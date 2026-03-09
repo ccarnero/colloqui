@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+data:
+  postgresql.conf: |
+    listen_addresses = '*'
+    port = 5432
+
+    # Connection tuning
+    max_connections = 100
+
+    # Memory
+    shared_buffers = 128MB
+    work_mem = 4MB
+    maintenance_work_mem = 64MB
+    effective_cache_size = 256MB
+
+    # WAL
+    wal_level = replica
+    max_wal_size = 256MB
+    min_wal_size = 64MB
+
+    # Checkpoints
+    checkpoint_completion_target = 0.9
+
+    # Logging
+    log_min_duration_statement = 500
+    log_connections = on
+    log_disconnections = on
+    log_lock_waits = on
+
+    # Performance
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    default_statistics_target = 100
+
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS events (
+      id          TEXT        PRIMARY KEY,
+      type        TEXT        NOT NULL,
+      payload     JSONB       NOT NULL DEFAULT '{}',
+      metadata    JSONB       NOT NULL DEFAULT '{}',
+      subject     TEXT        NOT NULL DEFAULT '',
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_events_type ON events (type);
+    CREATE INDEX IF NOT EXISTS idx_events_created_at ON events (created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_events_type_created ON events (type, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS metrics (
+      id          TEXT             PRIMARY KEY,
+      source      TEXT             NOT NULL,
+      name        TEXT             NOT NULL,
+      value       DOUBLE PRECISION NOT NULL DEFAULT 0,
+      tags        JSONB            NOT NULL DEFAULT '{}',
+      metadata    JSONB            NOT NULL DEFAULT '{}',
+      created_at  TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_metrics_source ON metrics (source);
+    CREATE INDEX IF NOT EXISTS idx_metrics_name ON metrics (name);
+    CREATE INDEX IF NOT EXISTS idx_metrics_source_created ON metrics (source, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_metrics_created_at ON metrics (created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS platform_users (
+      id            TEXT        PRIMARY KEY,
+      email         TEXT        UNIQUE NOT NULL,
+      password_hash TEXT        NOT NULL,
+      role          TEXT        NOT NULL DEFAULT 'operator',
+      is_active     BOOLEAN     NOT NULL DEFAULT true,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_platform_users_email ON platform_users (email);
+
+    CREATE TABLE IF NOT EXISTS api_clients (
+      id                 TEXT        PRIMARY KEY,
+      client_id          TEXT        UNIQUE NOT NULL,
+      client_secret_hash TEXT        NOT NULL,
+      name               TEXT        NOT NULL,
+      scope              TEXT        NOT NULL,
+      is_active          BOOLEAN     NOT NULL DEFAULT true,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_api_clients_client_id ON api_clients (client_id);
+    CREATE INDEX IF NOT EXISTS idx_api_clients_scope ON api_clients (scope);
+
+    CREATE TABLE IF NOT EXISTS public_routes (
+      id            TEXT        PRIMARY KEY,
+      method        TEXT        NOT NULL,
+      path_pattern  TEXT        NOT NULL,
+      scope         TEXT        NOT NULL,
+      environment   TEXT        NOT NULL,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_public_routes_scope_env ON public_routes (scope, environment);
+    CREATE INDEX IF NOT EXISTS idx_public_routes_env ON public_routes (environment);

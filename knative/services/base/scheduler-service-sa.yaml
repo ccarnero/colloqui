@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: scheduler-service
+  labels:
+    app.kubernetes.io/name: scheduler-service
+    app.kubernetes.io/part-of: yoizen-arch

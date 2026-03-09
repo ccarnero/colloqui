@@ -1,0 +1,127 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tenant-service-namespace-manager-dev
+  labels:
+    app.kubernetes.io/name: tenant-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: tenant-service
+    namespace: platform-services-dev
+roleRef:
+  kind: ClusterRole
+  name: tenant-namespace-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tenant-service-namespace-manager-qa
+  labels:
+    app.kubernetes.io/name: tenant-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: tenant-service
+    namespace: platform-services-qa
+roleRef:
+  kind: ClusterRole
+  name: tenant-namespace-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tenant-service-namespace-manager-staging
+  labels:
+    app.kubernetes.io/name: tenant-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: tenant-service
+    namespace: platform-services-staging
+roleRef:
+  kind: ClusterRole
+  name: tenant-namespace-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tenant-service-namespace-manager-production
+  labels:
+    app.kubernetes.io/name: tenant-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: tenant-service
+    namespace: platform-services-production
+roleRef:
+  kind: ClusterRole
+  name: tenant-namespace-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: scheduler-service-job-manager-dev
+  labels:
+    app.kubernetes.io/name: scheduler-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: scheduler-service
+    namespace: platform-services-dev
+roleRef:
+  kind: ClusterRole
+  name: scheduler-job-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: scheduler-service-job-manager-qa
+  labels:
+    app.kubernetes.io/name: scheduler-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: scheduler-service
+    namespace: platform-services-qa
+roleRef:
+  kind: ClusterRole
+  name: scheduler-job-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: scheduler-service-job-manager-staging
+  labels:
+    app.kubernetes.io/name: scheduler-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: scheduler-service
+    namespace: platform-services-staging
+roleRef:
+  kind: ClusterRole
+  name: scheduler-job-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: scheduler-service-job-manager-production
+  labels:
+    app.kubernetes.io/name: scheduler-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: scheduler-service
+    namespace: platform-services-production
+roleRef:
+  kind: ClusterRole
+  name: scheduler-job-manager
+  apiGroup: rbac.authorization.k8s.io

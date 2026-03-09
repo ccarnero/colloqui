@@ -1,0 +1,29 @@
+FROM oven/bun:1.3-alpine AS builder
+
+WORKDIR /app
+
+COPY packages/shared ./packages/shared
+COPY services/api-gateway/package.json ./services/api-gateway/
+WORKDIR /app/services/api-gateway
+RUN bun install
+
+COPY services/api-gateway/src ./src
+COPY services/api-gateway/tsconfig.json ./
+RUN bun run build
+
+FROM oven/bun:1.3-alpine
+
+WORKDIR /app/services/api-gateway
+
+RUN addgroup -g 1001 -S app && adduser -u 1001 -S app -G app
+
+COPY --from=builder /app/packages/shared /app/packages/shared
+COPY --from=builder /app/services/api-gateway/node_modules ./node_modules
+COPY --from=builder /app/services/api-gateway/dist ./dist
+COPY --from=builder /app/services/api-gateway/package.json ./
+
+USER 1001:1001
+
+EXPOSE 3000
+
+CMD ["bun", "run", "dist/main.js"]

@@ -1,0 +1,15 @@
+{
+  "name": "e2e-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "bun test",
+    "test:flow": "bun test flow.e2e.spec.ts",
+    "test:cache": "bun test cache.e2e.spec.ts",
+    "test:health": "bun test health.e2e.spec.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2"
+  }
+}
