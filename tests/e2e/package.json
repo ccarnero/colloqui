@@ -4,9 +4,17 @@
   "private": true,
   "scripts": {
     "test": "bun test",
+    "test:health": "bun test health.e2e.spec.ts",
     "test:flow": "bun test flow.e2e.spec.ts",
     "test:cache": "bun test cache.e2e.spec.ts",
-    "test:health": "bun test health.e2e.spec.ts"
+    "test:auth": "bun test auth.e2e.spec.ts",
+    "test:tenant": "bun test tenant.e2e.spec.ts",
+    "test:audit": "bun test audit.e2e.spec.ts",
+    "test:metrics": "bun test metrics.e2e.spec.ts",
+    "test:scheduler": "bun test scheduler.e2e.spec.ts",
+    "test:registry": "bun test registry.e2e.spec.ts",
+    "test:workflow": "bun test workflow.e2e.spec.ts",
+    "test:webhook": "bun test webhook.e2e.spec.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

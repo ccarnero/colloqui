@@ -1,14 +1,31 @@
+export type ServiceName =
+  | 'api-gateway'
+  | 'event-processor'
+  | 'cache-service'
+  | 'metrics-service';
+
+const NAMESPACE = process.env.SMOKE_TEST_NAMESPACE ?? 'platform-services-dev';
+const KOURIER_HOST = process.env.KOURIER_HOST ?? 'localhost';
+const KOURIER_PORT = process.env.KOURIER_PORT ?? '8080';
+const MINIKUBE_DOMAIN = process.env.MINIKUBE_DOMAIN ?? '192.168.49.2.sslip.io';
+
+function knativeUrl(service: string): string {
+  return `http://${service}.${NAMESPACE}.${MINIKUBE_DOMAIN}`;
+}
+
 const SERVICE_URLS = new Map<string, string>([
-  ['api-gateway', process.env.API_GATEWAY_URL ?? 'http://localhost:3000'],
-  ['event-processor', process.env.EVENT_PROCESSOR_URL ?? 'http://localhost:3001'],
-  ['cache-service', process.env.CACHE_SERVICE_URL ?? 'http://localhost:3002'],
+  ['api-gateway', process.env.API_GATEWAY_URL ?? knativeUrl('api-gateway')],
+  ['event-processor', process.env.EVENT_PROCESSOR_URL ?? knativeUrl('event-processor')],
+  ['cache-service', process.env.CACHE_SERVICE_URL ?? knativeUrl('cache-service')],
+  ['metrics-service', process.env.METRICS_SERVICE_URL ?? knativeUrl('metrics-service')],
 ]);
 
-const KOURIER_HOST = process.env.KOURIER_HOST;
-const KOURIER_PORT = process.env.KOURIER_PORT;
-
-export function getBaseUrl(service: 'api-gateway' | 'event-processor' | 'cache-service'): string {
+export function getBaseUrl(service: ServiceName): string {
   return SERVICE_URLS.get(service)!;
+}
+
+export interface RequestOptions {
+  headers?: Record<string, string>;
 }
 
 interface PollOptions {
@@ -60,9 +77,12 @@ function resolveRequest(url: string, init?: RequestInit): [string, RequestInit] 
   return [parsed.toString(), { ...init, headers }];
 }
 
-export async function httpGet<T = unknown>(url: string): Promise<{ status: number; body: T }> {
-  const [resolvedUrl, init] = resolveRequest(url);
-  const res = await fetch(resolvedUrl, init);
+function mergeHeaders(base: Record<string, string>, extra?: Record<string, string>): Record<string, string> {
+  if (!extra) return base;
+  return { ...base, ...extra };
+}
+
+async function parseResponse<T>(res: Response): Promise<{ status: number; body: T }> {
   const text = await res.text();
   let body: T;
   try {
@@ -71,57 +91,69 @@ export async function httpGet<T = unknown>(url: string): Promise<{ status: numbe
     body = text as unknown as T;
   }
   return { status: res.status, body };
+}
+
+export async function httpGet<T = unknown>(
+  url: string,
+  opts?: RequestOptions,
+): Promise<{ status: number; body: T }> {
+  const [resolvedUrl, init] = resolveRequest(url, {
+    headers: opts?.headers,
+  });
+  const res = await fetch(resolvedUrl, init);
+  return parseResponse<T>(res);
 }
 
 export async function httpPost<T = unknown>(
   url: string,
   payload: unknown,
+  opts?: RequestOptions,
 ): Promise<{ status: number; body: T }> {
   const [resolvedUrl, init] = resolveRequest(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mergeHeaders({ 'Content-Type': 'application/json' }, opts?.headers),
     body: JSON.stringify(payload),
   });
   const res = await fetch(resolvedUrl, init);
-  const text = await res.text();
-  let body: T;
-  try {
-    body = JSON.parse(text) as T;
-  } catch {
-    body = text as unknown as T;
-  }
-  return { status: res.status, body };
+  return parseResponse<T>(res);
 }
 
 export async function httpPut<T = unknown>(
   url: string,
   payload: unknown,
+  opts?: RequestOptions,
 ): Promise<{ status: number; body: T }> {
   const [resolvedUrl, init] = resolveRequest(url, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mergeHeaders({ 'Content-Type': 'application/json' }, opts?.headers),
     body: JSON.stringify(payload),
   });
   const res = await fetch(resolvedUrl, init);
-  const text = await res.text();
-  let body: T;
-  try {
-    body = JSON.parse(text) as T;
-  } catch {
-    body = text as unknown as T;
-  }
-  return { status: res.status, body };
+  return parseResponse<T>(res);
 }
 
-export async function httpDelete<T = unknown>(url: string): Promise<{ status: number; body: T }> {
-  const [resolvedUrl, init] = resolveRequest(url, { method: 'DELETE' });
+export async function httpPatch<T = unknown>(
+  url: string,
+  payload: unknown,
+  opts?: RequestOptions,
+): Promise<{ status: number; body: T }> {
+  const [resolvedUrl, init] = resolveRequest(url, {
+    method: 'PATCH',
+    headers: mergeHeaders({ 'Content-Type': 'application/json' }, opts?.headers),
+    body: JSON.stringify(payload),
+  });
   const res = await fetch(resolvedUrl, init);
-  const text = await res.text();
-  let body: T;
-  try {
-    body = JSON.parse(text) as T;
-  } catch {
-    body = text as unknown as T;
-  }
-  return { status: res.status, body };
+  return parseResponse<T>(res);
+}
+
+export async function httpDelete<T = unknown>(
+  url: string,
+  opts?: RequestOptions,
+): Promise<{ status: number; body: T }> {
+  const [resolvedUrl, init] = resolveRequest(url, {
+    method: 'DELETE',
+    headers: opts?.headers,
+  });
+  const res = await fetch(resolvedUrl, init);
+  return parseResponse<T>(res);
 }

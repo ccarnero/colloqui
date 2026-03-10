@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { getBaseUrl, httpPost, httpGet, poll } from './helpers';
+import { authHeaders } from './auth.setup';
 
 const GW = getBaseUrl('api-gateway');
 
@@ -19,16 +20,17 @@ async function publishAndWaitForResult(
   type: string,
   payload: object,
 ): Promise<{ eventId: string; result: ProcessedResult }> {
+  const h = await authHeaders();
   const { status, body } = await httpPost<PublishResponse>(`${GW}/events`, {
     type,
     payload,
-  });
+  }, { headers: h });
   expect(status).toBe(202);
   expect(body.status).toBe('accepted');
   const eventId = body.id;
 
   const result = await poll<ProcessedResult>(async () => {
-    const res = await httpGet<ProcessedResult>(`${GW}/results/${eventId}`);
+    const res = await httpGet<ProcessedResult>(`${GW}/results/${eventId}`, { headers: h });
     if (res.status === 200) return res.body;
     return null;
   }, { timeoutMs: 30_000 });
@@ -95,7 +97,8 @@ describe('E2E: full event flow', () => {
   });
 
   it('should return 404 for a nonexistent result', async () => {
-    const { status } = await httpGet(`${GW}/results/nonexistent-e2e-id`);
+    const h = await authHeaders();
+    const { status } = await httpGet(`${GW}/results/nonexistent-e2e-id`, { headers: h });
     expect(status).toBe(404);
   });
 });
