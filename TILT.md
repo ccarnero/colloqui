@@ -16,13 +16,13 @@ Tilt provides a fast inner-loop development experience for the Yoizen platform. 
 
 ### 1. Bootstrap the cluster (first time only)
 
-The bootstrap script creates the Minikube profile, installs Knative Serving with Kourier, and deploys all infrastructure. You only need to run this once:
+Just run this once:
 
 ```bash
-./bootstrap.sh dev
+minikube start -p yoizen-arch
 ```
 
-Passing `dev` restricts the bootstrap to the dev environment only, which is faster and uses fewer resources. Omit the argument to deploy all four environments (dev, qa, staging, production).
+This will create a minikube cluster with yoizen-arch profile attached.
 
 ### 2. Start Tilt
 
