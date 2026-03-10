@@ -1,8 +1,8 @@
-# AGENTS.md - Audit Service
+# AGENTS.md - Metrics Service
 
 ## Project Overview
 
-The Audit Service consumes domain events from the NATS JetStream `EVENTS` stream via durable consumer `audit-writer`, persists every event to per-tenant PostgreSQL databases, and exposes a paginated query API. It uses the `TenantConnectionManager` pattern to dynamically create connection pools to each tenant's dedicated PostgreSQL instance, with lazy schema initialization on first message per tenant.
+The Metrics Service consumes metric events from the NATS JetStream `EVENTS` stream (filtered to `events.metrics` subject), persists them to per-tenant PostgreSQL databases, and exposes a paginated query API. It uses the `TenantConnectionManager` pattern to dynamically create connection pools to each tenant's dedicated PostgreSQL instance.
 
 ## Tech Stack
 
@@ -22,46 +22,44 @@ src/
 ├── main.ts                                 # Bootstrap: Fastify adapter, port binding
 ├── app.module.ts                           # @Global() root module with NATS + TenantConnectionManager
 ├── providers/
-│   ├── nats.provider.ts                    # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CLIENT (audit-writer consumer)
-│   ├── postgres.provider.ts                # POSTGRES_SQL (unused legacy, kept for reference)
+│   ├── nats.provider.ts                    # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CLIENT (metrics-writer consumer)
+│   ├── postgres.provider.ts                # POSTGRES_SQL (unused, kept for reference)
 │   └── tenant-connection-manager.ts        # Per-tenant PostgreSQL pools (Map-based)
 └── modules/
-    ├── audit/
-    │   ├── audit.module.ts
-    │   ├── audit.controller.ts             # GET /audit/events, GET /audit/events/:id
-    │   └── audit.service.ts                # NATS consumer loop, per-tenant persist, query API
+    ├── metrics/
+    │   ├── metrics.module.ts
+    │   ├── metrics.controller.ts           # GET /metrics, GET /metrics/:id
+    │   └── metrics.service.ts              # NATS consumer loop, per-tenant persist, query API
     └── health/
         ├── health.module.ts
         └── health.controller.ts            # GET /health
 
 test/
 ├── unit/
-│   └── health.controller.spec.ts
 └── integration/
-    └── audit.integration.spec.ts
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/app.module.ts` | `@Global()` module exporting all NATS tokens and `TenantConnectionManager` |
-| `src/providers/nats.provider.ts` | Creates EVENTS stream, durable consumer `audit-writer` (explicit ack, all subjects, max_deliver 5) |
+| `src/app.module.ts` | `@Global()` module exporting NATS tokens and `TenantConnectionManager` |
+| `src/providers/nats.provider.ts` | Creates EVENTS stream, durable consumer `metrics-writer` (filter: `events.metrics`, explicit ack, max_deliver 5) |
 | `src/providers/tenant-connection-manager.ts` | Lazy pool creation per tenant; connects to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
-| `src/modules/audit/audit.service.ts` | Consumer loop: decode envelope -> extract tenantId -> ensure schema -> INSERT events -> ack/nak |
-| `src/modules/audit/audit.controller.ts` | Paginated query endpoints with type/date filters |
+| `src/modules/metrics/metrics.service.ts` | Consumer loop: decode envelope -> extract tenantId -> ensure schema -> INSERT metrics -> ack/nak |
+| `src/modules/metrics/metrics.controller.ts` | Paginated query endpoints with source/name/date filters |
 
 ## Architecture Highlights
 
 ### Data Flow
 
 ```
-NATS (events.>) -> consumer.consume(batch=100, expires=30s)
+NATS (events.metrics) -> consumer.consume(batch=100, expires=30s)
   -> msg.json() as EventEnvelope
-  -> extract tenantId from envelope.metadata.tenantId
+  -> extract tenantId from metadata
   -> TenantConnectionManager.getConnection(tenantId)
   -> ensureTable() (lazy schema init per tenant)
-  -> INSERT INTO events ... ON CONFLICT DO NOTHING
+  -> INSERT INTO metrics ... ON CONFLICT DO NOTHING
   -> msg.ack()   // or msg.nak() on error
 ```
 
@@ -71,32 +69,33 @@ NATS (events.>) -> consumer.consume(batch=100, expires=30s)
 AppModule (@Global)
 ├── NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CLIENT
 ├── TenantConnectionManager (Map<string, Sql>)
-├── AuditModule
-│   ├── AuditController (GET /audit/events, GET /audit/events/:id)
-│   └── AuditService (consumer loop + query logic)
+├── MetricsModule
+│   ├── MetricsController (GET /metrics, GET /metrics/:id)
+│   └── MetricsService (consumer loop + query logic)
 └── HealthModule -> HealthController
 ```
 
 ### Database Schema (per-tenant)
 
 ```sql
-CREATE TABLE events (
-    id          TEXT        PRIMARY KEY,
-    type        TEXT        NOT NULL,
-    payload     JSONB       NOT NULL DEFAULT '{}',
-    metadata    JSONB       NOT NULL DEFAULT '{}',
-    subject     TEXT        NOT NULL DEFAULT '',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE metrics (
+    id          TEXT             PRIMARY KEY,
+    source      TEXT             NOT NULL,
+    name        TEXT             NOT NULL,
+    value       DOUBLE PRECISION NOT NULL DEFAULT 0,
+    tags        JSONB            NOT NULL DEFAULT '{}',
+    metadata    JSONB            NOT NULL DEFAULT '{}',
+    created_at  TIMESTAMPTZ      NOT NULL DEFAULT NOW()
 );
--- Indexes: type, created_at DESC, (type, created_at DESC)
+-- Indexes: source, name, (source, created_at DESC), created_at DESC
 ```
 
 ### Communication
 
 | Target | Protocol | Direction | Purpose |
 |--------|----------|-----------|---------|
-| NATS JetStream (EVENTS) | NATS | Inbound | Consume all events via durable consumer `audit-writer` |
-| Per-tenant PostgreSQL | TCP | Outbound | Persist events to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
+| NATS JetStream (EVENTS) | NATS | Inbound | Consume `events.metrics` via durable consumer `metrics-writer` |
+| Per-tenant PostgreSQL | TCP | Outbound | Persist metrics to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
 
 ### DI Tokens
 
@@ -117,17 +116,9 @@ CREATE TABLE events (
 | `POSTGRES_PASSWORD` | `yoizen-dev-password` | PostgreSQL password |
 | `PLATFORM_ENVIRONMENT` | `dev` | Environment name for tenant namespace resolution |
 
-### Stream Configuration (from `@yoizen/shared`)
-
-| Stream | Retention | Max Age | Max Bytes |
-|--------|-----------|---------|-----------|
-| `EVENTS` | Limits | 7 days | 512 MB |
-
-Consumer: `audit-writer` -- explicit ack, deliver all, max deliver 5.
-
 ### Knative
 
-- Image: `dev.local/audit-service:local`
+- Image: `dev.local/metrics-service:local`
 - Autoscaling: min 1, max 5, target concurrency 50
 - Readiness probe: `GET /health` on port 3000
 
@@ -146,7 +137,6 @@ Consumer: `audit-writer` -- explicit ack, deliver all, max deliver 5.
 - **Schema lazy init**: `ensureTable()` runs once per tenant (tracked via `Set<string>`)
 - **Batched consumer**: `consume({ max_messages: 100, expires: 30_000 })` for efficient pull
 - **Idempotent writes**: `ON CONFLICT (id) DO NOTHING` prevents duplicate inserts
-- **Tenant routing**: messages without `metadata.tenantId` are logged and dropped
 - **Lifecycle hooks**: `OnModuleInit` starts consumer, `OnModuleDestroy` stops it and closes all pools
 
 ## Common Tasks
@@ -164,8 +154,8 @@ Requires local NATS (`nats://localhost:4222`) and a PostgreSQL instance per tena
 
 | Service | Relationship |
 |---------|-------------|
-| **NATS JetStream** | Consumes from EVENTS stream via `audit-writer` consumer |
-| **Per-tenant PostgreSQL** | Writes events to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
-| **api-gateway** | Upstream producer (publishes events) + proxies audit query endpoints |
+| **NATS JetStream** | Consumes from `events.metrics` on EVENTS stream |
+| **Per-tenant PostgreSQL** | Writes metrics to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
+| **api-gateway** | Upstream producer (publishes metric events) |
 | **tenant-service** | Provisions the per-tenant PostgreSQL instances |
-| **`@yoizen/shared`** | Stream/consumer names, `EventEnvelope`, `TENANT_HEADER` |
+| **`@yoizen/shared`** | Stream/consumer names, `MetricsPayload`, `TENANT_HEADER` |
