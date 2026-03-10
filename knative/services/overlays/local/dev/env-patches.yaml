@@ -34,6 +34,10 @@ spec:
               value: "http://metrics-service.platform-services-dev.svc.cluster.local"
             - name: SCHEDULER_SERVICE_URL
               value: "http://scheduler-service.platform-services-dev.svc.cluster.local"
+            - name: REGISTRY_SERVICE_URL
+              value: "http://registry-service.platform-services-dev.svc.cluster.local"
+            - name: WORKFLOW_SERVICE_URL
+              value: "http://workflow-api.platform-services-dev.svc.cluster.local"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -429,3 +433,158 @@ spec:
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: registry-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/registry-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: POSTGRES_HOST
+              value: "postgres.support-services-dev.svc.cluster.local"
+            - name: POSTGRES_USER
+              value: "yoizen"
+            - name: POSTGRES_PASSWORD
+              value: "yoizen-dev-password"
+            - name: POSTGRES_DB
+              value: "yoizen"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: TENANT_SERVICE_URL
+              value: "http://tenant-service.platform-services-dev.svc.cluster.local"
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: workflow-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/workflow-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: ENTRYPOINT
+              value: "dist/main.js"
+            - name: TEMPORAL_ADDRESS
+              value: "temporal.support-services-dev.svc.cluster.local:7233"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: workflow-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/workflow-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: ENTRYPOINT
+              value: "dist/temporal/worker.js"
+            - name: TEMPORAL_ADDRESS
+              value: "temporal.support-services-dev.svc.cluster.local:7233"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: workflow-http-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/workflow-http-worker:local
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: "temporal.support-services-dev.svc.cluster.local:7233"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

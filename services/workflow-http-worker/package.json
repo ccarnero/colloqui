@@ -1,0 +1,23 @@
+{
+  "name": "workflow-http-worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "bun run dist/worker.js",
+    "start:dev": "bun run --watch src/worker.ts",
+    "test": "bun test",
+    "test:unit": "bun test test/unit",
+    "test:integration": "bun test test/integration"
+  },
+  "dependencies": {
+    "@temporalio/worker": "^1.11.0",
+    "@temporalio/activity": "^1.11.0",
+    "@yoizen/shared": "file:../../packages/shared",
+    "axios": "^1.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2"
+  }
+}

@@ -32,6 +32,13 @@ export {
   SCHEDULER_K8S_DEFAULT_TIMEOUT_S,
   SCHEDULER_TICK_INTERVAL_MS,
   SCHEDULER_MAX_EXECUTION_LOG_ROWS,
+  REGISTRY_KNATIVE_GROUP,
+  REGISTRY_KNATIVE_VERSION,
+  REGISTRY_KNATIVE_SERVICES_PLURAL,
+  REGISTRY_KNATIVE_REVISIONS_PLURAL,
+  WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
+  WORKFLOW_HTTP_TASK_QUEUE,
+  WORKFLOW_DEFAULT_TIMEOUT_MS,
 } from './constants';
 
 export type {
@@ -58,3 +65,16 @@ export type {
   UserRole,
   PublicRouteEntry,
 } from './auth.interfaces';
+
+export type {
+  WorkflowExecutionContext,
+  EndpointCallArgs,
+  JsFunctionArgs,
+  ServiceBusCallArgs,
+  EndpointCallAction,
+  JsFunctionAction,
+  ServiceBusCallAction,
+  BranchAction,
+  WorkflowAction,
+  WorkflowDefinition,
+} from './workflow.interfaces';

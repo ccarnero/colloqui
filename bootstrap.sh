@@ -2,7 +2,8 @@
 set -euo pipefail
 
 PROFILE="yoizen-arch"
-ENVIRONMENTS=(dev qa staging production)
+ALL_ENVIRONMENTS=(dev qa staging production)
+ENVIRONMENTS=()
 KNATIVE_VERSION="v1.17.0"
 KOURIER_VERSION="v1.17.0"
 
@@ -14,6 +15,42 @@ NC='\033[0m'
 log()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()  { echo -e "${RED}[ERR]${NC}   $*" >&2; }
+
+usage() {
+  echo "Usage: $0 [OPTIONS] [ENV...]"
+  echo ""
+  echo "Environments: ${ALL_ENVIRONMENTS[*]}"
+  echo "If no environments specified, all are deployed."
+  echo ""
+  echo "Options:"
+  echo "  -h, --help    Show this help message"
+}
+
+parse_args() {
+  ENVIRONMENTS=()
+  for arg in "$@"; do
+    case "$arg" in
+      -h|--help) usage; exit 0 ;;
+      -*)        err "Unknown option: $arg"; usage; exit 1 ;;
+      *)
+        local valid=0
+        for e in "${ALL_ENVIRONMENTS[@]}"; do
+          [[ "$arg" == "$e" ]] && valid=1 && break
+        done
+        if (( valid )); then
+          ENVIRONMENTS+=("$arg")
+        else
+          err "Invalid environment: $arg"
+          echo "Valid: ${ALL_ENVIRONMENTS[*]}"
+          exit 1
+        fi
+        ;;
+    esac
+  done
+  if (( ${#ENVIRONMENTS[@]} == 0 )); then
+    ENVIRONMENTS=("${ALL_ENVIRONMENTS[@]}")
+  fi
+}
 
 check_deps() {
   local missing=()
@@ -120,15 +157,32 @@ configure_local_registry() {
     --patch '{"data":{"registries-skipping-tag-resolving":"dev.local"}}'
 }
 
+apply_namespaces() {
+  for env in "${ENVIRONMENTS[@]}"; do
+    for prefix in support-services platform-services; do
+      local ns="${prefix}-${env}"
+      if kubectl get namespace "$ns" &>/dev/null; then
+        log "Namespace '${ns}' already exists"
+      else
+        log "Creating namespace '${ns}'"
+        kubectl create namespace "$ns"
+        kubectl label namespace "$ns" \
+          app.kubernetes.io/part-of=yoizen-arch \
+          yoizen.io/environment="$env"
+      fi
+    done
+  done
+}
+
 apply_infrastructure() {
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-  log "Applying infrastructure (overlay: local, all environments)"
-  kubectl apply -k "${script_dir}/infrastructure/overlays/local"
-
   for env in "${ENVIRONMENTS[@]}"; do
     local ns="support-services-${env}"
+
+    log "Applying infrastructure for '${env}'"
+    kubectl apply -k "${script_dir}/infrastructure/overlays/local/${env}"
 
     log "Waiting for NATS in ${ns}..."
     kubectl rollout status statefulset/nats \
@@ -144,6 +198,11 @@ apply_infrastructure() {
     kubectl rollout status statefulset/postgres \
       --namespace "$ns" \
       --timeout=180s
+
+    log "Waiting for Temporal in ${ns}..."
+    kubectl rollout status deployment/temporal \
+      --namespace "$ns" \
+      --timeout=180s
   done
 }
 
@@ -154,8 +213,13 @@ apply_knative_config() {
   log "Applying Knative autoscaler config"
   retry 5 3 kubectl apply -k "${script_dir}/knative/serving"
 
-  log "Applying Knative services (all environments)"
-  retry 5 3 kubectl apply -k "${script_dir}/knative/services/overlays/local"
+  log "Applying Knative RBAC"
+  retry 5 3 kubectl apply -k "${script_dir}/knative/services/rbac"
+
+  for env in "${ENVIRONMENTS[@]}"; do
+    log "Applying Knative services for '${env}'"
+    retry 5 3 kubectl apply -k "${script_dir}/knative/services/overlays/local/${env}"
+  done
 }
 
 build_images() {
@@ -165,7 +229,7 @@ build_images() {
   log "Pointing Docker to minikube daemon"
   eval "$(minikube docker-env -p "$PROFILE")"
 
-  for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service; do
+  for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service workflow-service workflow-http-worker; do
     log "Building image: dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \
@@ -202,7 +266,10 @@ print_summary() {
 }
 
 main() {
+  parse_args "$@"
+
   log "Event-Driven Architecture Bootstrap"
+  log "Environments: ${ENVIRONMENTS[*]}"
   echo ""
 
   check_deps
@@ -211,6 +278,7 @@ main() {
   install_kourier
   configure_dns
   configure_local_registry
+  apply_namespaces
   apply_infrastructure
   build_images
   apply_knative_config

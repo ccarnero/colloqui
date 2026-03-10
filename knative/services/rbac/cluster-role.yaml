@@ -36,3 +36,21 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["create", "get", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: registry-service-manager
+  labels:
+    app.kubernetes.io/name: registry-service
+    app.kubernetes.io/part-of: yoizen-arch
+rules:
+  - apiGroups: ["serving.knative.dev"]
+    resources: ["services", "revisions"]
+    verbs: ["create", "get", "list", "update", "patch", "delete", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]

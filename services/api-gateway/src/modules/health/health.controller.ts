@@ -26,6 +26,8 @@ const SERVICE_URLS = new Map<string, string>([
   ['event-processor', process.env.EVENT_PROCESSOR_URL ?? 'http://event-processor.platform-services.svc.cluster.local'],
   ['metrics-service', process.env.METRICS_SERVICE_URL ?? 'http://metrics-service.platform-services.svc.cluster.local'],
   ['tenant-service', process.env.TENANT_SERVICE_URL ?? 'http://tenant-service.platform-services.svc.cluster.local'],
+  ['registry-service', process.env.REGISTRY_SERVICE_URL ?? 'http://registry-service.platform-services.svc.cluster.local'],
+  ['workflow-service', process.env.WORKFLOW_SERVICE_URL ?? 'http://workflow-api.platform-services.svc.cluster.local'],
 ]);
 
 const SERVICE_TIMEOUT_MS = 3_000;

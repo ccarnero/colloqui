@@ -39,3 +39,12 @@ export const SCHEDULER_DEFAULT_TIMEOUT_MS = 30_000;
 export const SCHEDULER_K8S_DEFAULT_TIMEOUT_S = 300;
 export const SCHEDULER_TICK_INTERVAL_MS = 5_000;
 export const SCHEDULER_MAX_EXECUTION_LOG_ROWS = 500;
+
+export const REGISTRY_KNATIVE_GROUP = 'serving.knative.dev';
+export const REGISTRY_KNATIVE_VERSION = 'v1';
+export const REGISTRY_KNATIVE_SERVICES_PLURAL = 'services';
+export const REGISTRY_KNATIVE_REVISIONS_PLURAL = 'revisions';
+
+export const WORKFLOW_ORCHESTRATOR_TASK_QUEUE = 'workflow-orchestrator';
+export const WORKFLOW_HTTP_TASK_QUEUE = 'workflow-http';
+export const WORKFLOW_DEFAULT_TIMEOUT_MS = 60_000;

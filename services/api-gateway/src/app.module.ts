@@ -4,6 +4,9 @@ import { EventsModule } from './modules/events/events.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { SchedulersModule } from './modules/schedulers/schedulers.module';
+import { RegistryModule } from './modules/registry/registry.module';
+import { DynamicRoutesModule } from './modules/dynamic-routes/dynamic-routes.module';
+import { WorkflowsModule } from './modules/workflows/workflows.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ProvidersModule } from './providers/providers.module';
@@ -18,6 +21,9 @@ import { AuthGuard } from './guards/auth.guard';
     AuditModule,
     TenantsModule,
     SchedulersModule,
+    RegistryModule,
+    WorkflowsModule,
+    DynamicRoutesModule,
     HealthModule,
   ],
   providers: [

@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: workflow-engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: temporal
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: temporal
+        app.kubernetes.io/component: workflow-engine
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: temporal
+          image: temporalio/auto-setup:latest
+          ports:
+            - name: grpc
+              containerPort: 7233
+              protocol: TCP
+            - name: web
+              containerPort: 8233
+              protocol: TCP
+          env:
+            - name: DB
+              value: "postgres12"
+            - name: DB_PORT
+              value: "5432"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_SEEDS
+              value: "postgres"
+            - name: DYNAMIC_CONFIG_FILE_PATH
+              value: "config/dynamicconfig/development-sql.yaml"
+          volumeMounts:
+            - name: dynamic-config
+              mountPath: /etc/temporal/config/dynamicconfig
+              readOnly: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: dynamic-config
+          configMap:
+            name: temporal-dynamic-config

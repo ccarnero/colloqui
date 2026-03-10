@@ -34,6 +34,8 @@ spec:
               value: "http://metrics-service.platform-services-production.svc.cluster.local"
             - name: SCHEDULER_SERVICE_URL
               value: "http://scheduler-service.platform-services-production.svc.cluster.local"
+            - name: REGISTRY_SERVICE_URL
+              value: "http://registry-service.platform-services-production.svc.cluster.local"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -409,6 +411,57 @@ spec:
               value: "6379"
             - name: PLATFORM_ENVIRONMENT
               value: "production"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: registry-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/registry-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: POSTGRES_HOST
+              value: "postgres.support-services-production.svc.cluster.local"
+            - name: POSTGRES_USER
+              value: "yoizen"
+            - name: POSTGRES_PASSWORD
+              value: "yoizen-dev-password"
+            - name: POSTGRES_DB
+              value: "yoizen"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: PLATFORM_ENVIRONMENT
+              value: "production"
+            - name: TENANT_SERVICE_URL
+              value: "http://tenant-service.platform-services-production.svc.cluster.local"
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-dynamic-config
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: workflow-engine
+data:
+  development-sql.yaml: |
+    {}

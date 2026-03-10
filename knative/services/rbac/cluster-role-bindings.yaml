@@ -125,3 +125,67 @@ roleRef:
   kind: ClusterRole
   name: scheduler-job-manager
   apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: registry-service-manager-dev
+  labels:
+    app.kubernetes.io/name: registry-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: registry-service
+    namespace: platform-services-dev
+roleRef:
+  kind: ClusterRole
+  name: registry-service-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: registry-service-manager-qa
+  labels:
+    app.kubernetes.io/name: registry-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: registry-service
+    namespace: platform-services-qa
+roleRef:
+  kind: ClusterRole
+  name: registry-service-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: registry-service-manager-staging
+  labels:
+    app.kubernetes.io/name: registry-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: registry-service
+    namespace: platform-services-staging
+roleRef:
+  kind: ClusterRole
+  name: registry-service-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: registry-service-manager-production
+  labels:
+    app.kubernetes.io/name: registry-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: registry-service
+    namespace: platform-services-production
+roleRef:
+  kind: ClusterRole
+  name: registry-service-manager
+  apiGroup: rbac.authorization.k8s.io
