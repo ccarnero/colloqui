@@ -38,9 +38,25 @@ wait_for_port() {
   done
 }
 
+ALL_KNATIVE_SERVICES=(
+  api-gateway
+  auth-service
+  event-processor
+  cache-service
+  audit-service
+  webhook-service
+  metrics-service
+  tenant-service
+  scheduler-service
+  registry-service
+  workflow-api
+  workflow-worker
+  workflow-http-worker
+)
+
 preflight_check() {
   local ok=true
-  for svc in api-gateway event-processor cache-service; do
+  for svc in "${ALL_KNATIVE_SERVICES[@]}"; do
     local ready
     ready=$(kubectl get ksvc "$svc" -n "$NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
     if [[ "$ready" != "True" ]]; then
@@ -85,13 +101,19 @@ run_tests() {
   export API_GATEWAY_URL="http://api-gateway.${NAMESPACE}.${domain}:${KOURIER_PORT}"
   export EVENT_PROCESSOR_URL="http://event-processor.${NAMESPACE}.${domain}:${KOURIER_PORT}"
   export CACHE_SERVICE_URL="http://cache-service.${NAMESPACE}.${domain}:${KOURIER_PORT}"
+  export METRICS_SERVICE_URL="http://metrics-service.${NAMESPACE}.${domain}:${KOURIER_PORT}"
   export KOURIER_HOST="localhost"
   export KOURIER_PORT="${KOURIER_PORT}"
 
+  export ADMIN_EMAIL="${ADMIN_EMAIL:-}"
+  export ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+  export E2E_TENANT="${E2E_TENANT:-e2e-test}"
+
   log "Service URLs (routed through Kourier):"
-  echo "  api-gateway     -> $API_GATEWAY_URL"
-  echo "  event-processor -> $EVENT_PROCESSOR_URL"
-  echo "  cache-service   -> $CACHE_SERVICE_URL"
+  echo "  api-gateway     -> $API_GATEWAY_URL  (all service tests route through this)"
+  echo "  event-processor -> $EVENT_PROCESSOR_URL  (direct health check)"
+  echo "  cache-service   -> $CACHE_SERVICE_URL  (direct CRUD + health)"
+  echo "  metrics-service -> $METRICS_SERVICE_URL  (direct — not proxied by gateway)"
   echo ""
 
   local test_filter="${1:-}"

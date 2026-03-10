@@ -25,10 +25,7 @@ export class AuthProxyService {
     tenantId?: string,
   ): Promise<object> {
     const url = `${this.baseUrl}${path}`;
-    const outHeaders: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...headers,
-    };
+    const outHeaders: Record<string, string> = { ...headers };
 
     if (tenantId) {
       outHeaders[TENANT_HEADER] = tenantId;
@@ -37,6 +34,7 @@ export class AuthProxyService {
     const init: RequestInit = { method, headers: outHeaders };
 
     if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+      outHeaders['Content-Type'] = 'application/json';
       init.body = JSON.stringify(body);
     }
 
