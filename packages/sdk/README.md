@@ -13,6 +13,7 @@ npm install @yoizen/sdk
 ## Quick Start
 
 ```typescript
+
 import { YoizenClient } from '@yoizen/sdk';
 
 const client = new YoizenClient({
