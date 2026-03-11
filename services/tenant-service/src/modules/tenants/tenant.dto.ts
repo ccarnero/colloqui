@@ -1,4 +1,11 @@
-import { IsString, IsNotEmpty, MaxLength, Matches } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  MaxLength,
+  Matches,
+  IsOptional,
+  IsObject,
+} from 'class-validator';
 
 export const VALID_ENVIRONMENTS = [
   'dev',
@@ -9,6 +16,28 @@ export const VALID_ENVIRONMENTS = [
 
 export type Environment = (typeof VALID_ENVIRONMENTS)[number];
 
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+export type EnvironmentConfig = { [key: string]: JsonValue };
+
+export type TenantConfiguration = Partial<
+  Record<Environment, EnvironmentConfig>
+>;
+
+export interface TenantRow {
+  id: string;
+  name: string;
+  configuration: TenantConfiguration;
+  created_at: Date;
+  updated_at: Date;
+}
+
 export class CreateTenantDto {
   @IsString()
   @IsNotEmpty()
@@ -18,4 +47,8 @@ export class CreateTenantDto {
       'name must be lowercase alphanumeric with optional hyphens, cannot start or end with a hyphen',
   })
   name!: string;
+
+  @IsOptional()
+  @IsObject()
+  configuration?: TenantConfiguration;
 }

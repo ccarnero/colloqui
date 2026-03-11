@@ -193,7 +193,7 @@ RESOURCE_DEPS = {
     'metrics-service':      ['nats', 'postgres'],
     'registry-service':     ['postgres'],
     'scheduler-service':    ['postgres'],
-    'tenant-service':       [],
+    'tenant-service':       ['postgres'],
     'webhook-service':      ['nats'],
     'workflow-api':         ['nats', 'temporal'],
     'workflow-worker':      ['nats', 'temporal'],

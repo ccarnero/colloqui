@@ -151,3 +151,13 @@ data:
     );
 
     CREATE INDEX IF NOT EXISTS idx_canary_service ON canary_deployments (service_id);
+
+    CREATE TABLE IF NOT EXISTS tenants (
+      id            TEXT        PRIMARY KEY,
+      name          TEXT        UNIQUE NOT NULL,
+      configuration JSONB       NOT NULL DEFAULT '{}',
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tenants_name ON tenants (name);

@@ -240,10 +240,20 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
-            - name: NODE_EXTRA_CA_CERTS
-              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            - name: POSTGRES_HOST
+              value: "postgres.support-services-production.svc.cluster.local"
+            - name: POSTGRES_USER
+              value: "yoizen"
+            - name: POSTGRES_PASSWORD
+              value: "yoizen-dev-password"
+            - name: POSTGRES_DB
+              value: "yoizen"
+            - name: POSTGRES_PORT
+              value: "5432"
             - name: PLATFORM_ENVIRONMENT
               value: "production"
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

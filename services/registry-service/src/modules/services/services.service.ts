@@ -334,6 +334,7 @@ export class ServicesService {
                 ...(envList.length > 0 ? { env: envList } : {}),
                 securityContext: {
                   runAsNonRoot: true,
+                  runAsUser: 1001,
                   allowPrivilegeEscalation: false,
                   capabilities: { drop: ['ALL'] },
                   seccompProfile: { type: 'RuntimeDefault' },

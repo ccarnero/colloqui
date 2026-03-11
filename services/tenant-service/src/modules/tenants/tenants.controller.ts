@@ -22,7 +22,7 @@ export class TenantsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() dto: CreateTenantDto): Promise<TenantDetail> {
-    return this.tenantsService.createTenant(dto.name);
+    return this.tenantsService.createTenant(dto.name, dto.configuration);
   }
 
   @Get()
