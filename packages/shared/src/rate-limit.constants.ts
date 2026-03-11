@@ -1,0 +1,10 @@
+export const RATE_LIMIT_KEY_PREFIX = 'ratelimit:';
+
+export const RATE_LIMIT_DEFAULT_ALGORITHM = 'sliding_window' as const;
+export const RATE_LIMIT_DEFAULT_LIMIT = 1000;
+export const RATE_LIMIT_DEFAULT_WINDOW_MS = 60_000;
+export const RATE_LIMIT_DEFAULT_CAPACITY = 500;
+export const RATE_LIMIT_DEFAULT_REFILL_RATE = 50;
+
+export const RATE_LIMIT_CONFIG_POLL_INTERVAL_MS = 15_000;
+export const RATE_LIMIT_CONFIG_FETCH_TIMEOUT_MS = 5_000;

@@ -78,3 +78,20 @@ export type {
   WorkflowAction,
   WorkflowDefinition,
 } from './workflow.interfaces';
+
+export {
+  RATE_LIMIT_KEY_PREFIX,
+  RATE_LIMIT_DEFAULT_ALGORITHM,
+  RATE_LIMIT_DEFAULT_LIMIT,
+  RATE_LIMIT_DEFAULT_WINDOW_MS,
+  RATE_LIMIT_DEFAULT_CAPACITY,
+  RATE_LIMIT_DEFAULT_REFILL_RATE,
+  RATE_LIMIT_CONFIG_POLL_INTERVAL_MS,
+  RATE_LIMIT_CONFIG_FETCH_TIMEOUT_MS,
+} from './rate-limit.constants';
+
+export type {
+  RateLimitAlgorithm,
+  RateLimitTenantConfig,
+  RateLimitResult,
+} from './rate-limit.interfaces';

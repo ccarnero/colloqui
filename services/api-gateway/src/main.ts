@@ -9,6 +9,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AppModule } from './app.module';
 import { DynamicRouteCacheService } from './modules/dynamic-routes/dynamic-route-cache.service';
 import { JwtService } from './modules/auth/jwt.service';
+import { RateLimitService } from './modules/rate-limit/rate-limit.service';
 import { TENANT_HEADER } from '@yoizen/shared';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
@@ -55,6 +56,7 @@ async function bootstrap(): Promise<void> {
 
   const routeCache = app.get(DynamicRouteCacheService);
   const jwtService = app.get(JwtService);
+  const rateLimitService = app.get(RateLimitService);
   const logger = new Logger('DynamicRouteHook');
 
   const fastify = app.getHttpAdapter().getInstance();
@@ -62,13 +64,29 @@ async function bootstrap(): Promise<void> {
   fastify.addHook(
     'onRequest',
     async (req: FastifyRequest, reply: FastifyReply) => {
+      const tenantId = resolveTenantFromRequest(req);
+
+      if (tenantId) {
+        const rl = await rateLimitService.consume(tenantId);
+        reply.header('X-RateLimit-Limit', rl.limit);
+        reply.header('X-RateLimit-Remaining', rl.remaining);
+        reply.header('X-RateLimit-Reset', rl.resetSeconds);
+
+        if (!rl.allowed) {
+          reply
+            .status(429)
+            .header('Retry-After', rl.resetSeconds)
+            .send({ statusCode: 429, message: 'Too Many Requests' });
+          return;
+        }
+      }
+
       const path = req.url.split('?')[0];
 
       for (let i = 0; i < PLATFORM_PREFIXES.length; i++) {
         if (path.startsWith(PLATFORM_PREFIXES[i])) return;
       }
 
-      const tenantId = resolveTenantFromRequest(req);
       if (!tenantId) return;
 
       const matched = routeCache.match(tenantId, req.method, path);
