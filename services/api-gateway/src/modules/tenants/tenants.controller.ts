@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Delete,
   Body,
   Param,
@@ -31,6 +32,16 @@ export class TenantsController {
   @Get(':name')
   async get(@Param('name') name: string): Promise<object> {
     const tenant = await this.tenantProxy.getTenant(name);
+    if (!tenant) throw new NotFoundException(`Tenant '${name}' not found`);
+    return tenant;
+  }
+
+  @Patch(':name')
+  async update(
+    @Param('name') name: string,
+    @Body() body: object,
+  ): Promise<object> {
+    const tenant = await this.tenantProxy.updateTenant(name, body);
     if (!tenant) throw new NotFoundException(`Tenant '${name}' not found`);
     return tenant;
   }

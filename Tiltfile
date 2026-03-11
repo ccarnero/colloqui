@@ -118,6 +118,7 @@ STANDARD_SERVICES = [
     'registry-service',
     'scheduler-service',
     'tenant-service',
+    'proxy-service',
     'webhook-service',
 ]
 
@@ -194,6 +195,7 @@ RESOURCE_DEPS = {
     'registry-service':     ['postgres'],
     'scheduler-service':    ['postgres'],
     'tenant-service':       ['postgres'],
+    'proxy-service':        [],
     'webhook-service':      ['nats'],
     'workflow-api':         ['nats', 'temporal'],
     'workflow-worker':      ['nats', 'temporal'],

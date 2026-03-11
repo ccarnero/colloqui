@@ -20,6 +20,7 @@ const PLATFORM_PREFIXES = [
   '/schedulers',
   '/registry',
   '/workflows',
+  '/proxy',
   '/health',
   '/auth',
 ];

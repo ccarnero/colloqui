@@ -7,6 +7,7 @@ import { SchedulersModule } from './modules/schedulers/schedulers.module';
 import { RegistryModule } from './modules/registry/registry.module';
 import { DynamicRoutesModule } from './modules/dynamic-routes/dynamic-routes.module';
 import { WorkflowsModule } from './modules/workflows/workflows.module';
+import { ProxyModule } from './modules/proxy/proxy.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ProvidersModule } from './providers/providers.module';
@@ -23,6 +24,7 @@ import { AuthGuard } from './guards/auth.guard';
     SchedulersModule,
     RegistryModule,
     WorkflowsModule,
+    ProxyModule,
     DynamicRoutesModule,
     HealthModule,
   ],

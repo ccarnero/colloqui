@@ -36,6 +36,8 @@ spec:
               value: "http://scheduler-service.platform-services-staging.svc.cluster.local"
             - name: REGISTRY_SERVICE_URL
               value: "http://registry-service.platform-services-staging.svc.cluster.local"
+            - name: PROXY_SERVICE_URL
+              value: "http://proxy-service.platform-services-staging.svc.cluster.local"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -491,4 +493,43 @@ spec:
               path: /health
               port: 3000
             initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: proxy-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/proxy-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: TENANT_SERVICE_URL
+              value: "http://tenant-service.platform-services-staging.svc.cluster.local"
+            - name: PLATFORM_ENVIRONMENT
+              value: "staging"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 3
             periodSeconds: 5

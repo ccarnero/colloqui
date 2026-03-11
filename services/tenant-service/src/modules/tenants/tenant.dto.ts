@@ -48,3 +48,9 @@ export class CreateTenantDto {
   @IsObject()
   configuration?: TenantConfiguration;
 }
+
+export class UpdateTenantDto {
+  @IsObject()
+  @IsNotEmpty()
+  configuration!: TenantConfiguration;
+}

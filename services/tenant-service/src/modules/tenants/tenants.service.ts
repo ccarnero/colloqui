@@ -157,6 +157,34 @@ export class TenantsService {
     };
   }
 
+  async updateTenant(
+    name: string,
+    configuration: TenantConfiguration,
+  ): Promise<TenantDetail> {
+    const row = await this.repository.updateConfiguration(name, configuration);
+    if (!row) {
+      throw new NotFoundException(`Tenant '${name}' not found`);
+    }
+
+    const items = await this.findNamespacesByTenant(name);
+    const namespaces: NamespaceStatus[] = items.map((ns) => ({
+      name: ns.metadata!.name!,
+      environment: ns.metadata!.labels![LABEL_ENVIRONMENT] as Environment,
+      phase: ns.status?.phase ?? 'Unknown',
+    }));
+
+    this.logger.log(`Updated configuration for tenant '${name}'`);
+
+    return {
+      name,
+      configuration: row.configuration,
+      namespaces,
+      postgresHost: postgresHost(name, this.environment),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
   async deleteTenant(name: string): Promise<void> {
     const row = await this.repository.findByName(name);
     if (!row) {

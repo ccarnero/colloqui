@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Delete,
   Body,
   Param,
@@ -13,7 +14,7 @@ import {
   type TenantDetail,
   type TenantSummary,
 } from './tenants.service';
-import { CreateTenantDto } from './tenant.dto';
+import { CreateTenantDto, UpdateTenantDto } from './tenant.dto';
 
 @Controller('tenants')
 export class TenantsController {
@@ -33,6 +34,14 @@ export class TenantsController {
   @Get(':name')
   async get(@Param('name') name: string): Promise<TenantDetail> {
     return this.tenantsService.getTenant(name);
+  }
+
+  @Patch(':name')
+  async update(
+    @Param('name') name: string,
+    @Body() dto: UpdateTenantDto,
+  ): Promise<TenantDetail> {
+    return this.tenantsService.updateTenant(name, dto.configuration);
   }
 
   @Delete(':name')

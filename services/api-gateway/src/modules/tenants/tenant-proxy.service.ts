@@ -57,6 +57,29 @@ export class TenantProxyService {
     return res.json();
   }
 
+  async updateTenant(
+    name: string,
+    body: object,
+    tenantId?: string,
+  ): Promise<object | null> {
+    const url = `${this.baseUrl}/tenants/${encodeURIComponent(name)}`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (tenantId) headers[TENANT_HEADER] = tenantId;
+
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body),
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      const text = await res.text();
+      this.logger.error(`Tenant service responded ${res.status}: ${text}`);
+      throw new Error(`Tenant service error: ${res.status}`);
+    }
+    return res.json();
+  }
+
   async deleteTenant(name: string, tenantId?: string): Promise<boolean> {
     const url = `${this.baseUrl}/tenants/${encodeURIComponent(name)}`;
     const headers: Record<string, string> = {};
