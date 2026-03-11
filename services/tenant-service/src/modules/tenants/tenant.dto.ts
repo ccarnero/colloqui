@@ -24,11 +24,7 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
-export type EnvironmentConfig = { [key: string]: JsonValue };
-
-export type TenantConfiguration = Partial<
-  Record<Environment, EnvironmentConfig>
->;
+export type TenantConfiguration = { [key: string]: JsonValue };
 
 export interface TenantRow {
   id: string;
