@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Environment (tokens, secrets)
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+client/dist/
+
+# Logs
+*.log
+npm-debug.log*
+tunnel.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Cloudflare tunnel
+*.cloudflared/
+
+# MongoDB data (if local)
+data/db/
+
+# Coverage
+coverage/
+
+# Bun
+bun.lockb

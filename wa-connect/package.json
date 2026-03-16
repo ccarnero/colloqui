@@ -1,0 +1,11 @@
+{
+  "name": "wa-connect",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["server", "client"],
+  "scripts": {
+    "dev": "cd server && bun run dev",
+    "test": "cd server && bun run test",
+    "dev:client": "cd client && bun run dev"
+  }
+}
