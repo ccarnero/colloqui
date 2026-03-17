@@ -95,6 +95,20 @@ const sendTemplate = (accountId, to, templateName, languageCode, components) =>
 const getTemplates = (accountId) =>
   request(`/accounts/${accountId}/templates`)
 
+// --- Token management ---
+
+const getTokenStatus = (accountId) =>
+  request(`/accounts/${accountId}/token-status`)
+
+const refreshAccountToken = (accountId) =>
+  request(`/accounts/${accountId}/token-refresh`, { method: 'POST' })
+
+const updateAccountToken = (accountId, accessToken) =>
+  request(`/accounts/${accountId}/token-update`, {
+    method: 'POST',
+    body: JSON.stringify({ access_token: accessToken }),
+  })
+
 export {
   register,
   login,
@@ -108,4 +122,7 @@ export {
   sendMessage,
   sendTemplate,
   getTemplates,
+  getTokenStatus,
+  refreshAccountToken,
+  updateAccountToken,
 }

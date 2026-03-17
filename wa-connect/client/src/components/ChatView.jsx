@@ -19,14 +19,14 @@ const statusIcon = (status) => {
   return ''
 }
 
-const ChatView = ({ accountId, contact, onMessageSent }) => {
+const ChatView = ({ accountId, contact, onMessageSent, refreshTick }) => {
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
   const scrollRef = useRef(null)
 
-  // Load messages when contact changes
+  // Load messages when contact changes or when a WS event bumps refreshTick
   useEffect(() => {
     if (!contact) return
 
@@ -35,7 +35,7 @@ const ChatView = ({ accountId, contact, onMessageSent }) => {
         setMessages(result.data.messages || [])
       }
     })
-  }, [accountId, contact])
+  }, [accountId, contact, refreshTick])
 
   // Scroll to bottom when messages change
   useEffect(() => {

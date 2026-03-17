@@ -39,13 +39,15 @@ const createWsServer = (httpServer, db, env) => {
 
           // Load user's account IDs
           const user = await db.collection('users').findOne(
-            { _id: new ObjectId(result.data.userId) },
+            { _id: new ObjectId(result.data.sub) },
             { projection: { account_ids: 1 } }
           )
 
           const accountIds = (user?.account_ids || []).map((id) => id.toString())
 
-          clients.set(ws, { userId: result.data.userId, accountIds })
+          console.log(`  [WS] Client authenticated — user: ${result.data.sub}, accounts: [${accountIds.join(', ')}]`)
+
+          clients.set(ws, { userId: result.data.sub, accountIds })
           ws.send(JSON.stringify({ type: 'auth_ok' }))
         }
       } catch {
@@ -67,12 +69,20 @@ const createWsServer = (httpServer, db, env) => {
   const broadcast = (accountId, event) => {
     const accountStr = accountId.toString()
     const payload = JSON.stringify(event)
+    let sent = 0
+
+    console.log(`  [WS] Broadcasting ${event.type} for account ${accountStr} to ${clients.size} client(s)`)
 
     for (const [ws, info] of clients) {
-      if (info.accountIds.includes(accountStr) && ws.readyState === 1) {
+      const match = info.accountIds.includes(accountStr)
+      console.log(`  [WS]   client ${info.userId}: accounts=[${info.accountIds.join(', ')}] match=${match} ready=${ws.readyState === 1}`)
+      if (match && ws.readyState === 1) {
         ws.send(payload)
+        sent++
       }
     }
+
+    console.log(`  [WS] Sent to ${sent} client(s)`)
   }
 
   return { wss, broadcast }

@@ -2,16 +2,13 @@
 // and calls onMessage for each incoming event.
 // Auto-reconnects on disconnect.
 //
-// In dev mode (Vite :5173), connects directly to the backend (:6666)
-// because Vite's proxy doesn't handle WebSocket upgrades.
+// Uses same host as the page — Vite proxies /ws in dev, same server in prod.
 
 import { useEffect, useRef } from 'react'
 
 const getWsUrl = () => {
-  const isDev = window.location.port === '5173'
-  const host = isDev ? `${window.location.hostname}:6666` : window.location.host
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${host}/ws`
+  return `${protocol}//${window.location.host}/ws`
 }
 
 const useWebSocket = (onMessage) => {

@@ -14,6 +14,7 @@ import { registerWebhookRoutes } from './routes/webhook-routes.js'
 import { registerConversationRoutes } from './routes/conversation-routes.js'
 import { registerMessageRoutes } from './routes/message-routes.js'
 import { registerTemplateRoutes } from './routes/template-routes.js'
+import { registerTokenRoutes } from './routes/token-routes.js'
 
 const startServer = async () => {
   const env = readEnv()
@@ -58,6 +59,7 @@ const startServer = async () => {
   registerConversationRoutes(app, db, env)
   registerMessageRoutes(app, db, env)
   registerTemplateRoutes(app, db, env)
+  registerTokenRoutes(app, db, env)
 
   // Serve frontend build in production
   const clientDist = resolve(import.meta.dir, '../../client/dist')
