@@ -52,6 +52,7 @@ ALL_KNATIVE_SERVICES=(
   workflow-api
   workflow-worker
   workflow-http-worker
+  proxy-service
 )
 
 preflight_check() {
