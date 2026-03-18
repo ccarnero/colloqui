@@ -16,11 +16,11 @@ data:
         isDefault: true
         editable: false
 
-      - name: Jaeger
-        uid: jaeger
-        type: jaeger
+      - name: Tempo
+        uid: tempo
+        type: tempo
         access: proxy
-        url: http://jaeger:16686
+        url: http://tempo:3200
         editable: false
 
       - name: Loki
@@ -31,7 +31,7 @@ data:
         editable: false
         jsonData:
           derivedFields:
-            - datasourceUid: jaeger
-              matcherRegex: '"traceId":"(\\w+)"'
+            - datasourceUid: tempo
+              matcherRegex: '"traceId":"(\w+)"'
               name: TraceID
               url: "$${__value.raw}"

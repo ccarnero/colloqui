@@ -18,12 +18,12 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: jaeger
+  name: tempo
 spec:
   template:
     spec:
       containers:
-        - name: jaeger
+        - name: tempo
           resources:
             requests:
               cpu: 50m

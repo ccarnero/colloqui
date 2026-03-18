@@ -3,7 +3,7 @@ kind: Kustomization
 
 resources:
   - otel-collector
-  - jaeger
+  - tempo
   - prometheus
   - loki
   - grafana

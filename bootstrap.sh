@@ -209,8 +209,8 @@ apply_infrastructure() {
       --namespace "$ns" \
       --timeout=120s
 
-    log "Waiting for Jaeger in ${ns}..."
-    kubectl rollout status deployment/jaeger \
+    log "Waiting for Tempo in ${ns}..."
+    kubectl rollout status deployment/tempo \
       --namespace "$ns" \
       --timeout=120s
 
@@ -284,7 +284,7 @@ print_summary() {
   echo "  Observability:"
   for env in "${ENVIRONMENTS[@]}"; do
     echo "    Grafana:     kubectl port-forward -n support-services-${env} svc/grafana 3001:3000"
-    echo "    Jaeger:      kubectl port-forward -n support-services-${env} svc/jaeger 16686:16686"
+    echo "    Tempo:       kubectl port-forward -n support-services-${env} svc/tempo 3200:3200"
     echo "    Prometheus:  kubectl port-forward -n support-services-${env} svc/prometheus 9090:9090"
   done
   echo ""
