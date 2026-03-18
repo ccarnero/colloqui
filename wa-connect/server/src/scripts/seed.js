@@ -13,7 +13,7 @@ import { hashPassword } from '../auth/hash-password.js'
 
 const SEED_USER = {
   email: 'christian.carnero@gmail.com',
-  password: 'waconnect2024',
+  password: '*****',
   name: 'Chris',
 }
 
