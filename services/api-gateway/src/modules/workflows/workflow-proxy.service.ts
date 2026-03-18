@@ -1,5 +1,6 @@
 import { Injectable, Logger, HttpException } from '@nestjs/common';
 import { TENANT_HEADER } from '@yoizen/shared';
+import { tracedFetch } from '@yoizen/observability';
 
 @Injectable()
 export class WorkflowProxyService {
@@ -31,7 +32,7 @@ export class WorkflowProxyService {
       init.body = JSON.stringify(body);
     }
 
-    const res = await fetch(url, init);
+    const res = await tracedFetch(url, init);
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       this.logger.error(

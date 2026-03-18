@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { ObservabilityModule } from '@yoizen/observability';
 import { KubernetesModule } from './providers/kubernetes.provider';
 import { TenantConnectionManager } from './providers/tenant-connection-manager';
 import { SchedulesModule } from './modules/schedules/schedules.module';
@@ -10,6 +11,7 @@ import { HealthModule } from './modules/health/health.module';
 @Global()
 @Module({
   imports: [
+    ObservabilityModule.forRoot({ serviceName: 'scheduler-service' }),
     KubernetesModule,
     EngineModule,
     ExecutorsModule,

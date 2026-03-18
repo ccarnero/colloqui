@@ -203,6 +203,31 @@ apply_infrastructure() {
     kubectl rollout status deployment/temporal \
       --namespace "$ns" \
       --timeout=180s
+
+    log "Waiting for OTel Collector in ${ns}..."
+    kubectl rollout status deployment/otel-collector \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Jaeger in ${ns}..."
+    kubectl rollout status deployment/jaeger \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Prometheus in ${ns}..."
+    kubectl rollout status deployment/prometheus \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Loki in ${ns}..."
+    kubectl rollout status deployment/loki \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Grafana in ${ns}..."
+    kubectl rollout status deployment/grafana \
+      --namespace "$ns" \
+      --timeout=120s
   done
 }
 
@@ -254,6 +279,13 @@ print_summary() {
   echo "  Namespaces:"
   for env in "${ENVIRONMENTS[@]}"; do
     echo "    support-services-${env}   platform-services-${env}"
+  done
+  echo ""
+  echo "  Observability:"
+  for env in "${ENVIRONMENTS[@]}"; do
+    echo "    Grafana:     kubectl port-forward -n support-services-${env} svc/grafana 3001:3000"
+    echo "    Jaeger:      kubectl port-forward -n support-services-${env} svc/jaeger 16686:16686"
+    echo "    Prometheus:  kubectl port-forward -n support-services-${env} svc/prometheus 9090:9090"
   done
   echo ""
   echo "  Useful commands:"

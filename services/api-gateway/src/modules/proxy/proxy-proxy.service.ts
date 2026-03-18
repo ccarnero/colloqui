@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { tracedFetch } from '@yoizen/observability';
 
 const PROXY_TIMEOUT_MS = 30_000;
 const HOP_BY_HOP = new Set(['host', 'connection', 'transfer-encoding', 'accept-encoding']);
@@ -38,7 +39,7 @@ export class ProxyProxyService {
     }
 
     try {
-      const upstream = await fetch(url, init);
+      const upstream = await tracedFetch(url, init);
 
       reply.status(upstream.status);
 

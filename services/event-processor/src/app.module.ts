@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { ObservabilityModule } from '@yoizen/observability';
 import { ProcessorModule } from './modules/processor/processor.module';
 import { HealthModule } from './modules/health/health.module';
 import {
@@ -15,7 +16,7 @@ import { REDIS_CLIENT, redisProvider } from './providers/redis.provider';
 
 @Global()
 @Module({
-  imports: [ProcessorModule, HealthModule],
+  imports: [ObservabilityModule.forRoot({ serviceName: 'event-processor' }), ProcessorModule, HealthModule],
   providers: [
     natsProvider,
     jetStreamManagerProvider,

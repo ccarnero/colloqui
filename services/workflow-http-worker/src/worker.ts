@@ -1,7 +1,9 @@
+import './instrumentation';
 import dns from 'dns';
 import { createServer } from 'http';
 import { Worker, NativeConnection } from '@temporalio/worker';
 import { WORKFLOW_HTTP_TASK_QUEUE } from '@yoizen/shared';
+import { shutdownTelemetry } from '@yoizen/observability';
 import * as activities from './activities';
 
 dns.setDefaultResultOrder('ipv4first');
@@ -44,7 +46,6 @@ async function main() {
     console.log('Shutting down HTTP worker...');
     worker.shutdown();
   };
-  process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 
   await worker.run();
@@ -53,4 +54,9 @@ async function main() {
 main().catch((err) => {
   console.error('HTTP worker failed:', err);
   process.exit(1);
+});
+
+process.on('SIGTERM', async () => {
+  await shutdownTelemetry();
+  process.exit(0);
 });

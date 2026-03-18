@@ -3,6 +3,7 @@ FROM oven/bun:1.3-debian AS builder
 WORKDIR /app
 
 COPY packages/shared ./packages/shared
+COPY packages/observability ./packages/observability
 COPY services/workflow-service/package.json ./services/workflow-service/
 WORKDIR /app/services/workflow-service
 RUN bun install
@@ -18,6 +19,7 @@ WORKDIR /app/services/workflow-service
 RUN groupadd -g 1001 app && useradd -u 1001 -g app -s /bin/sh app
 
 COPY --from=builder /app/packages/shared /app/packages/shared
+COPY --from=builder /app/packages/observability /app/packages/observability
 COPY --from=builder /app/services/workflow-service/node_modules ./node_modules
 COPY --from=builder /app/services/workflow-service/dist ./dist
 COPY --from=builder /app/services/workflow-service/package.json ./

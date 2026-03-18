@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ObservabilityModule } from '@yoizen/observability';
 import { ProvidersModule } from './providers/providers.module';
 import { TokenModule } from './modules/token/token.module';
 import { UsersModule } from './modules/users/users.module';
@@ -8,6 +9,7 @@ import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
+    ObservabilityModule.forRoot({ serviceName: 'auth-service' }),
     ProvidersModule,
     TokenModule,
     UsersModule,

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TENANT_HEADER } from '@yoizen/shared';
+import { tracedFetch } from '@yoizen/observability';
 
 @Injectable()
 export class TenantProxyService {
@@ -17,7 +18,7 @@ export class TenantProxyService {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
-    const res = await fetch(url, {
+    const res = await tracedFetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -35,7 +36,7 @@ export class TenantProxyService {
     const headers: Record<string, string> = {};
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
-    const res = await fetch(url, { headers });
+    const res = await tracedFetch(url, { headers });
     if (!res.ok) {
       this.logger.error(`Tenant service responded ${res.status} for ${url}`);
       throw new Error(`Tenant service error: ${res.status}`);
@@ -48,7 +49,7 @@ export class TenantProxyService {
     const headers: Record<string, string> = {};
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
-    const res = await fetch(url, { headers });
+    const res = await tracedFetch(url, { headers });
     if (res.status === 404) return null;
     if (!res.ok) {
       this.logger.error(`Tenant service responded ${res.status} for ${url}`);
@@ -66,7 +67,7 @@ export class TenantProxyService {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
-    const res = await fetch(url, {
+    const res = await tracedFetch(url, {
       method: 'PATCH',
       headers,
       body: JSON.stringify(body),
@@ -85,7 +86,7 @@ export class TenantProxyService {
     const headers: Record<string, string> = {};
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
-    const res = await fetch(url, { method: 'DELETE', headers });
+    const res = await tracedFetch(url, { method: 'DELETE', headers });
     if (res.status === 404) return false;
     if (!res.ok) {
       this.logger.error(`Tenant service responded ${res.status} for ${url}`);

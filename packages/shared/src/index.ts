@@ -39,6 +39,11 @@ export {
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
   WORKFLOW_HTTP_TASK_QUEUE,
   WORKFLOW_DEFAULT_TIMEOUT_MS,
+  GATEWAY_AUDIT_STREAM_NAME,
+  GATEWAY_AUDIT_STREAM_SUBJECTS,
+  GATEWAY_AUDIT_SUBJECT,
+  GATEWAY_AUDIT_CONSUMER_NAME,
+  GATEWAY_AUDIT_STREAM_MAX_BYTES,
 } from './constants';
 
 export type {
@@ -78,6 +83,11 @@ export type {
   WorkflowAction,
   WorkflowDefinition,
 } from './workflow.interfaces';
+
+export type {
+  GatewayAuditEvent,
+  GatewayAuditUpstream,
+} from './audit.interfaces';
 
 export {
   RATE_LIMIT_KEY_PREFIX,

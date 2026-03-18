@@ -14,6 +14,7 @@ import {
   RATE_LIMIT_DEFAULT_CAPACITY,
   RATE_LIMIT_DEFAULT_REFILL_RATE,
 } from '@yoizen/shared';
+import { tracedFetch } from '@yoizen/observability';
 
 interface TenantSummary {
   name: string;
@@ -71,7 +72,7 @@ export class RateLimitConfigCacheService implements OnModuleInit, OnModuleDestro
 
   private async refresh(): Promise<void> {
     try {
-      const res = await fetch(`${this.tenantServiceUrl}/tenants`, {
+      const res = await tracedFetch(`${this.tenantServiceUrl}/tenants`, {
         signal: AbortSignal.timeout(RATE_LIMIT_CONFIG_FETCH_TIMEOUT_MS),
       });
       if (!res.ok) {

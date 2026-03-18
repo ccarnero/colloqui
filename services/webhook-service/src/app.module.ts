@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { ObservabilityModule } from '@yoizen/observability';
 import { WebhookModule } from './modules/webhook/webhook.module';
 import { HealthModule } from './modules/health/health.module';
 import {
@@ -14,7 +15,11 @@ import {
 
 @Global()
 @Module({
-  imports: [WebhookModule, HealthModule],
+  imports: [
+    ObservabilityModule.forRoot({ serviceName: 'webhook-service' }),
+    WebhookModule,
+    HealthModule,
+  ],
   providers: [
     natsProvider,
     jetStreamManagerProvider,

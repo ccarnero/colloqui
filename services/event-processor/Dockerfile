@@ -3,6 +3,7 @@ FROM oven/bun:1.3-alpine AS builder
 WORKDIR /app
 
 COPY packages/shared ./packages/shared
+COPY packages/observability ./packages/observability
 COPY services/event-processor/package.json ./services/event-processor/
 WORKDIR /app/services/event-processor
 RUN bun install
@@ -18,6 +19,7 @@ WORKDIR /app/services/event-processor
 RUN addgroup -g 1001 -S app && adduser -u 1001 -S app -G app
 
 COPY --from=builder /app/packages/shared /app/packages/shared
+COPY --from=builder /app/packages/observability /app/packages/observability
 COPY --from=builder /app/services/event-processor/node_modules ./node_modules
 COPY --from=builder /app/services/event-processor/dist ./dist
 COPY --from=builder /app/services/event-processor/package.json ./

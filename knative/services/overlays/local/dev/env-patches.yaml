@@ -47,6 +47,10 @@ spec:
                   key: JWT_SECRET
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "api-gateway"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -88,6 +92,10 @@ spec:
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "event-processor"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -133,6 +141,10 @@ spec:
               value: "5432"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "audit-service"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -172,6 +184,10 @@ spec:
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "cache-service"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -209,6 +225,10 @@ spec:
           env:
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "webhook-service"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -258,6 +278,10 @@ spec:
               value: "dev"
             - name: NODE_EXTRA_CA_CERTS
               value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "tenant-service"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -303,6 +327,10 @@ spec:
               value: "5432"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "metrics-service"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -378,6 +406,10 @@ spec:
               value: "6379"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "auth-service"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -425,6 +457,10 @@ spec:
               value: "http://tenant-service.platform-services-dev.svc.cluster.local"
             - name: NODE_EXTRA_CA_CERTS
               value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "scheduler-service"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -476,6 +512,10 @@ spec:
               value: "http://tenant-service.platform-services-dev.svc.cluster.local"
             - name: NODE_EXTRA_CA_CERTS
               value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "registry-service"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -517,6 +557,10 @@ spec:
               value: "temporal.support-services-dev.svc.cluster.local:7233"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "workflow-service"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -558,6 +602,10 @@ spec:
               value: "temporal.support-services-dev.svc.cluster.local:7233"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "workflow-worker"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -586,6 +634,10 @@ spec:
           env:
             - name: TEMPORAL_ADDRESS
               value: "temporal.support-services-dev.svc.cluster.local:7233"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "workflow-http-worker"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -619,6 +671,10 @@ spec:
               value: "http://tenant-service.platform-services-dev.svc.cluster.local"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "proxy-service"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

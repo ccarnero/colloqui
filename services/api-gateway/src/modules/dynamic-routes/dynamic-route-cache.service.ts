@@ -4,6 +4,7 @@ import {
   type OnModuleInit,
   type OnModuleDestroy,
 } from '@nestjs/common';
+import { tracedFetch } from '@yoizen/observability';
 
 interface RouteEntry {
   id: string;
@@ -85,7 +86,7 @@ export class DynamicRouteCacheService implements OnModuleInit, OnModuleDestroy {
 
   private async refresh(): Promise<void> {
     try {
-      const res = await fetch(`${this.registryUrl}/routes`, {
+      const res = await tracedFetch(`${this.registryUrl}/routes`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!res.ok) {

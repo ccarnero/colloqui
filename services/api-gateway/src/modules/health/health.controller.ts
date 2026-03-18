@@ -1,4 +1,5 @@
 import { Controller, Get, Inject } from '@nestjs/common';
+import { tracedFetch } from '@yoizen/observability';
 import type { NatsConnection } from 'nats';
 import type Redis from 'ioredis';
 import { NATS_CONNECTION } from '../../providers/nats.provider';
@@ -82,7 +83,7 @@ export class HealthController {
 
     const checks = entries.map(async ([name, baseUrl]) => {
       try {
-        const res = await fetch(`${baseUrl}/health`, {
+        const res = await tracedFetch(`${baseUrl}/health`, {
           signal: AbortSignal.timeout(SERVICE_TIMEOUT_MS),
         });
         if (res.ok) {

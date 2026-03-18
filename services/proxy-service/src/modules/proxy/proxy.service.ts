@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { TENANT_HEADER } from '@yoizen/shared';
+import { tracedFetch } from '@yoizen/observability';
 
 const PROXY_TARGET_HEADER = 'x-proxy-target';
 const PROXY_TIMEOUT_MS = 30_000;
@@ -133,7 +134,7 @@ export class ProxyService {
     }
 
     try {
-      const upstream = await fetch(url, init);
+      const upstream = await tracedFetch(url, init);
 
       reply.status(upstream.status);
 
@@ -158,7 +159,7 @@ export class ProxyService {
     if (cached && cached.expiresAt > now) return cached.config;
 
     try {
-      const res = await fetch(
+      const res = await tracedFetch(
         `${this.tenantServiceUrl}/tenants/${encodeURIComponent(tenantId)}`,
         { signal: AbortSignal.timeout(5_000) },
       );

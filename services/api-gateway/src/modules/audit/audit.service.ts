@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TENANT_HEADER } from '@yoizen/shared';
+import { tracedFetch } from '@yoizen/observability';
 
 @Injectable()
 export class AuditProxyService {
@@ -23,7 +24,7 @@ export class AuditProxyService {
     const query = qs.toString();
     const url = `${this.baseUrl}/audit/events${query ? `?${query}` : ''}`;
 
-    const res = await fetch(url, {
+    const res = await tracedFetch(url, {
       headers: { [TENANT_HEADER]: tenantId },
     });
     if (!res.ok) {
@@ -35,7 +36,7 @@ export class AuditProxyService {
 
   async getEventById(id: string, tenantId: string): Promise<object | null> {
     const url = `${this.baseUrl}/audit/events/${encodeURIComponent(id)}`;
-    const res = await fetch(url, {
+    const res = await tracedFetch(url, {
       headers: { [TENANT_HEADER]: tenantId },
     });
     if (res.status === 404) return null;

@@ -17,6 +17,7 @@ import {
   JETSTREAM_CONSUMER,
   JETSTREAM_PUBLISHER,
 } from '../../providers/nats.provider';
+import { tracedFetch } from '@yoizen/observability';
 
 @Injectable()
 export class WebhookService implements OnModuleInit, OnModuleDestroy {
@@ -89,7 +90,7 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
 
     for (let attempt = 0; attempt < WEBHOOK_MAX_RETRIES; attempt++) {
       try {
-        const response = await fetch(callbackUrl!, {
+        const response = await tracedFetch(callbackUrl!, {
           method: 'POST',
           headers,
           body,

@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alerts
+  labels:
+    app: prometheus
+data:
+  alerts.yml: |
+    groups:
+      - name: api-gateway
+        rules:
+          - alert: HighErrorRate
+            expr: >
+              sum(rate(http_server_request_total{service_name="api-gateway", status_code=~"5.."}[5m]))
+              /
+              sum(rate(http_server_request_total{service_name="api-gateway"}[5m]))
+              > 0.05
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "API Gateway error rate above 5%"
+              description: "Gateway 5xx error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+          - alert: HighP99Latency
+            expr: >
+              histogram_quantile(0.99,
+                sum(rate(http_server_request_duration_bucket{service_name="api-gateway"}[5m])) by (le)
+              ) > 5000
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "API Gateway P99 latency above 5s"
+              description: "Gateway P99 latency is {{ $value }}ms over the last 5 minutes."
+
+          - alert: HighRateLimitRate
+            expr: >
+              sum(rate(http_server_request_total{service_name="api-gateway", status_code="429"}[5m]))
+              /
+              sum(rate(http_server_request_total{service_name="api-gateway"}[5m]))
+              > 0.20
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Rate limiting above 20% of requests"
+              description: "{{ $value | humanizePercentage }} of gateway requests are being rate limited."
+
+      - name: services
+        rules:
+          - alert: ServiceHighErrorRate
+            expr: >
+              sum(rate(http_server_request_total{status_code=~"5.."}[5m])) by (service_name)
+              /
+              sum(rate(http_server_request_total[5m])) by (service_name)
+              > 0.05
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Service {{ $labels.service_name }} error rate above 5%"
+              description: "{{ $labels.service_name }} 5xx error rate is {{ $value | humanizePercentage }}."
+
+          - alert: ServiceHighLatency
+            expr: >
+              histogram_quantile(0.99,
+                sum(rate(http_server_request_duration_bucket[5m])) by (le, service_name)
+              ) > 5000
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Service {{ $labels.service_name }} P99 latency above 5s"
+              description: "{{ $labels.service_name }} P99 latency is {{ $value }}ms."
