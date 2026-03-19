@@ -11,6 +11,8 @@ const createAccount = async (db, data) => {
       access_token: data.access_token,
       token_expires_at: data.token_expires_at || null,
       business_name: data.business_name || null,
+      meta_app_id: data.meta_app_id || null,
+      meta_app_secret: data.meta_app_secret || null,
       status: 'active',
       owner_user_id: new ObjectId(data.owner_user_id),
       created_at: new Date(),

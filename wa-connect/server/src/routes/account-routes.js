@@ -26,12 +26,20 @@ const registerAccountRoutes = (app, db, env) => {
 
   // Connect account (dev/sandbox flow — manual with known credentials)
   app.post('/api/accounts/connect', auth, async (req, res) => {
-    const { waba_id, phone_number_id, access_token, display_phone, business_name } = req.body
+    const { waba_id, phone_number_id, access_token, display_phone, business_name, meta_app_id, meta_app_secret } = req.body
 
     if (!waba_id || !phone_number_id || !access_token) {
       return res.status(400).json({
         error: 'waba_id, phone_number_id, and access_token are required',
       })
+    }
+
+    // Per-account Meta app credentials — fallback to env if not provided
+    const accountAppId = meta_app_id || env.META_APP_ID || null
+    const accountAppSecret = meta_app_secret || env.META_APP_SECRET || null
+
+    if (accountAppId) {
+      console.log(`  [ACCOUNT] Connecting with Meta App ID: ${accountAppId}`)
     }
 
     const result = await createAccount(db, {
@@ -40,6 +48,8 @@ const registerAccountRoutes = (app, db, env) => {
       access_token,
       display_phone,
       business_name,
+      meta_app_id: accountAppId,
+      meta_app_secret: accountAppSecret,
       owner_user_id: req.user._id.toString(),
     })
 
@@ -118,13 +128,15 @@ const registerAccountRoutes = (app, db, env) => {
       console.warn('  Embedded Signup: webhook subscription failed:', subResult.error)
     }
 
-    // Step 4: Persist the account
+    // Step 4: Persist the account — store env app credentials (Embedded Signup always uses env app)
     const accountResult = await createAccount(db, {
       waba_id,
       phone_number_id: resolved_phone_number_id,
       access_token,
       display_phone,
       business_name,
+      meta_app_id: env.META_APP_ID || null,
+      meta_app_secret: env.META_APP_SECRET || null,
       owner_user_id: req.user._id.toString(),
     })
 

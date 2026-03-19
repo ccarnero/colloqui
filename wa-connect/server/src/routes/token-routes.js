@@ -63,6 +63,7 @@ const registerTokenRoutes = (app, db, env) => {
       display_phone: account.display_phone,
       waba_id: account.waba_id,
       phone_number_id: account.phone_number_id,
+      meta_app_id: account.meta_app_id || null,
     })
   })
 
@@ -78,12 +79,20 @@ const registerTokenRoutes = (app, db, env) => {
       return res.status(400).json({ error: 'No token to refresh — paste a new token first' })
     }
 
-    console.log(`  [TOKEN] Refreshing token for ${account.business_name}...`)
+    // Use per-account credentials, fallback to env
+    const appId = account.meta_app_id || env.META_APP_ID
+    const appSecret = account.meta_app_secret || env.META_APP_SECRET
+
+    if (!appId || !appSecret) {
+      return res.status(400).json({ error: 'No Meta app credentials configured for this account. Update them in Account Settings.' })
+    }
+
+    console.log(`  [TOKEN] Refreshing token for ${account.business_name} (app: ${appId})...`)
 
     const result = await refreshToken(
       account.access_token,
-      env.META_APP_ID,
-      env.META_APP_SECRET,
+      appId,
+      appSecret,
       metaOpts
     )
 
@@ -129,15 +138,16 @@ const registerTokenRoutes = (app, db, env) => {
       return res.status(404).json({ error: 'Account not found' })
     }
 
-    console.log(`  [TOKEN] Manual token update for ${account.business_name}`)
+    // Use per-account credentials, fallback to env
+    const appId = account.meta_app_id || env.META_APP_ID
+    const appSecret = account.meta_app_secret || env.META_APP_SECRET
+
+    console.log(`  [TOKEN] Manual token update for ${account.business_name} (app: ${appId || 'NONE'})`)
 
     // Try to exchange it for a long-lived token immediately
-    const refreshResult = await refreshToken(
-      access_token.trim(),
-      env.META_APP_ID,
-      env.META_APP_SECRET,
-      metaOpts
-    )
+    const refreshResult = (appId && appSecret)
+      ? await refreshToken(access_token.trim(), appId, appSecret, metaOpts)
+      : { ok: false, error: 'No Meta app credentials — saved as short-lived' }
 
     let finalToken = access_token.trim()
     let expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // assume 24h if exchange fails
@@ -169,6 +179,35 @@ const registerTokenRoutes = (app, db, env) => {
       expires_at: expiresAt.toISOString(),
       days_remaining: Math.round((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)),
     })
+  })
+  // Update Meta app credentials for an account
+  app.post('/api/accounts/:accountId/meta-credentials', auth, async (req, res) => {
+    const { meta_app_id, meta_app_secret } = req.body
+
+    if (!meta_app_id || !meta_app_secret) {
+      return res.status(400).json({ error: 'meta_app_id and meta_app_secret are required' })
+    }
+
+    const account = await findOwnedAccount(req.user._id, req.params.accountId)
+
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' })
+    }
+
+    console.log(`  [TOKEN] Updating Meta credentials for ${account.business_name} → app: ${meta_app_id}`)
+
+    await db.collection('accounts').updateOne(
+      { _id: account._id },
+      {
+        $set: {
+          meta_app_id: meta_app_id.trim(),
+          meta_app_secret: meta_app_secret.trim(),
+          updated_at: new Date(),
+        },
+      }
+    )
+
+    res.json({ updated: true, meta_app_id: meta_app_id.trim() })
   })
 }
 
