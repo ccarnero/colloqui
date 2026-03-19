@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# Sync skill metadata to AGENTS.md Auto-invoke sections (Ultra robust version)
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../" && pwd)"
+SKILLS_DIR="$REPO_ROOT/skills"
+
+resolve_root_agents_md() {
+    local found
+    found=$(find "$REPO_ROOT" -maxdepth 1 -type f -iname "AGENTS.md" | head -n 1)
+    if [ -n "$found" ]; then
+        echo "$found"
+    else
+        echo "$REPO_ROOT/AGENTS.md"
+    fi
+}
+
+get_agents_path() {
+    local scope="$1"
+    local agents_md
+    agents_md="$(resolve_root_agents_md)"
+    case "$scope" in
+        root) echo "$agents_md" ;;
+        copilot) echo "$REPO_ROOT/.github/copilot-instructions.md" ;;
+        *) 
+            # Auto-detect AGENTS.md in subdirectories matching the scope
+            # Try exact match first, then case-insensitive
+            local found=$(find "$REPO_ROOT" -maxdepth 5 -type f -iname "AGENTS.md" | 
+                grep -i "$scope" | head -n 1)
+            [ -n "$found" ] && echo "$found" || echo ""
+            ;;
+    esac
+}
+
+extract_fm() {
+    local file="$1"
+    # Check if file starts with ---
+    if head -n 1 "$file" | tr -d '\r' | grep -q "^---$"; then
+        # Standard YAML with --- delimiters
+        awk 'BEGIN {n=0} /^---(\r)?$/ {n++; next} n==1 {print} n==2 {exit}' "$file"
+    else
+        # Non-delimited YAML - extract until first ---
+        awk '/^---(\r)?$/ {exit} {print}' "$file"
+    fi
+}
+
+echo "Skill Sync (Bash/Awk/Sed)"
+
+# Use a temp file to store mappings: scope|action|skill_name
+temp_map=$(mktemp)
+
+while IFS= read -r skill_file; do
+    [ -f "$skill_file" ] || continue
+    
+    fm=$(extract_fm "$skill_file")
+    [ -z "$fm" ] && continue
+
+    # Clean FM from potential \r and trailing spaces
+    fm=$(echo "$fm" | tr -d '\r')
+
+    name=$(echo "$fm" | grep "^name:" | head -n 1 | cut -d':' -f2- | tr -d '[]"'\''' | xargs)
+    # If not found directly, look for name inside metadata: block
+    [ -z "$name" ] && name=$(echo "$fm" | sed -n '/metadata:/,/^[a-z]/p' | grep "^[[:space:]]*name:" | head -n 1 | cut -d':' -f2- | tr -d '[]"'\''' | xargs)
+    
+    # Extract scopes - support inline [a, b] and multiline - a
+    scopes_raw=$(echo "$fm" | grep -A 5 "^[[:space:]]*scope:")
+    if echo "$scopes_raw" | grep -q "\["; then
+        scopes=$(echo "$scopes_raw" | grep "scope:" | cut -d'[' -f2 | cut -d']' -f1 | tr ',' ' ')
+    else
+        scopes=$(echo "$scopes_raw" | sed -n '/scope:/,/^[a-z]/p' | grep "^[[:space:]]*-" | sed 's/^[[:space:]]*-//' | xargs)
+    fi
+    
+    # Extract auto_invoke - support inline and multiline
+    actions_raw=$(echo "$fm" | grep -A 10 "^[[:space:]]*auto_invoke:")
+    auto_invoke_line=$(echo "$actions_raw" | grep "auto_invoke:" | head -n 1)
+    if echo "$auto_invoke_line" | grep -q "\["; then
+        actions=$(echo "$auto_invoke_line" | cut -d'[' -f2 | cut -d']' -f1 | tr ',' '\n')
+    else
+        actions=$(echo "$actions_raw" | sed -n '/auto_invoke:/,/^[a-z]/p' | grep "^[[:space:]]*-" | sed 's/^[[:space:]]*-//')
+    fi
+    
+    [ -z "$name" ] || [ -z "$scopes" ] || [ -z "$actions" ] && {
+        # echo "Skipping $skill_file: missing name($name), scope($scopes) or actions"
+        continue
+    }
+    
+    echo "Processing skill: $name (Scopes: $scopes)"
+
+    for s in $scopes; do
+        s=$(echo "$s" | tr -d '[:space:],')
+        [ -z "$s" ] && continue
+
+        echo "$actions" | while read -r a; do
+            a=$(echo "$a" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '"' | tr -d "'")
+            [ -n "$a" ] && echo "$s|$a|$name" >> "$temp_map"
+        done
+    done
+done < <(find "$SKILLS_DIR" -maxdepth 2 -name SKILL.md -print)
+
+# Now read the temp_map and update AGENTS.md
+# Get unique scopes from temp_map
+unique_scopes=$(cut -d'|' -f1 "$temp_map" | sort -u)
+for scope in $unique_scopes; do
+    paths=()
+    if [ "$scope" == "root" ]; then
+        paths+=($(get_agents_path "root"))
+        paths+=($(get_agents_path "copilot"))
+    else
+        paths+=($(get_agents_path "$scope"))
+    fi
+
+    for agents_path in "${paths[@]}"; do
+        [ -z "$agents_path" ] || [ ! -f "$agents_path" ] && continue
+        
+        table="## Auto-invoke Capabilities
+| Action | Required Skill | Trigger Pattern |
+| :--- | :--- | :--- |"
+        
+        # Filter temp_map for current scope and format rows
+        sorted_rows=$(grep "^$scope|" "$temp_map" | cut -d'|' -f2- | sort -u | while IFS='|' read -r a n; do
+            echo "| $a | \`$n\` | $a |"
+        done)
+        
+        # Only update if we have rows or it's root (to keep it clean)
+        if [ -n "$sorted_rows" ] || [ "$scope" == "root" ]; then
+            echo "Updating $agents_path"
+            # Form clean replacement section
+            full_section="$table\n$sorted_rows"
+            
+            # Check if Auto-invoke section exists
+            if grep -q "^##.*Auto-invoke" "$agents_path"; then
+                # Replace existing section
+                tmp_file=$(mktemp)
+                awk -v section="$full_section" '
+                    BEGIN { skip=0; printed=0 }
+                    /^## (.* )?Auto-invoke/ {
+                        if (!printed) {
+                            print section
+                            printed=1
+                        }
+                        skip=1
+                        next
+                    }
+                    skip && /^## / { skip=0 }
+                    !skip { print }
+                ' "$agents_path" > "$tmp_file"
+                mv "$tmp_file" "$agents_path"
+            else
+                # Insert new section after "Part 5: Available Skills" or at end of file
+                tmp_file=$(mktemp)
+                awk -v section="$full_section" '
+                    BEGIN { inserted=0 }
+                    /^## Part 6: SDD Orchestrator/ {
+                        if (!inserted) {
+                            print section
+                            inserted=1
+                        }
+                    }
+                    /^## Engram Persistent Memory/ {
+                        if (!inserted) {
+                            print section
+                            inserted=1
+                        }
+                    }
+                    { print }
+                    END {
+                        if (!inserted) {
+                            print "\n" section
+                        }
+                    }
+                ' "$agents_path" > "$tmp_file"
+                mv "$tmp_file" "$agents_path"
+            fi
+        fi
+    done
+done
+
+rm "$temp_map"
+echo "Done!"

@@ -1,0 +1,5 @@
+engram: installed
+version: engram 1.7.1
+auto_configured: yes
+configured_targets: 3
+failed_targets: 0

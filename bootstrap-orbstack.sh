@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROFILE="yoizen-arch"
 ALL_ENVIRONMENTS=(dev qa staging production)
 ENVIRONMENTS=()
 KNATIVE_VERSION="v1.17.0"
@@ -54,7 +53,7 @@ parse_args() {
 
 check_deps() {
   local missing=()
-  for cmd in minikube kubectl; do
+  for cmd in kubectl docker; do
     command -v "$cmd" &>/dev/null || missing+=("$cmd")
   done
   if (( ${#missing[@]} )); then
@@ -78,6 +77,22 @@ retry() {
   done
 }
 
+check_orbstack_context() {
+  local current_ctx
+  current_ctx="$(kubectl config current-context 2>/dev/null || true)"
+
+  if [[ "$current_ctx" != "orbstack" ]]; then
+    warn "Current context is '${current_ctx}', switching to 'orbstack'"
+    if ! kubectl config use-context orbstack 2>/dev/null; then
+      err "OrbStack Kubernetes context not found."
+      err "Enable Kubernetes in OrbStack: Settings → Kubernetes → Enable Kubernetes"
+      exit 1
+    fi
+  fi
+
+  log "Using kubectl context: orbstack"
+}
+
 wait_for_webhook() {
   log "Waiting for Knative webhook to be ready..."
   kubectl wait pod \
@@ -88,27 +103,12 @@ wait_for_webhook() {
   sleep 5
 }
 
-start_minikube() {
-  if minikube status -p "$PROFILE" &>/dev/null; then
-    log "Minikube profile '$PROFILE' already running"
-  else
-    log "Starting minikube profile '$PROFILE' (cpus=6, memory=16384)"
-    minikube start \
-      -p "$PROFILE" \
-      --cpus=6 \
-      --memory=16384 \
-      --driver=docker \
-      --kubernetes-version=stable
+install_knative_serving() {
+  if kubectl get crd services.serving.knative.dev &>/dev/null; then
+    log "Knative Serving CRDs already installed — skipping"
+    return
   fi
 
-  log "Setting kubectl context to profile '$PROFILE'"
-  kubectl config use-context "$PROFILE"
-
-  log "Enabling addons: metrics-server"
-  minikube addons enable metrics-server -p "$PROFILE"
-}
-
-install_knative_serving() {
   log "Installing Knative Serving CRDs (${KNATIVE_VERSION})"
   kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-crds.yaml"
 
@@ -123,6 +123,11 @@ install_knative_serving() {
 }
 
 install_kourier() {
+  if kubectl get deployment/net-kourier-controller --namespace kourier-system &>/dev/null; then
+    log "Kourier already installed — skipping"
+    return
+  fi
+
   log "Installing Kourier networking layer (${KOURIER_VERSION})"
   kubectl apply -f "https://github.com/knative/net-kourier/releases/download/knative-${KOURIER_VERSION}/kourier.yaml"
 
@@ -142,14 +147,18 @@ install_kourier() {
 }
 
 configure_dns() {
-  log "Configuring DNS with sslip.io"
+  # OrbStack's LoadBalancer controller assigns 127.0.0.1 to services of type LoadBalancer.
+  log "Configuring DNS with sslip.io (127.0.0.1)"
   retry 5 3 kubectl patch configmap/config-domain \
     --namespace knative-serving \
     --type merge \
-    --patch "{\"data\":{\"$(minikube ip -p "$PROFILE").sslip.io\":\"\"}}"
+    --patch '{"data":{"127.0.0.1.sslip.io":""}}'
 }
 
 configure_local_registry() {
+  # OrbStack >= 1.6 shares the local Docker daemon with the cluster's containerd,
+  # so images built with 'docker build dev.local/foo:local' are visible to pods
+  # without a registry push. Knative must skip tag-to-digest resolution for these.
   log "Configuring Knative to skip tag-to-digest resolution for local images"
   retry 5 3 kubectl patch configmap/config-deployment \
     --namespace knative-serving \
@@ -181,8 +190,8 @@ apply_infrastructure() {
   for env in "${ENVIRONMENTS[@]}"; do
     local ns="support-services-${env}"
 
-    log "Applying infrastructure for '${env}'"
-    kubectl apply -k "${script_dir}/infrastructure/overlays/local/${env}"
+    log "Applying infrastructure for '${env}' (OrbStack overlay)"
+    kubectl apply -k "${script_dir}/infrastructure/overlays/orbstack/${env}"
 
     log "Waiting for NATS in ${ns}..."
     kubectl rollout status statefulset/nats \
@@ -203,31 +212,6 @@ apply_infrastructure() {
     kubectl rollout status deployment/temporal \
       --namespace "$ns" \
       --timeout=180s
-
-    log "Waiting for OTel Collector in ${ns}..."
-    kubectl rollout status deployment/otel-collector \
-      --namespace "$ns" \
-      --timeout=120s
-
-    log "Waiting for Tempo in ${ns}..."
-    kubectl rollout status deployment/tempo \
-      --namespace "$ns" \
-      --timeout=120s
-
-    log "Waiting for Prometheus in ${ns}..."
-    kubectl rollout status deployment/prometheus \
-      --namespace "$ns" \
-      --timeout=120s
-
-    log "Waiting for Loki in ${ns}..."
-    kubectl rollout status deployment/loki \
-      --namespace "$ns" \
-      --timeout=120s
-
-    log "Waiting for Grafana in ${ns}..."
-    kubectl rollout status deployment/grafana \
-      --namespace "$ns" \
-      --timeout=120s
   done
 }
 
@@ -243,6 +227,7 @@ apply_knative_config() {
 
   for env in "${ENVIRONMENTS[@]}"; do
     log "Applying Knative services for '${env}'"
+    # Reuse the same local overlays — no PVCs in Knative services
     retry 5 3 kubectl apply -k "${script_dir}/knative/services/overlays/local/${env}"
   done
 }
@@ -253,17 +238,19 @@ build_packages() {
 
   log "Installing packages/observability dependencies"
   npm install --prefix "${script_dir}/packages/observability"
-
 }
 
 build_images() {
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-  log "Pointing Docker to minikube daemon"
-  eval "$(minikube docker-env -p "$PROFILE")"
+  # OrbStack >= 1.6: the local Docker daemon shares the image store with the
+  # cluster's containerd. No eval/docker-env needed — just build normally.
+  log "Building service images (Docker → OrbStack shared daemon)"
 
-  for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service workflow-service workflow-http-worker proxy-service; do
+  for svc in api-gateway auth-service event-processor cache-service audit-service \
+             webhook-service metrics-service tenant-service scheduler-service \
+             registry-service workflow-service workflow-http-worker proxy-service; do
     log "Building image: dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \
@@ -273,16 +260,13 @@ build_images() {
 }
 
 print_summary() {
-  local minikube_ip
-  minikube_ip="$(minikube ip -p "$PROFILE")"
-
   echo ""
   log "=============================="
   log " Setup complete!"
   log "=============================="
   echo ""
-  echo "  Minikube IP:   ${minikube_ip}"
-  echo "  DNS domain:    ${minikube_ip}.sslip.io"
+  echo "  Cluster:       OrbStack Kubernetes"
+  echo "  DNS domain:    127.0.0.1.sslip.io"
   echo "  Environments:  ${ENVIRONMENTS[*]}"
   echo ""
   echo "  Namespaces:"
@@ -290,31 +274,26 @@ print_summary() {
     echo "    support-services-${env}   platform-services-${env}"
   done
   echo ""
-  echo "  Observability:"
-  for env in "${ENVIRONMENTS[@]}"; do
-    echo "    Grafana:     kubectl port-forward -n support-services-${env} svc/grafana 3001:3000"
-    echo "    Tempo:       kubectl port-forward -n support-services-${env} svc/tempo 3200:3200"
-    echo "    Prometheus:  kubectl port-forward -n support-services-${env} svc/prometheus 9090:9090"
-  done
-  echo ""
   echo "  Useful commands:"
   for env in "${ENVIRONMENTS[@]}"; do
     echo "    kubectl get ksvc -n platform-services-${env}"
   done
   echo "    kubectl get pods --all-namespaces -l app.kubernetes.io/part-of=yoizen-arch"
-  echo "    minikube tunnel -p ${PROFILE}"
+  echo "    kubectl get storageclass"
+  echo ""
+  echo "  API Gateway (dev): http://api-gateway.platform-services-dev.127.0.0.1.sslip.io"
   echo ""
 }
 
 main() {
   parse_args "$@"
 
-  log "Event-Driven Architecture Bootstrap"
+  log "Event-Driven Architecture Bootstrap — OrbStack"
   log "Environments: ${ENVIRONMENTS[*]}"
   echo ""
 
   check_deps
-  start_minikube
+  check_orbstack_context
   install_knative_serving
   install_kourier
   configure_dns
