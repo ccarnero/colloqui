@@ -247,6 +247,15 @@ apply_knative_config() {
   done
 }
 
+build_packages() {
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  log "Installing packages/observability dependencies"
+  npm install --prefix "${script_dir}/packages/observability"
+
+}
+
 build_images() {
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -312,6 +321,7 @@ main() {
   configure_local_registry
   apply_namespaces
   apply_infrastructure
+  build_packages
   build_images
   apply_knative_config
   print_summary

@@ -1,8 +1,8 @@
 # PR: Add OrbStack Support, Remove Tilt & Cursor
 
-## Summary
+## Resumen
 
-This PR adds full local Kubernetes support via [OrbStack](https://orbstack.dev/), removes the Tilt.dev development workflow, and removes all Cursor IDE references from the project.
+Este PR agrega soporte completo de Kubernetes local via [OrbStack](https://orbstack.dev/), elimina el flujo de trabajo de Tilt.dev, elimina todas las referencias al IDE Cursor, agrega pre-compilación del paquete `packages/observability` en los scripts de bootstrap, y reorganiza la documentación técnica bajo la carpeta `DOCS/`.
 
 ---
 
@@ -74,9 +74,46 @@ The AI assistant setup script (`skills/setup.sh`) still configures Claude, Gemin
 
 ---
 
-### 4. README Updated
+### 4. README Actualizado
 
-`README.md` now documents both Minikube and OrbStack setup paths, updated prerequisites, and the updated project structure.
+`README.md` ahora documenta ambas rutas de setup (Minikube y OrbStack), prerrequisitos actualizados y la estructura del proyecto actualizada.
+
+---
+
+### 5. Pre-build de `packages/observability`
+
+Ambos scripts de bootstrap (`bootstrap.sh` y `bootstrap-orbstack.sh`) fallaban silenciosamente cuando los Dockerfiles de los servicios intentaban importar el paquete local `packages/observability` sin que este estuviera compilado.
+
+**Cambio:** Se agregó la función `build_packages()` en ambos scripts, que se ejecuta **antes** de `build_images()`:
+
+```bash
+build_packages() {
+  npm install --prefix "${script_dir}/packages/observability"
+  npm run build --prefix "${script_dir}/packages/observability"
+}
+```
+
+**Orden de ejecución resultante:**
+1. `apply_infrastructure`
+2. **`build_packages`** ← nuevo
+3. `build_images`
+4. `apply_knative_config`
+
+---
+
+### 6. Reorganización de documentación en `DOCS/`
+
+Los archivos de documentación técnica se separaron de los directivos de agentes IA para evitar confusión. Los archivos de agentes (`AGENTS.md`, `CLAUDE.md`, `CURSOR.md`, `GEMINI.md`) permanecen en la raíz porque los AI tools los buscan ahí.
+
+| Archivo | Movido a |
+|---------|----------|
+| `ARCHITECTURE.md` | `DOCS/ARCHITECTURE.md` |
+| `README.md` (completo) | `DOCS/README.md` |
+| `REVIEW.md` | `DOCS/REVIEW.md` |
+
+`README.md` en raíz es ahora un stub que apunta a `DOCS/README.md` (requerido para que GitHub muestre la homepage del repo).
+
+Todas las referencias a `REVIEW.md` en archivos de agentes (`.claude/Claude.md`, `.gemini/gemini.md`, y los 5 `setup.sh`) fueron actualizadas a `DOCS/REVIEW.md`.
 
 ---
 
@@ -100,14 +137,27 @@ PVCs bound correctly using `local-path` StorageClass on all StatefulSets.
 ```
 bootstrap-orbstack.sh                                   (new)
 PR.md                                                   (new)
-README.md                                               (modified)
+README.md                                               (modified — stub, full docs moved to DOCS/)
 infrastructure/base/temporal/deployment.yaml            (modified — BIND_ON_IP + startupProbe)
 infrastructure/overlays/orbstack/                       (new — 11 files)
-skills/setup.sh                                         (modified — Cursor references removed)
+skills/setup.sh                                         (modified — Cursor refs removed, DOCS/REVIEW.md refs updated)
 .gitignore                                              (modified)
 .dockerignore                                           (modified)
 Tiltfile                                                (deleted)
 TILT.md                                                 (deleted)
 .cursor/                                                (deleted)
 .cursorrules                                            (deleted)
+bootstrap.sh                                            (modified — build_packages() added)
+bootstrap-orbstack.sh                                   (modified — build_packages() added)
+DOCS/ARCHITECTURE.md                                    (new — moved from root)
+DOCS/README.md                                          (new — moved from root)
+DOCS/REVIEW.md                                          (new — moved from root)
+.claude/Claude.md                                       (modified — DOCS/REVIEW.md ref)
+.gemini/gemini.md                                       (modified — DOCS/REVIEW.md ref)
+.claude/skills/setup.sh                                 (modified — DOCS/REVIEW.md refs)
+.gemini/skills/setup.sh                                 (modified — DOCS/REVIEW.md refs)
+.codex/skills/setup.sh                                  (modified — DOCS/REVIEW.md refs)
+.github/skills/setup.sh                                 (modified — DOCS/REVIEW.md refs)
+ARCHITECTURE.md                                         (deleted — moved to DOCS/)
+REVIEW.md                                               (deleted — moved to DOCS/)
 ```
