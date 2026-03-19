@@ -3,6 +3,5 @@ dist
 *.md
 .git
 .gitignore
-.cursor
 infrastructure
 knative

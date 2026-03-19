@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: support-services-dev
+  labels:
+    app.kubernetes.io/part-of: yoizen-arch
+    yoizen.io/environment: dev
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: support-services-qa
+  labels:
+    app.kubernetes.io/part-of: yoizen-arch
+    yoizen.io/environment: qa
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: support-services-staging
+  labels:
+    app.kubernetes.io/part-of: yoizen-arch
+    yoizen.io/environment: staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: support-services-production
+  labels:
+    app.kubernetes.io/part-of: yoizen-arch
+    yoizen.io/environment: production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-services-dev
+  labels:
+    app.kubernetes.io/part-of: yoizen-arch
+    yoizen.io/environment: dev
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-services-qa
+  labels:
+    app.kubernetes.io/part-of: yoizen-arch
+    yoizen.io/environment: qa
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-services-staging
+  labels:
+    app.kubernetes.io/part-of: yoizen-arch
+    yoizen.io/environment: staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-services-production
+  labels:
+    app.kubernetes.io/part-of: yoizen-arch
+    yoizen.io/environment: production

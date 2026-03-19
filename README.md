@@ -1,12 +1,12 @@
 # Platform Cluster
 
-Serverless event-driven architecture running on Minikube with Knative Serving, NATS JetStream, Redis, PostgreSQL, and Temporal. Supports multi-environment deployment (dev, qa, staging, production) with per-environment isolation, multi-tenant namespace management with dedicated PostgreSQL per tenant, JWT authentication, dynamic service routing, workflow orchestration, job scheduling, and canary deployments.
+Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack) with Knative Serving, NATS JetStream, Redis, PostgreSQL, and Temporal. Supports multi-environment deployment (dev, qa, staging, production) with per-environment isolation, multi-tenant namespace management with dedicated PostgreSQL per tenant, JWT authentication, dynamic service routing, workflow orchestration, job scheduling, and canary deployments.
 
 ## Architecture
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│  Minikube Cluster (6 CPU, 16GB RAM, Docker driver)                    │
+│  Kubernetes Cluster (Minikube or OrbStack)                            │
 │                                                                       │
 │  ┌─── knative-serving ─────────────────────────────────────────────┐  │
 │  │  Kourier Ingress  ·  KPA Autoscaler  ·  sslip.io DNS           │  │
@@ -49,7 +49,12 @@ Each environment gets a fully isolated stack with its own infrastructure and pla
 You can also deploy a single environment for lighter local development:
 
 ```bash
+# Minikube
 kubectl apply -k infrastructure/overlays/local/dev
+kubectl apply -k knative/services/overlays/local/dev
+
+# OrbStack
+kubectl apply -k infrastructure/overlays/orbstack/dev
 kubectl apply -k knative/services/overlays/local/dev
 ```
 
@@ -193,11 +198,16 @@ The `packages/shared/` package (`@yoizen/shared`) contains all cross-service typ
 
 ## Prerequisites
 
-- [minikube](https://minikube.sigs.k8s.io/docs/start/) >= 1.32
-- [kubectl](https://kubernetes.io/docs/tasks/tools/) >= 1.28
-- [Docker](https://docs.docker.com/get-docker/) (minikube driver)
+| Tool | Version | Purpose |
+|------|---------|---------|
+| [kubectl](https://kubernetes.io/docs/tasks/tools/) | >= 1.28 | Cluster management |
+| [Docker](https://docs.docker.com/get-docker/) | >= 24 | Image builds |
+| [minikube](https://minikube.sigs.k8s.io/docs/start/) | >= 1.32 | Local cluster (Minikube path) |
+| [OrbStack](https://orbstack.dev/) | >= 1.6 | Local cluster (OrbStack path) |
 
 ## Quick Start
+
+### Minikube
 
 ```bash
 ./bootstrap.sh
@@ -211,11 +221,36 @@ This script will:
 5. Build service Docker images inside minikube
 6. Deploy Knative Services to all 4 `platform-services-{env}` namespaces
 
+### OrbStack
+
+1. Enable Kubernetes in OrbStack: **Settings → Kubernetes → Enable Kubernetes**
+2. Run:
+
+```bash
+./bootstrap-orbstack.sh
+```
+
+This script will:
+1. Switch kubectl context to `orbstack`
+2. Install Knative Serving + Kourier networking layer
+3. Deploy NATS JetStream, Redis, PostgreSQL, and Temporal using the `orbstack` overlay (StorageClass: `local-path`)
+4. Build service Docker images (OrbStack shares the local Docker daemon with the cluster — no extra configuration needed)
+5. Deploy Knative Services to all 4 `platform-services-{env}` namespaces
+
+Deploy a single environment:
+
+```bash
+./bootstrap-orbstack.sh dev
+```
+
+> **Note on PVCs from other clusters**: if you apply manifests originally designed for Minikube, EKS, GKE, or AKS that hardcode a `storageClassName` (`standard`, `gp2`, `gp3`, `standard-rwo`, `managed-premium`), the OrbStack overlay registers those as aliases for `rancher.io/local-path` so PVCs bind correctly without modifying the original YAMLs.
+
 ## Project Structure
 
 ```
 Arch/
-├── bootstrap.sh                     # One-command setup
+├── bootstrap.sh                     # One-command setup (Minikube)
+├── bootstrap-orbstack.sh            # One-command setup (OrbStack)
 ├── scripts/
 │   └── smoke-test.sh                # E2E smoke tests against minikube
 ├── packages/
@@ -234,13 +269,21 @@ Arch/
 │   │   ├── postgres/                 # PostgreSQL StatefulSet
 │   │   └── temporal/                 # Temporal Deployment + Service
 │   └── overlays/
-│       └── local/                    # Per-environment overlays
+│       ├── local/                    # Minikube per-environment overlays
+│       │   ├── namespaces.yaml       # All 8 namespace definitions
+│       │   ├── local-base/           # Shared patches (resource limits)
+│       │   ├── dev/                  # namespace: support-services-dev
+│       │   ├── qa/                   # namespace: support-services-qa
+│       │   ├── staging/              # namespace: support-services-staging
+│       │   └── production/           # namespace: support-services-production
+│       └── orbstack/                 # OrbStack per-environment overlays
+│           ├── storage-class-compat.yaml  # Aliases: standard/gp2/gp3/… → local-path
 │           ├── namespaces.yaml       # All 8 namespace definitions
-│           ├── local-base/           # Shared patches (resource limits)
-│           ├── dev/                  # namespace: support-services-dev
-│           ├── qa/                   # namespace: support-services-qa
-│           ├── staging/              # namespace: support-services-staging
-│           └── production/           # namespace: support-services-production
+│           ├── orbstack-base/        # Shared patches (resource limits + storageClassName)
+│           ├── dev/
+│           ├── qa/
+│           ├── staging/
+│           └── production/
 ├── knative/
 │   ├── serving/                      # Autoscaler ConfigMap
 │   └── services/
@@ -270,17 +313,23 @@ Arch/
 ### Apply infrastructure only
 
 ```bash
-# All environments
+# Minikube — all environments
 kubectl apply -k infrastructure/overlays/local
 
-# Single environment
+# Minikube — single environment
 kubectl apply -k infrastructure/overlays/local/dev
+
+# OrbStack — all environments
+kubectl apply -k infrastructure/overlays/orbstack
+
+# OrbStack — single environment
+kubectl apply -k infrastructure/overlays/orbstack/dev
 ```
 
 ### Apply Knative services only
 
 ```bash
-# All environments
+# All environments (same overlay for both Minikube and OrbStack)
 kubectl apply -k knative/serving
 kubectl apply -k knative/services/overlays/local
 
@@ -289,11 +338,21 @@ kubectl apply -k knative/serving
 kubectl apply -k knative/services/overlays/local/dev
 ```
 
-### Build images inside minikube
+### Build images (Minikube)
 
 ```bash
 eval $(minikube docker-env -p yoizen-arch)
-for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service workflow-service workflow-http-worker; do
+for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service workflow-service workflow-http-worker proxy-service; do
+  docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
+done
+```
+
+### Build images (OrbStack)
+
+OrbStack >= 1.6 shares the local Docker daemon with the cluster — just build normally:
+
+```bash
+for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service workflow-service workflow-http-worker proxy-service; do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```

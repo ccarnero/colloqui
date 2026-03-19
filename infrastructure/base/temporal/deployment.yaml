@@ -32,6 +32,13 @@ spec:
               value: "postgres12"
             - name: DB_PORT
               value: "5432"
+            # Force temporal to bind on all interfaces (0.0.0.0) instead of
+            # auto-detecting the pod IP via 'hostname -I'. Without this, in
+            # dual-stack clusters (e.g. OrbStack) the auto-setup script picks
+            # the IPv6 pod address as BIND_ON_IP, making gRPC unreachable via
+            # IPv4 — causing all TCP health probes to fail permanently.
+            - name: BIND_ON_IP
+              value: "0.0.0.0"
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
@@ -57,16 +64,25 @@ spec:
             limits:
               cpu: "2"
               memory: 1Gi
+          # startupProbe protects the container during auto-setup (DB migrations).
+          # On first boot, temporalio/auto-setup can take 2-4 minutes before
+          # port 7233 is available. 60 × 5s = 5 minutes maximum startup window.
+          startupProbe:
+            tcpSocket:
+              port: grpc
+            failureThreshold: 60
+            periodSeconds: 5
+            timeoutSeconds: 5
           livenessProbe:
             tcpSocket:
               port: grpc
-            initialDelaySeconds: 30
+            initialDelaySeconds: 0
             periodSeconds: 20
             timeoutSeconds: 5
           readinessProbe:
             tcpSocket:
               port: grpc
-            initialDelaySeconds: 15
+            initialDelaySeconds: 0
             periodSeconds: 10
             timeoutSeconds: 5
       volumes:
