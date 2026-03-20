@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   Headers,
@@ -146,6 +147,66 @@ export class AuthController {
     @Headers('authorization') auth: string,
   ): Promise<object> {
     return this.authProxy.proxy('DELETE', `/auth/clients/${id}`, undefined, {
+      Authorization: auth,
+    }, req[REQUEST_TENANT_KEY]);
+  }
+
+  @Scopes('platform')
+  @Post('tenant-users')
+  async createTenantUser(
+    @Req() req: any,
+    @Body() body: object,
+    @Headers('authorization') auth: string,
+  ): Promise<object> {
+    const tenantId = (body as Record<string, unknown>).tenant_id as string | undefined;
+    if (tenantId) {
+      await this.assertTenantExists(tenantId);
+    }
+    return this.authProxy.proxy('POST', '/auth/tenant-users', body, {
+      Authorization: auth,
+    }, req[REQUEST_TENANT_KEY]);
+  }
+
+  @Get('tenant-users')
+  async listTenantUsers(
+    @Req() req: any,
+    @Headers('authorization') auth: string,
+  ): Promise<object> {
+    return this.authProxy.proxy('GET', '/auth/tenant-users', undefined, {
+      Authorization: auth,
+    }, req[REQUEST_TENANT_KEY]);
+  }
+
+  @Get('tenant-users/:id')
+  async getTenantUser(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Headers('authorization') auth: string,
+  ): Promise<object> {
+    return this.authProxy.proxy('GET', `/auth/tenant-users/${id}`, undefined, {
+      Authorization: auth,
+    }, req[REQUEST_TENANT_KEY]);
+  }
+
+  @Patch('tenant-users/:id')
+  async updateTenantUser(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: object,
+    @Headers('authorization') auth: string,
+  ): Promise<object> {
+    return this.authProxy.proxy('PATCH', `/auth/tenant-users/${id}`, body, {
+      Authorization: auth,
+    }, req[REQUEST_TENANT_KEY]);
+  }
+
+  @Delete('tenant-users/:id')
+  async removeTenantUser(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Headers('authorization') auth: string,
+  ): Promise<object> {
+    return this.authProxy.proxy('DELETE', `/auth/tenant-users/${id}`, undefined, {
       Authorization: auth,
     }, req[REQUEST_TENANT_KEY]);
   }

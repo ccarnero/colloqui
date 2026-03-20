@@ -22,6 +22,7 @@ spec:
             - --storage.tsdb.retention.time=7d
             - --storage.tsdb.retention.size=1GB
             - --web.enable-lifecycle
+            - --web.enable-remote-write-receiver
           ports:
             - containerPort: 9090
               name: http

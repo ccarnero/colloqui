@@ -36,6 +36,7 @@ const PLATFORM_PREFIXES = [
   '/tenants',
   '/schedulers',
   '/registry',
+  '/adapters',
   '/workflows',
   '/proxy',
   '/health',

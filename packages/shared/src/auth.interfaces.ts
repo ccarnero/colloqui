@@ -1,12 +1,16 @@
 export type TokenScope = 'platform' | `tenant:${string}`;
 export type TokenType = 'user' | 'client';
-export type UserRole = 'admin' | 'operator';
+export type PlatformUserRole = 'admin' | 'operator';
+export type TenantUserRole = 'tenant_admin' | 'tenant_editor' | 'tenant_viewer';
+export type UserRole = PlatformUserRole | TenantUserRole;
 
 export interface JwtPayload {
   sub: string;
   type: TokenType;
   scope: TokenScope;
   role?: UserRole;
+  tenant_id?: string;
+  email?: string;
   env: string;
   iat: number;
   exp: number;

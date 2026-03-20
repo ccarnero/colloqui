@@ -67,6 +67,8 @@ export type {
   TokenResponse,
   TokenScope,
   TokenType,
+  PlatformUserRole,
+  TenantUserRole,
   UserRole,
   PublicRouteEntry,
 } from './auth.interfaces';

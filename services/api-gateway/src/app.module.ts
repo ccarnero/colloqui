@@ -6,6 +6,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { SchedulersModule } from './modules/schedulers/schedulers.module';
 import { RegistryModule } from './modules/registry/registry.module';
+import { AdaptersModule } from './modules/adapters/adapters.module';
 import { DynamicRoutesModule } from './modules/dynamic-routes/dynamic-routes.module';
 import { WorkflowsModule } from './modules/workflows/workflows.module';
 import { ProxyModule } from './modules/proxy/proxy.module';
@@ -27,6 +28,7 @@ import { AuditInterceptor } from './interceptors/audit.interceptor';
     TenantsModule,
     SchedulersModule,
     RegistryModule,
+    AdaptersModule,
     WorkflowsModule,
     ProxyModule,
     DynamicRoutesModule,

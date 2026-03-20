@@ -161,3 +161,19 @@ data:
     );
 
     CREATE INDEX IF NOT EXISTS idx_tenants_name ON tenants (name);
+
+    CREATE TABLE IF NOT EXISTS tenant_users (
+      id            TEXT        PRIMARY KEY,
+      tenant_id     TEXT        NOT NULL,
+      email         TEXT        NOT NULL,
+      password_hash TEXT        NOT NULL,
+      role          TEXT        NOT NULL DEFAULT 'tenant_viewer',
+      display_name  TEXT,
+      is_active     BOOLEAN     NOT NULL DEFAULT true,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(tenant_id, email)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tenant_users_tenant ON tenant_users (tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_tenant_users_email ON tenant_users (email);

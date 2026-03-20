@@ -18,6 +18,8 @@ resources:
   - proxy-service.yaml
   - registry-service.yaml
   - registry-service-sa.yaml
+  - adapter-service.yaml
   - workflow-api.yaml
   - workflow-worker.yaml
   - workflow-http-worker.yaml
+  - admin-console.yaml

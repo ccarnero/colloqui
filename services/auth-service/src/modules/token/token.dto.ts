@@ -1,6 +1,7 @@
 import {
   IsEmail,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsEnum,
 } from 'class-validator';
@@ -29,6 +30,10 @@ export class LoginDto {
   @IsString()
   @IsNotEmpty()
   password!: string;
+
+  @IsOptional()
+  @IsString()
+  tenant_id?: string;
 }
 
 export class RefreshDto {

@@ -5,6 +5,7 @@ import { TokenModule } from './modules/token/token.module';
 import { UsersModule } from './modules/users/users.module';
 import { ClientsModule } from './modules/clients/clients.module';
 import { PublicRoutesModule } from './modules/public-routes/public-routes.module';
+import { TenantUsersModule } from './modules/tenant-users/tenant-users.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -15,6 +16,7 @@ import { HealthModule } from './modules/health/health.module';
     UsersModule,
     ClientsModule,
     PublicRoutesModule,
+    TenantUsersModule,
     HealthModule,
   ],
 })
