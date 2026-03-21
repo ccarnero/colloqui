@@ -40,6 +40,9 @@ export class EventsService {
     payload: Record<string, unknown>,
     tenantId: string,
     callbackUrl?: string,
+    enrichAdapter?: { adapterId: string; endpointId: string },
+    forwardAdapter?: { adapterId: string; endpointId: string },
+    adapterId?: string,
   ): Promise<string> {
     const id = randomUUID();
     const subject = `${SUBJECT_PREFIX}.${type}`;
@@ -49,7 +52,16 @@ export class EventsService {
       receivedAt: Date.now(),
       tenantId,
     };
-    const envelope: EventEnvelope = { id, type, payload, metadata, callbackUrl };
+    const envelope: EventEnvelope = {
+      id,
+      type,
+      payload,
+      metadata,
+      callbackUrl,
+      adapterId,
+      enrichAdapter,
+      forwardAdapter,
+    };
     const body = JSON.stringify(envelope);
 
     const hdrs = natsHeaders();

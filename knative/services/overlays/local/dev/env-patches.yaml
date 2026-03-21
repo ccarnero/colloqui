@@ -94,6 +94,8 @@ spec:
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: ADAPTER_SERVICE_URL
+              value: "http://adapter-service.platform-services-dev.svc.cluster.local"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -227,6 +229,12 @@ spec:
           env:
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: ADAPTER_SERVICE_URL
+              value: "http://adapter-service.platform-services-dev.svc.cluster.local"
+            - name: REDIS_HOST
+              value: "redis.support-services-dev.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -636,6 +644,12 @@ spec:
           env:
             - name: TEMPORAL_ADDRESS
               value: "temporal.support-services-dev.svc.cluster.local:7233"
+            - name: ADAPTER_SERVICE_URL
+              value: "http://adapter-service.platform-services-dev.svc.cluster.local"
+            - name: REDIS_HOST
+              value: "redis.support-services-dev.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME

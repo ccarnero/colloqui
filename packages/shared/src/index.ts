@@ -44,6 +44,7 @@ export {
   GATEWAY_AUDIT_SUBJECT,
   GATEWAY_AUDIT_CONSUMER_NAME,
   GATEWAY_AUDIT_STREAM_MAX_BYTES,
+  DEFAULT_ADAPTER_SERVICE_URL,
 } from './constants';
 
 export type {
@@ -107,3 +108,14 @@ export type {
   RateLimitTenantConfig,
   RateLimitResult,
 } from './rate-limit.interfaces';
+
+export type {
+  AdapterCache,
+  AdapterConfig,
+  AdapterEndpointConfig,
+  ResolvedAdapterRequest,
+  AdapterReference,
+} from './adapter.interfaces';
+
+export { AdapterClient } from './adapter-client';
+export type { AdapterClientOptions } from './adapter-client';

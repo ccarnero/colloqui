@@ -3,7 +3,9 @@ import type { EventEnvelope } from '@yoizen/shared';
 import type { PipelineContext, PipelineStage } from './pipeline-stage.interface';
 import { ValidationStage } from './validation.stage';
 import { EnrichmentStage } from './enrichment.stage';
+import { AdapterEnrichmentStage } from './adapter-enrichment.stage';
 import { TransformStage } from './transform.stage';
+import { AdapterForwardStage } from './adapter-forward.stage';
 
 @Injectable()
 export class PipelineRunner {
@@ -12,11 +14,17 @@ export class PipelineRunner {
   constructor(
     validation: ValidationStage,
     enrichment: EnrichmentStage,
+    adapterEnrichment: AdapterEnrichmentStage,
     transform: TransformStage,
+    adapterForward: AdapterForwardStage,
   ) {
-    this.stages = [validation, enrichment, transform].sort(
-      (a, b) => a.order - b.order,
-    );
+    this.stages = [
+      validation,
+      enrichment,
+      adapterEnrichment,
+      transform,
+      adapterForward,
+    ].sort((a, b) => a.order - b.order);
   }
 
   async run(

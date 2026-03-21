@@ -4,34 +4,47 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
-} from '@nestjs/common';
-import type { Consumer, JetStreamClient } from 'nats';
+} from "@nestjs/common";
+import type { Consumer, JetStreamClient } from "nats";
+import type Redis from "ioredis";
 import {
+  AdapterClient,
+  DEFAULT_ADAPTER_SERVICE_URL,
   WEBHOOK_DLQ_SUBJECT,
   WEBHOOK_MAX_RETRIES,
   WEBHOOK_RETRY_DELAYS,
   TENANT_HEADER,
-} from '@yoizen/shared';
-import type { CompletionEvent } from '@yoizen/shared';
+} from "@yoizen/shared";
+import type { AdapterConfig, CompletionEvent } from "@yoizen/shared";
 import {
   JETSTREAM_CONSUMER,
   JETSTREAM_PUBLISHER,
-} from '../../providers/nats.provider';
-import { tracedFetch } from '@yoizen/observability';
+} from "../../providers/nats.provider";
+import { REDIS_CLIENT } from "../../providers/redis.provider";
+import { tracedFetch } from "@yoizen/observability";
 
 @Injectable()
 export class WebhookService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WebhookService.name);
   private readonly encoder = new TextEncoder();
   private readonly deliveryCounts = new Map<string, number>();
+  private readonly adapterClient: AdapterClient;
   private consumeIterator: Awaited<
-    ReturnType<Consumer['consume']>
+    ReturnType<Consumer["consume"]>
   > | null = null;
 
   constructor(
     @Inject(JETSTREAM_CONSUMER) private readonly consumer: Consumer,
     @Inject(JETSTREAM_PUBLISHER) private readonly publisher: JetStreamClient,
-  ) {}
+    @Inject(REDIS_CLIENT) redis: Redis,
+  ) {
+    this.adapterClient = new AdapterClient({
+      baseUrl:
+        process.env.ADAPTER_SERVICE_URL ?? DEFAULT_ADAPTER_SERVICE_URL,
+      fetchFn: tracedFetch,
+      cache: redis,
+    });
+  }
 
   async onModuleInit(): Promise<void> {
     this.consumeIterator = await this.consumer.consume({
@@ -60,9 +73,10 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
             continue;
           }
 
-          const tenantId = completion.result?.metadata?.tenantId as string | undefined
-            ?? msg.headers?.get(TENANT_HEADER)
-            ?? undefined;
+          const tenantId =
+            (completion.result?.metadata?.tenantId as string | undefined) ??
+            msg.headers?.get(TENANT_HEADER) ??
+            undefined;
 
           await this.dispatchWithRetry(completion, tenantId);
           msg.ack();
@@ -85,16 +99,34 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
     const { eventId, callbackUrl, result } = completion;
     const body = JSON.stringify(result);
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (tenantId) headers[TENANT_HEADER] = tenantId;
+    let adapter: AdapterConfig | null = null;
+    if (completion.adapterId && tenantId) {
+      try {
+        adapter = await this.adapterClient.getAdapter(
+          tenantId,
+          completion.adapterId,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Failed to fetch adapter '${completion.adapterId}' for event ${eventId}, using defaults: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
 
-    for (let attempt = 0; attempt < WEBHOOK_MAX_RETRIES; attempt++) {
+    const headers = this.buildHeaders(adapter, tenantId);
+    const timeoutMs = adapter?.timeoutMs ?? 10_000;
+    const maxRetries = adapter?.maxRetries ?? WEBHOOK_MAX_RETRIES;
+    const retryDelays = adapter
+      ? this.buildRetryDelays(adapter.retryBackoffMs, maxRetries)
+      : WEBHOOK_RETRY_DELAYS;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         const response = await tracedFetch(callbackUrl!, {
-          method: 'POST',
+          method: "POST",
           headers,
           body,
-          signal: AbortSignal.timeout(10_000),
+          signal: AbortSignal.timeout(timeoutMs),
         });
 
         if (response.ok) {
@@ -106,16 +138,16 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
         }
 
         this.logger.warn(
-          `Webhook attempt ${attempt + 1}/${WEBHOOK_MAX_RETRIES} failed for ${eventId}: HTTP ${response.status}`,
+          `Webhook attempt ${attempt + 1}/${maxRetries} failed for ${eventId}: HTTP ${response.status}`,
         );
       } catch (err) {
         this.logger.warn(
-          `Webhook attempt ${attempt + 1}/${WEBHOOK_MAX_RETRIES} failed for ${eventId}: ${err instanceof Error ? err.message : err}`,
+          `Webhook attempt ${attempt + 1}/${maxRetries} failed for ${eventId}: ${err instanceof Error ? err.message : err}`,
         );
       }
 
-      if (attempt < WEBHOOK_MAX_RETRIES - 1) {
-        await this.sleep(WEBHOOK_RETRY_DELAYS[attempt]);
+      if (attempt < maxRetries - 1) {
+        await this.sleep(retryDelays[attempt]);
       }
     }
 
@@ -130,7 +162,69 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private trackDelivery(eventId: string, success: boolean): void {
+  /**
+   * Merges adapter auth + custom headers with base webhook headers.
+   * Adapter headers (if present) are injected first, then tenant header.
+   */
+  private buildHeaders(
+    adapter: AdapterConfig | null,
+    tenantId?: string,
+  ): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (adapter) {
+      for (const h of adapter.headers) {
+        headers[h.key] = h.value;
+      }
+      this.injectAuthHeaders(adapter, headers);
+    }
+
+    if (tenantId) headers[TENANT_HEADER] = tenantId;
+    return headers;
+  }
+
+  private injectAuthHeaders(
+    adapter: AdapterConfig,
+    headers: Record<string, string>,
+  ): void {
+    const { authType, authConfig } = adapter;
+
+    switch (authType) {
+      case "api-key": {
+        const key = authConfig.apiKey as string;
+        const headerName =
+          (authConfig.apiKeyHeader as string) ?? "X-API-Key";
+        headers[headerName] = key;
+        break;
+      }
+      case "bearer": {
+        headers["Authorization"] = `Bearer ${authConfig.bearerToken as string}`;
+        break;
+      }
+      case "basic": {
+        const encoded = btoa(
+          `${authConfig.basicUsername as string}:${authConfig.basicPassword as string}`,
+        );
+        headers["Authorization"] = `Basic ${encoded}`;
+        break;
+      }
+    }
+  }
+
+  private buildRetryDelays(
+    backoffMs: number,
+    maxRetries: number,
+  ): readonly number[] {
+    const delays: number[] = [];
+    for (let i = 0; i < maxRetries - 1; i++) {
+      delays.push(backoffMs * (1 << i));
+    }
+    return delays;
+  }
+
+  private trackDelivery(eventId: string, _success: boolean): void {
     const count = (this.deliveryCounts.get(eventId) ?? 0) + 1;
     this.deliveryCounts.set(eventId, count);
 

@@ -4,6 +4,9 @@ export interface EventEnvelope {
   payload: Record<string, unknown>;
   metadata?: EventMetadata;
   callbackUrl?: string;
+  adapterId?: string;
+  enrichAdapter?: { adapterId: string; endpointId: string };
+  forwardAdapter?: { adapterId: string; endpointId: string };
 }
 
 export interface EventMetadata {
@@ -32,6 +35,7 @@ export interface CompletionEvent {
   type: string;
   result: ProcessedEvent;
   callbackUrl?: string;
+  adapterId?: string;
 }
 
 export interface MetricsPayload {

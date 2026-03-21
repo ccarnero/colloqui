@@ -12,6 +12,7 @@ import {
   jetStreamConsumerProvider,
   jetStreamPublisherProvider,
 } from './providers/nats.provider';
+import { REDIS_CLIENT, redisProvider } from './providers/redis.provider';
 
 @Global()
 @Module({
@@ -25,12 +26,14 @@ import {
     jetStreamManagerProvider,
     jetStreamConsumerProvider,
     jetStreamPublisherProvider,
+    redisProvider,
   ],
   exports: [
     NATS_CONNECTION,
     JETSTREAM_MANAGER,
     JETSTREAM_CONSUMER,
     JETSTREAM_PUBLISHER,
+    REDIS_CLIENT,
   ],
 })
 export class AppModule {}

@@ -15,7 +15,7 @@
     "@temporalio/activity": "^1.11.0",
     "@yoizen/observability": "file:../../packages/observability",
     "@yoizen/shared": "file:../../packages/shared",
-    "axios": "^1.7.0"
+    "ioredis": "^5.4.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
