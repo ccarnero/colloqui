@@ -19,7 +19,7 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 │  │  │  audit-service · cache-service · webhook-service           │  │  │
 │  │  │  metrics-service · tenant-service · scheduler-service      │  │  │
 │  │  │  registry-service · workflow-api · workflow-worker          │  │  │
-│  │  │  workflow-http-worker                                      │  │  │
+│  │  │  workflow-http-worker · adapter-service                    │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  │  ┌─ support-services-{env} (StatefulSets / Deployments) ─────┐  │  │
@@ -64,20 +64,21 @@ kubectl apply -k knative/services/overlays/local/dev
 |---|---|---|
 | **API Gateway** | Knative Service | HTTP entry point with JWT auth, input validation, SSE streaming, dynamic tenant routing, proxies to all downstream services |
 | **Auth Service** | Knative Service | JWT token generation (client credentials + user login), user/client management, dynamic public routes, Redis-synced route cache |
-| **Event Processor** | Knative Service | Subscribes to NATS JetStream, runs events through an enrichment pipeline, routes to a pluggable handler registry, writes results to Redis, publishes completion events |
+| **Event Processor** | Knative Service | Subscribes to NATS JetStream, runs events through an enrichment pipeline (including adapter enrichment and forwarding stages), routes to a pluggable handler registry, writes results to Redis, publishes completion events |
 | **Audit Service** | Knative Service | Independent NATS consumer that persists every event to per-tenant PostgreSQL. Exposes paginated query API |
 | **Metrics Service** | Knative Service | Consumes `events.metrics` from NATS and stores metrics in per-tenant PostgreSQL |
-| **Webhook Service** | Knative Service | Consumes completion events from RESULTS stream. Delivers HTTP callbacks with exponential backoff retry (3 attempts). Failed deliveries go to DLQ |
+| **Webhook Service** | Knative Service | Consumes completion events from RESULTS stream. Delivers HTTP callbacks with exponential backoff retry. When `adapterId` is present, uses adapter config for auth, headers, retries, and timeouts. Failed deliveries go to DLQ |
 | **Cache Service** | Knative Service | CRUD API with L1 in-memory + L2 Redis cache-aside pattern |
 | **Tenant Service** | Knative Service | Environment-scoped tenant namespace management. Provisions dedicated PostgreSQL StatefulSet per tenant |
 | **Scheduler Service** | Knative Service | Multi-tenant job scheduling (cron, interval, one-time) with inline JS and Kubernetes Job executors |
 | **Registry Service** | Knative Service | Knative-based service registry with route management, canary deployments, and traffic splitting |
 | **Workflow API** | Knative Service | REST API for Temporal workflow management (start, status, list) |
 | **Workflow Worker** | Knative Service | Temporal orchestrator worker executing JS functions and NATS service bus activities |
-| **Workflow HTTP Worker** | Knative Service | Temporal HTTP activity worker executing endpoint calls via axios |
+| **Adapter Service** | Knative Service | Manages multi-tenant HTTP adapter configurations (base URL, auth, headers, timeouts, retries) and their endpoints. Consumed via `AdapterClient` by workflow-http-worker, event-processor, and webhook-service |
+| **Workflow HTTP Worker** | Knative Service | Temporal HTTP activity worker executing endpoint calls via `tracedFetch`; supports adapter-driven config resolution (auth, headers, retries, timeouts) |
 | **NATS JetStream** | StatefulSet | Persistent event streaming backbone with 7-day retention. Streams: EVENTS, RESULTS, DLQ |
 | **Redis** | Deployment | Pure cache (no persistence, LRU eviction) |
-| **PostgreSQL** | StatefulSet | Shared database for auth and registry services |
+| **PostgreSQL** | StatefulSet | Shared database for auth, registry, and adapter services |
 | **Temporal** | Deployment | Workflow execution engine with PostgreSQL backend and Web UI |
 
 ### Event Flow
@@ -88,10 +89,12 @@ kubectl apply -k knative/services/overlays/local/dev
 4. If `callbackUrl` is provided, it is also stored in Redis under `callback:<eventId>`
 5. Gateway returns `202 Accepted` with event ID
 6. Event Processor consumes from durable consumer `event-processor`, runs the event through the enrichment pipeline, resolves a handler, processes the event, and writes the result to Redis
-7. Event Processor publishes a completion event to the `RESULTS` stream
+    - If `enrichAdapter` is present, the `AdapterEnrichmentStage` fetches data from the adapter endpoint and merges it into `payload._enriched`
+    - If `forwardAdapter` is present, the `AdapterForwardStage` POSTs the payload to the adapter endpoint with exponential backoff retry
+7. Event Processor publishes a completion event to the `RESULTS` stream (includes `adapterId` if present on the original envelope)
 8. Audit Service independently consumes from `audit-writer` on EVENTS, persisting to per-tenant PostgreSQL
 9. Metrics Service independently consumes `events.metrics`, persisting to per-tenant PostgreSQL
-10. Webhook Service consumes from `webhook-dispatcher` on RESULTS. If a callback URL is present, it POSTs the result with exponential backoff retry
+10. Webhook Service consumes from `webhook-dispatcher` on RESULTS. If a callback URL is present, it POSTs the result with exponential backoff retry. If `adapterId` is present, adapter config overrides default headers, auth, retry, and timeout settings
 11. Client polls `GET /results/:id` or receives the result via webhook or SSE
 
 ### Authentication & Authorization
@@ -115,7 +118,7 @@ Temporal-based workflow orchestration supports four action types:
 
 | Action | Execution | Description |
 |--------|-----------|-------------|
-| `endpointCall` | Remote (workflow-http-worker) | HTTP request via axios |
+| `endpointCall` | Remote (workflow-http-worker) | HTTP request via `tracedFetch`; supports adapter-driven config resolution via `adapterId`/`endpointId` |
 | `jsFunction` | Local (workflow-worker) | Inline JS evaluation |
 | `serviceBusCall` | Local (workflow-worker) | NATS publish with tenant header |
 | `branch` | Workflow-level | Parallel execution of sub-action branches |
@@ -170,7 +173,9 @@ Before reaching the handler, every event passes through a middleware-style enric
 |---|---|---|
 | `ValidationStage` | 10 | Validates payload against a registered JSON schema (ajv) |
 | `EnrichmentStage` | 20 | Attaches `metadata.receivedAt`, `metadata.correlationId`, `metadata.source` |
+| `AdapterEnrichmentStage` | 25 | Fetches data from adapter endpoint via `AdapterClient`, merges into `payload._enriched` (non-blocking on failure) |
 | `TransformStage` | 30 | Runs registered payload transformers in sequence |
+| `AdapterForwardStage` | 40 | POSTs payload to adapter endpoint with exponential backoff retry (non-blocking on failure) |
 
 ### NATS JetStream Streams
 
@@ -194,7 +199,9 @@ The `packages/shared/` package (`@yoizen/shared`) contains all cross-service typ
 - **Event interfaces**: `EventEnvelope`, `EventResult`, `ProcessedEvent`, `CompletionEvent`, `MetricsPayload`
 - **Auth interfaces**: `JwtPayload`, `TokenResponse`, `TokenScope`, `PublicRouteEntry`
 - **Workflow interfaces**: `WorkflowDefinition`, `WorkflowAction`, `WorkflowExecutionContext`
-- **Constants**: stream/consumer names, Redis key prefixes, TTLs, webhook retry config, task queues, Knative API versions
+- **Adapter interfaces**: `AdapterConfig`, `AdapterEndpointConfig`, `AdapterCache`, `ResolvedAdapterRequest`, `AdapterReference`
+- **Adapter client**: `AdapterClient` (stale-while-revalidate Redis cache, OAuth2 token management, request resolution)
+- **Constants**: stream/consumer names, Redis key prefixes, TTLs, webhook retry config, task queues, Knative API versions, `DEFAULT_ADAPTER_SERVICE_URL`
 
 ## Prerequisites
 
@@ -261,6 +268,8 @@ Arch/
 │           ├── auth.constants.ts     # JWT TTLs, public routes cache config
 │           ├── auth.interfaces.ts    # JwtPayload, TokenResponse, TokenScope, PublicRouteEntry
 │           ├── workflow.interfaces.ts # WorkflowDefinition, WorkflowAction, activity args
+│           ├── adapter.interfaces.ts # AdapterConfig, AdapterEndpointConfig, AdapterCache, ResolvedAdapterRequest
+│           ├── adapter-client.ts     # AdapterClient (SWR cache, OAuth2, request resolution)
 │           └── index.ts              # Barrel export
 ├── infrastructure/
 │   ├── base/                         # Kustomize base manifests
@@ -302,8 +311,9 @@ Arch/
 │   ├── tenant-service/               # NestJS + Fastify — K8s namespace + PostgreSQL provisioning
 │   ├── scheduler-service/            # NestJS + Fastify — Job scheduling (cron/interval/one-time)
 │   ├── registry-service/             # NestJS + Fastify — Knative service registry + canary
+│   ├── adapter-service/              # NestJS + Fastify — Multi-tenant HTTP adapter config + endpoints
 │   ├── workflow-service/             # NestJS + Fastify + Temporal — Workflow API + worker
-│   └── workflow-http-worker/         # Standalone Temporal worker — HTTP activities
+│   └── workflow-http-worker/         # Standalone Temporal worker — HTTP activities (adapter-aware)
 └── tests/
     └── e2e/                          # Cross-service end-to-end tests
 ```
@@ -342,7 +352,7 @@ kubectl apply -k knative/services/overlays/local/dev
 
 ```bash
 eval $(minikube docker-env -p yoizen-arch)
-for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service workflow-service workflow-http-worker proxy-service; do
+for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service adapter-service workflow-service workflow-http-worker proxy-service; do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```
@@ -352,7 +362,7 @@ done
 OrbStack >= 1.6 shares the local Docker daemon with the cluster — just build normally:
 
 ```bash
-for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service workflow-service workflow-http-worker proxy-service; do
+for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service adapter-service workflow-service workflow-http-worker proxy-service; do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```
@@ -481,6 +491,7 @@ API_GATEWAY_URL=http://localhost:3000 bun test
 | HTTP framework | Fastify | 2-3x faster than Express for NestJS |
 | Cache client | ioredis | Better pipelining, cluster support, and benchmark performance |
 | IaC format | Kustomize | Native to kubectl, zero external dependencies |
+| HTTP adapters | Shared `AdapterClient` with Redis SWR cache | Centralizes auth, headers, retries, and timeouts; stale-while-revalidate avoids blocking on cache miss |
 | Multi-environment | 4 isolated env pairs | Each env gets its own NATS, Redis, Postgres, Temporal, and full service stack |
 
 ## Tech Stack

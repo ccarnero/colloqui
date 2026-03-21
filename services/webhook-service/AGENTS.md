@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-The Webhook Service consumes completion events from the NATS JetStream `RESULTS` stream and delivers them to client-specified callback URLs via HTTP POST. It implements retry with exponential backoff (3 attempts at 1s, 5s, 30s intervals) and publishes permanently failed deliveries to a Dead Letter Queue (DLQ) stream. It is a purely message-driven service with no inbound HTTP API beyond `/health`.
+The Webhook Service consumes completion events from the NATS JetStream `RESULTS` stream and delivers them to client-specified callback URLs via HTTP POST. It implements retry with exponential backoff (3 attempts at 1s, 5s, 30s intervals) and publishes permanently failed deliveries to a Dead Letter Queue (DLQ) stream. When a `CompletionEvent` includes an `adapterId`, the service fetches the adapter configuration via `AdapterClient` (Redis SWR cache) to inject custom headers, auth credentials, and override default retry/timeout settings. It is a purely message-driven service with no inbound HTTP API beyond `/health`.
 
 ## Tech Stack
 
@@ -12,6 +12,8 @@ The Webhook Service consumes completion events from the NATS JetStream `RESULTS`
 | Framework | NestJS 11 + Fastify |
 | Language | TypeScript 5.7 (strict) |
 | Messaging | NATS JetStream (`nats` package) |
+| Cache | Redis via `ioredis` |
+| Adapter Resolution | `AdapterClient` (`@yoizen/shared`) |
 | Shared | `@yoizen/shared` (workspace: `packages/shared/`) |
 
 ## Repository Structure
@@ -21,7 +23,8 @@ src/
 ├── main.ts                         # Bootstrap: Fastify adapter, port binding
 ├── app.module.ts                   # @Global() root module with NATS providers
 ├── providers/
-│   └── nats.provider.ts            # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CONSUMER, JETSTREAM_PUBLISHER
+│   ├── nats.provider.ts            # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CONSUMER, JETSTREAM_PUBLISHER
+│   └── redis.provider.ts           # REDIS_CLIENT token (ioredis)
 └── modules/
     ├── webhook/
     │   ├── webhook.module.ts
@@ -52,11 +55,15 @@ test/
 NATS (results.>) -> consumer.consume(batch=50, expires=30s)
   -> msg.json() as CompletionEvent
   -> if no callbackUrl: ack and skip
+  -> if completion.adapterId + tenantId:
+       adapterClient.getAdapter(tenantId, adapterId)
+       -> merge adapter headers, auth, retry/timeout config
+  -> else: use defaults (10s timeout, 3 retries at 1s/5s/30s)
   -> dispatchWithRetry:
-       for attempt 0..2:
-         -> fetch(POST callbackUrl, body=result, timeout=10s)
+       for attempt 0..maxRetries:
+         -> tracedFetch(POST callbackUrl, body=result, timeout=timeoutMs)
          -> if 2xx: ack and return
-         -> sleep(RETRY_DELAYS[attempt])  // 1s, 5s, 30s
+         -> sleep(retryDelays[attempt])
        -> on exhaustion: publish to DLQ (dlq.webhook) and ack
 ```
 
@@ -64,9 +71,9 @@ NATS (results.>) -> consumer.consume(batch=50, expires=30s)
 
 | Setting | Value |
 |---------|-------|
-| Max retries | 3 (`WEBHOOK_MAX_RETRIES`) |
-| Retry delays | 1s, 5s, 30s (`WEBHOOK_RETRY_DELAYS`) |
-| Request timeout | 10s (`AbortSignal.timeout`) |
+| Max retries | 3 (`WEBHOOK_MAX_RETRIES`) — overridden by adapter `maxRetries` when `adapterId` present |
+| Retry delays | 1s, 5s, 30s (`WEBHOOK_RETRY_DELAYS`) — overridden by adapter `retryBackoffMs` exponential backoff |
+| Request timeout | 10s (`AbortSignal.timeout`) — overridden by adapter `timeoutMs` |
 | DLQ subject | `dlq.webhook` (`WEBHOOK_DLQ_SUBJECT`) |
 
 ### NATS Streams
@@ -80,8 +87,8 @@ NATS (results.>) -> consumer.consume(batch=50, expires=30s)
 
 ```
 AppModule (@Global)
-├── NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CONSUMER, JETSTREAM_PUBLISHER
-├── WebhookModule -> WebhookService
+├── NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CONSUMER, JETSTREAM_PUBLISHER, REDIS_CLIENT
+├── WebhookModule -> WebhookService (injects AdapterClient with REDIS_CLIENT)
 └── HealthModule -> HealthController
 ```
 
@@ -101,6 +108,7 @@ No other HTTP endpoints -- this service is message-driven.
 | `JETSTREAM_MANAGER` | `JetStreamManager` | `nats.provider.ts` |
 | `JETSTREAM_CONSUMER` | `Consumer` | `nats.provider.ts` (RESULTS stream, `webhook-dispatcher` consumer) |
 | `JETSTREAM_PUBLISHER` | `JetStreamClient` | `nats.provider.ts` (for DLQ publishing) |
+| `REDIS_CLIENT` | `Redis` (ioredis) | `redis.provider.ts` |
 
 ## Configuration
 
@@ -108,6 +116,9 @@ No other HTTP endpoints -- this service is message-driven.
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP server port (health endpoint only) |
 | `NATS_URL` | `nats://localhost:4222` | NATS server URL |
+| `ADAPTER_SERVICE_URL` | `http://adapter-service.platform-services-dev.svc.cluster.local` | Adapter service URL |
+| `REDIS_HOST` | `localhost` | Redis host (adapter cache) |
+| `REDIS_PORT` | `6379` | Redis port |
 
 ### Knative
 
@@ -158,13 +169,16 @@ bun install
 bun run start:dev   # watch mode on src/main.ts
 ```
 
-Requires local NATS (`nats://localhost:4222`). The RESULTS stream must exist (created by the event-processor on startup).
+Requires local NATS (`nats://localhost:4222`) and Redis (`localhost:6379`). The RESULTS stream must exist (created by the event-processor on startup).
 
 ## Dependencies on Other Services
 
 | Service | Relationship |
 |---------|-------------|
 | **NATS JetStream** | Consumes from RESULTS stream, publishes to DLQ stream |
+| **Redis** | Stale-while-revalidate cache for adapter configs and OAuth2 tokens |
+| **adapter-service** | Provides adapter config via REST API (fetched through `AdapterClient`) |
 | **event-processor** | Upstream producer (publishes completion events to RESULTS stream) |
 | **api-gateway** | Calls `/health` for aggregated health checks |
-| **`@yoizen/shared`** | Stream names, consumer names (`WEBHOOK_CONSUMER_NAME`), DLQ config, retry constants, interfaces (`CompletionEvent`) |
+| **`@yoizen/shared`** | Stream names, consumer names, DLQ config, retry constants, `CompletionEvent`, `AdapterClient`, `AdapterConfig` |
+| **`@yoizen/observability`** | `tracedFetch` for instrumented HTTP calls |

@@ -1,6 +1,6 @@
 # Event Processor
 
-Consumes events from the NATS JetStream `EVENTS` stream, runs them through an ordered enrichment pipeline (validation, enrichment, transform), routes to type-specific handlers via a pluggable registry, persists results to Redis, and publishes completion events to the `RESULTS` stream.
+Consumes events from the NATS JetStream `EVENTS` stream, runs them through an ordered enrichment pipeline (validation, enrichment, adapter enrichment, transform, adapter forwarding), routes to type-specific handlers via a pluggable registry, persists results to Redis, and publishes completion events to the `RESULTS` stream. Adapter pipeline stages fetch configuration from the adapter-service via `AdapterClient` and are non-blocking on failure.
 
 ## Quick Start
 
@@ -27,6 +27,7 @@ No other HTTP endpoints — this is a message-driven service.
 | `NATS_URL` | `nats://localhost:4222` | NATS server |
 | `REDIS_HOST` | `localhost` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
+| `ADAPTER_SERVICE_URL` | `http://adapter-service...` | Adapter service URL |
 
 ## Testing
 

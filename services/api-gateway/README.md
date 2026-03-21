@@ -68,6 +68,7 @@ The existing `AuthGuard` automatically enforces that a JWT with `scope: 'tenant:
 | `JWT_SECRET` | *(required)* | HS256 signing key |
 | `AUTH_SERVICE_URL` | `http://auth-service...` | Auth service URL |
 | `TENANT_SERVICE_URL` | `http://tenant-service...` | Tenant service URL |
+| `ADAPTER_SERVICE_URL` | `http://adapter-service...` | Adapter service proxy URL |
 
 ## Testing
 
