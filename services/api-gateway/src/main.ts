@@ -77,6 +77,20 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:4200";
+
+  app.enableCors({
+    origin: CORS_ORIGIN,
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-yoizen-tenant",
+      "x-request-id",
+    ],
+    credentials: true,
+  });
+
   const routeCache = app.get(DynamicRouteCacheService);
   const jwtService = app.get(JwtService);
   const rateLimitService = app.get(RateLimitService);

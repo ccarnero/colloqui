@@ -44,6 +44,10 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
+function parseJsonb<T>(value: T | string): T {
+  return typeof value === "string" ? JSON.parse(value) : value;
+}
+
 function mapAdapter(row: AdapterRow) {
   return {
     id: row.id,
@@ -52,8 +56,8 @@ function mapAdapter(row: AdapterRow) {
     context: row.context,
     baseUrl: row.base_url,
     authType: row.auth_type,
-    authConfig: row.auth_config,
-    headers: row.headers,
+    authConfig: parseJsonb(row.auth_config),
+    headers: parseJsonb(row.headers),
     timeoutMs: row.timeout_ms,
     maxRetries: row.max_retries,
     retryBackoffMs: row.retry_backoff_ms,
@@ -98,8 +102,8 @@ export class AdaptersService {
            headers, timeout_ms, max_retries, retry_backoff_ms, health_check_path)
         VALUES
           (${id}, ${tenantId}, ${dto.name}, ${dto.context}, ${dto.baseUrl},
-           ${authType}, ${JSON.stringify(authConfig)},
-           ${JSON.stringify(headers)}, ${timeoutMs},
+           ${authType}, ${this.sql.json(authConfig as never)},
+           ${this.sql.json(headers as never)}, ${timeoutMs},
            ${maxRetries}, ${retryBackoffMs}, ${healthCheckPath})
         RETURNING *
       `;

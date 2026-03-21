@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -10,11 +11,13 @@ import {
   Headers,
   BadRequestException,
 } from '@nestjs/common';
+import type { JwtPayload } from '@yoizen/shared';
 import { AuthProxyService } from './auth-proxy.service';
 import { TenantProxyService } from '../tenants/tenant-proxy.service';
 import { Public } from '../../decorators/public.decorator';
 import { Scopes } from '../../decorators/scopes.decorator';
 import { SkipTenant } from '../../decorators/skip-tenant.decorator';
+import { REQUEST_USER_KEY } from '../../guards/auth.guard';
 import { REQUEST_TENANT_KEY } from '../../guards/tenant.guard';
 
 const TENANT_SCOPE_PREFIX = 'tenant:';
@@ -151,17 +154,40 @@ export class AuthController {
     }, req[REQUEST_TENANT_KEY]);
   }
 
-  @Scopes('platform')
+  @Scopes('platform', 'tenant')
   @Post('tenant-users')
   async createTenantUser(
     @Req() req: any,
     @Body() body: object,
     @Headers('authorization') auth: string,
   ): Promise<object> {
-    const tenantId = (body as Record<string, unknown>).tenant_id as string | undefined;
-    if (tenantId) {
-      await this.assertTenantExists(tenantId);
+    const user = req[REQUEST_USER_KEY] as JwtPayload;
+    const record = body as Record<string, unknown>;
+    const tenantId = record.tenant_id as string | undefined;
+
+    if (user.scope !== 'platform') {
+      if (user.role !== 'tenant_admin') {
+        throw new ForbiddenException(
+          'Only tenant administrators can create users',
+        );
+      }
+      const scopeTenant = (user.scope as string).slice(
+        TENANT_SCOPE_PREFIX.length,
+      );
+      if (tenantId && tenantId !== scopeTenant) {
+        throw new ForbiddenException(
+          'Cannot create users for a different tenant',
+        );
+      }
+      if (!tenantId) {
+        record.tenant_id = scopeTenant;
+      }
     }
+
+    if (record.tenant_id) {
+      await this.assertTenantExists(record.tenant_id as string);
+    }
+
     return this.authProxy.proxy('POST', '/auth/tenant-users', body, {
       Authorization: auth,
     }, req[REQUEST_TENANT_KEY]);

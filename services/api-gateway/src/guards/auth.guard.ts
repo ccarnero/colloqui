@@ -89,13 +89,15 @@ export class AuthGuard implements CanActivate {
     const scope = payload.scope as string;
     if (scope === 'platform') return;
 
+    const isTenant = scope.startsWith(TENANT_SCOPE_PREFIX);
+
     for (let i = 0; i < required.length; i++) {
-      if (required[i] === 'platform') {
-        throw new ForbiddenException('Platform-level access required');
-      }
-      if (required[i] === 'tenant' && !scope.startsWith(TENANT_SCOPE_PREFIX)) {
-        throw new ForbiddenException('Tenant-level access required');
-      }
+      if (required[i] === 'tenant' && isTenant) return;
+      if (required[i] === scope) return;
     }
+
+    throw new ForbiddenException(
+      'Insufficient scope for this resource',
+    );
   }
 }
