@@ -1,0 +1,43 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: coexistance-seed
+  labels:
+    app.kubernetes.io/name: coexistance
+    app.kubernetes.io/component: seed
+    app.kubernetes.io/part-of: yoizen-arch
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: coexistance
+        app.kubernetes.io/component: seed
+        app.kubernetes.io/part-of: yoizen-arch
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+      containers:
+        - name: seed
+          image: dev.local/coexistance:local
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command:
+            - bun
+            - server/src/scripts/seed.js
+          envFrom:
+            - configMapRef:
+                name: coexistance-config
+            - secretRef:
+                name: coexistance-secret
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault

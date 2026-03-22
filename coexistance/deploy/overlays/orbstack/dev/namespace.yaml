@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: acme-dev-ns
+  labels:
+    app.kubernetes.io/part-of: yoizen-arch
+    yoizen.io/tenant: acme
+    yoizen.io/environment: dev
+    yoizen.io/managed-by: coexistance-deploy

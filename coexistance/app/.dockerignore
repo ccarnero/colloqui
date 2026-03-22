@@ -1,0 +1,15 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules/
+client/node_modules/
+server/node_modules/
+client/dist/
+coverage/
+docs/
+setup.sh
+tests/
+server/tests/
+client/public/
+*.log

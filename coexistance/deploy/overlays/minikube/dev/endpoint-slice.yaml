@@ -1,0 +1,15 @@
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: mongo-host-minikube
+  labels:
+    kubernetes.io/service-name: mongo-host
+    endpointslice.kubernetes.io/managed-by: coexistance-deploy
+addressType: IPv4
+ports:
+  - name: mongo
+    protocol: TCP
+    port: 27017
+endpoints:
+  - addresses:
+      - 192.168.49.1

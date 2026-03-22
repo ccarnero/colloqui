@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coexistance-debug
+  labels:
+    app.kubernetes.io/name: coexistance
+    app.kubernetes.io/component: webhook-debug
+    app.kubernetes.io/part-of: yoizen-arch
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: coexistance
+      app.kubernetes.io/component: webhook-debug
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: coexistance
+        app.kubernetes.io/component: webhook-debug
+        app.kubernetes.io/part-of: yoizen-arch
+    spec:
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+      containers:
+        - name: coexistance
+          image: dev.local/coexistance:local
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command:
+            - bun
+          args:
+            - --inspect=0.0.0.0:9229
+            - --watch
+            - server/src/server.js
+          envFrom:
+            - configMapRef:
+                name: coexistance-config
+            - secretRef:
+                name: coexistance-secret
+          ports:
+            - name: http
+              containerPort: 6666
+              protocol: TCP
+            - name: debug
+              containerPort: 9229
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

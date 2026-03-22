@@ -1,0 +1,20 @@
+{
+  "name": "coexistance",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "cd server && bun run dev",
+    "debug": "cd server && bun run debug",
+    "seed": "cd server && bun run seed",
+    "build": "cd client && bun run build",
+    "test": "cd server && bun run test",
+    "dev:client": "cd client && bun run dev"
+  },
+  "dependencies": {
+    "esbuild": "^0.27.4"
+  }
+}

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: coexistance-debug
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 6666
+      targetPort: http
+      protocol: TCP
+      nodePort: 30666
+    - name: debug
+      port: 9229
+      targetPort: debug
+      protocol: TCP
+      nodePort: 32229
