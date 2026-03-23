@@ -122,7 +122,7 @@ validateTenantAuthorization(agentId, tenant, subject) -> Result<ok, err>
 Restricciones adicionales:
 
 - Rotación obligatoria de API key cada 90 días
-- Max payload: 1 MB (claim check a 128 KB)
+- Max payload: 1 MB (claim check a 256 KB)
 - No acceden al stream completo — solo consumer dedicado
 - Revocación inmediata disponible (< 1 min)
 

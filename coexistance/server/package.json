@@ -1,0 +1,28 @@
+{
+  "name": "coexistance-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/server.js",
+    "debug": "bun --inspect=0.0.0.0:9229 --watch src/server.js",
+    "start": "bun src/server.js",
+    "seed": "bun src/scripts/seed.js",
+    "fix-account": "bun src/scripts/fix-account.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.12.0",
+    "nats": "^2.29.3",
+    "ulid": "^3.0.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  }
+}

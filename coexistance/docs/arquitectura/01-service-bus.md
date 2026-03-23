@@ -240,7 +240,7 @@ En milestone 1, el publish a NATS es non-blocking y fire-and-forget respecto al 
 ```
 // pseudocódigo
 const result = await saveToMongo(parsed)
-await notifyWebsocket(parsed)
+await notifySSE(parsed)
 
 // shadow publish — no bloquea la respuesta al provider
 publishToNats(envelope).catch(logPublishError)

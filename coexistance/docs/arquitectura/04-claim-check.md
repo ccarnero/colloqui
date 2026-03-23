@@ -45,7 +45,7 @@ sequenceDiagram
     participant P as Provider (Meta)
     participant I as Ingress Service
     participant M as MongoDB
-    participant WS as WebSocket
+    participant SSE as SSE Bridge
     participant JS as JetStream
     participant C as Consumer
 
@@ -55,7 +55,7 @@ sequenceDiagram
     I->>I: checkPayloadSize() → INLINE (3 KB < 256 KB)
     I->>I: buildEnvelope(payload_inline: true)
     I->>M: save(parsed)
-    I->>WS: notify(parsed)
+    I->>SSE: notify(parsed)
     I-->>JS: publish(envelope + payload inline)
     Note over JS: Mensaje completo: ~5 KB
     JS->>C: deliver(envelope)

@@ -21,7 +21,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 NATS_LOCAL_PORT=4222
 NATS_K8S_PORT=4222
-NATS_K8S_SVC="nats" #"svc/nats"           # ajustar si el service tiene otro nombre
+NATS_K8S_SVC="svc/nats"           # ajustar si el service tiene otro nombre
 NATS_K8S_NS="support-services-dev"              # ajustar al namespace real
 PIDFILE="/tmp/coexistance-dev.pids"
 

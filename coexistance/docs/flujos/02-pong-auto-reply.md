@@ -2,9 +2,7 @@
 
 ## Resumen
 
-Patrón de respuesta automática: cuando llega un mensaje entrante con el texto "ping", un nuevo consumer NATS lo detecta y dispara una respuesta "pong" a través del servicio de egress. Demuestra cómo agregar comportamiento reactivo sin modificar el ingress ni la persistencia.
-
-Este flujo **no existe todavía en el código** — es el próximo paso natural para validar que el bus permite agregar consumers sin tocar los servicios existentes.
+Patrón de respuesta automática: cuando llega un mensaje entrante con el texto "ping", un consumer NATS lo detecta y dispara una respuesta "pong" llamando directamente a `sendText()` + `saveMessage()` + `processEgress()`, sin pasar por HTTP. Demuestra cómo agregar comportamiento reactivo sin modificar ningún servicio existente.
 
 ## Analogía
 
@@ -15,189 +13,97 @@ Pensalo como un buzón de correo con reglas automáticas. El cartero (ingress) d
 | Actor | Rol |
 |-------|-----|
 | **NATS Bus** | Broker — entrega el evento de ingress al auto-replier |
-| **Auto-Reply Consumer** | NUEVO — escucha eventos `received`, evalúa regla, dispara egress |
-| **Egress Route** | POST /api/accounts/:id/messages/send — envía por Meta API |
-| **Meta Cloud API** | Entrega el "pong" al usuario de WhatsApp |
-| **Persistence** | Guarda el mensaje "pong" saliente (ya existe) |
-| **SSE Bridge** | Notifica al dashboard del pong enviado (ya existe) |
+| **Auto-Reply Consumer** | Escucha eventos `received`, evalúa reglas, ejecuta respuesta |
+| **evaluateRules()** | Extrae messages del envelope, recorre reglas hasta un match |
+| **executeReply()** | sendText → saveMessage → processEgress (direct calls) |
+| **Meta Cloud API** | Recibe el "pong" y lo entrega al usuario de WhatsApp |
+| **MongoDB** | Persiste el mensaje saliente con `source: 'auto-reply'` |
+| **SSE Bridge** | Notifica al dashboard del pong enviado (subscriber existente) |
 
 ## Diagrama de secuencia
 
 ```mermaid
 sequenceDiagram
     participant Bus as NATS Bus
-    participant AutoReply as Auto-Reply Consumer<br/>(NUEVO)
-    participant Egress as Egress Route<br/>(POST /send)
-    participant Meta as Meta Cloud API
-    participant Persist as Persistence Consumer
-    participant SSE as SSE Bridge
+    participant AR as Auto-Reply Consumer
+    participant Rules as evaluateRules()
+    participant Exec as executeReply()
     participant DB as MongoDB
+    participant Meta as Meta Cloud API
+    participant Egress as processEgress()
+    participant SSE as SSE Bridge
     participant Browser as Dashboard
 
-    Note over Bus: Evento de ingress ya publicado:<br/>evt.TENANT.coexistance.messaging<br/>.whatsapp.meta.received.v1
+    Note over Bus: Evento ya publicado por ingress:<br/>evt.TENANT.coexistance.messaging<br/>.whatsapp.meta.received.v1
 
-    Bus->>AutoReply: envelope (message inbound)
+    Bus->>AR: envelope (inbound message)
 
-    Note over AutoReply: 1. Extrae payload del envelope<br/>2. Parsea: entry[].changes[].value<br/>.messages[].text.body<br/>3. Evalúa regla: body === "ping"<br/>4. Si match → prepara respuesta
+    AR->>Rules: evaluateRules(envelope)
 
-    alt Texto === "ping"
-        AutoReply->>Egress: POST /api/accounts/:accountId/messages/send<br/>{ to: sender_wa_id, text: "pong 🏓" }
+    Note over Rules: 1. Extrae messages de<br/>envelope.data.payload<br/>.entry[0].changes[0]<br/>.value.messages<br/>2. Recorre array RULES<br/>3. Ejecuta pingPong(messages)
 
-        Note over Egress: Flujo normal de egress:<br/>1. sendText() → Meta API<br/>2. saveMessage() → MongoDB<br/>3. processEgress() → NATS (fire-and-forget)
+    alt body.toLowerCase() === "ping"
+        Rules-->>AR: { rule: 'ping-pong', action: 'send_text',<br/>to: '541134602008', text: 'pong' }
 
-        Egress->>Meta: WhatsApp Cloud API<br/>POST /v21.0/{phone_id}/messages
-        Meta-->>Egress: 200 OK { messages: [{ id: "wamid.xxx" }] }
+        AR->>DB: db.accounts.findOne({ _id: accountId })
+        DB-->>AR: account { access_token, phone_number_id }
 
-        Egress->>DB: saveMessage({ direction: 'outbound', text: 'pong 🏓' })
+        AR->>Exec: executeReply(match, account, db, env, busConfig)
 
-        Egress->>Bus: processEgress() → publish<br/>evt.TENANT.coexistance.messaging<br/>.whatsapp.meta.sent.v1
+        Note over Exec: Opción A: direct calls<br/>(sin HTTP, sin auth)
 
-        par
-            Bus->>SSE: Egress event → browser
+        Exec->>Meta: sendText(access_token, phone_number_id,<br/>to='541134602008', text='pong')
+        Meta-->>Exec: 200 { messages: [{ id: 'wamid.xxx' }] }
+
+        Exec->>DB: saveMessage({<br/>direction: 'outbound',<br/>source: 'auto-reply',<br/>text: 'pong',<br/>wa_message_id: 'wamid.xxx'<br/>})
+
+        Note over Exec: Shadow publish (fire-and-forget)
+
+        Exec-)Egress: processEgress({ body, tenant, accountid })
+
+        Note over Egress: buildEnvelope() → CloudEvents<br/>buildSubject() → evt.TENANT.coexistance<br/>.messaging.whatsapp.meta.sent.v1
+
+        Egress->>Bus: publishEvent(nc, subject, envelope)
+
+        par SSE Bridge
+            Bus->>SSE: egress event
             SSE->>Browser: SSE: { type: 'message_sent', eventId }
             Browser->>Browser: refreshConversations()
-        and
-            Bus->>Persist: Egress event
-            Note over Persist: parseWebhook() → type: 'unknown'<br/>(no es estructura de webhook Meta)<br/>→ SKIP (ya guardado por egress route)
         end
 
-    else Texto !== "ping"
-        Note over AutoReply: No match → no action<br/>(log: "no auto-reply rule matched")
+        Exec-->>AR: { ok: true, data: { waMessageId, rule } }
+        Note over AR: [AUTO-REPLY] Done — wamid.xxx
+
+    else body !== "ping"
+        Rules-->>AR: null
+        Note over AR: No match → no action
     end
 ```
 
-## Diseño del consumer
-
-### Ubicación propuesta
+## Estructura del servicio
 
 ```
 server/src/services/auto-reply/
-├── index.js              # startAutoReply({ nc, env })
-├── evaluate-rules.js     # evaluateRules(envelope) → { action, params } | null
+├── index.js              # startAutoReply({ nc, db, env, metrics })
+├── evaluate-rules.js     # evaluateRules(envelope) → match | null
+├── execute-reply.js      # executeReply(match, account, db, env, busConfig) → Result
 └── rules/
-    └── ping-pong.js      # Una regla por archivo
+    └── ping-pong.js      # pingPong(messages) → match | null
 ```
 
-### evaluate-rules.js (pseudo-código)
+## Subject NATS (subscribe)
 
-```javascript
-// Evaluate auto-reply rules against an incoming envelope.
-// Returns the first matching action or null.
-
-import { pingPong } from './rules/ping-pong.js'
-
-const RULES = [pingPong]
-
-const evaluateRules = (envelope) => {
-  const payload = envelope?.data?.payload
-  if (!payload) return null
-
-  for (const rule of RULES) {
-    const result = rule(payload)
-    if (result) return result
-  }
-
-  return null
-}
-
-export { evaluateRules }
+```
+evt.*.coexistance.messaging.whatsapp.meta.received.v1
 ```
 
-### rules/ping-pong.js
-
-```javascript
-// Rule: if inbound text is "ping", reply "pong 🏓"
-
-const pingPong = (payload) => {
-  const messages = payload?.entry?.[0]?.changes?.[0]?.value?.messages
-  if (!messages || messages.length === 0) return null
-
-  const msg = messages[0]
-  if (msg.type !== 'text') return null
-  if (msg.text?.body?.toLowerCase().trim() !== 'ping') return null
-
-  return {
-    action: 'send_text',
-    params: {
-      to: msg.from,        // wa_id del remitente
-      text: 'pong 🏓',
-    },
-  }
-}
-
-export { pingPong }
-```
-
-### index.js
-
-```javascript
-// Auto-reply service — subscribes to inbound events,
-// evaluates rules, fires egress if matched.
-
-import { subscribeToSubject } from '../../bus/subscribe.js'
-import { evaluateRules } from './evaluate-rules.js'
-
-const startAutoReply = ({ nc, env }) => {
-  const subject = 'evt.*.coexistance.messaging.whatsapp.meta.received.v1'
-  const baseUrl = `http://localhost:${env.PORT}`
-
-  const handler = async (envelope) => {
-    const match = evaluateRules(envelope)
-    if (!match) return
-
-    const accountId = envelope.accountid
-    if (!accountId) {
-      console.warn('  [AUTO-REPLY] No accountId in envelope, skip')
-      return
-    }
-
-    console.log(`  [AUTO-REPLY] Rule matched: ${match.action} → ${match.params.to}`)
-
-    // Fire egress via internal HTTP call (reuses auth + existing route)
-    // In production, would use a service token or internal bypass
-    try {
-      const res = await fetch(
-        `${baseUrl}/api/accounts/${accountId}/messages/send`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(match.params),
-        }
-      )
-      if (!res.ok) {
-        console.error(`  [AUTO-REPLY] Egress call failed: ${res.status}`)
-      }
-    } catch (e) {
-      console.error(`  [AUTO-REPLY] Egress call error: ${e.message}`)
-    }
-  }
-
-  subscribeToSubject(nc, subject, handler)
-  console.log('  [SERVICE] Auto-reply registered — listening for inbound events')
-}
-
-export { startAutoReply }
-```
-
-## Integración en server.js
-
-```javascript
-import { startAutoReply } from './services/auto-reply/index.js'
-
-// Dentro de startServer(), después de registerIngress:
-if (nc) {
-  startPersistence({ nc, db })
-  sseBridge = registerSse(app, { nc, db, env })
-  busMetrics = registerHealth(app, { nc, sseBridge })
-  registerIngress(app, { db, env, nc, metrics: busMetrics })
-  startAutoReply({ nc, env })  // ← NUEVO
-}
-```
+Solo escucha mensajes entrantes. Los eventos `sent` (egress) no le llegan — no hay riesgo de loop.
 
 ## Notas de diseño
 
-- **Zero coupling:** el auto-reply no importa nada de ingress, persistence ni SSE. Solo lee del bus.
-- **Extensible:** agregar reglas es crear un archivo en `rules/` y agregarlo al array `RULES`.
-- **Fire-and-forget:** la respuesta pasa por el mismo flujo de egress que un envío manual del operador.
-- **Idempotente:** si el mismo evento llega dos veces (retry de NATS), el auto-reply enviaría dos pongs. Solución futura: deduplicación con JetStream o cache de correlationIds procesados.
-- **Auth consideration:** el internal HTTP call al egress route necesita auth. Opciones: service token, bypass interno, o llamar directamente a sendText + processEgress sin HTTP.
+- **Zero coupling:** no importa nada de ingress, persistence ni SSE. Solo lee del bus y llama funciones de meta/db.
+- **Direct calls (Opción A):** bypasea HTTP y auth. No necesita JWT ni service token. Llama `sendText()` + `saveMessage()` + `processEgress()` directamente.
+- **Extensible:** agregar reglas = crear archivo en `rules/` + registrarlo en el array `RULES`.
+- **source: 'auto-reply':** el mensaje guardado en MongoDB se distingue de los enviados por el operador (`source: 'human'`).
+- **Sin deduplicación (v0):** si NATS entrega el mismo evento dos veces, se envían dos pongs. Futuro: dedup con JetStream o cache de correlationIds.
+- **Sin loop:** el auto-reply se subscribe a `received.v1`, y el pong que publica es `sent.v1`. No se escucha a sí mismo.

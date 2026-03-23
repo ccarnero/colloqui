@@ -7,8 +7,9 @@ Documentación de los casos de uso básicos de la plataforma, con diagramas de s
 | # | Flujo | Descripción | Estado |
 |---|-------|-------------|--------|
 | 01 | [Recibir mensaje](./01-recibir-mensaje.md) | Meta webhook → ingress → NATS → persistence + SSE → browser | Implementado |
-| 02 | [Auto-reply pong](./02-pong-auto-reply.md) | Consumer nuevo detecta "ping" → dispara egress "pong" | Propuesto |
+| 02 | [Auto-reply pong](./02-pong-auto-reply.md) | Consumer detecta "ping" → sendText + save + NATS (direct calls) | Stage 12 |
 | 03 | [Enviar mensaje](./03-enviar-mensaje.md) | Dashboard → egress → Meta API + MongoDB + NATS publish | Implementado |
+| 04 | [Ciclo ping→pong](./04-ciclo-ping-pong.md) | End-to-end: ingress + 3 subscribers + auto-reply + egress | Stage 12 |
 
 ## Arquitectura general
 

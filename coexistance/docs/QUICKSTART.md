@@ -2,60 +2,95 @@
 
 ## Requisitos
 
-- contexto `orbstack`
-- MongoDB corriendo en tu host en `27017`
-- platform cluster base ya levantado
+- Bun (runtime principal)
+- MongoDB corriendo en localhost:27017
+- kubectl (para port-forward de NATS desde k8s)
+- cloudflared (tunnel para webhooks de Meta)
 
-## Build de imagen
+## Setup inicial
 
 ```bash
-docker build \
-  -t dev.local/coexistance:local \
-  -f acme/coexistance/app/Dockerfile \
-  acme/coexistance/app
+# Clonar y entrar al proyecto
+cd coexistance
+
+# Copiar .env si no existe
+cp .env.example .env
+# Editar .env con tus credenciales de Meta
+
+# Instalar dependencias
+bun install
+
+# Seed: crea user + sandbox account (idempotente)
+bun run seed
 ```
 
-## Deploy
+## Levantar el entorno completo
 
 ```bash
-kubectl apply -k acme/coexistance/deploy/overlays/orbstack/dev
-kubectl rollout status deployment/coexistance-debug -n acme-dev-ns
+# Opción A: script automático (levanta todo en paralelo)
+chmod +x docs/flujos/dev-start.sh
+./docs/flujos/dev-start.sh
+
+# Opción B: manual en terminales separadas
+
+# Terminal 1 — NATS port-forward desde k8s
+kubectl port-forward svc/nats 4222:4222 -n support-services-dev
+
+# Terminal 2 — Tunnel para webhooks de Meta
+cloudflared tunnel run --protocol http2 whatsapp-dev
+
+# Terminal 3 — Backend (hot reload)
+bun run dev
+
+# Terminal 4 — Frontend (Vite HMR)
+bun run dev:client
 ```
 
 ## Verificar
 
 ```bash
-curl http://localhost:30666/api/health
-kubectl logs deployment/coexistance-debug -n acme-dev-ns --tail=120
+# Health check
+curl -s http://localhost:6666/api/health
+
+# Ver servicios activos en el log del server:
+#   ingress, egress, persistence, sse, health, auto-reply
 ```
 
-## Debugger
+## Puertos
 
-```bash
-python3 - <<'PY'
-import socket
-s = socket.socket(); s.settimeout(5); s.connect(("localhost", 32229)); print("debug open"); s.close()
-PY
-kubectl logs deployment/coexistance-debug -n acme-dev-ns | grep debug.bun.sh
+| Servicio | Puerto |
+|----------|--------|
+| Server (Express) | 6666 |
+| Frontend (Vite) | 5173 (proxy → 6666) |
+| NATS | 4222 (k8s port-forward) |
+| MongoDB | 27017 |
+
+## Login
+
+```
+email:    christian.carnero@gmail.com
+password: coexistance2024
 ```
 
-## Rerun del seed
+## Scripts útiles
 
 ```bash
-kubectl delete job coexistance-seed -n acme-dev-ns --ignore-not-found
-kubectl apply -k acme/coexistance/deploy/overlays/orbstack/dev
-kubectl logs job/coexistance-seed -n acme-dev-ns
+bun run dev          # Server con hot reload
+bun run dev:client   # Frontend con HMR
+bun run test         # Vitest (150+ tests)
+bun run seed         # Seed idempotente
+bun run build        # Build del frontend → client/dist/
 ```
 
 ## Loop de desarrollo
 
-- si cambias `app/server/src`, Bun recarga solo
-- si cambias dependencias, `package.json`, Dockerfile o frontend: rebuild de imagen y `kubectl rollout restart deployment/coexistance-debug -n acme-dev-ns`
+- Cambios en `server/src/` → Bun recarga automáticamente
+- Cambios en `client/src/` → Vite HMR actualiza el browser
+- Cambios en dependencias → `bun install` + restart
 
-## Webhook publico
+## Más documentación
 
-Siguiente paso sugerido:
-
-```bash
-cloudflared tunnel --url http://localhost:30666
-```
+- [Arquitectura del bus NATS](./arquitectura/README.md)
+- [Flujos con diagramas de secuencia](./flujos/README.md)
+- [Guías de uso](./help/README.md)
+- [PRD del MVP](./PRD.md)

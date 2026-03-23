@@ -51,7 +51,24 @@ Este documento define los estándares de observabilidad del bus: métricas míni
 | `ingress.agent.auth_failed` | tenant, agent_category | counter | Fallos de autenticación de agentes |
 | `ingress.agent.authorization_denied` | tenant, agent_id | counter | Fallos de autorización (solo terceros) |
 
-### 2.4 Infraestructura del bus
+### 2.4 Egress (Meta API)
+
+| Métrica | Tags | Tipo | Descripción |
+|---------|------|------|-------------|
+| `egress.sent` | tenant, channel | counter | Mensajes enviados via Meta API |
+| `egress.send_failed` | tenant, channel | counter | Errores al enviar por Meta API |
+| `egress.api_latency_ms` | tenant, channel | histogram | Latencia de respuesta de Meta API |
+| `egress.shadow_publish_ok` | tenant, channel | counter | Shadow publishes exitosos a NATS |
+
+### 2.5 SSE
+
+| Métrica | Tags | Tipo | Descripción |
+|---------|------|------|-------------|
+| `sse.connections_active` | tenant | gauge | Conexiones SSE activas |
+| `sse.events_streamed` | tenant | counter | Eventos enviados a navegadores |
+| `sse.events_dropped` | tenant | counter | Eventos sin clientes conectados |
+
+### 2.6 Infraestructura del bus
 
 | Métrica | Tags | Tipo | Descripción |
 |---------|------|------|-------------|
