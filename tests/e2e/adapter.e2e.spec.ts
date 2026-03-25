@@ -27,8 +27,17 @@ interface ProcessedResult {
   timestamp: number;
 }
 
-interface WorkflowStarted {
-  workflowId: string;
+interface WorkflowDefinitionCreated {
+  id: string;
+  name: string;
+  application: string;
+}
+
+interface ExecuteWorkflowResult {
+  executionId: string;
+  definitionId: string;
+  temporalWorkflowId: string;
+  runId: string;
 }
 
 interface EndpointCallResult {
@@ -37,14 +46,17 @@ interface EndpointCallResult {
   headers: Record<string, string>;
 }
 
-interface WorkflowStatus {
-  workflowId: string;
+interface ExecutionStatus {
+  executionId: string;
+  definitionId: string;
+  temporalWorkflowId: string;
   status: string;
   result?: {
     workflow: { name: string; tenant: string; application: string };
     request: Record<string, unknown>;
     results: Record<string, EndpointCallResult>;
   };
+  createdAt: string;
 }
 
 function findHeader(
@@ -53,7 +65,9 @@ function findHeader(
 ): string | undefined {
   const lower = name.toLowerCase();
   for (const [k, v] of Object.entries(headers)) {
-    if (k.toLowerCase() === lower) return String(v);
+    if (k.toLowerCase() === lower) {
+      return String(v);
+    }
   }
   return undefined;
 }
@@ -112,25 +126,68 @@ async function pollEvent(eventId: string): Promise<ProcessedResult> {
         `${GW}/results/${eventId}`,
         { headers: h },
       );
-      if (res.status === 200) return res.body;
+      if (res.status === 200) {
+        return res.body;
+      }
       return null;
     },
     { timeoutMs: 30_000 },
   );
 }
 
-async function pollWorkflow(
-  workflowId: string,
-  timeoutMs = 60_000,
-): Promise<WorkflowStatus> {
+/**
+ * Creates a workflow definition and immediately executes it.
+ * Returns both the definition ID and execution details for polling.
+ */
+async function createAndExecuteWorkflow(
+  name: string,
+  actions: unknown[],
+  request: Record<string, unknown> = {},
+): Promise<{
+  definitionId: string;
+  executionId: string;
+  temporalWorkflowId: string;
+}> {
   const h = await authHeaders();
-  return poll<WorkflowStatus>(
+
+  const { status: createStatus, body: definition } =
+    await httpPost<WorkflowDefinitionCreated>(`${GW}/workflows`, {
+      name,
+      application: "e2e-tests",
+      actions,
+    }, { headers: h });
+  expect(createStatus).toBe(201);
+
+  const { status: execStatus, body: execution } =
+    await httpPost<ExecuteWorkflowResult>(
+      `${GW}/workflows/${definition.id}/execute`,
+      { request },
+      { headers: h },
+    );
+  expect(execStatus).toBe(202);
+
+  return {
+    definitionId: definition.id,
+    executionId: execution.executionId,
+    temporalWorkflowId: execution.temporalWorkflowId,
+  };
+}
+
+async function pollWorkflow(
+  definitionId: string,
+  executionId: string,
+  timeoutMs = 60_000,
+): Promise<ExecutionStatus> {
+  const h = await authHeaders();
+  return poll<ExecutionStatus>(
     async () => {
-      const res = await httpGet<WorkflowStatus>(
-        `${GW}/workflows/${workflowId}`,
+      const res = await httpGet<ExecutionStatus>(
+        `${GW}/workflows/${definitionId}/executions/${executionId}`,
         { headers: h },
       );
-      if (res.status !== 200) return null;
+      if (res.status !== 200) {
+        return null;
+      }
       if (
         res.body.status === "COMPLETED" ||
         res.body.status === "FAILED"
@@ -158,7 +215,9 @@ describe("E2E: adapter integration", () => {
   });
 
   it("should add endpoints to the adapter", async () => {
-    if (!adapterId) return;
+    if (!adapterId) {
+      return;
+    }
     enrichEndpointId = await addEndpoint(adapterId, "Echo GET", "GET", "/get");
     forwardEndpointId = await addEndpoint(
       adapterId,
@@ -171,7 +230,9 @@ describe("E2E: adapter integration", () => {
   // ── Event-Processor ───────────────────────────────────────────
 
   it("should process an event with adapter enrichment", async () => {
-    if (!adapterId || !enrichEndpointId) return;
+    if (!adapterId || !enrichEndpointId) {
+      return;
+    }
     const h = await authHeaders();
 
     const { status, body } = await httpPost<EventAccepted>(
@@ -191,7 +252,9 @@ describe("E2E: adapter integration", () => {
   });
 
   it("should process an event with adapter forwarding", async () => {
-    if (!adapterId || !forwardEndpointId) return;
+    if (!adapterId || !forwardEndpointId) {
+      return;
+    }
     const h = await authHeaders();
 
     const { status, body } = await httpPost<EventAccepted>(
@@ -210,7 +273,9 @@ describe("E2E: adapter integration", () => {
   });
 
   it("should process an event through both enrichment and forwarding", async () => {
-    if (!adapterId || !enrichEndpointId || !forwardEndpointId) return;
+    if (!adapterId || !enrichEndpointId || !forwardEndpointId) {
+      return;
+    }
     const h = await authHeaders();
 
     const { status, body } = await httpPost<EventAccepted>(
@@ -232,75 +297,67 @@ describe("E2E: adapter integration", () => {
   // ── Workflow-HTTP-Worker ──────────────────────────────────────
 
   it("should complete a workflow with adapter-driven endpointCall", async () => {
-    if (!adapterId || !enrichEndpointId) return;
-    const h = await authHeaders();
+    if (!adapterId || !enrichEndpointId) {
+      return;
+    }
 
-    const { status, body } = await httpPost<WorkflowStarted>(
-      `${GW}/workflows`,
-      {
-        name: `e2e-adapter-wf-${Date.now()}`,
-        application: "e2e-tests",
-        request: { query: "adapter-check" },
-        actions: [
-          {
-            activity: "endpointCall",
-            name: "adapterGet",
-            args: {
-              method: "GET",
-              url: "",
-              adapterId,
-              endpointId: enrichEndpointId,
-              params: { source: "e2e" },
-            },
+    const { definitionId, executionId } = await createAndExecuteWorkflow(
+      `e2e-adapter-wf-${Date.now()}`,
+      [
+        {
+          activity: "endpointCall",
+          name: "adapterGet",
+          args: {
+            method: "GET",
+            url: "",
+            adapterId,
+            endpointId: enrichEndpointId,
+            params: { source: "e2e" },
           },
-        ],
-      },
-      { headers: h },
+        },
+      ],
+      { query: "adapter-check" },
     );
 
-    expect(status).toBe(202);
-    const result = await pollWorkflow(body.workflowId);
-    expect(result.workflowId).toBe(body.workflowId);
+    const result = await pollWorkflow(definitionId, executionId);
+    expect(result.executionId).toBe(executionId);
     expect(result.status).toBe("COMPLETED");
   });
 
   it("should complete a workflow with adapter endpointCall POST", async () => {
-    if (!adapterId || !forwardEndpointId) return;
-    const h = await authHeaders();
+    if (!adapterId || !forwardEndpointId) {
+      return;
+    }
 
-    const { status, body } = await httpPost<WorkflowStarted>(
-      `${GW}/workflows`,
-      {
-        name: `e2e-adapter-post-wf-${Date.now()}`,
-        application: "e2e-tests",
-        request: { message: "adapter-post-check" },
-        actions: [
-          {
-            activity: "endpointCall",
-            name: "adapterPost",
-            args: {
-              method: "POST",
-              url: "",
-              adapterId,
-              endpointId: forwardEndpointId,
-              data: { from: "workflow", source: "e2e" },
-            },
+    const { definitionId, executionId } = await createAndExecuteWorkflow(
+      `e2e-adapter-post-wf-${Date.now()}`,
+      [
+        {
+          activity: "endpointCall",
+          name: "adapterPost",
+          args: {
+            method: "POST",
+            url: "",
+            adapterId,
+            endpointId: forwardEndpointId,
+            data: { from: "workflow", source: "e2e" },
           },
-        ],
-      },
-      { headers: h },
+        },
+      ],
+      { message: "adapter-post-check" },
     );
 
-    expect(status).toBe(202);
-    const result = await pollWorkflow(body.workflowId);
-    expect(result.workflowId).toBe(body.workflowId);
+    const result = await pollWorkflow(definitionId, executionId);
+    expect(result.executionId).toBe(executionId);
     expect(result.status).toBe("COMPLETED");
   });
 
   // ── Webhook-Service ───────────────────────────────────────────
 
   it("should deliver webhook using adapter config", async () => {
-    if (!adapterId) return;
+    if (!adapterId) {
+      return;
+    }
     const h = await authHeaders();
 
     const { status, body } = await httpPost<EventAccepted>(
@@ -320,7 +377,9 @@ describe("E2E: adapter integration", () => {
   });
 
   it("should deliver webhook with adapter + enrichment combined", async () => {
-    if (!adapterId || !enrichEndpointId) return;
+    if (!adapterId || !enrichEndpointId) {
+      return;
+    }
     const h = await authHeaders();
 
     const { status, body } = await httpPost<EventAccepted>(
@@ -341,7 +400,9 @@ describe("E2E: adapter integration", () => {
   });
 
   afterAll(async () => {
-    if (adapterId) await deleteAdapter(adapterId);
+    if (adapterId) {
+      await deleteAdapter(adapterId);
+    }
   });
 });
 
@@ -370,33 +431,27 @@ describe("E2E: adapter custom headers", () => {
   });
 
   it("should include custom headers in workflow endpointCall (httpbin echo)", async () => {
-    if (!adapterId || !getEndpointId) return;
-    const h = await authHeaders();
+    if (!adapterId || !getEndpointId) {
+      return;
+    }
 
-    const { status, body } = await httpPost<WorkflowStarted>(
-      `${GW}/workflows`,
-      {
-        name: `e2e-header-wf-${Date.now()}`,
-        application: "e2e-tests",
-        request: {},
-        actions: [
-          {
-            activity: "endpointCall",
-            name: "echoHeaders",
-            args: {
-              method: "GET",
-              url: "",
-              adapterId,
-              endpointId: getEndpointId,
-            },
+    const { definitionId, executionId } = await createAndExecuteWorkflow(
+      `e2e-header-wf-${Date.now()}`,
+      [
+        {
+          activity: "endpointCall",
+          name: "echoHeaders",
+          args: {
+            method: "GET",
+            url: "",
+            adapterId,
+            endpointId: getEndpointId,
           },
-        ],
-      },
-      { headers: h },
+        },
+      ],
     );
 
-    expect(status).toBe(202);
-    const wf = await pollWorkflow(body.workflowId);
+    const wf = await pollWorkflow(definitionId, executionId);
     expect(wf.status).toBe("COMPLETED");
 
     const echoResult = wf.result?.results?.echoHeaders;
@@ -410,7 +465,9 @@ describe("E2E: adapter custom headers", () => {
   });
 
   it("should inject custom headers during event-processor enrichment", async () => {
-    if (!adapterId || !getEndpointId) return;
+    if (!adapterId || !getEndpointId) {
+      return;
+    }
     const h = await authHeaders();
 
     const { status, body } = await httpPost<EventAccepted>(
@@ -429,7 +486,9 @@ describe("E2E: adapter custom headers", () => {
   });
 
   it("should inject custom headers in webhook delivery", async () => {
-    if (!adapterId) return;
+    if (!adapterId) {
+      return;
+    }
     const h = await authHeaders();
 
     const { status, body } = await httpPost<EventAccepted>(
@@ -449,7 +508,9 @@ describe("E2E: adapter custom headers", () => {
   });
 
   afterAll(async () => {
-    if (adapterId) await deleteAdapter(adapterId);
+    if (adapterId) {
+      await deleteAdapter(adapterId);
+    }
   });
 });
 
@@ -483,34 +544,27 @@ describe("E2E: adapter retries", () => {
   });
 
   it("should exhaust retries on 5xx and return error status in workflow", async () => {
-    if (!adapterId || !status503EndpointId) return;
-    const h = await authHeaders();
+    if (!adapterId || !status503EndpointId) {
+      return;
+    }
 
-    const { status, body } = await httpPost<WorkflowStarted>(
-      `${GW}/workflows`,
-      {
-        name: `e2e-retry-wf-${Date.now()}`,
-        application: "e2e-tests",
-        request: {},
-        actions: [
-          {
-            activity: "endpointCall",
-            name: "retryCall",
-            args: {
-              method: "GET",
-              url: "",
-              adapterId,
-              endpointId: status503EndpointId,
-            },
+    const { definitionId, executionId } = await createAndExecuteWorkflow(
+      `e2e-retry-wf-${Date.now()}`,
+      [
+        {
+          activity: "endpointCall",
+          name: "retryCall",
+          args: {
+            method: "GET",
+            url: "",
+            adapterId,
+            endpointId: status503EndpointId,
           },
-        ],
-      },
-      { headers: h },
+        },
+      ],
     );
 
-    expect(status).toBe(202);
-
-    const wf = await pollWorkflow(body.workflowId);
+    const wf = await pollWorkflow(definitionId, executionId);
     expect(wf.status).toBe("COMPLETED");
 
     const retryResult = wf.result?.results?.retryCall;
@@ -519,7 +573,9 @@ describe("E2E: adapter retries", () => {
   });
 
   it("should process event even when forward retries exhaust (non-blocking)", async () => {
-    if (!adapterId || !forwardEndpointId) return;
+    if (!adapterId || !forwardEndpointId) {
+      return;
+    }
     const h = await authHeaders();
 
     const { status, body } = await httpPost<EventAccepted>(
@@ -538,7 +594,9 @@ describe("E2E: adapter retries", () => {
   });
 
   afterAll(async () => {
-    if (adapterId) await deleteAdapter(adapterId);
+    if (adapterId) {
+      await deleteAdapter(adapterId);
+    }
   });
 });
 
@@ -567,41 +625,36 @@ describe("E2E: adapter timeouts", () => {
   it(
     "should fail workflow when adapter timeout is exceeded",
     async () => {
-      if (!adapterId || !delayEndpointId) return;
-      const h = await authHeaders();
+      if (!adapterId || !delayEndpointId) {
+        return;
+      }
 
-      const { status, body } = await httpPost<WorkflowStarted>(
-        `${GW}/workflows`,
-        {
-          name: `e2e-timeout-wf-${Date.now()}`,
-          application: "e2e-tests",
-          request: {},
-          actions: [
-            {
-              activity: "endpointCall",
-              name: "slowCall",
-              args: {
-                method: "GET",
-                url: "",
-                adapterId,
-                endpointId: delayEndpointId,
-              },
+      const { definitionId, executionId } = await createAndExecuteWorkflow(
+        `e2e-timeout-wf-${Date.now()}`,
+        [
+          {
+            activity: "endpointCall",
+            name: "slowCall",
+            args: {
+              method: "GET",
+              url: "",
+              adapterId,
+              endpointId: delayEndpointId,
             },
-          ],
-        },
-        { headers: h },
+          },
+        ],
       );
 
-      expect(status).toBe(202);
-
-      const wf = await pollWorkflow(body.workflowId, 90_000);
+      const wf = await pollWorkflow(definitionId, executionId, 90_000);
       expect(wf.status).toBe("FAILED");
     },
     120_000,
   );
 
   it("should still process event when enrichment times out (non-blocking)", async () => {
-    if (!adapterId || !delayEndpointId) return;
+    if (!adapterId || !delayEndpointId) {
+      return;
+    }
     const h = await authHeaders();
 
     const { status, body } = await httpPost<EventAccepted>(
@@ -620,7 +673,9 @@ describe("E2E: adapter timeouts", () => {
   });
 
   it("should still process event when forward times out (non-blocking)", async () => {
-    if (!adapterId || !delayEndpointId) return;
+    if (!adapterId || !delayEndpointId) {
+      return;
+    }
     const h = await authHeaders();
 
     const postDelayId = await addEndpoint(
@@ -646,6 +701,8 @@ describe("E2E: adapter timeouts", () => {
   });
 
   afterAll(async () => {
-    if (adapterId) await deleteAdapter(adapterId);
+    if (adapterId) {
+      await deleteAdapter(adapterId);
+    }
   });
 });

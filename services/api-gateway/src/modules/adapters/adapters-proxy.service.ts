@@ -1,6 +1,7 @@
-import { Injectable, Logger, HttpException } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { TENANT_HEADER } from "@yoizen/shared";
 import { tracedFetch } from "@yoizen/observability";
+import { throwProxyError } from "../../utils/proxy-error.util";
 
 @Injectable()
 export class AdaptersProxyService {
@@ -41,16 +42,7 @@ export class AdaptersProxyService {
     }
 
     const res = await tracedFetch(url, init);
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      this.logger.error(
-        `Adapter service responded ${res.status} for ${method} ${url}`,
-      );
-      throw new HttpException(
-        text || `Adapter service error: ${res.status}`,
-        res.status,
-      );
-    }
+    if (!res.ok) await throwProxyError(res, "Adapter service", this.logger);
     if (res.status === 204) return {};
     return res.json();
   }

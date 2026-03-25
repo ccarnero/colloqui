@@ -15,7 +15,8 @@
     "test:registry": "bun test registry.e2e.spec.ts",
     "test:workflow": "bun test workflow.e2e.spec.ts",
     "test:webhook": "bun test webhook.e2e.spec.ts",
-    "test:adapter": "bun test adapter.e2e.spec.ts"
+    "test:adapter": "bun test adapter.e2e.spec.ts",
+    "test:error-propagation": "bun test error-propagation.e2e.spec.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

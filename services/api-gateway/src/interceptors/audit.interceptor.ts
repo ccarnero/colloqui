@@ -56,7 +56,7 @@ export class AuditInterceptor implements NestInterceptor {
       path: request.url.split('?')[0],
       statusCode: reply.statusCode,
       durationMs: Math.round(durationMs * 100) / 100,
-      clientIp: request.ip,
+      clientIp: request.ip ?? '',
       userAgent: (request.headers['user-agent'] as string) ?? '',
       jwtSubject: user?.sub ?? null,
       routeType: 'platform',

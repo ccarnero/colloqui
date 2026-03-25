@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ObservabilityModule } from '@yoizen/observability';
 import { EventsModule } from './modules/events/events.module';
 import { AuditModule } from './modules/audit/audit.module';
@@ -17,6 +17,7 @@ import { ProvidersModule } from './providers/providers.module';
 import { TenantGuard } from './guards/tenant.guard';
 import { AuthGuard } from './guards/auth.guard';
 import { AuditInterceptor } from './interceptors/audit.interceptor';
+import { ServiceExceptionFilter } from './filters/service-exception.filter';
 
 @Module({
   imports: [
@@ -36,6 +37,10 @@ import { AuditInterceptor } from './interceptors/audit.interceptor';
     HealthModule,
   ],
   providers: [
+    {
+      provide: APP_FILTER,
+      useClass: ServiceExceptionFilter,
+    },
     {
       provide: APP_GUARD,
       useClass: TenantGuard,

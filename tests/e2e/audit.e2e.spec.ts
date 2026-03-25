@@ -31,7 +31,7 @@ describe('E2E: audit-service', () => {
     await publishEvent('audit-e2e-deleted', { source: 'e2e-audit', reason: 'cleanup' });
 
     await Bun.sleep(3_000);
-  });
+  }, 30_000);
 
   it('should query audit events', async () => {
     const h = await authHeaders();

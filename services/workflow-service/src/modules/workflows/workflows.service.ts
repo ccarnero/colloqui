@@ -1,26 +1,50 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { Client } from '@temporalio/client';
-import { nanoid } from 'nanoid';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
+import type { Client } from "@temporalio/client";
+import { nanoid } from "nanoid";
 import {
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
   WORKFLOW_DEFAULT_TIMEOUT_MS,
-} from '@yoizen/shared';
+} from "@yoizen/shared";
 import type {
   WorkflowDefinition,
   WorkflowAction,
   WorkflowExecutionContext,
-} from '@yoizen/shared';
-import { TEMPORAL_CLIENT } from '../../providers/temporal.provider';
+} from "@yoizen/shared";
+import { TEMPORAL_CLIENT } from "../../providers/temporal.provider";
+import { WorkflowsRepository } from "./workflows.repository";
+import type {
+  WorkflowDefinitionRow,
+  WorkflowExecutionRow,
+} from "./workflows.repository";
 
-export interface StartWorkflowResult {
-  workflowId: string;
+export interface CreateWorkflowResult {
+  id: string;
+  name: string;
+  application: string;
+  tenantId: string;
+  actions: unknown;
+  createdAt: Date;
+}
+
+export interface ExecuteWorkflowResult {
+  executionId: string;
+  definitionId: string;
+  temporalWorkflowId: string;
   runId: string;
 }
 
-export interface WorkflowStatusResult {
-  workflowId: string;
+export interface ExecutionStatusResult {
+  executionId: string;
+  definitionId: string;
+  temporalWorkflowId: string;
   status: string;
   result?: WorkflowExecutionContext;
+  createdAt: Date;
 }
 
 @Injectable()
@@ -29,84 +53,196 @@ export class WorkflowsService {
 
   constructor(
     @Inject(TEMPORAL_CLIENT) private readonly temporal: Client,
+    private readonly repository: WorkflowsRepository,
   ) {}
 
-  async startWorkflow(
+  async createWorkflow(
+    tenantId: string,
     name: string,
     application: string,
-    tenantId: string,
-    request: Record<string, unknown>,
     actions: WorkflowAction[],
-  ): Promise<StartWorkflowResult> {
-    const workflowId = `${tenantId}:${name}:${nanoid()}`;
-
-    const definition: WorkflowDefinition = {
+  ): Promise<CreateWorkflowResult> {
+    const id = nanoid();
+    const row = await this.repository.createDefinition(
+      id,
+      tenantId,
       name,
-      tenant: tenantId,
       application,
-      request,
       actions,
-    };
-
-    const handle = await this.temporal.workflow.start('runWorkflow', {
-      taskQueue: WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
-      workflowId,
-      args: [definition],
-      workflowExecutionTimeout: WORKFLOW_DEFAULT_TIMEOUT_MS,
-      searchAttributes: {
-        TenantId: [tenantId],
-      },
-    });
-
-    this.logger.log(
-      `Started workflow ${workflowId} (runId=${handle.firstExecutionRunId})`,
     );
 
-    return { workflowId, runId: handle.firstExecutionRunId };
+    this.logger.log(
+      `Created workflow definition ${row.id} (${name}) for tenant ${tenantId}`,
+    );
+
+    return this.toCreateResult(row);
   }
 
-  async getWorkflowStatus(
-    workflowId: string,
+  async getWorkflow(
+    id: string,
     tenantId: string,
-  ): Promise<WorkflowStatusResult> {
-    if (!workflowId.startsWith(`${tenantId}:`)) {
-      throw new NotFoundException('Workflow not found');
+  ): Promise<CreateWorkflowResult> {
+    const row = await this.repository.findDefinitionById(
+      id,
+      tenantId,
+    );
+    if (!row) {
+      throw new NotFoundException("Workflow definition not found");
     }
-
-    const handle = this.temporal.workflow.getHandle(workflowId);
-    const describe = await handle.describe();
-
-    const statusName = describe.status.name;
-    let result: WorkflowExecutionContext | undefined;
-
-    if (statusName === 'COMPLETED') {
-      result = await handle.result();
-    }
-
-    return { workflowId, status: statusName, result };
+    return this.toCreateResult(row);
   }
 
   async listWorkflows(
     tenantId: string,
-  ): Promise<Array<{ workflowId: string; status: string; startTime: Date }>> {
-    const results: Array<{
-      workflowId: string;
-      status: string;
-      startTime: Date;
-    }> = [];
+  ): Promise<CreateWorkflowResult[]> {
+    const rows =
+      await this.repository.findDefinitionsByTenant(tenantId);
+    return rows.map((r) => this.toCreateResult(r));
+  }
 
-    const workflows = this.temporal.workflow.list({
-      query: `TenantId = '${tenantId}'`,
-    });
+  async deleteWorkflow(
+    id: string,
+    tenantId: string,
+  ): Promise<void> {
+    const deleted = await this.repository.softDeleteDefinition(
+      id,
+      tenantId,
+    );
+    if (!deleted) {
+      throw new NotFoundException("Workflow definition not found");
+    }
+    this.logger.log(
+      `Soft-deleted workflow definition ${id} for tenant ${tenantId}`,
+    );
+  }
 
-    for await (const wf of workflows) {
-      results.push({
-        workflowId: wf.workflowId,
-        status: wf.status.name,
-        startTime: wf.startTime,
-      });
+  async executeWorkflow(
+    definitionId: string,
+    tenantId: string,
+    request: Record<string, unknown>,
+  ): Promise<ExecuteWorkflowResult> {
+    const definition = await this.repository.findDefinitionById(
+      definitionId,
+      tenantId,
+    );
+    if (!definition) {
+      throw new NotFoundException("Workflow definition not found");
     }
 
-    return results;
+    const temporalWorkflowId = `${tenantId}:${definition.name}:${nanoid()}`;
+    const executionId = nanoid();
+
+    const workflowDef: WorkflowDefinition = {
+      name: definition.name,
+      tenant: tenantId,
+      application: definition.application,
+      request,
+      actions: definition.actions as WorkflowAction[],
+    };
+
+    const handle = await this.temporal.workflow.start(
+      "runWorkflow",
+      {
+        taskQueue: WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
+        workflowId: temporalWorkflowId,
+        args: [workflowDef],
+        workflowExecutionTimeout: WORKFLOW_DEFAULT_TIMEOUT_MS,
+        searchAttributes: {
+          TenantId: [tenantId],
+        },
+      },
+    );
+
+    const row = await this.repository.createExecution(
+      executionId,
+      definitionId,
+      tenantId,
+      temporalWorkflowId,
+      handle.firstExecutionRunId,
+      request,
+    );
+
+    this.logger.log(
+      `Started execution ${row.id} for definition ${definitionId} ` +
+        `(temporal=${temporalWorkflowId}, runId=${handle.firstExecutionRunId})`,
+    );
+
+    return {
+      executionId: row.id,
+      definitionId,
+      temporalWorkflowId,
+      runId: handle.firstExecutionRunId,
+    };
+  }
+
+  async listExecutions(
+    definitionId: string,
+    tenantId: string,
+  ): Promise<WorkflowExecutionRow[]> {
+    const definition = await this.repository.findDefinitionById(
+      definitionId,
+      tenantId,
+    );
+    if (!definition) {
+      throw new NotFoundException("Workflow definition not found");
+    }
+
+    return this.repository.findExecutionsByDefinition(
+      definitionId,
+      tenantId,
+    );
+  }
+
+  async getExecutionStatus(
+    executionId: string,
+    tenantId: string,
+  ): Promise<ExecutionStatusResult> {
+    const execution = await this.repository.findExecutionById(
+      executionId,
+      tenantId,
+    );
+    if (!execution) {
+      throw new NotFoundException("Workflow execution not found");
+    }
+
+    const handle = this.temporal.workflow.getHandle(
+      execution.temporal_workflow_id,
+    );
+    const describe = await handle.describe();
+    const currentStatus = describe.status.name;
+
+    if (currentStatus !== execution.status) {
+      await this.repository.updateExecutionStatus(
+        executionId,
+        currentStatus,
+      );
+    }
+
+    let result: WorkflowExecutionContext | undefined;
+    if (currentStatus === "COMPLETED") {
+      result = await handle.result();
+    }
+
+    return {
+      executionId: execution.id,
+      definitionId: execution.definition_id,
+      temporalWorkflowId: execution.temporal_workflow_id,
+      status: currentStatus,
+      result,
+      createdAt: execution.created_at,
+    };
+  }
+
+  private toCreateResult(
+    row: WorkflowDefinitionRow,
+  ): CreateWorkflowResult {
+    return {
+      id: row.id,
+      name: row.name,
+      application: row.application,
+      tenantId: row.tenant_id,
+      actions: row.actions,
+      createdAt: row.created_at,
+    };
   }
 }
