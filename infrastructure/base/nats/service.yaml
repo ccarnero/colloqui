@@ -18,6 +18,10 @@ spec:
       port: 8222
       targetPort: monitor
       protocol: TCP
+    - name: metrics
+      port: 7777
+      targetPort: metrics
+      protocol: TCP
 ---
 apiVersion: v1
 kind: Service

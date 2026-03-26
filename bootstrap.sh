@@ -296,8 +296,8 @@ build_images() {
   for svc in api-gateway auth-service event-processor cache-service \
              audit-service webhook-service metrics-service tenant-service \
              scheduler-service registry-service adapter-service \
-             workflow-service workflow-http-worker proxy-service \
-             admin-console; do
+             channel-service workflow-service workflow-http-worker \
+             proxy-service admin-console; do
     log "Building image: dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \

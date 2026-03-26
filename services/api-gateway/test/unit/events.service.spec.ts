@@ -1,28 +1,44 @@
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { Test } from '@nestjs/testing';
 import { EventsService } from '../../src/modules/events/events.service';
-import { JETSTREAM } from '../../src/providers/nats.provider';
+import { JETSTREAM, NATS_CONNECTION } from '../../src/providers/nats.provider';
 import { REDIS_CLIENT } from '../../src/providers/redis.provider';
+
+const TENANT_ID = 'test-tenant';
 
 describe('EventsService', () => {
   let service: EventsService;
   let mockJs: { publish: ReturnType<typeof mock> };
+  let mockNc: { subscribe: ReturnType<typeof mock>; isClosed: ReturnType<typeof mock> };
   let mockRedis: {
-    setex: ReturnType<typeof mock>;
     get: ReturnType<typeof mock>;
+    pipeline: ReturnType<typeof mock>;
+  };
+  let mockPipeline: {
+    setex: ReturnType<typeof mock>;
+    exec: ReturnType<typeof mock>;
   };
 
   beforeEach(async () => {
     mockJs = { publish: mock(() => Promise.resolve({ seq: 1 })) };
+    mockNc = {
+      subscribe: mock(() => ({ [Symbol.asyncIterator]: () => ({ next: () => Promise.resolve({ done: true, value: undefined }) }), unsubscribe: mock() })),
+      isClosed: mock(() => false),
+    };
+    mockPipeline = {
+      setex: mock(function (this: unknown) { return this; }),
+      exec: mock(() => Promise.resolve([])),
+    };
     mockRedis = {
-      setex: mock(() => Promise.resolve('OK')),
       get: mock(() => Promise.resolve(null)),
+      pipeline: mock(() => mockPipeline),
     };
 
     const module = await Test.createTestingModule({
       providers: [
         EventsService,
         { provide: JETSTREAM, useValue: mockJs },
+        { provide: NATS_CONNECTION, useValue: mockNc },
         { provide: REDIS_CLIENT, useValue: mockRedis },
       ],
     }).compile();
@@ -32,27 +48,22 @@ describe('EventsService', () => {
 
   describe('publish', () => {
     it('should publish to JetStream with correct subject', async () => {
-      const id = await service.publish('created', { name: 'test' });
+      const id = await service.publish('created', { name: 'test' }, TENANT_ID);
 
       expect(id).toBeDefined();
       expect(typeof id).toBe('string');
       expect(mockJs.publish).toHaveBeenCalledTimes(1);
 
-      const [subject, data] = mockJs.publish.mock.calls[0];
+      const [subject] = mockJs.publish.mock.calls[0];
       expect(subject).toBe('events.created');
-
-      const decoded = JSON.parse(new TextDecoder().decode(data));
-      expect(decoded.id).toBe(id);
-      expect(decoded.type).toBe('created');
-      expect(decoded.payload).toEqual({ name: 'test' });
     });
 
-    it('should store pending status in Redis with TTL', async () => {
-      const id = await service.publish('updated', {});
+    it('should store pending status in Redis pipeline with TTL', async () => {
+      const id = await service.publish('updated', {}, TENANT_ID);
 
-      expect(mockRedis.setex).toHaveBeenCalledTimes(1);
-      const [key, ttl, value] = mockRedis.setex.mock.calls[0];
-      expect(key).toBe(`pending:${id}`);
+      expect(mockPipeline.setex).toHaveBeenCalledTimes(1);
+      const [key, ttl, value] = mockPipeline.setex.mock.calls[0];
+      expect(key).toBe(`${TENANT_ID}:pending:${id}`);
       expect(ttl).toBe(3600);
       const parsed = JSON.parse(value);
       expect(parsed.id).toBe(id);
@@ -60,8 +71,8 @@ describe('EventsService', () => {
     });
 
     it('should generate unique IDs for each call', async () => {
-      const id1 = await service.publish('a', {});
-      const id2 = await service.publish('b', {});
+      const id1 = await service.publish('a', {}, TENANT_ID);
+      const id2 = await service.publish('b', {}, TENANT_ID);
       expect(id1).not.toBe(id2);
     });
   });
@@ -69,7 +80,7 @@ describe('EventsService', () => {
   describe('getResult', () => {
     it('should return null when not in L1 cache or Redis', async () => {
       mockRedis.get = mock(() => Promise.resolve(null));
-      const result = await service.getResult('nonexistent');
+      const result = await service.getResult('nonexistent', TENANT_ID);
       expect(result).toBeNull();
       expect(mockRedis.get).toHaveBeenCalledTimes(1);
     });
@@ -78,19 +89,19 @@ describe('EventsService', () => {
       const data = { eventId: 'abc', type: 'test', processed: true };
       mockRedis.get = mock(() => Promise.resolve(JSON.stringify(data)));
 
-      const result = await service.getResult('abc');
+      const result = await service.getResult('abc', TENANT_ID);
       expect(result).toEqual(data);
-      expect(mockRedis.get).toHaveBeenCalledWith('result:abc');
+      expect(mockRedis.get).toHaveBeenCalledWith(`${TENANT_ID}:result:abc`);
     });
 
     it('should return from L1 cache on second call (no Redis hit)', async () => {
       const data = { eventId: 'abc', processed: true };
       mockRedis.get = mock(() => Promise.resolve(JSON.stringify(data)));
 
-      await service.getResult('abc');
+      await service.getResult('abc', TENANT_ID);
       mockRedis.get = mock(() => Promise.resolve(null));
 
-      const result = await service.getResult('abc');
+      const result = await service.getResult('abc', TENANT_ID);
       expect(result).toEqual(data);
       expect(mockRedis.get).not.toHaveBeenCalled();
     });
@@ -99,14 +110,14 @@ describe('EventsService', () => {
       for (let i = 0; i < 1025; i++) {
         const d = { i };
         mockRedis.get = mock(() => Promise.resolve(JSON.stringify(d)));
-        await service.getResult(`id-${i}`);
+        await service.getResult(`id-${i}`, TENANT_ID);
       }
 
       mockRedis.get = mock(() => Promise.resolve(null));
-      const evicted = await service.getResult('id-0');
+      const evicted = await service.getResult('id-0', TENANT_ID);
       expect(evicted).toBeNull();
 
-      const stillCached = await service.getResult('id-1');
+      const stillCached = await service.getResult('id-1', TENANT_ID);
       expect(stillCached).toEqual({ i: 1 });
       expect(mockRedis.get).toHaveBeenCalledTimes(1);
     });

@@ -3,7 +3,7 @@ import { HttpClient } from "@angular/common/http";
 import { Router } from "@angular/router";
 import { environment } from "../../../environments/environment";
 
-type TenantUserRole = "tenant_admin" | "tenant_editor" | "tenant_viewer";
+const SYSTEM_ROLE_TENANT_ADMIN = "tenant_admin";
 
 interface ITokenResponse {
   access_token: string;
@@ -17,6 +17,7 @@ interface IJwtPayload {
   type: string;
   scope: string;
   role?: string;
+  permissions?: string[];
   tenant_id?: string;
   email?: string;
   env: string;
@@ -89,9 +90,21 @@ export class AuthService {
     return null;
   });
 
-  readonly userRole = computed<TenantUserRole>(() => {
+  readonly userRole = computed<string>(() => {
     const payload = this.jwtPayload();
-    return (payload?.role as TenantUserRole) ?? "tenant_viewer";
+    return payload?.role ?? "viewer";
+  });
+
+  readonly permissions = computed<Set<string>>(() => {
+    const payload = this.jwtPayload();
+    const perms = payload?.permissions;
+    return new Set(perms ?? []);
+  });
+
+  readonly isAdmin = computed(() => {
+    const role = this.userRole();
+    if (role === SYSTEM_ROLE_TENANT_ADMIN) return true;
+    return this.permissions().has("*");
   });
 
   readonly userProfile = computed<IUserProfile>(() => {
@@ -105,6 +118,11 @@ export class AuthService {
       role: formatRole(payload?.role ?? "viewer"),
     };
   });
+
+  hasPermission(permission: string): boolean {
+    if (this.isAdmin()) return true;
+    return this.permissions().has(permission);
+  }
 
   login(email: string, password: string, tenantId?: string): void {
     const body: Record<string, string> = { email, password };

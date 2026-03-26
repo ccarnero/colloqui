@@ -22,6 +22,7 @@ interface TokenClaims {
   type: 'user' | 'client';
   scope: TokenScope;
   role?: UserRole;
+  permissions?: string[];
   tenant_id?: string;
   email?: string;
   env: string;
@@ -132,9 +133,11 @@ export class TokenService implements OnModuleInit {
     }
 
     const tenantRows = await this.sql`
-      SELECT id, tenant_id, email, role, is_active
-      FROM tenant_users
-      WHERE id = ${payload.sub}
+      SELECT tu.id, tu.tenant_id, tu.email, tu.is_active,
+             tr.name AS role_name, tr.is_system
+      FROM tenant_users tu
+      JOIN tenant_roles tr ON tr.id = tu.role_id
+      WHERE tu.id = ${payload.sub}
       LIMIT 1
     `;
 
@@ -144,12 +147,18 @@ export class TokenService implements OnModuleInit {
 
     const tUser = tenantRows[0];
     const scope: TokenScope = `tenant:${tUser.tenant_id}`;
+    const permissions = await this.resolvePermissions(
+      tUser.role_name as string,
+      tUser.is_system as boolean,
+      tUser.id as string,
+    );
 
     return this.issueTokens({
       sub: tUser.id as string,
       type: 'user',
       scope,
-      role: tUser.role as UserRole,
+      role: tUser.role_name as UserRole,
+      permissions,
       tenant_id: tUser.tenant_id as string,
       email: tUser.email as string,
       env: this.environment,
@@ -207,15 +216,21 @@ export class TokenService implements OnModuleInit {
   ): Promise<TokenResponse> {
     const rows = tenantId
       ? await this.sql`
-          SELECT id, tenant_id, email, password_hash, role, is_active
-          FROM tenant_users
-          WHERE email = ${email} AND tenant_id = ${tenantId} AND is_active = true
+          SELECT tu.id, tu.tenant_id, tu.email, tu.password_hash,
+                 tr.name AS role_name, tr.is_system
+          FROM tenant_users tu
+          JOIN tenant_roles tr ON tr.id = tu.role_id
+          WHERE tu.email = ${email}
+            AND tu.tenant_id = ${tenantId}
+            AND tu.is_active = true
           LIMIT 1
         `
       : await this.sql`
-          SELECT id, tenant_id, email, password_hash, role, is_active
-          FROM tenant_users
-          WHERE email = ${email} AND is_active = true
+          SELECT tu.id, tu.tenant_id, tu.email, tu.password_hash,
+                 tr.name AS role_name, tr.is_system
+          FROM tenant_users tu
+          JOIN tenant_roles tr ON tr.id = tu.role_id
+          WHERE tu.email = ${email} AND tu.is_active = true
         `;
 
     if (rows.length === 0) {
@@ -235,12 +250,18 @@ export class TokenService implements OnModuleInit {
     }
 
     const scope: TokenScope = `tenant:${user.tenant_id}`;
+    const permissions = await this.resolvePermissions(
+      user.role_name as string,
+      user.is_system as boolean,
+      user.id as string,
+    );
 
     return this.issueTokens({
       sub: user.id as string,
       type: 'user',
       scope,
-      role: user.role as UserRole,
+      role: user.role_name as UserRole,
+      permissions,
       tenant_id: user.tenant_id as string,
       email: user.email as string,
       env: this.environment,
@@ -262,6 +283,32 @@ export class TokenService implements OnModuleInit {
     };
   }
 
+  /**
+   * Resolves permission strings for a tenant user.
+   * System roles (tenant_admin) get a wildcard; others get explicit permissions.
+   */
+  private async resolvePermissions(
+    _roleName: string,
+    isSystem: boolean,
+    userId: string,
+  ): Promise<string[]> {
+    if (isSystem) return ['*'];
+
+    const rows = await this.sql`
+      SELECT trp.resource, trp.action
+      FROM tenant_role_permissions trp
+      JOIN tenant_users tu ON tu.role_id = trp.role_id
+      WHERE tu.id = ${userId}
+    `;
+
+    const len = rows.length;
+    const perms: string[] = new Array(len);
+    for (let i = 0; i < len; i++) {
+      perms[i] = `${rows[i].resource}:${rows[i].action}`;
+    }
+    return perms;
+  }
+
   private async signToken(claims: TokenClaims): Promise<string> {
     const payload: Record<string, unknown> = {
       type: claims.type,
@@ -270,6 +317,7 @@ export class TokenService implements OnModuleInit {
     };
 
     if (claims.role) payload.role = claims.role;
+    if (claims.permissions) payload.permissions = claims.permissions;
     if (claims.tenant_id) payload.tenant_id = claims.tenant_id;
     if (claims.email) payload.email = claims.email;
 

@@ -22,4 +22,5 @@ resources:
   - workflow-api.yaml
   - workflow-worker.yaml
   - workflow-http-worker.yaml
+  - channel-service.yaml
   - admin-console.yaml

@@ -7,6 +7,7 @@ import { TenantsModule } from './modules/tenants/tenants.module';
 import { SchedulersModule } from './modules/schedulers/schedulers.module';
 import { RegistryModule } from './modules/registry/registry.module';
 import { AdaptersModule } from './modules/adapters/adapters.module';
+import { ChannelsModule } from './modules/channels/channels.module';
 import { DynamicRoutesModule } from './modules/dynamic-routes/dynamic-routes.module';
 import { WorkflowsModule } from './modules/workflows/workflows.module';
 import { ProxyModule } from './modules/proxy/proxy.module';
@@ -30,6 +31,7 @@ import { ServiceExceptionFilter } from './filters/service-exception.filter';
     SchedulersModule,
     RegistryModule,
     AdaptersModule,
+    ChannelsModule,
     WorkflowsModule,
     ProxyModule,
     DynamicRoutesModule,

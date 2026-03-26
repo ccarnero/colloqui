@@ -61,15 +61,15 @@ data:
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             {
-              "expr": "histogram_quantile(0.50, sum(rate(http_server_request_duration_bucket{service_name=\"api-gateway\"}[5m])) by (le))",
+              "expr": "histogram_quantile(0.50, sum(rate(http_server_request_duration_milliseconds_bucket{service_name=\"api-gateway\"}[5m])) by (le))",
               "legendFormat": "P50"
             },
             {
-              "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_bucket{service_name=\"api-gateway\"}[5m])) by (le))",
+              "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_milliseconds_bucket{service_name=\"api-gateway\"}[5m])) by (le))",
               "legendFormat": "P95"
             },
             {
-              "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_bucket{service_name=\"api-gateway\"}[5m])) by (le))",
+              "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_milliseconds_bucket{service_name=\"api-gateway\"}[5m])) by (le))",
               "legendFormat": "P99"
             }
           ],
@@ -138,6 +138,201 @@ data:
       "title": "API Gateway Overview",
       "uid": "api-gateway-overview"
     }
+  nats-overview.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "title": "Connections",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 5, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(gnatsd_varz_connections{job=\"nats\"})",
+              "legendFormat": "connections"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 500 }, { "color": "red", "value": 1000 }] } }
+          }
+        },
+        {
+          "title": "Subscriptions",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 5, "x": 5, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(gnatsd_varz_subscriptions{job=\"nats\"})",
+              "legendFormat": "subscriptions"
+            }
+          ]
+        },
+        {
+          "title": "Slow Consumers",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 5, "x": 10, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(gnatsd_varz_slow_consumers{job=\"nats\"})",
+              "legendFormat": "slow consumers"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }
+          }
+        },
+        {
+          "title": "Server CPU",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 5, "x": 15, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "avg(gnatsd_varz_cpu{job=\"nats\"})",
+              "legendFormat": "cpu %"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "percent" }
+          }
+        },
+        {
+          "title": "Server Memory",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(gnatsd_varz_mem{job=\"nats\"})",
+              "legendFormat": "memory"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "bytes" }
+          }
+        },
+        {
+          "title": "Messages In / Out Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(gnatsd_varz_in_msgs{job=\"nats\"}[5m]))",
+              "legendFormat": "msgs in/s"
+            },
+            {
+              "expr": "sum(rate(gnatsd_varz_out_msgs{job=\"nats\"}[5m]))",
+              "legendFormat": "msgs out/s"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cps",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "Bytes In / Out Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(gnatsd_varz_in_bytes{job=\"nats\"}[5m]))",
+              "legendFormat": "bytes in/s"
+            },
+            {
+              "expr": "sum(rate(gnatsd_varz_out_bytes{job=\"nats\"}[5m]))",
+              "legendFormat": "bytes out/s"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "JetStream Streams",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 12 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(jetstream_server_total_streams{job=\"nats\"})",
+              "legendFormat": "streams"
+            }
+          ]
+        },
+        {
+          "title": "JetStream Consumers",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 12 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(jetstream_server_total_consumers{job=\"nats\"})",
+              "legendFormat": "consumers"
+            }
+          ]
+        },
+        {
+          "title": "JetStream Stored Messages",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(jetstream_server_total_messages{job=\"nats\"})",
+              "legendFormat": "messages"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "JetStream Storage Usage",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(jetstream_server_total_message_bytes{job=\"nats\"})",
+              "legendFormat": "storage used"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["nats", "messaging", "observability"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "NATS Overview",
+      "uid": "nats-overview"
+    }
   service-health.json: |
     {
       "annotations": { "list": [] },
@@ -172,7 +367,7 @@ data:
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             {
-              "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_bucket[5m])) by (le, service_name))",
+              "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_milliseconds_bucket[5m])) by (le, service_name))",
               "legendFormat": "{{service_name}}"
             }
           ],

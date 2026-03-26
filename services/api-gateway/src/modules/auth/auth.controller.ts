@@ -11,11 +11,12 @@ import {
   Headers,
   BadRequestException,
 } from '@nestjs/common';
-import type { JwtPayload } from '@yoizen/shared';
+import { SYSTEM_ROLE_TENANT_ADMIN, type JwtPayload } from '@yoizen/shared';
 import { AuthProxyService } from './auth-proxy.service';
 import { TenantProxyService } from '../tenants/tenant-proxy.service';
 import { Public } from '../../decorators/public.decorator';
 import { Scopes } from '../../decorators/scopes.decorator';
+import { RequirePermission } from '../../decorators/permissions.decorator';
 import { SkipTenant } from '../../decorators/skip-tenant.decorator';
 import { REQUEST_USER_KEY } from '../../guards/auth.guard';
 import { REQUEST_TENANT_KEY } from '../../guards/tenant.guard';
@@ -166,7 +167,7 @@ export class AuthController {
     const tenantId = record.tenant_id as string | undefined;
 
     if (user.scope !== 'platform') {
-      if (user.role !== 'tenant_admin') {
+      if (user.role !== SYSTEM_ROLE_TENANT_ADMIN) {
         throw new ForbiddenException(
           'Only tenant administrators can create users',
         );
@@ -235,6 +236,93 @@ export class AuthController {
     return this.authProxy.proxy('DELETE', `/auth/tenant-users/${id}`, undefined, {
       Authorization: auth,
     }, req[REQUEST_TENANT_KEY]);
+  }
+
+  @Scopes('platform', 'tenant')
+  @RequirePermission('roles:create')
+  @Post('tenant-roles')
+  async createTenantRole(
+    @Req() req: any,
+    @Body() body: object,
+    @Headers('authorization') auth: string,
+  ): Promise<object> {
+    const user = req[REQUEST_USER_KEY] as JwtPayload;
+    const record = body as Record<string, unknown>;
+
+    if (user.scope !== 'platform' && !record.tenant_id) {
+      const scopeTenant = (user.scope as string).slice(
+        TENANT_SCOPE_PREFIX.length,
+      );
+      record.tenant_id = scopeTenant;
+    }
+
+    return this.authProxy.proxy('POST', '/auth/tenant-roles', body, {
+      Authorization: auth,
+    }, req[REQUEST_TENANT_KEY]);
+  }
+
+  @Scopes('platform', 'tenant')
+  @RequirePermission('roles:read')
+  @Get('tenant-roles')
+  async listTenantRoles(
+    @Req() req: any,
+    @Headers('authorization') auth: string,
+  ): Promise<object> {
+    return this.authProxy.proxy('GET', '/auth/tenant-roles', undefined, {
+      Authorization: auth,
+    }, req[REQUEST_TENANT_KEY]);
+  }
+
+  @Scopes('platform', 'tenant')
+  @RequirePermission('roles:read')
+  @Get('tenant-roles/:id')
+  async getTenantRole(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Headers('authorization') auth: string,
+  ): Promise<object> {
+    return this.authProxy.proxy(
+      'GET',
+      `/auth/tenant-roles/${id}`,
+      undefined,
+      { Authorization: auth },
+      req[REQUEST_TENANT_KEY],
+    );
+  }
+
+  @Scopes('platform', 'tenant')
+  @RequirePermission('roles:update')
+  @Patch('tenant-roles/:id')
+  async updateTenantRole(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: object,
+    @Headers('authorization') auth: string,
+  ): Promise<object> {
+    return this.authProxy.proxy(
+      'PATCH',
+      `/auth/tenant-roles/${id}`,
+      body,
+      { Authorization: auth },
+      req[REQUEST_TENANT_KEY],
+    );
+  }
+
+  @Scopes('platform', 'tenant')
+  @RequirePermission('roles:delete')
+  @Delete('tenant-roles/:id')
+  async deleteTenantRole(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Headers('authorization') auth: string,
+  ): Promise<object> {
+    return this.authProxy.proxy(
+      'DELETE',
+      `/auth/tenant-roles/${id}`,
+      undefined,
+      { Authorization: auth },
+      req[REQUEST_TENANT_KEY],
+    );
   }
 
   private async assertTenantExists(name: string): Promise<void> {

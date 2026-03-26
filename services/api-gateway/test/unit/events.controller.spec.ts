@@ -4,14 +4,26 @@ import { NotFoundException } from '@nestjs/common';
 import { EventsController } from '../../src/modules/events/events.controller';
 import { EventsService } from '../../src/modules/events/events.service';
 import { EventDto } from '../../src/modules/events/event.dto';
-import { JETSTREAM } from '../../src/providers/nats.provider';
+import { JETSTREAM, NATS_CONNECTION } from '../../src/providers/nats.provider';
 import { REDIS_CLIENT } from '../../src/providers/redis.provider';
+import { REQUEST_TENANT_KEY } from '../../src/guards/tenant.guard';
+
+const TENANT_ID = 'test-tenant';
+
+function fakeReq(): Record<string, unknown> {
+  return { [REQUEST_TENANT_KEY]: TENANT_ID };
+}
 
 describe('EventsController', () => {
   let controller: EventsController;
   let service: EventsService;
 
   beforeEach(async () => {
+    const mockPipeline = {
+      setex: mock(function (this: unknown) { return this; }),
+      exec: mock(() => Promise.resolve([])),
+    };
+
     const module = await Test.createTestingModule({
       controllers: [EventsController],
       providers: [
@@ -21,10 +33,20 @@ describe('EventsController', () => {
           useValue: { publish: mock(() => Promise.resolve({ seq: 1 })) },
         },
         {
+          provide: NATS_CONNECTION,
+          useValue: {
+            subscribe: mock(() => ({
+              [Symbol.asyncIterator]: () => ({ next: () => Promise.resolve({ done: true, value: undefined }) }),
+              unsubscribe: mock(),
+            })),
+            isClosed: mock(() => false),
+          },
+        },
+        {
           provide: REDIS_CLIENT,
           useValue: {
-            setex: mock(() => Promise.resolve('OK')),
             get: mock(() => Promise.resolve(null)),
+            pipeline: mock(() => mockPipeline),
           },
         },
       ],
@@ -39,7 +61,7 @@ describe('EventsController', () => {
       const dto = new EventDto();
       dto.type = 'created';
       dto.payload = { name: 'test' };
-      const result = await controller.publish(dto);
+      const result = await controller.publish(fakeReq() as any, dto);
 
       expect(result).toHaveProperty('id');
       expect(result.status).toBe('accepted');
@@ -52,7 +74,7 @@ describe('EventsController', () => {
       const data = { eventId: 'abc', processed: true };
       service.getResult = mock(() => Promise.resolve(data)) as any;
 
-      const result = await controller.getResult('abc');
+      const result = await controller.getResult(fakeReq() as any, 'abc');
       expect(result).toEqual(data);
     });
 
@@ -60,7 +82,7 @@ describe('EventsController', () => {
       service.getResult = mock(() => Promise.resolve(null)) as any;
 
       try {
-        await controller.getResult('nonexistent');
+        await controller.getResult(fakeReq() as any, 'nonexistent');
         expect(true).toBe(false);
       } catch (err) {
         expect(err).toBeInstanceOf(NotFoundException);

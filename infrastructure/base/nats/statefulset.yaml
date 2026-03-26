@@ -69,6 +69,35 @@ spec:
               port: monitor
             failureThreshold: 30
             periodSeconds: 2
+        - name: prometheus-nats-exporter
+          image: natsio/prometheus-nats-exporter:0.16.0
+          args:
+            - "-varz"
+            - "-connz"
+            - "-routez"
+            - "-jsz=all"
+            - "http://localhost:8222"
+          ports:
+            - name: metrics
+              containerPort: 7777
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          livenessProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          readinessProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
       volumes:
         - name: config
           configMap:

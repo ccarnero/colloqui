@@ -37,6 +37,8 @@ const PLATFORM_PREFIXES = [
   '/schedulers',
   '/registry',
   '/adapters',
+  '/channels',
+  '/webhooks',
   '/workflows',
   '/proxy',
   '/health',

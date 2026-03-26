@@ -1,4 +1,4 @@
-import { Component, inject, signal } from "@angular/core";
+import { Component, inject, signal, type OnInit } from "@angular/core";
 import { HttpClient } from "@angular/common/http";
 import { FormsModule } from "@angular/forms";
 import {
@@ -12,16 +12,11 @@ import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
 import { environment } from "../../../../environments/environment";
+import type { ITenantRole } from "../../../core/models/user.model";
 
 interface DialogData {
   tenantId: string | null;
 }
-
-const ROLES = [
-  { value: "tenant_admin", label: "Admin" },
-  { value: "tenant_editor", label: "Editor" },
-  { value: "tenant_viewer", label: "Viewer" },
-] as const;
 
 @Component({
   selector: "app-create-tenant-user-dialog",
@@ -83,9 +78,12 @@ const ROLES = [
 
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Role</mat-label>
-          <mat-select [ngModel]="role()" (ngModelChange)="role.set($event)">
-            @for (r of roles; track r.value) {
-              <mat-option [value]="r.value">{{ r.label }}</mat-option>
+          <mat-select
+            [ngModel]="selectedRoleId()"
+            (ngModelChange)="selectedRoleId.set($event)"
+          >
+            @for (r of availableRoles(); track r.id) {
+              <mat-option [value]="r.id">{{ r.name }}</mat-option>
             }
           </mat-select>
         </mat-form-field>
@@ -155,20 +153,33 @@ const ROLES = [
     }
   `,
 })
-export class CreateTenantUserDialogComponent {
+export class CreateTenantUserDialogComponent implements OnInit {
   private readonly http = inject(HttpClient);
   readonly dialogRef = inject(
     MatDialogRef<CreateTenantUserDialogComponent>,
   );
   readonly data = inject<DialogData>(MAT_DIALOG_DATA);
-  readonly roles = ROLES;
 
+  readonly availableRoles = signal<ITenantRole[]>([]);
   readonly email = signal("");
   readonly displayName = signal("");
   readonly password = signal("");
-  readonly role = signal("tenant_viewer");
+  readonly selectedRoleId = signal("");
   readonly submitting = signal(false);
   readonly errorMessage = signal("");
+
+  ngOnInit(): void {
+    this.http
+      .get<ITenantRole[]>(`${environment.apiUrl}/auth/tenant-roles`)
+      .subscribe({
+        next: (roles) => {
+          this.availableRoles.set(roles);
+          if (roles.length > 0) {
+            this.selectedRoleId.set(roles[0].id);
+          }
+        },
+      });
+  }
 
   submit(): void {
     this.submitting.set(true);
@@ -179,7 +190,7 @@ export class CreateTenantUserDialogComponent {
         tenant_id: this.data.tenantId,
         email: this.email(),
         password: this.password(),
-        role: this.role(),
+        role_id: this.selectedRoleId(),
         display_name: this.displayName() || undefined,
       })
       .subscribe({

@@ -8,6 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { SCOPES_KEY } from '../decorators/scopes.decorator';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { JwtService } from '../modules/auth/jwt.service';
 import { PublicRoutesCacheService } from '../modules/auth/public-routes-cache.service';
 import { REQUEST_TENANT_KEY } from './tenant.guard';
@@ -57,13 +58,24 @@ export class AuthGuard implements CanActivate {
 
     this.validateTenantScope(payload, request[REQUEST_TENANT_KEY]);
 
+    const handlers = [context.getHandler(), context.getClass()];
+
     const requiredScopes = this.reflector.getAllAndOverride<string[] | undefined>(
       SCOPES_KEY,
-      [context.getHandler(), context.getClass()],
+      handlers,
     );
 
     if (requiredScopes && requiredScopes.length > 0) {
       this.checkScopes(payload, requiredScopes);
+    }
+
+    const requiredPermissions = this.reflector.getAllAndOverride<string[] | undefined>(
+      PERMISSIONS_KEY,
+      handlers,
+    );
+
+    if (requiredPermissions && requiredPermissions.length > 0) {
+      this.checkPermissions(payload, requiredPermissions);
     }
 
     return true;
@@ -99,5 +111,24 @@ export class AuthGuard implements CanActivate {
     throw new ForbiddenException(
       'Insufficient scope for this resource',
     );
+  }
+
+  private checkPermissions(payload: JwtPayload, required: string[]): void {
+    const scope = payload.scope as string;
+    if (scope === 'platform') return;
+
+    const perms = payload.permissions;
+    if (!perms || perms.length === 0) {
+      throw new ForbiddenException('Insufficient permissions for this resource');
+    }
+
+    const permSet = new Set(perms);
+    if (permSet.has('*')) return;
+
+    for (let i = 0; i < required.length; i++) {
+      if (!permSet.has(required[i])) {
+        throw new ForbiddenException('Insufficient permissions for this resource');
+      }
+    }
   }
 }

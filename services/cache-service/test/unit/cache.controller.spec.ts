@@ -4,6 +4,8 @@ import { CacheController } from '../../src/modules/cache/cache.controller';
 import { CacheService } from '../../src/modules/cache/cache.service';
 import { REDIS_CLIENT } from '../../src/providers/redis.provider';
 
+const TENANT_ID = 'test-tenant';
+
 describe('CacheController', () => {
   let controller: CacheController;
   let service: CacheService;
@@ -15,7 +17,7 @@ describe('CacheController', () => {
       del: mock(() => Promise.resolve(1)),
       scan: mock(() => Promise.resolve(['0', []])),
       pipeline: mock(() => ({
-        get: mock(function (this: any) { return this; }),
+        get: mock(function (this: unknown) { return this; }),
         exec: mock(() => Promise.resolve([])),
       })),
     };
@@ -35,7 +37,7 @@ describe('CacheController', () => {
   describe('GET /cache/:key', () => {
     it('should return value from service', async () => {
       service.get = mock(() => Promise.resolve({ data: 'hello' })) as any;
-      const result = await controller.get('mykey');
+      const result = await controller.get(TENANT_ID, 'mykey');
       expect(result).toEqual({ data: 'hello' });
     });
   });
@@ -43,35 +45,35 @@ describe('CacheController', () => {
   describe('PUT /cache/:key', () => {
     it('should call set and return ok', async () => {
       service.set = mock(() => Promise.resolve()) as any;
-      const result = await controller.set('mykey', {
+      const result = await controller.set(TENANT_ID, 'mykey', {
         value: 'data',
         ttl: 300,
       });
       expect(result).toEqual({ ok: true });
-      expect(service.set).toHaveBeenCalledWith('mykey', 'data', 300);
+      expect(service.set).toHaveBeenCalledWith(`${TENANT_ID}:mykey`, 'data', 300);
     });
   });
 
   describe('DELETE /cache/:key', () => {
     it('should call del and return ok', async () => {
       service.del = mock(() => Promise.resolve()) as any;
-      const result = await controller.del('mykey');
+      const result = await controller.del(TENANT_ID, 'mykey');
       expect(result).toEqual({ ok: true });
-      expect(service.del).toHaveBeenCalledWith('mykey');
+      expect(service.del).toHaveBeenCalledWith(`${TENANT_ID}:mykey`);
     });
   });
 
   describe('GET /cache (listKeys)', () => {
     it('should return keys from scan', async () => {
       service.scan = mock(() => Promise.resolve(['a', 'b'])) as any;
-      const result = await controller.listKeys('test*', '50');
+      const result = await controller.listKeys(TENANT_ID, 'test*', '50');
       expect(result).toEqual(['a', 'b']);
-      expect(service.scan).toHaveBeenCalledWith('test*', 50);
+      expect(service.scan).toHaveBeenCalledWith(`${TENANT_ID}:test*`, 50);
     });
 
     it('should use defaults when no params provided', async () => {
       service.scan = mock(() => Promise.resolve([])) as any;
-      await controller.listKeys();
+      await controller.listKeys(undefined);
       expect(service.scan).toHaveBeenCalledWith('*', 100);
     });
   });
@@ -79,12 +81,12 @@ describe('CacheController', () => {
   describe('POST /cache/batch', () => {
     it('should return object from batchGet Map', async () => {
       const map = new Map<string, unknown>([
-        ['k1', 'v1'],
-        ['k2', 'v2'],
+        [`${TENANT_ID}:k1`, 'v1'],
+        [`${TENANT_ID}:k2`, 'v2'],
       ]);
       service.batchGet = mock(() => Promise.resolve(map)) as any;
-      const result = await controller.batchGet({ keys: ['k1', 'k2'] });
-      expect(result).toEqual({ k1: 'v1', k2: 'v2' });
+      const result = await controller.batchGet(TENANT_ID, { keys: ['k1', 'k2'] });
+      expect(result).toEqual({ [`${TENANT_ID}:k1`]: 'v1', [`${TENANT_ID}:k2`]: 'v2' });
     });
   });
 });

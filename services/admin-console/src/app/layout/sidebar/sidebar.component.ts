@@ -13,20 +13,13 @@ interface NavItem {
 
 interface NavSection {
   title: string;
-  minRole: "tenant_admin" | "tenant_editor" | "tenant_viewer";
+  requiredPermission?: string;
   items: NavItem[];
 }
-
-const ROLE_RANK = new Map<string, number>([
-  ["tenant_admin", 3],
-  ["tenant_editor", 2],
-  ["tenant_viewer", 1],
-]);
 
 const ALL_SECTIONS: NavSection[] = [
   {
     title: "Overview",
-    minRole: "tenant_viewer",
     items: [
       { label: "Dashboard", icon: "dashboard", route: "/dashboard" },
       {
@@ -39,19 +32,25 @@ const ALL_SECTIONS: NavSection[] = [
   },
   {
     title: "Identity & Access",
-    minRole: "tenant_admin",
+    requiredPermission: "users:read",
     items: [
       { label: "Users", icon: "people", route: "/users" },
       { label: "Roles & Permissions", icon: "shield", route: "/roles" },
-      { label: "Groups", icon: "group_work", route: "/groups" },
-      { label: "SSO / SAML", icon: "lock", route: "/sso" },
-      { label: "MFA Settings", icon: "phonelink_lock", route: "/mfa" },
-      { label: "API Keys", icon: "vpn_key", route: "/api-keys" },
+      /*{ label: "SSO / SAML", icon: "lock", route: "/sso" },
+      { label: "MFA Settings", icon: "phonelink_lock", route: "/mfa" },*/
+    ],
+  },
+  {
+    title: "Channels",
+    requiredPermission: "channels:read",
+    items: [
+      { label: "Accounts", icon: "chat", route: "/channels" },
+      { label: "Auto-Reply", icon: "reply_all", route: "/auto-reply" },
     ],
   },
   {
     title: "Automation",
-    minRole: "tenant_editor",
+    requiredPermission: "workflows:read",
     items: [
       { label: "Workflows", icon: "account_tree", route: "/workflows" },
       { label: "Webhooks", icon: "webhook", route: "/webhooks" },
@@ -61,9 +60,8 @@ const ALL_SECTIONS: NavSection[] = [
   },
   {
     title: "Data & Integrations",
-    minRole: "tenant_viewer",
+    requiredPermission: "adapters:read",
     items: [
-      { label: "Data Sources", icon: "storage", route: "/data-sources" },
       {
         label: "Network Sources",
         icon: "network_check",
@@ -81,16 +79,12 @@ const ALL_SECTIONS: NavSection[] = [
         ],
       },
       { label: "Data Export", icon: "download", route: "/data-export" },
-      {
-        label: "Schema Manager",
-        icon: "schema",
-        route: "/schema-manager",
-      },
+      { label: "API Keys", icon: "vpn_key", route: "/api-keys" }
     ],
   },
   {
     title: "Security & Compliance",
-    minRole: "tenant_admin",
+    requiredPermission: "audit:read",
     items: [
       {
         label: "Audit Log",
@@ -118,7 +112,7 @@ const ALL_SECTIONS: NavSection[] = [
   },
   {
     title: "Notifications",
-    minRole: "tenant_editor",
+    requiredPermission: "webhooks:read",
     items: [
       {
         label: "Notification Rules",
@@ -371,11 +365,10 @@ export class SidebarComponent {
   readonly expandedSections = new Set<string>();
 
   readonly visibleSections = computed(() => {
-    const role = this.authService.userRole();
-    const rank = ROLE_RANK.get(role) ?? 0;
-    return ALL_SECTIONS.filter(
-      (s) => rank >= (ROLE_RANK.get(s.minRole) ?? 0),
-    );
+    return ALL_SECTIONS.filter((s) => {
+      if (!s.requiredPermission) return true;
+      return this.authService.hasPermission(s.requiredPermission);
+    });
   });
 
   constructor() {

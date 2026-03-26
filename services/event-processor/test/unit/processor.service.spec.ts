@@ -2,14 +2,14 @@ import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { Test } from '@nestjs/testing';
 import { DiscoveryModule } from '@nestjs/core';
 import { ProcessorService } from '../../src/modules/processor/processor.service';
-import { JETSTREAM_CLIENT } from '../../src/providers/nats.provider';
+import { JETSTREAM_CLIENT, JETSTREAM_PUBLISHER } from '../../src/providers/nats.provider';
 import { REDIS_CLIENT } from '../../src/providers/redis.provider';
 import { HandlerRegistry } from '../../src/handlers/handler-registry';
 import { DefaultHandler } from '../../src/handlers/default.handler';
 import { CreatedHandler } from '../../src/handlers/created.handler';
 import { UpdatedHandler } from '../../src/handlers/updated.handler';
 import { DeletedHandler } from '../../src/handlers/deleted.handler';
-import { PipelineModule } from '../../src/pipeline/pipeline.module';
+import { PipelineRunner } from '../../src/pipeline/pipeline-runner';
 import type { EventEnvelope } from '@yoizen/shared';
 
 describe('ProcessorService', () => {
@@ -30,8 +30,16 @@ describe('ProcessorService', () => {
       ),
     };
 
+    const mockPublisher = {
+      publish: mock(() => Promise.resolve({ seq: 1 })),
+    };
+
+    const mockPipelineRunner = {
+      run: mock((envelope: EventEnvelope) => Promise.resolve(envelope)),
+    };
+
     const module = await Test.createTestingModule({
-      imports: [DiscoveryModule, PipelineModule],
+      imports: [DiscoveryModule],
       providers: [
         ProcessorService,
         HandlerRegistry,
@@ -39,7 +47,9 @@ describe('ProcessorService', () => {
         CreatedHandler,
         UpdatedHandler,
         DeletedHandler,
+        { provide: PipelineRunner, useValue: mockPipelineRunner },
         { provide: JETSTREAM_CLIENT, useValue: mockConsumer },
+        { provide: JETSTREAM_PUBLISHER, useValue: mockPublisher },
         { provide: REDIS_CLIENT, useValue: mockRedis },
       ],
     }).compile();

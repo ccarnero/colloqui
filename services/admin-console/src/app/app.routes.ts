@@ -87,6 +87,20 @@ export const routes: Routes = [
           ).then((m) => m.CustomizationComponent),
       },
       {
+        path: "channels",
+        loadComponent: () =>
+          import("./features/channels/channels.component").then(
+            (m) => m.ChannelsComponent,
+          ),
+      },
+      {
+        path: "auto-reply",
+        loadComponent: () =>
+          import(
+            "./features/channels/auto-reply/auto-reply.component"
+          ).then((m) => m.AutoReplyComponent),
+      },
+      {
         path: "workflows",
         loadComponent: () =>
           import(

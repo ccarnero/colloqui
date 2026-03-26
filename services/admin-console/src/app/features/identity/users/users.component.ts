@@ -41,7 +41,7 @@ import type { IUser } from "../../../core/models";
         </div>
       </div>
       <div class="ws-actions">
-        @if (authService.userRole() === "tenant_admin") {
+        @if (authService.hasPermission("users:create")) {
           <button
             class="btn btn-primary btn-sm"
             type="button"
@@ -83,7 +83,7 @@ import type { IUser } from "../../../core/models";
         <ng-container matColumnDef="actions">
           <th mat-header-cell *matHeaderCellDef></th>
           <td mat-cell *matCellDef="let u">
-            @if (authService.userRole() === "tenant_admin") {
+            @if (authService.hasPermission("users:delete")) {
               <button
                 mat-icon-button
                 color="warn"
@@ -151,14 +151,14 @@ export class UsersComponent implements OnInit {
 
   formatRole(role: string): string {
     return role
-      .replace("tenant_", "")
-      .replace(/^\w/, (c) => c.toUpperCase());
+      .split("_")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
   }
 
   roleColor(role: string): StatusBadgeColor {
     if (role === "tenant_admin") return "purple";
-    if (role === "tenant_editor") return "blue";
-    return "gray";
+    return "blue";
   }
 
   private loadUsers(): void {

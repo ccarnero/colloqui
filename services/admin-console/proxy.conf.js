@@ -17,6 +17,8 @@ module.exports = {
   "/events": gateway,
   "/results": gateway,
   "/adapters": gateway,
+  "/channels": gateway,
+  "/webhooks": gateway,
   "/workflows": gateway,
   "/registry": gateway,
   "/schedulers": gateway,

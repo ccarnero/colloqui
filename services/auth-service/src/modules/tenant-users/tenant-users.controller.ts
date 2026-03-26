@@ -24,7 +24,7 @@ export class TenantUsersController {
       dto.tenant_id,
       dto.email,
       dto.password,
-      dto.role,
+      dto.role_id,
       dto.display_name,
     );
   }

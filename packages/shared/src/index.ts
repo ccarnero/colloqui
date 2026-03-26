@@ -63,6 +63,10 @@ export {
   PUBLIC_ROUTES_CACHE_TTL,
 } from './auth.constants';
 
+export {
+  SYSTEM_ROLE_TENANT_ADMIN,
+} from './auth.interfaces';
+
 export type {
   JwtPayload,
   TokenResponse,
@@ -72,6 +76,8 @@ export type {
   TenantUserRole,
   UserRole,
   PublicRouteEntry,
+  ITenantRole,
+  ITenantRolePermission,
 } from './auth.interfaces';
 
 export type {
@@ -119,3 +125,39 @@ export type {
 
 export { AdapterClient } from './adapter-client';
 export type { AdapterClientOptions } from './adapter-client';
+
+export {
+  CHANNEL_STREAM_PREFIX,
+  CHANNEL_STREAM_SUBJECTS_PATTERN,
+  CHANNEL_CONSUMER_NAME,
+  CHANNEL_SUBJECT_PREFIX,
+  CHANNEL_DOMAIN,
+  CHANNEL_STREAM_MAX_AGE_NS,
+  CHANNEL_STREAM_MAX_BYTES,
+  CHANNEL_MAX_DELIVER,
+  CLAIM_CHECK_THRESHOLD_BYTES,
+  CLAIM_CHECK_BUCKET_PREFIX,
+  DEFAULT_CHANNEL_SERVICE_URL,
+} from './channel.constants';
+
+export type {
+  Channel,
+  ChannelProvider,
+  MessageKind,
+  ChannelEnvelope,
+  ChannelAccount,
+  InboundMessage,
+  OutboundMessage,
+  MessageMedia,
+  SendMessageResult,
+  IChannelProvider,
+  AutoReplyRule,
+} from './channel.interfaces';
+
+export {
+  buildChannelSubject,
+  buildIngressStreamName,
+  buildClaimCheckBucket,
+  buildTenantWildcard,
+  parseChannelSubject,
+} from './channel.utils';

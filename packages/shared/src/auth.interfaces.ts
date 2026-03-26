@@ -1,14 +1,17 @@
 export type TokenScope = 'platform' | `tenant:${string}`;
 export type TokenType = 'user' | 'client';
 export type PlatformUserRole = 'admin' | 'operator';
-export type TenantUserRole = 'tenant_admin' | 'tenant_editor' | 'tenant_viewer';
+export type TenantUserRole = string;
 export type UserRole = PlatformUserRole | TenantUserRole;
+
+export const SYSTEM_ROLE_TENANT_ADMIN = 'tenant_admin';
 
 export interface JwtPayload {
   sub: string;
   type: TokenType;
   scope: TokenScope;
   role?: UserRole;
+  permissions?: string[];
   tenant_id?: string;
   email?: string;
   env: string;
@@ -28,4 +31,22 @@ export interface PublicRouteEntry {
   method: string;
   path: string;
   scope: TokenScope;
+}
+
+export interface ITenantRole {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description: string | null;
+  is_system: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  permissions?: ITenantRolePermission[];
+  user_count?: number;
+}
+
+export interface ITenantRolePermission {
+  resource: string;
+  action: string;
 }
