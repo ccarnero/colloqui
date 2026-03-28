@@ -43,17 +43,12 @@ export class AuthGuard implements CanActivate {
       return true;
     }
 
-    const authHeader: string | undefined = request.headers.authorization ?? request.headers.Authorization;
-    if (!authHeader) {
+    const token = this.extractToken(request);
+    if (!token) {
       throw new UnauthorizedException('Missing Authorization header');
     }
 
-    const parts = authHeader.split(' ');
-    if (parts.length !== 2 || parts[0] !== 'Bearer') {
-      throw new UnauthorizedException('Invalid Authorization header format');
-    }
-
-    const payload = await this.jwtService.verify(parts[1]);
+    const payload = await this.jwtService.verify(token);
     request[REQUEST_USER_KEY] = payload;
 
     this.validateTenantScope(payload, request[REQUEST_TENANT_KEY]);
@@ -79,6 +74,17 @@ export class AuthGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  /** Bearer header first, then ?token= query param (for SSE / WebSocket). */
+  private extractToken(request: any): string | undefined {
+    const authHeader: string | undefined =
+      request.headers.authorization ?? request.headers.Authorization;
+    if (authHeader) {
+      const parts = authHeader.split(' ');
+      if (parts.length === 2 && parts[0] === 'Bearer') return parts[1];
+    }
+    return request.query?.token;
   }
 
   private validateTenantScope(payload: JwtPayload, tenantId: string | undefined): void {

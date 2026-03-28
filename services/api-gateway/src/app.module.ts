@@ -14,6 +14,7 @@ import { ProxyModule } from './modules/proxy/proxy.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { RateLimitModule } from './modules/rate-limit/rate-limit.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ProvidersModule } from './providers/providers.module';
 import { TenantGuard } from './guards/tenant.guard';
 import { AuthGuard } from './guards/auth.guard';
@@ -36,6 +37,7 @@ import { ServiceExceptionFilter } from './filters/service-exception.filter';
     ProxyModule,
     DynamicRoutesModule,
     RateLimitModule,
+    DashboardModule,
     HealthModule,
   ],
   providers: [

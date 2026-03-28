@@ -137,6 +137,7 @@ export {
   CHANNEL_MAX_DELIVER,
   CLAIM_CHECK_THRESHOLD_BYTES,
   CLAIM_CHECK_BUCKET_PREFIX,
+  CHANNEL_AUDIT_SUBJECT_PATTERN,
   DEFAULT_CHANNEL_SERVICE_URL,
 } from './channel.constants';
 
@@ -161,3 +162,19 @@ export {
   buildTenantWildcard,
   parseChannelSubject,
 } from './channel.utils';
+
+export type { ParsedSenderId, SenderIdType } from './phone.utils';
+export { parseSenderId, normalizeRecipient } from './phone.utils';
+
+export type {
+  DashboardStats,
+  DashboardDailyBreakdown,
+  DashboardQuota,
+  DashboardActivity,
+  AuditDashboardStats,
+} from './dashboard.interfaces';
+
+export {
+  DASHBOARD_CACHE_KEY_PREFIX,
+  DASHBOARD_CACHE_TTL,
+} from './dashboard.interfaces';

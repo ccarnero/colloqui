@@ -53,9 +53,8 @@ const ALL_SECTIONS: NavSection[] = [
     requiredPermission: "workflows:read",
     items: [
       { label: "Workflows", icon: "account_tree", route: "/workflows" },
-      { label: "Webhooks", icon: "webhook", route: "/webhooks" },
-      { label: "Scheduler", icon: "schedule", route: "/scheduler" },
-      { label: "Rules Engine", icon: "rule", route: "/rules" },
+      { label: "Hosted Services", icon: "webhook", route: "/hosted-services" },
+      { label: "YoizenClaw", icon: "schedule", route: "/yoizenclaw" },
     ],
   },
   {
@@ -78,7 +77,8 @@ const ALL_SECTIONS: NavSection[] = [
           },
         ],
       },
-      { label: "Data Export", icon: "download", route: "/data-export" },
+      { label: "Tools", icon: "download", route: "/tools" },
+      { label: "MCPs", icon: "download", route: "/mcps" },
       { label: "API Keys", icon: "vpn_key", route: "/api-keys" }
     ],
   },

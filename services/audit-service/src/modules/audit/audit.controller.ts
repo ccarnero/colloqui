@@ -23,7 +23,9 @@ export class AuditController {
     @Query('limit') limitStr?: string,
     @Query('offset') offsetStr?: string,
   ) {
-    if (!tenantId) throw new BadRequestException('Missing x-yoizen-tenant header');
+    if (!tenantId) {
+      throw new BadRequestException('Missing x-yoizen-tenant header');
+    }
 
     const limit = Math.min(Math.max(Number(limitStr) || 50, 1), 500);
     const offset = Math.max(Number(offsetStr) || 0, 0);
@@ -41,7 +43,9 @@ export class AuditController {
     @Headers(TENANT_HEADER) tenantId: string | undefined,
     @Param('id') id: string,
   ) {
-    if (!tenantId) throw new BadRequestException('Missing x-yoizen-tenant header');
+    if (!tenantId) {
+      throw new BadRequestException('Missing x-yoizen-tenant header');
+    }
 
     const event = await this.auditService.getEventById(id, tenantId);
     if (!event) {

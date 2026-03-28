@@ -6,6 +6,7 @@ import { MatTableModule } from "@angular/material/table";
 import { MatChipsModule } from "@angular/material/chips";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { HttpClient } from "@angular/common/http";
+import { environment } from "../../../environments/environment";
 import { AuthService } from "../../core/services/auth.service";
 import {
   AccountDialogComponent,
@@ -238,13 +239,13 @@ export class ChannelsComponent implements OnInit {
     );
     if (!confirmed) return;
 
-    this.http.delete(`/channels/accounts/${account.id}`).subscribe({
+    this.http.delete(`${environment.apiUrl}/channels/accounts/${account.id}`).subscribe({
       next: () => this.loadAccounts(),
     });
   }
 
   private loadAccounts(): void {
-    this.http.get<ChannelAccount[]>("/channels/accounts").subscribe({
+    this.http.get<ChannelAccount[]>(`${environment.apiUrl}/channels/accounts`).subscribe({
       next: (data) => {
         this.accounts.set(data);
         this.totalAccounts.set(data.length);

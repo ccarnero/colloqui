@@ -4,6 +4,7 @@ import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { HttpClient } from "@angular/common/http";
+import { environment } from "../../../../environments/environment";
 import {
   AutoReplyDialogComponent,
   type AutoReplyDialogResult,
@@ -136,13 +137,13 @@ export class AutoReplyComponent implements OnInit {
     );
     if (!confirmed) return;
 
-    this.http.delete(`/channels/auto-reply/${rule.id}`).subscribe({
+    this.http.delete(`${environment.apiUrl}/channels/auto-reply/${rule.id}`).subscribe({
       next: () => this.loadRules(),
     });
   }
 
   private loadRules(): void {
-    this.http.get<AutoReplyRule[]>("/channels/auto-reply").subscribe({
+    this.http.get<AutoReplyRule[]>(`${environment.apiUrl}/channels/auto-reply`).subscribe({
       next: (data) => this.rules.set(data),
     });
   }

@@ -41,6 +41,9 @@ export class TenantGuard implements CanActivate {
     const header: string | undefined = request.headers[TENANT_HEADER];
     if (header) return header;
 
+    const queryTenant: string | undefined = request.query?.tenant;
+    if (queryTenant) return queryTenant;
+
     throw new BadRequestException('Tenant context required. Provide tenant via hostname or x-yoizen-tenant header.');
   }
 }

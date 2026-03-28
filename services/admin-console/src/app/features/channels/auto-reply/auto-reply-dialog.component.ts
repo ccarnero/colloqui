@@ -1,6 +1,7 @@
 import { Component, inject, signal, type OnInit } from "@angular/core";
 import { HttpClient } from "@angular/common/http";
 import { FormsModule } from "@angular/forms";
+import { environment } from "../../../../environments/environment";
 import {
   MAT_DIALOG_DATA,
   MatDialogModule,
@@ -180,7 +181,7 @@ export class AutoReplyDialogComponent implements OnInit {
   readonly errorMessage = signal("");
 
   ngOnInit(): void {
-    this.http.get<ChannelAccount[]>("/channels/accounts").subscribe({
+    this.http.get<ChannelAccount[]>(`${environment.apiUrl}/channels/accounts`).subscribe({
       next: (list) => {
         this.accounts.set(list);
         if (list.length > 0) {
@@ -210,7 +211,7 @@ export class AutoReplyDialogComponent implements OnInit {
     this.errorMessage.set("");
 
     this.http
-      .post("/channels/auto-reply", {
+      .post(`${environment.apiUrl}/channels/auto-reply`, {
         accountId: this.selectedAccountId(),
         channel: this.selectedChannel(),
         triggerPattern: this.triggerPattern().trim(),

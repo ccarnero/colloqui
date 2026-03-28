@@ -1,6 +1,7 @@
 import { Component, inject, signal, type OnInit } from "@angular/core";
 import { HttpClient } from "@angular/common/http";
 import { FormsModule } from "@angular/forms";
+import { environment } from "../../../environments/environment";
 import {
   MAT_DIALOG_DATA,
   MatDialogModule,
@@ -298,7 +299,7 @@ export class AccountDialogComponent implements OnInit {
 
     if (this.isEdit) {
       this.http
-        .patch(`/channels/accounts/${this.editId}`, {
+        .patch(`${environment.apiUrl}/channels/accounts/${this.editId}`, {
           name: this.name().trim(),
           accessToken: this.accessToken().trim(),
           appId: this.appId().trim() || undefined,
@@ -319,7 +320,7 @@ export class AccountDialogComponent implements OnInit {
         });
     } else {
       this.http
-        .post("/channels/accounts", {
+        .post(`${environment.apiUrl}/channels/accounts`, {
           channel: this.channel(),
           name: this.name().trim(),
           externalId: this.externalId().trim(),

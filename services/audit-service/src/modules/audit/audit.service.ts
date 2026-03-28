@@ -148,4 +148,5 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     `;
     return rows[0] ?? null;
   }
+
 }

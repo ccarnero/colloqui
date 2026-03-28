@@ -7,6 +7,7 @@ import type {
   OutboundMessage,
   SendMessageResult,
 } from "@yoizen/shared";
+import { normalizeRecipient } from "@yoizen/shared";
 import { tracedFetch } from "@yoizen/observability";
 
 const GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
@@ -122,7 +123,7 @@ export class WhatsAppProvider implements IChannelProvider {
 
     const result: InboundMessage = {
       messageId: id,
-      from,
+      from: normalizeRecipient(from),
       timestamp,
       type,
       raw: msg,
@@ -152,7 +153,7 @@ export class WhatsAppProvider implements IChannelProvider {
   ): Record<string, unknown> {
     const base: Record<string, unknown> = {
       messaging_product: "whatsapp",
-      to: message.to,
+      to: normalizeRecipient(message.to),
     };
 
     switch (message.type) {

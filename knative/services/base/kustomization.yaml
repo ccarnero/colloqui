@@ -24,3 +24,4 @@ resources:
   - workflow-http-worker.yaml
   - channel-service.yaml
   - admin-console.yaml
+  - messaging-console.yaml
