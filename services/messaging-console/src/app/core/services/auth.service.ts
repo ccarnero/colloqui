@@ -1,4 +1,10 @@
-import { Injectable, signal, computed, inject } from "@angular/core";
+import {
+  Injectable,
+  signal,
+  computed,
+  inject,
+  DestroyRef,
+} from "@angular/core";
 import { HttpClient } from "@angular/common/http";
 import { Router } from "@angular/router";
 import { environment } from "../../../environments/environment";
@@ -61,12 +67,23 @@ function formatRole(role: string): string {
     .join(" ");
 }
 
+/** Refresh 60 seconds before expiry to avoid edge-case 401s. */
+const REFRESH_MARGIN_MS = 60_000;
+
 @Injectable({ providedIn: "root" })
 export class AuthService {
   private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+
+  private refreshTimerId: ReturnType<typeof setTimeout> | null = null;
 
   readonly token = signal<string | null>(localStorage.getItem(TOKEN_KEY));
+
+  constructor() {
+    this.scheduleRefresh();
+    this.destroyRef.onDestroy(() => this.clearRefreshTimer());
+  }
 
   private readonly jwtPayload = computed<IJwtPayload | null>(() => {
     const t = this.token();
@@ -150,6 +167,7 @@ export class AuthService {
   }
 
   logout(): void {
+    this.clearRefreshTimer();
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
     this.token.set(null);
@@ -182,6 +200,34 @@ export class AuthService {
     this.token.set(accessToken);
     if (refreshToken) {
       localStorage.setItem(REFRESH_KEY, refreshToken);
+    }
+    this.scheduleRefresh();
+  }
+
+  private scheduleRefresh(): void {
+    this.clearRefreshTimer();
+
+    const payload = this.jwtPayload();
+    if (!payload) return;
+
+    const expiresAt = payload.exp * 1000;
+    const delay = expiresAt - Date.now() - REFRESH_MARGIN_MS;
+
+    if (delay <= 0) {
+      this.refreshToken();
+      return;
+    }
+
+    this.refreshTimerId = setTimeout(() => {
+      this.refreshTimerId = null;
+      this.refreshToken();
+    }, delay);
+  }
+
+  private clearRefreshTimer(): void {
+    if (this.refreshTimerId !== null) {
+      clearTimeout(this.refreshTimerId);
+      this.refreshTimerId = null;
     }
   }
 }
