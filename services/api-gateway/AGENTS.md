@@ -66,6 +66,10 @@ src/
     │   ├── workflows.module.ts
     │   ├── workflows.controller.ts             # POST /workflows, GET /workflows, GET /workflows/:id
     │   └── workflow-proxy.service.ts           # WorkflowProxyService (HTTP fetch to workflow-api)
+    ├── adapters/
+    │   ├── adapters.module.ts
+    │   ├── adapters.controller.ts              # Proxy for /adapters CRUD + endpoint management
+    │   └── adapters-proxy.service.ts           # AdaptersProxyService (HTTP fetch to adapter-service)
     ├── dynamic-routes/
     │   ├── dynamic-routes.module.ts            # @Global() exporting DynamicRouteCacheService
     │   └── dynamic-route-cache.service.ts      # Polls registry-service GET /routes every 15s, Map-based route matching
@@ -110,6 +114,7 @@ AppModule
 ├── SchedulersModule ─── SchedulersController, SchedulerProxyService
 ├── RegistryModule ─── RegistryController, RegistryProxyService
 ├── WorkflowsModule ─── WorkflowsController, WorkflowProxyService
+├── AdaptersModule ─── AdaptersController, AdaptersProxyService
 ├── DynamicRoutesModule (@Global) ─── DynamicRouteCacheService
 └── HealthModule ─── HealthController
 ```
@@ -156,6 +161,7 @@ The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching p
 | scheduler-service | HTTP | Proxy scheduler operations |
 | registry-service | HTTP | Proxy registry operations; poll `GET /routes` for dynamic routing |
 | workflow-api | HTTP | Proxy workflow operations |
+| adapter-service | HTTP | Proxy `/adapters` CRUD and endpoint management |
 | Tenant Knative services | HTTP | Dynamic route proxy to registered services |
 
 ### DI Tokens
@@ -191,6 +197,7 @@ The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching p
 | `SCHEDULER_SERVICE_URL` | `http://scheduler-service.platform-services.svc.cluster.local` | Scheduler proxy |
 | `REGISTRY_SERVICE_URL` | `http://registry-service.platform-services.svc.cluster.local` | Registry proxy + route discovery |
 | `WORKFLOW_SERVICE_URL` | `http://workflow-api.platform-services.svc.cluster.local` | Workflow proxy |
+| `ADAPTER_SERVICE_URL` | `http://adapter-service.platform-services-dev.svc.cluster.local` | Adapter proxy |
 | `CACHE_SERVICE_URL` | `http://cache-service.platform-services-dev.svc.cluster.local` | Health check target |
 | `WEBHOOK_SERVICE_URL` | `http://webhook-service.platform-services-dev.svc.cluster.local` | Health check target |
 | `EVENT_PROCESSOR_URL` | `http://event-processor.platform-services-dev.svc.cluster.local` | Health check target |
@@ -256,6 +263,7 @@ Requires local NATS (`nats://localhost:4222`), Redis (`localhost:6379`), and `JW
 | **scheduler-service** | HTTP proxy target for `/schedulers/*` endpoints |
 | **registry-service** | HTTP proxy target for `/registry/*` endpoints; polls `GET /routes` for dynamic routing |
 | **workflow-api** | HTTP proxy target for `/workflows` endpoints |
+| **adapter-service** | HTTP proxy target for `/adapters/*` endpoints |
 | **event-processor** | Downstream consumer (health check only) |
 | **cache-service** | No data dependency (health check only) |
 | **webhook-service** | No data dependency (health check only) |

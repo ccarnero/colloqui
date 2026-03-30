@@ -30,6 +30,7 @@ const SERVICE_URLS = new Map<string, string>([
   ['registry-service', process.env.REGISTRY_SERVICE_URL ?? 'http://registry-service.platform-services.svc.cluster.local'],
   ['workflow-service', process.env.WORKFLOW_SERVICE_URL ?? 'http://workflow-api.platform-services.svc.cluster.local'],
   ['proxy-service', process.env.PROXY_SERVICE_URL ?? 'http://proxy-service.platform-services.svc.cluster.local'],
+  ['adapter-service', process.env.ADAPTER_SERVICE_URL ?? 'http://adapter-service.platform-services.svc.cluster.local'],
 ]);
 
 const SERVICE_TIMEOUT_MS = 3_000;

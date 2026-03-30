@@ -8,6 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { SCOPES_KEY } from '../decorators/scopes.decorator';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { JwtService } from '../modules/auth/jwt.service';
 import { PublicRoutesCacheService } from '../modules/auth/public-routes-cache.service';
 import { REQUEST_TENANT_KEY } from './tenant.guard';
@@ -42,31 +43,48 @@ export class AuthGuard implements CanActivate {
       return true;
     }
 
-    const authHeader: string | undefined = request.headers.authorization ?? request.headers.Authorization;
-    if (!authHeader) {
+    const token = this.extractToken(request);
+    if (!token) {
       throw new UnauthorizedException('Missing Authorization header');
     }
 
-    const parts = authHeader.split(' ');
-    if (parts.length !== 2 || parts[0] !== 'Bearer') {
-      throw new UnauthorizedException('Invalid Authorization header format');
-    }
-
-    const payload = await this.jwtService.verify(parts[1]);
+    const payload = await this.jwtService.verify(token);
     request[REQUEST_USER_KEY] = payload;
 
     this.validateTenantScope(payload, request[REQUEST_TENANT_KEY]);
 
+    const handlers = [context.getHandler(), context.getClass()];
+
     const requiredScopes = this.reflector.getAllAndOverride<string[] | undefined>(
       SCOPES_KEY,
-      [context.getHandler(), context.getClass()],
+      handlers,
     );
 
     if (requiredScopes && requiredScopes.length > 0) {
       this.checkScopes(payload, requiredScopes);
     }
 
+    const requiredPermissions = this.reflector.getAllAndOverride<string[] | undefined>(
+      PERMISSIONS_KEY,
+      handlers,
+    );
+
+    if (requiredPermissions && requiredPermissions.length > 0) {
+      this.checkPermissions(payload, requiredPermissions);
+    }
+
     return true;
+  }
+
+  /** Bearer header first, then ?token= query param (for SSE / WebSocket). */
+  private extractToken(request: any): string | undefined {
+    const authHeader: string | undefined =
+      request.headers.authorization ?? request.headers.Authorization;
+    if (authHeader) {
+      const parts = authHeader.split(' ');
+      if (parts.length === 2 && parts[0] === 'Bearer') return parts[1];
+    }
+    return request.query?.token;
   }
 
   private validateTenantScope(payload: JwtPayload, tenantId: string | undefined): void {
@@ -89,12 +107,33 @@ export class AuthGuard implements CanActivate {
     const scope = payload.scope as string;
     if (scope === 'platform') return;
 
+    const isTenant = scope.startsWith(TENANT_SCOPE_PREFIX);
+
     for (let i = 0; i < required.length; i++) {
-      if (required[i] === 'platform') {
-        throw new ForbiddenException('Platform-level access required');
-      }
-      if (required[i] === 'tenant' && !scope.startsWith(TENANT_SCOPE_PREFIX)) {
-        throw new ForbiddenException('Tenant-level access required');
+      if (required[i] === 'tenant' && isTenant) return;
+      if (required[i] === scope) return;
+    }
+
+    throw new ForbiddenException(
+      'Insufficient scope for this resource',
+    );
+  }
+
+  private checkPermissions(payload: JwtPayload, required: string[]): void {
+    const scope = payload.scope as string;
+    if (scope === 'platform') return;
+
+    const perms = payload.permissions;
+    if (!perms || perms.length === 0) {
+      throw new ForbiddenException('Insufficient permissions for this resource');
+    }
+
+    const permSet = new Set(perms);
+    if (permSet.has('*')) return;
+
+    for (let i = 0; i < required.length; i++) {
+      if (!permSet.has(required[i])) {
+        throw new ForbiddenException('Insufficient permissions for this resource');
       }
     }
   }

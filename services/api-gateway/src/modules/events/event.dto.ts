@@ -6,7 +6,19 @@ import {
   IsOptional,
   IsUrl,
   Matches,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class AdapterRefDto {
+  @IsString()
+  @IsNotEmpty()
+  adapterId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  endpointId!: string;
+}
 
 export class EventDto {
   @IsString()
@@ -22,4 +34,18 @@ export class EventDto {
   @IsOptional()
   @IsUrl({ require_tld: false })
   callbackUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  adapterId?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AdapterRefDto)
+  enrichAdapter?: AdapterRefDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AdapterRefDto)
+  forwardAdapter?: AdapterRefDto;
 }

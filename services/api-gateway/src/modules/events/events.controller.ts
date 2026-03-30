@@ -32,6 +32,9 @@ export class EventsController {
       dto.payload,
       req[REQUEST_TENANT_KEY],
       dto.callbackUrl,
+      dto.enrichAdapter,
+      dto.forwardAdapter,
+      dto.adapterId,
     );
     return { id, status: 'accepted' };
   }

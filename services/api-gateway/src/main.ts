@@ -1,7 +1,7 @@
 import './instrumentation';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import {
   FastifyAdapter,
   NestFastifyApplication,
@@ -31,15 +31,19 @@ import {
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
 const PLATFORM_PREFIXES = [
-  '/events',
-  '/audit',
-  '/tenants',
-  '/schedulers',
-  '/registry',
-  '/workflows',
-  '/proxy',
+  '/api/events',
+  '/api/audit',
+  '/api/tenants',
+  '/api/schedulers',
+  '/api/registry',
+  '/api/adapters',
+  '/api/channels',
+  '/api/webhooks',
+  '/api/workflows',
+  '/api/proxy',
+  '/api/auth',
+  '/api/dashboard',
   '/health',
-  '/auth',
 ];
 
 const HOST_PATTERN = /^[^.]+\.([^.]+)\.yplatform\.com$/;
@@ -64,7 +68,11 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(),
+    new FastifyAdapter({
+      genReqId: (req: { headers: Record<string, unknown> }) =>
+        (req.headers[REQUEST_ID_HEADER] as string | undefined) ??
+        crypto.randomUUID(),
+    }),
     { logger: pinoLogger },
   );
 
@@ -75,6 +83,24 @@ async function bootstrap(): Promise<void> {
       transform: true,
     }),
   );
+
+  const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:4200";
+
+  app.enableCors({
+    origin: CORS_ORIGIN,
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-yoizen-tenant",
+      "x-request-id",
+    ],
+    credentials: true,
+  });
+
+  app.setGlobalPrefix("api", {
+    exclude: [{ path: "health", method: RequestMethod.GET }],
+  });
 
   const routeCache = app.get(DynamicRouteCacheService);
   const jwtService = app.get(JwtService);
@@ -90,11 +116,8 @@ async function bootstrap(): Promise<void> {
   fastify.addHook(
     'onRequest',
     async (req: FastifyRequest, reply: FastifyReply) => {
-      const incomingId = req.headers[REQUEST_ID_HEADER] as string | undefined;
-      const requestId = incomingId ?? crypto.randomUUID();
-      (req as any).__requestId = requestId;
       (req as any).__startTime = performance.now();
-      reply.header(REQUEST_ID_HEADER, requestId);
+      reply.header(REQUEST_ID_HEADER, req.id);
     },
   );
 
@@ -270,7 +293,7 @@ async function bootstrap(): Promise<void> {
       const durationMs = Math.round((performance.now() - startTime) * 100) / 100;
 
       const event: GatewayAuditEvent = {
-        requestId: (req as any).__requestId ?? req.id,
+        requestId: req.id,
         traceId: getActiveTraceId() ?? '',
         timestamp: new Date().toISOString(),
         tenantId,

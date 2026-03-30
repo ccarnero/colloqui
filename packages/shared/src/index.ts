@@ -44,6 +44,7 @@ export {
   GATEWAY_AUDIT_SUBJECT,
   GATEWAY_AUDIT_CONSUMER_NAME,
   GATEWAY_AUDIT_STREAM_MAX_BYTES,
+  DEFAULT_ADAPTER_SERVICE_URL,
 } from './constants';
 
 export type {
@@ -62,13 +63,21 @@ export {
   PUBLIC_ROUTES_CACHE_TTL,
 } from './auth.constants';
 
+export {
+  SYSTEM_ROLE_TENANT_ADMIN,
+} from './auth.interfaces';
+
 export type {
   JwtPayload,
   TokenResponse,
   TokenScope,
   TokenType,
+  PlatformUserRole,
+  TenantUserRole,
   UserRole,
   PublicRouteEntry,
+  ITenantRole,
+  ITenantRolePermission,
 } from './auth.interfaces';
 
 export type {
@@ -105,3 +114,67 @@ export type {
   RateLimitTenantConfig,
   RateLimitResult,
 } from './rate-limit.interfaces';
+
+export type {
+  AdapterCache,
+  AdapterConfig,
+  AdapterEndpointConfig,
+  ResolvedAdapterRequest,
+  AdapterReference,
+} from './adapter.interfaces';
+
+export { AdapterClient } from './adapter-client';
+export type { AdapterClientOptions } from './adapter-client';
+
+export {
+  CHANNEL_STREAM_PREFIX,
+  CHANNEL_STREAM_SUBJECTS_PATTERN,
+  CHANNEL_CONSUMER_NAME,
+  CHANNEL_SUBJECT_PREFIX,
+  CHANNEL_DOMAIN,
+  CHANNEL_STREAM_MAX_AGE_NS,
+  CHANNEL_STREAM_MAX_BYTES,
+  CHANNEL_MAX_DELIVER,
+  CLAIM_CHECK_THRESHOLD_BYTES,
+  CLAIM_CHECK_BUCKET_PREFIX,
+  CHANNEL_AUDIT_SUBJECT_PATTERN,
+  DEFAULT_CHANNEL_SERVICE_URL,
+} from './channel.constants';
+
+export type {
+  Channel,
+  ChannelProvider,
+  MessageKind,
+  ChannelEnvelope,
+  ChannelAccount,
+  InboundMessage,
+  OutboundMessage,
+  MessageMedia,
+  SendMessageResult,
+  IChannelProvider,
+  AutoReplyRule,
+} from './channel.interfaces';
+
+export {
+  buildChannelSubject,
+  buildIngressStreamName,
+  buildClaimCheckBucket,
+  buildTenantWildcard,
+  parseChannelSubject,
+} from './channel.utils';
+
+export type { ParsedSenderId, SenderIdType } from './phone.utils';
+export { parseSenderId, normalizeRecipient } from './phone.utils';
+
+export type {
+  DashboardStats,
+  DashboardDailyBreakdown,
+  DashboardQuota,
+  DashboardActivity,
+  AuditDashboardStats,
+} from './dashboard.interfaces';
+
+export {
+  DASHBOARD_CACHE_KEY_PREFIX,
+  DASHBOARD_CACHE_TTL,
+} from './dashboard.interfaces';

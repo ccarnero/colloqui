@@ -1,12 +1,11 @@
 import {
   IsString,
   IsNotEmpty,
-  IsObject,
   IsArray,
   MaxLength,
-} from 'class-validator';
+} from "class-validator";
 
-export class StartWorkflowDto {
+export class CreateWorkflowDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(128)
@@ -16,9 +15,6 @@ export class StartWorkflowDto {
   @IsNotEmpty()
   @MaxLength(64)
   application!: string;
-
-  @IsObject()
-  request!: Record<string, unknown>;
 
   @IsArray()
   actions!: unknown[];

@@ -5,6 +5,17 @@ export const POSTGRES_SQL = 'POSTGRES_SQL';
 
 export type Sql = ReturnType<typeof postgres>;
 
+/**
+ * postgres.js `TransactionSql` loses its call signature due to `Omit`.
+ * This restores the tagged-template callable shape for `sql.begin()` callbacks.
+ */
+export type TxSql = {
+  <T extends readonly (object | undefined)[]>(
+    template: TemplateStringsArray,
+    ...parameters: readonly unknown[]
+  ): postgres.PendingQuery<T>;
+};
+
 export const postgresProvider: FactoryProvider = {
   provide: POSTGRES_SQL,
   useFactory: (): Sql => {

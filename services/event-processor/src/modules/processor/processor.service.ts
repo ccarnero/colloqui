@@ -94,7 +94,7 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
   }
 
   async processEvent(envelope: EventEnvelope, tenantId?: string): Promise<void> {
-    const { id: eventId, type, payload, metadata, callbackUrl } = envelope;
+    const { id: eventId, type, payload, metadata, callbackUrl, adapterId } = envelope;
 
     const count = this.typeCounts.get(type) ?? 0;
     this.typeCounts.set(type, count + 1);
@@ -120,6 +120,7 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
       type,
       result,
       ...(callbackUrl && { callbackUrl }),
+      ...(adapterId && { adapterId }),
     };
     const completionSubject = `${RESULTS_SUBJECT_PREFIX}.${type}`;
 

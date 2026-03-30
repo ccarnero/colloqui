@@ -1,6 +1,7 @@
-import { Injectable, Logger, HttpException } from '@nestjs/common';
-import { TENANT_HEADER } from '@yoizen/shared';
-import { tracedFetch } from '@yoizen/observability';
+import { Injectable, Logger } from "@nestjs/common";
+import { TENANT_HEADER } from "@yoizen/shared";
+import { tracedFetch } from "@yoizen/observability";
+import { throwProxyError } from "../../utils/proxy-error.util";
 
 @Injectable()
 export class RegistryProxyService {
@@ -41,11 +42,7 @@ export class RegistryProxyService {
     }
 
     const res = await tracedFetch(url, init);
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      this.logger.error(`Registry service responded ${res.status} for ${method} ${url}`);
-      throw new HttpException(text || `Registry service error: ${res.status}`, res.status);
-    }
+    if (!res.ok) await throwProxyError(res, "Registry service", this.logger);
     if (res.status === 204) return {};
     return res.json();
   }

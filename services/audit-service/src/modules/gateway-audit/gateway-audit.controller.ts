@@ -14,6 +14,14 @@ import { TENANT_HEADER } from '@yoizen/shared';
 export class GatewayAuditController {
   constructor(private readonly gatewayAuditService: GatewayAuditService) {}
 
+  @Get('stats')
+  async getDashboardStats(
+    @Headers(TENANT_HEADER) tenantId: string | undefined,
+  ) {
+    if (!tenantId) throw new BadRequestException('Missing x-yoizen-tenant header');
+    return this.gatewayAuditService.getDashboardStats(tenantId);
+  }
+
   @Get()
   async queryEvents(
     @Headers(TENANT_HEADER) tenantId: string | undefined,

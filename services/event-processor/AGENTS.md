@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-The Event Processor consumes domain events from the NATS JetStream `EVENTS` stream, runs them through an ordered enrichment pipeline (validation, enrichment, transform), routes them to type-specific handlers resolved via a pluggable registry, persists results to Redis, and publishes completion events to the `RESULTS` stream. It is a message-driven service with no inbound HTTP API beyond `/health`.
+The Event Processor consumes domain events from the NATS JetStream `EVENTS` stream, runs them through an ordered enrichment pipeline (validation, enrichment, adapter enrichment, transform, adapter forwarding), routes them to type-specific handlers resolved via a pluggable registry, persists results to Redis, and publishes completion events to the `RESULTS` stream. Adapter pipeline stages resolve configuration from the adapter-service via `AdapterClient` (Redis SWR cache) and are non-blocking on failure. It is a message-driven service with no inbound HTTP API beyond `/health`.
 
 ## Tech Stack
 
@@ -40,7 +40,9 @@ src/
 │   ├── pipeline.module.ts              # Provides all stages + PipelineRunner
 │   ├── validation.stage.ts             # Order 10: AJV schema validation (pass-through if no schema)
 │   ├── enrichment.stage.ts             # Order 20: Adds correlationId, receivedAt, source metadata
+│   ├── adapter-enrichment.stage.ts     # Order 25: Fetches data from adapter endpoint, merges into payload._enriched
 │   ├── transform.stage.ts             # Order 30: Runs registered PayloadTransformer functions
+│   ├── adapter-forward.stage.ts        # Order 40: POSTs payload to adapter endpoint with retry
 │   └── index.ts                        # Barrel export
 └── modules/
     ├── processor/
@@ -80,7 +82,9 @@ test/
 ```
 NATS (events.>) -> consumer.consume(batch=100, expires=30s)
   -> msg.json() as EventEnvelope
-  -> PipelineRunner: ValidationStage(10) -> EnrichmentStage(20) -> TransformStage(30)
+  -> PipelineRunner:
+       ValidationStage(10) -> EnrichmentStage(20) -> AdapterEnrichmentStage(25)
+       -> TransformStage(30) -> AdapterForwardStage(40)
   -> HandlerRegistry.get(type) ?? DefaultHandler
   -> handler.handle(eventId, payload) -> EventResult
   -> Promise.all([
@@ -97,7 +101,7 @@ AppModule (@Global)
 ├── NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CLIENT, JETSTREAM_PUBLISHER, REDIS_CLIENT
 ├── ProcessorModule
 │   ├── DiscoveryModule (NestJS core)
-│   ├── PipelineModule -> ValidationStage, EnrichmentStage, TransformStage, PipelineRunner
+│   ├── PipelineModule -> ValidationStage, EnrichmentStage, AdapterEnrichmentStage, TransformStage, AdapterForwardStage, PipelineRunner
 │   ├── HandlerRegistry (Map-based, O(1) lookup)
 │   ├── CreatedHandler, UpdatedHandler, DeletedHandler, DefaultHandler
 │   └── ProcessorService (consumer loop)
@@ -123,7 +127,9 @@ Stages implement `PipelineStage` interface with an `order` property. They are so
 |-------|-------|---------|
 | `ValidationStage` | 10 | AJV validation per registered schema (no schema = pass-through) |
 | `EnrichmentStage` | 20 | Adds `metadata.receivedAt`, `metadata.correlationId`, `metadata.source` |
+| `AdapterEnrichmentStage` | 25 | If `enrichAdapter` present, fetches data from adapter endpoint via `AdapterClient`, merges into `payload._enriched`. Non-blocking on failure |
 | `TransformStage` | 30 | Runs registered payload transformers in sequence |
+| `AdapterForwardStage` | 40 | If `forwardAdapter` present, POSTs payload to adapter endpoint with exponential backoff retry. Non-blocking on failure |
 
 ### Communication
 
@@ -131,7 +137,8 @@ Stages implement `PipelineStage` interface with an `order` property. They are so
 |--------|----------|-----------|---------|
 | NATS JetStream (EVENTS) | NATS | Inbound | Consume events from `events.>` via durable consumer `event-processor` |
 | NATS JetStream (RESULTS) | NATS | Outbound | Publish completion events to `results.<type>` |
-| Redis | TCP | Outbound | Store results at `result:<eventId>` with TTL 3600s |
+| Redis | TCP | Outbound | Store results at `result:<eventId>` with TTL 3600s; adapter config SWR cache |
+| adapter-service | HTTP | Outbound | Fetch adapter config for enrichment/forward stages via `AdapterClient` |
 
 ### DI Tokens
 
@@ -151,6 +158,7 @@ Stages implement `PipelineStage` interface with an `order` property. They are so
 | `NATS_URL` | `nats://localhost:4222` | NATS server URL |
 | `REDIS_HOST` | `localhost` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
+| `ADAPTER_SERVICE_URL` | `http://adapter-service.platform-services-dev.svc.cluster.local` | Adapter service URL |
 
 ### Stream Configuration (from `@yoizen/shared`)
 
@@ -255,7 +263,9 @@ Requires local NATS (`nats://localhost:4222`) and Redis (`localhost:6379`).
 | Service | Relationship |
 |---------|-------------|
 | **NATS JetStream** | Consumes from EVENTS stream, publishes to RESULTS stream |
-| **Redis** | Writes processed results at `result:<eventId>` |
+| **Redis** | Writes processed results at `result:<eventId>`; adapter config SWR cache |
+| **adapter-service** | Provides adapter config via REST API (fetched through `AdapterClient`) |
 | **api-gateway** | Upstream producer (publishes events to EVENTS stream) |
 | **webhook-service** | Downstream consumer (consumes from RESULTS stream) |
-| **`@yoizen/shared`** | Stream names, subject prefixes, consumer names, key prefixes, TTLs, limits, interfaces |
+| **`@yoizen/shared`** | Stream names, subject prefixes, consumer names, key prefixes, TTLs, limits, interfaces, `AdapterClient`, `DEFAULT_ADAPTER_SERVICE_URL` |
+| **`@yoizen/observability`** | `tracedFetch` for adapter HTTP calls |

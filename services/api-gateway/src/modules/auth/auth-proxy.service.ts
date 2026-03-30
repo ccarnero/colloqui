@@ -1,11 +1,7 @@
-import {
-  Injectable,
-  Logger,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
-import { TENANT_HEADER } from '@yoizen/shared';
-import { tracedFetch } from '@yoizen/observability';
+import { Injectable, Logger } from "@nestjs/common";
+import { TENANT_HEADER } from "@yoizen/shared";
+import { tracedFetch } from "@yoizen/observability";
+import { throwProxyError } from "../../utils/proxy-error.util";
 
 @Injectable()
 export class AuthProxyService {
@@ -41,19 +37,7 @@ export class AuthProxyService {
 
     const res = await tracedFetch(url, init);
 
-    if (!res.ok) {
-      const text = await res.text();
-      this.logger.error(`Auth service responded ${res.status}: ${text}`);
-
-      let parsed: object;
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = { message: text };
-      }
-
-      throw new HttpException(parsed, res.status as HttpStatus);
-    }
+    if (!res.ok) await throwProxyError(res, "Auth service", this.logger);
 
     if (res.status === 204) return { success: true };
     return res.json();

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-The `@yoizen/shared` package is the single source of truth for cross-service types, interfaces, and constants in the Yoizen Arch platform. It contains no runtime logic — only type definitions and constant values that keep service contracts in sync.
+The `@yoizen/shared` package is the single source of truth for cross-service types, interfaces, and constants in the Yoizen Arch platform. It primarily contains type definitions and constant values that keep service contracts in sync. The one exception is `AdapterClient` — a runtime class providing stale-while-revalidate caching, OAuth2 token management, and request resolution for adapter configs.
 
 ## Package Details
 
@@ -12,7 +12,7 @@ The `@yoizen/shared` package is the single source of truth for cross-service typ
 | Version | `1.0.0` |
 | Private | `true` |
 | Entry | `./src/index.ts` |
-| Dependencies | None |
+| Dependencies | `ioredis` (optional peer — required only when using `AdapterClient`) |
 
 ## Repository Structure
 
@@ -23,7 +23,9 @@ src/
 ├── interfaces.ts           # Event types: EventEnvelope, EventResult, ProcessedEvent, CompletionEvent, MetricsPayload
 ├── auth.constants.ts       # JWT TTLs, public routes cache config
 ├── auth.interfaces.ts      # JwtPayload, TokenResponse, TokenScope, UserRole, PublicRouteEntry
-└── workflow.interfaces.ts  # WorkflowDefinition, WorkflowAction, activity argument types
+├── workflow.interfaces.ts  # WorkflowDefinition, WorkflowAction, activity argument types
+├── adapter.interfaces.ts   # AdapterConfig, AdapterEndpointConfig, AdapterCache, ResolvedAdapterRequest
+└── adapter-client.ts       # AdapterClient (runtime: SWR cache, OAuth2 tokens, request resolution)
 ```
 
 ## Exports by Category
@@ -111,11 +113,11 @@ src/
 
 | Interface | Fields | Used By |
 |-----------|--------|---------|
-| `EventEnvelope` | `id, type, payload, metadata?, callbackUrl?` | Gateway, Event Processor, Audit |
+| `EventEnvelope` | `id, type, payload, metadata?, callbackUrl?, adapterId?, enrichAdapter?, forwardAdapter?` | Gateway, Event Processor, Audit |
 | `EventMetadata` | `receivedAt, source, subject, tenantId?` | Event Processor |
 | `EventResult` | `eventId, status, data, processedAt, processingTime` | Event Processor, Gateway |
 | `ProcessedEvent` | `...envelope, result, processedAt, processingTime` | Event Processor |
-| `CompletionEvent` | `eventId, type, status, result, completedAt, callbackUrl?` | Event Processor, Webhook |
+| `CompletionEvent` | `eventId, type, status, result, completedAt, callbackUrl?, adapterId?` | Event Processor, Webhook |
 | `MetricsPayload` | `source, name, value, tags?, metadata?, timestamp?` | Metrics Service |
 
 ### Auth Interfaces (`auth.interfaces.ts`)
@@ -136,9 +138,31 @@ src/
 | `WorkflowDefinition` | Workflow name, tenant, application, request, actions | Workflow Service |
 | `WorkflowExecutionContext` | Runtime context: workflow info, request, results map | Workflow Service |
 | `WorkflowAction` | Union: EndpointCall \| JsFunction \| ServiceBusCall \| Branch | Workflow Service |
-| `EndpointCallArgs` | HTTP method, url, params, data, headers | Workflow HTTP Worker |
+| `EndpointCallArgs` | HTTP method, url, params, data, headers, adapterId?, endpointId? | Workflow HTTP Worker |
 | `JsFunctionArgs` | Inline JS code string | Workflow Service |
 | `ServiceBusCallArgs` | NATS subject, payload, headers | Workflow Service |
+
+### Adapter Constants (`adapter.interfaces.ts`)
+
+| Constant | Value | Used By |
+|----------|-------|---------|
+| `DEFAULT_ADAPTER_SERVICE_URL` | `http://adapter-service.platform-services-dev.svc.cluster.local` | Workflow HTTP Worker, Event Processor, Webhook Service |
+
+### Adapter Interfaces (`adapter.interfaces.ts`)
+
+| Interface | Description | Used By |
+|-----------|-------------|---------|
+| `AdapterConfig` | Full adapter config: base URL, auth, headers, timeout, retries, endpoints | All adapter consumers |
+| `AdapterEndpointConfig` | Endpoint definition: id, label, method, path | All adapter consumers |
+| `AdapterCache` | Cache interface (get/set/del) compatible with `ioredis` | All adapter consumers |
+| `ResolvedAdapterRequest` | Resolved URL, headers, timeout, retries for a specific endpoint call | Workflow HTTP Worker, Event Processor |
+| `AdapterReference` | `{ adapterId: string; endpointId: string }` reference tuple | Gateway, Event Processor |
+
+### Adapter Client (`adapter-client.ts`)
+
+| Export | Description | Used By |
+|--------|-------------|---------|
+| `AdapterClient` | Runtime class: fetches adapter config from adapter-service REST API, caches in Redis with stale-while-revalidate (TTL 300s, stale 60s), manages OAuth2 client credentials tokens, resolves full request config (URL + auth headers + timeout + retries) | Workflow HTTP Worker, Event Processor, Webhook Service |
 
 ## Consumer Services
 
@@ -154,13 +178,14 @@ src/
 | registry-service | Knative constants, `TENANT_HEADER` |
 | tenant-service | `TENANT_HEADER` |
 | workflow-service | Workflow types, task queues, `TENANT_HEADER` |
-| workflow-http-worker | `WORKFLOW_HTTP_TASK_QUEUE`, `EndpointCallArgs`, `TENANT_HEADER` |
+| workflow-http-worker | `WORKFLOW_HTTP_TASK_QUEUE`, `EndpointCallArgs`, `TENANT_HEADER`, `AdapterClient`, `DEFAULT_ADAPTER_SERVICE_URL` |
+| adapter-service | `TENANT_HEADER`, `AdapterConfig` interface |
 
 **Not a consumer**: `cache-service` (standalone, no shared package dependency).
 
 ## Code Style and Conventions
 
-- **No runtime logic**: only types, interfaces, and constant values
+- **Primarily no runtime logic**: types, interfaces, and constant values; the one exception is `AdapterClient` which is a runtime class
 - **Barrel exports**: `index.ts` re-exports everything
 - **Naming**: SCREAMING_SNAKE_CASE for constants, PascalCase for interfaces
 - **Versioning**: not published to npm; consumed via workspace `file:` references

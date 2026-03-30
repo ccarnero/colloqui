@@ -14,7 +14,7 @@ export class TokenController {
 
   @Post('login')
   async login(@Body() dto: LoginDto): Promise<TokenResponse> {
-    return this.tokenService.login(dto.email, dto.password);
+    return this.tokenService.login(dto.email, dto.password, dto.tenant_id);
   }
 
   @Post('refresh')

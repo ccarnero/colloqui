@@ -1,0 +1,112 @@
+export type Channel = "whatsapp" | "instagram";
+export type ChannelProvider = "meta";
+export type MessageKind =
+  | "received"
+  | "sent"
+  | "delivered"
+  | "read"
+  | "failed";
+
+export interface ChannelEnvelope {
+  id: string;
+  specversion: "1.0";
+  type: string;
+  source: string;
+  time: string;
+  datacontenttype: "application/json";
+  subject: string;
+  data: Record<string, unknown>;
+  resource?: string;
+  traceid?: string;
+  correlationId?: string;
+  causationId?: string;
+  idempotencyKey: string;
+  tenantId: string;
+  channel: Channel;
+  provider: ChannelProvider;
+  kind: MessageKind;
+}
+
+export interface ChannelAccount {
+  id: string;
+  tenantId: string;
+  channel: Channel;
+  provider: ChannelProvider;
+  name: string;
+  externalId: string;
+  phoneNumberId?: string;
+  wabaId?: string;
+  igUserId?: string;
+  accessToken: string;
+  appId?: string;
+  appSecret?: string;
+  verifyToken?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InboundMessage {
+  messageId: string;
+  from: string;
+  timestamp: string;
+  type: string;
+  text?: string;
+  media?: MessageMedia;
+  raw: Record<string, unknown>;
+}
+
+export interface OutboundMessage {
+  to: string;
+  type: "text" | "template" | "image" | "document";
+  text?: string;
+  templateName?: string;
+  templateLanguage?: string;
+  templateComponents?: Record<string, unknown>[];
+  mediaUrl?: string;
+  caption?: string;
+}
+
+export interface MessageMedia {
+  mimeType: string;
+  id?: string;
+  url?: string;
+  caption?: string;
+}
+
+export interface SendMessageResult {
+  success: boolean;
+  providerMessageId?: string;
+  error?: string;
+  timestamp: string;
+}
+
+export interface IChannelProvider {
+  readonly channel: Channel;
+  readonly provider: ChannelProvider;
+
+  parseWebhook(
+    rawBody: Record<string, unknown>,
+  ): InboundMessage[];
+
+  sendMessage(
+    account: ChannelAccount,
+    message: OutboundMessage,
+  ): Promise<SendMessageResult>;
+
+  verifySignature(
+    rawBody: Uint8Array,
+    signature: string,
+    secret: string,
+  ): boolean;
+}
+
+export interface AutoReplyRule {
+  id: string;
+  tenantId: string;
+  accountId: string;
+  channel: Channel;
+  triggerPattern: string;
+  replyText: string;
+  isActive: boolean;
+}

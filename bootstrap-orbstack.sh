@@ -2,7 +2,9 @@
 set -euo pipefail
 
 ALL_ENVIRONMENTS=(dev qa staging production)
+ALL_GROUPS=(support-services platform-services)
 ENVIRONMENTS=()
+SERVICE_GROUP=""
 KNATIVE_VERSION="v1.17.0"
 KOURIER_VERSION="v1.17.0"
 
@@ -16,36 +18,65 @@ warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()  { echo -e "${RED}[ERR]${NC}   $*" >&2; }
 
 usage() {
-  echo "Usage: $0 [OPTIONS] [ENV...]"
-  echo ""
-  echo "Environments: ${ALL_ENVIRONMENTS[*]}"
-  echo "If no environments specified, all are deployed."
-  echo ""
-  echo "Options:"
-  echo "  -h, --help    Show this help message"
+  cat <<EOF
+Usage: $0 [OPTIONS] [ENV...] [GROUP]
+
+Environments: ${ALL_ENVIRONMENTS[*]}
+  (defaults to all if omitted)
+
+Groups: ${ALL_GROUPS[*]}
+  (defaults to both if omitted)
+
+Options:
+  -h, --help    Show this help message
+
+Examples:
+  $0 dev support-services       # Cluster init + infrastructure only
+  $0 dev platform-services      # Build images + deploy Knative services
+  $0 dev                        # Full bootstrap (both groups)
+  $0 dev qa support-services    # Infrastructure for dev and qa
+EOF
 }
 
 parse_args() {
   ENVIRONMENTS=()
+  SERVICE_GROUP=""
+  local positional=()
+
   for arg in "$@"; do
     case "$arg" in
       -h|--help) usage; exit 0 ;;
       -*)        err "Unknown option: $arg"; usage; exit 1 ;;
-      *)
-        local valid=0
-        for e in "${ALL_ENVIRONMENTS[@]}"; do
-          [[ "$arg" == "$e" ]] && valid=1 && break
-        done
-        if (( valid )); then
-          ENVIRONMENTS+=("$arg")
-        else
-          err "Invalid environment: $arg"
-          echo "Valid: ${ALL_ENVIRONMENTS[*]}"
-          exit 1
-        fi
-        ;;
+      *)         positional+=("$arg") ;;
     esac
   done
+
+  if (( ${#positional[@]} > 0 )); then
+    local last="${positional[-1]}"
+    local is_group=0
+    for g in "${ALL_GROUPS[@]}"; do
+      [[ "$last" == "$g" ]] && is_group=1 && break
+    done
+    if (( is_group )); then
+      SERVICE_GROUP="$last"
+      unset 'positional[-1]'
+    fi
+  fi
+
+  for arg in "${positional[@]+"${positional[@]}"}"; do
+    local valid=0
+    for e in "${ALL_ENVIRONMENTS[@]}"; do
+      [[ "$arg" == "$e" ]] && valid=1 && break
+    done
+    if (( valid )); then
+      ENVIRONMENTS+=("$arg")
+    else
+      err "Invalid environment: $arg"
+      echo "Valid: ${ALL_ENVIRONMENTS[*]}"
+      exit 1
+    fi
+  done
+
   if (( ${#ENVIRONMENTS[@]} == 0 )); then
     ENVIRONMENTS=("${ALL_ENVIRONMENTS[@]}")
   fi
@@ -85,7 +116,7 @@ check_orbstack_context() {
     warn "Current context is '${current_ctx}', switching to 'orbstack'"
     if ! kubectl config use-context orbstack 2>/dev/null; then
       err "OrbStack Kubernetes context not found."
-      err "Enable Kubernetes in OrbStack: Settings → Kubernetes → Enable Kubernetes"
+      err "Enable Kubernetes in OrbStack: Settings > Kubernetes > Enable Kubernetes"
       exit 1
     fi
   fi
@@ -147,7 +178,6 @@ install_kourier() {
 }
 
 configure_dns() {
-  # OrbStack's LoadBalancer controller assigns 127.0.0.1 to services of type LoadBalancer.
   log "Configuring DNS with sslip.io (127.0.0.1)"
   retry 5 3 kubectl patch configmap/config-domain \
     --namespace knative-serving \
@@ -156,9 +186,6 @@ configure_dns() {
 }
 
 configure_local_registry() {
-  # OrbStack >= 1.6 shares the local Docker daemon with the cluster's containerd,
-  # so images built with 'docker build dev.local/foo:local' are visible to pods
-  # without a registry push. Knative must skip tag-to-digest resolution for these.
   log "Configuring Knative to skip tag-to-digest resolution for local images"
   retry 5 3 kubectl patch configmap/config-deployment \
     --namespace knative-serving \
@@ -212,6 +239,31 @@ apply_infrastructure() {
     kubectl rollout status deployment/temporal \
       --namespace "$ns" \
       --timeout=180s
+
+    log "Waiting for OTel Collector in ${ns}..."
+    kubectl rollout status deployment/otel-collector \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Tempo in ${ns}..."
+    kubectl rollout status deployment/tempo \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Prometheus in ${ns}..."
+    kubectl rollout status deployment/prometheus \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Loki in ${ns}..."
+    kubectl rollout status deployment/loki \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Grafana in ${ns}..."
+    kubectl rollout status deployment/grafana \
+      --namespace "$ns" \
+      --timeout=120s
   done
 }
 
@@ -227,7 +279,6 @@ apply_knative_config() {
 
   for env in "${ENVIRONMENTS[@]}"; do
     log "Applying Knative services for '${env}'"
-    # Reuse the same local overlays — no PVCs in Knative services
     retry 5 3 kubectl apply -k "${script_dir}/knative/services/overlays/local/${env}"
   done
 }
@@ -244,13 +295,13 @@ build_images() {
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-  # OrbStack >= 1.6: the local Docker daemon shares the image store with the
-  # cluster's containerd. No eval/docker-env needed — just build normally.
-  log "Building service images (Docker → OrbStack shared daemon)"
+  log "Building service images (Docker > OrbStack shared daemon)"
 
-  for svc in api-gateway auth-service event-processor cache-service audit-service \
-             webhook-service metrics-service tenant-service scheduler-service \
-             registry-service workflow-service workflow-http-worker proxy-service; do
+  for svc in api-gateway auth-service event-processor cache-service \
+             audit-service webhook-service metrics-service tenant-service \
+             scheduler-service registry-service adapter-service \
+             channel-service workflow-service workflow-http-worker \
+             proxy-service admin-console; do
     log "Building image: dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \
@@ -259,40 +310,54 @@ build_images() {
   done
 }
 
-print_summary() {
-  echo ""
-  log "=============================="
-  log " Setup complete!"
-  log "=============================="
-  echo ""
-  echo "  Cluster:       OrbStack Kubernetes"
-  echo "  DNS domain:    127.0.0.1.sslip.io"
-  echo "  Environments:  ${ENVIRONMENTS[*]}"
-  echo ""
-  echo "  Namespaces:"
-  for env in "${ENVIRONMENTS[@]}"; do
-    echo "    support-services-${env}   platform-services-${env}"
-  done
-  echo ""
-  echo "  Useful commands:"
-  for env in "${ENVIRONMENTS[@]}"; do
-    echo "    kubectl get ksvc -n platform-services-${env}"
-  done
-  echo "    kubectl get pods --all-namespaces -l app.kubernetes.io/part-of=yoizen-arch"
-  echo "    kubectl get storageclass"
-  echo ""
-  echo "  API Gateway (dev): http://api-gateway.platform-services-dev.127.0.0.1.sslip.io"
-  echo ""
+# ---------------------------------------------------------------------------
+# Cluster & dependency verification (used by platform-services standalone)
+# ---------------------------------------------------------------------------
+
+verify_cluster() {
+  if ! kubectl cluster-info &>/dev/null; then
+    err "Kubernetes cluster is not reachable."
+    err "Run './bootstrap-orbstack.sh <env> support-services' first."
+    exit 1
+  fi
+  log "Cluster is reachable (context: orbstack)"
 }
 
-main() {
-  parse_args "$@"
+verify_support_services() {
+  local core_deployments=(redis otel-collector tempo prometheus loki grafana)
+  local core_statefulsets=(nats postgres)
 
-  log "Event-Driven Architecture Bootstrap — OrbStack"
-  log "Environments: ${ENVIRONMENTS[*]}"
+  for env in "${ENVIRONMENTS[@]}"; do
+    local ns="support-services-${env}"
+    if ! kubectl get namespace "$ns" &>/dev/null; then
+      warn "Namespace '${ns}' does not exist — support-services may not be deployed"
+      continue
+    fi
+
+    for dep in "${core_deployments[@]}"; do
+      if ! kubectl get deployment/"$dep" --namespace "$ns" &>/dev/null; then
+        warn "Deployment '${dep}' not found in ${ns}"
+      fi
+    done
+    for sts in "${core_statefulsets[@]}"; do
+      if ! kubectl get statefulset/"$sts" --namespace "$ns" &>/dev/null; then
+        warn "StatefulSet '${sts}' not found in ${ns}"
+      fi
+    done
+
+    if ! kubectl get deployment/temporal --namespace "$ns" &>/dev/null; then
+      warn "Deployment 'temporal' not found in ${ns}"
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
+# Service group runners
+# ---------------------------------------------------------------------------
+
+run_support_services() {
+  log "===== support-services (initial configuration + infrastructure) ====="
   echo ""
-
-  check_deps
   check_orbstack_context
   install_knative_serving
   install_kourier
@@ -300,9 +365,91 @@ main() {
   configure_local_registry
   apply_namespaces
   apply_infrastructure
+}
+
+run_platform_services() {
+  log "===== platform-services (build + deploy) ====="
+  echo ""
+  verify_cluster
+  verify_support_services
   build_packages
   build_images
   apply_knative_config
+}
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+
+print_summary() {
+  local group_label="${SERVICE_GROUP:-all}"
+
+  echo ""
+  log "=============================="
+  log " Setup complete! [${group_label}]"
+  log "=============================="
+  echo ""
+  echo "  Cluster:       OrbStack Kubernetes"
+  echo "  DNS domain:    127.0.0.1.sslip.io"
+  echo "  Environments:  ${ENVIRONMENTS[*]}"
+  echo "  Group:         ${group_label}"
+  echo ""
+
+  if [[ "$SERVICE_GROUP" != "platform-services" ]]; then
+    echo "  Namespaces:"
+    for env in "${ENVIRONMENTS[@]}"; do
+      echo "    support-services-${env}   platform-services-${env}"
+    done
+    echo ""
+    echo "  Observability:"
+    for env in "${ENVIRONMENTS[@]}"; do
+      echo "    Grafana:     kubectl port-forward -n support-services-${env} svc/grafana 3001:3000"
+      echo "    Tempo:       kubectl port-forward -n support-services-${env} svc/tempo 3200:3200"
+      echo "    Prometheus:  kubectl port-forward -n support-services-${env} svc/prometheus 9090:9090"
+    done
+    echo ""
+  fi
+
+  if [[ "$SERVICE_GROUP" != "support-services" ]]; then
+    echo "  Useful commands:"
+    for env in "${ENVIRONMENTS[@]}"; do
+      echo "    kubectl get ksvc -n platform-services-${env}"
+    done
+    echo "    kubectl get pods --all-namespaces -l app.kubernetes.io/part-of=yoizen-arch"
+    echo "    kubectl get storageclass"
+    echo ""
+    echo "  API Gateway (dev): http://api-gateway.platform-services-dev.127.0.0.1.sslip.io"
+    echo ""
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+main() {
+  parse_args "$@"
+
+  log "Event-Driven Architecture Bootstrap — OrbStack"
+  log "Environments: ${ENVIRONMENTS[*]}"
+  log "Group:        ${SERVICE_GROUP:-all}"
+  echo ""
+
+  check_deps
+
+  case "$SERVICE_GROUP" in
+    support-services)
+      run_support_services
+      ;;
+    platform-services)
+      run_platform_services
+      ;;
+    "")
+      run_support_services
+      run_platform_services
+      ;;
+  esac
+
   print_summary
 }
 

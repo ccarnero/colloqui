@@ -44,6 +44,16 @@ Referenced as a workspace dependency in each service's `package.json`:
 
 `WorkflowDefinition`, `WorkflowExecutionContext`, `WorkflowAction`, `EndpointCallAction`, `JsFunctionAction`, `ServiceBusCallAction`, `BranchAction`, `EndpointCallArgs`, `JsFunctionArgs`, `ServiceBusCallArgs`
 
+### Adapter (`adapter.interfaces.ts`, `adapter-client.ts`)
+
+**Interfaces**: `AdapterConfig`, `AdapterEndpointConfig`, `AdapterCache`, `ResolvedAdapterRequest`, `AdapterReference`
+
+**Client**: `AdapterClient` — stale-while-revalidate Redis cache, OAuth2 client credentials token management, adapter + endpoint request resolution. This is the only runtime export in the package (requires `ioredis` as optional peer dependency).
+
+**Constants**: `DEFAULT_ADAPTER_SERVICE_URL`
+
+**Updated interfaces**: `EventEnvelope` now includes `adapterId?`, `enrichAdapter?`, `forwardAdapter?`; `CompletionEvent` includes `adapterId?`; `EndpointCallArgs` includes `adapterId?`, `endpointId?`.
+
 ## Architecture
 
 See [AGENTS.md](AGENTS.md) for detailed export inventory and usage by service.

@@ -22,4 +22,4 @@ data:
       - job_name: nats
         static_configs:
           - targets:
-              - nats:8222
+              - nats:7777

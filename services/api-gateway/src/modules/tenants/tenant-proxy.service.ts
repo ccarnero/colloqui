@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { TENANT_HEADER } from '@yoizen/shared';
-import { tracedFetch } from '@yoizen/observability';
+import { Injectable, Logger } from "@nestjs/common";
+import { TENANT_HEADER } from "@yoizen/shared";
+import { tracedFetch } from "@yoizen/observability";
+import { throwProxyError } from "../../utils/proxy-error.util";
 
 @Injectable()
 export class TenantProxyService {
@@ -10,24 +11,22 @@ export class TenantProxyService {
   constructor() {
     this.baseUrl =
       process.env.TENANT_SERVICE_URL ??
-      'http://tenant-service.platform-services.svc.cluster.local';
+      "http://tenant-service.platform-services.svc.cluster.local";
   }
 
   async createTenant(body: object, tenantId?: string): Promise<object> {
     const url = `${this.baseUrl}/tenants`;
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
     const res = await tracedFetch(url, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      const text = await res.text();
-      this.logger.error(`Tenant service responded ${res.status}: ${text}`);
-      throw new Error(`Tenant service error: ${res.status}`);
-    }
+    if (!res.ok) await throwProxyError(res, "Tenant service", this.logger);
     return res.json();
   }
 
@@ -37,10 +36,7 @@ export class TenantProxyService {
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
     const res = await tracedFetch(url, { headers });
-    if (!res.ok) {
-      this.logger.error(`Tenant service responded ${res.status} for ${url}`);
-      throw new Error(`Tenant service error: ${res.status}`);
-    }
+    if (!res.ok) await throwProxyError(res, "Tenant service", this.logger);
     return res.json();
   }
 
@@ -51,10 +47,7 @@ export class TenantProxyService {
 
     const res = await tracedFetch(url, { headers });
     if (res.status === 404) return null;
-    if (!res.ok) {
-      this.logger.error(`Tenant service responded ${res.status} for ${url}`);
-      throw new Error(`Tenant service error: ${res.status}`);
-    }
+    if (!res.ok) await throwProxyError(res, "Tenant service", this.logger);
     return res.json();
   }
 
@@ -64,20 +57,18 @@ export class TenantProxyService {
     tenantId?: string,
   ): Promise<object | null> {
     const url = `${this.baseUrl}/tenants/${encodeURIComponent(name)}`;
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
     const res = await tracedFetch(url, {
-      method: 'PATCH',
+      method: "PATCH",
       headers,
       body: JSON.stringify(body),
     });
     if (res.status === 404) return null;
-    if (!res.ok) {
-      const text = await res.text();
-      this.logger.error(`Tenant service responded ${res.status}: ${text}`);
-      throw new Error(`Tenant service error: ${res.status}`);
-    }
+    if (!res.ok) await throwProxyError(res, "Tenant service", this.logger);
     return res.json();
   }
 
@@ -86,12 +77,9 @@ export class TenantProxyService {
     const headers: Record<string, string> = {};
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
-    const res = await tracedFetch(url, { method: 'DELETE', headers });
+    const res = await tracedFetch(url, { method: "DELETE", headers });
     if (res.status === 404) return false;
-    if (!res.ok) {
-      this.logger.error(`Tenant service responded ${res.status} for ${url}`);
-      throw new Error(`Tenant service error: ${res.status}`);
-    }
+    if (!res.ok) await throwProxyError(res, "Tenant service", this.logger);
     return true;
   }
 }

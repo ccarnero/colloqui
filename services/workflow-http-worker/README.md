@@ -1,6 +1,6 @@
 # Workflow HTTP Worker
 
-Standalone Temporal worker that executes HTTP-based workflow activities on the `workflow-http` task queue. Makes HTTP requests to arbitrary endpoints via `axios` with tenant header injection. No NestJS framework — raw Temporal worker with health server.
+Standalone Temporal worker that executes HTTP-based workflow activities on the `workflow-http` task queue. Makes HTTP requests via `tracedFetch` with tenant header injection. Supports adapter-driven configuration (base URL, auth, headers, retries, timeouts) resolved through `AdapterClient` when `adapterId`/`endpointId` are provided. No NestJS framework — raw Temporal worker with health server.
 
 ## Quick Start
 
@@ -24,6 +24,9 @@ Requires: Temporal server (`localhost:7233`).
 | `PORT` | `3000` | Health server port |
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace |
+| `ADAPTER_SERVICE_URL` | `http://adapter-service...` | Adapter service URL |
+| `REDIS_HOST` | `localhost` | Redis host (adapter cache) |
+| `REDIS_PORT` | `6379` | Redis port |
 
 ## Testing
 

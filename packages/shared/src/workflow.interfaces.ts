@@ -7,6 +7,8 @@ export interface WorkflowExecutionContext {
 export interface EndpointCallArgs {
   method: string;
   url: string;
+  adapterId?: string;
+  endpointId?: string;
   params?: Record<string, any>;
   data?: any;
   headers?: Record<string, string>;
