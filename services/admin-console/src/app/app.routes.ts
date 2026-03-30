@@ -115,6 +115,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: "hosted-services",
+        loadComponent: () =>
+          import(
+            "./features/automation/hosted-services/hosted-services.component"
+          ).then((m) => m.HostedServicesComponent),
+      },
+      {
         path: "scheduler",
         loadComponent: () =>
           import(

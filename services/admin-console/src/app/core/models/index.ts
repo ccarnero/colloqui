@@ -4,6 +4,14 @@ export type {
   ITenantRole,
   ITenantRolePermission,
 } from "./user.model";
+export type {
+  IRegisteredService,
+  IServiceDetail,
+  ICreateService,
+  IUpdateService,
+  IServiceRoute,
+  ICreateRoute,
+} from "./registry.model";
 
 export interface IActivity {
   readonly color: string;
