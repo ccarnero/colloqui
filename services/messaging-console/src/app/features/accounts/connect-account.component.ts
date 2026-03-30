@@ -10,6 +10,7 @@ import {
   LucideAngularModule,
   Phone,
   Instagram,
+  Send,
   ArrowLeft,
 } from "lucide-angular";
 import {
@@ -17,7 +18,7 @@ import {
   ICreateAccountDto,
 } from "../../core/services/channel.service";
 
-type ChannelChoice = "whatsapp" | "instagram" | null;
+type ChannelChoice = "whatsapp" | "instagram" | "telegram" | null;
 
 @Component({
   selector: "app-connect-account",
@@ -39,8 +40,8 @@ type ChannelChoice = "whatsapp" | "instagram" | null;
 
       <h1 class="ws-title">Connect Account</h1>
       <p class="ws-subtitle">
-        Connect a WhatsApp or Instagram account to start sending
-        and receiving messages.
+        Connect a WhatsApp, Instagram, or Telegram account to start
+        sending and receiving messages.
       </p>
 
       @if (error()) {
@@ -58,6 +59,11 @@ type ChannelChoice = "whatsapp" | "instagram" | null;
             <lucide-icon [img]="Instagram" [size]="24" />
             <h3>Instagram</h3>
             <p>Connect an Instagram Professional account for DMs.</p>
+          </button>
+          <button class="channel-option tg" (click)="channel.set('telegram')">
+            <lucide-icon [img]="SendIcon" [size]="24" />
+            <h3>Telegram</h3>
+            <p>Connect a Telegram bot using a token from BotFather.</p>
           </button>
         </div>
       } @else if (channel() === "whatsapp") {
@@ -118,6 +124,64 @@ type ChannelChoice = "whatsapp" | "instagram" | null;
                 <mat-spinner diameter="16" />
               } @else {
                 Connect WhatsApp
+              }
+            </button>
+          </div>
+        </form>
+      } @else if (channel() === "telegram") {
+        <form (ngSubmit)="submitTelegram()" class="connect-form">
+          <h2 class="form-title">
+            <lucide-icon [img]="SendIcon" [size]="18" />
+            Telegram Bot
+          </h2>
+          <div class="info-box tg-info">
+            <p>
+              Get your bot token from
+              <a href="https://t.me/BotFather"
+                 target="_blank"
+                 rel="noopener noreferrer">
+                @BotFather
+              </a>
+              on Telegram.
+            </p>
+          </div>
+          <mat-form-field appearance="outline">
+            <mat-label>Bot Token *</mat-label>
+            <input matInput
+                   [(ngModel)]="telegramBotToken"
+                   name="telegramBotToken"
+                   required
+                   placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" />
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Bot Username *</mat-label>
+            <input matInput
+                   [(ngModel)]="telegramUsername"
+                   name="telegramUsername"
+                   required
+                   placeholder="my_bot" />
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Account Name (optional)</mat-label>
+            <input matInput
+                   [(ngModel)]="businessName"
+                   name="tgName"
+                   placeholder="e.g. Support Bot" />
+          </mat-form-field>
+
+          <div class="form-actions">
+            <button type="button"
+                    class="btn btn-secondary"
+                    (click)="channel.set(null)">
+              Back
+            </button>
+            <button type="submit"
+                    class="btn btn-primary"
+                    [disabled]="submitting()">
+              @if (submitting()) {
+                <mat-spinner diameter="16" />
+              } @else {
+                Connect Telegram
               }
             </button>
           </div>
@@ -216,7 +280,7 @@ type ChannelChoice = "whatsapp" | "instagram" | null;
     }
     .channel-picker {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(3, 1fr);
       gap: 16px;
       margin-top: 24px;
     }
@@ -236,6 +300,9 @@ type ChannelChoice = "whatsapp" | "instagram" | null;
     }
     .channel-option.ig:hover {
       border-color: var(--purple);
+    }
+    .channel-option.tg:hover {
+      border-color: var(--accent);
     }
     .channel-option h3 {
       font-size: 15px;
@@ -279,6 +346,11 @@ type ChannelChoice = "whatsapp" | "instagram" | null;
       color: var(--purple);
       line-height: 1.5;
     }
+    .info-box.tg-info {
+      background: rgba(59, 130, 246, 0.08);
+      border-color: rgba(59, 130, 246, 0.2);
+      color: var(--accent);
+    }
     .info-box a {
       color: inherit;
       text-decoration: underline;
@@ -294,6 +366,7 @@ type ChannelChoice = "whatsapp" | "instagram" | null;
 export class ConnectAccountComponent {
   protected readonly Phone = Phone;
   protected readonly Instagram = Instagram;
+  protected readonly SendIcon = Send;
   protected readonly ArrowLeft = ArrowLeft;
 
   private readonly channelService = inject(ChannelService);
@@ -311,6 +384,8 @@ export class ConnectAccountComponent {
   metaAppSecret = "";
   igUserId = "";
   igUsername = "";
+  telegramBotToken = "";
+  telegramUsername = "";
 
   goBack(): void {
     this.router.navigate(["/accounts"]);
@@ -327,6 +402,21 @@ export class ConnectAccountComponent {
       accessToken: this.accessToken.trim(),
       appId: this.metaAppId.trim() || undefined,
       appSecret: this.metaAppSecret.trim() || undefined,
+    });
+  }
+
+  submitTelegram(): void {
+    if (!this.telegramBotToken || !this.telegramUsername) return;
+    const token = this.telegramBotToken.trim();
+    this.submit({
+      channel: "telegram",
+      provider: "telegram",
+      name:
+        this.businessName.trim() ||
+        `@${this.telegramUsername.trim()}`,
+      externalId: this.telegramUsername.trim(),
+      telegramBotToken: token,
+      accessToken: token,
     });
   }
 

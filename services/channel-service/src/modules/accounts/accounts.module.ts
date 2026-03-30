@@ -1,8 +1,10 @@
 import { Module } from "@nestjs/common";
 import { AccountsController } from "./accounts.controller";
 import { AccountsService } from "./accounts.service";
+import { TelegramModule } from "../../providers/telegram/telegram.module";
 
 @Module({
+  imports: [TelegramModule],
   controllers: [AccountsController],
   providers: [AccountsService],
   exports: [AccountsService],

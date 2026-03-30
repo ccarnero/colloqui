@@ -139,7 +139,8 @@ import {
                     <span class="badge badge-green">{{ rule.triggerPattern }}</span>
                     <span class="badge"
                           [class.badge-green]="rule.channel === 'whatsapp'"
-                          [class.badge-purple]="rule.channel === 'instagram'">
+                          [class.badge-purple]="rule.channel === 'instagram'"
+                          [class.badge-blue]="rule.channel === 'telegram'">
                       {{ rule.channel }}
                     </span>
                   </div>

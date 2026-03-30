@@ -74,12 +74,12 @@ import {
           <div class="tab-body">
             <form (ngSubmit)="sendText()" class="msg-form">
               <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Recipient (phone number or ID)</mat-label>
+                <mat-label>{{ recipientLabel }}</mat-label>
                 <input matInput
                        [(ngModel)]="recipient"
                        name="recipient"
                        required
-                       placeholder="+5491155550123" />
+                       [placeholder]="recipientPlaceholder" />
               </mat-form-field>
               <mat-form-field appearance="outline" class="full-width">
                 <mat-label>Message</mat-label>
@@ -110,7 +110,8 @@ import {
           </div>
         </mat-tab>
 
-        <!-- Template message tab -->
+        <!-- Template message tab (Meta only) -->
+        @if (!isTelegram) {
         <mat-tab label="Template Message">
           <div class="tab-body">
             <div class="info-box">
@@ -122,12 +123,12 @@ import {
             </div>
             <form (ngSubmit)="sendTemplate()" class="msg-form">
               <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Recipient (phone number or ID)</mat-label>
+                <mat-label>{{ recipientLabel }}</mat-label>
                 <input matInput
                        [(ngModel)]="recipient"
                        name="tplRecipient"
                        required
-                       placeholder="+5491155550123" />
+                       [placeholder]="recipientPlaceholder" />
               </mat-form-field>
               <mat-form-field appearance="outline" class="full-width">
                 <mat-label>Template Name</mat-label>
@@ -164,6 +165,7 @@ import {
             </form>
           </div>
         </mat-tab>
+        }
       </mat-tab-group>
     </div>
   `,
@@ -217,6 +219,23 @@ export class MessageComposerComponent implements OnInit {
   );
 
   selectedAccountId = "";
+
+  protected get isTelegram(): boolean {
+    const acct = this.accounts().find(
+      (a) => a.id === this.selectedAccountId,
+    );
+    return acct?.channel === "telegram";
+  }
+
+  protected get recipientLabel(): string {
+    return this.isTelegram
+      ? "Recipient (Chat ID)"
+      : "Recipient (phone number or ID)";
+  }
+
+  protected get recipientPlaceholder(): string {
+    return this.isTelegram ? "123456789" : "+5491155550123";
+  }
   recipient = "";
   textMessage = "";
   templateName = "";

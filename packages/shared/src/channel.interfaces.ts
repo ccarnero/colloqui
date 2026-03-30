@@ -1,5 +1,5 @@
-export type Channel = "whatsapp" | "instagram";
-export type ChannelProvider = "meta";
+export type Channel = "whatsapp" | "instagram" | "telegram";
+export type ChannelProvider = "meta" | "telegram";
 export type MessageKind =
   | "received"
   | "sent"
@@ -37,6 +37,7 @@ export interface ChannelAccount {
   phoneNumberId?: string;
   wabaId?: string;
   igUserId?: string;
+  telegramBotToken?: string;
   accessToken: string;
   appId?: string;
   appSecret?: string;
@@ -84,6 +85,8 @@ export interface SendMessageResult {
 export interface IChannelProvider {
   readonly channel: Channel;
   readonly provider: ChannelProvider;
+  /** HTTP header that carries the webhook signature for this provider. */
+  readonly signatureHeader?: string;
 
   parseWebhook(
     rawBody: Record<string, unknown>,

@@ -19,7 +19,9 @@ import { MatSelectModule } from "@angular/material/select";
 import {
   type AuthType,
   type HttpAdapter,
+  type HttpAdapterContext,
   type HttpAdapterDialogData,
+  type HttpAdapterDialogResult,
   type HttpMethod,
 } from "../../models/http-adapter.model";
 
@@ -76,6 +78,22 @@ const AUTH_TYPE_LABELS: ReadonlyMap<AuthType, string> = new Map([
             <div class="section-card-title">General</div>
           </div>
           <div class="section-card-body">
+            @if (showContextSelector) {
+              <mat-form-field appearance="outline" class="form-field-full">
+                <mat-label>Scope</mat-label>
+                <mat-select
+                  [value]="contextSignal()"
+                  (selectionChange)="contextSignal.set($event.value)"
+                >
+                  <mat-option value="internal">
+                    Internal (inside cluster)
+                  </mat-option>
+                  <mat-option value="external">
+                    External (third-party)
+                  </mat-option>
+                </mat-select>
+              </mat-form-field>
+            }
             <div class="form-row">
               <mat-form-field appearance="outline" class="form-field-half">
                 <mat-label>Name</mat-label>
@@ -541,7 +559,7 @@ const AUTH_TYPE_LABELS: ReadonlyMap<AuthType, string> = new Map([
 export class HttpAdapterDialogComponent {
   private readonly fb = inject(FormBuilder);
   readonly dialogRef = inject(
-    MatDialogRef<HttpAdapterDialogComponent>,
+    MatDialogRef<HttpAdapterDialogComponent, HttpAdapterDialogResult>,
   );
   readonly data = inject<HttpAdapterDialogData>(MAT_DIALOG_DATA);
 
@@ -553,6 +571,13 @@ export class HttpAdapterDialogComponent {
 
   readonly form = this.buildForm();
 
+  readonly showContextSelector =
+    this.data.mode === "create" && !this.data.context;
+
+  readonly contextSignal = signal<HttpAdapterContext>(
+    this.data.context ?? "internal",
+  );
+
   private readonly authTypeSignal = signal<AuthType>(
     this.data.adapter?.auth.type ?? "none",
   );
@@ -561,15 +586,11 @@ export class HttpAdapterDialogComponent {
 
   readonly dialogTitle = computed(() => {
     const action = this.data.mode === "create" ? "Create" : "Edit";
-    const ctx =
-      this.data.context === "internal"
-        ? "Internal Source"
-        : "External Source";
-    return `${action} ${ctx}`;
+    return `${action} Connector`;
   });
 
   readonly urlPlaceholder = computed(() =>
-    this.data.context === "internal"
+    this.contextSignal() === "internal"
       ? "http://svc.namespace.svc:8080"
       : "https://api.example.com",
   );
@@ -661,7 +682,7 @@ export class HttpAdapterDialogComponent {
       healthCheckPath: v.healthCheckPath ?? "/health",
     };
 
-    this.dialogRef.close(adapter);
+    this.dialogRef.close({ adapter, context: this.contextSignal() });
   }
 
   private buildForm() {

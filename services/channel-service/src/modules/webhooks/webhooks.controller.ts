@@ -13,7 +13,7 @@ import {
 } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import type { Channel } from "@yoizen/shared";
-import { ProviderRegistry } from "../../providers/meta/provider-registry";
+import { ChannelRouter } from "../../providers/channel-router";
 import { IngressService } from "../ingress/ingress.service";
 import { AccountsService } from "../accounts/accounts.service";
 import {
@@ -27,7 +27,7 @@ export class WebhooksController {
   private readonly logger = new Logger(WebhooksController.name);
 
   constructor(
-    private readonly registry: ProviderRegistry,
+    private readonly router: ChannelRouter,
     private readonly ingress: IngressService,
     private readonly accounts: AccountsService,
   ) {}
@@ -81,13 +81,14 @@ export class WebhooksController {
   ): Promise<{ status: string }> {
     const channelType = channel as Channel;
     webhookRequests.add(1, { channel, tenant: tenantId });
-    const provider = this.registry.get(channelType);
+    const provider = this.router.get(channelType);
     if (!provider) {
       throw new BadRequestException(`Unsupported channel: ${channel}`);
     }
 
-    const signature =
-      request.headers["x-hub-signature-256"] as string | undefined;
+    const signature = provider.signatureHeader
+      ? (request.headers[provider.signatureHeader] as string | undefined)
+      : undefined;
 
     const activeAccounts = await this.accounts.listActive(
       tenantId,
@@ -114,7 +115,7 @@ export class WebhooksController {
     if (signature && !verified) {
       webhookVerificationFailures.add(1, { channel, tenant: tenantId });
       this.logger.warn(
-        `HMAC verification failed for tenant=${tenantId} channel=${channel}`,
+        `Webhook signature verification failed for tenant=${tenantId} channel=${channel}`,
       );
       return { status: "signature_mismatch" };
     }
@@ -135,7 +136,13 @@ export class WebhooksController {
 
     setImmediate(() => {
       this.ingress
-        .processInbound(tenantId, channelType, "meta", account.id, messages)
+        .processInbound(
+          tenantId,
+          channelType,
+          provider.provider,
+          account.id,
+          messages,
+        )
         .catch((err) => {
           this.logger.error(
             `Ingress processing failed: ${err instanceof Error ? err.message : err}`,

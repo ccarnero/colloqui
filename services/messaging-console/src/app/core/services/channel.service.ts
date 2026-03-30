@@ -3,16 +3,19 @@ import { HttpClient, HttpParams } from "@angular/common/http";
 import { Observable } from "rxjs";
 import { environment } from "../../../environments/environment";
 
+export type ChannelType = "whatsapp" | "instagram" | "telegram";
+
 export interface IChannelAccount {
   id: string;
   tenantId: string;
-  channel: "whatsapp" | "instagram";
+  channel: ChannelType;
   provider: string;
   name: string;
   externalId: string;
   phoneNumberId?: string;
   wabaId?: string;
   igUserId?: string;
+  telegramBotToken?: string;
   accessToken?: string;
   appId?: string;
   appSecret?: string;
@@ -23,13 +26,14 @@ export interface IChannelAccount {
 }
 
 export interface ICreateAccountDto {
-  channel: "whatsapp" | "instagram";
-  provider?: "meta";
+  channel: ChannelType;
+  provider?: "meta" | "telegram";
   name: string;
   externalId: string;
   phoneNumberId?: string;
   wabaId?: string;
   igUserId?: string;
+  telegramBotToken?: string;
   accessToken: string;
   appId?: string;
   appSecret?: string;
@@ -68,7 +72,7 @@ export interface IAutoReplyRule {
 
 export interface ICreateAutoReplyDto {
   accountId: string;
-  channel: "whatsapp" | "instagram";
+  channel: ChannelType;
   triggerPattern: string;
   replyText: string;
 }
