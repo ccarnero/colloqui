@@ -49,3 +49,11 @@ export class PinoLoggerService implements LoggerService {
 
   fatal(_message: unknown, ..._optionalParams: unknown[]): void {}
 }
+
+export function getActiveTraceId(): string | undefined {
+  return undefined;
+}
+
+export function getActiveSpanId(): string | undefined {
+  return undefined;
+}
