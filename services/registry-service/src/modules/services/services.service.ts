@@ -124,7 +124,7 @@ export class ServicesService {
       VALUES
         (${id}, ${tenantId}, ${dto.name}, ${dto.image}, ${port},
          ${minScale}, ${maxScale}, ${concurrencyTarget},
-         ${JSON.stringify(envVars)}, 'active', ${ksvcName}, ${ns})
+         ${this.sql.json(envVars)}, 'active', ${ksvcName}, ${ns})
       RETURNING *
     `;
 
@@ -212,7 +212,7 @@ export class ServicesService {
         min_scale = ${minScale},
         max_scale = ${maxScale},
         concurrency_target = ${concurrencyTarget},
-        env_vars = ${JSON.stringify(envVars)},
+        env_vars = ${this.sql.json(envVars)},
         updated_at = NOW()
       WHERE id = ${id} AND tenant_id = ${tenantId}
       RETURNING *

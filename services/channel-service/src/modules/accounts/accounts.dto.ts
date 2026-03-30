@@ -6,12 +6,12 @@ import {
 } from "class-validator";
 
 export class CreateAccountDto {
-  @IsIn(["whatsapp", "instagram"])
-  channel!: "whatsapp" | "instagram";
+  @IsIn(["whatsapp", "instagram", "telegram"])
+  channel!: "whatsapp" | "instagram" | "telegram";
 
   @IsOptional()
-  @IsIn(["meta"])
-  provider?: "meta";
+  @IsIn(["meta", "telegram"])
+  provider?: "meta" | "telegram";
 
   @IsString()
   name!: string;
@@ -30,6 +30,10 @@ export class CreateAccountDto {
   @IsOptional()
   @IsString()
   igUserId?: string;
+
+  @IsOptional()
+  @IsString()
+  telegramBotToken?: string;
 
   @IsString()
   accessToken!: string;

@@ -13,6 +13,7 @@ import {
   Info,
   Phone,
   Instagram,
+  Send,
   Save,
 } from "lucide-angular";
 import {
@@ -60,6 +61,8 @@ import {
               <span class="section-card-title">Account Information</span>
               @if (account()!.channel === "instagram") {
                 <span class="badge badge-purple">Instagram</span>
+              } @else if (account()!.channel === "telegram") {
+                <span class="badge badge-blue">Telegram</span>
               } @else {
                 <span class="badge badge-green">WhatsApp</span>
               }
@@ -106,6 +109,13 @@ import {
                     {{ account()!.phoneNumberId || "—" }}
                   </span>
                 </div>
+              } @else if (account()!.channel === "telegram") {
+                <div class="info-item">
+                  <span class="info-label">Bot Username</span>
+                  <span class="info-value mono">
+                    @{{ account()!.externalId }}
+                  </span>
+                </div>
               } @else {
                 <div class="info-item">
                   <span class="info-label">IG User ID</span>
@@ -114,12 +124,14 @@ import {
                   </span>
                 </div>
               }
-              <div class="info-item">
-                <span class="info-label">Meta App ID</span>
-                <span class="info-value mono">
-                  {{ account()!.appId || "— (server default)" }}
-                </span>
-              </div>
+              @if (account()!.channel !== "telegram") {
+                <div class="info-item">
+                  <span class="info-label">Meta App ID</span>
+                  <span class="info-value mono">
+                    {{ account()!.appId || "— (server default)" }}
+                  </span>
+                </div>
+              }
             </div>
           </div>
         </div>
@@ -134,16 +146,25 @@ import {
           </div>
           <div class="section-card-body">
             <p class="hint">
-              Paste a new token from the Meta App Dashboard to update
-              the stored credentials.
+              @if (account()!.channel === "telegram") {
+                Paste a new bot token from BotFather to update the stored credentials.
+              } @else {
+                Paste a new token from the Meta App Dashboard to update the stored credentials.
+              }
             </p>
             <form (ngSubmit)="updateToken()" class="inline-form">
               <mat-form-field appearance="outline">
-                <mat-label>New Access Token</mat-label>
+                <mat-label>
+                  @if (account()!.channel === "telegram") {
+                    New Bot Token
+                  } @else {
+                    New Access Token
+                  }
+                </mat-label>
                 <input matInput
                        [(ngModel)]="newToken"
                        name="newToken"
-                       placeholder="EAAG..." />
+                       [placeholder]="account()!.channel === 'telegram' ? '123456:ABC-DEF...' : 'EAAG...'" />
               </mat-form-field>
               <button class="btn btn-primary"
                       type="submit"
@@ -160,6 +181,7 @@ import {
         </div>
 
         <!-- Update Meta Credentials -->
+        @if (account()!.channel !== "telegram") {
         <div class="section-card">
           <div class="section-card-header">
             <div class="section-title-row">
@@ -203,6 +225,7 @@ import {
             </form>
           </div>
         </div>
+        }
       }
     </div>
   `,
@@ -296,6 +319,7 @@ export class AccountSettingsComponent implements OnInit {
   protected readonly Info = Info;
   protected readonly Phone = Phone;
   protected readonly Instagram = Instagram;
+  protected readonly SendIcon = Send;
   protected readonly Save = Save;
 
   /** Route param bound via withComponentInputBinding() */

@@ -4,30 +4,32 @@ import { MatDialog } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
-import { HttpAdapterDialogComponent } from "../../../../shared/components/http-adapter-dialog/http-adapter-dialog.component";
+import { HttpAdapterDialogComponent } from "../../../shared/components/http-adapter-dialog/http-adapter-dialog.component";
 import {
   type HttpAdapter,
+  type HttpAdapterContext,
   type HttpAdapterDialogData,
   type HttpAdapterDialogResult,
-} from "../../../../shared/models/http-adapter.model";
-import { StatusBadgeComponent } from "../../../../shared/components/status-badge/status-badge.component";
+} from "../../../shared/models/http-adapter.model";
+import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 import {
   HttpAdapterService,
   type AdapterDto,
   type CreateAdapterPayload,
   type UpdateAdapterPayload,
-} from "../../../../core/services/http-adapter.service";
+} from "../../../core/services/http-adapter.service";
 
-interface InternalSourceRow {
+interface ConnectorRow {
   id: string;
+  context: HttpAdapterContext;
   adapter: HttpAdapter;
   status: string;
-  latency: string;
 }
 
-function toRow(dto: AdapterDto): InternalSourceRow {
+function toRow(dto: AdapterDto): ConnectorRow {
   return {
     id: dto.id,
+    context: dto.context as HttpAdapterContext,
     adapter: {
       name: dto.name,
       baseUrl: dto.baseUrl,
@@ -47,14 +49,16 @@ function toRow(dto: AdapterDto): InternalSourceRow {
       healthCheckPath: dto.healthCheckPath,
     },
     status: dto.status,
-    latency: "—",
   };
 }
 
-function toCreatePayload(adapter: HttpAdapter): CreateAdapterPayload {
+function toCreatePayload(
+  adapter: HttpAdapter,
+  context: HttpAdapterContext,
+): CreateAdapterPayload {
   return {
     name: adapter.name,
-    context: "internal",
+    context,
     baseUrl: adapter.baseUrl,
     authType: adapter.auth.type,
     authConfig: adapter.auth as unknown as Record<string, unknown>,
@@ -86,7 +90,7 @@ function toUpdatePayload(adapter: HttpAdapter): UpdateAdapterPayload {
 }
 
 @Component({
-  selector: "app-internal-sources",
+  selector: "app-connectors",
   standalone: true,
   imports: [
     MatTableModule,
@@ -98,9 +102,9 @@ function toUpdatePayload(adapter: HttpAdapter): UpdateAdapterPayload {
   template: `
     <div class="ws-header">
       <div>
-        <div class="ws-title">Internal Sources</div>
+        <div class="ws-title">Connectors</div>
         <div class="ws-subtitle">
-          HTTP adapters for services inside the cluster
+          HTTP adapters for internal and external services
         </div>
       </div>
       <div class="ws-actions">
@@ -109,7 +113,7 @@ function toUpdatePayload(adapter: HttpAdapter): UpdateAdapterPayload {
           class="btn btn-primary btn-sm"
           (click)="openCreate()"
         >
-          + Add Internal Source
+          + Add Connector
         </button>
       </div>
     </div>
@@ -120,10 +124,22 @@ function toUpdatePayload(adapter: HttpAdapter): UpdateAdapterPayload {
       </div>
     } @else {
       <div class="table-wrap">
-        <table mat-table [dataSource]="sources()">
+        <table mat-table [dataSource]="connectors()">
           <ng-container matColumnDef="name">
             <th mat-header-cell *matHeaderCellDef>Name</th>
             <td mat-cell *matCellDef="let r">{{ r.adapter.name }}</td>
+          </ng-container>
+          <ng-container matColumnDef="scope">
+            <th mat-header-cell *matHeaderCellDef>Scope</th>
+            <td mat-cell *matCellDef="let r">
+              <span
+                class="badge"
+                [class.badge-cyan]="r.context === 'internal'"
+                [class.badge-orange]="r.context === 'external'"
+              >
+                {{ r.context }}
+              </span>
+            </td>
           </ng-container>
           <ng-container matColumnDef="baseUrl">
             <th mat-header-cell *matHeaderCellDef>Base URL</th>
@@ -155,12 +171,6 @@ function toUpdatePayload(adapter: HttpAdapter): UpdateAdapterPayload {
               </span>
             </td>
           </ng-container>
-          <ng-container matColumnDef="healthCheck">
-            <th mat-header-cell *matHeaderCellDef>Health Check</th>
-            <td mat-cell *matCellDef="let r" style="font-family:monospace">
-              {{ r.adapter.healthCheckPath }}
-            </td>
-          </ng-container>
           <ng-container matColumnDef="actions">
             <th mat-header-cell *matHeaderCellDef>Actions</th>
             <td mat-cell *matCellDef="let r; let i = index">
@@ -188,33 +198,40 @@ function toUpdatePayload(adapter: HttpAdapter): UpdateAdapterPayload {
       </div>
     }
   `,
+  styles: `
+    .badge-cyan {
+      background: rgba(6, 182, 212, 0.15);
+      color: #06b6d4;
+    }
+    .badge-orange {
+      background: rgba(249, 115, 22, 0.15);
+      color: #f97316;
+    }
+  `,
 })
-export class InternalSourcesComponent implements OnInit {
+export class ConnectorsComponent implements OnInit {
   private readonly dialog = inject(MatDialog);
   private readonly adapterService = inject(HttpAdapterService);
 
   readonly cols = [
     "name",
+    "scope",
     "baseUrl",
     "auth",
     "endpoints",
     "status",
-    "healthCheck",
     "actions",
   ] as const;
 
-  readonly sources = signal<InternalSourceRow[]>([]);
+  readonly connectors = signal<ConnectorRow[]>([]);
   readonly loading = signal(true);
 
   ngOnInit(): void {
-    this.loadSources();
+    this.loadConnectors();
   }
 
   openCreate(): void {
-    const data: HttpAdapterDialogData = {
-      mode: "create",
-      context: "internal",
-    };
+    const data: HttpAdapterDialogData = { mode: "create" };
     this.dialog
       .open(HttpAdapterDialogComponent, {
         data,
@@ -226,18 +243,18 @@ export class InternalSourcesComponent implements OnInit {
       .subscribe((result?: HttpAdapterDialogResult) => {
         if (!result) return;
         this.adapterService
-          .create(toCreatePayload(result.adapter))
+          .create(toCreatePayload(result.adapter, result.context))
           .subscribe((dto) => {
-            this.sources.update((rows) => [...rows, toRow(dto)]);
+            this.connectors.update((rows) => [...rows, toRow(dto)]);
           });
       });
   }
 
   openEdit(index: number): void {
-    const row = this.sources()[index];
+    const row = this.connectors()[index];
     const data: HttpAdapterDialogData = {
       mode: "edit",
-      context: "internal",
+      context: row.context,
       adapter: row.adapter,
     };
     this.dialog
@@ -253,7 +270,7 @@ export class InternalSourcesComponent implements OnInit {
         this.adapterService
           .update(row.id, toUpdatePayload(result.adapter))
           .subscribe((dto) => {
-            this.sources.update((rows) =>
+            this.connectors.update((rows) =>
               rows.map((r, i) => (i === index ? toRow(dto) : r)),
             );
           });
@@ -261,16 +278,16 @@ export class InternalSourcesComponent implements OnInit {
   }
 
   remove(index: number): void {
-    const row = this.sources()[index];
+    const row = this.connectors()[index];
     this.adapterService.remove(row.id).subscribe(() => {
-      this.sources.update((rows) => rows.filter((_, i) => i !== index));
+      this.connectors.update((rows) => rows.filter((_, i) => i !== index));
     });
   }
 
-  private loadSources(): void {
-    this.adapterService.list("internal").subscribe({
+  private loadConnectors(): void {
+    this.adapterService.list().subscribe({
       next: (dtos) => {
-        this.sources.set(dtos.map(toRow));
+        this.connectors.set(dtos.map(toRow));
         this.loading.set(false);
       },
       error: () => {

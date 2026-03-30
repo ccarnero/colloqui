@@ -21,7 +21,7 @@ interface ChannelAccount {
   externalId: string;
   phoneNumberId?: string;
   wabaId?: string;
-  igUserId?: string;
+  telegramBotToken?: string;
   accessToken: string;
   appId?: string;
   appSecret?: string;
@@ -31,6 +31,7 @@ interface ChannelAccount {
 
 export interface AccountDialogData {
   account?: ChannelAccount;
+  defaultChannel?: string;
 }
 
 export interface AccountDialogResult {
@@ -58,7 +59,7 @@ export interface AccountDialogResult {
           {{
             isEdit
               ? "Update channel account settings"
-              : "Connect a WhatsApp or Instagram account"
+              : "Connect a WhatsApp or Telegram account"
           }}
         </div>
       </div>
@@ -82,7 +83,7 @@ export interface AccountDialogResult {
             [disabled]="isEdit"
           >
             <mat-option value="whatsapp">WhatsApp</mat-option>
-            <mat-option value="instagram">Instagram</mat-option>
+            <mat-option value="telegram">Telegram</mat-option>
           </mat-select>
         </mat-form-field>
 
@@ -102,7 +103,7 @@ export interface AccountDialogResult {
             matInput
             [ngModel]="externalId()"
             (ngModelChange)="externalId.set($event)"
-            placeholder="WABA ID or IG User ID"
+            placeholder="WABA ID or Bot username"
             [disabled]="isEdit"
           />
         </mat-form-field>
@@ -127,55 +128,59 @@ export interface AccountDialogResult {
           </mat-form-field>
         }
 
-        @if (channel() === "instagram") {
+        @if (channel() === "telegram") {
           <mat-form-field appearance="outline" class="full-width">
-            <mat-label>Instagram User ID</mat-label>
+            <mat-label>Bot Token</mat-label>
             <input
               matInput
-              [ngModel]="igUserId()"
-              (ngModelChange)="igUserId.set($event)"
+              type="password"
+              [ngModel]="telegramBotToken()"
+              (ngModelChange)="telegramBotToken.set($event)"
+              placeholder="Token from @BotFather"
             />
           </mat-form-field>
         }
 
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Access Token</mat-label>
-          <input
-            matInput
-            type="password"
-            [ngModel]="accessToken()"
-            (ngModelChange)="accessToken.set($event)"
-          />
-        </mat-form-field>
+        @if (channel() !== "telegram") {
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Access Token</mat-label>
+            <input
+              matInput
+              type="password"
+              [ngModel]="accessToken()"
+              (ngModelChange)="accessToken.set($event)"
+            />
+          </mat-form-field>
 
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>App ID (optional)</mat-label>
-          <input
-            matInput
-            [ngModel]="appId()"
-            (ngModelChange)="appId.set($event)"
-          />
-        </mat-form-field>
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>App ID (optional)</mat-label>
+            <input
+              matInput
+              [ngModel]="appId()"
+              (ngModelChange)="appId.set($event)"
+            />
+          </mat-form-field>
 
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>App Secret (optional)</mat-label>
-          <input
-            matInput
-            type="password"
-            [ngModel]="appSecret()"
-            (ngModelChange)="appSecret.set($event)"
-          />
-        </mat-form-field>
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>App Secret (optional)</mat-label>
+            <input
+              matInput
+              type="password"
+              [ngModel]="appSecret()"
+              (ngModelChange)="appSecret.set($event)"
+            />
+          </mat-form-field>
 
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Verify Token (optional)</mat-label>
-          <input
-            matInput
-            [ngModel]="verifyToken()"
-            (ngModelChange)="verifyToken.set($event)"
-            placeholder="Used for webhook verification"
-          />
-        </mat-form-field>
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Verify Token (optional)</mat-label>
+            <input
+              matInput
+              [ngModel]="verifyToken()"
+              (ngModelChange)="verifyToken.set($event)"
+              placeholder="Used for webhook verification"
+            />
+          </mat-form-field>
+        }
 
         @if (errorMessage()) {
           <div class="error-msg">{{ errorMessage() }}</div>
@@ -258,7 +263,7 @@ export class AccountDialogComponent implements OnInit {
   readonly externalId = signal("");
   readonly phoneNumberId = signal("");
   readonly wabaId = signal("");
-  readonly igUserId = signal("");
+  readonly telegramBotToken = signal("");
   readonly accessToken = signal("");
   readonly appId = signal("");
   readonly appSecret = signal("");
@@ -276,21 +281,27 @@ export class AccountDialogComponent implements OnInit {
       this.externalId.set(account.externalId);
       this.phoneNumberId.set(account.phoneNumberId ?? "");
       this.wabaId.set(account.wabaId ?? "");
-      this.igUserId.set(account.igUserId ?? "");
+      this.telegramBotToken.set(account.telegramBotToken ?? "");
       this.accessToken.set(account.accessToken);
       this.appId.set(account.appId ?? "");
       this.appSecret.set(account.appSecret ?? "");
       this.verifyToken.set(account.verifyToken ?? "");
+    } else if (this.data.defaultChannel) {
+      this.channel.set(this.data.defaultChannel);
     }
   }
 
   canSave(): boolean {
-    return (
+    const hasBase =
       this.channel().length > 0 &&
       this.name().trim().length > 0 &&
-      this.externalId().trim().length > 0 &&
-      this.accessToken().trim().length > 0
-    );
+      this.externalId().trim().length > 0;
+
+    if (this.channel() === "telegram") {
+      return hasBase && this.telegramBotToken().trim().length > 0;
+    }
+
+    return hasBase && this.accessToken().trim().length > 0;
   }
 
   save(): void {
@@ -319,6 +330,9 @@ export class AccountDialogComponent implements OnInit {
           },
         });
     } else {
+      const isTelegram = this.channel() === "telegram";
+      const botToken = this.telegramBotToken().trim();
+
       this.http
         .post(`${environment.apiUrl}/channels/accounts`, {
           channel: this.channel(),
@@ -326,8 +340,8 @@ export class AccountDialogComponent implements OnInit {
           externalId: this.externalId().trim(),
           phoneNumberId: this.phoneNumberId().trim() || undefined,
           wabaId: this.wabaId().trim() || undefined,
-          igUserId: this.igUserId().trim() || undefined,
-          accessToken: this.accessToken().trim(),
+          telegramBotToken: botToken || undefined,
+          accessToken: isTelegram ? botToken : this.accessToken().trim(),
           appId: this.appId().trim() || undefined,
           appSecret: this.appSecret().trim() || undefined,
           verifyToken: this.verifyToken().trim() || undefined,

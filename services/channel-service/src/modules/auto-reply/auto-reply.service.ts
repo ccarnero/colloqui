@@ -52,7 +52,7 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
       30_000,
     );
 
-    const subject = `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_DOMAIN}.*.meta.received.v1`;
+    const subject = `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_DOMAIN}.*.*.received.v1`;
     this.subscription = this.nc.subscribe(subject, {
       callback: (_err, msg) => {
         this.handleMessage(msg).catch((err) => {

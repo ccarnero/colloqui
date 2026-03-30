@@ -35,3 +35,11 @@ data:
               matcherRegex: '"traceId":"(\w+)"'
               name: TraceID
               url: "$${__value.raw}"
+
+      - name: NATS Monitoring
+        uid: nats-monitor
+        type: yesoreyeram-infinity-datasource
+        access: proxy
+        editable: false
+        jsonData:
+          url: "http://nats:8222"

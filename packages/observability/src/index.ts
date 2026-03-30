@@ -38,3 +38,12 @@ export {
   getActiveTraceId,
   getActiveSpanId,
 } from './trace-utils';
+
+export {
+  trace,
+  context,
+  SpanKind,
+  SpanStatusCode,
+  type Span,
+  type Tracer,
+} from '@opentelemetry/api';

@@ -15,13 +15,14 @@ const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS channel_accounts (
   id                TEXT        PRIMARY KEY,
   tenant_id         TEXT        NOT NULL,
-  channel           TEXT        NOT NULL CHECK (channel IN ('whatsapp', 'instagram')),
+  channel           TEXT        NOT NULL CHECK (channel IN ('whatsapp', 'instagram', 'telegram')),
   provider          TEXT        NOT NULL DEFAULT 'meta',
   name              TEXT        NOT NULL,
   external_id       TEXT        NOT NULL,
   phone_number_id   TEXT,
   waba_id           TEXT,
   ig_user_id        TEXT,
+  telegram_bot_token TEXT,
   access_token      TEXT        NOT NULL,
   app_id            TEXT,
   app_secret        TEXT,
@@ -38,6 +39,20 @@ CREATE INDEX IF NOT EXISTS idx_channel_accounts_channel
   ON channel_accounts (tenant_id, channel);
 CREATE INDEX IF NOT EXISTS idx_channel_accounts_external
   ON channel_accounts (external_id);
+
+-- Telegram support: add column + widen CHECK for existing tables
+ALTER TABLE channel_accounts
+  ADD COLUMN IF NOT EXISTS telegram_bot_token TEXT;
+
+DO $$
+BEGIN
+  ALTER TABLE channel_accounts
+    DROP CONSTRAINT IF EXISTS channel_accounts_channel_check;
+  ALTER TABLE channel_accounts
+    ADD CONSTRAINT channel_accounts_channel_check
+    CHECK (channel IN ('whatsapp', 'instagram', 'telegram'));
+EXCEPTION WHEN others THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS channel_messages (
   id                  TEXT        PRIMARY KEY,

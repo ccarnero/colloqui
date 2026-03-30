@@ -1,5 +1,6 @@
-import { Component, OnInit, inject, signal } from "@angular/core";
-import { DatePipe } from "@angular/common";
+import { Component, OnInit, computed, inject, signal } from "@angular/core";
+import { DatePipe, TitleCasePipe } from "@angular/common";
+import { ActivatedRoute } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
@@ -21,7 +22,7 @@ interface ChannelAccount {
   externalId: string;
   phoneNumberId?: string;
   wabaId?: string;
-  igUserId?: string;
+  telegramBotToken?: string;
   accessToken: string;
   appId?: string;
   appSecret?: string;
@@ -35,6 +36,7 @@ interface ChannelAccount {
   standalone: true,
   imports: [
     DatePipe,
+    TitleCasePipe,
     MatButtonModule,
     MatIconModule,
     MatTableModule,
@@ -44,9 +46,9 @@ interface ChannelAccount {
   template: `
     <div class="ws-header">
       <div>
-        <div class="ws-title">Channels</div>
+        <div class="ws-title">{{ channelFilter() | titlecase }}</div>
         <div class="ws-subtitle">
-          Manage messaging channel accounts (WhatsApp, Instagram)
+          Manage {{ channelFilter() | titlecase }} channel accounts
         </div>
       </div>
       <div class="ws-actions">
@@ -71,34 +73,17 @@ interface ChannelAccount {
         <div class="stat-label">Active</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ whatsappCount() }}</div>
-        <div class="stat-label">WhatsApp</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{{ instagramCount() }}</div>
-        <div class="stat-label">Instagram</div>
+        <div class="stat-value">{{ inactiveAccounts() }}</div>
+        <div class="stat-label">Inactive</div>
       </div>
     </div>
 
     <div class="table-wrap">
-      <table mat-table [dataSource]="accounts()">
+      <table mat-table [dataSource]="filteredAccounts()">
         <ng-container matColumnDef="name">
           <th mat-header-cell *matHeaderCellDef>Name</th>
           <td mat-cell *matCellDef="let a">
             <strong>{{ a.name }}</strong>
-          </td>
-        </ng-container>
-
-        <ng-container matColumnDef="channel">
-          <th mat-header-cell *matHeaderCellDef>Channel</th>
-          <td mat-cell *matCellDef="let a">
-            <span
-              class="badge"
-              [class.badge-green]="a.channel === 'whatsapp'"
-              [class.badge-purple]="a.channel === 'instagram'"
-            >
-              {{ a.channel }}
-            </span>
           </td>
         </ng-container>
 
@@ -149,7 +134,7 @@ interface ChannelAccount {
   styles: `
     .stats-row {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 16px;
       margin-bottom: 24px;
     }
@@ -193,29 +178,41 @@ export class ChannelsComponent implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly auth = inject(AuthService);
   private readonly dialog = inject(MatDialog);
+  private readonly route = inject(ActivatedRoute);
 
   readonly cols = [
     "name",
-    "channel",
     "externalId",
     "status",
     "createdAt",
     "actions",
   ] as const;
 
+  readonly channelFilter = signal("whatsapp");
   readonly accounts = signal<ChannelAccount[]>([]);
-  readonly totalAccounts = signal(0);
-  readonly activeAccounts = signal(0);
-  readonly whatsappCount = signal(0);
-  readonly instagramCount = signal(0);
+
+  readonly filteredAccounts = computed(() =>
+    this.accounts().filter((a) => a.channel === this.channelFilter()),
+  );
+
+  readonly totalAccounts = computed(() => this.filteredAccounts().length);
+  readonly activeAccounts = computed(
+    () => this.filteredAccounts().filter((a) => a.isActive).length,
+  );
+  readonly inactiveAccounts = computed(
+    () => this.filteredAccounts().filter((a) => !a.isActive).length,
+  );
 
   ngOnInit(): void {
-    this.loadAccounts();
+    this.route.paramMap.subscribe((params) => {
+      this.channelFilter.set(params.get("channel") ?? "whatsapp");
+      this.loadAccounts();
+    });
   }
 
   openCreate(): void {
     const ref = this.dialog.open(AccountDialogComponent, {
-      data: {},
+      data: { defaultChannel: this.channelFilter() },
       width: "520px",
     });
     ref.afterClosed().subscribe((result?: AccountDialogResult) => {
@@ -246,17 +243,7 @@ export class ChannelsComponent implements OnInit {
 
   private loadAccounts(): void {
     this.http.get<ChannelAccount[]>(`${environment.apiUrl}/channels/accounts`).subscribe({
-      next: (data) => {
-        this.accounts.set(data);
-        this.totalAccounts.set(data.length);
-        this.activeAccounts.set(data.filter((a) => a.isActive).length);
-        this.whatsappCount.set(
-          data.filter((a) => a.channel === "whatsapp").length,
-        );
-        this.instagramCount.set(
-          data.filter((a) => a.channel === "instagram").length,
-        );
-      },
+      next: (data) => this.accounts.set(data),
     });
   }
 }

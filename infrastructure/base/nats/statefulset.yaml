@@ -75,6 +75,7 @@ spec:
             - "-varz"
             - "-connz"
             - "-routez"
+            - "-subz"
             - "-jsz=all"
             - "http://localhost:8222"
           ports:

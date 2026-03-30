@@ -16,6 +16,7 @@ const GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
 export class WhatsAppProvider implements IChannelProvider {
   readonly channel = "whatsapp" as const;
   readonly provider = "meta" as const;
+  readonly signatureHeader = "x-hub-signature-256";
 
   private readonly logger = new Logger(WhatsAppProvider.name);
 

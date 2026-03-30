@@ -3,6 +3,7 @@ import type { JetStreamClient, JetStreamManager } from "nats";
 import { headers as natsHeaders } from "nats";
 import type {
   Channel,
+  ChannelProvider,
   OutboundMessage,
   SendMessageResult,
 } from "@yoizen/shared";
@@ -17,7 +18,7 @@ import {
   JETSTREAM_MANAGER,
   ensureIngressStream,
 } from "../../providers/nats.provider";
-import { ProviderRegistry } from "../../providers/meta/provider-registry";
+import { ChannelRouter } from "../../providers/channel-router";
 import { AccountsService } from "../accounts/accounts.service";
 import {
   egressMessagesSent,
@@ -36,7 +37,7 @@ export class EgressService {
   constructor(
     @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
-    private readonly registry: ProviderRegistry,
+    private readonly router: ChannelRouter,
     private readonly accounts: AccountsService,
   ) {}
 
@@ -56,7 +57,7 @@ export class EgressService {
       );
     }
 
-    const provider = this.registry.getOrThrow(account.channel);
+    const provider = this.router.getOrThrow(account.channel);
     const attrs = { channel: account.channel, tenant: tenantId };
     const start = performance.now();
     const result = await provider.sendMessage(account, message);
@@ -67,6 +68,7 @@ export class EgressService {
       await this.shadowPublish(
         tenantId,
         account.channel,
+        account.provider,
         accountId,
         message,
         result,
@@ -81,6 +83,7 @@ export class EgressService {
   private async shadowPublish(
     tenantId: string,
     channel: Channel,
+    channelProvider: ChannelProvider,
     accountId: string,
     message: OutboundMessage,
     result: SendMessageResult,
@@ -91,14 +94,14 @@ export class EgressService {
       const subject = buildChannelSubject(
         tenantId,
         channel,
-        "meta",
+        channelProvider,
         "sent",
       );
 
       const envelope = {
         id: crypto.randomUUID(),
         specversion: "1.0",
-        type: `io.yoizen.messaging.${channel}.meta.sent.v1`,
+        type: `io.yoizen.messaging.${channel}.${channelProvider}.sent.v1`,
         source: `//channel-service/accounts/${accountId}`,
         time: new Date().toISOString(),
         datacontenttype: "application/json",
@@ -111,7 +114,7 @@ export class EgressService {
         },
         tenantId,
         channel,
-        provider: "meta",
+        provider: channelProvider,
         kind: "sent",
         idempotencyKey: `${tenantId}:${channel}:sent:${result.providerMessageId ?? crypto.randomUUID()}`,
       };

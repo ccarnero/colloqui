@@ -27,14 +27,18 @@ export class AccountsController {
     @Headers(TENANT_HEADER) tenantId: string,
     @Body() dto: CreateAccountDto,
   ) {
+    const provider =
+      dto.provider ?? (dto.channel === "telegram" ? "telegram" : "meta");
+
     return this.accounts.create(tenantId, {
       channel: dto.channel,
-      provider: dto.provider ?? "meta",
+      provider,
       name: dto.name,
       externalId: dto.externalId,
       phoneNumberId: dto.phoneNumberId,
       wabaId: dto.wabaId,
       igUserId: dto.igUserId,
+      telegramBotToken: dto.telegramBotToken,
       accessToken: dto.accessToken,
       appId: dto.appId,
       appSecret: dto.appSecret,

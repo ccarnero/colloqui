@@ -1,7 +1,9 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { Sql } from "postgres";
-import type { Channel, ChannelAccount } from "@yoizen/shared";
+import type { Channel, ChannelAccount, ChannelProvider } from "@yoizen/shared";
+import { DEFAULT_CHANNEL_SERVICE_URL } from "@yoizen/shared";
 import { POSTGRES_SQL } from "../../providers/postgres.provider";
+import { TelegramProvider } from "../../providers/telegram/telegram.provider";
 
 interface AccountRow {
   id: string;
@@ -13,6 +15,7 @@ interface AccountRow {
   phone_number_id: string | null;
   waba_id: string | null;
   ig_user_id: string | null;
+  telegram_bot_token: string | null;
   access_token: string;
   app_id: string | null;
   app_secret: string | null;
@@ -27,12 +30,13 @@ function mapRow(row: AccountRow): ChannelAccount {
     id: row.id,
     tenantId: row.tenant_id,
     channel: row.channel as Channel,
-    provider: row.provider as "meta",
+    provider: row.provider as ChannelProvider,
     name: row.name,
     externalId: row.external_id,
     phoneNumberId: row.phone_number_id ?? undefined,
     wabaId: row.waba_id ?? undefined,
     igUserId: row.ig_user_id ?? undefined,
+    telegramBotToken: row.telegram_bot_token ?? undefined,
     accessToken: row.access_token,
     appId: row.app_id ?? undefined,
     appSecret: row.app_secret ?? undefined,
@@ -47,30 +51,46 @@ function mapRow(row: AccountRow): ChannelAccount {
 export class AccountsService {
   private readonly logger = new Logger(AccountsService.name);
 
-  constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
+  constructor(
+    @Inject(POSTGRES_SQL) private readonly sql: Sql,
+    private readonly telegramProvider: TelegramProvider,
+  ) {}
 
   async create(
     tenantId: string,
     data: Omit<ChannelAccount, "id" | "tenantId" | "createdAt" | "updatedAt">,
   ): Promise<ChannelAccount> {
     const id = crypto.randomUUID();
+
+    let appSecret = data.appSecret ?? null;
+    if (data.channel === "telegram" && !appSecret) {
+      appSecret = crypto.randomUUID().replace(/-/g, "");
+    }
+
     const rows = await this.sql<AccountRow[]>`
       INSERT INTO channel_accounts (
         id, tenant_id, channel, provider, name, external_id,
-        phone_number_id, waba_id, ig_user_id, access_token,
-        app_id, app_secret, verify_token, is_active
+        phone_number_id, waba_id, ig_user_id, telegram_bot_token,
+        access_token, app_id, app_secret, verify_token, is_active
       ) VALUES (
         ${id}, ${tenantId}, ${data.channel}, ${data.provider}, ${data.name},
         ${data.externalId}, ${data.phoneNumberId ?? null},
         ${data.wabaId ?? null}, ${data.igUserId ?? null},
+        ${data.telegramBotToken ?? null},
         ${data.accessToken}, ${data.appId ?? null},
-        ${data.appSecret ?? null}, ${data.verifyToken ?? null},
+        ${appSecret}, ${data.verifyToken ?? null},
         ${data.isActive}
       )
       RETURNING *
     `;
 
-    return mapRow(rows[0]);
+    const account = mapRow(rows[0]);
+
+    if (account.channel === "telegram" && account.isActive) {
+      await this.registerTelegramWebhook(account);
+    }
+
+    return account;
   }
 
   async list(
@@ -206,5 +226,36 @@ export class AccountsService {
     `;
 
     return result.count > 0;
+  }
+
+  private async registerTelegramWebhook(
+    account: ChannelAccount,
+  ): Promise<void> {
+    const botToken = account.telegramBotToken ?? account.accessToken;
+    const baseUrl =
+      process.env.CHANNEL_SERVICE_PUBLIC_URL ?? DEFAULT_CHANNEL_SERVICE_URL;
+    const webhookUrl = `${baseUrl}/webhooks/telegram/${account.tenantId}`;
+
+    try {
+      const result = await this.telegramProvider.registerWebhook(
+        botToken,
+        webhookUrl,
+        account.appSecret ?? "",
+      );
+
+      if (result.ok) {
+        this.logger.log(
+          `Telegram webhook registered for account=${account.id}`,
+        );
+      } else {
+        this.logger.warn(
+          `Telegram webhook registration failed for account=${account.id}: ${result.description}`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `Telegram webhook registration error: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 }

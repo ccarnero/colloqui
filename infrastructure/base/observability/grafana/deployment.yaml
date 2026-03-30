@@ -29,6 +29,8 @@ spec:
               value: "true"
             - name: GF_AUTH_ANONYMOUS_ORG_ROLE
               value: Viewer
+            - name: GF_INSTALL_PLUGINS
+              value: "yesoreyeram-infinity-datasource"
           resources:
             requests:
               cpu: 100m
