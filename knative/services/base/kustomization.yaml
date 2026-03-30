@@ -25,3 +25,4 @@ resources:
   - channel-service.yaml
   - admin-console.yaml
   - messaging-console.yaml
+  - yoizenclaw-admin-service.yaml

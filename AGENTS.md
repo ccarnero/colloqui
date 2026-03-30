@@ -181,6 +181,7 @@ Use these skills for detailed, project-specific patterns and workflows.
 | `git-commit` | Git commit standards and commit message formatting | [SKILL.md](skills/git-commit/SKILL.md) |
 | `skill-creator` | Create new AI agent skills | [SKILL.md](skills/skill-creator/SKILL.md) |
 | `skill-sync` | Sync skill metadata with AGENTS.md auto-invoke tables | [SKILL.md](skills/skill-sync/SKILL.md) |
+| `yz-ui` | YoizenClaw UI design system - colors, typography, components, and icons | [SKILL.md](skills/yz-ui/SKILL.md) |
 
 ### Auto-invoke Skills
 

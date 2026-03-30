@@ -115,3 +115,4 @@ bun.lock
 GEMINI.md
 CURSOR.md
 CLAUDE.md
+.claude/

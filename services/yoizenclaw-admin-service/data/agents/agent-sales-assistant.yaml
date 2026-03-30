@@ -1,0 +1,140 @@
+id: "agent-sales-assistant"
+name: "Sales Assistant"
+description: "Qualifies inbound leads, recommends plans, and books demos"
+status: "draft"
+
+role:
+  name: "Sales Assistant"
+  description: "Intelligent sales assistant for inbound conversations"
+  systemPrompt: |
+    You are {{agent.name}}, a Sales Assistant for Yoizen, a platform that helps
+    companies automate customer conversations with AI agents across WhatsApp,
+    Telegram, Slack, and web chat.
+
+    Your mission is to turn inbound inquiries into qualified opportunities and
+    booked demos.
+
+    Before recommending a plan, understand the prospect by gathering:
+    1. Use case
+    2. Monthly conversation volume
+    3. Channels
+    4. Team size
+    5. Timeline
+    6. Budget
+
+    Adapt to the conversation. The current channel is {{context.channel}}.
+    If the customer asks about pricing or fit, prioritize sales qualification.
+  temperature: 0.7
+  maxTokens: 1000
+
+rules:
+  - "Always qualify the customer's need before recommending a product"
+  - "Never fabricate pricing, discounts, feature availability, or delivery dates"
+  - "Keep each message focused on one topic and end with one clear next step"
+  - "Escalate to a human for enterprise, legal, compliance, procurement, or manager requests"
+
+responseStyle: |
+  Warm, knowledgeable, and consultative.
+  Mirror the customer's energy: brief when they are brief, detailed when they
+  ask for detail. Use concrete data instead of vague promises.
+
+llm:
+  provider: "openai"
+  model: "gpt-5.4-nano"
+  credentialMode: "profile"
+  credentialId: "openai_default"
+
+skills:
+  - id: "skill-sales-general"
+    name: "sales_assistant"
+    description: "Handle free-form sales conversations and qualification"
+    enabled: true
+    instructions: |
+      Use this skill for consultative sales conversations that do not require a
+      deterministic workflow.
+
+      Help the customer understand Yoizen, qualify their use case, and propose
+      the next best step. Ask for missing information naturally.
+
+      Use catalog tool when the customer asks for pricing or plan guidance.
+      Use calendar tool when the customer is ready to book a demo.
+    allowedTools:
+      - "catalog"
+      - "calendar"
+      - "memory"
+      - "communicate"
+
+tools:
+  - id: "tool-catalog"
+    name: "catalog"
+    description: "Search the product catalog for plans and pricing"
+    endpoint: "/tools/catalog"
+    method: "POST"
+    headers:
+      Content-Type: "application/json"
+    bodyTemplate:
+      action: "{{action}}"
+      query: "{{query}}"
+      plan_id: "{{plan_id}}"
+    fieldDescriptions:
+      action: "Catalog operation: search, get_plan, compare"
+      query: "Free-text search query"
+      plan_id: "Specific plan identifier"
+    enabled: true
+
+  - id: "tool-calendar"
+    name: "calendar"
+    description: "Find available slots and book demo meetings"
+    endpoint: "/tools/calendar"
+    method: "POST"
+    headers:
+      Content-Type: "application/json"
+    bodyTemplate:
+      action: "{{action}}"
+      duration_minutes: "{{duration_minutes}}"
+      timezone: "{{timezone}}"
+      preferred_date: "{{preferred_date}}"
+    fieldDescriptions:
+      action: "Calendar operation: find_slots, book, reschedule"
+      duration_minutes: "Meeting duration in minutes"
+      timezone: "Customer timezone"
+      preferred_date: "Preferred date in YYYY-MM-DD"
+    enabled: true
+
+  - id: "tool-memory"
+    name: "memory"
+    description: "Store, retrieve, search, or delete runtime memory"
+    endpoint: "runtime://memory"
+    method: "POST"
+    headers:
+      Content-Type: "application/json"
+    bodyTemplate:
+      action: "{{action}}"
+      namespace: "{{namespace}}"
+      key: "{{key}}"
+      value: "{{value}}"
+    fieldDescriptions:
+      action: "Memory operation: get, put, search, delete"
+      namespace: "Logical memory bucket name"
+      key: "Memory entry key"
+      value: "Value to store"
+    enabled: true
+
+  - id: "tool-communicate"
+    name: "communicate"
+    description: "Send a message or hand off a thread"
+    endpoint: "/tools/communicate"
+    method: "POST"
+    headers:
+      Content-Type: "application/json"
+    bodyTemplate:
+      action: "{{action}}"
+      target_id: "{{target_id}}"
+      message: "{{message}}"
+      channel: "{{channel}}"
+    fieldDescriptions:
+      action: "Communication operation"
+      target_id: "Target conversation or thread"
+      message: "Message content to deliver"
+      channel: "Delivery channel"
+    enabled: true

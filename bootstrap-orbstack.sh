@@ -301,7 +301,7 @@ build_images() {
              audit-service webhook-service metrics-service tenant-service \
              scheduler-service registry-service adapter-service \
              channel-service workflow-service workflow-http-worker \
-             proxy-service admin-console; do
+             proxy-service yoizenclaw-admin-service admin-console; do
     log "Building image: dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \

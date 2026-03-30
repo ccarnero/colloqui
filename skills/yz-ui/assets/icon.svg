@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="yoizenGrad" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1A66FF" />
+      <stop offset="55%" stop-color="#4A3ABF" />
+      <stop offset="100%" stop-color="#FD6421" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#050505" />
+  <circle cx="32" cy="32" r="22" fill="none" stroke="url(#yoizenGrad)" stroke-width="6" />
+  <path d="M23 24h7l6 10 5-10h7l-9 16v10h-6V40z" fill="url(#yoizenGrad)" />
+</svg>

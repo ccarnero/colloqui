@@ -49,6 +49,7 @@ ALL_KNATIVE_SERVICES=(
   tenant-service
   scheduler-service
   registry-service
+  yoizenclaw-admin-service
   workflow-api
   workflow-worker
   workflow-http-worker

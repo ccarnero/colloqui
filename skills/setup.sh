@@ -5,11 +5,13 @@
 #   - Gemini CLI: .gemini/skills/ symlink + GEMINI.md copies
 #   - Codex (OpenAI): .codex/skills/ symlink + AGENTS.md (native)
 #   - GitHub Copilot: .github/skills/ symlink
+#   - Cursor: .cursor/skills/ symlink + CURSOR.md copies + .cursorrules
 #
 # Usage:
 #   ./setup.sh              # Interactive mode (select AI assistants)
 #   ./setup.sh --all        # Configure all AI assistants
 #   ./setup.sh --claude     # Configure Claude Code
+#   ./setup.sh --cursor     # Configure Cursor
 #   ./setup.sh --opencode   # Configure OpenCode
 #   ./setup.sh --gemini     # Configure Gemini CLI
 #   ./setup.sh --global-only --project-type=nest --opencode --copilot
@@ -27,7 +29,20 @@ else
         REPO_ROOT="$(pwd)"
     fi
 fi
-SKILLS_SOURCE="$REPO_ROOT/skills"
+
+resolve_skills_source() {
+    local candidate
+    for candidate in \
+        "$REPO_ROOT/skills" \
+        "$REPO_ROOT/ywai/skills" \
+        "$SCRIPT_DIR" \
+        "$SCRIPT_DIR/../skills"; do
+        [[ -d "$candidate" ]] && { echo "$candidate"; return 0; }
+    done
+    echo "$REPO_ROOT/skills"
+}
+
+SKILLS_SOURCE="$(resolve_skills_source)"
 
 # Source shared UI (colors + print helpers)
 # shellcheck source=../setup/lib/ui.sh
@@ -40,6 +55,7 @@ _UI_PATH="$SCRIPT_DIR/../setup/lib/ui.sh"
 
 # Selection flags
 SETUP_CLAUDE=false
+SETUP_CURSOR=false
 SETUP_OPENCODE=false
 SETUP_GEMINI=false
 SETUP_CODEX=false
@@ -78,12 +94,13 @@ show_help() {
     echo "Options:"
     echo "  --all        Configure all AI assistants"
     echo "  --claude     Configure Claude Code"
+    echo "  --cursor     Configure Cursor"
     echo "  --opencode   Configure OpenCode"
     echo "  --gemini     Configure Gemini CLI"
     echo "  --codex      Configure Codex (OpenAI)"
     echo "  --copilot    Configure GitHub Copilot"
     echo "  --global-only Configure only global user-profile agents (no repo files)"
-    echo "  --project-type=<type> Project type for global agent generation (nest, nest-angular, nest-react, python, dotnet, qa-playwright, devops, generic)"
+    echo "  --project-type=<type> Project type for global agent generation"
     echo "  --help       Show this help message"
     echo ""
     echo "If no options provided, runs in interactive mode."
@@ -100,8 +117,11 @@ normalize_project_type() {
 types_json_for_global_agents() {
     local candidate
     for candidate in \
+        "$REPO_ROOT/ywai/types/types.json" \
         "$REPO_ROOT/ywai/setup/types/types.json" \
+        "$REPO_ROOT/types/types.json" \
         "$REPO_ROOT/setup/types/types.json" \
+        "$SCRIPT_DIR/../types/types.json" \
         "$SCRIPT_DIR/../setup/types/types.json"; do
         [[ -f "$candidate" ]] && { echo "$candidate"; return 0; }
     done
@@ -357,8 +377,11 @@ resolve_template_file() {
     local template_name="$1"
     local candidate
     for candidate in \
+        "$REPO_ROOT/ywai/templates/$template_name" \
+        "$REPO_ROOT/templates/$template_name" \
         "$REPO_ROOT/ywai/setup/lib/templates/$template_name" \
         "$REPO_ROOT/setup/lib/templates/$template_name" \
+        "$SCRIPT_DIR/../templates/$template_name" \
         "$SCRIPT_DIR/../setup/lib/templates/$template_name"; do
         [[ -f "$candidate" ]] && { echo "$candidate"; return 0; }
     done
@@ -556,8 +579,8 @@ show_menu() {
     echo -e "${CYAN}(Use numbers to toggle, Enter to confirm)${NC}"
     echo ""
 
-    local options=("Claude Code" "OpenCode" "Gemini CLI" "Codex (OpenAI)" "GitHub Copilot")
-    local selected=(true false false false false)  # Claude selected by default
+    local options=("Claude Code" "Cursor" "OpenCode" "Gemini CLI" "Codex (OpenAI)" "GitHub Copilot")
+    local selected=(true false false false false false)  # Claude selected by default
 
     while true; do
         for i in "${!options[@]}"; do
@@ -571,7 +594,7 @@ show_menu() {
         echo -e "  ${YELLOW}a${NC}. Select all"
         echo -e "  ${YELLOW}n${NC}. Select none"
         echo ""
-        echo -n "Toggle (1-5, a, n) or Enter to confirm: "
+        echo -n "Toggle (1-6, a, n) or Enter to confirm: "
 
         read -r choice
 
@@ -581,21 +604,23 @@ show_menu() {
             3) selected[2]=$([ "${selected[2]}" = true ] && echo false || echo true) ;;
             4) selected[3]=$([ "${selected[3]}" = true ] && echo false || echo true) ;;
             5) selected[4]=$([ "${selected[4]}" = true ] && echo false || echo true) ;;
-            a|A) selected=(true true true true true) ;;
-            n|N) selected=(false false false false false) ;;
+            6) selected[5]=$([ "${selected[5]}" = true ] && echo false || echo true) ;;
+            a|A) selected=(true true true true true true) ;;
+            n|N) selected=(false false false false false false) ;;
             "") break ;;
             *) echo -e "${RED}Invalid option${NC}" ;;
         esac
 
-        # Move tty cursor up to redraw menu
-        echo -en "\033[11A\033[J"
+        # Move cursor up to redraw menu
+        echo -en "\033[12A\033[J"
     done
 
     SETUP_CLAUDE=${selected[0]}
-    SETUP_OPENCODE=${selected[1]}
-    SETUP_GEMINI=${selected[2]}
-    SETUP_CODEX=${selected[3]}
-    SETUP_COPILOT=${selected[4]}
+    SETUP_CURSOR=${selected[1]}
+    SETUP_OPENCODE=${selected[2]}
+    SETUP_GEMINI=${selected[3]}
+    SETUP_CODEX=${selected[4]}
+    SETUP_COPILOT=${selected[5]}
 }
 
 setup_claude() {
@@ -621,6 +646,29 @@ setup_claude() {
     
     # Create Claude.md with Claude-specific instructions
     create_claude_md
+}
+
+setup_cursor() {
+    local target="$REPO_ROOT/.cursor/skills"
+    mkdir -p "$REPO_ROOT/.cursor"
+
+    if [ -L "$target" ]; then
+        rm "$target"
+    elif [ -d "$target" ]; then
+        mv "$target" "$REPO_ROOT/.cursor/skills.backup.$(date +%s)"
+    fi
+
+    ln -s "$SKILLS_SOURCE" "$target"
+    echo -e "${GREEN}  ✓ .cursor/skills -> skills/ (Cursor)${NC}"
+
+    copy_agents_md "CURSOR.md"
+    
+    local root_agents
+    root_agents="$(resolve_repo_doc_case_insensitive "AGENTS.md")"
+    if [ -f "$root_agents" ]; then
+        cp "$root_agents" "$REPO_ROOT/.cursorrules"
+        echo -e "${GREEN}  ✓ AGENTS.MD -> .cursorrules${NC}"
+    fi
 }
 
 setup_opencode() {
@@ -851,7 +899,7 @@ Access specialized skills through the skills/ directory symlinked at .claude/ski
 ## Key Commands
 - Use skills for complex tasks (linting, testing, etc.)
 - Follow lefthook pre-commit validation
-- Reference DOCS/REVIEW.md for code review standards
+- Reference REVIEW.md for code review standards
 EOF
         echo -e "${GREEN}  ✓ Created .claude/Claude.md${NC}"
     else
@@ -887,7 +935,7 @@ Access specialized skills through the skills/ directory symlinked at .gemini/ski
 ## Key Commands
 - Use skills for complex tasks (linting, testing, etc.)
 - Follow lefthook pre-commit validation
-- Reference DOCS/REVIEW.md for code review standards
+- Reference REVIEW.md for code review standards
 EOF
         echo -e "${GREEN}  ✓ Created .gemini/gemini.md${NC}"
     else
@@ -939,8 +987,9 @@ copy_agents_md() {
 while [[ $# -gt 0 ]]; do
     case $1 in
         --all)
-            SETUP_CLAUDE=true; SETUP_OPENCODE=true; SETUP_GEMINI=true; SETUP_CODEX=true; SETUP_COPILOT=true; shift ;;
+            SETUP_CLAUDE=true; SETUP_CURSOR=true; SETUP_OPENCODE=true; SETUP_GEMINI=true; SETUP_CODEX=true; SETUP_COPILOT=true; shift ;;
         --claude) SETUP_CLAUDE=true; shift ;;
+        --cursor) SETUP_CURSOR=true; shift ;;
         --opencode) SETUP_OPENCODE=true; shift ;;
         --gemini) SETUP_GEMINI=true; shift ;;
         --codex) SETUP_CODEX=true; shift ;;
@@ -953,7 +1002,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$GLOBAL_ONLY" == "true" ]] \
-    && [[ "$SETUP_CLAUDE" == "false" && "$SETUP_OPENCODE" == "false" \
+    && [[ "$SETUP_CLAUDE" == "false" && "$SETUP_CURSOR" == "false" && "$SETUP_OPENCODE" == "false" \
       && "$SETUP_GEMINI" == "false" && "$SETUP_CODEX" == "false" && "$SETUP_COPILOT" == "false" ]]; then
     SETUP_OPENCODE=true
     SETUP_COPILOT=true
@@ -961,6 +1010,7 @@ fi
 
 if [[ "$GLOBAL_ONLY" == "true" ]]; then
     SETUP_CLAUDE=false
+    SETUP_CURSOR=false
     SETUP_GEMINI=false
     SETUP_CODEX=false
 fi
@@ -985,13 +1035,14 @@ else
     echo ""
 fi
 
-if [[ "$GLOBAL_ONLY" == "false" ]] && [ "$SETUP_CLAUDE" = false ] && [ "$SETUP_OPENCODE" = false ] && [ "$SETUP_GEMINI" = false ] && [ "$SETUP_CODEX" = false ] && [ "$SETUP_COPILOT" = false ]; then
+if [[ "$GLOBAL_ONLY" == "false" ]] && [ "$SETUP_CLAUDE" = false ] && [ "$SETUP_CURSOR" = false ] && [ "$SETUP_OPENCODE" = false ] && [ "$SETUP_GEMINI" = false ] && [ "$SETUP_CODEX" = false ] && [ "$SETUP_COPILOT" = false ]; then
     show_menu
 fi
 
 STEP=1
 TOTAL=0
 [ "$SETUP_CLAUDE" = true ] && TOTAL=$((TOTAL + 1))
+[ "$SETUP_CURSOR" = true ] && TOTAL=$((TOTAL + 1))
 [ "$SETUP_OPENCODE" = true ] && TOTAL=$((TOTAL + 1))
 [ "$SETUP_GEMINI" = true ] && TOTAL=$((TOTAL + 1))
 [ "$SETUP_CODEX" = true ] && TOTAL=$((TOTAL + 1))
@@ -1000,6 +1051,11 @@ TOTAL=0
 if [ "$SETUP_CLAUDE" = true ]; then
     echo -e "${YELLOW}[$STEP/$TOTAL] Setting up Claude Code...${NC}"
     setup_claude; STEP=$((STEP + 1))
+fi
+
+if [ "$SETUP_CURSOR" = true ]; then
+    echo -e "${YELLOW}[$STEP/$TOTAL] Setting up Cursor...${NC}"
+    setup_cursor; STEP=$((STEP + 1))
 fi
 
 if [ "$SETUP_OPENCODE" = true ]; then

@@ -291,13 +291,19 @@ build_images() {
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
   log "Pointing Docker to minikube daemon"
-  eval "$(minikube docker-env -p "$PROFILE")"
+  # For Windows, we need to handle docker-env differently
+  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    # Windows - export variables manually
+    eval $(minikube docker-env -p "$PROFILE" --shell=bash)
+  else
+    eval "$(minikube docker-env -p "$PROFILE")"
+  fi
 
   for svc in api-gateway auth-service event-processor cache-service \
              audit-service webhook-service metrics-service tenant-service \
              scheduler-service registry-service adapter-service \
              channel-service workflow-service workflow-http-worker \
-             proxy-service admin-console; do
+             proxy-service yoizenclaw-admin-service admin-console; do
     log "Building image: dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \
