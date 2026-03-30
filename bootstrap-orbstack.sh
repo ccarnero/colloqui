@@ -19,7 +19,7 @@ err()  { echo -e "${RED}[ERR]${NC}   $*" >&2; }
 
 usage() {
   cat <<EOF
-Usage: $0 [OPTIONS] [ENV...] [GROUP]
+Usage: $0 [OPTIONS] [ENV|GROUP]...
 
 Environments: ${ALL_ENVIRONMENTS[*]}
   (defaults to all if omitted)
@@ -31,10 +31,11 @@ Options:
   -h, --help    Show this help message
 
 Examples:
-  $0 dev support-services       # Cluster init + infrastructure only
-  $0 dev platform-services      # Build images + deploy Knative services
+  $0 support-services           # Infra only for all environments
+  $0 dev support-services       # Infra only for dev
+  $0 support-services dev       # Same as above (order does not matter)
+  $0 platform-services dev qa   # Build + deploy for dev and qa
   $0 dev                        # Full bootstrap (both groups)
-  $0 dev qa support-services    # Infrastructure for dev and qa
 EOF
 }
 
@@ -51,28 +52,32 @@ parse_args() {
     esac
   done
 
-  if (( ${#positional[@]} > 0 )); then
-    local last="${positional[-1]}"
+  for arg in "${positional[@]+"${positional[@]}"}"; do
     local is_group=0
     for g in "${ALL_GROUPS[@]}"; do
-      [[ "$last" == "$g" ]] && is_group=1 && break
+      [[ "$arg" == "$g" ]] && is_group=1 && break
     done
-    if (( is_group )); then
-      SERVICE_GROUP="$last"
-      unset 'positional[-1]'
-    fi
-  fi
 
-  for arg in "${positional[@]+"${positional[@]}"}"; do
-    local valid=0
+    if (( is_group )); then
+      if [[ -n "$SERVICE_GROUP" ]]; then
+        err "Only one group can be selected."
+        echo "Valid groups: ${ALL_GROUPS[*]}"
+        exit 1
+      fi
+      SERVICE_GROUP="$arg"
+      continue
+    fi
+
+    local valid_env=0
     for e in "${ALL_ENVIRONMENTS[@]}"; do
-      [[ "$arg" == "$e" ]] && valid=1 && break
+      [[ "$arg" == "$e" ]] && valid_env=1 && break
     done
-    if (( valid )); then
+    if (( valid_env )); then
       ENVIRONMENTS+=("$arg")
     else
-      err "Invalid environment: $arg"
-      echo "Valid: ${ALL_ENVIRONMENTS[*]}"
+      err "Invalid environment or group: $arg"
+      echo "Valid environments: ${ALL_ENVIRONMENTS[*]}"
+      echo "Valid groups: ${ALL_GROUPS[*]}"
       exit 1
     fi
   done
