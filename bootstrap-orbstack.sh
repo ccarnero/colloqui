@@ -239,6 +239,31 @@ apply_infrastructure() {
     kubectl rollout status deployment/temporal \
       --namespace "$ns" \
       --timeout=180s
+
+    log "Waiting for OTel Collector in ${ns}..."
+    kubectl rollout status deployment/otel-collector \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Tempo in ${ns}..."
+    kubectl rollout status deployment/tempo \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Prometheus in ${ns}..."
+    kubectl rollout status deployment/prometheus \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Loki in ${ns}..."
+    kubectl rollout status deployment/loki \
+      --namespace "$ns" \
+      --timeout=120s
+
+    log "Waiting for Grafana in ${ns}..."
+    kubectl rollout status deployment/grafana \
+      --namespace "$ns" \
+      --timeout=120s
   done
 }
 
@@ -275,8 +300,8 @@ build_images() {
   for svc in api-gateway auth-service event-processor cache-service \
              audit-service webhook-service metrics-service tenant-service \
              scheduler-service registry-service adapter-service \
-             workflow-service workflow-http-worker proxy-service \
-             admin-console; do
+             channel-service workflow-service workflow-http-worker \
+             proxy-service admin-console; do
     log "Building image: dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \
@@ -299,7 +324,7 @@ verify_cluster() {
 }
 
 verify_support_services() {
-  local core_deployments=(redis)
+  local core_deployments=(redis otel-collector tempo prometheus loki grafana)
   local core_statefulsets=(nats postgres)
 
   for env in "${ENVIRONMENTS[@]}"; do
@@ -374,6 +399,13 @@ print_summary() {
     echo "  Namespaces:"
     for env in "${ENVIRONMENTS[@]}"; do
       echo "    support-services-${env}   platform-services-${env}"
+    done
+    echo ""
+    echo "  Observability:"
+    for env in "${ENVIRONMENTS[@]}"; do
+      echo "    Grafana:     kubectl port-forward -n support-services-${env} svc/grafana 3001:3000"
+      echo "    Tempo:       kubectl port-forward -n support-services-${env} svc/tempo 3200:3200"
+      echo "    Prometheus:  kubectl port-forward -n support-services-${env} svc/prometheus 9090:9090"
     done
     echo ""
   fi
