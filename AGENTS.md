@@ -183,6 +183,7 @@ Use these skills for detailed, project-specific patterns and workflows.
 | `skill-sync` | Sync skill metadata with AGENTS.md auto-invoke tables | [SKILL.md](skills/skill-sync/SKILL.md) |
 | `yz-ui` | YoizenClaw UI design system - colors, typography, components, and icons | [SKILL.md](skills/yz-ui/SKILL.md) |
 | `envelope-messages` | Manejo de envelopes de mensajes CloudEvents para NATS | [SKILL.md](skills/envelope-messages/SKILL.md) |
+| `multi-tenant` | Patrones de arquitectura multi-tenant: resolución, aislamiento, migración | [SKILL.md](skills/multi-tenant/SKILL.md) |
 
 ### Auto-invoke Skills
 
