@@ -87,7 +87,7 @@ export const routes: Routes = [
           ).then((m) => m.CustomizationComponent),
       },
       {
-        path: "channels",
+        path: "channels/:channel",
         loadComponent: () =>
           import("./features/channels/channels.component").then(
             (m) => m.ChannelsComponent,
@@ -150,18 +150,11 @@ export const routes: Routes = [
           ).then((m) => m.IntegrationsComponent),
       },
       {
-        path: "internal-sources",
+        path: "connectors",
         loadComponent: () =>
           import(
-            "./features/data-integrations/network-sources/internal-sources/internal-sources.component"
-          ).then((m) => m.InternalSourcesComponent),
-      },
-      {
-        path: "external-sources",
-        loadComponent: () =>
-          import(
-            "./features/data-integrations/network-sources/external-sources/external-sources.component"
-          ).then((m) => m.ExternalSourcesComponent),
+            "./features/data-integrations/connectors/connectors.component"
+          ).then((m) => m.ConnectorsComponent),
       },
       {
         path: "data-export",

@@ -9,6 +9,7 @@ import {
   LucideAngularModule,
   Phone,
   Instagram,
+  Send,
   Settings,
   Trash2,
   Plus,
@@ -35,7 +36,7 @@ import {
       <div>
         <h1 class="ws-title">Channel Accounts</h1>
         <p class="ws-subtitle">
-          Manage your connected WhatsApp and Instagram accounts
+          Manage your connected WhatsApp, Instagram, and Telegram accounts
         </p>
       </div>
       <div class="ws-actions">
@@ -59,7 +60,7 @@ import {
       <div class="empty-state">
         <lucide-icon [img]="Phone" [size]="32" />
         <h3>No accounts connected</h3>
-        <p>Connect a WhatsApp or Instagram account to get started.</p>
+        <p>Connect a WhatsApp, Instagram, or Telegram account to get started.</p>
         <button class="btn btn-primary" routerLink="/connect">
           <lucide-icon [img]="Plus" [size]="14" />
           Connect Account
@@ -74,6 +75,9 @@ import {
                 @if (account.channel === "instagram") {
                   <lucide-icon [img]="Instagram" [size]="16" />
                   <span class="badge badge-purple">Instagram</span>
+                } @else if (account.channel === "telegram") {
+                  <lucide-icon [img]="SendIcon" [size]="16" />
+                  <span class="badge badge-blue">Telegram</span>
                 } @else {
                   <lucide-icon [img]="Phone" [size]="16" />
                   <span class="badge badge-green">WhatsApp</span>
@@ -92,6 +96,8 @@ import {
               @if (account.channel === "whatsapp") {
                 <p class="account-detail">Phone: {{ account.phoneNumberId || "—" }}</p>
                 <p class="account-id">WABA: {{ account.wabaId || "—" }}</p>
+              } @else if (account.channel === "telegram") {
+                <p class="account-detail">Bot: @{{ account.externalId }}</p>
               } @else {
                 <p class="account-detail">IG: {{ account.igUserId || "—" }}</p>
                 <p class="account-id">External: {{ account.externalId || "—" }}</p>
@@ -217,6 +223,7 @@ import {
 export class AccountListComponent implements OnInit {
   protected readonly Phone = Phone;
   protected readonly Instagram = Instagram;
+  protected readonly SendIcon = Send;
   protected readonly Settings = Settings;
   protected readonly Trash2 = Trash2;
   protected readonly Plus = Plus;

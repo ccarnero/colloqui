@@ -41,6 +41,11 @@ export type HttpAdapterContext = "internal" | "external";
 
 export interface HttpAdapterDialogData {
   mode: "create" | "edit";
-  context: HttpAdapterContext;
+  context?: HttpAdapterContext;
   adapter?: HttpAdapter;
+}
+
+export interface HttpAdapterDialogResult {
+  adapter: HttpAdapter;
+  context: HttpAdapterContext;
 }

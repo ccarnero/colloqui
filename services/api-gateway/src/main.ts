@@ -9,7 +9,6 @@ import {
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { headers as natsHeaders } from 'nats';
 import type { JetStreamClient } from 'nats';
-import { trace, context, SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import { AppModule } from './app.module';
 import { DynamicRouteCacheService } from './modules/dynamic-routes/dynamic-route-cache.service';
 import { JwtService } from './modules/auth/jwt.service';
@@ -26,6 +25,10 @@ import {
   shutdownTelemetry,
   getActiveTraceId,
   tracedFetch,
+  trace,
+  context,
+  SpanKind,
+  SpanStatusCode,
 } from '@yoizen/observability';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);

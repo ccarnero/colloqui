@@ -322,6 +322,154 @@ data:
               "custom": { "drawStyle": "line", "fillOpacity": 10 }
             }
           }
+        },
+        {
+          "title": "JetStream Streams Detail",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jetstream_stream_messages{job=\"nats\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            },
+            {
+              "expr": "jetstream_stream_bytes{job=\"nats\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "B"
+            },
+            {
+              "expr": "jetstream_stream_consumer_count{job=\"nats\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "C"
+            },
+            {
+              "expr": "jetstream_stream_last_seq{job=\"nats\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "D"
+            }
+          ],
+          "transformations": [
+            { "id": "merge" },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "instance": true,
+                  "job": true,
+                  "server_id": true,
+                  "account": true
+                },
+                "renameByName": {
+                  "stream_name": "Stream",
+                  "Value #A": "Messages",
+                  "Value #B": "Bytes",
+                  "Value #C": "Consumers",
+                  "Value #D": "Last Seq"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Bytes" },
+                "properties": [{ "id": "unit", "value": "bytes" }]
+              }
+            ]
+          }
+        },
+        {
+          "title": "Message Rate per Stream",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(jetstream_stream_messages{job=\"nats\"}[5m])",
+              "legendFormat": "{{stream_name}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cps",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "Storage per Stream",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jetstream_stream_bytes{job=\"nats\"}",
+              "legendFormat": "{{stream_name}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "JetStream Consumers Detail",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jetstream_consumer_num_pending{job=\"nats\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            },
+            {
+              "expr": "jetstream_consumer_num_ack_pending{job=\"nats\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "B"
+            },
+            {
+              "expr": "jetstream_consumer_delivered_consumer_seq{job=\"nats\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "C"
+            }
+          ],
+          "transformations": [
+            { "id": "merge" },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "instance": true,
+                  "job": true,
+                  "server_id": true,
+                  "account": true
+                },
+                "renameByName": {
+                  "stream_name": "Stream",
+                  "consumer_name": "Consumer",
+                  "Value #A": "Pending",
+                  "Value #B": "Ack Pending",
+                  "Value #C": "Delivered Seq"
+                }
+              }
+            }
+          ]
         }
       ],
       "schemaVersion": 39,
@@ -405,4 +553,219 @@ data:
       "timezone": "browser",
       "title": "Service Health",
       "uid": "service-health"
+    }
+  nats-subjects.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [
+        {
+          "asDropdown": false,
+          "icon": "external link",
+          "includeVars": false,
+          "keepTime": true,
+          "tags": [],
+          "targetBlank": false,
+          "title": "NATS Overview",
+          "type": "link",
+          "url": "/d/nats-overview"
+        }
+      ],
+      "panels": [
+        {
+          "title": "Server Uptime",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "nats-monitor" },
+          "targets": [
+            {
+              "refId": "A",
+              "type": "json",
+              "source": "url",
+              "format": "table",
+              "url": "http://nats:8222/varz",
+              "url_options": { "method": "GET" },
+              "root_selector": "",
+              "columns": [
+                { "selector": "uptime", "text": "Uptime", "type": "string" }
+              ]
+            }
+          ],
+          "options": { "colorMode": "value", "graphMode": "none", "textMode": "value" }
+        },
+        {
+          "title": "Total Messages In",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "nats-monitor" },
+          "targets": [
+            {
+              "refId": "A",
+              "type": "json",
+              "source": "url",
+              "format": "table",
+              "url": "http://nats:8222/varz",
+              "url_options": { "method": "GET" },
+              "root_selector": "",
+              "columns": [
+                { "selector": "in_msgs", "text": "Messages In", "type": "number" }
+              ]
+            }
+          ],
+          "options": { "colorMode": "value", "graphMode": "none", "textMode": "value" }
+        },
+        {
+          "title": "Total Messages Out",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "nats-monitor" },
+          "targets": [
+            {
+              "refId": "A",
+              "type": "json",
+              "source": "url",
+              "format": "table",
+              "url": "http://nats:8222/varz",
+              "url_options": { "method": "GET" },
+              "root_selector": "",
+              "columns": [
+                { "selector": "out_msgs", "text": "Messages Out", "type": "number" }
+              ]
+            }
+          ],
+          "options": { "colorMode": "value", "graphMode": "none", "textMode": "value" }
+        },
+        {
+          "title": "Total Subscriptions",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "nats-monitor" },
+          "targets": [
+            {
+              "refId": "A",
+              "type": "json",
+              "source": "url",
+              "format": "table",
+              "url": "http://nats:8222/subsz",
+              "url_options": { "method": "GET" },
+              "root_selector": "",
+              "columns": [
+                { "selector": "num_subscriptions", "text": "Subscriptions", "type": "number" }
+              ]
+            }
+          ],
+          "options": { "colorMode": "value", "graphMode": "none", "textMode": "value" }
+        },
+        {
+          "title": "JetStream Streams",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "nats-monitor" },
+          "targets": [
+            {
+              "refId": "A",
+              "type": "json",
+              "source": "url",
+              "format": "table",
+              "url": "http://nats:8222/jsz?streams=true",
+              "url_options": { "method": "GET" },
+              "root_selector": "account_details.0.stream_detail",
+              "columns": [
+                { "selector": "name", "text": "Stream", "type": "string" },
+                { "selector": "config.subjects", "text": "Subjects", "type": "string" },
+                { "selector": "state.messages", "text": "Messages", "type": "number" },
+                { "selector": "state.bytes", "text": "Bytes", "type": "number" },
+                { "selector": "state.consumer_count", "text": "Consumers", "type": "number" },
+                { "selector": "state.last_seq", "text": "Last Seq", "type": "number" },
+                { "selector": "state.first_seq", "text": "First Seq", "type": "number" }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Bytes" },
+                "properties": [{ "id": "unit", "value": "bytes" }]
+              }
+            ]
+          }
+        },
+        {
+          "title": "Client Connections & Subscriptions",
+          "type": "table",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 },
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "nats-monitor" },
+          "targets": [
+            {
+              "refId": "A",
+              "type": "json",
+              "source": "url",
+              "format": "table",
+              "url": "http://nats:8222/connz?subs=true&sort=subs&limit=256",
+              "url_options": { "method": "GET" },
+              "root_selector": "connections",
+              "columns": [
+                { "selector": "name", "text": "Client Name", "type": "string" },
+                { "selector": "ip", "text": "IP", "type": "string" },
+                { "selector": "lang", "text": "Language", "type": "string" },
+                { "selector": "version", "text": "Version", "type": "string" },
+                { "selector": "subs", "text": "Num Subs", "type": "number" },
+                { "selector": "subscriptions_list", "text": "Subjects", "type": "string" },
+                { "selector": "in_msgs", "text": "Msgs In", "type": "number" },
+                { "selector": "out_msgs", "text": "Msgs Out", "type": "number" },
+                { "selector": "in_bytes", "text": "Bytes In", "type": "number" },
+                { "selector": "out_bytes", "text": "Bytes Out", "type": "number" }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Bytes In" },
+                "properties": [{ "id": "unit", "value": "bytes" }]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Bytes Out" },
+                "properties": [{ "id": "unit", "value": "bytes" }]
+              }
+            ]
+          }
+        },
+        {
+          "title": "Subscription Statistics",
+          "type": "table",
+          "gridPos": { "h": 4, "w": 24, "x": 0, "y": 22 },
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "nats-monitor" },
+          "targets": [
+            {
+              "refId": "A",
+              "type": "json",
+              "source": "url",
+              "format": "table",
+              "url": "http://nats:8222/subsz",
+              "url_options": { "method": "GET" },
+              "root_selector": "",
+              "columns": [
+                { "selector": "num_subscriptions", "text": "Subscriptions", "type": "number" },
+                { "selector": "num_cache", "text": "Cache Entries", "type": "number" },
+                { "selector": "cache_hit_rate", "text": "Cache Hit Rate", "type": "number" },
+                { "selector": "max_fanout", "text": "Max Fanout", "type": "number" },
+                { "selector": "avg_fanout", "text": "Avg Fanout", "type": "number" }
+              ]
+            }
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["nats", "subjects", "observability"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+      "timezone": "browser",
+      "title": "NATS Subjects Explorer",
+      "uid": "nats-subjects",
+      "refresh": "10s"
     }

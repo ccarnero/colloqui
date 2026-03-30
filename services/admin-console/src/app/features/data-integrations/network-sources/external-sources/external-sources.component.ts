@@ -8,6 +8,7 @@ import { HttpAdapterDialogComponent } from "../../../../shared/components/http-a
 import {
   type HttpAdapter,
   type HttpAdapterDialogData,
+  type HttpAdapterDialogResult,
 } from "../../../../shared/models/http-adapter.model";
 import { StatusBadgeComponent } from "../../../../shared/components/status-badge/status-badge.component";
 import {
@@ -224,10 +225,10 @@ export class ExternalSourcesComponent implements OnInit {
         panelClass: "app-dialog-panel",
       })
       .afterClosed()
-      .subscribe((result: HttpAdapter | undefined) => {
+      .subscribe((result?: HttpAdapterDialogResult) => {
         if (!result) return;
         this.adapterService
-          .create(toCreatePayload(result))
+          .create(toCreatePayload(result.adapter))
           .subscribe((dto) => {
             this.sources.update((rows) => [...rows, toRow(dto)]);
           });
@@ -249,10 +250,10 @@ export class ExternalSourcesComponent implements OnInit {
         panelClass: "app-dialog-panel",
       })
       .afterClosed()
-      .subscribe((result: HttpAdapter | undefined) => {
+      .subscribe((result?: HttpAdapterDialogResult) => {
         if (!result) return;
         this.adapterService
-          .update(row.id, toUpdatePayload(result))
+          .update(row.id, toUpdatePayload(result.adapter))
           .subscribe((dto) => {
             this.sources.update((rows) =>
               rows.map((r, i) => (i === index ? toRow(dto) : r)),

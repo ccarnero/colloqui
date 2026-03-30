@@ -44,8 +44,8 @@ const ALL_SECTIONS: NavSection[] = [
     title: "Channels",
     requiredPermission: "channels:read",
     items: [
-      { label: "Accounts", icon: "chat", route: "/channels" },
-      { label: "Auto-Reply", icon: "reply_all", route: "/auto-reply" },
+      { label: "Whatsapp", icon: "chat", route: "/channels/whatsapp" },
+      { label: "Telegram", icon: "send", route: "/channels/telegram" },
     ],
   },
   {
@@ -61,71 +61,12 @@ const ALL_SECTIONS: NavSection[] = [
     title: "Data & Integrations",
     requiredPermission: "adapters:read",
     items: [
-      {
-        label: "Network Sources",
-        icon: "network_check",
-        items: [
-          {
-            label: "Internal Sources",
-            icon: "input_circle",
-            route: "/internal-sources",
-          },
-          {
-            label: "External Sources",
-            icon: "hub",
-            route: "/external-sources",
-          },
-        ],
-      },
+      { label: "Connectors", icon: "hub", route: "/connectors" },
       { label: "Tools", icon: "download", route: "/tools" },
       { label: "MCPs", icon: "download", route: "/mcps" },
       { label: "API Keys", icon: "vpn_key", route: "/api-keys" }
     ],
-  },
-  {
-    title: "Security & Compliance",
-    requiredPermission: "audit:read",
-    items: [
-      {
-        label: "Audit Log",
-        icon: "receipt_long",
-        route: "/audit-log",
-        badge: "New",
-      },
-      {
-        label: "Security Center",
-        icon: "security",
-        route: "/security-center",
-      },
-      { label: "Compliance", icon: "verified", route: "/compliance" },
-      {
-        label: "IP Allow List",
-        icon: "language",
-        route: "/ip-allowlist",
-      },
-      {
-        label: "Data Retention",
-        icon: "inventory_2",
-        route: "/data-retention",
-      },
-    ],
-  },
-  {
-    title: "Notifications",
-    requiredPermission: "webhooks:read",
-    items: [
-      {
-        label: "Notification Rules",
-        icon: "notifications",
-        route: "/notification-rules",
-      },
-      {
-        label: "Email Templates",
-        icon: "email",
-        route: "/email-templates",
-      },
-    ],
-  },
+  }
 ];
 
 @Component({

@@ -18,6 +18,8 @@ import { getActiveTraceId } from '@yoizen/observability';
 
 const encoder = new TextEncoder();
 
+const SKIP_AUDIT_PATHS = new Set(["/health", "/healthz"]);
+
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   constructor(
@@ -25,8 +27,14 @@ export class AuditInterceptor implements NestInterceptor {
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const startTime = performance.now();
     const request = context.switchToHttp().getRequest<FastifyRequest>();
+    const path = request.url.split("?")[0];
+
+    if (SKIP_AUDIT_PATHS.has(path)) {
+      return next.handle();
+    }
+
+    const startTime = performance.now();
     const reply = context.switchToHttp().getResponse<FastifyReply>();
 
     return next.handle().pipe(

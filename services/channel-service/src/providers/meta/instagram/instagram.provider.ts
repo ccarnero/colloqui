@@ -15,6 +15,7 @@ const GRAPH_API_BASE = "https://graph.instagram.com/v21.0";
 export class InstagramProvider implements IChannelProvider {
   readonly channel = "instagram" as const;
   readonly provider = "meta" as const;
+  readonly signatureHeader = "x-hub-signature-256";
 
   private readonly logger = new Logger(InstagramProvider.name);
 

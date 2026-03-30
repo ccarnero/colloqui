@@ -110,15 +110,6 @@ import {
             <button
               mat-icon-button
               type="button"
-              aria-label="Manage routes"
-              matTooltip="Routes"
-              (click)="openRoutesDialog(s)"
-            >
-              <mat-icon>alt_route</mat-icon>
-            </button>
-            <button
-              mat-icon-button
-              type="button"
               aria-label="Edit service"
               matTooltip="Edit"
               (click)="openEditDialog(s)"
