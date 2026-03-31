@@ -2,12 +2,12 @@ import {
   Injectable,
   Logger,
   Inject,
-  forwardRef,
 } from '@nestjs/common';
 import { parse } from 'yaml';
 import * as fs from 'fs';
 import * as path from 'path';
-import { TenantConnectionManager } from '../providers/tenant-connection-manager';
+import { TENANT_CONNECTION_MANAGER } from '../providers/provider-tokens';
+import type { TenantConnectionManager } from '../providers/tenant-connection-manager';
 
 interface AgentSeed {
   id: string;
@@ -61,14 +61,16 @@ interface JobSeed {
   payload?: Record<string, unknown>;
 }
 
+type TenantConnectionManagerPort = Pick<TenantConnectionManager, 'getConnection'>;
+
 @Injectable()
 export class SeedService {
   private readonly logger = new Logger(SeedService.name);
   private readonly dataDir: string;
 
   constructor(
-    @Inject(forwardRef(() => TenantConnectionManager))
-    private readonly tenantManager: TenantConnectionManager,
+    @Inject(TENANT_CONNECTION_MANAGER)
+    private readonly tenantManager: TenantConnectionManagerPort,
   ) {
     this.dataDir = path.join(process.cwd(), 'data');
   }

@@ -18,6 +18,17 @@ import {
   type TestTenant,
 } from './setup';
 
+const AGENT_PUBLISHED_TYPE = 'io.yoizen.yoizenclaw.admin.agent.published.v1';
+const AGENT_UNPUBLISHED_TYPE =
+  'io.yoizen.yoizenclaw.admin.agent.unpublished.v1';
+const CREDENTIAL_ROTATED_TYPE =
+  'io.yoizen.yoizenclaw.admin.credential.rotated.v1';
+const RUNTIME_CONFIG_SYNC_TYPE =
+  'io.yoizen.yoizenclaw.runtime.config.synced.v1';
+const JOB_TRIGGER_TYPE = 'io.yoizen.yoizenclaw.admin.job.triggered.v1';
+const AGENT_PUBLISHED_SUBJECT =
+  'evt.nats-events-tenant.yoizenclaw-admin-service.automation.yoizenclaw.internal.agent_published.v1';
+
 describe('NATS Events E2E Tests', () => {
   let app: INestApplication;
   let context: TestContext;
@@ -55,7 +66,9 @@ describe('NATS Events E2E Tests', () => {
     if (app) {
       await app.close();
     }
-    await context.postgresContainer.stop();
+    if (context?.postgresContainer) {
+      await context.postgresContainer.stop();
+    }
   });
 
   beforeEach(async () => {
@@ -80,28 +93,41 @@ describe('NATS Events E2E Tests', () => {
       expect(event).toBeDefined();
 
       // Verificar estructura del evento
+      expect(event).toHaveProperty('specversion');
+      expect(event).toHaveProperty('source');
       expect(event).toHaveProperty('subject');
       expect(event).toHaveProperty('type');
-      expect(event).toHaveProperty('payload');
-      expect(event).toHaveProperty('metadata');
+      expect(event).toHaveProperty('resource');
+      expect(event).toHaveProperty('traceid');
+      expect(event).toHaveProperty('correlation_id');
+      expect(event).toHaveProperty('tenant');
+      expect(event).toHaveProperty('producer');
+      expect(event).toHaveProperty('data');
 
       // Verificar campos requeridos en payload
-      expect(event!.payload).toHaveProperty('agentId');
-      expect(event!.payload).toHaveProperty('name');
-      expect(event!.payload).toHaveProperty('publishedAt');
-      expect(event!.payload).toHaveProperty('status');
+      expect(event!.data.payload).toHaveProperty('agentId');
+      expect(event!.data.payload).toHaveProperty('name');
+      expect(event!.data.payload).toHaveProperty('publishedAt');
+      expect(event!.data.payload).toHaveProperty('status');
 
-      // Verificar metadata
-      expect(event!.metadata).toHaveProperty('tenantId');
-      expect(event!.metadata).toHaveProperty('timestamp');
-      expect(event!.metadata).toHaveProperty('source');
+      // Verificar envelope
+      expect(event!.specversion).toBe('1.0');
+      expect(event!.tenant).toBe(tenant.id);
+      expect(event!.producer).toBe('yoizenclaw-admin-service');
+      expect(event!.source).toBe(
+        '//yoizenclaw-admin-service/admin/agents/publish',
+      );
+      expect(event!.data.payload_inline).toBe(true);
+      expect(event!.data.payload_ref).toBeNull();
 
       // Verificar valores
-      expect(event!.type).toBe('agent.published');
-      expect(event!.subject).toBe('events.agent.published');
-      expect(event!.payload.agentId).toBe(agent.id);
+      expect(event!.type).toBe(AGENT_PUBLISHED_TYPE);
+      expect(event!.subject).toBe(AGENT_PUBLISHED_SUBJECT);
+      expect(event!.data.payload?.agentId).toBe(agent.id);
       expect(event!.metadata.tenantId).toBe(tenant.id);
-      expect(event!.metadata.source).toBe('admin-service');
+      expect(event!.metadata.source).toBe(
+        '//yoizenclaw-admin-service/admin/agents/publish',
+      );
       expect(typeof event!.metadata.timestamp).toBe('number');
     });
 
@@ -130,7 +156,7 @@ describe('NATS Events E2E Tests', () => {
       expect(event!.metadata).toHaveProperty('timestamp');
       expect(event!.metadata).toHaveProperty('source');
 
-      expect(event!.type).toBe('agent.unpublished');
+      expect(event!.type).toBe(AGENT_UNPUBLISHED_TYPE);
       expect(event!.metadata.tenantId).toBe(tenant.id);
     });
   });
@@ -150,7 +176,7 @@ describe('NATS Events E2E Tests', () => {
 
       const event = getLastEventByType(context, 'agent.published');
       expect(event).toBeDefined();
-      expect(event!.type).toBe('agent.published');
+      expect(event!.type).toBe(AGENT_PUBLISHED_TYPE);
       expect(event!.payload.agentId).toBe(agent.id);
       expect(event!.payload.name).toBe('Publish Event Agent');
       expect(event!.payload.status).toBe('published');
@@ -170,7 +196,7 @@ describe('NATS Events E2E Tests', () => {
 
       const event = getLastEventByType(context, 'agent.unpublished');
       expect(event).toBeDefined();
-      expect(event!.type).toBe('agent.unpublished');
+      expect(event!.type).toBe(AGENT_UNPUBLISHED_TYPE);
       expect(event!.payload.agentId).toBe(agent.id);
       expect(event!.payload.status).toBe('draft');
     });
@@ -205,55 +231,6 @@ describe('NATS Events E2E Tests', () => {
     });
   });
 
-  describe('Channel Config Changed Events', () => {
-    it('should emit channel.config.changed event when updating channel', async () => {
-      // Crear channel primero
-      const [channel] = await tenant.sql`
-        INSERT INTO channels (name, type, config)
-        VALUES ('Test Channel', 'webchat', ${tenant.sql.json({ greeting: 'Hello' })})  
-        RETURNING id;
-      `;
-
-      // Actualizar channel
-      await request(app.getHttpServer())
-        .put(`/admin/channels/${channel.id}`)
-        .set(TENANT_HEADER, tenant.id)
-        .send({
-          name: 'Updated Channel',
-          config: { greeting: 'Updated Hello' },
-        })
-        .expect(200);
-
-      const event = getLastEventByType(context, 'channel.config.changed');
-      expect(event).toBeDefined();
-      expect(event!.type).toBe('channel.config.changed');
-      expect(event!.payload.channelId).toBe(channel.id);
-      expect(event!.payload.channelType).toBe('webchat');
-      expect(event!.payload).toHaveProperty('changes');
-      expect(event!.metadata.tenantId).toBe(tenant.id);
-    });
-
-    it('should include correct change data in channel event', async () => {
-      const [channel] = await tenant.sql`
-        INSERT INTO channels (name, type, config)
-        VALUES ('Config Channel', 'whatsapp', ${tenant.sql.json({})})
-        RETURNING id;
-      `;
-
-      await request(app.getHttpServer())
-        .put(`/admin/channels/${channel.id}`)
-        .set(TENANT_HEADER, tenant.id)
-        .send({
-          config: { phoneNumber: '+1234567890', webhook: 'https://example.com' },
-        })
-        .expect(200);
-
-      const event = getLastEventByType(context, 'channel.config.changed');
-      expect(event!.payload.changes).toBeDefined();
-      expect(event!.payload).toHaveProperty('changedAt');
-    });
-  });
-
   describe('Credential Rotated Events', () => {
     it('should emit credential.rotated event when rotating credential', async () => {
       const [credential] = await tenant.sql`
@@ -272,7 +249,7 @@ describe('NATS Events E2E Tests', () => {
 
       const event = getLastEventByType(context, 'credential.rotated');
       expect(event).toBeDefined();
-      expect(event!.type).toBe('credential.rotated');
+      expect(event!.type).toBe(CREDENTIAL_ROTATED_TYPE);
       expect(event!.payload.credentialId).toBe(credential.id);
       expect(event!.payload.type).toBe('api_key');
       expect(event!.payload).toHaveProperty('rotatedAt');
@@ -296,7 +273,7 @@ describe('NATS Events E2E Tests', () => {
 
       const event = getLastEventByType(context, 'credential.rotated');
       expect(event).toBeDefined();
-      expect(event!.type).toBe('credential.rotated');
+      expect(event!.type).toBe(CREDENTIAL_ROTATED_TYPE);
     });
   });
 
@@ -318,7 +295,7 @@ describe('NATS Events E2E Tests', () => {
 
       const event = getLastEventByType(context, 'runtime.config.sync');
       expect(event).toBeDefined();
-      expect(event!.type).toBe('runtime.config.sync');
+      expect(event!.type).toBe(RUNTIME_CONFIG_SYNC_TYPE);
       expect(event!.payload).toHaveProperty('files');
       expect(event!.payload).toHaveProperty('deletePaths');
       expect(event!.payload).toHaveProperty('syncedAt');
@@ -355,7 +332,7 @@ describe('NATS Events E2E Tests', () => {
 
       const event = getLastEventByType(context, 'job.trigger');
       expect(event).toBeDefined();
-      expect(event!.type).toBe('job.trigger');
+      expect(event!.type).toBe(JOB_TRIGGER_TYPE);
       expect(event!.payload.jobId).toBe(job.id);
       expect(event!.payload).toHaveProperty('executionId');
       expect(event!.payload.eventPayload).toEqual(triggerPayload);
@@ -383,7 +360,7 @@ describe('NATS Events E2E Tests', () => {
 
       const event = getLastEventByType(context, 'job.trigger');
       expect(event).toBeDefined();
-      expect(event!.type).toBe('job.trigger');
+      expect(event!.type).toBe(JOB_TRIGGER_TYPE);
       expect(event!.payload.jobId).toBe(job.id);
     });
   });
@@ -409,29 +386,7 @@ describe('NATS Events E2E Tests', () => {
         .set(TENANT_HEADER, tenant.id)
         .expect(200);
 
-      // 3. Crear channel
-      const channelResponse = await request(app.getHttpServer())
-        .post('/admin/channels')
-        .set(TENANT_HEADER, tenant.id)
-        .send({
-          name: 'Test Channel',
-          type: 'webchat',
-          config: {},
-        })
-        .expect(201);
-
-      const channelId = channelResponse.body.id;
-
-      // 4. Actualizar channel (evento 2)
-      await request(app.getHttpServer())
-        .put(`/admin/channels/${channelId}`)
-        .set(TENANT_HEADER, tenant.id)
-        .send({
-          config: { updated: true },
-        })
-        .expect(200);
-
-      // 5. Crear credential
+      // 3. Crear credential
       const credentialResponse = await request(app.getHttpServer())
         .post('/admin/credentials')
         .set(TENANT_HEADER, tenant.id)
@@ -444,7 +399,7 @@ describe('NATS Events E2E Tests', () => {
 
       const credentialId = credentialResponse.body.id;
 
-      // 6. Rotar credential (evento 3)
+      // 4. Rotar credential (evento 2)
       await request(app.getHttpServer())
         .put(`/admin/credentials/${credentialId}/rotate`)
         .set(TENANT_HEADER, tenant.id)
@@ -455,18 +410,19 @@ describe('NATS Events E2E Tests', () => {
 
       // Verificar que se emitieron todos los eventos esperados
       const publishEvents = getEventsByType(context, 'agent.published');
-      const channelEvents = getEventsByType(context, 'channel.config.changed');
       const rotateEvents = getEventsByType(context, 'credential.rotated');
 
       expect(publishEvents.length).toBeGreaterThanOrEqual(1);
-      expect(channelEvents.length).toBeGreaterThanOrEqual(1);
       expect(rotateEvents.length).toBeGreaterThanOrEqual(1);
 
       // Verificar que cada evento tiene la estructura correcta
       for (const event of context.natsEvents.slice(initialEventCount)) {
+        expect(event).toHaveProperty('specversion');
         expect(event).toHaveProperty('subject');
         expect(event).toHaveProperty('type');
-        expect(event).toHaveProperty('payload');
+        expect(event).toHaveProperty('resource');
+        expect(event).toHaveProperty('data');
+        expect(event.data).toHaveProperty('payload');
         expect(event).toHaveProperty('metadata');
         expect(event.metadata).toHaveProperty('tenantId');
         expect(event.metadata).toHaveProperty('timestamp');

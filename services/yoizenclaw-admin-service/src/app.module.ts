@@ -3,6 +3,10 @@ import { ObservabilityModule } from '@yoizen/observability';
 import { TenantConnectionManager } from './providers/tenant-connection-manager';
 import { SeedService } from './db/seed.service';
 import {
+  SEED_SERVICE,
+  TENANT_CONNECTION_MANAGER,
+} from './providers/provider-tokens';
+import {
   NATS_CONNECTION,
   JETSTREAM_MANAGER,
   JETSTREAM_CLIENT,
@@ -34,14 +38,24 @@ import { HealthModule } from './modules/health/health.module';
     jetStreamManagerProvider,
     jetStreamClientProvider,
     TenantConnectionManager,
+    {
+      provide: TENANT_CONNECTION_MANAGER,
+      useExisting: TenantConnectionManager,
+    },
     SeedService,
+    {
+      provide: SEED_SERVICE,
+      useExisting: SeedService,
+    },
     NatsPublisher,
   ],
   exports: [
     NATS_CONNECTION,
     JETSTREAM_MANAGER,
     JETSTREAM_CLIENT,
+    TENANT_CONNECTION_MANAGER,
     TenantConnectionManager,
+    SEED_SERVICE,
     SeedService,
     NatsPublisher,
   ],

@@ -17,6 +17,10 @@ import {
   type TestTenant,
 } from './setup';
 
+const AGENT_PUBLISHED_TYPE = 'io.yoizen.yoizenclaw.admin.agent.published.v1';
+const AGENT_UNPUBLISHED_TYPE =
+  'io.yoizen.yoizenclaw.admin.agent.unpublished.v1';
+
 describe('Agents E2E Tests', () => {
   let app: INestApplication;
   let context: TestContext;
@@ -55,7 +59,9 @@ describe('Agents E2E Tests', () => {
     if (app) {
       await app.close();
     }
-    await context.postgresContainer.stop();
+    if (context?.postgresContainer) {
+      await context.postgresContainer.stop();
+    }
   });
 
   beforeEach(async () => {
@@ -237,11 +243,13 @@ describe('Agents E2E Tests', () => {
       // Verificar evento NATS
       const event = getLastEventByType(context, 'agent.published');
       expect(event).toBeDefined();
-      expect(event!.type).toBe('agent.published');
+      expect(event!.type).toBe(AGENT_PUBLISHED_TYPE);
       expect(event!.payload.agentId).toBe(agent.id);
       expect(event!.payload.name).toBe('Agent to Publish');
       expect(event!.metadata.tenantId).toBe(tenant.id);
-      expect(event!.metadata.source).toBe('admin-service');
+      expect(event!.metadata.source).toBe(
+        '//yoizenclaw-admin-service/admin/agents/publish',
+      );
     });
 
     it('should return 404 for non-existent agent', async () => {
@@ -271,7 +279,7 @@ describe('Agents E2E Tests', () => {
       // Verificar evento NATS
       const event = getLastEventByType(context, 'agent.unpublished');
       expect(event).toBeDefined();
-      expect(event!.type).toBe('agent.unpublished');
+      expect(event!.type).toBe(AGENT_UNPUBLISHED_TYPE);
       expect(event!.payload.agentId).toBe(agent.id);
       expect(event!.metadata.tenantId).toBe(tenant.id);
     });
@@ -357,8 +365,12 @@ describe('Agents E2E Tests', () => {
 
       // Verificar que tenemos ambos eventos NATS
       const events = context.natsEvents;
-      expect(events.filter((e) => e.type === 'agent.published').length).toBe(1);
-      expect(events.filter((e) => e.type === 'agent.unpublished').length).toBe(1);
+      expect(
+        events.filter((event) => event.eventName === 'agent.published').length,
+      ).toBe(1);
+      expect(
+        events.filter((event) => event.eventName === 'agent.unpublished').length,
+      ).toBe(1);
     });
   });
 });

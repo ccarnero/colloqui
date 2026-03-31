@@ -8,15 +8,29 @@ import {
 import type * as k8s from '@kubernetes/client-node';
 import { randomUUID } from 'node:crypto';
 import { K8S_CORE_API } from '../../providers/kubernetes.provider';
+import {
+  NatsTenantProvisioner,
+  type TenantTier,
+} from '../../providers/nats.provider';
 import { TenantPostgresProvisioner } from '../../providers/postgres.provider';
 import { TenantsRepository } from './tenants.repository';
 import {
   type Environment,
   type TenantConfiguration,
   VALID_ENVIRONMENTS,
-} from './tenant.dto';
+} from "./tenant.dto";
 
-const LABEL_TENANT = 'yoizen.io/tenant';
+export interface YoizenClawProvisioningResult {
+  tenant: string;
+  tier: TenantTier;
+  stream: string;
+  objectStore: string;
+  namespace: string;
+  natsUrl: string;
+  postgresHost: string;
+}
+
+const LABEL_TENANT = "yoizen.io/tenant";
 const LABEL_ENVIRONMENT = 'yoizen.io/environment';
 const LABEL_MANAGED_BY = 'yoizen.io/managed-by';
 const LABEL_PART_OF = 'app.kubernetes.io/part-of';
@@ -60,6 +74,7 @@ export class TenantsService {
   constructor(
     @Inject(K8S_CORE_API) private readonly k8sApi: k8s.CoreV1Api,
     private readonly pgProvisioner: TenantPostgresProvisioner,
+    private readonly natsProvisioner: NatsTenantProvisioner,
     private readonly repository: TenantsRepository,
   ) {
     const env = process.env.PLATFORM_ENVIRONMENT ?? 'dev';
@@ -182,6 +197,51 @@ export class TenantsService {
       postgresHost: postgresHost(name, this.environment),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+    };
+  }
+
+  async provisionYoizenClaw(
+    name: string,
+    tier: TenantTier,
+  ): Promise<YoizenClawProvisioningResult> {
+    const row = await this.repository.findByName(name);
+    if (!row) {
+      throw new NotFoundException(
+        `Tenant '${name}' not found`,
+      );
+    }
+
+    this.logger.log(
+      `Provisioning YoizenClaw for tenant '${name}' (tier: ${tier})`,
+    );
+
+    await this.natsProvisioner.createAccount(name);
+    await this.natsProvisioner.createStream(name, tier);
+    await this.natsProvisioner.createObjectStore(name, tier);
+    await this.natsProvisioner.createACLs(name, [
+      "ingress-service",
+      "admin-service",
+    ]);
+
+    const nsName = namespaceName(name, this.environment);
+
+    this.logger.log(
+      `YoizenClaw provisioned for tenant '${name}'`,
+    );
+
+    return {
+      tenant: name,
+      tier,
+      stream: `INGRESS-${name}`,
+      objectStore: `PAYLOAD-${name}`,
+      namespace: nsName,
+      natsUrl:
+        process.env.NATS_URL ??
+        "nats://localhost:4222",
+      postgresHost: postgresHost(
+        name,
+        this.environment,
+      ),
     };
   }
 

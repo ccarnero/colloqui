@@ -46,6 +46,7 @@ const PLATFORM_PREFIXES = [
   '/api/proxy',
   '/api/auth',
   '/api/dashboard',
+  '/api/admin',
   '/health',
 ];
 

@@ -4,14 +4,15 @@ import {
   Logger,
   Inject,
   Optional,
-  forwardRef,
 } from '@nestjs/common';
 import postgres from 'postgres';
-import { SeedService } from '../db/seed.service';
+import { SEED_SERVICE } from './provider-tokens';
+import type { SeedService } from '../db/seed.service';
 
 export type Sql = ReturnType<typeof postgres>;
 
 const PG_DATABASE = 'yoizen';
+type SeedServicePort = Pick<SeedService, 'runSeed'>;
 
 @Injectable()
 export class TenantConnectionManager implements OnModuleDestroy {
@@ -27,8 +28,8 @@ export class TenantConnectionManager implements OnModuleDestroy {
 
   constructor(
     @Optional()
-    @Inject(forwardRef(() => SeedService))
-    private readonly seedService?: SeedService,
+    @Inject(SEED_SERVICE)
+    private readonly seedService?: SeedServicePort,
   ) {}
 
   /**

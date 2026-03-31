@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
 } from "@nestjs/common";
 import { POSTGRES_SQL, type Sql } from "../../providers/postgres.provider";
 import { TenantRolesService } from "../tenant-roles/tenant-roles.service";
@@ -24,13 +25,17 @@ export interface TenantUserRow {
 type TenantUserPublic = Omit<TenantUserRow, "is_active">;
 
 @Injectable()
-export class TenantUsersService {
+export class TenantUsersService implements OnModuleInit {
   private readonly logger = new Logger(TenantUsersService.name);
 
   constructor(
     @Inject(POSTGRES_SQL) private readonly sql: Sql,
     private readonly tenantRolesService: TenantRolesService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.seedTenantAdmin();
+  }
 
   async create(
     tenantId: string,
@@ -189,5 +194,38 @@ export class TenantUsersService {
     throw new BadRequestException(
       `Role '${roleIdOrName}' does not exist or does not belong to this tenant`,
     );
+  }
+
+  private async seedTenantAdmin(): Promise<void> {
+    const tenantId = process.env.TENANT_ADMIN_TENANT_ID;
+    const email = process.env.TENANT_ADMIN_EMAIL;
+    const password = process.env.TENANT_ADMIN_PASSWORD;
+    const displayName = process.env.TENANT_ADMIN_DISPLAY_NAME;
+
+    if (!tenantId || !email || !password) {
+      return;
+    }
+
+    const existing = await this.sql`
+      SELECT id FROM tenant_users
+      WHERE tenant_id = ${tenantId} AND email = ${email}
+      LIMIT 1
+    `;
+
+    if (existing.length > 0) {
+      return;
+    }
+
+    const systemRoleId = await this.tenantRolesService.seedSystemRole(tenantId);
+
+    await this.create(
+      tenantId,
+      email,
+      password,
+      systemRoleId,
+      displayName,
+    );
+
+    this.logger.log(`Seeded tenant admin user: ${email} (${tenantId})`);
   }
 }

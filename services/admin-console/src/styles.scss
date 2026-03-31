@@ -468,6 +468,11 @@ body.light-theme {
   border: 1px solid rgba(34, 197, 94, 0.25);
   color: var(--green);
 }
+.alert-error {
+  background: var(--red-dim);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: var(--red);
+}
 
 // Metric card
 // Layout Components

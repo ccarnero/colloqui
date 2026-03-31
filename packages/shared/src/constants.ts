@@ -57,3 +57,39 @@ export const GATEWAY_AUDIT_STREAM_SUBJECTS = ['audit.gateway.>'] as const;
 export const GATEWAY_AUDIT_SUBJECT = 'audit.gateway.request';
 export const GATEWAY_AUDIT_CONSUMER_NAME = 'gateway-audit-writer';
 export const GATEWAY_AUDIT_STREAM_MAX_BYTES = 128 * 1024 * 1024;
+
+export const YOIZENCLAW_PRODUCER = "yoizenclaw-admin-service";
+export const YOIZENCLAW_DOMAIN = "automation";
+export const YOIZENCLAW_CHANNEL = "yoizenclaw";
+export const YOIZENCLAW_PROVIDER = "internal";
+export const YOIZENCLAW_ACCOUNT_ID = "yoizenclaw-admin";
+
+export const YOIZENCLAW_SUBJECT_PREFIX =
+  "evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal";
+
+export const YOIZENCLAW_CONFIG_SYNC =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.config_sync.v1`;
+export const YOIZENCLAW_JOBS_SYNC =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.jobs_sync.v1`;
+export const YOIZENCLAW_JOB_TRIGGER =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.job_trigger.v1`;
+export const YOIZENCLAW_CHAT_RESPOND =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.chat_respond.v1`;
+export const YOIZENCLAW_ONLINE =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.online.v1`;
+export const YOIZENCLAW_AGENT_OUTBOUND =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.agent_outbound.v1`;
+export const YOIZENCLAW_EXECUTION_STATUS =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.execution_status.v1`;
+export const YOIZENCLAW_AGENT_PUBLISHED =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.agent_published.v1`;
+export const YOIZENCLAW_AGENT_UNPUBLISHED =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.agent_unpublished.v1`;
+export const YOIZENCLAW_CREDENTIAL_ROTATED =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.credential_rotated.v1`;
+export const YOIZENCLAW_EVENT =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.event.v1`;
+
+export function buildYoizenClawSubject(template: string, tenantId: string): string {
+  return template.replaceAll("{tenant}", tenantId);
+}

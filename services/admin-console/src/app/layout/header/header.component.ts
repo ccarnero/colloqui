@@ -1,4 +1,4 @@
-import { Component, inject, output } from "@angular/core";
+import { ChangeDetectionStrategy, Component, inject, output } from "@angular/core";
 import { MatIconModule } from "@angular/material/icon";
 import { MatButtonModule } from "@angular/material/button";
 import { MatMenuModule } from "@angular/material/menu";
@@ -11,6 +11,7 @@ import { NotificationService } from "../../core/services/notification.service";
 
 @Component({
   selector: "app-header",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     MatIconModule,
     MatButtonModule,
@@ -72,8 +73,8 @@ import { NotificationService } from "../../core/services/notification.service";
         </button>
 
         <!-- Toggle Right Panel -->
-        <button mat-icon-button class="topbar-btn" (click)="toggleRightPanel.emit()" matTooltip="Toggle sidebar">
-          <mat-icon>view_sidebar</mat-icon>
+        <button mat-icon-button class="topbar-btn right-panel-btn" (click)="toggleRightPanel.emit()" matTooltip="Toggle Config Panel">
+          <mat-icon>tune</mat-icon>
         </button>
 
         <!-- User Avatar -->
@@ -182,19 +183,36 @@ import { NotificationService } from "../../core/services/notification.service";
     }
 
     .avatar-btn {
-      width: 32px;
-      height: 32px;
+      width: 36px;
+      height: 36px;
+      margin-left: 8px;
       border-radius: 50%;
-      background: var(--brand-gradient);
-      border: none;
+      background: linear-gradient(135deg, #4f46e5 0%, #d946ef 100%);
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 700;
-      font-size: 12px;
+      font-weight: 600;
+      font-size: 13px;
       color: #fff;
-      font-family: var(--font);
+      letter-spacing: 0.5px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .avatar-btn:hover {
+      transform: scale(1.05);
+      border-color: rgba(255, 255, 255, 0.3);
+      box-shadow: 0 4px 12px rgba(217, 70, 239, 0.3);
+    }
+    
+    .right-panel-btn {
+      transition: color 0.2s;
+    }
+    .right-panel-btn:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.05);
     }
 
     .notif-header {

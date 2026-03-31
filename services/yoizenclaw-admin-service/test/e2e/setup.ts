@@ -1,6 +1,25 @@
-import { GenericContainer, type StartedTestContainer, type Wait } from 'testcontainers';
+import { GenericContainer, type StartedTestContainer } from 'testcontainers';
 import postgres from 'postgres';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { Sql } from '../src/providers/tenant-connection-manager';
+import {
+  YOIZENCLAW_ACCOUNT_ID,
+  YOIZENCLAW_AGENT_PUBLISHED,
+  YOIZENCLAW_AGENT_UNPUBLISHED,
+  YOIZENCLAW_CHANNEL,
+  YOIZENCLAW_CONFIG_SYNC,
+  YOIZENCLAW_CREDENTIAL_ROTATED,
+  YOIZENCLAW_DOMAIN,
+  YOIZENCLAW_JOB_TRIGGER,
+  YOIZENCLAW_PRODUCER,
+  YOIZENCLAW_PROVIDER,
+  buildYoizenClawSubject,
+  type EventEnvelope,
+} from '../../src/types/yoizen-shared';
+import {
+  calculateChecksum,
+  serializeCanonicalPayload,
+} from '../../src/utils/payload-utils';
 
 // Schema SQL para inicializar las tablas
 const SCHEMA_SQL = `
@@ -104,14 +123,95 @@ export interface TestContext {
   tenantSchemas: Map<string, Sql>;
 }
 
-export interface NatsEvent {
+type CapturedEventName =
+  | 'agent.published'
+  | 'agent.unpublished'
+  | 'credential.rotated'
+  | 'runtime.config.sync'
+  | 'job.trigger';
+
+export interface NatsEvent extends EventEnvelope {
+  eventName: CapturedEventName;
   subject: string;
-  type: string;
   payload: Record<string, unknown>;
   metadata: {
+    source: string;
     tenantId: string;
     timestamp: number;
+  };
+}
+
+const EVENT_TYPES = {
+  'agent.published': 'io.yoizen.yoizenclaw.admin.agent.published.v1',
+  'agent.unpublished': 'io.yoizen.yoizenclaw.admin.agent.unpublished.v1',
+  'credential.rotated': 'io.yoizen.yoizenclaw.admin.credential.rotated.v1',
+  'runtime.config.sync': 'io.yoizen.yoizenclaw.runtime.config.synced.v1',
+  'job.trigger': 'io.yoizen.yoizenclaw.admin.job.triggered.v1',
+} as const;
+
+const EVENT_SUBJECTS: Record<CapturedEventName, string> = {
+  'agent.published': YOIZENCLAW_AGENT_PUBLISHED,
+  'agent.unpublished': YOIZENCLAW_AGENT_UNPUBLISHED,
+  'credential.rotated': YOIZENCLAW_CREDENTIAL_ROTATED,
+  'runtime.config.sync': YOIZENCLAW_CONFIG_SYNC,
+  'job.trigger': YOIZENCLAW_JOB_TRIGGER,
+};
+
+function createTraceId(): string {
+  return randomBytes(16).toString('hex');
+}
+
+function createCapturedEvent(
+  eventName: CapturedEventName,
+  tenantId: string,
+  payload: Record<string, unknown>,
+  options: {
+    correlationId: string;
+    occurredAt: string;
+    resource: string;
     source: string;
+  },
+): NatsEvent {
+  const time = options.occurredAt;
+  const serializedPayload = serializeCanonicalPayload(payload);
+
+  return {
+    accountid: YOIZENCLAW_ACCOUNT_ID,
+    causation_id: null,
+    channel: YOIZENCLAW_CHANNEL,
+    correlation_id: options.correlationId,
+    data: {
+      payload,
+      payload_bytes: Buffer.byteLength(serializedPayload, 'utf-8'),
+      payload_checksum: calculateChecksum(payload),
+      payload_inline: true,
+      payload_ref: null,
+      received_at: time,
+    },
+    domain: YOIZENCLAW_DOMAIN,
+    eventName,
+    id: randomUUID(),
+    idempotencykey: calculateChecksum(payload),
+    metadata: {
+      source: options.source,
+      tenantId,
+      timestamp: Date.parse(time),
+    },
+    payload,
+    producer: YOIZENCLAW_PRODUCER,
+    provider: YOIZENCLAW_PROVIDER,
+    resource: options.resource,
+    source: options.source,
+    specversion: '1.0',
+    subject: buildYoizenClawSubject(EVENT_SUBJECTS[eventName], tenantId),
+    tenant: tenantId,
+    time,
+    traceid: createTraceId(),
+    transport: {
+      method: 'stream',
+      protocol: 'internal',
+    },
+    type: EVENT_TYPES[eventName],
   };
 }
 
@@ -244,21 +344,23 @@ export function createMockNatsPublisher(context: TestContext) {
       agentId: string,
       name: string,
     ) => {
-      const event: NatsEvent = {
-        subject: 'events.agent.published',
-        type: 'agent.published',
-        payload: {
+      const publishedAt = new Date().toISOString();
+      const event = createCapturedEvent(
+        'agent.published',
+        tenantId,
+        {
           agentId,
           name,
-          publishedAt: new Date().toISOString(),
+          publishedAt,
           status: 'published',
         },
-        metadata: {
-          tenantId,
-          timestamp: Date.now(),
-          source: 'admin-service',
+        {
+          correlationId: `agent:${agentId}`,
+          occurredAt: publishedAt,
+          resource: `tenant/${tenantId}/agents/${agentId}`,
+          source: '//yoizenclaw-admin-service/admin/agents/publish',
         },
-      };
+      );
       context.natsEvents.push(event);
       return { seq: context.natsEvents.length };
     },
@@ -268,21 +370,23 @@ export function createMockNatsPublisher(context: TestContext) {
       agentId: string,
       name: string,
     ) => {
-      const event: NatsEvent = {
-        subject: 'events.agent.unpublished',
-        type: 'agent.unpublished',
-        payload: {
+      const unpublishedAt = new Date().toISOString();
+      const event = createCapturedEvent(
+        'agent.unpublished',
+        tenantId,
+        {
           agentId,
           name,
-          unpublishedAt: new Date().toISOString(),
           status: 'draft',
+          unpublishedAt,
         },
-        metadata: {
-          tenantId,
-          timestamp: Date.now(),
-          source: 'admin-service',
+        {
+          correlationId: `agent:${agentId}`,
+          occurredAt: unpublishedAt,
+          resource: `tenant/${tenantId}/agents/${agentId}`,
+          source: '//yoizenclaw-admin-service/admin/agents/unpublish',
         },
-      };
+      );
       context.natsEvents.push(event);
       return { seq: context.natsEvents.length };
     },
@@ -292,45 +396,22 @@ export function createMockNatsPublisher(context: TestContext) {
       credentialId: string,
       credentialType: string,
     ) => {
-      const event: NatsEvent = {
-        subject: 'events.credential.rotated',
-        type: 'credential.rotated',
-        payload: {
+      const rotatedAt = new Date().toISOString();
+      const event = createCapturedEvent(
+        'credential.rotated',
+        tenantId,
+        {
           credentialId,
+          rotatedAt,
           type: credentialType,
-          rotatedAt: new Date().toISOString(),
         },
-        metadata: {
-          tenantId,
-          timestamp: Date.now(),
-          source: 'admin-service',
+        {
+          correlationId: `credential:${credentialId}`,
+          occurredAt: rotatedAt,
+          resource: `tenant/${tenantId}/credentials/${credentialId}`,
+          source: '//yoizenclaw-admin-service/admin/credentials/rotate',
         },
-      };
-      context.natsEvents.push(event);
-      return { seq: context.natsEvents.length };
-    },
-
-    publishChannelConfigChanged: async (
-      tenantId: string,
-      channelId: string,
-      channelType: string,
-      changes: Record<string, unknown>,
-    ) => {
-      const event: NatsEvent = {
-        subject: 'events.channel.config.changed',
-        type: 'channel.config.changed',
-        payload: {
-          channelId,
-          channelType,
-          changes,
-          changedAt: new Date().toISOString(),
-        },
-        metadata: {
-          tenantId,
-          timestamp: Date.now(),
-          source: 'admin-service',
-        },
-      };
+      );
       context.natsEvents.push(event);
       return { seq: context.natsEvents.length };
     },
@@ -340,20 +421,22 @@ export function createMockNatsPublisher(context: TestContext) {
       files: Array<{ path: string; content: string; format: string }>,
       deletePaths: string[] = [],
     ) => {
-      const event: NatsEvent = {
-        subject: 'events.runtime.config.sync',
-        type: 'runtime.config.sync',
-        payload: {
-          files,
+      const syncedAt = new Date().toISOString();
+      const event = createCapturedEvent(
+        'runtime.config.sync',
+        tenantId,
+        {
           deletePaths,
-          syncedAt: new Date().toISOString(),
+          files,
+          syncedAt,
         },
-        metadata: {
-          tenantId,
-          timestamp: Date.now(),
-          source: 'admin-service',
+        {
+          correlationId: `runtime:${tenantId}:config`,
+          occurredAt: syncedAt,
+          resource: `tenant/${tenantId}/runtime/config`,
+          source: '//yoizenclaw-admin-service/admin/config-files/deploy',
         },
-      };
+      );
       context.natsEvents.push(event);
       return { seq: context.natsEvents.length };
     },
@@ -364,21 +447,23 @@ export function createMockNatsPublisher(context: TestContext) {
       executionId: string,
       eventPayload: Record<string, unknown>,
     ) => {
-      const event: NatsEvent = {
-        subject: 'events.job.trigger',
-        type: 'job.trigger',
-        payload: {
-          jobId,
-          executionId,
+      const triggeredAt = new Date().toISOString();
+      const event = createCapturedEvent(
+        'job.trigger',
+        tenantId,
+        {
           eventPayload,
-          triggeredAt: new Date().toISOString(),
+          executionId,
+          jobId,
+          triggeredAt,
         },
-        metadata: {
-          tenantId,
-          timestamp: Date.now(),
-          source: 'admin-service',
+        {
+          correlationId: `job:${jobId}:execution:${executionId}`,
+          occurredAt: triggeredAt,
+          resource: `tenant/${tenantId}/jobs/${jobId}/executions/${executionId}`,
+          source: '//yoizenclaw-admin-service/admin/jobs/trigger',
         },
-      };
+      );
       context.natsEvents.push(event);
       return { seq: context.natsEvents.length };
     },
@@ -406,7 +491,9 @@ export function getEventsByType(
   context: TestContext,
   eventType: string,
 ): NatsEvent[] {
-  return context.natsEvents.filter((e) => e.type === eventType);
+  return context.natsEvents.filter(
+    (event) => event.eventName === eventType || event.type === eventType,
+  );
 }
 
 /**

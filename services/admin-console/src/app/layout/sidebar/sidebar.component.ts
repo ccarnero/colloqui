@@ -1,4 +1,4 @@
-import { Component, computed, inject } from "@angular/core";
+import { ChangeDetectionStrategy, Component, computed, inject } from "@angular/core";
 import { RouterLink, RouterLinkActive } from "@angular/router";
 import { MatIconModule } from "@angular/material/icon";
 import { AuthService } from "../../core/services/auth.service";
@@ -71,6 +71,7 @@ const ALL_SECTIONS: NavSection[] = [
 
 @Component({
   selector: "app-sidebar",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, RouterLinkActive, MatIconModule],
   template: `
     <aside class="sidebar-container bg-sidebar">
@@ -99,7 +100,7 @@ const ALL_SECTIONS: NavSection[] = [
             <path class="cls-3" d="M1690.27,375.03l-111,57.17c-16.56-29.17-25.15-61.9-23.48-96.1,1.53-31.23,11.45-60.41,27.87-86.1l106.33,124.52.27.52h.01Z"/>
           </svg>
         </div>
-        <span class="brand-text text-primary">YoizenClaw</span>
+        <span class="brand-text text-primary">Admin Console</span>
       </div>
 
       <nav class="leftnav mt-4">

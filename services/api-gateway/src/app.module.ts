@@ -11,6 +11,7 @@ import { ChannelsModule } from './modules/channels/channels.module';
 import { DynamicRoutesModule } from './modules/dynamic-routes/dynamic-routes.module';
 import { WorkflowsModule } from './modules/workflows/workflows.module';
 import { ProxyModule } from './modules/proxy/proxy.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { RateLimitModule } from './modules/rate-limit/rate-limit.module';
@@ -35,6 +36,7 @@ import { ServiceExceptionFilter } from './filters/service-exception.filter';
     ChannelsModule,
     WorkflowsModule,
     ProxyModule,
+    AdminModule,
     DynamicRoutesModule,
     RateLimitModule,
     DashboardModule,

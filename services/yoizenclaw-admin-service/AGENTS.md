@@ -275,14 +275,14 @@ test/
 
 ### Events Published
 
-| Event | Subject | Trigger | Payload |
-|-------|---------|---------|---------|
-| `agent.published` | `events.agent.published` | POST /admin/agents/:id/publish | `{ agentId, name, publishedAt, status }` |
-| `agent.unpublished` | `events.agent.unpublished` | POST /admin/agents/:id/unpublish | `{ agentId, name, unpublishedAt, status }` |
-| `credential.rotated` | `events.credential.rotated` | PUT /admin/credentials/:id (with new value) | `{ credentialId, type, rotatedAt }` |
-| `runtime.config.sync` | `events.runtime.config.sync` | POST /admin/config-files/deploy | `{ files, deletePaths, syncedAt }` |
-| `runtime.jobs.sync` | `events.runtime.jobs.sync` | Bulk job sync | `{ jobs, syncedAt }` |
-| `job.trigger` | `events.job.trigger` | POST /admin/jobs/:id/trigger | `{ jobId, executionId, eventPayload, triggeredAt }` |
+| Event Type | Subject | Trigger | Payload |
+|------------|---------|---------|---------|
+| `io.yoizen.yoizenclaw.admin.agent.published.v1` | `evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal.agent_published.v1` | POST /admin/agents/:id/publish | `{ agentId, name, publishedAt, status }` |
+| `io.yoizen.yoizenclaw.admin.agent.unpublished.v1` | `evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal.agent_unpublished.v1` | POST /admin/agents/:id/unpublish | `{ agentId, name, unpublishedAt, status }` |
+| `io.yoizen.yoizenclaw.admin.credential.rotated.v1` | `evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal.credential_rotated.v1` | PUT /admin/credentials/:id (with new value) | `{ credentialId, type, rotatedAt }` |
+| `io.yoizen.yoizenclaw.runtime.config.synced.v1` | `evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal.config_sync.v1` | POST /admin/config-files/deploy | `{ files, deletePaths, syncedAt }` |
+| `io.yoizen.yoizenclaw.runtime.jobs.synced.v1` | `evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal.jobs_sync.v1` | Bulk job sync | `{ jobs, syncedAt }` |
+| `io.yoizen.yoizenclaw.admin.job.triggered.v1` | `evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal.job_trigger.v1` | POST /admin/jobs/:id/trigger | `{ jobId, executionId, eventPayload, triggeredAt }` |
 
 ### Event Envelope Structure
 
@@ -290,13 +290,33 @@ All events are wrapped in a standard envelope:
 
 ```typescript
 interface EventEnvelope {
-  id: string;           // UUID of the event
-  type: string;         // Event type (e.g., 'agent.published')
-  payload: object;      // Event-specific payload
-  metadata: {
-    tenantId: string;   // Tenant identifier
-    source: string;     // Service that emitted the event
-    receivedAt: number; // Timestamp (epoch ms)
+  specversion: "1.0";
+  id: string;
+  source: string;
+  type: string;
+  resource: string;
+  time: string;
+  traceid: string;
+  causation_id: string | null;
+  correlation_id: string;
+  tenant: string;
+  producer: string;
+  domain: string;
+  channel: string;
+  provider: string;
+  accountid: string;
+  idempotencykey: string;
+  transport: {
+    method: "stream";
+    protocol: "internal";
+  };
+  data: {
+    received_at: string;
+    payload_inline: boolean;
+    payload_ref: string | null;
+    payload_bytes: number;
+    payload_checksum: string;
+    payload: Record<string, unknown> | null;
   };
 }
 ```
@@ -305,11 +325,11 @@ interface EventEnvelope {
 
 | Property | Value | Description |
 |----------|-------|-------------|
-| Stream Name | `EVENTS` | NATS JetStream name |
+| Stream Name | `INGRESS-{tenant}` | NATS JetStream stream per tenant |
 | Retention | Limits | Message retention policy |
 | Max Age | 7 days | Maximum message age |
 | Max Bytes | 512 MB | Maximum stream size |
-| Subjects | `events.*` | Subject pattern for all events |
+| Subjects | `evt.{tenant}.>` | Subject pattern for each tenant stream |
 
 ## Architecture Highlights
 
@@ -351,7 +371,7 @@ AppModule (@Global)
 | Target | Protocol | Direction | Purpose |
 |--------|----------|-----------|---------|
 | Per-tenant PostgreSQL | TCP | Outbound | Persist agents, credentials, channels, jobs, config files |
-| NATS JetStream (EVENTS) | NATS | Outbound | Publish configuration change events |
+| NATS JetStream (INGRESS per tenant) | NATS | Outbound | Publish configuration change events |
 
 ### DI Tokens
 
@@ -360,6 +380,8 @@ AppModule (@Global)
 | `NATS_CONNECTION` | `NatsConnection` | `nats.provider.ts` |
 | `JETSTREAM_MANAGER` | `JetStreamManager` | `nats.provider.ts` |
 | `JETSTREAM_CLIENT` | `JetStreamClient` | `nats.provider.ts` |
+| `TENANT_CONNECTION_MANAGER` | `Symbol` | `provider-tokens.ts` |
+| `SEED_SERVICE` | `Symbol` | `provider-tokens.ts` |
 | TenantConnectionManager | Injectable class | `tenant-connection-manager.ts` |
 | NatsPublisher | Injectable class | `nats.provider.ts` |
 
@@ -397,7 +419,7 @@ AppModule (@Global)
 - **DTOs in same folder**: `agents.dto.ts` next to `agents.controller.ts` (no subfolders)
 - **SQL crudo**: postgres.js with tagged templates (no ORM)
 - **Validation**: global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, `transform`
-- **NATS only publisher**: No consumers in this service (only publishes to EVENTS stream)
+- **NATS only publisher**: No consumers in this service (only publishes to tenant-scoped `evt.*` subjects)
 - **Security**: Never return credential `value` field in API responses (⚠️ TEMPORAL: stored in plaintext)
 - **Lifecycle hooks**: `OnModuleDestroy` closes all connection pools
 
@@ -423,7 +445,7 @@ Requires local NATS and PostgreSQL per tenant.
 
 | Service | Relationship |
 |---------|-------------|
-| **NATS JetStream** | Publishes configuration change events to EVENTS stream |
+| **NATS JetStream** | Publishes configuration change events to tenant-scoped ingress streams |
 | **Per-tenant PostgreSQL** | Persists agents, credentials, jobs, and config files |
 | **api-gateway** | Upstream proxy (all admin endpoints proxied through gateway) |
 | **tenant-service** | Provisions the per-tenant PostgreSQL instances |

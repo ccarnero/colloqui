@@ -1,5 +1,12 @@
 import { DatePipe } from "@angular/common";
-import { Component, effect, inject, signal, type OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  effect,
+  inject,
+  signal,
+  type OnInit,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
 import { MatFormFieldModule } from "@angular/material/form-field";
@@ -80,6 +87,7 @@ function cloneSubagents(
 
 @Component({
   selector: "app-yoizenclaw",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     DatePipe,
     FormsModule,
@@ -96,9 +104,7 @@ function cloneSubagents(
     <div class="ws-header">
       <div>
         <div class="ws-title">YoizenClaw Agents</div>
-        <div class="ws-subtitle">
-          Create the first MVP agent for {{ tenant.currentTenant().name }}
-        </div>
+
       </div>
       <div class="ws-actions">
         <button
@@ -123,8 +129,8 @@ function cloneSubagents(
     </div>
 
     @if (errorMessage()) {
-      <div class="alert alert-warn">
-        <mat-icon>warning</mat-icon>
+      <div class="alert alert-error">
+        <mat-icon>error_outline</mat-icon>
         <div>{{ errorMessage() }}</div>
       </div>
     }
@@ -140,12 +146,7 @@ function cloneSubagents(
       <div class="hero-copy">
         <span class="hero-kicker">YoizenClaw MVP</span>
         <h2>Compose a production-ready system prompt with subagents.</h2>
-        <p>
-          This first version stores the visual fields in
-          <code>model_config</code> and sends the canonical
-          <code>system_prompt</code> to
-          <code>yoizenclaw-admin-service</code>.
-        </p>
+
       </div>
 
       <div class="hero-actions">
@@ -243,20 +244,20 @@ function cloneSubagents(
           <mat-tab label="Instructions">
             <div class="section-card-body">
               <div class="editor-grid">
-                <mat-form-field appearance="outline" class="full-span monaco-field">
-                  <mat-label>System Prompt</mat-label>
+                <div class="full-span editor-container">
+                  <label class="editor-label">System Prompt</label>
                   <ngx-monaco-editor class="prompt-editor" [options]="editorOptions" [(ngModel)]="systemPrompt"></ngx-monaco-editor>
-                </mat-form-field>
+                </div>
 
-                <mat-form-field appearance="outline" class="full-span monaco-field">
-                  <mat-label>Rules</mat-label>
+                <div class="full-span editor-container">
+                  <label class="editor-label">Rules</label>
                   <ngx-monaco-editor class="prompt-editor-sm" [options]="editorOptions" [(ngModel)]="rules"></ngx-monaco-editor>
-                </mat-form-field>
+                </div>
 
-                <mat-form-field appearance="outline" class="full-span monaco-field">
-                  <mat-label>Soul</mat-label>
+                <div class="full-span editor-container">
+                  <label class="editor-label">Soul</label>
                   <ngx-monaco-editor class="prompt-editor-sm" [options]="editorOptions" [(ngModel)]="soul"></ngx-monaco-editor>
-                </mat-form-field>
+                </div>
               </div>
             </div>
           </mat-tab>
@@ -292,10 +293,10 @@ function cloneSubagents(
                         <input matInput [(ngModel)]="subagent.description" placeholder="When this subagent should be used"/>
                       </mat-form-field>
 
-                      <mat-form-field appearance="outline" class="full-span monaco-field">
-                        <mat-label>System Prompt</mat-label>
+                      <div class="full-span editor-container">
+                        <label class="editor-label">System Prompt</label>
                         <ngx-monaco-editor class="prompt-editor-sm" [options]="editorOptions" [(ngModel)]="subagent.systemPrompt"></ngx-monaco-editor>
-                      </mat-form-field>
+                      </div>
                     </div>
                   </article>
                 }
@@ -324,7 +325,7 @@ function cloneSubagents(
               </div>
             }
 
-            @for (agent of agents(); track agent.id) {
+            @for (agent of agents(); track agent.id || $index) {
               <article class="agent-item">
                 <div class="agent-item-top">
                   <div>
@@ -375,16 +376,28 @@ function cloneSubagents(
     .hero-card {
       display: grid;
       grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.9fr);
-      gap: 20px;
-      padding: 24px;
-      margin-bottom: 20px;
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius3);
+      gap: 24px;
+      padding: 32px;
+      margin-bottom: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
       background:
-        radial-gradient(circle at top right, rgba(74, 58, 191, 0.12), transparent 45%),
-        radial-gradient(circle at bottom left, rgba(253, 100, 33, 0.08), transparent 35%),
-        var(--bg2);
-      box-shadow: var(--shadow2);
+        radial-gradient(circle at 100% 0%, rgba(79, 70, 229, 0.15), transparent 50%),
+        radial-gradient(circle at 0% 100%, rgba(217, 70, 239, 0.1), transparent 40%),
+        var(--bg2, #18181b);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%);
+      pointer-events: none;
     }
 
     .hero-kicker {
@@ -430,10 +443,18 @@ function cloneSubagents(
     }
 
     .metric-chip {
-      padding: 14px;
-      border-radius: var(--radius2);
-      border: 1px solid var(--border-subtle);
-      background: var(--bg);
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.02);
+      backdrop-filter: blur(8px);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+
+    .metric-chip:hover {
+      background: rgba(255, 255, 255, 0.04);
+      transform: translateY(-2px);
     }
 
     .metric-chip span {
@@ -498,10 +519,18 @@ function cloneSubagents(
 
     .subagent-card,
     .agent-item {
-      padding: 14px;
-      border-radius: var(--radius2);
-      border: 1px solid var(--border-subtle);
-      background: rgba(255, 255, 255, 0.02);
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.015);
+      transition: all 0.2s ease;
+    }
+
+    .agent-item:hover {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: rgba(255, 255, 255, 0.1);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     }
 
     .subagent-header,
@@ -554,15 +583,34 @@ function cloneSubagents(
     }
 
     .empty-state {
-      padding: 20px;
+      padding: 40px 20px;
       text-align: center;
-      color: var(--text3);
-      border: 1px dashed var(--border-subtle);
-      border-radius: var(--radius2);
+      color: rgba(255, 255, 255, 0.4);
+      border: 2px dashed rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.005);
+      transition: all 0.2s ease;
+    }
+    .empty-state:hover {
+      border-style: dotted;
+      border-color: rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.015);
+    }
+
+    .empty-state p {
+      margin: 0;
     }
 
     .empty-state mat-icon {
-      margin-bottom: 8px;
+      margin-bottom: 12px;
+      font-size: 32px;
+      height: 32px;
+      width: 32px;
+      opacity: 0.7;
     }
 
     .badge-draft {
@@ -584,20 +632,32 @@ function cloneSubagents(
       flex: 1;
     }
 
-    .monaco-field ::ng-deep .mat-mdc-text-field-wrapper {
-      padding: 0;
+    .editor-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .editor-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+    }
+
+    .prompt-editor,
+    .prompt-editor-sm {
+      display: block;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius2);
+      overflow: hidden;
     }
 
     .prompt-editor {
       height: 300px;
-      margin-top: 10px;
-      margin-bottom: 10px;
     }
 
     .prompt-editor-sm {
       height: 150px;
-      margin-top: 10px;
-      margin-bottom: 10px;
     }
 
     /* Style the mat-tab header explicitly to match admin-console dark theme if needed */

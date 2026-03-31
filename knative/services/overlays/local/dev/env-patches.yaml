@@ -44,6 +44,8 @@ spec:
               value: "http://adapter-service.platform-services-dev.svc.cluster.local"
             - name: CHANNEL_SERVICE_URL
               value: "http://channel-service.platform-services-dev.svc.cluster.local"
+            - name: ADMIN_SERVICE_URL
+              value: "http://yoizenclaw-admin-service.platform-services-dev.svc.cluster.local"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
