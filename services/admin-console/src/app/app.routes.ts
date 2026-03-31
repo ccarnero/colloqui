@@ -137,10 +137,27 @@ export const routes: Routes = [
       },
       {
         path: "yoizenclaw",
-        loadComponent: () =>
-          import(
-            "./features/automation/yoizenclaw/yoizenclaw.component"
-          ).then((m) => m.YoizenclawComponent),
+        children: [
+          {
+            path: "",
+            redirectTo: "agents",
+            pathMatch: "full",
+          },
+          {
+            path: "agents",
+            loadComponent: () =>
+              import(
+                "./features/automation/yoizenclaw/yoizenclaw.component"
+              ).then((m) => m.YoizenclawComponent),
+          },
+          {
+            path: "playground",
+            loadComponent: () =>
+              import(
+                "./features/automation/yoizenclaw/playground.component"
+              ).then((m) => m.PlaygroundComponent),
+          },
+        ],
       },
       {
         path: "data-sources",

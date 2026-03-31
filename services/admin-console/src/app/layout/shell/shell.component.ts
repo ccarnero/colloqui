@@ -1,9 +1,10 @@
 import { Component, inject, type OnInit, signal } from "@angular/core";
-import { RouterOutlet } from "@angular/router";
+import { Router, RouterOutlet, NavigationEnd } from "@angular/router";
 import { HeaderComponent } from "../header/header.component";
 import { SidebarComponent } from "../sidebar/sidebar.component";
 import { RightPanelComponent } from "../right-panel/right-panel.component";
 import { TenantService } from "../../core/services/tenant.service";
+import { filter } from "rxjs/operators";
 
 @Component({
   selector: "app-shell",
@@ -100,11 +101,20 @@ import { TenantService } from "../../core/services/tenant.service";
 })
 export class ShellComponent implements OnInit {
   private readonly tenantService = inject(TenantService);
-  
+  private readonly router = inject(Router);
+
   readonly sidebarOpen = signal(false);
   readonly rightPanelOpen = signal(true);
 
   ngOnInit(): void {
     this.tenantService.loadTenantDetails();
+    this.router.events
+      .pipe(filter((e) => e instanceof NavigationEnd))
+      .subscribe((e) => {
+        const nav = e as NavigationEnd;
+        if (nav.urlAfterRedirects.startsWith("/yoizenclaw")) {
+          this.rightPanelOpen.set(false);
+        }
+      });
   }
 }

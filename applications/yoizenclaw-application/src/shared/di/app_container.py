@@ -15,12 +15,14 @@ if TYPE_CHECKING:
     from src.interfaces.nats_bridge import RuntimeNatsBridge
     from src.interfaces.websocket.manager import ConfigWebSocketManager
     from src.jobs.scheduler_core import JobScheduler
+    from src.shared.adapter_client import AdapterClient
     from src.shared.config.tools import ToolRegistry
     from src.shared.logging.log_handlers import (
         AccessLogHandler,
         InMemoryLogHandler,
     )
     from src.shared.utils.runtime_config import RuntimeConfigRepository
+    from src.tools.adapter_executor import AdapterToolExecutor
 
 
 class AppContainer:
@@ -45,6 +47,8 @@ class AppContainer:
         self._yoizen_nats_client: NATS | None = None
         self._in_memory_handler: InMemoryLogHandler | None = None
         self._access_log_handler: AccessLogHandler | None = None
+        self._adapter_client: AdapterClient | None = None
+        self._adapter_tool_executor: AdapterToolExecutor | None = None
 
     @classmethod
     def get(cls) -> AppContainer:
@@ -170,3 +174,23 @@ class AppContainer:
     @access_log_handler.setter
     def access_log_handler(self, value: AccessLogHandler | None) -> None:
         self._access_log_handler = value
+
+    # -- adapter_client -------------------------------------------------
+
+    @property
+    def adapter_client(self) -> AdapterClient | None:
+        return self._adapter_client
+
+    @adapter_client.setter
+    def adapter_client(self, value: AdapterClient | None) -> None:
+        self._adapter_client = value
+
+    # -- adapter_tool_executor ------------------------------------------
+
+    @property
+    def adapter_tool_executor(self) -> AdapterToolExecutor | None:
+        return self._adapter_tool_executor
+
+    @adapter_tool_executor.setter
+    def adapter_tool_executor(self, value: AdapterToolExecutor | None) -> None:
+        self._adapter_tool_executor = value

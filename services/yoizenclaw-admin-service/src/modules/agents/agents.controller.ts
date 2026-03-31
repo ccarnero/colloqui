@@ -12,7 +12,7 @@ import {
   HttpStatus,
 } from "@nestjs/common";
 import { AgentsService } from "./agents.service";
-import { CreateAgentDto, UpdateAgentDto, ListAgentsQueryDto } from "./agents.dto";
+import { CreateAgentDto, UpdateAgentDto, ListAgentsQueryDto, ChatRequestDto, ChatResponseDto } from "./agents.dto";
 import type { Agent } from "./agents.repository";
 import { TenantGuard } from "../../providers/tenant.guard";
 import { TenantId } from "../../providers/tenant.decorator";
@@ -93,5 +93,15 @@ export class AgentsController {
     @Param("id") id: string,
   ): Promise<Agent> {
     return this.service.unpublish(tenantId, id);
+  }
+
+  @Post(":id/chat")
+  @HttpCode(HttpStatus.OK)
+  async chat(
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
+    @Body() dto: ChatRequestDto,
+  ): Promise<ChatResponseDto> {
+    return this.service.chat(tenantId, id, dto);
   }
 }

@@ -1,3 +1,44 @@
+// ---------------------------------------------------------------------------
+// Tool source types and adapter reference
+// ---------------------------------------------------------------------------
+
+/** Discriminator for how a tool reaches its backend. */
+export type ToolSourceType = "http" | "adapter";
+
+/** Reference to an adapter and one of its endpoints. */
+export interface IToolAdapterRef {
+  adapterId: string;
+  endpointId: string;
+}
+
+/**
+ * Frontend tool draft used inside the agent form.
+ * Each tool is either an HTTP endpoint or backed by a registered adapter.
+ */
+export interface IAgentToolDraft {
+  name: string;
+  description?: string;
+  sourceType: ToolSourceType;
+  /** HTTP endpoint fields. */
+  endpointUrl: string;
+  endpointMethod: string;
+  /** Adapter fields. */
+  adapterRef: IToolAdapterRef | null;
+}
+
+/** Backend tool payload sent to the API. */
+export interface IAgentToolPayload {
+  name: string;
+  description?: string;
+  source_type: ToolSourceType;
+  endpoint?: { url: string; method: string };
+  adapter_ref?: { adapter_id: string; endpoint_id: string };
+}
+
+// ---------------------------------------------------------------------------
+// Agent statuses & credential types
+// ---------------------------------------------------------------------------
+
 export const YOIZENCLAW_AGENT_STATUSES = {
   DRAFT: "draft",
   PUBLISHED: "published",
@@ -140,6 +181,24 @@ export function buildYoizenclawSubagentConfig(
     ...(description ? { description } : {}),
     ...(draft.enabled !== undefined ? { enabled: draft.enabled } : {}),
   };
+}
+
+export interface IYoizenclawTemplateSubagent {
+  name: string;
+  description: string;
+  system_prompt: string;
+  enabled: boolean;
+}
+
+export interface IYoizenclawTemplate {
+  id: string;
+  label: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  rules: string;
+  soul: string;
+  subagents: IYoizenclawTemplateSubagent[];
 }
 
 /**

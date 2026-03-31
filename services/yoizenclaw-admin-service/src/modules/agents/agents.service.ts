@@ -1,6 +1,14 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, Inject, Optional } from '@nestjs/common';
 import { AgentsRepository, type Agent, type CreateAgentData, type UpdateAgentData } from './agents.repository';
 import { NatsPublisher } from '../../providers/nats.provider';
+import { NATS_CONNECTION } from '../../providers/nats.provider';
+import type { NatsConnection } from 'nats';
+import type { ChatRequestDto, ChatResponseDto } from './agents.dto';
+import { buildYoizenClawSubject, YOIZENCLAW_CHAT_RESPOND } from '@yoizen/shared';
+import { AdaptersService } from '../adapters/adapters.service';
+
+const VALIDATE_ADAPTER_REFS =
+  (process.env.VALIDATE_ADAPTER_REFS ?? 'true') !== 'false';
 
 export interface FindAllOptions {
   status?: string;
@@ -16,6 +24,8 @@ export class AgentsService {
   constructor(
     private readonly repository: AgentsRepository,
     private readonly natsPublisher: NatsPublisher,
+    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
+    @Optional() private readonly adaptersService?: AdaptersService,
   ) {}
 
   /**
@@ -40,20 +50,22 @@ export class AgentsService {
   }
 
   /**
-   * Crea un nuevo agent.
+   * Crea un nuevo agent. Optionally validates adapter refs in tools.
    */
   async create(tenantId: string, data: CreateAgentData): Promise<Agent> {
+    await this.validateAdapterRefs(tenantId, data.tools);
     return this.repository.create(tenantId, data);
   }
 
   /**
-   * Actualiza un agent existente.
+   * Actualiza un agent existente. Optionally validates adapter refs in tools.
    */
   async update(
     tenantId: string,
     id: string,
     data: UpdateAgentData,
   ): Promise<Agent> {
+    await this.validateAdapterRefs(tenantId, data.tools);
     const agent = await this.repository.update(tenantId, id, data);
     if (!agent) {
       throw new NotFoundException(`Agent with ID '${id}' not found`);
@@ -126,5 +138,165 @@ export class AgentsService {
     }
 
     return agent;
+  }
+
+  /**
+   * Chat con agent via NATS Request-Reply.
+   * Sigue el patrón CloudEvents del skill envelope-messages.
+   */
+  async chat(
+    tenantId: string,
+    agentId: string,
+    dto: ChatRequestDto,
+  ): Promise<ChatResponseDto> {
+    // 1. Verificar que el agente existe y está publicado
+    const agent = await this.repository.findById(tenantId, agentId);
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID '${agentId}' not found`);
+    }
+    if (agent.status !== 'published') {
+      throw new NotFoundException(`Agent '${agentId}' is not published`);
+    }
+
+    // 2. Construir envelope CloudEvents (skill envelope-messages)
+    const now = new Date().toISOString();
+    const traceId = this.generateTraceId();
+    const correlationId = dto.conversationId || `chat-${Date.now()}`;
+    
+    const payload = {
+      action_type: 'chat_respond',
+      agent_id: agentId,
+      message: dto.message,
+      conversation_id: correlationId,
+      customer_name: dto.customerName || 'User',
+      context: dto.context || [],
+    };
+
+    const envelope = {
+      specversion: '1.0',
+      id: this.generateEventId(),
+      source: '//yoizenclaw-admin-service/admin/agents/chat',
+      type: 'io.yoizen.yoizenclaw.chat.request.v1',
+      resource: `tenant/${tenantId}/agents/${agentId}`,
+      time: now,
+      traceid: traceId,
+      causation_id: null,
+      correlation_id: correlationId,
+      tenant: tenantId,
+      producer: 'yoizenclaw-admin-service',
+      domain: 'automation',
+      channel: 'yoizenclaw',
+      provider: 'internal',
+      accountid: 'yoizenclaw-admin',
+      idempotencykey: this.computeIdempotencyKey(payload),
+      transport: {
+        method: 'agent',
+        protocol: 'internal',
+        agent_id: 'yoizenclaw-admin-service',
+        depth: 0,
+      },
+      data: {
+        received_at: now,
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: JSON.stringify(payload).length,
+        payload_checksum: this.computeChecksum(payload),
+        payload,
+      },
+    };
+
+    // 3. NATS Request-Reply
+    const subject = buildYoizenClawSubject(YOIZENCLAW_CHAT_RESPOND, tenantId);
+    
+    try {
+      this.logger.debug(`Sending chat request to ${subject} for agent ${agentId}`);
+      
+      // Request con timeout 30s
+      const response = await this.nc.request(
+        subject,
+        JSON.stringify(envelope),
+        { timeout: 30000 },
+      );
+
+      // 4. Parsear respuesta
+      const responseData = JSON.parse(response.data.toString());
+      
+      if (!responseData.data?.payload?.response) {
+        throw new Error('Invalid response from agent');
+      }
+
+      return {
+        reply: responseData.data.payload.response,
+        tool_calls: responseData.data.payload.tool_calls || [],
+      };
+    } catch (error) {
+      this.logger.error(`Chat request failed for agent ${agentId}`, error);
+      throw new NotFoundException('Failed to get response from agent');
+    }
+  }
+
+  private generateTraceId(): string {
+    return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  }
+
+  private generateEventId(): string {
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  }
+
+  private computeIdempotencyKey(payload: Record<string, unknown>): string {
+    return `sha256:${this.computeChecksum(payload)}`;
+  }
+
+  private computeChecksum(payload: Record<string, unknown>): string {
+    const canonical = JSON.stringify(payload, Object.keys(payload).sort());
+    return Buffer.from(canonical).toString('base64');
+  }
+
+  /**
+   * When VALIDATE_ADAPTER_REFS is enabled, checks that each tool's
+   * adapterRef points to an existing adapter and endpoint. Logs
+   * warnings for missing refs but does NOT block the save.
+   */
+  private async validateAdapterRefs(
+    tenantId: string,
+    tools?: unknown[],
+  ): Promise<void> {
+    if (!VALIDATE_ADAPTER_REFS || !this.adaptersService || !tools?.length) {
+      return;
+    }
+
+    for (const tool of tools) {
+      const t = tool as Record<string, unknown>;
+      const ref = t.adapterRef as
+        | { adapterId?: string; endpointId?: string }
+        | undefined;
+      if (!ref?.adapterId) continue;
+
+      const adapterExists = await this.adaptersService.adapterExists(
+        tenantId,
+        ref.adapterId,
+      );
+      if (!adapterExists) {
+        this.logger.warn(
+          `Tool '${t.name ?? "unnamed"}' references adapter '${ref.adapterId}' which does not exist. ` +
+            "Config will be saved but tool execution may fail.",
+        );
+        continue;
+      }
+
+      if (ref.endpointId) {
+        const epExists = await this.adaptersService.endpointExists(
+          tenantId,
+          ref.adapterId,
+          ref.endpointId,
+        );
+        if (!epExists) {
+          this.logger.warn(
+            `Tool '${t.name ?? "unnamed"}' references endpoint '${ref.endpointId}' on adapter '${ref.adapterId}' which does not exist. ` +
+              "Config will be saved but tool execution may fail.",
+          );
+        }
+      }
+    }
   }
 }

@@ -10,6 +10,7 @@ import {
   type IYoizenclawAgentListResponse,
   type IYoizenclawCredentialListQuery,
   type IYoizenclawCredentialListResponse,
+  type IYoizenclawTemplate,
 } from "../models/yoizenclaw.model";
 
 type QueryValue = string | number | boolean;
@@ -91,5 +92,73 @@ export class YoizenclawAdminService {
   createAgent(draft: IYoizenclawAgentDraft): Observable<IYoizenclawAgent> {
     const payload = buildYoizenclawCreateAgentPayload(draft);
     return this.http.post<IYoizenclawAgent>(`${BASE_URL}/agents`, payload);
+  }
+
+  publishAgent(agentId: string): Observable<IYoizenclawAgent> {
+    return this.http.post<IYoizenclawAgent>(`${BASE_URL}/agents/${agentId}/publish`, {});
+  }
+
+  /**
+   * Unpublishes a YoizenClaw agent (reverts to draft status).
+   *
+   * @param agentId - The agent to unpublish.
+   * @returns A stream with the unpublished agent record.
+   */
+  unpublishAgent(agentId: string): Observable<IYoizenclawAgent> {
+    return this.http.post<IYoizenclawAgent>(`${BASE_URL}/agents/${agentId}/unpublish`, {});
+  }
+
+  /**
+   * Retrieves a specific agent by ID.
+   *
+   * @param agentId - The agent ID to retrieve.
+   * @returns A stream with the agent record.
+   */
+  getAgent(agentId: string): Observable<IYoizenclawAgent> {
+    return this.http.get<IYoizenclawAgent>(`${BASE_URL}/agents/${agentId}`);
+  }
+
+  /**
+   * Updates an existing YoizenClaw agent.
+   *
+   * @param agentId - The agent to update.
+   * @param draft - UI form data with updates.
+   * @returns A stream with the updated agent record.
+   */
+  updateAgent(agentId: string, draft: IYoizenclawAgentDraft): Observable<IYoizenclawAgent> {
+    const payload = buildYoizenclawCreateAgentPayload(draft);
+    return this.http.put<IYoizenclawAgent>(`${BASE_URL}/agents/${agentId}`, payload);
+  }
+
+  /**
+   * Retrieves available agent templates.
+   *
+   * @returns A stream with the list of templates.
+   */
+  listTemplates(): Observable<{ templates: IYoizenclawTemplate[] }> {
+    return this.http.get<{ templates: IYoizenclawTemplate[] }>(`${BASE_URL}/templates`);
+  }
+
+  /**
+   * Sends a chat message to an agent and returns the response.
+   *
+   * @param agentId - The agent to chat with.
+   * @param request - Chat request with message and context.
+   * @returns A stream with the agent's reply.
+   */
+  chatWithAgent(
+    agentId: string,
+    request: {
+      message: string;
+      conversationId: string;
+      channel: string;
+      customerName: string;
+      context: Array<{ sender: "customer" | "agent"; content: string }>;
+    },
+  ): Observable<{ reply: string; tool_calls: unknown[] }> {
+    return this.http.post<{ reply: string; tool_calls: unknown[] }>(
+      `${BASE_URL}/agents/${agentId}/chat`,
+      request,
+    );
   }
 }

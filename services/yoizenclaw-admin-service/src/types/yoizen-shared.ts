@@ -39,6 +39,9 @@ export const YOIZENCLAW_RUNTIME_CONFIG_SYNC =
 export const YOIZENCLAW_RUNTIME_ONLINE =
   "evt.{tenant}.yoizenclaw.online.v1";
 
+export const YOIZENCLAW_CHAT_RESPOND =
+  "cmd.{tenant}.yoizenclaw.chat_respond.v1";
+
 export function buildYoizenClawSubject(
   template: string,
   tenantId: string,

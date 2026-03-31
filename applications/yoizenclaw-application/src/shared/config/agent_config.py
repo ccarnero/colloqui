@@ -43,6 +43,15 @@ class AgentSkillPayload(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
 
+class AdapterReference(BaseModel):
+    """Reference to an adapter endpoint for tool execution."""
+
+    adapter_id: str = Field(..., alias="adapterId", min_length=1)
+    endpoint_id: str = Field(..., alias="endpointId", min_length=1)
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
 class AgentToolPayload(BaseModel):
     """Validated tool payload published by the backend."""
 
@@ -50,8 +59,8 @@ class AgentToolPayload(BaseModel):
 
     id: str
     name: str
-    endpoint: str
-    method: Literal["GET", "POST", "PUT", "DELETE"]
+    endpoint: str | None = None
+    method: Literal["GET", "POST", "PUT", "DELETE"] | None = None
     headers: dict[str, str] = Field(default_factory=dict)
     body_template: dict[str, Any] | None = Field(
         default=None,
@@ -63,6 +72,28 @@ class AgentToolPayload(BaseModel):
         default=None,
         alias="fieldDescriptions",
     )
+    adapter_ref: AdapterReference | None = Field(
+        default=None,
+        alias="adapterRef",
+    )
+
+    @model_validator(mode="after")
+    def _validate_tool_source(self) -> "AgentToolPayload":
+        """Ensure exactly one of endpoint or adapterRef is provided."""
+        has_endpoint = self.endpoint is not None
+        has_adapter_ref = self.adapter_ref is not None
+
+        if has_endpoint and has_adapter_ref:
+            msg = (
+                "Tool must have either 'endpoint' or 'adapterRef', not both"
+            )
+            raise ValueError(msg)
+
+        if not has_endpoint and not has_adapter_ref:
+            msg = "Tool must have either 'endpoint' or 'adapterRef'"
+            raise ValueError(msg)
+
+        return self
 
 
 class AgentLlmPayload(BaseModel):

@@ -54,7 +54,14 @@ const ALL_SECTIONS: NavSection[] = [
     items: [
       { label: "Workflows", icon: "account_tree", route: "/workflows" },
       { label: "Hosted Services", icon: "webhook", route: "/hosted-services" },
-      { label: "YoizenClaw", icon: "schedule", route: "/yoizenclaw" },
+      {
+        label: "YoizenClaw",
+        icon: "psychology",
+        items: [
+          { label: "Agents", icon: "support_agent", route: "/yoizenclaw/agents" },
+          { label: "Playground", icon: "science", route: "/yoizenclaw/playground" },
+        ],
+      },
     ],
   },
   {

@@ -51,6 +51,9 @@ src/
     │   ├── config-files.service.ts             # Business logic, version increment
     │   ├── config-files.repository.ts          # SQL queries
     │   └── config-files.dto.ts                 # UpdateConfigFileDto, DeployConfigFilesDto
+    ├── adapters/
+    │   ├── adapters.controller.ts              # GET /admin/adapters, GET /admin/adapters/:id
+    │   └── adapters.service.ts                 # Proxy to adapter-service
     ├── runtime/
     │   ├── runtime.module.ts
     │   ├── runtime.controller.ts               # GET /runtime/status
@@ -149,6 +152,15 @@ test/
   "last_sync_at": "2026-03-30T12:00:00Z"
 }
 ```
+
+### Adapters Module (`/admin/adapters`)
+
+| Method | Endpoint | Description | Request Headers | Request Body | Query Params |
+|--------|----------|-------------|-----------------|--------------|--------------|
+| GET | `/admin/adapters` | List all adapters | `x-yoizen-tenant` | - | - |
+| GET | `/admin/adapters/:id` | Get adapter by ID | `x-yoizen-tenant` | - | - |
+
+Proxy endpoints that forward requests to the adapter-service. Used by the admin console UI to populate adapter/endpoint dropdowns in the tool configuration form.
 
 ### Health Module (`/health`)
 

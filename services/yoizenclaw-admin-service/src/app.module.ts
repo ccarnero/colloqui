@@ -21,6 +21,8 @@ import { JobsModule } from './modules/jobs/jobs.module';
 import { ConfigFilesModule } from './modules/config-files/config-files.module';
 import { RuntimeModule } from './modules/runtime/runtime.module';
 import { HealthModule } from './modules/health/health.module';
+import { TemplatesModule } from './modules/templates/templates.module';
+import { AdaptersModule } from './modules/adapters/adapters.module';
 
 @Global()
 @Module({
@@ -32,6 +34,8 @@ import { HealthModule } from './modules/health/health.module';
     ConfigFilesModule,
     RuntimeModule,
     HealthModule,
+    TemplatesModule,
+    AdaptersModule,
   ],
   providers: [
     natsProvider,

@@ -7,7 +7,8 @@ registry-backed and HTTP/NATS-backed tools.
 from __future__ import annotations
 
 import inspect
-from typing import Any
+import logging
+from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel
 from pydantic_ai.tools import Tool
@@ -15,6 +16,11 @@ from pydantic_ai.tools import Tool
 from src.shared.config.prompts import PromptLoadError, PromptLoader
 from src.application.agents.template_renderer import TemplateRenderer
 from src.tools.registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from src.tools.adapter_executor import AdapterToolExecutor
+
+logger = logging.getLogger(__name__)
 
 
 class ToolExecutor:
@@ -26,11 +32,13 @@ class ToolExecutor:
         tool_registry: ToolRegistry,
         prompt_loader: PromptLoader | None = None,
         template_renderer: TemplateRenderer | None = None,
+        adapter_tool_executor: AdapterToolExecutor | None = None,
     ) -> None:
         self.tools = self._normalize_config_items(tools)
         self.tool_registry = tool_registry
         self.prompt_loader = prompt_loader or PromptLoader()
         self.renderer = template_renderer or TemplateRenderer()
+        self._adapter_tool_executor = adapter_tool_executor
 
     def resolve_skill_allowed_tools(self, skill: dict[str, Any]) -> list[str]:
         """Return the list of tool names allowed by a skill configuration."""
@@ -196,6 +204,12 @@ class ToolExecutor:
         payload: dict[str, Any],
         state: dict[str, Any],
     ) -> Any:
+        adapter_ref_data = tool_definition.get("adapterRef")
+        if adapter_ref_data is not None:
+            return await self._execute_adapter_tool(
+                adapter_ref_data, payload, state,
+            )
+
         endpoint = str(tool_definition.get("endpoint", "")).strip()
         if not endpoint:
             raise ValueError("Tool endpoint is required for runtime execution")
@@ -242,6 +256,46 @@ class ToolExecutor:
             headers=headers,
         )
         return self._normalize_backend_tool_result(result)
+
+    async def _execute_adapter_tool(
+        self,
+        adapter_ref_data: Any,
+        payload: dict[str, Any],
+        state: dict[str, Any],
+    ) -> Any:
+        """Dispatch tool execution to AdapterToolExecutor when adapterRef is present."""
+        from src.shared.config.agent_config import AdapterReference
+        from src.tools.adapter_executor import is_adapter_tools_enabled
+
+        if not is_adapter_tools_enabled():
+            return {
+                "success": False,
+                "error": "Adapter tools are disabled",
+            }
+
+        if self._adapter_tool_executor is None:
+            return {
+                "success": False,
+                "error": "Adapter tool executor is not configured",
+            }
+
+        if isinstance(adapter_ref_data, dict):
+            adapter_ref = AdapterReference(**adapter_ref_data)
+        elif isinstance(adapter_ref_data, AdapterReference):
+            adapter_ref = adapter_ref_data
+        else:
+            return {
+                "success": False,
+                "error": "Invalid adapter reference configuration",
+            }
+
+        tenant_id = str(state.get("tenant_id", "")).strip()
+
+        return await self._adapter_tool_executor.execute(
+            tenant_id=tenant_id,
+            adapter_ref=adapter_ref,
+            payload=payload,
+        )
 
     def _resolve_tool_definition(self, tool_name: str) -> dict[str, Any] | None:
         for tool in self.tools:

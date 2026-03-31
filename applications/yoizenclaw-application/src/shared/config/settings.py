@@ -70,6 +70,13 @@ class BootstrapSettings(BaseSettings):
     RUNTIME_HEARTBEAT_INTERVAL_SECONDS: float = 15.0
     TENANT_ID: str = ""
 
+    YOIZENCLAW_ADAPTER_TOOLS_ENABLED: bool = True
+    ADAPTER_SERVICE_URL: str = ""
+    ADAPTER_CACHE_TTL_SECONDS: int = 60
+    ADAPTER_CACHE_HARD_TTL_SECONDS: int = 300
+    YOIZENCLAW_TOOL_RESPONSE_MAX_BYTES: int = 100_000
+    YOIZENCLAW_ADAPTER_TOOLS_ENABLED: bool = True
+
     @property
     def postgres_connection_string(self) -> str:
         return (
