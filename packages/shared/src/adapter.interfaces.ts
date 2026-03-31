@@ -6,6 +6,14 @@ export interface AdapterEndpointConfig {
   path: string;
 }
 
+export const AdapterStatus = {
+  ENABLED: "enabled",
+  DISABLED: "disabled",
+} as const;
+
+export type AdapterStatusValue =
+  (typeof AdapterStatus)[keyof typeof AdapterStatus];
+
 export interface AdapterConfig {
   id: string;
   tenantId: string;
@@ -19,7 +27,7 @@ export interface AdapterConfig {
   maxRetries: number;
   retryBackoffMs: number;
   healthCheckPath: string;
-  status: string;
+  status: AdapterStatusValue;
   endpoints: AdapterEndpointConfig[];
 }
 

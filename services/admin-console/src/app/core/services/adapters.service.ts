@@ -1,7 +1,7 @@
 import { HttpClient } from "@angular/common/http";
 import { Injectable, inject } from "@angular/core";
+import { map, type Observable } from "rxjs";
 import { environment } from "../../../environments/environment";
-import type { Observable } from "rxjs";
 
 export interface IAdapterEndpoint {
   id: string;
@@ -10,10 +10,12 @@ export interface IAdapterEndpoint {
   method: string;
 }
 
+export type AdapterStatus = "enabled" | "disabled";
+
 export interface IAdapterSummary {
   id: string;
   name: string;
-  status: string;
+  status: AdapterStatus;
   baseUrl?: string;
   authType?: string;
   hasAuth?: boolean;
@@ -24,7 +26,7 @@ export interface IAdapterDetail {
   id: string;
   name: string;
   baseUrl: string;
-  status: string;
+  status: AdapterStatus;
   authType: string;
   hasAuth: boolean;
   endpoints: IAdapterEndpoint[];
@@ -33,10 +35,12 @@ export interface IAdapterDetail {
 @Injectable({ providedIn: "root" })
 export class AdaptersService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiUrl}/admin/adapters`;
+  private readonly baseUrl = `${environment.apiUrl}/adapters`;
 
   listAdapters(): Observable<{ adapters: IAdapterSummary[] }> {
-    return this.http.get<{ adapters: IAdapterSummary[] }>(this.baseUrl);
+    return this.http
+      .get<IAdapterSummary[]>(this.baseUrl)
+      .pipe(map((adapters) => ({ adapters })));
   }
 
   getAdapter(adapterId: string): Observable<IAdapterDetail> {

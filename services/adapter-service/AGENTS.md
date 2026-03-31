@@ -109,7 +109,7 @@ Client (via API Gateway proxy)
 | `max_retries` | INTEGER | NOT NULL, DEFAULT 3 |
 | `retry_backoff_ms` | INTEGER | NOT NULL, DEFAULT 1000 |
 | `health_check_path` | TEXT | NOT NULL, DEFAULT '/health' |
-| `status` | TEXT | NOT NULL, DEFAULT 'pending' |
+| `status` | TEXT | NOT NULL, DEFAULT 'enabled', CHECK IN ('enabled', 'disabled') |
 | `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() |
 | `updated_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() |
 

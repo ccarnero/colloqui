@@ -117,6 +117,7 @@ export class UpdateAdapterDto {
   healthCheckPath?: string;
 
   @IsString()
+  @IsIn(["enabled", "disabled"])
   @IsOptional()
   status?: string;
 }

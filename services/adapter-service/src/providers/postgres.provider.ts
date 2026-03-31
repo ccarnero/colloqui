@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS http_adapters (
   max_retries       INTEGER NOT NULL DEFAULT 3,
   retry_backoff_ms  INTEGER NOT NULL DEFAULT 1000,
   health_check_path TEXT NOT NULL DEFAULT '/health',
-  status            TEXT NOT NULL DEFAULT 'pending',
+  status            TEXT NOT NULL DEFAULT 'enabled' CHECK (status IN ('enabled', 'disabled')),
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenant_id, name)
@@ -46,6 +46,27 @@ CREATE TABLE IF NOT EXISTS adapter_endpoints (
 );
 CREATE INDEX IF NOT EXISTS idx_adapter_endpoints_adapter
   ON adapter_endpoints (adapter_id);
+`;
+
+const MIGRATION_SQL = `
+UPDATE http_adapters
+  SET status = 'enabled'
+  WHERE status NOT IN ('enabled', 'disabled');
+
+ALTER TABLE http_adapters
+  ALTER COLUMN status SET DEFAULT 'enabled';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'http_adapters_status_check'
+  ) THEN
+    ALTER TABLE http_adapters
+      ADD CONSTRAINT http_adapters_status_check
+      CHECK (status IN ('enabled', 'disabled'));
+  END IF;
+END $$;
 `;
 
 const sqlProvider: FactoryProvider<Sql> = {
@@ -79,6 +100,7 @@ class SchemaInitializer implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     try {
       await this.sql.unsafe(SCHEMA_SQL);
+      await this.sql.unsafe(MIGRATION_SQL);
       this.logger.log("Adapter schema ensured");
     } catch (err) {
       this.logger.error("Failed to ensure adapter schema", err);

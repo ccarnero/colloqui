@@ -6,6 +6,8 @@ import {
   Logger,
 } from "@nestjs/common";
 import type { Sql } from "postgres";
+import { AdapterStatus } from "@yoizen/shared";
+import type { AdapterStatusValue } from "@yoizen/shared";
 import { POSTGRES_SQL } from "../../providers/postgres.provider";
 import type {
   CreateAdapterDto,
@@ -26,7 +28,7 @@ interface AdapterRow {
   max_retries: number;
   retry_backoff_ms: number;
   health_check_path: string;
-  status: string;
+  status: AdapterStatusValue;
   created_at: string;
   updated_at: string;
 }
@@ -94,17 +96,18 @@ export class AdaptersService {
     const maxRetries = dto.maxRetries ?? 3;
     const retryBackoffMs = dto.retryBackoffMs ?? 1000;
     const healthCheckPath = dto.healthCheckPath ?? "/health";
+    const status = AdapterStatus.ENABLED;
 
     try {
       const [row] = await this.sql<AdapterRow[]>`
         INSERT INTO http_adapters
           (id, tenant_id, name, context, base_url, auth_type, auth_config,
-           headers, timeout_ms, max_retries, retry_backoff_ms, health_check_path)
+           headers, timeout_ms, max_retries, retry_backoff_ms, health_check_path, status)
         VALUES
           (${id}, ${tenantId}, ${dto.name}, ${dto.context}, ${dto.baseUrl},
            ${authType}, ${this.sql.json(authConfig as never)},
            ${this.sql.json(headers as never)}, ${timeoutMs},
-           ${maxRetries}, ${retryBackoffMs}, ${healthCheckPath})
+           ${maxRetries}, ${retryBackoffMs}, ${healthCheckPath}, ${status})
         RETURNING *
       `;
 

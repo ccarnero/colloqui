@@ -12,6 +12,8 @@ export interface AdapterEndpointDto {
   createdAt: string;
 }
 
+export type AdapterStatus = "enabled" | "disabled";
+
 export interface AdapterDto {
   id: string;
   tenantId: string;
@@ -25,7 +27,7 @@ export interface AdapterDto {
   maxRetries: number;
   retryBackoffMs: number;
   healthCheckPath: string;
-  status: string;
+  status: AdapterStatus;
   createdAt: string;
   updatedAt: string;
   endpoints: AdapterEndpointDto[];
@@ -55,7 +57,7 @@ export interface UpdateAdapterPayload {
   maxRetries?: number;
   retryBackoffMs?: number;
   healthCheckPath?: string;
-  status?: string;
+  status?: AdapterStatus;
 }
 
 @Injectable({ providedIn: "root" })

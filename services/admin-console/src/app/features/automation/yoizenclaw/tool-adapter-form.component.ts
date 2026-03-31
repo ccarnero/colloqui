@@ -75,8 +75,8 @@ const AUTH_TYPE_LABELS: ReadonlyMap<string, string> = new Map([
             @for (adapter of adapters(); track adapter.id) {
               <mat-option [value]="adapter.id">
                 {{ adapter.name }}
-                @if (adapter.status !== "active") {
-                  <span class="adapter-status-warn">({{ adapter.status }})</span>
+                @if (adapter.status === "disabled") {
+                  <span class="adapter-status-warn">(disabled)</span>
                 }
               </mat-option>
             }
@@ -118,13 +118,6 @@ const AUTH_TYPE_LABELS: ReadonlyMap<string, string> = new Map([
               <span class="preview-value">{{ authTypeLabel() }}</span>
             </div>
           </div>
-        </div>
-      }
-
-      @if (adapterInactive()) {
-        <div class="adapter-form-warning">
-          <mat-icon>pause_circle</mat-icon>
-          <span>Adapter inactive</span>
         </div>
       }
     </div>
@@ -317,14 +310,14 @@ export class ToolAdapterFormComponent implements OnInit {
   readonly adapterInactive = computed(() => {
     const adapter = this.selectedAdapter();
     if (!adapter) return false;
-    return adapter.status !== "active";
+    return adapter.status === "disabled";
   });
 
   readonly adapterWarning = computed<string | null>(() => {
     const adapter = this.selectedAdapter();
     if (!adapter) return null;
-    if (adapter.status !== "active") {
-      return `Adapter "${adapter.name}" is inactive.`;
+    if (adapter.status === "disabled") {
+      return `Adapter "${adapter.name}" is disabled.`;
     }
     return null;
   });
