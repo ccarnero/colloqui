@@ -73,4 +73,9 @@ export class AdminConfigController {
   async getRuntimeStatus(@Req() req: TenantRequest): Promise<object> {
     return this.proxy.proxy('GET', '/admin/runtime/status', req.tenantId);
   }
+
+  @Get('templates')
+  async listTemplates(@Req() req: TenantRequest): Promise<object> {
+    return this.proxy.proxy('GET', '/admin/templates', req.tenantId);
+  }
 }

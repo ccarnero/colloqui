@@ -82,7 +82,7 @@ export class TenantConnectionManager implements OnModuleDestroy {
 
     const sql = this.getConnection(tenantId);
 
-    await sql`
+    await sql.unsafe(`
       CREATE TABLE IF NOT EXISTS agents (
         id UUID PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -156,7 +156,7 @@ export class TenantConnectionManager implements OnModuleDestroy {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
-    `;
+    `);
 
     this.markSchemaInitialized(tenantId);
     this.logger.log(`Schema initialized for tenant '${tenantId}'`);
