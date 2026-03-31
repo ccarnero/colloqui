@@ -1,4 +1,4 @@
-import { Component, inject, type OnInit } from "@angular/core";
+import { Component, inject, type OnInit, signal } from "@angular/core";
 import { RouterOutlet } from "@angular/router";
 import { HeaderComponent } from "../header/header.component";
 import { SidebarComponent } from "../sidebar/sidebar.component";
@@ -9,18 +9,23 @@ import { TenantService } from "../../core/services/tenant.service";
   selector: "app-shell",
   imports: [RouterOutlet, HeaderComponent, SidebarComponent, RightPanelComponent],
   template: `
-    <div class="yoizen-layout text-primary flex h-screen">
-      <app-sidebar class="w-64 bg-sidebar border-r border-subtle flex-shrink-0" />
+    <div class="yoizen-layout text-primary flex h-screen" [class.mobile-open]="sidebarOpen()">
+      @if (sidebarOpen()) {
+        <div class="sidebar-overlay" (click)="sidebarOpen.set(false)"></div>
+      }
+      <app-sidebar class="w-64 theme-sidebar bg-sidebar border-r border-subtle flex-shrink-0" />
       
       <div class="flex-1 flex flex-col min-w-0">
-        <app-header class="bg-surface border-b border-subtle" />
+        <app-header (toggleSidebar)="sidebarOpen.set(!sidebarOpen())" (toggleRightPanel)="rightPanelOpen.set(!rightPanelOpen())" class="bg-surface border-b border-subtle" />
         
         <div class="flex flex-1 overflow-hidden">
           <main class="workspace flex-1 overflow-auto bg-background p-6">
             <router-outlet />
           </main>
           
-          <app-right-panel class="right-panel w-72 bg-surface border-l border-subtle overflow-y-auto" />
+          @if (rightPanelOpen()) {
+            <app-right-panel class="right-panel w-72 bg-surface border-l border-subtle overflow-y-auto" />
+          }
         </div>
       </div>
     </div>
@@ -68,15 +73,36 @@ import { TenantService } from "../../core/services/tenant.service";
 
     @media (max-width: 900px) {
       .yoizen-layout {
-        flex-direction: column;
+        position: relative;
       }
-      .w-64 { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border-subtle); }
+      .theme-sidebar {
+        position: fixed;
+        top: 0;
+        left: -280px;
+        bottom: 0;
+        width: 256px;
+        z-index: 50;
+        transition: transform 0.3s ease;
+      }
+      .yoizen-layout.mobile-open .theme-sidebar {
+        transform: translateX(280px); /* 256px + some shadow offset possibly, wait, left is -280px, wait, just left:0 and translateX(-100%) */
+      }
       .right-panel { display: none; }
+      
+      .sidebar-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 40;
+      }
     }
   `,
 })
 export class ShellComponent implements OnInit {
   private readonly tenantService = inject(TenantService);
+  
+  readonly sidebarOpen = signal(false);
+  readonly rightPanelOpen = signal(true);
 
   ngOnInit(): void {
     this.tenantService.loadTenantDetails();

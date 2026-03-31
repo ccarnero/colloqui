@@ -12,6 +12,7 @@ import { provideAnimationsAsync } from "@angular/platform-browser/animations/asy
 import { routes } from "./app.routes";
 import { authInterceptor } from "./core/interceptors/auth.interceptor";
 import { tenantInterceptor } from "./core/interceptors/tenant.interceptor";
+import { provideMonacoEditor } from "ngx-monaco-editor-v2";
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -21,5 +22,16 @@ export const appConfig: ApplicationConfig = {
       withInterceptors([authInterceptor, tenantInterceptor]),
     ),
     provideAnimationsAsync(),
+    provideMonacoEditor({
+      defaultOptions: {
+        theme: "vs-dark",
+        minimap: { enabled: false },
+        formatOnPaste: true,
+        wordWrap: "on",
+      },
+      onMonacoLoad: () => {
+        // Here we could customize the monaco instance
+      }
+    }),
   ],
 };

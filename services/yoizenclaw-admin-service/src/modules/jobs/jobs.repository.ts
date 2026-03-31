@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
 
 export interface Job {
@@ -46,7 +47,8 @@ export class JobsRepository {
     private readonly connectionManager: TenantConnectionManager,
   ) {}
 
-  private getSql(tenantId: string): Sql {
+  private async getSql(tenantId: string): Promise<Sql> {
+    await this.connectionManager.ensureSchema(tenantId);
     return this.connectionManager.getConnection(tenantId);
   }
 
@@ -57,7 +59,7 @@ export class JobsRepository {
     tenantId: string,
     options: FindAllOptions = {},
   ): Promise<{ jobs: Job[]; total: number }> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
     const { agent_id, is_active, limit = 20, offset = 0 } = options;
 
     // Build conditions as parameterized fragments
@@ -106,7 +108,7 @@ export class JobsRepository {
    * Busca un job por su ID.
    */
   async findById(tenantId: string, id: string): Promise<Job | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<Job[]>`
       SELECT 
@@ -135,12 +137,14 @@ export class JobsRepository {
     tenantId: string,
     data: CreateJobData,
   ): Promise<Job> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
+    const jobId = randomUUID();
 
     const nextRun = this.calculateNextRun(data.schedule);
 
     const results = await sql<Job[]>`
       INSERT INTO jobs (
+        id,
         name,
         agent_id,
         schedule,
@@ -151,6 +155,7 @@ export class JobsRepository {
         created_at,
         updated_at
       ) VALUES (
+        ${jobId},
         ${data.name},
         ${data.agent_id},
         ${data.schedule},
@@ -185,7 +190,7 @@ export class JobsRepository {
     id: string,
     data: UpdateJobData,
   ): Promise<Job | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     // Build dynamic SET clauses using parameterized fragments
     const setClauses: string[] = ['updated_at = NOW()'];
@@ -234,7 +239,7 @@ export class JobsRepository {
    * Elimina un job.
    */
   async delete(tenantId: string, id: string): Promise<boolean> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<{ id: string }[]>`
       DELETE FROM jobs
@@ -249,7 +254,7 @@ export class JobsRepository {
    * Activa un job.
    */
   async enable(tenantId: string, id: string): Promise<Job | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<Job[]>`
       UPDATE jobs
@@ -277,7 +282,7 @@ export class JobsRepository {
    * Desactiva un job.
    */
   async disable(tenantId: string, id: string): Promise<Job | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<Job[]>`
       UPDATE jobs
@@ -305,7 +310,7 @@ export class JobsRepository {
    * Actualiza last_run y recalcula next_run.
    */
   async updateLastRun(tenantId: string, id: string, schedule: string): Promise<Job | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
     const nextRun = this.calculateNextRun(schedule);
 
     const results = await sql<Job[]>`

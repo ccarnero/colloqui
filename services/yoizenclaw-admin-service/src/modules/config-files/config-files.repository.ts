@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
 
 export interface ConfigFile {
@@ -37,7 +38,8 @@ export class ConfigFilesRepository {
     private readonly connectionManager: TenantConnectionManager,
   ) {}
 
-  private getSql(tenantId: string): Sql {
+  private async getSql(tenantId: string): Promise<Sql> {
+    await this.connectionManager.ensureSchema(tenantId);
     return this.connectionManager.getConnection(tenantId);
   }
 
@@ -48,7 +50,7 @@ export class ConfigFilesRepository {
     tenantId: string,
     options: FindAllOptions = {},
   ): Promise<{ files: ConfigFile[]; total: number }> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
     const { limit = 20, offset = 0 } = options;
 
     // Get total count
@@ -83,7 +85,7 @@ export class ConfigFilesRepository {
    * Busca un config file por su path único.
    */
   async findByPath(tenantId: string, path: string): Promise<ConfigFile | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<ConfigFile[]>`
       SELECT 
@@ -111,10 +113,12 @@ export class ConfigFilesRepository {
     tenantId: string,
     data: CreateConfigFileData,
   ): Promise<ConfigFile> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
+    const configFileId = randomUUID();
 
     const results = await sql<ConfigFile[]>`
       INSERT INTO config_files (
+        id,
         name,
         path,
         content,
@@ -124,6 +128,7 @@ export class ConfigFilesRepository {
         created_at,
         updated_at
       ) VALUES (
+        ${configFileId},
         ${data.name},
         ${data.path},
         ${data.content},
@@ -156,7 +161,7 @@ export class ConfigFilesRepository {
     path: string,
     data: UpdateConfigFileData,
   ): Promise<ConfigFile | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     // Build dynamic update
     const updates: string[] = ['updated_at = NOW()', 'version = version + 1'];
@@ -196,7 +201,7 @@ export class ConfigFilesRepository {
    * Elimina (soft delete) un config file.
    */
   async delete(tenantId: string, path: string): Promise<boolean> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<ConfigFile[]>`
       UPDATE config_files
@@ -212,7 +217,7 @@ export class ConfigFilesRepository {
    * Obtiene todos los config files activos para deploy.
    */
   async findAllActive(tenantId: string): Promise<ConfigFile[]> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const files = await sql<ConfigFile[]>`
       SELECT 

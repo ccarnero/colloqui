@@ -136,6 +136,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: "yoizenclaw",
+        loadComponent: () =>
+          import(
+            "./features/automation/yoizenclaw/yoizenclaw.component"
+          ).then((m) => m.YoizenclawComponent),
+      },
+      {
         path: "data-sources",
         loadComponent: () =>
           import(

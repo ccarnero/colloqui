@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
 
 export interface Agent {
@@ -53,7 +54,8 @@ export class AgentsRepository {
     private readonly connectionManager: TenantConnectionManager,
   ) {}
 
-  private getSql(tenantId: string): Sql {
+  private async getSql(tenantId: string): Promise<Sql> {
+    await this.connectionManager.ensureSchema(tenantId);
     return this.connectionManager.getConnection(tenantId);
   }
 
@@ -64,7 +66,7 @@ export class AgentsRepository {
     tenantId: string,
     options: FindAllOptions = {},
   ): Promise<{ agents: Agent[]; total: number }> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
     const { status, limit = 20, offset = 0 } = options;
 
     // Build where clause with parameterized conditions
@@ -115,7 +117,7 @@ export class AgentsRepository {
    * Busca un agent por su ID.
    */
   async findById(tenantId: string, id: string): Promise<Agent | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<Agent[]>`
       SELECT 
@@ -146,10 +148,12 @@ export class AgentsRepository {
     tenantId: string,
     data: CreateAgentData,
   ): Promise<Agent> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
+    const agentId = randomUUID();
 
     const results = await sql<Agent[]>`
       INSERT INTO agents (
+        id,
         name,
         description,
         system_prompt,
@@ -161,6 +165,7 @@ export class AgentsRepository {
         created_at,
         updated_at
       ) VALUES (
+        ${agentId},
         ${data.name},
         ${data.description ?? null},
         ${data.system_prompt},
@@ -198,7 +203,7 @@ export class AgentsRepository {
     id: string,
     data: UpdateAgentData,
   ): Promise<Agent | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     // Build dynamic update using sql.assignment for proper parameterization
     const updates: string[] = ['updated_at = NOW()'];
@@ -256,7 +261,7 @@ export class AgentsRepository {
    * Elimina (soft delete) un agent.
    */
   async delete(tenantId: string, id: string): Promise<boolean> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<Agent[]>`
       UPDATE agents
@@ -272,7 +277,7 @@ export class AgentsRepository {
    * Publica un agent (cambia status a 'published' y setea published_at).
    */
   async publish(tenantId: string, id: string): Promise<Agent | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<Agent[]>`
       UPDATE agents
@@ -303,7 +308,7 @@ export class AgentsRepository {
    * Despublica un agent (cambia status a 'draft' y limpia published_at).
    */
   async unpublish(tenantId: string, id: string): Promise<Agent | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<Agent[]>`
       UPDATE agents

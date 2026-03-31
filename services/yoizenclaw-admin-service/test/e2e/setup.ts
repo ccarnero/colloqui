@@ -5,7 +5,7 @@ import type { Sql } from '../src/providers/tenant-connection-manager';
 // Schema SQL para inicializar las tablas
 const SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS agents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     system_prompt TEXT NOT NULL,
@@ -23,7 +23,7 @@ const SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_agents_created_at ON agents(created_at DESC);
 
   CREATE TABLE IF NOT EXISTS credentials (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     type VARCHAR(50) NOT NULL CHECK (type IN ('api_key', 'oauth', 'basic', 'custom')),
     value TEXT NOT NULL,
@@ -36,7 +36,7 @@ const SCHEMA_SQL = `
   );
 
   CREATE TABLE IF NOT EXISTS channels (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     type VARCHAR(50) NOT NULL CHECK (type IN ('webchat', 'whatsapp', 'telegram', 'slack', 'custom')),
     config JSONB NOT NULL DEFAULT '{}',
@@ -49,7 +49,7 @@ const SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_channels_type ON channels(type);
 
   CREATE TABLE IF NOT EXISTS jobs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     agent_id UUID NOT NULL REFERENCES agents(id),
     schedule VARCHAR(255) NOT NULL,
@@ -65,7 +65,7 @@ const SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_jobs_active ON jobs(is_active) WHERE is_active = true;
 
   CREATE TABLE IF NOT EXISTS job_executions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     job_id UUID NOT NULL REFERENCES jobs(id),
     status VARCHAR(50) NOT NULL,
     event_payload JSONB DEFAULT '{}',
@@ -80,7 +80,7 @@ const SCHEMA_SQL = `
   );
 
   CREATE TABLE IF NOT EXISTS config_files (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     path TEXT NOT NULL UNIQUE,
     content TEXT NOT NULL,

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
 
 export interface JobExecution {
@@ -50,7 +51,8 @@ export class JobExecutionsRepository {
     private readonly connectionManager: TenantConnectionManager,
   ) {}
 
-  private getSql(tenantId: string): Sql {
+  private async getSql(tenantId: string): Promise<Sql> {
+    await this.connectionManager.ensureSchema(tenantId);
     return this.connectionManager.getConnection(tenantId);
   }
 
@@ -61,7 +63,7 @@ export class JobExecutionsRepository {
     tenantId: string,
     options: FindAllExecutionsOptions = {},
   ): Promise<{ executions: JobExecution[]; total: number }> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
     const { job_id, status, limit = 20, offset = 0 } = options;
 
     // Build conditions as parameterized fragments
@@ -116,7 +118,7 @@ export class JobExecutionsRepository {
    * Busca una ejecución por su ID.
    */
   async findById(tenantId: string, id: string): Promise<JobExecution | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<JobExecution[]>`
       SELECT 
@@ -149,10 +151,12 @@ export class JobExecutionsRepository {
     tenantId: string,
     data: CreateExecutionData,
   ): Promise<JobExecution> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
+    const executionId = randomUUID();
 
     const results = await sql<JobExecution[]>`
       INSERT INTO job_executions (
+        id,
         job_id,
         status,
         event_payload,
@@ -165,6 +169,7 @@ export class JobExecutionsRepository {
         finished_at,
         created_at
       ) VALUES (
+        ${executionId},
         ${data.job_id},
         ${data.status},
         ${sql.json((data.event_payload ?? {}) as JsonValue)},
@@ -204,7 +209,7 @@ export class JobExecutionsRepository {
     id: string,
     data: UpdateExecutionData,
   ): Promise<JobExecution | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     // Build dynamic SET clauses using parameterized fragments
     const setClauses: string[] = [];
@@ -270,7 +275,7 @@ export class JobExecutionsRepository {
    * Elimina una ejecución.
    */
   async delete(tenantId: string, id: string): Promise<boolean> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<{ id: string }[]>`
       DELETE FROM job_executions

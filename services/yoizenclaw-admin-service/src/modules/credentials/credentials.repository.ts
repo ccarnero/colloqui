@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
 
 export type CredentialType = 'api_key' | 'oauth' | 'basic' | 'custom';
@@ -70,7 +71,8 @@ export class CredentialsRepository {
     private readonly connectionManager: TenantConnectionManager,
   ) {}
 
-  private getSql(tenantId: string): Sql {
+  private async getSql(tenantId: string): Promise<Sql> {
+    await this.connectionManager.ensureSchema(tenantId);
     return this.connectionManager.getConnection(tenantId);
   }
 
@@ -82,7 +84,7 @@ export class CredentialsRepository {
     tenantId: string,
     options: FindAllOptions = {},
   ): Promise<{ credentials: CredentialWithoutValue[]; total: number }> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
     const { type, limit = 20, offset = 0 } = options;
 
     // Build where clause with parameterized conditions
@@ -134,7 +136,7 @@ export class CredentialsRepository {
     tenantId: string,
     id: string,
   ): Promise<CredentialWithoutValue | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<CredentialWithoutValue[]>`
       SELECT 
@@ -163,7 +165,7 @@ export class CredentialsRepository {
     tenantId: string,
     id: string,
   ): Promise<Credential | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<Credential[]>`
       SELECT 
@@ -193,7 +195,8 @@ export class CredentialsRepository {
     tenantId: string,
     data: CreateCredentialData,
   ): Promise<CredentialWithoutValue> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
+    const credentialId = randomUUID();
 
     // FIXME: Implementar cifrado con KMS/Vault antes de producción
     // Por ahora, is_encrypted siempre es false (placeholder)
@@ -201,6 +204,7 @@ export class CredentialsRepository {
 
     const results = await sql<CredentialWithoutValue[]>`
       INSERT INTO credentials (
+        id,
         name,
         type,
         value,
@@ -211,6 +215,7 @@ export class CredentialsRepository {
         created_at,
         updated_at
       ) VALUES (
+        ${credentialId},
         ${data.name},
         ${data.type},
         ${data.value},
@@ -245,7 +250,7 @@ export class CredentialsRepository {
     id: string,
     data: UpdateCredentialData,
   ): Promise<CredentialWithoutValue | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     // Build dynamic update using sql for proper parameterization
     const updates: string[] = ['updated_at = NOW()'];
@@ -297,7 +302,7 @@ export class CredentialsRepository {
    * Elimina (soft delete) una credencial.
    */
   async delete(tenantId: string, id: string): Promise<boolean> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     const results = await sql<CredentialWithoutValue[]>`
       UPDATE credentials
@@ -320,7 +325,7 @@ export class CredentialsRepository {
     newValue: string,
     newExpiresAt?: string,
   ): Promise<CredentialWithoutValue | null> {
-    const sql = this.getSql(tenantId);
+    const sql = await this.getSql(tenantId);
 
     // FIXME: Implementar cifrado con KMS/Vault antes de producción
     // Por ahora, is_encrypted sigue siendo false (placeholder)

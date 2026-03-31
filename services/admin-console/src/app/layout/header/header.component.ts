@@ -1,4 +1,4 @@
-import { Component, inject } from "@angular/core";
+import { Component, inject, output } from "@angular/core";
 import { MatIconModule } from "@angular/material/icon";
 import { MatButtonModule } from "@angular/material/button";
 import { MatMenuModule } from "@angular/material/menu";
@@ -21,6 +21,11 @@ import { NotificationService } from "../../core/services/notification.service";
   template: `
     <header class="topbar">
       <div class="topbar-left flex items-center gap-4">
+        <!-- Mobile Menu Toggle -->
+        <button mat-icon-button class="mobile-menu-btn" (click)="toggleSidebar.emit()">
+          <mat-icon>menu</mat-icon>
+        </button>
+
         <!-- Tenant Badge (static, no dropdown) -->
         <div class="tenant-badge">
           <span class="tenant-dot"></span>
@@ -64,6 +69,11 @@ import { NotificationService } from "../../core/services/notification.service";
         <!-- Help -->
         <button mat-icon-button class="topbar-btn">
           <mat-icon>help_outline</mat-icon>
+        </button>
+
+        <!-- Toggle Right Panel -->
+        <button mat-icon-button class="topbar-btn" (click)="toggleRightPanel.emit()" matTooltip="Toggle sidebar">
+          <mat-icon>view_sidebar</mat-icon>
         </button>
 
         <!-- User Avatar -->
@@ -114,7 +124,20 @@ import { NotificationService } from "../../core/services/notification.service";
     }
 
     .topbar-left {
-      /* Flex wrapper applied via tailwind */
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .mobile-menu-btn {
+      display: none;
+      color: var(--text-primary);
+    }
+
+    @media (max-width: 900px) {
+      .mobile-menu-btn {
+        display: flex;
+      }
     }
 
     .topbar-sep {
@@ -220,4 +243,7 @@ export class HeaderComponent {
   protected readonly themeService = inject(ThemeService);
   protected readonly authService = inject(AuthService);
   protected readonly notificationService = inject(NotificationService);
+
+  readonly toggleSidebar = output<void>();
+  readonly toggleRightPanel = output<void>();
 }

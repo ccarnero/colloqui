@@ -69,11 +69,12 @@ html.light-theme {
 
   // Yoizen UI Typography
   --text-primary: #ffffff;
-  --text-secondary: #b3b3b3;
-  --text-muted: #808080;
+  --text-secondary: #D4D4D4; // Better contrast (Neutral 300)
+  --text-muted: #A3A3A3;     // Meets WCAG AA against dark backgrounds (Neutral 400)
+  --text-accent: #60a5fa;    // Light blue for dark mode contrast
 
   // Utilities
-  --border-subtle: #404040;
+  --border-subtle: #3f3f46;  // Marginally softer border in dark mode
   --hover-accent: #2563eb;
   --brand-gradient: linear-gradient(90deg, #1A66FF 0%, #4A3ABF 60%, #FD6421 100%);
 
@@ -120,6 +121,7 @@ html.light-theme {
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #94a3b8;
+  --text-accent: #2563eb;    // Darker blue for light mode contrast
   --border-subtle: #e2e8f0;
 
   // Boilerplate variables mapped to light
@@ -242,9 +244,11 @@ body.light-theme {
 }
 
 .section-card-title {
-  font-weight: 700;
-  font-size: 16px;
-  color: var(--primary);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-accent);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 
 .section-card-sub {
@@ -281,14 +285,14 @@ body.light-theme {
 }
 
 .btn-secondary {
-  background: var(--bg-surface);
+  background: transparent;
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
 }
 .btn-secondary:hover {
-  background: var(--bg-card);
+  background: var(--bg3);
   color: var(--text-primary);
-  border-color: var(--border-subtle);
+  border-color: var(--border2);
 }
 
 .btn-danger {
@@ -641,10 +645,10 @@ body.light-theme {
 
 // Mat-dialog override
 .mat-mdc-dialog-container {
-  --mdc-dialog-container-color: var(--bg);
+  --mdc-dialog-container-color: var(--bg2);
 
   .mat-mdc-dialog-surface {
-    background: var(--bg) !important;
+    background: var(--bg2) !important;
   }
 }
 
