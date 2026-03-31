@@ -9,13 +9,20 @@ import { TenantService } from "../../core/services/tenant.service";
   selector: "app-shell",
   imports: [RouterOutlet, HeaderComponent, SidebarComponent, RightPanelComponent],
   template: `
-    <app-header />
-    <div class="layout">
-      <app-sidebar />
-      <main class="workspace">
-        <router-outlet />
-      </main>
-      <app-right-panel class="right-panel" />
+    <div class="yoizen-layout text-primary flex h-screen">
+      <app-sidebar class="w-64 bg-sidebar border-r border-subtle flex-shrink-0" />
+      
+      <div class="flex-1 flex flex-col min-w-0">
+        <app-header class="bg-surface border-b border-subtle" />
+        
+        <div class="flex flex-1 overflow-hidden">
+          <main class="workspace flex-1 overflow-auto bg-background p-6">
+            <router-outlet />
+          </main>
+          
+          <app-right-panel class="right-panel w-72 bg-surface border-l border-subtle overflow-y-auto" />
+        </div>
+      </div>
     </div>
   `,
   styles: `
@@ -23,31 +30,48 @@ import { TenantService } from "../../core/services/tenant.service";
       display: block;
       height: 100vh;
       overflow: hidden;
+      background: var(--bg-background);
+      color: var(--text-primary);
     }
 
-    .layout {
-      display: grid;
-      grid-template-columns: 220px 1fr 280px;
-      height: calc(100vh - 52px);
-      margin-top: 52px;
-      overflow: hidden;
+    .yoizen-layout {
+      display: flex;
+      height: 100vh;
     }
+
+    .w-64 { width: 256px; }
+    .w-72 { width: 288px; }
+    .flex { display: flex; }
+    .flex-col { flex-direction: column; }
+    .flex-1 { flex: 1 1 0%; }
+    .flex-shrink-0 { flex-shrink: 0; }
+    .min-w-0 { min-width: 0; }
+    .h-screen { height: 100vh; }
+    .overflow-hidden { overflow: hidden; }
+    .overflow-auto { overflow: auto; }
+    .overflow-y-auto { overflow-y: auto; }
+    .p-6 { padding: 24px; }
+
+    .bg-sidebar { background-color: var(--bg-sidebar); }
+    .bg-background { background-color: var(--bg-background); }
+    .bg-surface { background-color: var(--bg-surface); }
+    .text-primary { color: var(--text-primary); }
+
+    .border-r { border-right: 1px solid var(--border-subtle); }
+    .border-b { border-bottom: 1px solid var(--border-subtle); }
+    .border-l { border-left: 1px solid var(--border-subtle); }
 
     .workspace {
-      overflow-y: auto;
-      background: var(--bg);
-      padding: 24px;
       scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
+      scrollbar-color: var(--border-subtle) transparent;
     }
 
     @media (max-width: 900px) {
-      .layout {
-        grid-template-columns: 200px 1fr;
+      .yoizen-layout {
+        flex-direction: column;
       }
-      .right-panel {
-        display: none;
-      }
+      .w-64 { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border-subtle); }
+      .right-panel { display: none; }
     }
   `,
 })

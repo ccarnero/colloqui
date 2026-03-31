@@ -103,13 +103,8 @@ import { DatePipe } from "@angular/common";
   `,
   styles: `
     .panel {
-      background: var(--bg2);
-      border-left: 1px solid var(--border);
-      overflow-y: auto;
       padding: 16px;
       height: 100%;
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
     }
     .activity-empty {
       color: var(--text3);

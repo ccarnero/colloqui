@@ -20,18 +20,12 @@ import { NotificationService } from "../../core/services/notification.service";
   ],
   template: `
     <header class="topbar">
-      <div class="logo">
-        <div class="logo-icon">
-          <mat-icon>dashboard</mat-icon>
+      <div class="topbar-left flex items-center gap-4">
+        <!-- Tenant Badge (static, no dropdown) -->
+        <div class="tenant-badge">
+          <span class="tenant-dot"></span>
+          <span class="tenant-name text-primary font-medium">{{ tenantService.currentTenant().name }}</span>
         </div>
-        <span>AdminConsole</span>
-      </div>
-      <div class="topbar-sep"></div>
-
-      <!-- Tenant Badge (static, no dropdown) -->
-      <div class="tenant-badge">
-        <span class="tenant-dot"></span>
-        <span class="tenant-name">{{ tenantService.currentTenant().name }}</span>
       </div>
 
       <div class="topbar-right">
@@ -104,46 +98,23 @@ import { NotificationService } from "../../core/services/notification.service";
     </header>
   `,
   styles: `
+    :host {
+      display: block;
+    }
+    
     .topbar {
-      height: 52px;
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border);
+      height: 64px;
+      background: var(--bg-surface);
       display: flex;
       align-items: center;
-      padding: 0 20px;
-      gap: 16px;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 100;
+      padding: 0 24px;
+      justify-content: space-between;
+      position: relative;
+      z-index: 10;
     }
 
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 700;
-      font-size: 15px;
-      color: var(--text);
-      letter-spacing: -0.3px;
-      flex-shrink: 0;
-    }
-
-    .logo-icon {
-      width: 28px;
-      height: 28px;
-      background: linear-gradient(135deg, var(--accent), var(--purple));
-      border-radius: 7px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      mat-icon {
-        font-size: 16px;
-        width: 16px;
-        height: 16px;
-        color: #fff;
-      }
+    .topbar-left {
+      /* Flex wrapper applied via tailwind */
     }
 
     .topbar-sep {
@@ -191,7 +162,7 @@ import { NotificationService } from "../../core/services/notification.service";
       width: 32px;
       height: 32px;
       border-radius: 50%;
-      background: linear-gradient(135deg, var(--accent), var(--purple));
+      background: var(--brand-gradient);
       border: none;
       cursor: pointer;
       display: flex;
