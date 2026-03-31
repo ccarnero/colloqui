@@ -4,6 +4,7 @@ import {
   Logger,
   Inject,
   Optional,
+  forwardRef,
 } from '@nestjs/common';
 import postgres from 'postgres';
 import { SEED_SERVICE } from './provider-tokens';
@@ -28,7 +29,7 @@ export class TenantConnectionManager implements OnModuleDestroy {
 
   constructor(
     @Optional()
-    @Inject(SEED_SERVICE)
+    @Inject(forwardRef(() => SEED_SERVICE))
     private readonly seedService?: SeedServicePort,
   ) {}
 

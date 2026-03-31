@@ -262,6 +262,8 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-staging.svc.cluster.local:4222"
             - name: POSTGRES_HOST
               value: "postgres.support-services-staging.svc.cluster.local"
             - name: POSTGRES_USER

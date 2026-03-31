@@ -61,9 +61,16 @@ interface BuildEventOptions {
   source: string;
 }
 
+const NATS_CONNECT_TIMEOUT_MS = 10_000;
+const NATS_MAX_RECONNECT_ATTEMPTS = 5;
+
 const createNatsConnection = async (): Promise<NatsConnection> => {
   const url = process.env.NATS_URL ?? "nats://localhost:4222";
-  return connect({ servers: url });
+  return connect({
+    servers: url,
+    timeout: NATS_CONNECT_TIMEOUT_MS,
+    maxReconnectAttempts: NATS_MAX_RECONNECT_ATTEMPTS,
+  });
 };
 
 export const natsProvider: FactoryProvider = {

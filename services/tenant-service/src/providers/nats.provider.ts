@@ -200,12 +200,19 @@ export class NatsTenantProvisioner {
   }
 }
 
+const NATS_CONNECT_TIMEOUT_MS = 10_000;
+const NATS_MAX_RECONNECT_ATTEMPTS = 5;
+
 const natsConnectionProvider: FactoryProvider = {
   provide: NATS_CONNECTION,
   useFactory: async (): Promise<NatsConnection> => {
     const servers =
       process.env.NATS_URL ?? "nats://localhost:4222";
-    return connect({ servers });
+    return connect({
+      servers,
+      timeout: NATS_CONNECT_TIMEOUT_MS,
+      maxReconnectAttempts: NATS_MAX_RECONNECT_ATTEMPTS,
+    });
   },
 };
 
