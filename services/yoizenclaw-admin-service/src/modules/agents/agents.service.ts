@@ -1,11 +1,14 @@
 import { Injectable, NotFoundException, Logger, Inject, Optional } from '@nestjs/common';
 import { AgentsRepository, type Agent, type CreateAgentData, type UpdateAgentData } from './agents.repository';
-import { NatsPublisher } from '../../providers/nats.provider';
-import { NATS_CONNECTION } from '../../providers/nats.provider';
+import { NatsPublisher, LAZY_NATS } from '../../providers/nats.provider';
 import type { NatsConnection } from 'nats';
 import type { ChatRequestDto, ChatResponseDto } from './agents.dto';
 import { buildYoizenClawSubject, YOIZENCLAW_CHAT_RESPOND } from '@yoizen/shared';
 import { AdaptersService } from '../adapters/adapters.service';
+
+interface LazyNats {
+  getConnection(): Promise<NatsConnection>;
+}
 
 const VALIDATE_ADAPTER_REFS =
   (process.env.VALIDATE_ADAPTER_REFS ?? 'true') !== 'false';
@@ -24,7 +27,7 @@ export class AgentsService {
   constructor(
     private readonly repository: AgentsRepository,
     private readonly natsPublisher: NatsPublisher,
-    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
+    @Inject(LAZY_NATS) private readonly lazyNats: LazyNats,
     @Optional() private readonly adaptersService?: AdaptersService,
   ) {}
 
@@ -212,7 +215,8 @@ export class AgentsService {
       this.logger.debug(`Sending chat request to ${subject} for agent ${agentId}`);
       
       // Request con timeout 30s
-      const response = await this.nc.request(
+      const nc = await this.lazyNats.getConnection();
+      const response = await nc.request(
         subject,
         JSON.stringify(envelope),
         { timeout: 30000 },

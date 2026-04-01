@@ -8,6 +8,9 @@ ENVIRONMENTS=()
 SERVICE_GROUP=""
 KNATIVE_VERSION="v1.17.0"
 KOURIER_VERSION="v1.17.0"
+DEFAULT_MINIKUBE_CPUS=6
+DEFAULT_MINIKUBE_MEMORY_MB=16384
+MINIKUBE_MEMORY_RESERVE_MB=1024
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -18,25 +21,61 @@ log()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()  { echo -e "${RED}[ERR]${NC}   $*" >&2; }
 
+get_docker_memory_mb() {
+  local mem_total_bytes
+
+  mem_total_bytes="$(docker info --format '{{.MemTotal}}' 2>/dev/null || true)"
+  if [[ ! "$mem_total_bytes" =~ ^[0-9]+$ ]]; then
+    echo ""
+    return
+  fi
+
+  echo "$(( mem_total_bytes / 1024 / 1024 ))"
+}
+
+resolve_minikube_memory_mb() {
+  local docker_memory_mb
+  local requested_memory_mb
+
+  docker_memory_mb="$(get_docker_memory_mb)"
+  if [[ ! "$docker_memory_mb" =~ ^[0-9]+$ ]]; then
+    echo "$DEFAULT_MINIKUBE_MEMORY_MB"
+    return
+  fi
+
+  requested_memory_mb=$DEFAULT_MINIKUBE_MEMORY_MB
+  if (( docker_memory_mb > MINIKUBE_MEMORY_RESERVE_MB )); then
+    requested_memory_mb=$(( docker_memory_mb - MINIKUBE_MEMORY_RESERVE_MB ))
+    if (( requested_memory_mb > DEFAULT_MINIKUBE_MEMORY_MB )); then
+      requested_memory_mb=$DEFAULT_MINIKUBE_MEMORY_MB
+    fi
+  fi
+
+  echo "$requested_memory_mb"
+}
+
 usage() {
-  cat <<EOF
-Usage: $0 [OPTIONS] [ENV...] [GROUP]
-
-Environments: ${ALL_ENVIRONMENTS[*]}
-  (defaults to all if omitted)
-
-Groups: ${ALL_GROUPS[*]}
-  (defaults to both if omitted)
-
-Options:
-  -h, --help    Show this help message
-
-Examples:
-  $0 dev support-services       # Cluster init + infrastructure only
-  $0 dev platform-services      # Build images + deploy Knative services
-  $0 dev                        # Full bootstrap (both groups)
-  $0 dev qa support-services    # Infrastructure for dev and qa
-EOF
+  printf '%s\n' \
+    "Usage: $0 [OPTIONS] [ENV...] [GROUP]" \
+    "" \
+    "Environments: ${ALL_ENVIRONMENTS[*]}" \
+    "  (defaults to all if omitted)" \
+    "" \
+    "Groups: ${ALL_GROUPS[*]}" \
+    "  (defaults to both if omitted)" \
+    "" \
+    "Options:" \
+    "  -h, --help    Show this help message" \
+    "" \
+    "Environment variables:" \
+    "  MINIKUBE_CPUS         Override the Minikube CPU count" \
+    "  MINIKUBE_MEMORY_MB    Override the Minikube memory limit in MB" \
+    "" \
+    "Examples:" \
+    "  $0 dev support-services       # Cluster init + infrastructure only" \
+    "  $0 dev platform-services      # Build images + deploy Knative services" \
+    "  $0 dev                        # Full bootstrap (both groups)" \
+    "  $0 dev qa support-services    # Infrastructure for dev and qa"
 }
 
 parse_args() {
@@ -85,7 +124,7 @@ parse_args() {
 
 check_deps() {
   local missing=()
-  for cmd in minikube kubectl; do
+  for cmd in minikube kubectl docker; do
     command -v "$cmd" &>/dev/null || missing+=("$cmd")
   done
   if (( ${#missing[@]} )); then
@@ -120,14 +159,18 @@ wait_for_webhook() {
 }
 
 start_minikube() {
+  local minikube_cpus="${MINIKUBE_CPUS:-$DEFAULT_MINIKUBE_CPUS}"
+  local minikube_memory_mb="${MINIKUBE_MEMORY_MB:-$(resolve_minikube_memory_mb)}"
+
   if minikube status -p "$PROFILE" &>/dev/null; then
     log "Minikube profile '$PROFILE' already running"
   else
-    log "Starting minikube profile '$PROFILE' (cpus=6, memory=16384)"
+    log "Starting minikube profile '$PROFILE' " \
+      "(cpus=${minikube_cpus}, memory=${minikube_memory_mb}MB)"
     minikube start \
       -p "$PROFILE" \
-      --cpus=6 \
-      --memory=16384 \
+      --cpus="$minikube_cpus" \
+      --memory="$minikube_memory_mb" \
       --driver=docker \
       --kubernetes-version=stable
   fi
@@ -144,7 +187,10 @@ install_knative_serving() {
   kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-crds.yaml"
 
   log "Installing Knative Serving core (${KNATIVE_VERSION})"
-  kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-core.yaml"
+  # The serving-core install can briefly race the webhook startup on fresh or
+  # partially initialized clusters, so retry the full apply until the webhook
+  # is ready to accept ConfigMap updates.
+  retry 10 5 kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-core.yaml"
 
   log "Waiting for Knative Serving deployments..."
   kubectl wait deployment --all \

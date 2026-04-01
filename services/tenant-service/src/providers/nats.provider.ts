@@ -10,6 +10,8 @@ import {
   connect,
   DiscardPolicy,
   StorageType,
+  type JetStreamClient,
+  type JetStreamManager,
   type NatsConnection,
 } from "nats";
 
@@ -42,13 +44,84 @@ export interface NatsAclConfig {
   crossTenantDeny: string[];
 }
 
+export interface TenantNatsConnection {
+  jetstreamManager(): Promise<JetStreamManager>;
+  jetstream(): JetStreamClient;
+  close(): Promise<void>;
+}
+
+// Delay the NATS handshake until tenant provisioning needs it so the HTTP
+// server can start even when NATS is temporarily unavailable.
+class LazyNatsConnection implements TenantNatsConnection {
+  private connection?: NatsConnection;
+  private connectionPromise?: Promise<NatsConnection>;
+
+  constructor(
+    private readonly servers: string,
+    private readonly timeoutMs = NATS_CONNECT_TIMEOUT_MS,
+    private readonly maxReconnectAttempts =
+      NATS_MAX_RECONNECT_ATTEMPTS,
+  ) {}
+
+  async jetstreamManager(): Promise<JetStreamManager> {
+    const connection = await this.getConnection();
+    return connection.jetstreamManager();
+  }
+
+  jetstream(): JetStreamClient {
+    if (!this.connection) {
+      throw new Error(
+        "NATS connection is not ready yet.",
+      );
+    }
+
+    return this.connection.jetstream();
+  }
+
+  async close(): Promise<void> {
+    const connection = this.connection;
+    this.connection = undefined;
+    this.connectionPromise = undefined;
+
+    if (!connection) {
+      return;
+    }
+
+    await connection.close();
+  }
+
+  private async getConnection(): Promise<NatsConnection> {
+    if (this.connection) {
+      return this.connection;
+    }
+
+    if (!this.connectionPromise) {
+      this.connectionPromise = connect({
+        servers: this.servers,
+        timeout: this.timeoutMs,
+        maxReconnectAttempts: this.maxReconnectAttempts,
+      })
+        .then((connection) => {
+          this.connection = connection;
+          return connection;
+        })
+        .catch((error: unknown) => {
+          this.connectionPromise = undefined;
+          throw error;
+        });
+    }
+
+    return this.connectionPromise;
+  }
+}
+
 @Injectable()
 export class NatsTenantProvisioner {
   private readonly logger = new Logger(NatsTenantProvisioner.name);
 
   constructor(
     @Inject(NATS_CONNECTION)
-    private readonly nc: NatsConnection,
+    private readonly nc: TenantNatsConnection,
   ) {}
 
   /**
@@ -128,6 +201,7 @@ export class NatsTenantProvisioner {
     const ttlNs =
       BigInt(limits.maxAgeDays * MS_PER_DAY) * NS_PER_MS;
 
+    await this.nc.jetstreamManager();
     const js = this.nc.jetstream();
     await js.views.os(bucketName, {
       description: `Payloads for tenant ${tenantId}`,
@@ -203,16 +277,12 @@ export class NatsTenantProvisioner {
 const NATS_CONNECT_TIMEOUT_MS = 10_000;
 const NATS_MAX_RECONNECT_ATTEMPTS = 5;
 
-const natsConnectionProvider: FactoryProvider = {
+const natsConnectionProvider: FactoryProvider<TenantNatsConnection> = {
   provide: NATS_CONNECTION,
-  useFactory: async (): Promise<NatsConnection> => {
+  useFactory: (): TenantNatsConnection => {
     const servers =
       process.env.NATS_URL ?? "nats://localhost:4222";
-    return connect({
-      servers,
-      timeout: NATS_CONNECT_TIMEOUT_MS,
-      maxReconnectAttempts: NATS_MAX_RECONNECT_ATTEMPTS,
-    });
+    return new LazyNatsConnection(servers);
   },
 };
 

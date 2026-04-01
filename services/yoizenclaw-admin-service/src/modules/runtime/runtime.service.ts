@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TenantConnectionManager } from '../../providers/tenant-connection-manager';
-import { NatsPublisher, NATS_CONNECTION } from '../../providers/nats.provider';
-import type { NatsConnection } from 'nats';
+import { NatsPublisher } from '../../providers/nats.provider';
 
 interface RuntimeStatus {
   configured: boolean;

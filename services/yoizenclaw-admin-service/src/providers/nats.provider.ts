@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   connect,
+  RetentionPolicy,
+  StorageType,
   type JetStreamClient,
   type JetStreamManager,
   type NatsConnection,
@@ -31,6 +33,9 @@ import {
   calculateChecksum,
   serializeCanonicalPayload,
 } from "../utils/payload-utils";
+import {
+  buildTenantStreamConfig,
+} from "../types/stream-config";
 
 export const NATS_CONNECTION = "NATS_CONNECTION";
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
@@ -64,37 +69,102 @@ interface BuildEventOptions {
 const NATS_CONNECT_TIMEOUT_MS = 10_000;
 const NATS_MAX_RECONNECT_ATTEMPTS = 5;
 
-const createNatsConnection = async (): Promise<NatsConnection> => {
-  const url = process.env.NATS_URL ?? "nats://localhost:4222";
-  return connect({
-    servers: url,
-    timeout: NATS_CONNECT_TIMEOUT_MS,
-    maxReconnectAttempts: NATS_MAX_RECONNECT_ATTEMPTS,
-  });
+/**
+ * Lazy NATS connection wrapper. Defers the TCP handshake until
+ * the first publish so the HTTP server can start even when NATS
+ * is temporarily unavailable.
+ */
+class LazyNatsConnection {
+  private connection?: NatsConnection;
+  private connectionPromise?: Promise<NatsConnection>;
+  private jsm?: JetStreamManager;
+  private jsc?: JetStreamClient;
+  private readonly logger = new Logger("LazyNatsConnection");
+
+  constructor(
+    private readonly servers: string,
+    private readonly timeoutMs = NATS_CONNECT_TIMEOUT_MS,
+    private readonly maxReconnectAttempts = NATS_MAX_RECONNECT_ATTEMPTS,
+  ) {}
+
+  async getConnection(): Promise<NatsConnection> {
+    if (this.connection) {
+      return this.connection;
+    }
+
+    if (!this.connectionPromise) {
+      this.logger.log(`Connecting to NATS at ${this.servers}...`);
+      this.connectionPromise = connect({
+        servers: this.servers,
+        timeout: this.timeoutMs,
+        maxReconnectAttempts: this.maxReconnectAttempts,
+      })
+        .then((nc) => {
+          this.connection = nc;
+          this.logger.log("NATS connection established");
+          return nc;
+        })
+        .catch((error: unknown) => {
+          this.connectionPromise = undefined;
+          throw error;
+        });
+    }
+
+    return this.connectionPromise;
+  }
+
+  async jetstreamManager(): Promise<JetStreamManager> {
+    if (this.jsm) return this.jsm;
+    const nc = await this.getConnection();
+    this.jsm = await nc.jetstreamManager();
+    return this.jsm;
+  }
+
+  async jetstream(): Promise<JetStreamClient> {
+    if (this.jsc) return this.jsc;
+    const nc = await this.getConnection();
+    // Ensure JSM is initialized first
+    await this.jetstreamManager();
+    this.jsc = nc.jetstream();
+    return this.jsc;
+  }
+
+  async close(): Promise<void> {
+    const nc = this.connection;
+    this.connection = undefined;
+    this.connectionPromise = undefined;
+    this.jsm = undefined;
+    this.jsc = undefined;
+    if (nc) await nc.close();
+  }
+}
+
+export const LAZY_NATS = "LAZY_NATS";
+
+export const lazyNatsProvider: FactoryProvider<LazyNatsConnection> = {
+  provide: LAZY_NATS,
+  useFactory: (): LazyNatsConnection => {
+    const url = process.env.NATS_URL ?? "nats://localhost:4222";
+    return new LazyNatsConnection(url);
+  },
 };
 
 export const natsProvider: FactoryProvider = {
   provide: NATS_CONNECTION,
-  useFactory: createNatsConnection,
+  inject: [LAZY_NATS],
+  useFactory: (lazy: LazyNatsConnection) => lazy,
 };
 
 export const jetStreamManagerProvider: FactoryProvider = {
   provide: JETSTREAM_MANAGER,
-  inject: [NATS_CONNECTION],
-  useFactory: async (nc: NatsConnection): Promise<JetStreamManager> => {
-    return nc.jetstreamManager();
-  },
+  inject: [LAZY_NATS],
+  useFactory: (lazy: LazyNatsConnection) => lazy,
 };
 
 export const jetStreamClientProvider: FactoryProvider = {
   provide: JETSTREAM_CLIENT,
-  inject: [NATS_CONNECTION, JETSTREAM_MANAGER],
-  useFactory: async (
-    nc: NatsConnection,
-    _jm: JetStreamManager,
-  ): Promise<JetStreamClient> => {
-    return nc.jetstream();
-  },
+  inject: [LAZY_NATS],
+  useFactory: (lazy: LazyNatsConnection) => lazy,
 };
 
 function createTraceId(): string {
@@ -155,27 +225,111 @@ function buildEventEnvelope(
 @Injectable()
 export class NatsPublisher {
   private readonly logger = new Logger(NatsPublisher.name);
+  private readonly ensuredStreams = new Set<string>();
 
   constructor(
-    @Inject(JETSTREAM_CLIENT)
-    private readonly js: JetStreamClient,
+    @Inject(LAZY_NATS)
+    private readonly lazyNats: LazyNatsConnection,
   ) {}
+
+  /**
+   * Auto-ensures the tenant JetStream stream exists before
+   * the first publish per tenant. Idempotent — skips if the
+   * stream is already known or already exists in NATS.
+   */
+  private async ensureTenantStream(
+    tenantId: string,
+  ): Promise<void> {
+    if (this.ensuredStreams.has(tenantId)) {
+      return;
+    }
+
+    this.logger.log(
+      `Ensuring stream for tenant '${tenantId}'...`,
+    );
+
+    const config = buildTenantStreamConfig(tenantId, "free");
+
+    let jsm: JetStreamManager;
+    try {
+      jsm = await this.lazyNats.jetstreamManager();
+    } catch (jsmErr: unknown) {
+      const msg = jsmErr instanceof Error
+        ? jsmErr.message
+        : String(jsmErr);
+      this.logger.error(
+        `Failed to get JetStreamManager: ${msg}`,
+      );
+      throw jsmErr;
+    }
+
+    try {
+      await jsm.streams.info(config.name);
+      this.logger.log(
+        `Stream '${config.name}' already exists for tenant '${tenantId}'`,
+      );
+    } catch {
+      // Stream doesn't exist — create it
+      this.logger.log(
+        `Stream '${config.name}' not found, creating with subjects: ${JSON.stringify(config.subjects)}`,
+      );
+      try {
+        await jsm.streams.add({
+          name: config.name,
+          subjects: config.subjects,
+          max_age: config.limits.max_age,
+          max_bytes: config.limits.max_bytes,
+          max_msg_size: config.limits.max_msg_size,
+          num_replicas: config.limits.num_replicas,
+          retention: RetentionPolicy.Limits,
+          storage: StorageType.File,
+        });
+        this.logger.log(
+          `Auto-created stream '${config.name}' for tenant '${tenantId}'`,
+        );
+      } catch (createErr: unknown) {
+        const msg = createErr instanceof Error
+          ? createErr.message
+          : String(createErr);
+        this.logger.error(
+          `Failed to create stream '${config.name}': ${msg}`,
+        );
+        throw createErr;
+      }
+    }
+
+    this.ensuredStreams.add(tenantId);
+  }
 
   private async publishEvent(
     tenantId: string,
     subjectTemplate: string,
     event: EventEnvelope,
   ): Promise<PubAck | null> {
-    const subject = buildYoizenClawSubject(subjectTemplate, tenantId);
+    const subject = buildYoizenClawSubject(
+      subjectTemplate,
+      tenantId,
+    );
 
     try {
-      const ack = await this.js.publish(subject, JSON.stringify(event), {
-        msgID: event.idempotencykey,
-      });
-      this.logger.debug(`Published event to ${subject}: ${event.type}`);
+      await this.ensureTenantStream(tenantId);
+      const js = await this.lazyNats.jetstream();
+      const ack = await js.publish(
+        subject,
+        JSON.stringify(event),
+        { msgID: event.idempotencykey },
+      );
+      this.logger.debug(
+        `Published event to ${subject}: ${event.type}`,
+      );
       return ack;
-    } catch (error) {
-      this.logger.error(`Failed to publish event to ${subject}`, error);
+    } catch (error: unknown) {
+      const msg = error instanceof Error
+        ? error.message
+        : String(error);
+      this.logger.error(
+        `Failed to publish event to ${subject}: ${msg}`,
+      );
       throw error;
     }
   }

@@ -2,36 +2,26 @@ import {
   Injectable,
   OnModuleDestroy,
   Logger,
-  Inject,
-  Optional,
-  forwardRef,
 } from '@nestjs/common';
 import postgres from 'postgres';
-import { SEED_SERVICE } from './provider-tokens';
-import type { SeedService } from '../db/seed.service';
 
 export type Sql = ReturnType<typeof postgres>;
 
 const PG_DATABASE = 'yoizen';
-type SeedServicePort = Pick<SeedService, 'runSeed'>;
 
 @Injectable()
 export class TenantConnectionManager implements OnModuleDestroy {
   private readonly logger = new Logger(TenantConnectionManager.name);
   private readonly pools = new Map<string, Sql>();
   private readonly initializedSchemas = new Set<string>();
-  private readonly seededTenants = new Set<string>();
+  private readonly pendingInits = new Map<string, Promise<void>>();
 
   private readonly port = Number(process.env.POSTGRES_PORT) || 5432;
   private readonly username = process.env.POSTGRES_USER ?? 'yoizen';
   private readonly password = process.env.POSTGRES_PASSWORD ?? 'yoizen-dev-password';
   private readonly env = process.env.PLATFORM_ENVIRONMENT ?? 'dev';
 
-  constructor(
-    @Optional()
-    @Inject(forwardRef(() => SEED_SERVICE))
-    private readonly seedService?: SeedServicePort,
-  ) {}
+  constructor() {}
 
   /**
    * Obtiene o crea una conexión SQL para un tenant específico.
@@ -51,6 +41,9 @@ export class TenantConnectionManager implements OnModuleDestroy {
       max: 10,
       idle_timeout: 30,
       connect_timeout: 30,
+      onnotice: () => {
+        // Suppress PostgreSQL NOTICE messages (e.g. "relation already exists")
+      },
     });
     this.pools.set(tenantId, pool);
     this.logger.log(`Created connection pool for tenant '${tenantId}' -> ${host}/${PG_DATABASE}`);
@@ -73,17 +66,37 @@ export class TenantConnectionManager implements OnModuleDestroy {
 
   /**
    * Asegura que el schema de un tenant esté inicializado.
-   * Ejecuta las migraciones/schema creation y el seed si es necesario.
+   * Uses promise dedup to prevent concurrent duplicate runs.
    */
   async ensureSchema(tenantId: string): Promise<void> {
     if (this.isSchemaInitialized(tenantId)) {
       return;
     }
 
+    // Dedup: reuse in-flight promise for same tenant
+    const pending = this.pendingInits.get(tenantId);
+    if (pending) {
+      return pending;
+    }
+
+    const promise = this.initSchema(tenantId);
+    this.pendingInits.set(tenantId, promise);
+
+    try {
+      await promise;
+    } finally {
+      this.pendingInits.delete(tenantId);
+    }
+  }
+
+  private async initSchema(tenantId: string): Promise<void> {
     const sql = this.getConnection(tenantId);
 
-    await sql.unsafe(`
-      CREATE TABLE IF NOT EXISTS agents (
+    // Use begin() to ensure SET and DDL run on the same connection
+    await sql.begin(async (tx) => {
+      await tx.unsafe(`SET client_min_messages TO WARNING`);
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS agents (
         id UUID PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         description TEXT,
@@ -157,23 +170,11 @@ export class TenantConnectionManager implements OnModuleDestroy {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+      await tx.unsafe(`RESET client_min_messages`);
+    });
 
     this.markSchemaInitialized(tenantId);
     this.logger.log(`Schema initialized for tenant '${tenantId}'`);
-
-    // Ejecutar seed automáticamente si no se ha ejecutado antes
-    if (this.seedService && !this.seededTenants.has(tenantId)) {
-      try {
-        const result = await this.seedService.runSeed(tenantId);
-        this.seededTenants.add(tenantId);
-        this.logger.log(
-          `Seed completed for tenant '${tenantId}': ${result.agents} agents, ${result.jobs} jobs created`,
-        );
-      } catch (error) {
-        this.logger.error(`Failed to seed tenant '${tenantId}':`, error);
-        // No lanzamos error para no bloquear la inicialización del schema
-      }
-    }
   }
 
   /**
@@ -187,7 +188,6 @@ export class TenantConnectionManager implements OnModuleDestroy {
     await Promise.all(tasks);
     this.pools.clear();
     this.initializedSchemas.clear();
-    this.seededTenants.clear();
     this.logger.log('All connection pools closed');
   }
 

@@ -1,19 +1,13 @@
 import { Global, Module } from '@nestjs/common';
 import { ObservabilityModule } from '@yoizen/observability';
 import { TenantConnectionManager } from './providers/tenant-connection-manager';
-import { SeedService } from './db/seed.service';
 import {
-  SEED_SERVICE,
   TENANT_CONNECTION_MANAGER,
 } from './providers/provider-tokens';
 import {
-  NATS_CONNECTION,
-  JETSTREAM_MANAGER,
-  JETSTREAM_CLIENT,
+  LAZY_NATS,
   NatsPublisher,
-  natsProvider,
-  jetStreamManagerProvider,
-  jetStreamClientProvider,
+  lazyNatsProvider,
 } from './providers/nats.provider';
 import { AgentsModule } from './modules/agents/agents.module';
 import { CredentialsModule } from './modules/credentials/credentials.module';
@@ -38,29 +32,18 @@ import { AdaptersModule } from './modules/adapters/adapters.module';
     AdaptersModule,
   ],
   providers: [
-    natsProvider,
-    jetStreamManagerProvider,
-    jetStreamClientProvider,
+    lazyNatsProvider,
     TenantConnectionManager,
     {
       provide: TENANT_CONNECTION_MANAGER,
       useExisting: TenantConnectionManager,
     },
-    SeedService,
-    {
-      provide: SEED_SERVICE,
-      useExisting: SeedService,
-    },
     NatsPublisher,
   ],
   exports: [
-    NATS_CONNECTION,
-    JETSTREAM_MANAGER,
-    JETSTREAM_CLIENT,
+    LAZY_NATS,
     TENANT_CONNECTION_MANAGER,
     TenantConnectionManager,
-    SEED_SERVICE,
-    SeedService,
     NatsPublisher,
   ],
 })

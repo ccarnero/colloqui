@@ -140,10 +140,10 @@ export type {
   AdapterCache,
   AdapterConfig,
   AdapterEndpointConfig,
-  AdapterStatus,
   ResolvedAdapterRequest,
   AdapterReference,
 } from './adapter.interfaces';
+export { AdapterStatus } from './adapter.interfaces';
 export type { AdapterStatusValue } from './adapter.interfaces';
 
 export { AdapterClient } from './adapter-client';

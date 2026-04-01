@@ -1,8 +1,12 @@
 import { Injectable, Inject, Logger } from "@nestjs/common";
 import { StorageType, type JetStreamClient, type ObjectStore } from "nats";
-import { JETSTREAM_CLIENT } from "./nats.provider";
+import { LAZY_NATS } from "./nats.provider";
 import { checkPayloadSize } from "../utils/payload-utils";
 import { CLAIM_CHECK_THRESHOLD_BYTES } from "@yoizen/shared";
+
+interface LazyJetStream {
+  jetstream(): Promise<JetStreamClient>;
+}
 
 @Injectable()
 export class ClaimCheckService {
@@ -10,8 +14,8 @@ export class ClaimCheckService {
   private readonly bucketCache = new Map<string, ObjectStore>();
 
   constructor(
-    @Inject(JETSTREAM_CLIENT)
-    private readonly js: JetStreamClient,
+    @Inject(LAZY_NATS)
+    private readonly lazyNats: LazyJetStream,
   ) {}
 
   checkSize(
@@ -56,7 +60,8 @@ export class ClaimCheckService {
     if (this.bucketCache.has(bucketName)) return;
 
     try {
-      const os = await this.js.views.os(bucketName, {
+      const js = await this.lazyNats.jetstream();
+      const os = await js.views.os(bucketName, {
         ttl,
         storage: StorageType.File,
         max_bytes: 0,
@@ -79,7 +84,8 @@ export class ClaimCheckService {
     const cached = this.bucketCache.get(bucketName);
     if (cached) return cached;
 
-    const os = await this.js.views.os(bucketName, {
+    const js = await this.lazyNats.jetstream();
+    const os = await js.views.os(bucketName, {
       storage: StorageType.File,
       max_bytes: 0,
       replicas: 1,
