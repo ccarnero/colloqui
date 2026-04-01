@@ -1,15 +1,10 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import type { NatsConnection, JetStreamManager } from "nats";
 import { STREAM_LIMITS, type TenantTier } from "../../../src/providers/nats.provider";
-
-const NS_PER_MS = 1_000_000n;
-const MS_PER_DAY = 86_400_000;
+import { TENANT_TIER_LIMITS } from "@yoizen/shared";
 
 function tierMaxAgeNs(tier: TenantTier): number {
-  return Number(
-    BigInt(STREAM_LIMITS[tier].maxAgeDays * MS_PER_DAY) *
-      NS_PER_MS,
-  );
+  return TENANT_TIER_LIMITS[tier].max_age;
 }
 
 describe("NatsTenantProvisioner - provisionYoizenClaw orchestration", () => {
@@ -28,6 +23,12 @@ describe("NatsTenantProvisioner - provisionYoizenClaw orchestration", () => {
     const mockJsm = {
       streams: { info: infoFn, add: addFn, delete: deleteFn },
       consumers: { add: mock(() => Promise.resolve({})) },
+      getAccountInfo: mock(() =>
+        Promise.resolve({
+          storage: 0,
+          limits: { max_storage: -1 },
+        }),
+      ),
     } as unknown as JetStreamManager;
 
     const mockNc = {
@@ -53,19 +54,19 @@ describe("NatsTenantProvisioner - provisionYoizenClaw orchestration", () => {
       ["ingress-service", "admin-service"],
     );
 
-    expect(infoFn).toHaveBeenCalledWith("INGRESS-acme");
+    expect(infoFn).toHaveBeenCalledWith("INGRESS-ACME");
     expect(addFn).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "INGRESS-acme",
+        name: "INGRESS-ACME",
         subjects: ["evt.acme.>"],
         max_bytes: STREAM_LIMITS.pro.maxBytes,
       }),
     );
     expect(osFn).toHaveBeenCalledWith(
-      "PAYLOAD-acme",
+      "PAYLOAD-ACME",
       expect.objectContaining({
         ttl: tierMaxAgeNs("pro"),
-        max_bytes: 5_000_000_000,
+        max_bytes: TENANT_TIER_LIMITS.pro.object_store_max_bytes,
       }),
     );
     expect(aclConfig.tenantId).toBe("acme");

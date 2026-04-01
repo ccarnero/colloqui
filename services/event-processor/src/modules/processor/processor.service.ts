@@ -68,9 +68,9 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
       for await (const msg of this.consumeIterator) {
         try {
           const envelope = msg.json() as EventEnvelope;
-          const tenantId = envelope.metadata?.tenantId
-            ?? msg.headers?.get(TENANT_HEADER)
-            ?? undefined;
+          const tenantId = envelope.tenant
+            || msg.headers?.get(TENANT_HEADER)
+            || undefined;
 
           const context: PipelineContext = {
             subject: msg.subject,
@@ -93,8 +93,18 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async processEvent(envelope: EventEnvelope, tenantId?: string): Promise<void> {
-    const { id: eventId, type, payload, metadata, callbackUrl, adapterId } = envelope;
+  async processEvent(
+    envelope: EventEnvelope,
+    tenantId?: string,
+  ): Promise<void> {
+    const {
+      id: eventId,
+      type,
+      data: envelopeData,
+      callback_url,
+      adapter_id,
+    } = envelope;
+    const payload = envelopeData.payload ?? {};
 
     const count = this.typeCounts.get(type) ?? 0;
     this.typeCounts.set(type, count + 1);
@@ -108,7 +118,10 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
       processed,
       timestamp: Date.now(),
       ...(data !== undefined && { data }),
-      ...(metadata && { metadata }),
+      ...(tenantId && { tenant: tenantId }),
+      ...(envelope.correlation_id && {
+        correlation_id: envelope.correlation_id,
+      }),
     };
 
     const keyPrefix = tenantId ? `${tenantId}:` : '';
@@ -119,8 +132,8 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
       eventId,
       type,
       result,
-      ...(callbackUrl && { callbackUrl }),
-      ...(adapterId && { adapterId }),
+      ...(callback_url && { callback_url }),
+      ...(adapter_id && { adapter_id }),
     };
     const completionSubject = `${RESULTS_SUBJECT_PREFIX}.${type}`;
 
@@ -135,9 +148,5 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
         { headers: hdrs },
       ),
     ]);
-  }
-
-  getStats(): Map<string, number> {
-    return new Map(this.typeCounts);
   }
 }

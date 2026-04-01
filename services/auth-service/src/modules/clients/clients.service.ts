@@ -5,8 +5,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { POSTGRES_SQL, type Sql } from '../../providers/postgres.provider';
+import { ARGON2_OPTIONS } from '../../utils/password';
 
-export interface ClientRow {
+export interface IClientRow {
   id: string;
   client_id: string;
   name: string;
@@ -16,7 +17,7 @@ export interface ClientRow {
   updated_at: Date;
 }
 
-export interface CreatedClient extends ClientRow {
+export interface ICreatedClient extends IClientRow {
   client_secret: string;
 }
 
@@ -26,16 +27,12 @@ export class ClientsService {
 
   constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
 
-  async create(name: string, scope: string): Promise<CreatedClient> {
+  async create(name: string, scope: string): Promise<ICreatedClient> {
     const id = crypto.randomUUID();
     const clientId = `yoizen_${crypto.randomUUID().replace(/-/g, '')}`;
     const clientSecret = `ysk_${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`;
 
-    const secretHash = await Bun.password.hash(clientSecret, {
-      algorithm: 'argon2id',
-      memoryCost: 19_456,
-      timeCost: 2,
-    });
+    const secretHash = await Bun.password.hash(clientSecret, ARGON2_OPTIONS);
 
     const rows = await this.sql`
       INSERT INTO api_clients (id, client_id, client_secret_hash, name, scope)
@@ -46,12 +43,12 @@ export class ClientsService {
     this.logger.log(`Created API client '${name}' with scope '${scope}'`);
 
     return {
-      ...(rows[0] as ClientRow),
+      ...(rows[0] as IClientRow),
       client_secret: clientSecret,
     };
   }
 
-  async list(tenantId?: string): Promise<Omit<ClientRow, 'is_active'>[]> {
+  async list(tenantId?: string): Promise<Omit<IClientRow, 'is_active'>[]> {
     if (tenantId) {
       const tenantScope = `tenant:${tenantId}`;
       const rows = await this.sql`
@@ -61,7 +58,7 @@ export class ClientsService {
           AND (scope = 'platform' OR scope = ${tenantScope})
         ORDER BY created_at DESC
       `;
-      return rows as unknown as Omit<ClientRow, 'is_active'>[];
+      return rows as unknown as Omit<IClientRow, 'is_active'>[];
     }
 
     const rows = await this.sql`
@@ -70,7 +67,7 @@ export class ClientsService {
       WHERE is_active = true
       ORDER BY created_at DESC
     `;
-    return rows as unknown as Omit<ClientRow, 'is_active'>[];
+    return rows as unknown as Omit<IClientRow, 'is_active'>[];
   }
 
   async revoke(id: string): Promise<void> {

@@ -16,6 +16,7 @@ import { Observable, map } from 'rxjs';
 import { EventsService } from './events.service';
 import { EventDto } from './event.dto';
 import { REQUEST_TENANT_KEY } from '../../guards/tenant.guard';
+import type { TenantScopedRequest } from '../../types/yoizen-request';
 
 @Controller()
 export class EventsController {
@@ -24,7 +25,7 @@ export class EventsController {
   @Post('events')
   @HttpCode(HttpStatus.ACCEPTED)
   async publish(
-    @Req() req: any,
+    @Req() req: TenantScopedRequest,
     @Body() dto: EventDto,
   ): Promise<{ id: string; status: string }> {
     const id = await this.eventsService.publish(
@@ -40,14 +41,14 @@ export class EventsController {
   }
 
   @Get('results/:id')
-  async getResult(@Req() req: any, @Param('id') id: string): Promise<object> {
+  async getResult(@Req() req: TenantScopedRequest, @Param('id') id: string): Promise<object> {
     const result = await this.eventsService.getResult(id, req[REQUEST_TENANT_KEY]);
     if (result === null) throw new NotFoundException();
     return result;
   }
 
   @Sse('events/stream')
-  stream(@Req() req: any, @Query('types') types?: string): Observable<MessageEvent> {
+  stream(@Req() req: TenantScopedRequest, @Query('types') types?: string): Observable<MessageEvent> {
     const typeList = types
       ? types.split(',').filter((t) => t.length > 0)
       : [];

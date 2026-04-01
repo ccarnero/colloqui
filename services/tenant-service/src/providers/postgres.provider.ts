@@ -1,4 +1,11 @@
-import { Global, Module, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  Global,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  Module,
+} from '@nestjs/common';
 import type * as k8s from '@kubernetes/client-node';
 import { K8S_CORE_API, K8S_APPS_API } from './kubernetes.provider';
 
@@ -6,7 +13,15 @@ const PG_IMAGE = 'postgres:17-alpine';
 const PG_PORT = 5432;
 const PG_DB = 'yoizen';
 const PG_USER = 'yoizen';
-const PG_PASSWORD = 'yoizen-dev-password';
+const PG_PASSWORD = (() => {
+  const pw = process.env.POSTGRES_PASSWORD;
+  if (!pw) {
+    throw new InternalServerErrorException(
+      "POSTGRES_PASSWORD environment variable is required",
+    );
+  }
+  return pw;
+})();
 
 const LABELS = {
   'app.kubernetes.io/name': 'postgres',
@@ -168,92 +183,98 @@ export class TenantPostgresProvisioner {
     }
   }
 
-  private async createStatefulSet(namespace: string): Promise<void> {
-    const body: k8s.V1StatefulSet = {
-      metadata: { name: 'postgres', namespace, labels: LABELS },
-      spec: {
-        serviceName: 'postgres-headless',
-        replicas: 1,
-        selector: { matchLabels: { 'app.kubernetes.io/name': 'postgres' } },
-        template: {
-          metadata: { labels: LABELS },
+  /** StatefulSet pod template, volumes, and PVC template (metadata set in caller). */
+  private buildStatefulSetSpec(): k8s.V1StatefulSetSpec {
+    return {
+      serviceName: 'postgres-headless',
+      replicas: 1,
+      selector: { matchLabels: { 'app.kubernetes.io/name': 'postgres' } },
+      template: {
+        metadata: { labels: LABELS },
+        spec: {
+          terminationGracePeriodSeconds: 30,
+          securityContext: { fsGroup: 70 },
+          initContainers: [
+            {
+              name: 'init-permissions',
+              image: PG_IMAGE,
+              command: ['sh', '-c', 'chown -R 70:70 /var/lib/postgresql/data'],
+              securityContext: { runAsUser: 0 },
+              volumeMounts: [
+                { name: 'data', mountPath: '/var/lib/postgresql/data', subPath: 'pgdata' },
+              ],
+            },
+          ],
+          containers: [
+            {
+              name: 'postgres',
+              image: PG_IMAGE,
+              ports: [{ name: 'postgres', containerPort: PG_PORT, protocol: 'TCP' }],
+              envFrom: [{ secretRef: { name: 'postgres-credentials' } }],
+              args: ['-c', 'config_file=/etc/postgresql/postgresql.conf'],
+              volumeMounts: [
+                { name: 'config', mountPath: '/etc/postgresql', readOnly: true },
+                { name: 'init', mountPath: '/docker-entrypoint-initdb.d', readOnly: true },
+                { name: 'data', mountPath: '/var/lib/postgresql/data', subPath: 'pgdata' },
+              ],
+              resources: {
+                requests: { cpu: '50m', memory: '64Mi' },
+                limits: { cpu: '250m', memory: '128Mi' },
+              },
+              livenessProbe: {
+                exec: { command: ['pg_isready', '-U', PG_USER, '-d', PG_DB] },
+                initialDelaySeconds: 15,
+                periodSeconds: 20,
+                timeoutSeconds: 5,
+              },
+              readinessProbe: {
+                exec: { command: ['pg_isready', '-U', PG_USER, '-d', PG_DB] },
+                initialDelaySeconds: 5,
+                periodSeconds: 10,
+                timeoutSeconds: 5,
+              },
+              startupProbe: {
+                exec: { command: ['pg_isready', '-U', PG_USER, '-d', PG_DB] },
+                failureThreshold: 30,
+                periodSeconds: 2,
+              },
+            },
+          ],
+          volumes: [
+            {
+              name: 'config',
+              configMap: {
+                name: 'postgres-config',
+                items: [{ key: 'postgresql.conf', path: 'postgresql.conf' }],
+              },
+            },
+            {
+              name: 'init',
+              configMap: {
+                name: 'postgres-config',
+                items: [{ key: 'init.sql', path: 'init.sql' }],
+              },
+            },
+          ],
+        },
+      },
+      volumeClaimTemplates: [
+        {
+          metadata: { name: 'data' },
           spec: {
-            terminationGracePeriodSeconds: 30,
-            securityContext: { fsGroup: 70 },
-            initContainers: [
-              {
-                name: 'init-permissions',
-                image: PG_IMAGE,
-                command: ['sh', '-c', 'chown -R 70:70 /var/lib/postgresql/data'],
-                securityContext: { runAsUser: 0 },
-                volumeMounts: [
-                  { name: 'data', mountPath: '/var/lib/postgresql/data', subPath: 'pgdata' },
-                ],
-              },
-            ],
-            containers: [
-              {
-                name: 'postgres',
-                image: PG_IMAGE,
-                ports: [{ name: 'postgres', containerPort: PG_PORT, protocol: 'TCP' }],
-                envFrom: [{ secretRef: { name: 'postgres-credentials' } }],
-                args: ['-c', 'config_file=/etc/postgresql/postgresql.conf'],
-                volumeMounts: [
-                  { name: 'config', mountPath: '/etc/postgresql', readOnly: true },
-                  { name: 'init', mountPath: '/docker-entrypoint-initdb.d', readOnly: true },
-                  { name: 'data', mountPath: '/var/lib/postgresql/data', subPath: 'pgdata' },
-                ],
-                resources: {
-                  requests: { cpu: '50m', memory: '64Mi' },
-                  limits: { cpu: '250m', memory: '128Mi' },
-                },
-                livenessProbe: {
-                  exec: { command: ['pg_isready', '-U', PG_USER, '-d', PG_DB] },
-                  initialDelaySeconds: 15,
-                  periodSeconds: 20,
-                  timeoutSeconds: 5,
-                },
-                readinessProbe: {
-                  exec: { command: ['pg_isready', '-U', PG_USER, '-d', PG_DB] },
-                  initialDelaySeconds: 5,
-                  periodSeconds: 10,
-                  timeoutSeconds: 5,
-                },
-                startupProbe: {
-                  exec: { command: ['pg_isready', '-U', PG_USER, '-d', PG_DB] },
-                  failureThreshold: 30,
-                  periodSeconds: 2,
-                },
-              },
-            ],
-            volumes: [
-              {
-                name: 'config',
-                configMap: {
-                  name: 'postgres-config',
-                  items: [{ key: 'postgresql.conf', path: 'postgresql.conf' }],
-                },
-              },
-              {
-                name: 'init',
-                configMap: {
-                  name: 'postgres-config',
-                  items: [{ key: 'init.sql', path: 'init.sql' }],
-                },
-              },
-            ],
+            accessModes: ['ReadWriteOnce'],
+            resources: { requests: { storage: '1Gi' } },
           },
         },
-        volumeClaimTemplates: [
-          {
-            metadata: { name: 'data' },
-            spec: {
-              accessModes: ['ReadWriteOnce'],
-              resources: { requests: { storage: '1Gi' } },
-            },
-          },
-        ],
-      },
+      ],
+    };
+  }
+
+  private async createStatefulSet(namespace: string): Promise<void> {
+    const name = 'postgres';
+    const body: k8s.V1StatefulSet = {
+      metadata: { name, namespace, labels: LABELS },
+      spec: this.buildStatefulSetSpec(),
     };
     try {
       await this.appsApi.createNamespacedStatefulSet({ namespace, body });

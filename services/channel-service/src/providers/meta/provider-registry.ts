@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import type { IChannelProvider, Channel } from "@yoizen/shared";
 import { WhatsAppProvider } from "./whatsapp/whatsapp.provider";
 import { InstagramProvider } from "./instagram/instagram.provider";
@@ -24,7 +24,9 @@ export class ProviderRegistry {
   getOrThrow(channel: Channel): IChannelProvider {
     const provider = this.providers.get(channel);
     if (!provider) {
-      throw new Error(`No provider registered for channel: ${channel}`);
+      throw new NotFoundException(
+        `No provider registered for channel: ${channel}`,
+      );
     }
     return provider;
   }

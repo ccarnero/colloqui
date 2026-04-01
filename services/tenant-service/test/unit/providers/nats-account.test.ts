@@ -49,13 +49,13 @@ describe("NatsTenantProvisioner - createAccount", () => {
 
     expect(mockNc.jetstreamManager).toHaveBeenCalled();
     expect(mockJsm.streams.info).toHaveBeenCalledWith(
-      "INGRESS-acme",
+      "INGRESS-ACME",
     );
   });
 
   it("should warn and return if account stream already exists", async () => {
     mockJsm.streams.info = mock(() =>
-      Promise.resolve({ config: { name: "INGRESS-acme" } }),
+      Promise.resolve({ config: { name: "INGRESS-ACME" } }),
     );
 
     await provisioner.createAccount("acme");

@@ -1,6 +1,7 @@
 import './instrumentation';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { PinoLoggerService, registerHttpMetricsHooks, shutdownTelemetry } from '@yoizen/observability';
 import { AppModule } from './app.module';
@@ -11,6 +12,14 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
     { logger: pinoLogger },
+  );
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
   );
 
   const fastify = app.getHttpAdapter().getInstance();

@@ -3,8 +3,10 @@ import dns from 'dns';
 import { createServer } from 'http';
 import { Worker, NativeConnection } from '@temporalio/worker';
 import { WORKFLOW_HTTP_TASK_QUEUE } from '@yoizen/shared';
-import { shutdownTelemetry } from '@yoizen/observability';
+import { PinoLoggerService, shutdownTelemetry } from '@yoizen/observability';
 import * as activities from './activities';
+
+const logger = new PinoLoggerService('workflow-http-worker');
 
 dns.setDefaultResultOrder('ipv4first');
 
@@ -37,13 +39,13 @@ async function main() {
   });
 
   healthy = true;
-  console.log(
+  logger.log(
     `HTTP worker started on task queue "${WORKFLOW_HTTP_TASK_QUEUE}"`,
   );
 
   const shutdown = async () => {
     healthy = false;
-    console.log('Shutting down HTTP worker...');
+    logger.log('Shutting down HTTP worker...');
     worker.shutdown();
   };
   process.on('SIGINT', shutdown);
@@ -52,7 +54,10 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('HTTP worker failed:', err);
+  logger.error(
+    'HTTP worker failed',
+    err instanceof Error ? err.stack : String(err),
+  );
   process.exit(1);
 });
 

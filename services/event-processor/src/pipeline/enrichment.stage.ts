@@ -11,16 +11,17 @@ export class EnrichmentStage implements PipelineStage {
     envelope: EventEnvelope,
     context: PipelineContext,
   ): Promise<EventEnvelope> {
+    const receivedAt = envelope.data.received_at || new Date().toISOString();
+    const correlationId =
+      envelope.correlation_id || context.correlationId || randomUUID();
+
     return {
       ...envelope,
-      metadata: {
-        ...envelope.metadata,
-        receivedAt: envelope.metadata?.receivedAt ?? Date.now(),
-        correlationId:
-          envelope.metadata?.correlationId ??
-          context.correlationId ??
-          randomUUID(),
-        source: context.subject,
+      correlation_id: correlationId,
+      source: context.subject,
+      data: {
+        ...envelope.data,
+        received_at: receivedAt,
       },
     };
   }

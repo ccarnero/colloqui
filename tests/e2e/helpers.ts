@@ -13,15 +13,24 @@ function knativeUrl(service: string): string {
   return `http://${service}.${NAMESPACE}.${MINIKUBE_DOMAIN}`;
 }
 
-const SERVICE_URLS = new Map<string, string>([
+const RAW_SERVICE_URLS = new Map<string, string>([
   ['api-gateway', process.env.API_GATEWAY_URL ?? knativeUrl('api-gateway')],
   ['event-processor', process.env.EVENT_PROCESSOR_URL ?? knativeUrl('event-processor')],
   ['cache-service', process.env.CACHE_SERVICE_URL ?? knativeUrl('cache-service')],
   ['metrics-service', process.env.METRICS_SERVICE_URL ?? knativeUrl('metrics-service')],
 ]);
 
+const API_PREFIX = '/api';
+
+/** Returns the service URL with the `/api` prefix for api-gateway. */
 export function getBaseUrl(service: ServiceName): string {
-  return SERVICE_URLS.get(service)!;
+  const raw = RAW_SERVICE_URLS.get(service)!;
+  return service === 'api-gateway' ? `${raw}${API_PREFIX}` : raw;
+}
+
+/** Returns the service URL without any path prefix (for /health, etc.). */
+export function getRawBaseUrl(service: ServiceName): string {
+  return RAW_SERVICE_URLS.get(service)!;
 }
 
 export interface RequestOptions {

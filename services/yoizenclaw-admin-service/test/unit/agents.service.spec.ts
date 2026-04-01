@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach, vi } from 'bun:test';
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { AgentsService } from './agents.service';
-import { AgentsRepository, type Agent, type CreateAgentData } from './agents.repository';
+import {
+  AgentsRepository,
+  type IAgent,
+  type ICreateAgentData,
+} from './agents.repository';
 import { NatsPublisher } from '../../providers/nats.provider';
 
 describe('AgentsService', () => {
@@ -61,7 +65,7 @@ describe('AgentsService', () => {
           created_at: new Date(),
           updated_at: new Date(),
         },
-      ] as Agent[];
+      ] as IAgent[];
 
       vi.mocked(mockRepository.findAll).mockResolvedValue({
         agents: mockAgents,
@@ -95,7 +99,7 @@ describe('AgentsService', () => {
 
   describe('findById', () => {
     it('should return agent by id', async () => {
-      const mockAgent: Agent = {
+      const mockAgent: IAgent = {
         id: 'agent-1',
         name: 'Test Agent',
         description: null,
@@ -128,13 +132,13 @@ describe('AgentsService', () => {
 
   describe('create', () => {
     it('should create a new agent', async () => {
-      const createData: CreateAgentData = {
+      const createData: ICreateAgentData = {
         name: 'New Agent',
         system_prompt: 'You are helpful',
         model_config: { model: 'gpt-4' },
       };
 
-      const createdAgent: Agent = {
+      const createdAgent: IAgent = {
         id: 'new-id',
         ...createData,
         description: null,
@@ -160,7 +164,7 @@ describe('AgentsService', () => {
   describe('update', () => {
     it('should update agent', async () => {
       const updateData = { name: 'Updated Name' };
-      const updatedAgent: Agent = {
+      const updatedAgent: IAgent = {
         id: 'agent-1',
         name: 'Updated Name',
         description: null,
@@ -216,7 +220,7 @@ describe('AgentsService', () => {
 
   describe('publish', () => {
     it('should publish agent and emit event', async () => {
-      const publishedAgent: Agent = {
+      const publishedAgent: IAgent = {
         id: 'agent-1',
         name: 'Test Agent',
         description: null,
@@ -254,7 +258,7 @@ describe('AgentsService', () => {
     });
 
     it('should not fail if event emission fails', async () => {
-      const publishedAgent: Agent = {
+      const publishedAgent: IAgent = {
         id: 'agent-1',
         name: 'Test Agent',
         description: null,
@@ -283,7 +287,7 @@ describe('AgentsService', () => {
 
   describe('unpublish', () => {
     it('should unpublish agent and emit event', async () => {
-      const unpublishedAgent: Agent = {
+      const unpublishedAgent: IAgent = {
         id: 'agent-1',
         name: 'Test Agent',
         description: null,
@@ -321,7 +325,7 @@ describe('AgentsService', () => {
     });
 
     it('should not fail if event emission fails', async () => {
-      const unpublishedAgent: Agent = {
+      const unpublishedAgent: IAgent = {
         id: 'agent-1',
         name: 'Test Agent',
         description: null,

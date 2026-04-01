@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { TENANT_HEADER, DEFAULT_CHANNEL_SERVICE_URL } from "@yoizen/shared";
+import { TENANT_HEADER } from "@yoizen/shared";
 import { tracedFetch } from "@yoizen/observability";
+import { gatewayConfig } from "../../config/gateway.config";
 import { throwProxyError } from "../../utils/proxy-error.util";
 
 @Injectable()
@@ -9,8 +10,7 @@ export class ChannelsProxyService {
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl =
-      process.env.CHANNEL_SERVICE_URL ?? DEFAULT_CHANNEL_SERVICE_URL;
+    this.baseUrl = gatewayConfig.services.channel;
   }
 
   async proxy(

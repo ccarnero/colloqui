@@ -14,10 +14,7 @@ import {
 } from '@nestjs/common';
 import { AdminProxyService } from './admin-proxy.service';
 import { CreateJobDto, UpdateJobDto, TriggerJobDto } from './admin.dto';
-
-interface TenantRequest extends Request {
-  tenantId: string;
-}
+import type { TenantScopedRequest } from '../../types/yoizen-request';
 
 @Controller('admin/jobs')
 export class AdminJobsController {
@@ -25,7 +22,7 @@ export class AdminJobsController {
 
   @Get()
   async listJobs(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Query('agent_id') agentId?: string,
     @Query('is_active') isActive?: string,
     @Query('limit') limit?: string,
@@ -41,7 +38,7 @@ export class AdminJobsController {
 
   @Get('executions')
   async listExecutions(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Query('job_id') jobId?: string,
     @Query('status') status?: string,
     @Query('limit') limit?: string,
@@ -57,7 +54,7 @@ export class AdminJobsController {
 
   @Get(':id')
   async getJob(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<object> {
     return this.proxy.proxy('GET', `/admin/jobs/${id}`, req.tenantId);
@@ -66,7 +63,7 @@ export class AdminJobsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createJob(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Body() body: CreateJobDto,
   ): Promise<object> {
     return this.proxy.proxy(
@@ -80,7 +77,7 @@ export class AdminJobsController {
 
   @Put(':id')
   async updateJob(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateJobDto,
   ): Promise<object> {
@@ -96,7 +93,7 @@ export class AdminJobsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteJob(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
     await this.proxy.proxy('DELETE', `/admin/jobs/${id}`, req.tenantId);
@@ -105,7 +102,7 @@ export class AdminJobsController {
   @Post(':id/enable')
   @HttpCode(HttpStatus.OK)
   async enableJob(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<object> {
     return this.proxy.proxy('POST', `/admin/jobs/${id}/enable`, req.tenantId);
@@ -114,7 +111,7 @@ export class AdminJobsController {
   @Post(':id/disable')
   @HttpCode(HttpStatus.OK)
   async disableJob(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<object> {
     return this.proxy.proxy('POST', `/admin/jobs/${id}/disable`, req.tenantId);
@@ -123,7 +120,7 @@ export class AdminJobsController {
   @Post(':id/run')
   @HttpCode(HttpStatus.CREATED)
   async runJob(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<object> {
     return this.proxy.proxy('POST', `/admin/jobs/${id}/run`, req.tenantId);
@@ -132,7 +129,7 @@ export class AdminJobsController {
   @Post(':id/trigger')
   @HttpCode(HttpStatus.CREATED)
   async triggerJob(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: TriggerJobDto,
   ): Promise<object> {

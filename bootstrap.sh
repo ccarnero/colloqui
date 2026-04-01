@@ -349,7 +349,8 @@ build_images() {
              audit-service webhook-service metrics-service tenant-service \
              scheduler-service registry-service adapter-service \
              channel-service workflow-service workflow-http-worker \
-             proxy-service yoizenclaw-admin-service admin-console; do
+             proxy-service yoizenclaw-admin-service admin-console \
+             messaging-console; do
     log "Building image: dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \
@@ -468,6 +469,9 @@ print_summary() {
     done
     echo "    kubectl get pods --all-namespaces -l app.kubernetes.io/part-of=yoizen-arch"
     echo "    minikube tunnel -p ${PROFILE}"
+    echo ""
+    echo "  Port-forwarding (run in a separate terminal):"
+    echo "    ./port-forward.sh ${ENVIRONMENTS[0]}"
     echo ""
   fi
 }

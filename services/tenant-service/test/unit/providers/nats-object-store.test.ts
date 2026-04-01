@@ -52,11 +52,11 @@ describe("NatsTenantProvisioner - createObjectStore", () => {
     provisioner = new NatsTenantProvisioner(mockNc);
   });
 
-  it("should create PAYLOAD-acme bucket with TTL", async () => {
+  it("should create PAYLOAD-ACME bucket with TTL", async () => {
     await provisioner.createObjectStore("acme", "pro");
 
     expect(osFn).toHaveBeenCalled();
-    expect(osFn.mock.calls[0][0]).toBe("PAYLOAD-acme");
+    expect(osFn.mock.calls[0][0]).toBe("PAYLOAD-ACME");
     const opts = osFn.mock.calls[0][1] as { ttl: number };
     expect(opts.ttl).toBeGreaterThan(0);
   });
@@ -65,18 +65,16 @@ describe("NatsTenantProvisioner - createObjectStore", () => {
     await provisioner.createObjectStore("free-tenant", "free");
 
     const opts = osFn.mock.calls[0][1] as { ttl: number };
-    const expectedNs =
-      BigInt(7 * 86_400_000) * 1_000_000n;
-    expect(opts.ttl).toBe(Number(expectedNs));
+    const expectedNs = 7 * 24 * 60 * 60 * 1_000_000_000;
+    expect(opts.ttl).toBe(expectedNs);
   });
 
   it("should set TTL aligned to stream retention for pro tier", async () => {
     await provisioner.createObjectStore("acme", "pro");
 
     const opts = osFn.mock.calls[0][1] as { ttl: number };
-    const expectedNs =
-      BigInt(14 * 86_400_000) * 1_000_000n;
-    expect(opts.ttl).toBe(Number(expectedNs));
+    const expectedNs = 14 * 24 * 60 * 60 * 1_000_000_000;
+    expect(opts.ttl).toBe(expectedNs);
   });
 
   it("should set TTL aligned to stream retention for enterprise tier", async () => {
@@ -86,17 +84,16 @@ describe("NatsTenantProvisioner - createObjectStore", () => {
     );
 
     const opts = osFn.mock.calls[0][1] as { ttl: number };
-    const expectedNs =
-      BigInt(30 * 86_400_000) * 1_000_000n;
-    expect(opts.ttl).toBe(Number(expectedNs));
+    const expectedNs = 30 * 24 * 60 * 60 * 1_000_000_000;
+    expect(opts.ttl).toBe(expectedNs);
   });
 
-  it("should create bucket with 5GB max size", async () => {
+  it("should create bucket with tier-based max size", async () => {
     await provisioner.createObjectStore("acme", "pro");
 
     const opts = osFn.mock.calls[0][1] as {
       max_bytes: number;
     };
-    expect(opts.max_bytes).toBe(5_000_000_000);
+    expect(opts.max_bytes).toBe(2_147_483_648);
   });
 });

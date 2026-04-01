@@ -65,7 +65,7 @@ function makeCompletion(overrides: Partial<CompletionEvent> = {}): CompletionEve
       processed: true,
       timestamp: Date.now(),
     },
-    callbackUrl: "https://callback.example.com/hook",
+    callback_url: "https://callback.example.com/hook",
     ...overrides,
   };
 }
@@ -107,7 +107,7 @@ describe("WebhookService", () => {
     service = module.get(WebhookService);
   });
 
-  it("should use default retries when no adapterId", async () => {
+  it("should use default retries when no adapter_id", async () => {
     const completion = makeCompletion();
 
     await (service as any).dispatchWithRetry(completion, "t1");
@@ -117,8 +117,8 @@ describe("WebhookService", () => {
     expect(init.headers["X-API-Key"]).toBeUndefined();
   });
 
-  it("should use adapter auth and headers when adapterId is present", async () => {
-    const completion = makeCompletion({ adapterId: "adp-1" });
+  it("should use adapter auth and headers when adapter_id is present", async () => {
+    const completion = makeCompletion({ adapter_id: "adp-1" });
 
     await (service as any).dispatchWithRetry(completion, "t1");
 
@@ -167,7 +167,7 @@ describe("WebhookService", () => {
     }).compile();
 
     const svc = module.get(WebhookService);
-    const completion = makeCompletion({ adapterId: "adp-1" });
+    const completion = makeCompletion({ adapter_id: "adp-1" });
 
     await (svc as any).dispatchWithRetry(completion, "t1");
   });

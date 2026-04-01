@@ -75,21 +75,6 @@ export class TenantRolesService {
     return id;
   }
 
-  async getSystemRoleId(tenantId: string): Promise<string> {
-    const rows = await this.sql`
-      SELECT id FROM tenant_roles
-      WHERE tenant_id = ${tenantId}
-        AND name = ${SYSTEM_ROLE_TENANT_ADMIN}
-        AND is_system = true
-      LIMIT 1
-    `;
-
-    if (rows.length === 0) {
-      return this.seedSystemRole(tenantId);
-    }
-    return rows[0].id as string;
-  }
-
   async create(
     tenantId: string,
     name: string,

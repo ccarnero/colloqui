@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../providers/redis.provider';
+import { gatewayConfig } from '../../config/gateway.config';
 import {
   PUBLIC_ROUTES_CACHE_KEY_PREFIX,
   PUBLIC_ROUTES_CACHE_TTL,
@@ -16,7 +17,7 @@ export class PublicRoutesCacheService {
   private cacheExpiresAt = 0;
 
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {
-    this.environment = process.env.PLATFORM_ENVIRONMENT ?? 'dev';
+    this.environment = gatewayConfig.environment;
   }
 
   async getPublicRoutes(): Promise<PublicRouteEntry[]> {

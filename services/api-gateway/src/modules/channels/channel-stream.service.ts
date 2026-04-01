@@ -9,7 +9,7 @@ import {
 } from "@yoizen/shared";
 import { NATS_CONNECTION } from "../../providers/nats.provider";
 
-export interface SseEvent {
+interface SseEvent {
   data: string | object;
   id?: string;
   type?: string;

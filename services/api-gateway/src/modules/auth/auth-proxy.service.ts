@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { TENANT_HEADER } from "@yoizen/shared";
 import { tracedFetch } from "@yoizen/observability";
 import { throwProxyError } from "../../utils/proxy-error.util";
+import { gatewayConfig } from "../../config/gateway.config";
 
 @Injectable()
 export class AuthProxyService {
@@ -9,9 +10,7 @@ export class AuthProxyService {
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl =
-      process.env.AUTH_SERVICE_URL ??
-      'http://auth-service.platform-services.svc.cluster.local';
+    this.baseUrl = gatewayConfig.services.auth;
   }
 
   async proxy(

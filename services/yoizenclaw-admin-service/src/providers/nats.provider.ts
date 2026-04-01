@@ -12,6 +12,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  ServiceUnavailableException,
   type FactoryProvider,
 } from "@nestjs/common";
 import {
@@ -28,14 +29,20 @@ import {
   YOIZENCLAW_PROVIDER,
   buildYoizenClawSubject,
 } from "@yoizen/shared";
-import type { EventData, EventEnvelope, EventTransport } from "@yoizen/shared";
+import type {
+  EventData,
+  EventEnvelope,
+  EventTransport,
+} from "@yoizen/shared";
 import {
   calculateChecksum,
   serializeCanonicalPayload,
 } from "../utils/payload-utils";
 import {
+  type TenantTier,
   buildTenantStreamConfig,
-} from "../types/stream-config";
+  checkJetStreamCapacity,
+} from "@yoizen/shared";
 
 export const NATS_CONNECTION = "NATS_CONNECTION";
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
@@ -225,7 +232,7 @@ function buildEventEnvelope(
 @Injectable()
 export class NatsPublisher {
   private readonly logger = new Logger(NatsPublisher.name);
-  private readonly ensuredStreams = new Set<string>();
+  private readonly ensuredStreams = new Map<string, TenantTier>();
 
   constructor(
     @Inject(LAZY_NATS)
@@ -233,9 +240,20 @@ export class NatsPublisher {
   ) {}
 
   /**
+   * Registers a tenant's tier so the publisher uses the correct
+   * limits when auto-creating a stream. Call after provisioning.
+   */
+  registerTenantTier(tenantId: string, tier: TenantTier): void {
+    this.ensuredStreams.set(tenantId, tier);
+  }
+
+  /**
    * Auto-ensures the tenant JetStream stream exists before
    * the first publish per tenant. Idempotent — skips if the
    * stream is already known or already exists in NATS.
+   *
+   * If no tier was registered via `registerTenantTier`, falls
+   * back to "free" and logs a warning.
    */
   private async ensureTenantStream(
     tenantId: string,
@@ -248,7 +266,15 @@ export class NatsPublisher {
       `Ensuring stream for tenant '${tenantId}'...`,
     );
 
-    const config = buildTenantStreamConfig(tenantId, "free");
+    const tier: TenantTier = "free";
+    this.logger.warn(
+      `No tier registered for tenant '${tenantId}'; ` +
+        `using fallback tier '${tier}'. ` +
+        "Stream should be pre-provisioned via " +
+        "TenantProvisioningService.",
+    );
+
+    const config = buildTenantStreamConfig(tenantId, tier);
 
     let jsm: JetStreamManager;
     try {
@@ -266,13 +292,27 @@ export class NatsPublisher {
     try {
       await jsm.streams.info(config.name);
       this.logger.log(
-        `Stream '${config.name}' already exists for tenant '${tenantId}'`,
+        `Stream '${config.name}' already exists ` +
+          `for tenant '${tenantId}'`,
       );
     } catch {
-      // Stream doesn't exist — create it
       this.logger.log(
-        `Stream '${config.name}' not found, creating with subjects: ${JSON.stringify(config.subjects)}`,
+        `Stream '${config.name}' not found, creating ` +
+          `with subjects: ` +
+          `${JSON.stringify(config.subjects)}`,
       );
+
+      const info = await jsm.getAccountInfo();
+      const check = checkJetStreamCapacity(
+        config.limits.max_bytes,
+        info.storage,
+        info.limits.max_storage,
+      );
+      if (!check.ok) {
+        this.logger.error(check.message);
+        throw new ServiceUnavailableException(check.message);
+      }
+
       try {
         await jsm.streams.add({
           name: config.name,
@@ -285,20 +325,22 @@ export class NatsPublisher {
           storage: StorageType.File,
         });
         this.logger.log(
-          `Auto-created stream '${config.name}' for tenant '${tenantId}'`,
+          `Auto-created stream '${config.name}' ` +
+            `for tenant '${tenantId}'`,
         );
       } catch (createErr: unknown) {
         const msg = createErr instanceof Error
           ? createErr.message
           : String(createErr);
         this.logger.error(
-          `Failed to create stream '${config.name}': ${msg}`,
+          `Failed to create stream ` +
+            `'${config.name}': ${msg}`,
         );
         throw createErr;
       }
     }
 
-    this.ensuredStreams.add(tenantId);
+    this.ensuredStreams.set(tenantId, tier);
   }
 
   private async publishEvent(

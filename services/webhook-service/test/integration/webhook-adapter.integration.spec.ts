@@ -137,7 +137,7 @@ describe("webhook-service adapter integration", () => {
     callbackServer.stop(true);
   });
 
-  it("should deliver webhook with adapter auth headers when adapterId is present", async () => {
+  it("should deliver webhook with adapter auth headers when adapter_id is present", async () => {
     callbackHits.length = 0;
     const eventId = `wh-integ-adapter-${Date.now()}`;
 
@@ -146,15 +146,15 @@ describe("webhook-service adapter integration", () => {
       type: "created",
       processed: true,
       timestamp: Date.now(),
-      metadata: { tenantId: "t1" },
+      tenant: "t1",
     };
 
     const completion: CompletionEvent = {
       eventId,
       type: "created",
       result,
-      callbackUrl: `http://localhost:${CALLBACK_PORT}/hook`,
-      adapterId: "adp-wh-integ",
+      callback_url: `http://localhost:${CALLBACK_PORT}/hook`,
+      adapter_id: "adp-wh-integ",
     };
 
     await js.publish(
@@ -173,7 +173,7 @@ describe("webhook-service adapter integration", () => {
     expect(hit.headers["x-webhook-custom"]).toBe("true");
   });
 
-  it("should deliver webhook with default headers when no adapterId", async () => {
+  it("should deliver webhook with default headers when no adapter_id", async () => {
     callbackHits.length = 0;
     const eventId = `wh-integ-default-${Date.now()}`;
 
@@ -188,7 +188,7 @@ describe("webhook-service adapter integration", () => {
       eventId,
       type: "created",
       result,
-      callbackUrl: `http://localhost:${CALLBACK_PORT}/hook`,
+      callback_url: `http://localhost:${CALLBACK_PORT}/hook`,
     };
 
     await js.publish(
@@ -227,15 +227,15 @@ describe("webhook-service adapter integration", () => {
       type: "created",
       processed: true,
       timestamp: Date.now(),
-      metadata: { tenantId: "t1" },
+      tenant: "t1",
     };
 
     const completion: CompletionEvent = {
       eventId,
       type: "created",
       result,
-      callbackUrl: `http://localhost:${CALLBACK_PORT}/hook`,
-      adapterId: "adp-wh-integ",
+      callback_url: `http://localhost:${CALLBACK_PORT}/hook`,
+      adapter_id: "adp-wh-integ",
     };
 
     await js.publish(

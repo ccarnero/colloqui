@@ -8,10 +8,10 @@ import { Reflector } from '@nestjs/core';
 import { SKIP_TENANT_KEY } from '../decorators/skip-tenant.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { TENANT_HEADER } from '@yoizen/shared';
+import type { YoizenRequest } from '../types/yoizen-request';
+import { HOST_PATTERN } from '../constants';
 
 export const REQUEST_TENANT_KEY = 'tenantId';
-
-const HOST_PATTERN = /^[^.]+\.([^.]+)\.yplatform\.com$/;
 
 @Injectable()
 export class TenantGuard implements CanActivate {
@@ -24,7 +24,7 @@ export class TenantGuard implements CanActivate {
     ]);
     if (skip) return true;
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<YoizenRequest>();
     const tenantId = this.resolveTenant(request);
 
     request[REQUEST_TENANT_KEY] = tenantId;
@@ -33,16 +33,20 @@ export class TenantGuard implements CanActivate {
     return true;
   }
 
-  private resolveTenant(request: any): string {
+  private resolveTenant(request: YoizenRequest): string {
     const host: string = request.headers.host ?? '';
     const match = HOST_PATTERN.exec(host);
     if (match) return match[1];
 
-    const header: string | undefined = request.headers[TENANT_HEADER];
-    if (header) return header;
+    const rawHeader = request.headers[TENANT_HEADER];
+    const header = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+    if (typeof header === "string" && header.length > 0) return header;
 
-    const queryTenant: string | undefined = request.query?.tenant;
-    if (queryTenant) return queryTenant;
+    const q = request.query as { tenant?: unknown };
+    const queryTenant = q.tenant;
+    if (typeof queryTenant === "string" && queryTenant.length > 0) {
+      return queryTenant;
+    }
 
     throw new BadRequestException('Tenant context required. Provide tenant via hostname or x-yoizen-tenant header.');
   }

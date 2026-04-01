@@ -8,6 +8,7 @@ import {
 import type { Sql } from 'postgres';
 import { POSTGRES_SQL } from '../../providers/postgres.provider';
 import type { CreateRouteDto } from './routes.dto';
+import { generateId } from '../../utils/id';
 
 interface ServiceRoute {
   id: string;
@@ -32,8 +33,13 @@ interface RouteDiscoveryEntry {
   stripPrefix: boolean;
 }
 
-function generateId(): string {
-  return crypto.randomUUID();
+function isPostgresUniqueViolation(e: unknown): boolean {
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    'code' in e &&
+    (e as { code?: string }).code === '23505'
+  );
 }
 
 @Injectable()
@@ -58,7 +64,8 @@ export class RoutesService {
       throw new NotFoundException(`Service '${serviceId}' not found`);
     }
 
-    const methods = dto.methods ?? ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+    const methods: string[] =
+      dto.methods ?? ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
     const isPublic = dto.isPublic ?? false;
     const stripPrefix = dto.stripPrefix ?? true;
     const id = generateId();
@@ -68,14 +75,14 @@ export class RoutesService {
         INSERT INTO service_routes
           (id, service_id, path_prefix, methods, is_public, strip_prefix)
         VALUES
-          (${id}, ${serviceId}, ${dto.pathPrefix}, ${methods as any}, ${isPublic}, ${stripPrefix})
+          (${id}, ${serviceId}, ${dto.pathPrefix}, ${methods}, ${isPublic}, ${stripPrefix})
         RETURNING *
       `;
       this.routeCache.clear();
       this.logger.log(`Created route ${dto.pathPrefix} for service ${serviceId}`);
       return this.mapRow(row);
-    } catch (e: any) {
-      if (e?.code === '23505') {
+    } catch (e: unknown) {
+      if (isPostgresUniqueViolation(e)) {
         throw new ConflictException(
           `Route '${dto.pathPrefix}' already exists for this service`,
         );
@@ -170,15 +177,19 @@ export class RoutesService {
     return entries;
   }
 
-  private mapRow(row: any): ServiceRoute {
+  private mapRow(row: Record<string, unknown>): ServiceRoute {
+    const rawMethods = row.methods;
+    const methods = Array.isArray(rawMethods)
+      ? rawMethods.map((m) => String(m))
+      : [];
     return {
-      id: row.id,
-      serviceId: row.service_id,
-      pathPrefix: row.path_prefix,
-      methods: row.methods,
-      isPublic: row.is_public,
-      stripPrefix: row.strip_prefix,
-      createdAt: row.created_at,
+      id: String(row.id ?? ''),
+      serviceId: String(row.service_id ?? ''),
+      pathPrefix: String(row.path_prefix ?? ''),
+      methods,
+      isPublic: Boolean(row.is_public),
+      stripPrefix: Boolean(row.strip_prefix),
+      createdAt: String(row.created_at ?? ''),
     };
   }
 }

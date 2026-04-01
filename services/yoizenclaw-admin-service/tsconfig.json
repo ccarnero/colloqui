@@ -19,8 +19,8 @@
     "sourceMap": true,
     "incremental": true,
     "paths": {
-      "@yoizen/shared": ["./src/types/yoizen-shared.ts"],
-      "@yoizen/observability": ["./src/types/yoizen-observability.ts"]
+      "@yoizen/shared": ["../../packages/shared/src/index.ts"],
+      "@yoizen/observability": ["../../packages/observability/src/index.ts"]
     }
   },
   "include": ["src/**/*"],

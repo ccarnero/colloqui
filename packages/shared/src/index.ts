@@ -69,8 +69,9 @@ export { buildYoizenClawSubject } from './constants';
 export { extractTenantId, validateTenantId } from './tenant.utils';
 
 export type {
+  EventTransport,
+  EventData,
   EventEnvelope,
-  EventMetadata,
   EventResult,
   ProcessedEvent,
   CompletionEvent,
@@ -201,3 +202,18 @@ export {
   DASHBOARD_CACHE_KEY_PREFIX,
   DASHBOARD_CACHE_TTL,
 } from './dashboard.interfaces';
+
+export type {
+  TenantTier,
+  TenantStreamLimits,
+  TenantStreamConfig,
+  JetStreamStorageCheck,
+} from './tenant-stream.constants';
+
+export {
+  TENANT_TIER_LIMITS,
+  getTenantStreamName,
+  getTenantSubjectPattern,
+  buildTenantStreamConfig,
+  checkJetStreamCapacity,
+} from './tenant-stream.constants';

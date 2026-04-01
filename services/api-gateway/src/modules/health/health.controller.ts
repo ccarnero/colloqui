@@ -2,6 +2,7 @@ import { Controller, Get, Inject } from '@nestjs/common';
 import { tracedFetch } from '@yoizen/observability';
 import type { NatsConnection } from 'nats';
 import type Redis from 'ioredis';
+import { gatewayConfig } from '../../config/gateway.config';
 import { NATS_CONNECTION } from '../../providers/nats.provider';
 import { REDIS_CLIENT } from '../../providers/redis.provider';
 import { Public } from '../../decorators/public.decorator';
@@ -20,17 +21,17 @@ interface HealthResponse {
 }
 
 const SERVICE_URLS = new Map<string, string>([
-  ['auth-service', process.env.AUTH_SERVICE_URL ?? 'http://auth-service.platform-services.svc.cluster.local'],
-  ['cache-service', process.env.CACHE_SERVICE_URL ?? 'http://cache-service.platform-services.svc.cluster.local'],
-  ['webhook-service', process.env.WEBHOOK_SERVICE_URL ?? 'http://webhook-service.platform-services.svc.cluster.local'],
-  ['audit-service', process.env.AUDIT_SERVICE_URL ?? 'http://audit-service.platform-services.svc.cluster.local'],
-  ['event-processor', process.env.EVENT_PROCESSOR_URL ?? 'http://event-processor.platform-services.svc.cluster.local'],
-  ['metrics-service', process.env.METRICS_SERVICE_URL ?? 'http://metrics-service.platform-services.svc.cluster.local'],
-  ['tenant-service', process.env.TENANT_SERVICE_URL ?? 'http://tenant-service.platform-services.svc.cluster.local'],
-  ['registry-service', process.env.REGISTRY_SERVICE_URL ?? 'http://registry-service.platform-services.svc.cluster.local'],
-  ['workflow-service', process.env.WORKFLOW_SERVICE_URL ?? 'http://workflow-api.platform-services.svc.cluster.local'],
-  ['proxy-service', process.env.PROXY_SERVICE_URL ?? 'http://proxy-service.platform-services.svc.cluster.local'],
-  ['adapter-service', process.env.ADAPTER_SERVICE_URL ?? 'http://adapter-service.platform-services.svc.cluster.local'],
+  ['auth-service', gatewayConfig.services.auth],
+  ['cache-service', gatewayConfig.services.cache],
+  ['webhook-service', gatewayConfig.services.webhook],
+  ['audit-service', gatewayConfig.services.audit],
+  ['event-processor', gatewayConfig.services.eventProcessor],
+  ['metrics-service', gatewayConfig.services.metrics],
+  ['tenant-service', gatewayConfig.services.tenant],
+  ['registry-service', gatewayConfig.services.registry],
+  ['workflow-service', gatewayConfig.services.workflow],
+  ['proxy-service', gatewayConfig.services.proxy],
+  ['adapter-service', gatewayConfig.services.adapter],
 ]);
 
 const SERVICE_TIMEOUT_MS = 3_000;

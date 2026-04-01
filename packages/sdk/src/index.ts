@@ -45,8 +45,9 @@ export type {
 } from './types';
 
 export type {
+  EventTransport,
+  EventData,
   EventEnvelope,
-  EventMetadata,
   EventResult,
   ProcessedEvent,
   CompletionEvent,

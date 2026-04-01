@@ -13,6 +13,7 @@ import { JwtService } from '../modules/auth/jwt.service';
 import { PublicRoutesCacheService } from '../modules/auth/public-routes-cache.service';
 import { REQUEST_TENANT_KEY } from './tenant.guard';
 import type { JwtPayload } from '@yoizen/shared';
+import type { YoizenRequest } from '../types/yoizen-request';
 
 export const REQUEST_USER_KEY = 'user';
 
@@ -34,7 +35,7 @@ export class AuthGuard implements CanActivate {
 
     if (isPublic) return true;
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<YoizenRequest>();
     const method: string = request.method;
     const url: string = request.url.split('?')[0];
 
@@ -77,14 +78,17 @@ export class AuthGuard implements CanActivate {
   }
 
   /** Bearer header first, then ?token= query param (for SSE / WebSocket). */
-  private extractToken(request: any): string | undefined {
-    const authHeader: string | undefined =
+  private extractToken(request: YoizenRequest): string | undefined {
+    const rawAuth =
       request.headers.authorization ?? request.headers.Authorization;
-    if (authHeader) {
-      const parts = authHeader.split(' ');
-      if (parts.length === 2 && parts[0] === 'Bearer') return parts[1];
+    const authHeader = Array.isArray(rawAuth) ? rawAuth[0] : rawAuth;
+    if (typeof authHeader === "string") {
+      const parts = authHeader.split(" ");
+      if (parts.length === 2 && parts[0] === "Bearer") return parts[1];
     }
-    return request.query?.token;
+    const q = request.query as { token?: unknown };
+    const token = q.token;
+    return typeof token === "string" ? token : undefined;
   }
 
   private validateTenantScope(payload: JwtPayload, tenantId: string | undefined): void {

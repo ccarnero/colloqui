@@ -16,6 +16,7 @@ import {
   REGISTRY_KNATIVE_SERVICES_PLURAL,
 } from '@yoizen/shared';
 import type { StartCanaryDto, UpdateCanaryDto } from './canary.dto';
+import { generateId } from '../../utils/id';
 
 interface CanaryStatus {
   id: string;
@@ -28,8 +29,47 @@ interface CanaryStatus {
   updatedAt: string;
 }
 
-function generateId(): string {
-  return crypto.randomUUID();
+function errorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  return String(e);
+}
+
+function k8sApiErrorMessage(e: unknown): string {
+  if (typeof e === 'object' && e !== null && 'response' in e) {
+    const msg = (e as { response?: { body?: { message?: string } } }).response
+      ?.body?.message;
+    if (typeof msg === 'string' && msg.length > 0) return msg;
+  }
+  return errorMessage(e);
+}
+
+interface KnativeTrafficTarget {
+  percent?: number;
+  tag?: string;
+  revisionName?: string;
+}
+
+interface KnativeServiceSpecMutable {
+  template?: {
+    metadata?: { annotations?: Record<string, string> };
+    spec?: {
+      containers?: Array<Record<string, unknown>>;
+    };
+  };
+  traffic?: KnativeTrafficEntry[];
+}
+
+interface KnativeTrafficEntry {
+  revisionName: string;
+  percent: number;
+  tag: string;
+}
+
+interface KnativeServiceBody {
+  apiVersion?: string;
+  kind?: string;
+  metadata?: Record<string, unknown>;
+  spec: KnativeServiceSpecMutable;
 }
 
 @Injectable()
@@ -248,15 +288,22 @@ export class CanaryService {
         plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
         name,
       });
-      const obj = resp as any;
-      const traffic = obj.status?.traffic;
+      const obj = resp as Record<string, unknown>;
+      const status = obj.status as Record<string, unknown> | undefined;
+      const traffic = status?.traffic;
       if (Array.isArray(traffic) && traffic.length > 0) {
-        const stable = traffic.find(
-          (t: any) => t.percent === 100 || t.tag === 'stable',
+        const targets = traffic as KnativeTrafficTarget[];
+        const stable = targets.find(
+          (t) => t.percent === 100 || t.tag === 'stable',
         );
-        return stable?.revisionName ?? traffic[0].revisionName ?? null;
+        const first = targets[0];
+        return (
+          stable?.revisionName ??
+          (typeof first?.revisionName === 'string' ? first.revisionName : null)
+        );
       }
-      return obj.status?.latestReadyRevisionName ?? null;
+      const latest = status?.latestReadyRevisionName;
+      return typeof latest === 'string' ? latest : null;
     } catch {
       return null;
     }
@@ -274,7 +321,10 @@ export class CanaryService {
         plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
         name,
       });
-      return (resp as any).status?.latestCreatedRevisionName ?? null;
+      const obj = resp as Record<string, unknown>;
+      const status = obj.status as Record<string, unknown> | undefined;
+      const revision = status?.latestCreatedRevisionName;
+      return typeof revision === 'string' ? revision : null;
     } catch {
       return null;
     }
@@ -302,21 +352,27 @@ export class CanaryService {
     name: string,
     image: string,
   ): Promise<void> {
-    const current = await this.customApi.getNamespacedCustomObject({
+    const current = (await this.customApi.getNamespacedCustomObject({
       group: REGISTRY_KNATIVE_GROUP,
       version: REGISTRY_KNATIVE_VERSION,
       namespace,
       plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
       name,
-    }) as any;
+    })) as unknown as KnativeServiceBody;
 
     const spec = structuredClone(current.spec);
+    if (!spec.template?.spec?.containers?.[0]) {
+      throw new InternalServerErrorException(
+        'Knative Service has no template or containers in spec',
+      );
+    }
     spec.template.metadata ??= {};
     spec.template.metadata.annotations = {
       ...spec.template.metadata.annotations,
       'client.knative.dev/updateTimestamp': String(Date.now()),
     };
-    spec.template.spec.containers[0].image = image;
+    const containers = spec.template.spec.containers;
+    (containers[0] as { image: string }).image = image;
 
     try {
       await this.customApi.replaceNamespacedCustomObject({
@@ -327,9 +383,9 @@ export class CanaryService {
         name,
         body: { ...current, spec },
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
       throw new InternalServerErrorException(
-        `Failed to update Knative image: ${e?.response?.body?.message ?? e.message}`,
+        `Failed to update Knative image: ${k8sApiErrorMessage(e)}`,
       );
     }
   }
@@ -342,7 +398,7 @@ export class CanaryService {
     secondaryRevision: string | null,
     secondaryPercent: number,
   ): Promise<void> {
-    const traffic: any[] = [
+    const traffic: KnativeTrafficEntry[] = [
       {
         revisionName: primaryRevision,
         percent: primaryPercent,
@@ -358,13 +414,13 @@ export class CanaryService {
       });
     }
 
-    const current = await this.customApi.getNamespacedCustomObject({
+    const current = (await this.customApi.getNamespacedCustomObject({
       group: REGISTRY_KNATIVE_GROUP,
       version: REGISTRY_KNATIVE_VERSION,
       namespace,
       plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
       name,
-    }) as any;
+    })) as unknown as KnativeServiceBody;
 
     const spec = structuredClone(current.spec);
     spec.traffic = traffic;
@@ -378,23 +434,23 @@ export class CanaryService {
         name,
         body: { ...current, spec },
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
       throw new InternalServerErrorException(
-        `Failed to apply traffic split: ${e?.response?.body?.message ?? e.message}`,
+        `Failed to apply traffic split: ${k8sApiErrorMessage(e)}`,
       );
     }
   }
 
-  private mapRow(row: any): CanaryStatus {
+  private mapRow(row: Record<string, unknown>): CanaryStatus {
     return {
-      id: row.id,
-      serviceId: row.service_id,
-      stableRevision: row.stable_revision,
-      canaryRevision: row.canary_revision,
-      canaryPercent: row.canary_percent,
-      status: row.status,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      id: String(row.id ?? ''),
+      serviceId: String(row.service_id ?? ''),
+      stableRevision: String(row.stable_revision ?? ''),
+      canaryRevision: String(row.canary_revision ?? ''),
+      canaryPercent: Number(row.canary_percent ?? 0),
+      status: String(row.status ?? ''),
+      createdAt: String(row.created_at ?? ''),
+      updatedAt: String(row.updated_at ?? ''),
     };
   }
 }

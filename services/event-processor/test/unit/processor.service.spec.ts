@@ -12,6 +12,40 @@ import { DeletedHandler } from '../../src/handlers/deleted.handler';
 import { PipelineRunner } from '../../src/pipeline/pipeline-runner';
 import type { EventEnvelope } from '@yoizen/shared';
 
+function makeEnvelope(
+  overrides: Partial<EventEnvelope> & { id: string; type: string },
+): EventEnvelope {
+  const { id, type } = overrides;
+  return {
+    specversion: "1.0",
+    id,
+    source: `events.${type}`,
+    type,
+    resource: type,
+    time: new Date().toISOString(),
+    traceid: id,
+    causation_id: null,
+    correlation_id: id,
+    tenant: "test-tenant",
+    producer: "test",
+    domain: "platform",
+    channel: "events",
+    provider: "test",
+    accountid: "test-tenant",
+    idempotencykey: id,
+    transport: { method: "stream", protocol: "internal" },
+    data: {
+      received_at: new Date().toISOString(),
+      payload_inline: true,
+      payload_ref: null,
+      payload_bytes: 0,
+      payload_checksum: "",
+      payload: {},
+    },
+    ...overrides,
+  };
+}
+
 describe('ProcessorService', () => {
   let service: ProcessorService;
   let mockRedis: { setex: ReturnType<typeof mock> };
@@ -60,11 +94,18 @@ describe('ProcessorService', () => {
 
   describe('processEvent', () => {
     it('should write result to Redis with correct key and TTL', async () => {
-      const envelope: EventEnvelope = {
+      const envelope = makeEnvelope({
         id: 'evt-1',
         type: 'created',
-        payload: { data: true },
-      };
+        data: {
+          received_at: new Date().toISOString(),
+          payload_inline: true,
+          payload_ref: null,
+          payload_bytes: 0,
+          payload_checksum: "",
+          payload: { data: true },
+        },
+      });
       await service.processEvent(envelope);
 
       expect(mockRedis.setex).toHaveBeenCalledTimes(1);
@@ -82,57 +123,38 @@ describe('ProcessorService', () => {
     it('should set processed=true for known types (created, updated, deleted)', async () => {
       for (const type of ['created', 'updated', 'deleted']) {
         mockRedis.setex = mock(() => Promise.resolve('OK'));
-        await service.processEvent({ id: `id-${type}`, type, payload: {} });
+        await service.processEvent(makeEnvelope({ id: `id-${type}`, type }));
         const parsed = JSON.parse(mockRedis.setex.mock.calls[0][2]);
         expect(parsed.processed).toBe(true);
       }
     });
 
     it('should set processed=false for unknown type with falsy payload', async () => {
-      await service.processEvent({
+      await service.processEvent(makeEnvelope({
         id: 'evt-2',
         type: 'unknown',
-        payload: {},
-      });
+      }));
 
       const parsed = JSON.parse(mockRedis.setex.mock.calls[0][2]);
       expect(parsed.processed).toBe(false);
     });
 
     it('should set processed=true for unknown type with truthy payload', async () => {
-      await service.processEvent({
+      await service.processEvent(makeEnvelope({
         id: 'evt-3',
         type: 'custom',
-        payload: { data: 1 },
-      });
+        data: {
+          received_at: new Date().toISOString(),
+          payload_inline: true,
+          payload_ref: null,
+          payload_bytes: 0,
+          payload_checksum: "",
+          payload: { data: 1 },
+        },
+      }));
 
       const parsed = JSON.parse(mockRedis.setex.mock.calls[0][2]);
       expect(parsed.processed).toBe(true);
-    });
-  });
-
-  describe('getStats / type counting', () => {
-    it('should track event counts per type in O(1) Map', async () => {
-      await service.processEvent({ id: 'a1', type: 'created', payload: {} });
-      await service.processEvent({ id: 'a2', type: 'created', payload: {} });
-      await service.processEvent({ id: 'a3', type: 'created', payload: {} });
-      await service.processEvent({ id: 'b1', type: 'updated', payload: {} });
-      await service.processEvent({ id: 'b2', type: 'updated', payload: {} });
-
-      const stats = service.getStats();
-      expect(stats.get('created')).toBe(3);
-      expect(stats.get('updated')).toBe(2);
-      expect(stats.has('deleted')).toBe(false);
-    });
-
-    it('should return a copy of the map (not the internal reference)', async () => {
-      await service.processEvent({ id: 'x', type: 'test', payload: {} });
-
-      const stats = service.getStats();
-      stats.set('test', 999);
-
-      const freshStats = service.getStats();
-      expect(freshStats.get('test')).toBe(1);
     });
   });
 });

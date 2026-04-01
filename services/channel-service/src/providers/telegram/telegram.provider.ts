@@ -104,6 +104,96 @@ export class TelegramProvider implements IChannelProvider {
     return data;
   }
 
+  private extractTextContent(
+    msg: Record<string, unknown>,
+    base: InboundMessage,
+  ): InboundMessage | null {
+    if (typeof msg.text !== "string") return null;
+    return { ...base, text: msg.text };
+  }
+
+  private extractMediaContent(
+    msg: Record<string, unknown>,
+    base: InboundMessage,
+  ): InboundMessage | null {
+    const photo = msg.photo as
+      | Array<{ file_id: string; file_unique_id: string }>
+      | undefined;
+    if (photo?.length) {
+      const largest = photo[photo.length - 1];
+      return {
+        ...base,
+        type: "image",
+        text: msg.caption as string | undefined,
+        media: {
+          mimeType: "image/jpeg",
+          id: largest.file_id,
+          caption: msg.caption as string | undefined,
+        },
+      };
+    }
+
+    const document = msg.document as Record<string, unknown> | undefined;
+    if (document) {
+      return {
+        ...base,
+        type: "document",
+        text: msg.caption as string | undefined,
+        media: {
+          mimeType:
+            (document.mime_type as string) ?? "application/octet-stream",
+          id: document.file_id as string | undefined,
+          caption: msg.caption as string | undefined,
+        },
+      };
+    }
+
+    const sticker = msg.sticker as Record<string, unknown> | undefined;
+    if (sticker) {
+      return {
+        ...base,
+        type: "sticker",
+        media: {
+          mimeType: "image/webp",
+          id: sticker.file_id as string | undefined,
+        },
+      };
+    }
+
+    const voice = msg.voice as Record<string, unknown> | undefined;
+    if (voice) {
+      return {
+        ...base,
+        type: "audio",
+        media: {
+          mimeType: (voice.mime_type as string) ?? "audio/ogg",
+          id: voice.file_id as string | undefined,
+        },
+      };
+    }
+
+    const video = msg.video as Record<string, unknown> | undefined;
+    if (video) {
+      return {
+        ...base,
+        type: "video",
+        text: msg.caption as string | undefined,
+        media: {
+          mimeType: (video.mime_type as string) ?? "video/mp4",
+          id: video.file_id as string | undefined,
+        },
+      };
+    }
+
+    return null;
+  }
+
+  private extractContactInfo(
+    _msg: Record<string, unknown>,
+  ): InboundMessage | null {
+    return null;
+  }
+
   private parseTelegramMessage(
     msg: Record<string, unknown>,
   ): InboundMessage | null {
@@ -117,7 +207,7 @@ export class TelegramProvider implements IChannelProvider {
     const senderId = String(from?.id ?? chat?.id ?? "");
     if (!senderId) return null;
 
-    const result: InboundMessage = {
+    const base: InboundMessage = {
       messageId: String(messageId),
       from: senderId,
       timestamp: String(date),
@@ -125,71 +215,16 @@ export class TelegramProvider implements IChannelProvider {
       raw: msg,
     };
 
-    if (typeof msg.text === "string") {
-      result.text = msg.text;
-      return result;
-    }
+    const textMsg = this.extractTextContent(msg, base);
+    if (textMsg) return textMsg;
 
-    const photo = msg.photo as
-      | Array<{ file_id: string; file_unique_id: string }>
-      | undefined;
-    if (photo?.length) {
-      const largest = photo[photo.length - 1];
-      result.type = "image";
-      result.media = {
-        mimeType: "image/jpeg",
-        id: largest.file_id,
-        caption: msg.caption as string | undefined,
-      };
-      result.text = msg.caption as string | undefined;
-      return result;
-    }
+    const mediaMsg = this.extractMediaContent(msg, base);
+    if (mediaMsg) return mediaMsg;
 
-    const document = msg.document as Record<string, unknown> | undefined;
-    if (document) {
-      result.type = "document";
-      result.media = {
-        mimeType:
-          (document.mime_type as string) ?? "application/octet-stream",
-        id: document.file_id as string | undefined,
-        caption: msg.caption as string | undefined,
-      };
-      result.text = msg.caption as string | undefined;
-      return result;
-    }
+    const contactMsg = this.extractContactInfo(msg);
+    if (contactMsg) return contactMsg;
 
-    const sticker = msg.sticker as Record<string, unknown> | undefined;
-    if (sticker) {
-      result.type = "sticker";
-      result.media = {
-        mimeType: "image/webp",
-        id: sticker.file_id as string | undefined,
-      };
-      return result;
-    }
-
-    const voice = msg.voice as Record<string, unknown> | undefined;
-    if (voice) {
-      result.type = "audio";
-      result.media = {
-        mimeType: (voice.mime_type as string) ?? "audio/ogg",
-        id: voice.file_id as string | undefined,
-      };
-      return result;
-    }
-
-    const video = msg.video as Record<string, unknown> | undefined;
-    if (video) {
-      result.type = "video";
-      result.media = {
-        mimeType: (video.mime_type as string) ?? "video/mp4",
-        id: video.file_id as string | undefined,
-      };
-      result.text = msg.caption as string | undefined;
-      return result;
-    }
-
-    return result;
+    return base;
   }
 
   private async sendText(

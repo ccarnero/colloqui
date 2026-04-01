@@ -103,7 +103,9 @@ export interface AccountDialogResult {
             matInput
             [ngModel]="externalId()"
             (ngModelChange)="externalId.set($event)"
-            placeholder="WABA ID or Bot username"
+            [placeholder]="
+              channel() === 'whatsapp' ? 'WABA ID' : 'Bot username'
+            "
             [disabled]="isEdit"
           />
         </mat-form-field>
@@ -115,15 +117,6 @@ export interface AccountDialogResult {
               matInput
               [ngModel]="phoneNumberId()"
               (ngModelChange)="phoneNumberId.set($event)"
-            />
-          </mat-form-field>
-
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>WABA ID</mat-label>
-            <input
-              matInput
-              [ngModel]="wabaId()"
-              (ngModelChange)="wabaId.set($event)"
             />
           </mat-form-field>
         }
@@ -262,7 +255,6 @@ export class AccountDialogComponent implements OnInit {
   readonly name = signal("");
   readonly externalId = signal("");
   readonly phoneNumberId = signal("");
-  readonly wabaId = signal("");
   readonly telegramBotToken = signal("");
   readonly accessToken = signal("");
   readonly appId = signal("");
@@ -280,7 +272,6 @@ export class AccountDialogComponent implements OnInit {
       this.name.set(account.name);
       this.externalId.set(account.externalId);
       this.phoneNumberId.set(account.phoneNumberId ?? "");
-      this.wabaId.set(account.wabaId ?? "");
       this.telegramBotToken.set(account.telegramBotToken ?? "");
       this.accessToken.set(account.accessToken);
       this.appId.set(account.appId ?? "");
@@ -339,7 +330,10 @@ export class AccountDialogComponent implements OnInit {
           name: this.name().trim(),
           externalId: this.externalId().trim(),
           phoneNumberId: this.phoneNumberId().trim() || undefined,
-          wabaId: this.wabaId().trim() || undefined,
+          wabaId:
+            this.channel() === "whatsapp"
+              ? this.externalId().trim()
+              : undefined,
           telegramBotToken: botToken || undefined,
           accessToken: isTelegram ? botToken : this.accessToken().trim(),
           appId: this.appId().trim() || undefined,

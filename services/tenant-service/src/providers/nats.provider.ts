@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   Module,
+  ServiceUnavailableException,
   type FactoryProvider,
 } from "@nestjs/common";
 import {
@@ -14,24 +15,38 @@ import {
   type JetStreamManager,
   type NatsConnection,
 } from "nats";
+import {
+  type TenantTier,
+  TENANT_TIER_LIMITS,
+  getTenantStreamName,
+  checkJetStreamCapacity,
+} from "@yoizen/shared";
+
+export { type TenantTier } from "@yoizen/shared";
 
 export const NATS_CONNECTION = "NATS_CONNECTION";
 
-export type TenantTier = "free" | "pro" | "enterprise";
-
+/**
+ * @deprecated Import TENANT_TIER_LIMITS from @yoizen/shared instead.
+ * Kept for backward compatibility with existing tests.
+ */
 export const STREAM_LIMITS: Record<
   TenantTier,
   { maxBytes: number; maxAgeDays: number }
 > = {
-  free: { maxBytes: 1_000_000_000, maxAgeDays: 7 },
-  pro: { maxBytes: 5_000_000_000, maxAgeDays: 14 },
-  enterprise: { maxBytes: 20_000_000_000, maxAgeDays: 30 },
+  free: {
+    maxBytes: TENANT_TIER_LIMITS.free.max_bytes,
+    maxAgeDays: 7,
+  },
+  pro: {
+    maxBytes: TENANT_TIER_LIMITS.pro.max_bytes,
+    maxAgeDays: 14,
+  },
+  enterprise: {
+    maxBytes: TENANT_TIER_LIMITS.enterprise.max_bytes,
+    maxAgeDays: 30,
+  },
 };
-
-/** Nanoseconds per millisecond. */
-const NS_PER_MS = 1_000_000n;
-/** Milliseconds per day. */
-const MS_PER_DAY = 86_400_000;
 
 /**
  * ACL configuration for a tenant's NATS account.
@@ -70,7 +85,7 @@ class LazyNatsConnection implements TenantNatsConnection {
 
   jetstream(): JetStreamClient {
     if (!this.connection) {
-      throw new Error(
+      throw new ServiceUnavailableException(
         "NATS connection is not ready yet.",
       );
     }
@@ -132,7 +147,7 @@ export class NatsTenantProvisioner {
    */
   async createAccount(tenantId: string): Promise<void> {
     const jsm = await this.nc.jetstreamManager();
-    const streamName = `INGRESS-${tenantId}`;
+    const streamName = getTenantStreamName(tenantId);
 
     try {
       await jsm.streams.info(streamName);
@@ -141,7 +156,6 @@ export class NatsTenantProvisioner {
       );
       return;
     } catch (err: unknown) {
-      // Expected: stream not found means account is new
       const natsErr = err as { code?: number };
       if (natsErr.code !== 404) {
         throw err;
@@ -153,66 +167,71 @@ export class NatsTenantProvisioner {
 
   /**
    * Creates a JetStream stream for the tenant.
-   * Stream name: INGRESS-{tenantId}
+   * Stream name: INGRESS-{TENANT_ID} (uppercased)
    * Subject filter: evt.{tenantId}.>
-   * Limits are tier-based per wdocs/01.
+   * Limits are tier-based via @yoizen/shared TENANT_TIER_LIMITS.
    */
   async createStream(
     tenantId: string,
     tier: TenantTier,
   ): Promise<void> {
-    const limits = STREAM_LIMITS[tier];
-    const streamName = `INGRESS-${tenantId}`;
+    const limits = TENANT_TIER_LIMITS[tier];
+    const streamName = getTenantStreamName(tenantId);
     const jsm = await this.nc.jetstreamManager();
 
-    const maxAgeNs =
-      BigInt(limits.maxAgeDays * MS_PER_DAY) * NS_PER_MS;
+    const accountInfo = await jsm.getAccountInfo();
+    const capacityCheck = checkJetStreamCapacity(
+      limits.max_bytes,
+      accountInfo.storage,
+      accountInfo.limits.max_storage,
+    );
+    if (!capacityCheck.ok) {
+      this.logger.error(capacityCheck.message);
+      throw new ServiceUnavailableException(capacityCheck.message);
+    }
 
     await jsm.streams.add({
       name: streamName,
       subjects: [`evt.${tenantId}.>`],
       storage: StorageType.File,
       discard: DiscardPolicy.Old,
-      max_bytes: limits.maxBytes,
-      max_age: Number(maxAgeNs),
-      max_msg_size: 1_048_576, // 1 MB
-      duplicate_window: 120_000_000_000, // 2 min in ns
-      num_replicas: 1,
+      max_bytes: limits.max_bytes,
+      max_age: limits.max_age,
+      max_msg_size: limits.max_msg_size,
+      duplicate_window: 120_000_000_000,
+      num_replicas: limits.num_replicas,
     });
 
     this.logger.log(
       `Created stream '${streamName}' (tier: ${tier}, ` +
-        `maxBytes: ${limits.maxBytes}, ` +
-        `maxAge: ${limits.maxAgeDays}d)`,
+        `maxBytes: ${limits.max_bytes})`,
     );
   }
 
   /**
    * Creates an Object Store bucket for the tenant.
-   * Bucket name: PAYLOAD-{tenantId}
-   * TTL is aligned to the stream retention per wdocs/04.
+   * Bucket name: PAYLOAD-{TENANT_ID} (uppercased)
+   * TTL and max_bytes are tier-based via TENANT_TIER_LIMITS.
    */
   async createObjectStore(
     tenantId: string,
     tier: TenantTier,
   ): Promise<void> {
-    const limits = STREAM_LIMITS[tier];
-    const bucketName = `PAYLOAD-${tenantId}`;
-    const ttlNs =
-      BigInt(limits.maxAgeDays * MS_PER_DAY) * NS_PER_MS;
+    const limits = TENANT_TIER_LIMITS[tier];
+    const bucketName = `PAYLOAD-${tenantId.toUpperCase()}`;
 
     await this.nc.jetstreamManager();
     const js = this.nc.jetstream();
     await js.views.os(bucketName, {
       description: `Payloads for tenant ${tenantId}`,
-      ttl: Number(ttlNs),
-      max_bytes: 5_000_000_000, // 5 GB
+      ttl: limits.max_age,
+      max_bytes: limits.object_store_max_bytes,
       replicas: 1,
     });
 
     this.logger.log(
       `Created object store '${bucketName}' ` +
-        `(ttl: ${limits.maxAgeDays}d)`,
+        `(maxBytes: ${limits.object_store_max_bytes})`,
     );
   }
 
@@ -244,33 +263,6 @@ export class NatsTenantProvisioner {
     this.logger.debug(`ACL config: ${JSON.stringify(config)}`);
 
     return config;
-  }
-
-  /**
-   * Deactivates a tenant's NATS account by deleting
-   * the associated stream. Object Store data expires
-   * automatically via TTL.
-   */
-  async deactivateAccount(tenantId: string): Promise<void> {
-    const jsm = await this.nc.jetstreamManager();
-    const streamName = `INGRESS-${tenantId}`;
-
-    try {
-      await jsm.streams.delete(streamName);
-      this.logger.log(
-        `Deleted stream '${streamName}' ` +
-          `for tenant '${tenantId}'`,
-      );
-    } catch {
-      this.logger.warn(
-        `Stream '${streamName}' not found ` +
-          "during deactivation",
-      );
-    }
-
-    this.logger.log(
-      `Deactivated NATS account for tenant '${tenantId}'`,
-    );
   }
 }
 

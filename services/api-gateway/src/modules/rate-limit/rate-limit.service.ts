@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { RateLimitResult } from '@yoizen/shared';
 import { RATE_LIMIT_KEY_PREFIX } from '@yoizen/shared';
+import { gatewayConfig } from '../../config/gateway.config';
 import { RateLimitConfigCacheService } from './rate-limit-config-cache.service';
 import { FixedWindowStrategy } from './strategies/fixed-window.strategy';
 import { SlidingWindowStrategy } from './strategies/sliding-window.strategy';
@@ -24,7 +25,7 @@ export class RateLimitService {
     slidingWindow: SlidingWindowStrategy,
     tokenBucket: TokenBucketStrategy,
   ) {
-    this.environment = process.env.PLATFORM_ENVIRONMENT ?? 'dev';
+    this.environment = gatewayConfig.environment;
     this.strategies = new Map<string, RateLimitStrategy>([
       ['fw', fixedWindow],
       ['sw', slidingWindow],

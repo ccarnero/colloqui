@@ -13,12 +13,8 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { AdminProxyService } from './admin-proxy.service';
-import { REQUEST_TENANT_KEY } from '../../guards/tenant.guard';
 import { CreateAgentDto, UpdateAgentDto } from './admin.dto';
-
-interface TenantRequest extends Request {
-  tenantId: string;
-}
+import type { TenantScopedRequest } from '../../types/yoizen-request';
 
 @Controller('admin/agents')
 export class AdminAgentsController {
@@ -26,7 +22,7 @@ export class AdminAgentsController {
 
   @Get()
   async listAgents(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Query('status') status?: string,
     @Query('is_active') isActive?: string,
     @Query('limit') limit?: string,
@@ -42,7 +38,7 @@ export class AdminAgentsController {
 
   @Get(':id')
   async getAgent(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<object> {
     return this.proxy.proxy('GET', `/admin/agents/${id}`, req.tenantId);
@@ -51,7 +47,7 @@ export class AdminAgentsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createAgent(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Body() body: CreateAgentDto,
   ): Promise<object> {
     return this.proxy.proxy('POST', '/admin/agents', req.tenantId, undefined, body);
@@ -59,7 +55,7 @@ export class AdminAgentsController {
 
   @Put(':id')
   async updateAgent(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateAgentDto,
   ): Promise<object> {
@@ -69,7 +65,7 @@ export class AdminAgentsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteAgent(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
     await this.proxy.proxy('DELETE', `/admin/agents/${id}`, req.tenantId);
@@ -78,7 +74,7 @@ export class AdminAgentsController {
   @Post(':id/publish')
   @HttpCode(HttpStatus.OK)
   async publishAgent(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<object> {
     return this.proxy.proxy('POST', `/admin/agents/${id}/publish`, req.tenantId);
@@ -87,7 +83,7 @@ export class AdminAgentsController {
   @Post(':id/unpublish')
   @HttpCode(HttpStatus.OK)
   async unpublishAgent(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<object> {
     return this.proxy.proxy('POST', `/admin/agents/${id}/unpublish`, req.tenantId);

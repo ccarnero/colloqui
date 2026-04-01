@@ -9,8 +9,8 @@ import type {
 import {
   TENANT_HEADER,
   CLAIM_CHECK_THRESHOLD_BYTES,
-  buildIngressStreamName,
-  buildTenantWildcard,
+  getTenantStreamName,
+  getTenantSubjectPattern,
 } from "@yoizen/shared";
 import {
   injectTraceContext,
@@ -166,10 +166,10 @@ export class IngressService {
   }
 
   private async ensureStream(tenantId: string): Promise<void> {
-    const streamName = buildIngressStreamName(tenantId);
+    const streamName = getTenantStreamName(tenantId);
     if (ensuredStreams.has(streamName)) return;
 
-    const subjects = [buildTenantWildcard(tenantId)];
+    const subjects = [getTenantSubjectPattern(tenantId)];
     await ensureIngressStream(this.jsm, streamName, subjects);
     ensuredStreams.add(streamName);
   }

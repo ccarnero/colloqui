@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
 
-export interface Agent {
+export interface IAgent {
   id: string;
   name: string;
   description: string | null;
@@ -17,7 +17,7 @@ export interface Agent {
   updated_at: Date;
 }
 
-export interface CreateAgentData {
+export interface ICreateAgentData {
   name: string;
   description?: string;
   system_prompt: string;
@@ -37,7 +37,7 @@ export interface UpdateAgentData {
   is_active?: boolean;
 }
 
-export interface FindAllOptions {
+export interface IFindAllOptions {
   status?: string;
   is_active?: boolean;
   limit?: number;
@@ -64,8 +64,8 @@ export class AgentsRepository {
    */
   async findAll(
     tenantId: string,
-    options: FindAllOptions = {},
-  ): Promise<{ agents: Agent[]; total: number }> {
+    options: IFindAllOptions = {},
+  ): Promise<{ agents: IAgent[]; total: number }> {
     const sql = await this.getSql(tenantId);
     const { status, limit = 20, offset = 0 } = options;
 
@@ -89,7 +89,7 @@ export class AgentsRepository {
     const total = Number(countResult[0].count);
 
     // Get agents with pagination
-    const agents = await sql<Agent[]>`
+    const agents = await sql<IAgent[]>`
       SELECT 
         id,
         name,
@@ -116,10 +116,10 @@ export class AgentsRepository {
   /**
    * Busca un agent por su ID.
    */
-  async findById(tenantId: string, id: string): Promise<Agent | null> {
+  async findById(tenantId: string, id: string): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<Agent[]>`
+    const results = await sql<IAgent[]>`
       SELECT 
         id,
         name,
@@ -146,12 +146,12 @@ export class AgentsRepository {
    */
   async create(
     tenantId: string,
-    data: CreateAgentData,
-  ): Promise<Agent> {
+    data: ICreateAgentData,
+  ): Promise<IAgent> {
     const sql = await this.getSql(tenantId);
     const agentId = randomUUID();
 
-    const results = await sql<Agent[]>`
+    const results = await sql<IAgent[]>`
       INSERT INTO agents (
         id,
         name,
@@ -202,7 +202,7 @@ export class AgentsRepository {
     tenantId: string,
     id: string,
     data: UpdateAgentData,
-  ): Promise<Agent | null> {
+  ): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
 
     // Build dynamic update using sql.assignment for proper parameterization
@@ -235,7 +235,7 @@ export class AgentsRepository {
 
     const setClause = updates.join(', ');
 
-    const results = await sql<Agent[]>`
+    const results = await sql<IAgent[]>`
       UPDATE agents
       SET ${sql.unsafe(setClause)}
       WHERE id = ${id} AND is_active = true
@@ -263,7 +263,7 @@ export class AgentsRepository {
   async delete(tenantId: string, id: string): Promise<boolean> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<Agent[]>`
+    const results = await sql<IAgent[]>`
       UPDATE agents
       SET is_active = false, updated_at = NOW()
       WHERE id = ${id} AND is_active = true
@@ -276,10 +276,10 @@ export class AgentsRepository {
   /**
    * Publica un agent (cambia status a 'published' y setea published_at).
    */
-  async publish(tenantId: string, id: string): Promise<Agent | null> {
+  async publish(tenantId: string, id: string): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<Agent[]>`
+    const results = await sql<IAgent[]>`
       UPDATE agents
       SET 
         status = 'published',
@@ -307,10 +307,10 @@ export class AgentsRepository {
   /**
    * Despublica un agent (cambia status a 'draft' y limpia published_at).
    */
-  async unpublish(tenantId: string, id: string): Promise<Agent | null> {
+  async unpublish(tenantId: string, id: string): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<Agent[]>`
+    const results = await sql<IAgent[]>`
       UPDATE agents
       SET 
         status = 'draft',

@@ -1,15 +1,6 @@
-import {
-  Global,
-  Module,
-  Logger,
-  type OnModuleInit,
-  type OnModuleDestroy,
-} from "@nestjs/common";
-import type { FactoryProvider } from "@nestjs/common";
-import postgres from "postgres";
-import type { Sql } from "postgres";
+import { PostgresModule as BasePostgresModule } from "@yoizen/database";
 
-export const POSTGRES_SQL = "POSTGRES_SQL";
+export { POSTGRES_SQL } from "@yoizen/database";
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS http_adapters (
@@ -69,58 +60,8 @@ BEGIN
 END $$;
 `;
 
-const sqlProvider: FactoryProvider<Sql> = {
-  provide: POSTGRES_SQL,
-  useFactory: (): Sql => {
-    const host =
-      process.env.POSTGRES_HOST ??
-      "postgres.support-services-dev.svc.cluster.local";
-    const port = parseInt(process.env.POSTGRES_PORT ?? "5432", 10);
-    const database = process.env.POSTGRES_DB ?? "yoizen";
-    const username = process.env.POSTGRES_USER ?? "yoizen";
-    const password = process.env.POSTGRES_PASSWORD ?? "yoizen-dev-password";
-
-    return postgres({
-      host,
-      port,
-      database,
-      username,
-      password,
-      max: 10,
-      idle_timeout: 20,
-      connect_timeout: 10,
-    });
-  },
-};
-
-class SchemaInitializer implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(SchemaInitializer.name);
-  constructor(private readonly sql: Sql) {}
-
-  async onModuleInit(): Promise<void> {
-    try {
-      await this.sql.unsafe(SCHEMA_SQL);
-      await this.sql.unsafe(MIGRATION_SQL);
-      this.logger.log("Adapter schema ensured");
-    } catch (err) {
-      this.logger.error("Failed to ensure adapter schema", err);
-    }
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    await this.sql.end();
-  }
-}
-
-const schemaInitProvider = {
-  provide: "SCHEMA_INITIALIZER",
-  useFactory: (sql: Sql) => new SchemaInitializer(sql),
-  inject: [POSTGRES_SQL],
-};
-
-@Global()
-@Module({
-  providers: [sqlProvider, schemaInitProvider],
-  exports: [sqlProvider],
-})
-export class PostgresModule {}
+export const PostgresModule = BasePostgresModule.register({
+  defaultHost:
+    "postgres.support-services-dev.svc.cluster.local",
+  schemaSql: [SCHEMA_SQL, MIGRATION_SQL],
+});

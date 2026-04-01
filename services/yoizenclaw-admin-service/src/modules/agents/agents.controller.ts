@@ -13,7 +13,7 @@ import {
 } from "@nestjs/common";
 import { AgentsService } from "./agents.service";
 import { CreateAgentDto, UpdateAgentDto, ListAgentsQueryDto, ChatRequestDto, ChatResponseDto } from "./agents.dto";
-import type { Agent } from "./agents.repository";
+import type { IAgent } from "./agents.repository";
 import { TenantGuard } from "../../providers/tenant.guard";
 import { TenantId } from "../../providers/tenant.decorator";
 
@@ -26,7 +26,7 @@ export class AgentsController {
   async findAll(
     @TenantId() tenantId: string,
     @Query() query: ListAgentsQueryDto,
-  ): Promise<{ agents: Agent[]; total: number }> {
+  ): Promise<{ agents: IAgent[]; total: number }> {
     return this.service.findAll(tenantId, {
       status: query.status,
       is_active: query.is_active,
@@ -39,7 +39,7 @@ export class AgentsController {
   async findById(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-  ): Promise<Agent> {
+  ): Promise<IAgent> {
     return this.service.findById(tenantId, id);
   }
 
@@ -48,7 +48,7 @@ export class AgentsController {
   async create(
     @TenantId() tenantId: string,
     @Body() dto: CreateAgentDto,
-  ): Promise<Agent> {
+  ): Promise<IAgent> {
     return this.service.create(tenantId, {
       name: dto.name,
       description: dto.description,
@@ -64,7 +64,7 @@ export class AgentsController {
     @TenantId() tenantId: string,
     @Param("id") id: string,
     @Body() dto: UpdateAgentDto,
-  ): Promise<Agent> {
+  ): Promise<IAgent> {
     return this.service.update(tenantId, id, dto);
   }
 
@@ -82,7 +82,7 @@ export class AgentsController {
   async publish(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-  ): Promise<Agent> {
+  ): Promise<IAgent> {
     return this.service.publish(tenantId, id);
   }
 
@@ -91,7 +91,7 @@ export class AgentsController {
   async unpublish(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-  ): Promise<Agent> {
+  ): Promise<IAgent> {
     return this.service.unpublish(tenantId, id);
   }
 

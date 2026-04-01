@@ -7,7 +7,7 @@ import {
 } from "@yoizen/shared";
 import type { EndpointCallArgs } from "@yoizen/shared";
 
-export interface EndpointCallResult {
+export interface IEndpointCallResult {
   status: number;
   data: unknown;
   headers: Record<string, string>;
@@ -38,7 +38,7 @@ function getAdapterClient(): AdapterClient {
 export async function executeEndpointCall(
   args: EndpointCallArgs,
   tenantId: string,
-): Promise<EndpointCallResult> {
+): Promise<IEndpointCallResult> {
   if (args.adapterId && args.endpointId) {
     return executeWithAdapter(args, tenantId);
   }
@@ -48,7 +48,7 @@ export async function executeEndpointCall(
 async function executeWithAdapter(
   args: EndpointCallArgs,
   tenantId: string,
-): Promise<EndpointCallResult> {
+): Promise<IEndpointCallResult> {
   const client = getAdapterClient();
   const resolved = await client.resolveRequest(
     tenantId,
@@ -101,7 +101,7 @@ async function executeWithAdapter(
 async function executeRaw(
   args: EndpointCallArgs,
   tenantId: string,
-): Promise<EndpointCallResult> {
+): Promise<IEndpointCallResult> {
   const headers: Record<string, string> = {
     [TENANT_HEADER]: tenantId,
     ...args.headers,
@@ -137,7 +137,7 @@ function buildUrl(
   return url.toString();
 }
 
-async function buildResult(res: Response): Promise<EndpointCallResult> {
+async function buildResult(res: Response): Promise<IEndpointCallResult> {
   const responseHeaders: Record<string, string> = {};
   res.headers.forEach((v, k) => {
     responseHeaders[k] = v;

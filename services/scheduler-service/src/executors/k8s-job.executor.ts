@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as k8s from '@kubernetes/client-node';
 import { SCHEDULER_K8S_DEFAULT_TIMEOUT_S } from '@yoizen/shared';
-import { K8S_CORE_API, K8S_BATCH_API } from '../providers/kubernetes.provider';
+import { K8S_BATCH_API, K8S_CORE_API } from '../providers/k8s-api.tokens';
 import type { ScheduleExecutor } from './executor.interface';
 import type { Schedule } from '../modules/schedules/schedules.service';
 import type { ExecutionResult } from '../engine/engine.service';
@@ -91,13 +91,10 @@ export class K8sJobExecutor implements ScheduleExecutor {
     await this.coreApi.createNamespacedConfigMap({ namespace, body: cm });
   }
 
-  private buildJobSpec(
-    namespace: string,
-    jobName: string,
+  private buildContainerSpec(
     schedule: Schedule,
     configMapName: string | undefined,
-    timeoutSeconds: number,
-  ): k8s.V1Job {
+  ): k8s.V1Container {
     const config = schedule.config;
     const isDockerMode = schedule.exec_mode === 'docker';
 
@@ -140,15 +137,36 @@ export class K8sJobExecutor implements ScheduleExecutor {
       ];
     }
 
-    const job: k8s.V1Job = {
-      metadata: {
-        name: jobName,
-        namespace,
-        labels: {
-          'yoizen.io/managed-by': 'scheduler-service',
-          'yoizen.io/schedule-id': schedule.id,
-        },
+    return container;
+  }
+
+  private buildJobMetadata(
+    namespace: string,
+    jobName: string,
+    scheduleId: string,
+  ): k8s.V1ObjectMeta {
+    return {
+      name: jobName,
+      namespace,
+      labels: {
+        'yoizen.io/managed-by': 'scheduler-service',
+        'yoizen.io/schedule-id': scheduleId,
       },
+    };
+  }
+
+  private buildJobSpec(
+    namespace: string,
+    jobName: string,
+    schedule: Schedule,
+    configMapName: string | undefined,
+    timeoutSeconds: number,
+  ): k8s.V1Job {
+    const isDockerMode = schedule.exec_mode === 'docker';
+    const container = this.buildContainerSpec(schedule, configMapName);
+
+    return {
+      metadata: this.buildJobMetadata(namespace, jobName, schedule.id),
       spec: {
         activeDeadlineSeconds: timeoutSeconds,
         backoffLimit: 0,
@@ -170,8 +188,6 @@ export class K8sJobExecutor implements ScheduleExecutor {
         },
       },
     };
-
-    return job;
   }
 
   private async waitForJobCompletion(

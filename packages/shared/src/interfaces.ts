@@ -1,19 +1,47 @@
-export interface EventEnvelope {
-  id: string;
-  type: string;
-  payload: Record<string, unknown>;
-  metadata?: EventMetadata;
-  callbackUrl?: string;
-  adapterId?: string;
-  enrichAdapter?: { adapterId: string; endpointId: string };
-  forwardAdapter?: { adapterId: string; endpointId: string };
+export interface EventTransport {
+  method: "webhook" | "poll" | "stream" | "queue_bridge" | "agent";
+  protocol: "https" | "wss" | "amqp" | "internal";
+  agent_id?: string;
+  depth?: number;
 }
 
-export interface EventMetadata {
-  correlationId?: string;
-  source?: string;
-  receivedAt?: number;
-  tenantId?: string;
+export interface EventData {
+  received_at: string;
+  payload_inline: boolean;
+  payload_ref: string | null;
+  payload_bytes: number;
+  payload_checksum: string;
+  payload: Record<string, unknown> | null;
+}
+
+export interface EventEnvelope {
+  specversion: string;
+  id: string;
+  source: string;
+  type: string;
+  resource: string;
+  time: string;
+  traceid: string;
+  causation_id: string | null;
+  correlation_id: string;
+  tenant: string;
+  producer: string;
+  domain: string;
+  channel: string;
+  provider: string;
+  accountid: string;
+  idempotencykey: string;
+  transport: EventTransport;
+  data: EventData;
+
+  /** Pipeline extension: URL to POST completion results to */
+  callback_url?: string;
+  /** Pipeline extension: adapter ID for webhook delivery auth */
+  adapter_id?: string;
+  /** Pipeline extension: adapter ref for pre-handler enrichment */
+  enrich_adapter?: { adapterId: string; endpointId: string };
+  /** Pipeline extension: adapter ref for post-handler forwarding */
+  forward_adapter?: { adapterId: string; endpointId: string };
 }
 
 export interface EventResult {
@@ -27,15 +55,16 @@ export interface ProcessedEvent {
   processed: boolean;
   timestamp: number;
   data?: unknown;
-  metadata?: EventMetadata;
+  tenant?: string;
+  correlation_id?: string;
 }
 
 export interface CompletionEvent {
   eventId: string;
   type: string;
   result: ProcessedEvent;
-  callbackUrl?: string;
-  adapterId?: string;
+  callback_url?: string;
+  adapter_id?: string;
 }
 
 export interface MetricsPayload {

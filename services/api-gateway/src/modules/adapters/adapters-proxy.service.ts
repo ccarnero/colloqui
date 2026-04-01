@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { TENANT_HEADER } from "@yoizen/shared";
 import { tracedFetch } from "@yoizen/observability";
+import { gatewayConfig } from "../../config/gateway.config";
 import { throwProxyError } from "../../utils/proxy-error.util";
 
 @Injectable()
@@ -9,9 +10,7 @@ export class AdaptersProxyService {
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl =
-      process.env.ADAPTER_SERVICE_URL ??
-      "http://adapter-service.platform-services.svc.cluster.local";
+    this.baseUrl = gatewayConfig.services.adapter;
   }
 
   async proxy(

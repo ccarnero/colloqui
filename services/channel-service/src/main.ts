@@ -43,7 +43,11 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((err) => {
-  console.error(err);
+  const logger = new PinoLoggerService("channel-service");
+  logger.error(
+    "Bootstrap failed",
+    err instanceof Error ? err.stack : String(err),
+  );
   process.exit(1);
 });
 

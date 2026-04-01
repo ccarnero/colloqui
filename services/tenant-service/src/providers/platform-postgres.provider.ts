@@ -1,9 +1,10 @@
 import {
   Global,
-  Module,
+  InternalServerErrorException,
   Logger,
-  type OnModuleInit,
+  Module,
   type OnModuleDestroy,
+  type OnModuleInit,
 } from '@nestjs/common';
 import type { FactoryProvider } from '@nestjs/common';
 import postgres from 'postgres';
@@ -31,7 +32,12 @@ const sqlProvider: FactoryProvider<Sql> = {
     const port = parseInt(process.env.POSTGRES_PORT ?? '5432', 10);
     const database = process.env.POSTGRES_DB ?? 'yoizen';
     const username = process.env.POSTGRES_USER ?? 'yoizen';
-    const password = process.env.POSTGRES_PASSWORD ?? 'yoizen-dev-password';
+    const password = process.env.POSTGRES_PASSWORD;
+    if (!password) {
+      throw new InternalServerErrorException(
+        "POSTGRES_PASSWORD environment variable is required",
+      );
+    }
 
     return postgres({
       host,

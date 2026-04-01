@@ -1,5 +1,18 @@
-import { Injectable, NotFoundException, Logger, Inject, Optional } from '@nestjs/common';
-import { AgentsRepository, type Agent, type CreateAgentData, type UpdateAgentData } from './agents.repository';
+import {
+  BadGatewayException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
+import {
+  AgentsRepository,
+  type IAgent,
+  type ICreateAgentData,
+  type IFindAllOptions,
+  type UpdateAgentData,
+} from './agents.repository';
 import { NatsPublisher, LAZY_NATS } from '../../providers/nats.provider';
 import type { NatsConnection } from 'nats';
 import type { ChatRequestDto, ChatResponseDto } from './agents.dto';
@@ -12,13 +25,6 @@ interface LazyNats {
 
 const VALIDATE_ADAPTER_REFS =
   (process.env.VALIDATE_ADAPTER_REFS ?? 'true') !== 'false';
-
-export interface FindAllOptions {
-  status?: string;
-  is_active?: boolean;
-  limit?: number;
-  offset?: number;
-}
 
 @Injectable()
 export class AgentsService {
@@ -36,15 +42,15 @@ export class AgentsService {
    */
   async findAll(
     tenantId: string,
-    options: FindAllOptions = {},
-  ): Promise<{ agents: Agent[]; total: number }> {
+    options: IFindAllOptions = {},
+  ): Promise<{ agents: IAgent[]; total: number }> {
     return this.repository.findAll(tenantId, options);
   }
 
   /**
    * Obtiene un agent por su ID.
    */
-  async findById(tenantId: string, id: string): Promise<Agent> {
+  async findById(tenantId: string, id: string): Promise<IAgent> {
     const agent = await this.repository.findById(tenantId, id);
     if (!agent) {
       throw new NotFoundException(`Agent with ID '${id}' not found`);
@@ -55,7 +61,7 @@ export class AgentsService {
   /**
    * Crea un nuevo agent. Optionally validates adapter refs in tools.
    */
-  async create(tenantId: string, data: CreateAgentData): Promise<Agent> {
+  async create(tenantId: string, data: ICreateAgentData): Promise<IAgent> {
     await this.validateAdapterRefs(tenantId, data.tools);
     return this.repository.create(tenantId, data);
   }
@@ -67,7 +73,7 @@ export class AgentsService {
     tenantId: string,
     id: string,
     data: UpdateAgentData,
-  ): Promise<Agent> {
+  ): Promise<IAgent> {
     await this.validateAdapterRefs(tenantId, data.tools);
     const agent = await this.repository.update(tenantId, id, data);
     if (!agent) {
@@ -89,7 +95,7 @@ export class AgentsService {
   /**
    * Publica un agent y emite evento NATS.
    */
-  async publish(tenantId: string, id: string): Promise<Agent> {
+  async publish(tenantId: string, id: string): Promise<IAgent> {
     const agent = await this.repository.publish(tenantId, id);
     if (!agent) {
       throw new NotFoundException(`Agent with ID '${id}' not found`);
@@ -118,7 +124,7 @@ export class AgentsService {
   /**
    * Despublica un agent y emite evento NATS.
    */
-  async unpublish(tenantId: string, id: string): Promise<Agent> {
+  async unpublish(tenantId: string, id: string): Promise<IAgent> {
     const agent = await this.repository.unpublish(tenantId, id);
     if (!agent) {
       throw new NotFoundException(`Agent with ID '${id}' not found`);
@@ -152,7 +158,6 @@ export class AgentsService {
     agentId: string,
     dto: ChatRequestDto,
   ): Promise<ChatResponseDto> {
-    // 1. Verificar que el agente existe y está publicado
     const agent = await this.repository.findById(tenantId, agentId);
     if (!agent) {
       throw new NotFoundException(`Agent with ID '${agentId}' not found`);
@@ -161,11 +166,46 @@ export class AgentsService {
       throw new NotFoundException(`Agent '${agentId}' is not published`);
     }
 
-    // 2. Construir envelope CloudEvents (skill envelope-messages)
     const now = new Date().toISOString();
     const traceId = this.generateTraceId();
     const correlationId = dto.conversationId || `chat-${Date.now()}`;
-    
+    const envelope = this.buildChatPayload(
+      tenantId,
+      agentId,
+      dto,
+      correlationId,
+      traceId,
+      now,
+    );
+
+    const subject = buildYoizenClawSubject(YOIZENCLAW_CHAT_RESPOND, tenantId);
+
+    try {
+      this.logger.debug(`Sending chat request to ${subject} for agent ${agentId}`);
+
+      const nc = await this.lazyNats.getConnection();
+      const response = await nc.request(
+        subject,
+        JSON.stringify(envelope),
+        { timeout: 30000 },
+      );
+
+      const responseData: unknown = JSON.parse(response.data.toString());
+      return this.parseChatResponse(responseData);
+    } catch (error) {
+      this.logger.error(`Chat request failed for agent ${agentId}`, error);
+      throw new BadGatewayException('Failed to get response from agent');
+    }
+  }
+
+  private buildChatPayload(
+    tenantId: string,
+    agentId: string,
+    dto: ChatRequestDto,
+    correlationId: string,
+    traceId: string,
+    now: string,
+  ): Record<string, unknown> {
     const payload = {
       action_type: 'chat_respond',
       agent_id: agentId,
@@ -175,7 +215,7 @@ export class AgentsService {
       context: dto.context || [],
     };
 
-    const envelope = {
+    return {
       specversion: '1.0',
       id: this.generateEventId(),
       source: '//yoizenclaw-admin-service/admin/agents/chat',
@@ -207,36 +247,31 @@ export class AgentsService {
         payload,
       },
     };
+  }
 
-    // 3. NATS Request-Reply
-    const subject = buildYoizenClawSubject(YOIZENCLAW_CHAT_RESPOND, tenantId);
-    
-    try {
-      this.logger.debug(`Sending chat request to ${subject} for agent ${agentId}`);
-      
-      // Request con timeout 30s
-      const nc = await this.lazyNats.getConnection();
-      const response = await nc.request(
-        subject,
-        JSON.stringify(envelope),
-        { timeout: 30000 },
-      );
-
-      // 4. Parsear respuesta
-      const responseData = JSON.parse(response.data.toString());
-      
-      if (!responseData.data?.payload?.response) {
-        throw new Error('Invalid response from agent');
-      }
-
-      return {
-        reply: responseData.data.payload.response,
-        tool_calls: responseData.data.payload.tool_calls || [],
-      };
-    } catch (error) {
-      this.logger.error(`Chat request failed for agent ${agentId}`, error);
-      throw new NotFoundException('Failed to get response from agent');
+  private parseChatResponse(responseData: unknown): ChatResponseDto {
+    if (
+      typeof responseData !== 'object' ||
+      responseData === null ||
+      !('data' in responseData)
+    ) {
+      throw new BadGatewayException('Invalid response from agent');
     }
+    const data = (responseData as { data?: { payload?: unknown } }).data;
+    const payload = data?.payload as
+      | {
+          response?: unknown;
+          tool_calls?: unknown;
+        }
+      | undefined;
+    if (!payload?.response) {
+      throw new BadGatewayException('Invalid response from agent');
+    }
+
+    return {
+      reply: payload.response as string,
+      tool_calls: (payload.tool_calls || []) as unknown[],
+    };
   }
 
   private generateTraceId(): string {

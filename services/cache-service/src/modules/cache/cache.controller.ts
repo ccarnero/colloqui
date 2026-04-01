@@ -12,6 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { CacheService } from './cache.service';
+import { BatchGetDto, SetCacheDto } from './cache.dto';
 
 const TENANT_HEADER = 'x-yoizen-tenant';
 
@@ -45,7 +46,7 @@ export class CacheController {
   async set(
     @Headers(TENANT_HEADER) tenantId: string | undefined,
     @Param('key') key: string,
-    @Body() body: { value: unknown; ttl?: number },
+    @Body() body: SetCacheDto,
   ): Promise<{ ok: boolean }> {
     await this.cache.set(tenantKey(tenantId, key), body.value, body.ttl);
     return { ok: true };
@@ -64,9 +65,9 @@ export class CacheController {
   @HttpCode(HttpStatus.OK)
   async batchGet(
     @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Body() body: { keys: string[] },
+    @Body() body: BatchGetDto,
   ): Promise<Record<string, unknown>> {
-    const scopedKeys = (body.keys ?? []).map((k) => tenantKey(tenantId, k));
+    const scopedKeys = body.keys.map((k) => tenantKey(tenantId, k));
     const map = await this.cache.batchGet(scopedKeys);
     return Object.fromEntries(map);
   }

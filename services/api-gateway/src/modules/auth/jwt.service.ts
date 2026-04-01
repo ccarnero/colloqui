@@ -1,14 +1,24 @@
-import { Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  OnModuleInit,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { jwtVerify } from 'jose';
 import type { JwtPayload } from '@yoizen/shared';
+import { gatewayConfig } from '../../config/gateway.config';
 
 @Injectable()
 export class JwtService implements OnModuleInit {
   private secret!: Uint8Array;
 
   onModuleInit(): void {
-    const raw = process.env.JWT_SECRET;
-    if (!raw) throw new Error('JWT_SECRET environment variable is required');
+    const raw = gatewayConfig.jwtSecret;
+    if (!raw) {
+      throw new InternalServerErrorException(
+        "JWT_SECRET environment variable is required",
+      );
+    }
     this.secret = new TextEncoder().encode(raw);
   }
 

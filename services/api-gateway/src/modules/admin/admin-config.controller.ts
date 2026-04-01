@@ -11,16 +11,15 @@ import {
 } from '@nestjs/common';
 import { AdminProxyService } from './admin-proxy.service';
 import { UpsertConfigFileDto, DeployConfigFilesDto } from './admin.dto';
-
-interface TenantRequest extends Request {
-  tenantId: string;
-}
+import type { TenantScopedRequest } from '../../types/yoizen-request';
 
 @Controller('admin')
 export class AdminConfigController {
-  constructor(private readonly proxy: AdminProxyService) {}@Get('config-files')
+  constructor(private readonly proxy: AdminProxyService) {}
+
+  @Get('config-files')
   async listConfigFiles(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ): Promise<object> {
@@ -32,7 +31,7 @@ export class AdminConfigController {
 
   @Get('config-files/file')
   async getConfigFileByPath(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Query('path') path?: string,
   ): Promise<object> {
     return this.proxy.proxy('GET', '/admin/config-files/file', req.tenantId, {
@@ -42,7 +41,7 @@ export class AdminConfigController {
 
   @Put('config-files')
   async upsertConfigFile(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Body() body: UpsertConfigFileDto,
   ): Promise<object> {
     return this.proxy.proxy(
@@ -57,7 +56,7 @@ export class AdminConfigController {
   @Post('config-files/deploy')
   @HttpCode(HttpStatus.OK)
   async deployConfigFiles(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Body() body: DeployConfigFilesDto,
   ): Promise<object> {
     return this.proxy.proxy(
@@ -70,12 +69,12 @@ export class AdminConfigController {
   }
 
   @Get('runtime/status')
-  async getRuntimeStatus(@Req() req: TenantRequest): Promise<object> {
+  async getRuntimeStatus(@Req() req: TenantScopedRequest): Promise<object> {
     return this.proxy.proxy('GET', '/admin/runtime/status', req.tenantId);
   }
 
   @Get('templates')
-  async listTemplates(@Req() req: TenantRequest): Promise<object> {
+  async listTemplates(@Req() req: TenantScopedRequest): Promise<object> {
     return this.proxy.proxy('GET', '/admin/templates', req.tenantId);
   }
 }

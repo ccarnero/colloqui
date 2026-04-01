@@ -9,12 +9,9 @@ import {
   RATE_LIMIT_CONFIG_POLL_INTERVAL_MS,
   RATE_LIMIT_CONFIG_FETCH_TIMEOUT_MS,
   RATE_LIMIT_DEFAULT_ALGORITHM,
-  RATE_LIMIT_DEFAULT_LIMIT,
-  RATE_LIMIT_DEFAULT_WINDOW_MS,
-  RATE_LIMIT_DEFAULT_CAPACITY,
-  RATE_LIMIT_DEFAULT_REFILL_RATE,
 } from '@yoizen/shared';
 import { tracedFetch } from '@yoizen/observability';
+import { gatewayConfig } from '../../config/gateway.config';
 
 interface TenantSummary {
   name: string;
@@ -38,19 +35,21 @@ export class RateLimitConfigCacheService implements OnModuleInit, OnModuleDestro
   readonly defaultConfig: RateLimitTenantConfig;
 
   constructor() {
-    this.tenantServiceUrl =
-      process.env.TENANT_SERVICE_URL ??
-      'http://tenant-service.platform-services.svc.cluster.local';
+    this.tenantServiceUrl = gatewayConfig.services.tenant;
 
-    const alg = process.env.RATE_LIMIT_ALGORITHM ?? RATE_LIMIT_DEFAULT_ALGORITHM;
+    const normalizedAlg = String(gatewayConfig.rateLimit.algorithm).replace(
+      /-/g,
+      "_",
+    );
+    const alg = VALID_ALGORITHMS.has(normalizedAlg)
+      ? (normalizedAlg as RateLimitAlgorithm)
+      : RATE_LIMIT_DEFAULT_ALGORITHM;
     this.defaultConfig = {
-      algorithm: VALID_ALGORITHMS.has(alg)
-        ? (alg as RateLimitAlgorithm)
-        : RATE_LIMIT_DEFAULT_ALGORITHM,
-      limit: parseInt(process.env.RATE_LIMIT_DEFAULT_LIMIT ?? '', 10) || RATE_LIMIT_DEFAULT_LIMIT,
-      windowMs: parseInt(process.env.RATE_LIMIT_DEFAULT_WINDOW_MS ?? '', 10) || RATE_LIMIT_DEFAULT_WINDOW_MS,
-      capacity: parseInt(process.env.RATE_LIMIT_DEFAULT_CAPACITY ?? '', 10) || RATE_LIMIT_DEFAULT_CAPACITY,
-      refillRate: parseInt(process.env.RATE_LIMIT_DEFAULT_REFILL_RATE ?? '', 10) || RATE_LIMIT_DEFAULT_REFILL_RATE,
+      algorithm: alg,
+      limit: gatewayConfig.rateLimit.defaultLimit,
+      windowMs: gatewayConfig.rateLimit.defaultWindowMs,
+      capacity: gatewayConfig.rateLimit.defaultCapacity,
+      refillRate: gatewayConfig.rateLimit.defaultRefillRate,
     };
   }
 

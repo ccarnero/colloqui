@@ -3,7 +3,7 @@ import { getBaseUrl, httpGet } from './helpers';
 
 const MS = getBaseUrl('metrics-service');
 
-const skip = !MS;
+const skip = !process.env.METRICS_SERVICE_URL;
 
 describe('E2E: metrics-service (direct — requires METRICS_SERVICE_URL)', () => {
   it('should skip if METRICS_SERVICE_URL is not set', () => {

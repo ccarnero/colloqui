@@ -31,12 +31,4 @@ export class HandlerRegistry implements OnModuleInit {
   get(type: string): EventHandler | undefined {
     return this.handlers.get(type);
   }
-
-  has(type: string): boolean {
-    return this.handlers.has(type);
-  }
-
-  registeredTypes(): string[] {
-    return [...this.handlers.keys()];
-  }
 }

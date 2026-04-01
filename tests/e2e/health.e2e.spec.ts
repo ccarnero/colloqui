@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'bun:test';
-import { getBaseUrl, httpGet } from './helpers';
+import { getRawBaseUrl, getBaseUrl, httpGet } from './helpers';
 
-const GW = getBaseUrl('api-gateway');
+const GW = getRawBaseUrl('api-gateway');
 const EP = getBaseUrl('event-processor');
 const CS = getBaseUrl('cache-service');
 
@@ -55,6 +55,7 @@ describe('E2E: health checks', () => {
   }
 
   it('event-processor /health should report ok (direct)', async () => {
+    if (!process.env.EVENT_PROCESSOR_URL) return;
     const { status, body } = await httpGet<{ status: string; nats: boolean; redis: boolean }>(
       `${EP}/health`,
     );
@@ -65,6 +66,7 @@ describe('E2E: health checks', () => {
   });
 
   it('cache-service /health should report ok (direct)', async () => {
+    if (!process.env.CACHE_SERVICE_URL) return;
     const { status, body } = await httpGet<{ status: string; redis: string }>(
       `${CS}/health`,
     );

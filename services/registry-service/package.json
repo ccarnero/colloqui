@@ -15,6 +15,7 @@
     "@nestjs/common": "^11.1.14",
     "@nestjs/core": "^11.1.14",
     "@nestjs/platform-fastify": "^11.1.14",
+    "@yoizen/database": "file:../../packages/database",
     "@yoizen/observability": "file:../../packages/observability",
     "@yoizen/shared": "file:../../packages/shared",
     "class-transformer": "^0.5.1",

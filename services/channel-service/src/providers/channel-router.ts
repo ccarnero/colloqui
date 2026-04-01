@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import type { IChannelProvider, Channel } from "@yoizen/shared";
 import { ProviderRegistry } from "./meta/provider-registry";
 import { TelegramProvider } from "./telegram/telegram.provider";
@@ -37,7 +37,9 @@ export class ChannelRouter {
   getOrThrow(channel: Channel): IChannelProvider {
     const provider = this.providers.get(channel);
     if (!provider) {
-      throw new Error(`No provider registered for channel: ${channel}`);
+      throw new NotFoundException(
+        `No provider registered for channel: ${channel}`,
+      );
     }
     return provider;
   }

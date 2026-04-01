@@ -10,7 +10,7 @@ import { JETSTREAM_CLIENT } from '../../providers/nats.provider';
 import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
 import type { EventEnvelope, MetricsPayload } from '@yoizen/shared';
 
-export interface MetricRecord {
+export interface IMetricRecord {
   id: string;
   source: string;
   name: string;
@@ -97,21 +97,27 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
 
   private async persistMessage(msg: JsMsg): Promise<void> {
     const envelope = msg.json() as EventEnvelope;
-    const tenantId = envelope.metadata?.tenantId;
+    const tenantId = envelope.tenant;
     if (!tenantId) {
-      this.logger.warn(`Dropping metric ${envelope.id}: missing tenantId in metadata`);
+      this.logger.warn(`Dropping metric ${envelope.id}: missing tenant`);
       return;
     }
 
     const sql = this.tenantConnections.getConnection(tenantId);
     await this.ensureTable(sql, tenantId);
 
-    const payload = envelope.payload as unknown as MetricsPayload;
+    const payload = (envelope.data.payload ?? {}) as unknown as MetricsPayload;
 
     const source = payload.source ?? 'unknown';
     const name = payload.name ?? 'unnamed';
     const value = typeof payload.value === 'number' ? payload.value : 0;
     const tags = payload.tags ?? {};
+    const metadata = {
+      tenant: envelope.tenant,
+      source: envelope.source,
+      correlation_id: envelope.correlation_id,
+      traceid: envelope.traceid,
+    };
     const createdAt = payload.timestamp
       ? new Date(payload.timestamp).toISOString()
       : undefined;
@@ -125,7 +131,7 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
           ${name},
           ${value},
           ${JSON.stringify(tags)},
-          ${JSON.stringify(envelope.metadata ?? {})},
+          ${JSON.stringify(metadata)},
           ${createdAt}
         )
         ON CONFLICT (id) DO NOTHING
@@ -139,19 +145,19 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
           ${name},
           ${value},
           ${JSON.stringify(tags)},
-          ${JSON.stringify(envelope.metadata ?? {})}
+          ${JSON.stringify(metadata)}
         )
         ON CONFLICT (id) DO NOTHING
       `;
     }
   }
 
-  async queryMetrics(params: MetricsQueryParams, tenantId: string): Promise<MetricRecord[]> {
+  async queryMetrics(params: MetricsQueryParams, tenantId: string): Promise<IMetricRecord[]> {
     const { source, name, from, to, limit, offset } = params;
     const sql = this.tenantConnections.getConnection(tenantId);
     await this.ensureTable(sql, tenantId);
 
-    const rows = await sql<MetricRecord[]>`
+    const rows = await sql<IMetricRecord[]>`
       SELECT id, source, name, value, tags, metadata, created_at
       FROM metrics
       WHERE 1=1
@@ -167,11 +173,11 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
     return rows;
   }
 
-  async getMetricById(id: string, tenantId: string): Promise<MetricRecord | null> {
+  async getMetricById(id: string, tenantId: string): Promise<IMetricRecord | null> {
     const sql = this.tenantConnections.getConnection(tenantId);
     await this.ensureTable(sql, tenantId);
 
-    const rows = await sql<MetricRecord[]>`
+    const rows = await sql<IMetricRecord[]>`
       SELECT id, source, name, value, tags, metadata, created_at
       FROM metrics
       WHERE id = ${id}

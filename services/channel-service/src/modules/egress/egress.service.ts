@@ -10,8 +10,8 @@ import type {
 import {
   TENANT_HEADER,
   buildChannelSubject,
-  buildIngressStreamName,
-  buildTenantWildcard,
+  getTenantStreamName,
+  getTenantSubjectPattern,
 } from "@yoizen/shared";
 import {
   JETSTREAM_PUBLISHER,
@@ -136,10 +136,10 @@ export class EgressService {
   }
 
   private async ensureStream(tenantId: string): Promise<void> {
-    const streamName = buildIngressStreamName(tenantId);
+    const streamName = getTenantStreamName(tenantId);
     if (ensuredStreams.has(streamName)) return;
 
-    const subjects = [buildTenantWildcard(tenantId)];
+    const subjects = [getTenantSubjectPattern(tenantId)];
     await ensureIngressStream(this.jsm, streamName, subjects);
     ensuredStreams.add(streamName);
   }

@@ -5,6 +5,7 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { tracedFetch } from '@yoizen/observability';
+import { gatewayConfig } from '../../config/gateway.config';
 
 interface RouteEntry {
   id: string;
@@ -40,9 +41,7 @@ export class DynamicRouteCacheService implements OnModuleInit, OnModuleDestroy {
   private readonly registryUrl: string;
 
   constructor() {
-    this.registryUrl =
-      process.env.REGISTRY_SERVICE_URL ??
-      'http://registry-service.platform-services.svc.cluster.local';
+    this.registryUrl = gatewayConfig.services.registry;
   }
 
   async onModuleInit(): Promise<void> {

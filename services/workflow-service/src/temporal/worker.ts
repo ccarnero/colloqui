@@ -1,7 +1,10 @@
 import { createServer } from 'http';
 import { Worker, NativeConnection } from '@temporalio/worker';
 import { WORKFLOW_ORCHESTRATOR_TASK_QUEUE } from '@yoizen/shared';
+import { PinoLoggerService } from '@yoizen/observability';
 import * as activities from './activities';
+
+const logger = new PinoLoggerService('workflow-orchestrator-worker');
 
 let healthy = false;
 
@@ -34,13 +37,13 @@ async function main() {
   });
 
   healthy = true;
-  console.log(
+  logger.log(
     `Orchestrator worker started on task queue "${WORKFLOW_ORCHESTRATOR_TASK_QUEUE}"`,
   );
 
   const shutdown = async () => {
     healthy = false;
-    console.log('Shutting down orchestrator worker...');
+    logger.log('Shutting down orchestrator worker...');
     worker.shutdown();
   };
   process.on('SIGTERM', shutdown);
@@ -50,6 +53,9 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('Orchestrator worker failed:', err);
+  logger.error(
+    'Orchestrator worker failed',
+    err instanceof Error ? err.stack : String(err),
+  );
   process.exit(1);
 });

@@ -1,7 +1,7 @@
 import {
   Inject,
   Injectable,
-  Logger,
+  InternalServerErrorException,
   OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -30,7 +30,6 @@ interface TokenClaims {
 
 @Injectable()
 export class TokenService implements OnModuleInit {
-  private readonly logger = new Logger(TokenService.name);
   private readonly environment: string;
   private secret!: Uint8Array;
 
@@ -40,7 +39,11 @@ export class TokenService implements OnModuleInit {
 
   onModuleInit(): void {
     const raw = process.env.JWT_SECRET;
-    if (!raw) throw new Error('JWT_SECRET environment variable is required');
+    if (!raw) {
+      throw new InternalServerErrorException(
+        'JWT_SECRET environment variable is required',
+      );
+    }
     this.secret = new TextEncoder().encode(raw);
   }
 
@@ -103,7 +106,7 @@ export class TokenService implements OnModuleInit {
         algorithms: ['HS256'],
       });
       if (decoded.token_scope !== REFRESH_TOKEN_SCOPE) {
-        throw new Error('Not a refresh token');
+        throw new UnauthorizedException('Not a refresh token');
       }
       payload = { sub: decoded.sub as string };
     } catch {

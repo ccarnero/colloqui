@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { JetStreamClient, NatsConnection, Subscription } from 'nats';
 import { headers as natsHeaders } from 'nats';
 import type Redis from 'ioredis';
-import { Observable, filter } from 'rxjs';
+import { Observable } from 'rxjs';
 import {
   SUBJECT_PREFIX,
   RESULT_KEY_PREFIX,
@@ -16,9 +16,9 @@ import {
 import type { EventEnvelope } from '@yoizen/shared';
 import { JETSTREAM, NATS_CONNECTION } from '../../providers/nats.provider';
 import { REDIS_CLIENT } from '../../providers/redis.provider';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 
-export interface SseEvent {
+interface SseEvent {
   data: string | object;
   id?: string;
   type?: string;
@@ -46,21 +46,43 @@ export class EventsService {
   ): Promise<string> {
     const id = randomUUID();
     const subject = `${SUBJECT_PREFIX}.${type}`;
-    const metadata = {
-      correlationId: id,
-      source: subject,
-      receivedAt: Date.now(),
-      tenantId,
-    };
+    const now = new Date().toISOString();
+    const payloadJson = JSON.stringify(payload);
+    const payloadBytes = Buffer.byteLength(payloadJson, "utf8");
+    const payloadChecksum = createHash("sha256")
+      .update(payloadJson)
+      .digest("hex");
+
     const envelope: EventEnvelope = {
+      specversion: "1.0",
       id,
+      source: subject,
       type,
-      payload,
-      metadata,
-      callbackUrl,
-      adapterId,
-      enrichAdapter,
-      forwardAdapter,
+      resource: type,
+      time: now,
+      traceid: id,
+      causation_id: null,
+      correlation_id: id,
+      tenant: tenantId,
+      producer: "api-gateway",
+      domain: "platform",
+      channel: "events",
+      provider: "gateway",
+      accountid: tenantId,
+      idempotencykey: id,
+      transport: { method: "stream", protocol: "internal" },
+      data: {
+        received_at: now,
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: payloadBytes,
+        payload_checksum: payloadChecksum,
+        payload,
+      },
+      ...(callbackUrl && { callback_url: callbackUrl }),
+      ...(adapterId && { adapter_id: adapterId }),
+      ...(enrichAdapter && { enrich_adapter: enrichAdapter }),
+      ...(forwardAdapter && { forward_adapter: forwardAdapter }),
     };
     const body = JSON.stringify(envelope);
 
@@ -122,7 +144,7 @@ export class EventsService {
           for await (const msg of sub) {
             try {
               const data = msg.json() as EventEnvelope;
-              if (data.metadata?.tenantId !== tenantId) continue;
+              if (data.tenant !== tenantId) continue;
               subscriber.next({
                 data,
                 type: msg.subject,

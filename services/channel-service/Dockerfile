@@ -4,6 +4,8 @@ WORKDIR /app
 
 COPY packages/shared ./packages/shared
 COPY packages/observability ./packages/observability
+COPY packages/database ./packages/database
+RUN cd packages/database && bun install
 COPY services/channel-service/package.json ./services/channel-service/
 WORKDIR /app/services/channel-service
 RUN bun install
@@ -20,6 +22,7 @@ RUN addgroup -g 1001 -S app && adduser -u 1001 -S app -G app
 
 COPY --from=builder /app/packages/shared /app/packages/shared
 COPY --from=builder /app/packages/observability /app/packages/observability
+COPY --from=builder /app/packages/database /app/packages/database
 COPY --from=builder /app/services/channel-service/node_modules ./node_modules
 COPY --from=builder /app/services/channel-service/dist ./dist
 COPY --from=builder /app/services/channel-service/package.json ./

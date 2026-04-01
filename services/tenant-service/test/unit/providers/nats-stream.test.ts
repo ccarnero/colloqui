@@ -15,6 +15,12 @@ function createMockJsm(): JetStreamManager {
     consumers: {
       add: mock(() => Promise.resolve({})),
     },
+    getAccountInfo: mock(() =>
+      Promise.resolve({
+        storage: 0,
+        limits: { max_storage: -1 },
+      }),
+    ),
   } as unknown as JetStreamManager;
 }
 
@@ -47,7 +53,7 @@ describe("NatsTenantProvisioner - createStream", () => {
     provisioner = new NatsTenantProvisioner(mockNc);
   });
 
-  it("should create INGRESS-acme stream with 5GB limit for pro tier", async () => {
+  it("should create INGRESS-ACME stream with pro tier limits", async () => {
     await provisioner.createStream("acme", "pro");
 
     expect(mockJsm.streams.add).toHaveBeenCalled();
@@ -55,7 +61,7 @@ describe("NatsTenantProvisioner - createStream", () => {
       typeof mock
     >).mock.calls[0][0];
 
-    expect(call.name).toBe("INGRESS-acme");
+    expect(call.name).toBe("INGRESS-ACME");
     expect(call.subjects).toEqual(["evt.acme.>"]);
     expect(call.max_bytes).toBe(
       STREAM_LIMITS.pro.maxBytes,
@@ -64,27 +70,27 @@ describe("NatsTenantProvisioner - createStream", () => {
     expect(call.discard).toBe("old");
   });
 
-  it("should create stream with 1GB limit for free tier", async () => {
+  it("should create stream with free tier limits", async () => {
     await provisioner.createStream("free-tenant", "free");
 
     const call = (mockJsm.streams.add as ReturnType<
       typeof mock
     >).mock.calls[0][0];
 
-    expect(call.name).toBe("INGRESS-free-tenant");
+    expect(call.name).toBe("INGRESS-FREE-TENANT");
     expect(call.max_bytes).toBe(
       STREAM_LIMITS.free.maxBytes,
     );
   });
 
-  it("should create stream with 20GB limit for enterprise tier", async () => {
+  it("should create stream with enterprise tier limits", async () => {
     await provisioner.createStream("bigcorp", "enterprise");
 
     const call = (mockJsm.streams.add as ReturnType<
       typeof mock
     >).mock.calls[0][0];
 
-    expect(call.name).toBe("INGRESS-bigcorp");
+    expect(call.name).toBe("INGRESS-BIGCORP");
     expect(call.max_bytes).toBe(
       STREAM_LIMITS.enterprise.maxBytes,
     );
@@ -107,8 +113,7 @@ describe("NatsTenantProvisioner - createStream", () => {
       typeof mock
     >).mock.calls[0][0];
 
-    const expectedNs =
-      BigInt(14 * 86_400_000) * 1_000_000n;
-    expect(call.max_age).toBe(Number(expectedNs));
+    const expectedNs = 14 * 24 * 60 * 60 * 1_000_000_000;
+    expect(call.max_age).toBe(expectedNs);
   });
 });

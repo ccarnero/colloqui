@@ -1,26 +1,10 @@
-import { Global, Module } from '@nestjs/common';
-import * as k8s from '@kubernetes/client-node';
-import type { FactoryProvider } from '@nestjs/common';
+import type { DynamicModule } from "@nestjs/common";
+import { KubernetesModule as BaseKubernetesModule } from "@yoizen/database";
 
-export const K8S_CORE_API = 'K8S_CORE_API';
-export const K8S_BATCH_API = 'K8S_BATCH_API';
+import { K8S_BATCH_API, K8S_CORE_API } from "./k8s-api.tokens";
 
-const kc = new k8s.KubeConfig();
-kc.loadFromDefault();
+export { K8S_CORE_API, K8S_BATCH_API };
 
-const coreApiProvider: FactoryProvider = {
-  provide: K8S_CORE_API,
-  useFactory: (): k8s.CoreV1Api => kc.makeApiClient(k8s.CoreV1Api),
-};
-
-const batchApiProvider: FactoryProvider = {
-  provide: K8S_BATCH_API,
-  useFactory: (): k8s.BatchV1Api => kc.makeApiClient(k8s.BatchV1Api),
-};
-
-@Global()
-@Module({
-  providers: [coreApiProvider, batchApiProvider],
-  exports: [coreApiProvider, batchApiProvider],
-})
-export class KubernetesModule {}
+export const KubernetesModule: DynamicModule = BaseKubernetesModule.register({
+  extraApis: [K8S_BATCH_API],
+});

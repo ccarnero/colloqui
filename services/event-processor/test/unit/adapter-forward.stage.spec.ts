@@ -50,6 +50,40 @@ function buildMockRedis() {
   };
 }
 
+function makeEnvelope(
+  overrides: Partial<EventEnvelope> & { id: string; type: string },
+): EventEnvelope {
+  const { id, type } = overrides;
+  return {
+    specversion: "1.0",
+    id,
+    source: `events.${type}`,
+    type,
+    resource: type,
+    time: new Date().toISOString(),
+    traceid: id,
+    causation_id: null,
+    correlation_id: id,
+    tenant: "t1",
+    producer: "test",
+    domain: "platform",
+    channel: "events",
+    provider: "test",
+    accountid: "t1",
+    idempotencykey: id,
+    transport: { method: "stream", protocol: "internal" },
+    data: {
+      received_at: new Date().toISOString(),
+      payload_inline: true,
+      payload_ref: null,
+      payload_bytes: 0,
+      payload_checksum: "",
+      payload: {},
+    },
+    ...overrides,
+  };
+}
+
 describe("AdapterForwardStage", () => {
   let stage: AdapterForwardStage;
 
@@ -74,12 +108,19 @@ describe("AdapterForwardStage", () => {
     stage = module.get(AdapterForwardStage);
   });
 
-  it("should pass through when forwardAdapter is absent", async () => {
-    const envelope: EventEnvelope = {
+  it("should pass through when forward_adapter is absent", async () => {
+    const envelope = makeEnvelope({
       id: "evt-1",
       type: "created",
-      payload: { data: true },
-    };
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "",
+        payload: { data: true },
+      },
+    });
 
     const result = await stage.process(envelope, baseContext);
     expect(result).toEqual(envelope);
@@ -87,24 +128,30 @@ describe("AdapterForwardStage", () => {
   });
 
   it("should pass through when tenantId is missing", async () => {
-    const envelope: EventEnvelope = {
+    const envelope = makeEnvelope({
       id: "evt-2",
       type: "created",
-      payload: {},
-      forwardAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      forward_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, { subject: "events.created" });
     expect(result).toEqual(envelope);
   });
 
   it("should forward successfully on first attempt", async () => {
-    const envelope: EventEnvelope = {
+    const envelope = makeEnvelope({
       id: "evt-3",
       type: "created",
-      payload: { data: true },
-      forwardAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "",
+        payload: { data: true },
+      },
+      forward_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, baseContext);
 
@@ -127,12 +174,11 @@ describe("AdapterForwardStage", () => {
       return Promise.resolve(new Response("OK", { status: 200 }));
     });
 
-    const envelope: EventEnvelope = {
+    const envelope = makeEnvelope({
       id: "evt-4",
       type: "created",
-      payload: {},
-      forwardAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      forward_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, baseContext);
     expect(result).toEqual(envelope);
@@ -144,12 +190,11 @@ describe("AdapterForwardStage", () => {
       Promise.resolve(new Response("Bad Request", { status: 400 })),
     );
 
-    const envelope: EventEnvelope = {
+    const envelope = makeEnvelope({
       id: "evt-5",
       type: "created",
-      payload: {},
-      forwardAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      forward_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, baseContext);
     expect(result).toEqual(envelope);
@@ -161,15 +206,22 @@ describe("AdapterForwardStage", () => {
       Promise.resolve(new Response("Error", { status: 503 })),
     );
 
-    const envelope: EventEnvelope = {
+    const envelope = makeEnvelope({
       id: "evt-6",
       type: "created",
-      payload: { original: true },
-      forwardAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "",
+        payload: { original: true },
+      },
+      forward_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, baseContext);
-    expect(result.payload.original).toBe(true);
+    expect(result.data.payload?.original).toBe(true);
     expect(tracedFetchMock).toHaveBeenCalledTimes(3);
   });
 });

@@ -237,18 +237,9 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
     return rows[0] ?? null;
   }
 
-  /**
-   * Aggregated dashboard statistics from gateway_audit_events.
-   * Runs three queries in parallel: KPIs, daily breakdown, recent activity.
-   */
-  async getDashboardStats(
-    tenantId: string,
-  ): Promise<AuditDashboardStats> {
-    const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
-
-    const [aggregateRows, dailyRows, recentRows] = await Promise.all([
-      sql<AggregateRow[]>`
+  /** Aggregate KPIs: request/error counts, latency, p95, active sessions (7d window). */
+  private async getRequestCounts(sql: Sql): Promise<AggregateRow[]> {
+    return sql<AggregateRow[]>`
         SELECT
           COUNT(*) FILTER (
             WHERE created_at >= DATE_TRUNC('day', NOW())
@@ -282,9 +273,12 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
           ) AS active_sessions
         FROM gateway_audit_events
         WHERE created_at >= NOW() - INTERVAL '7 days'
-      `,
+      `;
+  }
 
-      sql<DailyRow[]>`
+  /** Per-day request volume and average latency (7d window). */
+  private async getStatusDistribution(sql: Sql): Promise<DailyRow[]> {
+    return sql<DailyRow[]>`
         SELECT
           DATE_TRUNC('day', created_at)::date::text AS day,
           COUNT(*)::text AS requests,
@@ -293,15 +287,34 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
         WHERE created_at >= NOW() - INTERVAL '7 days'
         GROUP BY DATE_TRUNC('day', created_at)
         ORDER BY day ASC
-      `,
+      `;
+  }
 
-      sql<RecentRow[]>`
+  /** Recent requests for activity feed (24h window). */
+  private async getTopEndpoints(sql: Sql): Promise<RecentRow[]> {
+    return sql<RecentRow[]>`
         SELECT method, path, status_code, created_at
         FROM gateway_audit_events
         WHERE created_at >= NOW() - INTERVAL '24 hours'
         ORDER BY created_at DESC
         LIMIT 20
-      `,
+      `;
+  }
+
+  /**
+   * Aggregated dashboard statistics from gateway_audit_events.
+   * Runs three queries in parallel: KPIs, daily breakdown, recent activity.
+   */
+  async getDashboardStats(
+    tenantId: string,
+  ): Promise<AuditDashboardStats> {
+    const sql = this.tenantConnections.getConnection(tenantId);
+    await this.ensureTable(sql, tenantId);
+
+    const [aggregateRows, dailyRows, recentRows] = await Promise.all([
+      this.getRequestCounts(sql),
+      this.getStatusDistribution(sql),
+      this.getTopEndpoints(sql),
     ]);
 
     const agg = aggregateRows[0];

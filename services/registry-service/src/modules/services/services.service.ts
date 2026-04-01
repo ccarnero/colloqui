@@ -1,10 +1,10 @@
 import {
+  ConflictException,
   Inject,
   Injectable,
-  ConflictException,
-  NotFoundException,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import type * as k8s from '@kubernetes/client-node';
 import type { Sql } from 'postgres';
@@ -22,6 +22,7 @@ import {
   type Environment,
   VALID_ENVIRONMENTS,
 } from './services.dto';
+import { generateId } from '../../utils/id';
 
 interface RegisteredService {
   id: string;
@@ -51,16 +52,73 @@ interface RevisionInfo {
   image: string;
 }
 
-function generateId(): string {
-  return crypto.randomUUID();
-}
-
 function knativeServiceName(serviceName: string, tenantId: string): string {
   return `${serviceName}-${tenantId}`;
 }
 
 function namespaceName(tenantId: string, env: Environment): string {
   return `${tenantId}-${env}-ns`;
+}
+
+function errorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  return String(e);
+}
+
+function k8sApiErrorMessage(e: unknown): string {
+  if (typeof e === 'object' && e !== null && 'response' in e) {
+    const msg = (e as { response?: { body?: { message?: string } } }).response
+      ?.body?.message;
+    if (typeof msg === 'string' && msg.length > 0) return msg;
+  }
+  return errorMessage(e);
+}
+
+function isK8sNotFound(e: unknown): boolean {
+  if (typeof e === 'object' && e !== null && 'response' in e) {
+    return (
+      (e as { response?: { statusCode?: number } }).response?.statusCode ===
+      404
+    );
+  }
+  return false;
+}
+
+/** Knative Revision list item (subset used for listRevisions). */
+interface KnativeRevisionListItem {
+  metadata?: { name?: string; creationTimestamp?: string };
+  status?: {
+    conditions?: Array<{ type?: string; status?: string }>;
+  };
+  spec?: {
+    containers?: Array<{ image?: string }>;
+  };
+}
+
+interface KnativeRevisionListResponse {
+  items?: KnativeRevisionListItem[];
+}
+
+/** Minimal Knative Service resource for get/replace patch flows. */
+interface KnativeServiceSpecPatch {
+  template: {
+    metadata?: { annotations?: Record<string, string> };
+    spec: {
+      containers: Array<{
+        name: string;
+        image: string;
+        ports: Array<{ containerPort: number; protocol: string }>;
+        env?: Array<{ name: string; value: string }>;
+      }>;
+    };
+  };
+}
+
+interface KnativeServiceResourcePatch {
+  apiVersion?: string;
+  kind?: string;
+  metadata?: Record<string, unknown>;
+  spec: KnativeServiceSpecPatch;
 }
 
 @Injectable()
@@ -75,7 +133,7 @@ export class ServicesService {
   ) {
     const env = process.env.PLATFORM_ENVIRONMENT ?? 'dev';
     if (!VALID_ENVIRONMENTS.includes(env as Environment)) {
-      throw new Error(
+      throw new InternalServerErrorException(
         `Invalid PLATFORM_ENVIRONMENT: '${env}'. Must be one of: ${VALID_ENVIRONMENTS.join(', ')}`,
       );
     }
@@ -240,8 +298,8 @@ export class ServicesService {
           plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
           name: row.knative_name,
         });
-      } catch (e: any) {
-        if (e?.response?.statusCode !== 404) throw e;
+      } catch (e: unknown) {
+        if (!isK8sNotFound(e)) throw e;
       }
     }
 
@@ -273,12 +331,13 @@ export class ServicesService {
         labelSelector: `serving.knative.dev/service=${row.knative_name}`,
       });
 
-      const list = resp as { items?: any[] };
-      return (list.items ?? []).map((rev: any) => ({
+      const list = resp as unknown as KnativeRevisionListResponse;
+      return (list.items ?? []).map((rev) => ({
         name: rev.metadata?.name ?? '',
-        ready: rev.status?.conditions?.some(
-          (c: any) => c.type === 'Ready' && c.status === 'True',
-        ) ?? false,
+        ready:
+          rev.status?.conditions?.some(
+            (c) => c.type === 'Ready' && c.status === 'True',
+          ) ?? false,
         createdAt: rev.metadata?.creationTimestamp ?? '',
         image: rev.spec?.containers?.[0]?.image ?? '',
       }));
@@ -287,7 +346,7 @@ export class ServicesService {
     }
   }
 
-  private async createKnativeService(
+  private buildKnativeServiceBody(
     namespace: string,
     name: string,
     image: string,
@@ -296,13 +355,13 @@ export class ServicesService {
     maxScale: number,
     concurrencyTarget: number,
     envVars: Record<string, string>,
-  ): Promise<void> {
+  ): Record<string, unknown> {
     const envList = Object.entries(envVars).map(([k, v]) => ({
       name: k,
       value: v,
     }));
 
-    const body = {
+    return {
       apiVersion: `${REGISTRY_KNATIVE_GROUP}/${REGISTRY_KNATIVE_VERSION}`,
       kind: 'Service',
       metadata: {
@@ -354,6 +413,28 @@ export class ServicesService {
         },
       },
     };
+  }
+
+  private async createKnativeService(
+    namespace: string,
+    name: string,
+    image: string,
+    port: number,
+    minScale: number,
+    maxScale: number,
+    concurrencyTarget: number,
+    envVars: Record<string, string>,
+  ): Promise<void> {
+    const body = this.buildKnativeServiceBody(
+      namespace,
+      name,
+      image,
+      port,
+      minScale,
+      maxScale,
+      concurrencyTarget,
+      envVars,
+    );
 
     try {
       await this.customApi.createNamespacedCustomObject({
@@ -363,12 +444,11 @@ export class ServicesService {
         plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
         body,
       });
-    } catch (e: any) {
-      this.logger.error(
-        `Failed to create Knative Service ${name}: ${e?.response?.body?.message ?? e.message}`,
-      );
+    } catch (e: unknown) {
+      const msg = k8sApiErrorMessage(e);
+      this.logger.error(`Failed to create Knative Service ${name}: ${msg}`);
       throw new InternalServerErrorException(
-        `Failed to create Knative Service: ${e?.response?.body?.message ?? e.message}`,
+        `Failed to create Knative Service: ${msg}`,
       );
     }
   }
@@ -388,13 +468,13 @@ export class ServicesService {
       value: v,
     }));
 
-    const current = await this.customApi.getNamespacedCustomObject({
+    const current = (await this.customApi.getNamespacedCustomObject({
       group: REGISTRY_KNATIVE_GROUP,
       version: REGISTRY_KNATIVE_VERSION,
       namespace,
       plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
       name,
-    }) as any;
+    })) as unknown as KnativeServiceResourcePatch;
 
     const spec = structuredClone(current.spec);
     spec.template.metadata ??= {};
@@ -422,32 +502,43 @@ export class ServicesService {
         name,
         body: { ...current, spec },
       });
-    } catch (e: any) {
-      this.logger.error(
-        `Failed to update Knative Service ${name}: ${e?.response?.body?.message ?? e.message}`,
-      );
+    } catch (e: unknown) {
+      const msg = k8sApiErrorMessage(e);
+      this.logger.error(`Failed to update Knative Service ${name}: ${msg}`);
       throw new InternalServerErrorException(
-        `Failed to update Knative Service: ${e?.response?.body?.message ?? e.message}`,
+        `Failed to update Knative Service: ${msg}`,
       );
     }
   }
 
-  private mapRow(row: any): RegisteredService {
+  private mapRow(row: Record<string, unknown>): RegisteredService {
+    const envVars = row.env_vars;
     return {
-      id: row.id,
-      tenantId: row.tenant_id,
-      name: row.name,
-      image: row.image,
-      port: row.port,
-      minScale: row.min_scale,
-      maxScale: row.max_scale,
-      concurrencyTarget: row.concurrency_target,
-      envVars: row.env_vars,
-      status: row.status,
-      knativeName: row.knative_name,
-      namespace: row.namespace,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      id: String(row.id ?? ''),
+      tenantId: String(row.tenant_id ?? ''),
+      name: String(row.name ?? ''),
+      image: String(row.image ?? ''),
+      port: Number(row.port ?? 0),
+      minScale: Number(row.min_scale ?? 0),
+      maxScale: Number(row.max_scale ?? 0),
+      concurrencyTarget: Number(row.concurrency_target ?? 0),
+      envVars:
+        envVars !== null &&
+        typeof envVars === 'object' &&
+        !Array.isArray(envVars)
+          ? (envVars as Record<string, string>)
+          : {},
+      status: String(row.status ?? ''),
+      knativeName:
+        row.knative_name === null || row.knative_name === undefined
+          ? null
+          : String(row.knative_name),
+      namespace:
+        row.namespace === null || row.namespace === undefined
+          ? null
+          : String(row.namespace),
+      createdAt: String(row.created_at ?? ''),
+      updatedAt: String(row.updated_at ?? ''),
     };
   }
 }

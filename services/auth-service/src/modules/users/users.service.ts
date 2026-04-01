@@ -6,6 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { POSTGRES_SQL, type Sql } from '../../providers/postgres.provider';
+import { ARGON2_OPTIONS } from '../../utils/password';
 
 export interface UserRow {
   id: string;
@@ -39,11 +40,7 @@ export class UsersService implements OnModuleInit {
     }
 
     const id = crypto.randomUUID();
-    const passwordHash = await Bun.password.hash(password, {
-      algorithm: 'argon2id',
-      memoryCost: 19_456,
-      timeCost: 2,
-    });
+    const passwordHash = await Bun.password.hash(password, ARGON2_OPTIONS);
 
     const rows = await this.sql`
       INSERT INTO platform_users (id, email, password_hash, role)

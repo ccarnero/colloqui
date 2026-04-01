@@ -2,8 +2,10 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-COPY services/admin-console/package.json services/admin-console/package-lock.json ./
-RUN npm ci --prefer-offline
+COPY packages/angular-shared ./packages/angular-shared
+COPY services/admin-console/package.json services/admin-console/package-lock.json ./services/admin-console/
+WORKDIR /app/services/admin-console
+RUN npm ci
 
 COPY services/admin-console/ .
 RUN npx ng build --configuration=production
@@ -11,7 +13,7 @@ RUN npx ng build --configuration=production
 FROM nginx:1.27-alpine
 
 COPY services/admin-console/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/dist/admin-console/browser /usr/share/nginx/html
+COPY --from=builder /app/services/admin-console/dist/admin-console/browser /usr/share/nginx/html
 
 RUN rm /etc/nginx/conf.d/default.conf.bak 2>/dev/null || true && \
     addgroup -g 1001 -S app && \

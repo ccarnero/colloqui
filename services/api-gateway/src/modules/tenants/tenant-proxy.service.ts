@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { TENANT_HEADER } from "@yoizen/shared";
 import { tracedFetch } from "@yoizen/observability";
 import { throwProxyError } from "../../utils/proxy-error.util";
+import { gatewayConfig } from "../../config/gateway.config";
 
 @Injectable()
 export class TenantProxyService {
@@ -9,9 +10,7 @@ export class TenantProxyService {
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl =
-      process.env.TENANT_SERVICE_URL ??
-      "http://tenant-service.platform-services.svc.cluster.local";
+    this.baseUrl = gatewayConfig.services.tenant;
   }
 
   async createTenant(body: object, tenantId?: string): Promise<object> {

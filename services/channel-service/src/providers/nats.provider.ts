@@ -1,36 +1,31 @@
-import {
-  connect,
-  type NatsConnection,
-  type JetStreamClient,
-  type JetStreamManager,
-  RetentionPolicy,
+import type {
+  NatsConnection,
+  JetStreamClient,
+  JetStreamManager,
 } from "nats";
+import { RetentionPolicy } from "nats";
 import type { FactoryProvider } from "@nestjs/common";
+import {
+  createNatsConnectionProvider,
+  NATS_CONNECTION,
+} from "@yoizen/database";
 import {
   CHANNEL_STREAM_MAX_AGE_NS,
   CHANNEL_STREAM_MAX_BYTES,
 } from "@yoizen/shared";
 
-export const NATS_CONNECTION = "NATS_CONNECTION";
+export { NATS_CONNECTION } from "@yoizen/database";
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
 
-const createNatsConnection = async (): Promise<NatsConnection> => {
-  const url = process.env.NATS_URL ?? "nats://localhost:4222";
-  return connect({ servers: url });
-};
-
-export const natsProvider: FactoryProvider = {
-  provide: NATS_CONNECTION,
-  useFactory: createNatsConnection,
-};
+export const natsProvider: FactoryProvider = createNatsConnectionProvider();
 
 export const jetStreamManagerProvider: FactoryProvider = {
   provide: JETSTREAM_MANAGER,
   inject: [NATS_CONNECTION],
-  useFactory: async (nc: NatsConnection): Promise<JetStreamManager> => {
-    return nc.jetstreamManager();
-  },
+  useFactory: async (
+    nc: NatsConnection,
+  ): Promise<JetStreamManager> => nc.jetstreamManager(),
 };
 
 /**
@@ -44,15 +39,21 @@ export async function ensureIngressStream(
 ): Promise<void> {
   try {
     await jsm.streams.info(streamName);
-  } catch {
-    await jsm.streams.add({
-      name: streamName,
-      subjects,
-      retention: RetentionPolicy.Limits,
-      max_age: CHANNEL_STREAM_MAX_AGE_NS,
-      max_bytes: CHANNEL_STREAM_MAX_BYTES,
-    });
+    return;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes("not found") && !msg.includes("no stream")) {
+      throw err;
+    }
   }
+
+  await jsm.streams.add({
+    name: streamName,
+    subjects,
+    retention: RetentionPolicy.Limits,
+    max_age: CHANNEL_STREAM_MAX_AGE_NS,
+    max_bytes: CHANNEL_STREAM_MAX_BYTES,
+  });
 }
 
 export const jetStreamPublisherProvider: FactoryProvider = {

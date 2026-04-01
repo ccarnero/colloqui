@@ -32,9 +32,9 @@ export class AdapterEnrichmentStage implements PipelineStage {
     envelope: EventEnvelope,
     context: PipelineContext,
   ): Promise<EventEnvelope> {
-    if (!envelope.enrichAdapter) return envelope;
+    if (!envelope.enrich_adapter) return envelope;
 
-    const { adapterId, endpointId } = envelope.enrichAdapter;
+    const { adapterId, endpointId } = envelope.enrich_adapter;
     const tenantId = context.tenantId;
     if (!tenantId) {
       this.logger.warn(
@@ -62,7 +62,7 @@ export class AdapterEnrichmentStage implements PipelineStage {
         headers,
         body:
           resolved.method !== "GET"
-            ? JSON.stringify(envelope.payload)
+            ? JSON.stringify(envelope.data.payload)
             : undefined,
         signal: AbortSignal.timeout(resolved.timeoutMs),
       });
@@ -75,15 +75,18 @@ export class AdapterEnrichmentStage implements PipelineStage {
       }
 
       const contentType = res.headers.get("content-type") ?? "";
-      const data = contentType.includes("application/json")
+      const enrichedData = contentType.includes("application/json")
         ? await res.json()
         : await res.text();
 
       return {
         ...envelope,
-        payload: {
-          ...envelope.payload,
-          _enriched: data,
+        data: {
+          ...envelope.data,
+          payload: {
+            ...(envelope.data.payload ?? {}),
+            _enriched: enrichedData,
+          },
         },
       };
     } catch (err) {

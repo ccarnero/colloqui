@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { AuditProxyService } from './audit.service';
 import { REQUEST_TENANT_KEY } from '../../guards/tenant.guard';
+import type { TenantScopedRequest } from '../../types/yoizen-request';
 
 @Controller('audit/events')
 export class AuditController {
@@ -15,7 +16,7 @@ export class AuditController {
 
   @Get()
   async queryEvents(
-    @Req() req: any,
+    @Req() req: TenantScopedRequest,
     @Query('type') type?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -29,7 +30,7 @@ export class AuditController {
   }
 
   @Get(':id')
-  async getEvent(@Req() req: any, @Param('id') id: string): Promise<object> {
+  async getEvent(@Req() req: TenantScopedRequest, @Param('id') id: string): Promise<object> {
     const event = await this.auditProxy.getEventById(id, req[REQUEST_TENANT_KEY]);
     if (!event) throw new NotFoundException(`Event ${id} not found`);
     return event;

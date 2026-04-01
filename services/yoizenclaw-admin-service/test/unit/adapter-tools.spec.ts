@@ -3,8 +3,8 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { AgentsService } from "../../src/modules/agents/agents.service";
 import {
   AgentsRepository,
-  type Agent,
-  type CreateAgentData,
+  type IAgent,
+  type ICreateAgentData,
 } from "../../src/modules/agents/agents.repository";
 import { NatsPublisher, NATS_CONNECTION } from "../../src/providers/nats.provider";
 import { AdaptersService } from "../../src/modules/adapters/adapters.service";
@@ -14,7 +14,7 @@ const TENANT_ID = "tenant-test";
 
 type MockFn = ReturnType<typeof vi.fn>;
 
-function makeAgent(overrides?: Partial<Agent>): Agent {
+function makeAgent(overrides?: Partial<IAgent>): IAgent {
   return {
     id: "agent-1",
     name: "Test Agent",
@@ -76,7 +76,7 @@ describe("Adapter Tools", () => {
 
   describe("Task 4.1: POST /admin/agents with adapter tool", () => {
     it("should create an agent with a tool containing adapterRef", async () => {
-      const createData: CreateAgentData = {
+      const createData: ICreateAgentData = {
         name: "Agent With Adapter Tool",
         system_prompt: "You use adapters",
         tools: [
@@ -133,7 +133,7 @@ describe("Adapter Tools", () => {
 
   describe("Task 4.4: Adapter existence validation", () => {
     it("should log warning when adapter does not exist but still save", async () => {
-      const createData: CreateAgentData = {
+      const createData: ICreateAgentData = {
         name: "Agent With Missing Adapter",
         system_prompt: "Test",
         tools: [
@@ -168,7 +168,7 @@ describe("Adapter Tools", () => {
     });
 
     it("should log warning when endpoint does not exist but still save", async () => {
-      const createData: CreateAgentData = {
+      const createData: ICreateAgentData = {
         name: "Agent With Missing Endpoint",
         system_prompt: "Test",
         tools: [
@@ -204,7 +204,7 @@ describe("Adapter Tools", () => {
     });
 
     it("should not warn when adapter and endpoint both exist", async () => {
-      const createData: CreateAgentData = {
+      const createData: ICreateAgentData = {
         name: "Agent With Valid Adapter",
         system_prompt: "Test",
         tools: [

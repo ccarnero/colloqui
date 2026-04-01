@@ -32,9 +32,9 @@ export class AdapterForwardStage implements PipelineStage {
     envelope: EventEnvelope,
     context: PipelineContext,
   ): Promise<EventEnvelope> {
-    if (!envelope.forwardAdapter) return envelope;
+    if (!envelope.forward_adapter) return envelope;
 
-    const { adapterId, endpointId } = envelope.forwardAdapter;
+    const { adapterId, endpointId } = envelope.forward_adapter;
     const tenantId = context.tenantId;
     if (!tenantId) {
       this.logger.warn(
@@ -57,7 +57,7 @@ export class AdapterForwardStage implements PipelineStage {
         "Content-Type": "application/json",
       };
 
-      const body = JSON.stringify(envelope.payload);
+      const body = JSON.stringify(envelope.data.payload);
       let lastError: unknown;
 
       for (let attempt = 0; attempt <= resolved.maxRetries; attempt++) {

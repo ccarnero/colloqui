@@ -1,0 +1,146 @@
+:host {
+  display: block;
+}
+
+code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  color: var(--text-primary);
+  background: var(--bg3);
+  border: 1px solid var(--border-subtle);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.info-banner {
+  padding: 16px 24px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg2);
+  position: relative;
+  overflow: hidden;
+}
+
+.info-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+
+.info-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.info-badge {
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.info-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.info-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.template-select-mini {
+  width: 200px;
+}
+
+::ng-deep .template-select-mini .mat-mdc-form-field-subscript-wrapper {
+  display: none;
+}
+
+.info-metrics {
+  display: flex;
+  gap: 16px;
+  padding-left: 20px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.metric-label {
+  font-size: 10px;
+  color: var(--text3);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.metric-value {
+  font-size: 20px;
+  color: var(--text-primary);
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.8fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.editor-card {
+  min-width: 0;
+}
+
+.app-tabs {
+  flex: 1;
+}
+
+::ng-deep .mat-mdc-tab-header {
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg2);
+}
+::ng-deep .mat-mdc-tab-labels {
+  display: flex;
+}
+::ng-deep .mdc-tab__text-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+::ng-deep .mdc-tab--active .mdc-tab__text-label {
+  color: var(--text-primary);
+}
+
+@media (max-width: 1180px) {
+  .workspace-grid,
+  .hero-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .hero-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .ws-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .ws-actions .btn {
+    flex: 1 1 0%;
+    justify-content: center;
+  }
+}

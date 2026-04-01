@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { tracedFetch } from '@yoizen/observability';
+import { gatewayConfig } from '../../config/gateway.config';
 
 const PROXY_TIMEOUT_MS = 30_000;
 const HOP_BY_HOP = new Set(['host', 'connection', 'transfer-encoding', 'accept-encoding']);
@@ -11,9 +12,7 @@ export class ProxyProxyService {
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl =
-      process.env.PROXY_SERVICE_URL ??
-      'http://proxy-service.platform-services.svc.cluster.local';
+    this.baseUrl = gatewayConfig.services.proxy;
   }
 
   async forward(req: FastifyRequest, reply: FastifyReply): Promise<void> {

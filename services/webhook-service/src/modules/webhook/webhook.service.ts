@@ -68,13 +68,13 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
         try {
           const completion = msg.json() as CompletionEvent;
 
-          if (!completion.callbackUrl) {
+          if (!completion.callback_url) {
             msg.ack();
             continue;
           }
 
           const tenantId =
-            (completion.result?.metadata?.tenantId as string | undefined) ??
+            (completion.result?.tenant as string | undefined) ??
             msg.headers?.get(TENANT_HEADER) ??
             undefined;
 
@@ -96,19 +96,19 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
     completion: CompletionEvent,
     tenantId?: string,
   ): Promise<void> {
-    const { eventId, callbackUrl, result } = completion;
+    const { eventId, callback_url, result } = completion;
     const body = JSON.stringify(result);
 
     let adapter: AdapterConfig | null = null;
-    if (completion.adapterId && tenantId) {
+    if (completion.adapter_id && tenantId) {
       try {
         adapter = await this.adapterClient.getAdapter(
           tenantId,
-          completion.adapterId,
+          completion.adapter_id,
         );
       } catch (err) {
         this.logger.warn(
-          `Failed to fetch adapter '${completion.adapterId}' for event ${eventId}, using defaults: ${err instanceof Error ? err.message : err}`,
+          `Failed to fetch adapter '${completion.adapter_id}' for event ${eventId}, using defaults: ${err instanceof Error ? err.message : err}`,
         );
       }
     }
@@ -122,7 +122,7 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const response = await tracedFetch(callbackUrl!, {
+        const response = await tracedFetch(callback_url!, {
           method: "POST",
           headers,
           body,
@@ -132,7 +132,7 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
         if (response.ok) {
           this.trackDelivery(eventId, true);
           this.logger.log(
-            `Webhook delivered for ${eventId} to ${callbackUrl} (attempt ${attempt + 1})`,
+            `Webhook delivered for ${eventId} to ${callback_url} (attempt ${attempt + 1})`,
           );
           return;
         }
@@ -236,9 +236,5 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  getDeliveryCounts(): Map<string, number> {
-    return new Map(this.deliveryCounts);
   }
 }

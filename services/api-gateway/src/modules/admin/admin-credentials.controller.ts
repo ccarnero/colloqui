@@ -18,10 +18,7 @@ import {
   UpdateCredentialDto,
   RotateCredentialDto,
 } from './admin.dto';
-
-interface TenantRequest extends Request {
-  tenantId: string;
-}
+import type { TenantScopedRequest } from '../../types/yoizen-request';
 
 @Controller('admin/credentials')
 export class AdminCredentialsController {
@@ -29,7 +26,7 @@ export class AdminCredentialsController {
 
   @Get()
   async listCredentials(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Query('type') type?: string,
     @Query('is_active') isActive?: string,
     @Query('limit') limit?: string,
@@ -45,7 +42,7 @@ export class AdminCredentialsController {
 
   @Get(':id')
   async getCredential(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<object> {
     return this.proxy.proxy('GET', `/admin/credentials/${id}`, req.tenantId);
@@ -54,7 +51,7 @@ export class AdminCredentialsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createCredential(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Body() body: CreateCredentialDto,
   ): Promise<object> {
     return this.proxy.proxy(
@@ -68,7 +65,7 @@ export class AdminCredentialsController {
 
   @Put(':id')
   async updateCredential(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateCredentialDto,
   ): Promise<object> {
@@ -84,7 +81,7 @@ export class AdminCredentialsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteCredential(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
     await this.proxy.proxy('DELETE', `/admin/credentials/${id}`, req.tenantId);
@@ -92,7 +89,7 @@ export class AdminCredentialsController {
 
   @Put(':id/rotate')
   async rotateCredential(
-    @Req() req: TenantRequest,
+    @Req() req: TenantScopedRequest,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: RotateCredentialDto,
   ): Promise<object> {

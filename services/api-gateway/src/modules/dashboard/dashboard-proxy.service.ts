@@ -8,6 +8,7 @@ import {
   type AuditDashboardStats,
   type DashboardStats,
 } from "@yoizen/shared";
+import { gatewayConfig } from "../../config/gateway.config";
 import { REDIS_CLIENT } from "../../providers/redis.provider";
 import { throwProxyError } from "../../utils/proxy-error.util";
 
@@ -35,10 +36,8 @@ export class DashboardProxyService {
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {
-    this.auditBaseUrl =
-      process.env.AUDIT_SERVICE_URL ??
-      "http://audit-service.platform-services.svc.cluster.local";
-    this.healthUrl = `http://localhost:${process.env.PORT ?? "3000"}/health`;
+    this.auditBaseUrl = gatewayConfig.services.audit;
+    this.healthUrl = `http://localhost:${gatewayConfig.port}/health`;
   }
 
   /**

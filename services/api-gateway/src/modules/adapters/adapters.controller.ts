@@ -12,7 +12,13 @@ import {
   HttpStatus,
 } from "@nestjs/common";
 import { AdaptersProxyService } from "./adapters-proxy.service";
+import {
+  CreateAdapterDto,
+  CreateEndpointDto,
+  UpdateAdapterDto,
+} from "./adapters.dto";
 import { REQUEST_TENANT_KEY } from "../../guards/tenant.guard";
+import type { TenantScopedRequest } from "../../types/yoizen-request";
 
 @Controller("adapters")
 export class AdaptersController {
@@ -20,7 +26,10 @@ export class AdaptersController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Req() req: any, @Body() body: unknown) {
+  async create(
+    @Req() req: TenantScopedRequest,
+    @Body() body: CreateAdapterDto,
+  ) {
     return this.proxy.proxy(
       "POST",
       "/adapters",
@@ -31,14 +40,17 @@ export class AdaptersController {
   }
 
   @Get()
-  async list(@Req() req: any, @Query("context") context?: string) {
+  async list(
+    @Req() req: TenantScopedRequest,
+    @Query("context") context?: string,
+  ) {
     return this.proxy.proxy("GET", "/adapters", req[REQUEST_TENANT_KEY], {
       context,
     });
   }
 
   @Get(":id")
-  async get(@Req() req: any, @Param("id") id: string) {
+  async get(@Req() req: TenantScopedRequest, @Param("id") id: string) {
     return this.proxy.proxy(
       "GET",
       `/adapters/${encodeURIComponent(id)}`,
@@ -48,9 +60,9 @@ export class AdaptersController {
 
   @Patch(":id")
   async update(
-    @Req() req: any,
+    @Req() req: TenantScopedRequest,
     @Param("id") id: string,
-    @Body() body: unknown,
+    @Body() body: UpdateAdapterDto,
   ) {
     return this.proxy.proxy(
       "PATCH",
@@ -63,7 +75,7 @@ export class AdaptersController {
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Req() req: any, @Param("id") id: string) {
+  async remove(@Req() req: TenantScopedRequest, @Param("id") id: string) {
     return this.proxy.proxy(
       "DELETE",
       `/adapters/${encodeURIComponent(id)}`,
@@ -74,9 +86,9 @@ export class AdaptersController {
   @Post(":id/endpoints")
   @HttpCode(HttpStatus.CREATED)
   async addEndpoint(
-    @Req() req: any,
+    @Req() req: TenantScopedRequest,
     @Param("id") id: string,
-    @Body() body: unknown,
+    @Body() body: CreateEndpointDto,
   ) {
     return this.proxy.proxy(
       "POST",
@@ -90,7 +102,7 @@ export class AdaptersController {
   @Delete(":id/endpoints/:epId")
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeEndpoint(
-    @Req() req: any,
+    @Req() req: TenantScopedRequest,
     @Param("id") id: string,
     @Param("epId") epId: string,
   ) {

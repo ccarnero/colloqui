@@ -1,5 +1,6 @@
 import { Controller, Get, Inject } from "@nestjs/common";
 import type { Sql } from "postgres";
+import { checkPostgres } from "@yoizen/database";
 import { POSTGRES_SQL } from "../../providers/postgres.provider";
 
 @Controller()
@@ -8,19 +9,10 @@ export class HealthController {
 
   @Get("health")
   async check(): Promise<{ status: string; postgres: string }> {
-    const pgOk = await this.checkPostgres();
+    const pgOk = await checkPostgres(this.sql);
     return {
       status: pgOk ? "ok" : "degraded",
       postgres: pgOk ? "connected" : "disconnected",
     };
-  }
-
-  private async checkPostgres(): Promise<boolean> {
-    try {
-      await this.sql`SELECT 1`;
-      return true;
-    } catch {
-      return false;
-    }
   }
 }

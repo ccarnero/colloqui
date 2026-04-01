@@ -22,7 +22,7 @@ import type {
   WorkflowExecutionRow,
 } from "./workflows.repository";
 
-export interface CreateWorkflowResult {
+export interface ICreateWorkflowResult {
   id: string;
   name: string;
   application: string;
@@ -61,7 +61,7 @@ export class WorkflowsService {
     name: string,
     application: string,
     actions: WorkflowAction[],
-  ): Promise<CreateWorkflowResult> {
+  ): Promise<ICreateWorkflowResult> {
     const id = nanoid();
     const row = await this.repository.createDefinition(
       id,
@@ -81,7 +81,7 @@ export class WorkflowsService {
   async getWorkflow(
     id: string,
     tenantId: string,
-  ): Promise<CreateWorkflowResult> {
+  ): Promise<ICreateWorkflowResult> {
     const row = await this.repository.findDefinitionById(
       id,
       tenantId,
@@ -94,7 +94,7 @@ export class WorkflowsService {
 
   async listWorkflows(
     tenantId: string,
-  ): Promise<CreateWorkflowResult[]> {
+  ): Promise<ICreateWorkflowResult[]> {
     const rows =
       await this.repository.findDefinitionsByTenant(tenantId);
     return rows.map((r) => this.toCreateResult(r));
@@ -235,7 +235,7 @@ export class WorkflowsService {
 
   private toCreateResult(
     row: WorkflowDefinitionRow,
-  ): CreateWorkflowResult {
+  ): ICreateWorkflowResult {
     return {
       id: row.id,
       name: row.name,

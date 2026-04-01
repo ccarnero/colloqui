@@ -22,6 +22,12 @@ function createMockJsm(): JetStreamManager {
     consumers: {
       add: mock(() => Promise.resolve({})),
     },
+    getAccountInfo: mock(() =>
+      Promise.resolve({
+        storage: 0,
+        limits: { max_storage: -1 },
+      }),
+    ),
   } as unknown as JetStreamManager;
 }
 
@@ -77,12 +83,12 @@ describe("provisionYoizenClaw endpoint integration", () => {
 
     expect(mockJsm.streams.add).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "INGRESS-acme",
+        name: "INGRESS-ACME",
         subjects: ["evt.acme.>"],
       }),
     );
     expect(osFn).toHaveBeenCalledWith(
-      "PAYLOAD-acme",
+      "PAYLOAD-ACME",
       expect.objectContaining({
         ttl: expect.any(Number),
       }),
@@ -94,8 +100,8 @@ describe("provisionYoizenClaw endpoint integration", () => {
 
     expect(mockJsm.streams.add).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "INGRESS-free-tenant",
-        max_bytes: 1_000_000_000,
+        name: "INGRESS-FREE-TENANT",
+        max_bytes: STREAM_LIMITS.free.maxBytes,
       }),
     );
   });
@@ -105,8 +111,8 @@ describe("provisionYoizenClaw endpoint integration", () => {
 
     expect(mockJsm.streams.add).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "INGRESS-bigcorp",
-        max_bytes: 20_000_000_000,
+        name: "INGRESS-BIGCORP",
+        max_bytes: STREAM_LIMITS.enterprise.maxBytes,
       }),
     );
   });

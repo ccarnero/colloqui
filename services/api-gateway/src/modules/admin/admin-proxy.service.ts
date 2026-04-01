@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TENANT_HEADER } from '@yoizen/shared';
 import { tracedFetch } from '@yoizen/observability';
+import { gatewayConfig } from '../../config/gateway.config';
 import { throwProxyError } from '../../utils/proxy-error.util';
 
 const PROXY_TIMEOUT_MS = 30_000;
@@ -11,9 +12,7 @@ export class AdminProxyService {
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl =
-      process.env.ADMIN_SERVICE_URL ??
-      'http://yoizenclaw-admin-service.platform-services-dev.svc.cluster.local';
+    this.baseUrl = gatewayConfig.services.admin;
   }
 
   /**

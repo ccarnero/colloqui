@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'bun:test';
 import { Test, TestingModule } from '@nestjs/testing';
-import { AgentsRepository, type Agent, type CreateAgentData } from './agents.repository';
+import {
+  AgentsRepository,
+  type IAgent,
+  type ICreateAgentData,
+} from './agents.repository';
 import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
 
 // Mock postgres sql tagged template
@@ -53,7 +57,7 @@ describe('AgentsRepository', () => {
 
   describe('findAll', () => {
     it('should return agents with default pagination', async () => {
-      const mockAgents: Agent[] = [
+      const mockAgents: IAgent[] = [
         {
           id: 'agent-1',
           name: 'Test Agent 1',
@@ -107,7 +111,7 @@ describe('AgentsRepository', () => {
 
   describe('findById', () => {
     it('should return agent by id', async () => {
-      const mockAgent: Agent = {
+      const mockAgent: IAgent = {
         id: 'agent-1',
         name: 'Test Agent',
         description: 'Description',
@@ -142,7 +146,7 @@ describe('AgentsRepository', () => {
 
   describe('create', () => {
     it('should create a new agent', async () => {
-      const createData: CreateAgentData = {
+      const createData: ICreateAgentData = {
         name: 'New Agent',
         system_prompt: 'You are a helpful assistant',
         model_config: { model: 'gpt-4' },
@@ -150,7 +154,7 @@ describe('AgentsRepository', () => {
         channels: [{ type: 'webchat' }],
       };
 
-      const createdAgent: Agent = {
+      const createdAgent: IAgent = {
         id: 'new-agent-id',
         name: createData.name,
         description: null,
@@ -176,12 +180,12 @@ describe('AgentsRepository', () => {
     });
 
     it('should create agent with minimal data', async () => {
-      const createData: CreateAgentData = {
+      const createData: ICreateAgentData = {
         name: 'Minimal Agent',
         system_prompt: 'You are helpful',
       };
 
-      const createdAgent: Agent = {
+      const createdAgent: IAgent = {
         id: 'minimal-id',
         name: createData.name,
         description: null,
@@ -208,7 +212,7 @@ describe('AgentsRepository', () => {
 
   describe('update', () => {
     it('should update agent fields', async () => {
-      const updatedAgent: Agent = {
+      const updatedAgent: IAgent = {
         id: 'agent-1',
         name: 'Updated Name',
         description: 'Updated description',
@@ -246,7 +250,7 @@ describe('AgentsRepository', () => {
     });
 
     it('should update status field', async () => {
-      const updatedAgent: Agent = {
+      const updatedAgent: IAgent = {
         id: 'agent-1',
         name: 'Test Agent',
         description: null,
@@ -294,7 +298,7 @@ describe('AgentsRepository', () => {
 
   describe('publish', () => {
     it('should publish agent', async () => {
-      const publishedAgent: Agent = {
+      const publishedAgent: IAgent = {
         id: 'agent-1',
         name: 'Test Agent',
         description: null,
@@ -330,7 +334,7 @@ describe('AgentsRepository', () => {
 
   describe('unpublish', () => {
     it('should unpublish agent', async () => {
-      const unpublishedAgent: Agent = {
+      const unpublishedAgent: IAgent = {
         id: 'agent-1',
         name: 'Test Agent',
         description: null,

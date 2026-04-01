@@ -8,7 +8,8 @@ import {
 import { type Observable, tap } from 'rxjs';
 import type { JetStreamClient } from 'nats';
 import { headers as natsHeaders } from 'nats';
-import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyReply } from 'fastify';
+import type { YoizenRequest } from '../types/yoizen-request';
 import { GATEWAY_AUDIT_SUBJECT, TENANT_HEADER } from '@yoizen/shared';
 import type { GatewayAuditEvent } from '@yoizen/shared';
 import { JETSTREAM } from '../providers/nats.provider';
@@ -27,7 +28,7 @@ export class AuditInterceptor implements NestInterceptor {
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const request = context.switchToHttp().getRequest<FastifyRequest>();
+    const request = context.switchToHttp().getRequest<YoizenRequest>();
     const path = request.url.split("?")[0];
 
     if (SKIP_AUDIT_PATHS.has(path)) {
@@ -46,14 +47,14 @@ export class AuditInterceptor implements NestInterceptor {
   }
 
   private publishAudit(
-    request: FastifyRequest,
+    request: YoizenRequest,
     reply: FastifyReply,
     startTime: number,
     error?: unknown,
   ): void {
     const durationMs = performance.now() - startTime;
-    const user = (request as any)[REQUEST_USER_KEY];
-    const tenantId: string | null = (request as any)[REQUEST_TENANT_KEY] ?? null;
+    const user = request[REQUEST_USER_KEY];
+    const tenantId: string | null = request[REQUEST_TENANT_KEY] ?? null;
 
     const event: GatewayAuditEvent = {
       requestId: request.id,

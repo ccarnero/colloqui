@@ -7,6 +7,8 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { YoizenRequest } from './types/yoizen-request';
+import { HOST_PATTERN } from './constants';
 import { headers as natsHeaders } from 'nats';
 import type { JetStreamClient } from 'nats';
 import { AppModule } from './app.module';
@@ -50,7 +52,6 @@ const PLATFORM_PREFIXES = [
   '/health',
 ];
 
-const HOST_PATTERN = /^[^.]+\.([^.]+)\.yplatform\.com$/;
 const PROXY_TIMEOUT_MS = 30_000;
 const REQUEST_ID_HEADER = 'x-request-id';
 const TRACER_NAME = 'api-gateway';
@@ -120,7 +121,7 @@ async function bootstrap(): Promise<void> {
   fastify.addHook(
     'onRequest',
     async (req: FastifyRequest, reply: FastifyReply) => {
-      (req as any).__startTime = performance.now();
+      (req as YoizenRequest).__startTime = performance.now();
       reply.header(REQUEST_ID_HEADER, req.id);
     },
   );
@@ -128,17 +129,18 @@ async function bootstrap(): Promise<void> {
   fastify.addHook(
     'onRequest',
     async (req: FastifyRequest, reply: FastifyReply) => {
+      const yReq = req as YoizenRequest;
       const tenantId = resolveTenantFromRequest(req);
-      (req as any).__tenantId = tenantId;
-      (req as any).__rateLimitApplied = false;
+      yReq.__tenantId = tenantId;
+      yReq.__rateLimitApplied = false;
 
       if (tenantId) {
         const rl = await rateLimitService.consume(tenantId);
         reply.header('X-RateLimit-Limit', rl.limit);
         reply.header('X-RateLimit-Remaining', rl.remaining);
         reply.header('X-RateLimit-Reset', rl.resetSeconds);
-        (req as any).__rateLimitApplied = true;
-        (req as any).__rateLimitRemaining = rl.remaining;
+        yReq.__rateLimitApplied = true;
+        yReq.__rateLimitRemaining = rl.remaining;
 
         if (!rl.allowed) {
           reply
@@ -170,7 +172,7 @@ async function bootstrap(): Promise<void> {
           'route.is_public': matched.isPublic,
         },
       });
-      (req as any).__dynamicRouteSpan = span;
+      yReq.__dynamicRouteSpan = span;
 
       const spanCtx = trace.setSpan(context.active(), span);
 
@@ -204,7 +206,7 @@ async function bootstrap(): Promise<void> {
               span.end();
               return;
             }
-            (req as any).__jwtSubject = payload.sub;
+            yReq.__jwtSubject = payload.sub;
             authSpan.setStatus({ code: SpanStatusCode.OK });
           } catch {
             authSpan.setStatus({ code: SpanStatusCode.ERROR, message: 'invalid token' });
@@ -259,7 +261,7 @@ async function bootstrap(): Promise<void> {
           span.setAttribute('http.status_code', upstream.status);
           span.setStatus({ code: SpanStatusCode.OK });
 
-          (req as any).__upstream = {
+          yReq.__upstream = {
             url: upstreamUrl,
             statusCode: upstream.status,
             durationMs: Math.round((performance.now() - proxyStart) * 100) / 100,
@@ -268,7 +270,7 @@ async function bootstrap(): Promise<void> {
           logger.error(`Dynamic route proxy error for ${req.method} ${upstreamUrl}: ${err}`);
           reply.status(502).send({ statusCode: 502, message: 'Bad Gateway' });
           span.setStatus({ code: SpanStatusCode.ERROR, message: '502' });
-          (req as any).__upstream = {
+          yReq.__upstream = {
             url: upstreamUrl,
             statusCode: 502,
             durationMs: Math.round((performance.now() - proxyStart) * 100) / 100,
@@ -283,7 +285,8 @@ async function bootstrap(): Promise<void> {
   fastify.addHook(
     'onResponse',
     async (req: FastifyRequest, reply: FastifyReply) => {
-      const startTime = (req as any).__startTime as number | undefined;
+      const yReq = req as YoizenRequest;
+      const startTime = yReq.__startTime;
       if (startTime === undefined) return;
 
       const isPlatform = PLATFORM_PREFIXES.some((p) =>
@@ -291,8 +294,8 @@ async function bootstrap(): Promise<void> {
       );
       if (isPlatform) return;
 
-      const tenantId: string | null = (req as any).__tenantId ?? null;
-      if (!tenantId && !(req as any).__upstream) return;
+      const tenantId: string | null = yReq.__tenantId ?? null;
+      if (!tenantId && !yReq.__upstream) return;
 
       const durationMs = Math.round((performance.now() - startTime) * 100) / 100;
 
@@ -307,11 +310,11 @@ async function bootstrap(): Promise<void> {
         durationMs,
         clientIp: req.ip,
         userAgent: (req.headers['user-agent'] as string) ?? '',
-        jwtSubject: (req as any).__jwtSubject ?? null,
+        jwtSubject: yReq.__jwtSubject ?? null,
         routeType: 'dynamic',
-        upstream: (req as any).__upstream,
-        rateLimitApplied: (req as any).__rateLimitApplied ?? false,
-        rateLimitRemaining: (req as any).__rateLimitRemaining,
+        upstream: yReq.__upstream,
+        rateLimitApplied: yReq.__rateLimitApplied ?? false,
+        rateLimitRemaining: yReq.__rateLimitRemaining,
       };
 
       const hdrs = natsHeaders();
@@ -326,7 +329,11 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((err) => {
-  console.error(err);
+  const logger = new PinoLoggerService("api-gateway");
+  logger.error(
+    "Bootstrap failed",
+    err instanceof Error ? err.stack : String(err),
+  );
   process.exit(1);
 });
 

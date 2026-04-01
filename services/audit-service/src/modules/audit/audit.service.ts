@@ -10,7 +10,7 @@ import { JETSTREAM_CLIENT } from '../../providers/nats.provider';
 import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
 import type { EventEnvelope } from '@yoizen/shared';
 
-export interface AuditEvent {
+export interface IAuditEvent {
   id: string;
   type: string;
   payload: Record<string, unknown>;
@@ -93,9 +93,9 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
 
   private async persistMessage(msg: JsMsg): Promise<void> {
     const envelope = msg.json() as EventEnvelope;
-    const tenantId = envelope.metadata?.tenantId;
+    const tenantId = envelope.tenant;
     if (!tenantId) {
-      this.logger.warn(`Dropping event ${envelope.id}: missing tenantId in metadata`);
+      this.logger.warn(`Dropping event ${envelope.id}: missing tenant`);
       return;
     }
 
@@ -103,26 +103,33 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     await this.ensureTable(sql, tenantId);
 
     const subject = msg.subject;
+    const payload = envelope.data.payload ?? {};
+    const metadata = {
+      tenant: envelope.tenant,
+      source: envelope.source,
+      correlation_id: envelope.correlation_id,
+      traceid: envelope.traceid,
+    };
 
     await sql`
       INSERT INTO events (id, type, payload, metadata, subject)
       VALUES (
         ${envelope.id},
         ${envelope.type},
-        ${JSON.stringify(envelope.payload)},
-        ${JSON.stringify(envelope.metadata ?? {})},
+        ${JSON.stringify(payload)},
+        ${JSON.stringify(metadata)},
         ${subject}
       )
       ON CONFLICT (id) DO NOTHING
     `;
   }
 
-  async queryEvents(params: AuditQueryParams, tenantId: string): Promise<AuditEvent[]> {
+  async queryEvents(params: AuditQueryParams, tenantId: string): Promise<IAuditEvent[]> {
     const { type, from, to, limit, offset } = params;
     const sql = this.tenantConnections.getConnection(tenantId);
     await this.ensureTable(sql, tenantId);
 
-    const rows = await sql<AuditEvent[]>`
+    const rows = await sql<IAuditEvent[]>`
       SELECT id, type, payload, metadata, subject, created_at
       FROM events
       WHERE 1=1
@@ -137,11 +144,11 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     return rows;
   }
 
-  async getEventById(id: string, tenantId: string): Promise<AuditEvent | null> {
+  async getEventById(id: string, tenantId: string): Promise<IAuditEvent | null> {
     const sql = this.tenantConnections.getConnection(tenantId);
     await this.ensureTable(sql, tenantId);
 
-    const rows = await sql<AuditEvent[]>`
+    const rows = await sql<IAuditEvent[]>`
       SELECT id, type, payload, metadata, subject, created_at
       FROM events
       WHERE id = ${id}

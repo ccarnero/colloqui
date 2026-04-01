@@ -1,5 +1,3 @@
 export const TENANT_CONNECTION_MANAGER = Symbol(
   "TENANT_CONNECTION_MANAGER",
 );
-
-export const SEED_SERVICE = Symbol("SEED_SERVICE");
