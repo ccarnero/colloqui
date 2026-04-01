@@ -20,15 +20,14 @@ if (!hostNodeModules) {
   process.exit(1);
 }
 
-const angularSrc = join(hostNodeModules, "@angular");
-const angularDest = join(root, "node_modules", "@angular");
 mkdirSync(join(root, "node_modules"), { recursive: true });
-try {
-  rmSync(angularDest, { recursive: true, force: true });
-} catch {
-  /* ignore */
+
+for (const pkg of ["@angular", "rxjs"]) {
+  const src = join(hostNodeModules, pkg);
+  const dest = join(root, "node_modules", pkg);
+  try { rmSync(dest, { recursive: true, force: true }); } catch { /* ignore */ }
+  if (existsSync(src)) symlinkSync(src, dest, "dir");
 }
-symlinkSync(angularSrc, angularDest, "dir");
 
 const tsc = join(hostNodeModules, ".bin", "tsc");
 const result = spawnSync(

@@ -5,7 +5,8 @@ WORKDIR /app
 COPY packages/angular-shared ./packages/angular-shared
 COPY services/admin-console/package.json services/admin-console/package-lock.json ./services/admin-console/
 WORKDIR /app/services/admin-console
-RUN npm ci
+RUN npm ci --ignore-scripts && \
+    cd /app/packages/angular-shared && npm run build
 
 COPY services/admin-console/ .
 RUN npx ng build --configuration=production
