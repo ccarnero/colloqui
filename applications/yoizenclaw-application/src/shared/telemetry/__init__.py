@@ -161,11 +161,13 @@ def init_telemetry(config: TelemetryConfig | None = None) -> None:
     # Use default config if none provided
     if config is None:
         import os
+        otel_env = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        logger.info(f"OTEL_EXPORTER_OTLP_ENDPOINT env var: {otel_env}")
         config = TelemetryConfig(
             service_name=os.getenv("OTEL_SERVICE_NAME", "yoizen-claw"),
             service_version=os.getenv("OTEL_SERVICE_VERSION", "1.0.0"),
             environment=os.getenv("OTEL_ENVIRONMENT", "development"),
-            otel_endpoint=os.getenv("OTEL_ENDPOINT", "http://otel-collector:4318"),
+            otel_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318"),
             sampling_rate=float(os.getenv("OTEL_SAMPLING_RATE", "1.0")),
             log_level=os.getenv("OTEL_LOG_LEVEL", "INFO"),
         )

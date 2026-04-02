@@ -5,6 +5,7 @@ Provides Pydantic-based configuration for OTEL SDK initialization.
 
 from __future__ import annotations
 
+import os
 from typing import Literal
 
 from pydantic import BaseModel, Field, validator
@@ -33,7 +34,10 @@ class TelemetryConfig(BaseModel):
     
     # OTLP endpoints
     otel_endpoint: str = Field(
-        default="http://otel-collector:4318",
+        default=os.environ.get(
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+        ),
         description="OTLP HTTP endpoint for traces, metrics and logs",
     )
     otel_logs_endpoint: str | None = Field(

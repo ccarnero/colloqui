@@ -48,6 +48,7 @@ env:
   # OpenTelemetry
   OTEL_ENABLED: "true"
   OTEL_SERVICE_NAME: yoizenclaw-runtime
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
 
 # -- Knative serving configuration
 knative:

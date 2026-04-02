@@ -388,8 +388,10 @@ class RuntimeNatsBridge:
             span.set_attribute("nats.message_size", len(message.data))
 
             try:
-                runtime_id = data.get("runtime_id", "unknown")
-                status = data.get("status", "unknown")
+                # Runtime online events use instance_id and configured fields
+                runtime_id = data.get("instance_id", "unknown")
+                configured = data.get("configured", False)
+                status = "configured" if configured else "not_configured"
                 
                 logger.info(
                     "Runtime online event: %s status=%s",
