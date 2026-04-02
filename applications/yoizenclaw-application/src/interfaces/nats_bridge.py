@@ -286,9 +286,10 @@ class RuntimeNatsBridge:
             span.set_attribute("nats.message_size", len(message.data))
 
             try:
-                agent_id = data.get("agentId")
-                agent_name = data.get("name")
-                published_at = data.get("publishedAt")
+                event_payload = data.get("payload", data)
+                agent_id = event_payload.get("agentId")
+                agent_name = event_payload.get("name")
+                published_at = event_payload.get("publishedAt")
                 
                 logger.info(
                     "Agent published: %s (%s) at %s",
@@ -337,8 +338,9 @@ class RuntimeNatsBridge:
             span.set_attribute("nats.message_size", len(message.data))
 
             try:
-                agent_id = data.get("agentId")
-                agent_name = data.get("name")
+                event_payload = data.get("payload", data)
+                agent_id = event_payload.get("agentId")
+                agent_name = event_payload.get("name")
                 
                 logger.info(
                     "Agent unpublished: %s (%s)",
