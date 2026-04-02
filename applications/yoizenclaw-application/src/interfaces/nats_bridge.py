@@ -687,7 +687,7 @@ class RuntimeNatsBridge:
             span.set_attribute("nats.has_reply", True)
 
             try:
-                from src.interfaces.http.handlers.chat import (
+                from src.shared.chat import (
                     ChatRequest,
                     generate_chat_reply,
                 )

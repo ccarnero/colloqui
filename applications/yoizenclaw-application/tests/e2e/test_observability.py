@@ -66,20 +66,20 @@ class TestEndToEndTracing:
         # Verify trace structure
         assert len(captured_spans) >= 4  # At least 4 spans
 
-    def test_websocket_trace(self) -> None:
-        """Verify WebSocket operations generate traces."""
+    def test_nats_trace(self) -> None:
+        """Verify NATS operations generate traces."""
         from src.shared.telemetry import get_tracer
 
-        ws_tracer = get_tracer("test.e2e.websocket")
+        nats_tracer = get_tracer("test.e2e.nats")
 
-        with ws_tracer.start_as_current_span("websocket.connect") as connect_span:
-            connect_span.set_attribute("websocket.id", "ws-123")
+        with nats_tracer.start_as_current_span("nats.connect") as connect_span:
+            connect_span.set_attribute("nats.id", "nats-123")
 
-            with ws_tracer.start_as_current_span("websocket.message") as msg_span:
+            with nats_tracer.start_as_current_span("nats.message") as msg_span:
                 msg_span.set_attribute("message.type", "text")
                 msg_span.set_attribute("message.size", 1024)
 
-            with ws_tracer.start_as_current_span("websocket.disconnect") as disc_span:
+            with nats_tracer.start_as_current_span("nats.disconnect") as disc_span:
                 disc_span.set_attribute("disconnect.code", 1000)
 
     def test_job_execution_trace(self) -> None:

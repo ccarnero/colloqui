@@ -271,8 +271,8 @@ class TestExecutePipeline:
         assert result["outputs"]["result"] == "ok"
 
     @pytest.mark.asyncio
-    async def test_notify_without_websocket(self):
-        """Notify step should handle missing websocket gracefully."""
+    async def test_notify_without_nats(self):
+        """Notify step should handle missing NATS gracefully."""
         steps = [
             {
                 "id": "n1",

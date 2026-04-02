@@ -9,7 +9,12 @@ from typing import Any
 import pytest
 
 from src.application.agents.agent import Agent
-from src.interfaces.http.handlers import chat as chat_handler
+from src.shared.chat import (
+    ChatRequest,
+    ChatContextMessage,
+    generate_chat_reply,
+    _get_chat_agent,
+)
 from src.shared.config.agent_config import (
     AgentConfigStore,
     AgentSyncRequest,
@@ -604,21 +609,21 @@ async def test_chat_handler_uses_run_with_skill_when_agent_has_skills(
     fake_agent = FakeAgent()
 
     async def fake_get_chat_agent(
-        request: chat_handler.ChatRequest,
+        request: ChatRequest,
     ) -> FakeAgent:
         return fake_agent
 
-    monkeypatch.setattr(chat_handler, "_get_chat_agent", fake_get_chat_agent)
+    monkeypatch.setattr("src.shared.chat._get_chat_agent", fake_get_chat_agent)
 
-    response = await chat_handler.generate_chat_reply(
-        chat_handler.ChatRequest(
+    response = await generate_chat_reply(
+        ChatRequest(
             agentId="agent-sales-assistant",
             message="Necesito seguir con la conversacion",
             customerName="Pedro",
             conversationId="conv-12e2bc34",
             channel="webchat",
             context=[
-                chat_handler.ChatContextMessage(
+                ChatContextMessage(
                     sender="customer",
                     content="Hola",
                 ),
@@ -663,14 +668,14 @@ async def test_chat_handler_falls_back_to_plain_run_without_skills(
     fake_agent = FakeAgent()
 
     async def fake_get_chat_agent(
-        request: chat_handler.ChatRequest,
+        request: ChatRequest,
     ) -> FakeAgent:
         return fake_agent
 
-    monkeypatch.setattr(chat_handler, "_get_chat_agent", fake_get_chat_agent)
+    monkeypatch.setattr("src.shared.chat._get_chat_agent", fake_get_chat_agent)
 
-    response = await chat_handler.generate_chat_reply(
-        chat_handler.ChatRequest(
+    response = await generate_chat_reply(
+        ChatRequest(
             agentId="agent-sales-assistant",
             message="Solo quiero una respuesta simple",
         ),

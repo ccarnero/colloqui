@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from src.application.llm.llm_service import LLMClient
-from src.interfaces.websocket import RuntimeConfigStore
+from src.shared.config.runtime_config_store import RuntimeConfigStore
 
 
 def test_llm_client_uses_mock_provider_without_api_key() -> None:
