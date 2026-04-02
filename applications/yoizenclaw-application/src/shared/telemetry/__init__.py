@@ -154,15 +154,17 @@ def init_telemetry(config: TelemetryConfig | None = None) -> None:
     """
     global _is_initialized, _config
     
+    # Debug: always log env var at start
+    import os
+    otel_env = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    logger.info(f"[DEBUG] OTEL_EXPORTER_OTLP_ENDPOINT env var: {otel_env}")
+    
     if _is_initialized:
         logger.debug("Telemetry already initialized, skipping")
         return
     
     # Use default config if none provided
     if config is None:
-        import os
-        otel_env = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
-        logger.info(f"OTEL_EXPORTER_OTLP_ENDPOINT env var: {otel_env}")
         config = TelemetryConfig(
             service_name=os.getenv("OTEL_SERVICE_NAME", "yoizen-claw"),
             service_version=os.getenv("OTEL_SERVICE_VERSION", "1.0.0"),

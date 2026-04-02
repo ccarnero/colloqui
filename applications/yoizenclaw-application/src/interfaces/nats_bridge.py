@@ -388,9 +388,13 @@ class RuntimeNatsBridge:
             span.set_attribute("nats.message_size", len(message.data))
 
             try:
-                # Runtime online events use instance_id and configured fields
-                runtime_id = data.get("instance_id", "unknown")
-                configured = data.get("configured", False)
+                # Debug: log full data structure
+                logger.info(f"[DEBUG] Runtime online raw data: {data}")
+                
+                # Extract from nested payload (CloudEvents envelope structure)
+                payload_data = data.get("payload", data)
+                runtime_id = payload_data.get("instance_id", "unknown")
+                configured = payload_data.get("configured", False)
                 status = "configured" if configured else "not_configured"
                 
                 logger.info(
