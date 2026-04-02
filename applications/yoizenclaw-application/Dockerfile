@@ -2,9 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY YoizenClaw/pyproject.toml ./
-COPY YoizenClaw/src ./src
-COPY shared/types/python /shared/types/python
+COPY applications/yoizenclaw-application/pyproject.toml ./
+COPY applications/yoizenclaw-application/src ./src
+COPY applications/shared/types/python /shared/types/python
 
 RUN pip install --no-cache-dir -e .
 

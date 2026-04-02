@@ -92,17 +92,30 @@ def _unwrap_command_data(raw: dict[str, Any]) -> tuple[dict[str, Any], str]:
 
 
 def _extract_action_from_subject(subject: str) -> str | None:
-    """Extract the kind from a wdocs-compliant subject.
+    """Extract the action from wdocs-compliant subjects.
     
-    wdocs format: evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v1
-    Example: 'evt.acme.yoizenclaw-admin-service.automation.yoizenclaw.internal.agent_action.v1'
-    Returns: 'agent_action'
+    Admin-service format (8 parts): evt.tenant.producer.domain.channel.provider.kind.v1
+    Example: 'evt.acme.yoizenclaw-admin-service.automation.yoizenclaw.internal.agent_published.v1'
+    Returns: 'agent_published'
+    
+    Runtime format (6 parts): evt.tenant.producer.kind.v1
+    Example: 'evt.acme.yoizenclaw.online.v1'
+    Returns: 'online'
     """
     parts = subject.split(".")
-    # wdocs format has at least 8 parts: evt.tenant.producer.domain.channel.provider.kind.v1
-    if len(parts) >= 8 and parts[0] == "evt":
+    if parts[0] != "evt":
+        return None
+        
+    # Handle admin-service subjects (8 parts)
+    if len(parts) >= 8:
         # kind is at position 6 (0-indexed: evt[0].tenant[1].producer[2].domain[3].channel[4].provider[5].kind[6].v1[7])
         return parts[6]
+    
+    # Handle runtime subjects (5 parts): evt.tenant.producer.kind.v1
+    elif len(parts) >= 5:
+        # kind is at position 3 (0-indexed: evt[0].tenant[1].producer[2].kind[3].v1[4])
+        return parts[3]
+    
     return None
 
 
@@ -138,28 +151,39 @@ class RuntimeNatsBridge:
         if self._nats.is_connected:
             return
 
-        from src.shared.logging.structured import (
-            init_structured_logging,
-            set_tenant_context,
-        )
+        try:
+            from src.shared.logging.structured import (
+                init_structured_logging,
+                set_tenant_context,
+            )
 
-        set_tenant_context(self._tenant_id)
-        init_structured_logging(logger)
+            set_tenant_context(self._tenant_id)
+            init_structured_logging(logger)
 
-        await self._nats.connect(
-            servers=[self._nats_url], name=self._instance_id
-        )
+            await self._nats.connect(
+                servers=[self._nats_url], name=self._instance_id
+            )
 
-        wildcard = f"evt.{self._tenant_id}.yoizenclaw.>"
-        await self._nats.subscribe(wildcard, cb=self._dispatch_message)
+            # Listen for admin-service events (agent_published, agent_unpublished, etc.)
+            admin_wildcard = f"evt.{self._tenant_id}.yoizenclaw-admin-service.automation.yoizenclaw.internal.>"
+            await self._nats.subscribe(admin_wildcard, cb=self._dispatch_message)
+            
+            # Also listen for direct yoizenclaw events (online, chat_respond, etc.)
+            runtime_wildcard = f"evt.{self._tenant_id}.yoizenclaw.>"
+            await self._nats.subscribe(runtime_wildcard, cb=self._dispatch_message)
 
-        await self._publish_runtime_online()
-        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-        logger.info(
-            "NATS bridge started for %s on %s",
-            self._instance_id,
-            wildcard,
-        )
+            await self._publish_runtime_online()
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+            logger.info(
+                "NATS bridge started for %s on %s and %s",
+                self._instance_id,
+                admin_wildcard,
+                runtime_wildcard,
+            )
+            
+        except Exception as e:
+            logger.error("Failed to start NATS bridge: %s", str(e))
+            raise
 
     async def _dispatch_message(self, message: Msg) -> None:
         """Route inbound messages to the correct handler by wdocs-compliant kind."""
@@ -213,6 +237,15 @@ class RuntimeNatsBridge:
         elif action == "agent_observation":
             await self._handle_job_event_dispatch(message, data, raw)
         
+        elif action == "agent_published":
+            await self._handle_agent_published_dispatch(message, data, raw)
+        
+        elif action == "agent_unpublished":
+            await self._handle_agent_unpublished_dispatch(message, data, raw)
+        
+        elif action == "online":
+            await self._handle_runtime_online_dispatch(message, data, raw)
+        
         else:
             dispatch_legacy: dict[str, Any] = {
                 "config_sync": self._handle_config_sync_dispatch,
@@ -227,6 +260,155 @@ class RuntimeNatsBridge:
                 await handler(message, data, raw)
             else:
                 logger.warning("No handler for action: %s", action)
+
+    async def _handle_agent_published_dispatch(
+        self,
+        message: Msg,
+        data: dict[str, Any],
+        _envelope: dict[str, Any],
+    ) -> None:
+        """Handle agent published events from admin-service."""
+        import time
+
+        start_time = time.perf_counter()
+        headers = dict(message.headers) if message.headers else {}
+        context = extract_trace_context(headers)
+
+        with self._tracer.start_as_current_span(
+            "nats.consume.agent_published",
+            context=context,
+            kind=trace.SpanKind.CONSUMER,
+        ) as span:
+            span.set_attribute("messaging.system", "nats")
+            span.set_attribute("messaging.destination", message.subject)
+            span.set_attribute("messaging.operation", "consume")
+            span.set_attribute("nats.subject", message.subject)
+            span.set_attribute("nats.message_size", len(message.data))
+
+            try:
+                agent_id = data.get("agentId")
+                agent_name = data.get("name")
+                published_at = data.get("publishedAt")
+                
+                logger.info(
+                    "Agent published: %s (%s) at %s",
+                    agent_name,
+                    agent_id,
+                    published_at,
+                )
+
+                # TODO: Update local agent cache when agent management is implemented
+
+                duration = time.perf_counter() - start_time
+                record_nats_message(message.subject, "consume", "success")
+                record_nats_duration(duration, message.subject)
+                span.set_attribute("messaging.duration_ms", duration * 1000)
+                span.set_status(trace.StatusCode.OK)
+            except Exception as error:
+                record_nats_message(message.subject, "consume", "error")
+                span.record_exception(error)
+                span.set_status(trace.StatusCode.ERROR, str(error))
+                logger.exception(
+                    "Failed to handle agent published event: %s", error
+                )
+
+    async def _handle_agent_unpublished_dispatch(
+        self,
+        message: Msg,
+        data: dict[str, Any],
+        _envelope: dict[str, Any],
+    ) -> None:
+        """Handle agent unpublished events from admin-service."""
+        import time
+
+        start_time = time.perf_counter()
+        headers = dict(message.headers) if message.headers else {}
+        context = extract_trace_context(headers)
+
+        with self._tracer.start_as_current_span(
+            "nats.consume.agent_unpublished",
+            context=context,
+            kind=trace.SpanKind.CONSUMER,
+        ) as span:
+            span.set_attribute("messaging.system", "nats")
+            span.set_attribute("messaging.destination", message.subject)
+            span.set_attribute("messaging.operation", "consume")
+            span.set_attribute("nats.subject", message.subject)
+            span.set_attribute("nats.message_size", len(message.data))
+
+            try:
+                agent_id = data.get("agentId")
+                agent_name = data.get("name")
+                
+                logger.info(
+                    "Agent unpublished: %s (%s)",
+                    agent_name,
+                    agent_id,
+                )
+
+                # TODO: Update local agent cache when agent management is implemented
+
+                duration = time.perf_counter() - start_time
+                record_nats_message(message.subject, "consume", "success")
+                record_nats_duration(duration, message.subject)
+                span.set_attribute("messaging.duration_ms", duration * 1000)
+                span.set_status(trace.StatusCode.OK)
+            except Exception as error:
+                record_nats_message(message.subject, "consume", "error")
+                span.record_exception(error)
+                span.set_status(trace.StatusCode.ERROR, str(error))
+                logger.exception(
+                    "Failed to handle agent unpublished event: %s", error
+                )
+
+    async def _handle_runtime_online_dispatch(
+        self,
+        message: Msg,
+        data: dict[str, Any],
+        _envelope: dict[str, Any],
+    ) -> None:
+        """Handle runtime online heartbeat events."""
+        import time
+
+        start_time = time.perf_counter()
+        headers = dict(message.headers) if message.headers else {}
+        context = extract_trace_context(headers)
+
+        with self._tracer.start_as_current_span(
+            "nats.consume.runtime_online",
+            context=context,
+            kind=trace.SpanKind.CONSUMER,
+        ) as span:
+            span.set_attribute("messaging.system", "nats")
+            span.set_attribute("messaging.destination", message.subject)
+            span.set_attribute("messaging.operation", "consume")
+            span.set_attribute("nats.subject", message.subject)
+            span.set_attribute("nats.message_size", len(message.data))
+
+            try:
+                runtime_id = data.get("runtime_id", "unknown")
+                status = data.get("status", "unknown")
+                
+                logger.info(
+                    "Runtime online event: %s status=%s",
+                    runtime_id,
+                    status,
+                )
+
+                # TODO: Track runtime status when runtime monitoring is implemented
+
+                duration = time.perf_counter() - start_time
+                record_nats_message(message.subject, "consume", "success")
+                record_nats_duration(duration, message.subject)
+                span.set_attribute("messaging.duration_ms", duration * 1000)
+                span.set_status(trace.StatusCode.OK)
+            except Exception as error:
+                record_nats_message(message.subject, "consume", "error")
+                span.record_exception(error)
+                span.set_status(trace.StatusCode.ERROR, str(error))
+                logger.exception(
+                    "Failed to handle runtime online event: %s", error
+                )
 
     async def _handle_config_sync_dispatch(
         self,

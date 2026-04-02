@@ -7,19 +7,16 @@ metadata:
   name: {{ include "yoizenclaw-runtime.fullname" . }}
   labels:
     {{- include "yoizenclaw-runtime.labels" . | nindent 4 }}
-  annotations:
-    # Knative autoscaling annotations
-    autoscaling.knative.dev/minScale: "{{ .Values.knative.minScale }}"
-    autoscaling.knative.dev/maxScale: "{{ .Values.knative.maxScale }}"
-    autoscaling.knative.dev/targetConcurrency: "{{ .Values.knative.targetConcurrency }}"
 spec:
   template:
     metadata:
       labels:
         {{- include "yoizenclaw-runtime.selectorLabels" . | nindent 8 }}
       annotations:
-        # Container lifecycle
         sidecar.istio.io/inject: "false"
+        autoscaling.knative.dev/minScale: "{{ .Values.knative.minScale }}"
+        autoscaling.knative.dev/maxScale: "{{ .Values.knative.maxScale }}"
+        autoscaling.knative.dev/target: "{{ .Values.knative.targetConcurrency }}"
     spec:
       containerConcurrency: {{ .Values.knative.containerConcurrency }}
       timeoutSeconds: {{ .Values.knative.timeoutSeconds }}
@@ -49,7 +46,7 @@ spec:
               value: {{ include "yoizenclaw-runtime.postgresHost" . | quote }}
             - name: POSTGRES_PORT
               value: {{ .Values.postgres.port | quote }}
-            - name: POSTGRES_DATABASE
+            - name: POSTGRES_DB
               value: {{ .Values.postgres.database | quote }}
             - name: POSTGRES_USER
               value: {{ .Values.postgres.user | quote }}

@@ -154,26 +154,22 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="YoizenClaw", version="0.1.0", lifespan=lifespan)
 
 # Initialize telemetry immediately after app creation (before adding middlewares)
-print("[YOIZEN-CLAW] Initializing telemetry...", flush=True)
 from src.shared.telemetry import init_telemetry
 init_telemetry()
-print("[YOIZEN-CLAW] Telemetry initialized", flush=True)
 
 # Instrument FastAPI for automatic HTTP tracing and metrics
-print("[YOIZEN-CLAW] Applying FastAPI instrumentor...", flush=True)
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry import metrics as otel_metrics
 meter_provider = otel_metrics.get_meter_provider()
 FastAPIInstrumentor().instrument_app(app, meter_provider=meter_provider)
-print("[YOIZEN-CLAW] FastAPI instrumentation enabled", flush=True)
 
 # Instrument asyncpg for automatic database tracing
 try:
     from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
     AsyncPGInstrumentor().instrument()
-    print("[YOIZEN-CLAW] AsyncPG instrumentation enabled", flush=True)
 except ImportError:
-    print("[YOIZEN-CLAW] AsyncPG instrumentation not available (missing dep)", flush=True)
+    # AsyncPG instrumentation not available (missing dependency)
+    pass
 
 
 async def _run_scheduler_leader_loop(scheduler_lock) -> None:
