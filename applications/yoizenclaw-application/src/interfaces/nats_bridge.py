@@ -141,6 +141,7 @@ class RuntimeNatsBridge:
         self._tracer = trace.get_tracer(__name__)
         self._tenant_id: str = bootstrap_settings.TENANT_ID
         self._object_store: Any = None
+        self._agent_cache: dict[str, dict[str, Any]] = {}
 
     def _subject(self, action: str) -> str:
         return shared_subjects.build_subject(self._tenant_id, action)
@@ -290,15 +291,28 @@ class RuntimeNatsBridge:
                 agent_id = event_payload.get("agentId")
                 agent_name = event_payload.get("name")
                 published_at = event_payload.get("publishedAt")
-                
+
+                # Update local agent cache
+                if agent_id:
+                    self._agent_cache[agent_id] = {
+                        "agentId": agent_id,
+                        "name": agent_name,
+                        "publishedAt": published_at,
+                        "data": event_payload,
+                    }
+                    logger.debug(
+                        "Cached published agent: %s (%s)",
+                        agent_name,
+                        agent_id,
+                    )
+                    span.set_attribute("agent.cache.size", len(self._agent_cache))
+
                 logger.info(
                     "Agent published: %s (%s) at %s",
                     agent_name,
                     agent_id,
                     published_at,
                 )
-
-                # TODO: Update local agent cache when agent management is implemented
 
                 duration = time.perf_counter() - start_time
                 record_nats_message(message.subject, "consume", "success")
@@ -341,14 +355,22 @@ class RuntimeNatsBridge:
                 event_payload = data.get("payload", data)
                 agent_id = event_payload.get("agentId")
                 agent_name = event_payload.get("name")
-                
+
+                # Remove from local agent cache
+                if agent_id and agent_id in self._agent_cache:
+                    del self._agent_cache[agent_id]
+                    logger.debug(
+                        "Removed unpublished agent from cache: %s (%s)",
+                        agent_name,
+                        agent_id,
+                    )
+                    span.set_attribute("agent.cache.size", len(self._agent_cache))
+
                 logger.info(
                     "Agent unpublished: %s (%s)",
                     agent_name,
                     agent_id,
                 )
-
-                # TODO: Update local agent cache when agent management is implemented
 
                 duration = time.perf_counter() - start_time
                 record_nats_message(message.subject, "consume", "success")
@@ -388,9 +410,6 @@ class RuntimeNatsBridge:
             span.set_attribute("nats.message_size", len(message.data))
 
             try:
-                # Debug: log full data structure
-                logger.info(f"[DEBUG] Runtime online raw data: {data}")
-                
                 # Extract from nested payload (CloudEvents envelope structure)
                 payload_data = data.get("payload", data)
                 runtime_id = payload_data.get("instance_id", "unknown")
@@ -402,8 +421,6 @@ class RuntimeNatsBridge:
                     runtime_id,
                     status,
                 )
-
-                # TODO: Track runtime status when runtime monitoring is implemented
 
                 duration = time.perf_counter() - start_time
                 record_nats_message(message.subject, "consume", "success")

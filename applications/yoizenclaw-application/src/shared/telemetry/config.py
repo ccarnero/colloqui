@@ -34,11 +34,8 @@ class TelemetryConfig(BaseModel):
     
     # OTLP endpoints
     otel_endpoint: str = Field(
-        default=os.environ.get(
-            "OTEL_EXPORTER_OTLP_ENDPOINT",
-            "http://otel-collector.support-services-dev.svc.cluster.local:4318"
-        ),
-        description="OTLP HTTP endpoint for traces, metrics and logs",
+        default=os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+        description="OTLP HTTP endpoint for traces, metrics and logs. Required.",
     )
     otel_logs_endpoint: str | None = Field(
         default=None,
@@ -121,6 +118,15 @@ class TelemetryConfig(BaseModel):
         description="Use insecure connection (dev only)",
     )
     
+    @validator("otel_endpoint", pre=True, always=True)
+    @classmethod
+    def validate_otel_endpoint(cls, v: str | None) -> str:
+        """Ensure OTEL endpoint is configured."""
+        value = v or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+        if not value:
+            raise ValueError("OTEL_EXPORTER_OTLP_ENDPOINT environment variable is required")
+        return value
+
     @validator("sampling_rate", pre=True)
     @classmethod
     def parse_sampling_rate(cls, v):

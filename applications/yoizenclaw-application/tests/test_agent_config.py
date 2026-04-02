@@ -124,9 +124,9 @@ async def test_agent_config_store_persists_runtime_override() -> None:
             "rules": ["Keep it short"],
             "responseStyle": "Empathetic, calm, and concise.",
             "llm": {
-                "provider": "zhipuai",
-                "model": "glm-4",
-                "credentialId": "zhipu-prod",
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "credentialId": "openai-prod",
             },
             "skills": [
                 {
@@ -156,10 +156,10 @@ async def test_agent_config_store_persists_runtime_override() -> None:
     assert saved["rules"] == ["Keep it short"]
     assert saved["response_style"] == "Empathetic, calm, and concise."
     assert saved["llm"] == {
-        "provider": "zhipuai",
-        "model": "glm-4",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
         "credential_mode": "profile",
-        "credential_id": "zhipu-prod",
+        "credential_id": "openai-prod",
     }
     assert saved["tools"][0]["name"] == "communicate"
     assert await store.load_active_config() == saved

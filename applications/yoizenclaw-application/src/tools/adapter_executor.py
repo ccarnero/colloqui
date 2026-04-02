@@ -1,6 +1,5 @@
 """AdapterToolExecutor — executes tools via resolved adapter configurations.
 
-Phase 3 of yoizenclaw-adapter-tools change.
 Resolves adapter/endpoint via AdapterClient, executes HTTP calls, handles
 errors and response truncation.
 """
@@ -9,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from typing import Any
 
 import httpx
@@ -23,19 +21,16 @@ from src.shared.config.agent_config import AdapterReference
 
 logger = logging.getLogger(__name__)
 
-_ADAPTER_TOOLS_ENABLED = os.environ.get(
-    "YOIZENCLAW_ADAPTER_TOOLS_ENABLED", "true",
-).lower() in ("true", "1", "yes")
-
-# TODO (Task 6.2): Remove YOIZENCLAW_ADAPTER_TOOLS_ENABLED feature flag after
-# validated in production. Replace _ADAPTER_TOOLS_ENABLED with True, update
-# is_adapter_tools_enabled() to always return True, and remove the env var from
-# settings.py and Knative overlays.
+_ADAPTER_TOOLS_ENABLED = True
 
 
 def is_adapter_tools_enabled() -> bool:
-    """Return whether adapter tools are enabled via feature flag."""
-    return _ADAPTER_TOOLS_ENABLED
+    """Return whether adapter tools are enabled.
+
+    Previously controlled by YOIZENCLAW_ADAPTER_TOOLS_ENABLED feature flag.
+    Now permanently enabled after production validation.
+    """
+    return True
 
 
 class _ResponseTruncator:

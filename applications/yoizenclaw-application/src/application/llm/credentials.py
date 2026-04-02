@@ -28,7 +28,6 @@ API_KEY_ENV_BY_PROVIDER: dict[str, tuple[str, ...]] = {
     "openai": ("OPENAI_API_KEY",),
     "openrouter": ("OPENROUTER_API_KEY",),
     "xai": ("XAI_API_KEY",),
-    "zhipuai": ("ZHIPU_API_KEY", "ZHIPUAI_API_KEY"),
 }
 
 BASE_URL_ENV_BY_PROVIDER: dict[str, tuple[str, ...]] = {

@@ -133,49 +133,6 @@ class LLMClient:
             provider="mock",
         )
 
-    async def _generate_zhipu(
-        self,
-        prompt: str,
-        system_prompt: str | None = None,
-    ) -> LLMResponse:
-        """Generate a response using Zhipu AI API.
-
-        Args:
-            prompt: The input prompt for the LLM.
-
-        Returns:
-            The LLM response from Zhipu AI.
-        """
-        import httpx
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        messages: list[dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        payload = {
-            "model": self.model,
-            "messages": messages,
-        }
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            data = response.json()
-
-        content = data["choices"][0]["message"]["content"]
-        return LLMResponse(content=content, model=self.model, provider="zhipuai")
-
     def _get_pydantic_model(self) -> object:
         """Get or create the pydantic-ai model instance.
 
@@ -200,7 +157,7 @@ class LLMClient:
         return self._model
 
     def supports_tool_execution(self) -> bool:
-        return not self._use_mock and self.provider != "zhipuai"
+        return not self._use_mock
 
     def build_text_agent(
         self,
@@ -333,9 +290,6 @@ class LLMClient:
             try:
                 if self._use_mock:
                     result = self._generate_mock_structured(output_schema)
-                elif self.provider == "zhipuai":
-                    response = await self._generate_zhipu(prompt, system_prompt)
-                    result = self._parse_structured_json_response(response.content)
                 else:
                     result = await self._generate_pydantic_ai_structured(
                         prompt,
@@ -404,8 +358,6 @@ class LLMClient:
             try:
                 if self._use_mock:
                     response = self._generate_mock(prompt)
-                elif self.provider == "zhipuai":
-                    response = await self._generate_zhipu(prompt, system_prompt)
                 else:
                     response = await self._generate_pydantic_ai(prompt, system_prompt)
                 

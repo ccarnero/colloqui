@@ -17,19 +17,19 @@ def test_llm_client_uses_mock_provider_without_api_key() -> None:
 
 
 def test_llm_client_resolves_api_key_from_credential_id(monkeypatch) -> None:
-    monkeypatch.setenv("LLM_CREDENTIAL_ZHIPU_PROD_API_KEY", "secret-key")
+    monkeypatch.setenv("LLM_CREDENTIAL_OPENAI_PROD_API_KEY", "secret-key")
 
     client = LLMClient(
         {
-            "provider": "zhipuai",
-            "model": "glm-4.5",
-            "credentialId": "zhipu-prod",
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "credentialId": "openai-prod",
         }
     )
 
-    assert client.provider == "zhipuai"
-    assert client.model == "glm-4.5"
-    assert client.credential_id == "zhipu-prod"
+    assert client.provider == "openai"
+    assert client.model == "gpt-4o-mini"
+    assert client.credential_id == "openai-prod"
     assert client.api_key == "secret-key"
     assert client._use_mock is False
 

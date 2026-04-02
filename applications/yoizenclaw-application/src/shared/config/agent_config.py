@@ -115,7 +115,6 @@ class AgentLlmPayload(BaseModel):
         "openai",
         "openrouter",
         "xai",
-        "zhipuai",
     ] | None = None
     model: str | None = None
     credential_mode: Literal["profile", "runtime-default", "none"] | None = Field(
