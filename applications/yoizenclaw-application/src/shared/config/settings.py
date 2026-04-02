@@ -25,7 +25,6 @@ class BootstrapSettings(BaseSettings):
         extra="ignore",
     )
 
-    BACKEND_WS_URL: str = "ws://localhost:3000"
     RUNTIME_API_KEY: str = ""
     NATS_URL: str = "nats://localhost:4222"
     backend_http_url: str = Field(

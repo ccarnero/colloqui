@@ -141,7 +141,7 @@ class JobExecutionEngine:
             # Persist execution record
             await self._memory.save_job_execution(execution)
 
-            # Report status to backend (if websocket available)
+            # Report status to backend (via NATS)
             await self._report_execution_status(execution, job)
 
     def _calculate_retry_delay(self, job: JobDefinition, retry_count: int) -> float:

@@ -20,7 +20,6 @@ _LAZY_MODULES: dict[str, str] = {
     "database": "src.infrastructure.database",
     "llm_providers": "src.infrastructure.llm_providers",
     "http": "src.interfaces.http",
-    "websocket": "src.interfaces.websocket",
     "config": "src.shared.config",
     "logging": "src.shared.logging",
     "utils": "src.shared.utils",

@@ -121,7 +121,7 @@ def _extract_action_from_subject(subject: str) -> str | None:
 
 def _is_configured_check() -> bool:
     try:
-        from src.interfaces.websocket import RuntimeConfigStore
+        from src.shared.config.runtime_config_store import RuntimeConfigStore
         return RuntimeConfigStore.get_optional() is not None
     except Exception:
         return False

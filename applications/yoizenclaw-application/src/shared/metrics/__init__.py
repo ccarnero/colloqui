@@ -64,12 +64,6 @@ job_duration_seconds = Histogram(
     buckets=[1.0, 5.0, 15.0, 60.0, 300.0]
 )
 
-websocket_connections_active = Gauge(
-    'websocket_connections_active',
-    'Active WebSocket connections',
-    ['service']
-)
-
 nats_messages_total = Counter(
     'nats_messages_total',
     'Total NATS messages',
@@ -164,14 +158,6 @@ def record_job_execution(job_type: str, status: str, duration: float,
         service=service,
         job_type=job_type
     ).observe(duration)
-
-
-def record_websocket_connection(active: bool, service: str = 'yoizen-claw') -> None:
-    """Record WebSocket connection metric."""
-    if active:
-        websocket_connections_active.labels(service=service).inc()
-    else:
-        websocket_connections_active.labels(service=service).dec()
 
 
 def record_nats_message(subject: str, msg_type: str, service: str = 'yoizen-claw') -> None:

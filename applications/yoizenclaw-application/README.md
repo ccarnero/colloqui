@@ -71,7 +71,7 @@ backend-synced runtime config directory.
 
 Environment variables used directly by the runtime:
 
-- `BACKEND_WS_URL`
+- `NATS_URL`
 - `RUNTIME_API_KEY`
 - `BACKEND_HTTP_URL`
 - `BACKEND_HTTP_API_KEY`
@@ -102,7 +102,7 @@ src/
 |-- config_loader/ # Runtime configuration and seed loaders
 |-- domain/        # Pure entities and domain rules
 |-- infrastructure/# External adapters and persistence
-|-- interfaces/    # HTTP and websocket adapters
+|-- interfaces/    # HTTP and NATS adapters
 |-- jobs/          # Scheduler, triggers, and job execution
 |-- shared/        # Shared helpers and logging
 \-- core/          # Compatibility layer for legacy imports
@@ -134,7 +134,7 @@ On startup the runtime:
 1. Initializes structured JSON logging.
 2. Loads runtime memory and agent configuration.
 3. Starts the job scheduler.
-4. Opens the websocket connection back to the control plane.
+4. Opens the NATS connection back to the control plane.
 
 That means the health endpoint is reachable before full configuration, but it
 only reports `configured: true` after the control plane has synced runtime
@@ -146,5 +146,5 @@ data.
 pytest
 ```
 
-The test suite covers memory, configuration loading, websocket behavior, and
+The test suite covers memory, configuration loading, NATS messaging, and
 job orchestration.

@@ -31,7 +31,6 @@ _job_duration_histogram: metrics.Histogram | None = None
 _job_executions_counter: metrics.Counter | None = None
 _nats_messages_counter: metrics.Counter | None = None
 _nats_duration_histogram: metrics.Histogram | None = None
-_websocket_connections_gauge: metrics.UpDownCounter | None = None
 _http_requests_counter: metrics.Counter | None = None
 _http_duration_histogram: metrics.Histogram | None = None
 
@@ -128,7 +127,6 @@ def _initialize_business_metrics(meter: metrics.Meter) -> None:
     global _job_executions_counter
     global _nats_messages_counter
     global _nats_duration_histogram
-    global _websocket_connections_gauge
     global _http_requests_counter
     global _http_duration_histogram
     
@@ -179,13 +177,6 @@ def _initialize_business_metrics(meter: metrics.Meter) -> None:
         description="NATS message processing duration",
         unit="s",
         explicit_bucket_boundaries_advisory=[0.01, 0.05, 0.1, 0.5, 1, 2, 5],
-    )
-    
-    # WebSocket metrics
-    _websocket_connections_gauge = meter.create_up_down_counter(
-        "websocket_connections_active",
-        description="Number of active WebSocket connections",
-        unit="1",
     )
     
     # HTTP metrics
@@ -307,17 +298,6 @@ def record_nats_duration(duration_seconds: float, subject: str) -> None:
     """
     if _nats_duration_histogram:
         _nats_duration_histogram.record(duration_seconds, {"subject": subject})
-
-
-def update_websocket_connections(delta: int, endpoint: str) -> None:
-    """Update active WebSocket connections count.
-    
-    Args:
-        delta: Change in connection count (+1 or -1).
-        endpoint: WebSocket endpoint.
-    """
-    if _websocket_connections_gauge:
-        _websocket_connections_gauge.add(delta, {"endpoint": endpoint})
 
 
 def record_http_request(method: str, route: str, status_code: int) -> None:

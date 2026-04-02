@@ -13,7 +13,8 @@ from src.shared.config.agent_config import (
 )
 from src.shared.config.config_loader_settings import get_runtime_prompts_dir
 from src.shared.config.prompts import PromptLoadError, PromptLoader
-from src.interfaces.websocket import RuntimeConfigStore, RuntimeNotConfiguredError
+from src.shared.config.runtime_config_store import RuntimeConfigStore
+from src.shared.errors.base import RuntimeNotConfiguredError
 from src.tools.registry import get_registry
 
 chat_prompt_loader = PromptLoader(str(get_runtime_prompts_dir()))

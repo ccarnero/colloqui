@@ -7,7 +7,6 @@ from typing import Any
 
 _LAZY_MODULES: dict[str, str] = {
     "http": "src.interfaces.http",
-    "websocket": "src.interfaces.websocket",
 }
 
 __all__ = list(_LAZY_MODULES)

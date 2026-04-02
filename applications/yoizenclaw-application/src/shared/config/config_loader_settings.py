@@ -119,7 +119,7 @@ class Settings:
         if not value:
             raise RuntimeError(
                 "llm.provider not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return value
     
@@ -130,7 +130,7 @@ class Settings:
         if not value:
             raise RuntimeError(
                 "llm.model not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return value
     
@@ -141,7 +141,7 @@ class Settings:
         if not value:
             raise RuntimeError(
                 "llm.api_key not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return value
     
@@ -152,7 +152,7 @@ class Settings:
         if value is None:
             raise RuntimeError(
                 "llm.temperature not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return float(value)
     
@@ -163,7 +163,7 @@ class Settings:
         if value is None:
             raise RuntimeError(
                 "llm.max_tokens not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return int(value)
     
@@ -177,7 +177,7 @@ class Settings:
         if not value:
             raise RuntimeError(
                 "backend.http_url not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return value
 
@@ -191,7 +191,7 @@ class Settings:
         if not value:
             raise RuntimeError(
                 "backend.http_api_key not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return value
 
@@ -202,7 +202,7 @@ class Settings:
         if value is None:
             raise RuntimeError(
                 "yoizen.check_interval not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return int(value)
     
@@ -213,7 +213,7 @@ class Settings:
         if value is None:
             raise RuntimeError(
                 "retry.max_retries not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return int(value)
     
@@ -224,7 +224,7 @@ class Settings:
         if value is None:
             raise RuntimeError(
                 "retry.delay not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return float(value)
     
@@ -265,7 +265,7 @@ class Settings:
         if value is None:
             raise RuntimeError(
                 "agent.max_iterations not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return int(value)
     
@@ -276,7 +276,7 @@ class Settings:
         if value is None:
             raise RuntimeError(
                 "agent.timeout not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return int(value)
     
@@ -287,7 +287,7 @@ class Settings:
         if value is None:
             raise RuntimeError(
                 "memory.max_size not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return int(value)
     
@@ -340,7 +340,7 @@ class GlobalSettings:
         if not value:
             raise RuntimeError(
                 "backend.http_url not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return value
 
@@ -354,7 +354,7 @@ class GlobalSettings:
         if not value:
             raise RuntimeError(
                 "backend.http_api_key not configured. "
-                "Backend must push configuration via WebSocket."
+                "Backend must push configuration via NATS."
             )
         return value
 

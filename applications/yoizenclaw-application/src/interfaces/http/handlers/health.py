@@ -1,6 +1,6 @@
 """Health check handler with dependency validation.
 
-Checks PostgreSQL, NATS, WebSocket, and scheduler connectivity.
+Checks PostgreSQL, NATS, and scheduler connectivity.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from src.interfaces.websocket.config_store import RuntimeConfigStore
+from src.shared.config.runtime_config_store import RuntimeConfigStore
 
 router = APIRouter()
 
@@ -93,20 +93,25 @@ def _check_config() -> HealthCheckDependency:
     return HealthCheckDependency(name="runtime_config", status="ok")
 
 
-def _check_websocket() -> HealthCheckDependency:
+def _check_nats_status() -> HealthCheckDependency:
+    """Check NATS connection status."""
     try:
-        from src.interfaces.websocket.manager import get_websocket_manager
+        from src.interfaces.nats_bridge import get_nats_bridge
 
-        ws_manager = get_websocket_manager()
-        if ws_manager is None:
+        bridge = get_nats_bridge()
+        if bridge is None:
             return HealthCheckDependency(
-                name="websocket", status="unavailable",
+                name="nats_connection", status="unavailable",
             )
-        return HealthCheckDependency(name="websocket", status="ok")
-    except Exception as exc:
-        logger.debug("WebSocket manager check failed: %s", exc)
+        connected = bridge._nats.is_connected
         return HealthCheckDependency(
-            name="websocket", status="error", detail=str(exc),
+            name="nats_connection",
+            status="ok" if connected else "disconnected",
+        )
+    except Exception as exc:
+        logger.debug("NATS connection check failed: %s", exc)
+        return HealthCheckDependency(
+            name="nats_connection", status="error", detail=str(exc),
         )
 
 
@@ -120,7 +125,7 @@ async def health_check() -> DetailedHealthResponse:
         _check_nats,
         _check_scheduler,
         _check_config,
-        _check_websocket,
+        _check_nats_status,
     ]
 
     dependencies: dict[str, HealthCheckDependency] = {}

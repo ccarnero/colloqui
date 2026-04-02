@@ -2,7 +2,7 @@
 
 Resolves API keys, base URLs, and service account credentials from
 environment variables and runtime secret files. All provider and model
-configuration comes from backend via WebSocket - no hardcoded defaults.
+configuration comes from backend via NATS - no hardcoded defaults.
 """
 
 from __future__ import annotations
@@ -223,7 +223,7 @@ def _resolve_credentials(
 ) -> CredentialSettings:
     """Resolve credentials from environment variables.
 
-    All configuration comes from backend via WebSocket, credentials
+    All configuration comes from backend via NATS, credentials
     are resolved from environment variables based on provider.
     """
     runtime_secret_entries = _get_runtime_secret_entries()

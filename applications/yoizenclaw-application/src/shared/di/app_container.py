@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from nats.aio.client import Client as NATS
 
     from src.interfaces.nats_bridge import RuntimeNatsBridge
-    from src.interfaces.websocket.manager import ConfigWebSocketManager
     from src.jobs.scheduler_core import JobScheduler
     from src.shared.adapter_client import AdapterClient
     from src.shared.config.tools import ToolRegistry
@@ -37,7 +36,6 @@ class AppContainer:
 
     def __init__(self) -> None:
         self._job_scheduler: JobScheduler | None = None
-        self._websocket_manager: ConfigWebSocketManager | None = None
         self._nats_bridge: RuntimeNatsBridge | None = None
         self._webhook_client: httpx.AsyncClient | None = None
         self._pipeline_http_client: httpx.AsyncClient | None = None
@@ -71,16 +69,6 @@ class AppContainer:
     @job_scheduler.setter
     def job_scheduler(self, value: JobScheduler | None) -> None:
         self._job_scheduler = value
-
-    # -- websocket_manager ----------------------------------------------
-
-    @property
-    def websocket_manager(self) -> ConfigWebSocketManager | None:
-        return self._websocket_manager
-
-    @websocket_manager.setter
-    def websocket_manager(self, value: ConfigWebSocketManager | None) -> None:
-        self._websocket_manager = value
 
     # -- nats_bridge ----------------------------------------------------
 

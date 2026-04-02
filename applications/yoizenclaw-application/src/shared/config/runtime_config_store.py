@@ -1,7 +1,7 @@
 """Runtime configuration store and data models.
 
 Centralizes all configuration-related data classes and the thread-safe
-store used by the WebSocket manager and other services.
+store used by NATS bridge and other services.
 """
 
 from __future__ import annotations

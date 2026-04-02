@@ -2,7 +2,7 @@
 
 Supports per-agent provider and model selection, resolves credential bundles
 from environment variables. All provider and model configuration comes from
-backend via WebSocket - no hardcoded defaults.
+backend via NATS - no hardcoded defaults.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ class LLMClient:
     """LLM client configured entirely by backend.
 
     All provider and model configuration comes from RuntimeConfigStore
-    (populated by backend via WebSocket) - no hardcoded defaults.
+    (populated by backend via NATS) - no hardcoded defaults.
     """
 
     def __init__(self, llm_config: dict[str, object] | None = None) -> None:
@@ -58,7 +58,7 @@ class LLMClient:
         if llm_config:
             config = llm_config
         else:
-            from src.interfaces.websocket import RuntimeConfigStore
+            from src.shared.config.runtime_config_store import RuntimeConfigStore
 
             runtime_config = RuntimeConfigStore.get_optional()
             if runtime_config is None:

@@ -11,7 +11,7 @@ Supported step types
 - **condition**     – Branch based on a simple expression
 - **loop**          – Iterate over a collection executing sub-steps
 - **transform**     – Map / filter / reshape data
-- **notify**        – Send an event to the backend via WebSocket
+- **notify**        – Send an event to the backend via NATS
 """
 
 from __future__ import annotations
@@ -382,7 +382,7 @@ async def _exec_notify(
     config: dict[str, Any],
     ctx: PipelineContext,
 ) -> dict[str, Any]:
-    """Send an event to the backend via WebSocket.
+    """Send an event to the backend via NATS.
 
     Config keys:
         event (str):   Event name.

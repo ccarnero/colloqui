@@ -260,7 +260,7 @@ class AgentManager:
         )
 
     async def _sync_runtime_store(self) -> None:
-        from src.interfaces.websocket import RuntimeConfigStore
+        from src.shared.config.runtime_config_store import RuntimeConfigStore
 
         if not self._configured:
             RuntimeConfigStore.clear()
