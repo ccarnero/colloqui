@@ -17,11 +17,12 @@ from opentelemetry import trace
 
 from src.application.agents.prompt_references import parse_prompt_references
 from src.shared.config.prompts import PromptLoader
-from src.application.llm.llm_service import LLMClient
+from src.application.llm.llm_service import LLMClient, LLMDeps
 from src.application.agents.condition_evaluator import ConditionEvaluator
 from src.application.agents.template_renderer import TemplateRenderer
 from src.application.agents.tool_executor import ToolExecutor
 from src.tools.registry import ToolRegistry
+from src.shared.config.settings import bootstrap_settings
 from src.shared.telemetry import get_tracer, record_agent_execution
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,14 @@ class Agent:
 
                 response = await self.llm_client.generate(
                     user_prompt,
-                    system_prompt=rendered_system_prompt,
+                    instructions=rendered_system_prompt,
+                    deps=LLMDeps(
+                        tenant_id=bootstrap_settings.TENANT_ID or "default",
+                        agent_id=agent_id,
+                        conversation_id=context.get("conversation_id") if context else None,
+                        tool_registry=self.tool_registry,
+                        metadata=self.agent_metadata,
+                    ),
                 )
                 
                 # Record metrics
@@ -214,7 +222,7 @@ class Agent:
                         tool_calls,
                     )
                     skill_agent = self.llm_client.build_text_agent(
-                        system_prompt=(rendered_system_prompt, skill_prompt),
+                        instructions=f"{rendered_system_prompt}\n\n{skill_prompt}",
                         tools=skill_tools,
                     )
                     result = await skill_agent.run(user_prompt)
@@ -224,7 +232,14 @@ class Agent:
                 else:
                     step_response = await self.llm_client.generate(
                         user_prompt,
-                        system_prompt=f"{rendered_system_prompt}\n\n{skill_prompt}",
+                        instructions=f"{rendered_system_prompt}\n\n{skill_prompt}",
+                        deps=LLMDeps(
+                            tenant_id=bootstrap_settings.TENANT_ID or "default",
+                            agent_id=agent_id,
+                            conversation_id=context.get("conversation_id") if context else None,
+                            tool_registry=self.tool_registry,
+                            metadata=self.agent_metadata,
+                        ),
                     )
                     response = step_response.content.strip()
 

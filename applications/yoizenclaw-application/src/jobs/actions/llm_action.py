@@ -41,20 +41,20 @@ async def execute_llm_call(
     prompt = await render_prompt(prompt_template, context, execution)
 
     if system_prompt_override:
-        system_prompt = system_prompt_override
+        instructions = system_prompt_override
     else:
         try:
             from src.shared.config.runtime_config_store import RuntimeConfigStore
 
             runtime_config = await RuntimeConfigStore.get()
-            system_prompt = runtime_config.agent.system_prompt
+            instructions = runtime_config.agent.system_prompt
         except Exception:
-            system_prompt = None
+            instructions = None
 
     execution.add_log("Calling LLM...")
     response = await llm_client.generate(
         prompt=prompt,
-        system_prompt=system_prompt,
+        instructions=instructions,
     )
 
     execution.add_log(f"LLM response received from {response.provider}/{response.model}")
