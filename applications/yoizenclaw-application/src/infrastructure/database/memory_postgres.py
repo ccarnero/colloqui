@@ -86,6 +86,7 @@ class Memory(MemoryBackend):
             min_size=2,
             max_size=10,
             init=_init_connection,
+            ssl="prefer",
         )
 
         async with self._pool.acquire() as conn:
