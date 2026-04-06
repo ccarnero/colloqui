@@ -4,10 +4,10 @@ import { JsInlineExecutor } from "../../src/executors/js-inline.executor";
 import {
   ExecMode,
   ScheduleType,
-} from "../../src/modules/schedules/schedule.dto";
-import type { Schedule } from "../../src/modules/schedules/schedules.service";
+} from "../../src/modules/schedules/schedules.dto";
+import type { ISchedule } from "../../src/modules/schedules/schedules.service";
 
-function baseSchedule(overrides: Partial<Schedule> = {}): Schedule {
+function baseSchedule(overrides: Partial<ISchedule> = {}): ISchedule {
   return {
     id: "550e8400-e29b-41d4-a716-446655440000",
     name: "inline",

@@ -95,7 +95,9 @@ GEMINI.md
 .opencode/**/cache/
 
 # Package manager locks (optional - uncomment if needed)
-# package-lock.json
+package-lock.json
+*/*/package-lock.json
+*/*/*/package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
 bun.lock

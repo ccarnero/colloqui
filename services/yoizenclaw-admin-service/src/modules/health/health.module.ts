@@ -1,11 +1,11 @@
-import { Module } from '@nestjs/common';
-import { HealthController } from './health.controller';
+import { Module } from "@nestjs/common";
+import { HealthController } from "./health.controller";
 
 /**
- * Módulo de Health para endpoints de health checking.
+ * Health module for health-check endpoints.
  *
- * Provee:
- * - GET /health - Verifica estado del servicio y dependencias
+ * Provides:
+ * - GET /health — service and dependency status
  */
 @Module({
   controllers: [HealthController],

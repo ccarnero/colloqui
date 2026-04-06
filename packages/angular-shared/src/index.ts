@@ -18,6 +18,7 @@ export { BaseAuthService } from "./base-auth.service";
 export { authInterceptor } from "./auth.interceptor";
 export { tenantInterceptor } from "./tenant.interceptor";
 export { authGuard } from "./auth.guard";
+export { provideCoreApp } from "./app-providers";
 
 /** Aliases for consumers that prefer PascalCase interceptor names. */
 export { authInterceptor as AuthInterceptor } from "./auth.interceptor";

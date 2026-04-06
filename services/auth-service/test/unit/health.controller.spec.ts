@@ -1,13 +1,9 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
+import { createMockPostgresSql } from "@yoizen/testing";
 import { HealthController } from "../../src/modules/health/health.controller";
 import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
-import { REDIS_CLIENT } from "../../src/providers/redis.provider";
-
-function createMockSql() {
-  const fn = mock((..._args: unknown[]) => Promise.resolve([{ "?column?": 1 }]));
-  return fn as unknown as ReturnType<typeof import("postgres")>;
-}
+import { REDIS_CLIENT } from "@yoizen/database";
 
 function createMockRedis() {
   return {
@@ -17,11 +13,11 @@ function createMockRedis() {
 
 describe("HealthController", () => {
   let controller: HealthController;
-  let sql: ReturnType<typeof createMockSql>;
+  let sql: ReturnType<typeof createMockPostgresSql>;
   let redis: ReturnType<typeof createMockRedis>;
 
   beforeEach(async () => {
-    sql = createMockSql();
+    sql = createMockPostgresSql(mock, [{ "?column?": 1 }]);
     redis = createMockRedis();
 
     const module = await Test.createTestingModule({

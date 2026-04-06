@@ -8,7 +8,7 @@ import type { JwtPayload } from "@yoizen/shared";
 import { AuditInterceptor } from "../../src/interceptors/audit.interceptor";
 import { REQUEST_USER_KEY } from "../../src/guards/auth.guard";
 import { REQUEST_TENANT_KEY } from "../../src/guards/tenant.guard";
-import type { YoizenRequest } from "../../src/types/yoizen-request";
+import type { IYoizenRequest } from "../../src/types/yoizen-request";
 
 describe("AuditInterceptor", () => {
   let publishMock: ReturnType<typeof mock>;
@@ -24,7 +24,7 @@ describe("AuditInterceptor", () => {
   }
 
   function createExecution(
-    request: YoizenRequest,
+    request: IYoizenRequest,
     reply: FastifyReply,
   ): ExecutionContext {
     return {
@@ -50,7 +50,7 @@ describe("AuditInterceptor", () => {
       headers: {},
       id: "req-1",
       ip: "127.0.0.1",
-    } as YoizenRequest;
+    } as IYoizenRequest;
     const reply = baseReply();
     const next: CallHandler = {
       handle: () => of({ ok: true }),
@@ -84,7 +84,7 @@ describe("AuditInterceptor", () => {
       ip: "10.0.0.1",
       [REQUEST_USER_KEY]: user,
       [REQUEST_TENANT_KEY]: "t1",
-    } as YoizenRequest;
+    } as IYoizenRequest;
     const reply = baseReply();
     const next: CallHandler = {
       handle: () => of({ accepted: true }),

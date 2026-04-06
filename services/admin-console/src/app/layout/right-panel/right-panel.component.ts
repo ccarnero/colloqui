@@ -1,4 +1,9 @@
-import { Component, computed, inject } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+} from "@angular/core";
 import { DashboardService } from "../../core/services/dashboard.service";
 import { SparklineComponent } from "../../shared/components/sparkline/sparkline.component";
 import { ProgressBarComponent } from "../../shared/components/progress-bar/progress-bar.component";
@@ -6,6 +11,7 @@ import { DatePipe } from "@angular/common";
 
 @Component({
   selector: "app-right-panel",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SparklineComponent, ProgressBarComponent, DatePipe],
   template: `
     <aside class="panel">

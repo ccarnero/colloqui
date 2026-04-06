@@ -1,16 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as yaml from 'js-yaml';
+import { Injectable } from "@nestjs/common";
+import * as fs from "fs/promises";
+import * as yaml from "js-yaml";
+import { PinoLoggerService } from "@yoizen/observability";
+import { yoizenclawAdminServiceConfig } from "../../config";
 
-export interface AgentTemplateSubagent {
+export interface IAgentTemplateSubagent {
   name: string;
   description: string;
   system_prompt: string;
   enabled: boolean;
 }
 
-export interface AgentTemplate {
+export interface IAgentTemplate {
   id: string;
   label: string;
   name: string;
@@ -18,10 +19,10 @@ export interface AgentTemplate {
   system_prompt: string;
   rules: string;
   soul: string;
-  subagents: AgentTemplateSubagent[];
+  subagents: IAgentTemplateSubagent[];
 }
 
-interface TemplatesFile {
+interface ITemplatesFile {
   templates: Array<{
     id: string;
     label: string;
@@ -41,32 +42,31 @@ interface TemplatesFile {
 
 @Injectable()
 export class TemplatesService {
-  private readonly logger = new Logger(TemplatesService.name);
-  private templatesCache: AgentTemplate[] | null = null;
+  private readonly logger = new PinoLoggerService(TemplatesService.name);
+  private templatesCache: IAgentTemplate[] | null = null;
   private readonly templatesPath: string;
 
   constructor() {
-    // Resolve path relative to project root
-    this.templatesPath = path.resolve(process.cwd(), 'data', 'templates.yaml');
+    this.templatesPath = yoizenclawAdminServiceConfig.templatesYamlPath;
   }
 
-  async loadTemplates(): Promise<AgentTemplate[]> {
+  async loadTemplates(): Promise<IAgentTemplate[]> {
     // Return cached templates if available
     if (this.templatesCache) {
       return this.templatesCache;
     }
 
     try {
-      const fileContent = await fs.readFile(this.templatesPath, 'utf-8');
-      const parsed = yaml.load(fileContent) as TemplatesFile;
-      
+      const fileContent = await fs.readFile(this.templatesPath, "utf-8");
+      const parsed = yaml.load(fileContent) as ITemplatesFile;
+
       if (!parsed?.templates || !Array.isArray(parsed.templates)) {
-        this.logger.warn('No templates found in templates.yaml');
+        this.logger.warn("No templates found in templates.yaml");
         return [];
       }
 
       // Transform to expected format
-      this.templatesCache = parsed.templates.map(template => ({
+      this.templatesCache = parsed.templates.map((template) => ({
         id: template.id,
         label: template.label,
         name: template.name,
@@ -74,30 +74,23 @@ export class TemplatesService {
         system_prompt: template.system_prompt,
         rules: template.rules,
         soul: template.soul,
-        subagents: template.subagents?.map(sub => ({
-          name: sub.name,
-          description: sub.description,
-          system_prompt: sub.system_prompt,
-          enabled: sub.enabled ?? true,
-        })) || [],
+        subagents:
+          template.subagents?.map((sub) => ({
+            name: sub.name,
+            description: sub.description,
+            system_prompt: sub.system_prompt,
+            enabled: sub.enabled ?? true,
+          })) || [],
       }));
 
       this.logger.log(`Loaded ${this.templatesCache.length} agent templates`);
       return this.templatesCache;
     } catch (error) {
-      this.logger.error(`Failed to load templates from ${this.templatesPath}:`, error);
+      this.logger.error(
+        `Failed to load templates from ${this.templatesPath}:`,
+        error,
+      );
       return [];
     }
-  }
-
-  async getTemplateById(id: string): Promise<AgentTemplate | null> {
-    const templates = await this.loadTemplates();
-    return templates.find(t => t.id === id) || null;
-  }
-
-  // Call this to reload templates (e.g., after file changes)
-  invalidateCache(): void {
-    this.templatesCache = null;
-    this.logger.log('Templates cache invalidated');
   }
 }

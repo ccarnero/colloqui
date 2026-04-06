@@ -1,14 +1,14 @@
 import type { IYoizenclawSubagentDraft } from "../../../core/models/yoizenclaw.model";
 
 /** Skill row for quick-insert chips and Monaco hover text. */
-export interface SkillInfo {
+export interface ISkillInfo {
   id: string;
   name: string;
   description: string;
 }
 
 /** Tool row for quick-insert chips and Monaco hover text. */
-export interface ToolInfo {
+export interface IToolInfo {
   id: string;
   name: string;
   description: string;

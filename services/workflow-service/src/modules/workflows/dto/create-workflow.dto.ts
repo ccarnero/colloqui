@@ -3,7 +3,11 @@ import {
   IsNotEmpty,
   IsArray,
   MaxLength,
+  ArrayNotEmpty,
+  Validate,
 } from "class-validator";
+import type { WorkflowAction } from "@yoizen/shared";
+import { IsWorkflowActionArrayConstraint } from "./workflow-action.validator";
 
 export class CreateWorkflowDto {
   @IsString()
@@ -17,5 +21,7 @@ export class CreateWorkflowDto {
   application!: string;
 
   @IsArray()
-  actions!: unknown[];
+  @ArrayNotEmpty()
+  @Validate(IsWorkflowActionArrayConstraint)
+  actions!: WorkflowAction[];
 }

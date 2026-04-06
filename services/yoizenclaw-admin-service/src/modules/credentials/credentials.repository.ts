@@ -1,18 +1,23 @@
-import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
-
-export type CredentialType = 'api_key' | 'oauth' | 'basic' | 'custom';
+import { Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import type { JsonValue } from "@yoizen/shared";
+import {
+  appendSqlSetFragment,
+  composeUpdateSetClause,
+} from "../../common/repository-sql.util";
+import { TenantScopedRepository } from "../../providers/tenant-scoped.repository";
+import { TenantConnectionManager } from "@yoizen/database";
+import type { CredentialType } from "./credentials.dto";
 
 /**
- * Credential entity - NUNCA expuesto con campo 'value' en API responses
- * FIXME: Implementar cifrado con KMS/Vault - actualmente is_encrypted=false
+ * Credential entity — never expose `value` in API responses.
+ * FIXME: Implement encryption with KMS/Vault — currently is_encrypted=false.
  */
-export interface Credential {
+export interface ICredential {
   id: string;
   name: string;
   type: CredentialType;
-  value: string; // Campo sensible - solo usado internamente
+  value: string; // Sensitive — internal use only
   is_encrypted: boolean;
   metadata: Record<string, unknown>;
   expires_at: Date | null;
@@ -22,9 +27,9 @@ export interface Credential {
 }
 
 /**
- * Credential sin campo value - versión segura para API responses
+ * Credential without `value` — safe shape for API responses.
  */
-export interface CredentialWithoutValue {
+export interface ICredentialWithoutValue {
   id: string;
   name: string;
   type: CredentialType;
@@ -36,7 +41,7 @@ export interface CredentialWithoutValue {
   updated_at: Date;
 }
 
-export interface CreateCredentialData {
+export interface ICreateCredentialData {
   name: string;
   type: CredentialType;
   value: string;
@@ -45,7 +50,7 @@ export interface CreateCredentialData {
   is_active?: boolean;
 }
 
-export interface UpdateCredentialData {
+export interface IUpdateCredentialData {
   name?: string;
   type?: CredentialType;
   value?: string;
@@ -54,60 +59,57 @@ export interface UpdateCredentialData {
   is_active?: boolean;
 }
 
-export interface FindAllOptions {
+export interface IFindAllOptions {
   type?: CredentialType;
   is_active?: boolean;
   limit?: number;
   offset?: number;
 }
 
-// Helper type for JSON values compatible with postgres.js
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type JsonValue = any;
+export type CredentialWithoutValue = ICredentialWithoutValue;
+export type CreateCredentialData = ICreateCredentialData;
+export type UpdateCredentialData = IUpdateCredentialData;
 
 @Injectable()
-export class CredentialsRepository {
-  constructor(
-    private readonly connectionManager: TenantConnectionManager,
-  ) {}
-
-  private async getSql(tenantId: string): Promise<Sql> {
-    await this.connectionManager.ensureSchema(tenantId);
-    return this.connectionManager.getConnection(tenantId);
+export class CredentialsRepository extends TenantScopedRepository {
+  constructor(connectionManager: TenantConnectionManager) {
+    super(connectionManager);
   }
 
   /**
-   * Lista todas las credenciales con filtros opcionales y paginación.
-   * Retorna credentials SIN el campo value por seguridad.
+   * Lists credentials with optional filters and pagination.
+   * Returns rows without `value` for safety.
    */
   async findAll(
     tenantId: string,
-    options: FindAllOptions = {},
+    options: IFindAllOptions = {},
   ): Promise<{ credentials: CredentialWithoutValue[]; total: number }> {
     const sql = await this.getSql(tenantId);
-    const { type, limit = 20, offset = 0 } = options;
+    const {
+      type,
+      is_active: isActiveFilter,
+      limit = 20,
+      offset = 0,
+    } = options;
 
-    // Build where clause with parameterized conditions
-    const conditions: string[] = ['is_active = true'];
-    const params: (string | boolean | number)[] = [];
-    let paramIndex = 1;
-
-    if (type) {
-      conditions.push(`type = $${paramIndex}`);
-      params.push(type);
-      paramIndex++;
-    }
-
-    const whereClause = conditions.join(' AND ');
+    /** When omitted, list only active rows (soft-delete default). */
+    const isActiveEq = isActiveFilter === undefined ? true : isActiveFilter;
 
     // Get total count
-    const countResult = await sql<{ count: number }[]>`
-      SELECT COUNT(*) as count FROM credentials WHERE ${sql.unsafe(whereClause)}
+    const countResult = type
+      ? await sql<{ count: string | number }[]>`
+      SELECT COUNT(*)::bigint AS count FROM credentials
+      WHERE is_active = ${isActiveEq} AND type = ${type}
+    `
+      : await sql<{ count: string | number }[]>`
+      SELECT COUNT(*)::bigint AS count FROM credentials
+      WHERE is_active = ${isActiveEq}
     `;
     const total = Number(countResult[0].count);
 
     // Get credentials WITHOUT value field (security)
-    const credentials = await sql<CredentialWithoutValue[]>`
+    const credentials = type
+      ? await sql<CredentialWithoutValue[]>`
       SELECT 
         id,
         name,
@@ -119,7 +121,24 @@ export class CredentialsRepository {
         created_at,
         updated_at
       FROM credentials
-      WHERE ${sql.unsafe(whereClause)}
+      WHERE is_active = ${isActiveEq} AND type = ${type}
+      ORDER BY created_at DESC
+      LIMIT ${limit}
+      OFFSET ${offset}
+    `
+      : await sql<CredentialWithoutValue[]>`
+      SELECT 
+        id,
+        name,
+        type,
+        is_encrypted,
+        metadata,
+        expires_at,
+        is_active,
+        created_at,
+        updated_at
+      FROM credentials
+      WHERE is_active = ${isActiveEq}
       ORDER BY created_at DESC
       LIMIT ${limit}
       OFFSET ${offset}
@@ -129,8 +148,7 @@ export class CredentialsRepository {
   }
 
   /**
-   * Busca una credencial por su ID.
-   * Retorna credential SIN el campo value por seguridad.
+   * Finds a credential by ID (without `value`).
    */
   async findById(
     tenantId: string,
@@ -158,38 +176,8 @@ export class CredentialsRepository {
   }
 
   /**
-   * Busca una credencial por su ID incluyendo el campo value.
-   * ⚠️ Solo usar internamente, NUNCA exponer en API responses.
-   */
-  async findByIdWithValue(
-    tenantId: string,
-    id: string,
-  ): Promise<Credential | null> {
-    const sql = await this.getSql(tenantId);
-
-    const results = await sql<Credential[]>`
-      SELECT 
-        id,
-        name,
-        type,
-        value,
-        is_encrypted,
-        metadata,
-        expires_at,
-        is_active,
-        created_at,
-        updated_at
-      FROM credentials
-      WHERE id = ${id} AND is_active = true
-      LIMIT 1
-    `;
-
-    return results[0] ?? null;
-  }
-
-  /**
-   * Crea una nueva credencial.
-   * FIXME: Implementar cifrado con KMS/Vault - actualmente guarda plaintext
+   * Creates a credential.
+   * FIXME: Encrypt with KMS/Vault — currently stores plaintext.
    */
   async create(
     tenantId: string,
@@ -198,8 +186,8 @@ export class CredentialsRepository {
     const sql = await this.getSql(tenantId);
     const credentialId = randomUUID();
 
-    // FIXME: Implementar cifrado con KMS/Vault antes de producción
-    // Por ahora, is_encrypted siempre es false (placeholder)
+    // FIXME: Encrypt with KMS/Vault before production
+    // For now is_encrypted stays false (placeholder)
     const isEncrypted = false;
 
     const results = await sql<CredentialWithoutValue[]>`
@@ -242,8 +230,8 @@ export class CredentialsRepository {
   }
 
   /**
-   * Actualiza una credencial existente.
-   * FIXME: Implementar cifrado con KMS/Vault antes de producción
+   * Updates an existing credential.
+   * FIXME: Encrypt with KMS/Vault before production
    */
   async update(
     tenantId: string,
@@ -252,32 +240,40 @@ export class CredentialsRepository {
   ): Promise<CredentialWithoutValue | null> {
     const sql = await this.getSql(tenantId);
 
-    // Build dynamic update using sql for proper parameterization
-    const updates: string[] = ['updated_at = NOW()'];
-    
+    const updates: string[] = [];
+    appendSqlSetFragment(updates, sql`updated_at = NOW()`);
+
     if (data.name !== undefined) {
-      updates.push(sql`name = ${data.name}` as unknown as string);
+      appendSqlSetFragment(updates, sql`name = ${data.name}`);
     }
     if (data.type !== undefined) {
-      updates.push(sql`type = ${data.type}` as unknown as string);
+      appendSqlSetFragment(updates, sql`type = ${data.type}`);
     }
     if (data.value !== undefined) {
-      // FIXME: Implementar cifrado con KMS/Vault antes de producción
-      // Al actualizar el value, is_encrypted sigue siendo false (placeholder)
-      updates.push(sql`value = ${data.value}` as unknown as string);
-      updates.push(sql`is_encrypted = ${false}` as unknown as string);
+      // FIXME: Encrypt with KMS/Vault before production
+      appendSqlSetFragment(updates, sql`value = ${data.value}`);
+      appendSqlSetFragment(updates, sql`is_encrypted = ${false}`);
     }
     if (data.metadata !== undefined) {
-      updates.push(sql`metadata = ${sql.json(data.metadata as JsonValue)}` as unknown as string);
+      appendSqlSetFragment(
+        updates,
+        sql`metadata = ${sql.json(data.metadata as JsonValue)}`,
+      );
     }
     if (data.expires_at !== undefined) {
-      updates.push(sql`expires_at = ${data.expires_at ? new Date(data.expires_at) : null}` as unknown as string);
+      appendSqlSetFragment(
+        updates,
+        sql`expires_at = ${data.expires_at ? new Date(data.expires_at) : null}`,
+      );
     }
     if (data.is_active !== undefined) {
-      updates.push(sql`is_active = ${data.is_active}` as unknown as string);
+      appendSqlSetFragment(
+        updates,
+        sql`is_active = ${data.is_active}`,
+      );
     }
 
-    const setClause = updates.join(', ');
+    const setClause = composeUpdateSetClause(updates);
 
     const results = await sql<CredentialWithoutValue[]>`
       UPDATE credentials
@@ -299,7 +295,7 @@ export class CredentialsRepository {
   }
 
   /**
-   * Elimina (soft delete) una credencial.
+   * Soft-deletes a credential.
    */
   async delete(tenantId: string, id: string): Promise<boolean> {
     const sql = await this.getSql(tenantId);
@@ -315,20 +311,21 @@ export class CredentialsRepository {
   }
 
   /**
-   * Rota el valor de una credencial (actualiza value y updated_at).
-   * Emite evento credential.rotated después de llamar a esto.
-   * FIXME: Implementar cifrado con KMS/Vault antes de producción
+   * Rotates a credential value (updates value and updated_at).
+   * Emit credential.rotated after calling this.
+   * FIXME: Encrypt with KMS/Vault before production
    */
-  async rotate(
-    tenantId: string,
-    id: string,
-    newValue: string,
-    newExpiresAt?: string,
-  ): Promise<CredentialWithoutValue | null> {
+  async rotate(options: {
+    tenantId: string;
+    id: string;
+    newValue: string;
+    newExpiresAt?: string;
+  }): Promise<CredentialWithoutValue | null> {
+    const { tenantId, id, newValue, newExpiresAt } = options;
     const sql = await this.getSql(tenantId);
 
-    // FIXME: Implementar cifrado con KMS/Vault antes de producción
-    // Por ahora, is_encrypted sigue siendo false (placeholder)
+    // FIXME: Encrypt with KMS/Vault before production
+    // For now is_encrypted remains false (placeholder)
 
     const results = await sql<CredentialWithoutValue[]>`
       UPDATE credentials

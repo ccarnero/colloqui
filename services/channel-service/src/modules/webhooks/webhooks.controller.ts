@@ -7,29 +7,24 @@ import {
   Req,
   HttpCode,
   HttpStatus,
-  Logger,
   BadRequestException,
   NotFoundException,
+  type RawBodyRequest,
 } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
+import { PinoLoggerService } from "@yoizen/observability";
 import type { Channel } from "@yoizen/shared";
-import { ChannelRouter } from "../../providers/channel-router";
-import { IngressService } from "../ingress/ingress.service";
 import { AccountsService } from "../accounts/accounts.service";
-import {
-  webhookRequests,
-  webhookVerificationFailures,
-  ingressMessagesReceived,
-} from "../ingress/ingress.metrics";
+import { WebhookIngressService } from "./webhook-ingress.service";
+import { MetaWebhookVerifyQueryDto } from "./meta-webhook-verify-query.dto";
 
 @Controller("webhooks")
 export class WebhooksController {
-  private readonly logger = new Logger(WebhooksController.name);
+  private readonly logger = new PinoLoggerService(WebhooksController.name);
 
   constructor(
-    private readonly router: ChannelRouter,
-    private readonly ingress: IngressService,
     private readonly accounts: AccountsService,
+    private readonly webhookIngress: WebhookIngressService,
   ) {}
 
   /**
@@ -40,18 +35,20 @@ export class WebhooksController {
   async verify(
     @Param("channel") channel: string,
     @Param("tenantId") tenantId: string,
-    @Query("hub.mode") mode?: string,
-    @Query("hub.verify_token") verifyToken?: string,
-    @Query("hub.challenge") challenge?: string,
+    @Query() query: MetaWebhookVerifyQueryDto,
   ): Promise<string> {
-    if (mode !== "subscribe" || !verifyToken || !challenge) {
+    if (
+      query.mode !== "subscribe" ||
+      !query.verifyToken ||
+      !query.challenge
+    ) {
       throw new BadRequestException("Missing verification parameters");
     }
 
     const account = await this.accounts.findByVerifyToken(
       tenantId,
       channel as Channel,
-      verifyToken,
+      query.verifyToken,
     );
 
     if (!account) {
@@ -64,7 +61,7 @@ export class WebhooksController {
     this.logger.log(
       `Webhook verified for tenant=${tenantId} channel=${channel} account=${account.id}`,
     );
-    return challenge;
+    return query.challenge;
   }
 
   /**
@@ -77,79 +74,8 @@ export class WebhooksController {
   async receive(
     @Param("channel") channel: string,
     @Param("tenantId") tenantId: string,
-    @Req() request: FastifyRequest,
+    @Req() request: RawBodyRequest<FastifyRequest>,
   ): Promise<{ status: string }> {
-    const channelType = channel as Channel;
-    webhookRequests.add(1, { channel, tenant: tenantId });
-    const provider = this.router.get(channelType);
-    if (!provider) {
-      throw new BadRequestException(`Unsupported channel: ${channel}`);
-    }
-
-    const signature = provider.signatureHeader
-      ? (request.headers[provider.signatureHeader] as string | undefined)
-      : undefined;
-
-    const activeAccounts = await this.accounts.listActive(
-      tenantId,
-      channelType,
-    );
-
-    if (activeAccounts.length === 0) {
-      this.logger.warn(
-        `No active accounts for tenant=${tenantId} channel=${channel}`,
-      );
-      return { status: "no_active_accounts" };
-    }
-
-    const rawBody = Buffer.from(
-      JSON.stringify(request.body),
-      "utf-8",
-    );
-
-    const verified = activeAccounts.some((account) => {
-      if (!account.appSecret || !signature) return false;
-      return provider.verifySignature(rawBody, signature, account.appSecret);
-    });
-
-    if (signature && !verified) {
-      webhookVerificationFailures.add(1, { channel, tenant: tenantId });
-      this.logger.warn(
-        `Webhook signature verification failed for tenant=${tenantId} channel=${channel}`,
-      );
-      return { status: "signature_mismatch" };
-    }
-
-    const body = request.body as Record<string, unknown>;
-    const messages = provider.parseWebhook(body);
-
-    if (messages.length === 0) {
-      return { status: "no_messages" };
-    }
-
-    ingressMessagesReceived.add(messages.length, {
-      channel,
-      tenant: tenantId,
-    });
-
-    const account = activeAccounts[0];
-
-    setImmediate(() => {
-      this.ingress
-        .processInbound(
-          tenantId,
-          channelType,
-          provider.provider,
-          account.id,
-          messages,
-        )
-        .catch((err) => {
-          this.logger.error(
-            `Ingress processing failed: ${err instanceof Error ? err.message : err}`,
-          );
-        });
-    });
-
-    return { status: "accepted" };
+    return this.webhookIngress.handleMetaWebhookPost(channel, tenantId, request);
   }
 }

@@ -3,7 +3,7 @@ import { Test } from "@nestjs/testing";
 import type { NatsConnection } from "nats";
 import { HealthController } from "../../src/modules/health/health.controller";
 import { NATS_CONNECTION } from "../../src/providers/nats.provider";
-import { TenantConnectionManager } from "../../src/providers/tenant-connection-manager";
+import { TenantConnectionManager } from "@yoizen/database";
 
 describe("HealthController", () => {
   let controller: HealthController;
@@ -19,7 +19,10 @@ describe("HealthController", () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [HealthController],
       providers: [
-        { provide: NATS_CONNECTION, useValue: mockNc as unknown as NatsConnection },
+        {
+          provide: NATS_CONNECTION,
+          useValue: mockNc as unknown as NatsConnection,
+        },
         {
           provide: TenantConnectionManager,
           useValue: mockTenantMgr,

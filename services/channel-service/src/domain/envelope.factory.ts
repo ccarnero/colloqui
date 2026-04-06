@@ -7,18 +7,23 @@ import type {
 } from "@yoizen/shared";
 import { buildChannelSubject } from "@yoizen/shared";
 
+interface ICreateChannelEnvelopeOptions {
+  tenantId: string;
+  channel: Channel;
+  provider: ChannelProvider;
+  kind: MessageKind;
+  message: InboundMessage;
+  accountId: string;
+}
+
 /**
  * Creates a CloudEvents-compatible channel envelope from an inbound message.
  * Pure function — no side effects.
  */
 export function createChannelEnvelope(
-  tenantId: string,
-  channel: Channel,
-  provider: ChannelProvider,
-  kind: MessageKind,
-  message: InboundMessage,
-  accountId: string,
+  options: ICreateChannelEnvelopeOptions,
 ): ChannelEnvelope {
+  const { tenantId, channel, provider, kind, message, accountId } = options;
   const id = crypto.randomUUID();
   const subject = buildChannelSubject(tenantId, channel, provider, kind);
 
@@ -45,15 +50,4 @@ export function createChannelEnvelope(
     kind,
     idempotencyKey: `${tenantId}:${channel}:${message.messageId}`,
   };
-}
-
-/**
- * Generates a deterministic idempotency key for deduplication via Nats-Msg-Id.
- */
-export function buildIdempotencyKey(
-  tenantId: string,
-  channel: Channel,
-  providerMessageId: string,
-): string {
-  return `${tenantId}:${channel}:${providerMessageId}`;
 }

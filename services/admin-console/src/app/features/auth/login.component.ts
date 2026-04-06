@@ -1,4 +1,9 @@
-import { Component, inject, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
 import { MatCardModule } from "@angular/material/card";
@@ -8,6 +13,7 @@ import { AuthService } from "../../core/services/auth.service";
 
 @Component({
   selector: "app-login",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatCardModule,
@@ -99,8 +105,8 @@ import { AuthService } from "../../core/services/auth.service";
 })
 export class LoginComponent {
   private readonly authService = inject(AuthService);
-  protected readonly email = signal("");
-  protected readonly password = signal("");
+  readonly email = signal("");
+  readonly password = signal("");
 
   onLogin(): void {
     this.authService.login(this.email(), this.password());

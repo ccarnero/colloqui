@@ -1,4 +1,9 @@
-import { Component, inject, input } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  input,
+} from "@angular/core";
 import {
   FormArray,
   FormBuilder,
@@ -17,6 +22,7 @@ import { HTTP_METHODS } from "./http-adapter-dialog.types";
 @Component({
   selector: "app-adapter-endpoint-config",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
     MatButtonModule,

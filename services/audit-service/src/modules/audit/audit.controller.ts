@@ -1,54 +1,38 @@
-import {
-  Controller,
-  Get,
-  Param,
-  Query,
-  Headers,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
-import { AuditService } from './audit.service';
-import { QueryEventsDto } from './audit.dto';
-import { TENANT_HEADER } from '@yoizen/shared';
+import { Controller, Get, Param, Query, UseGuards } from "@nestjs/common";
+import { assertFoundOrThrow } from "../../common/audit-http.util";
+import { auditPaginatedQuery } from "../../common/audit-list-helpers";
+import { TenantGuard, TenantId } from "@yoizen/database";
+import { AuditService } from "./audit.service";
+import { QueryEventsDto } from "./audit.dto";
 
-@Controller('audit/events')
+@Controller("audit/events")
+@UseGuards(TenantGuard)
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
+  /**
+   * Lists persisted events with optional type/date filters and pagination.
+   */
   @Get()
   async queryEvents(
-    @Headers(TENANT_HEADER) tenantId: string | undefined,
+    @TenantId() tenantId: string,
     @Query() query: QueryEventsDto,
   ) {
-    if (!tenantId) {
-      throw new BadRequestException('Missing x-yoizen-tenant header');
-    }
-
     const { type, from, to } = query;
-    const limit = Math.min(Math.max(query.limit ?? 50, 1), 500);
-    const offset = Math.max(query.offset ?? 0, 0);
-
-    const events = await this.auditService.queryEvents(
-      { type, from, to, limit, offset },
-      tenantId,
+    return auditPaginatedQuery(query.limit, query.offset, (limit, offset) =>
+      this.auditService.queryEvents(
+        { type, from, to, limit, offset },
+        tenantId,
+      ),
     );
-
-    return { events, limit, offset };
   }
 
-  @Get(':id')
-  async getEvent(
-    @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Param('id') id: string,
-  ) {
-    if (!tenantId) {
-      throw new BadRequestException('Missing x-yoizen-tenant header');
-    }
-
+  /**
+   * Returns a single event by id or 404 via {@link assertFoundOrThrow}.
+   */
+  @Get(":id")
+  async getEvent(@TenantId() tenantId: string, @Param("id") id: string) {
     const event = await this.auditService.getEventById(id, tenantId);
-    if (!event) {
-      throw new NotFoundException(`Event ${id} not found`);
-    }
-    return event;
+    return assertFoundOrThrow(event, `Event ${id} not found`);
   }
 }

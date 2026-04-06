@@ -8,73 +8,92 @@ import {
   Req,
   HttpCode,
   HttpStatus,
-} from '@nestjs/common';
-import { AdminProxyService } from './admin-proxy.service';
-import { UpsertConfigFileDto, DeployConfigFilesDto } from './admin.dto';
-import type { TenantScopedRequest } from '../../types/yoizen-request';
+} from "@nestjs/common";
+import { AdminProxyService } from "./admin-proxy.service";
+import {
+  UpsertConfigFileDto,
+  DeployConfigFilesDto,
+  AdminConfigFilesListQueryDto,
+  ConfigFilePathQueryDto,
+} from "./admin.dto";
+import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { toOptionalStringQueryParam } from "../../utils/pagination-query.util";
 
-@Controller('admin')
+@Controller("admin")
 export class AdminConfigController {
   constructor(private readonly proxy: AdminProxyService) {}
 
-  @Get('config-files')
+  @Get("config-files")
   async listConfigFiles(
-    @Req() req: TenantScopedRequest,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Req() req: ITenantScopedRequest,
+    @Query() query: AdminConfigFilesListQueryDto,
   ): Promise<object> {
-    return this.proxy.proxy('GET', '/admin/config-files', req.tenantId, {
-      limit,
-      offset,
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/admin/config-files",
+      tenantId: req.tenantId,
+      query: {
+        limit: toOptionalStringQueryParam(query.limit),
+        offset: toOptionalStringQueryParam(query.offset),
+      },
     });
   }
 
-  @Get('config-files/file')
+  @Get("config-files/file")
   async getConfigFileByPath(
-    @Req() req: TenantScopedRequest,
-    @Query('path') path?: string,
+    @Req() req: ITenantScopedRequest,
+    @Query() query: ConfigFilePathQueryDto,
   ): Promise<object> {
-    return this.proxy.proxy('GET', '/admin/config-files/file', req.tenantId, {
-      path,
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/admin/config-files/file",
+      tenantId: req.tenantId,
+      query: { path: query.path },
     });
   }
 
-  @Put('config-files')
+  @Put("config-files")
   async upsertConfigFile(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
     @Body() body: UpsertConfigFileDto,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'PUT',
-      '/admin/config-files',
-      req.tenantId,
-      undefined,
+    return this.proxy.proxy({
+      method: "PUT",
+      path: "/admin/config-files",
+      tenantId: req.tenantId,
       body,
-    );
+    });
   }
 
-  @Post('config-files/deploy')
+  @Post("config-files/deploy")
   @HttpCode(HttpStatus.OK)
   async deployConfigFiles(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
     @Body() body: DeployConfigFilesDto,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'POST',
-      '/admin/config-files/deploy',
-      req.tenantId,
-      undefined,
+    return this.proxy.proxy({
+      method: "POST",
+      path: "/admin/config-files/deploy",
+      tenantId: req.tenantId,
       body,
-    );
+    });
   }
 
-  @Get('runtime/status')
-  async getRuntimeStatus(@Req() req: TenantScopedRequest): Promise<object> {
-    return this.proxy.proxy('GET', '/admin/runtime/status', req.tenantId);
+  @Get("runtime/status")
+  async getRuntimeStatus(@Req() req: ITenantScopedRequest): Promise<object> {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/admin/runtime/status",
+      tenantId: req.tenantId,
+    });
   }
 
-  @Get('templates')
-  async listTemplates(@Req() req: TenantScopedRequest): Promise<object> {
-    return this.proxy.proxy('GET', '/admin/templates', req.tenantId);
+  @Get("templates")
+  async listTemplates(@Req() req: ITenantScopedRequest): Promise<object> {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/admin/templates",
+      tenantId: req.tenantId,
+    });
   }
 }

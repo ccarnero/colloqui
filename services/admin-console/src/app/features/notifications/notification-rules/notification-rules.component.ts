@@ -1,9 +1,9 @@
-import { Component, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, signal } from "@angular/core";
 import { MatCardModule } from "@angular/material/card";
 import { MatIconModule } from "@angular/material/icon";
 import { MatSlideToggleModule } from "@angular/material/slide-toggle";
 
-interface ChannelRule {
+interface IChannelRule {
   id: string;
   label: string;
   description: string;
@@ -14,6 +14,7 @@ interface ChannelRule {
 @Component({
   selector: "app-notification-rules",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatCardModule, MatIconModule, MatSlideToggleModule],
   template: `
     <div class="ws-header">
@@ -52,7 +53,7 @@ interface ChannelRule {
   `,
 })
 export class NotificationRulesComponent {
-  readonly channels = signal<ChannelRule[]>([
+  readonly channels = signal<IChannelRule[]>([
     {
       id: "email",
       label: "Email",

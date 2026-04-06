@@ -1,6 +1,6 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type Redis from "ioredis";
-import { tracedFetch } from "@yoizen/observability";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
 import {
   TENANT_HEADER,
   DASHBOARD_CACHE_KEY_PREFIX,
@@ -8,20 +8,20 @@ import {
   type AuditDashboardStats,
   type DashboardStats,
 } from "@yoizen/shared";
-import { gatewayConfig } from "../../config/gateway.config";
+import { gatewayConfig } from "../../config";
 import { REDIS_CLIENT } from "../../providers/redis.provider";
 import { throwProxyError } from "../../utils/proxy-error.util";
 
-interface ServiceHealthEntry {
+interface IServiceHealthEntry {
   status: string;
   [key: string]: unknown;
 }
 
-interface HealthResponse {
+interface IHealthResponse {
   status: string;
   nats: string;
   redis: string;
-  services: Record<string, ServiceHealthEntry | "unreachable">;
+  services: Record<string, IServiceHealthEntry | "unreachable">;
 }
 
 const HEALTH_TIMEOUT_MS = 4_000;
@@ -29,7 +29,7 @@ const AUDIT_TIMEOUT_MS = 8_000;
 
 @Injectable()
 export class DashboardProxyService {
-  private readonly logger = new Logger(DashboardProxyService.name);
+  private readonly logger = new PinoLoggerService(DashboardProxyService.name);
   private readonly auditBaseUrl: string;
   private readonly healthUrl: string;
 
@@ -37,7 +37,7 @@ export class DashboardProxyService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {
     this.auditBaseUrl = gatewayConfig.services.audit;
-    this.healthUrl = `http://localhost:${gatewayConfig.port}/health`;
+    this.healthUrl = `${gatewayConfig.selfBaseUrl}/health`;
   }
 
   /**
@@ -47,7 +47,11 @@ export class DashboardProxyService {
   async getStats(tenantId: string): Promise<DashboardStats> {
     const cacheKey = `${DASHBOARD_CACHE_KEY_PREFIX}${tenantId}`;
 
-    const cached = await this.redis.get(cacheKey).catch(() => null);
+    const cached = await this.redis.get(cacheKey).catch((err: unknown) => {
+      const detail = err instanceof Error ? err.message : String(err);
+      this.logger.debug(`Dashboard Redis cache read skipped: ${detail}`);
+      return null;
+    });
     if (cached) {
       return JSON.parse(cached) as DashboardStats;
     }
@@ -82,23 +86,28 @@ export class DashboardProxyService {
     return res.json() as Promise<AuditDashboardStats>;
   }
 
-  private async fetchHealth(): Promise<HealthResponse> {
+  private async fetchHealth(): Promise<IHealthResponse> {
     try {
       const res = await tracedFetch(this.healthUrl, {
         signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
       });
       if (res.ok) {
-        return res.json() as Promise<HealthResponse>;
+        return res.json() as Promise<IHealthResponse>;
       }
     } catch {
       this.logger.warn("Health endpoint unreachable during dashboard fetch");
     }
-    return { status: "unknown", nats: "unknown", redis: "unknown", services: {} };
+    return {
+      status: "unknown",
+      nats: "unknown",
+      redis: "unknown",
+      services: {},
+    };
   }
 
   private buildDashboardStats(
     audit: AuditDashboardStats,
-    health: HealthResponse,
+    health: IHealthResponse,
   ): DashboardStats {
     const requestsDelta =
       audit.requestsYesterday > 0
@@ -120,9 +129,7 @@ export class DashboardProxyService {
     const serviceHealth: Record<string, "ok" | "unreachable"> = {};
     for (const [name, val] of serviceEntries) {
       serviceHealth[name] =
-        typeof val === "object" && val.status === "ok"
-          ? "ok"
-          : "unreachable";
+        typeof val === "object" && val.status === "ok" ? "ok" : "unreachable";
     }
 
     const dayLabels = audit.dailyBreakdown.map((d) => {

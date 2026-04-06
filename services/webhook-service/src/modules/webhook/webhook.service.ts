@@ -1,95 +1,87 @@
 import {
   Inject,
   Injectable,
-  Logger,
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
 import type { Consumer, JetStreamClient } from "nats";
 import type Redis from "ioredis";
 import {
-  AdapterClient,
-  DEFAULT_ADAPTER_SERVICE_URL,
+  applyAdapterAuthHeadersSync,
+  createAdapterClientWithRedisAndFetch,
+  evictOneOldestIfExceedsMax,
+  sleep,
   WEBHOOK_DLQ_SUBJECT,
   WEBHOOK_MAX_RETRIES,
   WEBHOOK_RETRY_DELAYS,
   TENANT_HEADER,
 } from "@yoizen/shared";
 import type { AdapterConfig, CompletionEvent } from "@yoizen/shared";
+import { NatsConsumerRunner } from "@yoizen/database";
+import { webhookServiceConfig } from "../../config";
 import {
   JETSTREAM_CONSUMER,
   JETSTREAM_PUBLISHER,
 } from "../../providers/nats.provider";
-import { REDIS_CLIENT } from "../../providers/redis.provider";
-import { tracedFetch } from "@yoizen/observability";
+import { REDIS_CLIENT } from "@yoizen/database";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
 
 @Injectable()
 export class WebhookService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(WebhookService.name);
+  private readonly logger = new PinoLoggerService(WebhookService.name);
   private readonly encoder = new TextEncoder();
   private readonly deliveryCounts = new Map<string, number>();
-  private readonly adapterClient: AdapterClient;
-  private consumeIterator: Awaited<
-    ReturnType<Consumer["consume"]>
-  > | null = null;
+  private readonly adapterClient: ReturnType<
+    typeof createAdapterClientWithRedisAndFetch
+  >;
+  private readonly runner: NatsConsumerRunner;
 
   constructor(
-    @Inject(JETSTREAM_CONSUMER) private readonly consumer: Consumer,
+    @Inject(JETSTREAM_CONSUMER) consumer: Consumer,
     @Inject(JETSTREAM_PUBLISHER) private readonly publisher: JetStreamClient,
     @Inject(REDIS_CLIENT) redis: Redis,
   ) {
-    this.adapterClient = new AdapterClient({
-      baseUrl:
-        process.env.ADAPTER_SERVICE_URL ?? DEFAULT_ADAPTER_SERVICE_URL,
-      fetchFn: tracedFetch,
-      cache: redis,
-    });
+    this.adapterClient = createAdapterClientWithRedisAndFetch(
+      webhookServiceConfig.adapterServiceUrl,
+      redis,
+      tracedFetch,
+    );
+    this.runner = new NatsConsumerRunner(
+      consumer,
+      (msg) => this.handleMessage(msg),
+      this.logger,
+      { maxMessages: 50 },
+    );
   }
 
   async onModuleInit(): Promise<void> {
-    this.consumeIterator = await this.consumer.consume({
-      max_messages: 50,
-      expires: 30_000,
-    });
-    this.runConsumer();
+    await this.runner.start();
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.consumeIterator) {
-      this.consumeIterator.stop();
-      this.consumeIterator = null;
-    }
+    await this.runner.stop();
   }
 
-  private async runConsumer(): Promise<void> {
-    if (!this.consumeIterator) return;
-    try {
-      for await (const msg of this.consumeIterator) {
-        try {
-          const completion = msg.json() as CompletionEvent;
+  private async handleMessage(msg: import("nats").JsMsg): Promise<void> {
+    const completion = msg.json() as CompletionEvent;
+    const tenantId =
+      (completion.result?.tenant as string | undefined) ??
+      msg.headers?.get(TENANT_HEADER) ??
+      undefined;
 
-          if (!completion.callback_url) {
-            msg.ack();
-            continue;
-          }
+    await this.dispatchCompletionIfNeeded(completion, tenantId);
+  }
 
-          const tenantId =
-            (completion.result?.tenant as string | undefined) ??
-            msg.headers?.get(TENANT_HEADER) ??
-            undefined;
-
-          await this.dispatchWithRetry(completion, tenantId);
-          msg.ack();
-        } catch (err) {
-          this.logger.error(
-            `Failed to process completion: ${err instanceof Error ? err.message : err}`,
-          );
-          msg.nak();
-        }
-      }
-    } catch {
-      // iterator stopped
-    }
+  /**
+   * Guard + dispatch (same as NATS handler after JSON parse).
+   * @internal For unit tests covering the no-`callback_url` early return.
+   */
+  async dispatchCompletionIfNeeded(
+    completion: CompletionEvent,
+    tenantId?: string,
+  ): Promise<void> {
+    if (!completion.callback_url) return;
+    await this.dispatchWithRetry(completion, tenantId);
   }
 
   private async dispatchWithRetry(
@@ -130,7 +122,7 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
         });
 
         if (response.ok) {
-          this.trackDelivery(eventId, true);
+          this.trackDelivery(eventId);
           this.logger.log(
             `Webhook delivered for ${eventId} to ${callback_url} (attempt ${attempt + 1})`,
           );
@@ -147,11 +139,11 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (attempt < maxRetries - 1) {
-        await this.sleep(retryDelays[attempt]);
+        await sleep(retryDelays[attempt]);
       }
     }
 
-    this.trackDelivery(eventId, false);
+    this.trackDelivery(eventId);
     this.logger.error(
       `Webhook delivery exhausted for ${eventId}, publishing to DLQ`,
     );
@@ -178,39 +170,11 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
       for (const h of adapter.headers) {
         headers[h.key] = h.value;
       }
-      this.injectAuthHeaders(adapter, headers);
+      applyAdapterAuthHeadersSync(adapter, headers);
     }
 
     if (tenantId) headers[TENANT_HEADER] = tenantId;
     return headers;
-  }
-
-  private injectAuthHeaders(
-    adapter: AdapterConfig,
-    headers: Record<string, string>,
-  ): void {
-    const { authType, authConfig } = adapter;
-
-    switch (authType) {
-      case "api-key": {
-        const key = authConfig.apiKey as string;
-        const headerName =
-          (authConfig.apiKeyHeader as string) ?? "X-API-Key";
-        headers[headerName] = key;
-        break;
-      }
-      case "bearer": {
-        headers["Authorization"] = `Bearer ${authConfig.bearerToken as string}`;
-        break;
-      }
-      case "basic": {
-        const encoded = btoa(
-          `${authConfig.basicUsername as string}:${authConfig.basicPassword as string}`,
-        );
-        headers["Authorization"] = `Basic ${encoded}`;
-        break;
-      }
-    }
   }
 
   private buildRetryDelays(
@@ -224,17 +188,10 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
     return delays;
   }
 
-  private trackDelivery(eventId: string, _success: boolean): void {
+  private trackDelivery(eventId: string): void {
     const count = (this.deliveryCounts.get(eventId) ?? 0) + 1;
     this.deliveryCounts.set(eventId, count);
 
-    if (this.deliveryCounts.size > 10_000) {
-      const firstKey = this.deliveryCounts.keys().next().value;
-      if (firstKey !== undefined) this.deliveryCounts.delete(firstKey);
-    }
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    evictOneOldestIfExceedsMax(this.deliveryCounts, 10_000);
   }
 }

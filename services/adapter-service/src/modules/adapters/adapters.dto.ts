@@ -8,16 +8,52 @@ import {
   IsArray,
   ValidateNested,
   IsObject,
+  IsUrl,
 } from "class-validator";
 import { Type } from "class-transformer";
+import { PaginatedQueryDto } from "@yoizen/shared";
+
+const HTTP_METHODS = [
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+] as const;
+
+const ADAPTER_AUTH_TYPES = [
+  "none",
+  "api-key",
+  "bearer",
+  "basic",
+  "oauth2-client",
+] as const;
+
+export class HeaderEntryDto {
+  @IsString()
+  @IsNotEmpty()
+  key!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  value!: string;
+}
+
+/** Query params for `GET /adapters` list. */
+export class ListAdaptersQueryDto extends PaginatedQueryDto {
+  @IsOptional()
+  @IsIn(["internal", "external"])
+  context?: string;
+}
 
 export class CreateEndpointDto {
   @IsString()
   @IsNotEmpty()
   label!: string;
 
-  @IsString()
-  @IsNotEmpty()
+  @IsIn([...HTTP_METHODS])
   method!: string;
 
   @IsString()
@@ -34,12 +70,12 @@ export class CreateAdapterDto {
   @IsIn(["internal", "external"])
   context!: string;
 
-  @IsString()
+  @IsUrl({ require_tld: false })
   @IsNotEmpty()
   baseUrl!: string;
 
-  @IsString()
   @IsOptional()
+  @IsIn([...ADAPTER_AUTH_TYPES])
   authType?: string;
 
   @IsObject()
@@ -47,8 +83,10 @@ export class CreateAdapterDto {
   authConfig?: Record<string, unknown>;
 
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HeaderEntryDto)
   @IsOptional()
-  headers?: Array<{ key: string; value: string }>;
+  headers?: HeaderEntryDto[];
 
   @IsInt()
   @Min(100)
@@ -81,12 +119,12 @@ export class UpdateAdapterDto {
   @IsOptional()
   name?: string;
 
-  @IsString()
   @IsOptional()
+  @IsUrl({ require_tld: false })
   baseUrl?: string;
 
-  @IsString()
   @IsOptional()
+  @IsIn([...ADAPTER_AUTH_TYPES])
   authType?: string;
 
   @IsObject()
@@ -94,8 +132,10 @@ export class UpdateAdapterDto {
   authConfig?: Record<string, unknown>;
 
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HeaderEntryDto)
   @IsOptional()
-  headers?: Array<{ key: string; value: string }>;
+  headers?: HeaderEntryDto[];
 
   @IsInt()
   @Min(100)

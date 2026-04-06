@@ -14,7 +14,10 @@ import {
 import type { Channel } from "@yoizen/shared";
 import { TENANT_HEADER } from "@yoizen/shared";
 import { AutoReplyService } from "./auto-reply.service";
-import { CreateAutoReplyRuleDto } from "./auto-reply.dto";
+import {
+  CreateAutoReplyRuleDto,
+  ListAutoReplyRulesQueryDto,
+} from "./auto-reply.dto";
 
 @Controller("channels/auto-reply")
 export class AutoReplyController {
@@ -26,21 +29,21 @@ export class AutoReplyController {
     @Headers(TENANT_HEADER) tenantId: string,
     @Body() dto: CreateAutoReplyRuleDto,
   ) {
-    return this.autoReply.createRule(
+    return this.autoReply.createRule({
       tenantId,
-      dto.accountId,
-      dto.channel as Channel,
-      dto.triggerPattern,
-      dto.replyText,
-    );
+      accountId: dto.accountId,
+      channel: dto.channel as Channel,
+      triggerPattern: dto.triggerPattern,
+      replyText: dto.replyText,
+    });
   }
 
   @Get()
   async listRules(
     @Headers(TENANT_HEADER) tenantId: string,
-    @Query("accountId") accountId?: string,
+    @Query() query: ListAutoReplyRulesQueryDto,
   ) {
-    return this.autoReply.listRules(tenantId, accountId);
+    return this.autoReply.listRules(tenantId, query.accountId);
   }
 
   @Delete(":id")

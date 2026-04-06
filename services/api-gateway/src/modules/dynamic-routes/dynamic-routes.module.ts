@@ -1,5 +1,5 @@
-import { Global, Module } from '@nestjs/common';
-import { DynamicRouteCacheService } from './dynamic-route-cache.service';
+import { Global, Module } from "@nestjs/common";
+import { DynamicRouteCacheService } from "./dynamic-route-cache.service";
 
 @Global()
 @Module({

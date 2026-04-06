@@ -1,23 +1,15 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { createQueuedSql } from "@yoizen/testing";
 import type { Sql } from "postgres";
+import { SchedulesRepository } from "../../src/modules/schedules/schedules.repository";
 import { SchedulesService } from "../../src/modules/schedules/schedules.service";
 import {
   ScheduleType,
   ExecMode,
-} from "../../src/modules/schedules/schedule.dto";
+} from "../../src/modules/schedules/schedules.dto";
 import { TenantConnectionManager } from "../../src/providers/tenant-connection-manager";
-
-function createQueuedSql(rowsQueue: unknown[][]) {
-  const fn = mock(() => {
-    const next = rowsQueue.shift();
-    return Promise.resolve(next ?? []);
-  });
-  return Object.assign(fn, {
-    json: (v: unknown) => v,
-  }) as unknown as Sql;
-}
 
 function sampleSchedule(overrides: Record<string, unknown> = {}) {
   return {
@@ -44,13 +36,14 @@ describe("SchedulesService", () => {
 
   beforeEach(async () => {
     sqlQueue = [];
-    mockSql = createQueuedSql(sqlQueue);
+    mockSql = createQueuedSql(sqlQueue, mock);
     const tenantConnections = {
       ensureSchema: mock(() => Promise.resolve(mockSql)),
     };
 
     const module = await Test.createTestingModule({
       providers: [
+        SchedulesRepository,
         SchedulesService,
         { provide: TenantConnectionManager, useValue: tenantConnections },
       ],
@@ -95,10 +88,11 @@ describe("SchedulesService", () => {
   describe("findAll", () => {
     it("returns schedules with pagination fields", async () => {
       // Nested empty sql`` fragments run before the outer SELECT (postgres.js).
-      sqlQueue.push([], [], [
-        sampleSchedule(),
-        sampleSchedule({ id: "2", name: "b" }),
-      ]);
+      sqlQueue.push(
+        [],
+        [],
+        [sampleSchedule(), sampleSchedule({ id: "2", name: "b" })],
+      );
       const result = await service.findAll(
         { limit: 10, offset: 0 },
         "tenant-a",
@@ -130,13 +124,16 @@ describe("SchedulesService", () => {
   describe("update", () => {
     it("updates fields after findById", async () => {
       const existing = sampleSchedule();
-      sqlQueue.push([existing], [
-        {
-          ...existing,
-          name: "renamed",
-          updated_at: "2020-02-01T00:00:00.000Z",
-        },
-      ]);
+      sqlQueue.push(
+        [existing],
+        [
+          {
+            ...existing,
+            name: "renamed",
+            updated_at: "2020-02-01T00:00:00.000Z",
+          },
+        ],
+      );
       const row = await service.update(
         "550e8400-e29b-41d4-a716-446655440000",
         { name: "renamed" },

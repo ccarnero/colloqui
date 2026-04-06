@@ -1,4 +1,5 @@
 import { PostgresModule as BasePostgresModule } from "@yoizen/database";
+import { registryServiceConfig } from "../config";
 
 export { POSTGRES_SQL } from "@yoizen/database";
 
@@ -49,7 +50,6 @@ CREATE INDEX IF NOT EXISTS idx_canary_service ON canary_deployments (service_id)
 `;
 
 export const PostgresModule = BasePostgresModule.register({
-  defaultHost:
-    "postgres.support-services-dev.svc.cluster.local",
+  defaultHost: registryServiceConfig.defaultPostgresHost,
   schemaSql: [SCHEMA_SQL],
 });

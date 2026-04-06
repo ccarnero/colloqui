@@ -1,42 +1,69 @@
-import { Injectable, Logger } from '@nestjs/common';
-import type { FastifyRequest, FastifyReply } from 'fastify';
-import { TENANT_HEADER } from '@yoizen/shared';
-import { tracedFetch } from '@yoizen/observability';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from "@nestjs/common";
+import type { FastifyRequest, FastifyReply } from "fastify";
+import { evictOldestIfCapacityBeforeSet, TENANT_HEADER } from "@yoizen/shared";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
+import { proxyServiceConfig } from "../../config";
 
-const PROXY_TARGET_HEADER = 'x-proxy-target';
+const PROXY_TARGET_HEADER = "x-proxy-target";
 const PROXY_TIMEOUT_MS = 30_000;
 const TENANT_CACHE_TTL_MS = 60_000;
 const TENANT_CACHE_MAX = 512;
 
-const HOP_BY_HOP = new Set(['host', 'connection', 'transfer-encoding', 'accept-encoding']);
+const HOP_BY_HOP = new Set([
+  "host",
+  "connection",
+  "transfer-encoding",
+  "accept-encoding",
+]);
 
-interface CacheEntry {
+type TenantUrlConfigKey = "ySocialUrl" | "yFlowUrl";
+
+const TENANT_PROXY_PATH_PREFIX: Record<TenantUrlConfigKey, string> = {
+  ySocialUrl: "/proxy/ysocial",
+  yFlowUrl: "/proxy/yflow",
+};
+
+const TENANT_PROXY_MISSING_URL_MSG: Record<TenantUrlConfigKey, string> = {
+  ySocialUrl: "Tenant does not have ySocialUrl configured",
+  yFlowUrl: "Tenant does not have yFlowUrl configured",
+};
+
+interface ICacheEntry {
   config: Record<string, unknown>;
   expiresAt: number;
 }
 
+/** Tenant-scoped proxy: base URL from tenant config + path under prefix. */
+interface ITenantProxyParams {
+  readonly tenantId: string;
+  readonly req: FastifyRequest;
+  readonly reply: FastifyReply;
+  readonly configKey: TenantUrlConfigKey;
+}
+
 @Injectable()
 export class ProxyService {
-  private readonly logger = new Logger(ProxyService.name);
+  private readonly logger = new PinoLoggerService(ProxyService.name);
   private readonly tenantServiceUrl: string;
-  private readonly tenantCache = new Map<string, CacheEntry>();
+  private readonly tenantCache = new Map<string, ICacheEntry>();
 
   constructor() {
-    this.tenantServiceUrl =
-      process.env.TENANT_SERVICE_URL ??
-      'http://tenant-service.platform-services.svc.cluster.local';
+    this.tenantServiceUrl = proxyServiceConfig.tenantServiceUrl;
   }
 
   async handleGeneric(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const target = req.headers[PROXY_TARGET_HEADER] as string | undefined;
     if (!target) {
-      reply
-        .status(400)
-        .send({ statusCode: 400, message: 'Missing x-proxy-target header' });
-      return;
+      throw new BadRequestException("Missing x-proxy-target header");
     }
 
-    const upstreamPath = extractPath(req.url, '/proxy/generic');
+    const upstreamPath = extractPath(req.url, "/proxy/generic");
     const queryString = extractQuery(req.url);
     const url = `${target}${upstreamPath}${queryString}`;
 
@@ -44,67 +71,43 @@ export class ProxyService {
   }
 
   async handleYSocial(req: FastifyRequest, reply: FastifyReply): Promise<void> {
-    const tenantId = req.headers[TENANT_HEADER] as string | undefined;
-    if (!tenantId) {
-      reply
-        .status(400)
-        .send({ statusCode: 400, message: 'Missing tenant header' });
-      return;
-    }
-
-    const config = await this.getTenantConfig(tenantId);
-    if (!config) {
-      reply
-        .status(404)
-        .send({ statusCode: 404, message: `Tenant '${tenantId}' not found` });
-      return;
-    }
-
-    const ySocialUrl = config.ySocialUrl as string | undefined;
-    if (!ySocialUrl) {
-      reply.status(422).send({
-        statusCode: 422,
-        message: 'Tenant does not have ySocialUrl configured',
-      });
-      return;
-    }
-
-    const upstreamPath = extractPath(req.url, '/proxy/ysocial');
-    const queryString = extractQuery(req.url);
-    const url = `${ySocialUrl}${upstreamPath}${queryString}`;
-
-    await this.proxyTo(url, req, reply);
+    await this.handleTenantScopedProxy(req, reply, "ySocialUrl");
   }
 
   async handleYFlow(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+    await this.handleTenantScopedProxy(req, reply, "yFlowUrl");
+  }
+
+  private async handleTenantScopedProxy(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    configKey: TenantUrlConfigKey,
+  ): Promise<void> {
     const tenantId = req.headers[TENANT_HEADER] as string | undefined;
     if (!tenantId) {
-      reply
-        .status(400)
-        .send({ statusCode: 400, message: 'Missing tenant header' });
-      return;
+      throw new BadRequestException("Missing tenant header");
     }
+    await this.handleTenantProxy({ tenantId, req, reply, configKey });
+  }
 
+  private async handleTenantProxy(params: ITenantProxyParams): Promise<void> {
+    const { tenantId, req, reply, configKey } = params;
     const config = await this.getTenantConfig(tenantId);
     if (!config) {
-      reply
-        .status(404)
-        .send({ statusCode: 404, message: `Tenant '${tenantId}' not found` });
-      return;
+      throw new NotFoundException(`Tenant '${tenantId}' not found`);
     }
 
-    const yFlowUrl = config.yFlowUrl as string | undefined;
-    if (!yFlowUrl) {
-      reply.status(422).send({
-        statusCode: 422,
-        message: 'Tenant does not have yFlowUrl configured',
-      });
-      return;
+    const baseUrl = config[configKey] as string | undefined;
+    if (!baseUrl) {
+      throw new UnprocessableEntityException(
+        TENANT_PROXY_MISSING_URL_MSG[configKey],
+      );
     }
 
-    const upstreamPath = extractPath(req.url, '/proxy/yflow');
+    const pathPrefix = TENANT_PROXY_PATH_PREFIX[configKey];
+    const upstreamPath = extractPath(req.url, pathPrefix);
     const queryString = extractQuery(req.url);
-    const url = `${yFlowUrl}${upstreamPath}${queryString}`;
+    const url = `${baseUrl}${upstreamPath}${queryString}`;
 
     await this.proxyTo(url, req, reply);
   }
@@ -117,11 +120,10 @@ export class ProxyService {
     const upstreamHeaders: Record<string, string> = {};
     for (const [key, val] of Object.entries(req.headers)) {
       if (HOP_BY_HOP.has(key)) continue;
-      if (typeof val === 'string') upstreamHeaders[key] = val;
+      if (typeof val === "string") upstreamHeaders[key] = val;
     }
 
-    upstreamHeaders['accept-encoding'] = 'identity';
-
+    upstreamHeaders["accept-encoding"] = "identity";
 
     const init: RequestInit = {
       method: req.method,
@@ -129,7 +131,11 @@ export class ProxyService {
       signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     };
 
-    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body !== undefined) {
+    if (
+      req.method !== "GET" &&
+      req.method !== "HEAD" &&
+      req.body !== undefined
+    ) {
       init.body = JSON.stringify(req.body);
     }
 
@@ -139,7 +145,7 @@ export class ProxyService {
       reply.status(upstream.status);
 
       upstream.headers.forEach((value, key) => {
-        if (key === 'transfer-encoding' || key === 'connection') return;
+        if (key === "transfer-encoding" || key === "connection") return;
         reply.header(key, value);
       });
 
@@ -147,7 +153,7 @@ export class ProxyService {
       reply.send(body);
     } catch (err) {
       this.logger.error(`Proxy error for ${req.method} ${url}: ${err}`);
-      reply.status(502).send({ statusCode: 502, message: 'Bad Gateway' });
+      throw new BadGatewayException("Bad Gateway");
     }
   }
 
@@ -181,10 +187,11 @@ export class ProxyService {
       };
       const config = tenant.configuration ?? {};
 
-      if (this.tenantCache.size >= TENANT_CACHE_MAX) {
-        const firstKey = this.tenantCache.keys().next().value!;
-        this.tenantCache.delete(firstKey);
-      }
+      evictOldestIfCapacityBeforeSet(
+        this.tenantCache,
+        TENANT_CACHE_MAX,
+        tenantId,
+      );
 
       this.tenantCache.set(tenantId, {
         config,
@@ -193,19 +200,21 @@ export class ProxyService {
 
       return config;
     } catch (err) {
-      this.logger.error(`Failed to fetch tenant config for '${tenantId}': ${err}`);
+      this.logger.error(
+        `Failed to fetch tenant config for '${tenantId}': ${err}`,
+      );
       return cached?.config ?? null;
     }
   }
 }
 
 function extractPath(fullUrl: string, prefix: string): string {
-  const pathOnly = fullUrl.split('?')[0];
+  const pathOnly = fullUrl.split("?")[0];
   const remainder = pathOnly.slice(prefix.length);
-  return remainder || '/';
+  return remainder || "/";
 }
 
 function extractQuery(fullUrl: string): string {
-  const idx = fullUrl.indexOf('?');
-  return idx >= 0 ? fullUrl.slice(idx) : '';
+  const idx = fullUrl.indexOf("?");
+  return idx >= 0 ? fullUrl.slice(idx) : "";
 }

@@ -1,4 +1,9 @@
-import { Component, inject, type OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  type OnInit,
+} from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
@@ -13,16 +18,17 @@ import {
 import type { IRegisteredService } from "../../../core/models/registry.model";
 import {
   ServiceDialogComponent,
-  type ServiceDialogData,
-  type ServiceDialogResult,
+  type IServiceDialogData,
+  type IServiceDialogResult,
 } from "./service-dialog.component";
 import {
   RoutesDialogComponent,
-  type RoutesDialogData,
+  type IRoutesDialogData,
 } from "./routes-dialog.component";
 
 @Component({
   selector: "app-hosted-services",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     MatTableModule,
     MatButtonModule,
@@ -199,43 +205,37 @@ export class HostedServicesComponent implements OnInit {
   }
 
   openCreateDialog(): void {
-    const data: ServiceDialogData = {};
+    const data: IServiceDialogData = {};
     const ref = this.dialog.open(ServiceDialogComponent, {
       width: "640px",
       data,
     });
 
-    ref
-      .afterClosed()
-      .subscribe((result?: ServiceDialogResult) => {
+    ref.afterClosed().subscribe((result?: IServiceDialogResult) => {
+      if (result?.saved) {
+        this.registryService.loadServices();
+      }
+    });
+  }
+
+  openEditDialog(service: IRegisteredService): void {
+    this.registryService.getService(service.id).subscribe((detail) => {
+      const data: IServiceDialogData = { service: detail };
+      const ref = this.dialog.open(ServiceDialogComponent, {
+        width: "640px",
+        data,
+      });
+
+      ref.afterClosed().subscribe((result?: IServiceDialogResult) => {
         if (result?.saved) {
           this.registryService.loadServices();
         }
       });
-  }
-
-  openEditDialog(service: IRegisteredService): void {
-    this.registryService
-      .getService(service.id)
-      .subscribe((detail) => {
-        const data: ServiceDialogData = { service: detail };
-        const ref = this.dialog.open(
-          ServiceDialogComponent,
-          { width: "640px", data },
-        );
-
-        ref
-          .afterClosed()
-          .subscribe((result?: ServiceDialogResult) => {
-            if (result?.saved) {
-              this.registryService.loadServices();
-            }
-          });
-      });
+    });
   }
 
   openRoutesDialog(service: IRegisteredService): void {
-    const data: RoutesDialogData = {
+    const data: IRoutesDialogData = {
       serviceId: service.id,
       serviceName: service.name,
     };

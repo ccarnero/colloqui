@@ -1,5 +1,6 @@
 import { Module, forwardRef } from "@nestjs/common";
 import { WebhooksController } from "./webhooks.controller";
+import { WebhookIngressService } from "./webhook-ingress.service";
 import { WhatsAppProvider } from "../../providers/meta/whatsapp/whatsapp.provider";
 import { InstagramProvider } from "../../providers/meta/instagram/instagram.provider";
 import { ProviderRegistry } from "../../providers/meta/provider-registry";
@@ -16,6 +17,7 @@ import { AccountsModule } from "../accounts/accounts.module";
   ],
   controllers: [WebhooksController],
   providers: [
+    WebhookIngressService,
     WhatsAppProvider,
     InstagramProvider,
     ProviderRegistry,

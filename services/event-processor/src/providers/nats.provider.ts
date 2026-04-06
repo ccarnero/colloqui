@@ -1,16 +1,10 @@
-import type {
-  NatsConnection,
-  JetStreamClient,
-  JetStreamManager,
-  Consumer,
-} from "nats";
 import { RetentionPolicy } from "nats";
 import type { FactoryProvider } from "@nestjs/common";
 import {
   createNatsConnectionProvider,
-  ensureStream,
-  ensureConsumer,
-  NATS_CONNECTION,
+  createJetStreamDurableConsumerProvider,
+  createJetStreamManagerProvider,
+  createJetStreamPublisherProvider,
 } from "@yoizen/database";
 import {
   STREAM_NAME,
@@ -31,57 +25,43 @@ export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
 
 export const natsProvider: FactoryProvider = createNatsConnectionProvider();
 
-export const jetStreamManagerProvider: FactoryProvider = {
-  provide: JETSTREAM_MANAGER,
-  inject: [NATS_CONNECTION],
-  useFactory: async (
-    nc: NatsConnection,
-  ): Promise<JetStreamManager> => {
-    const jsm = await nc.jetstreamManager();
+export const jetStreamManagerProvider: FactoryProvider =
+  createJetStreamManagerProvider(JETSTREAM_MANAGER, {
+    streams: [
+      {
+        name: STREAM_NAME,
+        subjects: STREAM_SUBJECTS,
+        maxAge: STREAM_MAX_AGE_NS,
+        maxBytes: STREAM_MAX_BYTES,
+        retention: RetentionPolicy.Limits,
+      },
+      {
+        name: RESULTS_STREAM_NAME,
+        subjects: RESULTS_STREAM_SUBJECTS,
+        maxAge: STREAM_MAX_AGE_NS,
+        maxBytes: RESULTS_STREAM_MAX_BYTES,
+        retention: RetentionPolicy.Limits,
+      },
+    ],
+    consumers: [
+      {
+        stream: STREAM_NAME,
+        durableName: CONSUMER_NAME,
+        maxDeliver: MAX_DELIVER,
+      },
+    ],
+  });
 
-    await ensureStream(jsm, {
-      name: STREAM_NAME,
-      subjects: STREAM_SUBJECTS,
-      maxAge: STREAM_MAX_AGE_NS,
-      maxBytes: STREAM_MAX_BYTES,
-      retention: RetentionPolicy.Limits,
-    });
+export const jetStreamClientProvider: FactoryProvider =
+  createJetStreamDurableConsumerProvider({
+    provide: JETSTREAM_CLIENT,
+    managerToken: JETSTREAM_MANAGER,
+    streamName: STREAM_NAME,
+    durableName: CONSUMER_NAME,
+  });
 
-    await ensureStream(jsm, {
-      name: RESULTS_STREAM_NAME,
-      subjects: RESULTS_STREAM_SUBJECTS,
-      maxAge: STREAM_MAX_AGE_NS,
-      maxBytes: RESULTS_STREAM_MAX_BYTES,
-      retention: RetentionPolicy.Limits,
-    });
-
-    await ensureConsumer(jsm, {
-      stream: STREAM_NAME,
-      durableName: CONSUMER_NAME,
-      maxDeliver: MAX_DELIVER,
-    });
-
-    return jsm;
-  },
-};
-
-export const jetStreamClientProvider: FactoryProvider = {
-  provide: JETSTREAM_CLIENT,
-  inject: [NATS_CONNECTION, JETSTREAM_MANAGER],
-  useFactory: async (
-    nc: NatsConnection,
-    _jm: JetStreamManager,
-  ): Promise<Consumer> => {
-    const js: JetStreamClient = nc.jetstream();
-    return js.consumers.get(STREAM_NAME, CONSUMER_NAME);
-  },
-};
-
-export const jetStreamPublisherProvider: FactoryProvider = {
-  provide: JETSTREAM_PUBLISHER,
-  inject: [NATS_CONNECTION, JETSTREAM_MANAGER],
-  useFactory: (
-    nc: NatsConnection,
-    _jm: JetStreamManager,
-  ): JetStreamClient => nc.jetstream(),
-};
+export const jetStreamPublisherProvider: FactoryProvider =
+  createJetStreamPublisherProvider({
+    provide: JETSTREAM_PUBLISHER,
+    managerToken: JETSTREAM_MANAGER,
+  });

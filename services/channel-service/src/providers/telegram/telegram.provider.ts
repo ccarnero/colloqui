@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { timingSafeEqual } from "crypto";
 import type {
   IChannelProvider,
@@ -7,7 +7,7 @@ import type {
   OutboundMessage,
   SendMessageResult,
 } from "@yoizen/shared";
-import { tracedFetch } from "@yoizen/observability";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
 
 const BOT_API_BASE = "https://api.telegram.org/bot";
 
@@ -17,11 +17,12 @@ export class TelegramProvider implements IChannelProvider {
   readonly provider = "telegram" as const;
   readonly signatureHeader = "x-telegram-bot-api-secret-token";
 
-  private readonly logger = new Logger(TelegramProvider.name);
+  private readonly logger = new PinoLoggerService(TelegramProvider.name);
 
   parseWebhook(rawBody: Record<string, unknown>): InboundMessage[] {
-    const message = (rawBody.message ??
-      rawBody.channel_post) as Record<string, unknown> | undefined;
+    const message = (rawBody.message ?? rawBody.channel_post) as
+      | Record<string, unknown>
+      | undefined;
     if (!message) return [];
 
     const parsed = this.parseTelegramMessage(message);
@@ -61,10 +62,7 @@ export class TelegramProvider implements IChannelProvider {
   ): boolean {
     if (signature.length !== secret.length) return false;
 
-    return timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(secret),
-    );
+    return timingSafeEqual(Buffer.from(signature), Buffer.from(secret));
   }
 
   /**
@@ -96,9 +94,7 @@ export class TelegramProvider implements IChannelProvider {
     };
 
     if (!data.ok) {
-      this.logger.warn(
-        `Telegram setWebhook failed: ${data.description}`,
-      );
+      this.logger.warn(`Telegram setWebhook failed: ${data.description}`);
     }
 
     return data;
@@ -188,12 +184,6 @@ export class TelegramProvider implements IChannelProvider {
     return null;
   }
 
-  private extractContactInfo(
-    _msg: Record<string, unknown>,
-  ): InboundMessage | null {
-    return null;
-  }
-
   private parseTelegramMessage(
     msg: Record<string, unknown>,
   ): InboundMessage | null {
@@ -220,9 +210,6 @@ export class TelegramProvider implements IChannelProvider {
 
     const mediaMsg = this.extractMediaContent(msg, base);
     if (mediaMsg) return mediaMsg;
-
-    const contactMsg = this.extractContactInfo(msg);
-    if (contactMsg) return contactMsg;
 
     return base;
   }
@@ -307,9 +294,10 @@ export class TelegramProvider implements IChannelProvider {
 
     return {
       success: data.ok,
-      providerMessageId: data.result?.message_id != null
-        ? String(data.result.message_id)
-        : undefined,
+      providerMessageId:
+        data.result?.message_id != null
+          ? String(data.result.message_id)
+          : undefined,
       timestamp: new Date().toISOString(),
     };
   }

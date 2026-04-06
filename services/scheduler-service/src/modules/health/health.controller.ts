@@ -1,9 +1,19 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get } from "@nestjs/common";
+import { TenantConnectionManager } from "../../providers/tenant-connection-manager";
 
-@Controller('health')
+@Controller()
 export class HealthController {
-  @Get()
-  check(): { status: string } {
-    return { status: 'ok' };
+  constructor(private readonly tenantConnections: TenantConnectionManager) {}
+
+  @Get("health")
+  async check(): Promise<{
+    status: "ok" | "degraded";
+    postgres: boolean;
+  }> {
+    const postgresOk = await this.tenantConnections.verifyConnectivity();
+    return {
+      status: postgresOk ? "ok" : "degraded",
+      postgres: postgresOk,
+    };
   }
 }

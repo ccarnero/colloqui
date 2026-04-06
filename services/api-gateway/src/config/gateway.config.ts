@@ -1,15 +1,22 @@
 const K8S_DOMAIN = "svc.cluster.local";
 
+const gatewayPort = Number.parseInt(process.env.PORT ?? "3000", 10);
+
 /**
  * Centralized gateway configuration derived from environment variables.
  * Eliminates scattered process.env reads across proxy services.
  */
 export const gatewayConfig = {
-  port: Number(process.env.PORT) || 3000,
-  corsOrigin:
-    process.env.CORS_ORIGIN ?? "http://localhost:4200",
+  port: gatewayPort,
+  /** Base URL for this gateway (e.g. dashboard aggregator fetching own /health). */
+  selfBaseUrl:
+    process.env.API_GATEWAY_SELF_URL ?? `http://127.0.0.1:${gatewayPort}`,
+  corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:4200",
   environment: process.env.PLATFORM_ENVIRONMENT ?? "dev",
-  jwtSecret: process.env.JWT_SECRET ?? "",
+  /** Read at access time so tests can set JWT_SECRET before first use. */
+  get jwtSecret(): string {
+    return process.env.JWT_SECRET ?? "";
+  },
 
   services: {
     auth:
@@ -62,19 +69,9 @@ export const gatewayConfig = {
         | "token-bucket"
         | "sliding-window"
         | "fixed-window") ?? "token-bucket",
-    defaultLimit: Number(
-      process.env.RATE_LIMIT_DEFAULT_LIMIT ?? 100,
-    ),
-    defaultWindowMs: Number(
-      process.env.RATE_LIMIT_DEFAULT_WINDOW_MS ?? 60000,
-    ),
-    defaultCapacity: Number(
-      process.env.RATE_LIMIT_DEFAULT_CAPACITY ?? 100,
-    ),
-    defaultRefillRate: Number(
-      process.env.RATE_LIMIT_DEFAULT_REFILL_RATE ?? 10,
-    ),
+    defaultLimit: Number(process.env.RATE_LIMIT_DEFAULT_LIMIT ?? 100),
+    defaultWindowMs: Number(process.env.RATE_LIMIT_DEFAULT_WINDOW_MS ?? 60000),
+    defaultCapacity: Number(process.env.RATE_LIMIT_DEFAULT_CAPACITY ?? 100),
+    defaultRefillRate: Number(process.env.RATE_LIMIT_DEFAULT_REFILL_RATE ?? 10),
   },
 } as const;
-
-export type GatewayConfig = typeof gatewayConfig;

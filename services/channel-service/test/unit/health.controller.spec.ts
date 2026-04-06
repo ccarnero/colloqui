@@ -1,21 +1,17 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
+import { createMockPostgresSql } from "@yoizen/testing";
 import { HealthController } from "../../src/modules/health/health.controller";
 import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
 import { NATS_CONNECTION } from "../../src/providers/nats.provider";
 
-function createMockSql() {
-  const fn = mock(() => Promise.resolve([{ "?column?": 1 }]));
-  return fn as unknown as import("postgres").Sql;
-}
-
 describe("HealthController", () => {
   let controller: HealthController;
-  let sql: ReturnType<typeof createMockSql>;
+  let sql: ReturnType<typeof createMockPostgresSql>;
   let nc: { isClosed: ReturnType<typeof mock> };
 
   beforeEach(async () => {
-    sql = createMockSql();
+    sql = createMockPostgresSql(mock, [{ "?column?": 1 }]);
     nc = {
       isClosed: mock(() => false),
     };

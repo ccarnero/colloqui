@@ -1,14 +1,21 @@
-import { Injectable, Logger } from '@nestjs/common';
-import type { FastifyRequest, FastifyReply } from 'fastify';
-import { tracedFetch } from '@yoizen/observability';
-import { gatewayConfig } from '../../config/gateway.config';
+import { Injectable } from "@nestjs/common";
+import type { FastifyRequest, FastifyReply } from "fastify";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
+import { gatewayConfig } from "../../config";
+import { PROXY_TIMEOUT_MS } from "../../constants";
+import { copyForwardableHeaders } from "../../utils/copy-forwardable-headers";
+import { pipeUpstreamResponseToReply } from "../../utils/pipe-upstream-to-reply.util";
 
-const PROXY_TIMEOUT_MS = 30_000;
-const HOP_BY_HOP = new Set(['host', 'connection', 'transfer-encoding', 'accept-encoding']);
+const HOP_BY_HOP = new Set([
+  "host",
+  "connection",
+  "transfer-encoding",
+  "accept-encoding",
+]);
 
 @Injectable()
 export class ProxyProxyService {
-  private readonly logger = new Logger(ProxyProxyService.name);
+  private readonly logger = new PinoLoggerService(ProxyProxyService.name);
   private readonly baseUrl: string;
 
   constructor() {
@@ -19,13 +26,8 @@ export class ProxyProxyService {
     const path = req.url;
     const url = `${this.baseUrl}${path}`;
 
-    const upstreamHeaders: Record<string, string> = {};
-    for (const [key, val] of Object.entries(req.headers)) {
-      if (HOP_BY_HOP.has(key)) continue;
-      if (typeof val === 'string') upstreamHeaders[key] = val;
-    }
-    upstreamHeaders['accept-encoding'] = 'identity';
-
+    const upstreamHeaders = copyForwardableHeaders(req, HOP_BY_HOP);
+    upstreamHeaders["accept-encoding"] = "identity";
 
     const init: RequestInit = {
       method: req.method,
@@ -33,25 +35,22 @@ export class ProxyProxyService {
       signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     };
 
-    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body !== undefined) {
+    if (
+      req.method !== "GET" &&
+      req.method !== "HEAD" &&
+      req.body !== undefined
+    ) {
       init.body = JSON.stringify(req.body);
     }
 
     try {
       const upstream = await tracedFetch(url, init);
-
-      reply.status(upstream.status);
-
-      upstream.headers.forEach((value, key) => {
-        if (key === 'transfer-encoding' || key === 'connection') return;
-        reply.header(key, value);
-      });
-
-      const body = await upstream.text();
-      reply.send(body);
+      await pipeUpstreamResponseToReply(reply, upstream);
     } catch (err) {
-      this.logger.error(`Proxy pass-through error for ${req.method} ${url}: ${err}`);
-      reply.status(502).send({ statusCode: 502, message: 'Bad Gateway' });
+      this.logger.error(
+        `Proxy pass-through error for ${req.method} ${url}: ${err}`,
+      );
+      reply.status(502).send({ statusCode: 502, message: "Bad Gateway" });
     }
   }
 }

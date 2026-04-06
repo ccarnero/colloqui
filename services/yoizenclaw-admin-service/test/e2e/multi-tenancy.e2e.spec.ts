@@ -1,11 +1,18 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
-import { Test } from '@nestjs/testing';
-import type { INestApplication } from '@nestjs/common';
-import request from 'supertest';
-import { AppModule } from '../../src/app.module';
-import { TenantConnectionManager } from '../../src/providers/tenant-connection-manager';
-import { NatsPublisher } from '../../src/providers/nats.provider';
-import { TENANT_HEADER } from '../../src/types/yoizen-shared';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "bun:test";
+import { Test } from "@nestjs/testing";
+import type { INestApplication } from "@nestjs/common";
+import request from "supertest";
+import { AppModule } from "../../src/app.module";
+import { TenantConnectionManager } from "@yoizen/database";
+import { NatsPublisher } from "../../src/providers/nats.provider";
+import { TENANT_HEADER } from "@yoizen/shared";
 import {
   setupPostgres,
   createMockNatsPublisher,
@@ -13,9 +20,9 @@ import {
   cleanupTenantTables,
   type TestContext,
   type TestTenant,
-} from './setup';
+} from "./setup";
 
-describe('Multi-Tenancy E2E Tests', () => {
+describe("Multi-Tenancy E2E Tests", () => {
   let app: INestApplication;
   let context: TestContext;
   let tenantA: TestTenant;
@@ -24,8 +31,8 @@ describe('Multi-Tenancy E2E Tests', () => {
 
   beforeAll(async () => {
     context = await setupPostgres();
-    tenantA = await createTestTenant(context, 'tenant-a');
-    tenantB = await createTestTenant(context, 'tenant-b');
+    tenantA = await createTestTenant(context, "tenant-a");
+    tenantB = await createTestTenant(context, "tenant-b");
 
     const mockNatsPublisher = createMockNatsPublisher(context);
 
@@ -62,8 +69,8 @@ describe('Multi-Tenancy E2E Tests', () => {
     await cleanupTenantTables(context, tenantB.id);
   });
 
-  describe('Tenant Isolation - Agents', () => {
-    it('Tenant A should only see their own agents', async () => {
+  describe("Tenant Isolation - Agents", () => {
+    it("Tenant A should only see their own agents", async () => {
       // Crear 3 agents en Tenant A directamente en DB
       await tenantA.sql`
         INSERT INTO agents (name, system_prompt, status)
@@ -89,8 +96,8 @@ describe('Multi-Tenancy E2E Tests', () => {
         .useValue({
           getConnection: () => tenantA.sql,
           ensureSchema: async () => {},
-          isSchemaInitialized: () => true,
-          markSchemaInitialized: () => {},
+          isInitialized: () => true,
+          markInitialized: () => {},
           closeAll: async () => {},
           onModuleDestroy: async () => {},
         })
@@ -103,13 +110,17 @@ describe('Multi-Tenancy E2E Tests', () => {
 
       // Tenant A lista sus agents
       const responseA = await request(appA.getHttpServer())
-        .get('/admin/agents')
+        .get("/admin/agents")
         .set(TENANT_HEADER, tenantA.id)
         .expect(200);
 
       expect(responseA.body.agents.length).toBe(3);
       expect(responseA.body.total).toBe(3);
-      expect(responseA.body.agents.every((a: { name: string }) => a.name.includes('Tenant A'))).toBe(true);
+      expect(
+        responseA.body.agents.every((a: { name: string }) =>
+          a.name.includes("Tenant A"),
+        ),
+      ).toBe(true);
 
       await appA.close();
 
@@ -121,8 +132,8 @@ describe('Multi-Tenancy E2E Tests', () => {
         .useValue({
           getConnection: () => tenantB.sql,
           ensureSchema: async () => {},
-          isSchemaInitialized: () => true,
-          markSchemaInitialized: () => {},
+          isInitialized: () => true,
+          markInitialized: () => {},
           closeAll: async () => {},
           onModuleDestroy: async () => {},
         })
@@ -135,18 +146,22 @@ describe('Multi-Tenancy E2E Tests', () => {
 
       // Tenant B lista sus agents
       const responseB = await request(appB.getHttpServer())
-        .get('/admin/agents')
+        .get("/admin/agents")
         .set(TENANT_HEADER, tenantB.id)
         .expect(200);
 
       expect(responseB.body.agents.length).toBe(2);
       expect(responseB.body.total).toBe(2);
-      expect(responseB.body.agents.every((a: { name: string }) => a.name.includes('Tenant B'))).toBe(true);
+      expect(
+        responseB.body.agents.every((a: { name: string }) =>
+          a.name.includes("Tenant B"),
+        ),
+      ).toBe(true);
 
       await appB.close();
     });
 
-    it('Tenant B cannot access Tenant A agent by ID', async () => {
+    it("Tenant B cannot access Tenant A agent by ID", async () => {
       // Crear agent en Tenant A
       const [agentA] = await tenantA.sql`
         INSERT INTO agents (name, system_prompt, status)
@@ -162,8 +177,8 @@ describe('Multi-Tenancy E2E Tests', () => {
         .useValue({
           getConnection: () => tenantB.sql,
           ensureSchema: async () => {},
-          isSchemaInitialized: () => true,
-          markSchemaInitialized: () => {},
+          isInitialized: () => true,
+          markInitialized: () => {},
           closeAll: async () => {},
           onModuleDestroy: async () => {},
         })
@@ -183,7 +198,7 @@ describe('Multi-Tenancy E2E Tests', () => {
       await appB.close();
     });
 
-    it('Tenant B cannot modify Tenant A agent', async () => {
+    it("Tenant B cannot modify Tenant A agent", async () => {
       // Crear agent en Tenant A
       const [agentA] = await tenantA.sql`
         INSERT INTO agents (name, system_prompt, status)
@@ -199,8 +214,8 @@ describe('Multi-Tenancy E2E Tests', () => {
         .useValue({
           getConnection: () => tenantB.sql,
           ensureSchema: async () => {},
-          isSchemaInitialized: () => true,
-          markSchemaInitialized: () => {},
+          isInitialized: () => true,
+          markInitialized: () => {},
           closeAll: async () => {},
           onModuleDestroy: async () => {},
         })
@@ -213,8 +228,8 @@ describe('Multi-Tenancy E2E Tests', () => {
     });
   });
 
-  describe('Tenant Isolation - Credentials', () => {
-    it('should isolate credentials between tenants', async () => {
+  describe("Tenant Isolation - Credentials", () => {
+    it("should isolate credentials between tenants", async () => {
       // Crear credentials en ambos tenants
       await tenantA.sql`
         INSERT INTO credentials (name, type, value)
@@ -235,8 +250,8 @@ describe('Multi-Tenancy E2E Tests', () => {
         .useValue({
           getConnection: () => tenantA.sql,
           ensureSchema: async () => {},
-          isSchemaInitialized: () => true,
-          markSchemaInitialized: () => {},
+          isInitialized: () => true,
+          markInitialized: () => {},
           closeAll: async () => {},
           onModuleDestroy: async () => {},
         })
@@ -248,7 +263,7 @@ describe('Multi-Tenancy E2E Tests', () => {
       await appA.init();
 
       const responseA = await request(appA.getHttpServer())
-        .get('/admin/credentials')
+        .get("/admin/credentials")
         .set(TENANT_HEADER, tenantA.id)
         .expect(200);
 
@@ -258,8 +273,8 @@ describe('Multi-Tenancy E2E Tests', () => {
     });
   });
 
-  describe('Tenant Isolation - Channels', () => {
-    it('should isolate channels between tenants', async () => {
+  describe("Tenant Isolation - Channels", () => {
+    it("should isolate channels between tenants", async () => {
       // Crear channels en ambos tenants
       await tenantA.sql`
         INSERT INTO channels (name, type, config)
@@ -280,8 +295,8 @@ describe('Multi-Tenancy E2E Tests', () => {
         .useValue({
           getConnection: () => tenantA.sql,
           ensureSchema: async () => {},
-          isSchemaInitialized: () => true,
-          markSchemaInitialized: () => {},
+          isInitialized: () => true,
+          markInitialized: () => {},
           closeAll: async () => {},
           onModuleDestroy: async () => {},
         })
@@ -293,7 +308,7 @@ describe('Multi-Tenancy E2E Tests', () => {
       await appA.init();
 
       const responseA = await request(appA.getHttpServer())
-        .get('/admin/channels')
+        .get("/admin/channels")
         .set(TENANT_HEADER, tenantA.id)
         .expect(200);
 
@@ -303,8 +318,8 @@ describe('Multi-Tenancy E2E Tests', () => {
     });
   });
 
-  describe('Mixed Tenant Operations', () => {
-    it('should handle concurrent operations from different tenants', async () => {
+  describe("Mixed Tenant Operations", () => {
+    it("should handle concurrent operations from different tenants", async () => {
       // Configurar ambas aplicaciones
       const moduleA = await Test.createTestingModule({
         imports: [AppModule],
@@ -313,8 +328,8 @@ describe('Multi-Tenancy E2E Tests', () => {
         .useValue({
           getConnection: () => tenantA.sql,
           ensureSchema: async () => {},
-          isSchemaInitialized: () => true,
-          markSchemaInitialized: () => {},
+          isInitialized: () => true,
+          markInitialized: () => {},
           closeAll: async () => {},
           onModuleDestroy: async () => {},
         })
@@ -329,8 +344,8 @@ describe('Multi-Tenancy E2E Tests', () => {
         .useValue({
           getConnection: () => tenantB.sql,
           ensureSchema: async () => {},
-          isSchemaInitialized: () => true,
-          markSchemaInitialized: () => {},
+          isInitialized: () => true,
+          markInitialized: () => {},
           closeAll: async () => {},
           onModuleDestroy: async () => {},
         })
@@ -346,18 +361,18 @@ describe('Multi-Tenancy E2E Tests', () => {
       // Operaciones concurrentes
       const [responseA, responseB] = await Promise.all([
         request(appA.getHttpServer())
-          .post('/admin/agents')
+          .post("/admin/agents")
           .set(TENANT_HEADER, tenantA.id)
           .send({
-            name: 'Concurrent Agent A',
-            system_prompt: 'Prompt A',
+            name: "Concurrent Agent A",
+            system_prompt: "Prompt A",
           }),
         request(appB.getHttpServer())
-          .post('/admin/agents')
+          .post("/admin/agents")
           .set(TENANT_HEADER, tenantB.id)
           .send({
-            name: 'Concurrent Agent B',
-            system_prompt: 'Prompt B',
+            name: "Concurrent Agent B",
+            system_prompt: "Prompt B",
           }),
       ]);
 
@@ -369,12 +384,12 @@ describe('Multi-Tenancy E2E Tests', () => {
 
       // Verificar que cada tenant solo ve su propio agent
       const listA = await request(appA.getHttpServer())
-        .get('/admin/agents')
+        .get("/admin/agents")
         .set(TENANT_HEADER, tenantA.id)
         .expect(200);
 
       const listB = await request(appB.getHttpServer())
-        .get('/admin/agents')
+        .get("/admin/agents")
         .set(TENANT_HEADER, tenantB.id)
         .expect(200);
 

@@ -45,6 +45,9 @@ export const REGISTRY_KNATIVE_VERSION = 'v1';
 export const REGISTRY_KNATIVE_SERVICES_PLURAL = 'services';
 export const REGISTRY_KNATIVE_REVISIONS_PLURAL = 'revisions';
 
+/** Default container port when registering a Knative service without explicit port. */
+export const REGISTRY_DEFAULT_SERVICE_PORT = 3000;
+
 export const WORKFLOW_ORCHESTRATOR_TASK_QUEUE = 'workflow-orchestrator';
 export const WORKFLOW_HTTP_TASK_QUEUE = 'workflow-http';
 export const WORKFLOW_DEFAULT_TIMEOUT_MS = 60_000;

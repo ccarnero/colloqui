@@ -1,61 +1,40 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import type Redis from "ioredis";
-import {
-  AdapterClient,
-  DEFAULT_ADAPTER_SERVICE_URL,
-  TENANT_HEADER,
-} from "@yoizen/shared";
+import { Inject, Injectable } from "@nestjs/common";
+import { AdapterClient, sleep } from "@yoizen/shared";
 import type { EventEnvelope } from "@yoizen/shared";
-import { tracedFetch } from "@yoizen/observability";
-import { REDIS_CLIENT } from "../providers/redis.provider";
-import type { PipelineContext, PipelineStage } from "./pipeline-stage.interface";
-
-const SOURCE_HEADER = "X-Yoizen-Source";
-const SOURCE_VALUE = "event-processor";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
+import { ADAPTER_CLIENT } from "../providers/adapter-client.provider";
+import type {
+  IPipelineContext,
+  IPipelineStage,
+} from "./pipeline-stage.interface";
+import { resolveAdapterPipelineRefAndRequest } from "./adapter-pipeline-stage-base.util";
 
 @Injectable()
-export class AdapterForwardStage implements PipelineStage {
+export class AdapterForwardStage implements IPipelineStage {
   readonly order = 40;
-  private readonly logger = new Logger(AdapterForwardStage.name);
-  private readonly adapterClient: AdapterClient;
+  private readonly logger = new PinoLoggerService(AdapterForwardStage.name);
 
-  constructor(@Inject(REDIS_CLIENT) redis: Redis) {
-    this.adapterClient = new AdapterClient({
-      baseUrl:
-        process.env.ADAPTER_SERVICE_URL ?? DEFAULT_ADAPTER_SERVICE_URL,
-      fetchFn: tracedFetch,
-      cache: redis,
-    });
-  }
+  constructor(
+    @Inject(ADAPTER_CLIENT) private readonly adapterClient: AdapterClient,
+  ) {}
 
   async process(
     envelope: EventEnvelope,
-    context: PipelineContext,
+    context: IPipelineContext,
   ): Promise<EventEnvelope> {
-    if (!envelope.forward_adapter) return envelope;
-
-    const { adapterId, endpointId } = envelope.forward_adapter;
-    const tenantId = context.tenantId;
-    if (!tenantId) {
-      this.logger.warn(
-        `Skipping adapter forward for event ${envelope.id}: no tenantId`,
-      );
-      return envelope;
-    }
+    const pipelineResolved = await resolveAdapterPipelineRefAndRequest({
+      envelope,
+      context,
+      field: "forward_adapter",
+      logger: this.logger,
+      label: "forward",
+      adapterClient: this.adapterClient,
+      extraHeaders: { "Content-Type": "application/json" },
+    });
+    if (!pipelineResolved) return envelope;
 
     try {
-      const resolved = await this.adapterClient.resolveRequest(
-        tenantId,
-        adapterId,
-        endpointId,
-      );
-
-      const headers: Record<string, string> = {
-        ...resolved.headers,
-        [TENANT_HEADER]: tenantId,
-        [SOURCE_HEADER]: SOURCE_VALUE,
-        "Content-Type": "application/json",
-      };
+      const { resolved, headers } = pipelineResolved;
 
       const body = JSON.stringify(envelope.data.payload);
       let lastError: unknown;
@@ -63,7 +42,7 @@ export class AdapterForwardStage implements PipelineStage {
       for (let attempt = 0; attempt <= resolved.maxRetries; attempt++) {
         if (attempt > 0) {
           const delay = resolved.retryBackoffMs * (1 << (attempt - 1));
-          await new Promise((r) => setTimeout(r, delay));
+          await sleep(delay);
         }
 
         try {

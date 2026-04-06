@@ -1,15 +1,16 @@
-import { Injectable, NotFoundException, Logger, ConflictException } from '@nestjs/common';
-import { ConfigFilesRepository, type ConfigFile, type CreateConfigFileData, type UpdateConfigFileData } from './config-files.repository';
-import { NatsPublisher } from '../../providers/nats.provider';
-
-export interface FindAllOptions {
-  limit?: number;
-  offset?: number;
-}
+import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConfigFilesRepository,
+  type IConfigFile,
+  type ICreateConfigFileData,
+  type IFindAllConfigFilesOptions,
+} from "./config-files.repository";
+import { NatsPublisher } from "../../providers/nats.provider";
+import { PinoLoggerService } from "@yoizen/observability";
 
 @Injectable()
 export class ConfigFilesService {
-  private readonly logger = new Logger(ConfigFilesService.name);
+  private readonly logger = new PinoLoggerService(ConfigFilesService.name);
 
   constructor(
     private readonly repository: ConfigFilesRepository,
@@ -17,19 +18,19 @@ export class ConfigFilesService {
   ) {}
 
   /**
-   * Lista todos los config files con paginación.
+   * Lists all config files with pagination.
    */
   async findAll(
     tenantId: string,
-    options: FindAllOptions = {},
-  ): Promise<{ files: ConfigFile[]; total: number }> {
+    options: IFindAllConfigFilesOptions = {},
+  ): Promise<{ files: IConfigFile[]; total: number }> {
     return this.repository.findAll(tenantId, options);
   }
 
   /**
-   * Obtiene un config file por su path.
+   * Returns a config file by path.
    */
-  async findByPath(tenantId: string, path: string): Promise<ConfigFile> {
+  async findByPath(tenantId: string, path: string): Promise<IConfigFile> {
     const file = await this.repository.findByPath(tenantId, path);
     if (!file) {
       throw new NotFoundException(`Config file with path '${path}' not found`);
@@ -38,13 +39,15 @@ export class ConfigFilesService {
   }
 
   /**
-   * Crea un nuevo config file.
-   * Si ya existe un archivo con el mismo path, actualiza el existente.
+   * Creates a new config file, or updates an existing one at the same path.
    */
-  async createOrUpdate(tenantId: string, data: CreateConfigFileData): Promise<ConfigFile> {
+  async createOrUpdate(
+    tenantId: string,
+    data: ICreateConfigFileData,
+  ): Promise<IConfigFile> {
     // Check if file already exists
     const existingFile = await this.repository.findByPath(tenantId, data.path);
-    
+
     if (existingFile) {
       // Update existing file
       this.logger.log(`Updating existing config file: ${data.path}`);
@@ -53,7 +56,9 @@ export class ConfigFilesService {
         content: data.content,
       });
       if (!updated) {
-        throw new NotFoundException(`Config file with path '${data.path}' not found during update`);
+        throw new NotFoundException(
+          `Config file with path '${data.path}' not found during update`,
+        );
       }
       return updated;
     }
@@ -64,46 +69,18 @@ export class ConfigFilesService {
   }
 
   /**
-   * Actualiza un config file existente (incrementa versión automáticamente).
-   */
-  async update(
-    tenantId: string,
-    path: string,
-    data: UpdateConfigFileData,
-  ): Promise<ConfigFile> {
-    const file = await this.repository.update(tenantId, path, data);
-    if (!file) {
-      throw new NotFoundException(`Config file with path '${path}' not found`);
-    }
-    this.logger.log(`Config file '${path}' updated to version ${file.version}`);
-    return file;
-  }
-
-  /**
-   * Elimina (soft delete) un config file.
-   */
-  async delete(tenantId: string, path: string): Promise<void> {
-    const deleted = await this.repository.delete(tenantId, path);
-    if (!deleted) {
-      throw new NotFoundException(`Config file with path '${path}' not found`);
-    }
-    this.logger.log(`Config file '${path}' deleted`);
-  }
-
-  /**
-   * Deploy: obtiene todos los config files activos y emite evento NATS.
+   * Deploy: loads all active config files and emits a NATS sync event.
    */
   async deploy(
     tenantId: string,
     deletePaths: string[] = [],
-  ): Promise<{ files: ConfigFile[]; eventEmitted: boolean }> {
-    // Obtener todos los config files activos
+  ): Promise<{ files: IConfigFile[]; eventEmitted: boolean }> {
     const files = await this.repository.findAllActive(tenantId);
 
-    // Emitir evento NATS
+    // Emit NATS event
     let eventEmitted = false;
     try {
-      const filesForEvent = files.map(file => ({
+      const filesForEvent = files.map((file) => ({
         path: file.path,
         content: file.content,
         format: file.format,
@@ -115,13 +92,12 @@ export class ConfigFilesService {
         deletePaths,
       );
       eventEmitted = true;
-      this.logger.log(`Runtime config sync event emitted with ${files.length} files`);
-    } catch (error) {
-      this.logger.error(
-        `Failed to emit runtime.config.sync event`,
-        error,
+      this.logger.log(
+        `Runtime config sync event emitted with ${files.length} files`,
       );
-      // No lanzamos error para no fallar la operación de deploy
+    } catch (error) {
+      this.logger.error(`Failed to emit runtime.config.sync event`, error);
+      // Do not fail the deploy operation if the event fails
     }
 
     return { files, eventEmitted };

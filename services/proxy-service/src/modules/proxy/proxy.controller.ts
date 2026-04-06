@@ -1,12 +1,12 @@
-import { Controller, All, Req, Res } from '@nestjs/common';
-import type { FastifyRequest, FastifyReply } from 'fastify';
-import { ProxyService } from './proxy.service';
+import { Controller, All, Req, Res } from "@nestjs/common";
+import type { FastifyRequest, FastifyReply } from "fastify";
+import { ProxyService } from "./proxy.service";
 
-@Controller('proxy')
+@Controller("proxy")
 export class ProxyController {
   constructor(private readonly proxyService: ProxyService) {}
 
-  @All('generic')
+  @All("generic")
   handleGenericRoot(
     @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
@@ -14,7 +14,7 @@ export class ProxyController {
     return this.proxyService.handleGeneric(req, reply);
   }
 
-  @All('generic/*')
+  @All("generic/*")
   handleGenericPath(
     @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
@@ -22,7 +22,7 @@ export class ProxyController {
     return this.proxyService.handleGeneric(req, reply);
   }
 
-  @All('ysocial')
+  @All("ysocial")
   handleYSocialRoot(
     @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
@@ -30,7 +30,7 @@ export class ProxyController {
     return this.proxyService.handleYSocial(req, reply);
   }
 
-  @All('ysocial/*')
+  @All("ysocial/*")
   handleYSocialPath(
     @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
@@ -38,7 +38,7 @@ export class ProxyController {
     return this.proxyService.handleYSocial(req, reply);
   }
 
-  @All('yflow')
+  @All("yflow")
   handleYFlowRoot(
     @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
@@ -46,7 +46,7 @@ export class ProxyController {
     return this.proxyService.handleYFlow(req, reply);
   }
 
-  @All('yflow/*')
+  @All("yflow/*")
   handleYFlowPath(
     @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,

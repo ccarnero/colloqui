@@ -1,22 +1,14 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import type { Consumer } from "nats";
-import { AuditService, type IAuditEvent } from "../../src/modules/audit/audit.service";
+import type { EventEnvelope } from "@yoizen/shared";
+import { AuditRepository } from "../../src/modules/audit/audit.repository";
+import {
+  AuditService,
+  type IAuditEvent,
+} from "../../src/modules/audit/audit.service";
 import { JETSTREAM_CLIENT } from "../../src/providers/nats.provider";
-import { TenantConnectionManager, type Sql } from "../../src/providers/tenant-connection-manager";
-
-function makeMockConsumer(): Consumer {
-  return {
-    consume: mock(() =>
-      Promise.resolve({
-        [Symbol.asyncIterator]: () => ({
-          next: () => Promise.resolve({ done: true, value: undefined }),
-        }),
-        stop: mock(),
-      }),
-    ),
-  } as unknown as Consumer;
-}
+import { TenantConnectionManager, type Sql } from "@yoizen/database";
+import { makeMockJetStreamConsumer } from "../make-mock-consumer";
 
 describe("AuditService", () => {
   let service: AuditService;
@@ -52,8 +44,9 @@ describe("AuditService", () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
+        AuditRepository,
         AuditService,
-        { provide: JETSTREAM_CLIENT, useValue: makeMockConsumer() },
+        { provide: JETSTREAM_CLIENT, useValue: makeMockJetStreamConsumer() },
         { provide: TenantConnectionManager, useValue: mockTenantMgr },
       ],
     }).compile();
@@ -78,13 +71,73 @@ describe("AuditService", () => {
   });
 
   it("getEventById returns null when no row", async () => {
-    const emptySql = Object.assign(
-      () => Promise.resolve([]),
-      {},
-    ) as Sql;
+    const emptySql = Object.assign(() => Promise.resolve([]), {}) as Sql;
     mockTenantMgr.getConnection.mockReturnValue(emptySql);
 
     const row = await service.getEventById("missing", "tenant-a");
     expect(row).toBeNull();
+  });
+
+  it("persistAuditEnvelope inserts when tenant present", async () => {
+    let insertCount = 0;
+    const trackingSql = Object.assign(
+      (_strings: TemplateStringsArray, ..._values: unknown[]) => {
+        const head = _strings[0] ?? "";
+        if (head.includes("INSERT INTO events")) {
+          insertCount += 1;
+        }
+        if (head.includes("CREATE TABLE")) {
+          return Promise.resolve([]);
+        }
+        return Promise.resolve([]);
+      },
+      {},
+    ) as Sql;
+
+    mockTenantMgr.isInitialized.mockReturnValue(false);
+    mockTenantMgr.getConnection.mockReturnValue(trackingSql);
+
+    const persist = service as unknown as {
+      persistAuditEnvelope: (
+        envelope: EventEnvelope,
+        subject: string,
+      ) => Promise<void>;
+    };
+    await persist.persistAuditEnvelope(
+      {
+        specversion: "1.0",
+        id: "e1",
+        source: "src",
+        type: "t.test",
+        resource: "r",
+        time: new Date().toISOString(),
+        traceid: "tr",
+        causation_id: null,
+        correlation_id: "co",
+        tenant: "tenant-a",
+        producer: "p",
+        domain: "d",
+        channel: "c",
+        provider: "p",
+        accountid: "a",
+        idempotencykey: "k",
+        transport: {
+          method: "webhook",
+          protocol: "https",
+        },
+        data: {
+          received_at: new Date().toISOString(),
+          payload_inline: true,
+          payload_ref: null,
+          payload_bytes: 0,
+          payload_checksum: "x",
+          payload: { x: 1 },
+        },
+      },
+      "events.test.subject",
+    );
+
+    expect(insertCount).toBe(1);
+    expect(mockTenantMgr.markInitialized).toHaveBeenCalled();
   });
 });

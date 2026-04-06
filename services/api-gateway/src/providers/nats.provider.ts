@@ -23,9 +23,7 @@ export const natsProvider: FactoryProvider = createNatsConnectionProvider();
 export const jetStreamManagerProvider: FactoryProvider = {
   provide: JETSTREAM_MANAGER,
   inject: [NATS_CONNECTION],
-  useFactory: async (
-    nc: NatsConnection,
-  ): Promise<JetStreamManager> => {
+  useFactory: async (nc: NatsConnection): Promise<JetStreamManager> => {
     const jsm = await nc.jetstreamManager();
     await Promise.all([
       ensureStream(jsm, {
@@ -42,9 +40,12 @@ export const jetStreamManagerProvider: FactoryProvider = {
   },
 };
 
+/** Depends on JETSTREAM_MANAGER so stream ensure runs before JetStream is used. */
 export const jetStreamProvider: FactoryProvider = {
   provide: JETSTREAM,
-  inject: [NATS_CONNECTION],
-  useFactory: (nc: NatsConnection): JetStreamClient =>
-    nc.jetstream(),
+  inject: [NATS_CONNECTION, JETSTREAM_MANAGER],
+  useFactory: (
+    nc: NatsConnection,
+    _jsm: JetStreamManager,
+  ): JetStreamClient => nc.jetstream(),
 };

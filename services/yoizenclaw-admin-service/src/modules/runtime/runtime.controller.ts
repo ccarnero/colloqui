@@ -1,35 +1,33 @@
-import { Controller, Get, Headers, HttpCode, HttpStatus } from '@nestjs/common';
-import { TENANT_HEADER } from '@yoizen/shared';
-import { RuntimeService } from './runtime.service';
-
-interface RuntimeStatusResponse {
-  configured: boolean;
-  connected_runtimes: string[];
-  last_sync_at?: string;
-}
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+} from "@nestjs/common";
+import { RuntimeService, type IRuntimeStatus } from "./runtime.service";
+import { TenantGuard } from "../../guards/tenant.guard";
+import { TenantId } from "../../providers/tenant.decorator";
 
 /**
- * Controller para endpoints de estado del runtime.
- * Base path: /admin/runtime
+ * Runtime status endpoints. Base path: /admin/runtime
  */
-@Controller('admin/runtime')
+@Controller("admin/runtime")
+@UseGuards(TenantGuard)
 export class RuntimeController {
   constructor(private readonly runtimeService: RuntimeService) {}
 
   /**
-   * Obtiene el estado del runtime para un tenant.
+   * Returns runtime status for a tenant.
    * GET /admin/runtime/status
    *
-   * Retorna información sobre:
-   * - Si el runtime está configurado
-   * - Runtimes conectados
-   * - Última sincronización
+   * Includes whether the runtime is configured, connected runtimes, and last sync time.
    */
-  @Get('status')
+  @Get("status")
   @HttpCode(HttpStatus.OK)
   async getStatus(
-    @Headers(TENANT_HEADER) tenantId: string,
-  ): Promise<RuntimeStatusResponse> {
+    @TenantId() tenantId: string,
+  ): Promise<IRuntimeStatus> {
     return this.runtimeService.getStatus(tenantId);
   }
 }

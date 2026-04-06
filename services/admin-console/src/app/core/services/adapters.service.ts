@@ -1,7 +1,11 @@
-import { HttpClient } from "@angular/common/http";
 import { Injectable, inject } from "@angular/core";
 import { map, type Observable } from "rxjs";
-import { environment } from "../../../environments/environment";
+import type { AdapterStatus } from "../models/adapter-status";
+import {
+  HttpAdapterService,
+  type IAdapterDto,
+  type IAdapterEndpointDto,
+} from "./http-adapter.service";
 
 export interface IAdapterEndpoint {
   id: string;
@@ -10,7 +14,7 @@ export interface IAdapterEndpoint {
   method: string;
 }
 
-export type AdapterStatus = "enabled" | "disabled";
+export type { AdapterStatus };
 
 export interface IAdapterSummary {
   id: string;
@@ -32,18 +36,56 @@ export interface IAdapterDetail {
   endpoints: IAdapterEndpoint[];
 }
 
+function endpointDtoToView(dto: IAdapterEndpointDto): IAdapterEndpoint {
+  return {
+    id: dto.id,
+    label: dto.label,
+    path: dto.path,
+    method: dto.method,
+  };
+}
+
+function adapterDtoToSummary(dto: IAdapterDto): IAdapterSummary {
+  return {
+    id: dto.id,
+    name: dto.name,
+    status: dto.status,
+    baseUrl: dto.baseUrl,
+    authType: dto.authType,
+    hasAuth: dto.authType !== "none",
+    endpoints: dto.endpoints.map(endpointDtoToView),
+  };
+}
+
+function adapterDtoToDetail(dto: IAdapterDto): IAdapterDetail {
+  return {
+    id: dto.id,
+    name: dto.name,
+    baseUrl: dto.baseUrl,
+    status: dto.status,
+    authType: dto.authType,
+    hasAuth: dto.authType !== "none",
+    endpoints: dto.endpoints.map(endpointDtoToView),
+  };
+}
+
+/**
+ * Read-only adapter list/detail for YoizenClaw tooling. Delegates HTTP to
+ * {@link HttpAdapterService} to avoid duplicating `/adapters` client logic.
+ */
 @Injectable({ providedIn: "root" })
 export class AdaptersService {
-  private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiUrl}/adapters`;
+  private readonly httpAdapter = inject(HttpAdapterService);
 
   listAdapters(): Observable<{ adapters: IAdapterSummary[] }> {
-    return this.http
-      .get<IAdapterSummary[]>(this.baseUrl)
-      .pipe(map((adapters) => ({ adapters })));
+    return this.httpAdapter
+      .list()
+      .pipe(map((adapters) => ({ adapters: adapters.map(adapterDtoToSummary) })));
   }
 
   getAdapter(adapterId: string): Observable<IAdapterDetail> {
-    return this.http.get<IAdapterDetail>(`${this.baseUrl}/${adapterId}`);
+    return this.httpAdapter
+      .get(adapterId)
+      .pipe(map(adapterDtoToDetail));
   }
 }

@@ -8,15 +8,23 @@ import {
   Matches,
   ArrayMinSize,
   IsIn,
-} from 'class-validator';
+} from "class-validator";
 
-const VALID_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
+const VALID_METHODS = [
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+] as const;
 
 export class CreateRouteDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
-  @Matches(/^\//, { message: 'path_prefix must start with /' })
+  @Matches(/^\//, { message: "path_prefix must start with /" })
   pathPrefix!: string;
 
   @IsOptional()

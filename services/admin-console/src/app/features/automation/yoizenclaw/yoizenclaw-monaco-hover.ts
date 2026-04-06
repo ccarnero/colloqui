@@ -1,8 +1,8 @@
-import type { SkillInfo, ToolInfo } from "./yoizenclaw.types";
+import type { ISkillInfo, IToolInfo } from "./yoizenclaw.types";
 
 export function registerYoizenclawMonacoHoverProvider(opts: {
-  getSkills: () => SkillInfo[];
-  getTools: () => ToolInfo[];
+  getSkills: () => ISkillInfo[];
+  getTools: () => IToolInfo[];
 }): void {
   const checkMonaco = () => {
     const w = window as unknown as { monaco?: typeof import("monaco-editor") };
@@ -18,7 +18,8 @@ export function registerYoizenclawMonacoHoverProvider(opts: {
 
           const startColumn = wordAtPos.startColumn;
           const word = wordAtPos.word;
-          const charBefore = startColumn > 1 ? lineContent[startColumn - 2] : "";
+          const charBefore =
+            startColumn > 1 ? lineContent[startColumn - 2] : "";
 
           if (charBefore === "@") {
             if (word.startsWith("skill:")) {

@@ -7,11 +7,12 @@ import {
   IsIn,
   IsISO8601,
   Length,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+} from "class-validator";
+import { Type } from "class-transformer";
+import { PaginatedQueryDto } from "@yoizen/shared";
 
-// FIXME: Implementar cifrado con KMS/Vault - actualmente almacenado en plaintext
-export type CredentialType = 'api_key' | 'oauth' | 'basic' | 'custom';
+// FIXME: Encrypt with KMS/Vault — currently stored as plaintext
+export type CredentialType = "api_key" | "oauth" | "basic" | "custom";
 
 export class CreateCredentialDto {
   @IsString()
@@ -21,12 +22,12 @@ export class CreateCredentialDto {
 
   @IsString()
   @IsNotEmpty()
-  @IsIn(['api_key', 'oauth', 'basic', 'custom'])
+  @IsIn(["api_key", "oauth", "basic", "custom"])
   type!: CredentialType;
 
   @IsString()
   @IsNotEmpty()
-  // FIXME: Implementar cifrado con KMS/Vault antes de producción
+  // FIXME: Encrypt with KMS/Vault before production
   value!: string;
 
   @IsObject()
@@ -52,12 +53,12 @@ export class UpdateCredentialDto {
 
   @IsString()
   @IsOptional()
-  @IsIn(['api_key', 'oauth', 'basic', 'custom'])
+  @IsIn(["api_key", "oauth", "basic", "custom"])
   type?: CredentialType;
 
   @IsString()
   @IsOptional()
-  // FIXME: Implementar cifrado con KMS/Vault antes de producción
+  // FIXME: Encrypt with KMS/Vault before production
   value?: string;
 
   @IsObject()
@@ -75,30 +76,22 @@ export class UpdateCredentialDto {
   is_active?: boolean;
 }
 
-export class ListCredentialsQueryDto {
+export class ListCredentialsQueryDto extends PaginatedQueryDto {
   @IsString()
   @IsOptional()
-  @IsIn(['api_key', 'oauth', 'basic', 'custom'])
+  @IsIn(["api_key", "oauth", "basic", "custom"])
   type?: CredentialType;
 
   @IsBoolean()
   @IsOptional()
   @Type(() => Boolean)
   is_active?: boolean;
-
-  @IsOptional()
-  @Type(() => Number)
-  limit?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  offset?: number;
 }
 
 export class RotateCredentialDto {
   @IsString()
   @IsNotEmpty()
-  // FIXME: Implementar cifrado con KMS/Vault antes de producción
+  // FIXME: Encrypt with KMS/Vault before production
   new_value!: string;
 
   @IsISO8601()

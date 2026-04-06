@@ -3,59 +3,60 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
-  Logger,
   NotFoundException,
-} from '@nestjs/common';
-import type * as k8s from '@kubernetes/client-node';
-import { randomUUID } from 'node:crypto';
-import { K8S_CORE_API } from '../../providers/kubernetes.provider';
-import { TenantPostgresProvisioner } from '../../providers/postgres.provider';
-import { TenantsRepository } from './tenants.repository';
+} from "@nestjs/common";
+import { PinoLoggerService } from "@yoizen/observability";
+import type * as k8s from "@kubernetes/client-node";
+import { randomUUID } from "node:crypto";
+import { tenantServiceConfig } from "../../config";
+import { K8S_CORE_API } from "../../providers/kubernetes.provider";
+import { TenantPostgresProvisioner } from "../../providers/postgres.provider";
+import { TenantsRepository } from "./tenants.repository";
 import {
   type Environment,
   type TenantConfiguration,
   VALID_ENVIRONMENTS,
 } from "./tenant.dto";
+import {
+  invalidPlatformEnvironmentMessage,
+  tenantKubernetesNamespaceName,
+} from "@yoizen/shared";
 
 const LABEL_TENANT = "yoizen.io/tenant";
-const LABEL_ENVIRONMENT = 'yoizen.io/environment';
-const LABEL_MANAGED_BY = 'yoizen.io/managed-by';
-const LABEL_PART_OF = 'app.kubernetes.io/part-of';
-const MANAGED_BY_VALUE = 'tenant-service';
-const PART_OF_VALUE = 'yoizen-arch';
+const LABEL_ENVIRONMENT = "yoizen.io/environment";
+const LABEL_MANAGED_BY = "yoizen.io/managed-by";
+const LABEL_PART_OF = "app.kubernetes.io/part-of";
+const MANAGED_BY_VALUE = "tenant-service";
+const PART_OF_VALUE = "yoizen-arch";
 
-interface NamespaceStatus {
+interface INamespaceStatus {
   name: string;
   environment: Environment;
   phase: string;
 }
 
-export interface TenantDetail {
+export interface ITenantDetail {
   name: string;
   configuration: TenantConfiguration;
-  namespaces: NamespaceStatus[];
+  namespaces: INamespaceStatus[];
   postgresHost: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export interface TenantSummary {
+export interface ITenantSummary {
   name: string;
   environment: string;
   configuration: TenantConfiguration;
 }
 
-function namespaceName(tenant: string, env: Environment): string {
-  return `${tenant}-${env}-ns`;
-}
-
 function postgresHost(tenant: string, env: Environment): string {
-  return `postgres.${namespaceName(tenant, env)}.svc.cluster.local`;
+  return `postgres.${tenantKubernetesNamespaceName(tenant, env)}.svc.cluster.local`;
 }
 
 @Injectable()
 export class TenantsService {
-  private readonly logger = new Logger(TenantsService.name);
+  private readonly logger = new PinoLoggerService(TenantsService.name);
   private readonly environment: Environment;
 
   constructor(
@@ -63,32 +64,34 @@ export class TenantsService {
     private readonly pgProvisioner: TenantPostgresProvisioner,
     private readonly repository: TenantsRepository,
   ) {
-    const env = process.env.PLATFORM_ENVIRONMENT ?? 'dev';
+    const env = tenantServiceConfig.platformEnvironment;
     if (!VALID_ENVIRONMENTS.includes(env as Environment)) {
       throw new InternalServerErrorException(
-        `Invalid PLATFORM_ENVIRONMENT: '${env}'. Must be one of: ${VALID_ENVIRONMENTS.join(', ')}`,
+        invalidPlatformEnvironmentMessage(env),
       );
     }
     this.environment = env as Environment;
     this.logger.log(`Tenant service scoped to environment: ${this.environment}`);
   }
 
+  /**
+   * Creates DB row, Kubernetes namespace, and provisions PostgreSQL for the tenant.
+   *
+   * @param name - DNS-safe tenant name.
+   * @param configuration - Arbitrary JSON configuration blob.
+   */
   async createTenant(
     name: string,
     configuration: TenantConfiguration = {},
-  ): Promise<TenantDetail> {
+  ): Promise<ITenantDetail> {
     const existing = await this.repository.findByName(name);
     if (existing) {
       throw new ConflictException(`Tenant '${name}' already exists`);
     }
 
-    const row = await this.repository.create(
-      randomUUID(),
-      name,
-      configuration,
-    );
+    const row = await this.repository.create(randomUUID(), name, configuration);
 
-    const nsName = namespaceName(name, this.environment);
+    const nsName = tenantKubernetesNamespaceName(name, this.environment);
     const body = {
       metadata: {
         name: nsName,
@@ -108,10 +111,10 @@ export class TenantsService {
 
     this.logger.log(`Created tenant '${name}' with namespace ${nsName}`);
 
-    const ns: NamespaceStatus = {
+    const ns: INamespaceStatus = {
       name: nsName,
       environment: this.environment,
-      phase: created.status?.phase ?? 'Active',
+      phase: created.status?.phase ?? "Active",
     };
 
     return {
@@ -124,7 +127,10 @@ export class TenantsService {
     };
   }
 
-  async listTenants(): Promise<TenantSummary[]> {
+  /**
+   * Lists tenant summaries for the current platform environment.
+   */
+  async listTenants(): Promise<ITenantSummary[]> {
     const rows = await this.repository.findAll();
     return rows.map((row) => ({
       name: row.name,
@@ -133,65 +139,67 @@ export class TenantsService {
     }));
   }
 
-  async getTenant(name: string): Promise<TenantDetail> {
+  /**
+   * Returns tenant detail including namespace phases and Postgres host.
+   *
+   * @param name - Tenant name.
+   */
+  async getTenant(name: string): Promise<ITenantDetail> {
     const row = await this.repository.findByName(name);
     if (!row) {
-      throw new NotFoundException(
-        `Tenant '${name}' not found`,
-      );
+      throw new NotFoundException(`Tenant '${name}' not found`);
     }
 
     const items = await this.findNamespacesByTenant(name);
-    const namespaces: NamespaceStatus[] = items.map((ns) => ({
-      name: ns.metadata!.name!,
-      environment: ns.metadata!.labels![LABEL_ENVIRONMENT] as Environment,
-      phase: ns.status?.phase ?? 'Unknown',
-    }));
 
     return {
       name,
       configuration: row.configuration,
-      namespaces,
+      namespaces: this.mapNamespacesToStatuses(items),
       postgresHost: postgresHost(name, this.environment),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
   }
 
+  /**
+   * Updates stored configuration JSON for the tenant.
+   *
+   * @param name - Tenant name.
+   * @param configuration - Full replacement configuration object.
+   */
   async updateTenant(
     name: string,
     configuration: TenantConfiguration,
-  ): Promise<TenantDetail> {
+  ): Promise<ITenantDetail> {
     const row = await this.repository.updateConfiguration(name, configuration);
     if (!row) {
       throw new NotFoundException(`Tenant '${name}' not found`);
     }
 
     const items = await this.findNamespacesByTenant(name);
-    const namespaces: NamespaceStatus[] = items.map((ns) => ({
-      name: ns.metadata!.name!,
-      environment: ns.metadata!.labels![LABEL_ENVIRONMENT] as Environment,
-      phase: ns.status?.phase ?? 'Unknown',
-    }));
 
     this.logger.log(`Updated configuration for tenant '${name}'`);
 
     return {
       name,
       configuration: row.configuration,
-      namespaces,
+      namespaces: this.mapNamespacesToStatuses(items),
       postgresHost: postgresHost(name, this.environment),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
   }
 
+  /**
+   * Deletes all labeled namespaces (cascades workloads) then removes the DB row.
+   *
+   * @param name - Tenant name.
+   */
   async deleteTenant(name: string): Promise<void> {
     const row = await this.repository.findByName(name);
     if (!row) {
-      throw new NotFoundException(
-        `Tenant '${name}' not found`,
-      );
+      throw new NotFoundException(`Tenant '${name}' not found`);
     }
 
     const items = await this.findNamespacesByTenant(name);
@@ -203,8 +211,23 @@ export class TenantsService {
       }),
     );
 
-    await this.repository.deleteByName(name);
+    const deleted = await this.repository.deleteByName(name);
+    if (!deleted) {
+      this.logger.warn(
+        `Tenant '${name}' was not found in database after namespace cleanup`,
+      );
+    }
     this.logger.log(`Deleted tenant '${name}' from database`);
+  }
+
+  private mapNamespacesToStatuses(
+    items: k8s.V1Namespace[],
+  ): INamespaceStatus[] {
+    return items.map((ns) => ({
+      name: ns.metadata!.name!,
+      environment: ns.metadata!.labels![LABEL_ENVIRONMENT] as Environment,
+      phase: ns.status?.phase ?? "Unknown",
+    }));
   }
 
   private async findNamespacesByTenant(

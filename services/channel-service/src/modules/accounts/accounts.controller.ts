@@ -15,8 +15,13 @@ import {
 import type { Channel } from "@yoizen/shared";
 import { TENANT_HEADER } from "@yoizen/shared";
 import { AccountsService } from "./accounts.service";
-import { CreateAccountDto, UpdateAccountDto } from "./accounts.dto";
+import {
+  CreateAccountDto,
+  ListAccountsQueryDto,
+  UpdateAccountDto,
+} from "./accounts.dto";
 
+/** CRUD for channel accounts (WhatsApp, Instagram, Telegram). */
 @Controller("channels/accounts")
 export class AccountsController {
   constructor(private readonly accounts: AccountsService) {}
@@ -47,22 +52,22 @@ export class AccountsController {
     });
   }
 
+  /**
+   * Lists channel accounts, optionally filtered by validated channel enum.
+   *
+   * @param tenantId  Resolved from `x-yoizen-tenant`.
+   * @param query     Optional `channel` filter.
+   */
   @Get()
   async list(
     @Headers(TENANT_HEADER) tenantId: string,
-    @Query("channel") channel?: string,
+    @Query() query: ListAccountsQueryDto,
   ) {
-    return this.accounts.list(
-      tenantId,
-      channel as Channel | undefined,
-    );
+    return this.accounts.list(tenantId, query.channel as Channel | undefined);
   }
 
   @Get(":id")
-  async get(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param("id") id: string,
-  ) {
+  async get(@Headers(TENANT_HEADER) tenantId: string, @Param("id") id: string) {
     const account = await this.accounts.findById(tenantId, id);
     if (!account) throw new NotFoundException("Account not found");
     return account;

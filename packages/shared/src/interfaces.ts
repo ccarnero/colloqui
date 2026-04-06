@@ -1,3 +1,15 @@
+/**
+ * Safe JSON-compatible value type. Use instead of `any` for
+ * unstructured data stored as JSONB or passed through message envelopes.
+ */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
 export interface EventTransport {
   method: "webhook" | "poll" | "stream" | "queue_bridge" | "agent";
   protocol: "https" | "wss" | "amqp" | "internal";

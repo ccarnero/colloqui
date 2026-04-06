@@ -62,10 +62,9 @@ export class YoizenclawAdminService {
   listAgents(
     query?: IYoizenclawAgentListQuery,
   ): Observable<IYoizenclawAgentListResponse> {
-    return this.http.get<IYoizenclawAgentListResponse>(
-      `${BASE_URL}/agents`,
-      { params: buildQueryParams(query) },
-    );
+    return this.http.get<IYoizenclawAgentListResponse>(`${BASE_URL}/agents`, {
+      params: buildQueryParams(query),
+    });
   }
 
   /**
@@ -95,7 +94,10 @@ export class YoizenclawAdminService {
   }
 
   publishAgent(agentId: string): Observable<IYoizenclawAgent> {
-    return this.http.post<IYoizenclawAgent>(`${BASE_URL}/agents/${agentId}/publish`, {});
+    return this.http.post<IYoizenclawAgent>(
+      `${BASE_URL}/agents/${agentId}/publish`,
+      {},
+    );
   }
 
   /**
@@ -105,7 +107,10 @@ export class YoizenclawAdminService {
    * @returns A stream with the unpublished agent record.
    */
   unpublishAgent(agentId: string): Observable<IYoizenclawAgent> {
-    return this.http.post<IYoizenclawAgent>(`${BASE_URL}/agents/${agentId}/unpublish`, {});
+    return this.http.post<IYoizenclawAgent>(
+      `${BASE_URL}/agents/${agentId}/unpublish`,
+      {},
+    );
   }
 
   /**
@@ -125,9 +130,15 @@ export class YoizenclawAdminService {
    * @param draft - UI form data with updates.
    * @returns A stream with the updated agent record.
    */
-  updateAgent(agentId: string, draft: IYoizenclawAgentDraft): Observable<IYoizenclawAgent> {
+  updateAgent(
+    agentId: string,
+    draft: IYoizenclawAgentDraft,
+  ): Observable<IYoizenclawAgent> {
     const payload = buildYoizenclawCreateAgentPayload(draft);
-    return this.http.put<IYoizenclawAgent>(`${BASE_URL}/agents/${agentId}`, payload);
+    return this.http.put<IYoizenclawAgent>(
+      `${BASE_URL}/agents/${agentId}`,
+      payload,
+    );
   }
 
   /**
@@ -136,7 +147,9 @@ export class YoizenclawAdminService {
    * @returns A stream with the list of templates.
    */
   listTemplates(): Observable<{ templates: IYoizenclawTemplate[] }> {
-    return this.http.get<{ templates: IYoizenclawTemplate[] }>(`${BASE_URL}/templates`);
+    return this.http.get<{ templates: IYoizenclawTemplate[] }>(
+      `${BASE_URL}/templates`,
+    );
   }
 
   /**

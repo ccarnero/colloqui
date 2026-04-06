@@ -1,10 +1,14 @@
+import { Transform } from "class-transformer";
 import {
   IsBoolean,
   IsEnum,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from "class-validator";
 
@@ -18,6 +22,13 @@ export enum ExecMode {
   JS_INLINE = "js-inline",
   JS_K8S = "js-k8s",
   DOCKER = "docker",
+}
+
+function toOptionalInt(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  return Number(value);
 }
 
 export class CreateScheduleDto {
@@ -81,4 +92,48 @@ export class UpdateScheduleDto {
   @IsOptional()
   @IsBoolean()
   enabled?: boolean;
+}
+
+/** Query for `GET /schedulers/schedules` (mirrors scheduler-service list). */
+export class ListSchedulesQueryProxyDto {
+  @IsOptional()
+  @IsString()
+  enabled?: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => toOptionalInt(value))
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => toOptionalInt(value))
+  @IsInt()
+  @Min(0)
+  offset?: number;
+}
+
+/** Query for execution list endpoints. */
+export class ListExecutionsQueryProxyDto {
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => toOptionalInt(value))
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => toOptionalInt(value))
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }

@@ -1,16 +1,25 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException } from "@nestjs/common";
 import {
   CredentialsRepository,
   type CredentialWithoutValue,
   type CreateCredentialData,
   type UpdateCredentialData,
-  type FindAllOptions,
-} from './credentials.repository';
-import { NatsPublisher } from '../../providers/nats.provider';
+  type IFindAllOptions,
+} from "./credentials.repository";
+import { NatsPublisher } from "../../providers/nats.provider";
+import { PinoLoggerService } from "@yoizen/observability";
+
+/** Parameters for rotating a credential secret. */
+interface IRotateCredentialParams {
+  readonly tenantId: string;
+  readonly id: string;
+  readonly newValue: string;
+  readonly newExpiresAt?: string;
+}
 
 @Injectable()
 export class CredentialsService {
-  private readonly logger = new Logger(CredentialsService.name);
+  private readonly logger = new PinoLoggerService(CredentialsService.name);
 
   constructor(
     private readonly repository: CredentialsRepository,
@@ -18,19 +27,19 @@ export class CredentialsService {
   ) {}
 
   /**
-   * Lista todas las credenciales con filtros y paginación.
-   * NUNCA retorna el campo value por seguridad.
+   * Lists all credentials with optional filters and pagination.
+   * Never returns the `value` field for security.
    */
   async findAll(
     tenantId: string,
-    options: FindAllOptions = {},
+    options: IFindAllOptions = {},
   ): Promise<{ credentials: CredentialWithoutValue[]; total: number }> {
     return this.repository.findAll(tenantId, options);
   }
 
   /**
-   * Obtiene una credencial por su ID.
-   * NUNCA retorna el campo value por seguridad.
+   * Gets a credential by id.
+   * Never returns the `value` field for security.
    */
   async findById(
     tenantId: string,
@@ -44,21 +53,21 @@ export class CredentialsService {
   }
 
   /**
-   * Crea una nueva credencial.
-   * FIXME: Implementar cifrado con KMS/Vault antes de producción
+   * Creates a new credential.
+   * FIXME: Implement encryption with KMS/Vault before production.
    */
   async create(
     tenantId: string,
     data: CreateCredentialData,
   ): Promise<CredentialWithoutValue> {
-    // FIXME: Implementar validación adicional del valor antes de guardar
-    // FIXME: Implementar cifrado con KMS/Vault antes de producción
+    // FIXME: Add additional validation for the secret value before persisting.
+    // FIXME: Implement encryption with KMS/Vault before production.
     return this.repository.create(tenantId, data);
   }
 
   /**
-   * Actualiza una credencial existente.
-   * FIXME: Implementar cifrado con KMS/Vault antes de producción
+   * Updates an existing credential.
+   * FIXME: Implement encryption with KMS/Vault before production.
    */
   async update(
     tenantId: string,
@@ -70,7 +79,7 @@ export class CredentialsService {
       throw new NotFoundException(`Credential with ID '${id}' not found`);
     }
 
-    // Si se actualizó el value, emitir evento de rotación
+    // If the secret value was updated, emit a rotation event.
     if (data.value !== undefined) {
       try {
         await this.natsPublisher.publishCredentialRotated(
@@ -86,7 +95,7 @@ export class CredentialsService {
           `Failed to emit credential.rotated event for credential '${credential.id}'`,
           error,
         );
-        // No lanzamos error para no fallar la operación de actualizar
+        // Do not fail the update if the event publish fails.
       }
     }
 
@@ -94,7 +103,7 @@ export class CredentialsService {
   }
 
   /**
-   * Elimina (soft delete) una credencial.
+   * Soft-deletes a credential.
    */
   async delete(tenantId: string, id: string): Promise<void> {
     const deleted = await this.repository.delete(tenantId, id);
@@ -104,29 +113,25 @@ export class CredentialsService {
   }
 
   /**
-   * Rota el valor de una credencial y emite evento NATS.
-   * FIXME: Implementar cifrado con KMS/Vault antes de producción
+   * Rotates a credential secret and emits a NATS event.
+   * FIXME: Implement encryption with KMS/Vault before production.
    */
-  async rotate(
-    tenantId: string,
-    id: string,
-    newValue: string,
-    newExpiresAt?: string,
-  ): Promise<CredentialWithoutValue> {
-    // FIXME: Implementar validación del nuevo valor antes de rotar
-    // FIXME: Implementar cifrado con KMS/Vault antes de producción
+  async rotate(params: IRotateCredentialParams): Promise<CredentialWithoutValue> {
+    const { tenantId, id, newValue, newExpiresAt } = params;
+    // FIXME: Validate the new secret value before persisting.
+    // FIXME: Implement encryption with KMS/Vault before production.
 
-    const credential = await this.repository.rotate(
+    const credential = await this.repository.rotate({
       tenantId,
       id,
       newValue,
       newExpiresAt,
-    );
+    });
     if (!credential) {
       throw new NotFoundException(`Credential with ID '${id}' not found`);
     }
 
-    // Emitir evento NATS
+    // Emit NATS event.
     try {
       await this.natsPublisher.publishCredentialRotated(
         tenantId,
@@ -141,7 +146,7 @@ export class CredentialsService {
         `Failed to emit credential.rotated event for credential '${credential.id}'`,
         error,
       );
-      // No lanzamos error para no fallar la operación de rotar
+      // Do not fail the rotate if the event publish fails.
     }
 
     return credential;

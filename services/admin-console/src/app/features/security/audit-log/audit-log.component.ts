@@ -1,9 +1,9 @@
-import { Component, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, signal } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatPaginatorModule } from "@angular/material/paginator";
 import { MatTableModule } from "@angular/material/table";
 
-interface AuditLogRow {
+interface IAuditLogRow {
   time: string;
   user: string;
   action: string;
@@ -14,6 +14,7 @@ interface AuditLogRow {
 @Component({
   selector: "app-audit-log",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatTableModule, MatButtonModule, MatPaginatorModule],
   template: `
     <div class="ws-header">
@@ -73,7 +74,7 @@ interface AuditLogRow {
 export class AuditLogComponent {
   readonly cols = ["time", "user", "action", "resource", "ip"] as const;
 
-  readonly logs = signal<AuditLogRow[]>([
+  readonly logs = signal<IAuditLogRow[]>([
     {
       time: "14:32:01",
       user: "alice@acme.com",

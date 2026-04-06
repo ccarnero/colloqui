@@ -2,8 +2,9 @@ import { Injectable, inject } from "@angular/core";
 import { HttpClient } from "@angular/common/http";
 import type { Observable } from "rxjs";
 import { environment } from "../../../environments/environment";
+import type { AdapterStatus } from "../models/adapter-status";
 
-export interface AdapterEndpointDto {
+export interface IAdapterEndpointDto {
   id: string;
   adapterId: string;
   label: string;
@@ -12,9 +13,9 @@ export interface AdapterEndpointDto {
   createdAt: string;
 }
 
-export type AdapterStatus = "enabled" | "disabled";
+export type { AdapterStatus };
 
-export interface AdapterDto {
+export interface IAdapterDto {
   id: string;
   tenantId: string;
   name: string;
@@ -30,10 +31,10 @@ export interface AdapterDto {
   status: AdapterStatus;
   createdAt: string;
   updatedAt: string;
-  endpoints: AdapterEndpointDto[];
+  endpoints: IAdapterEndpointDto[];
 }
 
-export interface CreateAdapterPayload {
+export interface ICreateAdapterPayload {
   name: string;
   context: string;
   baseUrl: string;
@@ -47,7 +48,7 @@ export interface CreateAdapterPayload {
   endpoints?: Array<{ label: string; method: string; path: string }>;
 }
 
-export interface UpdateAdapterPayload {
+export interface IUpdateAdapterPayload {
   name?: string;
   baseUrl?: string;
   authType?: string;
@@ -65,21 +66,21 @@ export class HttpAdapterService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiUrl}/adapters`;
 
-  list(context?: string): Observable<AdapterDto[]> {
+  list(context?: string): Observable<IAdapterDto[]> {
     const url = context ? `${this.base}?context=${context}` : this.base;
-    return this.http.get<AdapterDto[]>(url);
+    return this.http.get<IAdapterDto[]>(url);
   }
 
-  get(id: string): Observable<AdapterDto> {
-    return this.http.get<AdapterDto>(`${this.base}/${id}`);
+  get(id: string): Observable<IAdapterDto> {
+    return this.http.get<IAdapterDto>(`${this.base}/${id}`);
   }
 
-  create(payload: CreateAdapterPayload): Observable<AdapterDto> {
-    return this.http.post<AdapterDto>(this.base, payload);
+  create(payload: ICreateAdapterPayload): Observable<IAdapterDto> {
+    return this.http.post<IAdapterDto>(this.base, payload);
   }
 
-  update(id: string, payload: UpdateAdapterPayload): Observable<AdapterDto> {
-    return this.http.patch<AdapterDto>(`${this.base}/${id}`, payload);
+  update(id: string, payload: IUpdateAdapterPayload): Observable<IAdapterDto> {
+    return this.http.patch<IAdapterDto>(`${this.base}/${id}`, payload);
   }
 
   remove(id: string): Observable<void> {
@@ -89,8 +90,8 @@ export class HttpAdapterService {
   addEndpoint(
     adapterId: string,
     endpoint: { label: string; method: string; path: string },
-  ): Observable<AdapterEndpointDto> {
-    return this.http.post<AdapterEndpointDto>(
+  ): Observable<IAdapterEndpointDto> {
+    return this.http.post<IAdapterEndpointDto>(
       `${this.base}/${adapterId}/endpoints`,
       endpoint,
     );

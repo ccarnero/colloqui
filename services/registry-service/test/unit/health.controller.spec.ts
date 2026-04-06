@@ -1,21 +1,17 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
+import { createMockPostgresSql } from "@yoizen/testing";
 import { HealthController } from "../../src/modules/health/health.controller";
 import { K8S_CORE_API } from "../../src/providers/kubernetes.provider";
 import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
 
-function createMockSql() {
-  const fn = mock(() => Promise.resolve([{ "?column?": 1 }]));
-  return fn as unknown as import("postgres").Sql;
-}
-
 describe("HealthController", () => {
   let controller: HealthController;
-  let sql: ReturnType<typeof createMockSql>;
+  let sql: ReturnType<typeof createMockPostgresSql>;
   let k8sApi: { listNamespace: ReturnType<typeof mock> };
 
   beforeEach(async () => {
-    sql = createMockSql();
+    sql = createMockPostgresSql(mock, [{ "?column?": 1 }]);
     k8sApi = {
       listNamespace: mock(() => Promise.resolve({ items: [] })),
     };

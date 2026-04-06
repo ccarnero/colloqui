@@ -1,23 +1,21 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { createHmac, timingSafeEqual } from "crypto";
+import { Injectable } from "@nestjs/common";
 import type {
-  IChannelProvider,
   ChannelAccount,
   InboundMessage,
   OutboundMessage,
   SendMessageResult,
 } from "@yoizen/shared";
-import { tracedFetch } from "@yoizen/observability";
+import { PinoLoggerService } from "@yoizen/observability";
+import { sendMetaMessage } from "../meta-base";
+import { MetaChannelProviderBase } from "../meta-channel-provider.base";
 
 const GRAPH_API_BASE = "https://graph.instagram.com/v21.0";
 
 @Injectable()
-export class InstagramProvider implements IChannelProvider {
+export class InstagramProvider extends MetaChannelProviderBase {
   readonly channel = "instagram" as const;
-  readonly provider = "meta" as const;
-  readonly signatureHeader = "x-hub-signature-256";
 
-  private readonly logger = new Logger(InstagramProvider.name);
+  private readonly logger = new PinoLoggerService(InstagramProvider.name);
 
   parseWebhook(rawBody: Record<string, unknown>): InboundMessage[] {
     const messages: InboundMessage[] = [];
@@ -25,7 +23,9 @@ export class InstagramProvider implements IChannelProvider {
     if (!entry) return messages;
 
     for (const e of entry) {
-      const messaging = e.messaging as Array<Record<string, unknown>> | undefined;
+      const messaging = e.messaging as
+        | Array<Record<string, unknown>>
+        | undefined;
       if (!messaging) continue;
 
       for (const event of messaging) {
@@ -46,64 +46,17 @@ export class InstagramProvider implements IChannelProvider {
     const url = `${GRAPH_API_BASE}/${account.igUserId}/messages`;
     const body = this.buildSendPayload(message);
 
-    try {
-      const res = await tracedFetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${account.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(10_000),
-      });
-
-      if (!res.ok) {
-        const errorBody = await res.text();
-        this.logger.warn(`Instagram send failed: ${res.status} ${errorBody}`);
-        return {
-          success: false,
-          error: `HTTP ${res.status}: ${errorBody}`,
-          timestamp: new Date().toISOString(),
-        };
-      }
-
-      const data = (await res.json()) as {
-        recipient_id?: string;
-        message_id?: string;
-      };
-
-      return {
-        success: true,
-        providerMessageId: data.message_id,
-        timestamp: new Date().toISOString(),
-      };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Instagram send error: ${errorMsg}`);
-      return {
-        success: false,
-        error: errorMsg,
-        timestamp: new Date().toISOString(),
-      };
-    }
-  }
-
-  verifySignature(
-    rawBody: Buffer,
-    signature: string,
-    secret: string,
-  ): boolean {
-    const expectedSig = createHmac("sha256", secret)
-      .update(rawBody)
-      .digest("hex");
-
-    const expected = `sha256=${expectedSig}`;
-    if (signature.length !== expected.length) return false;
-
-    return timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expected),
-    );
+    return sendMetaMessage({
+      url,
+      token: account.accessToken,
+      body,
+      logger: this.logger,
+      logLabel: "Instagram",
+      parseSuccessBody: (data: unknown) => {
+        const d = data as { message_id?: string };
+        return d.message_id;
+      },
+    });
   }
 
   private isEchoMessage(event: Record<string, unknown>): boolean {
@@ -151,9 +104,7 @@ export class InstagramProvider implements IChannelProvider {
     return result;
   }
 
-  private buildSendPayload(
-    message: OutboundMessage,
-  ): Record<string, unknown> {
+  private buildSendPayload(message: OutboundMessage): Record<string, unknown> {
     const base: Record<string, unknown> = {
       recipient: { id: message.to },
     };

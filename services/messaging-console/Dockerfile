@@ -1,5 +1,8 @@
 FROM node:22-alpine AS builder
 
+# package.json pins npm@11.6.2; lockfile v3 from npm 11 is not accepted by npm 10's npm ci
+RUN npm install -g npm@11.6.2
+
 WORKDIR /app
 
 COPY packages/angular-shared ./packages/angular-shared

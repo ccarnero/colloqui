@@ -3,10 +3,15 @@ FROM oven/bun:1.3-debian AS builder
 WORKDIR /app
 
 COPY packages/shared ./packages/shared
+RUN cd packages/shared && bun install
 COPY packages/observability ./packages/observability
 COPY services/workflow-http-worker/package.json ./services/workflow-http-worker/
 WORKDIR /app/services/workflow-http-worker
 RUN bun install
+RUN rm -rf ../../packages/observability/node_modules/@nestjs \
+  && mkdir -p ../../packages/observability/node_modules \
+  && ln -sfn ../../../services/workflow-http-worker/node_modules/@nestjs \
+    ../../packages/observability/node_modules/@nestjs
 
 COPY services/workflow-http-worker/src ./src
 COPY services/workflow-http-worker/tsconfig.json ./
@@ -23,6 +28,7 @@ COPY --from=builder /app/packages/observability /app/packages/observability
 COPY --from=builder /app/services/workflow-http-worker/node_modules ./node_modules
 COPY --from=builder /app/services/workflow-http-worker/dist ./dist
 COPY --from=builder /app/services/workflow-http-worker/package.json ./
+COPY --from=builder /app/services/workflow-http-worker/tsconfig.json ./
 
 USER 1001:1001
 

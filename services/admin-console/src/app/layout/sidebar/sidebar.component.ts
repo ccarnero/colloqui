@@ -1,23 +1,28 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+} from "@angular/core";
 import { RouterLink, RouterLinkActive } from "@angular/router";
 import { MatIconModule } from "@angular/material/icon";
 import { AuthService } from "../../core/services/auth.service";
 
-interface NavItem {
+interface INavItem {
   label: string;
   icon: string;
   route?: string;
   badge?: string;
-  items?: NavItem[];
+  items?: INavItem[];
 }
 
-interface NavSection {
+interface INavSection {
   title: string;
   requiredPermission?: string;
-  items: NavItem[];
+  items: INavItem[];
 }
 
-const ALL_SECTIONS: NavSection[] = [
+const ALL_SECTIONS: INavSection[] = [
   {
     title: "Overview",
     items: [
@@ -36,8 +41,8 @@ const ALL_SECTIONS: NavSection[] = [
     items: [
       { label: "Users", icon: "people", route: "/users" },
       { label: "Roles & Permissions", icon: "shield", route: "/roles" },
-      /*{ label: "SSO / SAML", icon: "lock", route: "/sso" },
-      { label: "MFA Settings", icon: "phonelink_lock", route: "/mfa" },*/
+      // { label: "SSO / SAML", icon: "lock", route: "/sso" },
+      // { label: "MFA Settings", icon: "phonelink_lock", route: "/mfa" },
     ],
   },
   {
@@ -58,8 +63,16 @@ const ALL_SECTIONS: NavSection[] = [
         label: "YoizenClaw",
         icon: "psychology",
         items: [
-          { label: "Agents", icon: "support_agent", route: "/yoizenclaw/agents" },
-          { label: "Playground", icon: "science", route: "/yoizenclaw/playground" },
+          {
+            label: "Agents",
+            icon: "support_agent",
+            route: "/yoizenclaw/agents",
+          },
+          {
+            label: "Playground",
+            icon: "science",
+            route: "/yoizenclaw/playground",
+          },
         ],
       },
     ],
@@ -69,11 +82,9 @@ const ALL_SECTIONS: NavSection[] = [
     requiredPermission: "adapters:read",
     items: [
       { label: "Connectors", icon: "hub", route: "/connectors" },
-      { label: "Tools", icon: "download", route: "/tools" },
-      { label: "MCPs", icon: "download", route: "/mcps" },
-      { label: "API Keys", icon: "vpn_key", route: "/api-keys" }
+      { label: "API Keys", icon: "vpn_key", route: "/api-keys" },
     ],
-  }
+  },
 ];
 
 @Component({
@@ -82,7 +93,7 @@ const ALL_SECTIONS: NavSection[] = [
   imports: [RouterLink, RouterLinkActive, MatIconModule],
   template: `
     <aside class="sidebar-container bg-sidebar">
-      <!-- Módulo Logo YoizenClaw (Diseño actualizado según yz-ui) -->
+      <!-- YoizenClaw module logo (yz-ui) -->
       <div class="brand-logo border-subtle">
         <div class="logo-icon flex-center">
           <svg class="w-8 h-8 logo-svg" id="Capa_1" data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 714.26">

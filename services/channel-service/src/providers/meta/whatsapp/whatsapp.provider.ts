@@ -1,24 +1,22 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { createHmac, timingSafeEqual } from "crypto";
+import { Injectable } from "@nestjs/common";
 import type {
-  IChannelProvider,
   ChannelAccount,
   InboundMessage,
   OutboundMessage,
   SendMessageResult,
 } from "@yoizen/shared";
 import { normalizeRecipient } from "@yoizen/shared";
-import { tracedFetch } from "@yoizen/observability";
+import { PinoLoggerService } from "@yoizen/observability";
+import { sendMetaMessage } from "../meta-base";
+import { MetaChannelProviderBase } from "../meta-channel-provider.base";
 
 const GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
 
 @Injectable()
-export class WhatsAppProvider implements IChannelProvider {
+export class WhatsAppProvider extends MetaChannelProviderBase {
   readonly channel = "whatsapp" as const;
-  readonly provider = "meta" as const;
-  readonly signatureHeader = "x-hub-signature-256";
 
-  private readonly logger = new Logger(WhatsAppProvider.name);
+  private readonly logger = new PinoLoggerService(WhatsAppProvider.name);
 
   parseWebhook(rawBody: Record<string, unknown>): InboundMessage[] {
     const messages: InboundMessage[] = [];
@@ -33,7 +31,9 @@ export class WhatsAppProvider implements IChannelProvider {
         const value = change.value as Record<string, unknown> | undefined;
         if (!value) continue;
 
-        const msgs = value.messages as Array<Record<string, unknown>> | undefined;
+        const msgs = value.messages as
+          | Array<Record<string, unknown>>
+          | undefined;
         if (!msgs) continue;
 
         for (const msg of msgs) {
@@ -53,68 +53,20 @@ export class WhatsAppProvider implements IChannelProvider {
     const url = `${GRAPH_API_BASE}/${account.phoneNumberId}/messages`;
     const body = this.buildSendPayload(message);
 
-    try {
-      const res = await tracedFetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${account.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(10_000),
-      });
-
-      if (!res.ok) {
-        const errorBody = await res.text();
-        this.logger.warn(`WhatsApp send failed: ${res.status} ${errorBody}`);
-        return {
-          success: false,
-          error: `HTTP ${res.status}: ${errorBody}`,
-          timestamp: new Date().toISOString(),
-        };
-      }
-
-      const data = (await res.json()) as {
-        messages?: Array<{ id: string }>;
-      };
-
-      return {
-        success: true,
-        providerMessageId: data.messages?.[0]?.id,
-        timestamp: new Date().toISOString(),
-      };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`WhatsApp send error: ${errorMsg}`);
-      return {
-        success: false,
-        error: errorMsg,
-        timestamp: new Date().toISOString(),
-      };
-    }
+    return sendMetaMessage({
+      url,
+      token: account.accessToken,
+      body,
+      logger: this.logger,
+      logLabel: "WhatsApp",
+      parseSuccessBody: (data: unknown) => {
+        const d = data as { messages?: Array<{ id: string }> };
+        return d.messages?.[0]?.id;
+      },
+    });
   }
 
-  verifySignature(
-    rawBody: Buffer,
-    signature: string,
-    secret: string,
-  ): boolean {
-    const expectedSig = createHmac("sha256", secret)
-      .update(rawBody)
-      .digest("hex");
-
-    const expected = `sha256=${expectedSig}`;
-    if (signature.length !== expected.length) return false;
-
-    return timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expected),
-    );
-  }
-
-  private parseMessage(
-    msg: Record<string, unknown>,
-  ): InboundMessage | null {
+  private parseMessage(msg: Record<string, unknown>): InboundMessage | null {
     const id = msg.id as string | undefined;
     const from = msg.from as string | undefined;
     const timestamp = msg.timestamp as string | undefined;
@@ -135,11 +87,17 @@ export class WhatsAppProvider implements IChannelProvider {
       result.text = textObj?.body;
     }
 
-    if (type === "image" || type === "video" || type === "audio" || type === "document") {
+    if (
+      type === "image" ||
+      type === "video" ||
+      type === "audio" ||
+      type === "document"
+    ) {
       const mediaObj = msg[type] as Record<string, unknown> | undefined;
       if (mediaObj) {
         result.media = {
-          mimeType: (mediaObj.mime_type as string) ?? "application/octet-stream",
+          mimeType:
+            (mediaObj.mime_type as string) ?? "application/octet-stream",
           id: mediaObj.id as string | undefined,
           caption: mediaObj.caption as string | undefined,
         };
@@ -149,9 +107,7 @@ export class WhatsAppProvider implements IChannelProvider {
     return result;
   }
 
-  private buildSendPayload(
-    message: OutboundMessage,
-  ): Record<string, unknown> {
+  private buildSendPayload(message: OutboundMessage): Record<string, unknown> {
     const base: Record<string, unknown> = {
       messaging_product: "whatsapp",
       to: normalizeRecipient(message.to),

@@ -107,6 +107,14 @@
             }
           },
           "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "tsconfig.spec.json",
+            "buildTarget": "admin-console:build:development",
+            "runner": "vitest"
+          }
         }
       }
     }

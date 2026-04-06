@@ -17,7 +17,7 @@ mock.module("@yoizen/observability", () => ({
 }));
 
 const { WhatsAppProvider } = await import(
-  "../../src/providers/meta/whatsapp/whatsapp.provider",
+  "../../src/providers/meta/whatsapp/whatsapp.provider"
 );
 
 function waAccount(overrides: Partial<ChannelAccount> = {}): ChannelAccount {
@@ -86,9 +86,12 @@ describe("WhatsAppProvider", () => {
     it("returns HTTP error details when Graph API rejects", async () => {
       tracedFetch.mockImplementationOnce(() =>
         Promise.resolve(
-          new Response(JSON.stringify({ error: { message: "Invalid OAuth" } }), {
-            status: 400,
-          }),
+          new Response(
+            JSON.stringify({ error: { message: "Invalid OAuth" } }),
+            {
+              status: 400,
+            },
+          ),
         ),
       );
 
@@ -123,8 +126,7 @@ describe("WhatsAppProvider", () => {
       const rawBody = Buffer.from('{"object":"whatsapp_business_account"}');
       const secret = "app-secret";
       const expected =
-        "sha256=" +
-        createHmac("sha256", secret).update(rawBody).digest("hex");
+        "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex");
 
       expect(provider.verifySignature(rawBody, expected, secret)).toBe(true);
     });

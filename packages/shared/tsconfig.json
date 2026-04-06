@@ -4,6 +4,8 @@
     "target": "ES2022",
     "strict": true,
     "declaration": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "./dist",

@@ -1,15 +1,22 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
-import { Test } from '@nestjs/testing';
-import type { INestApplication } from '@nestjs/common';
-import request from 'supertest';
-import { JobsModule } from '../../src/modules/jobs/jobs.module';
-import { TenantConnectionManager } from '../../src/providers/tenant-connection-manager';
-import { NatsPublisher } from '../../src/providers/nats.provider';
-import { TENANT_HEADER } from '@yoizen/shared';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "bun:test";
+import { Test } from "@nestjs/testing";
+import type { INestApplication } from "@nestjs/common";
+import request from "supertest";
+import { JobsModule } from "../../src/modules/jobs/jobs.module";
+import { TenantConnectionManager } from "@yoizen/database";
+import { NatsPublisher } from "../../src/providers/nats.provider";
+import { TENANT_HEADER } from "@yoizen/shared";
 
 const createMockTenantConnectionManager = () => {
   const pools = new Map();
-  
+
   return {
     getConnection: (tenantId: string) => {
       if (!pools.has(tenantId)) {
@@ -30,11 +37,13 @@ const createMockNatsPublisher = () => ({
   publishJobTrigger: async () => null,
 });
 
-describe('Jobs Integration Tests', () => {
+describe("Jobs Integration Tests", () => {
   let app: INestApplication;
-  let mockConnectionManager: ReturnType<typeof createMockTenantConnectionManager>;
+  let mockConnectionManager: ReturnType<
+    typeof createMockTenantConnectionManager
+  >;
   let mockNatsPublisher: ReturnType<typeof createMockNatsPublisher>;
-  const TENANT_ID = 'test-tenant-123';
+  const TENANT_ID = "test-tenant-123";
 
   beforeAll(async () => {
     mockConnectionManager = createMockTenantConnectionManager();
@@ -62,114 +71,114 @@ describe('Jobs Integration Tests', () => {
     // Reset mocks before each test
   });
 
-  describe('POST /admin/jobs', () => {
-    it('should create a new job', async () => {
+  describe("POST /admin/jobs", () => {
+    it("should create a new job", async () => {
       const jobData = {
-        name: 'Test Job',
-        agent_id: 'agent-1',
-        schedule: '0 */6 * * *',
-        payload: { key: 'value' },
+        name: "Test Job",
+        agent_id: "agent-1",
+        schedule: "0 */6 * * *",
+        payload: { key: "value" },
         is_active: true,
       };
 
       const response = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send(jobData)
         .expect(201);
 
-      expect(response.body).toHaveProperty('id');
+      expect(response.body).toHaveProperty("id");
       expect(response.body.name).toBe(jobData.name);
       expect(response.body.agent_id).toBe(jobData.agent_id);
       expect(response.body.schedule).toBe(jobData.schedule);
       expect(response.body.is_active).toBe(true);
     });
 
-    it('should validate required fields', async () => {
+    it("should validate required fields", async () => {
       const invalidData = {
-        name: '',
-        agent_id: 'not-a-uuid',
-        schedule: '',
+        name: "",
+        agent_id: "not-a-uuid",
+        schedule: "",
       };
 
       await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send(invalidData)
         .expect(400);
     });
 
-    it('should require tenant header', async () => {
+    it("should require tenant header", async () => {
       const jobData = {
-        name: 'Test Job',
-        agent_id: 'agent-1',
-        schedule: '0 */6 * * *',
+        name: "Test Job",
+        agent_id: "agent-1",
+        schedule: "0 */6 * * *",
       };
 
       await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .send(jobData)
         .expect(400);
     });
 
-    it('should create job with interval schedule', async () => {
+    it("should create job with interval schedule", async () => {
       const jobData = {
-        name: 'Interval Job',
-        agent_id: 'agent-1',
-        schedule: 'interval:30',
+        name: "Interval Job",
+        agent_id: "agent-1",
+        schedule: "interval:30",
         payload: {},
       };
 
       const response = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send(jobData)
         .expect(201);
 
-      expect(response.body.schedule).toBe('interval:30');
+      expect(response.body.schedule).toBe("interval:30");
     });
   });
 
-  describe('GET /admin/jobs', () => {
-    it('should list jobs with pagination', async () => {
+  describe("GET /admin/jobs", () => {
+    it("should list jobs with pagination", async () => {
       const response = await request(app.getHttpServer())
-        .get('/admin/jobs?limit=10&offset=0')
+        .get("/admin/jobs?limit=10&offset=0")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
-      expect(response.body).toHaveProperty('jobs');
-      expect(response.body).toHaveProperty('total');
+      expect(response.body).toHaveProperty("jobs");
+      expect(response.body).toHaveProperty("total");
       expect(Array.isArray(response.body.jobs)).toBe(true);
     });
 
-    it('should filter by agent_id', async () => {
+    it("should filter by agent_id", async () => {
       const response = await request(app.getHttpServer())
-        .get('/admin/jobs?agent_id=agent-1')
+        .get("/admin/jobs?agent_id=agent-1")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
-      expect(response.body).toHaveProperty('jobs');
+      expect(response.body).toHaveProperty("jobs");
     });
 
-    it('should filter by is_active', async () => {
+    it("should filter by is_active", async () => {
       const response = await request(app.getHttpServer())
-        .get('/admin/jobs?is_active=true')
+        .get("/admin/jobs?is_active=true")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
-      expect(response.body).toHaveProperty('jobs');
+      expect(response.body).toHaveProperty("jobs");
     });
   });
 
-  describe('GET /admin/jobs/:id', () => {
-    it('should get job by id', async () => {
+  describe("GET /admin/jobs/:id", () => {
+    it("should get job by id", async () => {
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Test Job',
-          agent_id: 'agent-1',
-          schedule: '0 */6 * * *',
+          name: "Test Job",
+          agent_id: "agent-1",
+          schedule: "0 */6 * * *",
         })
         .expect(201);
 
@@ -181,26 +190,26 @@ describe('Jobs Integration Tests', () => {
         .expect(200);
 
       expect(response.body.id).toBe(jobId);
-      expect(response.body.name).toBe('Test Job');
+      expect(response.body.name).toBe("Test Job");
     });
 
-    it('should return 404 for non-existent job', async () => {
+    it("should return 404 for non-existent job", async () => {
       await request(app.getHttpServer())
-        .get('/admin/jobs/non-existent-id')
+        .get("/admin/jobs/non-existent-id")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(404);
     });
   });
 
-  describe('PUT /admin/jobs/:id', () => {
-    it('should update job', async () => {
+  describe("PUT /admin/jobs/:id", () => {
+    it("should update job", async () => {
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Original Name',
-          agent_id: 'agent-1',
-          schedule: '0 */6 * * *',
+          name: "Original Name",
+          agent_id: "agent-1",
+          schedule: "0 */6 * * *",
         })
         .expect(201);
 
@@ -210,33 +219,33 @@ describe('Jobs Integration Tests', () => {
         .put(`/admin/jobs/${jobId}`)
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Updated Name',
-          schedule: '0 */12 * * *',
+          name: "Updated Name",
+          schedule: "0 */12 * * *",
         })
         .expect(200);
 
-      expect(response.body.name).toBe('Updated Name');
-      expect(response.body.schedule).toBe('0 */12 * * *');
+      expect(response.body.name).toBe("Updated Name");
+      expect(response.body.schedule).toBe("0 */12 * * *");
     });
 
-    it('should return 404 for non-existent job', async () => {
+    it("should return 404 for non-existent job", async () => {
       await request(app.getHttpServer())
-        .put('/admin/jobs/non-existent-id')
+        .put("/admin/jobs/non-existent-id")
         .set(TENANT_HEADER, TENANT_ID)
-        .send({ name: 'New Name' })
+        .send({ name: "New Name" })
         .expect(404);
     });
   });
 
-  describe('DELETE /admin/jobs/:id', () => {
-    it('should delete job', async () => {
+  describe("DELETE /admin/jobs/:id", () => {
+    it("should delete job", async () => {
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Job to Delete',
-          agent_id: 'agent-1',
-          schedule: '0 */6 * * *',
+          name: "Job to Delete",
+          agent_id: "agent-1",
+          schedule: "0 */6 * * *",
         })
         .expect(201);
 
@@ -253,23 +262,23 @@ describe('Jobs Integration Tests', () => {
         .expect(404);
     });
 
-    it('should return 404 for non-existent job', async () => {
+    it("should return 404 for non-existent job", async () => {
       await request(app.getHttpServer())
-        .delete('/admin/jobs/non-existent-id')
+        .delete("/admin/jobs/non-existent-id")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(404);
     });
   });
 
-  describe('POST /admin/jobs/:id/enable', () => {
-    it('should enable job', async () => {
+  describe("POST /admin/jobs/:id/enable", () => {
+    it("should enable job", async () => {
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Job to Enable',
-          agent_id: 'agent-1',
-          schedule: '0 */6 * * *',
+          name: "Job to Enable",
+          agent_id: "agent-1",
+          schedule: "0 */6 * * *",
           is_active: false,
         })
         .expect(201);
@@ -284,23 +293,23 @@ describe('Jobs Integration Tests', () => {
       expect(response.body.is_active).toBe(true);
     });
 
-    it('should return 404 for non-existent job', async () => {
+    it("should return 404 for non-existent job", async () => {
       await request(app.getHttpServer())
-        .post('/admin/jobs/non-existent-id/enable')
+        .post("/admin/jobs/non-existent-id/enable")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(404);
     });
   });
 
-  describe('POST /admin/jobs/:id/disable', () => {
-    it('should disable job', async () => {
+  describe("POST /admin/jobs/:id/disable", () => {
+    it("should disable job", async () => {
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Job to Disable',
-          agent_id: 'agent-1',
-          schedule: '0 */6 * * *',
+          name: "Job to Disable",
+          agent_id: "agent-1",
+          schedule: "0 */6 * * *",
           is_active: true,
         })
         .expect(201);
@@ -315,23 +324,23 @@ describe('Jobs Integration Tests', () => {
       expect(response.body.is_active).toBe(false);
     });
 
-    it('should return 404 for non-existent job', async () => {
+    it("should return 404 for non-existent job", async () => {
       await request(app.getHttpServer())
-        .post('/admin/jobs/non-existent-id/disable')
+        .post("/admin/jobs/non-existent-id/disable")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(404);
     });
   });
 
-  describe('POST /admin/jobs/:id/run', () => {
-    it('should run job manually and create execution', async () => {
+  describe("POST /admin/jobs/:id/run", () => {
+    it("should run job manually and create execution", async () => {
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Job to Run',
-          agent_id: 'agent-1',
-          schedule: '0 */6 * * *',
+          name: "Job to Run",
+          agent_id: "agent-1",
+          schedule: "0 */6 * * *",
           is_active: true,
         })
         .expect(201);
@@ -343,20 +352,20 @@ describe('Jobs Integration Tests', () => {
         .set(TENANT_HEADER, TENANT_ID)
         .expect(201);
 
-      expect(response.body).toHaveProperty('id');
+      expect(response.body).toHaveProperty("id");
       expect(response.body.job_id).toBe(jobId);
-      expect(response.body.status).toBe('running');
-      expect(response.body.triggered_by).toBe('manual');
+      expect(response.body.status).toBe("running");
+      expect(response.body.triggered_by).toBe("manual");
     });
 
-    it('should return 400 for inactive job', async () => {
+    it("should return 400 for inactive job", async () => {
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Inactive Job',
-          agent_id: 'agent-1',
-          schedule: '0 */6 * * *',
+          name: "Inactive Job",
+          agent_id: "agent-1",
+          schedule: "0 */6 * * *",
           is_active: false,
         })
         .expect(201);
@@ -369,25 +378,25 @@ describe('Jobs Integration Tests', () => {
         .expect(400);
     });
 
-    it('should return 404 for non-existent job', async () => {
+    it("should return 404 for non-existent job", async () => {
       await request(app.getHttpServer())
-        .post('/admin/jobs/non-existent-id/run')
+        .post("/admin/jobs/non-existent-id/run")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(404);
     });
   });
 
-  describe('POST /admin/jobs/:id/trigger', () => {
-    it('should trigger job with payload and emit event', async () => {
+  describe("POST /admin/jobs/:id/trigger", () => {
+    it("should trigger job with payload and emit event", async () => {
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Job to Trigger',
-          agent_id: 'agent-1',
-          schedule: '0 */6 * * *',
+          name: "Job to Trigger",
+          agent_id: "agent-1",
+          schedule: "0 */6 * * *",
           is_active: true,
-          payload: { default: 'value' },
+          payload: { default: "value" },
         })
         .expect(201);
 
@@ -397,24 +406,24 @@ describe('Jobs Integration Tests', () => {
         .post(`/admin/jobs/${jobId}/trigger`)
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          event_payload: { custom: 'data' },
+          event_payload: { custom: "data" },
         })
         .expect(201);
 
-      expect(response.body).toHaveProperty('id');
+      expect(response.body).toHaveProperty("id");
       expect(response.body.job_id).toBe(jobId);
-      expect(response.body.status).toBe('pending');
-      expect(response.body.triggered_by).toBe('event');
+      expect(response.body.status).toBe("pending");
+      expect(response.body.triggered_by).toBe("event");
     });
 
-    it('should trigger job without payload', async () => {
+    it("should trigger job without payload", async () => {
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Job to Trigger',
-          agent_id: 'agent-1',
-          schedule: '0 */6 * * *',
+          name: "Job to Trigger",
+          agent_id: "agent-1",
+          schedule: "0 */6 * * *",
           is_active: true,
         })
         .expect(201);
@@ -427,17 +436,17 @@ describe('Jobs Integration Tests', () => {
         .send({})
         .expect(201);
 
-      expect(response.body.status).toBe('pending');
+      expect(response.body.status).toBe("pending");
     });
 
-    it('should return 400 for inactive job', async () => {
+    it("should return 400 for inactive job", async () => {
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Inactive Job',
-          agent_id: 'agent-1',
-          schedule: '0 */6 * * *',
+          name: "Inactive Job",
+          agent_id: "agent-1",
+          schedule: "0 */6 * * *",
           is_active: false,
         })
         .expect(201);
@@ -452,48 +461,48 @@ describe('Jobs Integration Tests', () => {
     });
   });
 
-  describe('GET /admin/jobs/executions', () => {
-    it('should list job executions', async () => {
+  describe("GET /admin/jobs/executions", () => {
+    it("should list job executions", async () => {
       const response = await request(app.getHttpServer())
-        .get('/admin/jobs/executions?limit=10&offset=0')
+        .get("/admin/jobs/executions?limit=10&offset=0")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
-      expect(response.body).toHaveProperty('executions');
-      expect(response.body).toHaveProperty('total');
+      expect(response.body).toHaveProperty("executions");
+      expect(response.body).toHaveProperty("total");
       expect(Array.isArray(response.body.executions)).toBe(true);
     });
 
-    it('should filter by job_id', async () => {
+    it("should filter by job_id", async () => {
       const response = await request(app.getHttpServer())
-        .get('/admin/jobs/executions?job_id=job-1')
+        .get("/admin/jobs/executions?job_id=job-1")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
-      expect(response.body).toHaveProperty('executions');
+      expect(response.body).toHaveProperty("executions");
     });
 
-    it('should filter by status', async () => {
+    it("should filter by status", async () => {
       const response = await request(app.getHttpServer())
-        .get('/admin/jobs/executions?status=completed')
+        .get("/admin/jobs/executions?status=completed")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
-      expect(response.body).toHaveProperty('executions');
+      expect(response.body).toHaveProperty("executions");
     });
   });
 
-  describe('Complete workflow', () => {
-    it('should handle full job lifecycle', async () => {
+  describe("Complete workflow", () => {
+    it("should handle full job lifecycle", async () => {
       // 1. Create job
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/jobs')
+        .post("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Lifecycle Job',
-          agent_id: 'agent-1',
-          schedule: 'interval:60',
-          payload: { key: 'value' },
+          name: "Lifecycle Job",
+          agent_id: "agent-1",
+          schedule: "interval:60",
+          payload: { key: "value" },
         })
         .expect(201);
 
@@ -502,7 +511,7 @@ describe('Jobs Integration Tests', () => {
 
       // 2. List jobs - should include the new one
       const listResponse = await request(app.getHttpServer())
-        .get('/admin/jobs')
+        .get("/admin/jobs")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
@@ -514,20 +523,20 @@ describe('Jobs Integration Tests', () => {
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
-      expect(getResponse.body.name).toBe('Lifecycle Job');
+      expect(getResponse.body.name).toBe("Lifecycle Job");
 
       // 4. Update job
       const updateResponse = await request(app.getHttpServer())
         .put(`/admin/jobs/${jobId}`)
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Updated Lifecycle Job',
-          schedule: '0 */12 * * *',
+          name: "Updated Lifecycle Job",
+          schedule: "0 */12 * * *",
         })
         .expect(200);
 
-      expect(updateResponse.body.name).toBe('Updated Lifecycle Job');
-      expect(updateResponse.body.schedule).toBe('0 */12 * * *');
+      expect(updateResponse.body.name).toBe("Updated Lifecycle Job");
+      expect(updateResponse.body.schedule).toBe("0 */12 * * *");
 
       // 5. Disable job
       const disableResponse = await request(app.getHttpServer())
@@ -552,11 +561,11 @@ describe('Jobs Integration Tests', () => {
         .expect(201);
 
       const executionId = runResponse.body.id;
-      expect(runResponse.body.status).toBe('running');
+      expect(runResponse.body.status).toBe("running");
 
       // 8. List executions - should include the new one
       const executionsResponse = await request(app.getHttpServer())
-        .get('/admin/jobs/executions')
+        .get("/admin/jobs/executions")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
@@ -567,12 +576,12 @@ describe('Jobs Integration Tests', () => {
         .post(`/admin/jobs/${jobId}/trigger`)
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          event_payload: { custom: 'data' },
+          event_payload: { custom: "data" },
         })
         .expect(201);
 
-      expect(triggerResponse.body.status).toBe('pending');
-      expect(triggerResponse.body.triggered_by).toBe('event');
+      expect(triggerResponse.body.status).toBe("pending");
+      expect(triggerResponse.body.triggered_by).toBe("event");
 
       // 10. Delete job
       await request(app.getHttpServer())

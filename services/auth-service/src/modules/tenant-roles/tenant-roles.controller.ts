@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
 } from "@nestjs/common";
+import { requireTenantHeader } from "../../common/require-tenant-header";
 import { TenantRolesService } from "./tenant-roles.service";
 import { CreateTenantRoleDto, UpdateTenantRoleDto } from "./tenant-role.dto";
 import { TENANT_HEADER } from "@yoizen/shared";
@@ -20,17 +21,17 @@ export class TenantRolesController {
 
   @Post()
   async create(@Body() dto: CreateTenantRoleDto) {
-    return this.tenantRolesService.create(
-      dto.tenant_id,
-      dto.name,
-      dto.description,
-      dto.permissions,
-    );
+    return this.tenantRolesService.create({
+      tenantId: dto.tenant_id,
+      name: dto.name,
+      description: dto.description,
+      permissions: dto.permissions,
+    });
   }
 
   @Get()
-  async list(@Headers(TENANT_HEADER) tenantId: string) {
-    return this.tenantRolesService.listByTenant(tenantId);
+  async list(@Headers(TENANT_HEADER) tenantId: string | undefined) {
+    return this.tenantRolesService.listByTenant(requireTenantHeader(tenantId));
   }
 
   @Get(":id")

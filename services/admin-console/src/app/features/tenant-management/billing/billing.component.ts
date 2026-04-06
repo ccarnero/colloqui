@@ -1,10 +1,11 @@
-import { Component, inject } from "@angular/core";
+import { ChangeDetectionStrategy, Component, inject } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatTableModule } from "@angular/material/table";
 import { TenantService } from "../../../core/services/tenant.service";
 
 @Component({
   selector: "app-billing",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatTableModule, MatButtonModule],
   template: `
     <div class="ws-header">

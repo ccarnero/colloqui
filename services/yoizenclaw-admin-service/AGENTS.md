@@ -23,6 +23,8 @@ The YoizenClaw Admin Service manages the administrative configuration for conver
 src/
 ├── main.ts                                     # Bootstrap: Fastify adapter, ValidationPipe, port binding
 ├── app.module.ts                               # @Global() root module with providers and feature modules
+├── guards/
+│   └── tenant.guard.ts                         # Re-exports TenantGuard from @yoizen/database
 ├── providers/
 │   ├── tenant-connection-manager.ts            # Per-tenant PostgreSQL pools (Map<string, Sql>)
 │   └── nats.provider.ts                        # NATS_CONNECTION, JETSTREAM_MANAGER, NatsPublisher

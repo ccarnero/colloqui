@@ -6,7 +6,8 @@ import {
   IsArray,
   IsNotEmpty,
   MaxLength,
-} from 'class-validator';
+} from "class-validator";
+import { PaginatedQueryDto } from "@yoizen/shared";
 
 const MAX_NAME_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -188,4 +189,59 @@ export class DeployConfigFilesDto {
   @IsBoolean()
   @IsOptional()
   restart?: boolean;
+}
+
+/** Query for `GET /admin/credentials`. */
+export class AdminCredentialsListQueryDto extends PaginatedQueryDto {
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  is_active?: string;
+}
+
+/** Query for `GET /admin/agents`. */
+export class AdminAgentsListQueryDto extends PaginatedQueryDto {
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  is_active?: string;
+}
+
+/** Query for `GET /admin/jobs`. */
+export class AdminJobsListQueryDto extends PaginatedQueryDto {
+  @IsOptional()
+  @IsString()
+  agent_id?: string;
+
+  @IsOptional()
+  @IsString()
+  is_active?: string;
+}
+
+/** Query for `GET /admin/jobs/executions`. */
+export class AdminJobExecutionsListQueryDto extends PaginatedQueryDto {
+  @IsOptional()
+  @IsString()
+  job_id?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+/** Query for `GET /admin/config-files`. */
+export class AdminConfigFilesListQueryDto extends PaginatedQueryDto {}
+
+/** Query for `GET /admin/config-files/file`. */
+export class ConfigFilePathQueryDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2048)
+  path!: string;
 }

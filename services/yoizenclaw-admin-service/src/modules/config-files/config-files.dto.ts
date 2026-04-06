@@ -3,12 +3,11 @@ import {
   IsNotEmpty,
   IsOptional,
   IsEnum,
+  IsArray,
   Length,
-  IsInt,
-  Min,
-  IsBoolean,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+} from "class-validator";
+import { Type } from "class-transformer";
+import { PaginatedQueryDto } from "@yoizen/shared";
 
 export class CreateConfigFileDto {
   @IsString()
@@ -24,40 +23,12 @@ export class CreateConfigFileDto {
   @IsNotEmpty()
   content!: string;
 
-  @IsEnum(['yaml', 'json'])
+  @IsEnum(["yaml", "json"])
   @IsNotEmpty()
-  format!: 'yaml' | 'json';
+  format!: "yaml" | "json";
 }
 
-export class UpdateConfigFileDto {
-  @IsString()
-  @IsOptional()
-  @Length(1, 255)
-  name?: string;
-
-  @IsString()
-  @IsOptional()
-  content?: string;
-
-  @IsBoolean()
-  @IsOptional()
-  @Type(() => Boolean)
-  is_active?: boolean;
-}
-
-export class ListConfigFilesQueryDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  limit?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  offset?: number;
-}
+export class ListConfigFilesQueryDto extends PaginatedQueryDto {}
 
 export class GetConfigFileByPathQueryDto {
   @IsString()
@@ -67,6 +38,7 @@ export class GetConfigFileByPathQueryDto {
 
 export class DeployConfigFilesDto {
   @IsOptional()
+  @IsArray()
   @IsString({ each: true })
   deletePaths?: string[];
 }

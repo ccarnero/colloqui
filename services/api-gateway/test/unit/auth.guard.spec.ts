@@ -13,7 +13,7 @@ import { PERMISSIONS_KEY } from "../../src/decorators/permissions.decorator";
 import type { JwtService } from "../../src/modules/auth/jwt.service";
 import type { PublicRoutesCacheService } from "../../src/modules/auth/public-routes-cache.service";
 import { REQUEST_TENANT_KEY } from "../../src/guards/tenant.guard";
-import type { YoizenRequest } from "../../src/types/yoizen-request";
+import type { IYoizenRequest } from "../../src/types/yoizen-request";
 
 function createReflector(overrides: {
   isPublic?: boolean;
@@ -24,13 +24,14 @@ function createReflector(overrides: {
     getAllAndOverride: mock(<T>(key: string | symbol) => {
       if (key === IS_PUBLIC_KEY) return (overrides.isPublic ?? false) as T;
       if (key === SCOPES_KEY) return (overrides.scopes ?? undefined) as T;
-      if (key === PERMISSIONS_KEY) return (overrides.permissions ?? undefined) as T;
+      if (key === PERMISSIONS_KEY)
+        return (overrides.permissions ?? undefined) as T;
       return undefined as T;
     }),
   } as unknown as Reflector;
 }
 
-function createContext(request: YoizenRequest): ExecutionContext {
+function createContext(request: IYoizenRequest): ExecutionContext {
   const noop = () => {};
   return {
     getHandler: () => noop,
@@ -41,14 +42,14 @@ function createContext(request: YoizenRequest): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-function baseRequest(overrides: Partial<YoizenRequest> = {}): YoizenRequest {
+function baseRequest(overrides: Partial<IYoizenRequest> = {}): IYoizenRequest {
   return {
     method: "GET",
     url: "/v1/resource",
     headers: {},
     query: {},
     ...overrides,
-  } as YoizenRequest;
+  } as IYoizenRequest;
 }
 
 const platformPayload: JwtPayload = {
@@ -116,7 +117,7 @@ describe("AuthGuard", () => {
     const req = baseRequest({
       headers: { authorization: "Bearer valid.jwt" },
       [REQUEST_TENANT_KEY]: "acme",
-    } as YoizenRequest);
+    } as IYoizenRequest);
     const ctx = createContext(req);
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
@@ -129,7 +130,7 @@ describe("AuthGuard", () => {
     const req = baseRequest({
       headers: { authorization: "Bearer valid.jwt" },
       [REQUEST_TENANT_KEY]: "acme",
-    } as YoizenRequest);
+    } as IYoizenRequest);
     const ctx = createContext(req);
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
@@ -179,7 +180,7 @@ describe("AuthGuard", () => {
     const req = baseRequest({
       headers: { authorization: "Bearer valid.jwt" },
       [REQUEST_TENANT_KEY]: "acme",
-    } as YoizenRequest);
+    } as IYoizenRequest);
     const ctx = createContext(req);
 
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
@@ -202,7 +203,7 @@ describe("AuthGuard", () => {
     const req = baseRequest({
       headers: { authorization: "Bearer valid.jwt" },
       [REQUEST_TENANT_KEY]: "acme",
-    } as YoizenRequest);
+    } as IYoizenRequest);
     const ctx = createContext(req);
 
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
@@ -225,7 +226,7 @@ describe("AuthGuard", () => {
     const req = baseRequest({
       headers: { authorization: "Bearer valid.jwt" },
       [REQUEST_TENANT_KEY]: "acme",
-    } as YoizenRequest);
+    } as IYoizenRequest);
     const ctx = createContext(req);
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);

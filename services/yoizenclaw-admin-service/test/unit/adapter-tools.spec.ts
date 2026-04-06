@@ -6,11 +6,36 @@ import {
   type IAgent,
   type ICreateAgentData,
 } from "../../src/modules/agents/agents.repository";
-import { NatsPublisher, NATS_CONNECTION } from "../../src/providers/nats.provider";
+import { LAZY_NATS, NatsPublisher } from "../../src/providers/nats.provider";
 import { AdaptersService } from "../../src/modules/adapters/adapters.service";
-import { validateToolSourceExclusion } from "../../src/modules/agents/agents.dto";
 
 const TENANT_ID = "tenant-test";
+
+/**
+ * Validates that each tool has exactly one of `endpoint` or `adapterRef`.
+ * Used by adapter-tools tests only (not wired to HTTP validation).
+ */
+async function validateToolSourceExclusion(
+  tools: unknown[],
+): Promise<string[]> {
+  const errors: string[] = [];
+  for (let i = 0; i < tools.length; i++) {
+    const tool = tools[i] as Record<string, unknown>;
+    const hasEndpoint = Boolean(tool.endpoint);
+    const hasAdapterRef = Boolean(tool.adapterRef);
+    if (hasEndpoint && hasAdapterRef) {
+      errors.push(
+        `Tool at index ${i}: must have either endpoint OR adapterRef, not both`,
+      );
+    }
+    if (!hasEndpoint && !hasAdapterRef) {
+      errors.push(
+        `Tool at index ${i}: must have either endpoint OR adapterRef`,
+      );
+    }
+  }
+  return errors;
+}
 
 type MockFn = ReturnType<typeof vi.fn>;
 
@@ -66,7 +91,10 @@ describe("Adapter Tools", () => {
         AgentsService,
         { provide: AgentsRepository, useValue: mockRepository },
         { provide: NatsPublisher, useValue: mockNatsPublisher },
-        { provide: NATS_CONNECTION, useValue: {} },
+        {
+          provide: LAZY_NATS,
+          useValue: { getConnection: vi.fn().mockResolvedValue({}) },
+        },
         { provide: AdaptersService, useValue: mockAdaptersService },
       ],
     }).compile();
@@ -102,10 +130,7 @@ describe("Adapter Tools", () => {
       const result = await service.create(TENANT_ID, createData);
 
       expect(result.name).toBe("Agent With Adapter Tool");
-      expect(mockRepository.create).toHaveBeenCalledWith(
-        TENANT_ID,
-        createData,
-      );
+      expect(mockRepository.create).toHaveBeenCalledWith(TENANT_ID, createData);
     });
 
     it("should reject a tool with both endpoint AND adapterRef", async () => {
@@ -122,9 +147,7 @@ describe("Adapter Tools", () => {
     });
 
     it("should reject a tool with neither endpoint nor adapterRef", async () => {
-      const errors = await validateToolSourceExclusion([
-        { name: "bare-tool" },
-      ]);
+      const errors = await validateToolSourceExclusion([{ name: "bare-tool" }]);
 
       expect(errors.length > 0).toBe(true);
       expect(errors[0]).toContain("must have either endpoint OR adapterRef");
@@ -152,16 +175,15 @@ describe("Adapter Tools", () => {
         makeAgent({ tools: createData.tools }),
       );
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const warnSpy = vi.spyOn((service as any).logger, "warn");
+      const loggerCarrier = service as unknown as {
+        readonly logger: { warn: (...args: unknown[]) => void };
+      };
+      const warnSpy = vi.spyOn(loggerCarrier.logger, "warn");
 
       const result = await service.create(TENANT_ID, createData);
 
       expect(result).toBeDefined();
-      expect(mockRepository.create).toHaveBeenCalledWith(
-        TENANT_ID,
-        createData,
-      );
+      expect(mockRepository.create).toHaveBeenCalledWith(TENANT_ID, createData);
       expect(warnSpy).toHaveBeenCalled();
       const calls = warnSpy.mock.calls;
       expect(calls[0][0]).toContain("nonexistent-adapter");
@@ -188,16 +210,15 @@ describe("Adapter Tools", () => {
         makeAgent({ tools: createData.tools }),
       );
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const warnSpy = vi.spyOn((service as any).logger, "warn");
+      const loggerCarrier = service as unknown as {
+        readonly logger: { warn: (...args: unknown[]) => void };
+      };
+      const warnSpy = vi.spyOn(loggerCarrier.logger, "warn");
 
       const result = await service.create(TENANT_ID, createData);
 
       expect(result).toBeDefined();
-      expect(mockRepository.create).toHaveBeenCalledWith(
-        TENANT_ID,
-        createData,
-      );
+      expect(mockRepository.create).toHaveBeenCalledWith(TENANT_ID, createData);
       expect(warnSpy).toHaveBeenCalled();
       const calls = warnSpy.mock.calls;
       expect(calls[0][0]).toContain("nonexistent-endpoint");
@@ -224,8 +245,10 @@ describe("Adapter Tools", () => {
         makeAgent({ tools: createData.tools }),
       );
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const warnSpy = vi.spyOn((service as any).logger, "warn");
+      const loggerCarrier = service as unknown as {
+        readonly logger: { warn: (...args: unknown[]) => void };
+      };
+      const warnSpy = vi.spyOn(loggerCarrier.logger, "warn");
 
       await service.create(TENANT_ID, createData);
 

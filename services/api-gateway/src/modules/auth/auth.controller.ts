@@ -14,7 +14,7 @@ import { Public } from "../../decorators/public.decorator";
 import { Scopes } from "../../decorators/scopes.decorator";
 import { RequirePermission } from "../../decorators/permissions.decorator";
 import { SkipTenant } from "../../decorators/skip-tenant.decorator";
-import type { YoizenRequest } from "../../types/yoizen-request";
+import type { IYoizenRequest } from "../../types/yoizen-request";
 import {
   AuthLoginBodyDto,
   AuthRefreshBodyDto,
@@ -56,7 +56,7 @@ export class AuthController {
   @Scopes("platform")
   @Get("public-routes")
   async listPublicRoutes(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Headers("authorization") auth: string,
   ): Promise<object> {
     return this.authFacade.listPublicRoutes(req, auth);
@@ -65,7 +65,7 @@ export class AuthController {
   @Scopes("platform")
   @Post("public-routes")
   async createPublicRoute(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Body() body: CreatePublicRouteDto,
     @Headers("authorization") auth: string,
   ): Promise<object> {
@@ -75,7 +75,7 @@ export class AuthController {
   @Scopes("platform")
   @Delete("public-routes/:id")
   async removePublicRoute(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Param("id") id: string,
     @Headers("authorization") auth: string,
   ): Promise<object> {
@@ -85,7 +85,7 @@ export class AuthController {
   @Scopes("platform")
   @Post("users")
   async createUser(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Body() body: CreateUserBodyDto,
     @Headers("authorization") auth: string,
   ): Promise<object> {
@@ -95,7 +95,7 @@ export class AuthController {
   @Scopes("platform")
   @Get("users")
   async listUsers(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Headers("authorization") auth: string,
   ): Promise<object> {
     return this.authFacade.listUsers(req, auth);
@@ -104,7 +104,7 @@ export class AuthController {
   @Scopes("platform")
   @Post("clients")
   async createClient(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Body() body: CreateClientBodyDto,
     @Headers("authorization") auth: string,
   ): Promise<object> {
@@ -114,7 +114,7 @@ export class AuthController {
   @Scopes("platform")
   @Get("clients")
   async listClients(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Headers("authorization") auth: string,
   ): Promise<object> {
     return this.authFacade.listClients(req, auth);
@@ -123,7 +123,7 @@ export class AuthController {
   @Scopes("platform")
   @Delete("clients/:id")
   async revokeClient(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Param("id") id: string,
     @Headers("authorization") auth: string,
   ): Promise<object> {
@@ -133,7 +133,7 @@ export class AuthController {
   @Scopes("platform", "tenant")
   @Post("tenant-users")
   async createTenantUser(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Body() body: CreateTenantUserBodyDto,
     @Headers("authorization") auth: string,
   ): Promise<object> {
@@ -142,7 +142,7 @@ export class AuthController {
 
   @Get("tenant-users")
   async listTenantUsers(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Headers("authorization") auth: string,
   ): Promise<object> {
     return this.authFacade.listTenantUsers(req, auth);
@@ -150,7 +150,7 @@ export class AuthController {
 
   @Get("tenant-users/:id")
   async getTenantUser(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Param("id") id: string,
     @Headers("authorization") auth: string,
   ): Promise<object> {
@@ -159,7 +159,7 @@ export class AuthController {
 
   @Patch("tenant-users/:id")
   async updateTenantUser(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Param("id") id: string,
     @Body() body: UpdateTenantUserBodyDto,
     @Headers("authorization") auth: string,
@@ -169,7 +169,7 @@ export class AuthController {
 
   @Delete("tenant-users/:id")
   async removeTenantUser(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Param("id") id: string,
     @Headers("authorization") auth: string,
   ): Promise<object> {
@@ -180,7 +180,7 @@ export class AuthController {
   @RequirePermission("roles:create")
   @Post("tenant-roles")
   async createTenantRole(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Body() body: CreateTenantRoleDto,
     @Headers("authorization") auth: string,
   ): Promise<object> {
@@ -191,7 +191,7 @@ export class AuthController {
   @RequirePermission("roles:read")
   @Get("tenant-roles")
   async listTenantRoles(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Headers("authorization") auth: string,
   ): Promise<object> {
     return this.authFacade.listTenantRoles(req, auth);
@@ -201,7 +201,7 @@ export class AuthController {
   @RequirePermission("roles:read")
   @Get("tenant-roles/:id")
   async getTenantRole(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Param("id") id: string,
     @Headers("authorization") auth: string,
   ): Promise<object> {
@@ -212,7 +212,7 @@ export class AuthController {
   @RequirePermission("roles:update")
   @Patch("tenant-roles/:id")
   async updateTenantRole(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Param("id") id: string,
     @Body() body: UpdateTenantRoleDto,
     @Headers("authorization") auth: string,
@@ -224,7 +224,7 @@ export class AuthController {
   @RequirePermission("roles:delete")
   @Delete("tenant-roles/:id")
   async deleteTenantRole(
-    @Req() req: YoizenRequest,
+    @Req() req: IYoizenRequest,
     @Param("id") id: string,
     @Headers("authorization") auth: string,
   ): Promise<object> {

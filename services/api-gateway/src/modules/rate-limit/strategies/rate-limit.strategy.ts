@@ -1,5 +1,5 @@
-import type { RateLimitResult, RateLimitTenantConfig } from '@yoizen/shared';
+import type { RateLimitResult, RateLimitTenantConfig } from "@yoizen/shared";
 
-export interface RateLimitStrategy {
+export interface IRateLimitStrategy {
   consume(key: string, config: RateLimitTenantConfig): Promise<RateLimitResult>;
 }

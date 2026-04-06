@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import type { Consumer } from "nats";
+import { MetricsRepository } from "../../src/modules/metrics/metrics.repository";
 import {
   MetricsService,
   type IMetricRecord,
 } from "../../src/modules/metrics/metrics.service";
 import { JETSTREAM_CLIENT } from "../../src/providers/nats.provider";
-import { TenantConnectionManager, type Sql } from "../../src/providers/tenant-connection-manager";
+import { TenantConnectionManager, type Sql } from "@yoizen/database";
 
 function makeMockConsumer(): Consumer {
   return {
@@ -56,6 +57,7 @@ describe("MetricsService", () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
+        MetricsRepository,
         MetricsService,
         { provide: JETSTREAM_CLIENT, useValue: makeMockConsumer() },
         { provide: TenantConnectionManager, useValue: mockTenantMgr },
@@ -82,13 +84,65 @@ describe("MetricsService", () => {
   });
 
   it("getMetricById returns null when no row", async () => {
-    const emptySql = Object.assign(
-      () => Promise.resolve([]),
-      {},
-    ) as Sql;
+    const emptySql = Object.assign(() => Promise.resolve([]), {}) as Sql;
     mockTenantMgr.getConnection.mockReturnValue(emptySql);
 
     const row = await service.getMetricById("missing", "tenant-a");
     expect(row).toBeNull();
+  });
+
+  it("persistMetricEnvelopeForTest inserts when tenant present", async () => {
+    let insertCount = 0;
+    const trackingSql = Object.assign(
+      (_strings: TemplateStringsArray, ..._values: unknown[]) => {
+        const head = _strings[0] ?? "";
+        if (head.includes("INSERT INTO metrics")) {
+          insertCount += 1;
+        }
+        return Promise.resolve([]);
+      },
+      {},
+    ) as Sql;
+
+    mockTenantMgr.getConnection.mockReturnValue(trackingSql);
+
+    await service.persistMetricEnvelopeForTest({
+      specversion: "1.0",
+      id: "m-evt-1",
+      source: "s",
+      type: "metric",
+      resource: "r",
+      time: new Date().toISOString(),
+      traceid: "t",
+      causation_id: null,
+      correlation_id: "c",
+      tenant: "tenant-a",
+      producer: "p",
+      domain: "d",
+      channel: "c",
+      provider: "p",
+      accountid: "a",
+      idempotencykey: "k",
+      transport: {
+        method: "webhook",
+        protocol: "https",
+      },
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "x",
+        payload: {
+          source: "api",
+          name: "hits",
+          value: 3,
+          tags: {},
+          timestamp: new Date().toISOString(),
+        },
+      },
+    });
+
+    expect(insertCount).toBe(1);
   });
 });

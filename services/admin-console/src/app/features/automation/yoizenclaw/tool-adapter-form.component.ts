@@ -291,7 +291,8 @@ export class ToolAdapterFormComponent implements OnInit {
 
   @Input() initialAdapterRef: IToolAdapterRef | null = null;
   @Input() initialAdapterName: string | null = null;
-  @Output() readonly adapterRefChange = new EventEmitter<IToolAdapterRef | null>();
+  @Output() readonly adapterRefChange =
+    new EventEmitter<IToolAdapterRef | null>();
 
   readonly adapters = signal<IAdapterSummary[]>([]);
   readonly selectedAdapter = signal<IAdapterSummary | null>(null);
@@ -299,8 +300,12 @@ export class ToolAdapterFormComponent implements OnInit {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
-  readonly selectedAdapterId = computed(() => this.selectedAdapter()?.id ?? null);
-  readonly selectedEndpointId = computed(() => this.selectedEndpoint()?.id ?? null);
+  readonly selectedAdapterId = computed(
+    () => this.selectedAdapter()?.id ?? null,
+  );
+  readonly selectedEndpointId = computed(
+    () => this.selectedEndpoint()?.id ?? null,
+  );
 
   readonly currentEndpoints = computed(() => {
     const adapter = this.selectedAdapter();
@@ -388,7 +393,10 @@ export class ToolAdapterFormComponent implements OnInit {
     this.selectedEndpoint.set(endpoint);
 
     if (endpoint) {
-      this.adapterRefChange.emit({ adapterId: adapter.id, endpointId: endpoint.id });
+      this.adapterRefChange.emit({
+        adapterId: adapter.id,
+        endpointId: endpoint.id,
+      });
     } else {
       this.adapterRefChange.emit(null);
     }
@@ -424,7 +432,8 @@ export class ToolAdapterFormComponent implements OnInit {
 
     this.selectedAdapter.set(adapter);
 
-    const endpoint = adapter.endpoints.find((e) => e.id === ref.endpointId) ?? null;
+    const endpoint =
+      adapter.endpoints.find((e) => e.id === ref.endpointId) ?? null;
     if (!endpoint) {
       this.error.set("Endpoint not found in adapter.");
       return;

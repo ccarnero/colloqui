@@ -1,4 +1,10 @@
-import { Component, inject, type OnInit, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  type OnInit,
+  signal,
+} from "@angular/core";
 import { Router, RouterOutlet, NavigationEnd } from "@angular/router";
 import { HeaderComponent } from "../header/header.component";
 import { SidebarComponent } from "../sidebar/sidebar.component";
@@ -8,7 +14,13 @@ import { filter } from "rxjs/operators";
 
 @Component({
   selector: "app-shell",
-  imports: [RouterOutlet, HeaderComponent, SidebarComponent, RightPanelComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    RouterOutlet,
+    HeaderComponent,
+    SidebarComponent,
+    RightPanelComponent,
+  ],
   template: `
     <div class="yoizen-layout text-primary flex h-screen" [class.mobile-open]="sidebarOpen()">
       @if (sidebarOpen()) {

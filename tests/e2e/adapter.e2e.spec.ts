@@ -678,19 +678,12 @@ describe("E2E: adapter timeouts", () => {
     }
     const h = await authHeaders();
 
-    const postDelayId = await addEndpoint(
-      adapterId,
-      "10s Delay POST",
-      "POST",
-      "/delay/10",
-    );
-
     const { status, body } = await httpPost<EventAccepted>(
       `${GW}/events`,
       {
         type: "adapter-timeout-fwd-e2e",
         payload: { data: "timeout-forward" },
-        forwardAdapter: { adapterId, endpointId: postDelayId },
+        forwardAdapter: { adapterId, endpointId: delayEndpointId },
       },
       { headers: h },
     );

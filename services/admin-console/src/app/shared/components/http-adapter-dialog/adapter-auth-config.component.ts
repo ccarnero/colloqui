@@ -1,8 +1,5 @@
-import { Component, input } from "@angular/core";
-import {
-  FormGroup,
-  ReactiveFormsModule,
-} from "@angular/forms";
+import { ChangeDetectionStrategy, Component, input } from "@angular/core";
+import { FormGroup, ReactiveFormsModule } from "@angular/forms";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
@@ -12,6 +9,7 @@ import { authTypeOptions } from "./http-adapter-dialog.types";
 @Component({
   selector: "app-adapter-auth-config",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
     MatFormFieldModule,

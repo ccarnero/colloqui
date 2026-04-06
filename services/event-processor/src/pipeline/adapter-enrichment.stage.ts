@@ -1,75 +1,54 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import type Redis from "ioredis";
-import {
-  AdapterClient,
-  DEFAULT_ADAPTER_SERVICE_URL,
-  TENANT_HEADER,
-} from "@yoizen/shared";
+import { Inject, Injectable } from "@nestjs/common";
+import { AdapterClient } from "@yoizen/shared";
 import type { EventEnvelope } from "@yoizen/shared";
-import { tracedFetch } from "@yoizen/observability";
-import { REDIS_CLIENT } from "../providers/redis.provider";
-import type { PipelineContext, PipelineStage } from "./pipeline-stage.interface";
-
-const SOURCE_HEADER = "X-Yoizen-Source";
-const SOURCE_VALUE = "event-processor";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
+import { ADAPTER_CLIENT } from "../providers/adapter-client.provider";
+import type {
+  IPipelineContext,
+  IPipelineStage,
+} from "./pipeline-stage.interface";
+import { resolveAdapterPipelineRefAndRequest } from "./adapter-pipeline-stage-base.util";
 
 @Injectable()
-export class AdapterEnrichmentStage implements PipelineStage {
+export class AdapterEnrichmentStage implements IPipelineStage {
   readonly order = 25;
-  private readonly logger = new Logger(AdapterEnrichmentStage.name);
-  private readonly adapterClient: AdapterClient;
+  private readonly logger = new PinoLoggerService(AdapterEnrichmentStage.name);
 
-  constructor(@Inject(REDIS_CLIENT) redis: Redis) {
-    this.adapterClient = new AdapterClient({
-      baseUrl:
-        process.env.ADAPTER_SERVICE_URL ?? DEFAULT_ADAPTER_SERVICE_URL,
-      fetchFn: tracedFetch,
-      cache: redis,
-    });
-  }
+  constructor(
+    @Inject(ADAPTER_CLIENT) private readonly adapterClient: AdapterClient,
+  ) {}
 
   async process(
     envelope: EventEnvelope,
-    context: PipelineContext,
+    context: IPipelineContext,
   ): Promise<EventEnvelope> {
-    if (!envelope.enrich_adapter) return envelope;
-
-    const { adapterId, endpointId } = envelope.enrich_adapter;
-    const tenantId = context.tenantId;
-    if (!tenantId) {
-      this.logger.warn(
-        `Skipping adapter enrichment for event ${envelope.id}: no tenantId`,
-      );
-      return envelope;
-    }
+    const resolved = await resolveAdapterPipelineRefAndRequest({
+      envelope,
+      context,
+      field: "enrich_adapter",
+      logger: this.logger,
+      label: "enrichment",
+      adapterClient: this.adapterClient,
+      extraHeaders: { Accept: "application/json" },
+    });
+    if (!resolved) return envelope;
 
     try {
-      const resolved = await this.adapterClient.resolveRequest(
-        tenantId,
-        adapterId,
-        endpointId,
-      );
+      const { resolved: req, headers } = resolved;
 
-      const headers: Record<string, string> = {
-        ...resolved.headers,
-        [TENANT_HEADER]: tenantId,
-        [SOURCE_HEADER]: SOURCE_VALUE,
-        Accept: "application/json",
-      };
-
-      const res = await tracedFetch(resolved.url, {
-        method: resolved.method,
+      const res = await tracedFetch(req.url, {
+        method: req.method,
         headers,
         body:
-          resolved.method !== "GET"
+          req.method !== "GET"
             ? JSON.stringify(envelope.data.payload)
             : undefined,
-        signal: AbortSignal.timeout(resolved.timeoutMs),
+        signal: AbortSignal.timeout(req.timeoutMs),
       });
 
       if (!res.ok) {
         this.logger.warn(
-          `Adapter enrichment failed for event ${envelope.id}: HTTP ${res.status} from ${resolved.url}`,
+          `Adapter enrichment failed for event ${envelope.id}: HTTP ${res.status} from ${req.url}`,
         );
         return envelope;
       }

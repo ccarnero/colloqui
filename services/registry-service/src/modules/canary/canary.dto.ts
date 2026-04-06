@@ -5,7 +5,7 @@ import {
   Min,
   Max,
   MaxLength,
-} from 'class-validator';
+} from "class-validator";
 
 export class StartCanaryDto {
   @IsString()

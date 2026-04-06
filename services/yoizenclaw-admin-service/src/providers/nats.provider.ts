@@ -11,10 +11,11 @@ import {
 import {
   Inject,
   Injectable,
-  Logger,
+  OnModuleDestroy,
   ServiceUnavailableException,
   type FactoryProvider,
 } from "@nestjs/common";
+import { PinoLoggerService } from "@yoizen/observability";
 import {
   YOIZENCLAW_ACCOUNT_ID,
   YOIZENCLAW_AGENT_PUBLISHED,
@@ -24,16 +25,11 @@ import {
   YOIZENCLAW_CREDENTIAL_ROTATED,
   YOIZENCLAW_DOMAIN,
   YOIZENCLAW_JOB_TRIGGER,
-  YOIZENCLAW_JOBS_SYNC,
   YOIZENCLAW_PRODUCER,
   YOIZENCLAW_PROVIDER,
   buildYoizenClawSubject,
 } from "@yoizen/shared";
-import type {
-  EventData,
-  EventEnvelope,
-  EventTransport,
-} from "@yoizen/shared";
+import type { EventData, EventEnvelope, EventTransport } from "@yoizen/shared";
 import {
   calculateChecksum,
   serializeCanonicalPayload,
@@ -43,10 +39,7 @@ import {
   buildTenantStreamConfig,
   checkJetStreamCapacity,
 } from "@yoizen/shared";
-
-export const NATS_CONNECTION = "NATS_CONNECTION";
-export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
-export const JETSTREAM_CLIENT = "JETSTREAM_CLIENT";
+import { yoizenclawAdminServiceConfig } from "../config";
 
 const DEFAULT_TRANSPORT: EventTransport = {
   method: "agent",
@@ -60,11 +53,10 @@ const EVENT_TYPES = {
   AGENT_UNPUBLISHED: "io.yoizen.yoizenclaw.admin.agent.unpublished.v1",
   CREDENTIAL_ROTATED: "io.yoizen.yoizenclaw.admin.credential.rotated.v1",
   RUNTIME_CONFIG_SYNC: "io.yoizen.yoizenclaw.runtime.config.synced.v1",
-  RUNTIME_JOBS_SYNC: "io.yoizen.yoizenclaw.runtime.jobs.synced.v1",
   JOB_TRIGGER: "io.yoizen.yoizenclaw.admin.job.triggered.v1",
 } as const;
 
-interface BuildEventOptions {
+interface IBuildEventOptions {
   eventType: string;
   occurredAt: string;
   payload: Record<string, unknown>;
@@ -86,7 +78,7 @@ class LazyNatsConnection {
   private connectionPromise?: Promise<NatsConnection>;
   private jsm?: JetStreamManager;
   private jsc?: JetStreamClient;
-  private readonly logger = new Logger("LazyNatsConnection");
+  private readonly logger = new PinoLoggerService("LazyNatsConnection");
 
   constructor(
     private readonly servers: string,
@@ -151,27 +143,8 @@ export const LAZY_NATS = "LAZY_NATS";
 export const lazyNatsProvider: FactoryProvider<LazyNatsConnection> = {
   provide: LAZY_NATS,
   useFactory: (): LazyNatsConnection => {
-    const url = process.env.NATS_URL ?? "nats://localhost:4222";
-    return new LazyNatsConnection(url);
+    return new LazyNatsConnection(yoizenclawAdminServiceConfig.natsUrl);
   },
-};
-
-export const natsProvider: FactoryProvider = {
-  provide: NATS_CONNECTION,
-  inject: [LAZY_NATS],
-  useFactory: (lazy: LazyNatsConnection) => lazy,
-};
-
-export const jetStreamManagerProvider: FactoryProvider = {
-  provide: JETSTREAM_MANAGER,
-  inject: [LAZY_NATS],
-  useFactory: (lazy: LazyNatsConnection) => lazy,
-};
-
-export const jetStreamClientProvider: FactoryProvider = {
-  provide: JETSTREAM_CLIENT,
-  inject: [LAZY_NATS],
-  useFactory: (lazy: LazyNatsConnection) => lazy,
 };
 
 function createTraceId(): string {
@@ -194,15 +167,9 @@ function buildEventData(
   };
 }
 
-function buildIdempotencyKey(
-  payload: Record<string, unknown>,
-): string {
-  return calculateChecksum(payload);
-}
-
 function buildEventEnvelope(
   tenantId: string,
-  options: BuildEventOptions,
+  options: IBuildEventOptions,
 ): EventEnvelope {
   const eventId = randomUUID();
   const data = buildEventData(options.payload, options.occurredAt);
@@ -223,15 +190,15 @@ function buildEventEnvelope(
     channel: YOIZENCLAW_CHANNEL,
     provider: YOIZENCLAW_PROVIDER,
     accountid: YOIZENCLAW_ACCOUNT_ID,
-    idempotencykey: buildIdempotencyKey(options.payload),
+    idempotencykey: calculateChecksum(options.payload),
     transport: DEFAULT_TRANSPORT,
     data,
   };
 }
 
 @Injectable()
-export class NatsPublisher {
-  private readonly logger = new Logger(NatsPublisher.name);
+export class NatsPublisher implements OnModuleDestroy {
+  private readonly logger = new PinoLoggerService(NatsPublisher.name);
   private readonly ensuredStreams = new Map<string, TenantTier>();
 
   constructor(
@@ -240,11 +207,10 @@ export class NatsPublisher {
   ) {}
 
   /**
-   * Registers a tenant's tier so the publisher uses the correct
-   * limits when auto-creating a stream. Call after provisioning.
+   * Closes the lazy NATS connection on application shutdown.
    */
-  registerTenantTier(tenantId: string, tier: TenantTier): void {
-    this.ensuredStreams.set(tenantId, tier);
+  async onModuleDestroy(): Promise<void> {
+    await this.lazyNats.close();
   }
 
   /**
@@ -252,19 +218,15 @@ export class NatsPublisher {
    * the first publish per tenant. Idempotent — skips if the
    * stream is already known or already exists in NATS.
    *
-   * If no tier was registered via `registerTenantTier`, falls
-   * back to "free" and logs a warning.
+   * Uses fallback tier "free" and logs a warning; stream should
+   * be pre-provisioned via TenantProvisioningService when possible.
    */
-  private async ensureTenantStream(
-    tenantId: string,
-  ): Promise<void> {
+  private async ensureTenantStream(tenantId: string): Promise<void> {
     if (this.ensuredStreams.has(tenantId)) {
       return;
     }
 
-    this.logger.log(
-      `Ensuring stream for tenant '${tenantId}'...`,
-    );
+    this.logger.log(`Ensuring stream for tenant '${tenantId}'...`);
 
     const tier: TenantTier = "free";
     this.logger.warn(
@@ -280,20 +242,15 @@ export class NatsPublisher {
     try {
       jsm = await this.lazyNats.jetstreamManager();
     } catch (jsmErr: unknown) {
-      const msg = jsmErr instanceof Error
-        ? jsmErr.message
-        : String(jsmErr);
-      this.logger.error(
-        `Failed to get JetStreamManager: ${msg}`,
-      );
+      const msg = jsmErr instanceof Error ? jsmErr.message : String(jsmErr);
+      this.logger.error(`Failed to get JetStreamManager: ${msg}`);
       throw jsmErr;
     }
 
     try {
       await jsm.streams.info(config.name);
       this.logger.log(
-        `Stream '${config.name}' already exists ` +
-          `for tenant '${tenantId}'`,
+        `Stream '${config.name}' already exists ` + `for tenant '${tenantId}'`,
       );
     } catch {
       this.logger.log(
@@ -325,16 +282,13 @@ export class NatsPublisher {
           storage: StorageType.File,
         });
         this.logger.log(
-          `Auto-created stream '${config.name}' ` +
-            `for tenant '${tenantId}'`,
+          `Auto-created stream '${config.name}' ` + `for tenant '${tenantId}'`,
         );
       } catch (createErr: unknown) {
-        const msg = createErr instanceof Error
-          ? createErr.message
-          : String(createErr);
+        const msg =
+          createErr instanceof Error ? createErr.message : String(createErr);
         this.logger.error(
-          `Failed to create stream ` +
-            `'${config.name}': ${msg}`,
+          `Failed to create stream ` + `'${config.name}': ${msg}`,
         );
         throw createErr;
       }
@@ -348,30 +302,19 @@ export class NatsPublisher {
     subjectTemplate: string,
     event: EventEnvelope,
   ): Promise<PubAck | null> {
-    const subject = buildYoizenClawSubject(
-      subjectTemplate,
-      tenantId,
-    );
+    const subject = buildYoizenClawSubject(subjectTemplate, tenantId);
 
     try {
       await this.ensureTenantStream(tenantId);
       const js = await this.lazyNats.jetstream();
-      const ack = await js.publish(
-        subject,
-        JSON.stringify(event),
-        { msgID: event.idempotencykey },
-      );
-      this.logger.debug(
-        `Published event to ${subject}: ${event.type}`,
-      );
+      const ack = await js.publish(subject, JSON.stringify(event), {
+        msgID: event.idempotencykey,
+      });
+      this.logger.debug(`Published event to ${subject}: ${event.type}`);
       return ack;
     } catch (error: unknown) {
-      const msg = error instanceof Error
-        ? error.message
-        : String(error);
-      this.logger.error(
-        `Failed to publish event to ${subject}: ${msg}`,
-      );
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to publish event to ${subject}: ${msg}`);
       throw error;
     }
   }
@@ -467,38 +410,13 @@ export class NatsPublisher {
     return this.publishEvent(tenantId, YOIZENCLAW_CONFIG_SYNC, event);
   }
 
-  async publishRuntimeJobsSync(
-    tenantId: string,
-    jobs: Array<{
-      agentId: string;
-      id: string;
-      name: string;
-      schedule: string;
-    }>,
-  ): Promise<PubAck | null> {
-    const syncedAt = new Date().toISOString();
-    const event = buildEventEnvelope(tenantId, {
-      correlationId: `runtime:${tenantId}:jobs`,
-      eventType: EVENT_TYPES.RUNTIME_JOBS_SYNC,
-      occurredAt: syncedAt,
-      payload: {
-        action_type: "jobs_sync",
-        jobs,
-        syncedAt,
-      },
-      resource: `tenant/${tenantId}/runtime/jobs`,
-      source: "//yoizenclaw-admin-service/admin/jobs/sync",
-    });
-
-    return this.publishEvent(tenantId, YOIZENCLAW_JOBS_SYNC, event);
-  }
-
-  async publishJobTrigger(
-    tenantId: string,
-    jobId: string,
-    executionId: string,
-    eventPayload: Record<string, unknown>,
-  ): Promise<PubAck | null> {
+  async publishJobTrigger(options: {
+    tenantId: string;
+    jobId: string;
+    executionId: string;
+    eventPayload: Record<string, unknown>;
+  }): Promise<PubAck | null> {
+    const { tenantId, jobId, executionId, eventPayload } = options;
     const triggeredAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
       correlationId: `job:${jobId}:execution:${executionId}`,

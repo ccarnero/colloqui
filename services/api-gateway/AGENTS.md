@@ -21,67 +21,37 @@ The API Gateway is the HTTP entry point for the event-driven platform. It valida
 
 ```
 src/
-├── main.ts                                     # Bootstrap: Fastify adapter, ValidationPipe, dynamic route hook
-├── app.module.ts                               # Root module with APP_GUARD (TenantGuard, AuthGuard)
-├── guards/
-│   ├── auth.guard.ts                           # JWT verification, public route bypass, scope enforcement
-│   └── tenant.guard.ts                         # Tenant resolution from hostname or x-yoizen-tenant header
-├── decorators/
-│   ├── public.decorator.ts                     # @Public() — skip auth for endpoint
-│   ├── scopes.decorator.ts                     # @Scopes('platform') — require specific token scope
-│   └── skip-tenant.decorator.ts                # @SkipTenant() — skip tenant resolution
+├── main.ts
+├── app.module.ts                    # APP_GUARD, APP_FILTER, APP_INTERCEPTOR
+├── config.ts / config/gateway.config.ts
+├── guards/                          # auth.guard, tenant.guard
+├── decorators/                     # public, scopes, skip-tenant
+├── filters/                        # service-exception.filter
+├── interceptors/                   # audit.interceptor
+├── hooks/                          # Fastify proxy / dynamic route hooks
 ├── providers/
-│   ├── providers.module.ts                     # @Global() module exporting NATS + Redis
-│   ├── nats.provider.ts                        # NATS_CONNECTION, JETSTREAM, JETSTREAM_MANAGER tokens
-│   └── redis.provider.ts                       # REDIS_CLIENT token
+│   ├── providers.module.ts         # @Global() NATS + Redis
+│   ├── nats.provider.ts
+│   └── redis.provider.ts
 └── modules/
-    ├── events/
-    │   ├── events.module.ts
-    │   ├── events.controller.ts                # POST /events, GET /results/:id, SSE /events/stream
-    │   ├── events.service.ts                   # Publish, result lookup (L1 Map + Redis), SSE observable
-    │   └── event.dto.ts                        # EventDto with class-validator decorators
-    ├── auth/
-    │   ├── auth.module.ts
-    │   ├── auth.controller.ts                  # POST /auth/token, /login, /refresh; CRUD users, clients, public-routes
-    │   ├── auth-proxy.service.ts               # HTTP proxy to auth-service
-    │   ├── jwt.service.ts                      # JWT verification (HS256 via jose)
-    │   └── public-routes-cache.service.ts      # Redis-backed cache with 30s in-memory TTL
-    ├── audit/
-    │   ├── audit.module.ts
-    │   ├── audit.controller.ts                 # GET /audit/events, GET /audit/events/:id
-    │   └── audit.service.ts                    # AuditProxyService (HTTP fetch to audit-service)
+    ├── events/                     # publish, results, SSE
+    ├── auth/                       # auth-facade, jwt, public-routes-cache, auth-proxy
+    ├── audit/                      # audit + channel-audit proxy controllers
     ├── tenants/
-    │   ├── tenants.module.ts
-    │   ├── tenants.controller.ts               # POST/GET/DELETE /tenants
-    │   └── tenant-proxy.service.ts             # TenantProxyService (HTTP fetch to tenant-service)
     ├── schedulers/
-    │   ├── schedulers.module.ts
-    │   ├── schedulers.controller.ts            # Proxy for /schedulers/schedules, /schedulers/executions
-    │   └── schedulers.service.ts               # SchedulerProxyService (HTTP fetch to scheduler-service)
     ├── registry/
-    │   ├── registry.module.ts
-    │   ├── registry.controller.ts              # Proxy for /registry/services, routes, canary
-    │   └── registry-proxy.service.ts           # RegistryProxyService (HTTP fetch to registry-service)
     ├── workflows/
-    │   ├── workflows.module.ts
-    │   ├── workflows.controller.ts             # POST /workflows, GET /workflows, GET /workflows/:id
-    │   └── workflow-proxy.service.ts           # WorkflowProxyService (HTTP fetch to workflow-api)
     ├── adapters/
-    │   ├── adapters.module.ts
-    │   ├── adapters.controller.ts              # Proxy for /adapters CRUD + endpoint management
-    │   └── adapters-proxy.service.ts           # AdaptersProxyService (HTTP fetch to adapter-service)
-    ├── dynamic-routes/
-    │   ├── dynamic-routes.module.ts            # @Global() exporting DynamicRouteCacheService
-    │   └── dynamic-route-cache.service.ts      # Polls registry-service GET /routes every 15s, Map-based route matching
-    └── health/
-        ├── health.module.ts
-        └── health.controller.ts                # GET /health (NATS, Redis, downstream services)
+    ├── channels/                   # channel + stream proxies
+    ├── proxy/                      # generic proxy passthrough
+    ├── admin/                      # yoizenclaw-admin proxy (agents, jobs, credentials, config)
+    ├── dashboard/                  # dashboard stats aggregation
+    ├── rate-limit/                 # tenant rate limits
+    ├── dynamic-routes/             # @Global() DynamicRouteCacheService
+    └── health/                     # GatewayHealthService + downstream checks
 
 test/
-├── unit/
-│   ├── health.controller.spec.ts
-│   ├── events.controller.spec.ts
-│   └── events.service.spec.ts
+├── unit/                           # many *.spec.ts (controllers, guards, proxies, utils)
 └── integration/
     └── events.integration.spec.ts
 ```
@@ -105,18 +75,26 @@ test/
 
 ```
 AppModule
+├── APP_FILTER: ServiceExceptionFilter
 ├── APP_GUARD: TenantGuard, AuthGuard
-├── ProvidersModule (@Global) ─── NATS_CONNECTION, JETSTREAM, JETSTREAM_MANAGER, REDIS_CLIENT
-├── AuthModule ─── AuthController, AuthProxyService, JwtService, PublicRoutesCacheService
-├── EventsModule ─── EventsController, EventsService
-├── AuditModule ─── AuditController, AuditProxyService
-├── TenantsModule ─── TenantsController, TenantProxyService
-├── SchedulersModule ─── SchedulersController, SchedulerProxyService
-├── RegistryModule ─── RegistryController, RegistryProxyService
-├── WorkflowsModule ─── WorkflowsController, WorkflowProxyService
-├── AdaptersModule ─── AdaptersController, AdaptersProxyService
-├── DynamicRoutesModule (@Global) ─── DynamicRouteCacheService
-└── HealthModule ─── HealthController
+├── APP_INTERCEPTOR: AuditInterceptor
+├── ProvidersModule (@Global) ─── NATS, Redis
+├── ObservabilityModule
+├── AuthModule
+├── EventsModule
+├── AuditModule                    # audit + channel-audit HTTP proxies
+├── TenantsModule
+├── SchedulersModule
+├── RegistryModule
+├── AdaptersModule
+├── ChannelsModule
+├── WorkflowsModule
+├── ProxyModule                    # pass-through to proxy-service
+├── AdminModule                    # yoizenclaw-admin-service JSON proxy
+├── DynamicRoutesModule (@Global)
+├── RateLimitModule
+├── DashboardModule
+└── HealthModule                   # GatewayHealthService (NATS, Redis, all downstream /health)
 ```
 
 ### Authentication Flow

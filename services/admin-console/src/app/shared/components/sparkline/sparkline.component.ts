@@ -66,8 +66,7 @@ export class SparklineComponent {
     return values
       .map((v, i) => {
         const x =
-          this.pad +
-          (i / (values.length - 1)) * (this.width - this.pad * 2);
+          this.pad + (i / (values.length - 1)) * (this.width - this.pad * 2);
         const y =
           this.height -
           this.pad -

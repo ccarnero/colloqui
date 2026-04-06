@@ -12,16 +12,26 @@ import {
   HttpStatus,
 } from "@nestjs/common";
 import { AgentsService } from "./agents.service";
-import { CreateAgentDto, UpdateAgentDto, ListAgentsQueryDto, ChatRequestDto, ChatResponseDto } from "./agents.dto";
+import {
+  CreateAgentDto,
+  UpdateAgentDto,
+  ListAgentsQueryDto,
+  ChatRequestDto,
+  ChatResponseDto,
+} from "./agents.dto";
 import type { IAgent } from "./agents.repository";
-import { TenantGuard } from "../../providers/tenant.guard";
+import { TenantGuard } from "../../guards/tenant.guard";
 import { TenantId } from "../../providers/tenant.decorator";
 
+/** CRUD + chat bridge for YoizenClaw agents (proxied through api-gateway). */
 @Controller("admin/agents")
 @UseGuards(TenantGuard)
 export class AgentsController {
   constructor(private readonly service: AgentsService) {}
 
+  /**
+   * Paginated agent list with optional status / active filters.
+   */
   @Get()
   async findAll(
     @TenantId() tenantId: string,

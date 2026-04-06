@@ -1,18 +1,19 @@
 import {
   Global,
-  InternalServerErrorException,
-  Logger,
   Module,
   type OnModuleDestroy,
   type OnModuleInit,
-} from '@nestjs/common';
-import type { FactoryProvider } from '@nestjs/common';
-import postgres from 'postgres';
-import type { Sql } from 'postgres';
+} from "@nestjs/common";
+import { PinoLoggerService } from "@yoizen/observability";
+import type { FactoryProvider } from "@nestjs/common";
+import postgres from "postgres";
+import type { Sql } from "postgres";
+import { tenantServiceConfig } from "../config";
 
-export const PLATFORM_POSTGRES_SQL = 'PLATFORM_POSTGRES_SQL';
+export const PLATFORM_POSTGRES_SQL = "PLATFORM_POSTGRES_SQL";
 
-const SCHEMA_SQL = `
+/** Exported for unit tests asserting platform DDL shape. */
+export const TENANTS_PLATFORM_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS tenants (
   id            TEXT        PRIMARY KEY,
   name          TEXT        UNIQUE NOT NULL,
@@ -26,18 +27,11 @@ CREATE INDEX IF NOT EXISTS idx_tenants_name ON tenants (name);
 const sqlProvider: FactoryProvider<Sql> = {
   provide: PLATFORM_POSTGRES_SQL,
   useFactory: (): Sql => {
-    const host =
-      process.env.POSTGRES_HOST ??
-      'postgres.support-services-dev.svc.cluster.local';
-    const port = parseInt(process.env.POSTGRES_PORT ?? '5432', 10);
-    const database = process.env.POSTGRES_DB ?? 'yoizen';
-    const username = process.env.POSTGRES_USER ?? 'yoizen';
-    const password = process.env.POSTGRES_PASSWORD;
-    if (!password) {
-      throw new InternalServerErrorException(
-        "POSTGRES_PASSWORD environment variable is required",
-      );
-    }
+    const host = tenantServiceConfig.postgresHost;
+    const port = tenantServiceConfig.postgresPort;
+    const database = tenantServiceConfig.postgresDb;
+    const username = tenantServiceConfig.postgresUser;
+    const password = tenantServiceConfig.postgresPassword;
 
     return postgres({
       host,
@@ -54,15 +48,16 @@ const sqlProvider: FactoryProvider<Sql> = {
 };
 
 class SchemaInitializer implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(SchemaInitializer.name);
+  private readonly logger = new PinoLoggerService(SchemaInitializer.name);
   constructor(private readonly sql: Sql) {}
 
   async onModuleInit(): Promise<void> {
     try {
-      await this.sql.unsafe(SCHEMA_SQL);
-      this.logger.log('Tenants schema ensured');
+      await this.sql.unsafe(TENANTS_PLATFORM_SCHEMA_SQL);
+      this.logger.log("Tenants schema ensured");
     } catch (err) {
-      this.logger.error('Failed to ensure tenants schema', err);
+      this.logger.error("Failed to ensure tenants schema", err);
+      throw err;
     }
   }
 
@@ -72,7 +67,7 @@ class SchemaInitializer implements OnModuleInit, OnModuleDestroy {
 }
 
 const schemaInitProvider = {
-  provide: 'TENANT_SCHEMA_INITIALIZER',
+  provide: "TENANT_SCHEMA_INITIALIZER",
   useFactory: (sql: Sql) => new SchemaInitializer(sql),
   inject: [PLATFORM_POSTGRES_SQL],
 };

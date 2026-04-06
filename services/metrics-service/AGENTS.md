@@ -22,9 +22,7 @@ src/
 ├── main.ts                                 # Bootstrap: Fastify adapter, port binding
 ├── app.module.ts                           # @Global() root module with NATS + TenantConnectionManager
 ├── providers/
-│   ├── nats.provider.ts                    # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CLIENT (metrics-writer consumer)
-│   ├── postgres.provider.ts                # POSTGRES_SQL (unused, kept for reference)
-│   └── tenant-connection-manager.ts        # Per-tenant PostgreSQL pools (Map-based)
+│   └── nats.provider.ts                    # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CLIENT (metrics-writer consumer)
 └── modules/
     ├── metrics/
     │   ├── metrics.module.ts
@@ -35,8 +33,7 @@ src/
         └── health.controller.ts            # GET /health
 
 test/
-├── unit/
-└── integration/
+└── unit/
 ```
 
 ## Key Files
@@ -45,7 +42,7 @@ test/
 |------|---------|
 | `src/app.module.ts` | `@Global()` module exporting NATS tokens and `TenantConnectionManager` |
 | `src/providers/nats.provider.ts` | Creates EVENTS stream, durable consumer `metrics-writer` (filter: `events.metrics`, explicit ack, max_deliver 5) |
-| `src/providers/tenant-connection-manager.ts` | Lazy pool creation per tenant; connects to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
+| `TenantConnectionManager` | From `@yoizen/database`; lazy pool per tenant to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
 | `src/modules/metrics/metrics.service.ts` | Consumer loop: decode envelope -> extract tenantId -> ensure schema -> INSERT metrics -> ack/nak |
 | `src/modules/metrics/metrics.controller.ts` | Paginated query endpoints with source/name/date filters |
 
@@ -128,7 +125,7 @@ CREATE TABLE metrics (
 |---------|-------|
 | `bun test` | All tests |
 | `bun test test/unit` | Unit tests |
-| `bun test test/integration` | Integration tests (requires NATS + PostgreSQL) |
+| *(none in-service)* | No `test/integration/` directory; use `bun test test/unit` only |
 
 ## Code Style and Conventions
 

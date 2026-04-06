@@ -7,32 +7,34 @@ import {
   Body,
   Param,
   Query,
-  Headers,
+  UseGuards,
   HttpCode,
   HttpStatus,
-} from '@nestjs/common';
-import { TENANT_HEADER } from '@yoizen/shared';
-import { CredentialsService } from './credentials.service';
+} from "@nestjs/common";
+import { CredentialsService } from "./credentials.service";
 import {
   CreateCredentialDto,
   UpdateCredentialDto,
   ListCredentialsQueryDto,
   RotateCredentialDto,
-} from './credentials.dto';
-import type { CredentialWithoutValue } from './credentials.repository';
+} from "./credentials.dto";
+import type { CredentialWithoutValue } from "./credentials.repository";
+import { TenantGuard } from "../../guards/tenant.guard";
+import { TenantId } from "../../providers/tenant.decorator";
 
-@Controller('admin/credentials')
+@Controller("admin/credentials")
+@UseGuards(TenantGuard)
 export class CredentialsController {
   constructor(private readonly service: CredentialsService) {}
 
   /**
-   * Lista todas las credenciales con filtros opcionales.
+   * Lists credentials with optional filters.
    * GET /admin/credentials?type=api_key&limit=20&offset=0
-   * NUNCA retorna el campo value por seguridad.
+   * Never returns the `value` field.
    */
   @Get()
   async findAll(
-    @Headers(TENANT_HEADER) tenantId: string,
+    @TenantId() tenantId: string,
     @Query() query: ListCredentialsQueryDto,
   ): Promise<{ credentials: CredentialWithoutValue[]; total: number }> {
     return this.service.findAll(tenantId, {
@@ -44,27 +46,27 @@ export class CredentialsController {
   }
 
   /**
-   * Obtiene una credencial por su ID.
+   * Returns a credential by ID.
    * GET /admin/credentials/:id
-   * NUNCA retorna el campo value por seguridad.
+   * Never returns the `value` field.
    */
-  @Get(':id')
+  @Get(":id")
   async findById(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
   ): Promise<CredentialWithoutValue> {
     return this.service.findById(tenantId, id);
   }
 
   /**
-   * Crea una nueva credencial.
+   * Creates a credential.
    * POST /admin/credentials
-   * FIXME: Implementar cifrado con KMS/Vault antes de producción
+   * FIXME: Encrypt with KMS/Vault before production
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(
-    @Headers(TENANT_HEADER) tenantId: string,
+    @TenantId() tenantId: string,
     @Body() dto: CreateCredentialDto,
   ): Promise<CredentialWithoutValue> {
     return this.service.create(tenantId, {
@@ -78,15 +80,15 @@ export class CredentialsController {
   }
 
   /**
-   * Actualiza una credencial existente.
+   * Updates an existing credential.
    * PUT /admin/credentials/:id
-   * Si se actualiza el value, se emite evento credential.rotated.
-   * FIXME: Implementar cifrado con KMS/Vault antes de producción
+   * Emits credential.rotated when `value` changes.
+   * FIXME: Encrypt with KMS/Vault before production
    */
-  @Put(':id')
+  @Put(":id")
   async update(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
     @Body() dto: UpdateCredentialDto,
   ): Promise<CredentialWithoutValue> {
     return this.service.update(tenantId, id, {
@@ -100,30 +102,35 @@ export class CredentialsController {
   }
 
   /**
-   * Elimina (soft delete) una credencial.
+   * Soft-deletes a credential.
    * DELETE /admin/credentials/:id
    */
-  @Delete(':id')
+  @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
   ): Promise<void> {
     await this.service.delete(tenantId, id);
   }
 
   /**
-   * Rota el valor de una credencial.
+   * Rotates a credential value.
    * PUT /admin/credentials/:id/rotate
-   * Emite evento credential.rotated al completar.
-   * FIXME: Implementar cifrado con KMS/Vault antes de producción
+   * Emits credential.rotated on success.
+   * FIXME: Encrypt with KMS/Vault before production
    */
-  @Put(':id/rotate')
+  @Put(":id/rotate")
   async rotate(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
     @Body() dto: RotateCredentialDto,
   ): Promise<CredentialWithoutValue> {
-    return this.service.rotate(tenantId, id, dto.new_value, dto.new_expires_at);
+    return this.service.rotate({
+      tenantId,
+      id,
+      newValue: dto.new_value,
+      newExpiresAt: dto.new_expires_at,
+    });
   }
 }

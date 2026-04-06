@@ -1,10 +1,10 @@
-import { Component, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, signal } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
 import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 
-interface IntegrationRow {
+interface IIntegrationRow {
   name: string;
   category: string;
   status: string;
@@ -15,7 +15,13 @@ interface IntegrationRow {
 @Component({
   selector: "app-integrations",
   standalone: true,
-  imports: [MatTableModule, MatButtonModule, MatIconModule, StatusBadgeComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    MatTableModule,
+    MatButtonModule,
+    MatIconModule,
+    StatusBadgeComponent,
+  ],
   template: `
     <div class="ws-header">
       <div>
@@ -90,7 +96,7 @@ export class IntegrationsComponent {
     "actions",
   ] as const;
 
-  readonly integrations = signal<IntegrationRow[]>([
+  readonly integrations = signal<IIntegrationRow[]>([
     {
       name: "Salesforce CRM",
       category: "CRM",

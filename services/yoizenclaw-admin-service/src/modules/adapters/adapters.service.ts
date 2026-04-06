@@ -1,27 +1,27 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import {
   sanitizeAdapter,
   sanitizeAdapterDetail,
   type AdapterSummaryDto,
   type AdapterDetailDto,
 } from "./adapters.dto";
-
-const ADAPTER_SERVICE_URL =
-  process.env.ADAPTER_SERVICE_URL ?? "http://adapter-service:3000";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
+import { TENANT_HEADER } from "@yoizen/shared";
+import { yoizenclawAdminServiceConfig } from "../../config";
 
 @Injectable()
 export class AdaptersService {
-  private readonly logger = new Logger(AdaptersService.name);
+  private readonly logger = new PinoLoggerService(AdaptersService.name);
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl = ADAPTER_SERVICE_URL;
+    this.baseUrl = yoizenclawAdminServiceConfig.adapterServiceUrl;
   }
 
   async findAll(tenantId: string): Promise<{ adapters: AdapterSummaryDto[] }> {
     try {
-      const response = await fetch(`${this.baseUrl}/adapters`, {
-        headers: { "x-yoizen-tenant": tenantId },
+      const response = await tracedFetch(`${this.baseUrl}/adapters`, {
+        headers: { [TENANT_HEADER]: tenantId },
       });
 
       if (!response.ok) {
@@ -44,13 +44,27 @@ export class AdaptersService {
     }
   }
 
+  /**
+   * Loads a single adapter or throws if missing (404 from downstream).
+   */
+  async findOneOrThrow(
+    tenantId: string,
+    adapterId: string,
+  ): Promise<AdapterDetailDto> {
+    const adapter = await this.findOne(tenantId, adapterId);
+    if (!adapter) {
+      throw new NotFoundException(`Adapter '${adapterId}' not found`);
+    }
+    return adapter;
+  }
+
   async findOne(
     tenantId: string,
     adapterId: string,
   ): Promise<AdapterDetailDto | null> {
     try {
-      const response = await fetch(`${this.baseUrl}/adapters/${adapterId}`, {
-        headers: { "x-yoizen-tenant": tenantId },
+      const response = await tracedFetch(`${this.baseUrl}/adapters/${adapterId}`, {
+        headers: { [TENANT_HEADER]: tenantId },
       });
 
       if (!response.ok) {
@@ -74,10 +88,7 @@ export class AdaptersService {
     }
   }
 
-  async adapterExists(
-    tenantId: string,
-    adapterId: string,
-  ): Promise<boolean> {
+  async adapterExists(tenantId: string, adapterId: string): Promise<boolean> {
     const adapter = await this.findOne(tenantId, adapterId);
     return adapter !== null;
   }

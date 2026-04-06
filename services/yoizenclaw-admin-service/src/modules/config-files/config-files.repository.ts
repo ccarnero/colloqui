@@ -1,55 +1,55 @@
-import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
+import { Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import { TenantScopedRepository } from "../../providers/tenant-scoped.repository";
+import { TenantConnectionManager } from "@yoizen/database";
+import {
+  appendSqlSetFragment,
+  composeUpdateSetClause,
+} from "../../common/repository-sql.util";
 
-export interface ConfigFile {
+export interface IConfigFile {
   id: string;
   name: string;
   path: string;
   content: string;
-  format: 'yaml' | 'json';
+  format: "yaml" | "json";
   version: number;
   is_active: boolean;
   created_at: Date;
   updated_at: Date;
 }
 
-export interface CreateConfigFileData {
+export interface ICreateConfigFileData {
   name: string;
   path: string;
   content: string;
-  format: 'yaml' | 'json';
+  format: "yaml" | "json";
 }
 
-export interface UpdateConfigFileData {
+interface IUpdateConfigFileData {
   name?: string;
   content?: string;
   is_active?: boolean;
 }
 
-export interface FindAllOptions {
+export interface IFindAllConfigFilesOptions {
   limit?: number;
   offset?: number;
 }
 
 @Injectable()
-export class ConfigFilesRepository {
-  constructor(
-    private readonly connectionManager: TenantConnectionManager,
-  ) {}
-
-  private async getSql(tenantId: string): Promise<Sql> {
-    await this.connectionManager.ensureSchema(tenantId);
-    return this.connectionManager.getConnection(tenantId);
+export class ConfigFilesRepository extends TenantScopedRepository {
+  constructor(connectionManager: TenantConnectionManager) {
+    super(connectionManager);
   }
 
   /**
-   * Lista todos los config files con paginación.
+   * Lists config files with pagination.
    */
   async findAll(
     tenantId: string,
-    options: FindAllOptions = {},
-  ): Promise<{ files: ConfigFile[]; total: number }> {
+    options: IFindAllConfigFilesOptions = {},
+  ): Promise<{ files: IConfigFile[]; total: number }> {
     const sql = await this.getSql(tenantId);
     const { limit = 20, offset = 0 } = options;
 
@@ -60,7 +60,7 @@ export class ConfigFilesRepository {
     const total = Number(countResult[0].count);
 
     // Get files with pagination
-    const files = await sql<ConfigFile[]>`
+    const files = await sql<IConfigFile[]>`
       SELECT 
         id,
         name,
@@ -82,12 +82,12 @@ export class ConfigFilesRepository {
   }
 
   /**
-   * Busca un config file por su path único.
+   * Finds a config file by unique path.
    */
-  async findByPath(tenantId: string, path: string): Promise<ConfigFile | null> {
+  async findByPath(tenantId: string, path: string): Promise<IConfigFile | null> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<ConfigFile[]>`
+    const results = await sql<IConfigFile[]>`
       SELECT 
         id,
         name,
@@ -107,16 +107,16 @@ export class ConfigFilesRepository {
   }
 
   /**
-   * Crea un nuevo config file.
+   * Creates a new config file.
    */
   async create(
     tenantId: string,
-    data: CreateConfigFileData,
-  ): Promise<ConfigFile> {
+    data: ICreateConfigFileData,
+  ): Promise<IConfigFile> {
     const sql = await this.getSql(tenantId);
     const configFileId = randomUUID();
 
-    const results = await sql<ConfigFile[]>`
+    const results = await sql<IConfigFile[]>`
       INSERT INTO config_files (
         id,
         name,
@@ -154,31 +154,31 @@ export class ConfigFilesRepository {
   }
 
   /**
-   * Actualiza un config file existente e incrementa la versión.
+   * Updates an existing config file and bumps version.
    */
   async update(
     tenantId: string,
     path: string,
-    data: UpdateConfigFileData,
-  ): Promise<ConfigFile | null> {
+    data: IUpdateConfigFileData,
+  ): Promise<IConfigFile | null> {
     const sql = await this.getSql(tenantId);
 
     // Build dynamic update
-    const updates: string[] = ['updated_at = NOW()', 'version = version + 1'];
+    const updates: string[] = ["updated_at = NOW()", "version = version + 1"];
 
     if (data.name !== undefined) {
-      updates.push(sql`name = ${data.name}` as unknown as string);
+      appendSqlSetFragment(updates, sql`name = ${data.name}`);
     }
     if (data.content !== undefined) {
-      updates.push(sql`content = ${data.content}` as unknown as string);
+      appendSqlSetFragment(updates, sql`content = ${data.content}`);
     }
     if (data.is_active !== undefined) {
-      updates.push(sql`is_active = ${data.is_active}` as unknown as string);
+      appendSqlSetFragment(updates, sql`is_active = ${data.is_active}`);
     }
 
-    const setClause = updates.join(', ');
+    const setClause = composeUpdateSetClause(updates);
 
-    const results = await sql<ConfigFile[]>`
+    const results = await sql<IConfigFile[]>`
       UPDATE config_files
       SET ${sql.unsafe(setClause)}
       WHERE path = ${path} AND is_active = true
@@ -198,28 +198,12 @@ export class ConfigFilesRepository {
   }
 
   /**
-   * Elimina (soft delete) un config file.
+   * Returns all active config files for deploy.
    */
-  async delete(tenantId: string, path: string): Promise<boolean> {
+  async findAllActive(tenantId: string): Promise<IConfigFile[]> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<ConfigFile[]>`
-      UPDATE config_files
-      SET is_active = false, updated_at = NOW()
-      WHERE path = ${path} AND is_active = true
-      RETURNING id
-    `;
-
-    return results.length > 0;
-  }
-
-  /**
-   * Obtiene todos los config files activos para deploy.
-   */
-  async findAllActive(tenantId: string): Promise<ConfigFile[]> {
-    const sql = await this.getSql(tenantId);
-
-    const files = await sql<ConfigFile[]>`
+    const files = await sql<IConfigFile[]>`
       SELECT 
         id,
         name,

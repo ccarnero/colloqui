@@ -1,4 +1,5 @@
 import {
+  ChangeDetectionStrategy,
   Component,
   inject,
   signal,
@@ -7,7 +8,7 @@ import {
 } from "@angular/core";
 import { DatePipe, JsonPipe } from "@angular/common";
 import { Subscription } from "rxjs";
-import { LucideAngularModule, Radio, Zap, AlertCircle } from "lucide-angular";
+import { LucideAngularModule, Radio, Zap } from "lucide-angular";
 import {
   EventStreamService,
   type IChannelStreamEvent,
@@ -25,6 +26,7 @@ const MAX_FEED_ENTRIES = 100;
 
 @Component({
   selector: "app-event-feed",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [DatePipe, JsonPipe, LucideAngularModule],
   template: `
     <div class="feed-header">
@@ -192,7 +194,6 @@ const MAX_FEED_ENTRIES = 100;
 export class EventFeedComponent implements OnInit, OnDestroy {
   protected readonly Radio = Radio;
   protected readonly Zap = Zap;
-  protected readonly AlertCircle = AlertCircle;
 
   private readonly streamService = inject(EventStreamService);
   private sub: Subscription | null = null;

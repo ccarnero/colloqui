@@ -1,159 +1,81 @@
 import {
   Inject,
   Injectable,
-  Logger,
   OnModuleDestroy,
   OnModuleInit,
-} from '@nestjs/common';
-import type { Consumer, JsMsg } from 'nats';
-import { JETSTREAM_CLIENT } from '../../providers/nats.provider';
-import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
-import type { EventEnvelope } from '@yoizen/shared';
+} from "@nestjs/common";
+import type { Consumer } from "nats";
+import { NatsConsumerRunner } from "@yoizen/database";
+import { PinoLoggerService } from "@yoizen/observability";
+import { JETSTREAM_CLIENT } from "../../providers/nats.provider";
+import type { EventEnvelope } from "@yoizen/shared";
+import type { IAuditQueryParams } from "../../common/audit-query-params";
+import { AuditRepository, type IAuditEvent } from "./audit.repository";
 
-export interface IAuditEvent {
-  id: string;
-  type: string;
-  payload: Record<string, unknown>;
-  metadata: Record<string, unknown>;
-  subject: string;
-  created_at: string;
-}
-
-interface AuditQueryParams {
-  type?: string;
-  from?: string;
-  to?: string;
-  limit: number;
-  offset: number;
-}
+export type { IAuditEvent };
 
 @Injectable()
 export class AuditService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(AuditService.name);
-  private consumeIterator: Awaited<
-    ReturnType<Consumer['consume']>
-  > | null = null;
+  private readonly logger = new PinoLoggerService(AuditService.name);
+  private readonly runner: NatsConsumerRunner;
 
   constructor(
-    @Inject(JETSTREAM_CLIENT) private readonly consumer: Consumer,
-    private readonly tenantConnections: TenantConnectionManager,
-  ) {}
+    @Inject(JETSTREAM_CLIENT) consumer: Consumer,
+    private readonly auditRepository: AuditRepository,
+  ) {
+    this.runner = new NatsConsumerRunner(
+      consumer,
+      (msg) => this.persistMessage(msg),
+      this.logger,
+    );
+  }
 
   async onModuleInit(): Promise<void> {
-    this.consumeIterator = await this.consumer.consume({
-      max_messages: 100,
-      expires: 30_000,
-    });
-    this.runConsumer();
+    await this.runner.start();
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.consumeIterator) {
-      this.consumeIterator.stop();
-      this.consumeIterator = null;
-    }
+    await this.runner.stop();
   }
 
-  private async ensureTable(sql: Sql, tenantId: string): Promise<void> {
-    if (this.tenantConnections.isInitialized(tenantId)) return;
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS events (
-        id          TEXT        PRIMARY KEY,
-        type        TEXT        NOT NULL,
-        payload     JSONB       NOT NULL DEFAULT '{}',
-        metadata    JSONB       NOT NULL DEFAULT '{}',
-        subject     TEXT        NOT NULL DEFAULT '',
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `;
-    await sql`CREATE INDEX IF NOT EXISTS idx_events_type ON events (type)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_events_created_at ON events (created_at DESC)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_events_type_created ON events (type, created_at DESC)`;
-
-    this.tenantConnections.markInitialized(tenantId);
+  private async persistMessage(msg: import("nats").JsMsg): Promise<void> {
+    await this.persistAuditEnvelope(msg.json() as EventEnvelope, msg.subject);
   }
 
-  private async runConsumer(): Promise<void> {
-    if (!this.consumeIterator) return;
-    try {
-      for await (const msg of this.consumeIterator) {
-        try {
-          await this.persistMessage(msg);
-          msg.ack();
-        } catch (err) {
-          this.logger.error(`Failed to persist event: ${err}`);
-          msg.nak();
-        }
-      }
-    } catch {
-      // iterator stopped
-    }
-  }
-
-  private async persistMessage(msg: JsMsg): Promise<void> {
-    const envelope = msg.json() as EventEnvelope;
+  private async persistAuditEnvelope(
+    envelope: EventEnvelope,
+    subject: string,
+  ): Promise<void> {
     const tenantId = envelope.tenant;
     if (!tenantId) {
       this.logger.warn(`Dropping event ${envelope.id}: missing tenant`);
       return;
     }
 
-    const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
-
-    const subject = msg.subject;
-    const payload = envelope.data.payload ?? {};
-    const metadata = {
-      tenant: envelope.tenant,
-      source: envelope.source,
-      correlation_id: envelope.correlation_id,
-      traceid: envelope.traceid,
-    };
-
-    await sql`
-      INSERT INTO events (id, type, payload, metadata, subject)
-      VALUES (
-        ${envelope.id},
-        ${envelope.type},
-        ${JSON.stringify(payload)},
-        ${JSON.stringify(metadata)},
-        ${subject}
-      )
-      ON CONFLICT (id) DO NOTHING
-    `;
+    await this.auditRepository.insertAuditEvent(tenantId, envelope, subject);
   }
 
-  async queryEvents(params: AuditQueryParams, tenantId: string): Promise<IAuditEvent[]> {
-    const { type, from, to, limit, offset } = params;
-    const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
-
-    const rows = await sql<IAuditEvent[]>`
-      SELECT id, type, payload, metadata, subject, created_at
-      FROM events
-      WHERE 1=1
-        ${type ? sql`AND type = ${type}` : sql``}
-        ${from ? sql`AND created_at >= ${from}` : sql``}
-        ${to ? sql`AND created_at <= ${to}` : sql``}
-      ORDER BY created_at DESC
-      LIMIT ${limit}
-      OFFSET ${offset}
-    `;
-
-    return rows;
+  /**
+   * @param params  Query filters including type, date range, and pagination.
+   * @param tenantId  Tenant scope for the query.
+   * @returns Matching audit events ordered by creation date descending.
+   */
+  async queryEvents(
+    params: IAuditQueryParams,
+    tenantId: string,
+  ): Promise<IAuditEvent[]> {
+    return this.auditRepository.queryEvents(params, tenantId);
   }
 
-  async getEventById(id: string, tenantId: string): Promise<IAuditEvent | null> {
-    const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
-
-    const rows = await sql<IAuditEvent[]>`
-      SELECT id, type, payload, metadata, subject, created_at
-      FROM events
-      WHERE id = ${id}
-    `;
-    return rows[0] ?? null;
+  /**
+   * @param id  Event primary key.
+   * @param tenantId  Tenant scope for the lookup.
+   * @returns The matching event or `null`.
+   */
+  async getEventById(
+    id: string,
+    tenantId: string,
+  ): Promise<IAuditEvent | null> {
+    return this.auditRepository.getEventById(id, tenantId);
   }
-
 }

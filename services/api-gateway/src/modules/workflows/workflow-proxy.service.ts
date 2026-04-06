@@ -1,40 +1,14 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { TENANT_HEADER } from "@yoizen/shared";
-import { tracedFetch } from "@yoizen/observability";
-import { gatewayConfig } from "../../config/gateway.config";
-import { throwProxyError } from "../../utils/proxy-error.util";
+import { Injectable } from "@nestjs/common";
+import { gatewayConfig } from "../../config";
+import { TenantJsonProxyBase } from "../../utils/tenant-json-proxy.base";
 
 @Injectable()
-export class WorkflowProxyService {
-  private readonly logger = new Logger(WorkflowProxyService.name);
-  private readonly baseUrl: string;
-
+export class WorkflowProxyService extends TenantJsonProxyBase {
   constructor() {
-    this.baseUrl = gatewayConfig.services.workflow;
-  }
-
-  async proxy(
-    method: string,
-    path: string,
-    tenantId: string,
-    body?: unknown,
-  ): Promise<object> {
-    const url = `${this.baseUrl}${path}`;
-
-    const headers: Record<string, string> = {
-      [TENANT_HEADER]: tenantId,
-    };
-
-    const init: RequestInit = { method, headers };
-
-    if (body !== undefined && method !== 'GET' && method !== 'DELETE') {
-      headers['content-type'] = 'application/json';
-      init.body = JSON.stringify(body);
-    }
-
-    const res = await tracedFetch(url, init);
-    if (!res.ok) await throwProxyError(res, "Workflow service", this.logger);
-    if (res.status === 204) return {};
-    return res.json();
+    super(
+      gatewayConfig.services.workflow,
+      "Workflow service",
+      WorkflowProxyService.name,
+    );
   }
 }

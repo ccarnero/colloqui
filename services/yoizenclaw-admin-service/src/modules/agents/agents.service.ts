@@ -2,43 +2,44 @@ import {
   BadGatewayException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
-  Optional,
-} from '@nestjs/common';
+} from "@nestjs/common";
+import { PinoLoggerService } from "@yoizen/observability";
 import {
   AgentsRepository,
   type IAgent,
   type ICreateAgentData,
   type IFindAllOptions,
-  type UpdateAgentData,
-} from './agents.repository';
-import { NatsPublisher, LAZY_NATS } from '../../providers/nats.provider';
-import type { NatsConnection } from 'nats';
-import type { ChatRequestDto, ChatResponseDto } from './agents.dto';
-import { buildYoizenClawSubject, YOIZENCLAW_CHAT_RESPOND } from '@yoizen/shared';
-import { AdaptersService } from '../adapters/adapters.service';
+  type IUpdateAgentData,
+} from "./agents.repository";
+import { NatsPublisher, LAZY_NATS } from "../../providers/nats.provider";
+import type { NatsConnection } from "nats";
+import type { ChatRequestDto, ChatResponseDto } from "./agents.dto";
+import {
+  buildYoizenClawSubject,
+  YOIZENCLAW_CHAT_RESPOND,
+} from "@yoizen/shared";
+import { AdaptersService } from "../adapters/adapters.service";
+import { yoizenclawAdminServiceConfig } from "../../config";
+import { calculateChecksum } from "../../utils/payload-utils";
 
-interface LazyNats {
+interface ILazyNats {
   getConnection(): Promise<NatsConnection>;
 }
 
-const VALIDATE_ADAPTER_REFS =
-  (process.env.VALIDATE_ADAPTER_REFS ?? 'true') !== 'false';
-
 @Injectable()
 export class AgentsService {
-  private readonly logger = new Logger(AgentsService.name);
+  private readonly logger = new PinoLoggerService(AgentsService.name);
 
   constructor(
     private readonly repository: AgentsRepository,
     private readonly natsPublisher: NatsPublisher,
-    @Inject(LAZY_NATS) private readonly lazyNats: LazyNats,
-    @Optional() private readonly adaptersService?: AdaptersService,
+    @Inject(LAZY_NATS) private readonly lazyNats: ILazyNats,
+    private readonly adaptersService: AdaptersService,
   ) {}
 
   /**
-   * Lista todos los agents con filtros y paginación.
+   * Lists agents with filters and pagination.
    */
   async findAll(
     tenantId: string,
@@ -48,7 +49,7 @@ export class AgentsService {
   }
 
   /**
-   * Obtiene un agent por su ID.
+   * Returns an agent by ID.
    */
   async findById(tenantId: string, id: string): Promise<IAgent> {
     const agent = await this.repository.findById(tenantId, id);
@@ -59,7 +60,7 @@ export class AgentsService {
   }
 
   /**
-   * Crea un nuevo agent. Optionally validates adapter refs in tools.
+   * Creates a new agent. Optionally validates adapter refs in tools.
    */
   async create(tenantId: string, data: ICreateAgentData): Promise<IAgent> {
     await this.validateAdapterRefs(tenantId, data.tools);
@@ -67,12 +68,12 @@ export class AgentsService {
   }
 
   /**
-   * Actualiza un agent existente. Optionally validates adapter refs in tools.
+   * Updates an existing agent. Optionally validates adapter refs in tools.
    */
   async update(
     tenantId: string,
     id: string,
-    data: UpdateAgentData,
+    data: IUpdateAgentData,
   ): Promise<IAgent> {
     await this.validateAdapterRefs(tenantId, data.tools);
     const agent = await this.repository.update(tenantId, id, data);
@@ -83,7 +84,7 @@ export class AgentsService {
   }
 
   /**
-   * Elimina (soft delete) un agent.
+   * Soft-deletes an agent.
    */
   async delete(tenantId: string, id: string): Promise<void> {
     const deleted = await this.repository.delete(tenantId, id);
@@ -93,7 +94,7 @@ export class AgentsService {
   }
 
   /**
-   * Publica un agent y emite evento NATS.
+   * Publishes an agent and emits a NATS event.
    */
   async publish(tenantId: string, id: string): Promise<IAgent> {
     const agent = await this.repository.publish(tenantId, id);
@@ -101,7 +102,7 @@ export class AgentsService {
       throw new NotFoundException(`Agent with ID '${id}' not found`);
     }
 
-    // Emitir evento NATS
+    // Emit NATS event
     try {
       await this.natsPublisher.publishAgentPublished(
         tenantId,
@@ -114,15 +115,14 @@ export class AgentsService {
         `Failed to emit agent.published event for agent '${agent.id}'`,
         error,
       );
-      // No lanzamos error para no fallar la operación de publicar
-      // pero logueamos el problema
+      // Swallow errors so publish still succeeds; problem is logged
     }
 
     return agent;
   }
 
   /**
-   * Despublica un agent y emite evento NATS.
+   * Unpublishes an agent and emits a NATS event.
    */
   async unpublish(tenantId: string, id: string): Promise<IAgent> {
     const agent = await this.repository.unpublish(tenantId, id);
@@ -130,7 +130,7 @@ export class AgentsService {
       throw new NotFoundException(`Agent with ID '${id}' not found`);
     }
 
-    // Emitir evento NATS
+    // Emit NATS event
     try {
       await this.natsPublisher.publishAgentUnpublished(
         tenantId,
@@ -143,15 +143,14 @@ export class AgentsService {
         `Failed to emit agent.unpublished event for agent '${agent.id}'`,
         error,
       );
-      // No lanzamos error para no fallar la operación de despublicar
+      // Swallow errors so unpublish still succeeds
     }
 
     return agent;
   }
 
   /**
-   * Chat con agent via NATS Request-Reply.
-   * Sigue el patrón CloudEvents del skill envelope-messages.
+   * Chat with an agent via NATS request-reply (CloudEvents envelope pattern).
    */
   async chat(
     tenantId: string,
@@ -162,80 +161,81 @@ export class AgentsService {
     if (!agent) {
       throw new NotFoundException(`Agent with ID '${agentId}' not found`);
     }
-    if (agent.status !== 'published') {
+    if (agent.status !== "published") {
       throw new NotFoundException(`Agent '${agentId}' is not published`);
     }
 
     const now = new Date().toISOString();
     const traceId = this.generateTraceId();
     const correlationId = dto.conversationId || `chat-${Date.now()}`;
-    const envelope = this.buildChatPayload(
+    const envelope = this.buildChatPayload({
       tenantId,
       agentId,
       dto,
       correlationId,
       traceId,
       now,
-    );
+    });
 
     const subject = buildYoizenClawSubject(YOIZENCLAW_CHAT_RESPOND, tenantId);
 
     try {
-      this.logger.debug(`Sending chat request to ${subject} for agent ${agentId}`);
+      this.logger.debug(
+        `Sending chat request to ${subject} for agent ${agentId}`,
+      );
 
       const nc = await this.lazyNats.getConnection();
-      const response = await nc.request(
-        subject,
-        JSON.stringify(envelope),
-        { timeout: 30000 },
-      );
+      const response = await nc.request(subject, JSON.stringify(envelope), {
+        timeout: yoizenclawAdminServiceConfig.chatRequestTimeoutMs,
+      });
 
       const responseData: unknown = JSON.parse(response.data.toString());
       return this.parseChatResponse(responseData);
     } catch (error) {
       this.logger.error(`Chat request failed for agent ${agentId}`, error);
-      throw new BadGatewayException('Failed to get response from agent');
+      throw new BadGatewayException("Failed to get response from agent");
     }
   }
 
-  private buildChatPayload(
-    tenantId: string,
-    agentId: string,
-    dto: ChatRequestDto,
-    correlationId: string,
-    traceId: string,
-    now: string,
-  ): Record<string, unknown> {
+  private buildChatPayload(options: {
+    tenantId: string;
+    agentId: string;
+    dto: ChatRequestDto;
+    correlationId: string;
+    traceId: string;
+    now: string;
+  }): Record<string, unknown> {
+    const { tenantId, agentId, dto, correlationId, traceId, now } = options;
     const payload = {
-      action_type: 'chat_respond',
+      action_type: "chat_respond",
       agent_id: agentId,
       message: dto.message,
       conversation_id: correlationId,
-      customer_name: dto.customerName || 'User',
+      customer_name: dto.customerName || "User",
       context: dto.context || [],
     };
 
     return {
-      specversion: '1.0',
+      specversion: "1.0",
       id: this.generateEventId(),
-      source: '//yoizenclaw-admin-service/admin/agents/chat',
-      type: 'io.yoizen.yoizenclaw.chat.request.v1',
+      source: "//yoizenclaw-admin-service/admin/agents/chat",
+      type: "io.yoizen.yoizenclaw.chat.request.v1",
       resource: `tenant/${tenantId}/agents/${agentId}`,
       time: now,
       traceid: traceId,
       causation_id: null,
       correlation_id: correlationId,
       tenant: tenantId,
-      producer: 'yoizenclaw-admin-service',
-      domain: 'automation',
-      channel: 'yoizenclaw',
-      provider: 'internal',
-      accountid: 'yoizenclaw-admin',
+      producer: "yoizenclaw-admin-service",
+      domain: "automation",
+      channel: "yoizenclaw",
+      provider: "internal",
+      accountid: "yoizenclaw-admin",
       idempotencykey: this.computeIdempotencyKey(payload),
       transport: {
-        method: 'agent',
-        protocol: 'internal',
-        agent_id: 'yoizenclaw-admin-service',
+        method: "agent",
+        protocol: "internal",
+        agent_id: "yoizenclaw-admin-service",
         depth: 0,
       },
       data: {
@@ -243,7 +243,7 @@ export class AgentsService {
         payload_inline: true,
         payload_ref: null,
         payload_bytes: JSON.stringify(payload).length,
-        payload_checksum: this.computeChecksum(payload),
+        payload_checksum: calculateChecksum(payload),
         payload,
       },
     };
@@ -251,11 +251,11 @@ export class AgentsService {
 
   private parseChatResponse(responseData: unknown): ChatResponseDto {
     if (
-      typeof responseData !== 'object' ||
+      typeof responseData !== "object" ||
       responseData === null ||
-      !('data' in responseData)
+      !("data" in responseData)
     ) {
-      throw new BadGatewayException('Invalid response from agent');
+      throw new BadGatewayException("Invalid response from agent");
     }
     const data = (responseData as { data?: { payload?: unknown } }).data;
     const payload = data?.payload as
@@ -265,7 +265,7 @@ export class AgentsService {
         }
       | undefined;
     if (!payload?.response) {
-      throw new BadGatewayException('Invalid response from agent');
+      throw new BadGatewayException("Invalid response from agent");
     }
 
     return {
@@ -275,7 +275,9 @@ export class AgentsService {
   }
 
   private generateTraceId(): string {
-    return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    return Array.from({ length: 32 }, () =>
+      Math.floor(Math.random() * 16).toString(16),
+    ).join("");
   }
 
   private generateEventId(): string {
@@ -283,12 +285,7 @@ export class AgentsService {
   }
 
   private computeIdempotencyKey(payload: Record<string, unknown>): string {
-    return `sha256:${this.computeChecksum(payload)}`;
-  }
-
-  private computeChecksum(payload: Record<string, unknown>): string {
-    const canonical = JSON.stringify(payload, Object.keys(payload).sort());
-    return Buffer.from(canonical).toString('base64');
+    return calculateChecksum(payload);
   }
 
   /**
@@ -300,7 +297,7 @@ export class AgentsService {
     tenantId: string,
     tools?: unknown[],
   ): Promise<void> {
-    if (!VALIDATE_ADAPTER_REFS || !this.adaptersService || !tools?.length) {
+    if (!yoizenclawAdminServiceConfig.validateAdapterRefs || !tools?.length) {
       return;
     }
 

@@ -7,35 +7,37 @@ import {
   Body,
   Param,
   Query,
-  Headers,
+  UseGuards,
   HttpCode,
   HttpStatus,
-} from '@nestjs/common';
-import { TENANT_HEADER } from '@yoizen/shared';
-import { JobsService } from './jobs.service';
+} from "@nestjs/common";
+import { JobsService } from "./jobs.service";
 import {
   CreateJobDto,
   UpdateJobDto,
   TriggerJobDto,
   ListJobsQueryDto,
   ListJobExecutionsQueryDto,
-} from './jobs.dto';
-import type { Job } from './jobs.repository';
-import type { JobExecution } from './job-executions.repository';
+} from "./jobs.dto";
+import type { IJob } from "./jobs.repository";
+import type { IJobExecution } from "./job-executions.repository";
+import { TenantGuard } from "../../guards/tenant.guard";
+import { TenantId } from "../../providers/tenant.decorator";
 
-@Controller('admin/jobs')
+@Controller("admin/jobs")
+@UseGuards(TenantGuard)
 export class JobsController {
   constructor(private readonly service: JobsService) {}
 
   /**
-   * Lista todos los jobs con filtros opcionales.
+   * Lists jobs with optional filters.
    * GET /admin/jobs?agent_id=xxx&is_active=true&limit=20&offset=0
    */
   @Get()
   async findAll(
-    @Headers(TENANT_HEADER) tenantId: string,
+    @TenantId() tenantId: string,
     @Query() query: ListJobsQueryDto,
-  ): Promise<{ jobs: Job[]; total: number }> {
+  ): Promise<{ jobs: IJob[]; total: number }> {
     return this.service.findAll(tenantId, {
       agent_id: query.agent_id,
       is_active: query.is_active,
@@ -45,27 +47,44 @@ export class JobsController {
   }
 
   /**
-   * Obtiene un job por su ID.
+   * Lists job executions.
+   * GET /admin/jobs/executions?job_id=xxx&status=running&limit=20&offset=0
+   */
+  @Get("executions")
+  async findAllExecutions(
+    @TenantId() tenantId: string,
+    @Query() query: ListJobExecutionsQueryDto,
+  ): Promise<{ executions: IJobExecution[]; total: number }> {
+    return this.service.findAllExecutions(tenantId, {
+      job_id: query.job_id,
+      status: query.status,
+      limit: query.limit,
+      offset: query.offset,
+    });
+  }
+
+  /**
+   * Returns a job by ID.
    * GET /admin/jobs/:id
    */
-  @Get(':id')
+  @Get(":id")
   async findById(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
-  ): Promise<Job> {
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
+  ): Promise<IJob> {
     return this.service.findById(tenantId, id);
   }
 
   /**
-   * Crea un nuevo job.
+   * Creates a job.
    * POST /admin/jobs
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(
-    @Headers(TENANT_HEADER) tenantId: string,
+    @TenantId() tenantId: string,
     @Body() dto: CreateJobDto,
-  ): Promise<Job> {
+  ): Promise<IJob> {
     return this.service.create(tenantId, {
       name: dto.name,
       agent_id: dto.agent_id,
@@ -76,98 +95,81 @@ export class JobsController {
   }
 
   /**
-   * Actualiza un job existente.
+   * Updates an existing job.
    * PUT /admin/jobs/:id
    */
-  @Put(':id')
+  @Put(":id")
   async update(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
     @Body() dto: UpdateJobDto,
-  ): Promise<Job> {
+  ): Promise<IJob> {
     return this.service.update(tenantId, id, dto);
   }
 
   /**
-   * Elimina un job.
+   * Deletes a job.
    * DELETE /admin/jobs/:id
    */
-  @Delete(':id')
+  @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
   ): Promise<void> {
     await this.service.delete(tenantId, id);
   }
 
   /**
-   * Activa un job.
+   * Enables a job.
    * POST /admin/jobs/:id/enable
    */
-  @Post(':id/enable')
+  @Post(":id/enable")
   @HttpCode(HttpStatus.OK)
   async enable(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
-  ): Promise<Job> {
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
+  ): Promise<IJob> {
     return this.service.enable(tenantId, id);
   }
 
   /**
-   * Desactiva un job.
+   * Disables a job.
    * POST /admin/jobs/:id/disable
    */
-  @Post(':id/disable')
+  @Post(":id/disable")
   @HttpCode(HttpStatus.OK)
   async disable(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
-  ): Promise<Job> {
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
+  ): Promise<IJob> {
     return this.service.disable(tenantId, id);
   }
 
   /**
-   * Ejecuta un job manualmente.
+   * Runs a job manually.
    * POST /admin/jobs/:id/run
    */
-  @Post(':id/run')
+  @Post(":id/run")
   @HttpCode(HttpStatus.CREATED)
   async run(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
-  ): Promise<JobExecution> {
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
+  ): Promise<IJobExecution> {
     return this.service.run(tenantId, id);
   }
 
   /**
-   * Trigger un job con payload personalizado.
+   * Triggers a job with a custom payload.
    * POST /admin/jobs/:id/trigger
    */
-  @Post(':id/trigger')
+  @Post(":id/trigger")
   @HttpCode(HttpStatus.CREATED)
   async trigger(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
     @Body() dto: TriggerJobDto,
-  ): Promise<JobExecution> {
+  ): Promise<IJobExecution> {
     return this.service.trigger(tenantId, id, dto.event_payload);
-  }
-
-  /**
-   * Lista las ejecuciones de jobs.
-   * GET /admin/jobs/executions?job_id=xxx&status=running&limit=20&offset=0
-   */
-  @Get('executions')
-  async findAllExecutions(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Query() query: ListJobExecutionsQueryDto,
-  ): Promise<{ executions: JobExecution[]; total: number }> {
-    return this.service.findAllExecutions(tenantId, {
-      job_id: query.job_id,
-      status: query.status,
-      limit: query.limit,
-      offset: query.offset,
-    });
   }
 }

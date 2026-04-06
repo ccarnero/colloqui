@@ -107,7 +107,6 @@ AppModule
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP server port |
 | `TENANT_SERVICE_URL` | `http://tenant-service.platform-services.svc.cluster.local` | Tenant service base URL |
-| `PLATFORM_ENVIRONMENT` | `dev` | Environment name |
 
 ### Knative
 
@@ -122,7 +121,7 @@ AppModule
 |---------|-------|
 | `bun test` | All tests |
 | `bun test test/unit` | Unit tests |
-| `bun test test/integration` | Integration tests |
+| *(none in-service)* | No `test/integration/` directory; `package.json` `test:integration` is reserved |
 
 ## Code Style and Conventions
 

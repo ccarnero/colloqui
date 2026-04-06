@@ -1,75 +1,59 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean } from "class-validator";
-
+/** Response shape for adapter list/detail (built in code, not validated by ValidationPipe). */
 export class AdapterEndpointDto {
-  @IsString()
-  @IsNotEmpty()
   id!: string;
-
-  @IsString()
-  @IsNotEmpty()
   label!: string;
-
-  @IsString()
-  @IsNotEmpty()
   path!: string;
-
-  @IsString()
-  @IsNotEmpty()
   method!: string;
 }
 
 export class AdapterSummaryDto {
-  @IsString()
-  @IsNotEmpty()
   id!: string;
-
-  @IsString()
-  @IsNotEmpty()
   name!: string;
-
-  @IsString()
-  @IsNotEmpty()
   status!: string;
-
-  @IsString()
-  @IsOptional()
   baseUrl?: string;
-
-  @IsString()
-  @IsOptional()
   authType?: string;
-
-  @IsBoolean()
-  @IsOptional()
   hasAuth?: boolean;
-
   endpoints!: AdapterEndpointDto[];
 }
 
+function mapAdapterAuthFields(raw: Record<string, unknown>): {
+  authType: string;
+  hasAuth: boolean;
+} {
+  const authType = (raw.authType as string) ?? "none";
+  const authConfig = raw.authConfig as Record<string, unknown> | undefined;
+  const hasAuth =
+    authType !== "none" &&
+    authConfig !== undefined &&
+    Object.keys(authConfig).length > 0;
+  return { authType, hasAuth };
+}
+
+function mapAdapterEndpoints(
+  raw: Record<string, unknown>,
+): Array<{
+  id: string;
+  label: string;
+  path: string;
+  method: string;
+}> {
+  return ((raw.endpoints as Array<Record<string, unknown>>) ?? []).map(
+    (ep) => ({
+      id: ep.id as string,
+      label: ep.label as string,
+      path: ep.path as string,
+      method: ep.method as string,
+    }),
+  );
+}
+
 export class AdapterDetailDto {
-  @IsString()
-  @IsNotEmpty()
   id!: string;
-
-  @IsString()
-  @IsNotEmpty()
   name!: string;
-
-  @IsString()
-  @IsNotEmpty()
   baseUrl!: string;
-
-  @IsString()
-  @IsNotEmpty()
   status!: string;
-
-  @IsString()
-  @IsNotEmpty()
   authType!: string;
-
-  @IsBoolean()
   hasAuth!: boolean;
-
   endpoints!: AdapterEndpointDto[];
 }
 
@@ -81,12 +65,7 @@ export class AdapterDetailDto {
 export function sanitizeAdapter(
   raw: Record<string, unknown>,
 ): AdapterSummaryDto {
-  const authType = (raw.authType as string) ?? "none";
-  const authConfig = raw.authConfig as Record<string, unknown> | undefined;
-  const hasAuth =
-    authType !== "none" &&
-    authConfig !== undefined &&
-    Object.keys(authConfig).length > 0;
+  const { authType, hasAuth } = mapAdapterAuthFields(raw);
 
   return {
     id: raw.id as string,
@@ -95,14 +74,7 @@ export function sanitizeAdapter(
     baseUrl: raw.baseUrl as string | undefined,
     authType,
     hasAuth,
-    endpoints: (raw.endpoints as Array<Record<string, unknown>> ?? []).map(
-      (ep) => ({
-        id: ep.id as string,
-        label: ep.label as string,
-        path: ep.path as string,
-        method: ep.method as string,
-      }),
-    ),
+    endpoints: mapAdapterEndpoints(raw),
   };
 }
 
@@ -112,12 +84,7 @@ export function sanitizeAdapter(
 export function sanitizeAdapterDetail(
   raw: Record<string, unknown>,
 ): AdapterDetailDto {
-  const authType = (raw.authType as string) ?? "none";
-  const authConfig = raw.authConfig as Record<string, unknown> | undefined;
-  const hasAuth =
-    authType !== "none" &&
-    authConfig !== undefined &&
-    Object.keys(authConfig).length > 0;
+  const { authType, hasAuth } = mapAdapterAuthFields(raw);
 
   return {
     id: raw.id as string,
@@ -126,13 +93,6 @@ export function sanitizeAdapterDetail(
     status: raw.status as string,
     authType,
     hasAuth,
-    endpoints: (raw.endpoints as Array<Record<string, unknown>> ?? []).map(
-      (ep) => ({
-        id: ep.id as string,
-        label: ep.label as string,
-        path: ep.path as string,
-        method: ep.method as string,
-      }),
-    ),
+    endpoints: mapAdapterEndpoints(raw),
   };
 }

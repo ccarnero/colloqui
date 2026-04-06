@@ -36,6 +36,7 @@ export {
   REGISTRY_KNATIVE_VERSION,
   REGISTRY_KNATIVE_SERVICES_PLURAL,
   REGISTRY_KNATIVE_REVISIONS_PLURAL,
+  REGISTRY_DEFAULT_SERVICE_PORT,
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
   WORKFLOW_HTTP_TASK_QUEUE,
   WORKFLOW_DEFAULT_TIMEOUT_MS,
@@ -68,7 +69,17 @@ export { buildYoizenClawSubject } from './constants';
 
 export { extractTenantId, validateTenantId } from './tenant.utils';
 
+export { generateId } from './id.utils';
+
+export { sleep } from './async.utils';
+
+export {
+  evictOldestIfCapacityBeforeSet,
+  evictOneOldestIfExceedsMax,
+} from './fifo-map';
+
 export type {
+  JsonValue,
   EventTransport,
   EventData,
   EventEnvelope,
@@ -147,7 +158,12 @@ export type {
 export { AdapterStatus } from './adapter.interfaces';
 export type { AdapterStatusValue } from './adapter.interfaces';
 
-export { AdapterClient } from './adapter-client';
+export { applyAdapterAuthHeadersSync } from './adapter-auth-headers';
+
+export {
+  AdapterClient,
+  createAdapterClientWithRedisAndFetch,
+} from './adapter-client';
 export type { AdapterClientOptions } from './adapter-client';
 
 export {
@@ -217,3 +233,40 @@ export {
   buildTenantStreamConfig,
   checkJetStreamCapacity,
 } from './tenant-stream.constants';
+
+export {
+  DEFAULT_LIST_LIMIT,
+  MAX_LIST_LIMIT,
+  clampListLimit,
+  clampListOffset,
+  type IPaginationQueryDto,
+} from './pagination';
+
+export { PaginatedQueryDto } from './paginated-query.dto';
+
+export {
+  VALID_ENVIRONMENTS,
+  type Environment,
+} from './platform-environment';
+
+export {
+  tenantKubernetesNamespaceName,
+  invalidPlatformEnvironmentMessage,
+} from "./tenant-namespace";
+
+export { METRICS_SCHEMA_SQL } from "./metrics-schema";
+
+export type {
+  IHealthConnectionState,
+  IHealthAggregateStatus,
+  IAuthServiceHealthResponse,
+  ICacheServiceHealthResponse,
+  IGatewayCoreHealthResponse,
+  IGatewayDownstreamHealthBody,
+  IGatewayDownstreamHealth,
+  IApiGatewayHealthResponse,
+  ITenantHealthResponse,
+  INatsPostgresHealthResponse,
+  INatsRedisHealthResponse,
+  IYoizenClawHealthResponse,
+} from './health.interfaces';

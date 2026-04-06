@@ -1,76 +1,15 @@
 import {
   IsString,
   IsNotEmpty,
-  ValidateNested,
   IsOptional,
-  IsIn,
   IsObject,
   IsArray,
   IsBoolean,
+  IsIn,
   Length,
-} from 'class-validator';
-import { Type } from 'class-transformer';
-
-export class AdapterReferenceDto {
-  @IsString()
-  @IsNotEmpty()
-  adapterId!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  endpointId!: string;
-}
-
-export class AgentToolDto {
-  @IsString()
-  @IsNotEmpty()
-  name!: string;
-
-  @IsOptional()
-  @IsString()
-  endpoint?: string;
-
-  @IsOptional()
-  @IsIn(['GET', 'POST', 'PUT', 'DELETE'])
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => AdapterReferenceDto)
-  adapterRef?: AdapterReferenceDto;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
-}
-
-/**
- * Validates that each tool in the array has exactly one of
- * `endpoint` or `adapterRef` — never both and never neither.
- *
- * Returns an array of error messages (empty when valid).
- */
-export async function validateToolSourceExclusion(
-  tools: unknown[],
-): Promise<string[]> {
-  const errors: string[] = [];
-  for (let i = 0; i < tools.length; i++) {
-    const tool = tools[i] as Record<string, unknown>;
-    const hasEndpoint = Boolean(tool.endpoint);
-    const hasAdapterRef = Boolean(tool.adapterRef);
-    if (hasEndpoint && hasAdapterRef) {
-      errors.push(
-        `Tool at index ${i}: must have either endpoint OR adapterRef, not both`,
-      );
-    }
-    if (!hasEndpoint && !hasAdapterRef) {
-      errors.push(
-        `Tool at index ${i}: must have either endpoint OR adapterRef`,
-      );
-    }
-  }
-  return errors;
-}
+} from "class-validator";
+import { Type } from "class-transformer";
+import { PaginatedQueryDto } from "@yoizen/shared";
 
 export class CreateAgentDto {
   @IsString()
@@ -131,9 +70,9 @@ export class UpdateAgentDto {
   @Type(() => Array)
   channels?: unknown[];
 
-  @IsString()
   @IsOptional()
-  status?: 'draft' | 'published' | 'archived';
+  @IsIn(["draft", "published", "archived"])
+  status?: "draft" | "published" | "archived";
 
   @IsBoolean()
   @IsOptional()
@@ -141,23 +80,15 @@ export class UpdateAgentDto {
   is_active?: boolean;
 }
 
-export class ListAgentsQueryDto {
-  @IsString()
+export class ListAgentsQueryDto extends PaginatedQueryDto {
   @IsOptional()
+  @IsIn(["draft", "published", "archived"])
   status?: string;
 
   @IsBoolean()
   @IsOptional()
   @Type(() => Boolean)
   is_active?: boolean;
-
-  @IsOptional()
-  @Type(() => Number)
-  limit?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  offset?: number;
 }
 
 export class ChatRequestDto {
@@ -176,9 +107,13 @@ export class ChatRequestDto {
   @IsArray()
   @IsOptional()
   @Type(() => Array)
-  context?: Array<{ sender: 'customer' | 'agent'; content: string }>;
+  context?: Array<{ sender: "customer" | "agent"; content: string }>;
 }
 
+/**
+ * Chat API response shape. Outgoing responses are not validated by
+ * ValidationPipe; use this class for typing and OpenAPI documentation only.
+ */
 export class ChatResponseDto {
   reply!: string;
   tool_calls?: unknown[];

@@ -6,10 +6,10 @@ import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
 
 describe("HealthController", () => {
   it("returns ok when SELECT 1 succeeds", async () => {
-    const sql = Object.assign(
-      () => Promise.resolve([]),
-      { json: (x: never) => x, unsafe: mock() },
-    ) as Sql;
+    const sql = Object.assign(() => Promise.resolve([]), {
+      json: (x: never) => x,
+      unsafe: mock(),
+    }) as Sql;
 
     const moduleRef = await Test.createTestingModule({
       controllers: [HealthController],
@@ -23,10 +23,10 @@ describe("HealthController", () => {
   });
 
   it("returns degraded when SELECT 1 fails", async () => {
-    const sql = Object.assign(
-      () => Promise.reject(new Error("econnrefused")),
-      { json: (x: never) => x, unsafe: mock() },
-    ) as Sql;
+    const sql = Object.assign(() => Promise.reject(new Error("econnrefused")), {
+      json: (x: never) => x,
+      unsafe: mock(),
+    }) as Sql;
 
     const moduleRef = await Test.createTestingModule({
       controllers: [HealthController],

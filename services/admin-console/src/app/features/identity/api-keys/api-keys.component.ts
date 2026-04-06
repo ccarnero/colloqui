@@ -1,4 +1,4 @@
-import { Component, inject } from "@angular/core";
+import { ChangeDetectionStrategy, Component, inject } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
@@ -7,7 +7,13 @@ import { StatusBadgeComponent } from "../../../shared/components/status-badge/st
 
 @Component({
   selector: "app-api-keys",
-  imports: [MatTableModule, MatButtonModule, MatIconModule, StatusBadgeComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    MatTableModule,
+    MatButtonModule,
+    MatIconModule,
+    StatusBadgeComponent,
+  ],
   template: `
     <div class="ws-header">
       <div>

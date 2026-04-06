@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { JetStreamClient, JetStreamManager } from "nats";
 import { headers as natsHeaders } from "nats";
 import type {
@@ -7,32 +7,35 @@ import type {
   OutboundMessage,
   SendMessageResult,
 } from "@yoizen/shared";
-import {
-  TENANT_HEADER,
-  buildChannelSubject,
-  getTenantStreamName,
-  getTenantSubjectPattern,
-} from "@yoizen/shared";
+import { TENANT_HEADER, buildChannelSubject } from "@yoizen/shared";
 import {
   JETSTREAM_PUBLISHER,
   JETSTREAM_MANAGER,
-  ensureIngressStream,
+  ensureTenantIngressStream,
 } from "../../providers/nats.provider";
+import { PinoLoggerService } from "@yoizen/observability";
 import { ChannelRouter } from "../../providers/channel-router";
 import { AccountsService } from "../accounts/accounts.service";
 import {
   egressMessagesSent,
   egressSendFailures,
   egressSendDuration,
-  egressShadowPublishFailures,
 } from "./egress.metrics";
+import { UTF8_TEXT_ENCODER } from "../../common/utf8-text-encoder";
 
-const encoder = new TextEncoder();
-const ensuredStreams = new Set<string>();
+/** Options for shadow-publishing a sent event to JetStream. */
+interface IShadowPublishOptions {
+  tenantId: string;
+  channel: Channel;
+  channelProvider: ChannelProvider;
+  accountId: string;
+  message: OutboundMessage;
+  result: SendMessageResult;
+}
 
 @Injectable()
 export class EgressService {
-  private readonly logger = new Logger(EgressService.name);
+  private readonly logger = new PinoLoggerService(EgressService.name);
 
   constructor(
     @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
@@ -65,14 +68,14 @@ export class EgressService {
 
     if (result.success) {
       egressMessagesSent.add(1, attrs);
-      await this.shadowPublish(
+      await this.shadowPublish({
         tenantId,
-        account.channel,
-        account.provider,
+        channel: account.channel,
+        channelProvider: account.provider,
         accountId,
         message,
         result,
-      );
+      });
     } else {
       egressSendFailures.add(1, attrs);
     }
@@ -80,16 +83,17 @@ export class EgressService {
     return result;
   }
 
-  private async shadowPublish(
-    tenantId: string,
-    channel: Channel,
-    channelProvider: ChannelProvider,
-    accountId: string,
-    message: OutboundMessage,
-    result: SendMessageResult,
-  ): Promise<void> {
+  private async shadowPublish(options: IShadowPublishOptions): Promise<void> {
+    const {
+      tenantId,
+      channel,
+      channelProvider,
+      accountId,
+      message,
+      result,
+    } = options;
     try {
-      await this.ensureStream(tenantId);
+      await ensureTenantIngressStream(this.jsm, tenantId);
 
       const subject = buildChannelSubject(
         tenantId,
@@ -123,11 +127,9 @@ export class EgressService {
       hdrs.set(TENANT_HEADER, tenantId);
       hdrs.set("Nats-Msg-Id", envelope.idempotencyKey);
 
-      await this.js.publish(
-        subject,
-        encoder.encode(JSON.stringify(envelope)),
-        { headers: hdrs },
-      );
+      await this.js.publish(subject, UTF8_TEXT_ENCODER.encode(JSON.stringify(envelope)), {
+        headers: hdrs,
+      });
     } catch (err) {
       this.logger.warn(
         `Shadow publish failed: ${err instanceof Error ? err.message : err}`,
@@ -135,12 +137,4 @@ export class EgressService {
     }
   }
 
-  private async ensureStream(tenantId: string): Promise<void> {
-    const streamName = getTenantStreamName(tenantId);
-    if (ensuredStreams.has(streamName)) return;
-
-    const subjects = [getTenantSubjectPattern(tenantId)];
-    await ensureIngressStream(this.jsm, streamName, subjects);
-    ensuredStreams.add(streamName);
-  }
 }

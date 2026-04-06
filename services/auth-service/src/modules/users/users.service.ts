@@ -1,78 +1,72 @@
 import {
   ConflictException,
-  Inject,
   Injectable,
-  Logger,
   OnModuleInit,
-} from '@nestjs/common';
-import { POSTGRES_SQL, type Sql } from '../../providers/postgres.provider';
-import { ARGON2_OPTIONS } from '../../utils/password';
-
-export interface UserRow {
-  id: string;
-  email: string;
-  role: string;
-  is_active: boolean;
-  created_at: Date;
-  updated_at: Date;
-}
+} from "@nestjs/common";
+import { PinoLoggerService } from "@yoizen/observability";
+import { authServiceConfig } from "../../config";
+import { hashSecret } from "../../utils/password";
+import { UsersRepository, type IUserRow } from "./users.repository";
 
 @Injectable()
 export class UsersService implements OnModuleInit {
-  private readonly logger = new Logger(UsersService.name);
+  private readonly logger = new PinoLoggerService(UsersService.name);
 
-  constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
+  constructor(private readonly usersRepository: UsersRepository) {}
 
   async onModuleInit(): Promise<void> {
     await this.seedAdmin();
   }
 
+  /**
+   * Registers a platform user with a hashed password.
+   *
+   * @param email - Unique login email.
+   * @param password - Plain password (hashed before storage).
+   * @param role - Application role string.
+   * @returns Created user row without `is_active`.
+   */
   async create(
     email: string,
     password: string,
     role: string,
-  ): Promise<Omit<UserRow, 'is_active'>> {
-    const existing = await this.sql`
-      SELECT id FROM platform_users WHERE email = ${email} LIMIT 1
-    `;
+  ): Promise<Omit<IUserRow, "is_active">> {
+    const existing = await this.usersRepository.findByEmail(email);
     if (existing.length > 0) {
       throw new ConflictException(`User with email '${email}' already exists`);
     }
 
     const id = crypto.randomUUID();
-    const passwordHash = await Bun.password.hash(password, ARGON2_OPTIONS);
+    const passwordHash = await hashSecret(password);
 
-    const rows = await this.sql`
-      INSERT INTO platform_users (id, email, password_hash, role)
-      VALUES (${id}, ${email}, ${passwordHash}, ${role})
-      RETURNING id, email, role, created_at, updated_at
-    `;
+    const rows = await this.usersRepository.insertUser({
+      id,
+      email,
+      passwordHash,
+      role,
+    });
 
     this.logger.log(`Created user ${email} with role ${role}`);
-    return rows[0] as Omit<UserRow, 'is_active'>;
+    return rows[0] as Omit<IUserRow, "is_active">;
   }
 
-  async list(): Promise<Omit<UserRow, 'is_active'>[]> {
-    const rows = await this.sql`
-      SELECT id, email, role, created_at, updated_at
-      FROM platform_users
-      WHERE is_active = true
-      ORDER BY created_at DESC
-    `;
-    return rows as unknown as Omit<UserRow, 'is_active'>[];
+  /**
+   * @returns All active platform users (password hashes omitted by repository shape).
+   */
+  async list(): Promise<Omit<IUserRow, "is_active">[]> {
+    const rows = await this.usersRepository.listActive();
+    return rows as unknown as Omit<IUserRow, "is_active">[];
   }
 
   private async seedAdmin(): Promise<void> {
-    const email = process.env.ADMIN_EMAIL;
-    const password = process.env.ADMIN_PASSWORD;
+    const email = authServiceConfig.adminEmail;
+    const password = authServiceConfig.adminPassword;
     if (!email || !password) return;
 
-    const existing = await this.sql`
-      SELECT id FROM platform_users WHERE role = 'admin' LIMIT 1
-    `;
+    const existing = await this.usersRepository.findAdmin();
     if (existing.length > 0) return;
 
-    await this.create(email, password, 'admin');
+    await this.create(email, password, "admin");
     this.logger.log(`Seeded admin user: ${email}`);
   }
 }

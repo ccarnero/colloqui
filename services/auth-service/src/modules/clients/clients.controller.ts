@@ -1,9 +1,17 @@
-import { Body, Controller, Delete, Get, Headers, Param, Post } from '@nestjs/common';
-import { ClientsService } from './clients.service';
-import { CreateClientDto } from './client.dto';
-import { TENANT_HEADER } from '@yoizen/shared';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  Param,
+  Post,
+} from "@nestjs/common";
+import { ClientsService } from "./clients.service";
+import { CreateClientDto } from "./client.dto";
+import { TENANT_HEADER } from "@yoizen/shared";
 
-@Controller('auth/clients')
+@Controller("auth/clients")
 export class ClientsController {
   constructor(private readonly clientsService: ClientsService) {}
 
@@ -17,8 +25,8 @@ export class ClientsController {
     return this.clientsService.list(tenantId);
   }
 
-  @Delete(':id')
-  async revoke(@Param('id') id: string) {
+  @Delete(":id")
+  async revoke(@Param("id") id: string) {
     await this.clientsService.revoke(id);
     return { deleted: true };
   }

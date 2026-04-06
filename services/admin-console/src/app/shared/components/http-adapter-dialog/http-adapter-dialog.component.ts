@@ -1,4 +1,10 @@
-import { Component, computed, inject, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  signal,
+} from "@angular/core";
 import {
   FormArray,
   FormBuilder,
@@ -18,10 +24,10 @@ import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
 import {
   type AuthType,
-  type HttpAdapter,
-  type HttpAdapterContext,
-  type HttpAdapterDialogData,
-  type HttpAdapterDialogResult,
+  type IHttpAdapter,
+  type IHttpAdapterContext,
+  type IHttpAdapterDialogData,
+  type IHttpAdapterDialogResult,
   type HttpMethod,
 } from "../../models/http-adapter.model";
 import { AdapterAuthConfigComponent } from "./adapter-auth-config.component";
@@ -30,6 +36,7 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
 @Component({
   selector: "app-http-adapter-dialog",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
     MatDialogModule,
@@ -214,16 +221,16 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
 export class HttpAdapterDialogComponent {
   private readonly fb = inject(FormBuilder);
   readonly dialogRef = inject(
-    MatDialogRef<HttpAdapterDialogComponent, HttpAdapterDialogResult>,
+    MatDialogRef<HttpAdapterDialogComponent, IHttpAdapterDialogResult>,
   );
-  readonly data = inject<HttpAdapterDialogData>(MAT_DIALOG_DATA);
+  readonly data = inject<IHttpAdapterDialogData>(MAT_DIALOG_DATA);
 
   readonly form = this.buildForm();
 
   readonly showContextSelector =
     this.data.mode === "create" && !this.data.context;
 
-  readonly contextSignal = signal<HttpAdapterContext>(
+  readonly contextSignal = signal<IHttpAdapterContext>(
     this.data.context ?? "internal",
   );
 
@@ -280,7 +287,7 @@ export class HttpAdapterDialogComponent {
 
     const v = this.form.getRawValue();
     const authTypeVal = v.auth.type ?? "none";
-    const adapter: HttpAdapter = {
+    const adapter: IHttpAdapter = {
       name: v.name ?? "",
       baseUrl: v.baseUrl ?? "",
       auth: {
@@ -354,8 +361,14 @@ export class HttpAdapterDialogComponent {
           }),
         ),
       ),
-      timeoutMs: [a?.timeoutMs ?? 5000, [Validators.required, Validators.min(0)]],
-      maxRetries: [a?.maxRetries ?? 3, [Validators.required, Validators.min(0)]],
+      timeoutMs: [
+        a?.timeoutMs ?? 5000,
+        [Validators.required, Validators.min(0)],
+      ],
+      maxRetries: [
+        a?.maxRetries ?? 3,
+        [Validators.required, Validators.min(0)],
+      ],
       retryBackoffMs: [
         a?.retryBackoffMs ?? 1000,
         [Validators.required, Validators.min(0)],

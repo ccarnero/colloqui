@@ -1,4 +1,4 @@
-import { computed, inject, Injectable, signal } from "@angular/core";
+import { computed, Injectable, signal } from "@angular/core";
 import { HttpClient } from "@angular/common/http";
 import { Router } from "@angular/router";
 import type { Observable } from "rxjs";
@@ -12,10 +12,17 @@ import { decodeJwtPayload, extractInitials, formatRole } from "./auth-utils";
  */
 @Injectable()
 export abstract class BaseAuthService implements IAuthContext {
-  private readonly http = inject(HttpClient);
-  private readonly router = inject(Router);
-
   readonly token = signal<string | null>(null);
+
+  /**
+   * Constructor-injected `HttpClient` / `Router` so Angular 21+ resolves them
+   * in DI context (Vitest/ng test). `injector.get(HttpClient)` triggers NG0203
+   * with HttpClient’s factory.
+   */
+  protected constructor(
+    protected readonly http: HttpClient,
+    protected readonly router: Router,
+  ) {}
 
   /**
    * Call from the concrete service constructor after `super()` to hydrate the token

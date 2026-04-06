@@ -1,6 +1,6 @@
-import { Global, Module } from '@nestjs/common';
-import { POSTGRES_SQL, postgresProvider } from './postgres.provider';
-import { REDIS_CLIENT, redisProvider } from './redis.provider';
+import { Global, Module } from "@nestjs/common";
+import { REDIS_CLIENT, redisProvider } from "@yoizen/database";
+import { POSTGRES_SQL, postgresProvider } from "./postgres.provider";
 
 @Global()
 @Module({

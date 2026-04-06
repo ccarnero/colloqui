@@ -1,4 +1,5 @@
 import { PostgresModule as BasePostgresModule } from "@yoizen/database";
+import { channelServiceConfig } from "../config";
 
 export { POSTGRES_SQL } from "@yoizen/database";
 
@@ -44,32 +45,6 @@ BEGIN
 EXCEPTION WHEN others THEN NULL;
 END $$;
 
-CREATE TABLE IF NOT EXISTS channel_messages (
-  id                  TEXT        PRIMARY KEY,
-  tenant_id           TEXT        NOT NULL,
-  account_id          TEXT        NOT NULL REFERENCES channel_accounts(id) ON DELETE CASCADE,
-  channel             TEXT        NOT NULL,
-  provider            TEXT        NOT NULL DEFAULT 'meta',
-  direction           TEXT        NOT NULL CHECK (direction IN ('inbound', 'outbound')),
-  provider_message_id TEXT,
-  contact_id          TEXT        NOT NULL,
-  message_type        TEXT        NOT NULL,
-  content             JSONB       NOT NULL DEFAULT '{}',
-  status              TEXT        NOT NULL DEFAULT 'received',
-  raw_payload         JSONB,
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(tenant_id, provider_message_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_channel_messages_tenant
-  ON channel_messages (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_channel_messages_account
-  ON channel_messages (account_id);
-CREATE INDEX IF NOT EXISTS idx_channel_messages_contact
-  ON channel_messages (tenant_id, contact_id);
-CREATE INDEX IF NOT EXISTS idx_channel_messages_created
-  ON channel_messages (tenant_id, created_at DESC);
-
 CREATE TABLE IF NOT EXISTS auto_reply_rules (
   id              TEXT        PRIMARY KEY,
   tenant_id       TEXT        NOT NULL,
@@ -89,7 +64,6 @@ CREATE INDEX IF NOT EXISTS idx_auto_reply_rules_tenant
 `;
 
 export const PostgresModule = BasePostgresModule.register({
-  defaultHost:
-    "postgres.support-services-dev.svc.cluster.local",
+  defaultHost: channelServiceConfig.defaultPostgresHost,
   schemaSql: [SCHEMA_SQL],
 });

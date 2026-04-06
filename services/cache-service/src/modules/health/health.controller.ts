@@ -1,6 +1,7 @@
-import { Controller, Get, Inject } from '@nestjs/common';
-import type Redis from 'ioredis';
-import { REDIS_CLIENT } from '../../providers/redis.provider';
+import { Controller, Get, Inject } from "@nestjs/common";
+import type Redis from "ioredis";
+import { checkRedis, REDIS_CLIENT } from "@yoizen/database";
+import type { ICacheServiceHealthResponse } from "@yoizen/shared";
 
 @Controller()
 export class HealthController {
@@ -8,17 +9,12 @@ export class HealthController {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
-  @Get('health')
-  async check(): Promise<{ status: string; redis: string }> {
-    let redisOk = false;
-    try {
-      redisOk = (await this.redis.ping()) === 'PONG';
-    } catch {
-      redisOk = false;
-    }
+  @Get("health")
+  async check(): Promise<ICacheServiceHealthResponse> {
+    const redisOk = await checkRedis(this.redis);
     return {
-      status: redisOk ? 'ok' : 'degraded',
-      redis: redisOk ? 'connected' : 'disconnected',
+      status: redisOk ? "ok" : "degraded",
+      redis: redisOk ? "connected" : "disconnected",
     };
   }
 }

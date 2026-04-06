@@ -1,5 +1,8 @@
 import type { FactoryProvider } from "@nestjs/common";
-import { createPostgresProvider } from "@yoizen/database";
+import {
+  createPostgresProvider,
+  PLATFORM_POSTGRES_POOL_OPTIONS,
+} from "@yoizen/database";
 import type postgres from "postgres";
 
 export { POSTGRES_SQL } from "@yoizen/database";
@@ -16,8 +19,6 @@ export type TxSql = {
   ): postgres.PendingQuery<T>;
 };
 
-export const postgresProvider: FactoryProvider = createPostgresProvider({
-  max: 20,
-  connectTimeout: 30,
-  prepare: true,
-});
+export const postgresProvider: FactoryProvider = createPostgresProvider(
+  PLATFORM_POSTGRES_POOL_OPTIONS,
+);

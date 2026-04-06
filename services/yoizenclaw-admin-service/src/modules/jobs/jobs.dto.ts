@@ -5,9 +5,11 @@ import {
   IsObject,
   IsBoolean,
   IsUUID,
+  IsIn,
   Length,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+} from "class-validator";
+import { Type } from "class-transformer";
+import { PaginatedQueryDto } from "@yoizen/shared";
 
 export class CreateJobDto {
   @IsString()
@@ -68,7 +70,7 @@ export class TriggerJobDto {
   event_payload?: Record<string, unknown>;
 }
 
-export class ListJobsQueryDto {
+export class ListJobsQueryDto extends PaginatedQueryDto {
   @IsUUID()
   @IsOptional()
   agent_id?: string;
@@ -77,30 +79,14 @@ export class ListJobsQueryDto {
   @IsOptional()
   @Type(() => Boolean)
   is_active?: boolean;
-
-  @IsOptional()
-  @Type(() => Number)
-  limit?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  offset?: number;
 }
 
-export class ListJobExecutionsQueryDto {
+export class ListJobExecutionsQueryDto extends PaginatedQueryDto {
   @IsUUID()
   @IsOptional()
   job_id?: string;
 
-  @IsString()
   @IsOptional()
+  @IsIn(["pending", "running", "completed", "failed"])
   status?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  limit?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  offset?: number;
 }

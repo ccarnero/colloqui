@@ -1,70 +1,145 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { describe, it, expect, afterEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { ConflictException } from "@nestjs/common";
+import { UsersRepository } from "../../src/modules/users/users.repository";
 import { UsersService } from "../../src/modules/users/users.service";
 import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
-
-function createMockSql() {
-  const fn = mock((..._args: unknown[]) => Promise.resolve([]));
-  return fn as unknown as ReturnType<typeof import("postgres")>;
-}
+import type { Sql } from "../../src/providers/postgres.provider";
 
 describe("UsersService", () => {
   let service: UsersService;
-  let sql: ReturnType<typeof createMockSql>;
 
-  beforeEach(async () => {
+  afterEach(() => {
     delete process.env.ADMIN_EMAIL;
     delete process.env.ADMIN_PASSWORD;
+  });
 
-    sql = createMockSql();
+  it("onModuleInit skips admin seed when ADMIN_EMAIL is unset", async () => {
+    const mockSql = Object.assign(
+      () => Promise.resolve([]),
+      {},
+    ) as unknown as Sql;
 
-    const module = await Test.createTestingModule({
+    const moduleRef = await Test.createTestingModule({
       providers: [
+        UsersRepository,
         UsersService,
-        { provide: POSTGRES_SQL, useValue: sql },
+        { provide: POSTGRES_SQL, useValue: mockSql },
       ],
     }).compile();
 
-    service = module.get(UsersService);
+    service = moduleRef.get(UsersService);
+    await expect(service.onModuleInit()).resolves.toBeUndefined();
   });
 
-  describe("create", () => {
-    it("should throw ConflictException if email already exists", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
-        { id: "existing-id" },
-      ]);
-      await expect(
-        service.create("dup@test.com", "password123", "admin"),
-      ).rejects.toBeInstanceOf(ConflictException);
-    });
+  it("onModuleInit skips create when an admin already exists", async () => {
+    let insertCalls = 0;
+    const mockSql = Object.assign(
+      (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const q = strings.reduce(
+          (acc, s, i) => acc + s + String(values[i] ?? ""),
+          "",
+        );
+        if (q.includes("WHERE role = ") && q.includes("admin")) {
+          return Promise.resolve([{ id: "admin-1" }]);
+        }
+        if (q.includes("INSERT INTO platform_users")) {
+          insertCalls += 1;
+        }
+        return Promise.resolve([]);
+      },
+      {},
+    ) as unknown as Sql;
 
-    it("should create user and return without is_active", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
-      const created = {
-        id: "new-id",
-        email: "new@test.com",
-        role: "operator",
-        created_at: new Date(),
-        updated_at: new Date(),
-      };
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([created]);
+    process.env.ADMIN_EMAIL = "admin@example.com";
+    process.env.ADMIN_PASSWORD = "secret";
 
-      const result = await service.create("new@test.com", "password123", "operator");
-      expect(result.email).toBe("new@test.com");
-      expect(result.role).toBe("operator");
-    });
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        UsersRepository,
+        UsersService,
+        { provide: POSTGRES_SQL, useValue: mockSql },
+      ],
+    }).compile();
+
+    service = moduleRef.get(UsersService);
+    await service.onModuleInit();
+    expect(insertCalls).toBe(0);
   });
 
-  describe("list", () => {
-    it("should return list of active users", async () => {
-      const users = [
-        { id: "u1", email: "a@test.com", role: "admin", created_at: new Date(), updated_at: new Date() },
-      ];
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce(users);
-      const result = await service.list();
-      expect(result).toHaveLength(1);
-      expect(result[0].email).toBe("a@test.com");
-    });
+  it("list delegates to repository.listActive", async () => {
+    const mockRepo = {
+      findByEmail: mock(() => Promise.resolve([])),
+      findAdmin: mock(() => Promise.resolve([])),
+      listActive: mock(() =>
+        Promise.resolve([
+          {
+            id: "u1",
+            email: "a@b.com",
+            password_hash: "h",
+            role: "platform",
+            created_at: new Date(),
+            updated_at: new Date(),
+          },
+        ]),
+      ),
+      insertUser: mock(() => Promise.resolve([])),
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        { provide: UsersRepository, useValue: mockRepo },
+        UsersService,
+      ],
+    }).compile();
+    const svc = moduleRef.get(UsersService);
+    const rows = await svc.list();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.email).toBe("a@b.com");
+  });
+
+  it("create throws ConflictException when email exists", async () => {
+    const mockRepo = {
+      findByEmail: mock(() => Promise.resolve([{ id: "x" }])),
+      findAdmin: mock(() => Promise.resolve([])),
+      listActive: mock(() => Promise.resolve([])),
+      insertUser: mock(() => Promise.resolve([])),
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        { provide: UsersRepository, useValue: mockRepo },
+        UsersService,
+      ],
+    }).compile();
+    const svc = moduleRef.get(UsersService);
+    await expect(svc.create("a@b.com", "pw", "admin")).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it("create inserts when email is new", async () => {
+    const row = {
+      id: "new-id",
+      email: "new@b.com",
+      password_hash: "hash",
+      role: "editor",
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    const mockRepo = {
+      findByEmail: mock(() => Promise.resolve([])),
+      findAdmin: mock(() => Promise.resolve([])),
+      listActive: mock(() => Promise.resolve([])),
+      insertUser: mock(() => Promise.resolve([row])),
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        { provide: UsersRepository, useValue: mockRepo },
+        UsersService,
+      ],
+    }).compile();
+    const svc = moduleRef.get(UsersService);
+    const created = await svc.create("new@b.com", "secret", "editor");
+    expect(created.email).toBe("new@b.com");
+    expect(created.role).toBe("editor");
   });
 });

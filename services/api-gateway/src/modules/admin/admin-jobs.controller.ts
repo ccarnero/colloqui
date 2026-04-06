@@ -11,134 +11,162 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
-} from '@nestjs/common';
-import { AdminProxyService } from './admin-proxy.service';
-import { CreateJobDto, UpdateJobDto, TriggerJobDto } from './admin.dto';
-import type { TenantScopedRequest } from '../../types/yoizen-request';
+} from "@nestjs/common";
+import { AdminProxyService } from "./admin-proxy.service";
+import {
+  CreateJobDto,
+  UpdateJobDto,
+  TriggerJobDto,
+  AdminJobsListQueryDto,
+  AdminJobExecutionsListQueryDto,
+} from "./admin.dto";
+import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { toOptionalStringQueryParam } from "../../utils/pagination-query.util";
 
-@Controller('admin/jobs')
+@Controller("admin/jobs")
 export class AdminJobsController {
   constructor(private readonly proxy: AdminProxyService) {}
 
   @Get()
   async listJobs(
-    @Req() req: TenantScopedRequest,
-    @Query('agent_id') agentId?: string,
-    @Query('is_active') isActive?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Req() req: ITenantScopedRequest,
+    @Query() query: AdminJobsListQueryDto,
   ): Promise<object> {
-    return this.proxy.proxy('GET', '/admin/jobs', req.tenantId, {
-      agent_id: agentId,
-      is_active: isActive,
-      limit,
-      offset,
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/admin/jobs",
+      tenantId: req.tenantId,
+      query: {
+        agent_id: query.agent_id,
+        is_active: query.is_active,
+        limit: toOptionalStringQueryParam(query.limit),
+        offset: toOptionalStringQueryParam(query.offset),
+      },
     });
   }
 
-  @Get('executions')
+  @Get("executions")
   async listExecutions(
-    @Req() req: TenantScopedRequest,
-    @Query('job_id') jobId?: string,
-    @Query('status') status?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Req() req: ITenantScopedRequest,
+    @Query() query: AdminJobExecutionsListQueryDto,
   ): Promise<object> {
-    return this.proxy.proxy('GET', '/admin/jobs/executions', req.tenantId, {
-      job_id: jobId,
-      status,
-      limit,
-      offset,
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/admin/jobs/executions",
+      tenantId: req.tenantId,
+      query: {
+        job_id: query.job_id,
+        status: query.status,
+        limit: toOptionalStringQueryParam(query.limit),
+        offset: toOptionalStringQueryParam(query.offset),
+      },
     });
   }
 
-  @Get(':id')
+  @Get(":id")
   async getJob(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<object> {
-    return this.proxy.proxy('GET', `/admin/jobs/${id}`, req.tenantId);
+    return this.proxy.proxy({
+      method: "GET",
+      path: `/admin/jobs/${id}`,
+      tenantId: req.tenantId,
+    });
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createJob(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
     @Body() body: CreateJobDto,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'POST',
-      '/admin/jobs',
-      req.tenantId,
-      undefined,
+    return this.proxy.proxy({
+      method: "POST",
+      path: "/admin/jobs",
+      tenantId: req.tenantId,
       body,
-    );
+    });
   }
 
-  @Put(':id')
+  @Put(":id")
   async updateJob(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
     @Body() body: UpdateJobDto,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'PUT',
-      `/admin/jobs/${id}`,
-      req.tenantId,
-      undefined,
+    return this.proxy.proxy({
+      method: "PUT",
+      path: `/admin/jobs/${id}`,
+      tenantId: req.tenantId,
       body,
-    );
+    });
   }
 
-  @Delete(':id')
+  @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteJob(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<void> {
-    await this.proxy.proxy('DELETE', `/admin/jobs/${id}`, req.tenantId);
+    await this.proxy.proxy({
+      method: "DELETE",
+      path: `/admin/jobs/${id}`,
+      tenantId: req.tenantId,
+    });
   }
 
-  @Post(':id/enable')
+  @Post(":id/enable")
   @HttpCode(HttpStatus.OK)
   async enableJob(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<object> {
-    return this.proxy.proxy('POST', `/admin/jobs/${id}/enable`, req.tenantId);
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/admin/jobs/${id}/enable`,
+      tenantId: req.tenantId,
+    });
   }
 
-  @Post(':id/disable')
+  @Post(":id/disable")
   @HttpCode(HttpStatus.OK)
   async disableJob(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<object> {
-    return this.proxy.proxy('POST', `/admin/jobs/${id}/disable`, req.tenantId);
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/admin/jobs/${id}/disable`,
+      tenantId: req.tenantId,
+    });
   }
 
-  @Post(':id/run')
+  @Post(":id/run")
   @HttpCode(HttpStatus.CREATED)
   async runJob(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<object> {
-    return this.proxy.proxy('POST', `/admin/jobs/${id}/run`, req.tenantId);
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/admin/jobs/${id}/run`,
+      tenantId: req.tenantId,
+    });
   }
 
-  @Post(':id/trigger')
+  @Post(":id/trigger")
   @HttpCode(HttpStatus.CREATED)
   async triggerJob(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
     @Body() body: TriggerJobDto,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'POST',
-      `/admin/jobs/${id}/trigger`,
-      req.tenantId,
-      undefined,
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/admin/jobs/${id}/trigger`,
+      tenantId: req.tenantId,
       body,
-    );
+    });
   }
 }

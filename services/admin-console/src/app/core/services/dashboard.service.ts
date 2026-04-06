@@ -74,18 +74,14 @@ export class DashboardService implements OnDestroy {
     this.error.set(null);
 
     this.http
-      .get<IDashboardStats>(
-        `${environment.apiUrl}/dashboard/stats`,
-      )
+      .get<IDashboardStats>(`${environment.apiUrl}/dashboard/stats`)
       .subscribe({
         next: (data) => {
           this.stats.set(data);
           this.loading.set(false);
         },
         error: (err) => {
-          this.error.set(
-            err?.message ?? "Failed to load dashboard stats",
-          );
+          this.error.set(err?.message ?? "Failed to load dashboard stats");
           this.loading.set(false);
         },
       });

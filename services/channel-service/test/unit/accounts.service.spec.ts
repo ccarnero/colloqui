@@ -1,20 +1,11 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
+import { createQueuedSql } from "@yoizen/testing";
 import type { Sql } from "postgres";
 import { AccountsService } from "../../src/modules/accounts/accounts.service";
+import { AccountsRepository } from "../../src/modules/accounts/accounts.repository";
 import { TelegramProvider } from "../../src/providers/telegram/telegram.provider";
 import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
-
-function createQueuedSql(rowsQueue: unknown[][]) {
-  const fn = mock(() => {
-    const next = rowsQueue.shift();
-    return Promise.resolve(next ?? []);
-  });
-  return Object.assign(fn, {
-    json: (v: unknown) => v,
-    unsafe: mock(() => Promise.resolve([])),
-  }) as unknown as Sql;
-}
 
 function accountRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -46,6 +37,7 @@ describe("AccountsService", () => {
     const module = await Test.createTestingModule({
       providers: [
         AccountsService,
+        AccountsRepository,
         { provide: POSTGRES_SQL, useValue: sql },
         {
           provide: TelegramProvider,
@@ -62,7 +54,7 @@ describe("AccountsService", () => {
 
   describe("create", () => {
     it("inserts WhatsApp account without Telegram webhook", async () => {
-      const sql = createQueuedSql([[accountRow()]]);
+      const sql = createQueuedSql([[accountRow()]], mock);
       const service = await compile(sql);
       const acc = await service.create("tenant-a", {
         channel: "whatsapp",
@@ -77,16 +69,19 @@ describe("AccountsService", () => {
     });
 
     it("registers Telegram webhook for active telegram account", async () => {
-      const sql = createQueuedSql([
+      const sql = createQueuedSql(
         [
-          accountRow({
-            channel: "telegram",
-            provider: "telegram",
-            telegram_bot_token: "bot-token",
-            access_token: "bot-token",
-          }),
+          [
+            accountRow({
+              channel: "telegram",
+              provider: "telegram",
+              telegram_bot_token: "bot-token",
+              access_token: "bot-token",
+            }),
+          ],
         ],
-      ]);
+        mock,
+      );
       const service = await compile(sql);
       await service.create("tenant-a", {
         channel: "telegram",
@@ -103,7 +98,10 @@ describe("AccountsService", () => {
 
   describe("list", () => {
     it("returns accounts for tenant", async () => {
-      const sql = createQueuedSql([[accountRow(), accountRow({ id: "acc-2" })]]);
+      const sql = createQueuedSql(
+        [[accountRow(), accountRow({ id: "acc-2" })]],
+        mock,
+      );
       const service = await compile(sql);
       const list = await service.list("tenant-a");
       expect(list).toHaveLength(2);
@@ -112,14 +110,14 @@ describe("AccountsService", () => {
 
   describe("findById", () => {
     it("returns null when missing", async () => {
-      const sql = createQueuedSql([[]]);
+      const sql = createQueuedSql([[]], mock);
       const service = await compile(sql);
       const acc = await service.findById("tenant-a", "missing");
       expect(acc).toBeNull();
     });
 
     it("returns account when found", async () => {
-      const sql = createQueuedSql([[accountRow()]]);
+      const sql = createQueuedSql([[accountRow()]], mock);
       const service = await compile(sql);
       const acc = await service.findById("tenant-a", "acc-1");
       expect(acc?.id).toBe("acc-1");
@@ -138,7 +136,9 @@ describe("AccountsService", () => {
         },
       ) as unknown as Sql;
       const service = await compile(sql);
-      const acc = await service.update("tenant-a", "acc-1", { name: "Renamed" });
+      const acc = await service.update("tenant-a", "acc-1", {
+        name: "Renamed",
+      });
       expect(acc?.name).toBe("Renamed");
       expect(unsafe).toHaveBeenCalled();
     });

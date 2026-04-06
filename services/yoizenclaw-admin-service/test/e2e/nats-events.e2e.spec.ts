@@ -1,11 +1,18 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
-import { Test } from '@nestjs/testing';
-import type { INestApplication } from '@nestjs/common';
-import request from 'supertest';
-import { AppModule } from '../../src/app.module';
-import { TenantConnectionManager } from '../../src/providers/tenant-connection-manager';
-import { NatsPublisher } from '../../src/providers/nats.provider';
-import { TENANT_HEADER } from '../../src/types/yoizen-shared';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "bun:test";
+import { Test } from "@nestjs/testing";
+import type { INestApplication } from "@nestjs/common";
+import request from "supertest";
+import { AppModule } from "../../src/app.module";
+import { TenantConnectionManager } from "@yoizen/database";
+import { NatsPublisher } from "../../src/providers/nats.provider";
+import { TENANT_HEADER } from "@yoizen/shared";
 import {
   setupPostgres,
   createMockNatsPublisher,
@@ -16,35 +23,35 @@ import {
   getEventsByType,
   type TestContext,
   type TestTenant,
-} from './setup';
+} from "./setup";
 
-const AGENT_PUBLISHED_TYPE = 'io.yoizen.yoizenclaw.admin.agent.published.v1';
+const AGENT_PUBLISHED_TYPE = "io.yoizen.yoizenclaw.admin.agent.published.v1";
 const AGENT_UNPUBLISHED_TYPE =
-  'io.yoizen.yoizenclaw.admin.agent.unpublished.v1';
+  "io.yoizen.yoizenclaw.admin.agent.unpublished.v1";
 const CREDENTIAL_ROTATED_TYPE =
-  'io.yoizen.yoizenclaw.admin.credential.rotated.v1';
+  "io.yoizen.yoizenclaw.admin.credential.rotated.v1";
 const RUNTIME_CONFIG_SYNC_TYPE =
-  'io.yoizen.yoizenclaw.runtime.config.synced.v1';
-const JOB_TRIGGER_TYPE = 'io.yoizen.yoizenclaw.admin.job.triggered.v1';
+  "io.yoizen.yoizenclaw.runtime.config.synced.v1";
+const JOB_TRIGGER_TYPE = "io.yoizen.yoizenclaw.admin.job.triggered.v1";
 const AGENT_PUBLISHED_SUBJECT =
-  'evt.nats-events-tenant.yoizenclaw-admin-service.automation.yoizenclaw.internal.agent_published.v1';
+  "evt.nats-events-tenant.yoizenclaw-admin-service.automation.yoizenclaw.internal.agent_published.v1";
 
-describe('NATS Events E2E Tests', () => {
+describe("NATS Events E2E Tests", () => {
   let app: INestApplication;
   let context: TestContext;
   let tenant: TestTenant;
 
   beforeAll(async () => {
     context = await setupPostgres();
-    tenant = await createTestTenant(context, 'nats-events-tenant');
+    tenant = await createTestTenant(context, "nats-events-tenant");
 
     const mockNatsPublisher = createMockNatsPublisher(context);
 
     const mockConnectionManager = {
       getConnection: () => tenant.sql,
       ensureSchema: async () => {},
-      isSchemaInitialized: () => true,
-      markSchemaInitialized: () => {},
+      isInitialized: () => true,
+      markInitialized: () => {},
       closeAll: async () => {},
       onModuleDestroy: async () => {},
     };
@@ -76,8 +83,8 @@ describe('NATS Events E2E Tests', () => {
     clearNatsEvents(context);
   });
 
-  describe('Event Structure Validation', () => {
-    it('should emit event with correct structure on agent publish', async () => {
+  describe("Event Structure Validation", () => {
+    it("should emit event with correct structure on agent publish", async () => {
       const [agent] = await tenant.sql`
         INSERT INTO agents (name, system_prompt, status)
         VALUES ('Event Test Agent', 'Prompt', 'draft')
@@ -89,33 +96,33 @@ describe('NATS Events E2E Tests', () => {
         .set(TENANT_HEADER, tenant.id)
         .expect(200);
 
-      const event = getLastEventByType(context, 'agent.published');
+      const event = getLastEventByType(context, "agent.published");
       expect(event).toBeDefined();
 
       // Verificar estructura del evento
-      expect(event).toHaveProperty('specversion');
-      expect(event).toHaveProperty('source');
-      expect(event).toHaveProperty('subject');
-      expect(event).toHaveProperty('type');
-      expect(event).toHaveProperty('resource');
-      expect(event).toHaveProperty('traceid');
-      expect(event).toHaveProperty('correlation_id');
-      expect(event).toHaveProperty('tenant');
-      expect(event).toHaveProperty('producer');
-      expect(event).toHaveProperty('data');
+      expect(event).toHaveProperty("specversion");
+      expect(event).toHaveProperty("source");
+      expect(event).toHaveProperty("subject");
+      expect(event).toHaveProperty("type");
+      expect(event).toHaveProperty("resource");
+      expect(event).toHaveProperty("traceid");
+      expect(event).toHaveProperty("correlation_id");
+      expect(event).toHaveProperty("tenant");
+      expect(event).toHaveProperty("producer");
+      expect(event).toHaveProperty("data");
 
       // Verificar campos requeridos en payload
-      expect(event!.data.payload).toHaveProperty('agentId');
-      expect(event!.data.payload).toHaveProperty('name');
-      expect(event!.data.payload).toHaveProperty('publishedAt');
-      expect(event!.data.payload).toHaveProperty('status');
+      expect(event!.data.payload).toHaveProperty("agentId");
+      expect(event!.data.payload).toHaveProperty("name");
+      expect(event!.data.payload).toHaveProperty("publishedAt");
+      expect(event!.data.payload).toHaveProperty("status");
 
       // Verificar envelope
-      expect(event!.specversion).toBe('1.0');
+      expect(event!.specversion).toBe("1.0");
       expect(event!.tenant).toBe(tenant.id);
-      expect(event!.producer).toBe('yoizenclaw-admin-service');
+      expect(event!.producer).toBe("yoizenclaw-admin-service");
       expect(event!.source).toBe(
-        '//yoizenclaw-admin-service/admin/agents/publish',
+        "//yoizenclaw-admin-service/admin/agents/publish",
       );
       expect(event!.data.payload_inline).toBe(true);
       expect(event!.data.payload_ref).toBeNull();
@@ -126,12 +133,12 @@ describe('NATS Events E2E Tests', () => {
       expect(event!.data.payload?.agentId).toBe(agent.id);
       expect(event!.metadata.tenantId).toBe(tenant.id);
       expect(event!.metadata.source).toBe(
-        '//yoizenclaw-admin-service/admin/agents/publish',
+        "//yoizenclaw-admin-service/admin/agents/publish",
       );
-      expect(typeof event!.metadata.timestamp).toBe('number');
+      expect(typeof event!.metadata.timestamp).toBe("number");
     });
 
-    it('should emit event with correct structure on agent unpublish', async () => {
+    it("should emit event with correct structure on agent unpublish", async () => {
       const [agent] = await tenant.sql`
         INSERT INTO agents (name, system_prompt, status, published_at)
         VALUES ('Unpublish Test Agent', 'Prompt', 'published', NOW())
@@ -143,26 +150,26 @@ describe('NATS Events E2E Tests', () => {
         .set(TENANT_HEADER, tenant.id)
         .expect(200);
 
-      const event = getLastEventByType(context, 'agent.unpublished');
+      const event = getLastEventByType(context, "agent.unpublished");
       expect(event).toBeDefined();
 
       // Verificar estructura
-      expect(event!.payload).toHaveProperty('agentId');
-      expect(event!.payload).toHaveProperty('name');
-      expect(event!.payload).toHaveProperty('unpublishedAt');
-      expect(event!.payload).toHaveProperty('status');
+      expect(event!.payload).toHaveProperty("agentId");
+      expect(event!.payload).toHaveProperty("name");
+      expect(event!.payload).toHaveProperty("unpublishedAt");
+      expect(event!.payload).toHaveProperty("status");
 
-      expect(event!.metadata).toHaveProperty('tenantId');
-      expect(event!.metadata).toHaveProperty('timestamp');
-      expect(event!.metadata).toHaveProperty('source');
+      expect(event!.metadata).toHaveProperty("tenantId");
+      expect(event!.metadata).toHaveProperty("timestamp");
+      expect(event!.metadata).toHaveProperty("source");
 
       expect(event!.type).toBe(AGENT_UNPUBLISHED_TYPE);
       expect(event!.metadata.tenantId).toBe(tenant.id);
     });
   });
 
-  describe('Agent Publish/Unpublish Events', () => {
-    it('should emit agent.published event when publishing agent', async () => {
+  describe("Agent Publish/Unpublish Events", () => {
+    it("should emit agent.published event when publishing agent", async () => {
       const [agent] = await tenant.sql`
         INSERT INTO agents (name, system_prompt, status)
         VALUES ('Publish Event Agent', 'Prompt', 'draft')
@@ -174,15 +181,15 @@ describe('NATS Events E2E Tests', () => {
         .set(TENANT_HEADER, tenant.id)
         .expect(200);
 
-      const event = getLastEventByType(context, 'agent.published');
+      const event = getLastEventByType(context, "agent.published");
       expect(event).toBeDefined();
       expect(event!.type).toBe(AGENT_PUBLISHED_TYPE);
       expect(event!.payload.agentId).toBe(agent.id);
-      expect(event!.payload.name).toBe('Publish Event Agent');
-      expect(event!.payload.status).toBe('published');
+      expect(event!.payload.name).toBe("Publish Event Agent");
+      expect(event!.payload.status).toBe("published");
     });
 
-    it('should emit agent.unpublished event when unpublishing agent', async () => {
+    it("should emit agent.unpublished event when unpublishing agent", async () => {
       const [agent] = await tenant.sql`
         INSERT INTO agents (name, system_prompt, status, published_at)
         VALUES ('Unpublish Event Agent', 'Prompt', 'published', NOW())
@@ -194,14 +201,14 @@ describe('NATS Events E2E Tests', () => {
         .set(TENANT_HEADER, tenant.id)
         .expect(200);
 
-      const event = getLastEventByType(context, 'agent.unpublished');
+      const event = getLastEventByType(context, "agent.unpublished");
       expect(event).toBeDefined();
       expect(event!.type).toBe(AGENT_UNPUBLISHED_TYPE);
       expect(event!.payload.agentId).toBe(agent.id);
-      expect(event!.payload.status).toBe('draft');
+      expect(event!.payload.status).toBe("draft");
     });
 
-    it('should emit both events for publish-unpublish cycle', async () => {
+    it("should emit both events for publish-unpublish cycle", async () => {
       const [agent] = await tenant.sql`
         INSERT INTO agents (name, system_prompt, status)
         VALUES ('Cycle Agent', 'Prompt', 'draft')
@@ -220,8 +227,8 @@ describe('NATS Events E2E Tests', () => {
         .set(TENANT_HEADER, tenant.id)
         .expect(200);
 
-      const publishEvents = getEventsByType(context, 'agent.published');
-      const unpublishEvents = getEventsByType(context, 'agent.unpublished');
+      const publishEvents = getEventsByType(context, "agent.published");
+      const unpublishEvents = getEventsByType(context, "agent.unpublished");
 
       expect(publishEvents.length).toBe(1);
       expect(unpublishEvents.length).toBe(1);
@@ -231,8 +238,8 @@ describe('NATS Events E2E Tests', () => {
     });
   });
 
-  describe('Credential Rotated Events', () => {
-    it('should emit credential.rotated event when rotating credential', async () => {
+  describe("Credential Rotated Events", () => {
+    it("should emit credential.rotated event when rotating credential", async () => {
       const [credential] = await tenant.sql`
         INSERT INTO credentials (name, type, value)
         VALUES ('Rotatable Credential', 'api_key', 'old-value')
@@ -243,20 +250,20 @@ describe('NATS Events E2E Tests', () => {
         .put(`/admin/credentials/${credential.id}/rotate`)
         .set(TENANT_HEADER, tenant.id)
         .send({
-          new_value: 'new-rotated-value',
+          new_value: "new-rotated-value",
         })
         .expect(200);
 
-      const event = getLastEventByType(context, 'credential.rotated');
+      const event = getLastEventByType(context, "credential.rotated");
       expect(event).toBeDefined();
       expect(event!.type).toBe(CREDENTIAL_ROTATED_TYPE);
       expect(event!.payload.credentialId).toBe(credential.id);
-      expect(event!.payload.type).toBe('api_key');
-      expect(event!.payload).toHaveProperty('rotatedAt');
+      expect(event!.payload.type).toBe("api_key");
+      expect(event!.payload).toHaveProperty("rotatedAt");
       expect(event!.metadata.tenantId).toBe(tenant.id);
     });
 
-    it('should emit credential.rotated event when updating credential value', async () => {
+    it("should emit credential.rotated event when updating credential value", async () => {
       const [credential] = await tenant.sql`
         INSERT INTO credentials (name, type, value)
         VALUES ('Updatable Credential', 'oauth', 'original-token')
@@ -267,18 +274,18 @@ describe('NATS Events E2E Tests', () => {
         .put(`/admin/credentials/${credential.id}`)
         .set(TENANT_HEADER, tenant.id)
         .send({
-          value: 'updated-token-value',
+          value: "updated-token-value",
         })
         .expect(200);
 
-      const event = getLastEventByType(context, 'credential.rotated');
+      const event = getLastEventByType(context, "credential.rotated");
       expect(event).toBeDefined();
       expect(event!.type).toBe(CREDENTIAL_ROTATED_TYPE);
     });
   });
 
-  describe('Runtime Config Sync Events', () => {
-    it('should emit runtime.config.sync event when deploying config files', async () => {
+  describe("Runtime Config Sync Events", () => {
+    it("should emit runtime.config.sync event when deploying config files", async () => {
       // Crear algunos config files
       await tenant.sql`
         INSERT INTO config_files (name, path, content, format)
@@ -288,24 +295,24 @@ describe('NATS Events E2E Tests', () => {
       `;
 
       await request(app.getHttpServer())
-        .post('/admin/config-files/deploy')
+        .post("/admin/config-files/deploy")
         .set(TENANT_HEADER, tenant.id)
         .send({})
         .expect(200);
 
-      const event = getLastEventByType(context, 'runtime.config.sync');
+      const event = getLastEventByType(context, "runtime.config.sync");
       expect(event).toBeDefined();
       expect(event!.type).toBe(RUNTIME_CONFIG_SYNC_TYPE);
-      expect(event!.payload).toHaveProperty('files');
-      expect(event!.payload).toHaveProperty('deletePaths');
-      expect(event!.payload).toHaveProperty('syncedAt');
+      expect(event!.payload).toHaveProperty("files");
+      expect(event!.payload).toHaveProperty("deletePaths");
+      expect(event!.payload).toHaveProperty("syncedAt");
       expect(Array.isArray(event!.payload.files)).toBe(true);
       expect(event!.metadata.tenantId).toBe(tenant.id);
     });
   });
 
-  describe('Job Trigger Events', () => {
-    it('should emit job.trigger event when triggering job', async () => {
+  describe("Job Trigger Events", () => {
+    it("should emit job.trigger event when triggering job", async () => {
       // Crear agent primero
       const [agent] = await tenant.sql`
         INSERT INTO agents (name, system_prompt, status)
@@ -320,7 +327,7 @@ describe('NATS Events E2E Tests', () => {
         RETURNING id;
       `;
 
-      const triggerPayload = { customData: 'test-value', priority: 1 };
+      const triggerPayload = { customData: "test-value", priority: 1 };
 
       await request(app.getHttpServer())
         .post(`/admin/jobs/${job.id}/trigger`)
@@ -330,17 +337,17 @@ describe('NATS Events E2E Tests', () => {
         })
         .expect(201);
 
-      const event = getLastEventByType(context, 'job.trigger');
+      const event = getLastEventByType(context, "job.trigger");
       expect(event).toBeDefined();
       expect(event!.type).toBe(JOB_TRIGGER_TYPE);
       expect(event!.payload.jobId).toBe(job.id);
-      expect(event!.payload).toHaveProperty('executionId');
+      expect(event!.payload).toHaveProperty("executionId");
       expect(event!.payload.eventPayload).toEqual(triggerPayload);
-      expect(event!.payload).toHaveProperty('triggeredAt');
+      expect(event!.payload).toHaveProperty("triggeredAt");
       expect(event!.metadata.tenantId).toBe(tenant.id);
     });
 
-    it('should emit job.trigger event when running job manually', async () => {
+    it("should emit job.trigger event when running job manually", async () => {
       const [agent] = await tenant.sql`
         INSERT INTO agents (name, system_prompt, status)
         VALUES ('Manual Job Agent', 'Prompt', 'published')
@@ -358,22 +365,22 @@ describe('NATS Events E2E Tests', () => {
         .set(TENANT_HEADER, tenant.id)
         .expect(201);
 
-      const event = getLastEventByType(context, 'job.trigger');
+      const event = getLastEventByType(context, "job.trigger");
       expect(event).toBeDefined();
       expect(event!.type).toBe(JOB_TRIGGER_TYPE);
       expect(event!.payload.jobId).toBe(job.id);
     });
   });
 
-  describe('Multiple Event Scenarios', () => {
-    it('should emit multiple events during complex workflow', async () => {
+  describe("Multiple Event Scenarios", () => {
+    it("should emit multiple events during complex workflow", async () => {
       // 1. Crear agent
       const createResponse = await request(app.getHttpServer())
-        .post('/admin/agents')
+        .post("/admin/agents")
         .set(TENANT_HEADER, tenant.id)
         .send({
-          name: 'Complex Workflow Agent',
-          system_prompt: 'Prompt',
+          name: "Complex Workflow Agent",
+          system_prompt: "Prompt",
         })
         .expect(201);
 
@@ -388,12 +395,12 @@ describe('NATS Events E2E Tests', () => {
 
       // 3. Crear credential
       const credentialResponse = await request(app.getHttpServer())
-        .post('/admin/credentials')
+        .post("/admin/credentials")
         .set(TENANT_HEADER, tenant.id)
         .send({
-          name: 'Test Credential',
-          type: 'api_key',
-          value: 'secret',
+          name: "Test Credential",
+          type: "api_key",
+          value: "secret",
         })
         .expect(201);
 
@@ -404,29 +411,29 @@ describe('NATS Events E2E Tests', () => {
         .put(`/admin/credentials/${credentialId}/rotate`)
         .set(TENANT_HEADER, tenant.id)
         .send({
-          new_value: 'new-secret',
+          new_value: "new-secret",
         })
         .expect(200);
 
       // Verificar que se emitieron todos los eventos esperados
-      const publishEvents = getEventsByType(context, 'agent.published');
-      const rotateEvents = getEventsByType(context, 'credential.rotated');
+      const publishEvents = getEventsByType(context, "agent.published");
+      const rotateEvents = getEventsByType(context, "credential.rotated");
 
       expect(publishEvents.length).toBeGreaterThanOrEqual(1);
       expect(rotateEvents.length).toBeGreaterThanOrEqual(1);
 
       // Verificar que cada evento tiene la estructura correcta
       for (const event of context.natsEvents.slice(initialEventCount)) {
-        expect(event).toHaveProperty('specversion');
-        expect(event).toHaveProperty('subject');
-        expect(event).toHaveProperty('type');
-        expect(event).toHaveProperty('resource');
-        expect(event).toHaveProperty('data');
-        expect(event.data).toHaveProperty('payload');
-        expect(event).toHaveProperty('metadata');
-        expect(event.metadata).toHaveProperty('tenantId');
-        expect(event.metadata).toHaveProperty('timestamp');
-        expect(event.metadata).toHaveProperty('source');
+        expect(event).toHaveProperty("specversion");
+        expect(event).toHaveProperty("subject");
+        expect(event).toHaveProperty("type");
+        expect(event).toHaveProperty("resource");
+        expect(event).toHaveProperty("data");
+        expect(event.data).toHaveProperty("payload");
+        expect(event).toHaveProperty("metadata");
+        expect(event.metadata).toHaveProperty("tenantId");
+        expect(event.metadata).toHaveProperty("timestamp");
+        expect(event.metadata).toHaveProperty("source");
       }
     });
   });

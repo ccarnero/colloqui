@@ -1,4 +1,9 @@
-import { Component, inject, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatInputModule } from "@angular/material/input";
@@ -6,9 +11,11 @@ import { MatButtonModule } from "@angular/material/button";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { LucideAngularModule, MessageSquare } from "lucide-angular";
 import { AuthService } from "../../core/services/auth.service";
+import { getHttpErrorMessage } from "../../core/utils/http-error-message";
 
 @Component({
   selector: "app-login",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatFormFieldModule,
@@ -156,8 +163,7 @@ export class LoginComponent {
       },
       error: (err) => {
         this.submitting.set(false);
-        const message =
-          err?.error?.message ?? err?.message ?? "Login failed";
+        const message = getHttpErrorMessage(err, "Login failed");
         this.error.set(message);
       },
     });

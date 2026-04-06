@@ -3,6 +3,7 @@ FROM oven/bun:1.3-alpine AS builder
 WORKDIR /app
 
 COPY packages/shared ./packages/shared
+RUN cd packages/shared && bun install
 COPY packages/observability ./packages/observability
 COPY packages/database ./packages/database
 RUN cd packages/database && bun install
@@ -10,6 +11,10 @@ COPY services/yoizenclaw-admin-service/package.json \
   ./services/yoizenclaw-admin-service/
 WORKDIR /app/services/yoizenclaw-admin-service
 RUN bun install
+RUN rm -rf ../../packages/observability/node_modules/@nestjs \
+  && mkdir -p ../../packages/observability/node_modules \
+  && ln -sfn ../../../services/yoizenclaw-admin-service/node_modules/@nestjs \
+    ../../packages/observability/node_modules/@nestjs
 
 COPY services/yoizenclaw-admin-service/src ./src
 COPY services/yoizenclaw-admin-service/data ./data

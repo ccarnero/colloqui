@@ -1,10 +1,11 @@
-import { Component } from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 
 @Component({
   selector: "app-workflows",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatButtonModule, MatIconModule, StatusBadgeComponent],
   template: `
     <div class="ws-header">
