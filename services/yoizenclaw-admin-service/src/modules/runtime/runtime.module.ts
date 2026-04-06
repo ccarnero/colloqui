@@ -1,10 +1,9 @@
-import { Module } from '@nestjs/common';
-import { RuntimeController } from './runtime.controller';
-import { RuntimeService } from './runtime.service';
+import { Module } from "@nestjs/common";
+import { RuntimeController } from "./runtime.controller";
+import { RuntimeService } from "./runtime.service";
 
 /**
- * Módulo de Runtime para consultar estado de conexiones
- * y métricas del sistema.
+ * Runtime module for connection status and system metrics.
  */
 @Module({
   controllers: [RuntimeController],

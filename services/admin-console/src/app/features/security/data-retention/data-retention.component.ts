@@ -1,8 +1,8 @@
-import { Component, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, signal } from "@angular/core";
 import { MatSlideToggleModule } from "@angular/material/slide-toggle";
 import { MatTableModule } from "@angular/material/table";
 
-interface RetentionRow {
+interface IRetentionRow {
   dataType: string;
   period: string;
   enabled: boolean;
@@ -11,6 +11,7 @@ interface RetentionRow {
 @Component({
   selector: "app-data-retention",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatTableModule, MatSlideToggleModule],
   template: `
     <div class="ws-header">
@@ -50,7 +51,7 @@ interface RetentionRow {
 export class DataRetentionComponent {
   readonly cols = ["dataType", "period", "enabled"] as const;
 
-  readonly policies = signal<RetentionRow[]>([
+  readonly policies = signal<IRetentionRow[]>([
     { dataType: "Audit logs", period: "400 days", enabled: true },
     { dataType: "Application logs", period: "90 days", enabled: true },
     { dataType: "User sessions", period: "30 days", enabled: true },

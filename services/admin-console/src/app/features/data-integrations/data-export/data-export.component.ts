@@ -1,4 +1,11 @@
-import { Component, computed, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  signal,
+} from "@angular/core";
+import { NotificationService } from "../../../core/services/notification.service";
 import { MatButtonModule } from "@angular/material/button";
 import { MatCardModule } from "@angular/material/card";
 import { MatFormFieldModule } from "@angular/material/form-field";
@@ -10,6 +17,7 @@ type ExportFormat = "json" | "csv" | "parquet";
 @Component({
   selector: "app-data-export",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     MatCardModule,
     MatButtonModule,
@@ -94,6 +102,7 @@ type ExportFormat = "json" | "csv" | "parquet";
   `,
 })
 export class DataExportComponent {
+  private readonly notifications = inject(NotificationService);
   readonly formats: ReadonlyArray<{
     id: ExportFormat;
     label: string;
@@ -150,6 +159,12 @@ export class DataExportComponent {
     if (!this.canExport()) {
       return;
     }
-    // Mock export action
+    const fmt = this.selectedFormat();
+    const label = this.formats.find((x) => x.id === fmt)?.label ?? fmt;
+    this.notifications.push({
+      color: "primary",
+      text: `Export queued (${label}, ${this.startDate()} → ${this.endDate()})`,
+      time: new Date().toISOString(),
+    });
   }
 }

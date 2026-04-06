@@ -1,9 +1,15 @@
-import { Component, inject, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+} from "@angular/core";
 import { MatSlideToggleModule } from "@angular/material/slide-toggle";
 import { TenantService } from "../../../core/services/tenant.service";
 
 @Component({
   selector: "app-mfa",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatSlideToggleModule],
   template: `
     <div class="ws-header">

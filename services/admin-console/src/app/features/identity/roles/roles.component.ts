@@ -1,4 +1,9 @@
-import { Component, inject, type OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  type OnInit,
+} from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
@@ -12,13 +17,14 @@ import {
 } from "../../../shared/components/status-badge/status-badge.component";
 import {
   RoleDialogComponent,
-  type RoleDialogData,
-  type RoleDialogResult,
+  type IRoleDialogData,
+  type IRoleDialogResult,
 } from "./role-dialog.component";
 import type { ITenantRole } from "../../../core/models/user.model";
 
 @Component({
   selector: "app-roles",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     MatTableModule,
     MatButtonModule,
@@ -158,7 +164,7 @@ export class RolesComponent implements OnInit {
   }
 
   openCreateDialog(): void {
-    const data: RoleDialogData = {
+    const data: IRoleDialogData = {
       tenantId: this.authService.tenantId() ?? "",
     };
     const ref = this.dialog.open(RoleDialogComponent, {
@@ -166,14 +172,14 @@ export class RolesComponent implements OnInit {
       data,
     });
 
-    ref.afterClosed().subscribe((result?: RoleDialogResult) => {
+    ref.afterClosed().subscribe((result?: IRoleDialogResult) => {
       if (result?.saved) this.roleService.loadRoles();
     });
   }
 
   openEditDialog(role: ITenantRole): void {
     this.roleService.getRole(role.id).subscribe((full) => {
-      const data: RoleDialogData = {
+      const data: IRoleDialogData = {
         tenantId: this.authService.tenantId() ?? "",
         role: full,
       };
@@ -182,7 +188,7 @@ export class RolesComponent implements OnInit {
         data,
       });
 
-      ref.afterClosed().subscribe((result?: RoleDialogResult) => {
+      ref.afterClosed().subscribe((result?: IRoleDialogResult) => {
         if (result?.saved) this.roleService.loadRoles();
       });
     });

@@ -9,12 +9,12 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
-} from '@nestjs/common';
-import { ServicesService } from './services.service';
-import { RegisterServiceDto, UpdateServiceDto } from './services.dto';
-import { TENANT_HEADER } from '@yoizen/shared';
+} from "@nestjs/common";
+import { ServicesService } from "./services.service";
+import { RegisterServiceDto, UpdateServiceDto } from "./services.dto";
+import { TENANT_HEADER } from "@yoizen/shared";
 
-@Controller('services')
+@Controller("services")
 export class ServicesController {
   constructor(private readonly servicesService: ServicesService) {}
 
@@ -32,36 +32,33 @@ export class ServicesController {
     return this.servicesService.list(tenantId);
   }
 
-  @Get(':id')
-  async get(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
-  ) {
+  @Get(":id")
+  async get(@Headers(TENANT_HEADER) tenantId: string, @Param("id") id: string) {
     return this.servicesService.get(tenantId, id);
   }
 
-  @Patch(':id')
+  @Patch(":id")
   async update(
     @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
+    @Param("id") id: string,
     @Body() dto: UpdateServiceDto,
   ) {
     return this.servicesService.update(tenantId, id, dto);
   }
 
-  @Delete(':id')
+  @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(
     @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
+    @Param("id") id: string,
   ) {
     return this.servicesService.remove(tenantId, id);
   }
 
-  @Get(':id/revisions')
+  @Get(":id/revisions")
   async listRevisions(
     @Headers(TENANT_HEADER) tenantId: string,
-    @Param('id') id: string,
+    @Param("id") id: string,
   ) {
     return this.servicesService.listRevisions(tenantId, id);
   }

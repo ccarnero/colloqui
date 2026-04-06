@@ -1,29 +1,16 @@
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsOptional, IsString } from "class-validator";
+import { PaginatedQueryDto } from "@yoizen/shared";
 
-export class QueryEventsDto {
+export class QueryEventsDto extends PaginatedQueryDto {
   @IsOptional()
   @IsString()
   type?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   from?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   to?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(1000)
-  limit?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  offset?: number;
 }

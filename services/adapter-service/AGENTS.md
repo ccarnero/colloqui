@@ -173,7 +173,7 @@ No NATS or Redis dependencies. This is a stateless REST service backed by Postgr
 |---------|-------|
 | `bun test` | All tests |
 | `bun test test/unit` | Unit tests |
-| `bun test test/integration` | Integration tests (requires local PostgreSQL) |
+| *(none in-service)* | Integration-style coverage lives in repo `tests/e2e/` when present |
 
 E2E tests live in `tests/e2e/adapter.e2e.spec.ts` and cover adapter CRUD, custom headers, retries, timeouts, enrichment, forwarding, workflow endpointCall, and webhook delivery.
 
@@ -185,7 +185,7 @@ E2E tests live in `tests/e2e/adapter.e2e.spec.ts` and cover adapter CRUD, custom
 - **JSONB fields**: `auth_config` and `headers` stored as JSONB, parsed with `parseJsonb` helper
 - **UUID generation**: `crypto.randomUUID()` for adapter and endpoint IDs
 - **Map-based aggregation**: joins are grouped with `Map<string, EndpointRow[]>` for O(n) endpoint grouping
-- **Unique violation handling**: catches PostgreSQL error code `23505` and throws `BadRequestException`
+- **Unique violation handling**: catches PostgreSQL error code `23505` and throws `ConflictException`
 - **Multi-tenancy**: all queries filter by `tenant_id` extracted from `x-yoizen-tenant` header
 - **Validation**: global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, `transform`
 - **Context constraint**: `context` must be `internal` or `external` (enforced at both DTO and DB level)

@@ -1,4 +1,11 @@
-import { Component, computed, inject, OnDestroy, OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  OnDestroy,
+  OnInit,
+} from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { TenantService } from "../../../core/services/tenant.service";
 import { DashboardService } from "../../../core/services/dashboard.service";
@@ -6,10 +13,8 @@ import { SparklineComponent } from "../../../shared/components/sparkline/sparkli
 
 @Component({
   selector: "app-dashboard",
-  imports: [
-    MatButtonModule,
-    SparklineComponent,
-  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [MatButtonModule, SparklineComponent],
   template: `
     <div class="ws-header">
       <div>
@@ -180,12 +185,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return `${arrow} ${Math.abs(d).toFixed(2)}%`;
   });
 
-  protected readonly apiUsageData = computed(() =>
-    this.stats()?.dailyBreakdown.map((d) => d.requests) ?? [],
+  protected readonly apiUsageData = computed(
+    () => this.stats()?.dailyBreakdown.map((d) => d.requests) ?? [],
   );
 
-  protected readonly latencyData = computed(() =>
-    this.stats()?.dailyBreakdown.map((d) => d.avgLatencyMs) ?? [],
+  protected readonly latencyData = computed(
+    () => this.stats()?.dailyBreakdown.map((d) => d.avgLatencyMs) ?? [],
   );
 
   protected readonly dayLabels = computed(() => {

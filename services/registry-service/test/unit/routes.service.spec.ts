@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import type { Sql } from "postgres";
+import { RoutesRepository } from "../../src/modules/routes/routes.repository";
 import { RoutesService } from "../../src/modules/routes/routes.service";
 import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
 
@@ -23,7 +24,11 @@ describe("RoutesService", () => {
 
   async function compileWithSql(sql: Sql) {
     const module = await Test.createTestingModule({
-      providers: [RoutesService, { provide: POSTGRES_SQL, useValue: sql }],
+      providers: [
+        RoutesRepository,
+        RoutesService,
+        { provide: POSTGRES_SQL, useValue: sql },
+      ],
     }).compile();
     return module.get(RoutesService);
   }
@@ -67,7 +72,9 @@ describe("RoutesService", () => {
         mock(() => {
           calls += 1;
           if (calls === 1) return Promise.resolve([{ id: "svc-1" }]);
-          return Promise.reject(Object.assign(new Error("dup"), { code: "23505" }));
+          return Promise.reject(
+            Object.assign(new Error("dup"), { code: "23505" }),
+          );
         }),
         { json: (v: unknown) => v },
       ) as unknown as Sql;

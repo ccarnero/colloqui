@@ -1,40 +1,51 @@
 import Redis from "ioredis";
 import { tracedFetch } from "@yoizen/observability";
 import {
-  AdapterClient,
-  DEFAULT_ADAPTER_SERVICE_URL,
+  createAdapterClientWithRedisAndFetch,
+  sleep,
   TENANT_HEADER,
 } from "@yoizen/shared";
 import type { EndpointCallArgs } from "@yoizen/shared";
+import { workflowHttpWorkerConfig } from "../config";
 
-export interface IEndpointCallResult {
+interface IEndpointCallResult {
   status: number;
   data: unknown;
   headers: Record<string, string>;
 }
 
-let adapterClient: AdapterClient | null = null;
+let adapterClient: ReturnType<
+  typeof createAdapterClientWithRedisAndFetch
+> | null = null;
 
-function getAdapterClient(): AdapterClient {
+function getAdapterClient(): ReturnType<
+  typeof createAdapterClientWithRedisAndFetch
+> {
   if (adapterClient) return adapterClient;
 
   const redis = new Redis({
-    host: process.env.REDIS_HOST ?? "localhost",
-    port: Number(process.env.REDIS_PORT ?? "6379"),
+    host: workflowHttpWorkerConfig.redisHost,
+    port: workflowHttpWorkerConfig.redisPort,
     lazyConnect: true,
     maxRetriesPerRequest: 2,
   });
 
-  adapterClient = new AdapterClient({
-    baseUrl:
-      process.env.ADAPTER_SERVICE_URL ?? DEFAULT_ADAPTER_SERVICE_URL,
-    fetchFn: tracedFetch,
-    cache: redis,
-  });
+  adapterClient = createAdapterClientWithRedisAndFetch(
+    workflowHttpWorkerConfig.adapterServiceUrl,
+    redis,
+    tracedFetch,
+  );
 
   return adapterClient;
 }
 
+/**
+ * Temporal activity: performs an HTTP call, optionally resolved via {@link AdapterClient}.
+ *
+ * @param args - Method, URL, body, optional adapter/endpoint ids.
+ * @param tenantId - Injected tenant for adapter resolution and `x-yoizen-tenant`.
+ * @returns Normalized status, body, and string headers.
+ */
 export async function executeEndpointCall(
   args: EndpointCallArgs,
   tenantId: string,
@@ -63,10 +74,7 @@ async function executeWithAdapter(
   };
 
   const url = buildUrl(resolved.url, args.params);
-  const body = args.data !== undefined ? JSON.stringify(args.data) : undefined;
-  if (body) {
-    mergedHeaders["Content-Type"] ??= "application/json";
-  }
+  const body = applyJsonBody(args.data, mergedHeaders);
 
   let lastError: unknown;
 
@@ -108,25 +116,18 @@ async function executeRaw(
   };
 
   const url = buildUrl(args.url, args.params);
-  const body = args.data !== undefined ? JSON.stringify(args.data) : undefined;
-  if (body) {
-    headers["Content-Type"] ??= "application/json";
-  }
+  const body = applyJsonBody(args.data, headers);
 
-  const res = await tracedFetch(url, {
+  return fetchWithTenantTimeout({
     method: args.method,
+    url,
     headers,
     body,
-    signal: AbortSignal.timeout(30_000),
+    timeoutMs: 30_000,
   });
-
-  return buildResult(res);
 }
 
-function buildUrl(
-  base: string,
-  params?: Record<string, unknown>,
-): string {
+function buildUrl(base: string, params?: Record<string, unknown>): string {
   if (!params) return base;
   const url = new URL(base);
   for (const [k, v] of Object.entries(params)) {
@@ -135,6 +136,37 @@ function buildUrl(
     }
   }
   return url.toString();
+}
+
+/** Shared JSON body + Content-Type for POST-like payloads. */
+function applyJsonBody(
+  data: unknown,
+  headers: Record<string, string>,
+): string | undefined {
+  if (data === undefined) return undefined;
+  headers["Content-Type"] ??= "application/json";
+  return JSON.stringify(data);
+}
+
+interface IFetchWithTenantTimeoutOptions {
+  readonly method: string;
+  readonly url: string;
+  readonly headers: Record<string, string>;
+  readonly body: string | undefined;
+  readonly timeoutMs: number;
+}
+
+async function fetchWithTenantTimeout(
+  options: IFetchWithTenantTimeoutOptions,
+): Promise<IEndpointCallResult> {
+  const { method, url, headers, body, timeoutMs } = options;
+  const res = await tracedFetch(url, {
+    method,
+    headers,
+    body,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  return buildResult(res);
 }
 
 async function buildResult(res: Response): Promise<IEndpointCallResult> {
@@ -152,8 +184,4 @@ async function buildResult(res: Response): Promise<IEndpointCallResult> {
   }
 
   return { status: res.status, data, headers: responseHeaders };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

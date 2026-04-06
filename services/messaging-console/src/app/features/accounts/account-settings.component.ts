@@ -1,4 +1,11 @@
-import { Component, inject, signal, OnInit, input } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  OnInit,
+  input,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { Router } from "@angular/router";
 import { MatFormFieldModule } from "@angular/material/form-field";
@@ -11,11 +18,9 @@ import {
   Key,
   Shield,
   Info,
-  Phone,
-  Instagram,
-  Send,
   Save,
 } from "lucide-angular";
+import { getHttpErrorMessage } from "../../core/utils/http-error-message";
 import {
   ChannelService,
   IChannelAccount,
@@ -23,6 +28,7 @@ import {
 
 @Component({
   selector: "app-account-settings",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatFormFieldModule,
@@ -317,9 +323,6 @@ export class AccountSettingsComponent implements OnInit {
   protected readonly Key = Key;
   protected readonly Shield = Shield;
   protected readonly Info = Info;
-  protected readonly Phone = Phone;
-  protected readonly Instagram = Instagram;
-  protected readonly SendIcon = Send;
   protected readonly Save = Save;
 
   /** Route param bound via withComponentInputBinding() */
@@ -376,7 +379,7 @@ export class AccountSettingsComponent implements OnInit {
           this.savingToken.set(false);
           this.message.set({
             type: "error",
-            text: err?.error?.message ?? "Failed to update token",
+            text: getHttpErrorMessage(err, "Failed to update token"),
           });
         },
       });
@@ -406,7 +409,7 @@ export class AccountSettingsComponent implements OnInit {
           this.savingCreds.set(false);
           this.message.set({
             type: "error",
-            text: err?.error?.message ?? "Failed to save credentials",
+            text: getHttpErrorMessage(err, "Failed to save credentials"),
           });
         },
       });

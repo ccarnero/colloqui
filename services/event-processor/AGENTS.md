@@ -24,14 +24,12 @@ src/
 ├── app.module.ts                       # @Global() root module with NATS + Redis providers
 ├── providers/
 │   ├── nats.provider.ts                # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CLIENT, JETSTREAM_PUBLISHER
-│   └── redis.provider.ts              # REDIS_CLIENT
+│   └── adapter-client.provider.ts      # ADAPTER_CLIENT
 ├── handlers/
 │   ├── event-handler.interface.ts      # EventHandler interface
 │   ├── event-type.decorator.ts         # @EventType('...') class decorator
 │   ├── handler-registry.ts             # DiscoveryService-based Map<string, EventHandler> lookup
-│   ├── created.handler.ts              # @EventType('created')
-│   ├── updated.handler.ts              # @EventType('updated')
-│   ├── deleted.handler.ts              # @EventType('deleted')
+│   ├── lifecycle-handlers.ts           # CreatedHandler, UpdatedHandler, DeletedHandler
 │   ├── default.handler.ts              # Fallback handler for unknown types
 │   └── index.ts                        # Barrel export
 ├── pipeline/
@@ -42,8 +40,7 @@ src/
 │   ├── enrichment.stage.ts             # Order 20: Adds correlationId, receivedAt, source metadata
 │   ├── adapter-enrichment.stage.ts     # Order 25: Fetches data from adapter endpoint, merges into payload._enriched
 │   ├── transform.stage.ts             # Order 30: Runs registered PayloadTransformer functions
-│   ├── adapter-forward.stage.ts        # Order 40: POSTs payload to adapter endpoint with retry
-│   └── index.ts                        # Barrel export
+│   └── adapter-forward.stage.ts        # Order 40: POSTs payload to adapter endpoint with retry
 └── modules/
     ├── processor/
     │   ├── processor.module.ts         # Imports DiscoveryModule + PipelineModule, registers handlers
@@ -148,7 +145,7 @@ Stages implement `PipelineStage` interface with an `order` property. They are so
 | `JETSTREAM_MANAGER` | `JetStreamManager` | `nats.provider.ts` |
 | `JETSTREAM_CLIENT` | `Consumer` | `nats.provider.ts` |
 | `JETSTREAM_PUBLISHER` | `JetStreamClient` | `nats.provider.ts` |
-| `REDIS_CLIENT` | `Redis` (ioredis) | `redis.provider.ts` |
+| `REDIS_CLIENT` | `Redis` (ioredis) | `app.module.ts` → `redisProvider` from `@yoizen/database` |
 
 ## Configuration
 

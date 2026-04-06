@@ -21,24 +21,29 @@ The Audit Service consumes domain events from the NATS JetStream `EVENTS` stream
 src/
 ├── main.ts                                 # Bootstrap: Fastify adapter, port binding
 ├── app.module.ts                           # @Global() root module with NATS + TenantConnectionManager
+├── common/
+│   ├── audit-list-helpers.ts               # Pagination helpers
+│   ├── gateway-audit-projection.ts         # Shared SQL SELECT list for gateway_audit_events
+│   └── channel-audit-projection.ts         # Shared SQL SELECT list for channel_events
 ├── providers/
-│   ├── nats.provider.ts                    # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CLIENT (audit-writer consumer)
-│   ├── postgres.provider.ts                # POSTGRES_SQL (unused legacy, kept for reference)
-│   └── tenant-connection-manager.ts        # Per-tenant PostgreSQL pools (Map-based)
+│   └── nats.provider.ts                    # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CLIENT (audit-writer consumer)
 └── modules/
     ├── audit/
     │   ├── audit.module.ts
     │   ├── audit.controller.ts             # GET /audit/events, GET /audit/events/:id
     │   └── audit.service.ts                # NATS consumer loop, per-tenant persist, query API
+    ├── channel-audit/
+    │   ├── channel-audit.controller.ts
+    │   └── channel-audit.service.ts        # Channel message audit ingest + query
+    ├── gateway-audit/
+    │   ├── gateway-audit.controller.ts
+    │   └── gateway-audit.service.ts        # Gateway audit ingest + query + dashboard stats
     └── health/
         ├── health.module.ts
         └── health.controller.ts            # GET /health
 
 test/
-├── unit/
-│   └── health.controller.spec.ts
-└── integration/
-    └── audit.integration.spec.ts
+└── unit/                                   # Controller + service unit tests (no integration/ in repo)
 ```
 
 ## Key Files
@@ -47,7 +52,7 @@ test/
 |------|---------|
 | `src/app.module.ts` | `@Global()` module exporting all NATS tokens and `TenantConnectionManager` |
 | `src/providers/nats.provider.ts` | Creates EVENTS stream, durable consumer `audit-writer` (explicit ack, all subjects, max_deliver 5) |
-| `src/providers/tenant-connection-manager.ts` | Lazy pool creation per tenant; connects to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
+| `TenantConnectionManager` | From `@yoizen/database`; lazy pool per tenant to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
 | `src/modules/audit/audit.service.ts` | Consumer loop: decode envelope -> extract tenantId -> ensure schema -> INSERT events -> ack/nak |
 | `src/modules/audit/audit.controller.ts` | Paginated query endpoints with type/date filters |
 
@@ -137,7 +142,7 @@ Consumer: `audit-writer` -- explicit ack, deliver all, max deliver 5.
 |---------|-------|
 | `bun test` | All tests |
 | `bun test test/unit` | Unit tests |
-| `bun test test/integration` | Integration tests (requires NATS + PostgreSQL) |
+| *(none in-service)* | No `test/integration/` directory; use `bun test test/unit` only |
 
 ## Code Style and Conventions
 

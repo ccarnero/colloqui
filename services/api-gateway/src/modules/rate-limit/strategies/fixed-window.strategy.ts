@@ -1,8 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
-import type Redis from 'ioredis';
-import type { RateLimitResult, RateLimitTenantConfig } from '@yoizen/shared';
-import { REDIS_CLIENT } from '../../../providers/redis.provider';
-import type { RateLimitStrategy } from './rate-limit.strategy';
+import { Inject, Injectable } from "@nestjs/common";
+import type Redis from "ioredis";
+import type { RateLimitResult, RateLimitTenantConfig } from "@yoizen/shared";
+import { REDIS_CLIENT } from "../../../providers/redis.provider";
+import type { IRateLimitStrategy } from "./rate-limit.strategy";
 
 /**
  * KEYS[1] = ratelimit:{env}:{tenant}:{windowStart}
@@ -25,7 +25,7 @@ return {1, count, ttl}
 `;
 
 @Injectable()
-export class FixedWindowStrategy implements RateLimitStrategy {
+export class FixedWindowStrategy implements IRateLimitStrategy {
   private scriptSha: string | null = null;
 
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
@@ -57,23 +57,25 @@ export class FixedWindowStrategy implements RateLimitStrategy {
     windowSec: number,
   ): Promise<unknown> {
     if (!this.scriptSha) {
-      this.scriptSha = await this.redis.script(
-        'LOAD',
+      this.scriptSha = (await this.redis.script(
+        "LOAD",
         LUA_FIXED_WINDOW,
-      ) as string;
+      )) as string;
     }
     try {
       return await this.redis.evalsha(
-        this.scriptSha, 1, redisKey, limit, windowSec,
+        this.scriptSha,
+        1,
+        redisKey,
+        limit,
+        windowSec,
       );
     } catch {
-      this.scriptSha = await this.redis.script(
-        'LOAD',
+      this.scriptSha = (await this.redis.script(
+        "LOAD",
         LUA_FIXED_WINDOW,
-      ) as string;
-      return this.redis.evalsha(
-        this.scriptSha, 1, redisKey, limit, windowSec,
-      );
+      )) as string;
+      return this.redis.evalsha(this.scriptSha, 1, redisKey, limit, windowSec);
     }
   }
 }

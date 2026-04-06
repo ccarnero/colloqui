@@ -1,5 +1,6 @@
 export {
   initTelemetry,
+  initServiceTelemetry,
   shutdownTelemetry,
   getTracer,
   getMeter,
@@ -31,6 +32,13 @@ export {
 export {
   tracedFetch,
 } from './traced-fetch';
+
+export {
+  bootstrapFastifyApp,
+  registerTelemetrySigtermHandler,
+  runNestFastifyServiceMain,
+  type IBootstrapFastifyOptions,
+} from "./bootstrap-fastify";
 
 export {
   startSpan,

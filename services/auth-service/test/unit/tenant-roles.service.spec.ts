@@ -6,6 +6,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from "@nestjs/common";
+import { TenantRolesRepository } from "../../src/modules/tenant-roles/tenant-roles.repository";
 import { TenantRolesService } from "../../src/modules/tenant-roles/tenant-roles.service";
 import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
 
@@ -29,6 +30,7 @@ describe("TenantRolesService", () => {
 
     const module = await Test.createTestingModule({
       providers: [
+        TenantRolesRepository,
         TenantRolesService,
         { provide: POSTGRES_SQL, useValue: sql },
       ],
@@ -58,7 +60,12 @@ describe("TenantRolesService", () => {
   describe("create", () => {
     it("should throw ConflictException for reserved name tenant_admin", async () => {
       await expect(
-        service.create("t1", "tenant_admin", undefined, []),
+        service.create({
+          tenantId: "t1",
+          name: "tenant_admin",
+          description: undefined,
+          permissions: [],
+        }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
@@ -67,7 +74,12 @@ describe("TenantRolesService", () => {
         { id: "existing" },
       ]);
       await expect(
-        service.create("t1", "editor", undefined, []),
+        service.create({
+          tenantId: "t1",
+          name: "editor",
+          description: undefined,
+          permissions: [],
+        }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
   });
@@ -159,6 +171,46 @@ describe("TenantRolesService", () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
       await expect(service.delete("r1")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("update", () => {
+    it("throws NotFoundException when role missing", async () => {
+      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+      await expect(
+        service.update("missing", { name: "x" }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("throws ForbiddenException when renaming system role", async () => {
+      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+        {
+          id: "r1",
+          tenant_id: "t1",
+          name: "tenant_admin",
+          is_system: true,
+        },
+      ]);
+      await expect(
+        service.update("r1", { name: "other" }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("throws ConflictException for duplicate name", async () => {
+      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+        {
+          id: "r1",
+          tenant_id: "t1",
+          name: "editor",
+          is_system: false,
+        },
+      ]);
+      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+        { id: "other" },
+      ]);
+      await expect(
+        service.update("r1", { name: "taken" }),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 });

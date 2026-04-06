@@ -1,10 +1,14 @@
-import { Component, inject, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { Router } from "@angular/router";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatInputModule } from "@angular/material/input";
 import { MatButtonModule } from "@angular/material/button";
-import { MatSelectModule } from "@angular/material/select";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import {
   LucideAngularModule,
@@ -17,17 +21,18 @@ import {
   ChannelService,
   ICreateAccountDto,
 } from "../../core/services/channel.service";
+import { getHttpErrorMessage } from "../../core/utils/http-error-message";
 
 type ChannelChoice = "whatsapp" | "instagram" | "telegram" | null;
 
 @Component({
   selector: "app-connect-account",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
-    MatSelectModule,
     MatProgressSpinnerModule,
     LucideAngularModule,
   ],
@@ -411,9 +416,7 @@ export class ConnectAccountComponent {
     this.submit({
       channel: "telegram",
       provider: "telegram",
-      name:
-        this.businessName.trim() ||
-        `@${this.telegramUsername.trim()}`,
+      name: this.businessName.trim() || `@${this.telegramUsername.trim()}`,
       externalId: this.telegramUsername.trim(),
       telegramBotToken: token,
       accessToken: token,
@@ -446,7 +449,7 @@ export class ConnectAccountComponent {
       error: (err) => {
         this.submitting.set(false);
         this.error.set(
-          err?.error?.message ?? err?.message ?? "Connection failed",
+          getHttpErrorMessage(err, "Connection failed"),
         );
       },
     });

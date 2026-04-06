@@ -16,6 +16,7 @@
     "@nestjs/platform-fastify": "^11.1.14",
     "@yoizen/database": "file:../../packages/database",
     "@yoizen/observability": "file:../../packages/observability",
+    "@yoizen/shared": "file:../../packages/shared",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "ioredis": "^5.4.1",

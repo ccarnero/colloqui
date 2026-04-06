@@ -71,6 +71,16 @@ export function initTelemetry(options: TelemetryOptions): void {
   metrics.setGlobalMeterProvider(meterProvider);
 }
 
+/**
+ * Initializes telemetry for a service, allowing OTEL_SERVICE_NAME to override
+ * the provided default service name.
+ */
+export function initServiceTelemetry(defaultServiceName: string): void {
+  initTelemetry({
+    serviceName: process.env.OTEL_SERVICE_NAME ?? defaultServiceName,
+  });
+}
+
 export async function shutdownTelemetry(): Promise<void> {
   const promises: Promise<void>[] = [];
   if (tracerProvider) {

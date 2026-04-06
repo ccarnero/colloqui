@@ -17,12 +17,7 @@ import {
   selector: "app-yoizenclaw-existing-agents",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    DatePipe,
-    MatButtonModule,
-    MatIconModule,
-    MatProgressSpinnerModule,
-  ],
+  imports: [DatePipe, MatButtonModule, MatIconModule, MatProgressSpinnerModule],
   template: `
     <aside class="stack-column">
       <section class="section-card">

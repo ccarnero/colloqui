@@ -1,25 +1,17 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type { JetStreamClient, JetStreamManager } from "nats";
 import { headers as natsHeaders } from "nats";
-import type {
-  Channel,
-  ChannelProvider,
-  InboundMessage,
-} from "@yoizen/shared";
-import {
-  TENANT_HEADER,
-  CLAIM_CHECK_THRESHOLD_BYTES,
-  getTenantStreamName,
-  getTenantSubjectPattern,
-} from "@yoizen/shared";
+import type { Channel, ChannelProvider, InboundMessage } from "@yoizen/shared";
+import { TENANT_HEADER, CLAIM_CHECK_THRESHOLD_BYTES } from "@yoizen/shared";
 import {
   injectTraceContext,
+  PinoLoggerService,
   startNatsProducerSpan,
 } from "@yoizen/observability";
 import {
   JETSTREAM_PUBLISHER,
   JETSTREAM_MANAGER,
-  ensureIngressStream,
+  ensureTenantIngressStream,
 } from "../../providers/nats.provider";
 import { createChannelEnvelope } from "../../domain/envelope.factory";
 import {
@@ -28,14 +20,36 @@ import {
   ingressClaimCheckCount,
   ingressPublishDuration,
 } from "./ingress.metrics";
+import { UTF8_TEXT_ENCODER } from "../../common/utf8-text-encoder";
 
-const encoder = new TextEncoder();
+interface IProcessInboundOptions {
+  tenantId: string;
+  channel: Channel;
+  provider: ChannelProvider;
+  accountId: string;
+  messages: InboundMessage[];
+}
 
-const ensuredStreams = new Set<string>();
+/** Options for publishing a single inbound message to JetStream. */
+interface IPublishMessageOptions {
+  tenantId: string;
+  channel: Channel;
+  provider: ChannelProvider;
+  accountId: string;
+  message: InboundMessage;
+}
+
+/** Claim-check publish: small reference message when payload exceeds threshold. */
+interface IPublishWithClaimCheckParams {
+  readonly tenantId: string;
+  readonly subject: string;
+  readonly idempotencyKey: string;
+  readonly payloadBytes: Uint8Array;
+}
 
 @Injectable()
 export class IngressService {
-  private readonly logger = new Logger(IngressService.name);
+  private readonly logger = new PinoLoggerService(IngressService.name);
 
   constructor(
     @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
@@ -46,17 +60,18 @@ export class IngressService {
    * Processes inbound messages: builds envelopes and publishes to JetStream.
    * Returns immediately — publishing happens asynchronously per message.
    */
-  async processInbound(
-    tenantId: string,
-    channel: Channel,
-    provider: ChannelProvider,
-    accountId: string,
-    messages: InboundMessage[],
-  ): Promise<void> {
-    await this.ensureStream(tenantId);
+  async processInbound(options: IProcessInboundOptions): Promise<void> {
+    const { tenantId, channel, provider, accountId, messages } = options;
+    await ensureTenantIngressStream(this.jsm, tenantId);
 
     const publishPromises = messages.map((msg) =>
-      this.publishMessage(tenantId, channel, provider, accountId, msg),
+      this.publishMessage({
+        tenantId,
+        channel,
+        provider,
+        accountId,
+        message: msg,
+      }),
     );
 
     const results = await Promise.allSettled(publishPromises);
@@ -79,33 +94,30 @@ export class IngressService {
   }
 
   private async publishMessage(
-    tenantId: string,
-    channel: Channel,
-    provider: ChannelProvider,
-    accountId: string,
-    message: InboundMessage,
+    options: IPublishMessageOptions,
   ): Promise<void> {
-    const envelope = createChannelEnvelope(
+    const { tenantId, channel, provider, accountId, message } = options;
+    const envelope = createChannelEnvelope({
       tenantId,
       channel,
       provider,
-      "received",
+      kind: "received",
       message,
       accountId,
-    );
+    });
 
     const payload = JSON.stringify(envelope);
-    const payloadBytes = encoder.encode(payload);
+    const payloadBytes = UTF8_TEXT_ENCODER.encode(payload);
     const start = performance.now();
 
     if (payloadBytes.byteLength > CLAIM_CHECK_THRESHOLD_BYTES) {
       ingressClaimCheckCount.add(1, { channel, tenant: tenantId });
-      await this.publishWithClaimCheck(
+      await this.publishWithClaimCheck({
         tenantId,
-        envelope.subject,
-        envelope.idempotencyKey,
+        subject: envelope.subject,
+        idempotencyKey: envelope.idempotencyKey,
         payloadBytes,
-      );
+      });
       return;
     }
 
@@ -128,18 +140,16 @@ export class IngressService {
       span.end();
     }
 
-    ingressPublishDuration.record(
-      performance.now() - start,
-      { channel, tenant: tenantId },
-    );
+    ingressPublishDuration.record(performance.now() - start, {
+      channel,
+      tenant: tenantId,
+    });
   }
 
   private async publishWithClaimCheck(
-    tenantId: string,
-    subject: string,
-    idempotencyKey: string,
-    payloadBytes: Uint8Array,
+    params: IPublishWithClaimCheckParams,
   ): Promise<void> {
+    const { tenantId, subject, idempotencyKey, payloadBytes } = params;
     const claimId = crypto.randomUUID();
 
     const claimRef = JSON.stringify({
@@ -158,19 +168,7 @@ export class IngressService {
       `Claim-check: payload ${payloadBytes.byteLength} bytes stored as ${claimId}`,
     );
 
-    await this.js.publish(
-      subject,
-      encoder.encode(claimRef),
-      { headers: hdrs },
-    );
+    await this.js.publish(subject, UTF8_TEXT_ENCODER.encode(claimRef), { headers: hdrs });
   }
 
-  private async ensureStream(tenantId: string): Promise<void> {
-    const streamName = getTenantStreamName(tenantId);
-    if (ensuredStreams.has(streamName)) return;
-
-    const subjects = [getTenantSubjectPattern(tenantId)];
-    await ensureIngressStream(this.jsm, streamName, subjects);
-    ensuredStreams.add(streamName);
-  }
 }

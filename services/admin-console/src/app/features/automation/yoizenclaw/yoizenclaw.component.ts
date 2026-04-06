@@ -11,15 +11,12 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { MatSelectModule } from "@angular/material/select";
 import { MatTabsModule } from "@angular/material/tabs";
-import { TenantService } from "../../../core/services/tenant.service";
-import { ThemeService } from "../../../core/services/theme.service";
 import { YoizenclawAdminService } from "../../../core/services/yoizenclaw-admin.service";
 import {
   type IAgentToolDraft,
   type IYoizenclawAgent,
   type IYoizenclawAgentDraft,
   type IYoizenclawCredentialProfile,
-  type IYoizenclawSubagentConfig,
   type IYoizenclawSubagentDraft,
   type IYoizenclawTemplate,
 } from "../../../core/models/yoizenclaw.model";
@@ -31,15 +28,18 @@ import { YoizenclawTopBarComponent } from "./yoizenclaw-top-bar.component";
 import {
   buildToolPayloadsFromDrafts,
   extractMentionsFromPrompt,
+  formatHttpErrorMessage,
+  mapSubagentConfigToDraft,
   parseToolPayload,
 } from "./yoizenclaw.helpers";
 import { registerYoizenclawMonacoHoverProvider } from "./yoizenclaw-monaco-hover";
 import {
   DEFAULT_TEMPLATE_ID,
-  type SkillInfo,
-  type ToolInfo,
+  type ISkillInfo,
+  type IToolInfo,
   cloneSubagents,
 } from "./yoizenclaw.types";
+import type { Observable } from "rxjs";
 
 @Component({
   selector: "app-yoizenclaw",
@@ -183,8 +183,6 @@ import {
 })
 export class YoizenclawComponent implements OnInit {
   private readonly yoizenclawAdminService = inject(YoizenclawAdminService);
-  protected readonly tenant = inject(TenantService);
-  protected readonly themeService = inject(ThemeService);
 
   readonly templates = signal<IYoizenclawTemplate[]>([]);
   readonly loading = signal(false);
@@ -200,7 +198,7 @@ export class YoizenclawComponent implements OnInit {
     return extractMentionsFromPrompt(this.systemPrompt);
   });
 
-  readonly availableSkills = computed<SkillInfo[]>(() => {
+  readonly availableSkills = computed<ISkillInfo[]>(() => {
     return this.subagents
       .filter((s) => s.name.trim().length > 0)
       .map((s) => ({
@@ -210,7 +208,7 @@ export class YoizenclawComponent implements OnInit {
       }));
   });
 
-  readonly availableTools = computed<ToolInfo[]>(() => {
+  readonly availableTools = computed<IToolInfo[]>(() => {
     return this.tools
       .filter((t) => t.name.trim().length > 0)
       .map((t) => ({
@@ -281,12 +279,7 @@ export class YoizenclawComponent implements OnInit {
     this.rules = template.rules;
     this.soul = template.soul;
     this.subagents = cloneSubagents(
-      template.subagents.map((s) => ({
-        name: s.name,
-        description: s.description,
-        systemPrompt: s.system_prompt,
-        enabled: s.enabled,
-      })),
+      template.subagents.map(mapSubagentConfigToDraft),
     );
     this.successMessage.set("");
     this.errorMessage.set("");
@@ -335,16 +328,18 @@ export class YoizenclawComponent implements OnInit {
           this.agents.update((agents) =>
             agents.map((a) => (a.id === agent.id ? agent : a)),
           );
-          this.successMessage.set(`Agent "${agent.name}" updated successfully.`);
+          this.successMessage.set(
+            `Agent "${agent.name}" updated successfully.`,
+          );
           this.saving.set(false);
           this.editingAgentId.set(null);
         },
         error: (error: { error?: { message?: string | string[] } }) => {
-          const message = error.error?.message;
           this.errorMessage.set(
-            Array.isArray(message)
-              ? message.join(", ")
-              : message ?? "The agent could not be updated.",
+            formatHttpErrorMessage(
+              error.error?.message,
+              "The agent could not be updated.",
+            ),
           );
           this.saving.set(false);
         },
@@ -353,15 +348,17 @@ export class YoizenclawComponent implements OnInit {
       this.yoizenclawAdminService.createAgent(draft).subscribe({
         next: (agent) => {
           this.agents.set([agent, ...this.agents()]);
-          this.successMessage.set(`Agent "${agent.name}" created successfully.`);
+          this.successMessage.set(
+            `Agent "${agent.name}" created successfully.`,
+          );
           this.saving.set(false);
         },
         error: (error: { error?: { message?: string | string[] } }) => {
-          const message = error.error?.message;
           this.errorMessage.set(
-            Array.isArray(message)
-              ? message.join(", ")
-              : message ?? "The agent could not be created.",
+            formatHttpErrorMessage(
+              error.error?.message,
+              "The agent could not be created.",
+            ),
           );
           this.saving.set(false);
         },
@@ -370,51 +367,45 @@ export class YoizenclawComponent implements OnInit {
   }
 
   publishAgent(agentId: string): void {
-    this.publishingId.set(agentId);
-    this.errorMessage.set("");
-    this.successMessage.set("");
-
-    this.yoizenclawAdminService.publishAgent(agentId).subscribe({
-      next: (agent) => {
-        this.agents.update((agents) =>
-          agents.map((a) => (a.id === agent.id ? agent : a)),
-        );
-        this.successMessage.set(`Agent "${agent.name}" published successfully.`);
-        this.publishingId.set(null);
-      },
-      error: (error: { error?: { message?: string | string[] } }) => {
-        const message = error.error?.message;
-        this.errorMessage.set(
-          Array.isArray(message)
-            ? message.join(", ")
-            : message ?? "Failed to publish agent.",
-        );
-        this.publishingId.set(null);
-      },
-    });
+    this.runAgentPublishToggle(
+      agentId,
+      () => this.yoizenclawAdminService.publishAgent(agentId),
+      "published",
+      "Failed to publish agent.",
+    );
   }
 
   unpublishAgent(agentId: string): void {
+    this.runAgentPublishToggle(
+      agentId,
+      () => this.yoizenclawAdminService.unpublishAgent(agentId),
+      "unpublished",
+      "Failed to unpublish agent.",
+    );
+  }
+
+  private runAgentPublishToggle(
+    agentId: string,
+    request: () => Observable<IYoizenclawAgent>,
+    successVerb: "published" | "unpublished",
+    failMessage: string,
+  ): void {
     this.publishingId.set(agentId);
     this.errorMessage.set("");
     this.successMessage.set("");
-
-    this.yoizenclawAdminService.unpublishAgent(agentId).subscribe({
+    request().subscribe({
       next: (agent) => {
         this.agents.update((agents) =>
           agents.map((a) => (a.id === agent.id ? agent : a)),
         );
         this.successMessage.set(
-          `Agent "${agent.name}" unpublished successfully.`,
+          `Agent "${agent.name}" ${successVerb} successfully.`,
         );
         this.publishingId.set(null);
       },
       error: (error: { error?: { message?: string | string[] } }) => {
-        const message = error.error?.message;
         this.errorMessage.set(
-          Array.isArray(message)
-            ? message.join(", ")
-            : message ?? "Failed to unpublish agent.",
+          formatHttpErrorMessage(error.error?.message, failMessage),
         );
         this.publishingId.set(null);
       },
@@ -432,16 +423,11 @@ export class YoizenclawComponent implements OnInit {
     this.rules = agent.model_config.rules;
     this.soul = agent.model_config.soul;
 
-    this.subagents = agent.model_config.subagents.map(
-      (sub: IYoizenclawSubagentConfig) => ({
-        name: sub.name,
-        description: sub.description || "",
-        systemPrompt: sub.system_prompt,
-        enabled: sub.enabled ?? true,
-      }),
-    );
+    this.subagents = agent.model_config.subagents.map(mapSubagentConfigToDraft);
 
-    this.tools = (agent.tools ?? []).map((raw: unknown) => parseToolPayload(raw));
+    this.tools = (agent.tools ?? []).map((raw: unknown) =>
+      parseToolPayload(raw),
+    );
 
     this.successMessage.set(`Editing agent: ${agent.name}`);
     this.errorMessage.set("");

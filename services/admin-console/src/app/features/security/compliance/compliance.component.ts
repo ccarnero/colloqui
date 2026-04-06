@@ -1,9 +1,9 @@
-import { Component, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, signal } from "@angular/core";
 import { MatCardModule } from "@angular/material/card";
 import { MatIconModule } from "@angular/material/icon";
 import { ProgressBarComponent } from "../../../shared/components/progress-bar/progress-bar.component";
 
-interface FrameworkCard {
+interface IFrameworkCard {
   id: string;
   name: string;
   description: string;
@@ -15,6 +15,7 @@ interface FrameworkCard {
 @Component({
   selector: "app-compliance",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatCardModule, MatIconModule, ProgressBarComponent],
   template: `
     <div class="ws-header">
@@ -69,7 +70,7 @@ interface FrameworkCard {
   `,
 })
 export class ComplianceComponent {
-  readonly frameworks = signal<FrameworkCard[]>([
+  readonly frameworks = signal<IFrameworkCard[]>([
     {
       id: "soc2",
       name: "SOC 2 Type II",

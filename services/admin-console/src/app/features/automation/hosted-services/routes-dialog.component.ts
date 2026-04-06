@@ -1,11 +1,14 @@
-import { Component, inject, signal, type OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  type OnInit,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
 import { MatCheckboxModule } from "@angular/material/checkbox";
-import {
-  MAT_DIALOG_DATA,
-  MatDialogModule,
-} from "@angular/material/dialog";
+import { MAT_DIALOG_DATA, MatDialogModule } from "@angular/material/dialog";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
@@ -24,13 +27,14 @@ const ALL_METHODS = [
   "OPTIONS",
 ] as const;
 
-export interface RoutesDialogData {
+export interface IRoutesDialogData {
   serviceId: string;
   serviceName: string;
 }
 
 @Component({
   selector: "app-routes-dialog",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatDialogModule,
@@ -286,8 +290,7 @@ export interface RoutesDialogData {
 })
 export class RoutesDialogComponent implements OnInit {
   private readonly registryService = inject(RegistryService);
-  protected readonly data =
-    inject<RoutesDialogData>(MAT_DIALOG_DATA);
+  protected readonly data = inject<IRoutesDialogData>(MAT_DIALOG_DATA);
 
   readonly routes = signal<IServiceRoute[]>([]);
   readonly loading = signal(false);
@@ -360,23 +363,19 @@ export class RoutesDialogComponent implements OnInit {
   }
 
   removeRoute(route: IServiceRoute): void {
-    this.registryService
-      .deleteRoute(this.data.serviceId, route.id)
-      .subscribe({
-        next: () => this.loadRoutes(),
-      });
+    this.registryService.deleteRoute(this.data.serviceId, route.id).subscribe({
+      next: () => this.loadRoutes(),
+    });
   }
 
   private loadRoutes(): void {
     this.loading.set(true);
-    this.registryService
-      .listRoutes(this.data.serviceId)
-      .subscribe({
-        next: (data) => {
-          this.routes.set(data);
-          this.loading.set(false);
-        },
-        error: () => this.loading.set(false),
-      });
+    this.registryService.listRoutes(this.data.serviceId).subscribe({
+      next: (data) => {
+        this.routes.set(data);
+        this.loading.set(false);
+      },
+      error: () => this.loading.set(false),
+    });
   }
 }

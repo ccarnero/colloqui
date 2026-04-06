@@ -110,6 +110,43 @@ describe("ProxyService", () => {
     expect(reply.body).toBe("flow");
   });
 
+  it("handleGeneric returns 400 when x-proxy-target is missing", async () => {
+    const service = new ProxyService();
+    const reply = createReply();
+    const req = {
+      headers: {},
+      url: "/proxy/generic/foo",
+      method: "GET",
+      body: undefined,
+    } as never;
+
+    await service.handleGeneric(req, reply as never);
+    expect(reply.code).toBe(400);
+    expect((reply.body as { message?: string }).message).toContain(
+      "x-proxy-target",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("handleGeneric forwards to x-proxy-target base URL", async () => {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(new Response("upstream", { status: 200 })),
+    );
+    const service = new ProxyService();
+    const reply = createReply();
+    const req = {
+      headers: { "x-proxy-target": "https://upstream.example" },
+      url: "/proxy/generic/api/v1?q=1",
+      method: "GET",
+      body: undefined,
+    } as never;
+
+    await service.handleGeneric(req, reply as never);
+    expect(reply.code).toBe(200);
+    expect(reply.body).toBe("upstream");
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
   it("proxyTo returns upstream status and body", async () => {
     fetchMock.mockImplementation(() =>
       Promise.resolve(new Response("hello", { status: 418 })),

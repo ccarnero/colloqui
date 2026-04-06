@@ -1,15 +1,18 @@
-import { describe, it, expect, beforeEach, mock } from 'bun:test';
-import { Test } from '@nestjs/testing';
-import { EventsService } from '../../src/modules/events/events.service';
-import { JETSTREAM, NATS_CONNECTION } from '../../src/providers/nats.provider';
-import { REDIS_CLIENT } from '../../src/providers/redis.provider';
+import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { Test } from "@nestjs/testing";
+import { EventsService } from "../../src/modules/events/events.service";
+import { JETSTREAM, NATS_CONNECTION } from "../../src/providers/nats.provider";
+import { REDIS_CLIENT } from "../../src/providers/redis.provider";
 
-const TENANT_ID = 'test-tenant';
+const TENANT_ID = "test-tenant";
 
-describe('EventsService', () => {
+describe("EventsService", () => {
   let service: EventsService;
   let mockJs: { publish: ReturnType<typeof mock> };
-  let mockNc: { subscribe: ReturnType<typeof mock>; isClosed: ReturnType<typeof mock> };
+  let mockNc: {
+    subscribe: ReturnType<typeof mock>;
+    isClosed: ReturnType<typeof mock>;
+  };
   let mockRedis: {
     get: ReturnType<typeof mock>;
     pipeline: ReturnType<typeof mock>;
@@ -22,11 +25,18 @@ describe('EventsService', () => {
   beforeEach(async () => {
     mockJs = { publish: mock(() => Promise.resolve({ seq: 1 })) };
     mockNc = {
-      subscribe: mock(() => ({ [Symbol.asyncIterator]: () => ({ next: () => Promise.resolve({ done: true, value: undefined }) }), unsubscribe: mock() })),
+      subscribe: mock(() => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ done: true, value: undefined }),
+        }),
+        unsubscribe: mock(),
+      })),
       isClosed: mock(() => false),
     };
     mockPipeline = {
-      setex: mock(function (this: unknown) { return this; }),
+      setex: mock(function (this: unknown) {
+        return this;
+      }),
       exec: mock(() => Promise.resolve([])),
     };
     mockRedis = {
@@ -46,20 +56,28 @@ describe('EventsService', () => {
     service = module.get(EventsService);
   });
 
-  describe('publish', () => {
-    it('should publish to JetStream with correct subject', async () => {
-      const id = await service.publish('created', { name: 'test' }, TENANT_ID);
+  describe("publish", () => {
+    it("should publish to JetStream with correct subject", async () => {
+      const id = await service.publish({
+        type: "created",
+        payload: { name: "test" },
+        tenantId: TENANT_ID,
+      });
 
       expect(id).toBeDefined();
-      expect(typeof id).toBe('string');
+      expect(typeof id).toBe("string");
       expect(mockJs.publish).toHaveBeenCalledTimes(1);
 
       const [subject] = mockJs.publish.mock.calls[0];
-      expect(subject).toBe('events.created');
+      expect(subject).toBe("events.created");
     });
 
-    it('should store pending status in Redis pipeline with TTL', async () => {
-      const id = await service.publish('updated', {}, TENANT_ID);
+    it("should store pending status in Redis pipeline with TTL", async () => {
+      const id = await service.publish({
+        type: "updated",
+        payload: {},
+        tenantId: TENANT_ID,
+      });
 
       expect(mockPipeline.setex).toHaveBeenCalledTimes(1);
       const [key, ttl, value] = mockPipeline.setex.mock.calls[0];
@@ -67,46 +85,54 @@ describe('EventsService', () => {
       expect(ttl).toBe(3600);
       const parsed = JSON.parse(value);
       expect(parsed.id).toBe(id);
-      expect(parsed.status).toBe('pending');
+      expect(parsed.status).toBe("pending");
     });
 
-    it('should generate unique IDs for each call', async () => {
-      const id1 = await service.publish('a', {}, TENANT_ID);
-      const id2 = await service.publish('b', {}, TENANT_ID);
+    it("should generate unique IDs for each call", async () => {
+      const id1 = await service.publish({
+        type: "a",
+        payload: {},
+        tenantId: TENANT_ID,
+      });
+      const id2 = await service.publish({
+        type: "b",
+        payload: {},
+        tenantId: TENANT_ID,
+      });
       expect(id1).not.toBe(id2);
     });
   });
 
-  describe('getResult', () => {
-    it('should return null when not in L1 cache or Redis', async () => {
+  describe("getResult", () => {
+    it("should return null when not in L1 cache or Redis", async () => {
       mockRedis.get = mock(() => Promise.resolve(null));
-      const result = await service.getResult('nonexistent', TENANT_ID);
+      const result = await service.getResult("nonexistent", TENANT_ID);
       expect(result).toBeNull();
       expect(mockRedis.get).toHaveBeenCalledTimes(1);
     });
 
-    it('should return parsed result from Redis on L1 miss', async () => {
-      const data = { eventId: 'abc', type: 'test', processed: true };
+    it("should return parsed result from Redis on L1 miss", async () => {
+      const data = { eventId: "abc", type: "test", processed: true };
       mockRedis.get = mock(() => Promise.resolve(JSON.stringify(data)));
 
-      const result = await service.getResult('abc', TENANT_ID);
+      const result = await service.getResult("abc", TENANT_ID);
       expect(result).toEqual(data);
       expect(mockRedis.get).toHaveBeenCalledWith(`${TENANT_ID}:result:abc`);
     });
 
-    it('should return from L1 cache on second call (no Redis hit)', async () => {
-      const data = { eventId: 'abc', processed: true };
+    it("should return from L1 cache on second call (no Redis hit)", async () => {
+      const data = { eventId: "abc", processed: true };
       mockRedis.get = mock(() => Promise.resolve(JSON.stringify(data)));
 
-      await service.getResult('abc', TENANT_ID);
+      await service.getResult("abc", TENANT_ID);
       mockRedis.get = mock(() => Promise.resolve(null));
 
-      const result = await service.getResult('abc', TENANT_ID);
+      const result = await service.getResult("abc", TENANT_ID);
       expect(result).toEqual(data);
       expect(mockRedis.get).not.toHaveBeenCalled();
     });
 
-    it('should evict oldest L1 entry when cache exceeds 1024', async () => {
+    it("should evict oldest L1 entry when cache exceeds 1024", async () => {
       for (let i = 0; i < 1025; i++) {
         const d = { i };
         mockRedis.get = mock(() => Promise.resolve(JSON.stringify(d)));
@@ -114,10 +140,10 @@ describe('EventsService', () => {
       }
 
       mockRedis.get = mock(() => Promise.resolve(null));
-      const evicted = await service.getResult('id-0', TENANT_ID);
+      const evicted = await service.getResult("id-0", TENANT_ID);
       expect(evicted).toBeNull();
 
-      const stillCached = await service.getResult('id-1', TENANT_ID);
+      const stillCached = await service.getResult("id-1", TENANT_ID);
       expect(stillCached).toEqual({ i: 1 });
       expect(mockRedis.get).toHaveBeenCalledTimes(1);
     });

@@ -1,5 +1,3 @@
-import { initTelemetry } from '@yoizen/observability';
+import { initServiceTelemetry } from "@yoizen/observability";
 
-initTelemetry({
-  serviceName: process.env.OTEL_SERVICE_NAME ?? 'api-gateway',
-});
+initServiceTelemetry("api-gateway");

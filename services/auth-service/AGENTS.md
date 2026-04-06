@@ -24,9 +24,8 @@ src/
 ├── main.ts                                     # Bootstrap: Fastify adapter, ValidationPipe, port binding
 ├── app.module.ts                               # Root module imports
 ├── providers/
-│   ├── providers.module.ts                     # @Global() module exporting POSTGRES_SQL + REDIS_CLIENT
-│   ├── postgres.provider.ts                    # POSTGRES_SQL token (postgres.js, max 20 connections)
-│   └── redis.provider.ts                       # REDIS_CLIENT token (ioredis, lazy connect)
+│   ├── providers.module.ts                     # @Global() POSTGRES_SQL + REDIS_CLIENT (redis via @yoizen/database)
+│   └── postgres.provider.ts                    # POSTGRES_SQL token (postgres.js, max 20 connections)
 └── modules/
     ├── token/
     │   ├── token.module.ts
@@ -59,7 +58,7 @@ src/
 |------|---------|
 | `src/app.module.ts` | Imports ProvidersModule, TokenModule, UsersModule, ClientsModule, PublicRoutesModule, HealthModule |
 | `src/providers/postgres.provider.ts` | Factory provider for `POSTGRES_SQL` (postgres.js, prepared statements) |
-| `src/providers/redis.provider.ts` | Factory provider for `REDIS_CLIENT` (ioredis, lazy connect, max 3 retries) |
+| `providers.module.ts` | Registers `redisProvider` from `@yoizen/database` for `REDIS_CLIENT` |
 | `src/modules/token/token.service.ts` | JWT generation (HS256 via `jose`), client credentials grant, user login, token refresh |
 | `src/modules/users/users.service.ts` | User CRUD with argon2id password hashing, admin seeding from `ADMIN_EMAIL`/`ADMIN_PASSWORD` env vars |
 | `src/modules/clients/clients.service.ts` | API client management with `yoizen_` prefixed client IDs and `ysk_` prefixed secrets |
@@ -113,7 +112,7 @@ AppModule
 | Token | Type | Source |
 |-------|------|--------|
 | `POSTGRES_SQL` | `Sql` (postgres.js) | `postgres.provider.ts` |
-| `REDIS_CLIENT` | `Redis` (ioredis) | `redis.provider.ts` |
+| `REDIS_CLIENT` | `Redis` (ioredis) | `providers.module.ts` → `redisProvider` (`@yoizen/database`) |
 
 ### Database Schema
 
@@ -152,7 +151,8 @@ public_routes   (id, method, path_pattern, scope, environment, created_at)
 |---------|-------|
 | `bun test` | All tests |
 | `bun test test/unit` | Unit tests |
-| `bun test test/integration` | Integration tests |
+
+There is no `test/integration/` directory in this service; use `bun test test/unit` for automated tests.
 
 ## Code Style and Conventions
 

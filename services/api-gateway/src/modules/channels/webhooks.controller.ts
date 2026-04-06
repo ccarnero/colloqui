@@ -1,16 +1,22 @@
 import {
+  Body,
   Controller,
   Get,
   Post,
   Param,
   Query,
-  Req,
   HttpCode,
   HttpStatus,
+  UsePipes,
+  ValidationPipe,
 } from "@nestjs/common";
 import { Public } from "../../decorators/public.decorator";
 import { SkipTenant } from "../../decorators/skip-tenant.decorator";
 import { ChannelsProxyService } from "./channels-proxy.service";
+import {
+  WebhookVerificationQueryDto,
+  WebhookInboundBodyDto,
+} from "./webhooks-gateway.dto";
 
 /**
  * Webhook endpoints are public (no JWT, no tenant guard).
@@ -26,47 +32,43 @@ export class WebhooksController {
   async verify(
     @Param("channel") channel: string,
     @Param("tenantId") tenantId: string,
-    @Query("hub.mode") mode?: string,
-    @Query("hub.verify_token") verifyToken?: string,
-    @Query("hub.challenge") challenge?: string,
+    @Query() query: WebhookVerificationQueryDto,
   ): Promise<object> {
     const qs: Record<string, string | undefined> = {
-      "hub.mode": mode,
-      "hub.verify_token": verifyToken,
-      "hub.challenge": challenge,
+      "hub.mode": query["hub.mode"],
+      "hub.verify_token": query["hub.verify_token"],
+      "hub.challenge": query["hub.challenge"],
     };
 
-    return this.proxy.proxy(
-      "GET",
-      `/webhooks/${encodeURIComponent(channel)}/${encodeURIComponent(tenantId)}`,
+    return this.proxy.proxy({
+      method: "GET",
+      path: `/webhooks/${encodeURIComponent(channel)}/${encodeURIComponent(tenantId)}`,
       tenantId,
-      qs,
-    );
+      query: qs,
+    });
   }
 
   @Post(":channel/:tenantId")
   @Public()
   @SkipTenant()
   @HttpCode(HttpStatus.OK)
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: false,
+      forbidNonWhitelisted: false,
+      transform: true,
+    }),
+  )
   async receive(
     @Param("channel") channel: string,
     @Param("tenantId") tenantId: string,
-    @Req() req: Record<string, unknown>,
+    @Body() body: WebhookInboundBodyDto,
   ): Promise<object> {
-    const headers: Record<string, string> = {};
-    const sigHeader = (req as { headers?: Record<string, string> }).headers?.[
-      "x-hub-signature-256"
-    ];
-    if (sigHeader) {
-      headers["x-hub-signature-256"] = sigHeader;
-    }
-
-    return this.proxy.proxy(
-      "POST",
-      `/webhooks/${encodeURIComponent(channel)}/${encodeURIComponent(tenantId)}`,
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/webhooks/${encodeURIComponent(channel)}/${encodeURIComponent(tenantId)}`,
       tenantId,
-      undefined,
-      (req as { body?: unknown }).body,
-    );
+      body: body as unknown as Record<string, unknown>,
+    });
   }
 }

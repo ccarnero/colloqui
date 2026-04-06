@@ -27,11 +27,8 @@ export function serializeCanonicalPayload(
   return JSON.stringify(normalizePayloadValue(payload));
 }
 
-export function calculateChecksum(
-  payload: Record<string, unknown>,
-): string {
+export function calculateChecksum(payload: Record<string, unknown>): string {
   const serialized = serializeCanonicalPayload(payload);
   const hash = createHash("sha256").update(serialized).digest("hex");
   return `sha256:${hash}`;
 }
-

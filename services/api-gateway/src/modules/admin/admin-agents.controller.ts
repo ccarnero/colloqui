@@ -11,149 +11,172 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
-} from '@nestjs/common';
-import { AdminProxyService } from './admin-proxy.service';
+} from "@nestjs/common";
+import { AdminProxyService } from "./admin-proxy.service";
 import {
   ChatRequestDto,
   CreateAgentDto,
   MemoryProposalParamDto,
+  AdminAgentsListQueryDto,
   UpdateAgentDto,
-} from './admin.dto';
-import type { TenantScopedRequest } from '../../types/yoizen-request';
+} from "./admin.dto";
+import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { toOptionalStringQueryParam } from "../../utils/pagination-query.util";
 
-@Controller('admin/agents')
+@Controller("admin/agents")
 export class AdminAgentsController {
   constructor(private readonly proxy: AdminProxyService) {}
 
   @Get()
   async listAgents(
-    @Req() req: TenantScopedRequest,
-    @Query('status') status?: string,
-    @Query('is_active') isActive?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Req() req: ITenantScopedRequest,
+    @Query() query: AdminAgentsListQueryDto,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'GET',
-      '/admin/agents',
-      req.tenantId,
-      { status, is_active: isActive, limit, offset },
-    );
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/admin/agents",
+      tenantId: req.tenantId,
+      query: {
+        status: query.status,
+        is_active: query.is_active,
+        limit: toOptionalStringQueryParam(query.limit),
+        offset: toOptionalStringQueryParam(query.offset),
+      },
+    });
   }
 
-  @Get('memory-proposals')
+  @Get("memory-proposals")
   async listMemoryProposals(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'GET',
-      '/admin/agents/memory-proposals',
-      req.tenantId,
-      undefined,
-      undefined,
-      req.user?.sub,
-    );
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/admin/agents/memory-proposals",
+      tenantId: req.tenantId,
+      trustedUserId: req.user?.sub,
+    });
   }
 
-  @Get(':id')
+  @Get(":id")
   async getAgent(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<object> {
-    return this.proxy.proxy('GET', `/admin/agents/${id}`, req.tenantId);
+    return this.proxy.proxy({
+      method: "GET",
+      path: `/admin/agents/${id}`,
+      tenantId: req.tenantId,
+    });
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createAgent(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
     @Body() body: CreateAgentDto,
   ): Promise<object> {
-    return this.proxy.proxy('POST', '/admin/agents', req.tenantId, undefined, body);
+    return this.proxy.proxy({
+      method: "POST",
+      path: "/admin/agents",
+      tenantId: req.tenantId,
+      body,
+    });
   }
 
-  @Put(':id')
+  @Put(":id")
   async updateAgent(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
     @Body() body: UpdateAgentDto,
   ): Promise<object> {
-    return this.proxy.proxy('PUT', `/admin/agents/${id}`, req.tenantId, undefined, body);
+    return this.proxy.proxy({
+      method: "PUT",
+      path: `/admin/agents/${id}`,
+      tenantId: req.tenantId,
+      body,
+    });
   }
 
-  @Delete(':id')
+  @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteAgent(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<void> {
-    await this.proxy.proxy('DELETE', `/admin/agents/${id}`, req.tenantId);
+    await this.proxy.proxy({
+      method: "DELETE",
+      path: `/admin/agents/${id}`,
+      tenantId: req.tenantId,
+    });
   }
 
-  @Post(':id/publish')
+  @Post(":id/publish")
   @HttpCode(HttpStatus.OK)
   async publishAgent(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<object> {
-    return this.proxy.proxy('POST', `/admin/agents/${id}/publish`, req.tenantId);
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/admin/agents/${id}/publish`,
+      tenantId: req.tenantId,
+    });
   }
 
-  @Post(':id/unpublish')
+  @Post(":id/unpublish")
   @HttpCode(HttpStatus.OK)
   async unpublishAgent(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<object> {
-    return this.proxy.proxy('POST', `/admin/agents/${id}/unpublish`, req.tenantId);
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/admin/agents/${id}/unpublish`,
+      tenantId: req.tenantId,
+    });
   }
 
-  @Post(':id/chat')
+  @Post(":id/chat")
   @HttpCode(HttpStatus.OK)
   async chatWithAgent(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
     @Body() body: ChatRequestDto,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'POST',
-      `/admin/agents/${id}/chat`,
-      req.tenantId,
-      undefined,
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/admin/agents/${id}/chat`,
+      tenantId: req.tenantId,
       body,
-      req.user?.sub,
-    );
+      trustedUserId: req.user?.sub,
+    });
   }
 
-  @Post('memory-proposals/:id/approve')
+  @Post("memory-proposals/:id/approve")
   @HttpCode(HttpStatus.OK)
   async approveMemoryProposal(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
     @Param() params: MemoryProposalParamDto,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'POST',
-      `/admin/agents/memory-proposals/${params.id}/approve`,
-      req.tenantId,
-      undefined,
-      undefined,
-      req.user?.sub,
-    );
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/admin/agents/memory-proposals/${params.id}/approve`,
+      tenantId: req.tenantId,
+      trustedUserId: req.user?.sub,
+    });
   }
 
-  @Post('memory-proposals/:id/reject')
+  @Post("memory-proposals/:id/reject")
   @HttpCode(HttpStatus.OK)
   async rejectMemoryProposal(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
     @Param() params: MemoryProposalParamDto,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'POST',
-      `/admin/agents/memory-proposals/${params.id}/reject`,
-      req.tenantId,
-      undefined,
-      undefined,
-      req.user?.sub,
-    );
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/admin/agents/memory-proposals/${params.id}/reject`,
+      tenantId: req.tenantId,
+      trustedUserId: req.user?.sub,
+    });
   }
 }

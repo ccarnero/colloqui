@@ -32,7 +32,6 @@ export const webhookVerificationFailures = meter.createCounter(
   { description: "Total HMAC verification failures" },
 );
 
-export const webhookRequests = meter.createCounter(
-  "channel.webhook.requests",
-  { description: "Total webhook requests received" },
-);
+export const webhookRequests = meter.createCounter("channel.webhook.requests", {
+  description: "Total webhook requests received",
+});

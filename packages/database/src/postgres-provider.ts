@@ -26,6 +26,16 @@ export interface PostgresPoolOptions {
   prepare?: boolean;
 }
 
+/**
+ * Shared pool tuning for platform HTTP services (auth, workflow, etc.).
+ * O(1) constant — import instead of duplicating `createPostgresProvider` options.
+ */
+export const PLATFORM_POSTGRES_POOL_OPTIONS: Readonly<PostgresPoolOptions> = {
+  max: 20,
+  connectTimeout: 30,
+  prepare: true,
+};
+
 export interface PostgresModuleOptions extends PostgresPoolOptions {
   /** Raw SQL to execute on module init (DDL, migrations, etc.) */
   schemaSql?: string[];

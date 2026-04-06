@@ -2,6 +2,8 @@ import {
   connect,
   type NatsConnection,
   type JetStreamManager,
+  type JetStreamClient,
+  type Consumer,
   type RetentionPolicy,
   AckPolicy,
   DeliverPolicy,
@@ -112,4 +114,81 @@ export async function ensureConsumer(
   } catch {
     // consumer already exists
   }
+}
+
+/**
+ * Bootstrap options for JetStream manager: ensure streams and consumers in order.
+ */
+export interface IJetStreamManagerBootstrapOptions {
+  readonly streams: readonly EnsureStreamOptions[];
+  readonly consumers: readonly EnsureConsumerOptions[];
+}
+
+/**
+ * Nest factory: connects JetStream manager, ensures configured streams/consumers.
+ */
+export function createJetStreamManagerProvider(
+  provideToken: string,
+  options: IJetStreamManagerBootstrapOptions,
+): FactoryProvider<Promise<JetStreamManager>> {
+  return {
+    provide: provideToken,
+    inject: [NATS_CONNECTION],
+    useFactory: async (nc: NatsConnection): Promise<JetStreamManager> => {
+      const jsm = await nc.jetstreamManager();
+      const { streams, consumers } = options;
+      for (let i = 0; i < streams.length; i++) {
+        await ensureStream(jsm, streams[i]!);
+      }
+      for (let i = 0; i < consumers.length; i++) {
+        await ensureConsumer(jsm, consumers[i]!);
+      }
+      return jsm;
+    },
+  };
+}
+
+export interface IJetStreamDurableConsumerProviderOptions {
+  readonly provide: string;
+  readonly managerToken: string;
+  readonly streamName: string;
+  readonly durableName: string;
+}
+
+/**
+ * Nest factory: resolves a durable JetStream consumer handle.
+ */
+export function createJetStreamDurableConsumerProvider(
+  opts: IJetStreamDurableConsumerProviderOptions,
+): FactoryProvider<Promise<Consumer>> {
+  return {
+    provide: opts.provide,
+    inject: [NATS_CONNECTION, opts.managerToken],
+    useFactory: async (
+      nc: NatsConnection,
+      _jm: JetStreamManager,
+    ): Promise<Consumer> => {
+      const js: JetStreamClient = nc.jetstream();
+      return js.consumers.get(opts.streamName, opts.durableName);
+    },
+  };
+}
+
+export interface IJetStreamPublisherProviderOptions {
+  readonly provide: string;
+  readonly managerToken: string;
+}
+
+/**
+ * Nest factory: JetStream client for publishing.
+ */
+export function createJetStreamPublisherProvider(
+  opts: IJetStreamPublisherProviderOptions,
+): FactoryProvider<JetStreamClient> {
+  return {
+    provide: opts.provide,
+    inject: [NATS_CONNECTION, opts.managerToken],
+    useFactory: (nc: NatsConnection, _jm: JetStreamManager): JetStreamClient =>
+      nc.jetstream(),
+  };
 }

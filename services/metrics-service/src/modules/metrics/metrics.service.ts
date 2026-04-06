@@ -1,102 +1,62 @@
 import {
   Inject,
   Injectable,
-  Logger,
   OnModuleDestroy,
   OnModuleInit,
-} from '@nestjs/common';
-import type { Consumer, JsMsg } from 'nats';
-import { JETSTREAM_CLIENT } from '../../providers/nats.provider';
-import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
-import type { EventEnvelope, MetricsPayload } from '@yoizen/shared';
+} from "@nestjs/common";
+import type { Consumer } from "nats";
+import { NatsConsumerRunner } from "@yoizen/database";
+import { PinoLoggerService } from "@yoizen/observability";
+import { JETSTREAM_CLIENT } from "../../providers/nats.provider";
+import { TenantConnectionManager } from "@yoizen/database";
+import type { EventEnvelope } from "@yoizen/shared";
+import type { IMetricsQueryParams } from "../../common/metrics-query-params";
+import {
+  MetricsRepository,
+  type IMetricRecord,
+} from "./metrics.repository";
 
-export interface IMetricRecord {
-  id: string;
-  source: string;
-  name: string;
-  value: number;
-  tags: Record<string, string>;
-  metadata: Record<string, unknown>;
-  created_at: string;
-}
-
-interface MetricsQueryParams {
-  source?: string;
-  name?: string;
-  from?: string;
-  to?: string;
-  limit: number;
-  offset: number;
-}
+export type { IMetricRecord };
 
 @Injectable()
 export class MetricsService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(MetricsService.name);
-  private consumeIterator: Awaited<
-    ReturnType<Consumer['consume']>
-  > | null = null;
+  private readonly logger = new PinoLoggerService(MetricsService.name);
+  private readonly runner: NatsConsumerRunner;
 
   constructor(
-    @Inject(JETSTREAM_CLIENT) private readonly consumer: Consumer,
+    @Inject(JETSTREAM_CLIENT) consumer: Consumer,
     private readonly tenantConnections: TenantConnectionManager,
-  ) {}
+    private readonly metricsRepository: MetricsRepository,
+  ) {
+    this.runner = new NatsConsumerRunner(
+      consumer,
+      (msg) => this.persistMessage(msg),
+      this.logger,
+    );
+  }
 
   async onModuleInit(): Promise<void> {
-    this.consumeIterator = await this.consumer.consume({
-      max_messages: 100,
-      expires: 30_000,
-    });
-    this.runConsumer();
+    await this.runner.start();
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.consumeIterator) {
-      this.consumeIterator.stop();
-      this.consumeIterator = null;
-    }
+    await this.runner.stop();
   }
 
-  private async ensureTable(sql: Sql, tenantId: string): Promise<void> {
-    if (this.tenantConnections.isInitialized(tenantId)) return;
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS metrics (
-        id          TEXT             PRIMARY KEY,
-        source      TEXT             NOT NULL,
-        name        TEXT             NOT NULL,
-        value       DOUBLE PRECISION NOT NULL DEFAULT 0,
-        tags        JSONB            NOT NULL DEFAULT '{}',
-        metadata    JSONB            NOT NULL DEFAULT '{}',
-        created_at  TIMESTAMPTZ      NOT NULL DEFAULT NOW()
-      )
-    `;
-    await sql`CREATE INDEX IF NOT EXISTS idx_metrics_source ON metrics (source)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_metrics_name ON metrics (name)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_metrics_source_created ON metrics (source, created_at DESC)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_metrics_created_at ON metrics (created_at DESC)`;
-
-    this.tenantConnections.markInitialized(tenantId);
+  private async persistMessage(msg: import("nats").JsMsg): Promise<void> {
+    await this.persistMetricEnvelope(msg.json() as EventEnvelope);
   }
 
-  private async runConsumer(): Promise<void> {
-    if (!this.consumeIterator) return;
-    try {
-      for await (const msg of this.consumeIterator) {
-        try {
-          await this.persistMessage(msg);
-          msg.ack();
-        } catch (err) {
-          this.logger.error(`Failed to persist metric: ${err}`);
-          msg.nak();
-        }
-      }
-    } catch {
-      // iterator stopped
-    }
+  /**
+   * Exposes NATS persistence for unit tests (no live JetStream required).
+   *
+   * @param envelope  Decoded JetStream message body.
+   */
+  async persistMetricEnvelopeForTest(envelope: EventEnvelope): Promise<void> {
+    await this.persistMetricEnvelope(envelope);
   }
 
-  private async persistMessage(msg: JsMsg): Promise<void> {
-    const envelope = msg.json() as EventEnvelope;
+  private async persistMetricEnvelope(envelope: EventEnvelope): Promise<void> {
     const tenantId = envelope.tenant;
     if (!tenantId) {
       this.logger.warn(`Dropping metric ${envelope.id}: missing tenant`);
@@ -104,84 +64,36 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
     }
 
     const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
-
-    const payload = (envelope.data.payload ?? {}) as unknown as MetricsPayload;
-
-    const source = payload.source ?? 'unknown';
-    const name = payload.name ?? 'unnamed';
-    const value = typeof payload.value === 'number' ? payload.value : 0;
-    const tags = payload.tags ?? {};
-    const metadata = {
-      tenant: envelope.tenant,
-      source: envelope.source,
-      correlation_id: envelope.correlation_id,
-      traceid: envelope.traceid,
-    };
-    const createdAt = payload.timestamp
-      ? new Date(payload.timestamp).toISOString()
-      : undefined;
-
-    if (createdAt) {
-      await sql`
-        INSERT INTO metrics (id, source, name, value, tags, metadata, created_at)
-        VALUES (
-          ${envelope.id},
-          ${source},
-          ${name},
-          ${value},
-          ${JSON.stringify(tags)},
-          ${JSON.stringify(metadata)},
-          ${createdAt}
-        )
-        ON CONFLICT (id) DO NOTHING
-      `;
-    } else {
-      await sql`
-        INSERT INTO metrics (id, source, name, value, tags, metadata)
-        VALUES (
-          ${envelope.id},
-          ${source},
-          ${name},
-          ${value},
-          ${JSON.stringify(tags)},
-          ${JSON.stringify(metadata)}
-        )
-        ON CONFLICT (id) DO NOTHING
-      `;
-    }
+    await this.metricsRepository.insertMetricFromEnvelope(
+      sql,
+      tenantId,
+      envelope,
+    );
   }
 
-  async queryMetrics(params: MetricsQueryParams, tenantId: string): Promise<IMetricRecord[]> {
-    const { source, name, from, to, limit, offset } = params;
+  /**
+   * @param params  Query filters including source, name, date range, and pagination.
+   * @param tenantId  Tenant scope for the query.
+   * @returns Matching metric records ordered by creation date descending.
+   */
+  async queryMetrics(
+    params: IMetricsQueryParams,
+    tenantId: string,
+  ): Promise<IMetricRecord[]> {
     const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
-
-    const rows = await sql<IMetricRecord[]>`
-      SELECT id, source, name, value, tags, metadata, created_at
-      FROM metrics
-      WHERE 1=1
-        ${source ? sql`AND source = ${source}` : sql``}
-        ${name ? sql`AND name = ${name}` : sql``}
-        ${from ? sql`AND created_at >= ${from}` : sql``}
-        ${to ? sql`AND created_at <= ${to}` : sql``}
-      ORDER BY created_at DESC
-      LIMIT ${limit}
-      OFFSET ${offset}
-    `;
-
-    return rows;
+    return this.metricsRepository.queryMetrics(sql, tenantId, params);
   }
 
-  async getMetricById(id: string, tenantId: string): Promise<IMetricRecord | null> {
+  /**
+   * @param id  Metric record primary key.
+   * @param tenantId  Tenant scope for the lookup.
+   * @returns The matching metric or `null`.
+   */
+  async getMetricById(
+    id: string,
+    tenantId: string,
+  ): Promise<IMetricRecord | null> {
     const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
-
-    const rows = await sql<IMetricRecord[]>`
-      SELECT id, source, name, value, tags, metadata, created_at
-      FROM metrics
-      WHERE id = ${id}
-    `;
-    return rows[0] ?? null;
+    return this.metricsRepository.getMetricById(sql, tenantId, id);
   }
 }

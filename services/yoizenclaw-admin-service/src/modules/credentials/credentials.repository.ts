@@ -1,14 +1,21 @@
-import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
-import { getSecretFields, type CredentialProvider } from './providers/credential-provider.registry';
+import { Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import type { JsonValue } from "@yoizen/shared";
+import {
+  TenantConnectionManager,
+  type Sql,
+} from "../../providers/tenant-connection-manager";
+import {
+  getSecretFields,
+  type CredentialProvider,
+} from "./providers/credential-provider.registry";
 
-export type SyncStatus = 'pending' | 'synced' | 'failed' | 'manual_review_required';
+export type SyncStatus =
+  | "pending"
+  | "synced"
+  | "failed"
+  | "manual_review_required";
 
-/**
- * Provider-aware credential entity
- * Core domain model for credentials with provider-specific payloads
- */
 export interface ProviderCredential {
   id: string;
   name: string;
@@ -26,9 +33,6 @@ export interface ProviderCredential {
   updated_at: Date;
 }
 
-/**
- * Masked credential - safe for API responses. Secret fields are replaced with asterisks.
- */
 export interface MaskedCredential {
   id: string;
   name: string;
@@ -77,10 +81,6 @@ export interface FindAllOptions {
   offset?: number;
 }
 
-// Helper type for JSON values compatible with postgres.js
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type JsonValue = any;
-
 @Injectable()
 export class CredentialsRepository {
   constructor(
@@ -92,10 +92,6 @@ export class CredentialsRepository {
     return this.connectionManager.getConnection(tenantId);
   }
 
-  /**
-   * List all credentials with optional filters and pagination.
-   * Returns credentials with masked payloads (no plaintext secrets).
-   */
   async findAll(
     tenantId: string,
     options: FindAllOptions = {},
@@ -103,10 +99,8 @@ export class CredentialsRepository {
     const sql = await this.getSql(tenantId);
     const { provider, is_active, sync_status, limit = 20, offset = 0 } = options;
 
-    // Default to active credentials unless explicitly overridden
     const activeCondition = is_active !== undefined ? is_active : true;
 
-    // Get total count
     const countResult = await sql<{ count: number }[]>`
       SELECT COUNT(*) as count FROM credentials
       WHERE is_active = ${activeCondition}
@@ -115,7 +109,6 @@ export class CredentialsRepository {
     `;
     const total = Number(countResult[0].count);
 
-    // Get credentials without sensitive payload fields
     const credentials = await sql<MaskedCredential[]>`
       SELECT
         id,
@@ -141,7 +134,6 @@ export class CredentialsRepository {
       OFFSET ${offset}
     `;
 
-    // Determine has_secret from payload (check if secret fields have values)
     const credentialsWithSecretFlag = credentials.map((cred) => ({
       ...cred,
       has_secret: this.hasSecretValues(cred.provider, cred.payload),
@@ -150,9 +142,6 @@ export class CredentialsRepository {
     return { credentials: credentialsWithSecretFlag, total };
   }
 
-  /**
-   * Find credential by ID (without sensitive data)
-   */
   async findById(
     tenantId: string,
     id: string,
@@ -188,10 +177,6 @@ export class CredentialsRepository {
     };
   }
 
-  /**
-   * Find credential by ID with full payload (including secrets).
-   * ⚠️ Only use internally for sync operations. NEVER expose in API responses.
-   */
   async findByIdWithPayload(
     tenantId: string,
     id: string,
@@ -222,10 +207,6 @@ export class CredentialsRepository {
     return results[0] ?? null;
   }
 
-  /**
-   * Find all active credentials for sync operations.
-   * Returns full payloads with secrets for runtime materialization.
-   */
   async findAllForSync(
     tenantId: string,
   ): Promise<ProviderCredential[]> {
@@ -256,10 +237,6 @@ export class CredentialsRepository {
     return results;
   }
 
-  /**
-   * Create a new provider-aware credential.
-   * TODO(security): Encrypt payloads with KMS/Vault before production
-   */
   async create(
     tenantId: string,
     data: CreateProviderCredentialData,
@@ -268,9 +245,7 @@ export class CredentialsRepository {
     const credentialId = randomUUID();
 
     const isEncrypted = false;
-
-    // Set initial sync status to pending
-    const syncStatus: SyncStatus = 'pending';
+    const syncStatus: SyncStatus = "pending";
 
     const results = await sql<MaskedCredential[]>`
       INSERT INTO credentials (
@@ -327,11 +302,6 @@ export class CredentialsRepository {
     };
   }
 
-  /**
-   * Update a credential with partial update support.
-   * Preserves existing secret values when not explicitly replaced.
-   * TODO(security): Encrypt payloads with KMS/Vault before production
-   */
   async update(
     tenantId: string,
     id: string,
@@ -339,13 +309,12 @@ export class CredentialsRepository {
   ): Promise<MaskedCredential | null> {
     const sql = await this.getSql(tenantId);
 
-    // Determine sync_status updates
     let syncStatus = data.sync_status;
     if (data.payload !== undefined && !syncStatus) {
-      syncStatus = 'pending';
+      syncStatus = "pending";
     }
 
-    const isSynced = syncStatus === 'synced';
+    const isSynced = syncStatus === "synced";
 
     const results = await sql<MaskedCredential[]>`
       UPDATE credentials
@@ -387,9 +356,6 @@ export class CredentialsRepository {
     };
   }
 
-  /**
-   * Soft delete a credential.
-   */
   async delete(tenantId: string, id: string): Promise<boolean> {
     const sql = await this.getSql(tenantId);
 
@@ -403,10 +369,6 @@ export class CredentialsRepository {
     return results.length > 0;
   }
 
-  /**
-   * Rotate credential secrets (full payload replacement).
-   * TODO(security): Encrypt payloads with KMS/Vault before production
-   */
   async rotate(
     tenantId: string,
     id: string,
@@ -421,7 +383,7 @@ export class CredentialsRepository {
         payload = ${sql.json(newPayload as JsonValue)},
         is_encrypted = ${false},
         expires_at = ${newExpiresAt ? new Date(newExpiresAt) : null},
-        sync_status = ${'pending'},
+        sync_status = ${"pending"},
         updated_at = NOW()
       WHERE id = ${id} AND is_active = true
       RETURNING 
@@ -449,9 +411,6 @@ export class CredentialsRepository {
     };
   }
 
-  /**
-   * Update sync status for a credential.
-   */
   async updateSyncStatus(
     tenantId: string,
     id: string,
@@ -460,7 +419,7 @@ export class CredentialsRepository {
   ): Promise<boolean> {
     const sql = await this.getSql(tenantId);
 
-    const lastSyncAt = status === 'synced' ? new Date() : null;
+    const lastSyncAt = status === "synced" ? new Date() : null;
 
     const results = await sql<{ id: string }[]>`
       UPDATE credentials
@@ -476,16 +435,16 @@ export class CredentialsRepository {
     return results.length > 0;
   }
 
-  /**
-   * Check if payload contains actual secret values for the given provider.
-   */
-  private hasSecretValues(provider: CredentialProvider, payload: Record<string, unknown>): boolean {
-    if (!payload || typeof payload !== 'object' || !provider) return false;
+  private hasSecretValues(
+    provider: CredentialProvider,
+    payload: Record<string, unknown>,
+  ): boolean {
+    if (!payload || typeof payload !== "object" || !provider) return false;
 
     const secretFields = getSecretFields(provider);
     return secretFields.some((field) => {
       const value = payload[field];
-      return value !== null && value !== undefined && value !== '';
+      return value !== null && value !== undefined && value !== "";
     });
   }
 }

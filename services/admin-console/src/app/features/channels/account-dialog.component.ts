@@ -1,7 +1,12 @@
-import { Component, inject, signal, type OnInit } from "@angular/core";
-import { HttpClient } from "@angular/common/http";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  type OnInit,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
-import { environment } from "../../../environments/environment";
+import { ChannelAdminService } from "../../core/services/channel-admin.service";
 import {
   MAT_DIALOG_DATA,
   MatDialogModule,
@@ -12,34 +17,20 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
+import type { IChannelAccount } from "../../core/models/channel-account.model";
 
-interface ChannelAccount {
-  id: string;
-  channel: string;
-  provider: string;
-  name: string;
-  externalId: string;
-  phoneNumberId?: string;
-  wabaId?: string;
-  telegramBotToken?: string;
-  accessToken: string;
-  appId?: string;
-  appSecret?: string;
-  verifyToken?: string;
-  isActive: boolean;
-}
-
-export interface AccountDialogData {
-  account?: ChannelAccount;
+export interface IAccountDialogData {
+  account?: IChannelAccount;
   defaultChannel?: string;
 }
 
-export interface AccountDialogResult {
+export interface IAccountDialogResult {
   saved: boolean;
 }
 
 @Component({
   selector: "app-account-dialog",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatDialogModule,
@@ -242,11 +233,11 @@ export interface AccountDialogResult {
   `,
 })
 export class AccountDialogComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly channels = inject(ChannelAdminService);
   readonly dialogRef = inject(
-    MatDialogRef<AccountDialogComponent, AccountDialogResult>,
+    MatDialogRef<AccountDialogComponent, IAccountDialogResult>,
   );
-  private readonly data = inject<AccountDialogData>(MAT_DIALOG_DATA);
+  private readonly data = inject<IAccountDialogData>(MAT_DIALOG_DATA);
 
   isEdit = false;
   private editId = "";
@@ -300,8 +291,8 @@ export class AccountDialogComponent implements OnInit {
     this.errorMessage.set("");
 
     if (this.isEdit) {
-      this.http
-        .patch(`${environment.apiUrl}/channels/accounts/${this.editId}`, {
+      this.channels
+        .patchAccount(this.editId, {
           name: this.name().trim(),
           accessToken: this.accessToken().trim(),
           appId: this.appId().trim() || undefined,
@@ -324,8 +315,8 @@ export class AccountDialogComponent implements OnInit {
       const isTelegram = this.channel() === "telegram";
       const botToken = this.telegramBotToken().trim();
 
-      this.http
-        .post(`${environment.apiUrl}/channels/accounts`, {
+      this.channels
+        .createAccount({
           channel: this.channel(),
           name: this.name().trim(),
           externalId: this.externalId().trim(),

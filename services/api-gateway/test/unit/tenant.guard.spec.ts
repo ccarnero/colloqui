@@ -2,12 +2,9 @@ import { describe, it, expect, mock } from "bun:test";
 import { BadRequestException, type ExecutionContext } from "@nestjs/common";
 import type { Reflector } from "@nestjs/core";
 import { TENANT_HEADER } from "@yoizen/shared";
-import {
-  TenantGuard,
-  REQUEST_TENANT_KEY,
-} from "../../src/guards/tenant.guard";
+import { TenantGuard, REQUEST_TENANT_KEY } from "../../src/guards/tenant.guard";
 import { SKIP_TENANT_KEY } from "../../src/decorators/skip-tenant.decorator";
-import type { YoizenRequest } from "../../src/types/yoizen-request";
+import type { IYoizenRequest } from "../../src/types/yoizen-request";
 
 function createReflector(skipTenant?: boolean): Reflector {
   return {
@@ -18,7 +15,7 @@ function createReflector(skipTenant?: boolean): Reflector {
   } as unknown as Reflector;
 }
 
-function createContext(request: YoizenRequest): ExecutionContext {
+function createContext(request: IYoizenRequest): ExecutionContext {
   const noop = () => {};
   return {
     getHandler: () => noop,
@@ -29,14 +26,14 @@ function createContext(request: YoizenRequest): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-function baseRequest(overrides: Partial<YoizenRequest> = {}): YoizenRequest {
+function baseRequest(overrides: Partial<IYoizenRequest> = {}): IYoizenRequest {
   return {
     method: "GET",
     url: "/x",
     headers: {},
     query: {},
     ...overrides,
-  } as YoizenRequest;
+  } as IYoizenRequest;
 }
 
 describe("TenantGuard", () => {

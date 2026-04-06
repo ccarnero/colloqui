@@ -1,7 +1,7 @@
-import { Module } from '@nestjs/common';
-import { AuditController } from './audit.controller';
-import { ChannelAuditProxyController } from './channel-audit.controller';
-import { AuditProxyService } from './audit.service';
+import { Module } from "@nestjs/common";
+import { AuditController } from "./audit.controller";
+import { ChannelAuditProxyController } from "./channel-audit.controller";
+import { AuditProxyService } from "./audit-proxy.service";
 
 @Module({
   controllers: [AuditController, ChannelAuditProxyController],

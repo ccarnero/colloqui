@@ -1,4 +1,10 @@
-import { Component, inject, signal, type OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  type OnInit,
+} from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatDialog } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
@@ -6,41 +12,41 @@ import { MatTableModule } from "@angular/material/table";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { HttpAdapterDialogComponent } from "../../../shared/components/http-adapter-dialog/http-adapter-dialog.component";
 import {
-  type HttpAdapter,
-  type HttpAdapterContext,
-  type HttpAdapterDialogData,
-  type HttpAdapterDialogResult,
+  type IHttpAdapter,
+  type IHttpAdapterContext,
+  type IHttpAdapterDialogData,
+  type IHttpAdapterDialogResult,
 } from "../../../shared/models/http-adapter.model";
 import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 import {
   HttpAdapterService,
-  type AdapterDto,
-  type CreateAdapterPayload,
-  type UpdateAdapterPayload,
+  type IAdapterDto,
+  type ICreateAdapterPayload,
+  type IUpdateAdapterPayload,
 } from "../../../core/services/http-adapter.service";
 
-interface ConnectorRow {
+interface IConnectorRow {
   id: string;
-  context: HttpAdapterContext;
-  adapter: HttpAdapter;
+  context: IHttpAdapterContext;
+  adapter: IHttpAdapter;
   status: string;
 }
 
-function toRow(dto: AdapterDto): ConnectorRow {
+function toRow(dto: IAdapterDto): IConnectorRow {
   return {
     id: dto.id,
-    context: dto.context as HttpAdapterContext,
+    context: dto.context as IHttpAdapterContext,
     adapter: {
       name: dto.name,
       baseUrl: dto.baseUrl,
       auth: {
-        type: dto.authType as HttpAdapter["auth"]["type"],
+        type: dto.authType as IHttpAdapter["auth"]["type"],
         ...(dto.authConfig as Record<string, unknown>),
       },
       headers: dto.headers,
       endpoints: dto.endpoints.map((ep) => ({
         label: ep.label,
-        method: ep.method as HttpAdapter["endpoints"][number]["method"],
+        method: ep.method as IHttpAdapter["endpoints"][number]["method"],
         path: ep.path,
       })),
       timeoutMs: dto.timeoutMs,
@@ -53,9 +59,9 @@ function toRow(dto: AdapterDto): ConnectorRow {
 }
 
 function toCreatePayload(
-  adapter: HttpAdapter,
-  context: HttpAdapterContext,
-): CreateAdapterPayload {
+  adapter: IHttpAdapter,
+  context: IHttpAdapterContext,
+): ICreateAdapterPayload {
   return {
     name: adapter.name,
     context,
@@ -75,7 +81,7 @@ function toCreatePayload(
   };
 }
 
-function toUpdatePayload(adapter: HttpAdapter): UpdateAdapterPayload {
+function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
   return {
     name: adapter.name,
     baseUrl: adapter.baseUrl,
@@ -92,6 +98,7 @@ function toUpdatePayload(adapter: HttpAdapter): UpdateAdapterPayload {
 @Component({
   selector: "app-connectors",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     MatTableModule,
     MatButtonModule,
@@ -223,7 +230,7 @@ export class ConnectorsComponent implements OnInit {
     "actions",
   ] as const;
 
-  readonly connectors = signal<ConnectorRow[]>([]);
+  readonly connectors = signal<IConnectorRow[]>([]);
   readonly loading = signal(true);
 
   ngOnInit(): void {
@@ -231,7 +238,7 @@ export class ConnectorsComponent implements OnInit {
   }
 
   openCreate(): void {
-    const data: HttpAdapterDialogData = { mode: "create" };
+    const data: IHttpAdapterDialogData = { mode: "create" };
     this.dialog
       .open(HttpAdapterDialogComponent, {
         data,
@@ -240,7 +247,7 @@ export class ConnectorsComponent implements OnInit {
         panelClass: "app-dialog-panel",
       })
       .afterClosed()
-      .subscribe((result?: HttpAdapterDialogResult) => {
+      .subscribe((result?: IHttpAdapterDialogResult) => {
         if (!result) return;
         this.adapterService
           .create(toCreatePayload(result.adapter, result.context))
@@ -252,7 +259,7 @@ export class ConnectorsComponent implements OnInit {
 
   openEdit(index: number): void {
     const row = this.connectors()[index];
-    const data: HttpAdapterDialogData = {
+    const data: IHttpAdapterDialogData = {
       mode: "edit",
       context: row.context,
       adapter: row.adapter,
@@ -265,7 +272,7 @@ export class ConnectorsComponent implements OnInit {
         panelClass: "app-dialog-panel",
       })
       .afterClosed()
-      .subscribe((result?: HttpAdapterDialogResult) => {
+      .subscribe((result?: IHttpAdapterDialogResult) => {
         if (!result) return;
         this.adapterService
           .update(row.id, toUpdatePayload(result.adapter))

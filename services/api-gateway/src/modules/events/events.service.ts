@@ -1,8 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
-import type { JetStreamClient, NatsConnection, Subscription } from 'nats';
-import { headers as natsHeaders } from 'nats';
-import type Redis from 'ioredis';
-import { Observable } from 'rxjs';
+import { Inject, Injectable } from "@nestjs/common";
+import type { JetStreamClient, NatsConnection } from "nats";
+import { headers as natsHeaders } from "nats";
+import type Redis from "ioredis";
+import type { Observable } from "rxjs";
 import {
   SUBJECT_PREFIX,
   RESULT_KEY_PREFIX,
@@ -12,16 +12,23 @@ import {
   CALLBACK_TTL,
   RESULT_CACHE_MAX,
   TENANT_HEADER,
-} from '@yoizen/shared';
-import type { EventEnvelope } from '@yoizen/shared';
-import { JETSTREAM, NATS_CONNECTION } from '../../providers/nats.provider';
-import { REDIS_CLIENT } from '../../providers/redis.provider';
-import { randomUUID, createHash } from 'crypto';
+} from "@yoizen/shared";
+import type { EventEnvelope } from "@yoizen/shared";
+import { JETSTREAM, NATS_CONNECTION } from "../../providers/nats.provider";
+import { REDIS_CLIENT } from "../../providers/redis.provider";
+import { randomUUID, createHash } from "crypto";
+import type { ISseEvent } from "../../constants";
+import { createNatsMultiSubjectObservable } from "../../utils/nats-stream-observable.util";
 
-interface SseEvent {
-  data: string | object;
-  id?: string;
-  type?: string;
+/** Single options bag for {@link EventsService.publish} (avoids long positional args). */
+interface IPublishEventParams {
+  type: string;
+  payload: Record<string, unknown>;
+  tenantId: string;
+  callbackUrl?: string;
+  enrichAdapter?: { adapterId: string; endpointId: string };
+  forwardAdapter?: { adapterId: string; endpointId: string };
+  adapterId?: string;
 }
 
 @Injectable()
@@ -35,15 +42,22 @@ export class EventsService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
-  async publish(
-    type: string,
-    payload: Record<string, unknown>,
-    tenantId: string,
-    callbackUrl?: string,
-    enrichAdapter?: { adapterId: string; endpointId: string },
-    forwardAdapter?: { adapterId: string; endpointId: string },
-    adapterId?: string,
-  ): Promise<string> {
+  /**
+   * Publishes a CloudEvents-shaped envelope to JetStream and seeds Redis pending state.
+   *
+   * @param params - Event type, payload, tenant, and optional adapter routing.
+   * @returns New event id (UUID).
+   */
+  async publish(params: IPublishEventParams): Promise<string> {
+    const {
+      type,
+      payload,
+      tenantId,
+      callbackUrl,
+      enrichAdapter,
+      forwardAdapter,
+      adapterId,
+    } = params;
     const id = randomUUID();
     const subject = `${SUBJECT_PREFIX}.${type}`;
     const now = new Date().toISOString();
@@ -93,10 +107,14 @@ export class EventsService {
     pipeline.setex(
       `${tenantId}:${PENDING_KEY_PREFIX}${id}`,
       PENDING_TTL,
-      JSON.stringify({ id, status: 'pending' }),
+      JSON.stringify({ id, status: "pending" }),
     );
     if (callbackUrl) {
-      pipeline.setex(`${tenantId}:${CALLBACK_KEY_PREFIX}${id}`, CALLBACK_TTL, callbackUrl);
+      pipeline.setex(
+        `${tenantId}:${CALLBACK_KEY_PREFIX}${id}`,
+        CALLBACK_TTL,
+        callbackUrl,
+      );
     }
 
     await Promise.all([
@@ -107,6 +125,12 @@ export class EventsService {
     return id;
   }
 
+  /**
+   * Reads a processed result from L1 cache then Redis (`result:` key).
+   *
+   * @param id - Event id returned from {@link publish}.
+   * @param tenantId - Tenant scope for key namespacing.
+   */
   async getResult(id: string, tenantId: string): Promise<object | null> {
     const cacheKey = `${tenantId}:${id}`;
     const cached = this.resultCache.get(cacheKey);
@@ -127,40 +151,22 @@ export class EventsService {
     return parsed;
   }
 
-  streamEvents(types: string[], tenantId: string): Observable<SseEvent> {
-    return new Observable<SseEvent>((subscriber) => {
-      const subjects =
-        types.length === 0
-          ? [`${SUBJECT_PREFIX}.>`]
-          : types.map((t) => `${SUBJECT_PREFIX}.${t}`);
+  /**
+   * SSE stream of events for the tenant, filtered by optional type list.
+   *
+   * @param types - Empty array means subscribe to `events.>`.
+   * @param tenantId - Tenant scope (drops foreign tenant messages).
+   */
+  streamEvents(types: string[], tenantId: string): Observable<ISseEvent> {
+    const subjects =
+      types.length === 0
+        ? [`${SUBJECT_PREFIX}.>`]
+        : types.map((t) => `${SUBJECT_PREFIX}.${t}`);
 
-      const subs: Subscription[] = [];
-
-      for (const subject of subjects) {
-        const sub = this.nc.subscribe(subject);
-        subs.push(sub);
-
-        (async () => {
-          for await (const msg of sub) {
-            try {
-              const data = msg.json() as EventEnvelope;
-              if (data.tenant !== tenantId) continue;
-              subscriber.next({
-                data,
-                type: msg.subject,
-              });
-            } catch {
-              // skip malformed messages
-            }
-          }
-        })();
-      }
-
-      return () => {
-        for (const sub of subs) {
-          sub.unsubscribe();
-        }
-      };
+    return createNatsMultiSubjectObservable(this.nc, subjects, (msg) => {
+      const data = msg.json() as EventEnvelope;
+      if (data.tenant !== tenantId) return null;
+      return { data, type: msg.subject };
     });
   }
 }

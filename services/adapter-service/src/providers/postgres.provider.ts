@@ -1,4 +1,5 @@
 import { PostgresModule as BasePostgresModule } from "@yoizen/database";
+import { adapterServiceConfig } from "../config";
 
 export { POSTGRES_SQL } from "@yoizen/database";
 
@@ -61,7 +62,6 @@ END $$;
 `;
 
 export const PostgresModule = BasePostgresModule.register({
-  defaultHost:
-    "postgres.support-services-dev.svc.cluster.local",
+  defaultHost: adapterServiceConfig.defaultPostgresHost,
   schemaSql: [SCHEMA_SQL, MIGRATION_SQL],
 });

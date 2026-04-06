@@ -1,65 +1,44 @@
-import { Controller, Get, HttpCode, HttpStatus, Logger } from '@nestjs/common';
-import { TenantConnectionManager } from '../../providers/tenant-connection-manager';
-
-interface HealthCheckResponse {
-  status: 'ok' | 'error';
-  timestamp: string;
-  checks: {
-    database: 'up' | 'down';
-  };
-}
+import { Controller, Get, HttpException, HttpStatus } from "@nestjs/common";
+import { TenantConnectionManager } from "@yoizen/database";
+import { PinoLoggerService } from "@yoizen/observability";
+import type { IYoizenClawHealthResponse } from "@yoizen/shared";
 
 /**
- * Controller para health checks del servicio.
- * Base path: /health
+ * Service health checks.
+ * Base path: `/health`.
  *
- * Verifica:
- * - Conectividad a PostgreSQL (a través de TenantConnectionManager)
+ * Liveness: TenantConnectionManager is constructible; pool count is diagnostic only.
  */
-@Controller('health')
+@Controller()
 export class HealthController {
-  private readonly logger = new Logger(HealthController.name);
+  private readonly logger = new PinoLoggerService(HealthController.name);
 
-  constructor(
-    private readonly tenantManager: TenantConnectionManager,
-  ) {}
+  constructor(private readonly tenantManager: TenantConnectionManager) {}
 
   /**
-   * Health check endpoint.
-   * GET /health
-   *
-   * Este endpoint NO requiere tenant header porque es usado
-   * por Knative/Docker/Kubernetes para verificar el estado
-   * del servicio antes de enrutar tráfico.
+   * Health check endpoint (`GET /health`).
+   * No tenant header: used by Knative/Docker/Kubernetes before routing traffic.
    */
-  @Get()
-  @HttpCode(HttpStatus.OK)
-  async check(): Promise<HealthCheckResponse> {
+  @Get("health")
+  async check(): Promise<IYoizenClawHealthResponse> {
     const timestamp = new Date().toISOString();
+    const poolCount = this.tenantManager.getKnownTenantIds().length;
+    this.logger.debug(`Health check: ${String(poolCount)} active connection pools`);
 
-    // Para el health check general, verificamos que el
-    // TenantConnectionManager esté operativo (sin necesidad
-    // de una conexión específica a tenant)
-    let databaseStatus: 'up' | 'down' = 'up';
+    const dbOk = await this.tenantManager.probeFirstPool();
 
-    try {
-      // Verificar que el manager puede crear conexiones
-      // (las pools se crean lazy, solo verificamos que no haya errores de init)
-      const poolCount = this.tenantManager['pools']?.size ?? 0;
-      this.logger.debug(`Health check: ${poolCount} active connection pools`);
-    } catch (error) {
-      this.logger.error('Health check failed', error);
-      databaseStatus = 'down';
-    }
-
-    const status: HealthCheckResponse['status'] = databaseStatus === 'up' ? 'ok' : 'error';
-
-    return {
-      status,
+    const body: IYoizenClawHealthResponse = {
+      status: dbOk ? "ok" : "error",
       timestamp,
       checks: {
-        database: databaseStatus,
+        database: dbOk ? "up" : "down",
       },
     };
+
+    if (!dbOk) {
+      throw new HttpException(body, HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    return body;
   }
 }

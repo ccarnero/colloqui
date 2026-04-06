@@ -1,4 +1,10 @@
-import { Component, inject, signal, type OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  type OnInit,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
@@ -16,21 +22,22 @@ import type {
   IUpdateService,
 } from "../../../core/models/registry.model";
 
-export interface ServiceDialogData {
+export interface IServiceDialogData {
   service?: IServiceDetail;
 }
 
-export interface ServiceDialogResult {
+export interface IServiceDialogResult {
   saved: boolean;
 }
 
-interface EnvVarRow {
+interface IEnvVarRow {
   key: string;
   value: string;
 }
 
 @Component({
   selector: "app-service-dialog",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatDialogModule,
@@ -218,11 +225,10 @@ interface EnvVarRow {
 export class ServiceDialogComponent implements OnInit {
   private readonly registryService = inject(RegistryService);
   private readonly dialogRef =
-    inject<
-      MatDialogRef<ServiceDialogComponent, ServiceDialogResult>
-    >(MatDialogRef);
-  private readonly data =
-    inject<ServiceDialogData>(MAT_DIALOG_DATA);
+    inject<MatDialogRef<ServiceDialogComponent, IServiceDialogResult>>(
+      MatDialogRef,
+    );
+  private readonly data = inject<IServiceDialogData>(MAT_DIALOG_DATA);
 
   readonly saving = signal(false);
 
@@ -232,7 +238,7 @@ export class ServiceDialogComponent implements OnInit {
   minScale: number | null = null;
   maxScale: number | null = null;
   concurrencyTarget: number | null = null;
-  envVars: EnvVarRow[] = [];
+  envVars: IEnvVarRow[] = [];
   isEdit = false;
 
   ngOnInit(): void {
@@ -245,9 +251,10 @@ export class ServiceDialogComponent implements OnInit {
       this.minScale = svc.minScale;
       this.maxScale = svc.maxScale;
       this.concurrencyTarget = svc.concurrencyTarget;
-      this.envVars = Object.entries(svc.envVars).map(
-        ([key, value]) => ({ key, value }),
-      );
+      this.envVars = Object.entries(svc.envVars).map(([key, value]) => ({
+        key,
+        value,
+      }));
     }
   }
 
@@ -281,21 +288,14 @@ export class ServiceDialogComponent implements OnInit {
       const dto: IUpdateService = {
         image: this.image.trim(),
         ...(this.port != null ? { port: this.port } : {}),
-        ...(this.minScale != null
-          ? { minScale: this.minScale }
-          : {}),
-        ...(this.maxScale != null
-          ? { maxScale: this.maxScale }
-          : {}),
+        ...(this.minScale != null ? { minScale: this.minScale } : {}),
+        ...(this.maxScale != null ? { maxScale: this.maxScale } : {}),
         ...(this.concurrencyTarget != null
           ? { concurrencyTarget: this.concurrencyTarget }
           : {}),
         envVars: envVarsMap,
       };
-      this.registryService.updateService(
-        this.data.service.id,
-        dto,
-      );
+      this.registryService.updateService(this.data.service.id, dto);
       this.saving.set(false);
       this.dialogRef.close({ saved: true });
     } else {
@@ -303,12 +303,8 @@ export class ServiceDialogComponent implements OnInit {
         name: this.name.trim(),
         image: this.image.trim(),
         ...(this.port != null ? { port: this.port } : {}),
-        ...(this.minScale != null
-          ? { minScale: this.minScale }
-          : {}),
-        ...(this.maxScale != null
-          ? { maxScale: this.maxScale }
-          : {}),
+        ...(this.minScale != null ? { minScale: this.minScale } : {}),
+        ...(this.maxScale != null ? { maxScale: this.maxScale } : {}),
         ...(this.concurrencyTarget != null
           ? { concurrencyTarget: this.concurrencyTarget }
           : {}),

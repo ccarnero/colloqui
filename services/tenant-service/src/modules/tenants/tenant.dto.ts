@@ -5,28 +5,16 @@ import {
   Matches,
   IsOptional,
   IsObject,
-} from 'class-validator';
+} from "class-validator";
+import type { JsonValue } from "@yoizen/shared";
 
-export const VALID_ENVIRONMENTS = [
-  'dev',
-  'qa',
-  'staging',
-  'production',
-] as const;
+export { VALID_ENVIRONMENTS, type Environment } from "@yoizen/shared";
 
-export type Environment = (typeof VALID_ENVIRONMENTS)[number];
-
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+export type { JsonValue };
 
 export type TenantConfiguration = { [key: string]: JsonValue };
 
-export interface TenantRow {
+export interface ITenantRow {
   id: string;
   name: string;
   configuration: TenantConfiguration;
@@ -40,7 +28,7 @@ export class CreateTenantDto {
   @MaxLength(32)
   @Matches(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, {
     message:
-      'name must be lowercase alphanumeric with optional hyphens, cannot start or end with a hyphen',
+      "name must be lowercase alphanumeric with optional hyphens, cannot start or end with a hyphen",
   })
   name!: string;
 

@@ -25,7 +25,8 @@ src/
 ├── auth.interfaces.ts      # JwtPayload, TokenResponse, TokenScope, UserRole, PublicRouteEntry
 ├── workflow.interfaces.ts  # WorkflowDefinition, WorkflowAction, activity argument types
 ├── adapter.interfaces.ts   # AdapterConfig, AdapterEndpointConfig, AdapterCache, ResolvedAdapterRequest
-└── adapter-client.ts       # AdapterClient (runtime: SWR cache, OAuth2 tokens, request resolution)
+├── adapter-client.ts       # AdapterClient (runtime: SWR cache, OAuth2 tokens, request resolution)
+└── async.utils.ts          # sleep(ms) for backoff and tests
 ```
 
 ## Exports by Category

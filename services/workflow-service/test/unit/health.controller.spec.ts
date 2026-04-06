@@ -5,7 +5,9 @@ import { HealthController } from "../../src/modules/health/health.controller";
 
 describe("HealthController", () => {
   let controller: HealthController;
-  let mockTemporal: { workflowService: { getSystemInfo: ReturnType<typeof mock> } };
+  let mockTemporal: {
+    workflowService: { getSystemInfo: ReturnType<typeof mock> };
+  };
 
   beforeEach(async () => {
     mockTemporal = {

@@ -1,4 +1,4 @@
-import { Component, inject } from "@angular/core";
+import { ChangeDetectionStrategy, Component, inject } from "@angular/core";
 import { MatTableModule } from "@angular/material/table";
 import { TenantService } from "../../../core/services/tenant.service";
 import { SparklineComponent } from "../../../shared/components/sparkline/sparkline.component";
@@ -6,6 +6,7 @@ import { StatusBadgeComponent } from "../../../shared/components/status-badge/st
 
 @Component({
   selector: "app-analytics",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatTableModule, SparklineComponent, StatusBadgeComponent],
   template: `
     <div class="ws-header">
@@ -119,8 +120,8 @@ import { StatusBadgeComponent } from "../../../shared/components/status-badge/st
 export class AnalyticsComponent {
   protected readonly tenant = inject(TenantService);
   readonly apiVolumeData = [
-    12000, 18000, 15000, 22000, 19000, 28000, 24000, 31000, 27000, 35000,
-    30000, 38000, 34000, 42000,
+    12000, 18000, 15000, 22000, 19000, 28000, 24000, 31000, 27000, 35000, 30000,
+    38000, 34000, 42000,
   ];
   readonly topEndpoints = [
     { endpoint: "/api/users", calls: "24.1K", avg: 42 },

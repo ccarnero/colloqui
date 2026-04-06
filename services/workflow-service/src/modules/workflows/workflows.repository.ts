@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { Sql } from "postgres";
 import { POSTGRES_SQL } from "../../providers/postgres.provider";
 
-export interface WorkflowDefinitionRow {
+export interface IWorkflowDefinitionRow {
   id: string;
   tenant_id: string;
   name: string;
@@ -13,7 +13,7 @@ export interface WorkflowDefinitionRow {
   deleted_at: Date | null;
 }
 
-export interface WorkflowExecutionRow {
+export interface IWorkflowExecutionRow {
   id: string;
   definition_id: string;
   tenant_id: string;
@@ -25,6 +25,23 @@ export interface WorkflowExecutionRow {
   updated_at: Date;
 }
 
+export interface ICreateDefinitionParams {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly name: string;
+  readonly application: string;
+  readonly actions: unknown[];
+}
+
+export interface ICreateExecutionParams {
+  readonly id: string;
+  readonly definitionId: string;
+  readonly tenantId: string;
+  readonly temporalWorkflowId: string;
+  readonly temporalRunId: string;
+  readonly request: Record<string, unknown>;
+}
+
 @Injectable()
 export class WorkflowsRepository {
   constructor(
@@ -32,13 +49,10 @@ export class WorkflowsRepository {
   ) {}
 
   async createDefinition(
-    id: string,
-    tenantId: string,
-    name: string,
-    application: string,
-    actions: unknown[],
-  ): Promise<WorkflowDefinitionRow> {
-    const [row] = await this.sql<WorkflowDefinitionRow[]>`
+    params: ICreateDefinitionParams,
+  ): Promise<IWorkflowDefinitionRow> {
+    const { id, tenantId, name, application, actions } = params;
+    const [row] = await this.sql<IWorkflowDefinitionRow[]>`
       INSERT INTO workflow_definitions (id, tenant_id, name, application, actions)
       VALUES (${id}, ${tenantId}, ${name}, ${application}, ${this.sql.json(actions as never)})
       RETURNING id, tenant_id, name, application, actions,
@@ -50,8 +64,8 @@ export class WorkflowsRepository {
   async findDefinitionById(
     id: string,
     tenantId: string,
-  ): Promise<WorkflowDefinitionRow | undefined> {
-    const [row] = await this.sql<WorkflowDefinitionRow[]>`
+  ): Promise<IWorkflowDefinitionRow | undefined> {
+    const [row] = await this.sql<IWorkflowDefinitionRow[]>`
       SELECT id, tenant_id, name, application, actions,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
@@ -64,8 +78,8 @@ export class WorkflowsRepository {
 
   async findDefinitionsByTenant(
     tenantId: string,
-  ): Promise<WorkflowDefinitionRow[]> {
-    return this.sql<WorkflowDefinitionRow[]>`
+  ): Promise<IWorkflowDefinitionRow[]> {
+    return this.sql<IWorkflowDefinitionRow[]>`
       SELECT id, tenant_id, name, application, actions,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
@@ -75,10 +89,7 @@ export class WorkflowsRepository {
     `;
   }
 
-  async softDeleteDefinition(
-    id: string,
-    tenantId: string,
-  ): Promise<boolean> {
+  async softDeleteDefinition(id: string, tenantId: string): Promise<boolean> {
     const result = await this.sql`
       UPDATE workflow_definitions
       SET deleted_at = NOW(), updated_at = NOW()
@@ -90,14 +101,17 @@ export class WorkflowsRepository {
   }
 
   async createExecution(
-    id: string,
-    definitionId: string,
-    tenantId: string,
-    temporalWorkflowId: string,
-    temporalRunId: string,
-    request: Record<string, unknown>,
-  ): Promise<WorkflowExecutionRow> {
-    const [row] = await this.sql<WorkflowExecutionRow[]>`
+    params: ICreateExecutionParams,
+  ): Promise<IWorkflowExecutionRow> {
+    const {
+      id,
+      definitionId,
+      tenantId,
+      temporalWorkflowId,
+      temporalRunId,
+      request,
+    } = params;
+    const [row] = await this.sql<IWorkflowExecutionRow[]>`
       INSERT INTO workflow_executions
         (id, definition_id, tenant_id, temporal_workflow_id,
          temporal_run_id, request)
@@ -112,10 +126,7 @@ export class WorkflowsRepository {
     return row;
   }
 
-  async updateExecutionStatus(
-    id: string,
-    status: string,
-  ): Promise<boolean> {
+  async updateExecutionStatus(id: string, status: string): Promise<boolean> {
     const result = await this.sql`
       UPDATE workflow_executions
       SET status = ${status}, updated_at = NOW()
@@ -127,8 +138,8 @@ export class WorkflowsRepository {
   async findExecutionById(
     id: string,
     tenantId: string,
-  ): Promise<WorkflowExecutionRow | undefined> {
-    const [row] = await this.sql<WorkflowExecutionRow[]>`
+  ): Promise<IWorkflowExecutionRow | undefined> {
+    const [row] = await this.sql<IWorkflowExecutionRow[]>`
       SELECT id, definition_id, tenant_id,
              temporal_workflow_id, temporal_run_id,
              request, status, created_at, updated_at
@@ -142,8 +153,8 @@ export class WorkflowsRepository {
   async findExecutionsByDefinition(
     definitionId: string,
     tenantId: string,
-  ): Promise<WorkflowExecutionRow[]> {
-    return this.sql<WorkflowExecutionRow[]>`
+  ): Promise<IWorkflowExecutionRow[]> {
+    return this.sql<IWorkflowExecutionRow[]>`
       SELECT id, definition_id, tenant_id,
              temporal_workflow_id, temporal_run_id,
              request, status, created_at, updated_at

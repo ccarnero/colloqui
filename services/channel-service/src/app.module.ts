@@ -16,6 +16,7 @@ import { AccountsModule } from "./modules/accounts/accounts.module";
 import { AutoReplyModule } from "./modules/auto-reply/auto-reply.module";
 import { HealthModule } from "./modules/health/health.module";
 
+/** Registers Postgres, NATS, and JetStream as global providers for channel modules. */
 @Global()
 @Module({
   imports: [

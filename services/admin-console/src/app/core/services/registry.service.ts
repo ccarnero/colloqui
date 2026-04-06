@@ -41,11 +41,9 @@ export class RegistryService {
   }
 
   updateService(id: string, dto: IUpdateService): void {
-    this.http
-      .patch<IRegisteredService>(`${BASE_URL}/${id}`, dto)
-      .subscribe({
-        next: () => this.loadServices(),
-      });
+    this.http.patch<IRegisteredService>(`${BASE_URL}/${id}`, dto).subscribe({
+      next: () => this.loadServices(),
+    });
   }
 
   deleteService(id: string): void {
@@ -55,9 +53,7 @@ export class RegistryService {
   }
 
   listRoutes(serviceId: string) {
-    return this.http.get<IServiceRoute[]>(
-      `${BASE_URL}/${serviceId}/routes`,
-    );
+    return this.http.get<IServiceRoute[]>(`${BASE_URL}/${serviceId}/routes`);
   }
 
   createRoute(serviceId: string, dto: ICreateRoute) {
@@ -68,8 +64,6 @@ export class RegistryService {
   }
 
   deleteRoute(serviceId: string, routeId: string) {
-    return this.http.delete(
-      `${BASE_URL}/${serviceId}/routes/${routeId}`,
-    );
+    return this.http.delete(`${BASE_URL}/${serviceId}/routes/${routeId}`);
   }
 }

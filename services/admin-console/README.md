@@ -103,3 +103,7 @@ The production build is packaged into an nginx container via the Dockerfile.
 |------|----------|
 | `environment.ts` (dev) | `http://api-gateway.platform-services-dev.192.168.49.2.sslip.io` |
 | `environment.prod.ts` | `/api` |
+
+## Component testing strategy
+
+See **Angular consoles** under *Testing* in the repo root `AGENTS.md`. Summary: use Angular `TestBed`, `HttpClientTestingModule` for API calls, stub heavy Material/dialog children, and prioritize auth, interceptors, and services before large feature components.

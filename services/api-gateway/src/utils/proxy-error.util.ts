@@ -1,4 +1,8 @@
-import { HttpException, type HttpStatus, Logger } from "@nestjs/common";
+import { HttpException, type HttpStatus } from "@nestjs/common";
+
+interface ILogger {
+  error(message: string): void;
+}
 
 /**
  * Reads the response body from a failed downstream service call,
@@ -8,7 +12,7 @@ import { HttpException, type HttpStatus, Logger } from "@nestjs/common";
 export async function throwProxyError(
   res: Response,
   serviceName: string,
-  logger: Logger,
+  logger: ILogger,
 ): Promise<never> {
   const text = await res.text().catch(() => "");
   logger.error(`${serviceName} responded ${res.status}: ${text}`);

@@ -23,23 +23,24 @@ src/
 ├── main.ts                                     # API server bootstrap: Fastify adapter, ValidationPipe
 ├── app.module.ts                               # Root module: ProvidersModule, WorkflowsModule, HealthModule
 ├── providers/
-│   ├── providers.module.ts                     # @Global() exporting TEMPORAL_CLIENT + NATS_CONNECTION
+│   ├── providers.module.ts                     # @Global() exporting TEMPORAL_CLIENT, POSTGRES_SQL
 │   ├── temporal.provider.ts                    # TEMPORAL_CLIENT token, TenantId search attribute registration
-│   └── nats.provider.ts                        # NATS_CONNECTION token
+│   └── postgres.provider.ts                    # PostgreSQL for workflow definitions
 ├── modules/
 │   ├── workflows/
 │   │   ├── workflows.module.ts
 │   │   ├── workflows.controller.ts             # POST /workflows (202), GET /workflows, GET /workflows/:id
 │   │   ├── workflows.service.ts                # Start workflow via Temporal, query status, list by tenant
 │   │   └── dto/
-│   │       └── start-workflow.dto.ts           # StartWorkflowDto (name, application, request, actions)
+│   │       ├── create-workflow.dto.ts          # CreateWorkflowDto (name, application, request, actions)
+│   │       ├── execute-workflow.dto.ts         # Execute workflow request shape
+│   │       └── workflow-action.validator.ts    # Action array validation
 │   └── health/
 │       ├── health.module.ts
 │       └── health.controller.ts                # GET /health (Temporal connectivity)
 └── temporal/
-    ├── workflows.ts                            # runWorkflow: sequential action execution with template resolution
+    ├── workflows.ts                            # runWorkflow + {{path.to.value}} template resolution (TEMPLATE_RE, resolveTemplates)
     ├── worker.ts                               # Standalone Temporal worker process (orchestrator task queue)
-    ├── templating.ts                           # {{path.to.value}} template resolution utility
     └── activities/
         ├── index.ts                            # Barrel export: executeJsFunction, executeServiceBusCall
         ├── js-function.activity.ts            # Evaluates inline JS via new Function()
@@ -93,10 +94,12 @@ Actions support `{{path.to.value}}` templates resolved against the `WorkflowExec
 
 ```
 AppModule
-├── ProvidersModule (@Global) ─── TEMPORAL_CLIENT, NATS_CONNECTION
+├── ProvidersModule (@Global) ─── TEMPORAL_CLIENT, POSTGRES_SQL
 ├── WorkflowsModule ─── WorkflowsController, WorkflowsService
 └── HealthModule ─── HealthController
 ```
+
+NATS is not registered in `ProvidersModule`. The service-bus activity (`service-bus.activity.ts`) connects lazily via `workflowServiceConfig.natsUrl` when `executeServiceBusCall` runs.
 
 ### Communication
 
@@ -110,7 +113,7 @@ AppModule
 | Token | Type | Source |
 |-------|------|--------|
 | `TEMPORAL_CLIENT` | `Client` (@temporalio/client) | `temporal.provider.ts` |
-| `NATS_CONNECTION` | `NatsConnection` | `nats.provider.ts` |
+| `POSTGRES_SQL` | `Sql` (postgres.js) | `postgres.provider.ts` |
 
 ## Configuration
 
@@ -138,7 +141,7 @@ Readiness probe: `GET /health` on port 3000
 |---------|-------|
 | `bun test` | All tests |
 | `bun test test/unit` | Unit tests |
-| `bun test test/integration` | Integration tests (requires Temporal server) |
+| *(none in-service)* | No `test/integration/` directory; use `bun test test/unit` only |
 
 ## Code Style and Conventions
 

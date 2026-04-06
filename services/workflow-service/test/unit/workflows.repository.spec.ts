@@ -4,15 +4,12 @@ import type { Sql } from "postgres";
 import { WorkflowsRepository } from "../../src/modules/workflows/workflows.repository";
 import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
 import type {
-  WorkflowDefinitionRow,
-  WorkflowExecutionRow,
+  IWorkflowDefinitionRow,
+  IWorkflowExecutionRow,
 } from "../../src/modules/workflows/workflows.repository";
 
 function makeSql(
-  impl: (
-    strings: TemplateStringsArray,
-    values: unknown[],
-  ) => Promise<unknown>,
+  impl: (strings: TemplateStringsArray, values: unknown[]) => Promise<unknown>,
 ): Sql {
   const fn = (strings: TemplateStringsArray, ...values: unknown[]) =>
     impl(strings, values);
@@ -22,7 +19,7 @@ function makeSql(
   }) as Sql;
 }
 
-const definitionRow: WorkflowDefinitionRow = {
+const definitionRow: IWorkflowDefinitionRow = {
   id: "def-1",
   tenant_id: "t1",
   name: "Flow",
@@ -33,7 +30,7 @@ const definitionRow: WorkflowDefinitionRow = {
   deleted_at: null,
 };
 
-const executionRow: WorkflowExecutionRow = {
+const executionRow: IWorkflowExecutionRow = {
   id: "exe-1",
   definition_id: "def-1",
   tenant_id: "t1",
@@ -72,22 +69,20 @@ describe("WorkflowsRepository", () => {
     });
 
     it("inserts a workflow definition and returns the row", async () => {
-      const row = await repo.createDefinition(
-        "def-1",
-        "t1",
-        "Flow",
-        "app",
-        definitionRow.actions as unknown[],
-      );
+      const row = await repo.createDefinition({
+        id: "def-1",
+        tenantId: "t1",
+        name: "Flow",
+        application: "app",
+        actions: definitionRow.actions as unknown[],
+      });
       expect(row.id).toBe("def-1");
       expect(row.tenant_id).toBe("t1");
       expect(row.actions).toEqual(definitionRow.actions);
     });
 
     it("propagates SQL errors", async () => {
-      const sql = makeSql(() =>
-        Promise.reject(new Error("db unavailable")),
-      );
+      const sql = makeSql(() => Promise.reject(new Error("db unavailable")));
       const moduleRef = await Test.createTestingModule({
         providers: [
           WorkflowsRepository,
@@ -97,7 +92,13 @@ describe("WorkflowsRepository", () => {
       const r = moduleRef.get(WorkflowsRepository);
 
       await expect(
-        r.createDefinition("def-1", "t1", "Flow", "app", []),
+        r.createDefinition({
+          id: "def-1",
+          tenantId: "t1",
+          name: "Flow",
+          application: "app",
+          actions: [],
+        }),
       ).rejects.toThrow("db unavailable");
     });
   });
@@ -250,14 +251,14 @@ describe("WorkflowsRepository", () => {
       }).compile();
       const repo = moduleRef.get(WorkflowsRepository);
 
-      const row = await repo.createExecution(
-        "exe-1",
-        "def-1",
-        "t1",
-        "tw-1",
-        "run-1",
-        { orderId: "o1" },
-      );
+      const row = await repo.createExecution({
+        id: "exe-1",
+        definitionId: "def-1",
+        tenantId: "t1",
+        temporalWorkflowId: "tw-1",
+        temporalRunId: "run-1",
+        request: { orderId: "o1" },
+      });
       expect(row.status).toBe("RUNNING");
       expect(row.temporal_workflow_id).toBe("tw-1");
     });
@@ -273,7 +274,14 @@ describe("WorkflowsRepository", () => {
       const repo = moduleRef.get(WorkflowsRepository);
 
       await expect(
-        repo.createExecution("exe-1", "def-1", "t1", "tw-1", "run-1", {}),
+        repo.createExecution({
+          id: "exe-1",
+          definitionId: "def-1",
+          tenantId: "t1",
+          temporalWorkflowId: "tw-1",
+          temporalRunId: "run-1",
+          request: {},
+        }),
       ).rejects.toThrow("insert failed");
     });
   });

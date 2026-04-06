@@ -1,4 +1,6 @@
-import { DestroyRef, Injectable, inject } from "@angular/core";
+import { DestroyRef, Injectable } from "@angular/core";
+import { HttpClient } from "@angular/common/http";
+import { Router } from "@angular/router";
 import type { ITokenResponse } from "@yoizen/angular-shared";
 import { BaseAuthService } from "@yoizen/angular-shared";
 import { environment } from "../../../environments/environment";
@@ -8,14 +10,14 @@ const REFRESH_MARGIN_MS = 60_000;
 
 @Injectable({ providedIn: "root" })
 export class AuthService extends BaseAuthService {
-  private readonly destroyRef = inject(DestroyRef);
   private refreshTimerId: ReturnType<typeof setTimeout> | null = null;
 
-  constructor() {
-    super();
+  constructor(http: HttpClient, router: Router, destroyRef: DestroyRef) {
+    // Peers resolve duplicate `@angular/common` typings; runtime types match.
+    super(http as never, router as never);
     this.restoreTokenFromStorage();
     this.scheduleRefresh();
-    this.destroyRef.onDestroy(() => this.clearRefreshTimer());
+    destroyRef.onDestroy(() => this.clearRefreshTimer());
   }
 
   protected override get apiBaseUrl(): string {

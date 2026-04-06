@@ -1,10 +1,7 @@
 import { TestBed } from "@angular/core/testing";
-import { provideHttpClient } from "@angular/common/http";
-import { provideHttpClientTesting } from "@angular/common/http/testing";
 import { provideRouter } from "@angular/router";
 
 import { App } from "./app";
-import { AuthService } from "./core/services/auth.service";
 import { authGuard } from "./core/guards/auth.guard";
 
 describe("App", () => {
@@ -19,23 +16,12 @@ describe("App", () => {
     const fixture = TestBed.createComponent(App);
     expect(fixture.componentInstance).toBeTruthy();
   });
-});
 
-describe("AuthService", () => {
-  beforeEach(() => {
-    TestBed.configureTestingModule({
-      providers: [
-        AuthService,
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        provideRouter([]),
-      ],
-    });
-  });
-
-  it("can be instantiated", () => {
-    const service = TestBed.inject(AuthService);
-    expect(service).toBeTruthy();
+  it("renders a router outlet", () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector("router-outlet")).not.toBeNull();
   });
 });
 

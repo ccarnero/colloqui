@@ -41,3 +41,8 @@ export function createRedisProvider(
     },
   };
 }
+
+/**
+ * Shared default provider used by services that don't need custom options.
+ */
+export const redisProvider: FactoryProvider<Redis> = createRedisProvider();

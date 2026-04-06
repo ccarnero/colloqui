@@ -3,12 +3,17 @@ FROM oven/bun:1.3-alpine AS builder
 WORKDIR /app
 
 COPY packages/shared ./packages/shared
+RUN cd packages/shared && bun install
 COPY packages/observability ./packages/observability
 COPY packages/database ./packages/database
 RUN cd packages/database && bun install
 COPY services/metrics-service/package.json ./services/metrics-service/
 WORKDIR /app/services/metrics-service
 RUN bun install
+RUN rm -rf ../../packages/observability/node_modules/@nestjs \
+  && mkdir -p ../../packages/observability/node_modules \
+  && ln -sfn ../../../services/metrics-service/node_modules/@nestjs \
+    ../../packages/observability/node_modules/@nestjs
 
 COPY services/metrics-service/src ./src
 COPY services/metrics-service/tsconfig.json ./
@@ -26,6 +31,7 @@ COPY --from=builder /app/packages/database /app/packages/database
 COPY --from=builder /app/services/metrics-service/node_modules ./node_modules
 COPY --from=builder /app/services/metrics-service/dist ./dist
 COPY --from=builder /app/services/metrics-service/package.json ./
+COPY --from=builder /app/services/metrics-service/tsconfig.json ./
 
 USER 1001:1001
 

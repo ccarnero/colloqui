@@ -3,10 +3,9 @@ import {
   Catch,
   type ExceptionFilter,
   HttpException,
-  Logger,
 } from "@nestjs/common";
 import type { FastifyReply } from "fastify";
-import { getActiveTraceId } from "@yoizen/observability";
+import { getActiveTraceId, PinoLoggerService } from "@yoizen/observability";
 
 /**
  * Global exception filter for the API gateway.
@@ -16,7 +15,7 @@ import { getActiveTraceId } from "@yoizen/observability";
  */
 @Catch()
 export class ServiceExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger(ServiceExceptionFilter.name);
+  private readonly logger = new PinoLoggerService(ServiceExceptionFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const reply = host.switchToHttp().getResponse<FastifyReply>();

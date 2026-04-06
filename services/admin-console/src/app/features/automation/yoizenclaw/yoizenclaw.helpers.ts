@@ -1,8 +1,19 @@
 import type {
   IAgentToolDraft,
   IAgentToolPayload,
+  IYoizenclawSubagentDraft,
   ToolSourceType,
 } from "../../../core/models/yoizenclaw.model";
+
+/**
+ * Normalizes Nest/backend error payloads where `message` may be a string or array.
+ */
+export function formatHttpErrorMessage(
+  message: string | string[] | undefined,
+  fallback: string,
+): string {
+  return Array.isArray(message) ? message.join(", ") : (message ?? fallback);
+}
 
 export function extractMentionsFromPrompt(text: string): string[] {
   const mentionRegex = /@(skill|tool):([a-zA-Z0-9_-]+)/g;
@@ -64,4 +75,22 @@ export function buildToolPayloadsFromDrafts(
 
       return payload;
     });
+}
+
+/**
+ * Maps a backend subagent config (snake_case) to a client-side draft (camelCase).
+ * Works for both agent model_config subagents and template subagents.
+ */
+export function mapSubagentConfigToDraft(config: {
+  name: string;
+  description?: string;
+  system_prompt: string;
+  enabled?: boolean;
+}): IYoizenclawSubagentDraft {
+  return {
+    name: config.name,
+    description: config.description || "",
+    systemPrompt: config.system_prompt,
+    enabled: config.enabled ?? true,
+  };
 }

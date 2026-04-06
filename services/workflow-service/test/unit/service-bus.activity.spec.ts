@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 
 const mockFlush = mock(() => Promise.resolve());
-const mockPublish = mock((_subject: string, _payload?: Uint8Array) => undefined);
-const mockHeaderSet = mock(
-  (_key: string, _value: string) => undefined,
+const mockPublish = mock(
+  (_subject: string, _payload?: Uint8Array) => undefined,
 );
+const mockHeaderSet = mock((_key: string, _value: string) => undefined);
 
 const mockConn = {
   isClosed: () => false,

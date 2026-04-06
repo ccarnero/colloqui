@@ -1,11 +1,13 @@
 import { Injectable } from "@angular/core";
+import { HttpClient } from "@angular/common/http";
+import { Router } from "@angular/router";
 import { BaseAuthService } from "@yoizen/angular-shared";
 import { environment } from "../../../environments/environment";
 
 @Injectable({ providedIn: "root" })
 export class AuthService extends BaseAuthService {
-  constructor() {
-    super();
+  constructor(http: HttpClient, router: Router) {
+    super(http as never, router as never);
     this.restoreTokenFromStorage();
   }
 

@@ -15,7 +15,13 @@ const fakeAdapterConfig = {
   healthCheckPath: "/health",
   status: "active",
   endpoints: [
-    { id: "ep-1", adapterId: "adp-1", label: "Get", method: "GET", path: "/data" },
+    {
+      id: "ep-1",
+      adapterId: "adp-1",
+      label: "Get",
+      method: "GET",
+      path: "/data",
+    },
   ],
 };
 
@@ -36,7 +42,13 @@ const mockRedisInstance = {
 };
 
 mock.module("ioredis", () => {
-  return { default: class Redis { constructor() { return mockRedisInstance; } } };
+  return {
+    default: class Redis {
+      constructor() {
+        return mockRedisInstance;
+      }
+    },
+  };
 });
 
 let tracedFetchMock: ReturnType<typeof mock>;
@@ -106,9 +118,7 @@ describe("executeEndpointCall", () => {
     tracedFetchMock.mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
-        return Promise.resolve(
-          new Response("Server Error", { status: 500 }),
-        );
+        return Promise.resolve(new Response("Server Error", { status: 500 }));
       }
       return Promise.resolve(
         new Response(JSON.stringify({ ok: true }), {

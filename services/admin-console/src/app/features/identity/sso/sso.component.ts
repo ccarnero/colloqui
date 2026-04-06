@@ -1,10 +1,16 @@
-import { Component, inject, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+} from "@angular/core";
 import { MatSlideToggleModule } from "@angular/material/slide-toggle";
 import { TenantService } from "../../../core/services/tenant.service";
 import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 
 @Component({
   selector: "app-sso",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatSlideToggleModule, StatusBadgeComponent],
   template: `
     <div class="ws-header">

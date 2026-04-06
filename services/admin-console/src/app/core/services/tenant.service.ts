@@ -1,4 +1,10 @@
-import { Injectable, computed, inject, signal } from "@angular/core";
+import {
+  ErrorHandler,
+  Injectable,
+  computed,
+  inject,
+  signal,
+} from "@angular/core";
 import { HttpClient } from "@angular/common/http";
 import { AuthService } from "./auth.service";
 import { environment } from "../../../environments/environment";
@@ -14,6 +20,7 @@ interface ITenantDetail {
 export class TenantService {
   private readonly authService = inject(AuthService);
   private readonly http = inject(HttpClient);
+  private readonly errorHandler = inject(ErrorHandler);
 
   private readonly tenantDetail = signal<ITenantDetail | null>(null);
 
@@ -41,8 +48,14 @@ export class TenantService {
       .get<ITenantDetail>(`${environment.apiUrl}/tenants/${id}`)
       .subscribe({
         next: (detail) => this.tenantDetail.set(detail),
-        error: () => {
-          /* tenant details are optional */
+        error: (err: unknown) => {
+          this.errorHandler.handleError(
+            err instanceof Error
+              ? err
+              : new Error(
+                  `TenantService: failed to load tenant details: ${String(err)}`,
+                ),
+          );
         },
       });
   }

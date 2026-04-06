@@ -11,10 +11,6 @@ import {
   connect,
   type NatsConnection,
   type JetStreamClient,
-  type JetStreamManager,
-  AckPolicy,
-  DeliverPolicy,
-  ReplayPolicy,
   RetentionPolicy,
 } from "nats";
 import {

@@ -8,66 +8,61 @@ import {
   Post,
   Query,
   Req,
-} from '@nestjs/common';
-import { AdminProxyService } from './admin-proxy.service';
-import {
-  MemoryDecisionDto,
-  MemoryProposalParamDto,
-} from './admin.dto';
-import type { TenantScopedRequest } from '../../types/yoizen-request';
+} from "@nestjs/common";
+import { AdminProxyService } from "./admin-proxy.service";
+import { MemoryDecisionDto, MemoryProposalParamDto } from "./admin.dto";
+import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { toOptionalStringQueryParam } from "../../utils/pagination-query.util";
 
-@Controller('admin/memories')
+@Controller("admin/memories")
 export class AdminMemoriesController {
   constructor(private readonly proxy: AdminProxyService) {}
 
-  @Get('proposals')
+  @Get("proposals")
   async listProposals(
-    @Req() req: TenantScopedRequest,
-    @Query('status') status?: string,
-    @Query('kind') kind?: string,
-    @Query('limit') limit?: string,
+    @Req() req: ITenantScopedRequest,
+    @Query("status") status?: string,
+    @Query("kind") kind?: string,
+    @Query("limit") limit?: number,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'GET',
-      '/admin/memories/proposals',
-      req.tenantId,
-      { status, kind, limit },
-      undefined,
-      req.user?.sub,
-    );
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/admin/memories/proposals",
+      tenantId: req.tenantId,
+      query: { status, kind, limit: toOptionalStringQueryParam(limit) },
+      trustedUserId: req.user?.sub,
+    });
   }
 
-  @Post('proposals/:id/approve')
+  @Post("proposals/:id/approve")
   @HttpCode(HttpStatus.OK)
   async approveProposal(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
     @Param() params: MemoryProposalParamDto,
     @Body() body: MemoryDecisionDto,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'POST',
-      `/admin/memories/proposals/${params.id}/approve`,
-      req.tenantId,
-      undefined,
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/admin/memories/proposals/${params.id}/approve`,
+      tenantId: req.tenantId,
       body,
-      req.user?.sub,
-    );
+      trustedUserId: req.user?.sub,
+    });
   }
 
-  @Post('proposals/:id/reject')
+  @Post("proposals/:id/reject")
   @HttpCode(HttpStatus.OK)
   async rejectProposal(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
     @Param() params: MemoryProposalParamDto,
     @Body() body: MemoryDecisionDto,
   ): Promise<object> {
-    return this.proxy.proxy(
-      'POST',
-      `/admin/memories/proposals/${params.id}/reject`,
-      req.tenantId,
-      undefined,
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/admin/memories/proposals/${params.id}/reject`,
+      tenantId: req.tenantId,
       body,
-      req.user?.sub,
-    );
+      trustedUserId: req.user?.sub,
+    });
   }
 }

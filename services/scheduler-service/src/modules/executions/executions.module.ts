@@ -1,10 +1,11 @@
-import { Module } from '@nestjs/common';
-import { ExecutionsController } from './executions.controller';
-import { ExecutionsService } from './executions.service';
+import { Module } from "@nestjs/common";
+import { ExecutionsController } from "./executions.controller";
+import { ExecutionsRepository } from "./executions.repository";
+import { ExecutionsService } from "./executions.service";
 
 @Module({
   controllers: [ExecutionsController],
-  providers: [ExecutionsService],
+  providers: [ExecutionsRepository, ExecutionsService],
   exports: [ExecutionsService],
 })
 export class ExecutionsModule {}

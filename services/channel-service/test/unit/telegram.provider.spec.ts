@@ -16,7 +16,7 @@ mock.module("@yoizen/observability", () => ({
 }));
 
 const { TelegramProvider } = await import(
-  "../../src/providers/telegram/telegram.provider",
+  "../../src/providers/telegram/telegram.provider"
 );
 
 function baseAccount(overrides: Partial<ChannelAccount> = {}): ChannelAccount {
@@ -43,13 +43,10 @@ describe("TelegramProvider", () => {
     tracedFetch.mockReset();
     tracedFetch.mockImplementation(() =>
       Promise.resolve(
-        new Response(
-          JSON.stringify({ ok: true, result: { message_id: 99 } }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
+        new Response(JSON.stringify({ ok: true, result: { message_id: 99 } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
       ),
     );
     provider = new TelegramProvider();
@@ -150,10 +147,13 @@ describe("TelegramProvider", () => {
     it("calls setWebhook with URL and secret token", async () => {
       tracedFetch.mockImplementationOnce(() =>
         Promise.resolve(
-          new Response(JSON.stringify({ ok: true, description: "Webhook set" }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
+          new Response(
+            JSON.stringify({ ok: true, description: "Webhook set" }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
         ),
       );
 
@@ -166,9 +166,7 @@ describe("TelegramProvider", () => {
       expect(result.ok).toBe(true);
       expect(tracedFetch).toHaveBeenCalledTimes(1);
       const call = tracedFetch.mock.calls[0];
-      expect(call?.[0]).toBe(
-        "https://api.telegram.org/botmy-token/setWebhook",
-      );
+      expect(call?.[0]).toBe("https://api.telegram.org/botmy-token/setWebhook");
       const init = call?.[1] as RequestInit;
       const body = JSON.parse(String(init?.body));
       expect(body.url).toBe("https://example.com/hook");

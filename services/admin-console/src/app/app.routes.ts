@@ -68,9 +68,9 @@ export const routes: Routes = [
       {
         path: "billing",
         loadComponent: () =>
-          import(
-            "./features/tenant-management/billing/billing.component"
-          ).then((m) => m.BillingComponent),
+          import("./features/tenant-management/billing/billing.component").then(
+            (m) => m.BillingComponent,
+          ),
       },
       {
         path: "quotas",
@@ -96,16 +96,16 @@ export const routes: Routes = [
       {
         path: "auto-reply",
         loadComponent: () =>
-          import(
-            "./features/channels/auto-reply/auto-reply.component"
-          ).then((m) => m.AutoReplyComponent),
+          import("./features/channels/auto-reply/auto-reply.component").then(
+            (m) => m.AutoReplyComponent,
+          ),
       },
       {
         path: "workflows",
         loadComponent: () =>
-          import(
-            "./features/automation/workflows/workflows.component"
-          ).then((m) => m.WorkflowsComponent),
+          import("./features/automation/workflows/workflows.component").then(
+            (m) => m.WorkflowsComponent,
+          ),
       },
       {
         path: "webhooks",
@@ -124,9 +124,9 @@ export const routes: Routes = [
       {
         path: "scheduler",
         loadComponent: () =>
-          import(
-            "./features/automation/scheduler/scheduler.component"
-          ).then((m) => m.SchedulerComponent),
+          import("./features/automation/scheduler/scheduler.component").then(
+            (m) => m.SchedulerComponent,
+          ),
       },
       {
         path: "rules",
@@ -211,9 +211,9 @@ export const routes: Routes = [
       {
         path: "audit-log",
         loadComponent: () =>
-          import(
-            "./features/security/audit-log/audit-log.component"
-          ).then((m) => m.AuditLogComponent),
+          import("./features/security/audit-log/audit-log.component").then(
+            (m) => m.AuditLogComponent,
+          ),
       },
       {
         path: "security-center",
@@ -225,9 +225,9 @@ export const routes: Routes = [
       {
         path: "compliance",
         loadComponent: () =>
-          import(
-            "./features/security/compliance/compliance.component"
-          ).then((m) => m.ComplianceComponent),
+          import("./features/security/compliance/compliance.component").then(
+            (m) => m.ComplianceComponent,
+          ),
       },
       {
         path: "ip-allowlist",
@@ -283,9 +283,7 @@ export const routes: Routes = [
   {
     path: "login",
     loadComponent: () =>
-      import("./features/auth/login.component").then(
-        (m) => m.LoginComponent,
-      ),
+      import("./features/auth/login.component").then((m) => m.LoginComponent),
   },
   { path: "**", redirectTo: "dashboard" },
 ];

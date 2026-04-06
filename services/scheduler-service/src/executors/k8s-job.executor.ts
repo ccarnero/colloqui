@@ -1,32 +1,38 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import * as k8s from '@kubernetes/client-node';
-import { SCHEDULER_K8S_DEFAULT_TIMEOUT_S } from '@yoizen/shared';
-import { K8S_BATCH_API, K8S_CORE_API } from '../providers/k8s-api.tokens';
-import type { ScheduleExecutor } from './executor.interface';
-import type { Schedule } from '../modules/schedules/schedules.service';
-import type { ExecutionResult } from '../engine/engine.service';
+import { Inject, Injectable } from "@nestjs/common";
+import * as k8s from "@kubernetes/client-node";
+import { SCHEDULER_K8S_DEFAULT_TIMEOUT_S } from "@yoizen/shared";
+import { PinoLoggerService } from "@yoizen/observability";
+import { schedulerServiceConfig } from "../config";
+import { K8S_BATCH_API, K8S_CORE_API } from "../providers/k8s-api.tokens";
+import type { IScheduleExecutor } from "./executor.interface";
+import type { ISchedule } from "../modules/schedules/schedules.service";
+import type { IExecutionResult } from "../engine/engine.service";
 
-type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timeout';
+import type { ExecutionStatus } from "../types";
 
 const JOB_POLL_INTERVAL_MS = 3_000;
 const JOB_POLL_MAX_MS = 600_000;
 
 @Injectable()
-export class K8sJobExecutor implements ScheduleExecutor {
-  private readonly logger = new Logger(K8sJobExecutor.name);
-  private readonly env = process.env.PLATFORM_ENVIRONMENT ?? 'dev';
+export class K8sJobExecutor implements IScheduleExecutor {
+  private readonly logger = new PinoLoggerService(K8sJobExecutor.name);
+  private readonly env = schedulerServiceConfig.platformEnvironment;
 
   constructor(
     @Inject(K8S_CORE_API) private readonly coreApi: k8s.CoreV1Api,
     @Inject(K8S_BATCH_API) private readonly batchApi: k8s.BatchV1Api,
   ) {}
 
-  async execute(schedule: Schedule, tenantId: string): Promise<ExecutionResult> {
+  async execute(
+    schedule: ISchedule,
+    tenantId: string,
+  ): Promise<IExecutionResult> {
     const namespace = `${tenantId}-${this.env}-ns`;
     const jobName = `sched-${schedule.id.slice(0, 8)}-${Date.now()}`;
     const config = schedule.config;
-    const timeoutSeconds = (config.timeout as number) || SCHEDULER_K8S_DEFAULT_TIMEOUT_S;
-    const isDockerMode = schedule.exec_mode === 'docker';
+    const timeoutSeconds =
+      (config.timeout as number) || SCHEDULER_K8S_DEFAULT_TIMEOUT_S;
+    const isDockerMode = schedule.exec_mode === "docker";
 
     let configMapName: string | undefined;
 
@@ -40,16 +46,18 @@ export class K8sJobExecutor implements ScheduleExecutor {
         );
       }
 
-      const job = this.buildJobSpec(
+      const job = this.buildJobSpec({
         namespace,
         jobName,
         schedule,
         configMapName,
         timeoutSeconds,
-      );
+      });
 
       await this.batchApi.createNamespacedJob({ namespace, body: job });
-      this.logger.log(`Created K8s Job '${jobName}' in namespace '${namespace}'`);
+      this.logger.log(
+        `Created K8s Job '${jobName}' in namespace '${namespace}'`,
+      );
 
       const status = await this.waitForJobCompletion(namespace, jobName);
       const logs = await this.fetchPodLogs(namespace, jobName);
@@ -57,7 +65,7 @@ export class K8sJobExecutor implements ScheduleExecutor {
       return {
         status,
         output: logs,
-        error: status === 'failed' ? 'Job failed' : '',
+        error: status === "failed" ? "Job failed" : "",
         metadata: {
           tenantId,
           namespace,
@@ -69,10 +77,15 @@ export class K8sJobExecutor implements ScheduleExecutor {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`K8s Job execution failed for ${jobName}: ${message}`);
       return {
-        status: 'failed',
-        output: '',
+        status: "failed",
+        output: "",
         error: message,
-        metadata: { tenantId, namespace, jobName, execMode: schedule.exec_mode },
+        metadata: {
+          tenantId,
+          namespace,
+          jobName,
+          execMode: schedule.exec_mode,
+        },
       };
     } finally {
       await this.cleanup(namespace, jobName, configMapName);
@@ -86,17 +99,17 @@ export class K8sJobExecutor implements ScheduleExecutor {
   ): Promise<void> {
     const cm: k8s.V1ConfigMap = {
       metadata: { name, namespace },
-      data: { 'script.js': script },
+      data: { "script.js": script },
     };
     await this.coreApi.createNamespacedConfigMap({ namespace, body: cm });
   }
 
   private buildContainerSpec(
-    schedule: Schedule,
+    schedule: ISchedule,
     configMapName: string | undefined,
   ): k8s.V1Container {
     const config = schedule.config;
-    const isDockerMode = schedule.exec_mode === 'docker';
+    const isDockerMode = schedule.exec_mode === "docker";
 
     const envVars: k8s.V1EnvVar[] = Object.entries(
       (config.env as Record<string, string>) ?? {},
@@ -107,33 +120,31 @@ export class K8sJobExecutor implements ScheduleExecutor {
       | undefined;
 
     const container: k8s.V1Container = {
-      name: 'task',
-      image: isDockerMode
-        ? (config.image as string)
-        : 'oven/bun:1.3-alpine',
+      name: "task",
+      image: isDockerMode ? (config.image as string) : "oven/bun:1.3-alpine",
       env: envVars.length > 0 ? envVars : undefined,
       resources: {
         requests: {
-          cpu: resources?.cpu ?? '100m',
-          memory: resources?.memory ?? '128Mi',
+          cpu: resources?.cpu ?? "100m",
+          memory: resources?.memory ?? "128Mi",
         },
         limits: {
-          cpu: resources?.cpu ?? '500m',
-          memory: resources?.memory ?? '256Mi',
+          cpu: resources?.cpu ?? "500m",
+          memory: resources?.memory ?? "256Mi",
         },
       },
       securityContext: {
         runAsNonRoot: true,
         runAsUser: 1001,
         allowPrivilegeEscalation: false,
-        capabilities: { drop: ['ALL'] },
+        capabilities: { drop: ["ALL"] },
       },
     };
 
     if (!isDockerMode && configMapName) {
-      container.command = ['bun', 'run', '/scripts/script.js'];
+      container.command = ["bun", "run", "/scripts/script.js"];
       container.volumeMounts = [
-        { name: 'script-volume', mountPath: '/scripts', readOnly: true },
+        { name: "script-volume", mountPath: "/scripts", readOnly: true },
       ];
     }
 
@@ -149,20 +160,22 @@ export class K8sJobExecutor implements ScheduleExecutor {
       name: jobName,
       namespace,
       labels: {
-        'yoizen.io/managed-by': 'scheduler-service',
-        'yoizen.io/schedule-id': scheduleId,
+        "yoizen.io/managed-by": "scheduler-service",
+        "yoizen.io/schedule-id": scheduleId,
       },
     };
   }
 
-  private buildJobSpec(
-    namespace: string,
-    jobName: string,
-    schedule: Schedule,
-    configMapName: string | undefined,
-    timeoutSeconds: number,
-  ): k8s.V1Job {
-    const isDockerMode = schedule.exec_mode === 'docker';
+  private buildJobSpec(options: {
+    namespace: string;
+    jobName: string;
+    schedule: ISchedule;
+    configMapName: string | undefined;
+    timeoutSeconds: number;
+  }): k8s.V1Job {
+    const { namespace, jobName, schedule, configMapName, timeoutSeconds } =
+      options;
+    const isDockerMode = schedule.exec_mode === "docker";
     const container = this.buildContainerSpec(schedule, configMapName);
 
     return {
@@ -173,13 +186,13 @@ export class K8sJobExecutor implements ScheduleExecutor {
         ttlSecondsAfterFinished: 300,
         template: {
           spec: {
-            restartPolicy: 'Never',
+            restartPolicy: "Never",
             containers: [container],
             volumes:
               !isDockerMode && configMapName
                 ? [
                     {
-                      name: 'script-volume',
+                      name: "script-volume",
                       configMap: { name: configMapName },
                     },
                   ]
@@ -204,17 +217,17 @@ export class K8sJobExecutor implements ScheduleExecutor {
       const conditions = job.status?.conditions ?? [];
 
       for (const c of conditions) {
-        if (c.type === 'Complete' && c.status === 'True') return 'completed';
-        if (c.type === 'Failed' && c.status === 'True') {
-          if (c.reason === 'DeadlineExceeded') return 'timeout';
-          return 'failed';
+        if (c.type === "Complete" && c.status === "True") return "completed";
+        if (c.type === "Failed" && c.status === "True") {
+          if (c.reason === "DeadlineExceeded") return "timeout";
+          return "failed";
         }
       }
 
       await new Promise((r) => setTimeout(r, JOB_POLL_INTERVAL_MS));
     }
 
-    return 'timeout';
+    return "timeout";
   }
 
   private async fetchPodLogs(
@@ -228,19 +241,19 @@ export class K8sJobExecutor implements ScheduleExecutor {
       });
 
       const pod = podList.items[0];
-      if (!pod?.metadata?.name) return '';
+      if (!pod?.metadata?.name) return "";
 
       const logBody = await this.coreApi.readNamespacedPodLog({
         name: pod.metadata.name,
         namespace,
-        container: 'task',
+        container: "task",
         tailLines: 1000,
       });
 
-      return typeof logBody === 'string' ? logBody : String(logBody);
+      return typeof logBody === "string" ? logBody : String(logBody);
     } catch (err) {
       this.logger.warn(`Failed to fetch pod logs for job ${jobName}: ${err}`);
-      return '';
+      return "";
     }
   }
 
@@ -253,10 +266,13 @@ export class K8sJobExecutor implements ScheduleExecutor {
       await this.batchApi.deleteNamespacedJob({
         name: jobName,
         namespace,
-        body: { propagationPolicy: 'Background' },
+        body: { propagationPolicy: "Background" },
       });
-    } catch {
-      // Job may already be cleaned up by TTL controller
+    } catch (e: unknown) {
+      const detail = e instanceof Error ? e.message : String(e);
+      this.logger.debug(
+        `Job delete skipped (may already be gone) ${namespace}/${jobName}: ${detail}`,
+      );
     }
 
     if (configMapName) {
@@ -265,8 +281,11 @@ export class K8sJobExecutor implements ScheduleExecutor {
           name: configMapName,
           namespace,
         });
-      } catch {
-        // ConfigMap may not exist
+      } catch (e: unknown) {
+        const detail = e instanceof Error ? e.message : String(e);
+        this.logger.debug(
+          `ConfigMap delete skipped ${namespace}/${configMapName}: ${detail}`,
+        );
       }
     }
   }

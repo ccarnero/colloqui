@@ -1,6 +1,6 @@
-import type { EventResult } from '@yoizen/shared';
+import type { EventResult } from "@yoizen/shared";
 
-export interface EventHandler {
+export interface IEventHandler {
   readonly eventType: string;
   handle(eventId: string, payload: unknown): Promise<EventResult>;
 }

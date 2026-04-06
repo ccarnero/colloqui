@@ -1,86 +1,53 @@
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import type Redis from "ioredis";
+import { REDIS_CLIENT } from "@yoizen/database";
+import { PUBLIC_ROUTES_CACHE_KEY_PREFIX } from "@yoizen/shared";
+import type { PublicRouteEntry } from "@yoizen/shared";
+import { PinoLoggerService } from "@yoizen/observability";
 import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import type Redis from 'ioredis';
-import { POSTGRES_SQL, type Sql } from '../../providers/postgres.provider';
-import { REDIS_CLIENT } from '../../providers/redis.provider';
-import { PUBLIC_ROUTES_CACHE_KEY_PREFIX } from '@yoizen/shared';
-import type { PublicRouteEntry } from '@yoizen/shared';
-
-export interface PublicRouteRow {
-  id: string;
-  method: string;
-  path_pattern: string;
-  scope: string;
-  environment: string;
-  created_at: Date;
-}
+  PublicRoutesRepository,
+  type IPublicRouteRow,
+} from "./public-routes.repository";
+import type { ICreatePublicRouteOptions } from "./public-routes.types";
 
 @Injectable()
 export class PublicRoutesService {
-  private readonly logger = new Logger(PublicRoutesService.name);
-  private readonly environment: string;
+  private readonly logger = new PinoLoggerService(PublicRoutesService.name);
 
   constructor(
-    @Inject(POSTGRES_SQL) private readonly sql: Sql,
+    private readonly publicRoutesRepository: PublicRoutesRepository,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
-  ) {
-    this.environment = process.env.PLATFORM_ENVIRONMENT ?? 'dev';
-  }
+  ) {}
 
-  async create(
-    method: string,
-    pathPattern: string,
-    scope: string,
-    tenantId?: string,
-  ): Promise<PublicRouteRow> {
+  async create(options: ICreatePublicRouteOptions): Promise<IPublicRouteRow> {
+    const { method, pathPattern, scope, tenantId } = options;
     const id = crypto.randomUUID();
 
-    const rows = await this.sql`
-      INSERT INTO public_routes (id, method, path_pattern, scope, environment)
-      VALUES (${id}, ${method}, ${pathPattern}, ${scope}, ${this.environment})
-      RETURNING id, method, path_pattern, scope, environment, created_at
-    `;
+    const rows = await this.publicRoutesRepository.insertRoute(
+      id,
+      method,
+      pathPattern,
+      scope,
+    );
 
     this.logger.log(
-      `Created public route: ${method} ${pathPattern} (${scope}, ${this.environment})`,
+      `Created public route: ${method} ${pathPattern} (${scope}, ${this.publicRoutesRepository.environmentName})`,
     );
 
     await this.syncToRedis(tenantId);
-    return rows[0] as PublicRouteRow;
+    return rows[0] as IPublicRouteRow;
   }
 
-  async list(tenantId?: string): Promise<PublicRouteRow[]> {
+  async list(tenantId?: string): Promise<IPublicRouteRow[]> {
     if (tenantId) {
       const tenantScope = `tenant:${tenantId}`;
-      const rows = await this.sql`
-        SELECT id, method, path_pattern, scope, environment, created_at
-        FROM public_routes
-        WHERE environment = ${this.environment}
-          AND (scope = 'platform' OR scope = ${tenantScope})
-        ORDER BY created_at DESC
-      `;
-      return rows as unknown as PublicRouteRow[];
+      return this.publicRoutesRepository.listForTenant(tenantScope);
     }
-
-    const rows = await this.sql`
-      SELECT id, method, path_pattern, scope, environment, created_at
-      FROM public_routes
-      WHERE environment = ${this.environment}
-      ORDER BY created_at DESC
-    `;
-    return rows as unknown as PublicRouteRow[];
+    return this.publicRoutesRepository.listAll();
   }
 
   async remove(id: string, tenantId?: string): Promise<void> {
-    const result = await this.sql`
-      DELETE FROM public_routes
-      WHERE id = ${id} AND environment = ${this.environment}
-      RETURNING id
-    `;
+    const result = await this.publicRoutesRepository.deleteById(id);
 
     if (result.length === 0) {
       throw new NotFoundException(`Public route '${id}' not found`);
@@ -90,28 +57,27 @@ export class PublicRoutesService {
     await this.syncToRedis(tenantId);
   }
 
-  async syncToRedis(tenantId?: string): Promise<void> {
-    const rows = await this.sql`
-      SELECT method, path_pattern, scope
-      FROM public_routes
-      WHERE environment = ${this.environment}
-    `;
+  private async syncToRedis(tenantId?: string): Promise<void> {
+    const rows = await this.publicRoutesRepository.loadSyncRows();
 
-    const entries: PublicRouteEntry[] = rows.map((r: Record<string, unknown>) => ({
-      method: r.method as string,
-      path: r.path_pattern as string,
-      scope: r.scope as PublicRouteEntry['scope'],
-    }));
+    const entries: PublicRouteEntry[] = rows.map(
+      (r: Record<string, unknown>) => ({
+        method: r.method as string,
+        path: r.path_pattern as string,
+        scope: r.scope as PublicRouteEntry["scope"],
+      }),
+    );
 
-    const baseKey = `${PUBLIC_ROUTES_CACHE_KEY_PREFIX}${this.environment}`;
+    const env = this.publicRoutesRepository.environmentName;
+    const baseKey = `${PUBLIC_ROUTES_CACHE_KEY_PREFIX}${env}`;
     await this.redis.set(baseKey, JSON.stringify(entries));
 
     if (tenantId) {
       const tenantScope = `tenant:${tenantId}`;
       const tenantEntries = entries.filter(
-        (e) => e.scope === 'platform' || e.scope === tenantScope,
+        (e) => e.scope === "platform" || e.scope === tenantScope,
       );
-      const tenantKey = `${PUBLIC_ROUTES_CACHE_KEY_PREFIX}${this.environment}:${tenantId}`;
+      const tenantKey = `${PUBLIC_ROUTES_CACHE_KEY_PREFIX}${env}:${tenantId}`;
       await this.redis.set(tenantKey, JSON.stringify(tenantEntries));
     }
 

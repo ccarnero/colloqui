@@ -1,8 +1,14 @@
-import { Component, computed, input } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  input,
+} from "@angular/core";
 
 @Component({
   selector: "app-progress-bar",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [],
   template: `
     @if (isQuotaMode()) {

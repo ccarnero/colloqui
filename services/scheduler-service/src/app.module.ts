@@ -1,17 +1,18 @@
-import { Global, Module } from '@nestjs/common';
-import { ObservabilityModule } from '@yoizen/observability';
-import { KubernetesModule } from './providers/kubernetes.provider';
-import { TenantConnectionManager } from './providers/tenant-connection-manager';
-import { SchedulesModule } from './modules/schedules/schedules.module';
-import { ExecutionsModule } from './modules/executions/executions.module';
-import { EngineModule } from './engine/engine.module';
-import { ExecutorsModule } from './executors/executors.module';
-import { HealthModule } from './modules/health/health.module';
+import { Global, Module } from "@nestjs/common";
+import { ObservabilityModule } from "@yoizen/observability";
+import { KubernetesModule } from "./providers/kubernetes.provider";
+import { TenantConnectionManager } from "./providers/tenant-connection-manager";
+import { SchedulesModule } from "./modules/schedules/schedules.module";
+import { ExecutionsModule } from "./modules/executions/executions.module";
+import { EngineModule } from "./engine/engine.module";
+import { ExecutorsModule } from "./executors/executors.module";
+import { HealthModule } from "./modules/health/health.module";
 
+/** Registers shared infrastructure (K8s, tenant connections) as global providers. */
 @Global()
 @Module({
   imports: [
-    ObservabilityModule.forRoot({ serviceName: 'scheduler-service' }),
+    ObservabilityModule.forRoot({ serviceName: "scheduler-service" }),
     KubernetesModule,
     EngineModule,
     ExecutorsModule,

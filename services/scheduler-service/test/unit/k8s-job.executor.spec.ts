@@ -9,10 +9,10 @@ import { Test } from "@nestjs/testing";
 import {
   ExecMode,
   ScheduleType,
-} from "../../src/modules/schedules/schedule.dto";
-import type { Schedule } from "../../src/modules/schedules/schedules.service";
+} from "../../src/modules/schedules/schedules.dto";
+import type { ISchedule } from "../../src/modules/schedules/schedules.service";
 
-function baseSchedule(overrides: Partial<Schedule> = {}): Schedule {
+function baseSchedule(overrides: Partial<ISchedule> = {}): ISchedule {
   return {
     id: "550e8400-e29b-41d4-a716-446655440000",
     name: "k8s-job",
@@ -97,9 +97,7 @@ describe("K8sJobExecutor", () => {
     expect(call?.body.metadata?.labels?.["yoizen.io/schedule-id"]).toBe(
       schedule.id,
     );
-    expect(call?.body.spec?.template?.spec?.containers?.[0]?.name).toBe(
-      "task",
-    );
+    expect(call?.body.spec?.template?.spec?.containers?.[0]?.name).toBe("task");
   });
 
   it("creates a ConfigMap with the script for js-k8s mode", async () => {
@@ -149,7 +147,9 @@ describe("K8sJobExecutor", () => {
     batchApi.readNamespacedJob = mock(() =>
       Promise.resolve({
         status: {
-          conditions: [{ type: "Failed", status: "True", reason: "BackoffLimitExceeded" }],
+          conditions: [
+            { type: "Failed", status: "True", reason: "BackoffLimitExceeded" },
+          ],
         },
       }),
     );
@@ -251,8 +251,11 @@ describe("K8sJobExecutor", () => {
       });
 
       const orig = global.setTimeout;
-      global.setTimeout = ((cb: TimerHandler, _ms?: number, ...args: unknown[]) =>
-        orig(cb, 0, ...args)) as typeof setTimeout;
+      global.setTimeout = ((
+        cb: TimerHandler,
+        _ms?: number,
+        ...args: unknown[]
+      ) => orig(cb, 0, ...args)) as typeof setTimeout;
 
       try {
         const result = await executor.execute(baseSchedule(), "tenant-k");

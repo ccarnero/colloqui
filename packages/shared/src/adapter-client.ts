@@ -1,3 +1,4 @@
+import { applyAdapterAuthHeadersSync } from "./adapter-auth-headers";
 import { TENANT_HEADER } from "./constants";
 import type {
   AdapterCache,
@@ -68,8 +69,15 @@ export class AdapterClient {
     adapterId: string,
     endpointId: string,
   ): Promise<ResolvedAdapterRequest> {
-    const adapter = await this.getAdapter(tenantId, adapterId);
-    const endpoint = adapter.endpoints.find((ep) => ep.id === endpointId);
+    let adapter = await this.getAdapter(tenantId, adapterId);
+    let endpoint = adapter.endpoints.find((ep) => ep.id === endpointId);
+
+    if (!endpoint) {
+      await this.invalidate(tenantId, adapterId);
+      adapter = await this.getAdapter(tenantId, adapterId);
+      endpoint = adapter.endpoints.find((ep) => ep.id === endpointId);
+    }
+
     if (!endpoint) {
       throw new Error(
         `Endpoint '${endpointId}' not found on adapter '${adapterId}'`,
@@ -163,39 +171,10 @@ export class AdapterClient {
     adapter: AdapterConfig,
     headers: Record<string, string>,
   ): Promise<void> {
-    const { authType, authConfig } = adapter;
-
-    switch (authType) {
-      case "none":
-        break;
-
-      case "api-key": {
-        const apiKey = authConfig.apiKey as string;
-        const headerName =
-          (authConfig.apiKeyHeader as string) ?? "X-API-Key";
-        headers[headerName] = apiKey;
-        break;
-      }
-
-      case "bearer": {
-        const token = authConfig.bearerToken as string;
-        headers["Authorization"] = `Bearer ${token}`;
-        break;
-      }
-
-      case "basic": {
-        const user = authConfig.basicUsername as string;
-        const pass = authConfig.basicPassword as string;
-        const encoded = btoa(`${user}:${pass}`);
-        headers["Authorization"] = `Basic ${encoded}`;
-        break;
-      }
-
-      case "oauth2": {
-        const token = await this.getOAuthToken(adapter);
-        headers["Authorization"] = `Bearer ${token}`;
-        break;
-      }
+    applyAdapterAuthHeadersSync(adapter, headers);
+    if (adapter.authType === "oauth2") {
+      const token = await this.getOAuthToken(adapter);
+      headers["Authorization"] = `Bearer ${token}`;
     }
   }
 
@@ -238,4 +217,16 @@ export class AdapterClient {
 
     return body.access_token;
   }
+}
+
+/**
+ * Shared wiring for services and workers: {@link AdapterClient} with Redis cache
+ * and a custom fetch (e.g. `tracedFetch` from `@yoizen/observability`).
+ */
+export function createAdapterClientWithRedisAndFetch(
+  baseUrl: string,
+  cache: AdapterClientOptions["cache"],
+  fetchFn: AdapterClientOptions["fetchFn"],
+): AdapterClient {
+  return new AdapterClient({ baseUrl, cache, fetchFn });
 }

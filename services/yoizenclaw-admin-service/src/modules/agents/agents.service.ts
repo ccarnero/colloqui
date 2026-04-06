@@ -1,33 +1,32 @@
 import {
   BadGatewayException,
   Injectable,
-  Logger,
   NotFoundException,
   Optional,
-} from '@nestjs/common';
+  Inject,
+} from "@nestjs/common";
+import { PinoLoggerService } from "@yoizen/observability";
 import {
   AgentsRepository,
   type IAgent,
   type ICreateAgentData,
   type IFindAllOptions,
-  type UpdateAgentData,
-} from './agents.repository';
-import { NatsPublisher } from '../../providers/nats.provider';
+  type IUpdateAgentData,
+} from "./agents.repository";
+import { NatsPublisher } from "../../providers/nats.provider";
 import type {
   ChatRequestDto,
   ChatResponseDto,
   MemoryProposalActionResponseDto,
   MemoryProposalListResponseDto,
-} from './agents.dto';
-import { AdaptersService } from '../adapters/adapters.service';
-import { AgentsRuntimeService } from './agents-runtime.service';
-
-const VALIDATE_ADAPTER_REFS =
-  (process.env.VALIDATE_ADAPTER_REFS ?? 'true') !== 'false';
+} from "./agents.dto";
+import { AdaptersService } from "../adapters/adapters.service";
+import { AgentsRuntimeService } from "./agents-runtime.service";
+import { yoizenclawAdminServiceConfig } from "../../config";
 
 @Injectable()
 export class AgentsService {
-  private readonly logger = new Logger(AgentsService.name);
+  private readonly logger = new PinoLoggerService(AgentsService.name);
 
   constructor(
     private readonly repository: AgentsRepository,
@@ -36,9 +35,6 @@ export class AgentsService {
     @Optional() private readonly adaptersService?: AdaptersService,
   ) {}
 
-  /**
-   * Lista todos los agents con filtros y paginación.
-   */
   async findAll(
     tenantId: string,
     options: IFindAllOptions = {},
@@ -46,9 +42,6 @@ export class AgentsService {
     return this.repository.findAll(tenantId, options);
   }
 
-  /**
-   * Obtiene un agent por su ID.
-   */
   async findById(tenantId: string, id: string): Promise<IAgent> {
     const agent = await this.repository.findById(tenantId, id);
     if (!agent) {
@@ -57,21 +50,15 @@ export class AgentsService {
     return agent;
   }
 
-  /**
-   * Crea un nuevo agent. Optionally validates adapter refs in tools.
-   */
   async create(tenantId: string, data: ICreateAgentData): Promise<IAgent> {
     await this.validateAdapterRefs(tenantId, data.tools);
     return this.repository.create(tenantId, data);
   }
 
-  /**
-   * Actualiza un agent existente. Optionally validates adapter refs in tools.
-   */
   async update(
     tenantId: string,
     id: string,
-    data: UpdateAgentData,
+    data: IUpdateAgentData,
   ): Promise<IAgent> {
     await this.validateAdapterRefs(tenantId, data.tools);
     const agent = await this.repository.update(tenantId, id, data);
@@ -81,9 +68,6 @@ export class AgentsService {
     return agent;
   }
 
-  /**
-   * Elimina (soft delete) un agent.
-   */
   async delete(tenantId: string, id: string): Promise<void> {
     const deleted = await this.repository.delete(tenantId, id);
     if (!deleted) {
@@ -91,16 +75,12 @@ export class AgentsService {
     }
   }
 
-  /**
-   * Publica un agent y emite evento NATS.
-   */
   async publish(tenantId: string, id: string): Promise<IAgent> {
     const agent = await this.repository.publish(tenantId, id);
     if (!agent) {
       throw new NotFoundException(`Agent with ID '${id}' not found`);
     }
 
-    // Emitir evento NATS con configuración completa
     try {
       await this.natsPublisher.publishAgentPublished(
         tenantId,
@@ -120,23 +100,17 @@ export class AgentsService {
         `Failed to emit agent.published event for agent '${agent.id}'`,
         error,
       );
-      // No lanzamos error para no fallar la operación de publicar
-      // pero logueamos el problema
     }
 
     return agent;
   }
 
-  /**
-   * Despublica un agent y emite evento NATS.
-   */
   async unpublish(tenantId: string, id: string): Promise<IAgent> {
     const agent = await this.repository.unpublish(tenantId, id);
     if (!agent) {
       throw new NotFoundException(`Agent with ID '${id}' not found`);
     }
 
-    // Emitir evento NATS
     try {
       await this.natsPublisher.publishAgentUnpublished(
         tenantId,
@@ -149,16 +123,11 @@ export class AgentsService {
         `Failed to emit agent.unpublished event for agent '${agent.id}'`,
         error,
       );
-      // No lanzamos error para no fallar la operación de despublicar
     }
 
     return agent;
   }
 
-  /**
-   * Chat con agent via NATS Request-Reply.
-   * Sigue el patrón CloudEvents del skill envelope-messages.
-   */
   async chat(
     tenantId: string,
     agentId: string,
@@ -169,33 +138,26 @@ export class AgentsService {
     if (!agent) {
       throw new NotFoundException(`Agent with ID '${agentId}' not found`);
     }
-    if (agent.status !== 'published') {
+    if (agent.status !== "published") {
       throw new NotFoundException(`Agent '${agentId}' is not published`);
     }
 
-    // Prioritize userId from DTO (editable in playground) over header
     const resolvedUserId = dto.userId || userId;
 
     try {
       return this.runtimeService.chat(tenantId, agentId, dto, resolvedUserId);
     } catch (error) {
       this.logger.error(`Chat request failed for agent ${agentId}`, error);
-      throw new BadGatewayException('Failed to get response from agent');
+      throw new BadGatewayException("Failed to get response from agent");
     }
   }
 
-  /**
-   * Lists memory proposals pending human review for the tenant.
-   */
   async listMemoryProposals(
     tenantId: string,
   ): Promise<MemoryProposalListResponseDto> {
     return this.runtimeService.listMemoryProposals(tenantId);
   }
 
-  /**
-   * Approves a tenant memory proposal with an optional reviewer identity.
-   */
   async approveMemoryProposal(
     tenantId: string,
     proposalId: string,
@@ -204,14 +166,11 @@ export class AgentsService {
     return this.runtimeService.reviewMemoryProposal(
       tenantId,
       proposalId,
-      'memory_proposals_approve',
+      "memory_proposals_approve",
       reviewerId,
     );
   }
 
-  /**
-   * Rejects a tenant memory proposal with an optional reviewer identity.
-   */
   async rejectMemoryProposal(
     tenantId: string,
     proposalId: string,
@@ -220,21 +179,20 @@ export class AgentsService {
     return this.runtimeService.reviewMemoryProposal(
       tenantId,
       proposalId,
-      'memory_proposals_reject',
+      "memory_proposals_reject",
       reviewerId,
     );
   }
 
   /**
    * When VALIDATE_ADAPTER_REFS is enabled, checks that each tool's
-   * adapterRef points to an existing adapter and endpoint. Logs
-   * warnings for missing refs but does NOT block the save.
+   * adapterRef points to an existing adapter and endpoint.
    */
   private async validateAdapterRefs(
     tenantId: string,
     tools?: unknown[],
   ): Promise<void> {
-    if (!VALIDATE_ADAPTER_REFS || !this.adaptersService || !tools?.length) {
+    if (!yoizenclawAdminServiceConfig.validateAdapterRefs || !tools?.length) {
       return;
     }
 
@@ -245,7 +203,7 @@ export class AgentsService {
         | undefined;
       if (!ref?.adapterId) continue;
 
-      const adapterExists = await this.adaptersService.adapterExists(
+      const adapterExists = await this.adaptersService?.adapterExists(
         tenantId,
         ref.adapterId,
       );
@@ -258,7 +216,7 @@ export class AgentsService {
       }
 
       if (ref.endpointId) {
-        const epExists = await this.adaptersService.endpointExists(
+        const epExists = await this.adaptersService?.endpointExists(
           tenantId,
           ref.adapterId,
           ref.endpointId,

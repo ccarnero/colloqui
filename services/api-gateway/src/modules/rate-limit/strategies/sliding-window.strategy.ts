@@ -1,8 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
-import type Redis from 'ioredis';
-import type { RateLimitResult, RateLimitTenantConfig } from '@yoizen/shared';
-import { REDIS_CLIENT } from '../../../providers/redis.provider';
-import type { RateLimitStrategy } from './rate-limit.strategy';
+import { Inject, Injectable } from "@nestjs/common";
+import type Redis from "ioredis";
+import type { RateLimitResult, RateLimitTenantConfig } from "@yoizen/shared";
+import { REDIS_CLIENT } from "../../../providers/redis.provider";
+import type { IRateLimitStrategy } from "./rate-limit.strategy";
 
 /**
  * Two-window interpolation for a sliding window counter.
@@ -62,7 +62,7 @@ return {1, math.floor(estimate), math.ceil(resetMs / 1000)}
 `;
 
 @Injectable()
-export class SlidingWindowStrategy implements RateLimitStrategy {
+export class SlidingWindowStrategy implements IRateLimitStrategy {
   private scriptSha: string | null = null;
 
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
@@ -77,7 +77,12 @@ export class SlidingWindowStrategy implements RateLimitStrategy {
     const now = Date.now();
 
     const result = await this.evalScript(
-      prevKey, currKey, tsKey, config.limit, config.windowMs, now,
+      prevKey,
+      currKey,
+      tsKey,
+      config.limit,
+      config.windowMs,
+      now,
     );
 
     const [allowed, estimate, resetSec] = result as [number, number, number];
@@ -100,22 +105,36 @@ export class SlidingWindowStrategy implements RateLimitStrategy {
     now: number,
   ): Promise<unknown> {
     if (!this.scriptSha) {
-      this.scriptSha = await this.redis.script(
-        'LOAD',
+      this.scriptSha = (await this.redis.script(
+        "LOAD",
         LUA_SLIDING_WINDOW,
-      ) as string;
+      )) as string;
     }
     try {
       return await this.redis.evalsha(
-        this.scriptSha, 3, prevKey, currKey, tsKey, limit, windowMs, now,
+        this.scriptSha,
+        3,
+        prevKey,
+        currKey,
+        tsKey,
+        limit,
+        windowMs,
+        now,
       );
     } catch {
-      this.scriptSha = await this.redis.script(
-        'LOAD',
+      this.scriptSha = (await this.redis.script(
+        "LOAD",
         LUA_SLIDING_WINDOW,
-      ) as string;
+      )) as string;
       return this.redis.evalsha(
-        this.scriptSha, 3, prevKey, currKey, tsKey, limit, windowMs, now,
+        this.scriptSha,
+        3,
+        prevKey,
+        currKey,
+        tsKey,
+        limit,
+        windowMs,
+        now,
       );
     }
   }

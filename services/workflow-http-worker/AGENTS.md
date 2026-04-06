@@ -111,7 +111,8 @@ When `adapterId` and `endpointId` are present, the activity resolves the full re
 |---------|-------|
 | `bun test` | All tests |
 | `bun test test/unit` | Unit tests |
-| `bun test test/integration` | Integration tests (requires Temporal server) |
+
+There is no `test/integration/` suite in this package yet; use `bun test` for the full run.
 
 ## Code Style and Conventions
 

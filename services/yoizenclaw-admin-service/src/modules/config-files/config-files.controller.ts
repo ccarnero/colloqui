@@ -5,34 +5,35 @@ import {
   Post,
   Body,
   Query,
-  Headers,
   HttpCode,
   HttpStatus,
-} from '@nestjs/common';
-import { TENANT_HEADER } from '@yoizen/shared';
-import { ConfigFilesService } from './config-files.service';
+  UseGuards,
+} from "@nestjs/common";
+import { ConfigFilesService } from "./config-files.service";
 import {
   CreateConfigFileDto,
-  UpdateConfigFileDto,
   ListConfigFilesQueryDto,
   GetConfigFileByPathQueryDto,
   DeployConfigFilesDto,
-} from './config-files.dto';
-import type { ConfigFile } from './config-files.repository';
+} from "./config-files.dto";
+import type { IConfigFile } from "./config-files.repository";
+import { TenantGuard } from "../../guards/tenant.guard";
+import { TenantId } from "../../providers/tenant.decorator";
 
-@Controller('admin/config-files')
+@Controller("admin/config-files")
+@UseGuards(TenantGuard)
 export class ConfigFilesController {
   constructor(private readonly service: ConfigFilesService) {}
 
   /**
-   * Lista todos los config files.
+   * Lists config files.
    * GET /admin/config-files?limit=20&offset=0
    */
   @Get()
   async findAll(
-    @Headers(TENANT_HEADER) tenantId: string,
+    @TenantId() tenantId: string,
     @Query() query: ListConfigFilesQueryDto,
-  ): Promise<{ files: ConfigFile[]; total: number }> {
+  ): Promise<{ files: IConfigFile[]; total: number }> {
     return this.service.findAll(tenantId, {
       limit: query.limit,
       offset: query.offset,
@@ -40,28 +41,28 @@ export class ConfigFilesController {
   }
 
   /**
-   * Obtiene un config file por su path.
+   * Returns a config file by path.
    * GET /admin/config-files/file?path=/config/app.yaml
    */
-  @Get('file')
+  @Get("file")
   async findByPath(
-    @Headers(TENANT_HEADER) tenantId: string,
+    @TenantId() tenantId: string,
     @Query() query: GetConfigFileByPathQueryDto,
-  ): Promise<ConfigFile> {
+  ): Promise<IConfigFile> {
     return this.service.findByPath(tenantId, query.path);
   }
 
   /**
-   * Crea o actualiza un config file.
+   * Creates or updates a config file.
    * PUT /admin/config-files
-   * Si el path ya existe, actualiza y automaticamente incrementa la versión.
-   * Si no existe, crea uno nuevo con versión 1.
+   * If the path exists, updates and bumps version.
+   * If not, creates a new file at version 1.
    */
   @Put()
   async createOrUpdate(
-    @Headers(TENANT_HEADER) tenantId: string,
+    @TenantId() tenantId: string,
     @Body() dto: CreateConfigFileDto,
-  ): Promise<ConfigFile> {
+  ): Promise<IConfigFile> {
     return this.service.createOrUpdate(tenantId, {
       name: dto.name,
       path: dto.path,
@@ -71,16 +72,16 @@ export class ConfigFilesController {
   }
 
   /**
-   * Deploy: sincroniza config files al runtime.
+   * Deploy: syncs config files to runtime.
    * POST /admin/config-files/deploy
-   * Emite evento NATS runtime.config.sync con todos los archivos activos.
+   * Emits NATS runtime.config.sync with all active files.
    */
-  @Post('deploy')
+  @Post("deploy")
   @HttpCode(HttpStatus.OK)
   async deploy(
-    @Headers(TENANT_HEADER) tenantId: string,
+    @TenantId() tenantId: string,
     @Body() dto: DeployConfigFilesDto,
-  ): Promise<{ files: ConfigFile[]; eventEmitted: boolean }> {
+  ): Promise<{ files: IConfigFile[]; eventEmitted: boolean }> {
     return this.service.deploy(tenantId, dto.deletePaths);
   }
 }

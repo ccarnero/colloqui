@@ -1,25 +1,27 @@
-import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
-import { JobsRepository, type Job, type CreateJobData, type UpdateJobData } from './jobs.repository';
-import { JobExecutionsRepository, type JobExecution, type CreateExecutionData } from './job-executions.repository';
-import { NatsPublisher } from '../../providers/nats.provider';
-
-export interface FindAllJobsOptions {
-  agent_id?: string;
-  is_active?: boolean;
-  limit?: number;
-  offset?: number;
-}
-
-export interface FindAllExecutionsOptions {
-  job_id?: string;
-  status?: string;
-  limit?: number;
-  offset?: number;
-}
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from "@nestjs/common";
+import {
+  JobsRepository,
+  type IJob,
+  type ICreateJobData,
+  type IUpdateJobData,
+  type IFindAllJobsOptions,
+} from "./jobs.repository";
+import {
+  JobExecutionsRepository,
+  type IJobExecution,
+  type ICreateExecutionData,
+  type IFindAllExecutionsOptions,
+} from "./job-executions.repository";
+import { NatsPublisher } from "../../providers/nats.provider";
+import { PinoLoggerService } from "@yoizen/observability";
 
 @Injectable()
 export class JobsService {
-  private readonly logger = new Logger(JobsService.name);
+  private readonly logger = new PinoLoggerService(JobsService.name);
 
   constructor(
     private readonly jobsRepository: JobsRepository,
@@ -28,19 +30,19 @@ export class JobsService {
   ) {}
 
   /**
-   * Lista todos los jobs con filtros y paginación.
+   * Lists all jobs with optional filters and pagination.
    */
   async findAll(
     tenantId: string,
-    options: FindAllJobsOptions = {},
-  ): Promise<{ jobs: Job[]; total: number }> {
+    options: IFindAllJobsOptions = {},
+  ): Promise<{ jobs: IJob[]; total: number }> {
     return this.jobsRepository.findAll(tenantId, options);
   }
 
   /**
-   * Obtiene un job por su ID.
+   * Returns a job by ID.
    */
-  async findById(tenantId: string, id: string): Promise<Job> {
+  async findById(tenantId: string, id: string): Promise<IJob> {
     const job = await this.jobsRepository.findById(tenantId, id);
     if (!job) {
       throw new NotFoundException(`Job with ID '${id}' not found`);
@@ -49,20 +51,20 @@ export class JobsService {
   }
 
   /**
-   * Crea un nuevo job.
+   * Creates a new job.
    */
-  async create(tenantId: string, data: CreateJobData): Promise<Job> {
+  async create(tenantId: string, data: ICreateJobData): Promise<IJob> {
     return this.jobsRepository.create(tenantId, data);
   }
 
   /**
-   * Actualiza un job existente.
+   * Updates an existing job.
    */
   async update(
     tenantId: string,
     id: string,
-    data: UpdateJobData,
-  ): Promise<Job> {
+    data: IUpdateJobData,
+  ): Promise<IJob> {
     const job = await this.jobsRepository.update(tenantId, id, data);
     if (!job) {
       throw new NotFoundException(`Job with ID '${id}' not found`);
@@ -71,7 +73,7 @@ export class JobsService {
   }
 
   /**
-   * Elimina un job.
+   * Deletes a job.
    */
   async delete(tenantId: string, id: string): Promise<void> {
     const deleted = await this.jobsRepository.delete(tenantId, id);
@@ -81,9 +83,9 @@ export class JobsService {
   }
 
   /**
-   * Activa un job.
+   * Enables a job.
    */
-  async enable(tenantId: string, id: string): Promise<Job> {
+  async enable(tenantId: string, id: string): Promise<IJob> {
     const job = await this.jobsRepository.enable(tenantId, id);
     if (!job) {
       throw new NotFoundException(`Job with ID '${id}' not found`);
@@ -93,9 +95,9 @@ export class JobsService {
   }
 
   /**
-   * Desactiva un job.
+   * Disables a job.
    */
-  async disable(tenantId: string, id: string): Promise<Job> {
+  async disable(tenantId: string, id: string): Promise<IJob> {
     const job = await this.jobsRepository.disable(tenantId, id);
     if (!job) {
       throw new NotFoundException(`Job with ID '${id}' not found`);
@@ -105,9 +107,9 @@ export class JobsService {
   }
 
   /**
-   * Ejecuta un job manualmente creando una ejecución.
+   * Runs a job manually by creating an execution record.
    */
-  async run(tenantId: string, id: string): Promise<JobExecution> {
+  async run(tenantId: string, id: string): Promise<IJobExecution> {
     const job = await this.jobsRepository.findById(tenantId, id);
     if (!job) {
       throw new NotFoundException(`Job with ID '${id}' not found`);
@@ -117,31 +119,36 @@ export class JobsService {
       throw new BadRequestException(`Job '${job.name}' is not active`);
     }
 
-    // Crear ejecución en estado running
-    const executionData: CreateExecutionData = {
+    // Create execution in running state
+    const executionData: ICreateExecutionData = {
       job_id: id,
-      status: 'running',
-      triggered_by: 'manual',
+      status: "running",
+      triggered_by: "manual",
     };
 
-    const execution = await this.executionsRepository.create(tenantId, executionData);
+    const execution = await this.executionsRepository.create(
+      tenantId,
+      executionData,
+    );
 
-    // Actualizar last_run del job
+    // Update job last_run
     await this.jobsRepository.updateLastRun(tenantId, id, job.schedule);
 
-    this.logger.log(`Job '${job.name}' started manually, execution: ${execution.id}`);
+    this.logger.log(
+      `Job '${job.name}' started manually, execution: ${execution.id}`,
+    );
 
     return execution;
   }
 
   /**
-   * Trigger un job con payload personalizado emite evento NATS.
+   * Triggers a job with a custom payload and emits a NATS event.
    */
   async trigger(
     tenantId: string,
     id: string,
     eventPayload: Record<string, unknown> = {},
-  ): Promise<JobExecution> {
+  ): Promise<IJobExecution> {
     const job = await this.jobsRepository.findById(tenantId, id);
     if (!job) {
       throw new NotFoundException(`Job with ID '${id}' not found`);
@@ -151,54 +158,48 @@ export class JobsService {
       throw new BadRequestException(`Job '${job.name}' is not active`);
     }
 
-    // Crear ejecución en estado pending
-    const executionData: CreateExecutionData = {
+    // Create execution in pending state
+    const executionData: ICreateExecutionData = {
       job_id: id,
-      status: 'pending',
+      status: "pending",
       event_payload: eventPayload,
-      triggered_by: 'event',
+      triggered_by: "event",
     };
 
-    const execution = await this.executionsRepository.create(tenantId, executionData);
+    const execution = await this.executionsRepository.create(
+      tenantId,
+      executionData,
+    );
 
-    // Emitir evento NATS
+    // Emit NATS event
     try {
-      await this.natsPublisher.publishJobTrigger(
+      await this.natsPublisher.publishJobTrigger({
         tenantId,
-        job.id,
-        execution.id,
-        { ...job.payload, ...eventPayload },
+        jobId: job.id,
+        executionId: execution.id,
+        eventPayload: { ...job.payload, ...eventPayload },
+      });
+      this.logger.log(
+        `Job '${job.name}' triggered, execution: ${execution.id}`,
       );
-      this.logger.log(`Job '${job.name}' triggered, execution: ${execution.id}`);
     } catch (error) {
       this.logger.error(
         `Failed to emit job.trigger event for job '${job.id}'`,
         error,
       );
-      // No lanzamos error para no fallar la operación
+      // Swallow errors so the trigger operation still succeeds
     }
 
     return execution;
   }
 
   /**
-   * Lista todas las ejecuciones de jobs.
+   * Lists all job executions.
    */
   async findAllExecutions(
     tenantId: string,
-    options: FindAllExecutionsOptions = {},
-  ): Promise<{ executions: JobExecution[]; total: number }> {
+    options: IFindAllExecutionsOptions = {},
+  ): Promise<{ executions: IJobExecution[]; total: number }> {
     return this.executionsRepository.findAll(tenantId, options);
-  }
-
-  /**
-   * Obtiene una ejecución por su ID.
-   */
-  async findExecutionById(tenantId: string, id: string): Promise<JobExecution> {
-    const execution = await this.executionsRepository.findById(tenantId, id);
-    if (!execution) {
-      throw new NotFoundException(`Job execution with ID '${id}' not found`);
-    }
-    return execution;
   }
 }

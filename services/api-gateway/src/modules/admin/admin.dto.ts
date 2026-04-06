@@ -10,8 +10,9 @@ import {
   ValidateNested,
   IsISO8601,
   Length,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+} from "class-validator";
+import { Type } from "class-transformer";
+import { PaginatedQueryDto } from "@yoizen/shared";
 
 const MAX_NAME_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -81,8 +82,8 @@ export class UpdateAgentDto {
 
 export class ChatContextEntryDto {
   @IsString()
-  @IsIn(['customer', 'agent'])
-  sender!: 'customer' | 'agent';
+  @IsIn(["customer", "agent"])
+  sender!: "customer" | "agent";
 
   @IsString()
   @IsNotEmpty()
@@ -130,9 +131,6 @@ export class MemoryDecisionDto {
   reason?: string;
 }
 
-/**
- * Provider-aware credential creation
- */
 export class CreateCredentialDto {
   @IsString()
   @IsNotEmpty()
@@ -142,19 +140,19 @@ export class CreateCredentialDto {
   @IsString()
   @IsNotEmpty()
   @IsIn([
-    'openai',
-    'anthropic',
-    'google',
-    'google-vertex',
-    'bedrock',
-    'groq',
-    'mistral',
-    'openrouter',
-    'xai',
-    'cohere',
-    'cerebras',
-    'huggingface',
-    'mock',
+    "openai",
+    "anthropic",
+    "google",
+    "google-vertex",
+    "bedrock",
+    "groq",
+    "mistral",
+    "openrouter",
+    "xai",
+    "cohere",
+    "cerebras",
+    "huggingface",
+    "mock",
   ])
   provider!: string;
 
@@ -176,10 +174,6 @@ export class CreateCredentialDto {
   is_active?: boolean;
 }
 
-/**
- * Provider-aware credential update
- * Omitting secret fields in payload preserves existing values
- */
 export class UpdateCredentialDto {
   @IsString()
   @IsOptional()
@@ -189,19 +183,19 @@ export class UpdateCredentialDto {
   @IsString()
   @IsOptional()
   @IsIn([
-    'openai',
-    'anthropic',
-    'google',
-    'google-vertex',
-    'bedrock',
-    'groq',
-    'mistral',
-    'openrouter',
-    'xai',
-    'cohere',
-    'cerebras',
-    'huggingface',
-    'mock',
+    "openai",
+    "anthropic",
+    "google",
+    "google-vertex",
+    "bedrock",
+    "groq",
+    "mistral",
+    "openrouter",
+    "xai",
+    "cohere",
+    "cerebras",
+    "huggingface",
+    "mock",
   ])
   provider?: string;
 
@@ -223,9 +217,6 @@ export class UpdateCredentialDto {
   is_active?: boolean;
 }
 
-/**
- * Credential rotation (replace secret values)
- */
 export class RotateCredentialDto {
   @IsObject()
   @IsNotEmpty()
@@ -309,4 +300,59 @@ export class DeployConfigFilesDto {
   @IsBoolean()
   @IsOptional()
   restart?: boolean;
+}
+
+/** Query for `GET /admin/credentials`. */
+export class AdminCredentialsListQueryDto extends PaginatedQueryDto {
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  is_active?: string;
+}
+
+/** Query for `GET /admin/agents`. */
+export class AdminAgentsListQueryDto extends PaginatedQueryDto {
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  is_active?: string;
+}
+
+/** Query for `GET /admin/jobs`. */
+export class AdminJobsListQueryDto extends PaginatedQueryDto {
+  @IsOptional()
+  @IsString()
+  agent_id?: string;
+
+  @IsOptional()
+  @IsString()
+  is_active?: string;
+}
+
+/** Query for `GET /admin/jobs/executions`. */
+export class AdminJobExecutionsListQueryDto extends PaginatedQueryDto {
+  @IsOptional()
+  @IsString()
+  job_id?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+/** Query for `GET /admin/config-files`. */
+export class AdminConfigFilesListQueryDto extends PaginatedQueryDto {}
+
+/** Query for `GET /admin/config-files/file`. */
+export class ConfigFilePathQueryDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2048)
+  path!: string;
 }

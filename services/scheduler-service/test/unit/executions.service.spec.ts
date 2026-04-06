@@ -1,18 +1,10 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import type { Sql } from "postgres";
+import { createQueuedSql } from "@yoizen/testing";
+import { ExecutionsRepository } from "../../src/modules/executions/executions.repository";
 import { ExecutionsService } from "../../src/modules/executions/executions.service";
 import { TenantConnectionManager } from "../../src/providers/tenant-connection-manager";
-
-function createQueuedSql(rowsQueue: unknown[][]) {
-  const fn = mock(() => {
-    const next = rowsQueue.shift();
-    return Promise.resolve(next ?? []);
-  });
-  return Object.assign(fn, {
-    json: (v: unknown) => v,
-  }) as unknown as Sql;
-}
 
 function logRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -37,13 +29,14 @@ describe("ExecutionsService", () => {
 
   beforeEach(async () => {
     sqlQueue = [];
-    mockSql = createQueuedSql(sqlQueue);
+    mockSql = createQueuedSql(sqlQueue, mock);
     const tenantConnections = {
       ensureSchema: mock(() => Promise.resolve(mockSql)),
     };
 
     const module = await Test.createTestingModule({
       providers: [
+        ExecutionsRepository,
         ExecutionsService,
         { provide: TenantConnectionManager, useValue: tenantConnections },
       ],
@@ -88,6 +81,27 @@ describe("ExecutionsService", () => {
       sqlQueue.push([logRow()]);
       const row = await service.findById("log-1", "tenant-a");
       expect(row?.id).toBe("log-1");
+    });
+  });
+
+  describe("createLog", () => {
+    it("delegates to repository.createLog", async () => {
+      sqlQueue.push([logRow({ status: "pending" })]);
+      const row = await service.createLog("sched-1", "tenant-a");
+      expect(row.schedule_id).toBe("sched-1");
+      expect(row.status).toBe("pending");
+    });
+  });
+
+  describe("updateStatus", () => {
+    it("delegates to repository.updateStatus", async () => {
+      sqlQueue.push([], [logRow({ status: "completed" })]);
+      const row = await service.updateStatus({
+        id: "log-1",
+        tenantId: "tenant-a",
+        status: "completed",
+      });
+      expect(row.status).toBe("completed");
     });
   });
 });

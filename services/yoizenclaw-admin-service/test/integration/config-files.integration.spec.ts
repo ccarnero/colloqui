@@ -1,16 +1,23 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
-import { Test } from '@nestjs/testing';
-import type { INestApplication } from '@nestjs/common';
-import request from 'supertest';
-import { ConfigFilesModule } from '../../src/modules/config-files/config-files.module';
-import { TenantConnectionManager } from '../../src/providers/tenant-connection-manager';
-import { NatsPublisher } from '../../src/providers/nats.provider';
-import { TENANT_HEADER } from '@yoizen/shared';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "bun:test";
+import { Test } from "@nestjs/testing";
+import type { INestApplication } from "@nestjs/common";
+import request from "supertest";
+import { ConfigFilesModule } from "../../src/modules/config-files/config-files.module";
+import { TenantConnectionManager } from "@yoizen/database";
+import { NatsPublisher } from "../../src/providers/nats.provider";
+import { TENANT_HEADER } from "@yoizen/shared";
 
 // Mock implementations for integration tests
 const createMockTenantConnectionManager = () => {
   const pools = new Map();
-  
+
   return {
     getConnection: (tenantId: string) => {
       if (!pools.has(tenantId)) {
@@ -32,11 +39,13 @@ const createMockNatsPublisher = () => ({
   publishRuntimeConfigSync: async () => null,
 });
 
-describe('ConfigFiles Integration Tests', () => {
+describe("ConfigFiles Integration Tests", () => {
   let app: INestApplication;
-  let mockConnectionManager: ReturnType<typeof createMockTenantConnectionManager>;
+  let mockConnectionManager: ReturnType<
+    typeof createMockTenantConnectionManager
+  >;
   let mockNatsPublisher: ReturnType<typeof createMockNatsPublisher>;
-  const TENANT_ID = 'test-tenant-123';
+  const TENANT_ID = "test-tenant-123";
 
   beforeAll(async () => {
     mockConnectionManager = createMockTenantConnectionManager();
@@ -64,93 +73,91 @@ describe('ConfigFiles Integration Tests', () => {
     // Reset mocks before each test
   });
 
-  describe('GET /admin/config-files', () => {
-    it('should list config files with pagination', async () => {
+  describe("GET /admin/config-files", () => {
+    it("should list config files with pagination", async () => {
       const response = await request(app.getHttpServer())
-        .get('/admin/config-files?limit=10&offset=0')
+        .get("/admin/config-files?limit=10&offset=0")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
-      expect(response.body).toHaveProperty('files');
-      expect(response.body).toHaveProperty('total');
+      expect(response.body).toHaveProperty("files");
+      expect(response.body).toHaveProperty("total");
       expect(Array.isArray(response.body.files)).toBe(true);
     });
 
-    it('should require tenant header', async () => {
-      await request(app.getHttpServer())
-        .get('/admin/config-files')
-        .expect(400);
+    it("should require tenant header", async () => {
+      await request(app.getHttpServer()).get("/admin/config-files").expect(400);
     });
   });
 
-  describe('GET /admin/config-files/file', () => {
-    it('should get config file by path', async () => {
+  describe("GET /admin/config-files/file", () => {
+    it("should get config file by path", async () => {
       // First create a config file
       const createResponse = await request(app.getHttpServer())
-        .put('/admin/config-files')
+        .put("/admin/config-files")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Test Config',
-          path: '/config/test.yaml',
-          content: 'key: value',
-          format: 'yaml',
+          name: "Test Config",
+          path: "/config/test.yaml",
+          content: "key: value",
+          format: "yaml",
         })
         .expect(200);
 
       // Then get it by path
       const response = await request(app.getHttpServer())
-        .get('/admin/config-files/file?path=/config/test.yaml')
+        .get("/admin/config-files/file?path=/config/test.yaml")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
-      expect(response.body.path).toBe('/config/test.yaml');
-      expect(response.body.content).toBe('key: value');
+      expect(response.body.path).toBe("/config/test.yaml");
+      expect(response.body.content).toBe("key: value");
     });
 
-    it('should return 404 for non-existent path', async () => {
+    it("should return 404 for non-existent path", async () => {
       await request(app.getHttpServer())
-        .get('/admin/config-files/file?path=/config/nonexistent.yaml')
+        .get("/admin/config-files/file?path=/config/nonexistent.yaml")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(404);
     });
 
-    it('should require path parameter', async () => {
+    it("should require path parameter", async () => {
       await request(app.getHttpServer())
-        .get('/admin/config-files/file')
+        .get("/admin/config-files/file")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(400);
     });
   });
 
-  describe('PUT /admin/config-files', () => {
-    it('should create new config file', async () => {
+  describe("PUT /admin/config-files", () => {
+    it("should create new config file", async () => {
       const response = await request(app.getHttpServer())
-        .put('/admin/config-files')
+        .put("/admin/config-files")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'New Config',
-          path: '/config/new.yaml',
-          content: 'key: value',
-          format: 'yaml',
+          name: "New Config",
+          path: "/config/new.yaml",
+          content: "key: value",
+          format: "yaml",
         })
         .expect(200);
 
-      expect(response.body).toHaveProperty('id');
-      expect(response.body.path).toBe('/config/new.yaml');
+      expect(response.body).toHaveProperty("id");
+      expect(response.body.path).toBe("/config/new.yaml");
       expect(response.body.version).toBe(1);
-      expect(response.body.format).toBe('yaml');
+      expect(response.body.format).toBe("yaml");
     });
 
-    it('should update existing config file and increment version', async () => {
+    it("should update existing config file and increment version", async () => {
       // First create
       const createResponse = await request(app.getHttpServer())
-        .put('/admin/config-files')
+        .put("/admin/config-files")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Version Test',
-          path: '/config/version-test.yaml',
-          content: 'version: 1',
-          format: 'yaml',
+          name: "Version Test",
+          path: "/config/version-test.yaml",
+          content: "version: 1",
+          format: "yaml",
         })
         .expect(200);
 
@@ -158,132 +165,132 @@ describe('ConfigFiles Integration Tests', () => {
 
       // Then update
       const updateResponse = await request(app.getHttpServer())
-        .put('/admin/config-files')
+        .put("/admin/config-files")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Version Test Updated',
-          path: '/config/version-test.yaml',
-          content: 'version: 2',
-          format: 'yaml',
+          name: "Version Test Updated",
+          path: "/config/version-test.yaml",
+          content: "version: 2",
+          format: "yaml",
         })
         .expect(200);
 
       expect(updateResponse.body.version).toBe(2);
-      expect(updateResponse.body.content).toBe('version: 2');
+      expect(updateResponse.body.content).toBe("version: 2");
     });
 
-    it('should validate required fields', async () => {
+    it("should validate required fields", async () => {
       const invalidData = {
-        name: '',
-        path: '',
-        content: '',
-        format: 'invalid',
+        name: "",
+        path: "",
+        content: "",
+        format: "invalid",
       };
 
       await request(app.getHttpServer())
-        .put('/admin/config-files')
+        .put("/admin/config-files")
         .set(TENANT_HEADER, TENANT_ID)
         .send(invalidData)
         .expect(400);
     });
 
-    it('should validate format enum', async () => {
+    it("should validate format enum", async () => {
       const invalidData = {
-        name: 'Test',
-        path: '/config/test.yaml',
-        content: 'key: value',
-        format: 'xml',
+        name: "Test",
+        path: "/config/test.yaml",
+        content: "key: value",
+        format: "xml",
       };
 
       await request(app.getHttpServer())
-        .put('/admin/config-files')
+        .put("/admin/config-files")
         .set(TENANT_HEADER, TENANT_ID)
         .send(invalidData)
         .expect(400);
     });
 
-    it('should require tenant header', async () => {
+    it("should require tenant header", async () => {
       const configData = {
-        name: 'Test Config',
-        path: '/config/test.yaml',
-        content: 'key: value',
-        format: 'yaml',
+        name: "Test Config",
+        path: "/config/test.yaml",
+        content: "key: value",
+        format: "yaml",
       };
 
       await request(app.getHttpServer())
-        .put('/admin/config-files')
+        .put("/admin/config-files")
         .send(configData)
         .expect(400);
     });
   });
 
-  describe('POST /admin/config-files/deploy', () => {
-    it('should deploy and emit runtime config sync event', async () => {
+  describe("POST /admin/config-files/deploy", () => {
+    it("should deploy and emit runtime config sync event", async () => {
       // Create some config files first
       await request(app.getHttpServer())
-        .put('/admin/config-files')
+        .put("/admin/config-files")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'App Config',
-          path: '/config/app.yaml',
-          content: 'app: config',
-          format: 'yaml',
+          name: "App Config",
+          path: "/config/app.yaml",
+          content: "app: config",
+          format: "yaml",
         })
         .expect(200);
 
       await request(app.getHttpServer())
-        .put('/admin/config-files')
+        .put("/admin/config-files")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Routes Config',
-          path: '/config/routes.json',
+          name: "Routes Config",
+          path: "/config/routes.json",
           content: '{"routes": []}',
-          format: 'json',
+          format: "json",
         })
         .expect(200);
 
       // Deploy
       const response = await request(app.getHttpServer())
-        .post('/admin/config-files/deploy')
+        .post("/admin/config-files/deploy")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
-      expect(response.body).toHaveProperty('files');
-      expect(response.body).toHaveProperty('eventEmitted');
+      expect(response.body).toHaveProperty("files");
+      expect(response.body).toHaveProperty("eventEmitted");
       expect(response.body.eventEmitted).toBe(true);
       expect(response.body.files.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('should support deletePaths parameter', async () => {
+    it("should support deletePaths parameter", async () => {
       const response = await request(app.getHttpServer())
-        .post('/admin/config-files/deploy')
+        .post("/admin/config-files/deploy")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          deletePaths: ['/config/old.yaml', '/config/deprecated.json'],
+          deletePaths: ["/config/old.yaml", "/config/deprecated.json"],
         })
         .expect(200);
 
       expect(response.body.eventEmitted).toBe(true);
     });
 
-    it('should require tenant header', async () => {
+    it("should require tenant header", async () => {
       await request(app.getHttpServer())
-        .post('/admin/config-files/deploy')
+        .post("/admin/config-files/deploy")
         .expect(400);
     });
   });
 
-  describe('Complete workflow', () => {
-    it('should handle full config file lifecycle', async () => {
+  describe("Complete workflow", () => {
+    it("should handle full config file lifecycle", async () => {
       // 1. Create config file
       const createResponse = await request(app.getHttpServer())
-        .put('/admin/config-files')
+        .put("/admin/config-files")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Lifecycle Config',
-          path: '/config/lifecycle.yaml',
-          content: 'initial: value',
-          format: 'yaml',
+          name: "Lifecycle Config",
+          path: "/config/lifecycle.yaml",
+          content: "initial: value",
+          format: "yaml",
         })
         .expect(200);
 
@@ -292,7 +299,7 @@ describe('ConfigFiles Integration Tests', () => {
 
       // 2. List config files - should include the new one
       const listResponse = await request(app.getHttpServer())
-        .get('/admin/config-files')
+        .get("/admin/config-files")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
@@ -304,26 +311,26 @@ describe('ConfigFiles Integration Tests', () => {
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
-      expect(getResponse.body.name).toBe('Lifecycle Config');
+      expect(getResponse.body.name).toBe("Lifecycle Config");
 
       // 4. Update config file (version should increment)
       const updateResponse = await request(app.getHttpServer())
-        .put('/admin/config-files')
+        .put("/admin/config-files")
         .set(TENANT_HEADER, TENANT_ID)
         .send({
-          name: 'Updated Lifecycle Config',
+          name: "Updated Lifecycle Config",
           path: configPath,
-          content: 'updated: value',
-          format: 'yaml',
+          content: "updated: value",
+          format: "yaml",
         })
         .expect(200);
 
-      expect(updateResponse.body.name).toBe('Updated Lifecycle Config');
+      expect(updateResponse.body.name).toBe("Updated Lifecycle Config");
       expect(updateResponse.body.version).toBe(2);
 
       // 5. Deploy config files
       const deployResponse = await request(app.getHttpServer())
-        .post('/admin/config-files/deploy')
+        .post("/admin/config-files/deploy")
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 

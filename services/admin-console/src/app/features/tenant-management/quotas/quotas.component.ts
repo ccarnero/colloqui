@@ -1,8 +1,9 @@
-import { Component } from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { ProgressBarComponent } from "../../../shared/components/progress-bar/progress-bar.component";
 
 @Component({
   selector: "app-quotas",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ProgressBarComponent],
   template: `
     <div class="ws-header">

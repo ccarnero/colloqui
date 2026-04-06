@@ -1,48 +1,17 @@
-import './instrumentation';
-import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import "./instrumentation";
+import "reflect-metadata";
 import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
-import { PinoLoggerService, registerHttpMetricsHooks, shutdownTelemetry } from '@yoizen/observability';
-import { AppModule } from './app.module';
+  bootstrapFastifyApp,
+  runNestFastifyServiceMain,
+} from "@yoizen/observability";
+import { AppModule } from "./app.module";
+import { tenantServiceConfig } from "./config";
 
-const PORT = parseInt(process.env.PORT ?? '3000', 10);
-
-async function bootstrap(): Promise<void> {
-  const pinoLogger = new PinoLoggerService('tenant-service');
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
-    new FastifyAdapter(),
-    { logger: pinoLogger },
-  );
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-
-  const fastify = app.getHttpAdapter().getInstance();
-  registerHttpMetricsHooks(fastify, 'tenant-service');
-
-  await app.listen(PORT, '0.0.0.0');
-}
-
-bootstrap().catch((err) => {
-  const logger = new PinoLoggerService("tenant-service");
-  logger.error(
-    "Bootstrap failed",
-    err instanceof Error ? err.stack : String(err),
-  );
-  process.exit(1);
-});
-
-process.on('SIGTERM', async () => {
-  await shutdownTelemetry();
-  process.exit(0);
+runNestFastifyServiceMain("tenant-service", async () => {
+  await bootstrapFastifyApp({
+    serviceName: "tenant-service",
+    module: AppModule,
+    port: tenantServiceConfig.port,
+    withValidationPipe: true,
+  });
 });

@@ -1,9 +1,16 @@
-import { ChangeDetectionStrategy, Component, inject, output } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  OnInit,
+  output,
+} from "@angular/core";
 import { MatIconModule } from "@angular/material/icon";
 import { MatButtonModule } from "@angular/material/button";
 import { MatMenuModule } from "@angular/material/menu";
 import { MatBadgeModule } from "@angular/material/badge";
 import { MatDividerModule } from "@angular/material/divider";
+import { MatTooltipModule } from "@angular/material/tooltip";
 import { TenantService } from "../../core/services/tenant.service";
 import { ThemeService } from "../../core/services/theme.service";
 import { AuthService } from "../../core/services/auth.service";
@@ -18,6 +25,7 @@ import { NotificationService } from "../../core/services/notification.service";
     MatMenuModule,
     MatBadgeModule,
     MatDividerModule,
+    MatTooltipModule,
   ],
   template: `
     <header class="topbar">
@@ -48,7 +56,14 @@ import { NotificationService } from "../../core/services/notification.service";
           <mat-icon>notifications_none</mat-icon>
         </button>
         <mat-menu #notifMenu="matMenu">
-          <div class="notif-header">Notifications</div>
+          <div class="notif-header flex items-center justify-between gap-2 px-3">
+            <span>Notifications</span>
+            @if (notificationService.unreadCount() > 0) {
+              <button mat-button type="button" (click)="notificationService.markAllRead(); $event.stopPropagation()">
+                Mark all read
+              </button>
+            }
+          </div>
           @for (n of notificationService.notifications(); track n.text) {
             <button mat-menu-item>
               <span class="activity-dot" [style.background]="n.color"></span>
@@ -68,7 +83,13 @@ import { NotificationService } from "../../core/services/notification.service";
         </button>
 
         <!-- Help -->
-        <button mat-icon-button class="topbar-btn">
+        <button
+          mat-icon-button
+          class="topbar-btn"
+          type="button"
+          (click)="onHelpClick()"
+          matTooltip="Help"
+        >
           <mat-icon>help_outline</mat-icon>
         </button>
 
@@ -91,11 +112,11 @@ import { NotificationService } from "../../core/services/notification.service";
             <div class="user-menu-role">{{ authService.userProfile().role }}</div>
           </div>
           <mat-divider />
-          <button mat-menu-item>
+          <button mat-menu-item disabled matTooltip="Coming soon">
             <mat-icon>person</mat-icon>
             <span>Profile</span>
           </button>
-          <button mat-menu-item>
+          <button mat-menu-item disabled matTooltip="Coming soon">
             <mat-icon>settings</mat-icon>
             <span>Settings</span>
           </button>
@@ -256,7 +277,7 @@ import { NotificationService } from "../../core/services/notification.service";
     }
   `,
 })
-export class HeaderComponent {
+export class HeaderComponent implements OnInit {
   protected readonly tenantService = inject(TenantService);
   protected readonly themeService = inject(ThemeService);
   protected readonly authService = inject(AuthService);
@@ -264,4 +285,25 @@ export class HeaderComponent {
 
   readonly toggleSidebar = output<void>();
   readonly toggleRightPanel = output<void>();
+
+  ngOnInit(): void {
+    if (this.notificationService.notifications().length === 0) {
+      this.notificationService.push({
+        color: "#4f46e5",
+        text: "Welcome to the Admin Console",
+        time: new Date().toLocaleString(),
+      });
+    }
+  }
+
+  /**
+   * Placeholder until docs / support URLs are wired.
+   */
+  protected onHelpClick(): void {
+    this.notificationService.push({
+      color: "#6366f1",
+      text: "Help: use the sidebar for navigation. Documentation links will be added here.",
+      time: new Date().toLocaleString(),
+    });
+  }
 }

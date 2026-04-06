@@ -2,72 +2,55 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from "@nestjs/common";
-import {
-  POSTGRES_SQL,
-  type Sql,
-  type TxSql,
-} from "../../providers/postgres.provider";
+import { PinoLoggerService } from "@yoizen/observability";
 import { SYSTEM_ROLE_TENANT_ADMIN } from "@yoizen/shared";
 import type { PermissionDto } from "./tenant-role.dto";
+import type {
+  ITenantRoleSummary,
+  ITenantRoleWithPermissions,
+} from "./tenant-role.types";
+import {
+  TenantRolesRepository,
+  type ITenantRoleRow,
+} from "./tenant-roles.repository";
 
-export interface TenantRoleRow {
+interface ICreateTenantRoleOptions {
+  tenantId: string;
+  name: string;
+  description?: string;
+  permissions: PermissionDto[];
+}
+
+/** Row shape from {@link TenantRolesRepository.findRoleForUpdate}. */
+interface IRoleForUpdateRow {
   id: string;
+  is_system: boolean;
   tenant_id: string;
   name: string;
-  description: string | null;
-  is_system: boolean;
-  is_active: boolean;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface TenantRoleWithPermissions extends TenantRoleRow {
-  permissions: Array<{ resource: string; action: string }>;
-}
-
-export interface TenantRoleSummary extends TenantRoleRow {
-  user_count: number;
 }
 
 @Injectable()
 export class TenantRolesService {
-  private readonly logger = new Logger(TenantRolesService.name);
+  private readonly logger = new PinoLoggerService(TenantRolesService.name);
 
-  constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
+  constructor(private readonly tenantRolesRepository: TenantRolesRepository) {}
 
   /**
    * Idempotently seeds the tenant_admin system role for a tenant.
    * @returns The system role ID.
    */
   async seedSystemRole(tenantId: string): Promise<string> {
-    const existing = await this.sql`
-      SELECT id FROM tenant_roles
-      WHERE tenant_id = ${tenantId}
-        AND name = ${SYSTEM_ROLE_TENANT_ADMIN}
-      LIMIT 1
-    `;
+    const existing = await this.tenantRolesRepository.findSystemRoleId(tenantId);
 
     if (existing.length > 0) {
-      return existing[0].id as string;
+      return (existing[0] as { id: string }).id;
     }
 
     const id = crypto.randomUUID();
-    await this.sql`
-      INSERT INTO tenant_roles (id, tenant_id, name, description, is_system)
-      VALUES (
-        ${id},
-        ${tenantId},
-        ${SYSTEM_ROLE_TENANT_ADMIN},
-        ${"Full administrative access — bypasses all permission checks"},
-        true
-      )
-      ON CONFLICT (tenant_id, name) DO NOTHING
-    `;
+    await this.tenantRolesRepository.insertSystemRoleOnConflict(id, tenantId);
 
     this.logger.log(
       `Seeded system role '${SYSTEM_ROLE_TENANT_ADMIN}' for tenant ${tenantId}`,
@@ -76,22 +59,19 @@ export class TenantRolesService {
   }
 
   async create(
-    tenantId: string,
-    name: string,
-    description: string | undefined,
-    permissions: PermissionDto[],
-  ): Promise<TenantRoleWithPermissions> {
+    options: ICreateTenantRoleOptions,
+  ): Promise<ITenantRoleWithPermissions> {
+    const { tenantId, name, description, permissions } = options;
     if (name === SYSTEM_ROLE_TENANT_ADMIN) {
       throw new ConflictException(
         `Role name '${SYSTEM_ROLE_TENANT_ADMIN}' is reserved`,
       );
     }
 
-    const existing = await this.sql`
-      SELECT id FROM tenant_roles
-      WHERE tenant_id = ${tenantId} AND name = ${name}
-      LIMIT 1
-    `;
+    const existing = await this.tenantRolesRepository.findRoleByTenantAndName(
+      tenantId,
+      name,
+    );
     if (existing.length > 0) {
       throw new ConflictException(
         `Role '${name}' already exists for this tenant`,
@@ -100,20 +80,12 @@ export class TenantRolesService {
 
     const id = crypto.randomUUID();
 
-    await this.sql.begin(async (_tx) => {
-      const tx = _tx as unknown as TxSql;
-      await tx`
-        INSERT INTO tenant_roles (id, tenant_id, name, description)
-        VALUES (${id}, ${tenantId}, ${name}, ${description ?? null})
-      `;
-
-      for (const p of permissions) {
-        const permId = crypto.randomUUID();
-        await tx`
-          INSERT INTO tenant_role_permissions (id, role_id, resource, action)
-          VALUES (${permId}, ${id}, ${p.resource}, ${p.action})
-        `;
-      }
+    await this.tenantRolesRepository.createRoleWithPermissions({
+      id,
+      tenantId,
+      name,
+      description: description ?? null,
+      permissions,
     });
 
     this.logger.log(
@@ -122,49 +94,27 @@ export class TenantRolesService {
     return this.getWithPermissions(id);
   }
 
-  async listByTenant(tenantId: string): Promise<TenantRoleSummary[]> {
-    const rows = await this.sql`
-      SELECT
-        r.id, r.tenant_id, r.name, r.description,
-        r.is_system, r.is_active, r.created_at, r.updated_at,
-        COUNT(DISTINCT tu.id)::int AS user_count
-      FROM tenant_roles r
-      LEFT JOIN tenant_users tu
-        ON tu.role_id = r.id AND tu.is_active = true
-      WHERE r.tenant_id = ${tenantId} AND r.is_active = true
-      GROUP BY r.id
-      ORDER BY r.is_system DESC, r.name ASC
-    `;
-    return rows as unknown as TenantRoleSummary[];
+  async listByTenant(tenantId: string): Promise<ITenantRoleSummary[]> {
+    const rows = await this.tenantRolesRepository.listSummariesByTenant(
+      tenantId,
+    );
+    return rows as unknown as ITenantRoleSummary[];
   }
 
-  async getWithPermissions(id: string): Promise<TenantRoleWithPermissions> {
-    const rows = await this.sql`
-      SELECT id, tenant_id, name, description,
-             is_system, is_active, created_at, updated_at
-      FROM tenant_roles
-      WHERE id = ${id} AND is_active = true
-      LIMIT 1
-    `;
+  async getWithPermissions(id: string): Promise<ITenantRoleWithPermissions> {
+    const rows = await this.tenantRolesRepository.findActiveRoleBase(id);
 
     if (rows.length === 0) {
       throw new NotFoundException("Role not found");
     }
 
-    const role = rows[0] as unknown as TenantRoleRow;
-    const permRows = await this.sql`
-      SELECT resource, action
-      FROM tenant_role_permissions
-      WHERE role_id = ${id}
-      ORDER BY resource, action
-    `;
+    const role = rows[0] as ITenantRoleRow;
+    const permRows =
+      await this.tenantRolesRepository.listPermissionsForRole(id);
 
     return {
       ...role,
-      permissions: permRows as unknown as Array<{
-        resource: string;
-        action: string;
-      }>,
+      permissions: permRows,
     };
   }
 
@@ -175,19 +125,14 @@ export class TenantRolesService {
       description?: string;
       permissions?: PermissionDto[];
     },
-  ): Promise<TenantRoleWithPermissions> {
-    const existing = await this.sql`
-      SELECT id, is_system, tenant_id, name
-      FROM tenant_roles
-      WHERE id = ${id} AND is_active = true
-      LIMIT 1
-    `;
+  ): Promise<ITenantRoleWithPermissions> {
+    const existing = await this.tenantRolesRepository.findRoleForUpdate(id);
 
     if (existing.length === 0) {
       throw new NotFoundException("Role not found");
     }
 
-    const role = existing[0];
+    const role = existing[0] as IRoleForUpdateRow;
 
     if (role.is_system && patch.name && patch.name !== role.name) {
       throw new ForbiddenException("Cannot rename a system role");
@@ -200,13 +145,11 @@ export class TenantRolesService {
     }
 
     if (patch.name) {
-      const dup = await this.sql`
-        SELECT id FROM tenant_roles
-        WHERE tenant_id = ${role.tenant_id}
-          AND name = ${patch.name}
-          AND id != ${id}
-        LIMIT 1
-      `;
+      const dup = await this.tenantRolesRepository.findDuplicateName(
+        role.tenant_id,
+        patch.name,
+        id,
+      );
       if (dup.length > 0) {
         throw new ConflictException(
           `Role '${patch.name}' already exists for this tenant`,
@@ -214,64 +157,33 @@ export class TenantRolesService {
       }
     }
 
-    await this.sql.begin(async (_tx) => {
-      const tx = _tx as unknown as TxSql;
-      await tx`
-        UPDATE tenant_roles SET
-          name = COALESCE(${patch.name ?? null}, name),
-          description = COALESCE(${patch.description ?? null}, description),
-          updated_at = NOW()
-        WHERE id = ${id}
-      `;
-
-      if (patch.permissions !== undefined) {
-        await tx`DELETE FROM tenant_role_permissions WHERE role_id = ${id}`;
-
-        for (const p of patch.permissions) {
-          const permId = crypto.randomUUID();
-          await tx`
-            INSERT INTO tenant_role_permissions (id, role_id, resource, action)
-            VALUES (${permId}, ${id}, ${p.resource}, ${p.action})
-          `;
-        }
-      }
-    });
+    await this.tenantRolesRepository.updateRoleTransaction(id, patch);
 
     this.logger.log(`Updated role ${id}`);
     return this.getWithPermissions(id);
   }
 
   async delete(id: string): Promise<void> {
-    const existing = await this.sql`
-      SELECT id, is_system FROM tenant_roles
-      WHERE id = ${id} AND is_active = true
-      LIMIT 1
-    `;
+    const existing = await this.tenantRolesRepository.findForDelete(id);
 
     if (existing.length === 0) {
       throw new NotFoundException("Role not found");
     }
 
-    if (existing[0].is_system) {
+    if ((existing[0] as { is_system?: boolean }).is_system) {
       throw new ForbiddenException("Cannot delete a system role");
     }
 
-    const assigned = await this.sql`
-      SELECT id FROM tenant_users
-      WHERE role_id = ${id} AND is_active = true
-      LIMIT 1
-    `;
+    const hasAssignedUsers =
+      await this.tenantRolesRepository.hasActiveUsersForRole(id);
 
-    if (assigned.length > 0) {
+    if (hasAssignedUsers) {
       throw new BadRequestException(
         "Cannot delete a role that still has active users assigned",
       );
     }
 
-    await this.sql`
-      UPDATE tenant_roles SET is_active = false, updated_at = NOW()
-      WHERE id = ${id}
-    `;
+    await this.tenantRolesRepository.softDeleteRole(id);
 
     this.logger.log(`Soft-deleted role ${id}`);
   }

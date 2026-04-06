@@ -24,7 +24,7 @@ import {
   UpdateAgentDto,
 } from "./agents.dto";
 import type { IAgent } from "./agents.repository";
-import { TenantGuard } from "../../providers/tenant.guard";
+import { TenantGuard } from "../../guards/tenant.guard";
 import { TenantId } from "../../providers/tenant.decorator";
 
 const YOIZEN_USER_ID_HEADER = "x-yoizen-user-id";

@@ -1,6 +1,13 @@
-import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
+import { Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import type { JsonValue } from "@yoizen/shared";
+import {
+  appendSqlSetFragment,
+  composeUpdateSetClause,
+} from "../../common/repository-sql.util";
+import { TenantScopedRepository } from "../../providers/tenant-scoped.repository";
+import { TenantConnectionManager, type Sql } from "@yoizen/database";
+import { AGENT_ROW_COLUMNS } from "./agents-sql.constants";
 
 export interface IAgent {
   id: string;
@@ -10,7 +17,7 @@ export interface IAgent {
   model_config: Record<string, unknown>;
   tools: unknown[];
   channels: unknown[];
-  status: 'draft' | 'published' | 'archived';
+  status: "draft" | "published" | "archived";
   is_active: boolean;
   published_at: Date | null;
   created_at: Date;
@@ -26,14 +33,14 @@ export interface ICreateAgentData {
   channels?: unknown[];
 }
 
-export interface UpdateAgentData {
+export interface IUpdateAgentData {
   name?: string;
   description?: string;
   system_prompt?: string;
   model_config?: Record<string, unknown>;
   tools?: unknown[];
   channels?: unknown[];
-  status?: 'draft' | 'published' | 'archived';
+  status?: "draft" | "published" | "archived";
   is_active?: boolean;
 }
 
@@ -44,67 +51,56 @@ export interface IFindAllOptions {
   offset?: number;
 }
 
-// Helper type for JSON values compatible with postgres.js
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type JsonValue = any;
-
 @Injectable()
-export class AgentsRepository {
-  constructor(
-    private readonly connectionManager: TenantConnectionManager,
-  ) {}
-
-  private async getSql(tenantId: string): Promise<Sql> {
-    await this.connectionManager.ensureSchema(tenantId);
-    return this.connectionManager.getConnection(tenantId);
+export class AgentsRepository extends TenantScopedRepository {
+  constructor(connectionManager: TenantConnectionManager) {
+    super(connectionManager);
   }
 
   /**
-   * Lista todos los agents con filtros opcionales y paginación.
+   * Lists agents with optional filters and pagination.
    */
   async findAll(
     tenantId: string,
     options: IFindAllOptions = {},
   ): Promise<{ agents: IAgent[]; total: number }> {
     const sql = await this.getSql(tenantId);
-    const { status, limit = 20, offset = 0 } = options;
+    const {
+      status,
+      is_active: isActiveFilter,
+      limit = 20,
+      offset = 0,
+    } = options;
 
-    // Build where clause with parameterized conditions
-    const conditions: string[] = ['is_active = true'];
-    const params: (string | boolean | number)[] = [];
-    let paramIndex = 1;
-
-    if (status) {
-      conditions.push(`status = $${paramIndex}`);
-      params.push(status);
-      paramIndex++;
-    }
-
-    const whereClause = conditions.join(' AND ');
+    /** When omitted, list only active rows (soft-delete default). */
+    const isActiveEq = isActiveFilter === undefined ? true : isActiveFilter;
 
     // Get total count
-    const countResult = await sql<{ count: number }[]>`
-      SELECT COUNT(*) as count FROM agents WHERE ${sql.unsafe(whereClause)}
+    const countResult = status
+      ? await sql<{ count: string | number }[]>`
+      SELECT COUNT(*)::bigint AS count FROM agents
+      WHERE is_active = ${isActiveEq} AND status = ${status}
+    `
+      : await sql<{ count: string | number }[]>`
+      SELECT COUNT(*)::bigint AS count FROM agents
+      WHERE is_active = ${isActiveEq}
     `;
     const total = Number(countResult[0].count);
 
     // Get agents with pagination
-    const agents = await sql<IAgent[]>`
-      SELECT 
-        id,
-        name,
-        description,
-        system_prompt,
-        model_config,
-        tools,
-        channels,
-        status,
-        is_active,
-        published_at,
-        created_at,
-        updated_at
+    const agents = status
+      ? await sql<IAgent[]>`
+      SELECT ${sql.unsafe(AGENT_ROW_COLUMNS)}
       FROM agents
-      WHERE ${sql.unsafe(whereClause)}
+      WHERE is_active = ${isActiveEq} AND status = ${status}
+      ORDER BY created_at DESC
+      LIMIT ${limit}
+      OFFSET ${offset}
+    `
+      : await sql<IAgent[]>`
+      SELECT ${sql.unsafe(AGENT_ROW_COLUMNS)}
+      FROM agents
+      WHERE is_active = ${isActiveEq}
       ORDER BY created_at DESC
       LIMIT ${limit}
       OFFSET ${offset}
@@ -114,25 +110,13 @@ export class AgentsRepository {
   }
 
   /**
-   * Busca un agent por su ID.
+   * Finds an agent by ID.
    */
   async findById(tenantId: string, id: string): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
 
     const results = await sql<IAgent[]>`
-      SELECT 
-        id,
-        name,
-        description,
-        system_prompt,
-        model_config,
-        tools,
-        channels,
-        status,
-        is_active,
-        published_at,
-        created_at,
-        updated_at
+      SELECT ${sql.unsafe(AGENT_ROW_COLUMNS)}
       FROM agents
       WHERE id = ${id} AND is_active = true
       LIMIT 1
@@ -142,12 +126,9 @@ export class AgentsRepository {
   }
 
   /**
-   * Crea un nuevo agent.
+   * Creates a new agent.
    */
-  async create(
-    tenantId: string,
-    data: ICreateAgentData,
-  ): Promise<IAgent> {
+  async create(tenantId: string, data: ICreateAgentData): Promise<IAgent> {
     const sql = await this.getSql(tenantId);
     const agentId = randomUUID();
 
@@ -177,88 +158,85 @@ export class AgentsRepository {
         NOW(),
         NOW()
       )
-      RETURNING 
-        id,
-        name,
-        description,
-        system_prompt,
-        model_config,
-        tools,
-        channels,
-        status,
-        is_active,
-        published_at,
-        created_at,
-        updated_at
+      RETURNING ${sql.unsafe(AGENT_ROW_COLUMNS)}
     `;
 
     return results[0];
   }
 
   /**
-   * Actualiza un agent existente.
+   * Updates an existing agent.
    */
   async update(
     tenantId: string,
     id: string,
-    data: UpdateAgentData,
+    data: IUpdateAgentData,
   ): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
-
-    // Build dynamic update using sql.assignment for proper parameterization
-    const updates: string[] = ['updated_at = NOW()'];
-    
-    if (data.name !== undefined) {
-      updates.push(sql`name = ${data.name}` as unknown as string);
-    }
-    if (data.description !== undefined) {
-      updates.push(sql`description = ${data.description}` as unknown as string);
-    }
-    if (data.system_prompt !== undefined) {
-      updates.push(sql`system_prompt = ${data.system_prompt}` as unknown as string);
-    }
-    if (data.model_config !== undefined) {
-      updates.push(sql`model_config = ${sql.json(data.model_config as JsonValue)}` as unknown as string);
-    }
-    if (data.tools !== undefined) {
-      updates.push(sql`tools = ${sql.json(data.tools as JsonValue)}` as unknown as string);
-    }
-    if (data.channels !== undefined) {
-      updates.push(sql`channels = ${sql.json(data.channels as JsonValue)}` as unknown as string);
-    }
-    if (data.status !== undefined) {
-      updates.push(sql`status = ${data.status}` as unknown as string);
-    }
-    if (data.is_active !== undefined) {
-      updates.push(sql`is_active = ${data.is_active}` as unknown as string);
-    }
-
-    const setClause = updates.join(', ');
+    const setClause = this.composeAgentUpdateSetClause(sql, data);
 
     const results = await sql<IAgent[]>`
       UPDATE agents
       SET ${sql.unsafe(setClause)}
       WHERE id = ${id} AND is_active = true
-      RETURNING 
-        id,
-        name,
-        description,
-        system_prompt,
-        model_config,
-        tools,
-        channels,
-        status,
-        is_active,
-        published_at,
-        created_at,
-        updated_at
+      RETURNING ${sql.unsafe(AGENT_ROW_COLUMNS)}
     `;
 
     return results[0] ?? null;
   }
 
+  private composeAgentUpdateSetClause(sql: Sql, data: IUpdateAgentData): string {
+    const updates: string[] = [];
+    appendSqlSetFragment(updates, sql`updated_at = NOW()`);
+
+    if (data.name !== undefined) {
+      appendSqlSetFragment(updates, sql`name = ${data.name}`);
+    }
+    if (data.description !== undefined) {
+      appendSqlSetFragment(
+        updates,
+        sql`description = ${data.description}`,
+      );
+    }
+    if (data.system_prompt !== undefined) {
+      appendSqlSetFragment(
+        updates,
+        sql`system_prompt = ${data.system_prompt}`,
+      );
+    }
+    if (data.model_config !== undefined) {
+      appendSqlSetFragment(
+        updates,
+        sql`model_config = ${sql.json(data.model_config as JsonValue)}`,
+      );
+    }
+    if (data.tools !== undefined) {
+      appendSqlSetFragment(
+        updates,
+        sql`tools = ${sql.json(data.tools as JsonValue)}`,
+      );
+    }
+    if (data.channels !== undefined) {
+      appendSqlSetFragment(
+        updates,
+        sql`channels = ${sql.json(data.channels as JsonValue)}`,
+      );
+    }
+    if (data.status !== undefined) {
+      appendSqlSetFragment(updates, sql`status = ${data.status}`);
+    }
+    if (data.is_active !== undefined) {
+      appendSqlSetFragment(
+        updates,
+        sql`is_active = ${data.is_active}`,
+      );
+    }
+
+    return composeUpdateSetClause(updates);
+  }
+
   /**
-   * Elimina (soft delete) un agent.
+   * Soft-deletes an agent.
    */
   async delete(tenantId: string, id: string): Promise<boolean> {
     const sql = await this.getSql(tenantId);
@@ -274,7 +252,7 @@ export class AgentsRepository {
   }
 
   /**
-   * Publica un agent (cambia status a 'published' y setea published_at).
+   * Publishes an agent (sets status to `published` and `published_at`).
    */
   async publish(tenantId: string, id: string): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
@@ -286,26 +264,14 @@ export class AgentsRepository {
         published_at = NOW(),
         updated_at = NOW()
       WHERE id = ${id} AND is_active = true
-      RETURNING 
-        id,
-        name,
-        description,
-        system_prompt,
-        model_config,
-        tools,
-        channels,
-        status,
-        is_active,
-        published_at,
-        created_at,
-        updated_at
+      RETURNING ${sql.unsafe(AGENT_ROW_COLUMNS)}
     `;
 
     return results[0] ?? null;
   }
 
   /**
-   * Despublica un agent (cambia status a 'draft' y limpia published_at).
+   * Unpublishes an agent (sets status to `draft` and clears `published_at`).
    */
   async unpublish(tenantId: string, id: string): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
@@ -317,19 +283,7 @@ export class AgentsRepository {
         published_at = NULL,
         updated_at = NOW()
       WHERE id = ${id} AND is_active = true
-      RETURNING 
-        id,
-        name,
-        description,
-        system_prompt,
-        model_config,
-        tools,
-        channels,
-        status,
-        is_active,
-        published_at,
-        created_at,
-        updated_at
+      RETURNING ${sql.unsafe(AGENT_ROW_COLUMNS)}
     `;
 
     return results[0] ?? null;

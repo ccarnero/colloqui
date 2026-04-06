@@ -1,20 +1,16 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { ConflictException, NotFoundException, InternalServerErrorException } from "@nestjs/common";
+import {
+  ConflictException,
+  NotFoundException,
+  InternalServerErrorException,
+} from "@nestjs/common";
+import { createQueuedSql } from "@yoizen/testing";
 import type { Sql } from "postgres";
+import { ServicesRepository } from "../../src/modules/services/services.repository";
 import { ServicesService } from "../../src/modules/services/services.service";
 import { K8S_CUSTOM_OBJECTS_API } from "../../src/providers/kubernetes.provider";
 import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
-
-function createQueuedSql(rowsQueue: unknown[][]): Sql {
-  const fn = mock(() => {
-    const next = rowsQueue.shift();
-    return Promise.resolve(next ?? []);
-  });
-  return Object.assign(fn, {
-    json: (v: unknown) => v,
-  }) as unknown as Sql;
-}
 
 function baseRegisteredRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -50,7 +46,7 @@ describe("ServicesService", () => {
   beforeEach(async () => {
     process.env.PLATFORM_ENVIRONMENT = "dev";
     sqlQueue = [];
-    const sql = createQueuedSql(sqlQueue);
+    const sql = createQueuedSql(sqlQueue, mock);
     customApi = {
       createNamespacedCustomObject: mock(() => Promise.resolve({})),
       getNamespacedCustomObject: mock(() =>
@@ -60,13 +56,12 @@ describe("ServicesService", () => {
       ),
       replaceNamespacedCustomObject: mock(() => Promise.resolve({})),
       deleteNamespacedCustomObject: mock(() => Promise.resolve({})),
-      listNamespacedCustomObject: mock(() =>
-        Promise.resolve({ items: [] }),
-      ),
+      listNamespacedCustomObject: mock(() => Promise.resolve({ items: [] })),
     };
 
     const module = await Test.createTestingModule({
       providers: [
+        ServicesRepository,
         ServicesService,
         { provide: K8S_CUSTOM_OBJECTS_API, useValue: customApi },
         { provide: POSTGRES_SQL, useValue: sql },
@@ -152,13 +147,16 @@ describe("ServicesService", () => {
 
     it("patches Knative and returns updated row", async () => {
       const row = baseRegisteredRow();
-      sqlQueue.push([row], [
-        {
-          ...row,
-          image: "registry.io/img:v2",
-          updated_at: "2020-02-01T00:00:00.000Z",
-        },
-      ]);
+      sqlQueue.push(
+        [row],
+        [
+          {
+            ...row,
+            image: "registry.io/img:v2",
+            updated_at: "2020-02-01T00:00:00.000Z",
+          },
+        ],
+      );
       customApi.getNamespacedCustomObject.mockResolvedValueOnce({
         spec: {
           template: {
@@ -186,15 +184,60 @@ describe("ServicesService", () => {
   describe("remove", () => {
     it("throws NotFoundException when service missing", async () => {
       sqlQueue.push([]);
-      await expect(service.remove("tenant-a", "missing")).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.remove("tenant-a", "missing"),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("deletes Knative object and DB row", async () => {
       sqlQueue.push([baseRegisteredRow()], []);
       await service.remove("tenant-a", "svc-1");
       expect(customApi.deleteNamespacedCustomObject).toHaveBeenCalled();
+    });
+  });
+
+  describe("listRevisions", () => {
+    it("throws NotFoundException when service row missing", async () => {
+      sqlQueue.push([]);
+      await expect(
+        service.listRevisions("tenant-a", "missing"),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("returns mapped revisions from Knative list", async () => {
+      sqlQueue.push([
+        {
+          knative_name: "ksvc-1",
+          namespace: "tenant-a-dev-ns",
+        },
+      ]);
+      customApi.listNamespacedCustomObject.mockResolvedValueOnce({
+        items: [
+          {
+            metadata: { name: "rev-1", creationTimestamp: "2020-01-01T00:00:00Z" },
+            status: {
+              conditions: [{ type: "Ready", status: "True" }],
+            },
+            spec: { containers: [{ image: "img:v1" }] },
+          },
+        ],
+      });
+      const revs = await service.listRevisions("tenant-a", "svc-1");
+      expect(revs).toHaveLength(1);
+      expect(revs[0]?.name).toBe("rev-1");
+      expect(revs[0]?.ready).toBe(true);
+      expect(revs[0]?.image).toBe("img:v1");
+    });
+
+    it("returns empty array when knative fields missing", async () => {
+      sqlQueue.push([
+        {
+          knative_name: null,
+          namespace: "ns",
+        },
+      ]);
+      const revs = await service.listRevisions("tenant-a", "svc-1");
+      expect(revs).toEqual([]);
     });
   });
 });

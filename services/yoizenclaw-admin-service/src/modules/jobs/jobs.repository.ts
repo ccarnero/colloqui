@@ -1,8 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
+import { Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import type { JsonValue } from "@yoizen/shared";
+import { joinDynamicWhereFragments } from "../../common/repository-sql.util";
+import { TenantScopedRepository } from "../../providers/tenant-scoped.repository";
+import { TenantConnectionManager } from "@yoizen/database";
 
-export interface Job {
+export interface IJob {
   id: string;
   name: string;
   agent_id: string;
@@ -15,7 +18,7 @@ export interface Job {
   updated_at: Date;
 }
 
-export interface CreateJobData {
+export interface ICreateJobData {
   name: string;
   agent_id: string;
   schedule: string;
@@ -23,7 +26,7 @@ export interface CreateJobData {
   is_active?: boolean;
 }
 
-export interface UpdateJobData {
+export interface IUpdateJobData {
   name?: string;
   agent_id?: string;
   schedule?: string;
@@ -31,34 +34,26 @@ export interface UpdateJobData {
   is_active?: boolean;
 }
 
-export interface FindAllOptions {
+export interface IFindAllJobsOptions {
   agent_id?: string;
   is_active?: boolean;
   limit?: number;
   offset?: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type JsonValue = any;
-
 @Injectable()
-export class JobsRepository {
-  constructor(
-    private readonly connectionManager: TenantConnectionManager,
-  ) {}
-
-  private async getSql(tenantId: string): Promise<Sql> {
-    await this.connectionManager.ensureSchema(tenantId);
-    return this.connectionManager.getConnection(tenantId);
+export class JobsRepository extends TenantScopedRepository {
+  constructor(connectionManager: TenantConnectionManager) {
+    super(connectionManager);
   }
 
   /**
-   * Lista todos los jobs con filtros opcionales y paginación.
+   * Lists jobs with optional filters and pagination.
    */
   async findAll(
     tenantId: string,
-    options: FindAllOptions = {},
-  ): Promise<{ jobs: Job[]; total: number }> {
+    options: IFindAllJobsOptions = {},
+  ): Promise<{ jobs: IJob[]; total: number }> {
     const sql = await this.getSql(tenantId);
     const { agent_id, is_active, limit = 20, offset = 0 } = options;
 
@@ -73,16 +68,14 @@ export class JobsRepository {
       conditions.push(sql`is_active = ${is_active}` as unknown as string);
     }
 
-    const whereClause = conditions.length > 0
-      ? conditions.join(' AND ')
-      : '1=1';
+    const whereClause = joinDynamicWhereFragments(conditions);
 
     const countResult = await sql<{ count: number }[]>`
       SELECT COUNT(*) as count FROM jobs WHERE ${sql.unsafe(whereClause)}
     `;
     const total = Number(countResult[0].count);
 
-    const jobs = await sql<Job[]>`
+    const jobs = await sql<IJob[]>`
       SELECT 
         id,
         name,
@@ -105,12 +98,12 @@ export class JobsRepository {
   }
 
   /**
-   * Busca un job por su ID.
+   * Finds a job by ID.
    */
-  async findById(tenantId: string, id: string): Promise<Job | null> {
+  async findById(tenantId: string, id: string): Promise<IJob | null> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<Job[]>`
+    const results = await sql<IJob[]>`
       SELECT 
         id,
         name,
@@ -131,18 +124,15 @@ export class JobsRepository {
   }
 
   /**
-   * Crea un nuevo job calculando next_run.
+   * Creates a job and computes next_run.
    */
-  async create(
-    tenantId: string,
-    data: CreateJobData,
-  ): Promise<Job> {
+  async create(tenantId: string, data: ICreateJobData): Promise<IJob> {
     const sql = await this.getSql(tenantId);
     const jobId = randomUUID();
 
     const nextRun = this.calculateNextRun(data.schedule);
 
-    const results = await sql<Job[]>`
+    const results = await sql<IJob[]>`
       INSERT INTO jobs (
         id,
         name,
@@ -183,18 +173,18 @@ export class JobsRepository {
   }
 
   /**
-   * Actualiza un job existente recalculando next_run si cambia el schedule.
+   * Updates a job; recomputes next_run when the schedule changes.
    */
   async update(
     tenantId: string,
     id: string,
-    data: UpdateJobData,
-  ): Promise<Job | null> {
+    data: IUpdateJobData,
+  ): Promise<IJob | null> {
     const sql = await this.getSql(tenantId);
 
     // Build dynamic SET clauses using parameterized fragments
-    const setClauses: string[] = ['updated_at = NOW()'];
-    
+    const setClauses: string[] = ["updated_at = NOW()"];
+
     if (data.name !== undefined) {
       setClauses.push(sql`name = ${data.name}` as unknown as string);
     }
@@ -207,15 +197,17 @@ export class JobsRepository {
       setClauses.push(sql`next_run = ${nextRun}` as unknown as string);
     }
     if (data.payload !== undefined) {
-      setClauses.push(sql`payload = ${sql.json(data.payload as JsonValue)}` as unknown as string);
+      setClauses.push(
+        sql`payload = ${sql.json(data.payload as JsonValue)}` as unknown as string,
+      );
     }
     if (data.is_active !== undefined) {
       setClauses.push(sql`is_active = ${data.is_active}` as unknown as string);
     }
 
-    const setClause = setClauses.join(', ');
+    const setClause = setClauses.join(", ");
 
-    const results = await sql<Job[]>`
+    const results = await sql<IJob[]>`
       UPDATE jobs
       SET ${sql.unsafe(setClause)}
       WHERE id = ${id}
@@ -236,7 +228,7 @@ export class JobsRepository {
   }
 
   /**
-   * Elimina un job.
+   * Deletes a job.
    */
   async delete(tenantId: string, id: string): Promise<boolean> {
     const sql = await this.getSql(tenantId);
@@ -251,12 +243,12 @@ export class JobsRepository {
   }
 
   /**
-   * Activa un job.
+   * Activates a job.
    */
-  async enable(tenantId: string, id: string): Promise<Job | null> {
+  async enable(tenantId: string, id: string): Promise<IJob | null> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<Job[]>`
+    const results = await sql<IJob[]>`
       UPDATE jobs
       SET 
         is_active = true,
@@ -279,12 +271,12 @@ export class JobsRepository {
   }
 
   /**
-   * Desactiva un job.
+   * Deactivates a job.
    */
-  async disable(tenantId: string, id: string): Promise<Job | null> {
+  async disable(tenantId: string, id: string): Promise<IJob | null> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<Job[]>`
+    const results = await sql<IJob[]>`
       UPDATE jobs
       SET 
         is_active = false,
@@ -307,13 +299,17 @@ export class JobsRepository {
   }
 
   /**
-   * Actualiza last_run y recalcula next_run.
+   * Updates last_run and recomputes next_run.
    */
-  async updateLastRun(tenantId: string, id: string, schedule: string): Promise<Job | null> {
+  async updateLastRun(
+    tenantId: string,
+    id: string,
+    schedule: string,
+  ): Promise<IJob | null> {
     const sql = await this.getSql(tenantId);
     const nextRun = this.calculateNextRun(schedule);
 
-    const results = await sql<Job[]>`
+    const results = await sql<IJob[]>`
       UPDATE jobs
       SET 
         last_run = NOW(),
@@ -337,26 +333,26 @@ export class JobsRepository {
   }
 
   /**
-   * Calcula la próxima ejecución basado en el schedule.
-   * Soporta: cron expression, interval:X (minutos), once
+   * Computes next run time from schedule.
+   * Supports: cron expression, interval:X (minutes), once
    */
   private calculateNextRun(schedule: string): Date | null {
     const now = new Date();
 
-    if (schedule === 'once') {
+    if (schedule === "once") {
       return null;
     }
 
-    if (schedule.startsWith('interval:')) {
-      const minutes = parseInt(schedule.split(':')[1], 10);
+    if (schedule.startsWith("interval:")) {
+      const minutes = parseInt(schedule.split(":")[1], 10);
       if (isNaN(minutes)) {
         return null;
       }
       return new Date(now.getTime() + minutes * 60 * 1000);
     }
 
-    // Asumimos que es una expresión cron - para simplificar, usamos NOW() + 1 hora
-    // En producción se usaría una librería como cron-parser
+    // Assume cron-like expression — simplified: use now + 1 hour
+    // Production should use a library such as cron-parser
     return new Date(now.getTime() + 60 * 60 * 1000);
   }
 }

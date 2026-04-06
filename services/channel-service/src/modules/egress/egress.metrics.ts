@@ -16,8 +16,3 @@ export const egressSendDuration = meter.createHistogram(
   "channel.egress.send_duration_ms",
   { description: "Duration of outbound send in milliseconds" },
 );
-
-export const egressShadowPublishFailures = meter.createCounter(
-  "channel.egress.shadow_publish_failures",
-  { description: "Total failed shadow publishes for sent.v1" },
-);

@@ -1,4 +1,10 @@
-import { Component, inject, signal, type OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  type OnInit,
+} from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
@@ -14,7 +20,7 @@ import { firstValueFrom } from "rxjs";
 import { YoizenclawAdminService } from "../../../core/services/yoizenclaw-admin.service";
 import type { IYoizenclawAgent } from "../../../core/models/yoizenclaw.model";
 
-interface ChatMessage {
+interface IChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp: Date;
@@ -25,6 +31,7 @@ interface ChatMessage {
 @Component({
   selector: "app-playground",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     FormsModule,
@@ -169,355 +176,7 @@ interface ChatMessage {
       </div>
     </div>
   `,
-  styles: [`
-    .playground-layout {
-      display: grid;
-      grid-template-columns: 320px 1fr;
-      gap: 24px;
-      height: calc(100vh - 100px);
-      padding: 24px;
-    }
-
-    .side-panel, .chat-panel {
-      background: var(--bg2, #1a1a1a);
-      border: 1px solid var(--border-subtle, #333);
-      border-radius: 12px;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-    }
-
-    .panel-header {
-      padding: 20px;
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-    }
-    
-    .panel-header > mat-icon {
-      margin-top: 2px;
-    }
-
-    .panel-header.border-b {
-      border-bottom: 1px solid var(--border-subtle, #333);
-    }
-
-    .text-primary-icon {
-      color: var(--primary, #1a66ff);
-    }
-
-    .text-primary-heading {
-      color: var(--text-primary, #fff);
-      font-size: 1.125rem;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-    }
-
-    .text-secondary { color: var(--text2, #a0a0a0); }
-    .text-muted { color: var(--text3, #777); }
-    .text-sm { font-size: 0.875rem; }
-    .text-xs { font-size: 0.75rem; }
-    .m-0 { margin: 0; }
-    .mt-1 { margin-top: 4px; }
-
-    .panel-content {
-      padding: 0 20px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      min-height: 0;
-    }
-
-    .input-label {
-      display: block;
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: var(--text2, #a0a0a0);
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .yz-select {
-      width: 100%;
-    }
-
-    ::ng-deep .yz-select .mdc-text-field--outlined {
-      --mdc-outlined-text-field-container-shape: 8px;
-    }
-
-    ::ng-deep .yz-select .mat-mdc-form-field-subscript-wrapper {
-      display: none;
-    }
-
-    .agent-option {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      width: 100%;
-    }
-
-    .status-dot {
-      display: inline-block;
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background-color: #ff9800;
-      margin-left: 8px;
-    }
-    .status-dot.published { background-color: #4caf50; }
-
-    .metrics-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 16px;
-    }
-
-    .yz-pill {
-      padding: 4px 12px;
-      border-radius: 16px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      background: var(--bg3, #2a2a2a);
-      color: var(--text2, #a0a0a0);
-      border: 1px solid var(--border-subtle, #333);
-    }
-    .yz-pill.published {
-      background: rgba(76, 175, 80, 0.1);
-      color: #4caf50;
-      border-color: rgba(76, 175, 80, 0.2);
-    }
-
-    .messages-area {
-      flex: 1;
-      overflow-y: auto;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      scrollbar-width: thin;
-      scrollbar-color: var(--border-subtle) transparent;
-    }
-
-    .empty-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      color: var(--text3, #777);
-      text-align: center;
-    }
-    .empty-icon {
-      font-size: 48px;
-      width: 48px;
-      height: 48px;
-      margin-bottom: 16px;
-      opacity: 0.3;
-    }
-
-    .msg-wrapper {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      max-width: 85%;
-    }
-
-    .msg-user {
-      align-self: flex-end;
-      flex-direction: row-reverse;
-    }
-
-    .msg-assistant {
-      align-self: flex-start;
-    }
-
-    .msg-system {
-      align-self: center;
-      max-width: 100%;
-    }
-
-    .msg-avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: var(--bg3, #2a2a2a);
-      color: var(--text2, #a0a0a0);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      border: 1px solid var(--border-subtle, #333);
-    }
-
-    .msg-user .msg-avatar {
-      background: var(--accent-dim, rgba(26, 102, 255, 0.1));
-      color: var(--primary, #1a66ff);
-      border-color: transparent;
-    }
-
-    .msg-bubble {
-      background: var(--bg3, #2a2a2a);
-      padding: 12px 16px;
-      border-radius: 16px;
-      border-top-left-radius: 4px;
-      border: 1px solid var(--border-subtle, #333);
-    }
-
-    .msg-user .msg-bubble {
-      background: rgba(26, 102, 255, 0.1);
-      border-color: rgba(26, 102, 255, 0.2);
-      border-top-left-radius: 16px;
-      border-top-right-radius: 4px;
-    }
-
-    .msg-system .msg-bubble {
-      background: transparent;
-      border: 1px dashed var(--border-subtle, #333);
-      text-align: center;
-      font-style: italic;
-      border-radius: 8px;
-    }
-
-    .msg-meta {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 16px;
-      margin-bottom: 6px;
-    }
-
-    .msg-author {
-      font-weight: 600;
-      font-size: 0.8125rem;
-      color: var(--text-primary, #fff);
-    }
-    .msg-user .msg-author { color: var(--primary, #66b2ff); }
-
-    .msg-time {
-      font-size: 0.6875rem;
-      color: var(--text3, #777);
-    }
-
-    .msg-text {
-      color: var(--text-primary, #fff);
-      font-size: 0.875rem;
-      line-height: 1.5;
-      white-space: pre-wrap;
-    }
-
-    .typing-indicator {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px;
-      color: var(--text3, #777);
-      font-style: italic;
-      font-size: 0.875rem;
-    }
-
-    .chat-input-area {
-      padding: 16px;
-      border-top: 1px solid var(--border-subtle, #333);
-      display: flex;
-      gap: 12px;
-      background: var(--bg2, #1f1f1f);
-      align-items: center;
-    }
-
-    .yz-input-wrapper {
-      flex: 1;
-      display: flex;
-      background: var(--bg3, #2a2a2a);
-      border: 1px solid var(--border-subtle, #333);
-      border-radius: 24px;
-      padding: 6px 6px 6px 16px;
-      transition: border-color 0.2s;
-      align-items: center;
-    }
-
-    .yz-input-wrapper:focus-within {
-      border-color: var(--primary, #1a66ff);
-    }
-
-    .yz-input {
-      flex: 1;
-      background: transparent;
-      border: none;
-      color: var(--text-primary, #fff);
-      font-size: 0.875rem;
-      outline: none;
-    }
-    .yz-input::placeholder { color: var(--text3, #777); }
-
-    .yz-text-input {
-      width: 100%;
-      background: var(--bg3, #2a2a2a);
-      border: 1px solid var(--border-subtle, #333);
-      border-radius: 8px;
-      color: var(--text-primary, #fff);
-      padding: 8px 12px;
-      font-size: 0.875rem;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-    .yz-text-input:focus {
-      border-color: var(--primary, #1a66ff);
-    }
-    .yz-text-input:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    .yz-text-input::placeholder {
-      color: var(--text3, #777);
-    }
-
-    .yz-icon-btn {
-      background: var(--primary, #1a66ff);
-      color: white;
-      border: none;
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .yz-icon-btn mat-icon { font-size: 16px; width: 16px; height: 16px; }
-    .yz-icon-btn:disabled { 
-      background: var(--border-subtle, #333);
-      color: var(--text3, #777);
-      cursor: not-allowed; 
-    }
-    .yz-icon-btn:not(:disabled):hover { filter: brightness(1.1); }
-
-    .yz-btn {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 16px;
-      border-radius: 24px;
-      font-weight: 500;
-      font-size: 0.875rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .yz-btn.ghost-danger {
-      background: transparent;
-      border: 1px solid transparent;
-      color: #f44336;
-    }
-    .yz-btn.ghost-danger:hover:not(:disabled) {
-      background: rgba(244, 67, 54, 0.05);
-      border-color: rgba(244, 67, 54, 0.2);
-    }
-    .yz-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-    .yz-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
-  `],
+  styleUrls: ["./playground.component.scss"],
 })
 export class PlaygroundComponent implements OnInit {
   private readonly yoizenclawService = inject(YoizenclawAdminService);
@@ -525,7 +184,7 @@ export class PlaygroundComponent implements OnInit {
   readonly agents = signal<IYoizenclawAgent[]>([]);
   readonly selectedAgentId = signal<string | null>(null);
   readonly selectedAgent = signal<IYoizenclawAgent | null>(null);
-  readonly messages = signal<ChatMessage[]>([]);
+  readonly messages = signal<IChatMessage[]>([]);
   readonly newMessage = signal("");
   readonly userId = signal<string>("test-user");
   readonly loading = signal(true);
@@ -538,16 +197,20 @@ export class PlaygroundComponent implements OnInit {
   async loadAgents(): Promise<void> {
     try {
       this.loading.set(true);
-      const response = await firstValueFrom(this.yoizenclawService.listAgents());
+      const response = await firstValueFrom(
+        this.yoizenclawService.listAgents(),
+      );
       this.agents.set(response.agents);
-      
+
       // Auto-select first published agent
-      const publishedAgent = response.agents.find((a: IYoizenclawAgent) => a.status === "published");
+      const publishedAgent = response.agents.find(
+        (a: IYoizenclawAgent) => a.status === "published",
+      );
       if (publishedAgent) {
         this.selectedAgentId.set(publishedAgent.id);
         this.selectedAgent.set(publishedAgent);
       }
-    } catch (error) {
+    } catch {
       this.messages.set([
         {
           role: "system",
@@ -561,7 +224,7 @@ export class PlaygroundComponent implements OnInit {
   }
 
   onAgentChange(event: { value: string }): void {
-    const agent = this.agents().find(a => a.id === event.value);
+    const agent = this.agents().find((a) => a.id === event.value);
     this.selectedAgent.set(agent || null);
     this.clearChat();
   }
@@ -569,11 +232,11 @@ export class PlaygroundComponent implements OnInit {
   async sendMessage(): Promise<void> {
     const message = this.newMessage().trim();
     const agent = this.selectedAgent();
-    
+
     if (!message || !agent) return;
 
     // Add user message
-    this.messages.update(msgs => [
+    this.messages.update((msgs) => [
       ...msgs,
       {
         role: "user",
@@ -587,17 +250,19 @@ export class PlaygroundComponent implements OnInit {
 
     try {
       // Call YoizenClaw via NATS through the service
-      const response = await firstValueFrom(this.yoizenclawService.chatWithAgent(agent.id, {
-        message,
-        conversationId: this.getConversationId(),
-        channel: "playground",
-        customerName: "Test User",
-        context: this.buildContext(),
-        userId: this.userId(),
-      }));
+      const response = await firstValueFrom(
+        this.yoizenclawService.chatWithAgent(agent.id, {
+          message,
+          conversationId: this.getConversationId(),
+          channel: "playground",
+          customerName: "Test User",
+          context: this.buildContext(),
+          userId: this.userId(),
+        }),
+      );
 
       // Add assistant response
-      this.messages.update(msgs => [
+      this.messages.update((msgs) => [
         ...msgs,
         {
           role: "assistant",
@@ -607,8 +272,8 @@ export class PlaygroundComponent implements OnInit {
           agentName: agent.name,
         },
       ]);
-    } catch (error) {
-      this.messages.update(msgs => [
+    } catch {
+      this.messages.update((msgs) => [
         ...msgs,
         {
           role: "system",
@@ -629,10 +294,13 @@ export class PlaygroundComponent implements OnInit {
     return `playground-${this.selectedAgent()?.id}-${Date.now()}`;
   }
 
-  private buildContext(): Array<{ sender: "customer" | "agent"; content: string }> {
+  private buildContext(): Array<{
+    sender: "customer" | "agent";
+    content: string;
+  }> {
     return this.messages()
-      .filter(m => m.role === "user" || m.role === "assistant")
-      .map(m => ({
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({
         sender: m.role === "user" ? "customer" : "agent",
         content: m.content,
       }));

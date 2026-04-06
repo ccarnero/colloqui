@@ -9,7 +9,7 @@ import { MatChipsModule } from "@angular/material/chips";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { MonacoEditorModule } from "ngx-monaco-editor-v2";
-import type { SkillInfo, ToolInfo } from "./yoizenclaw.types";
+import type { ISkillInfo, IToolInfo } from "./yoizenclaw.types";
 
 @Component({
   selector: "app-yoizenclaw-chat-panel",
@@ -233,8 +233,8 @@ import type { SkillInfo, ToolInfo } from "./yoizenclaw.types";
 })
 export class YoizenclawChatPanelComponent {
   readonly editorOptions = input.required<Record<string, unknown>>();
-  readonly availableSkills = input.required<SkillInfo[]>();
-  readonly availableTools = input.required<ToolInfo[]>();
+  readonly availableSkills = input.required<ISkillInfo[]>();
+  readonly availableTools = input.required<IToolInfo[]>();
   readonly extractedMentions = input.required<string[]>();
 
   readonly systemPrompt = model("");

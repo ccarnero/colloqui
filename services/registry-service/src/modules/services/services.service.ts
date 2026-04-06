@@ -3,49 +3,48 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
-  Logger,
   NotFoundException,
-} from '@nestjs/common';
-import type * as k8s from '@kubernetes/client-node';
-import type { Sql } from 'postgres';
-import { K8S_CUSTOM_OBJECTS_API } from '../../providers/kubernetes.provider';
-import { POSTGRES_SQL } from '../../providers/postgres.provider';
+} from "@nestjs/common";
+import { PinoLoggerService } from "@yoizen/observability";
+import type * as k8s from "@kubernetes/client-node";
+import { K8S_CUSTOM_OBJECTS_API } from "../../providers/kubernetes.provider";
 import {
+  REGISTRY_DEFAULT_SERVICE_PORT,
   REGISTRY_KNATIVE_GROUP,
   REGISTRY_KNATIVE_VERSION,
   REGISTRY_KNATIVE_SERVICES_PLURAL,
   REGISTRY_KNATIVE_REVISIONS_PLURAL,
-} from '@yoizen/shared';
+  generateId,
+  invalidPlatformEnvironmentMessage,
+  tenantKubernetesNamespaceName,
+} from "@yoizen/shared";
 import {
   type RegisterServiceDto,
   type UpdateServiceDto,
   type Environment,
   VALID_ENVIRONMENTS,
-} from './services.dto';
-import { generateId } from '../../utils/id';
+} from "./services.dto";
+import { registryServiceConfig } from "../../config";
+import { ServicesRepository } from "./services.repository";
+import { k8sApiErrorMessage, isK8sNotFound } from "../../utils/k8s-error";
+import {
+  buildKnativeServiceBody,
+  envRecordToKnativeEnvList,
+  type IBuildKnativeServiceBodyParams,
+  type IKnativeServiceResourcePatch,
+} from "./knative-builder";
+import {
+  type IRegisteredService,
+  mapRegisteredServiceRow,
+  getNamespacedKnativeService,
+  replaceNamespacedKnativeService,
+} from "../../common/registry-row-mappers";
 
-interface RegisteredService {
-  id: string;
-  tenantId: string;
-  name: string;
-  image: string;
-  port: number;
-  minScale: number;
-  maxScale: number;
-  concurrencyTarget: number;
-  envVars: Record<string, string>;
-  status: string;
-  knativeName: string | null;
-  namespace: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface ServiceDetail extends RegisteredService {
+interface IServiceDetail extends IRegisteredService {
   knativeStatus?: Record<string, unknown>;
 }
 
-interface RevisionInfo {
+interface IRevisionInfo {
   name: string;
   ready: boolean;
   createdAt: string;
@@ -57,35 +56,11 @@ function knativeServiceName(serviceName: string, tenantId: string): string {
 }
 
 function namespaceName(tenantId: string, env: Environment): string {
-  return `${tenantId}-${env}-ns`;
-}
-
-function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  return String(e);
-}
-
-function k8sApiErrorMessage(e: unknown): string {
-  if (typeof e === 'object' && e !== null && 'response' in e) {
-    const msg = (e as { response?: { body?: { message?: string } } }).response
-      ?.body?.message;
-    if (typeof msg === 'string' && msg.length > 0) return msg;
-  }
-  return errorMessage(e);
-}
-
-function isK8sNotFound(e: unknown): boolean {
-  if (typeof e === 'object' && e !== null && 'response' in e) {
-    return (
-      (e as { response?: { statusCode?: number } }).response?.statusCode ===
-      404
-    );
-  }
-  return false;
+  return tenantKubernetesNamespaceName(tenantId, env);
 }
 
 /** Knative Revision list item (subset used for listRevisions). */
-interface KnativeRevisionListItem {
+interface IKnativeRevisionListItem {
   metadata?: { name?: string; creationTimestamp?: string };
   status?: {
     conditions?: Array<{ type?: string; status?: string }>;
@@ -95,46 +70,24 @@ interface KnativeRevisionListItem {
   };
 }
 
-interface KnativeRevisionListResponse {
-  items?: KnativeRevisionListItem[];
-}
-
-/** Minimal Knative Service resource for get/replace patch flows. */
-interface KnativeServiceSpecPatch {
-  template: {
-    metadata?: { annotations?: Record<string, string> };
-    spec: {
-      containers: Array<{
-        name: string;
-        image: string;
-        ports: Array<{ containerPort: number; protocol: string }>;
-        env?: Array<{ name: string; value: string }>;
-      }>;
-    };
-  };
-}
-
-interface KnativeServiceResourcePatch {
-  apiVersion?: string;
-  kind?: string;
-  metadata?: Record<string, unknown>;
-  spec: KnativeServiceSpecPatch;
+interface IKnativeRevisionListResponse {
+  items?: IKnativeRevisionListItem[];
 }
 
 @Injectable()
 export class ServicesService {
-  private readonly logger = new Logger(ServicesService.name);
+  private readonly logger = new PinoLoggerService(ServicesService.name);
   private readonly environment: Environment;
 
   constructor(
     @Inject(K8S_CUSTOM_OBJECTS_API)
     private readonly customApi: k8s.CustomObjectsApi,
-    @Inject(POSTGRES_SQL) private readonly sql: Sql,
+    private readonly servicesRepository: ServicesRepository,
   ) {
-    const env = process.env.PLATFORM_ENVIRONMENT ?? 'dev';
+    const env = registryServiceConfig.platformEnvironment;
     if (!VALID_ENVIRONMENTS.includes(env as Environment)) {
       throw new InternalServerErrorException(
-        `Invalid PLATFORM_ENVIRONMENT: '${env}'. Must be one of: ${VALID_ENVIRONMENTS.join(', ')}`,
+        invalidPlatformEnvironmentMessage(env),
       );
     }
     this.environment = env as Environment;
@@ -143,87 +96,83 @@ export class ServicesService {
   async register(
     tenantId: string,
     dto: RegisterServiceDto,
-  ): Promise<RegisteredService> {
+  ): Promise<IRegisteredService> {
     const ksvcName = knativeServiceName(dto.name, tenantId);
     const ns = namespaceName(tenantId, this.environment);
     const id = generateId();
 
-    const existing = await this.sql`
-      SELECT id FROM registered_services
-      WHERE tenant_id = ${tenantId} AND name = ${dto.name}
-    `;
+    const existing = await this.servicesRepository.findIdByTenantAndName(
+      tenantId,
+      dto.name,
+    );
     if (existing.length > 0) {
       throw new ConflictException(
         `Service '${dto.name}' already registered for tenant '${tenantId}'`,
       );
     }
 
-    const port = dto.port ?? 3000;
+    const port = dto.port ?? REGISTRY_DEFAULT_SERVICE_PORT;
     const minScale = dto.minScale ?? 0;
     const maxScale = dto.maxScale ?? 10;
     const concurrencyTarget = dto.concurrencyTarget ?? 100;
     const envVars = dto.envVars ?? {};
 
-    await this.createKnativeService(
-      ns,
-      ksvcName,
-      dto.image,
+    await this.createKnativeService({
+      namespace: ns,
+      name: ksvcName,
+      image: dto.image,
       port,
       minScale,
       maxScale,
       concurrencyTarget,
       envVars,
-    );
+    });
 
-    const [row] = await this.sql`
-      INSERT INTO registered_services
-        (id, tenant_id, name, image, port, min_scale, max_scale,
-         concurrency_target, env_vars, status, knative_name, namespace)
-      VALUES
-        (${id}, ${tenantId}, ${dto.name}, ${dto.image}, ${port},
-         ${minScale}, ${maxScale}, ${concurrencyTarget},
-         ${this.sql.json(envVars)}, 'active', ${ksvcName}, ${ns})
-      RETURNING *
-    `;
+    const [row] = await this.servicesRepository.insertRegisteredService({
+      id,
+      tenantId,
+      dto,
+      port,
+      minScale,
+      maxScale,
+      concurrencyTarget,
+      envVars,
+      ksvcName,
+      ns,
+    });
 
     this.logger.log(`Registered service ${ksvcName} in ${ns}`);
-    return this.mapRow(row);
+    return mapRegisteredServiceRow(row);
   }
 
-  async list(tenantId: string): Promise<RegisteredService[]> {
-    const rows = await this.sql`
-      SELECT * FROM registered_services
-      WHERE tenant_id = ${tenantId}
-      ORDER BY created_at DESC
-    `;
-    return rows.map(this.mapRow);
+  async list(tenantId: string): Promise<IRegisteredService[]> {
+    const rows = await this.servicesRepository.listByTenant(tenantId);
+    return rows.map(mapRegisteredServiceRow);
   }
 
-  async get(tenantId: string, id: string): Promise<ServiceDetail> {
-    const [row] = await this.sql`
-      SELECT * FROM registered_services
-      WHERE id = ${id} AND tenant_id = ${tenantId}
-    `;
+  async get(tenantId: string, id: string): Promise<IServiceDetail> {
+    const [row] = await this.servicesRepository.findByIdAndTenant(id, tenantId);
     if (!row) {
       throw new NotFoundException(`Service '${id}' not found`);
     }
 
-    const svc = this.mapRow(row);
+    const svc = mapRegisteredServiceRow(row);
     let knativeStatus: Record<string, unknown> | undefined;
 
     if (svc.knativeName && svc.namespace) {
       try {
-        const resp = await this.customApi.getNamespacedCustomObject({
-          group: REGISTRY_KNATIVE_GROUP,
-          version: REGISTRY_KNATIVE_VERSION,
-          namespace: svc.namespace,
-          plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
-          name: svc.knativeName,
-        });
+        const resp = await getNamespacedKnativeService(
+          this.customApi,
+          svc.namespace,
+          svc.knativeName,
+        );
         const obj = resp as Record<string, unknown>;
         knativeStatus = (obj.status as Record<string, unknown>) ?? {};
-      } catch {
-        knativeStatus = { error: 'unable to fetch Knative status' };
+      } catch (e: unknown) {
+        this.logger.warn(
+          `Knative status fetch failed for ${svc.knativeName}: ${k8sApiErrorMessage(e)}`,
+        );
+        knativeStatus = { error: "unable to fetch Knative status" };
       }
     }
 
@@ -234,57 +183,57 @@ export class ServicesService {
     tenantId: string,
     id: string,
     dto: UpdateServiceDto,
-  ): Promise<RegisteredService> {
-    const [row] = await this.sql`
-      SELECT * FROM registered_services
-      WHERE id = ${id} AND tenant_id = ${tenantId}
-    `;
+  ): Promise<IRegisteredService> {
+    const [row] = await this.servicesRepository.findByIdAndTenant(id, tenantId);
     if (!row) {
       throw new NotFoundException(`Service '${id}' not found`);
     }
 
-    const image = dto.image ?? row.image;
-    const port = dto.port ?? row.port;
-    const minScale = dto.minScale ?? row.min_scale;
-    const maxScale = dto.maxScale ?? row.max_scale;
-    const concurrencyTarget = dto.concurrencyTarget ?? row.concurrency_target;
-    const envVars = dto.envVars ?? row.env_vars;
+    const image = String(dto.image ?? row.image ?? "");
+    const port = Number(dto.port ?? row.port ?? REGISTRY_DEFAULT_SERVICE_PORT);
+    const minScale = Number(dto.minScale ?? row.min_scale ?? 0);
+    const maxScale = Number(dto.maxScale ?? row.max_scale ?? 10);
+    const concurrencyTarget = Number(
+      dto.concurrencyTarget ?? row.concurrency_target ?? 100,
+    );
+    const envVarsRaw = dto.envVars ?? row.env_vars;
+    const envVars: Record<string, string> =
+      envVarsRaw &&
+      typeof envVarsRaw === "object" &&
+      !Array.isArray(envVarsRaw)
+        ? (envVarsRaw as Record<string, string>)
+        : {};
 
     if (row.knative_name && row.namespace) {
-      await this.updateKnativeService(
-        row.namespace,
-        row.knative_name,
+      await this.updateKnativeService({
+        namespace: String(row.namespace),
+        name: String(row.knative_name),
         image,
         port,
         minScale,
         maxScale,
         concurrencyTarget,
         envVars,
-      );
+      });
     }
 
-    const [updated] = await this.sql`
-      UPDATE registered_services SET
-        image = ${image},
-        port = ${port},
-        min_scale = ${minScale},
-        max_scale = ${maxScale},
-        concurrency_target = ${concurrencyTarget},
-        env_vars = ${this.sql.json(envVars)},
-        updated_at = NOW()
-      WHERE id = ${id} AND tenant_id = ${tenantId}
-      RETURNING *
-    `;
+    const [updated] = await this.servicesRepository.updateRegisteredService({
+      id,
+      tenantId,
+      image,
+      port,
+      minScale,
+      maxScale,
+      concurrencyTarget,
+      envVars,
+    });
 
     this.logger.log(`Updated service ${row.knative_name}`);
-    return this.mapRow(updated);
+    return mapRegisteredServiceRow(updated);
   }
 
   async remove(tenantId: string, id: string): Promise<void> {
-    const [row] = await this.sql`
-      SELECT * FROM registered_services
-      WHERE id = ${id} AND tenant_id = ${tenantId}
-    `;
+    const [row] = await this.servicesRepository.findByIdAndTenant(id, tenantId);
     if (!row) {
       throw new NotFoundException(`Service '${id}' not found`);
     }
@@ -294,27 +243,24 @@ export class ServicesService {
         await this.customApi.deleteNamespacedCustomObject({
           group: REGISTRY_KNATIVE_GROUP,
           version: REGISTRY_KNATIVE_VERSION,
-          namespace: row.namespace,
+          namespace: String(row.namespace),
           plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
-          name: row.knative_name,
+          name: String(row.knative_name),
         });
       } catch (e: unknown) {
         if (!isK8sNotFound(e)) throw e;
       }
     }
 
-    await this.sql`DELETE FROM registered_services WHERE id = ${id}`;
+    await this.servicesRepository.deleteById(id);
     this.logger.log(`Removed service ${row.knative_name}`);
   }
 
-  async listRevisions(
-    tenantId: string,
-    id: string,
-  ): Promise<RevisionInfo[]> {
-    const [row] = await this.sql`
-      SELECT knative_name, namespace FROM registered_services
-      WHERE id = ${id} AND tenant_id = ${tenantId}
-    `;
+  async listRevisions(tenantId: string, id: string): Promise<IRevisionInfo[]> {
+    const [row] = await this.servicesRepository.selectKnativeMetaForRevision(
+      id,
+      tenantId,
+    );
     if (!row) {
       throw new NotFoundException(`Service '${id}' not found`);
     }
@@ -326,115 +272,34 @@ export class ServicesService {
       const resp = await this.customApi.listNamespacedCustomObject({
         group: REGISTRY_KNATIVE_GROUP,
         version: REGISTRY_KNATIVE_VERSION,
-        namespace: row.namespace,
+        namespace: String(row.namespace),
         plural: REGISTRY_KNATIVE_REVISIONS_PLURAL,
-        labelSelector: `serving.knative.dev/service=${row.knative_name}`,
+        labelSelector: `serving.knative.dev/service=${String(row.knative_name)}`,
       });
 
-      const list = resp as unknown as KnativeRevisionListResponse;
+      const list = resp as unknown as IKnativeRevisionListResponse;
       return (list.items ?? []).map((rev) => ({
-        name: rev.metadata?.name ?? '',
+        name: rev.metadata?.name ?? "",
         ready:
           rev.status?.conditions?.some(
-            (c) => c.type === 'Ready' && c.status === 'True',
+            (c) => c.type === "Ready" && c.status === "True",
           ) ?? false,
-        createdAt: rev.metadata?.creationTimestamp ?? '',
-        image: rev.spec?.containers?.[0]?.image ?? '',
+        createdAt: rev.metadata?.creationTimestamp ?? "",
+        image: rev.spec?.containers?.[0]?.image ?? "",
       }));
-    } catch {
+    } catch (e: unknown) {
+      this.logger.warn(
+        `List Knative revisions failed for ${row.knative_name}: ${k8sApiErrorMessage(e)}`,
+      );
       return [];
     }
   }
 
-  private buildKnativeServiceBody(
-    namespace: string,
-    name: string,
-    image: string,
-    port: number,
-    minScale: number,
-    maxScale: number,
-    concurrencyTarget: number,
-    envVars: Record<string, string>,
-  ): Record<string, unknown> {
-    const envList = Object.entries(envVars).map(([k, v]) => ({
-      name: k,
-      value: v,
-    }));
-
-    return {
-      apiVersion: `${REGISTRY_KNATIVE_GROUP}/${REGISTRY_KNATIVE_VERSION}`,
-      kind: 'Service',
-      metadata: {
-        name,
-        namespace,
-        labels: {
-          'app.kubernetes.io/managed-by': 'registry-service',
-          'app.kubernetes.io/part-of': 'yoizen-arch',
-        },
-      },
-      spec: {
-        template: {
-          metadata: {
-            annotations: {
-              'autoscaling.knative.dev/class': 'kpa.autoscaling.knative.dev',
-              'autoscaling.knative.dev/metric': 'concurrency',
-              'autoscaling.knative.dev/target': String(concurrencyTarget),
-              'autoscaling.knative.dev/min-scale': String(minScale),
-              'autoscaling.knative.dev/max-scale': String(maxScale),
-            },
-          },
-          spec: {
-            containerConcurrency: 0,
-            containers: [
-              {
-                name: 'user-container',
-                image,
-                ports: [{ containerPort: port, protocol: 'TCP' }],
-                ...(envList.length > 0 ? { env: envList } : {}),
-                securityContext: {
-                  runAsNonRoot: true,
-                  runAsUser: 1001,
-                  allowPrivilegeEscalation: false,
-                  capabilities: { drop: ['ALL'] },
-                  seccompProfile: { type: 'RuntimeDefault' },
-                },
-                resources: {
-                  requests: { cpu: '50m', memory: '64Mi' },
-                  limits: { cpu: '500m', memory: '256Mi' },
-                },
-                readinessProbe: {
-                  httpGet: { path: '/health', port },
-                  initialDelaySeconds: 5,
-                  periodSeconds: 5,
-                },
-              },
-            ],
-          },
-        },
-      },
-    };
-  }
-
   private async createKnativeService(
-    namespace: string,
-    name: string,
-    image: string,
-    port: number,
-    minScale: number,
-    maxScale: number,
-    concurrencyTarget: number,
-    envVars: Record<string, string>,
+    params: IBuildKnativeServiceBodyParams,
   ): Promise<void> {
-    const body = this.buildKnativeServiceBody(
-      namespace,
-      name,
-      image,
-      port,
-      minScale,
-      maxScale,
-      concurrencyTarget,
-      envVars,
-    );
+    const { namespace, name } = params;
+    const body = buildKnativeServiceBody(params);
 
     try {
       await this.customApi.createNamespacedCustomObject({
@@ -454,54 +319,50 @@ export class ServicesService {
   }
 
   private async updateKnativeService(
-    namespace: string,
-    name: string,
-    image: string,
-    port: number,
-    minScale: number,
-    maxScale: number,
-    concurrencyTarget: number,
-    envVars: Record<string, string>,
+    params: IBuildKnativeServiceBodyParams,
   ): Promise<void> {
-    const envList = Object.entries(envVars).map(([k, v]) => ({
-      name: k,
-      value: v,
-    }));
-
-    const current = (await this.customApi.getNamespacedCustomObject({
-      group: REGISTRY_KNATIVE_GROUP,
-      version: REGISTRY_KNATIVE_VERSION,
+    const {
       namespace,
-      plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
       name,
-    })) as unknown as KnativeServiceResourcePatch;
+      image,
+      port,
+      minScale,
+      maxScale,
+      concurrencyTarget,
+      envVars,
+    } = params;
+    const envList = envRecordToKnativeEnvList(envVars);
+
+    const current = (await getNamespacedKnativeService(
+      this.customApi,
+      namespace,
+      name,
+    )) as unknown as IKnativeServiceResourcePatch;
 
     const spec = structuredClone(current.spec);
     spec.template.metadata ??= {};
     spec.template.metadata.annotations = {
       ...spec.template.metadata.annotations,
-      'autoscaling.knative.dev/target': String(concurrencyTarget),
-      'autoscaling.knative.dev/min-scale': String(minScale),
-      'autoscaling.knative.dev/max-scale': String(maxScale),
+      "autoscaling.knative.dev/target": String(concurrencyTarget),
+      "autoscaling.knative.dev/min-scale": String(minScale),
+      "autoscaling.knative.dev/max-scale": String(maxScale),
     };
     spec.template.spec.containers = [
       {
-        name: 'user-container',
+        name: "user-container",
         image,
-        ports: [{ containerPort: port, protocol: 'TCP' }],
+        ports: [{ containerPort: port, protocol: "TCP" }],
         ...(envList.length > 0 ? { env: envList } : {}),
       },
     ];
 
     try {
-      await this.customApi.replaceNamespacedCustomObject({
-        group: REGISTRY_KNATIVE_GROUP,
-        version: REGISTRY_KNATIVE_VERSION,
+      await replaceNamespacedKnativeService(
+        this.customApi,
         namespace,
-        plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
         name,
-        body: { ...current, spec },
-      });
+        { ...current, spec } as Record<string, unknown>,
+      );
     } catch (e: unknown) {
       const msg = k8sApiErrorMessage(e);
       this.logger.error(`Failed to update Knative Service ${name}: ${msg}`);
@@ -509,36 +370,5 @@ export class ServicesService {
         `Failed to update Knative Service: ${msg}`,
       );
     }
-  }
-
-  private mapRow(row: Record<string, unknown>): RegisteredService {
-    const envVars = row.env_vars;
-    return {
-      id: String(row.id ?? ''),
-      tenantId: String(row.tenant_id ?? ''),
-      name: String(row.name ?? ''),
-      image: String(row.image ?? ''),
-      port: Number(row.port ?? 0),
-      minScale: Number(row.min_scale ?? 0),
-      maxScale: Number(row.max_scale ?? 0),
-      concurrencyTarget: Number(row.concurrency_target ?? 0),
-      envVars:
-        envVars !== null &&
-        typeof envVars === 'object' &&
-        !Array.isArray(envVars)
-          ? (envVars as Record<string, string>)
-          : {},
-      status: String(row.status ?? ''),
-      knativeName:
-        row.knative_name === null || row.knative_name === undefined
-          ? null
-          : String(row.knative_name),
-      namespace:
-        row.namespace === null || row.namespace === undefined
-          ? null
-          : String(row.namespace),
-      createdAt: String(row.created_at ?? ''),
-      updatedAt: String(row.updated_at ?? ''),
-    };
   }
 }

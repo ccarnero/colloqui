@@ -1,10 +1,10 @@
-import { Component, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, signal } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
 import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 
-interface AllowlistRow {
+interface IAllowlistRow {
   cidr: string;
   label: string;
   flag: string;
@@ -16,7 +16,13 @@ interface AllowlistRow {
 @Component({
   selector: "app-ip-allowlist",
   standalone: true,
-  imports: [MatTableModule, MatButtonModule, MatIconModule, StatusBadgeComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    MatTableModule,
+    MatButtonModule,
+    MatIconModule,
+    StatusBadgeComponent,
+  ],
   template: `
     <div class="ws-header">
       <div>
@@ -90,7 +96,7 @@ export class IpAllowlistComponent {
     "actions",
   ] as const;
 
-  readonly entries = signal<AllowlistRow[]>([
+  readonly entries = signal<IAllowlistRow[]>([
     {
       cidr: "203.0.113.0/24",
       label: "HQ egress",

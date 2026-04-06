@@ -252,7 +252,8 @@ import type {
 })
 export class YoizenclawAgentConfigComponent {
   readonly section = input.required<"general" | "skills">();
-  readonly credentialProfiles = input.required<IYoizenclawCredentialProfile[]>();
+  readonly credentialProfiles =
+    input.required<IYoizenclawCredentialProfile[]>();
   readonly editorOptions = input.required<Record<string, unknown>>();
 
   readonly agentName = model("");

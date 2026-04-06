@@ -1,7 +1,14 @@
 import type { Sql } from "./types";
 import type { NatsConnection } from "nats";
-import type Redis from "ioredis";
 import type * as k8s from "@kubernetes/client-node";
+
+/**
+ * Minimal Redis surface for health checks — avoids duplicate `ioredis` typings
+ * when the app and this package resolve different physical installs.
+ */
+export interface RedisPinger {
+  ping(): Promise<unknown>;
+}
 
 /**
  * Checks PostgreSQL connectivity via `SELECT 1`.
@@ -29,7 +36,7 @@ export function checkNats(nc: NatsConnection): boolean {
 /**
  * Checks Redis connectivity via `PING`.
  */
-export async function checkRedis(redis: Redis): Promise<boolean> {
+export async function checkRedis(redis: RedisPinger): Promise<boolean> {
   try {
     await redis.ping();
     return true;

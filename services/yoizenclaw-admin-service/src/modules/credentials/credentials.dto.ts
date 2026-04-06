@@ -7,14 +7,11 @@ import {
   IsIn,
   IsISO8601,
   Length,
-} from 'class-validator';
-import { Type } from 'class-transformer';
-import type { CredentialProvider } from './providers/credential-provider.registry';
-import { ALL_PROVIDERS } from './providers/credential-provider.registry';
+} from "class-validator";
+import { Type } from "class-transformer";
+import type { CredentialProvider } from "./providers/credential-provider.registry";
+import { ALL_PROVIDERS } from "./providers/credential-provider.registry";
 
-/**
- * DTO for creating a provider-aware credential
- */
 export class CreateProviderCredentialDto {
   @IsString()
   @IsNotEmpty()
@@ -28,12 +25,6 @@ export class CreateProviderCredentialDto {
 
   @IsObject()
   @IsNotEmpty()
-  /**
-   * Provider-specific payload containing fields like:
-   * - api_key, base_url for openai/anthropic/etc
-   * - project_id, region, service_account_json for google-vertex
-   * - aws_access_key_id, aws_secret_access_key, aws_session_token, region for bedrock
-   */
   payload!: Record<string, unknown>;
 
   @IsObject()
@@ -51,10 +42,6 @@ export class CreateProviderCredentialDto {
   is_active?: boolean;
 }
 
-/**
- * DTO for updating a provider-aware credential
- * Note: omitting a secret field in payload preserves the existing secret
- */
 export class UpdateProviderCredentialDto {
   @IsString()
   @IsOptional()
@@ -68,10 +55,6 @@ export class UpdateProviderCredentialDto {
 
   @IsObject()
   @IsOptional()
-  /**
-   * Provider-specific payload. Omit secret fields to preserve existing values.
-   * Set a secret field to empty string or new value to replace it.
-   */
   payload?: Record<string, unknown>;
 
   @IsObject()
@@ -89,9 +72,6 @@ export class UpdateProviderCredentialDto {
   is_active?: boolean;
 }
 
-/**
- * DTO for listing/querying credentials
- */
 export class ListCredentialsQueryDto {
   @IsString()
   @IsOptional()
@@ -105,7 +85,7 @@ export class ListCredentialsQueryDto {
 
   @IsString()
   @IsOptional()
-  @IsIn(['pending', 'synced', 'failed', 'manual_review_required'])
+  @IsIn(["pending", "synced", "failed", "manual_review_required"])
   sync_status?: string;
 
   @IsOptional()
@@ -117,16 +97,9 @@ export class ListCredentialsQueryDto {
   offset?: number;
 }
 
-/**
- * DTO for rotating a credential (replacing secret values)
- */
 export class RotateCredentialDto {
   @IsObject()
   @IsNotEmpty()
-  /**
-   * New provider payload with replacement secret values.
-   * Only secret fields that need rotation should be included.
-   */
   payload!: Record<string, unknown>;
 
   @IsISO8601()
@@ -134,26 +107,13 @@ export class RotateCredentialDto {
   new_expires_at?: string;
 }
 
-/**
- * DTO for manual sync trigger
- */
 export class SyncCredentialsDto {
   @IsBoolean()
   @IsOptional()
   @Type(() => Boolean)
-  /**
-   * If true, only sync credentials with failed status
-   */
   failed_only?: boolean;
 }
 
-// ============================================================================
-// Response DTOs
-// ============================================================================
-
-/**
- * Masked credential response - never includes plaintext secrets
- */
 export interface CredentialResponseDto {
   id: string;
   name: string;
@@ -163,7 +123,7 @@ export interface CredentialResponseDto {
   metadata: Record<string, unknown>;
   expires_at: string | null;
   is_active: boolean;
-  sync_status: 'pending' | 'synced' | 'failed' | 'manual_review_required';
+  sync_status: "pending" | "synced" | "failed" | "manual_review_required";
   last_sync_at: string | null;
   sync_error: string | null;
   has_secret: boolean;
@@ -171,9 +131,6 @@ export interface CredentialResponseDto {
   updated_at: string;
 }
 
-/**
- * Provider info response
- */
 export interface ProviderInfoDto {
   provider: CredentialProvider;
   display_name: string;
@@ -189,12 +146,9 @@ export interface ProviderInfoDto {
   }>;
 }
 
-/**
- * Sync status response
- */
 export interface SyncStatusResponseDto {
   credential_id: string;
-  sync_status: 'pending' | 'synced' | 'failed';
+  sync_status: "pending" | "synced" | "failed";
   last_sync_at: string | null;
   sync_error: string | null;
 }

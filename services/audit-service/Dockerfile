@@ -3,12 +3,24 @@ FROM oven/bun:1.3-alpine AS builder
 WORKDIR /app
 
 COPY packages/shared ./packages/shared
+RUN cd packages/shared && bun install
 COPY packages/observability ./packages/observability
 COPY packages/database ./packages/database
 RUN cd packages/database && bun install
 COPY services/audit-service/package.json ./services/audit-service/
 WORKDIR /app/services/audit-service
 RUN bun install
+RUN rm -rf ../../packages/observability/node_modules/@nestjs \
+  && mkdir -p ../../packages/observability/node_modules \
+  && ln -sfn ../../../services/audit-service/node_modules/@nestjs \
+    ../../packages/observability/node_modules/@nestjs
+RUN rm -rf ../../packages/shared/node_modules/class-transformer \
+    ../../packages/shared/node_modules/class-validator \
+  && mkdir -p ../../packages/shared/node_modules \
+  && ln -sfn ../../../services/audit-service/node_modules/class-transformer \
+    ../../packages/shared/node_modules/class-transformer \
+  && ln -sfn ../../../services/audit-service/node_modules/class-validator \
+    ../../packages/shared/node_modules/class-validator
 
 COPY services/audit-service/src ./src
 COPY services/audit-service/tsconfig.json ./
@@ -26,6 +38,7 @@ COPY --from=builder /app/packages/database /app/packages/database
 COPY --from=builder /app/services/audit-service/node_modules ./node_modules
 COPY --from=builder /app/services/audit-service/dist ./dist
 COPY --from=builder /app/services/audit-service/package.json ./
+COPY --from=builder /app/services/audit-service/tsconfig.json ./
 
 USER 1001:1001
 

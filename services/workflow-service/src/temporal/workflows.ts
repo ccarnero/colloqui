@@ -1,4 +1,4 @@
-import { proxyActivities } from '@temporalio/workflow';
+import { proxyActivities } from "@temporalio/workflow";
 import type {
   WorkflowDefinition,
   WorkflowExecutionContext,
@@ -6,9 +6,10 @@ import type {
   EndpointCallArgs,
   JsFunctionArgs,
   ServiceBusCallArgs,
-} from '@yoizen/shared';
+} from "@yoizen/shared";
+import { WORKFLOW_HTTP_TASK_QUEUE } from "./workflow-queue";
 
-interface OrchestratorActivities {
+interface IOrchestratorActivities {
   executeJsFunction(
     args: JsFunctionArgs,
     context: WorkflowExecutionContext,
@@ -19,38 +20,42 @@ interface OrchestratorActivities {
   ): Promise<{ published: true; subject: string }>;
 }
 
-interface HttpActivities {
+interface IHttpActivities {
   executeEndpointCall(
     args: EndpointCallArgs,
     tenantId: string,
-  ): Promise<{ status: number; data: unknown; headers: Record<string, string> }>;
+  ): Promise<{
+    status: number;
+    data: unknown;
+    headers: Record<string, string>;
+  }>;
 }
 
-const local = proxyActivities<OrchestratorActivities>({
-  startToCloseTimeout: '30s',
+const local = proxyActivities<IOrchestratorActivities>({
+  startToCloseTimeout: "30s",
   retry: { maximumAttempts: 3 },
 });
 
-const http = proxyActivities<HttpActivities>({
-  taskQueue: 'workflow-http',
-  startToCloseTimeout: '30s',
+const http = proxyActivities<IHttpActivities>({
+  taskQueue: WORKFLOW_HTTP_TASK_QUEUE,
+  startToCloseTimeout: "30s",
   retry: { maximumAttempts: 3 },
 });
 
 const TEMPLATE_RE = /\{\{(.+?)\}\}/g;
 
 function resolvePath(context: WorkflowExecutionContext, path: string): unknown {
-  const segments = path.trim().split('.');
+  const segments = path.trim().split(".");
   let current: unknown = context;
   for (let i = 0; i < segments.length; i++) {
-    if (current == null || typeof current !== 'object') return '';
+    if (current == null || typeof current !== "object") return "";
     current = (current as Record<string, unknown>)[segments[i]];
   }
-  return current ?? '';
+  return current ?? "";
 }
 
 function resolveTemplates<T>(value: T, context: WorkflowExecutionContext): T {
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value.replace(TEMPLATE_RE, (_, path: string) =>
       String(resolvePath(context, path)),
     ) as unknown as T;
@@ -58,7 +63,7 @@ function resolveTemplates<T>(value: T, context: WorkflowExecutionContext): T {
   if (Array.isArray(value)) {
     return value.map((v) => resolveTemplates(v, context)) as unknown as T;
   }
-  if (value !== null && typeof value === 'object') {
+  if (value !== null && typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>);
     const out: Record<string, unknown> = {};
     for (let i = 0; i < entries.length; i++) {
@@ -85,30 +90,30 @@ async function executeAction(
   const tenant = context.workflow.tenant;
 
   switch (action.activity) {
-    case 'endpointCall':
+    case "endpointCall":
       return http.executeEndpointCall(
         resolveTemplates(action.args, context),
         tenant,
       );
 
-    case 'jsFunction':
+    case "jsFunction":
       return local.executeJsFunction(
         resolveTemplates(action.args, context),
         context,
       );
 
-    case 'serviceBusCall':
+    case "serviceBusCall":
       return local.executeServiceBusCall(
         resolveTemplates(action.args, context),
         tenant,
       );
 
-    case 'branch': {
+    case "branch": {
       const branchEntries: Array<[string, WorkflowAction[]]> = [];
       const keys = Object.keys(action);
       for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
-        if (key === 'activity' || key === 'name') continue;
+        if (key === "activity" || key === "name") continue;
         branchEntries.push([
           key,
           (action as Record<string, unknown>)[key] as WorkflowAction[],
@@ -131,6 +136,13 @@ async function executeAction(
         Object.assign(context.results, branchResults[i]);
       }
       return branchEntries.map(([name]) => name);
+    }
+
+    default: {
+      const activity = (action as WorkflowAction).activity;
+      throw new Error(
+        `Unsupported workflow activity: ${String(activity)}`,
+      );
     }
   }
 }

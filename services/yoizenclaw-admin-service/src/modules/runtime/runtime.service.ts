@@ -1,38 +1,36 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { TenantConnectionManager } from '../../providers/tenant-connection-manager';
-import { NatsPublisher } from '../../providers/nats.provider';
+import { Inject, Injectable } from "@nestjs/common";
+import type Redis from "ioredis";
+import { TenantConnectionManager } from "@yoizen/database";
+import { REDIS_CLIENT } from "../../providers/redis.provider";
+import { PinoLoggerService } from "@yoizen/observability";
 
-interface RuntimeStatus {
+const LAST_SYNC_KEY_PREFIX = "yoizenclaw:admin:runtime:last_sync:";
+
+/** Runtime health payload returned by {@link RuntimeService.getStatus}. */
+export interface IRuntimeStatus {
   configured: boolean;
   connected_runtimes: string[];
   last_sync_at?: string;
 }
 
-/**
- * Servicio para consultar el estado del runtime y conexiones.
- */
 @Injectable()
 export class RuntimeService {
-  private readonly logger = new Logger(RuntimeService.name);
-  private lastSyncAt: string | undefined;
+  private readonly logger = new PinoLoggerService(RuntimeService.name);
 
   constructor(
     private readonly tenantManager: TenantConnectionManager,
-    private readonly natsPublisher: NatsPublisher,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   /**
-   * Obtiene el estado del runtime para un tenant.
-   * Verifica conectividad a NATS y devuelve métricas básicas.
+   * @returns runtime status including DB connectivity and connected runtimes
    */
-  async getStatus(tenantId: string): Promise<RuntimeStatus> {
+  async getStatus(tenantId: string): Promise<IRuntimeStatus> {
     this.logger.debug(`Getting runtime status for tenant: ${tenantId}`);
 
-    // Verificar conexión a la base de datos del tenant
     let databaseConnected = false;
     try {
-      const sql = this.tenantManager.getConnection(tenantId);
-      // Ejecutar una query simple para verificar conectividad
+      const sql = await this.tenantManager.ensureSchema(tenantId);
       await sql`SELECT 1`;
       databaseConnected = true;
     } catch (error) {
@@ -42,13 +40,29 @@ export class RuntimeService {
       );
     }
 
-    // Registrar última sincronización si hay conectividad
-    if (databaseConnected && !this.lastSyncAt) {
-      this.lastSyncAt = new Date().toISOString();
+    const syncKey = `${LAST_SYNC_KEY_PREFIX}${tenantId}`;
+    let lastSyncAt: string | undefined;
+
+    try {
+      const existing = await this.redis.get(syncKey);
+      if (databaseConnected && !existing) {
+        const now = new Date().toISOString();
+        await this.redis.set(syncKey, now);
+        lastSyncAt = now;
+      } else {
+        lastSyncAt = existing ?? undefined;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Redis last_sync unavailable for tenant ${tenantId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      if (databaseConnected) {
+        lastSyncAt = new Date().toISOString();
+      }
     }
 
-    // Determinar runtimes conectados (en una implementación real,
-    // esto consultaría NATS o un registro de runtimes activos)
     const connectedRuntimes: string[] = databaseConnected
       ? [`runtime-${tenantId}-primary`]
       : [];
@@ -56,34 +70,7 @@ export class RuntimeService {
     return {
       configured: databaseConnected,
       connected_runtimes: connectedRuntimes,
-      last_sync_at: this.lastSyncAt,
-    };
-  }
-
-  /**
-   * Actualiza la marca de última sincronización.
-   * Llamado cuando se sincroniza configuración con el runtime.
-   */
-  updateLastSync(): void {
-    this.lastSyncAt = new Date().toISOString();
-    this.logger.log(`Runtime sync timestamp updated: ${this.lastSyncAt}`);
-  }
-
-  /**
-   * Obtiene métricas básicas del servicio.
-   */
-  getMetrics(): {
-    uptime_seconds: number;
-    memory_usage_mb: number;
-    active_tenants: number;
-  } {
-    const uptime = process.uptime();
-    const memoryUsage = process.memoryUsage();
-
-    return {
-      uptime_seconds: Math.floor(uptime),
-      memory_usage_mb: Math.round(memoryUsage.heapUsed / 1024 / 1024),
-      active_tenants: 0, // Se actualizaría con datos reales del TenantConnectionManager
+      last_sync_at: lastSyncAt,
     };
   }
 }

@@ -8,24 +8,13 @@
  *
  * Tasks 5.4-5.5: yoizenclaw-adapter-tools
  */
-import { describe, it, expect, vi, beforeEach } from "bun:test";
+// Vitest globals (see tsconfig.spec.json); keep filename *.e2e.spec.ts for Bun runners if needed.
+
+import type { IAgentToolPayload, IToolAdapterRef } from "../../../core/models/yoizenclaw.model";
 
 // ---------------------------------------------------------------------------
-// Types matching the actual service interfaces
+// Mock contract types (E2E stubs — not all fields match production DTOs)
 // ---------------------------------------------------------------------------
-
-interface IToolAdapterRef {
-  adapterId: string;
-  endpointId: string;
-}
-
-interface IAgentToolPayload {
-  name: string;
-  source_type: "http" | "adapter";
-  endpoint?: { url: string; method: string };
-  adapter_ref?: { adapter_id: string; endpoint_id: string };
-  description?: string;
-}
 
 interface IAgentCreateRequest {
   name: string;
@@ -58,7 +47,12 @@ interface IAdapterSummary {
   baseUrl: string;
   authType: string;
   hasAuth: boolean;
-  endpoints: Array<{ id: string; path: string; method: string; label?: string }>;
+  endpoints: Array<{
+    id: string;
+    path: string;
+    method: string;
+    label?: string;
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,8 +127,18 @@ const MOCK_ADAPTER: IAdapterSummary = {
   authType: "bearer",
   hasAuth: true,
   endpoints: [
-    { id: "ep-search", path: "/contacts/search", method: "POST", label: "Search Contacts" },
-    { id: "ep-get", path: "/contacts/{id}", method: "GET", label: "Get Contact" },
+    {
+      id: "ep-search",
+      path: "/contacts/search",
+      method: "POST",
+      label: "Search Contacts",
+    },
+    {
+      id: "ep-get",
+      path: "/contacts/{id}",
+      method: "GET",
+      label: "Get Contact",
+    },
   ],
 };
 
@@ -232,9 +236,7 @@ describe("Adapter Tools E2E: Create Agent with Adapter Tool", () => {
 
     expect(updated).toBeDefined();
     expect(updated!.tools[0].source_type).toBe("adapter");
-    expect(updated!.tools[0].adapter_ref?.adapter_id).toBe(
-      "adapter-crm-001",
-    );
+    expect(updated!.tools[0].adapter_ref?.adapter_id).toBe("adapter-crm-001");
     // Endpoint URL should no longer be present
     expect(updated!.tools[0].endpoint).toBeUndefined();
   });
@@ -271,9 +273,7 @@ describe("Adapter Tools E2E: Create Agent with Adapter Tool", () => {
 
   it("should resolve adapter details when adapterRef is set", async () => {
     const adaptersClient = createMockAdaptersClient([MOCK_ADAPTER]);
-    const adapter = await adaptersClient.getAdapter(
-      MOCK_ADAPTER_REF.adapterId,
-    );
+    const adapter = await adaptersClient.getAdapter(MOCK_ADAPTER_REF.adapterId);
 
     expect(adapter).toBeDefined();
     expect(adapter!.name).toBe("CRM API Adapter");
@@ -328,62 +328,59 @@ describe("Adapter Tools E2E: Create Agent with Adapter Tool", () => {
 describe("Adapter Tools E2E: Execute Agent with Adapter Tool", () => {
   const EXECUTION_TIMEOUT_MS = 30_000;
 
-  it(
-    "should execute full flow: message → LLM → adapter tool → response",
-    async () => {
-      /**
-       * Simulates the full execution flow:
-       * 1. User sends message to agent
-       * 2. Agent (LLM) decides to use the adapter tool
-       * 3. ToolExecutor resolves adapter via AdapterClient
-       * 4. AdapterToolExecutor executes HTTP call via adapter config
-       * 5. Response is returned to the conversation
-       */
+  it("should execute full flow: message → LLM → adapter tool → response", async () => {
+    /**
+     * Simulates the full execution flow:
+     * 1. User sends message to agent
+     * 2. Agent (LLM) decides to use the adapter tool
+     * 3. ToolExecutor resolves adapter via AdapterClient
+     * 4. AdapterToolExecutor executes HTTP call via adapter config
+     * 5. Response is returned to the conversation
+     */
 
-      // Step 1: Simulate adapter resolution
-      const resolvedRequest = {
-        url: "https://crm.example.com/api/v2/contacts/search",
-        method: "POST",
-        headers: {
-          Authorization: "Bearer ***", // Redacted in tests
-          "X-Yoizen-Tenant": TENANT_ID,
-          "Content-Type": "application/json",
-        },
-        timeout_ms: 5000,
-      };
+    // Step 1: Simulate adapter resolution
+    const resolvedRequest = {
+      url: "https://crm.example.com/api/v2/contacts/search",
+      method: "POST",
+      headers: {
+        Authorization: "Bearer ***", // Redacted in tests
+        "X-Yoizen-Tenant": TENANT_ID,
+        "Content-Type": "application/json",
+      },
+      timeout_ms: 5000,
+    };
 
-      expect(resolvedRequest.url).toContain("/contacts/search");
-      expect(resolvedRequest.method).toBe("POST");
-      expect(resolvedRequest.headers["X-Yoizen-Tenant"]).toBe(TENANT_ID);
+    expect(resolvedRequest.url).toContain("/contacts/search");
+    expect(resolvedRequest.method).toBe("POST");
+    expect(resolvedRequest.headers["X-Yoizen-Tenant"]).toBe(TENANT_ID);
 
-      // Step 2: Simulate external API response
-      const externalResponse = {
-        results: [
-          { id: "c1", name: "John Doe", email: "john@example.com" },
-          { id: "c2", name: "Jane Smith", email: "jane@example.com" },
-        ],
-        total: 2,
-      };
+    // Step 2: Simulate external API response
+    const externalResponse = {
+      results: [
+        { id: "c1", name: "John Doe", email: "john@example.com" },
+        { id: "c2", name: "Jane Smith", email: "jane@example.com" },
+      ],
+      total: 2,
+    };
 
-      // Step 3: Simulate tool result returned to LLM
-      const toolResult = {
-        success: true,
-        data: externalResponse,
-      };
+    // Step 3: Simulate tool result returned to LLM
+    const toolResult = {
+      success: true,
+      data: externalResponse,
+    };
 
-      expect(toolResult.success).toBe(true);
-      expect(toolResult.data.results).toHaveLength(2);
+    expect(toolResult.success).toBe(true);
+    expect(toolResult.data.results).toHaveLength(2);
 
-      // Step 4: Simulate final agent response
-      const agentResponse =
-        "I found 2 contacts matching your search:\n" +
-        "1. John Doe (john@example.com)\n" +
-        "2. Jane Smith (jane@example.com)";
+    // Step 4: Simulate final agent response
+    const agentResponse =
+      "I found 2 contacts matching your search:\n" +
+      "1. John Doe (john@example.com)\n" +
+      "2. Jane Smith (jane@example.com)";
 
-      expect(agentResponse).toContain("John Doe");
-      expect(agentResponse).toContain("Jane Smith");
-    },
-  );
+    expect(agentResponse).toContain("John Doe");
+    expect(agentResponse).toContain("Jane Smith");
+  });
 
   it("should handle adapter-service unavailability gracefully", async () => {
     /**
@@ -480,52 +477,49 @@ describe("Adapter Tools E2E: Execute Agent with Adapter Tool", () => {
     expect(disabledResult.success).toBe(false);
   });
 
-  it(
-    "should execute full lifecycle: create → publish → execute → verify",
-    async () => {
-      const adminClient = createMockAdminClient();
+  it("should execute full lifecycle: create → publish → execute → verify", async () => {
+    const adminClient = createMockAdminClient();
 
-      // 1. Create agent with adapter tool
-      const agent = await adminClient.createAgent({
-        name: "Lifecycle Agent",
-        description: "Full lifecycle test",
-        systemPrompt: "You manage CRM contacts.",
-        provider: "openai",
-        model: "gpt-4",
-        rules: "Be careful with data.",
-        soul: "Professional.",
-        tools: [
-          {
-            name: "search-contacts",
-            source_type: "adapter",
-            adapter_ref: {
-              adapter_id: "adapter-crm-001",
-              endpoint_id: "ep-search",
-            },
+    // 1. Create agent with adapter tool
+    const agent = await adminClient.createAgent({
+      name: "Lifecycle Agent",
+      description: "Full lifecycle test",
+      systemPrompt: "You manage CRM contacts.",
+      provider: "openai",
+      model: "gpt-4",
+      rules: "Be careful with data.",
+      soul: "Professional.",
+      tools: [
+        {
+          name: "search-contacts",
+          source_type: "adapter",
+          adapter_ref: {
+            adapter_id: "adapter-crm-001",
+            endpoint_id: "ep-search",
           },
-        ],
-        subagents: [],
-      });
+        },
+      ],
+      subagents: [],
+    });
 
-      expect(agent.status).toBe("draft");
+    expect(agent.status).toBe("draft");
 
-      // 2. Publish agent
-      const published = await adminClient.publishAgent(agent.id);
-      expect(published!.status).toBe("published");
+    // 2. Publish agent
+    const published = await adminClient.publishAgent(agent.id);
+    expect(published!.status).toBe("published");
 
-      // 3. Simulate execution (adapter tool call)
-      const executionResult = {
-        success: true,
-        data: { results: [{ id: "c1", name: "Test Contact" }] },
-      };
-      expect(executionResult.success).toBe(true);
+    // 3. Simulate execution (adapter tool call)
+    const executionResult = {
+      success: true,
+      data: { results: [{ id: "c1", name: "Test Contact" }] },
+    };
+    expect(executionResult.success).toBe(true);
 
-      // 4. Verify tool config persisted
-      const stored = await adminClient.getAgent(agent.id);
-      expect(stored!.tools[0].adapter_ref).toEqual({
-        adapter_id: "adapter-crm-001",
-        endpoint_id: "ep-search",
-      });
-    },
-  );
+    // 4. Verify tool config persisted
+    const stored = await adminClient.getAgent(agent.id);
+    expect(stored!.tools[0].adapter_ref).toEqual({
+      adapter_id: "adapter-crm-001",
+      endpoint_id: "ep-search",
+    });
+  });
 });

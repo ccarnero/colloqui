@@ -371,7 +371,8 @@ export function buildYoizenclawAgentModelConfig(
   return {
     provider: normalizeRequiredText(draft.provider),
     model: normalizeRequiredText(draft.model),
-    credential_profile_id: normalizeOptionalText(draft.credentialProfileId) ?? null,
+    credential_profile_id:
+      normalizeOptionalText(draft.credentialProfileId) ?? null,
     rules: normalizeRequiredText(draft.rules),
     soul: normalizeRequiredText(draft.soul),
     subagents: (draft.subagents ?? []).map(buildYoizenclawSubagentConfig),

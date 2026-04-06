@@ -1,16 +1,20 @@
-import { describe, it, expect, beforeEach, vi } from 'bun:test';
-import { Test, TestingModule } from '@nestjs/testing';
+import { describe, it, expect, beforeEach, vi } from "bun:test";
+import { Test, TestingModule } from "@nestjs/testing";
 import {
   AgentsRepository,
   type IAgent,
   type ICreateAgentData,
-} from './agents.repository';
-import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
+} from "../../src/modules/agents/agents.repository";
+import {
+  TenantConnectionManager,
+  type Sql,
+} from "@yoizen/database";
+import { mockSqlSequentialResponses } from "../mock-utils";
 
 // Mock postgres sql tagged template
 const createMockSql = (): Sql => {
   const mockQuery = vi.fn();
-  
+
   const sql = Object.assign(
     (strings: TemplateStringsArray, ...values: unknown[]) => {
       return mockQuery(strings, ...values);
@@ -20,25 +24,26 @@ const createMockSql = (): Sql => {
       json: vi.fn((value: unknown) => JSON.stringify(value)),
       begin: vi.fn(),
       end: vi.fn(),
-    }
+    },
   ) as unknown as Sql;
 
   // Attach the mockQuery to access it in tests
   (sql as unknown as { _mockQuery: typeof mockQuery })._mockQuery = mockQuery;
-  
+
   return sql;
 };
 
-describe('AgentsRepository', () => {
+describe("AgentsRepository", () => {
   let repository: AgentsRepository;
   let mockConnectionManager: TenantConnectionManager;
   let mockSql: Sql;
-  const TENANT_ID = 'tenant-123';
+  const TENANT_ID = "tenant-123";
 
   beforeEach(async () => {
     mockSql = createMockSql();
-    
+
     mockConnectionManager = {
+      ensureSchema: vi.fn(() => Promise.resolve()),
       getConnection: vi.fn().mockReturnValue(mockSql),
     } as unknown as TenantConnectionManager;
 
@@ -55,18 +60,18 @@ describe('AgentsRepository', () => {
     repository = module.get<AgentsRepository>(AgentsRepository);
   });
 
-  describe('findAll', () => {
-    it('should return agents with default pagination', async () => {
+  describe("findAll", () => {
+    it("should return agents with default pagination", async () => {
       const mockAgents: IAgent[] = [
         {
-          id: 'agent-1',
-          name: 'Test Agent 1',
-          description: 'Description 1',
-          system_prompt: 'System prompt 1',
+          id: "agent-1",
+          name: "Test Agent 1",
+          description: "Description 1",
+          system_prompt: "System prompt 1",
           model_config: {},
           tools: [],
           channels: [],
-          status: 'draft',
+          status: "draft",
           is_active: true,
           published_at: null,
           created_at: new Date(),
@@ -74,8 +79,10 @@ describe('AgentsRepository', () => {
         },
       ];
 
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
-      
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
+
       // First call is for count
       mockQuery.mockResolvedValueOnce([{ count: 1 }]);
       // Second call is for agents
@@ -85,21 +92,27 @@ describe('AgentsRepository', () => {
 
       expect(result.agents).toHaveLength(1);
       expect(result.total).toBe(1);
-      expect(mockConnectionManager.getConnection).toHaveBeenCalledWith(TENANT_ID);
+      expect(mockConnectionManager.getConnection).toHaveBeenCalledWith(
+        TENANT_ID,
+      );
     });
 
-    it('should filter by status', async () => {
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
+    it("should filter by status", async () => {
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
       mockQuery.mockResolvedValueOnce([{ count: 0 }]);
       mockQuery.mockResolvedValueOnce([]);
 
-      await repository.findAll(TENANT_ID, { status: 'published' });
+      await repository.findAll(TENANT_ID, { status: "published" });
 
       expect(mockQuery).toHaveBeenCalled();
     });
 
-    it('should use custom limit and offset', async () => {
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
+    it("should use custom limit and offset", async () => {
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
       mockQuery.mockResolvedValueOnce([{ count: 100 }]);
       mockQuery.mockResolvedValueOnce([]);
 
@@ -109,98 +122,106 @@ describe('AgentsRepository', () => {
     });
   });
 
-  describe('findById', () => {
-    it('should return agent by id', async () => {
+  describe("findById", () => {
+    it("should return agent by id", async () => {
       const mockAgent: IAgent = {
-        id: 'agent-1',
-        name: 'Test Agent',
-        description: 'Description',
-        system_prompt: 'System prompt',
+        id: "agent-1",
+        name: "Test Agent",
+        description: "Description",
+        system_prompt: "System prompt",
         model_config: {},
         tools: [],
         channels: [],
-        status: 'draft',
+        status: "draft",
         is_active: true,
         published_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
 
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
       mockQuery.mockResolvedValueOnce([mockAgent]);
 
-      const result = await repository.findById(TENANT_ID, 'agent-1');
+      const result = await repository.findById(TENANT_ID, "agent-1");
 
       expect(result).toEqual(mockAgent);
     });
 
-    it('should return null when agent not found', async () => {
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
+    it("should return null when agent not found", async () => {
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
       mockQuery.mockResolvedValueOnce([]);
 
-      const result = await repository.findById(TENANT_ID, 'non-existent');
+      const result = await repository.findById(TENANT_ID, "non-existent");
 
       expect(result).toBeNull();
     });
   });
 
-  describe('create', () => {
-    it('should create a new agent', async () => {
+  describe("create", () => {
+    it("should create a new agent", async () => {
       const createData: ICreateAgentData = {
-        name: 'New Agent',
-        system_prompt: 'You are a helpful assistant',
-        model_config: { model: 'gpt-4' },
-        tools: [{ type: 'search' }],
-        channels: [{ type: 'webchat' }],
+        name: "New Agent",
+        system_prompt: "You are a helpful assistant",
+        model_config: { model: "gpt-4" },
+        tools: [{ type: "search" }],
+        channels: [{ type: "webchat" }],
       };
 
       const createdAgent: IAgent = {
-        id: 'new-agent-id',
+        id: "new-agent-id",
         name: createData.name,
         description: null,
         system_prompt: createData.system_prompt,
         model_config: createData.model_config!,
         tools: createData.tools!,
         channels: createData.channels!,
-        status: 'draft',
+        status: "draft",
         is_active: true,
         published_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
 
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
       mockQuery.mockResolvedValueOnce([createdAgent]);
 
       const result = await repository.create(TENANT_ID, createData);
 
-      expect(result.id).toBe('new-agent-id');
-      expect(result.status).toBe('draft');
+      expect(result.id).toBe("new-agent-id");
+      expect(result.status).toBe("draft");
       expect(result.is_active).toBe(true);
     });
 
-    it('should create agent with minimal data', async () => {
+    it("should create agent with minimal data", async () => {
       const createData: ICreateAgentData = {
-        name: 'Minimal Agent',
-        system_prompt: 'You are helpful',
+        name: "Minimal Agent",
+        system_prompt: "You are helpful",
       };
 
       const createdAgent: IAgent = {
-        id: 'minimal-id',
+        id: "minimal-id",
         name: createData.name,
         description: null,
         system_prompt: createData.system_prompt,
         model_config: {},
         tools: [],
         channels: [],
-        status: 'draft',
+        status: "draft",
         is_active: true,
         published_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
 
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
       mockQuery.mockResolvedValueOnce([createdAgent]);
 
       const result = await repository.create(TENANT_ID, createData);
@@ -210,159 +231,177 @@ describe('AgentsRepository', () => {
     });
   });
 
-  describe('update', () => {
-    it('should update agent fields', async () => {
+  describe("update", () => {
+    it("should update agent fields", async () => {
       const updatedAgent: IAgent = {
-        id: 'agent-1',
-        name: 'Updated Name',
-        description: 'Updated description',
-        system_prompt: 'Updated prompt',
-        model_config: { model: 'gpt-4' },
+        id: "agent-1",
+        name: "Updated Name",
+        description: "Updated description",
+        system_prompt: "Updated prompt",
+        model_config: { model: "gpt-4" },
         tools: [],
         channels: [],
-        status: 'draft',
+        status: "draft",
         is_active: true,
         published_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
 
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
-      mockQuery.mockResolvedValueOnce([updatedAgent]);
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
+      mockSqlSequentialResponses(mockQuery, [[], [], [updatedAgent]]);
 
-      const result = await repository.update(TENANT_ID, 'agent-1', {
-        name: 'Updated Name',
-        description: 'Updated description',
+      const result = await repository.update(TENANT_ID, "agent-1", {
+        name: "Updated Name",
+        description: "Updated description",
       });
 
       expect(result).toEqual(updatedAgent);
     });
 
-    it('should return null when agent not found', async () => {
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
-      mockQuery.mockResolvedValueOnce([]);
+    it("should return null when agent not found", async () => {
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
+      mockSqlSequentialResponses(mockQuery, [[], []]);
 
-      const result = await repository.update(TENANT_ID, 'non-existent', {
-        name: 'New Name',
+      const result = await repository.update(TENANT_ID, "non-existent", {
+        name: "New Name",
       });
 
       expect(result).toBeNull();
     });
 
-    it('should update status field', async () => {
+    it("should update status field", async () => {
       const updatedAgent: IAgent = {
-        id: 'agent-1',
-        name: 'Test Agent',
+        id: "agent-1",
+        name: "Test Agent",
         description: null,
-        system_prompt: 'Prompt',
+        system_prompt: "Prompt",
         model_config: {},
         tools: [],
         channels: [],
-        status: 'archived',
+        status: "archived",
         is_active: true,
         published_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
 
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
-      mockQuery.mockResolvedValueOnce([updatedAgent]);
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
+      mockSqlSequentialResponses(mockQuery, [[], [updatedAgent]]);
 
-      const result = await repository.update(TENANT_ID, 'agent-1', {
-        status: 'archived',
+      const result = await repository.update(TENANT_ID, "agent-1", {
+        status: "archived",
       });
 
-      expect(result?.status).toBe('archived');
+      expect(result?.status).toBe("archived");
     });
   });
 
-  describe('delete', () => {
-    it('should soft delete agent', async () => {
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
-      mockQuery.mockResolvedValueOnce([{ id: 'agent-1' }]);
+  describe("delete", () => {
+    it("should soft delete agent", async () => {
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
+      mockQuery.mockResolvedValueOnce([{ id: "agent-1" }]);
 
-      const result = await repository.delete(TENANT_ID, 'agent-1');
+      const result = await repository.delete(TENANT_ID, "agent-1");
 
       expect(result).toBe(true);
     });
 
-    it('should return false when agent not found', async () => {
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
+    it("should return false when agent not found", async () => {
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
       mockQuery.mockResolvedValueOnce([]);
 
-      const result = await repository.delete(TENANT_ID, 'non-existent');
+      const result = await repository.delete(TENANT_ID, "non-existent");
 
       expect(result).toBe(false);
     });
   });
 
-  describe('publish', () => {
-    it('should publish agent', async () => {
+  describe("publish", () => {
+    it("should publish agent", async () => {
       const publishedAgent: IAgent = {
-        id: 'agent-1',
-        name: 'Test Agent',
+        id: "agent-1",
+        name: "Test Agent",
         description: null,
-        system_prompt: 'Prompt',
+        system_prompt: "Prompt",
         model_config: {},
         tools: [],
         channels: [],
-        status: 'published',
+        status: "published",
         is_active: true,
         published_at: new Date(),
         created_at: new Date(),
         updated_at: new Date(),
       };
 
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
       mockQuery.mockResolvedValueOnce([publishedAgent]);
 
-      const result = await repository.publish(TENANT_ID, 'agent-1');
+      const result = await repository.publish(TENANT_ID, "agent-1");
 
-      expect(result?.status).toBe('published');
+      expect(result?.status).toBe("published");
       expect(result?.published_at).not.toBeNull();
     });
 
-    it('should return null when agent not found', async () => {
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
+    it("should return null when agent not found", async () => {
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
       mockQuery.mockResolvedValueOnce([]);
 
-      const result = await repository.publish(TENANT_ID, 'non-existent');
+      const result = await repository.publish(TENANT_ID, "non-existent");
 
       expect(result).toBeNull();
     });
   });
 
-  describe('unpublish', () => {
-    it('should unpublish agent', async () => {
+  describe("unpublish", () => {
+    it("should unpublish agent", async () => {
       const unpublishedAgent: IAgent = {
-        id: 'agent-1',
-        name: 'Test Agent',
+        id: "agent-1",
+        name: "Test Agent",
         description: null,
-        system_prompt: 'Prompt',
+        system_prompt: "Prompt",
         model_config: {},
         tools: [],
         channels: [],
-        status: 'draft',
+        status: "draft",
         is_active: true,
         published_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
 
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
       mockQuery.mockResolvedValueOnce([unpublishedAgent]);
 
-      const result = await repository.unpublish(TENANT_ID, 'agent-1');
+      const result = await repository.unpublish(TENANT_ID, "agent-1");
 
-      expect(result?.status).toBe('draft');
+      expect(result?.status).toBe("draft");
       expect(result?.published_at).toBeNull();
     });
 
-    it('should return null when agent not found', async () => {
-      const mockQuery = (mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> })._mockQuery;
+    it("should return null when agent not found", async () => {
+      const mockQuery = (
+        mockSql as unknown as { _mockQuery: ReturnType<typeof vi.fn> }
+      )._mockQuery;
       mockQuery.mockResolvedValueOnce([]);
 
-      const result = await repository.unpublish(TENANT_ID, 'non-existent');
+      const result = await repository.unpublish(TENANT_ID, "non-existent");
 
       expect(result).toBeNull();
     });

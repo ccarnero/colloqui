@@ -1,8 +1,11 @@
-import { Component, inject, signal, OnInit } from "@angular/core";
-import { Router, RouterLink } from "@angular/router";
-import { MatButtonModule } from "@angular/material/button";
-import { MatIconModule } from "@angular/material/icon";
-import { MatMenuModule } from "@angular/material/menu";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  OnInit,
+} from "@angular/core";
+import { RouterLink } from "@angular/router";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import {
@@ -22,11 +25,9 @@ import {
 
 @Component({
   selector: "app-account-list",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterLink,
-    MatButtonModule,
-    MatIconModule,
-    MatMenuModule,
     MatTooltipModule,
     MatProgressSpinnerModule,
     LucideAngularModule,
@@ -230,7 +231,6 @@ export class AccountListComponent implements OnInit {
   protected readonly RefreshCw = RefreshCw;
 
   private readonly channelService = inject(ChannelService);
-  private readonly router = inject(Router);
 
   readonly accounts = signal<IChannelAccount[]>([]);
   readonly loading = signal(true);
@@ -260,9 +260,7 @@ export class AccountListComponent implements OnInit {
 
     this.channelService.deleteAccount(account.id).subscribe({
       next: () => {
-        this.accounts.update((prev) =>
-          prev.filter((a) => a.id !== account.id),
-        );
+        this.accounts.update((prev) => prev.filter((a) => a.id !== account.id));
       },
     });
   }

@@ -3,52 +3,54 @@ import {
   Get,
   Param,
   Query,
-  Headers,
-  BadRequestException,
   NotFoundException,
-} from '@nestjs/common';
-import { ExecutionsService } from './executions.service';
-import { TENANT_HEADER } from '@yoizen/shared';
+  UseGuards,
+} from "@nestjs/common";
+import { clampListLimit, clampListOffset } from "@yoizen/shared";
+import { TenantGuard, TenantId } from "@yoizen/database";
+import { ExecutionsService } from "./executions.service";
+import { ListExecutionsQueryDto } from "./list-executions-query.dto";
 
+/** Paginated execution logs for schedules. */
 @Controller()
+@UseGuards(TenantGuard)
 export class ExecutionsController {
   constructor(private readonly executionsService: ExecutionsService) {}
 
-  @Get('schedules/:scheduleId/executions')
+  @Get("schedules/:scheduleId/executions")
   async findBySchedule(
-    @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Param('scheduleId') scheduleId: string,
-    @Query('status') status?: string,
-    @Query('limit') limitStr?: string,
-    @Query('offset') offsetStr?: string,
+    @TenantId() tenantId: string,
+    @Param("scheduleId") scheduleId: string,
+    @Query() query: ListExecutionsQueryDto,
   ) {
-    if (!tenantId) throw new BadRequestException('Missing x-yoizen-tenant header');
-    const limit = Math.min(Math.max(Number(limitStr) || 50, 1), 500);
-    const offset = Math.max(Number(offsetStr) || 0, 0);
-    return this.executionsService.findByScheduleId(scheduleId, { status, limit, offset }, tenantId);
+    const limit = clampListLimit(query.limit);
+    const offset = clampListOffset(query.offset);
+    return this.executionsService.findByScheduleId(
+      scheduleId,
+      { status: query.status, limit, offset },
+      tenantId,
+    );
   }
 
-  @Get('executions')
+  @Get("executions")
   async findAll(
-    @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Query('status') status?: string,
-    @Query('limit') limitStr?: string,
-    @Query('offset') offsetStr?: string,
+    @TenantId() tenantId: string,
+    @Query() query: ListExecutionsQueryDto,
   ) {
-    if (!tenantId) throw new BadRequestException('Missing x-yoizen-tenant header');
-    const limit = Math.min(Math.max(Number(limitStr) || 50, 1), 500);
-    const offset = Math.max(Number(offsetStr) || 0, 0);
-    return this.executionsService.findAll({ status, limit, offset }, tenantId);
+    const limit = clampListLimit(query.limit);
+    const offset = clampListOffset(query.offset);
+    return this.executionsService.findAll(
+      { status: query.status, limit, offset },
+      tenantId,
+    );
   }
 
-  @Get('executions/:id')
-  async findById(
-    @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Param('id') id: string,
-  ) {
-    if (!tenantId) throw new BadRequestException('Missing x-yoizen-tenant header');
+  @Get("executions/:id")
+  async findById(@TenantId() tenantId: string, @Param("id") id: string) {
     const execution = await this.executionsService.findById(id, tenantId);
-    if (!execution) throw new NotFoundException(`Execution ${id} not found`);
+    if (!execution) {
+      throw new NotFoundException(`Execution ${id} not found`);
+    }
     return execution;
   }
 }

@@ -11,90 +11,128 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
-} from '@nestjs/common';
-import { AdminProxyService } from './admin-proxy.service';
+} from "@nestjs/common";
+import { AdminProxyService } from "./admin-proxy.service";
 import {
   CreateCredentialDto,
   UpdateCredentialDto,
   RotateCredentialDto,
-} from './admin.dto';
-import type { TenantScopedRequest } from '../../types/yoizen-request';
+  AdminCredentialsListQueryDto,
+} from "./admin.dto";
+import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { toOptionalStringQueryParam } from "../../utils/pagination-query.util";
 
-@Controller('admin/credentials')
+@Controller("admin/credentials")
 export class AdminCredentialsController {
   constructor(private readonly proxy: AdminProxyService) {}
 
-  @Get('providers')
+  @Get("providers")
   async getProviders(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
   ): Promise<object> {
-    return this.proxy.proxyRequest('GET', '/admin/credentials/providers', req);
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/admin/credentials/providers",
+      tenantId: req.tenantId,
+    });
   }
 
   @Get()
   async listCredentials(
-    @Req() req: TenantScopedRequest,
-    @Query('provider') provider?: string,
-    @Query('is_active') isActive?: string,
-    @Query('sync_status') syncStatus?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Req() req: ITenantScopedRequest,
+    @Query() query: AdminCredentialsListQueryDto,
   ): Promise<object> {
-    return this.proxy.proxyRequest('GET', '/admin/credentials', req, {
-      query: { provider, is_active: isActive, sync_status: syncStatus, limit, offset },
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/admin/credentials",
+      tenantId: req.tenantId,
+      query: {
+        type: query.type,
+        is_active: query.is_active,
+        limit: toOptionalStringQueryParam(query.limit),
+        offset: toOptionalStringQueryParam(query.offset),
+      },
     });
   }
 
-  @Get(':id')
+  @Get(":id")
   async getCredential(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<object> {
-    return this.proxy.proxyRequest('GET', `/admin/credentials/${id}`, req);
+    return this.proxy.proxy({
+      method: "GET",
+      path: `/admin/credentials/${id}`,
+      tenantId: req.tenantId,
+    });
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createCredential(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
     @Body() body: CreateCredentialDto,
   ): Promise<object> {
-    return this.proxy.proxyRequest('POST', '/admin/credentials', req, { body });
+    return this.proxy.proxy({
+      method: "POST",
+      path: "/admin/credentials",
+      tenantId: req.tenantId,
+      body,
+    });
   }
 
-  @Put(':id')
+  @Put(":id")
   async updateCredential(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
     @Body() body: UpdateCredentialDto,
   ): Promise<object> {
-    return this.proxy.proxyRequest('PUT', `/admin/credentials/${id}`, req, { body });
+    return this.proxy.proxy({
+      method: "PUT",
+      path: `/admin/credentials/${id}`,
+      tenantId: req.tenantId,
+      body,
+    });
   }
 
-  @Delete(':id')
+  @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteCredential(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<void> {
-    await this.proxy.proxyRequest('DELETE', `/admin/credentials/${id}`, req);
+    await this.proxy.proxy({
+      method: "DELETE",
+      path: `/admin/credentials/${id}`,
+      tenantId: req.tenantId,
+    });
   }
 
-  @Put(':id/rotate')
+  @Put(":id/rotate")
   async rotateCredential(
-    @Req() req: TenantScopedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
     @Body() body: RotateCredentialDto,
   ): Promise<object> {
-    return this.proxy.proxyRequest('PUT', `/admin/credentials/${id}/rotate`, req, { body });
+    return this.proxy.proxy({
+      method: "PUT",
+      path: `/admin/credentials/${id}/rotate`,
+      tenantId: req.tenantId,
+      body,
+    });
   }
 
-  @Post('sync')
+  @Post("sync")
   @HttpCode(HttpStatus.ACCEPTED)
   async syncCredentials(
-    @Req() req: TenantScopedRequest,
+    @Req() req: ITenantScopedRequest,
     @Body() body?: object,
   ): Promise<object> {
-    return this.proxy.proxyRequest('POST', '/admin/credentials/sync', req, { body });
+    return this.proxy.proxy({
+      method: "POST",
+      path: "/admin/credentials/sync",
+      tenantId: req.tenantId,
+      body,
+    });
   }
 }

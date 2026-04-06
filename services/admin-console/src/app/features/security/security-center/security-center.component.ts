@@ -1,11 +1,11 @@
-import { Component, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, signal } from "@angular/core";
 import { MatCardModule } from "@angular/material/card";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
 import { ProgressBarComponent } from "../../../shared/components/progress-bar/progress-bar.component";
 import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 
-interface SecurityEventRow {
+interface ISecurityEventRow {
   time: string;
   severity: string;
   summary: string;
@@ -15,6 +15,7 @@ interface SecurityEventRow {
 @Component({
   selector: "app-security-center",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     MatCardModule,
     MatIconModule,
@@ -155,7 +156,7 @@ export class SecurityCenterComponent {
     },
   ]);
 
-  readonly events = signal<SecurityEventRow[]>([
+  readonly events = signal<ISecurityEventRow[]>([
     {
       time: "14:10",
       severity: "medium",

@@ -14,10 +14,7 @@ import { TelegramProvider } from "./telegram/telegram.provider";
 export class ChannelRouter {
   private readonly providers: Map<Channel, IChannelProvider>;
 
-  constructor(
-    metaRegistry: ProviderRegistry,
-    telegram: TelegramProvider,
-  ) {
+  constructor(metaRegistry: ProviderRegistry, telegram: TelegramProvider) {
     this.providers = new Map<Channel, IChannelProvider>();
 
     for (const channel of metaRegistry.channels()) {
@@ -42,9 +39,5 @@ export class ChannelRouter {
       );
     }
     return provider;
-  }
-
-  channels(): Channel[] {
-    return [...this.providers.keys()];
   }
 }

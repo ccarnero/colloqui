@@ -87,10 +87,9 @@ export class ChannelService {
     if (channel) {
       params = params.set("channel", channel);
     }
-    return this.http.get<IChannelAccount[]>(
-      `${this.base}/accounts`,
-      { params },
-    );
+    return this.http.get<IChannelAccount[]>(`${this.base}/accounts`, {
+      params,
+    });
   }
 
   getAccount(id: string): Observable<IChannelAccount> {
@@ -100,10 +99,7 @@ export class ChannelService {
   }
 
   createAccount(body: ICreateAccountDto): Observable<IChannelAccount> {
-    return this.http.post<IChannelAccount>(
-      `${this.base}/accounts`,
-      body,
-    );
+    return this.http.post<IChannelAccount>(`${this.base}/accounts`, body);
   }
 
   updateAccount(
@@ -122,36 +118,25 @@ export class ChannelService {
     );
   }
 
-  sendMessage(
-    accountId: string,
-    body: ISendMessageDto,
-  ): Observable<object> {
+  sendMessage(accountId: string, body: ISendMessageDto): Observable<object> {
     return this.http.post(
       `${this.base}/${encodeURIComponent(accountId)}/messages`,
       body,
     );
   }
 
-  listAutoReplyRules(
-    accountId?: string,
-  ): Observable<IAutoReplyRule[]> {
+  listAutoReplyRules(accountId?: string): Observable<IAutoReplyRule[]> {
     let params = new HttpParams();
     if (accountId) {
       params = params.set("accountId", accountId);
     }
-    return this.http.get<IAutoReplyRule[]>(
-      `${this.base}/auto-reply`,
-      { params },
-    );
+    return this.http.get<IAutoReplyRule[]>(`${this.base}/auto-reply`, {
+      params,
+    });
   }
 
-  createAutoReplyRule(
-    body: ICreateAutoReplyDto,
-  ): Observable<IAutoReplyRule> {
-    return this.http.post<IAutoReplyRule>(
-      `${this.base}/auto-reply`,
-      body,
-    );
+  createAutoReplyRule(body: ICreateAutoReplyDto): Observable<IAutoReplyRule> {
+    return this.http.post<IAutoReplyRule>(`${this.base}/auto-reply`, body);
   }
 
   deleteAutoReplyRule(id: string): Observable<void> {

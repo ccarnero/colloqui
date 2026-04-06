@@ -1,4 +1,10 @@
-import { Component, inject, signal, type OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  type OnInit,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
 import { MatCheckboxModule } from "@angular/material/checkbox";
@@ -9,8 +15,7 @@ import {
 } from "@angular/material/dialog";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatInputModule } from "@angular/material/input";
-import { HttpClient } from "@angular/common/http";
-import { environment } from "../../../../environments/environment";
+import { RoleService } from "../../../core/services/role.service";
 import type {
   ITenantRole,
   ITenantRolePermission,
@@ -31,23 +36,24 @@ const RESOURCES = [
 
 const ACTIONS = ["create", "read", "update", "delete"] as const;
 
-interface PermissionCell {
+interface IPermissionCell {
   resource: string;
   action: string;
   enabled: boolean;
 }
 
-export interface RoleDialogData {
+export interface IRoleDialogData {
   tenantId: string;
   role?: ITenantRole;
 }
 
-export interface RoleDialogResult {
+export interface IRoleDialogResult {
   saved: boolean;
 }
 
 @Component({
   selector: "app-role-dialog",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatDialogModule,
@@ -148,10 +154,10 @@ export interface RoleDialogResult {
   `,
 })
 export class RoleDialogComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly roleService = inject(RoleService);
   private readonly dialogRef =
-    inject<MatDialogRef<RoleDialogComponent, RoleDialogResult>>(MatDialogRef);
-  private readonly data = inject<RoleDialogData>(MAT_DIALOG_DATA);
+    inject<MatDialogRef<RoleDialogComponent, IRoleDialogResult>>(MatDialogRef);
+  private readonly data = inject<IRoleDialogData>(MAT_DIALOG_DATA);
 
   readonly resources = RESOURCES;
   readonly actions = ACTIONS;
@@ -204,11 +210,10 @@ export class RoleDialogComponent implements OnInit {
     }
 
     this.saving.set(true);
-    const baseUrl = `${environment.apiUrl}/auth/tenant-roles`;
 
     if (this.isEdit && this.data.role) {
-      this.http
-        .patch<ITenantRole>(`${baseUrl}/${this.data.role.id}`, {
+      this.roleService
+        .patchRoleRequest(this.data.role.id, {
           name: this.isSystemRole ? undefined : this.name.trim(),
           description: this.description.trim(),
           permissions,
@@ -221,13 +226,13 @@ export class RoleDialogComponent implements OnInit {
           error: () => this.saving.set(false),
         });
     } else {
-      this.http
-        .post<ITenantRole>(baseUrl, {
-          tenant_id: this.data.tenantId,
-          name: this.name.trim(),
-          description: this.description.trim(),
+      this.roleService
+        .createRoleRequest(
+          this.data.tenantId,
+          this.name.trim(),
+          this.description.trim(),
           permissions,
-        })
+        )
         .subscribe({
           next: () => {
             this.saving.set(false);

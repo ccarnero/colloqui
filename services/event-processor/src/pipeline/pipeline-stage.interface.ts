@@ -1,15 +1,15 @@
-import type { EventEnvelope } from '@yoizen/shared';
+import type { EventEnvelope } from "@yoizen/shared";
 
-export interface PipelineContext {
+export interface IPipelineContext {
   subject: string;
   correlationId?: string;
   tenantId?: string;
 }
 
-export interface PipelineStage {
+export interface IPipelineStage {
   readonly order: number;
   process(
     envelope: EventEnvelope,
-    context: PipelineContext,
+    context: IPipelineContext,
   ): Promise<EventEnvelope>;
 }

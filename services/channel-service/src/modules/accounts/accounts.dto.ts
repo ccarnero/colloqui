@@ -1,9 +1,4 @@
-import {
-  IsString,
-  IsIn,
-  IsOptional,
-  IsBoolean,
-} from "class-validator";
+import { IsString, IsIn, IsOptional, IsBoolean } from "class-validator";
 
 export class CreateAccountDto {
   @IsIn(["whatsapp", "instagram", "telegram"])
@@ -79,4 +74,11 @@ export class UpdateAccountDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+/** Query params for `GET /channels/accounts`. */
+export class ListAccountsQueryDto {
+  @IsOptional()
+  @IsIn(["whatsapp", "instagram", "telegram"])
+  channel?: "whatsapp" | "instagram" | "telegram";
 }

@@ -1,38 +1,30 @@
 import {
   Inject,
   Injectable,
-  Logger,
   OnModuleInit,
   OnModuleDestroy,
 } from "@nestjs/common";
 import type { NatsConnection, Subscription } from "nats";
-import type { Sql } from "postgres";
-import type {
-  ChannelEnvelope,
-  AutoReplyRule,
-  Channel,
-} from "@yoizen/shared";
-import {
-  CHANNEL_SUBJECT_PREFIX,
-  CHANNEL_DOMAIN,
-} from "@yoizen/shared";
+import { PinoLoggerService } from "@yoizen/observability";
+import type { ChannelEnvelope, AutoReplyRule, Channel } from "@yoizen/shared";
+import { CHANNEL_SUBJECT_PREFIX, CHANNEL_DOMAIN } from "@yoizen/shared";
 import { NATS_CONNECTION } from "../../providers/nats.provider";
-import { POSTGRES_SQL } from "../../providers/postgres.provider";
 import { EgressService } from "../egress/egress.service";
+import { AutoReplyRepository } from "./auto-reply.repository";
+import { matchAutoReplyPattern } from "./auto-reply.pattern";
 
-interface RuleRow {
-  id: string;
-  tenant_id: string;
-  account_id: string;
-  channel: string;
-  trigger_pattern: string;
-  reply_text: string;
-  is_active: boolean;
+/** Options for creating an auto-reply rule. */
+interface ICreateRuleOptions {
+  tenantId: string;
+  accountId: string;
+  channel: Channel;
+  triggerPattern: string;
+  replyText: string;
 }
 
 @Injectable()
 export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(AutoReplyService.name);
+  private readonly logger = new PinoLoggerService(AutoReplyService.name);
   private subscription: Subscription | null = null;
 
   private readonly rulesCache = new Map<string, AutoReplyRule[]>();
@@ -40,7 +32,7 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
-    @Inject(POSTGRES_SQL) private readonly sql: Sql,
+    private readonly autoReplyRepository: AutoReplyRepository,
     private readonly egress: EgressService,
   ) {}
 
@@ -48,7 +40,12 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
     await this.refreshRulesCache();
 
     this.cacheRefreshInterval = setInterval(
-      () => this.refreshRulesCache().catch(() => {}),
+      () =>
+        this.refreshRulesCache().catch((err: unknown) => {
+          this.logger.warn(
+            `Rules cache refresh failed: ${err instanceof Error ? err.message : err}`,
+          );
+        }),
       30_000,
     );
 
@@ -87,7 +84,9 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
     if (!rules || rules.length === 0) return;
 
     const matchedRule = rules.find((rule) =>
-      this.matchPattern(text, rule.triggerPattern),
+      matchAutoReplyPattern(text, rule.triggerPattern, (msg) =>
+        this.logger.warn(msg),
+      ),
     );
 
     if (!matchedRule) return;
@@ -106,28 +105,8 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private matchPattern(text: string, pattern: string): boolean {
-    if (pattern === "*") return true;
-
-    const lowerText = text.toLowerCase();
-    const lowerPattern = pattern.toLowerCase();
-
-    if (lowerPattern.startsWith("regex:")) {
-      try {
-        const regex = new RegExp(lowerPattern.slice(6), "i");
-        return regex.test(text);
-      } catch {
-        return false;
-      }
-    }
-
-    return lowerText.includes(lowerPattern);
-  }
-
   private async refreshRulesCache(): Promise<void> {
-    const rows = await this.sql<RuleRow[]>`
-      SELECT * FROM auto_reply_rules WHERE is_active = true
-    `;
+    const rows = await this.autoReplyRepository.loadActiveRules();
 
     this.rulesCache.clear();
 
@@ -154,19 +133,18 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Auto-reply rules cache refreshed: ${rows.length} rules`);
   }
 
-  async createRule(
-    tenantId: string,
-    accountId: string,
-    channel: Channel,
-    triggerPattern: string,
-    replyText: string,
-  ): Promise<AutoReplyRule> {
+  async createRule(options: ICreateRuleOptions): Promise<AutoReplyRule> {
+    const { tenantId, accountId, channel, triggerPattern, replyText } = options;
     const id = crypto.randomUUID();
 
-    await this.sql`
-      INSERT INTO auto_reply_rules (id, tenant_id, account_id, channel, trigger_pattern, reply_text)
-      VALUES (${id}, ${tenantId}, ${accountId}, ${channel}, ${triggerPattern}, ${replyText})
-    `;
+    await this.autoReplyRepository.insertRule({
+      id,
+      tenantId,
+      accountId,
+      channel,
+      triggerPattern,
+      replyText,
+    });
 
     const rule: AutoReplyRule = {
       id,
@@ -193,17 +171,10 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
     tenantId: string,
     accountId?: string,
   ): Promise<AutoReplyRule[]> {
-    const rows = accountId
-      ? await this.sql<RuleRow[]>`
-          SELECT * FROM auto_reply_rules
-          WHERE tenant_id = ${tenantId} AND account_id = ${accountId}
-          ORDER BY created_at ASC
-        `
-      : await this.sql<RuleRow[]>`
-          SELECT * FROM auto_reply_rules
-          WHERE tenant_id = ${tenantId}
-          ORDER BY created_at ASC
-        `;
+    const rows = await this.autoReplyRepository.listRulesForTenant(
+      tenantId,
+      accountId,
+    );
 
     return rows.map((row) => ({
       id: row.id,
@@ -217,10 +188,10 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
   }
 
   async deleteRule(tenantId: string, ruleId: string): Promise<boolean> {
-    const result = await this.sql`
-      DELETE FROM auto_reply_rules
-      WHERE id = ${ruleId} AND tenant_id = ${tenantId}
-    `;
+    const result = await this.autoReplyRepository.deleteRule(
+      tenantId,
+      ruleId,
+    );
 
     if (result.count > 0) {
       await this.refreshRulesCache();
