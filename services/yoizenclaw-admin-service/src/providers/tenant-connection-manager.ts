@@ -103,8 +103,12 @@ export class TenantConnectionManager implements OnModuleDestroy {
         CREATE TABLE IF NOT EXISTS credentials (
           id UUID PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
-          type VARCHAR(50) NOT NULL CHECK (type IN ('api_key', 'oauth', 'basic', 'custom')),
-          value TEXT NOT NULL,
+          provider VARCHAR(50) NOT NULL CHECK (provider IN ('openai', 'anthropic', 'google', 'google-vertex', 'bedrock', 'groq', 'mistral', 'openrouter', 'xai', 'cohere', 'cerebras', 'huggingface', 'mock')),
+          schema_version INTEGER NOT NULL DEFAULT 1,
+          payload JSONB NOT NULL DEFAULT '{}',
+          sync_status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (sync_status IN ('pending', 'synced', 'failed', 'manual_review_required')),
+          last_sync_at TIMESTAMPTZ,
+          sync_error TEXT,
           is_encrypted BOOLEAN DEFAULT false,
           metadata JSONB DEFAULT '{}',
           expires_at TIMESTAMPTZ,
@@ -112,6 +116,27 @@ export class TenantConnectionManager implements OnModuleDestroy {
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
+
+        -- Idempotent migration for existing tenant schemas
+        -- Add new provider-aware columns if they don't exist
+        ALTER TABLE IF EXISTS credentials ADD COLUMN IF NOT EXISTS provider VARCHAR(50) CHECK (provider IN ('openai', 'anthropic', 'google', 'google-vertex', 'bedrock', 'groq', 'mistral', 'openrouter', 'xai', 'cohere', 'cerebras', 'huggingface', 'mock'));
+        ALTER TABLE IF EXISTS credentials ADD COLUMN IF NOT EXISTS schema_version INTEGER DEFAULT 1;
+        ALTER TABLE IF EXISTS credentials ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT '{}';
+        ALTER TABLE IF EXISTS credentials ADD COLUMN IF NOT EXISTS sync_status VARCHAR(50) DEFAULT 'pending' CHECK (sync_status IN ('pending', 'synced', 'failed', 'manual_review_required'));
+        ALTER TABLE IF EXISTS credentials ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMPTZ;
+        ALTER TABLE IF EXISTS credentials ADD COLUMN IF NOT EXISTS sync_error TEXT;
+        ALTER TABLE IF EXISTS credentials ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT false;
+        ALTER TABLE IF EXISTS credentials ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
+        ALTER TABLE IF EXISTS credentials ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
+        -- Remove legacy columns from existing tables (no-op if they don't exist)
+        ALTER TABLE IF EXISTS credentials DROP COLUMN IF EXISTS type;
+        ALTER TABLE IF EXISTS credentials DROP COLUMN IF EXISTS config;
+        ALTER TABLE IF EXISTS credentials DROP COLUMN IF EXISTS value;
+
+        -- Index for sync status queries
+        CREATE INDEX IF NOT EXISTS idx_credentials_sync_status ON credentials(sync_status) WHERE is_active = true;
+        CREATE INDEX IF NOT EXISTS idx_credentials_provider ON credentials(provider) WHERE is_active = true;
 
         CREATE TABLE IF NOT EXISTS jobs (
           id UUID PRIMARY KEY,

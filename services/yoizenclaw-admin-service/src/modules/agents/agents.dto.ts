@@ -160,6 +160,16 @@ export class ListAgentsQueryDto {
   offset?: number;
 }
 
+export class ChatContextEntryDto {
+  @IsString()
+  @IsIn(['customer', 'agent'])
+  sender!: 'customer' | 'agent';
+
+  @IsString()
+  @IsNotEmpty()
+  content!: string;
+}
+
 export class ChatRequestDto {
   @IsString()
   @IsNotEmpty()
@@ -173,13 +183,47 @@ export class ChatRequestDto {
   @IsOptional()
   customerName?: string;
 
+  @IsString()
+  @IsOptional()
+  userId?: string;
+
+  @IsString()
+  @IsOptional()
+  channel?: string;
+
   @IsArray()
   @IsOptional()
-  @Type(() => Array)
-  context?: Array<{ sender: 'customer' | 'agent'; content: string }>;
+  @ValidateNested({ each: true })
+  @Type(() => ChatContextEntryDto)
+  context?: ChatContextEntryDto[];
 }
 
 export class ChatResponseDto {
   reply!: string;
   tool_calls?: unknown[];
+}
+
+export class MemoryProposalParamDto {
+  @IsString()
+  @IsNotEmpty()
+  id!: string;
+}
+
+export class MemoryProposalDto {
+  id!: string;
+  kind?: string;
+  title?: string;
+  content_excerpt?: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export class MemoryProposalListResponseDto {
+  proposals!: MemoryProposalDto[];
+}
+
+export class MemoryProposalActionResponseDto {
+  success!: boolean;
+  proposal?: MemoryProposalDto;
 }

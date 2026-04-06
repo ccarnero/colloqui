@@ -3,8 +3,16 @@ import { TENANT_HEADER } from '@yoizen/shared';
 import { tracedFetch } from '@yoizen/observability';
 import { gatewayConfig } from '../../config/gateway.config';
 import { throwProxyError } from '../../utils/proxy-error.util';
+import { setTrustedUserIdHeader } from '../../utils/trusted-user-header.util';
+import type { TenantScopedRequest } from '../../types/yoizen-request';
 
 const PROXY_TIMEOUT_MS = 30_000;
+
+interface ProxyRequestOptions {
+  query?: Record<string, string | undefined>;
+  body?: unknown;
+  trustedUserId?: string;
+}
 
 @Injectable()
 export class AdminProxyService {
@@ -13,6 +21,28 @@ export class AdminProxyService {
 
   constructor() {
     this.baseUrl = gatewayConfig.services.admin;
+  }
+
+  /**
+   * Forwards a request to the yoizenclaw-admin-service.
+   * Extracts tenantId and auth header from the incoming request automatically.
+   */
+  async proxyRequest(
+    method: string,
+    path: string,
+    req: TenantScopedRequest,
+    options: ProxyRequestOptions = {},
+  ): Promise<object> {
+    const authHeader = req.headers['authorization'] as string | undefined;
+    return this.proxy(
+      method,
+      path,
+      req.tenantId,
+      options.query,
+      options.body,
+      options.trustedUserId,
+      authHeader,
+    );
   }
 
   /**
@@ -30,6 +60,8 @@ export class AdminProxyService {
     tenantId: string,
     query?: Record<string, string | undefined>,
     body?: unknown,
+    trustedUserId?: string,
+    authHeader?: string,
   ): Promise<object> {
     const qs = new URLSearchParams();
     if (query) {
@@ -43,6 +75,10 @@ export class AdminProxyService {
     const headers: Record<string, string> = {
       [TENANT_HEADER]: tenantId,
     };
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
+    }
+    setTrustedUserIdHeader(headers, trustedUserId);
 
     const init: RequestInit = {
       method,

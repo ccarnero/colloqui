@@ -1,5 +1,5 @@
-"""Compatibility package for legacy src.core imports."""
+"""Compatibility package for src.core imports."""
 
-from src.application.memory.memory_factory import create_memory
+from src.app.memory.memory_factory import create_memory
 
 __all__ = ["create_memory"]

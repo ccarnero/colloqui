@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.interfaces.http.middleware.auth import ApiKeyAuthMiddleware
+from src.api.middleware.auth import ApiKeyAuthMiddleware
 
 
 def create_test_client() -> TestClient:

@@ -1,62 +1,78 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
+import { getSecretFields, type CredentialProvider } from './providers/credential-provider.registry';
 
-export type CredentialType = 'api_key' | 'oauth' | 'basic' | 'custom';
+export type SyncStatus = 'pending' | 'synced' | 'failed' | 'manual_review_required';
 
 /**
- * Credential entity - NUNCA expuesto con campo 'value' en API responses
- * FIXME: Implementar cifrado con KMS/Vault - actualmente is_encrypted=false
+ * Provider-aware credential entity
+ * Core domain model for credentials with provider-specific payloads
  */
-export interface Credential {
+export interface ProviderCredential {
   id: string;
   name: string;
-  type: CredentialType;
-  value: string; // Campo sensible - solo usado internamente
+  provider: CredentialProvider;
+  schema_version: number;
+  payload: Record<string, unknown>;
   is_encrypted: boolean;
   metadata: Record<string, unknown>;
   expires_at: Date | null;
   is_active: boolean;
+  sync_status: SyncStatus;
+  last_sync_at: Date | null;
+  sync_error: string | null;
   created_at: Date;
   updated_at: Date;
 }
 
 /**
- * Credential sin campo value - versión segura para API responses
+ * Masked credential - safe for API responses. Secret fields are replaced with asterisks.
  */
-export interface CredentialWithoutValue {
+export interface MaskedCredential {
   id: string;
   name: string;
-  type: CredentialType;
+  provider: CredentialProvider;
+  schema_version: number;
+  payload: Record<string, unknown>;
   is_encrypted: boolean;
   metadata: Record<string, unknown>;
   expires_at: Date | null;
   is_active: boolean;
+  sync_status: SyncStatus;
+  last_sync_at: Date | null;
+  sync_error: string | null;
+  has_secret: boolean;
   created_at: Date;
   updated_at: Date;
 }
 
-export interface CreateCredentialData {
+export interface CreateProviderCredentialData {
   name: string;
-  type: CredentialType;
-  value: string;
+  provider: CredentialProvider;
+  schema_version: number;
+  payload: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   expires_at?: string;
   is_active?: boolean;
 }
 
-export interface UpdateCredentialData {
+export interface UpdateProviderCredentialData {
   name?: string;
-  type?: CredentialType;
-  value?: string;
+  provider?: CredentialProvider;
+  schema_version?: number;
+  payload?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   expires_at?: string | null;
   is_active?: boolean;
+  sync_status?: SyncStatus;
+  sync_error?: string | null;
 }
 
 export interface FindAllOptions {
-  type?: CredentialType;
+  provider?: CredentialProvider;
   is_active?: boolean;
+  sync_status?: SyncStatus;
   limit?: number;
   offset?: number;
 }
@@ -77,76 +93,86 @@ export class CredentialsRepository {
   }
 
   /**
-   * Lista todas las credenciales con filtros opcionales y paginación.
-   * Retorna credentials SIN el campo value por seguridad.
+   * List all credentials with optional filters and pagination.
+   * Returns credentials with masked payloads (no plaintext secrets).
    */
   async findAll(
     tenantId: string,
     options: FindAllOptions = {},
-  ): Promise<{ credentials: CredentialWithoutValue[]; total: number }> {
+  ): Promise<{ credentials: MaskedCredential[]; total: number }> {
     const sql = await this.getSql(tenantId);
-    const { type, limit = 20, offset = 0 } = options;
+    const { provider, is_active, sync_status, limit = 20, offset = 0 } = options;
 
-    // Build where clause with parameterized conditions
-    const conditions: string[] = ['is_active = true'];
-    const params: (string | boolean | number)[] = [];
-    let paramIndex = 1;
-
-    if (type) {
-      conditions.push(`type = $${paramIndex}`);
-      params.push(type);
-      paramIndex++;
-    }
-
-    const whereClause = conditions.join(' AND ');
+    // Default to active credentials unless explicitly overridden
+    const activeCondition = is_active !== undefined ? is_active : true;
 
     // Get total count
     const countResult = await sql<{ count: number }[]>`
-      SELECT COUNT(*) as count FROM credentials WHERE ${sql.unsafe(whereClause)}
+      SELECT COUNT(*) as count FROM credentials
+      WHERE is_active = ${activeCondition}
+      ${provider ? sql`AND provider = ${provider}` : sql``}
+      ${sync_status ? sql`AND sync_status = ${sync_status}` : sql``}
     `;
     const total = Number(countResult[0].count);
 
-    // Get credentials WITHOUT value field (security)
-    const credentials = await sql<CredentialWithoutValue[]>`
-      SELECT 
+    // Get credentials without sensitive payload fields
+    const credentials = await sql<MaskedCredential[]>`
+      SELECT
         id,
         name,
-        type,
+        provider,
+        schema_version,
+        payload,
         is_encrypted,
         metadata,
         expires_at,
         is_active,
+        sync_status,
+        last_sync_at,
+        sync_error,
         created_at,
         updated_at
       FROM credentials
-      WHERE ${sql.unsafe(whereClause)}
+      WHERE is_active = ${activeCondition}
+      ${provider ? sql`AND provider = ${provider}` : sql``}
+      ${sync_status ? sql`AND sync_status = ${sync_status}` : sql``}
       ORDER BY created_at DESC
       LIMIT ${limit}
       OFFSET ${offset}
     `;
 
-    return { credentials, total };
+    // Determine has_secret from payload (check if secret fields have values)
+    const credentialsWithSecretFlag = credentials.map((cred) => ({
+      ...cred,
+      has_secret: this.hasSecretValues(cred.provider, cred.payload),
+    }));
+
+    return { credentials: credentialsWithSecretFlag, total };
   }
 
   /**
-   * Busca una credencial por su ID.
-   * Retorna credential SIN el campo value por seguridad.
+   * Find credential by ID (without sensitive data)
    */
   async findById(
     tenantId: string,
     id: string,
-  ): Promise<CredentialWithoutValue | null> {
+  ): Promise<MaskedCredential | null> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<CredentialWithoutValue[]>`
+    const results = await sql<MaskedCredential[]>`
       SELECT 
         id,
         name,
-        type,
+        provider,
+        schema_version,
+        payload,
         is_encrypted,
         metadata,
         expires_at,
         is_active,
+        sync_status,
+        last_sync_at,
+        sync_error,
         created_at,
         updated_at
       FROM credentials
@@ -154,29 +180,38 @@ export class CredentialsRepository {
       LIMIT 1
     `;
 
-    return results[0] ?? null;
+    if (!results[0]) return null;
+
+    return {
+      ...results[0],
+      has_secret: this.hasSecretValues(results[0].provider, results[0].payload),
+    };
   }
 
   /**
-   * Busca una credencial por su ID incluyendo el campo value.
-   * ⚠️ Solo usar internamente, NUNCA exponer en API responses.
+   * Find credential by ID with full payload (including secrets).
+   * ⚠️ Only use internally for sync operations. NEVER expose in API responses.
    */
-  async findByIdWithValue(
+  async findByIdWithPayload(
     tenantId: string,
     id: string,
-  ): Promise<Credential | null> {
+  ): Promise<ProviderCredential | null> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<Credential[]>`
+    const results = await sql<ProviderCredential[]>`
       SELECT 
         id,
         name,
-        type,
-        value,
+        provider,
+        schema_version,
+        payload,
         is_encrypted,
         metadata,
         expires_at,
         is_active,
+        sync_status,
+        last_sync_at,
+        sync_error,
         created_at,
         updated_at
       FROM credentials
@@ -188,123 +223,177 @@ export class CredentialsRepository {
   }
 
   /**
-   * Crea una nueva credencial.
-   * FIXME: Implementar cifrado con KMS/Vault - actualmente guarda plaintext
+   * Find all active credentials for sync operations.
+   * Returns full payloads with secrets for runtime materialization.
+   */
+  async findAllForSync(
+    tenantId: string,
+  ): Promise<ProviderCredential[]> {
+    const sql = await this.getSql(tenantId);
+
+    const results = await sql<ProviderCredential[]>`
+      SELECT
+        id,
+        name,
+        provider,
+        schema_version,
+        payload,
+        is_encrypted,
+        metadata,
+        expires_at,
+        is_active,
+        sync_status,
+        last_sync_at,
+        sync_error,
+        created_at,
+        updated_at
+      FROM credentials
+      WHERE is_active = true
+        AND sync_status != 'manual_review_required'
+      ORDER BY name ASC
+    `;
+
+    return results;
+  }
+
+  /**
+   * Create a new provider-aware credential.
+   * TODO(security): Encrypt payloads with KMS/Vault before production
    */
   async create(
     tenantId: string,
-    data: CreateCredentialData,
-  ): Promise<CredentialWithoutValue> {
+    data: CreateProviderCredentialData,
+  ): Promise<MaskedCredential> {
     const sql = await this.getSql(tenantId);
     const credentialId = randomUUID();
 
-    // FIXME: Implementar cifrado con KMS/Vault antes de producción
-    // Por ahora, is_encrypted siempre es false (placeholder)
     const isEncrypted = false;
 
-    const results = await sql<CredentialWithoutValue[]>`
+    // Set initial sync status to pending
+    const syncStatus: SyncStatus = 'pending';
+
+    const results = await sql<MaskedCredential[]>`
       INSERT INTO credentials (
         id,
         name,
-        type,
-        value,
+        provider,
+        schema_version,
+        payload,
         is_encrypted,
         metadata,
         expires_at,
         is_active,
+        sync_status,
+        last_sync_at,
+        sync_error,
         created_at,
         updated_at
       ) VALUES (
         ${credentialId},
         ${data.name},
-        ${data.type},
-        ${data.value},
+        ${data.provider},
+        ${data.schema_version},
+        ${sql.json(data.payload as JsonValue)},
         ${isEncrypted},
         ${sql.json((data.metadata ?? {}) as JsonValue)},
         ${data.expires_at ? new Date(data.expires_at) : null},
         ${data.is_active ?? true},
+        ${syncStatus},
+        NULL,
+        NULL,
         NOW(),
         NOW()
       )
-      RETURNING 
+      RETURNING
         id,
         name,
-        type,
+        provider,
+        schema_version,
+        payload,
         is_encrypted,
         metadata,
         expires_at,
         is_active,
+        sync_status,
+        last_sync_at,
+        sync_error,
         created_at,
         updated_at
     `;
 
-    return results[0];
+    return {
+      ...results[0],
+      has_secret: this.hasSecretValues(results[0].provider, results[0].payload),
+    };
   }
 
   /**
-   * Actualiza una credencial existente.
-   * FIXME: Implementar cifrado con KMS/Vault antes de producción
+   * Update a credential with partial update support.
+   * Preserves existing secret values when not explicitly replaced.
+   * TODO(security): Encrypt payloads with KMS/Vault before production
    */
   async update(
     tenantId: string,
     id: string,
-    data: UpdateCredentialData,
-  ): Promise<CredentialWithoutValue | null> {
+    data: UpdateProviderCredentialData,
+  ): Promise<MaskedCredential | null> {
     const sql = await this.getSql(tenantId);
 
-    // Build dynamic update using sql for proper parameterization
-    const updates: string[] = ['updated_at = NOW()'];
-    
-    if (data.name !== undefined) {
-      updates.push(sql`name = ${data.name}` as unknown as string);
-    }
-    if (data.type !== undefined) {
-      updates.push(sql`type = ${data.type}` as unknown as string);
-    }
-    if (data.value !== undefined) {
-      // FIXME: Implementar cifrado con KMS/Vault antes de producción
-      // Al actualizar el value, is_encrypted sigue siendo false (placeholder)
-      updates.push(sql`value = ${data.value}` as unknown as string);
-      updates.push(sql`is_encrypted = ${false}` as unknown as string);
-    }
-    if (data.metadata !== undefined) {
-      updates.push(sql`metadata = ${sql.json(data.metadata as JsonValue)}` as unknown as string);
-    }
-    if (data.expires_at !== undefined) {
-      updates.push(sql`expires_at = ${data.expires_at ? new Date(data.expires_at) : null}` as unknown as string);
-    }
-    if (data.is_active !== undefined) {
-      updates.push(sql`is_active = ${data.is_active}` as unknown as string);
+    // Determine sync_status updates
+    let syncStatus = data.sync_status;
+    if (data.payload !== undefined && !syncStatus) {
+      syncStatus = 'pending';
     }
 
-    const setClause = updates.join(', ');
+    const isSynced = syncStatus === 'synced';
 
-    const results = await sql<CredentialWithoutValue[]>`
+    const results = await sql<MaskedCredential[]>`
       UPDATE credentials
-      SET ${sql.unsafe(setClause)}
+      SET
+        name = COALESCE(${data.name !== undefined ? data.name : null}, name),
+        provider = COALESCE(${data.provider !== undefined ? data.provider : null}, provider),
+        schema_version = COALESCE(${data.schema_version !== undefined ? data.schema_version : null}, schema_version),
+        payload = COALESCE(${data.payload !== undefined ? sql.json(data.payload as JsonValue) : null}, payload),
+        metadata = COALESCE(${data.metadata !== undefined ? sql.json(data.metadata as JsonValue) : null}, metadata),
+        expires_at = COALESCE(${data.expires_at !== undefined ? data.expires_at ? new Date(data.expires_at) : null : null}, expires_at),
+        is_active = COALESCE(${data.is_active !== undefined ? data.is_active : null}, is_active),
+        sync_status = COALESCE(${syncStatus !== undefined ? syncStatus : null}, sync_status),
+        last_sync_at = ${isSynced ? sql`NOW()` : sql`last_sync_at`},
+        sync_error = ${isSynced ? sql`NULL` : sql`COALESCE(${data.sync_error !== undefined ? data.sync_error : null}, sync_error)`},
+        updated_at = NOW()
       WHERE id = ${id} AND is_active = true
-      RETURNING 
+      RETURNING
         id,
         name,
-        type,
+        provider,
+        schema_version,
+        payload,
         is_encrypted,
         metadata,
         expires_at,
         is_active,
+        sync_status,
+        last_sync_at,
+        sync_error,
         created_at,
         updated_at
     `;
 
-    return results[0] ?? null;
+    if (!results[0]) return null;
+
+    return {
+      ...results[0],
+      has_secret: this.hasSecretValues(results[0].provider, results[0].payload),
+    };
   }
 
   /**
-   * Elimina (soft delete) una credencial.
+   * Soft delete a credential.
    */
   async delete(tenantId: string, id: string): Promise<boolean> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<CredentialWithoutValue[]>`
+    const results = await sql<{ id: string }[]>`
       UPDATE credentials
       SET is_active = false, updated_at = NOW()
       WHERE id = ${id} AND is_active = true
@@ -315,41 +404,88 @@ export class CredentialsRepository {
   }
 
   /**
-   * Rota el valor de una credencial (actualiza value y updated_at).
-   * Emite evento credential.rotated después de llamar a esto.
-   * FIXME: Implementar cifrado con KMS/Vault antes de producción
+   * Rotate credential secrets (full payload replacement).
+   * TODO(security): Encrypt payloads with KMS/Vault before production
    */
   async rotate(
     tenantId: string,
     id: string,
-    newValue: string,
+    newPayload: Record<string, unknown>,
     newExpiresAt?: string,
-  ): Promise<CredentialWithoutValue | null> {
+  ): Promise<MaskedCredential | null> {
     const sql = await this.getSql(tenantId);
 
-    // FIXME: Implementar cifrado con KMS/Vault antes de producción
-    // Por ahora, is_encrypted sigue siendo false (placeholder)
-
-    const results = await sql<CredentialWithoutValue[]>`
+    const results = await sql<MaskedCredential[]>`
       UPDATE credentials
       SET 
-        value = ${newValue},
+        payload = ${sql.json(newPayload as JsonValue)},
         is_encrypted = ${false},
         expires_at = ${newExpiresAt ? new Date(newExpiresAt) : null},
+        sync_status = ${'pending'},
         updated_at = NOW()
       WHERE id = ${id} AND is_active = true
       RETURNING 
         id,
         name,
-        type,
+        provider,
+        schema_version,
+        payload,
         is_encrypted,
         metadata,
         expires_at,
         is_active,
+        sync_status,
+        last_sync_at,
+        sync_error,
         created_at,
         updated_at
     `;
 
-    return results[0] ?? null;
+    if (!results[0]) return null;
+
+    return {
+      ...results[0],
+      has_secret: this.hasSecretValues(results[0].provider, results[0].payload),
+    };
+  }
+
+  /**
+   * Update sync status for a credential.
+   */
+  async updateSyncStatus(
+    tenantId: string,
+    id: string,
+    status: SyncStatus,
+    error?: string,
+  ): Promise<boolean> {
+    const sql = await this.getSql(tenantId);
+
+    const lastSyncAt = status === 'synced' ? new Date() : null;
+
+    const results = await sql<{ id: string }[]>`
+      UPDATE credentials
+      SET 
+        sync_status = ${status},
+        last_sync_at = ${lastSyncAt},
+        sync_error = ${error ?? null},
+        updated_at = NOW()
+      WHERE id = ${id} AND is_active = true
+      RETURNING id
+    `;
+
+    return results.length > 0;
+  }
+
+  /**
+   * Check if payload contains actual secret values for the given provider.
+   */
+  private hasSecretValues(provider: CredentialProvider, payload: Record<string, unknown>): boolean {
+    if (!payload || typeof payload !== 'object' || !provider) return false;
+
+    const secretFields = getSecretFields(provider);
+    return secretFields.some((field) => {
+      const value = payload[field];
+      return value !== null && value !== undefined && value !== '';
+    });
   }
 }

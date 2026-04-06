@@ -17,6 +17,7 @@ import { RuntimeModule } from './modules/runtime/runtime.module';
 import { HealthModule } from './modules/health/health.module';
 import { TemplatesModule } from './modules/templates/templates.module';
 import { AdaptersModule } from './modules/adapters/adapters.module';
+import { MemoriesModule } from './modules/memories/memories.module';
 
 @Global()
 @Module({
@@ -30,6 +31,7 @@ import { AdaptersModule } from './modules/adapters/adapters.module';
     HealthModule,
     TemplatesModule,
     AdaptersModule,
+    MemoriesModule,
   ],
   providers: [
     lazyNatsProvider,

@@ -16,6 +16,7 @@ import { DynamicRouteCacheService } from './modules/dynamic-routes/dynamic-route
 import { JwtService } from './modules/auth/jwt.service';
 import { RateLimitService } from './modules/rate-limit/rate-limit.service';
 import { JETSTREAM } from './providers/nats.provider';
+import { buildForwardHeaders } from './utils/trusted-user-header.util';
 import {
   TENANT_HEADER,
   GATEWAY_AUDIT_SUBJECT,
@@ -225,11 +226,7 @@ async function bootstrap(): Promise<void> {
 
         const proxyStart = performance.now();
 
-        const upstreamHeaders: Record<string, string> = {};
-        for (const [key, val] of Object.entries(req.headers)) {
-          if (key === 'host' || key === 'connection' || key === 'transfer-encoding') continue;
-          if (typeof val === 'string') upstreamHeaders[key] = val;
-        }
+        const upstreamHeaders = buildForwardHeaders(req.headers, yReq.__jwtSubject);
 
         const init: RequestInit = {
           method: req.method,

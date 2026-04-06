@@ -1,4 +1,158 @@
 // ---------------------------------------------------------------------------
+// Provider-aware credential types for YoizenClaw
+// ---------------------------------------------------------------------------
+
+/** Supported LLM providers for credentials */
+export type YoizenclawCredentialProvider =
+  | "openai"
+  | "anthropic"
+  | "google"
+  | "google-vertex"
+  | "bedrock"
+  | "groq"
+  | "mistral"
+  | "openrouter"
+  | "xai"
+  | "cohere"
+  | "cerebras"
+  | "huggingface"
+  | "mock";
+
+/** All supported providers as array */
+export const YOIZENCLAW_CREDENTIAL_PROVIDERS: YoizenclawCredentialProvider[] = [
+  "openai",
+  "anthropic",
+  "google",
+  "google-vertex",
+  "bedrock",
+  "groq",
+  "mistral",
+  "openrouter",
+  "xai",
+  "cohere",
+  "cerebras",
+  "huggingface",
+  "mock",
+];
+
+/** Human-readable provider names */
+export const YOIZENCLAW_PROVIDER_DISPLAY_NAMES: Record<YoizenclawCredentialProvider, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google AI (Gemini)",
+  "google-vertex": "Google Vertex AI",
+  bedrock: "AWS Bedrock",
+  groq: "Groq",
+  mistral: "Mistral AI",
+  openrouter: "OpenRouter",
+  xai: "xAI (Grok)",
+  cohere: "Cohere",
+  cerebras: "Cerebras",
+  huggingface: "Hugging Face",
+  mock: "Mock Provider",
+};
+
+/** Sync status for credentials */
+export type YoizenclawCredentialSyncStatus =
+  | "pending"
+  | "synced"
+  | "failed"
+  | "manual_review_required";
+
+/** Provider field definition for dynamic form rendering */
+export interface IYoizenclawProviderField {
+  name: string;
+  type: "string" | "url" | "enum" | "json";
+  required: boolean;
+  secret: boolean;
+  description: string;
+  placeholder?: string;
+  options?: string[];
+}
+
+/** Provider schema definition */
+export interface IYoizenclawProviderSchema {
+  provider: YoizenclawCredentialProvider;
+  display_name: string;
+  description: string;
+  fields: IYoizenclawProviderField[];
+}
+
+/** Provider-aware credential profile */
+export interface IYoizenclawCredentialProfile {
+  id: string;
+  name: string;
+  provider: YoizenclawCredentialProvider;
+  schema_version: number;
+  payload: Record<string, unknown>;
+  is_encrypted: boolean;
+  metadata: Record<string, unknown>;
+  expires_at: string | null;
+  is_active: boolean;
+  sync_status: YoizenclawCredentialSyncStatus;
+  last_sync_at: string | null;
+  sync_error: string | null;
+  has_secret: boolean;
+  created_at: string;
+  updated_at: string;
+
+}
+
+/** List response for credentials */
+export interface IYoizenclawCredentialListResponse {
+  credentials: IYoizenclawCredentialProfile[];
+  total: number;
+}
+
+/** Query parameters for credential list */
+export interface IYoizenclawCredentialListQuery {
+  provider?: YoizenclawCredentialProvider;
+  sync_status?: YoizenclawCredentialSyncStatus;
+  is_active?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+/** Create credential payload (provider-aware) */
+export interface IYoizenclawCreateCredentialPayload {
+  name: string;
+  provider: YoizenclawCredentialProvider;
+  payload: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  expires_at?: string;
+  is_active?: boolean;
+}
+
+/** Update credential payload (provider-aware) */
+export interface IYoizenclawUpdateCredentialPayload {
+  name?: string;
+  provider?: YoizenclawCredentialProvider;
+  payload?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  expires_at?: string | null;
+  is_active?: boolean;
+}
+
+/** Rotate credential payload (provider-aware) */
+export interface IYoizenclawRotateCredentialPayload {
+  payload: Record<string, unknown>;
+  new_expires_at?: string;
+}
+
+/** Sync response */
+export interface IYoizenclawCredentialSyncResponse {
+  message: string;
+  triggered: boolean;
+  results: { credentialId: string; success: boolean; error?: string }[];
+  summary: { successful: number; failed: number; total: number };
+}
+
+/** Providers list response */
+export interface IYoizenclawProvidersResponse {
+  providers: IYoizenclawProviderSchema[];
+}
+
+// ---------------------------------------------------------------------------
 // Tool source types and adapter reference
 // ---------------------------------------------------------------------------
 
@@ -36,7 +190,7 @@ export interface IAgentToolPayload {
 }
 
 // ---------------------------------------------------------------------------
-// Agent statuses & credential types
+// Agent statuses
 // ---------------------------------------------------------------------------
 
 export const YOIZENCLAW_AGENT_STATUSES = {
@@ -47,16 +201,6 @@ export const YOIZENCLAW_AGENT_STATUSES = {
 
 export type YoizenclawAgentStatus =
   (typeof YOIZENCLAW_AGENT_STATUSES)[keyof typeof YOIZENCLAW_AGENT_STATUSES];
-
-export const YOIZENCLAW_CREDENTIAL_TYPES = {
-  API_KEY: "api_key",
-  OAUTH: "oauth",
-  BASIC: "basic",
-  CUSTOM: "custom",
-} as const;
-
-export type YoizenclawCredentialType =
-  (typeof YOIZENCLAW_CREDENTIAL_TYPES)[keyof typeof YOIZENCLAW_CREDENTIAL_TYPES];
 
 export interface IYoizenclawSubagentConfig {
   name: string;
@@ -101,28 +245,42 @@ export interface IYoizenclawAgentListQuery {
   offset?: number;
 }
 
-export interface IYoizenclawCredentialProfile {
+export interface IYoizenclawChatContextEntry {
+  sender: "customer" | "agent";
+  content: string;
+}
+
+export interface IYoizenclawChatRequest {
+  message: string;
+  conversationId: string;
+  channel?: string;
+  customerName?: string;
+  userId?: string;
+  context: IYoizenclawChatContextEntry[];
+}
+
+export interface IYoizenclawChatResponse {
+  reply: string;
+  tool_calls: unknown[];
+}
+
+export interface IYoizenclawMemoryProposal {
   id: string;
-  name: string;
-  type: YoizenclawCredentialType;
-  is_encrypted: boolean;
-  metadata: Record<string, unknown>;
-  expires_at: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  kind?: string;
+  title?: string;
+  content_excerpt?: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
-export interface IYoizenclawCredentialListResponse {
-  credentials: IYoizenclawCredentialProfile[];
-  total: number;
+export interface IYoizenclawMemoryProposalListResponse {
+  proposals: IYoizenclawMemoryProposal[];
 }
 
-export interface IYoizenclawCredentialListQuery {
-  type?: YoizenclawCredentialType;
-  is_active?: boolean;
-  limit?: number;
-  offset?: number;
+export interface IYoizenclawMemoryProposalActionResponse {
+  success: boolean;
+  proposal?: IYoizenclawMemoryProposal;
 }
 
 export interface IYoizenclawSubagentDraft {

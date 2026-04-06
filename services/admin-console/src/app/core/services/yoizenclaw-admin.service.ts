@@ -8,9 +8,21 @@ import {
   type IYoizenclawAgentDraft,
   type IYoizenclawAgentListQuery,
   type IYoizenclawAgentListResponse,
+  type IYoizenclawChatRequest,
+  type IYoizenclawChatResponse,
+  type IYoizenclawCreateCredentialPayload,
   type IYoizenclawCredentialListQuery,
   type IYoizenclawCredentialListResponse,
+  type IYoizenclawCredentialProfile,
+  type IYoizenclawMemoryProposalActionResponse,
+  type IYoizenclawMemoryProposalListResponse,
+  type IYoizenclawRotateCredentialPayload,
   type IYoizenclawTemplate,
+  type IYoizenclawUpdateCredentialPayload,
+  type IYoizenclawCredentialSyncResponse,
+  type IYoizenclawProvidersResponse,
+  type YoizenclawCredentialProvider,
+  type YoizenclawCredentialSyncStatus,
 } from "../models/yoizenclaw.model";
 
 type QueryValue = string | number | boolean;
@@ -42,8 +54,13 @@ function buildQueryParams(
     params["is_active"] = query.is_active;
   }
 
-  if ("type" in query && query.type !== undefined) {
-    params["type"] = query.type;
+  // Provider-aware query params
+  if ("provider" in query && query.provider !== undefined) {
+    params["provider"] = query.provider;
+  }
+
+  if ("sync_status" in query && query.sync_status !== undefined) {
+    params["sync_status"] = query.sync_status;
   }
 
   return params;
@@ -68,10 +85,25 @@ export class YoizenclawAdminService {
     );
   }
 
+  // ============================================================================
+  // Provider-Aware Credential APIs
+  // ============================================================================
+
+  /**
+   * Retrieves available credential providers with their schemas.
+   *
+   * @returns A stream with provider schemas for UI form rendering.
+   */
+  listCredentialProviders(): Observable<IYoizenclawProvidersResponse> {
+    return this.http.get<IYoizenclawProvidersResponse>(
+      `${BASE_URL}/credentials/providers`,
+    );
+  }
+
   /**
    * Retrieves credential profiles for the active tenant.
    *
-   * @param query - Optional filter and pagination parameters.
+   * @param query - Optional filter and pagination parameters (provider-aware).
    * @returns A stream of credential profile data.
    */
   listCredentialProfiles(
@@ -82,6 +114,82 @@ export class YoizenclawAdminService {
       { params: buildQueryParams(query) },
     );
   }
+
+  /**
+   * Creates a new provider-aware credential profile.
+   *
+   * @param payload - Credential data (name, provider, payload, etc.).
+   * @returns A stream with the created credential.
+   */
+  createCredentialProfile(
+    payload: IYoizenclawCreateCredentialPayload,
+  ): Observable<IYoizenclawCredentialProfile> {
+    return this.http.post<IYoizenclawCredentialProfile>(
+      `${BASE_URL}/credentials`,
+      payload,
+    );
+  }
+
+  /**
+   * Updates an existing credential profile.
+   *
+   * @param id - Credential ID.
+   * @param payload - Fields to update (all optional).
+   * @returns A stream with the updated credential.
+   */
+  updateCredentialProfile(
+    id: string,
+    payload: IYoizenclawUpdateCredentialPayload,
+  ): Observable<IYoizenclawCredentialProfile> {
+    return this.http.put<IYoizenclawCredentialProfile>(
+      `${BASE_URL}/credentials/${id}`,
+      payload,
+    );
+  }
+
+  /**
+   * Deletes a credential profile.
+   *
+   * @param id - Credential ID.
+   * @returns An empty stream (HTTP 204).
+   */
+  deleteCredentialProfile(id: string): Observable<void> {
+    return this.http.delete<void>(`${BASE_URL}/credentials/${id}`);
+  }
+
+  /**
+   * Rotates the secrets of a credential profile.
+   *
+   * @param id - Credential ID.
+   * @param payload - New payload with replacement secrets.
+   * @returns A stream with the rotated credential.
+   */
+  rotateCredentialProfile(
+    id: string,
+    payload: IYoizenclawRotateCredentialPayload,
+  ): Observable<IYoizenclawCredentialProfile> {
+    return this.http.put<IYoizenclawCredentialProfile>(
+      `${BASE_URL}/credentials/${id}/rotate`,
+      payload,
+    );
+  }
+
+  /**
+   * Triggers manual sync of credentials to runtime.
+   *
+   * @param failedOnly - If true, only sync credentials with failed status.
+   * @returns A stream with sync results.
+   */
+  syncCredentials(failedOnly?: boolean): Observable<IYoizenclawCredentialSyncResponse> {
+    return this.http.post<IYoizenclawCredentialSyncResponse>(
+      `${BASE_URL}/credentials/sync`,
+      { failed_only: failedOnly },
+    );
+  }
+
+  // ============================================================================
+  // Agent APIs
+  // ============================================================================
 
   /**
    * Creates a YoizenClaw agent using the MVP form contract.
@@ -148,17 +256,52 @@ export class YoizenclawAdminService {
    */
   chatWithAgent(
     agentId: string,
-    request: {
-      message: string;
-      conversationId: string;
-      channel: string;
-      customerName: string;
-      context: Array<{ sender: "customer" | "agent"; content: string }>;
-    },
-  ): Observable<{ reply: string; tool_calls: unknown[] }> {
-    return this.http.post<{ reply: string; tool_calls: unknown[] }>(
+    request: IYoizenclawChatRequest,
+  ): Observable<IYoizenclawChatResponse> {
+    return this.http.post<IYoizenclawChatResponse>(
       `${BASE_URL}/agents/${agentId}/chat`,
       request,
+    );
+  }
+
+  /**
+   * Retrieves tenant memory proposals pending human review.
+   *
+   * @returns A stream with the pending proposal list.
+   */
+  listMemoryProposals(): Observable<IYoizenclawMemoryProposalListResponse> {
+    return this.http.get<IYoizenclawMemoryProposalListResponse>(
+      `${BASE_URL}/memories/proposals`,
+    );
+  }
+
+  /**
+   * Approves a tenant memory proposal.
+   *
+   * @param proposalId - Proposal identifier.
+   * @returns A stream with the review result.
+   */
+  approveMemoryProposal(
+    proposalId: string,
+  ): Observable<IYoizenclawMemoryProposalActionResponse> {
+    return this.http.post<IYoizenclawMemoryProposalActionResponse>(
+      `${BASE_URL}/memories/proposals/${proposalId}/approve`,
+      {},
+    );
+  }
+
+  /**
+   * Rejects a tenant memory proposal.
+   *
+   * @param proposalId - Proposal identifier.
+   * @returns A stream with the review result.
+   */
+  rejectMemoryProposal(
+    proposalId: string,
+  ): Observable<IYoizenclawMemoryProposalActionResponse> {
+    return this.http.post<IYoizenclawMemoryProposalActionResponse>(
+      `${BASE_URL}/memories/proposals/${proposalId}/reject`,
+      {},
     );
   }
 }

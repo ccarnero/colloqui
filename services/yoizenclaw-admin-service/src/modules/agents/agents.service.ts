@@ -1,6 +1,5 @@
 import {
   BadGatewayException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -13,15 +12,15 @@ import {
   type IFindAllOptions,
   type UpdateAgentData,
 } from './agents.repository';
-import { NatsPublisher, LAZY_NATS } from '../../providers/nats.provider';
-import type { NatsConnection } from 'nats';
-import type { ChatRequestDto, ChatResponseDto } from './agents.dto';
-import { buildYoizenClawSubject, YOIZENCLAW_CHAT_RESPOND } from '@yoizen/shared';
+import { NatsPublisher } from '../../providers/nats.provider';
+import type {
+  ChatRequestDto,
+  ChatResponseDto,
+  MemoryProposalActionResponseDto,
+  MemoryProposalListResponseDto,
+} from './agents.dto';
 import { AdaptersService } from '../adapters/adapters.service';
-
-interface LazyNats {
-  getConnection(): Promise<NatsConnection>;
-}
+import { AgentsRuntimeService } from './agents-runtime.service';
 
 const VALIDATE_ADAPTER_REFS =
   (process.env.VALIDATE_ADAPTER_REFS ?? 'true') !== 'false';
@@ -33,7 +32,7 @@ export class AgentsService {
   constructor(
     private readonly repository: AgentsRepository,
     private readonly natsPublisher: NatsPublisher,
-    @Inject(LAZY_NATS) private readonly lazyNats: LazyNats,
+    private readonly runtimeService: AgentsRuntimeService,
     @Optional() private readonly adaptersService?: AdaptersService,
   ) {}
 
@@ -101,12 +100,19 @@ export class AgentsService {
       throw new NotFoundException(`Agent with ID '${id}' not found`);
     }
 
-    // Emitir evento NATS
+    // Emitir evento NATS con configuración completa
     try {
       await this.natsPublisher.publishAgentPublished(
         tenantId,
         agent.id,
         agent.name,
+        {
+          system_prompt: agent.system_prompt,
+          model_config: agent.model_config,
+          tools: agent.tools,
+          channels: agent.channels,
+          description: agent.description ?? undefined,
+        },
       );
       this.logger.log(`Agent '${agent.name}' published and event emitted`);
     } catch (error) {
@@ -157,6 +163,7 @@ export class AgentsService {
     tenantId: string,
     agentId: string,
     dto: ChatRequestDto,
+    userId?: string,
   ): Promise<ChatResponseDto> {
     const agent = await this.repository.findById(tenantId, agentId);
     if (!agent) {
@@ -166,129 +173,56 @@ export class AgentsService {
       throw new NotFoundException(`Agent '${agentId}' is not published`);
     }
 
-    const now = new Date().toISOString();
-    const traceId = this.generateTraceId();
-    const correlationId = dto.conversationId || `chat-${Date.now()}`;
-    const envelope = this.buildChatPayload(
-      tenantId,
-      agentId,
-      dto,
-      correlationId,
-      traceId,
-      now,
-    );
-
-    const subject = buildYoizenClawSubject(YOIZENCLAW_CHAT_RESPOND, tenantId);
+    // Prioritize userId from DTO (editable in playground) over header
+    const resolvedUserId = dto.userId || userId;
 
     try {
-      this.logger.debug(`Sending chat request to ${subject} for agent ${agentId}`);
-
-      const nc = await this.lazyNats.getConnection();
-      const response = await nc.request(
-        subject,
-        JSON.stringify(envelope),
-        { timeout: 30000 },
-      );
-
-      const responseData: unknown = JSON.parse(response.data.toString());
-      return this.parseChatResponse(responseData);
+      return this.runtimeService.chat(tenantId, agentId, dto, resolvedUserId);
     } catch (error) {
       this.logger.error(`Chat request failed for agent ${agentId}`, error);
       throw new BadGatewayException('Failed to get response from agent');
     }
   }
 
-  private buildChatPayload(
+  /**
+   * Lists memory proposals pending human review for the tenant.
+   */
+  async listMemoryProposals(
     tenantId: string,
-    agentId: string,
-    dto: ChatRequestDto,
-    correlationId: string,
-    traceId: string,
-    now: string,
-  ): Record<string, unknown> {
-    const payload = {
-      action_type: 'chat_respond',
-      agent_id: agentId,
-      message: dto.message,
-      conversation_id: correlationId,
-      customer_name: dto.customerName || 'User',
-      context: dto.context || [],
-    };
-
-    return {
-      specversion: '1.0',
-      id: this.generateEventId(),
-      source: '//yoizenclaw-admin-service/admin/agents/chat',
-      type: 'io.yoizen.yoizenclaw.chat.request.v1',
-      resource: `tenant/${tenantId}/agents/${agentId}`,
-      time: now,
-      traceid: traceId,
-      causation_id: null,
-      correlation_id: correlationId,
-      tenant: tenantId,
-      producer: 'yoizenclaw-admin-service',
-      domain: 'automation',
-      channel: 'yoizenclaw',
-      provider: 'internal',
-      accountid: 'yoizenclaw-admin',
-      idempotencykey: this.computeIdempotencyKey(payload),
-      transport: {
-        method: 'agent',
-        protocol: 'internal',
-        agent_id: 'yoizenclaw-admin-service',
-        depth: 0,
-      },
-      data: {
-        received_at: now,
-        payload_inline: true,
-        payload_ref: null,
-        payload_bytes: JSON.stringify(payload).length,
-        payload_checksum: this.computeChecksum(payload),
-        payload,
-      },
-    };
+  ): Promise<MemoryProposalListResponseDto> {
+    return this.runtimeService.listMemoryProposals(tenantId);
   }
 
-  private parseChatResponse(responseData: unknown): ChatResponseDto {
-    if (
-      typeof responseData !== 'object' ||
-      responseData === null ||
-      !('data' in responseData)
-    ) {
-      throw new BadGatewayException('Invalid response from agent');
-    }
-    const data = (responseData as { data?: { payload?: unknown } }).data;
-    const payload = data?.payload as
-      | {
-          response?: unknown;
-          tool_calls?: unknown;
-        }
-      | undefined;
-    if (!payload?.response) {
-      throw new BadGatewayException('Invalid response from agent');
-    }
-
-    return {
-      reply: payload.response as string,
-      tool_calls: (payload.tool_calls || []) as unknown[],
-    };
+  /**
+   * Approves a tenant memory proposal with an optional reviewer identity.
+   */
+  async approveMemoryProposal(
+    tenantId: string,
+    proposalId: string,
+    reviewerId?: string,
+  ): Promise<MemoryProposalActionResponseDto> {
+    return this.runtimeService.reviewMemoryProposal(
+      tenantId,
+      proposalId,
+      'memory_proposals_approve',
+      reviewerId,
+    );
   }
 
-  private generateTraceId(): string {
-    return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-  }
-
-  private generateEventId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-  }
-
-  private computeIdempotencyKey(payload: Record<string, unknown>): string {
-    return `sha256:${this.computeChecksum(payload)}`;
-  }
-
-  private computeChecksum(payload: Record<string, unknown>): string {
-    const canonical = JSON.stringify(payload, Object.keys(payload).sort());
-    return Buffer.from(canonical).toString('base64');
+  /**
+   * Rejects a tenant memory proposal with an optional reviewer identity.
+   */
+  async rejectMemoryProposal(
+    tenantId: string,
+    proposalId: string,
+    reviewerId?: string,
+  ): Promise<MemoryProposalActionResponseDto> {
+    return this.runtimeService.reviewMemoryProposal(
+      tenantId,
+      proposalId,
+      'memory_proposals_reject',
+      reviewerId,
+    );
   }
 
   /**

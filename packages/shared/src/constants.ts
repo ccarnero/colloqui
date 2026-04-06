@@ -87,6 +87,10 @@ export const YOIZENCLAW_AGENT_UNPUBLISHED =
   `${YOIZENCLAW_SUBJECT_PREFIX}.agent_unpublished.v1`;
 export const YOIZENCLAW_CREDENTIAL_ROTATED =
   `${YOIZENCLAW_SUBJECT_PREFIX}.credential_rotated.v1`;
+export const YOIZENCLAW_CREDENTIAL_SYNC =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.credential_sync.v1`;
+export const YOIZENCLAW_CREDENTIAL_SYNC_COMPLETED =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.credential_sync_completed.v1`;
 export const YOIZENCLAW_EVENT =
   `${YOIZENCLAW_SUBJECT_PREFIX}.event.v1`;
 

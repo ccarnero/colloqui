@@ -84,6 +84,20 @@ interface ChatMessage {
               {{ selectedAgent()?.tools?.length || 0 }} tools
             </span>
           </div>
+
+          <div class="form-group">
+            <label class="input-label">User ID (for testing memory)</label>
+            <input
+              type="text"
+              class="yz-text-input"
+              [(ngModel)]="userId"
+              placeholder="test-user, user-123, etc."
+              [disabled]="loading()"
+            />
+            <p class="text-muted text-xs mt-1">
+              This identifies the user for conversation memory and personalization
+            </p>
+          </div>
         </div>
       </div>
 
@@ -209,6 +223,10 @@ interface ChatMessage {
 
     .panel-content {
       padding: 0 20px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      min-height: 0;
     }
 
     .input-label {
@@ -434,6 +452,28 @@ interface ChatMessage {
     }
     .yz-input::placeholder { color: var(--text3, #777); }
 
+    .yz-text-input {
+      width: 100%;
+      background: var(--bg3, #2a2a2a);
+      border: 1px solid var(--border-subtle, #333);
+      border-radius: 8px;
+      color: var(--text-primary, #fff);
+      padding: 8px 12px;
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .yz-text-input:focus {
+      border-color: var(--primary, #1a66ff);
+    }
+    .yz-text-input:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .yz-text-input::placeholder {
+      color: var(--text3, #777);
+    }
+
     .yz-icon-btn {
       background: var(--primary, #1a66ff);
       color: white;
@@ -487,6 +527,7 @@ export class PlaygroundComponent implements OnInit {
   readonly selectedAgent = signal<IYoizenclawAgent | null>(null);
   readonly messages = signal<ChatMessage[]>([]);
   readonly newMessage = signal("");
+  readonly userId = signal<string>("test-user");
   readonly loading = signal(true);
   readonly sending = signal(false);
 
@@ -552,6 +593,7 @@ export class PlaygroundComponent implements OnInit {
         channel: "playground",
         customerName: "Test User",
         context: this.buildContext(),
+        userId: this.userId(),
       }));
 
       // Add assistant response

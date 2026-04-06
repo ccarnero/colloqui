@@ -26,7 +26,9 @@ import pytest
 
 _app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _repo_root = os.path.dirname(os.path.dirname(_app_dir))
-shared_types_path = os.path.join(_repo_root, "applications", "shared", "types", "python")
+shared_types_path = os.path.join(
+    _repo_root, "applications", "shared", "types", "python"
+)
 if shared_types_path not in sys.path:
     sys.path.insert(0, shared_types_path)
 
@@ -184,17 +186,7 @@ class TestCloudEventsEnvelopeValidation:
     @pytest.mark.asyncio
     async def test_bridge_rejects_message_without_envelope(self) -> None:
         """Task 2.4.4: Inbound handler rejects non-envelope messages."""
-        from src.interfaces.nats_bridge import RuntimeNatsBridge
-
-        bridge = RuntimeNatsBridge.__new__(RuntimeNatsBridge)
-        bridge._nats = MagicMock()
-        bridge._nats.is_connected = False
-        bridge._tracer = MagicMock()
-        bridge._instance_id = "test"
-        bridge._heartbeat_interval_seconds = 15.0
-        bridge._heartbeat_task = None
-        bridge._tenant_id = "acme"
-        bridge._object_store = None
+        bridge = _build_test_bridge("acme")
 
         raw_payload = {"just": "data", "no": "envelope"}
         msg = _make_mock_msg(
@@ -202,39 +194,40 @@ class TestCloudEventsEnvelopeValidation:
             raw_payload,
         )
 
-        with patch.object(
-            bridge, "_apply_config_sync", new_callable=AsyncMock
-        ) as mock_apply:
+        with patch(
+            "src.messaging.bridge.handle_config_sync",
+            new_callable=AsyncMock,
+        ) as mock_handler:
             await bridge._dispatch_message(msg)
-            mock_apply.assert_not_called()
+            mock_handler.assert_not_called()
 
 
 class TestDepthLimitEnforcement:
     """Task 2.4.5: Bridge enforces depth limit before processing."""
 
     def test_enforce_depth_limit_allows_below_max(self) -> None:
-        from src.shared.depth import enforce_depth_limit
+        from src.utils.depth.tracker import enforce_depth_limit
 
         envelope = _make_valid_envelope(depth=3)
         result = enforce_depth_limit(envelope)
         assert result["transport"]["depth"] == 3
 
     def test_enforce_depth_limit_rejects_at_max(self) -> None:
-        from src.shared.depth import DepthExceededError, enforce_depth_limit
+        from src.utils.depth.tracker import DepthExceededError, enforce_depth_limit
 
         envelope = _make_valid_envelope(depth=5)
         with pytest.raises(DepthExceededError):
             enforce_depth_limit(envelope)
 
     def test_enforce_depth_limit_rejects_above_max(self) -> None:
-        from src.shared.depth import DepthExceededError, enforce_depth_limit
+        from src.utils.depth.tracker import DepthExceededError, enforce_depth_limit
 
         envelope = _make_valid_envelope(depth=10)
         with pytest.raises(DepthExceededError):
             enforce_depth_limit(envelope)
 
     def test_enforce_depth_limit_allows_zero(self) -> None:
-        from src.shared.depth import enforce_depth_limit
+        from src.utils.depth.tracker import enforce_depth_limit
 
         envelope = _make_valid_envelope(depth=0)
         result = enforce_depth_limit(envelope)
@@ -243,17 +236,7 @@ class TestDepthLimitEnforcement:
     @pytest.mark.asyncio
     async def test_bridge_rejects_depth_exceeded_message(self) -> None:
         """Task 2.4.6: Message handler rejects depth-exceeded messages."""
-        from src.interfaces.nats_bridge import RuntimeNatsBridge
-
-        bridge = RuntimeNatsBridge.__new__(RuntimeNatsBridge)
-        bridge._nats = MagicMock()
-        bridge._nats.is_connected = False
-        bridge._tracer = MagicMock()
-        bridge._instance_id = "test"
-        bridge._heartbeat_interval_seconds = 15.0
-        bridge._heartbeat_task = None
-        bridge._tenant_id = "acme"
-        bridge._object_store = None
+        bridge = _build_test_bridge("acme")
 
         envelope = _make_valid_envelope(depth=5)
         msg = _make_mock_msg(
@@ -261,25 +244,26 @@ class TestDepthLimitEnforcement:
             envelope,
         )
 
-        with patch.object(
-            bridge, "_apply_config_sync", new_callable=AsyncMock
-        ) as mock_apply:
+        with patch(
+            "src.messaging.bridge.handle_config_sync",
+            new_callable=AsyncMock,
+        ) as mock_handler:
             await bridge._dispatch_message(msg)
-            mock_apply.assert_not_called()
+            mock_handler.assert_not_called()
 
 
 class TestOutboundEnvelopeWithDepth:
     """Task 2.4.7: Outbound messages use envelope with incremented depth."""
 
     def test_increment_depth_increases_by_one(self) -> None:
-        from src.shared.depth import increment_depth
+        from src.utils.depth.tracker import increment_depth
 
         envelope = _make_valid_envelope(depth=2)
         result = increment_depth(envelope)
         assert result["transport"]["depth"] == 3
 
     def test_increment_depth_sets_causation_id(self) -> None:
-        from src.shared.depth import increment_depth
+        from src.utils.depth.tracker import increment_depth
 
         envelope = _make_valid_envelope(depth=2)
         envelope["id"] = "evt-123"
@@ -287,7 +271,7 @@ class TestOutboundEnvelopeWithDepth:
         assert result["causation_id"] == "evt-123"
 
     def test_increment_depth_preserves_other_fields(self) -> None:
-        from src.shared.depth import increment_depth
+        from src.utils.depth.tracker import increment_depth
 
         envelope = _make_valid_envelope(depth=1)
         result = increment_depth(envelope)
@@ -311,7 +295,7 @@ class TestOutboundEnvelopeWithDepth:
     @pytest.mark.asyncio
     async def test_outbound_publish_uses_envelope_with_depth(self) -> None:
         """Task 2.4.8: Outbound publish wraps in CloudEvents envelope."""
-        from src.interfaces.nats_bridge import RuntimeNatsBridge
+        from src.messaging.bridge import RuntimeNatsBridge
 
         bridge = RuntimeNatsBridge.__new__(RuntimeNatsBridge)
         bridge._nats = AsyncMock()
@@ -344,7 +328,7 @@ class TestClaimCheckForLargePayloads:
 
     @pytest.mark.asyncio
     async def test_check_payload_size_inline_for_small(self) -> None:
-        from src.shared.claim_check import check_payload_size
+        from src.utils.claim_check.resolver import check_payload_size
 
         small_payload = b"x" * 100
         result = await check_payload_size(small_payload)
@@ -353,7 +337,7 @@ class TestClaimCheckForLargePayloads:
 
     @pytest.mark.asyncio
     async def test_check_payload_size_claim_check_for_large(self) -> None:
-        from src.shared.claim_check import (
+        from src.utils.claim_check.resolver import (
             CLAIM_CHECK_THRESHOLD_BYTES,
             check_payload_size,
         )
@@ -365,7 +349,7 @@ class TestClaimCheckForLargePayloads:
 
     @pytest.mark.asyncio
     async def test_check_payload_size_exactly_at_threshold(self) -> None:
-        from src.shared.claim_check import (
+        from src.utils.claim_check.resolver import (
             CLAIM_CHECK_THRESHOLD_BYTES,
             check_payload_size,
         )
@@ -376,7 +360,7 @@ class TestClaimCheckForLargePayloads:
 
     @pytest.mark.asyncio
     async def test_store_payload_returns_ref(self) -> None:
-        from src.shared.claim_check import store_payload
+        from src.utils.claim_check.resolver import store_payload
 
         mock_store = AsyncMock()
         mock_store.put = AsyncMock(return_value=None)
@@ -388,8 +372,8 @@ class TestClaimCheckForLargePayloads:
     @pytest.mark.asyncio
     async def test_outbound_large_payload_uses_claim_check(self) -> None:
         """Task 2.4.10: Outbound with payload > 256KB stores in Object Store."""
-        from src.shared.claim_check import CLAIM_CHECK_THRESHOLD_BYTES
-        from src.interfaces.nats_bridge import RuntimeNatsBridge
+        from src.utils.claim_check.resolver import CLAIM_CHECK_THRESHOLD_BYTES
+        from src.messaging.bridge import RuntimeNatsBridge
 
         bridge = RuntimeNatsBridge.__new__(RuntimeNatsBridge)
         bridge._nats = AsyncMock()
@@ -416,7 +400,8 @@ class TestClaimCheckForLargePayloads:
 
 def _build_test_bridge(tenant_id: str) -> Any:
     """Create a RuntimeNatsBridge via __new__ with all required attributes."""
-    from src.interfaces.nats_bridge import RuntimeNatsBridge
+    from src.messaging.bridge import RuntimeNatsBridge
+    from src.messaging.handlers.agents import AgentCache
 
     bridge = RuntimeNatsBridge.__new__(RuntimeNatsBridge)
     bridge._nats = AsyncMock()
@@ -425,9 +410,12 @@ def _build_test_bridge(tenant_id: str) -> Any:
     bridge._tracer = MagicMock()
     bridge._instance_id = "test-instance"
     bridge._heartbeat_interval_seconds = 15.0
+    bridge._runtime_online_log_interval_seconds = 60.0
+    bridge._runtime_online_log_state = {}
     bridge._heartbeat_task = None
     bridge._tenant_id = tenant_id
     bridge._object_store = None
+    bridge._agent_cache = AgentCache()
 
     mock_span = MagicMock()
     mock_span.__enter__ = MagicMock(return_value=mock_span)
@@ -437,41 +425,61 @@ def _build_test_bridge(tenant_id: str) -> Any:
 
 
 class TestDynamicSubjectSubscription:
-    """Task 2.4.11: Bridge subscribes to evt.{tenant}.yoizenclaw.>."""
+    """Task 2.4.11: Bridge subscribes to admin-service and runtime wildcards."""
 
     @pytest.mark.asyncio
-    async def test_start_subscribes_to_tenant_wildcard(self) -> None:
-        """Task 2.4.12: start() uses dynamic subject with tenant from env."""
+    async def test_start_subscribes_to_admin_service_wildcard(self) -> None:
+        """start() subscribes to admin-service wildcard first."""
         bridge = _build_test_bridge("acme")
 
         with patch(
-            "src.interfaces.nats_bridge._is_configured_check",
+            "src.messaging.bridge._is_configured_check",
             return_value=False,
         ):
             await bridge.start()
 
-        first_subscribe_call = bridge._nats.subscribe.call_args_list[0]
-        assert first_subscribe_call[0][0] == "evt.acme.yoizenclaw.>"
+        admin_subscribe = bridge._nats.subscribe.call_args_list[0]
+        assert admin_subscribe[0][0] == (
+            "evt.acme.yoizenclaw-admin-service.automation.yoizenclaw.internal.>"
+        )
+
+    @pytest.mark.asyncio
+    async def test_start_subscribes_to_runtime_wildcard(self) -> None:
+        """start() subscribes to runtime wildcard second."""
+        bridge = _build_test_bridge("acme")
+
+        with patch(
+            "src.messaging.bridge._is_configured_check",
+            return_value=False,
+        ):
+            await bridge.start()
+
+        runtime_subscribe = bridge._nats.subscribe.call_args_list[1]
+        assert runtime_subscribe[0][0] == "evt.acme.yoizenclaw.>"
 
     @pytest.mark.asyncio
     async def test_start_uses_tenant_id_from_env(self) -> None:
         bridge = _build_test_bridge("globalcorp")
 
         with patch(
-            "src.interfaces.nats_bridge._is_configured_check",
+            "src.messaging.bridge._is_configured_check",
             return_value=False,
         ):
             await bridge.start()
 
-        first_subscribe_call = bridge._nats.subscribe.call_args_list[0]
-        assert first_subscribe_call[0][0] == "evt.globalcorp.yoizenclaw.>"
+        admin_subscribe = bridge._nats.subscribe.call_args_list[0]
+        assert admin_subscribe[0][0] == (
+            "evt.globalcorp.yoizenclaw-admin-service.automation.yoizenclaw.internal.>"
+        )
+        runtime_subscribe = bridge._nats.subscribe.call_args_list[1]
+        assert runtime_subscribe[0][0] == "evt.globalcorp.yoizenclaw.>"
 
     @pytest.mark.asyncio
     async def test_start_publishes_online_to_tenant_subject(self) -> None:
         bridge = _build_test_bridge("acme")
 
         with patch(
-            "src.interfaces.nats_bridge._is_configured_check",
+            "src.messaging.bridge._is_configured_check",
             return_value=False,
         ):
             await bridge.start()
@@ -479,3 +487,169 @@ class TestDynamicSubjectSubscription:
         online_publish = bridge._nats.publish.call_args_list[0]
         subject = online_publish[0][0]
         assert subject == "evt.acme.yoizenclaw.online.v1"
+
+
+class TestRuntimeOnlineLogNoiseReduction:
+    """Runtime online heartbeat logs are throttled to reduce noise."""
+
+    @pytest.mark.asyncio
+    async def test_suppresses_duplicate_heartbeats_within_interval(self) -> None:
+        bridge = _build_test_bridge("acme")
+
+        msg = _make_mock_msg("evt.acme.yoizenclaw.online.v1", _make_valid_envelope())
+        payload = {
+            "payload": {
+                "instance_id": "runtime-1",
+                "configured": False,
+            }
+        }
+
+        with (
+            patch(
+                "src.messaging.bridge.time.monotonic",
+                side_effect=[100.0, 110.0],
+            ),
+            patch("src.messaging.bridge.logger") as mock_logger,
+        ):
+            await bridge._handle_runtime_online(msg, payload, {})
+            await bridge._handle_runtime_online(msg, payload, {})
+
+        assert mock_logger.info.call_count == 1
+        assert mock_logger.debug.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_logs_when_runtime_status_changes(self) -> None:
+        bridge = _build_test_bridge("acme")
+
+        msg = _make_mock_msg("evt.acme.yoizenclaw.online.v1", _make_valid_envelope())
+        first_payload = {
+            "payload": {
+                "instance_id": "runtime-1",
+                "configured": False,
+            }
+        }
+        second_payload = {
+            "payload": {
+                "instance_id": "runtime-1",
+                "configured": True,
+            }
+        }
+
+        with (
+            patch(
+                "src.messaging.bridge.time.monotonic",
+                side_effect=[100.0, 110.0],
+            ),
+            patch("src.messaging.bridge.logger") as mock_logger,
+        ):
+            await bridge._handle_runtime_online(msg, first_payload, {})
+            await bridge._handle_runtime_online(msg, second_payload, {})
+
+        assert mock_logger.info.call_count == 2
+
+
+def _make_admin_service_subject(tenant: str, action: str) -> str:
+    """Build an admin-service format subject (8 parts)."""
+    return f"evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal.{action}.v1"
+
+
+class TestChatRespondDispatch:
+    """Dispatch routes admin-service chat_respond to the correct handler."""
+
+    @pytest.mark.asyncio
+    async def test_chat_respond_dispatches_to_legacy_handler(self) -> None:
+        """Legacy playground payload (no session fields) routes to handle_chat_respond."""
+        bridge = _build_test_bridge("acme")
+
+        payload = {
+            "action_type": "chat_respond",
+            "agent_id": "test-agent",
+            "message": "Hello from playground",
+            "conversation_id": "playground-test-123",
+            "customer_name": "Test User",
+            "context": [],
+        }
+        envelope = _make_valid_envelope(
+            tenant="acme",
+            action="chat_respond",
+            data=payload,
+        )
+        subject = _make_admin_service_subject("acme", "chat_respond")
+        msg = _make_mock_msg(subject, envelope, reply="_INBOX.reply123")
+
+        with (
+            patch(
+                "src.messaging.bridge.handle_chat_respond",
+                new_callable=AsyncMock,
+            ) as mock_chat,
+            patch(
+                "src.messaging.bridge.handle_session_chat_respond",
+                new_callable=AsyncMock,
+            ) as mock_session,
+        ):
+            await bridge._dispatch_message(msg)
+            mock_chat.assert_called_once()
+            mock_session.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_chat_respond_dispatches_to_session_handler(self) -> None:
+        """Session-format payload on chat_respond routes to handle_session_chat_respond."""
+        bridge = _build_test_bridge("acme")
+
+        payload = {
+            "chat_id": "chat-uuid-123",
+            "agent_id": "test-agent",
+            "message": "Hello from session",
+            "turn_number": 1,
+            "session_id": "session-uuid-456",
+            "timestamp": "2026-04-04T12:00:00Z",
+        }
+        envelope = _make_valid_envelope(
+            tenant="acme",
+            action="chat_respond",
+            data=payload,
+        )
+        subject = _make_admin_service_subject("acme", "chat_respond")
+        msg = _make_mock_msg(subject, envelope, reply="_INBOX.reply456")
+
+        with (
+            patch(
+                "src.messaging.bridge.handle_chat_respond",
+                new_callable=AsyncMock,
+            ) as mock_chat,
+            patch(
+                "src.messaging.bridge.handle_session_chat_respond",
+                new_callable=AsyncMock,
+            ) as mock_session,
+        ):
+            await bridge._dispatch_message(msg)
+            mock_session.assert_called_once()
+            mock_chat.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_agent_outbound_still_dispatches_chat(self) -> None:
+        """Existing agent_outbound path continues to work for runtime subjects."""
+        bridge = _build_test_bridge("acme")
+
+        payload = {
+            "action_type": "chat_respond",
+            "agent_id": "test-agent",
+            "message": "Hello from runtime path",
+            "conversation_id": "runtime-test-123",
+            "customer_name": "Test User",
+            "context": [],
+        }
+        envelope = _make_valid_envelope(
+            tenant="acme",
+            action="agent_outbound",
+            data=payload,
+        )
+        subject = "evt.acme.yoizenclaw.agent.outbound.v1"
+        msg = _make_mock_msg(subject, envelope, reply="_INBOX.reply789")
+
+        with patch(
+            "src.messaging.bridge.handle_chat_respond",
+            new_callable=AsyncMock,
+        ) as mock_chat:
+            await bridge._dispatch_message(msg)
+            mock_chat.assert_called_once()

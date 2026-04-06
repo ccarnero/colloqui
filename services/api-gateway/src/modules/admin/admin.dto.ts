@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsString,
   IsOptional,
   IsBoolean,
@@ -6,7 +7,11 @@ import {
   IsArray,
   IsNotEmpty,
   MaxLength,
+  ValidateNested,
+  IsISO8601,
+  Length,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 const MAX_NAME_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -74,45 +79,161 @@ export class UpdateAgentDto {
   is_active?: boolean;
 }
 
-export class CreateCredentialDto {
+export class ChatContextEntryDto {
+  @IsString()
+  @IsIn(['customer', 'agent'])
+  sender!: 'customer' | 'agent';
+
   @IsString()
   @IsNotEmpty()
-  @MaxLength(MAX_NAME_LENGTH)
-  name!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  type!: string;
-
-  @IsObject()
-  @IsNotEmpty()
-  config!: Record<string, unknown>;
-
-  @IsBoolean()
-  @IsOptional()
-  is_active?: boolean;
+  content!: string;
 }
 
-export class UpdateCredentialDto {
+export class ChatRequestDto {
+  @IsString()
+  @IsNotEmpty()
+  message!: string;
+
   @IsString()
   @IsOptional()
-  @MaxLength(MAX_NAME_LENGTH)
-  name?: string;
+  conversationId?: string;
 
-  @IsObject()
+  @IsString()
   @IsOptional()
-  config?: Record<string, unknown>;
+  customerName?: string;
 
-  @IsBoolean()
+  @IsString()
   @IsOptional()
-  is_active?: boolean;
+  userId?: string;
+
+  @IsString()
+  @IsOptional()
+  channel?: string;
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ChatContextEntryDto)
+  context?: ChatContextEntryDto[];
 }
 
-export class RotateCredentialDto {
+export class MemoryProposalParamDto {
+  @IsString()
+  @IsNotEmpty()
+  id!: string;
+}
+
+export class MemoryDecisionDto {
   @IsString()
   @IsOptional()
   @MaxLength(MAX_DESCRIPTION_LENGTH)
   reason?: string;
+}
+
+/**
+ * Provider-aware credential creation
+ */
+export class CreateCredentialDto {
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, MAX_NAME_LENGTH)
+  name!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @IsIn([
+    'openai',
+    'anthropic',
+    'google',
+    'google-vertex',
+    'bedrock',
+    'groq',
+    'mistral',
+    'openrouter',
+    'xai',
+    'cohere',
+    'cerebras',
+    'huggingface',
+    'mock',
+  ])
+  provider!: string;
+
+  @IsObject()
+  @IsNotEmpty()
+  payload!: Record<string, unknown>;
+
+  @IsObject()
+  @IsOptional()
+  metadata?: Record<string, unknown>;
+
+  @IsISO8601()
+  @IsOptional()
+  expires_at?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  @Type(() => Boolean)
+  is_active?: boolean;
+}
+
+/**
+ * Provider-aware credential update
+ * Omitting secret fields in payload preserves existing values
+ */
+export class UpdateCredentialDto {
+  @IsString()
+  @IsOptional()
+  @Length(1, MAX_NAME_LENGTH)
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsIn([
+    'openai',
+    'anthropic',
+    'google',
+    'google-vertex',
+    'bedrock',
+    'groq',
+    'mistral',
+    'openrouter',
+    'xai',
+    'cohere',
+    'cerebras',
+    'huggingface',
+    'mock',
+  ])
+  provider?: string;
+
+  @IsObject()
+  @IsOptional()
+  payload?: Record<string, unknown>;
+
+  @IsObject()
+  @IsOptional()
+  metadata?: Record<string, unknown>;
+
+  @IsISO8601()
+  @IsOptional()
+  expires_at?: string | null;
+
+  @IsBoolean()
+  @IsOptional()
+  @Type(() => Boolean)
+  is_active?: boolean;
+}
+
+/**
+ * Credential rotation (replace secret values)
+ */
+export class RotateCredentialDto {
+  @IsObject()
+  @IsNotEmpty()
+  payload!: Record<string, unknown>;
+
+  @IsISO8601()
+  @IsOptional()
+  new_expires_at?: string;
 }
 
 export class CreateJobDto {

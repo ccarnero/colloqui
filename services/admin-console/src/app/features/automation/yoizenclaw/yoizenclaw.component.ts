@@ -487,9 +487,11 @@ export class YoizenclawComponent implements OnInit {
       .listCredentialProfiles({ is_active: true, limit: 50, offset: 0 })
       .subscribe({
         next: (response) => {
+          console.log('[Yoizenclaw] Credential profiles loaded:', response.credentials);
           this.credentialProfiles.set(response.credentials);
         },
-        error: () => {
+        error: (err) => {
+          console.error('[Yoizenclaw] Failed to load credential profiles:', err);
           this.errorMessage.set(
             "Unable to load credential profiles for this tenant.",
           );

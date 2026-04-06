@@ -10,12 +10,24 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Headers,
 } from "@nestjs/common";
 import { AgentsService } from "./agents.service";
-import { CreateAgentDto, UpdateAgentDto, ListAgentsQueryDto, ChatRequestDto, ChatResponseDto } from "./agents.dto";
+import {
+  ChatRequestDto,
+  ChatResponseDto,
+  CreateAgentDto,
+  ListAgentsQueryDto,
+  MemoryProposalActionResponseDto,
+  MemoryProposalListResponseDto,
+  MemoryProposalParamDto,
+  UpdateAgentDto,
+} from "./agents.dto";
 import type { IAgent } from "./agents.repository";
 import { TenantGuard } from "../../providers/tenant.guard";
 import { TenantId } from "../../providers/tenant.decorator";
+
+const YOIZEN_USER_ID_HEADER = "x-yoizen-user-id";
 
 @Controller("admin/agents")
 @UseGuards(TenantGuard)
@@ -33,6 +45,14 @@ export class AgentsController {
       limit: query.limit,
       offset: query.offset,
     });
+  }
+
+  @Get("memory-proposals")
+  @HttpCode(HttpStatus.OK)
+  async listMemoryProposals(
+    @TenantId() tenantId: string,
+  ): Promise<MemoryProposalListResponseDto> {
+    return this.service.listMemoryProposals(tenantId);
   }
 
   @Get(":id")
@@ -101,7 +121,36 @@ export class AgentsController {
     @TenantId() tenantId: string,
     @Param("id") id: string,
     @Body() dto: ChatRequestDto,
+    @Headers(YOIZEN_USER_ID_HEADER) userId?: string,
   ): Promise<ChatResponseDto> {
-    return this.service.chat(tenantId, id, dto);
+    return this.service.chat(tenantId, id, dto, userId);
+  }
+
+  @Post("memory-proposals/:id/approve")
+  @HttpCode(HttpStatus.OK)
+  async approveMemoryProposal(
+    @TenantId() tenantId: string,
+    @Param() params: MemoryProposalParamDto,
+    @Headers(YOIZEN_USER_ID_HEADER) reviewerId?: string,
+  ): Promise<MemoryProposalActionResponseDto> {
+    return this.service.approveMemoryProposal(
+      tenantId,
+      params.id,
+      reviewerId,
+    );
+  }
+
+  @Post("memory-proposals/:id/reject")
+  @HttpCode(HttpStatus.OK)
+  async rejectMemoryProposal(
+    @TenantId() tenantId: string,
+    @Param() params: MemoryProposalParamDto,
+    @Headers(YOIZEN_USER_ID_HEADER) reviewerId?: string,
+  ): Promise<MemoryProposalActionResponseDto> {
+    return this.service.rejectMemoryProposal(
+      tenantId,
+      params.id,
+      reviewerId,
+    );
   }
 }

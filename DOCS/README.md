@@ -389,6 +389,25 @@ kubectl get pods -n support-services-dev
 
 ### Access services
 
+#### OrbStack
+
+OrbStack exposes the local cluster through `127.0.0.1.sslip.io`, so no tunnel is required.
+
+```bash
+# Authenticate (get a token)
+curl -X POST http://api-gateway.platform-services-dev.127.0.0.1.sslip.io/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"grant_type":"client_credentials","client_id":"...","client_secret":"..."}'
+```
+
+For local localhost access to the frontends/API, you can also use:
+
+```bash
+./port-forward.sh dev
+```
+
+#### Minikube
+
 Start the minikube tunnel (required for Kourier LoadBalancer):
 
 ```bash

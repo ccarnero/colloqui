@@ -1,21 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from 'bun:test';
-import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
-import { AgentsService } from './agents.service';
+import { AgentsService } from '../../src/modules/agents/agents.service';
+import { AgentsRuntimeService } from '../../src/modules/agents/agents-runtime.service';
 import {
   AgentsRepository,
   type IAgent,
   type ICreateAgentData,
-} from './agents.repository';
-import { NatsPublisher } from '../../providers/nats.provider';
+} from '../../src/modules/agents/agents.repository';
+import { NatsPublisher } from '../../src/providers/nats.provider';
 
 describe('AgentsService', () => {
   let service: AgentsService;
   let mockRepository: AgentsRepository;
   let mockNatsPublisher: NatsPublisher;
+  let mockRuntimeService: AgentsRuntimeService;
   const TENANT_ID = 'tenant-123';
 
-  beforeEach(async () => {
+  beforeEach(() => {
     mockRepository = {
       findAll: vi.fn(),
       findById: vi.fn(),
@@ -31,21 +32,17 @@ describe('AgentsService', () => {
       publishAgentUnpublished: vi.fn(),
     } as unknown as NatsPublisher;
 
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AgentsService,
-        {
-          provide: AgentsRepository,
-          useValue: mockRepository,
-        },
-        {
-          provide: NatsPublisher,
-          useValue: mockNatsPublisher,
-        },
-      ],
-    }).compile();
+    mockRuntimeService = {
+      chat: vi.fn(),
+      listMemoryProposals: vi.fn(),
+      reviewMemoryProposal: vi.fn(),
+    } as unknown as AgentsRuntimeService;
 
-    service = module.get<AgentsService>(AgentsService);
+    service = new AgentsService(
+      mockRepository,
+      mockNatsPublisher,
+      mockRuntimeService,
+    );
   });
 
   describe('findAll', () => {

@@ -157,6 +157,20 @@ export const routes: Routes = [
                 "./features/automation/yoizenclaw/playground.component"
               ).then((m) => m.PlaygroundComponent),
           },
+          {
+            path: "memories",
+            loadComponent: () =>
+              import(
+                "./features/automation/yoizenclaw/memories.component"
+              ).then((m) => m.YoizenclawMemoriesComponent),
+          },
+          {
+            path: "credentials",
+            loadComponent: () =>
+              import(
+                "./features/automation/yoizenclaw/credentials.component"
+              ).then((m) => m.YoizenclawCredentialsComponent),
+          },
         ],
       },
       {

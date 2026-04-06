@@ -53,14 +53,12 @@ import type {
             />
           </mat-form-field>
 
-          <mat-form-field appearance="outline">
-            <mat-label>LLM Provider</mat-label>
-            <mat-select [(ngModel)]="provider">
-              <mat-option value="openai">OpenAI</mat-option>
-              <mat-option value="azure-openai">Azure OpenAI</mat-option>
-              <mat-option value="anthropic">Anthropic</mat-option>
-            </mat-select>
-          </mat-form-field>
+          @if (credentialProfileId()) {
+            <mat-form-field appearance="outline">
+              <mat-label>LLM Provider</mat-label>
+              <input matInput [value]="provider()" disabled />
+            </mat-form-field>
+          }
 
           <mat-form-field appearance="outline">
             <mat-label>LLM Model</mat-label>
@@ -69,11 +67,11 @@ import type {
 
           <mat-form-field appearance="outline">
             <mat-label>Credential Profile</mat-label>
-            <mat-select [(ngModel)]="credentialProfileId">
+            <mat-select [(ngModel)]="credentialProfileId" (selectionChange)="onCredentialProfileChange()">
               <mat-option [value]="null">No credential profile</mat-option>
               @for (profile of credentialProfiles(); track profile.id) {
                 <mat-option [value]="profile.id">
-                  {{ profile.name }} · {{ profile.type }}
+                  {{ profile.name }} · {{ profile.provider }}
                 </mat-option>
               }
             </mat-select>
@@ -264,6 +262,27 @@ export class YoizenclawAgentConfigComponent {
   readonly credentialProfileId = model<string | null>(null);
 
   readonly subagents = model<IYoizenclawSubagentDraft[]>([]);
+
+  /**
+   * Auto-select LLM Provider based on the selected Credential Profile.
+   * The provider value comes directly from the credential profile API response.
+   */
+  onCredentialProfileChange(): void {
+    const selectedId = this.credentialProfileId();
+    if (!selectedId) {
+      // If no profile selected, clear the provider
+      this.provider.set("");
+      return;
+    }
+
+    const selectedProfile = this.credentialProfiles().find(
+      (p) => p.id === selectedId
+    );
+    if (selectedProfile) {
+      // Use the provider directly from the credential profile
+      this.provider.set(selectedProfile.provider);
+    }
+  }
 
   addSubagent(): void {
     this.subagents.update((items) => [

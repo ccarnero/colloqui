@@ -36,10 +36,14 @@ YOIZENCLAW_ACTIONS: dict[str, str] = {
     "config_sync": "config_sync.v1",
     "jobs_sync": "jobs_sync.v1",
     "job_trigger": "job_trigger.v1",
+    "job.event.emit": "job.event.emit.v1",
     "chat_respond": "chat_respond.v1",
     "online": "online.v1",
+    "runtime_online": "runtime.online.v1",
     "event": "event.v1",
     "agent_outbound": "agent.outbound.v1",
+    "agent_published": "agent_published.v1",
+    "agent_unpublished": "agent_unpublished.v1",
     "execution_status": "job.execution_status.v1",
 }
 

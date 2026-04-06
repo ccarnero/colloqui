@@ -190,7 +190,7 @@ class TestStructuredLoggingWithTenantTags:
 
         mock_prom = MagicMock()
         with patch.dict(sys.modules, {"prometheus_client": mock_prom}):
-            from src.interfaces.nats_bridge import RuntimeNatsBridge
+            from src.messaging.bridge import RuntimeNatsBridge
 
             bridge = RuntimeNatsBridge.__new__(RuntimeNatsBridge)
             bridge._nats = AsyncMock()
@@ -204,7 +204,7 @@ class TestStructuredLoggingWithTenantTags:
             bridge._object_store = None
 
             with patch(
-                "src.interfaces.nats_bridge._is_configured_check",
+                "src.messaging.bridge._is_configured_check",
                 return_value=False,
             ):
                 await bridge.start()

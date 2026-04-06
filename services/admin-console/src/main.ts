@@ -68,7 +68,6 @@ function configureMonacoGlobal(): void {
         colors: {},
       });
       
-      console.log('[Monaco] YoizenClaw prompt language configured');
     } else {
       // Retry in 100ms if Monaco not loaded yet
       setTimeout(tryConfigure, 100);

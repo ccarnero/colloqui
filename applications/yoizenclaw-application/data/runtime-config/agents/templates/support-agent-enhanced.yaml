@@ -1,0 +1,200 @@
+name: "Customer Support Enhanced"
+description: "Enhanced customer support agent with ticket management and knowledge base skills"
+role:
+  name: "Customer Support Agent"
+  description: "A helpful customer support agent that can manage tickets, access knowledge base, and resolve customer issues"
+  systemPrompt: "You are a professional customer support agent. Help customers resolve issues efficiently, access relevant information, and provide excellent service. Always be empathetic and solution-focused."
+  temperature: 0.7
+  maxTokens: 600
+rules:
+  - "Always be empathetic and professional"
+  - "Follow support procedures and escalation paths"
+  - "Document all customer interactions"
+  - "Use enhanced skills for support operations"
+responseStyle: "Empathetic, professional, and solution-oriented"
+llm:
+  provider: "openai"
+  model: "gpt-4"
+skills:
+  # Ticket management skill
+  - id: "ticket-skill"
+    name: "ticket_skill"
+    description: "Manage customer support tickets"
+    enabled: true
+    instructions: "Manage ticket #$TICKET_ID for $CUSTOMER_NAME. Issue: $ISSUE. Priority: $PRIORITY. Category: $CATEGORY. Resolution steps: $RESOLUTION. Full ticket context: $ARGUMENTS"
+    when_to_use: "Use when creating, updating, or managing support tickets"
+    triggers: ["/ticket", "/case", "/issue"]
+    arguments: ["ticket_id", "customer_name", "issue", "priority", "category", "resolution"]
+    allowedTools: ["ticket_tool", "crm_tool", "escalation_tool"]
+    context_mode: "inline"
+    priority: 10
+  
+  # Knowledge base search skill
+  - id: "knowledge-skill"
+    name: "knowledge_skill"
+    description: "Search knowledge base for solutions"
+    enabled: true
+    instructions: "Search knowledge base for $QUERY in $CATEGORY. Keywords: $KEYWORDS. Language: $LANGUAGE. Context: $CONTEXT. Search details: $ARGUMENTS"
+    when_to_use: "Use when searching for solutions, documentation, or knowledge articles"
+    triggers: ["/search", "/kb", "/knowledge", "/docs"]
+    arguments: ["query", "category", "keywords", "language", "context"]
+    allowedTools: ["kb_tool", "search_tool", "documentation_tool"]
+    context_mode: "inline"
+    priority: 8
+  
+  # Customer communication skill
+  - id: "communicate-skill"
+    name: "communicate_skill"
+    description: "Handle customer communications and follow-ups"
+    enabled: true
+    instructions: "Communicate with $CUSTOMER_NAME via $CHANNEL. Topic: $TOPIC. Tone: $TONE. Template: $TEMPLATE. Personalization: $PERSONALIZATION. Message details: $ARGUMENTS"
+    when_to_use: "Use when communicating with customers via email, chat, or phone"
+    triggers: ["/email", "/contact", "/respond", "/communicate"]
+    arguments: ["customer_name", "channel", "topic", "tone", "template", "personalization"]
+    allowedTools: ["email_tool", "chat_tool", "template_tool"]
+    context_mode: "inline"
+    priority: 7
+  
+  # Escalation management skill
+  - id: "escalate-skill"
+    name: "escalate_skill"
+    description: "Manage escalations and urgent issues"
+    enabled: true
+    instructions: "Escalate issue $ISSUE_TYPE for $CUSTOMER_NAME. Severity: $SEVERITY. Escalation level: $LEVEL. Reason: $REASON. Timeline: $TIMELINE. Escalation details: $ARGUMENTS"
+    when_to_use: "Use when escalating issues to higher support levels"
+    triggers: ["/escalate", "/urgent", "/escalation"]
+    arguments: ["issue_type", "customer_name", "severity", "level", "reason", "timeline"]
+    allowedTools: ["escalation_tool", "alert_tool", "management_tool"]
+    context_mode: "fork"
+    modelOverride: "claude-3-sonnet"
+    priority: 9
+  
+  # Resolution and closure skill
+  - id: "resolve-skill"
+    name: "resolve_skill"
+    description: "Resolve customer issues and close tickets"
+    enabled: true
+    instructions: "Resolve ticket #$TICKET_ID for $CUSTOMER_NAME. Solution: $SOLUTION. Customer satisfaction: $SATISFACTION. Follow-up: $FOLLOWUP. Lessons learned: $LESSONS. Resolution details: $ARGUMENTS"
+    when_to_use: "Use when resolving issues and closing support tickets"
+    triggers: ["/resolve", "/close", "/solved"]
+    arguments: ["ticket_id", "customer_name", "solution", "satisfaction", "followup", "lessons"]
+    allowedTools: ["ticket_tool", "survey_tool", "analytics_tool"]
+    context_mode: "inline"
+    priority: 8
+  
+  # FAQ and documentation skill
+  - id: "faq-skill"
+    name: "faq_skill"
+    description: "Provide FAQ answers and documentation"
+    enabled: true
+    instructions: "Provide FAQ answer for $TOPIC in $CATEGORY. Language: $LANGUAGE. Customer type: $CUSTOMER_TYPE. Product: $PRODUCT. Context: $CONTEXT. FAQ details: $ARGUMENTS"
+    when_to_use: "Use when providing quick answers from FAQ or documentation"
+    triggers: ["/faq", "/help", "/answer", "/question"]
+    arguments: ["topic", "category", "language", "customer_type", "product", "context"]
+    allowedTools: ["faq_tool", "documentation_tool", "search_tool"]
+    context_mode: "inline"
+    priority: 6
+tools:
+  - id: "ticket_tool"
+    name: "ticket_tool"
+    description: "Manage support tickets and cases"
+    endpoint: "https://api.support.com/tickets"
+    method: "POST"
+    enabled: true
+    headers:
+      Authorization: "Bearer ${SUPPORT_TOKEN}"
+  
+  - id: "kb_tool"
+    name: "kb_tool"
+    description: "Access knowledge base and documentation"
+    endpoint: "https://api.kb.com/search"
+    method: "POST"
+    enabled: true
+  
+  - id: "crm_tool"
+    name: "crm_tool"
+    description: "Access customer relationship data"
+    endpoint: "https://api.crm.com/customers"
+    method: "GET"
+    enabled: true
+  
+  - id: "escalation_tool"
+    name: "escalation_tool"
+    description: "Manage issue escalations"
+    endpoint: "https://api.escalate.com/create"
+    method: "POST"
+    enabled: true
+  
+  - id: "email_tool"
+    name: "email_tool"
+    description: "Send customer emails"
+    endpoint: "https://api.email.com/send"
+    method: "POST"
+    enabled: true
+  
+  - id: "chat_tool"
+    name: "chat_tool"
+    description: "Handle live chat conversations"
+    endpoint: "https://api.chat.com/conversations"
+    method: "POST"
+    enabled: true
+  
+  - id: "template_tool"
+    name: "template_tool"
+    description: "Access communication templates"
+    endpoint: "https://api.templates.com/get"
+    method: "GET"
+    enabled: true
+  
+  - id: "alert_tool"
+    name: "alert_tool"
+    description: "Send alerts and notifications"
+    endpoint: "https://api.alerts.com/send"
+    method: "POST"
+    enabled: true
+  
+  - id: "survey_tool"
+    name: "survey_tool"
+    description: "Create and manage customer surveys"
+    endpoint: "https://api.survey.com/create"
+    method: "POST"
+    enabled: true
+  
+  - id: "analytics_tool"
+    name: "analytics_tool"
+    description: "Access support analytics and metrics"
+    endpoint: "https://api.analytics.com/support"
+    method: "GET"
+    enabled: true
+  
+  - id: "faq_tool"
+    name: "faq_tool"
+    description: "Access FAQ and quick answers"
+    endpoint: "https://api.faq.com/search"
+    method: "POST"
+    enabled: true
+  
+  - id: "documentation_tool"
+    name: "documentation_tool"
+    description: "Access product documentation"
+    endpoint: "https://api.docs.com/search"
+    method: "POST"
+    enabled: true
+  
+  - id: "search_tool"
+    name: "search_tool"
+    description: "General search across support systems"
+    endpoint: "https://api.search.com/query"
+    method: "POST"
+    enabled: true
+  
+  - id: "management_tool"
+    name: "management_tool"
+    description: "Access management and reporting tools"
+    endpoint: "https://api.management.com/reports"
+    method: "GET"
+    enabled: true
+# Enhanced features enabled
+enableEnhancedSkills: true
+enableSkillRouting: true
+enableDiscoveryTools: true

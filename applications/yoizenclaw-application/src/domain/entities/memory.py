@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.jobs.domain.entities import JobDefinition, JobExecution
+    from src.services.domain.entities import JobDefinition, JobExecution
 
 
 class MemoryBackend(ABC):
