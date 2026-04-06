@@ -195,7 +195,7 @@ class TestEnhancedAgentE2E:
         )
         
         # Verify discovery tools were registered
-        assert tool_registry.register_tool_def.call_count >= 2  # SelectSkill and ListSkills
+        assert tool_registry.register_tool_def.call_count >= 2  # ActivateSkill and ListSkills
 
     @pytest.mark.asyncio
     async def test_legacy_skill_migration(self) -> None:

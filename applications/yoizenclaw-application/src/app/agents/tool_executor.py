@@ -47,7 +47,7 @@ class ToolExecutor:
         if not isinstance(configured_allowed, list):
             configured_allowed = skill.get("allowedTools")
 
-        enabled_tool_names = self._resolve_enabled_tool_names()
+        enabled_tool_names = self.resolve_enabled_tool_names()
 
         if isinstance(configured_allowed, list) and configured_allowed:
             normalized_allowed: list[str] = []
@@ -73,7 +73,7 @@ class ToolExecutor:
         """Validate prompt-referenced tools against enabled and allowed tools."""
 
         allowed_tool_names = set(self.resolve_skill_allowed_tools(skill))
-        enabled_tool_names = self._resolve_enabled_tool_names()
+        enabled_tool_names = self.resolve_enabled_tool_names()
 
         valid_tool_names: list[str] = []
         warnings: list[str] = []
@@ -96,7 +96,7 @@ class ToolExecutor:
 
         return valid_tool_names, warnings
 
-    def _resolve_enabled_tool_names(self) -> set[str]:
+    def resolve_enabled_tool_names(self) -> set[str]:
         """Resolve enabled tool names from config or registry fallback."""
         configured_tool_names = {
             str(tool.get("name", "")).strip()
@@ -193,6 +193,78 @@ class ToolExecutor:
             )
 
         return tools
+
+    def build_tools_with_schema(
+        self,
+        allowed_tool_names: list[str],
+        state: dict[str, Any],
+        tool_calls: list[dict[str, Any]],
+    ) -> list[Tool]:
+        """Build pydantic-ai Tools with explicit JSON schemas.
+
+        Uses ``Tool.from_schema`` so the LLM sees the real parameter
+        schemas (e.g. ``action``, ``target_id``) instead of the internal
+        wrapper signature (``input``, ``_tool_name``).
+
+        Falls back to ``build_skill_tools`` for tools without a registered
+        ``ToolDef`` (i.e. config-only HTTP tools).
+        """
+        schema_tools: list[Tool] = []
+        fallback_names: list[str] = []
+
+        for tool_name in allowed_tool_names:
+            # Check if the registry has a ToolDef with a proper schema
+            tool_def = self.tool_registry.get_tool(tool_name) if self.tool_registry else None
+
+            if tool_def and tool_def.input_schema:
+                _name = tool_name
+
+                async def _handler(
+                    _tool_name: str = _name,
+                    **kwargs: Any,
+                ) -> Any:
+                    try:
+                        result = await self._execute_tool_payload(
+                            _tool_name, kwargs, state,
+                        )
+                        serialized = self._serialize(result)
+                        self._merge_state(state, result)
+                    except Exception as error:
+                        logger.exception(
+                            "Tool '%s' execution failed: %s", _tool_name, error,
+                        )
+                        serialized = {
+                            "success": False,
+                            "tool": _tool_name,
+                            "error": str(error),
+                        }
+
+                    tool_calls.append({
+                        "tool": _tool_name,
+                        "input": self._serialize(kwargs),
+                        "result": serialized,
+                    })
+                    return serialized
+
+                schema_tools.append(
+                    Tool.from_schema(
+                        function=_handler,
+                        name=tool_def.name,
+                        description=tool_def.description,
+                        json_schema=tool_def.input_schema,
+                        takes_ctx=False,
+                    )
+                )
+            else:
+                fallback_names.append(tool_name)
+
+        # Tools without a ToolDef schema fall back to the legacy builder
+        if fallback_names:
+            schema_tools.extend(
+                self.build_skill_tools(fallback_names, state, tool_calls)
+            )
+
+        return schema_tools
 
     async def execute_tool(
         self,

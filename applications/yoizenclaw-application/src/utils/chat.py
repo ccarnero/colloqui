@@ -184,11 +184,23 @@ async def generate_chat_reply(request: ChatRequest) -> ChatResponse:
             and agent.agent_metadata
             and agent.agent_metadata.get("enhanced")
         ):
-            # Use enhanced skill execution
-            result = await agent.run_with_enhanced_skill(
-                request.message,
-                context=runtime_context,
+            # Determine routing mode
+            routing_mode = (agent.agent_metadata or {}).get(
+                "skill_routing_mode", "llm_driven"
             )
+
+            if routing_mode == "llm_driven" and hasattr(agent, "run_llm_driven"):
+                # LLM-driven: the LLM decides which skill to activate
+                result = await agent.run_llm_driven(
+                    request.message,
+                    context=runtime_context,
+                )
+            else:
+                # Router mode: SkillRouter decides before the LLM
+                result = await agent.run_with_enhanced_skill(
+                    request.message,
+                    context=runtime_context,
+                )
         else:
             # Use legacy skill-based execution
             result = await agent.run_with_skill(

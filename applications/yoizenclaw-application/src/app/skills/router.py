@@ -116,7 +116,7 @@ class SkillRouter:
             logger.debug(f"Selected skill by name: {explicit_skill.name}")
             return explicit_skill
 
-        # 3. LLM-driven selection (placeholder for future SelectSkill tool)
+        # 3. Semantic selection via keyword overlap
         semantic_skill = self._resolve_by_semantics(context)
         if semantic_skill:
             logger.debug(f"Selected skill by semantic match: {semantic_skill.name}")

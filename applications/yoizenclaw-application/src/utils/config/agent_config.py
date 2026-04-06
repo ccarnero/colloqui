@@ -302,6 +302,13 @@ class EnhancedAgentSyncRequest(BaseModel):
     enable_skill_routing: bool = Field(default=True, alias="enableSkillRouting")
     enable_discovery_tools: bool = Field(default=True, alias="enableDiscoveryTools")
 
+    # Skill routing mode:
+    #  - "router": SkillRouter decides before the LLM sees the message (default)
+    #  - "llm_driven": LLM sees a lightweight skill catalog and decides via ActivateSkill tool
+    skill_routing_mode: Literal["router", "llm_driven"] = Field(
+        default="llm_driven", alias="skillRoutingMode"
+    )
+
     @model_validator(mode="before")
     @classmethod
     def _normalize_and_migrate_skills(cls, data: Any) -> Any:
@@ -454,7 +461,12 @@ def build_agent_system_prompt(
     if response_style_text:
         extra_sections.append(_format_text_section("Soul", response_style_text))
 
-    skills_text = _format_skill_bullets(agent_config.get("skills", []))
+    skill_routing_mode = agent_config.get("skillRoutingMode") or agent_config.get(
+        "skill_routing_mode", "llm_driven"
+    )
+    skills_text = _format_skill_bullets(
+        agent_config.get("skills", []), skill_routing_mode=skill_routing_mode
+    )
     if skills_text:
         extra_sections.append(skills_text)
 
@@ -543,7 +555,9 @@ def _format_text_section(title: str, text: str) -> str:
     return f"{title}:\n{cleaned_text}"
 
 
-def _format_skill_bullets(items: Any) -> str:
+def _format_skill_bullets(
+    items: Any, *, skill_routing_mode: str = "router"
+) -> str:
     if not isinstance(items, list):
         return ""
 
@@ -587,7 +601,19 @@ def _format_skill_bullets(items: Any) -> str:
     if not lines:
         return ""
 
-    return "Available Skills:\n" + "\n".join(lines)
+    header = "Available Skills:\n" + "\n".join(lines)
+
+    if skill_routing_mode == "llm_driven":
+        header += (
+            "\n\n"
+            "SKILL USAGE: When you detect the user's intent matches a skill above, "
+            "call the `ActivateSkill` tool with the skill name. "
+            "The tool will return the full instructions for that skill. "
+            "Follow those instructions to respond to the user. "
+            "If no skill matches, respond naturally without activating any skill."
+        )
+
+    return header
 
 
 def _coerce_response_style_text(value: Any) -> str:

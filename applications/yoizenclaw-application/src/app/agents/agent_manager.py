@@ -278,6 +278,7 @@ class AgentManager:
                 "enhanced": True,
                 "enable_skill_routing": enhanced_config.enable_skill_routing,
                 "enable_discovery_tools": enhanced_config.enable_discovery_tools,
+                "skill_routing_mode": enhanced_config.skill_routing_mode,
             },
         )
 

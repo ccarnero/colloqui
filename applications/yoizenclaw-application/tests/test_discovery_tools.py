@@ -1,7 +1,7 @@
-"""Tests for skill discovery tools (SelectSkill, ListSkills)."""
+"""Tests for skill discovery tools (ActivateSkill, ListSkills)."""
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from src.app.skills.skill_def import SkillDefinition
 from src.app.skills.router import SkillRouter
@@ -18,6 +18,7 @@ class TestSkillDiscoveryTools:
                 id="sales",
                 name="sales_assistant",
                 description="Helps with sales inquiries",
+                instructions="You are a sales assistant. Help the customer with pricing.",
                 when_to_use="Use when customer asks about pricing or products",
                 triggers=["/sales", "/pricing"],
                 arguments=["product", "quantity"],
@@ -28,6 +29,7 @@ class TestSkillDiscoveryTools:
                 id="support",
                 name="support_agent",
                 description="Technical support assistance",
+                instructions="You are tech support. Help resolve technical issues.",
                 when_to_use="Use when customer reports technical issues",
                 triggers=["/support"],
                 arguments=["issue_type"],
@@ -38,28 +40,28 @@ class TestSkillDiscoveryTools:
                 id="general",
                 name="general_assistant",
                 description="General purpose assistance",
+                instructions="You are a general assistant.",
                 when_to_use="Use for general inquiries",
                 priority=1,
             ),
         ]
         return SkillRouter(skills)
 
-    def test_create_select_skill_tool(self) -> None:
-        """Test creation of SelectSkill tool."""
+    def test_create_activate_skill_tool(self) -> None:
+        """Test creation of ActivateSkill tool."""
         router = self.create_test_router()
         discovery = SkillDiscoveryTools(router)
 
-        tool = discovery.create_select_skill_tool()
+        tool = discovery.create_activate_skill_tool()
 
-        assert tool.name == "SelectSkill"
-        assert "Select and activate a skill" in tool.description
+        assert tool.name == "ActivateSkill"
+        assert "Activate a skill" in tool.description
         assert tool.read_only is True
 
         schema = tool.input_schema
         assert schema["type"] == "object"
         assert "skill_name" in schema["properties"]
         assert "reasoning" in schema["properties"]
-        assert "user_intent" in schema["properties"]
         assert schema["required"] == ["skill_name"]
 
     def test_create_list_skills_tool(self) -> None:
@@ -78,17 +80,19 @@ class TestSkillDiscoveryTools:
         assert "filter_by_trigger" in schema["properties"]
         assert "include_disabled" in schema["properties"]
 
-    @pytest.mark.asyncio
-    async def test_select_skill_success(self) -> None:
-        """Test successful skill selection."""
+    def test_activate_skill_success(self) -> None:
+        """Test successful skill activation returns full instructions."""
         router = self.create_test_router()
-        discovery = SkillDiscoveryTools(router)
+        activated_skills = []
+        discovery = SkillDiscoveryTools(
+            router, on_activate=lambda s: activated_skills.append(s)
+        )
 
-        result = await discovery.create_select_skill_tool().execute(
+        tool = discovery.create_activate_skill_tool()
+        result = tool.func(
             {
                 "skill_name": "sales_assistant",
                 "reasoning": "Customer is asking about pricing",
-                "user_intent": "Customer wants to know product prices",
             },
             {},
         )
@@ -96,68 +100,67 @@ class TestSkillDiscoveryTools:
         assert result["success"] is True
         assert result["skill_name"] == "sales_assistant"
         assert result["skill_id"] == "sales"
-        assert result["description"] == "Helps with sales inquiries"
         assert (
-            result["when_to_use"] == "Use when customer asks about pricing or products"
+            result["instructions"]
+            == "You are a sales assistant. Help the customer with pricing."
         )
-        assert result["triggers"] == ["/sales", "/pricing"]
-        assert result["arguments"] == ["product", "quantity"]
         assert result["allowed_tools"] == ["price_calculator"]
-        assert result["llm_reasoning"] == "Customer is asking about pricing"
+        assert result["arguments"] == ["product", "quantity"]
+        assert "guidance" in result
 
-    @pytest.mark.asyncio
-    async def test_select_skill_missing_name(self) -> None:
-        """Test skill selection with missing skill name."""
+        # Callback was invoked
+        assert len(activated_skills) == 1
+        assert activated_skills[0].name == "sales_assistant"
+
+    def test_activate_skill_missing_name(self) -> None:
+        """Test skill activation with missing skill name."""
         router = self.create_test_router()
         discovery = SkillDiscoveryTools(router)
 
-        result = await discovery.create_select_skill_tool().execute(
+        result = discovery.create_activate_skill_tool().func(
             {"reasoning": "Some reasoning"}, {}
         )
 
         assert result["success"] is False
         assert "skill_name is required" in result["error"]
 
-    @pytest.mark.asyncio
-    async def test_select_skill_not_found(self) -> None:
-        """Test skill selection with non-existent skill."""
+    def test_activate_skill_not_found(self) -> None:
+        """Test skill activation with non-existent skill."""
         router = self.create_test_router()
         discovery = SkillDiscoveryTools(router)
 
-        result = await discovery.create_select_skill_tool().execute(
+        result = discovery.create_activate_skill_tool().func(
             {"skill_name": "nonexistent_skill", "reasoning": "Some reasoning"}, {}
         )
 
         assert result["success"] is False
         assert "not found" in result["error"]
+        assert "available_skills" in result
 
-    @pytest.mark.asyncio
-    async def test_select_skill_validation_failure(self) -> None:
-        """Test skill selection when validation would fail."""
+    def test_activate_skill_no_callback(self) -> None:
+        """Test skill activation works without callback."""
         router = self.create_test_router()
-        discovery = SkillDiscoveryTools(router)
+        discovery = SkillDiscoveryTools(router)  # no on_activate
 
-        with patch.object(router, "resolve", return_value=None):
-            result = await discovery.create_select_skill_tool().execute(
-                {"skill_name": "sales_assistant", "reasoning": "Some reasoning"}, {}
-            )
+        result = discovery.create_activate_skill_tool().func(
+            {"skill_name": "support_agent"}, {}
+        )
 
-        assert result["success"] is False
-        assert "validation failed" in result["error"]
+        assert result["success"] is True
+        assert result["skill_name"] == "support_agent"
+        assert "resolve technical issues" in result["instructions"]
 
-    @pytest.mark.asyncio
-    async def test_list_skills_all(self) -> None:
+    def test_list_skills_all(self) -> None:
         """Test listing all available skills."""
         router = self.create_test_router()
         discovery = SkillDiscoveryTools(router)
 
-        result = await discovery.create_list_skills_tool().execute({}, {})
+        result = discovery.create_list_skills_tool().func({}, {})
 
         assert result["success"] is True
         assert result["total_count"] == 3
         assert len(result["skills"]) == 3
 
-        # Check skill structure
         skill_names = [skill["name"] for skill in result["skills"]]
         assert "sales_assistant" in skill_names
         assert "support_agent" in skill_names
@@ -171,13 +174,12 @@ class TestSkillDiscoveryTools:
         assert "routing_summary" in result
         assert "**sales_assistant**" in result["routing_summary"]
 
-    @pytest.mark.asyncio
-    async def test_list_skills_filter_by_trigger(self) -> None:
+    def test_list_skills_filter_by_trigger(self) -> None:
         """Test listing skills filtered by trigger."""
         router = self.create_test_router()
         discovery = SkillDiscoveryTools(router)
 
-        result = await discovery.create_list_skills_tool().execute(
+        result = discovery.create_list_skills_tool().func(
             {"filter_by_trigger": "/sales"}, {}
         )
 
@@ -187,8 +189,7 @@ class TestSkillDiscoveryTools:
         assert result["skills"][0]["name"] == "sales_assistant"
         assert result["filter_by_trigger"] == "/sales"
 
-    @pytest.mark.asyncio
-    async def test_list_skills_include_disabled(self) -> None:
+    def test_list_skills_include_disabled(self) -> None:
         """Test listing skills including disabled ones."""
         skills = self.create_test_router().skills + [
             SkillDefinition(
@@ -202,7 +203,7 @@ class TestSkillDiscoveryTools:
         router = SkillRouter(skills)
         discovery = SkillDiscoveryTools(router)
 
-        result = await discovery.create_list_skills_tool().execute(
+        result = discovery.create_list_skills_tool().func(
             {"include_disabled": True}, {}
         )
 
@@ -215,13 +216,12 @@ class TestSkillDiscoveryTools:
         )
         assert disabled_skill["enabled"] is False
 
-    @pytest.mark.asyncio
-    async def test_list_skills_optional_fields(self) -> None:
+    def test_list_skills_optional_fields(self) -> None:
         """Test that optional fields are only included when they have values."""
         router = self.create_test_router()
         discovery = SkillDiscoveryTools(router)
 
-        result = await discovery.create_list_skills_tool().execute({}, {})
+        result = discovery.create_list_skills_tool().func({}, {})
 
         # Sales skill has all optional fields
         sales_skill = next(
@@ -237,9 +237,9 @@ class TestSkillDiscoveryTools:
             s for s in result["skills"] if s["name"] == "general_assistant"
         )
         assert "when_to_use" in general_skill
-        assert "triggers" not in general_skill  # Empty list omitted
-        assert "arguments" not in general_skill  # Empty list omitted
-        assert "allowed_tools" not in general_skill  # Empty list omitted
+        assert "triggers" not in general_skill
+        assert "arguments" not in general_skill
+        assert "allowed_tools" not in general_skill
 
     def test_get_all_discovery_tools(self) -> None:
         """Test getting all discovery tools."""
@@ -250,7 +250,7 @@ class TestSkillDiscoveryTools:
 
         assert len(tools) == 2
         tool_names = [tool.name for tool in tools]
-        assert "SelectSkill" in tool_names
+        assert "ActivateSkill" in tool_names
         assert "ListSkills" in tool_names
 
     def test_create_discovery_tools_convenience(self) -> None:
@@ -261,40 +261,27 @@ class TestSkillDiscoveryTools:
 
         assert len(tools) == 2
         assert all(hasattr(tool, "name") for tool in tools)
-        assert all(hasattr(tool, "execute") for tool in tools)
 
-    @pytest.mark.asyncio
-    async def test_select_skill_with_context_mode(self) -> None:
-        """Test skill selection includes context mode when not inline."""
-        skills = [
-            SkillDefinition(
-                id="fork_skill",
-                name="fork_assistant",
-                description="Fork mode skill",
-                context_mode="fork",
-                model_override="claude-3-haiku",
-            )
-        ]
-        router = SkillRouter(skills)
-        discovery = SkillDiscoveryTools(router)
+    def test_create_discovery_tools_with_callback(self) -> None:
+        """Test convenience function passes callback through."""
+        router = self.create_test_router()
+        activated = []
 
-        result = await discovery.create_select_skill_tool().execute(
-            {"skill_name": "fork_assistant", "reasoning": "Need isolated execution"}, {}
-        )
+        tools = create_discovery_tools(router, on_activate=lambda s: activated.append(s))
 
-        assert result["success"] is True
-        assert result["context_mode"] == "fork"
-        assert result["model_override"] == "claude-3-haiku"
+        activate_tool = next(t for t in tools if t.name == "ActivateSkill")
+        activate_tool.func({"skill_name": "sales_assistant"}, {})
 
-    @pytest.mark.asyncio
-    async def test_tool_error_handling(self) -> None:
-        """Test error handling in discovery tools."""
+        assert len(activated) == 1
+
+    def test_activate_skill_error_handling(self) -> None:
+        """Test error handling in ActivateSkill tool."""
         router = Mock()
         router.enabled_skills = []
         router.validate_skill_selection.return_value = (None, ["Skill not found"])
         discovery = SkillDiscoveryTools(router)
 
-        result = await discovery.create_select_skill_tool().execute(
+        result = discovery.create_activate_skill_tool().func(
             {"skill_name": "test"}, {}
         )
 

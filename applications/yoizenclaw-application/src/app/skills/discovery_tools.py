@@ -1,13 +1,15 @@
 """Discovery tools for LLM-driven skill selection.
 
-Provides SelectSkill and ListSkills tools that allow the LLM to
-discover and activate skills based on user intent.
+Provides ActivateSkill and ListSkills tools that allow the LLM to
+discover and activate skills based on user intent.  ActivateSkill
+returns the full skill instructions (lazy loading) so the LLM can
+follow them to respond.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from src.app.tools.tool_def import ToolDef
 from .router import SkillRouter, SkillContext
@@ -18,20 +20,38 @@ logger = logging.getLogger(__name__)
 class SkillDiscoveryTools:
     """Creates tools for LLM-driven skill discovery and selection."""
 
-    def __init__(self, skill_router: SkillRouter) -> None:
-        """Initialize discovery tools with a skill router."""
+    def __init__(
+        self,
+        skill_router: SkillRouter,
+        on_activate: Callable[[Any], None] | None = None,
+    ) -> None:
+        """Initialize discovery tools with a skill router.
+
+        Args:
+            skill_router: Router with available skills.
+            on_activate: Optional callback invoked when the LLM activates
+                a skill via ``ActivateSkill``.  Receives the
+                ``SkillDefinition`` instance.
+        """
         self.skill_router = skill_router
+        self._on_activate_callback = on_activate
 
-    def create_select_skill_tool(self) -> ToolDef:
-        """Create the SelectSkill tool for LLM to activate skills."""
+    def create_activate_skill_tool(self) -> ToolDef:
+        """Create the ActivateSkill tool for LLM-driven skill loading.
 
-        def select_skill_func(
+        When called, returns the full skill instructions so the LLM can
+        follow them to respond to the user. This enables lazy-loading:
+        the system prompt only contains a lightweight catalog, and the
+        LLM fetches full instructions on demand.
+        """
+        on_activate = self._on_activate_callback
+
+        def activate_skill_func(
             params: dict[str, Any], config: dict[str, Any]
         ) -> dict[str, Any]:
-            """Select a skill for activation based on user intent."""
+            """Activate a skill and receive its full instructions."""
             skill_name = params.get("skill_name", "").strip()
             reasoning = params.get("reasoning", "").strip()
-            user_intent = params.get("user_intent", "").strip()
 
             if not skill_name:
                 return {
@@ -39,77 +59,62 @@ class SkillDiscoveryTools:
                     "error": "skill_name is required",
                 }
 
-            # Validate the skill exists
             skill, warnings = self.skill_router.validate_skill_selection(skill_name)
 
             if not skill:
                 return {
                     "success": False,
                     "error": f"Skill '{skill_name}' not found",
+                    "available_skills": [
+                        s.name for s in self.skill_router.enabled_skills
+                    ],
                     "warnings": warnings,
                 }
 
-            # Create context for validation
-            context = SkillContext(
-                user_message=user_intent or f"Activate skill: {skill_name}",
-                explicit_skill_name=skill_name,
-                available_skills=self.skill_router.enabled_skills,
+            logger.info(
+                f"LLM activated skill: {skill_name} (reasoning: {reasoning})"
             )
 
-            # Verify the skill would be selected
-            resolved_skill = self.skill_router.resolve(context)
+            if on_activate:
+                on_activate(skill)
 
-            if resolved_skill and resolved_skill.name == skill_name:
-                logger.info(
-                    f"LLM selected skill: {skill_name} (reasoning: {reasoning})"
-                )
-
-                return {
-                    "success": True,
-                    "skill_name": skill_name,
-                    "skill_id": skill.id,
-                    "description": skill.description,
-                    "when_to_use": skill.when_to_use,
-                    "triggers": skill.triggers,
-                    "arguments": skill.arguments,
-                    "allowed_tools": skill.allowed_tools,
-                    "context_mode": skill.context_mode,
-                    "model_override": skill.model_override,
-                    "llm_reasoning": reasoning,
-                    "user_intent": user_intent,
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": f"Skill '{skill_name}' validation failed",
-                    "selected_instead": resolved_skill.name if resolved_skill else None,
-                    "warnings": warnings + context.warnings,
-                }
+            return {
+                "success": True,
+                "skill_name": skill_name,
+                "skill_id": skill.id,
+                "instructions": skill.instructions,
+                "allowed_tools": skill.allowed_tools,
+                "arguments": skill.arguments,
+                "guidance": (
+                    "Follow the instructions above to handle the user's request. "
+                    "Use only the allowed_tools listed if any are specified."
+                ),
+            }
 
         return ToolDef(
-            name="SelectSkill",
-            description="Select and activate a skill based on user intent and skill capabilities",
+            name="ActivateSkill",
+            description=(
+                "Activate a skill to receive its full instructions. "
+                "Call this when you detect the user's intent matches one of the available skills. "
+                "The returned instructions tell you exactly how to handle the request."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
                     "skill_name": {
                         "type": "string",
-                        "description": "The name of the skill to select",
+                        "description": "The name of the skill to activate (from the available skills catalog)",
                     },
                     "reasoning": {
                         "type": "string",
-                        "description": "Why this skill is appropriate for the user's request",
-                    },
-                    "user_intent": {
-                        "type": "string",
-                        "description": "What the user is trying to accomplish",
+                        "description": "Brief explanation of why this skill matches the user's intent",
                     },
                 },
                 "required": ["skill_name"],
             },
-            func=select_skill_func,
+            func=activate_skill_func,
             read_only=True,
-            max_output_chars=8192,
+            max_output_chars=16384,
         )
 
     def create_list_skills_tool(self) -> ToolDef:
@@ -203,12 +208,15 @@ class SkillDiscoveryTools:
     def get_all_discovery_tools(self) -> list[ToolDef]:
         """Get all discovery tools for registration."""
         return [
-            self.create_select_skill_tool(),
+            self.create_activate_skill_tool(),
             self.create_list_skills_tool(),
         ]
 
 
-def create_discovery_tools(skill_router: SkillRouter) -> list[ToolDef]:
+def create_discovery_tools(
+    skill_router: SkillRouter,
+    on_activate: Callable[[Any], None] | None = None,
+) -> list[ToolDef]:
     """Convenience function to create all discovery tools."""
-    discovery = SkillDiscoveryTools(skill_router)
+    discovery = SkillDiscoveryTools(skill_router, on_activate=on_activate)
     return discovery.get_all_discovery_tools()
