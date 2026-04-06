@@ -337,6 +337,10 @@ class LLMClient:
     def supports_tool_execution(self) -> bool:
         return not self._use_mock
 
+    def _register_tool(self, agent: PydanticAgent, tool_def: Any) -> None:
+        """Backwards-compatible tool registration helper for runtime agents."""
+        LLMAgentFactory._register_tool(agent, tool_def)
+
     def build_text_agent(
         self,
         instructions: str | None = None,

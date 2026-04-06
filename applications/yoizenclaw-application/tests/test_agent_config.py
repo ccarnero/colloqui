@@ -33,10 +33,10 @@ def _write_base_agent_config(config_dir: Path) -> None:
             [
                 'name: "recovery"',
                 'description: "Base recovery config"',
-                'tools:',
-                '  - resource',
-                '  - memory',
-                '  - communicate',
+                "tools:",
+                "  - resource",
+                "  - memory",
+                "  - communicate",
                 'skill: "recovery"',
             ]
         ),
@@ -188,9 +188,9 @@ async def test_agent_config_store_uses_canonical_recovery_id() -> None:
 
     assert saved["name"] == "Recovery Agent"
     assert repository.saved_agent_ids == [RECOVERY_AGENT_ID]
-    assert (
-        await store.load_active_config()
-    )["role"]["system_prompt"] == "Canonical recovery prompt"
+    assert (await store.load_active_config())["role"][
+        "system_prompt"
+    ] == "Canonical recovery prompt"
 
 
 @pytest.mark.asyncio
@@ -463,9 +463,7 @@ async def test_agent_run_renders_namespaced_prompt_variables(
         system_prompt: str | None = None,
     ) -> SimpleNamespace:
         assert prompt == "Hola"
-        assert system_prompt == (
-            "You are Recovery Agent. Talk to Pedro on webchat."
-        )
+        assert system_prompt == ("You are Recovery Agent. Talk to Pedro on webchat.")
         return SimpleNamespace(content="Respuesta")
 
     monkeypatch.setattr(agent.llm_client, "generate", fake_generate)
@@ -577,9 +575,7 @@ async def test_agent_run_with_skill_warns_for_tool_reference_not_allowed(
     result = await agent.run_with_skill("Quiero cotizar")
 
     assert result["response"] == "Listo"
-    assert any(
-        "@tool:memory" in warning for warning in result["state"]["warnings"]
-    )
+    assert any("@tool:memory" in warning for warning in result["state"]["warnings"])
 
 
 @pytest.mark.asyncio

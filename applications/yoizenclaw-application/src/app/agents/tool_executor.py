@@ -47,21 +47,23 @@ class ToolExecutor:
         if not isinstance(configured_allowed, list):
             configured_allowed = skill.get("allowedTools")
 
-        enabled_tool_names = {
-            str(tool.get("name", "")).strip()
-            for tool in self.tools
-            if isinstance(tool, dict) and tool.get("enabled", True) is not False
-        }
+        enabled_tool_names = self._resolve_enabled_tool_names()
 
         if isinstance(configured_allowed, list) and configured_allowed:
-            return [
-                str(tool_name).strip()
-                for tool_name in configured_allowed
-                if isinstance(tool_name, str)
-                and str(tool_name).strip() in enabled_tool_names
-            ]
+            normalized_allowed: list[str] = []
+            for tool_name in configured_allowed:
+                if not isinstance(tool_name, str):
+                    continue
+                normalized_name = tool_name.strip()
+                if (
+                    normalized_name
+                    and normalized_name in enabled_tool_names
+                    and normalized_name not in normalized_allowed
+                ):
+                    normalized_allowed.append(normalized_name)
+            return normalized_allowed
 
-        return [tool_name for tool_name in enabled_tool_names if tool_name]
+        return sorted(enabled_tool_names)
 
     def resolve_prompt_referenced_tools(
         self,
@@ -71,11 +73,7 @@ class ToolExecutor:
         """Validate prompt-referenced tools against enabled and allowed tools."""
 
         allowed_tool_names = set(self.resolve_skill_allowed_tools(skill))
-        enabled_tool_names = {
-            str(tool.get("name", "")).strip()
-            for tool in self.tools
-            if isinstance(tool, dict) and tool.get("enabled", True) is not False
-        }
+        enabled_tool_names = self._resolve_enabled_tool_names()
 
         valid_tool_names: list[str] = []
         warnings: list[str] = []
@@ -97,6 +95,32 @@ class ToolExecutor:
                 valid_tool_names.append(normalized_name)
 
         return valid_tool_names, warnings
+
+    def _resolve_enabled_tool_names(self) -> set[str]:
+        """Resolve enabled tool names from config or registry fallback."""
+        configured_tool_names = {
+            str(tool.get("name", "")).strip()
+            for tool in self.tools
+            if isinstance(tool, dict) and tool.get("enabled", True) is not False
+        }
+        configured_tool_names = {
+            tool_name for tool_name in configured_tool_names if tool_name
+        }
+
+        if configured_tool_names:
+            return configured_tool_names
+
+        fallback_tool_names: set[str] = set()
+        for tool in self.tool_registry.get_tools():
+            if isinstance(tool, dict):
+                tool_name = str(tool.get("name", "")).strip()
+            else:
+                tool_name = str(getattr(tool, "name", "")).strip()
+
+            if tool_name:
+                fallback_tool_names.add(tool_name)
+
+        return fallback_tool_names
 
     def build_skill_tools(
         self,
@@ -131,10 +155,26 @@ class ToolExecutor:
                 _tool_name: str = tool_name,
             ) -> Any:
                 payload = input if isinstance(input, dict) else {}
-                result = await self._execute_tool_payload(
-                    _tool_name, payload, state,
-                )
-                serialized_result = self._serialize(result)
+                try:
+                    result = await self._execute_tool_payload(
+                        _tool_name,
+                        payload,
+                        state,
+                    )
+                    serialized_result = self._serialize(result)
+                    self._merge_state(state, result)
+                except Exception as error:
+                    logger.exception(
+                        "Tool '%s' execution failed: %s",
+                        _tool_name,
+                        error,
+                    )
+                    serialized_result = {
+                        "success": False,
+                        "tool": _tool_name,
+                        "error": str(error),
+                    }
+
                 tool_calls.append(
                     {
                         "tool": _tool_name,
@@ -142,7 +182,6 @@ class ToolExecutor:
                         "result": serialized_result,
                     },
                 )
-                self._merge_state(state, result)
                 return serialized_result
 
             tools.append(
@@ -163,7 +202,8 @@ class ToolExecutor:
     ) -> Any:
         """Execute a tool from a pipeline step definition."""
         rendered_input = self.renderer.render_value(
-            step.get("input"), state,
+            step.get("input"),
+            state,
         )
         payload = rendered_input if isinstance(rendered_input, dict) else {}
         return await self._execute_tool_payload(tool_name, payload, state)
@@ -196,7 +236,9 @@ class ToolExecutor:
             )
 
         return await self._execute_configured_tool(
-            tool_definition, payload, state,
+            tool_definition,
+            payload,
+            state,
         )
 
     async def _execute_configured_tool(
@@ -208,7 +250,9 @@ class ToolExecutor:
         adapter_ref_data = tool_definition.get("adapterRef")
         if adapter_ref_data is not None:
             return await self._execute_adapter_tool(
-                adapter_ref_data, payload, state,
+                adapter_ref_data,
+                payload,
+                state,
             )
 
         endpoint = str(tool_definition.get("endpoint", "")).strip()
@@ -232,7 +276,8 @@ class ToolExecutor:
             body_template = tool_definition.get("bodyTemplate")
 
         request_payload = self.renderer.render_tool_template(
-            body_template, request_context,
+            body_template,
+            request_context,
         )
         if not isinstance(request_payload, dict):
             request_payload = payload
@@ -313,9 +358,7 @@ class ToolExecutor:
 
         response_data = result.get("data")
         if isinstance(response_data, dict):
-            normalized = {
-                key: value for key, value in result.items() if key != "data"
-            }
+            normalized = {key: value for key, value in result.items() if key != "data"}
             normalized.update(response_data)
             return normalized
 

@@ -31,6 +31,23 @@ logger = logging.getLogger(__name__)
 _tracer = get_tracer(__name__)
 
 
+def _extract_run_text(result: Any) -> str:
+    """Extract plain text from pydantic-ai run results.
+
+    Newer pydantic-ai versions expose text on ``output`` while older tests or
+    mocks may still provide ``content``.
+    """
+    output_value = getattr(result, "output", None)
+    if isinstance(output_value, str):
+        return output_value
+
+    content_value = getattr(result, "content", None)
+    if isinstance(content_value, str):
+        return content_value
+
+    return str(output_value or content_value or "")
+
+
 class Agent:
     """Runtime agent with optional skill execution.
 
@@ -124,11 +141,12 @@ class Agent:
                     model=self.llm_client.model,
                 )
 
-                span.set_attribute("output.length", len(response.content))
+                response_text = _extract_run_text(response)
+                span.set_attribute("output.length", len(response_text))
                 span.set_attribute("duration_ms", duration * 1000)
                 span.set_status(trace.StatusCode.OK)
 
-                return response.content
+                return response_text
 
             except Exception as e:
                 # Record metrics for error
@@ -252,20 +270,27 @@ class Agent:
                 from pydantic_ai import Agent as PydanticAgent
 
                 instructions_parts = [selected_skill.get("instructions", "")]
-                if system_prompt_refs.get("tool_references"):
-                    tool_names = ", ".join(system_prompt_refs["tool_references"])
-                    instructions_parts.append(f"Available tools: {tool_names}")
+                if referenced_tool_names:
+                    prompt_tool_names = ", ".join(referenced_tool_names)
+                    instructions_parts.append(
+                        f"Prompt-referenced tools: {prompt_tool_names}."
+                    )
+                if allowed_tool_names:
+                    allowed_names = ", ".join(allowed_tool_names)
+                    instructions_parts.append(
+                        (
+                            "Use tools when external data or actions are required. "
+                            f"Allowed tools: {allowed_names}."
+                        )
+                    )
 
                 instructions = "\n\n".join(filter(None, instructions_parts))
 
                 skill_agent = PydanticAgent(
                     self.llm_client._get_pydantic_model(),
                     instructions=instructions,
+                    tools=skill_tools,
                 )
-
-                # Register tools for skill agent
-                for tool_def in skill_tools:
-                    self.llm_client._register_tool(skill_agent, tool_def)
 
                 # Execute skill
                 response = await skill_agent.run(
@@ -289,13 +314,14 @@ class Agent:
                     model=self.llm_client.model,
                 )
 
-                span.set_attribute("output.length", len(response.content))
+                response_text = _extract_run_text(response)
+                span.set_attribute("output.length", len(response_text))
                 span.set_attribute("skill.used", True)
                 span.set_attribute("duration_ms", duration * 1000)
                 span.set_status(trace.StatusCode.OK)
 
                 return {
-                    "response": response.content,
+                    "response": response_text,
                     "tool_calls": tool_calls,
                     "state": state,
                 }
