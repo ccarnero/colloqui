@@ -1,11 +1,13 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   inject,
   signal,
   type OnInit,
 } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
+import { MatChipsModule } from "@angular/material/chips";
 import { MatDialog } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
@@ -28,6 +30,7 @@ import {
 interface IConnectorRow {
   id: string;
   context: IHttpAdapterContext;
+  tags: string[];
   adapter: IHttpAdapter;
   status: string;
 }
@@ -36,6 +39,7 @@ function toRow(dto: IAdapterDto): IConnectorRow {
   return {
     id: dto.id,
     context: dto.context as IHttpAdapterContext,
+    tags: dto.tags ?? [],
     adapter: {
       name: dto.name,
       baseUrl: dto.baseUrl,
@@ -53,6 +57,8 @@ function toRow(dto: IAdapterDto): IConnectorRow {
       maxRetries: dto.maxRetries,
       retryBackoffMs: dto.retryBackoffMs,
       healthCheckPath: dto.healthCheckPath,
+      tags: dto.tags ?? [],
+      isEncrypted: dto.isEncrypted ?? false,
     },
     status: dto.status,
   };
@@ -73,6 +79,7 @@ function toCreatePayload(
     maxRetries: adapter.maxRetries,
     retryBackoffMs: adapter.retryBackoffMs,
     healthCheckPath: adapter.healthCheckPath,
+    tags: adapter.tags,
     endpoints: adapter.endpoints.map((ep) => ({
       label: ep.label,
       method: ep.method,
@@ -92,6 +99,7 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
     maxRetries: adapter.maxRetries,
     retryBackoffMs: adapter.retryBackoffMs,
     healthCheckPath: adapter.healthCheckPath,
+    tags: adapter.tags,
   };
 }
 
@@ -102,6 +110,7 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
   imports: [
     MatTableModule,
     MatButtonModule,
+    MatChipsModule,
     MatIconModule,
     MatProgressSpinnerModule,
     StatusBadgeComponent,
@@ -111,7 +120,7 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
       <div>
         <div class="ws-title">Connectors</div>
         <div class="ws-subtitle">
-          HTTP adapters for internal and external services
+          HTTP adapters for your services
         </div>
       </div>
       <div class="ws-actions">
@@ -125,16 +134,45 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
       </div>
     </div>
 
+    <div class="filter-bar">
+      <mat-chip-listbox
+        [value]="activeTag()"
+        (change)="onTagFilter($event.value)"
+        class="tag-filter"
+      >
+        <mat-chip-option value="">All</mat-chip-option>
+        @for (tag of availableTags(); track tag) {
+          <mat-chip-option [value]="tag">{{ tag }}</mat-chip-option>
+        }
+      </mat-chip-listbox>
+    </div>
+
     @if (loading()) {
       <div style="display:flex;justify-content:center;padding:2rem">
         <mat-spinner diameter="36" />
       </div>
     } @else {
       <div class="table-wrap">
-        <table mat-table [dataSource]="connectors()">
+        <table mat-table [dataSource]="filteredConnectors()">
           <ng-container matColumnDef="name">
             <th mat-header-cell *matHeaderCellDef>Name</th>
-            <td mat-cell *matCellDef="let r">{{ r.adapter.name }}</td>
+            <td mat-cell *matCellDef="let r">
+              <div class="name-cell">
+                <mat-icon class="name-icon">http</mat-icon>
+                <span>{{ r.adapter.name }}</span>
+              </div>
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="tags">
+            <th mat-header-cell *matHeaderCellDef>Tags</th>
+            <td mat-cell *matCellDef="let r">
+              @for (tag of r.tags; track tag) {
+                <span class="badge badge-violet">{{ tag }}</span>
+              }
+              @if (r.tags.length === 0) {
+                <span class="badge badge-slate">—</span>
+              }
+            </td>
           </ng-container>
           <ng-container matColumnDef="scope">
             <th mat-header-cell *matHeaderCellDef>Scope</th>
@@ -214,6 +252,31 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
       background: rgba(249, 115, 22, 0.15);
       color: #f97316;
     }
+    .badge-violet {
+      background: rgba(139, 92, 246, 0.15);
+      color: #8b5cf6;
+    }
+    .badge-slate {
+      background: rgba(148, 163, 184, 0.15);
+      color: #94a3b8;
+    }
+    .filter-bar {
+      padding: 0 0 12px;
+    }
+    .tag-filter {
+      font-size: 12px;
+    }
+    .name-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .name-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: var(--text3);
+    }
   `,
 })
 export class ConnectorsComponent implements OnInit {
@@ -222,6 +285,7 @@ export class ConnectorsComponent implements OnInit {
 
   readonly cols = [
     "name",
+    "tags",
     "scope",
     "baseUrl",
     "auth",
@@ -232,9 +296,25 @@ export class ConnectorsComponent implements OnInit {
 
   readonly connectors = signal<IConnectorRow[]>([]);
   readonly loading = signal(true);
+  readonly activeTag = signal<string>("");
+
+  readonly availableTags = computed(() => {
+    const all = this.connectors().flatMap((r) => r.tags);
+    return [...new Set(all)].sort();
+  });
+
+  readonly filteredConnectors = computed(() => {
+    const tag = this.activeTag();
+    if (!tag) return this.connectors();
+    return this.connectors().filter((r) => r.tags.includes(tag));
+  });
 
   ngOnInit(): void {
     this.loadConnectors();
+  }
+
+  onTagFilter(tag: string): void {
+    this.activeTag.set(tag ?? "");
   }
 
   openCreate(): void {
@@ -258,7 +338,7 @@ export class ConnectorsComponent implements OnInit {
   }
 
   openEdit(index: number): void {
-    const row = this.connectors()[index];
+    const row = this.filteredConnectors()[index];
     const data: IHttpAdapterDialogData = {
       mode: "edit",
       context: row.context,
@@ -278,20 +358,21 @@ export class ConnectorsComponent implements OnInit {
           .update(row.id, toUpdatePayload(result.adapter))
           .subscribe((dto) => {
             this.connectors.update((rows) =>
-              rows.map((r, i) => (i === index ? toRow(dto) : r)),
+              rows.map((r) => (r.id === row.id ? toRow(dto) : r)),
             );
           });
       });
   }
 
   remove(index: number): void {
-    const row = this.connectors()[index];
+    const row = this.filteredConnectors()[index];
     this.adapterService.remove(row.id).subscribe(() => {
-      this.connectors.update((rows) => rows.filter((_, i) => i !== index));
+      this.connectors.update((rows) => rows.filter((r) => r.id !== row.id));
     });
   }
 
   private loadConnectors(): void {
+    this.loading.set(true);
     this.adapterService.list().subscribe({
       next: (dtos) => {
         this.connectors.set(dtos.map(toRow));

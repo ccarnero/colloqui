@@ -1,4 +1,7 @@
-import type { AuthType, HttpMethod } from "../../models/http-adapter.model";
+import type {
+  AuthType,
+  HttpMethod,
+} from "../../models/http-adapter.model";
 
 export const HTTP_METHODS: readonly HttpMethod[] = [
   "GET",

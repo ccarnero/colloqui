@@ -13,10 +13,13 @@ import { MatSelectModule } from "@angular/material/select";
 import { MatTabsModule } from "@angular/material/tabs";
 import { YoizenclawAdminService } from "../../../core/services/yoizenclaw-admin.service";
 import {
+  AdaptersService,
+  type IAdapterSummary,
+} from "../../../core/services/adapters.service";
+import {
   type IAgentToolDraft,
   type IYoizenclawAgent,
   type IYoizenclawAgentDraft,
-  type IYoizenclawCredentialProfile,
   type IYoizenclawSubagentDraft,
   type IYoizenclawTemplate,
 } from "../../../core/models/yoizenclaw.model";
@@ -100,9 +103,9 @@ import type { Observable } from "rxjs";
               <strong class="metric-value">{{ agents().length }}</strong>
             </div>
             <div class="metric-item">
-              <span class="metric-label">Profiles</span>
+              <span class="metric-label">Connectors</span>
               <strong class="metric-value">{{
-                credentialProfiles().length
+                llmConnectors().length
               }}</strong>
             </div>
             <div class="metric-item">
@@ -132,13 +135,13 @@ import type { Observable } from "rxjs";
           <mat-tab label="General">
             <app-yoizenclaw-agent-config
               section="general"
-              [credentialProfiles]="credentialProfiles()"
+              [llmConnectors]="llmConnectors()"
               [editorOptions]="editorOptions"
               [(agentName)]="agentName"
               [(description)]="description"
               [(provider)]="provider"
               [(model)]="model"
-              [(credentialProfileId)]="credentialProfileId"
+              [(connectorId)]="connectorId"
             />
           </mat-tab>
 
@@ -157,7 +160,7 @@ import type { Observable } from "rxjs";
           <mat-tab label="Skills ({{ subagents.length }})">
             <app-yoizenclaw-agent-config
               section="skills"
-              [credentialProfiles]="credentialProfiles()"
+              [llmConnectors]="llmConnectors()"
               [editorOptions]="editorOptions"
               [(subagents)]="subagents"
             />
@@ -183,6 +186,7 @@ import type { Observable } from "rxjs";
 })
 export class YoizenclawComponent implements OnInit {
   private readonly yoizenclawAdminService = inject(YoizenclawAdminService);
+  private readonly adaptersService = inject(AdaptersService);
 
   readonly templates = signal<IYoizenclawTemplate[]>([]);
   readonly loading = signal(false);
@@ -190,7 +194,7 @@ export class YoizenclawComponent implements OnInit {
   readonly publishingId = signal<string | null>(null);
   readonly editingAgentId = signal<string | null>(null);
   readonly agents = signal<IYoizenclawAgent[]>([]);
-  readonly credentialProfiles = signal<IYoizenclawCredentialProfile[]>([]);
+  readonly llmConnectors = signal<IAdapterSummary[]>([]);
   readonly errorMessage = signal("");
   readonly successMessage = signal("");
 
@@ -233,7 +237,7 @@ export class YoizenclawComponent implements OnInit {
   soul = "Friendly and knowledgeable.";
   provider = "openai";
   model = "gpt-5.4-nano";
-  credentialProfileId: string | null = null;
+  connectorId: string | null = null;
   subagents: IYoizenclawSubagentDraft[] = [];
   tools: IAgentToolDraft[] = [];
 
@@ -289,7 +293,7 @@ export class YoizenclawComponent implements OnInit {
     this.applyTemplateById(this.selectedTemplateId);
     this.provider = "openai";
     this.model = "gpt-5.4-nano";
-    this.credentialProfileId = null;
+    this.connectorId = null;
     this.tools = [];
   }
 
@@ -309,7 +313,7 @@ export class YoizenclawComponent implements OnInit {
       systemPrompt: this.systemPrompt,
       provider: this.provider,
       model: this.model,
-      credentialProfileId: this.credentialProfileId,
+      connectorId: this.connectorId,
       rules: this.rules,
       soul: this.soul,
       subagents: this.subagents,
@@ -417,9 +421,9 @@ export class YoizenclawComponent implements OnInit {
     this.agentName = agent.name;
     this.description = agent.description || "";
     this.systemPrompt = agent.system_prompt;
-    this.provider = agent.model_config.provider;
-    this.model = agent.model_config.model;
-    this.credentialProfileId = agent.model_config.credential_profile_id;
+    this.provider = agent.model_config.llm.provider;
+    this.model = agent.model_config.llm.model;
+    this.connectorId = agent.model_config.llm.connectorId;
     this.rules = agent.model_config.rules;
     this.soul = agent.model_config.soul;
 
@@ -458,30 +462,30 @@ export class YoizenclawComponent implements OnInit {
       },
     });
 
-    this.yoizenclawAdminService.listAgents({ limit: 12, offset: 0 }).subscribe({
-      next: (response) => {
-        this.agents.set(response.agents);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.errorMessage.set("Unable to load existing YoizenClaw agents.");
-        this.loading.set(false);
-      },
-    });
-
     this.yoizenclawAdminService
-      .listCredentialProfiles({ is_active: true, limit: 50, offset: 0 })
+      .listAgents({ limit: 12, offset: 0 })
       .subscribe({
         next: (response) => {
-          console.log('[Yoizenclaw] Credential profiles loaded:', response.credentials);
-          this.credentialProfiles.set(response.credentials);
+          this.agents.set(response.agents);
+          this.loading.set(false);
         },
-        error: (err) => {
-          console.error('[Yoizenclaw] Failed to load credential profiles:', err);
+        error: () => {
           this.errorMessage.set(
-            "Unable to load credential profiles for this tenant.",
+            "Unable to load existing YoizenClaw agents.",
           );
+          this.loading.set(false);
         },
       });
+
+    this.adaptersService.listByTag("llm").subscribe({
+      next: (connectors) => {
+        this.llmConnectors.set(connectors);
+      },
+      error: () => {
+        this.errorMessage.set(
+          "Unable to load LLM connectors for this tenant.",
+        );
+      },
+    });
   }
 }

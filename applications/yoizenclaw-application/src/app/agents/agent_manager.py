@@ -347,6 +347,9 @@ class AgentManager:
                     "credential_id": llm_config.get("credential_id")
                     or llm_config.get("credentialId")
                     or "",
+                    "connector_id": llm_config.get("connector_id")
+                    or llm_config.get("connectorId")
+                    or "",
                     "temperature": role_config.get("temperature", 0.7),
                     "max_tokens": role_config.get("max_tokens")
                     or role_config.get("maxTokens")

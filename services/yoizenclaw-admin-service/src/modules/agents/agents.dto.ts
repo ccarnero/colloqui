@@ -6,11 +6,26 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsUUID,
   Length,
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { PaginatedQueryDto } from "@yoizen/shared";
+
+export class ModelConfigLlmDto {
+  @IsString()
+  @IsOptional()
+  provider?: string;
+
+  @IsString()
+  @IsOptional()
+  model?: string;
+
+  @IsUUID()
+  @IsOptional()
+  connectorId?: string;
+}
 
 export class CreateAgentDto {
   @IsString()

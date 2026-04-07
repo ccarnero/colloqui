@@ -4,7 +4,7 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
 import type { AuthType } from "../../models/http-adapter.model";
-import { authTypeOptions } from "./http-adapter-dialog.types";
+import { AUTH_TYPE_LABELS, authTypeOptions } from "./http-adapter-dialog.types";
 
 @Component({
   selector: "app-adapter-auth-config",
@@ -22,29 +22,44 @@ import { authTypeOptions } from "./http-adapter-dialog.types";
         <div class="section-card-title">Authentication</div>
       </div>
       <div class="section-card-body">
-        <mat-form-field appearance="outline" class="form-field-full">
-          <mat-label>Auth Type</mat-label>
-          <mat-select formControlName="type">
-            @for (opt of authOptions; track opt.value) {
-              <mat-option [value]="opt.value">
-                {{ opt.label }}
-              </mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        @if (readonly()) {
+          <div class="readonly-auth-type">
+            {{ authTypeLabel(authType()) }}
+          </div>
+        } @else {
+          <mat-form-field appearance="outline" class="form-field-full">
+            <mat-label>Auth Type</mat-label>
+            <mat-select formControlName="type">
+              @for (opt of authOptions; track opt.value) {
+                <mat-option [value]="opt.value">
+                  {{ opt.label }}
+                </mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        }
 
         @switch (authType()) {
           @case ("api-key") {
             <div class="form-row">
-              <mat-form-field appearance="outline" class="form-field-half">
-                <mat-label>Header Name</mat-label>
-                <input
-                  matInput
-                  formControlName="apiKeyHeader"
-                  placeholder="X-API-Key"
-                />
-              </mat-form-field>
-              <mat-form-field appearance="outline" class="form-field-half">
+              @if (!readonly()) {
+                <mat-form-field
+                  appearance="outline"
+                  class="form-field-half"
+                >
+                  <mat-label>Header Name</mat-label>
+                  <input
+                    matInput
+                    formControlName="apiKeyHeader"
+                    placeholder="X-API-Key"
+                  />
+                </mat-form-field>
+              }
+              <mat-form-field
+                appearance="outline"
+                [class.form-field-half]="!readonly()"
+                [class.form-field-full]="readonly()"
+              >
                 <mat-label>API Key</mat-label>
                 <input matInput formControlName="apiKey" type="password" />
               </mat-form-field>
@@ -52,7 +67,7 @@ import { authTypeOptions } from "./http-adapter-dialog.types";
           }
           @case ("bearer") {
             <mat-form-field appearance="outline" class="form-field-full">
-              <mat-label>Bearer Token</mat-label>
+              <mat-label>API Key</mat-label>
               <input matInput formControlName="bearerToken" type="password" />
             </mat-form-field>
           }
@@ -126,11 +141,23 @@ import { authTypeOptions } from "./http-adapter-dialog.types";
     .form-field-full {
       width: 100%;
     }
+
+    .readonly-auth-type {
+      font-size: 12px;
+      color: var(--text2);
+      padding: 4px 0 12px;
+      font-weight: 500;
+    }
   `,
 })
 export class AdapterAuthConfigComponent {
   readonly authForm = input.required<FormGroup>();
   readonly authType = input.required<AuthType>();
+  readonly readonly = input(false);
 
   readonly authOptions = authTypeOptions();
+
+  authTypeLabel(type: AuthType): string {
+    return AUTH_TYPE_LABELS.get(type) ?? type;
+  }
 }

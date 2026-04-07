@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS http_adapters (
   retry_backoff_ms  INTEGER NOT NULL DEFAULT 1000,
   health_check_path TEXT NOT NULL DEFAULT '/health',
   status            TEXT NOT NULL DEFAULT 'enabled' CHECK (status IN ('enabled', 'disabled')),
+  is_encrypted      BOOLEAN NOT NULL DEFAULT false,
+  tags              TEXT[] NOT NULL DEFAULT '{}',
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenant_id, name)
@@ -26,6 +28,8 @@ CREATE INDEX IF NOT EXISTS idx_http_adapters_tenant
   ON http_adapters (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_http_adapters_context
   ON http_adapters (tenant_id, context);
+CREATE INDEX IF NOT EXISTS idx_http_adapters_tags
+  ON http_adapters USING GIN (tags);
 
 CREATE TABLE IF NOT EXISTS adapter_endpoints (
   id          TEXT PRIMARY KEY,
@@ -59,6 +63,31 @@ BEGIN
       CHECK (status IN ('enabled', 'disabled'));
   END IF;
 END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'http_adapters' AND column_name = 'is_encrypted'
+  ) THEN
+    ALTER TABLE http_adapters
+      ADD COLUMN is_encrypted BOOLEAN NOT NULL DEFAULT false;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'http_adapters' AND column_name = 'tags'
+  ) THEN
+    ALTER TABLE http_adapters
+      ADD COLUMN tags TEXT[] NOT NULL DEFAULT '{}';
+    CREATE INDEX IF NOT EXISTS idx_http_adapters_tags
+      ON http_adapters USING GIN (tags);
+  END IF;
+END $$;
+
 `;
 
 export const PostgresModule = BasePostgresModule.register({

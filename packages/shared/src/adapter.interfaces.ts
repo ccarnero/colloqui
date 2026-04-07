@@ -28,6 +28,7 @@ export interface AdapterConfig {
   retryBackoffMs: number;
   healthCheckPath: string;
   status: AdapterStatusValue;
+  tags: string[];
   endpoints: AdapterEndpointConfig[];
 }
 

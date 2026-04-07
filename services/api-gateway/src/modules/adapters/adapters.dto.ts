@@ -35,8 +35,8 @@ export class CreateAdapterDto {
   context!: string;
 
   @IsString()
-  @IsNotEmpty()
-  baseUrl!: string;
+  @IsOptional()
+  baseUrl?: string;
 
   @IsString()
   @IsOptional()
@@ -68,6 +68,11 @@ export class CreateAdapterDto {
   @IsString()
   @IsOptional()
   healthCheckPath?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  tags?: string[];
 
   @IsArray()
   @ValidateNested({ each: true })
@@ -120,4 +125,9 @@ export class UpdateAdapterDto {
   @IsIn(["enabled", "disabled"])
   @IsOptional()
   status?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  tags?: string[];
 }

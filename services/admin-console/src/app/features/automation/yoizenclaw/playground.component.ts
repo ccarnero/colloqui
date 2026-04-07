@@ -76,7 +76,7 @@ interface IChatMessage {
               </mat-select>
             </mat-form-field>
             <p class="text-muted text-xs mt-1" *ngIf="selectedAgent()">
-              Model: {{ selectedAgent()?.model_config?.provider }} / {{ selectedAgent()?.model_config?.model }}
+              Model: {{ selectedAgent()?.model_config?.llm?.provider }} / {{ selectedAgent()?.model_config?.llm?.model }}
             </p>
           </div>
 

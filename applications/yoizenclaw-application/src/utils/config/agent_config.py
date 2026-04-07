@@ -196,6 +196,7 @@ class AgentLlmPayload(BaseModel):
         alias="credentialMode",
     )
     credential_id: str | None = Field(default=None, alias="credentialId")
+    connector_id: str | None = Field(default=None, alias="connectorId")
 
     @model_validator(mode="after")
     def _apply_default_credential_mode(self) -> "AgentLlmPayload":
@@ -259,6 +260,7 @@ class AgentSyncRequest(BaseModel):
                 "model": normalized.get("llm_model"),
                 "credentialMode": normalized.get("llm_credential_mode"),
                 "credentialId": normalized.get("llm_credential_id"),
+                "connectorId": normalized.get("llm_connector_id"),
             }
             if any(value is not None for value in llm_aliases.values()):
                 normalized["llm"] = llm_aliases
@@ -271,6 +273,7 @@ class AgentSyncRequest(BaseModel):
         normalized.pop("llm_model", None)
         normalized.pop("llm_credential_mode", None)
         normalized.pop("llm_credential_id", None)
+        normalized.pop("llm_connector_id", None)
         normalized.pop("flows", None)
         normalized.pop("execution", None)
         return normalized
@@ -347,6 +350,7 @@ class EnhancedAgentSyncRequest(BaseModel):
                 "model": normalized.get("llm_model"),
                 "credentialMode": normalized.get("llm_credential_mode"),
                 "credentialId": normalized.get("llm_credential_id"),
+                "connectorId": normalized.get("llm_connector_id"),
             }
             if any(value is not None for value in llm_aliases.values()):
                 normalized["llm"] = llm_aliases
@@ -383,6 +387,7 @@ class EnhancedAgentSyncRequest(BaseModel):
         normalized.pop("llm_model", None)
         normalized.pop("llm_credential_mode", None)
         normalized.pop("llm_credential_id", None)
+        normalized.pop("llm_connector_id", None)
         normalized.pop("flows", None)
         normalized.pop("execution", None)
 
@@ -555,9 +560,7 @@ def _format_text_section(title: str, text: str) -> str:
     return f"{title}:\n{cleaned_text}"
 
 
-def _format_skill_bullets(
-    items: Any, *, skill_routing_mode: str = "router"
-) -> str:
+def _format_skill_bullets(items: Any, *, skill_routing_mode: str = "router") -> str:
     if not isinstance(items, list):
         return ""
 

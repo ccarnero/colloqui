@@ -2,7 +2,9 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from "@nestjs/common";
+
 import { PinoLoggerService } from "@yoizen/observability";
 import type {
   CreateAdapterDto,
@@ -78,12 +80,14 @@ export class AdaptersService {
     context: string | undefined,
     limit: number,
     offset: number,
+    tag?: string,
   ) {
     const rows = await this.adaptersRepository.listRows(
       tenantId,
       context,
       limit,
       offset,
+      tag,
     );
     const adapterIds = rows.map((r) => r.id);
     const endpoints =
@@ -229,4 +233,5 @@ export class AdaptersService {
       `Removed endpoint '${endpointId}' from adapter ${adapterId}`,
     );
   }
+
 }

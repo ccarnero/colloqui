@@ -4,6 +4,7 @@ import { vi } from "vitest";
 import { of } from "rxjs";
 import { YoizenclawComponent } from "./yoizenclaw.component";
 import { YoizenclawAdminService } from "../../../core/services/yoizenclaw-admin.service";
+import { AdaptersService } from "../../../core/services/adapters.service";
 
 describe("YoizenclawComponent", () => {
   let fixture: ComponentFixture<YoizenclawComponent>;
@@ -20,9 +21,12 @@ describe("YoizenclawComponent", () => {
               .fn()
               .mockReturnValue(of({ templates: [] })),
             listAgents: vi.fn().mockReturnValue(of({ agents: [] })),
-            listCredentialProfiles: vi
-              .fn()
-              .mockReturnValue(of({ credentials: [] })),
+          },
+        },
+        {
+          provide: AdaptersService,
+          useValue: {
+            listByTag: vi.fn().mockReturnValue(of([])),
           },
         },
       ],

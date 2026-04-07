@@ -12,15 +12,15 @@ function toOptionalInt(value: unknown): number | undefined {
  * Shared limit/offset query DTO for list endpoints (audit, scheduler, etc.).
  */
 export class PaginatedQueryDto {
-  @IsOptional()
   @Transform(({ value }) => toOptionalInt(value))
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Max(500)
   limit?: number;
 
-  @IsOptional()
   @Transform(({ value }) => toOptionalInt(value))
+  @IsOptional()
   @IsInt()
   @Min(0)
   offset?: number;

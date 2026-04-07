@@ -41,8 +41,6 @@ responseStyle: |
 llm:
   provider: "openai"
   model: "gpt-5.4-nano"
-  credentialMode: "profile"
-  credentialId: "openai_default"
 
 skills:
   - id: "skill-sales-general"

@@ -23,7 +23,6 @@ describe("YoizenclawAdminService", () => {
   it("exposes expected HTTP API methods", () => {
     const service = TestBed.inject(YoizenclawAdminService);
     expect(typeof service.listAgents).toBe("function");
-    expect(typeof service.listCredentialProfiles).toBe("function");
     expect(typeof service.createAgent).toBe("function");
     expect(typeof service.publishAgent).toBe("function");
     expect(typeof service.unpublishAgent).toBe("function");
@@ -31,5 +30,8 @@ describe("YoizenclawAdminService", () => {
     expect(typeof service.updateAgent).toBe("function");
     expect(typeof service.listTemplates).toBe("function");
     expect(typeof service.chatWithAgent).toBe("function");
+    expect(typeof service.listMemoryProposals).toBe("function");
+    expect(typeof service.approveMemoryProposal).toBe("function");
+    expect(typeof service.rejectMemoryProposal).toBe("function");
   });
 });

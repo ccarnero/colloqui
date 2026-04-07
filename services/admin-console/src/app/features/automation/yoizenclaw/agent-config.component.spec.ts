@@ -13,7 +13,7 @@ describe("YoizenclawAgentConfigComponent", () => {
 
     fixture = TestBed.createComponent(YoizenclawAgentConfigComponent);
     fixture.componentRef.setInput("section", "general");
-    fixture.componentRef.setInput("credentialProfiles", []);
+    fixture.componentRef.setInput("llmConnectors", []);
     fixture.componentRef.setInput("editorOptions", {});
     fixture.detectChanges();
   });

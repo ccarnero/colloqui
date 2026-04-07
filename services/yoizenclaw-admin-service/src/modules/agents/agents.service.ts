@@ -1,5 +1,6 @@
 import {
   BadGatewayException,
+  BadRequestException,
   Injectable,
   NotFoundException,
   Optional,
@@ -51,6 +52,7 @@ export class AgentsService {
   }
 
   async create(tenantId: string, data: ICreateAgentData): Promise<IAgent> {
+    await this.validateConnectorRef(tenantId, data.model_config);
     await this.validateAdapterRefs(tenantId, data.tools);
     return this.repository.create(tenantId, data);
   }
@@ -60,6 +62,7 @@ export class AgentsService {
     id: string,
     data: IUpdateAgentData,
   ): Promise<IAgent> {
+    await this.validateConnectorRef(tenantId, data.model_config);
     await this.validateAdapterRefs(tenantId, data.tools);
     const agent = await this.repository.update(tenantId, id, data);
     if (!agent) {
@@ -182,6 +185,38 @@ export class AgentsService {
       "memory_proposals_reject",
       reviewerId,
     );
+  }
+
+  private async validateConnectorRef(
+    tenantId: string,
+    modelConfig?: Record<string, unknown>,
+  ): Promise<void> {
+    const llm = modelConfig?.llm as Record<string, unknown> | undefined;
+    const connectorId = llm?.connectorId as string | undefined;
+    if (!connectorId) return;
+
+    const adapter = await this.adaptersService?.findOne(
+      tenantId,
+      connectorId,
+    );
+
+    if (!adapter) {
+      throw new BadRequestException(
+        `connectorId '${connectorId}' does not reference an existing adapter`,
+      );
+    }
+
+    if (adapter.category !== "llm") {
+      throw new BadRequestException(
+        `Adapter '${connectorId}' has category '${adapter.category}'; expected 'llm'`,
+      );
+    }
+
+    if (adapter.status !== "enabled") {
+      throw new BadRequestException(
+        `Adapter '${connectorId}' is '${adapter.status}'; expected 'enabled'`,
+      );
+    }
   }
 
   /**

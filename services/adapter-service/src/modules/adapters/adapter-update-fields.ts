@@ -13,6 +13,7 @@ export const ADAPTER_UPDATE_FIELD_MAP = {
   retryBackoffMs: "retry_backoff_ms",
   healthCheckPath: "health_check_path",
   status: "status",
+  tags: "tags",
 } as const;
 
 type AdapterUpdateDtoKey = keyof typeof ADAPTER_UPDATE_FIELD_MAP;

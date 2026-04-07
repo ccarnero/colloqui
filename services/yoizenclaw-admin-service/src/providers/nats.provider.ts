@@ -22,9 +22,6 @@ import {
   YOIZENCLAW_AGENT_UNPUBLISHED,
   YOIZENCLAW_CHANNEL,
   YOIZENCLAW_CONFIG_SYNC,
-  YOIZENCLAW_CREDENTIAL_ROTATED,
-  YOIZENCLAW_CREDENTIAL_SYNC,
-  YOIZENCLAW_CREDENTIAL_SYNC_COMPLETED,
   YOIZENCLAW_DOMAIN,
   YOIZENCLAW_JOB_TRIGGER,
   YOIZENCLAW_PRODUCER,
@@ -53,9 +50,6 @@ const DEFAULT_TRANSPORT: EventTransport = {
 const EVENT_TYPES = {
   AGENT_PUBLISHED: "io.yoizen.yoizenclaw.admin.agent.published.v1",
   AGENT_UNPUBLISHED: "io.yoizen.yoizenclaw.admin.agent.unpublished.v1",
-  CREDENTIAL_ROTATED: "io.yoizen.yoizenclaw.admin.credential.rotated.v1",
-  CREDENTIAL_SYNC: "io.yoizen.yoizenclaw.admin.credential.sync.v1",
-  CREDENTIAL_SYNC_COMPLETED: "io.yoizen.yoizenclaw.admin.credentials.sync.completed.v1",
   RUNTIME_CONFIG_SYNC: "io.yoizen.yoizenclaw.runtime.config.synced.v1",
   JOB_TRIGGER: "io.yoizen.yoizenclaw.admin.job.triggered.v1",
 } as const;
@@ -377,51 +371,6 @@ export class NatsPublisher implements OnModuleDestroy {
     return this.publishEvent(tenantId, YOIZENCLAW_AGENT_UNPUBLISHED, event);
   }
 
-  async publishCredentialRotated(
-    tenantId: string,
-    credentialId: string,
-    credentialType: string,
-  ): Promise<PubAck | null> {
-    const rotatedAt = new Date().toISOString();
-    const event = buildEventEnvelope(tenantId, {
-      correlationId: `credential:${credentialId}`,
-      eventType: EVENT_TYPES.CREDENTIAL_ROTATED,
-      occurredAt: rotatedAt,
-      payload: {
-        credentialId,
-        rotatedAt,
-        type: credentialType,
-      },
-      resource: `tenant/${tenantId}/credentials/${credentialId}`,
-      source: "//yoizenclaw-admin-service/admin/credentials/rotate",
-    });
-
-    return this.publishEvent(tenantId, YOIZENCLAW_CREDENTIAL_ROTATED, event);
-  }
-
-  async publishCredentialSync(
-    tenantId: string,
-    credentialId: string,
-    provider: string,
-  ): Promise<PubAck | null> {
-    const syncedAt = new Date().toISOString();
-    const event = buildEventEnvelope(tenantId, {
-      correlationId: `credential:${credentialId}:sync`,
-      eventType: EVENT_TYPES.CREDENTIAL_SYNC,
-      occurredAt: syncedAt,
-      payload: {
-        action_type: "credential_sync",
-        credentialId,
-        provider,
-        syncedAt,
-      },
-      resource: `tenant/${tenantId}/credentials/${credentialId}/sync`,
-      source: "//yoizenclaw-admin-service/admin/credentials/sync",
-    });
-
-    return this.publishEvent(tenantId, YOIZENCLAW_CREDENTIAL_SYNC, event);
-  }
-
   async publishRuntimeConfigSync(
     tenantId: string,
     files: Array<{ content: string; format: string; path: string }>,
@@ -469,28 +418,5 @@ export class NatsPublisher implements OnModuleDestroy {
     });
 
     return this.publishEvent(tenantId, YOIZENCLAW_JOB_TRIGGER, event);
-  }
-
-  async publishCredentialSyncCompleted(
-    tenantId: string,
-    successCount: number,
-    failedCount: number,
-  ): Promise<PubAck | null> {
-    const syncedAt = new Date().toISOString();
-    const event = buildEventEnvelope(tenantId, {
-      correlationId: `runtime:${tenantId}:credentials:sync`,
-      eventType: EVENT_TYPES.CREDENTIAL_SYNC_COMPLETED,
-      occurredAt: syncedAt,
-      payload: {
-        action_type: "credentials_sync_completed",
-        successCount,
-        failedCount,
-        syncedAt,
-      },
-      resource: `tenant/${tenantId}/runtime/credentials/sync`,
-      source: "//yoizenclaw-admin-service/admin/credentials/sync-completed",
-    });
-
-    return this.publishEvent(tenantId, YOIZENCLAW_CREDENTIAL_SYNC_COMPLETED, event);
   }
 }

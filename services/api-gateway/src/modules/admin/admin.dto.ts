@@ -8,8 +8,6 @@ import {
   IsNotEmpty,
   MaxLength,
   ValidateNested,
-  IsISO8601,
-  Length,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { PaginatedQueryDto } from "@yoizen/shared";
@@ -131,102 +129,6 @@ export class MemoryDecisionDto {
   reason?: string;
 }
 
-export class CreateCredentialDto {
-  @IsString()
-  @IsNotEmpty()
-  @Length(1, MAX_NAME_LENGTH)
-  name!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @IsIn([
-    "openai",
-    "anthropic",
-    "google",
-    "google-vertex",
-    "bedrock",
-    "groq",
-    "mistral",
-    "openrouter",
-    "xai",
-    "cohere",
-    "cerebras",
-    "huggingface",
-    "mock",
-  ])
-  provider!: string;
-
-  @IsObject()
-  @IsNotEmpty()
-  payload!: Record<string, unknown>;
-
-  @IsObject()
-  @IsOptional()
-  metadata?: Record<string, unknown>;
-
-  @IsISO8601()
-  @IsOptional()
-  expires_at?: string;
-
-  @IsBoolean()
-  @IsOptional()
-  @Type(() => Boolean)
-  is_active?: boolean;
-}
-
-export class UpdateCredentialDto {
-  @IsString()
-  @IsOptional()
-  @Length(1, MAX_NAME_LENGTH)
-  name?: string;
-
-  @IsString()
-  @IsOptional()
-  @IsIn([
-    "openai",
-    "anthropic",
-    "google",
-    "google-vertex",
-    "bedrock",
-    "groq",
-    "mistral",
-    "openrouter",
-    "xai",
-    "cohere",
-    "cerebras",
-    "huggingface",
-    "mock",
-  ])
-  provider?: string;
-
-  @IsObject()
-  @IsOptional()
-  payload?: Record<string, unknown>;
-
-  @IsObject()
-  @IsOptional()
-  metadata?: Record<string, unknown>;
-
-  @IsISO8601()
-  @IsOptional()
-  expires_at?: string | null;
-
-  @IsBoolean()
-  @IsOptional()
-  @Type(() => Boolean)
-  is_active?: boolean;
-}
-
-export class RotateCredentialDto {
-  @IsObject()
-  @IsNotEmpty()
-  payload!: Record<string, unknown>;
-
-  @IsISO8601()
-  @IsOptional()
-  new_expires_at?: string;
-}
-
 export class CreateJobDto {
   @IsString()
   @IsNotEmpty()
@@ -300,17 +202,6 @@ export class DeployConfigFilesDto {
   @IsBoolean()
   @IsOptional()
   restart?: boolean;
-}
-
-/** Query for `GET /admin/credentials`. */
-export class AdminCredentialsListQueryDto extends PaginatedQueryDto {
-  @IsOptional()
-  @IsString()
-  type?: string;
-
-  @IsOptional()
-  @IsString()
-  is_active?: string;
 }
 
 /** Query for `GET /admin/agents`. */

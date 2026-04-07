@@ -31,6 +31,7 @@ const ADAPTER_AUTH_TYPES = [
   "oauth2-client",
 ] as const;
 
+
 export class HeaderEntryDto {
   @IsString()
   @IsNotEmpty()
@@ -46,6 +47,10 @@ export class ListAdaptersQueryDto extends PaginatedQueryDto {
   @IsOptional()
   @IsIn(["internal", "external"])
   context?: string;
+
+  @IsOptional()
+  @IsString()
+  tag?: string;
 }
 
 export class CreateEndpointDto {
@@ -108,6 +113,11 @@ export class CreateAdapterDto {
   healthCheckPath?: string;
 
   @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  tags?: string[];
+
+  @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateEndpointDto)
   @IsOptional()
@@ -160,4 +170,9 @@ export class UpdateAdapterDto {
   @IsIn(["enabled", "disabled"])
   @IsOptional()
   status?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  tags?: string[];
 }

@@ -42,12 +42,13 @@ export class AdaptersController {
   async list(
     @Req() req: ITenantScopedRequest,
     @Query("context") context?: string,
+    @Query("tag") tag?: string,
   ) {
     return this.proxy.proxy({
       method: "GET",
       path: "/adapters",
       tenantId: req[REQUEST_TENANT_KEY],
-      query: { context },
+      query: { context, tag },
     });
   }
 

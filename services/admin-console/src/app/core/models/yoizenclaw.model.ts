@@ -1,158 +1,4 @@
 // ---------------------------------------------------------------------------
-// Provider-aware credential types for YoizenClaw
-// ---------------------------------------------------------------------------
-
-/** Supported LLM providers for credentials */
-export type YoizenclawCredentialProvider =
-  | "openai"
-  | "anthropic"
-  | "google"
-  | "google-vertex"
-  | "bedrock"
-  | "groq"
-  | "mistral"
-  | "openrouter"
-  | "xai"
-  | "cohere"
-  | "cerebras"
-  | "huggingface"
-  | "mock";
-
-/** All supported providers as array */
-export const YOIZENCLAW_CREDENTIAL_PROVIDERS: YoizenclawCredentialProvider[] = [
-  "openai",
-  "anthropic",
-  "google",
-  "google-vertex",
-  "bedrock",
-  "groq",
-  "mistral",
-  "openrouter",
-  "xai",
-  "cohere",
-  "cerebras",
-  "huggingface",
-  "mock",
-];
-
-/** Human-readable provider names */
-export const YOIZENCLAW_PROVIDER_DISPLAY_NAMES: Record<YoizenclawCredentialProvider, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  google: "Google AI (Gemini)",
-  "google-vertex": "Google Vertex AI",
-  bedrock: "AWS Bedrock",
-  groq: "Groq",
-  mistral: "Mistral AI",
-  openrouter: "OpenRouter",
-  xai: "xAI (Grok)",
-  cohere: "Cohere",
-  cerebras: "Cerebras",
-  huggingface: "Hugging Face",
-  mock: "Mock Provider",
-};
-
-/** Sync status for credentials */
-export type YoizenclawCredentialSyncStatus =
-  | "pending"
-  | "synced"
-  | "failed"
-  | "manual_review_required";
-
-/** Provider field definition for dynamic form rendering */
-export interface IYoizenclawProviderField {
-  name: string;
-  type: "string" | "url" | "enum" | "json";
-  required: boolean;
-  secret: boolean;
-  description: string;
-  placeholder?: string;
-  options?: string[];
-}
-
-/** Provider schema definition */
-export interface IYoizenclawProviderSchema {
-  provider: YoizenclawCredentialProvider;
-  display_name: string;
-  description: string;
-  fields: IYoizenclawProviderField[];
-}
-
-/** Provider-aware credential profile */
-export interface IYoizenclawCredentialProfile {
-  id: string;
-  name: string;
-  provider: YoizenclawCredentialProvider;
-  schema_version: number;
-  payload: Record<string, unknown>;
-  is_encrypted: boolean;
-  metadata: Record<string, unknown>;
-  expires_at: string | null;
-  is_active: boolean;
-  sync_status: YoizenclawCredentialSyncStatus;
-  last_sync_at: string | null;
-  sync_error: string | null;
-  has_secret: boolean;
-  created_at: string;
-  updated_at: string;
-
-}
-
-/** List response for credentials */
-export interface IYoizenclawCredentialListResponse {
-  credentials: IYoizenclawCredentialProfile[];
-  total: number;
-}
-
-/** Query parameters for credential list */
-export interface IYoizenclawCredentialListQuery {
-  provider?: YoizenclawCredentialProvider;
-  sync_status?: YoizenclawCredentialSyncStatus;
-  is_active?: boolean;
-  limit?: number;
-  offset?: number;
-}
-
-/** Create credential payload (provider-aware) */
-export interface IYoizenclawCreateCredentialPayload {
-  name: string;
-  provider: YoizenclawCredentialProvider;
-  payload: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-  expires_at?: string;
-  is_active?: boolean;
-}
-
-/** Update credential payload (provider-aware) */
-export interface IYoizenclawUpdateCredentialPayload {
-  name?: string;
-  provider?: YoizenclawCredentialProvider;
-  payload?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-  expires_at?: string | null;
-  is_active?: boolean;
-}
-
-/** Rotate credential payload (provider-aware) */
-export interface IYoizenclawRotateCredentialPayload {
-  payload: Record<string, unknown>;
-  new_expires_at?: string;
-}
-
-/** Sync response */
-export interface IYoizenclawCredentialSyncResponse {
-  message: string;
-  triggered: boolean;
-  results: { credentialId: string; success: boolean; error?: string }[];
-  summary: { successful: number; failed: number; total: number };
-}
-
-/** Providers list response */
-export interface IYoizenclawProvidersResponse {
-  providers: IYoizenclawProviderSchema[];
-}
-
-// ---------------------------------------------------------------------------
 // Tool source types and adapter reference
 // ---------------------------------------------------------------------------
 
@@ -209,10 +55,14 @@ export interface IYoizenclawSubagentConfig {
   enabled?: boolean;
 }
 
-export interface IYoizenclawAgentModelConfig {
+export interface IYoizenclawAgentModelConfigLlm {
   provider: string;
   model: string;
-  credential_profile_id: string | null;
+  connectorId: string | null;
+}
+
+export interface IYoizenclawAgentModelConfig {
+  llm: IYoizenclawAgentModelConfigLlm;
   rules: string;
   soul: string;
   subagents: IYoizenclawSubagentConfig[];
@@ -296,7 +146,7 @@ export interface IYoizenclawAgentDraft {
   systemPrompt: string;
   provider: string;
   model: string;
-  credentialProfileId?: string | null;
+  connectorId?: string | null;
   rules: string;
   soul: string;
   subagents?: IYoizenclawSubagentDraft[];
@@ -311,6 +161,18 @@ export interface IYoizenclawCreateAgentPayload {
   model_config: IYoizenclawAgentModelConfig;
   tools?: unknown[];
   channels?: unknown[];
+}
+
+export function getAgentLlmConfig(modelConfig: IYoizenclawAgentModelConfig): {
+  provider: string;
+  model: string;
+  connectorId: string | null;
+} {
+  return {
+    provider: modelConfig.llm.provider,
+    model: modelConfig.llm.model,
+    connectorId: modelConfig.llm.connectorId,
+  };
 }
 
 function normalizeOptionalText(value?: string | null): string | undefined {
@@ -369,10 +231,11 @@ export function buildYoizenclawAgentModelConfig(
   draft: IYoizenclawAgentDraft,
 ): IYoizenclawAgentModelConfig {
   return {
-    provider: normalizeRequiredText(draft.provider),
-    model: normalizeRequiredText(draft.model),
-    credential_profile_id:
-      normalizeOptionalText(draft.credentialProfileId) ?? null,
+    llm: {
+      provider: normalizeRequiredText(draft.provider),
+      model: normalizeRequiredText(draft.model),
+      connectorId: normalizeOptionalText(draft.connectorId) ?? null,
+    },
     rules: normalizeRequiredText(draft.rules),
     soul: normalizeRequiredText(draft.soul),
     subagents: (draft.subagents ?? []).map(buildYoizenclawSubagentConfig),

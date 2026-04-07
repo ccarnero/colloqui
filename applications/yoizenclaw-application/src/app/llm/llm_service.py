@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import asyncio
 import re
-import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Sequence
 
 from pydantic_ai import Agent as PydanticAgent, RunContext
@@ -27,8 +29,10 @@ from src.app.llm.credentials import (
     _normalize_model,
     _normalize_provider,
     _resolve_credentials,
+    resolve_from_adapter,
 )
 from src.utils.telemetry import get_tracer, record_llm_call, record_llm_tokens
+from src.utils.utils.credentials import CredentialSettings
 from src.app.tools.registry import ToolRegistry
 from src.app.llm._instrumentation import InstrumentedLLMGenerate
 from src.utils.config.settings import bootstrap_settings
@@ -70,6 +74,7 @@ class LLMAgentFactory:
     """
 
     _cache: dict[str, PydanticAgent] = {}
+    _max_cache_size = 100
 
     @classmethod
     def _get_cache_key(
@@ -142,6 +147,12 @@ class LLMAgentFactory:
                 cls._register_tool(agent, tool_def)
 
         cls._cache[cache_key] = agent
+        
+        # Simple LRU eviction: remove oldest entry if cache is full
+        if len(cls._cache) > cls._max_cache_size:
+            oldest_key = next(iter(cls._cache))
+            del cls._cache[oldest_key]
+            
         return agent
 
     @classmethod
@@ -181,11 +192,6 @@ class LLMClient:
     """
 
     def __init__(self, llm_config: dict[str, object] | None = None) -> None:
-        """Initialize the LLM client based on backend configuration.
-
-        If llm_config is provided, it is used directly. Otherwise,
-        configuration is fetched from RuntimeConfigStore.
-        """
         if llm_config:
             config = llm_config
         else:
@@ -216,15 +222,88 @@ class LLMClient:
             config.get("credential_mode", config.get("credentialMode")),
             self.credential_id,
         )
-        self.credentials = _resolve_credentials(
-            self.provider,
-            self.credential_id,
-            self.credential_mode,
-        )
+
+        self._connector_id: str | None = None
+        raw_connector = config.get("connector_id", config.get("connectorId"))
+        if isinstance(raw_connector, str) and raw_connector.strip():
+            connector_id = raw_connector.strip()
+            # Standard UUID validation (case-insensitive)
+            if re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', connector_id, re.IGNORECASE):
+                self._connector_id = connector_id
+            else:
+                self._connector_id = None
+
+        if self._connector_id is not None:
+            self.credentials = CredentialSettings()
+            self._credentials_resolved = False
+        else:
+            self.credentials = _resolve_credentials(
+                self.provider,
+                self.credential_id,
+                self.credential_mode,
+            )
+            self._credentials_resolved = True
+
         self.api_key = self.credentials.api_key
-        self._use_mock = not _has_provider_credentials(self.provider, self.credentials)
+        # Fix mock mode logic: use mock when credentials are not available
+        if self._connector_id is not None:
+            # Connector-based credentials - use mock until resolved
+            self._use_mock = not self._credentials_resolved
+        else:
+            # Traditional credentials - use mock when provider credentials are missing
+            self._use_mock = not _has_provider_credentials(self.provider, self.credentials)
         self._model: object | None = None
         self._prompt_loader = PromptLoader()
+        self._credentials_lock = asyncio.Lock()
+
+    async def _ensure_credentials(self) -> None:
+        # Simple lock-based resolution - no race conditions
+        if self._credentials_resolved:
+            return
+
+        async with self._credentials_lock:
+            if self._credentials_resolved:
+                return
+
+            try:
+                if self._connector_id is None:
+                    self.credentials = _resolve_credentials(
+                        self.provider,
+                        self.credential_id,
+                        self.credential_mode,
+                    )
+                    self.api_key = self.credentials.api_key
+                    self._use_mock = not _has_provider_credentials(
+                        self.provider, self.credentials
+                    )
+                else:
+                    from src.utils.di import AppContainer
+
+                    adapter_client = AppContainer.get().adapter_client
+                    if adapter_client is None:
+                        raise RuntimeError(
+                            "AdapterClient is not available in AppContainer. "
+                            f"Cannot resolve LLM credentials from connector_id '{self._connector_id}'"
+                        )
+
+                    self.credentials = await resolve_from_adapter(
+                        adapter_client,
+                        self._connector_id,
+                    )
+                    self.api_key = self.credentials.api_key
+                    self._use_mock = not _has_provider_credentials(
+                        self.provider, self.credentials
+                    )
+
+                # Mark as resolved only after success
+                self._credentials_resolved = True
+                # Invalidate model cache only after successful resolution
+                self._model = None
+                
+            except Exception:
+                # Reset state on failure to allow retry
+                self._credentials_resolved = False
+                raise
 
     def _get_model_identifier(self) -> str:
         """Build model identifier string from configuration.
@@ -459,6 +538,7 @@ class LLMClient:
         deps: LLMDeps | None = None,
     ) -> dict[str, Any]:
         """Generate structured JSON output from the LLM with instrumentation."""
+        await self._ensure_credentials()
         prompt_tokens = len(prompt.split())
 
         with InstrumentedLLMGenerate(
@@ -503,6 +583,7 @@ class LLMClient:
         Returns:
             The LLM response with content and metadata.
         """
+        await self._ensure_credentials()
         prompt_tokens = len(prompt.split())
 
         with InstrumentedLLMGenerate(

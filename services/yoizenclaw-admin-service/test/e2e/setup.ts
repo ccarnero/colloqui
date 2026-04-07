@@ -8,7 +8,6 @@ import {
   YOIZENCLAW_AGENT_UNPUBLISHED,
   YOIZENCLAW_CHANNEL,
   YOIZENCLAW_CONFIG_SYNC,
-  YOIZENCLAW_CREDENTIAL_ROTATED,
   YOIZENCLAW_DOMAIN,
   YOIZENCLAW_JOB_TRIGGER,
   YOIZENCLAW_PRODUCER,
@@ -126,7 +125,6 @@ export interface TestContext {
 type CapturedEventName =
   | "agent.published"
   | "agent.unpublished"
-  | "credential.rotated"
   | "runtime.config.sync"
   | "job.trigger";
 
@@ -144,7 +142,6 @@ export interface NatsEvent extends EventEnvelope {
 const EVENT_TYPES = {
   "agent.published": "io.yoizen.yoizenclaw.admin.agent.published.v1",
   "agent.unpublished": "io.yoizen.yoizenclaw.admin.agent.unpublished.v1",
-  "credential.rotated": "io.yoizen.yoizenclaw.admin.credential.rotated.v1",
   "runtime.config.sync": "io.yoizen.yoizenclaw.runtime.config.synced.v1",
   "job.trigger": "io.yoizen.yoizenclaw.admin.job.triggered.v1",
 } as const;
@@ -152,7 +149,6 @@ const EVENT_TYPES = {
 const EVENT_SUBJECTS: Record<CapturedEventName, string> = {
   "agent.published": YOIZENCLAW_AGENT_PUBLISHED,
   "agent.unpublished": YOIZENCLAW_AGENT_UNPUBLISHED,
-  "credential.rotated": YOIZENCLAW_CREDENTIAL_ROTATED,
   "runtime.config.sync": YOIZENCLAW_CONFIG_SYNC,
   "job.trigger": YOIZENCLAW_JOB_TRIGGER,
 };
@@ -385,31 +381,6 @@ export function createMockNatsPublisher(context: TestContext) {
           occurredAt: unpublishedAt,
           resource: `tenant/${tenantId}/agents/${agentId}`,
           source: "//yoizenclaw-admin-service/admin/agents/unpublish",
-        },
-      );
-      context.natsEvents.push(event);
-      return { seq: context.natsEvents.length };
-    },
-
-    publishCredentialRotated: async (
-      tenantId: string,
-      credentialId: string,
-      credentialType: string,
-    ) => {
-      const rotatedAt = new Date().toISOString();
-      const event = createCapturedEvent(
-        "credential.rotated",
-        tenantId,
-        {
-          credentialId,
-          rotatedAt,
-          type: credentialType,
-        },
-        {
-          correlationId: `credential:${credentialId}`,
-          occurredAt: rotatedAt,
-          resource: `tenant/${tenantId}/credentials/${credentialId}`,
-          source: "//yoizenclaw-admin-service/admin/credentials/rotate",
         },
       );
       context.natsEvents.push(event);

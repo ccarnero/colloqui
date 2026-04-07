@@ -37,6 +37,8 @@ describe("mapAdapter / mapEndpoint", () => {
       max_retries: 1,
       retry_backoff_ms: 2,
       health_check_path: "/h",
+      is_encrypted: false,
+      tags: [],
       status: "enabled",
       created_at: "c",
       updated_at: "u",
@@ -45,6 +47,7 @@ describe("mapAdapter / mapEndpoint", () => {
     expect(m.tenantId).toBe("t1");
     expect(m.authConfig).toEqual({ k: "v" });
     expect(m.headers).toEqual([{ key: "h", value: "1" }]);
+    expect(m.isEncrypted).toBe(false);
   });
 
   it("parses string JSONB auth_config and headers", () => {
@@ -61,6 +64,8 @@ describe("mapAdapter / mapEndpoint", () => {
       max_retries: 1,
       retry_backoff_ms: 1,
       health_check_path: "/",
+      is_encrypted: false,
+      tags: [],
       status: "disabled",
       created_at: "c",
       updated_at: "u",

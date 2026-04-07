@@ -8,13 +8,20 @@ configuration comes from backend via NATS - no hardcoded defaults.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+from urllib.parse import urlparse
 
 from src.utils.config.config_loader_settings import get_runtime_config_dir
 from src.utils.utils.credentials import CredentialSettings
 from src.utils.errors import RequiredFieldMissingError
+
+if TYPE_CHECKING:
+    from src.utils.adapter_client import AdapterClient
+
+logger = logging.getLogger(__name__)
 
 
 API_KEY_ENV_BY_PROVIDER: dict[str, tuple[str, ...]] = {
@@ -275,3 +282,69 @@ def _has_provider_credentials(provider: str, credentials: CredentialSettings) ->
         )
 
     return bool(credentials.api_key)
+
+
+_ADAPTER_LLM_AUTH_TYPES = frozenset(
+    os.getenv("ADAPTER_LLM_AUTH_TYPES", "bearer,api-key").split(",")
+)
+
+
+async def resolve_from_adapter(
+    adapter_client: "AdapterClient",
+    connector_id: str,
+) -> CredentialSettings:
+    try:
+        adapter = await adapter_client.get_adapter(connector_id)
+    except (ConnectionError, TimeoutError) as e:
+        raise ValueError(f"Network error retrieving adapter '{connector_id}': {e}") from e
+    except Exception as e:
+        raise ValueError(f"Failed to retrieve adapter '{connector_id}': {e}") from e
+
+    # Validate adapter exists
+    if not adapter:
+        raise ValueError(f"Adapter '{connector_id}' not found")
+
+    auth_type = getattr(adapter, "auth_type", None)
+    auth_config = getattr(adapter, "auth_config", None)
+
+    if not auth_type or not auth_config:
+        raise ValueError(f"Adapter '{connector_id}' missing auth configuration")
+
+    if auth_type == "bearer":
+        api_key = auth_config.get("token", "")
+    elif auth_type == "api-key":
+        api_key = auth_config.get("key", "")
+    else:
+        raise ValueError(
+            f"Adapter auth type '{auth_type}' is not supported for LLM credentials. "
+            f"Supported types: {', '.join(sorted(_ADAPTER_LLM_AUTH_TYPES))}"
+        )
+
+    if not isinstance(api_key, str):
+        raise ValueError(
+            f"Adapter '{connector_id}' has auth type '{auth_type}' "
+            f"but API key is not a string (got {type(api_key).__name__})"
+        )
+
+    if not api_key.strip():
+        raise ValueError(
+            f"Adapter '{connector_id}' has auth type '{auth_type}' "
+            "but no API key was found in auth_config"
+        )
+
+    # Validate base URL if provided
+    base_url = getattr(adapter, "base_url", None)
+    if base_url and base_url.strip():
+        parsed = urlparse(base_url.strip())
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError(
+                f"Adapter '{connector_id}' has invalid base_url: '{base_url}'"
+            )
+        base_url = base_url.strip()
+    else:
+        base_url = None
+
+    return CredentialSettings(
+        api_key=api_key.strip(),
+        base_url=base_url,
+    )

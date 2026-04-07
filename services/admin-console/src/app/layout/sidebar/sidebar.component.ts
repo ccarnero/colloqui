@@ -66,7 +66,6 @@ const ALL_SECTIONS: INavSection[] = [
           { label: "Agents", icon: "support_agent", route: "/yoizenclaw/agents" },
           { label: "Playground", icon: "science", route: "/yoizenclaw/playground" },
           { label: "Memories", icon: "memory", route: "/yoizenclaw/memories" },
-          { label: "Credentials", icon: "key", route: "/yoizenclaw/credentials" },
         ],
       },
     ],

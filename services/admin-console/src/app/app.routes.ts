@@ -164,13 +164,6 @@ export const routes: Routes = [
                 "./features/automation/yoizenclaw/memories.component"
               ).then((m) => m.YoizenclawMemoriesComponent),
           },
-          {
-            path: "credentials",
-            loadComponent: () =>
-              import(
-                "./features/automation/yoizenclaw/credentials.component"
-              ).then((m) => m.YoizenclawCredentialsComponent),
-          },
         ],
       },
       {

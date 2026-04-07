@@ -35,6 +35,8 @@ export interface IHttpAdapter {
   maxRetries: number;
   retryBackoffMs: number;
   healthCheckPath: string;
+  tags: string[];
+  isEncrypted: boolean;
 }
 
 export type IHttpAdapterContext = "internal" | "external";

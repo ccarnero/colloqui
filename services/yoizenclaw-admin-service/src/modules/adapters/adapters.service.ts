@@ -18,9 +18,17 @@ export class AdaptersService {
     this.baseUrl = yoizenclawAdminServiceConfig.adapterServiceUrl;
   }
 
-  async findAll(tenantId: string): Promise<{ adapters: AdapterSummaryDto[] }> {
+  async findAll(
+    tenantId: string,
+    tag?: string,
+  ): Promise<{ adapters: AdapterSummaryDto[] }> {
     try {
-      const response = await tracedFetch(`${this.baseUrl}/adapters`, {
+      const url = new URL(`${this.baseUrl}/adapters`);
+      if (tag) {
+        url.searchParams.set("tag", tag);
+      }
+
+      const response = await tracedFetch(url.toString(), {
         headers: { [TENANT_HEADER]: tenantId },
       });
 

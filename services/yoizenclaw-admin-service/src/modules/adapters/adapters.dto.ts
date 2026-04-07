@@ -13,6 +13,7 @@ export class AdapterSummaryDto {
   baseUrl?: string;
   authType?: string;
   hasAuth?: boolean;
+  tags?: string[];
   endpoints!: AdapterEndpointDto[];
 }
 
@@ -54,6 +55,8 @@ export class AdapterDetailDto {
   status!: string;
   authType!: string;
   hasAuth!: boolean;
+  category!: string;
+  tags?: string[];
   endpoints!: AdapterEndpointDto[];
 }
 
@@ -74,6 +77,7 @@ export function sanitizeAdapter(
     baseUrl: raw.baseUrl as string | undefined,
     authType,
     hasAuth,
+    tags: (raw.tags as string[] | undefined) ?? [],
     endpoints: mapAdapterEndpoints(raw),
   };
 }
@@ -93,6 +97,8 @@ export function sanitizeAdapterDetail(
     status: raw.status as string,
     authType,
     hasAuth,
+    category: (raw.category as string) ?? "",
+    tags: (raw.tags as string[] | undefined) ?? [],
     endpoints: mapAdapterEndpoints(raw),
   };
 }

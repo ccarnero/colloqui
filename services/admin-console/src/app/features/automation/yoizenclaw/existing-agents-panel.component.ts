@@ -48,7 +48,7 @@ import {
                   <strong class="agent-name">{{ agent.name }}</strong>
                   <div class="agent-meta">
                     {{ formatProvider(agent) }} ·
-                    {{ agent.model_config.model || "No model" }}
+                    {{ formatModel(agent) }}
                   </div>
                 </div>
                 <span [class]="statusClass(agent.status)">
@@ -62,7 +62,7 @@ import {
 
               <div class="agent-footer">
                 <span>
-                  {{ agent.model_config.subagents.length }} skills
+                  {{ getSkillsCount(agent) }} skills
                 </span>
                 <span>
                   {{ agent.created_at | date: "mediumDate" }}
@@ -79,8 +79,6 @@ import {
                   >
                     @if (publishingId() === agent.id) {
                       <mat-spinner diameter="14"></mat-spinner>
-                    } @else {
-                      <mat-icon>rocket_launch</mat-icon>
                     }
                     Publish
                   </button>
@@ -95,8 +93,6 @@ import {
                   >
                     @if (publishingId() === agent.id) {
                       <mat-spinner diameter="14"></mat-spinner>
-                    } @else {
-                      <mat-icon>pause_circle</mat-icon>
                     }
                     Unpublish
                   </button>
@@ -107,7 +103,6 @@ import {
                   class="action-btn edit-btn"
                   (click)="edit.emit(agent)"
                 >
-                  <mat-icon>edit_note</mat-icon>
                   Edit
                 </button>
               </div>
@@ -317,8 +312,17 @@ export class YoizenclawExistingAgentsPanelComponent {
   readonly unpublish = output<string>();
 
   formatProvider(agent: IYoizenclawAgent): string {
-    const provider = agent.model_config.provider?.trim();
+    const provider = agent.model_config?.llm?.provider?.trim();
     return provider ? provider : "No provider";
+  }
+
+  formatModel(agent: IYoizenclawAgent): string {
+    const model = agent.model_config?.llm?.model?.trim();
+    return model ? model : "No model";
+  }
+
+  getSkillsCount(agent: IYoizenclawAgent): number {
+    return agent.model_config?.subagents?.length ?? 0;
   }
 
   statusClass(status: IYoizenclawAgent["status"]): string {

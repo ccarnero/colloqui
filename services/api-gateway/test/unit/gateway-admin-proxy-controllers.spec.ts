@@ -2,7 +2,6 @@ import "reflect-metadata";
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { AdminAgentsController } from "../../src/modules/admin/admin-agents.controller";
-import { AdminCredentialsController } from "../../src/modules/admin/admin-credentials.controller";
 import { AdminJobsController } from "../../src/modules/admin/admin-jobs.controller";
 import { AdminProxyService } from "../../src/modules/admin/admin-proxy.service";
 
@@ -48,51 +47,6 @@ describe("AdminAgentsController", () => {
     expect(proxy).toHaveBeenCalledWith({
       method: "GET",
       path: `/admin/agents/${UUID}`,
-      tenantId: "t1",
-    });
-  });
-});
-
-describe("AdminCredentialsController", () => {
-  let controller: AdminCredentialsController;
-  let proxy: ReturnType<typeof mock>;
-
-  beforeEach(async () => {
-    proxy = mock(() => Promise.resolve({}));
-    const moduleRef = await Test.createTestingModule({
-      controllers: [AdminCredentialsController],
-      providers: [{ provide: AdminProxyService, useValue: { proxy } }],
-    }).compile();
-    controller = moduleRef.get(AdminCredentialsController);
-  });
-
-  const req = { tenantId: "t1" } as never;
-
-  it("listCredentials forwards query params", async () => {
-    await controller.listCredentials(req, {
-      type: "api_key",
-      is_active: "true",
-      limit: 10,
-      offset: 0,
-    });
-    expect(proxy).toHaveBeenCalledWith({
-      method: "GET",
-      path: "/admin/credentials",
-      tenantId: "t1",
-      query: {
-        type: "api_key",
-        is_active: "true",
-        limit: "10",
-        offset: "0",
-      },
-    });
-  });
-
-  it("deleteCredential issues DELETE", async () => {
-    await controller.deleteCredential(req, UUID);
-    expect(proxy).toHaveBeenCalledWith({
-      method: "DELETE",
-      path: `/admin/credentials/${UUID}`,
       tenantId: "t1",
     });
   });

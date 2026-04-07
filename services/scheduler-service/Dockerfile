@@ -15,13 +15,6 @@ RUN rm -rf ../../packages/observability/node_modules/@nestjs \
   && mkdir -p ../../packages/observability/node_modules \
   && ln -sfn ../../../services/scheduler-service/node_modules/@nestjs \
     ../../packages/observability/node_modules/@nestjs
-RUN rm -rf ../../packages/shared/node_modules/class-transformer \
-    ../../packages/shared/node_modules/class-validator \
-  && mkdir -p ../../packages/shared/node_modules \
-  && ln -sfn ../../../services/scheduler-service/node_modules/class-transformer \
-    ../../packages/shared/node_modules/class-transformer \
-  && ln -sfn ../../../services/scheduler-service/node_modules/class-validator \
-    ../../packages/shared/node_modules/class-validator
 
 COPY services/scheduler-service/src ./src
 COPY services/scheduler-service/tsconfig.json ./

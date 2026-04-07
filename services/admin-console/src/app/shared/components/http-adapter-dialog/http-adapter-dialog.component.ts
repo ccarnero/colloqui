@@ -3,6 +3,7 @@ import {
   Component,
   computed,
   inject,
+  type OnInit,
   signal,
 } from "@angular/core";
 import {
@@ -22,6 +23,8 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
+import { MatChipsModule } from "@angular/material/chips";
+import { COMMA, ENTER } from "@angular/cdk/keycodes";
 import {
   type AuthType,
   type IHttpAdapter,
@@ -44,6 +47,7 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
     MatInputModule,
     MatSelectModule,
     MatButtonModule,
+    MatChipsModule,
     MatIconModule,
     AdapterAuthConfigComponent,
     AdapterEndpointConfigComponent,
@@ -52,7 +56,9 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
   template: `
     <div class="dialog-header">
       <div>
-        <div class="dialog-title">{{ dialogTitle() }}</div>
+        <div class="dialog-title">
+          {{ data.mode === "create" ? "Create" : "Edit" }} Connector
+        </div>
         <div class="dialog-subtitle">
           Configure the HTTP adapter settings below
         </div>
@@ -100,10 +106,42 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
                 <input
                   matInput
                   formControlName="baseUrl"
-                  placeholder="{{ urlPlaceholder() }}"
+                  [placeholder]="
+                    contextSignal() === 'internal'
+                      ? 'http://svc.namespace.svc:8080'
+                      : 'https://api.example.com'
+                  "
                 />
               </mat-form-field>
             </div>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-card-header">
+            <div class="section-card-title">Tags</div>
+          </div>
+          <div class="section-card-body">
+            <mat-form-field appearance="outline" class="form-field-full">
+              <mat-label>Tags</mat-label>
+              <mat-chip-grid #chipGrid>
+                @for (tag of tags(); track tag) {
+                  <mat-chip-row (removed)="removeTag(tag)">
+                    {{ tag }}
+                    <button matChipRemove>
+                      <mat-icon>cancel</mat-icon>
+                    </button>
+                  </mat-chip-row>
+                }
+              </mat-chip-grid>
+              <input
+                matInput
+                placeholder="Add tag..."
+                [matChipInputFor]="chipGrid"
+                [matChipInputSeparatorKeyCodes]="separatorKeyCodes"
+                (matChipInputTokenEnd)="addTag($event)"
+              />
+            </mat-form-field>
           </div>
         </div>
 
@@ -162,11 +200,19 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
               <div class="form-row form-row-triple">
                 <mat-form-field appearance="outline">
                   <mat-label>Timeout (ms)</mat-label>
-                  <input matInput type="number" formControlName="timeoutMs" />
+                  <input
+                    matInput
+                    type="number"
+                    formControlName="timeoutMs"
+                  />
                 </mat-form-field>
                 <mat-form-field appearance="outline">
                   <mat-label>Max Retries</mat-label>
-                  <input matInput type="number" formControlName="maxRetries" />
+                  <input
+                    matInput
+                    type="number"
+                    formControlName="maxRetries"
+                  />
                 </mat-form-field>
                 <mat-form-field appearance="outline">
                   <mat-label>Backoff (ms)</mat-label>
@@ -218,7 +264,7 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
     </div>
   `,
 })
-export class HttpAdapterDialogComponent {
+export class HttpAdapterDialogComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   readonly dialogRef = inject(
     MatDialogRef<HttpAdapterDialogComponent, IHttpAdapterDialogResult>,
@@ -227,6 +273,8 @@ export class HttpAdapterDialogComponent {
 
   readonly form = this.buildForm();
 
+  readonly separatorKeyCodes = [ENTER, COMMA] as const;
+
   readonly showContextSelector =
     this.data.mode === "create" && !this.data.context;
 
@@ -234,22 +282,13 @@ export class HttpAdapterDialogComponent {
     this.data.context ?? "internal",
   );
 
+  readonly tags = signal<string[]>(this.data.adapter?.tags ?? []);
+
   private readonly authTypeSignal = signal<AuthType>(
     this.data.adapter?.auth.type ?? "none",
   );
 
   readonly authType = this.authTypeSignal.asReadonly();
-
-  readonly dialogTitle = computed(() => {
-    const action = this.data.mode === "create" ? "Create" : "Edit";
-    return `${action} Connector`;
-  });
-
-  readonly urlPlaceholder = computed(() =>
-    this.contextSignal() === "internal"
-      ? "http://svc.namespace.svc:8080"
-      : "https://api.example.com",
-  );
 
   get authFormGroup(): FormGroup {
     return this.form.get("auth") as FormGroup;
@@ -280,6 +319,20 @@ export class HttpAdapterDialogComponent {
     return this.form.get("endpoints") as FormArray;
   }
 
+  ngOnInit(): void {}
+
+  addTag(event: { value: string; chipInput: { clear: () => void } }): void {
+    const value = (event.value ?? "").trim().toLowerCase();
+    if (value && !this.tags().includes(value)) {
+      this.tags.update((t) => [...t, value]);
+    }
+    event.chipInput.clear();
+  }
+
+  removeTag(tag: string): void {
+    this.tags.update((t) => t.filter((v) => v !== tag));
+  }
+
   submit(): void {
     if (this.form.invalid) {
       return;
@@ -287,6 +340,7 @@ export class HttpAdapterDialogComponent {
 
     const v = this.form.getRawValue();
     const authTypeVal = v.auth.type ?? "none";
+
     const adapter: IHttpAdapter = {
       name: v.name ?? "",
       baseUrl: v.baseUrl ?? "",
@@ -322,9 +376,14 @@ export class HttpAdapterDialogComponent {
       maxRetries: v.maxRetries ?? 3,
       retryBackoffMs: v.retryBackoffMs ?? 1000,
       healthCheckPath: v.healthCheckPath ?? "/health",
+      tags: this.tags(),
+      isEncrypted: false,
     };
 
-    this.dialogRef.close({ adapter, context: this.contextSignal() });
+    this.dialogRef.close({
+      adapter,
+      context: this.contextSignal(),
+    });
   }
 
   private buildForm() {

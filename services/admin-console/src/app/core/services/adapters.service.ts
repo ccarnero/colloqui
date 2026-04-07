@@ -69,10 +69,6 @@ function adapterDtoToDetail(dto: IAdapterDto): IAdapterDetail {
   };
 }
 
-/**
- * Read-only adapter list/detail for YoizenClaw tooling. Delegates HTTP to
- * {@link HttpAdapterService} to avoid duplicating `/adapters` client logic.
- */
 @Injectable({ providedIn: "root" })
 export class AdaptersService {
   private readonly httpAdapter = inject(HttpAdapterService);
@@ -80,7 +76,17 @@ export class AdaptersService {
   listAdapters(): Observable<{ adapters: IAdapterSummary[] }> {
     return this.httpAdapter
       .list()
-      .pipe(map((adapters) => ({ adapters: adapters.map(adapterDtoToSummary) })));
+      .pipe(
+        map((adapters) => ({
+          adapters: adapters.map(adapterDtoToSummary),
+        })),
+      );
+  }
+
+  listByTag(tag: string): Observable<IAdapterSummary[]> {
+    return this.httpAdapter
+      .list({ tag })
+      .pipe(map((dtos) => dtos.map(adapterDtoToSummary)));
   }
 
   getAdapter(adapterId: string): Observable<IAdapterDetail> {
