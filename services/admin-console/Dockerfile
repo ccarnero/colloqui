@@ -5,7 +5,7 @@ WORKDIR /app
 COPY packages/angular-shared ./packages/angular-shared
 COPY services/admin-console/package.json services/admin-console/package-lock.json ./services/admin-console/
 WORKDIR /app/services/admin-console
-RUN npm ci --ignore-scripts && \
+RUN npm install --ignore-scripts && \
     cd /app/packages/angular-shared && npm run build
 
 COPY services/admin-console/ .

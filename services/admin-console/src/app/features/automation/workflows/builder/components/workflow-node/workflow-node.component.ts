@@ -43,6 +43,7 @@ import {
         fNodeOutput
         [fOutputId]="node().key + '-out'"
         fOutputConnectableSide="right"
+        [fOutputMultiple]="node().type === branchType"
       ></div>
     </div>
   `,

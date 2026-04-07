@@ -452,10 +452,9 @@ export class WorkflowBuilderComponent implements OnInit {
   }
 
   /**
-   * Reconstructs the visual flow graph (nodes + connections)
-   * from a saved workflow definition. Actions are stored as a
-   * linear array, so connections are inferred from ordering.
-   * Horizontal layout: each node is placed further to the right.
+   * Reconstructs the visual flow graph from a saved definition.
+   * Handles linear actions and recursively expands branch paths
+   * into child nodes with fan-out connections.
    */
   private deserializeFlow(dto: {
     actions: unknown[];
@@ -466,36 +465,48 @@ export class WorkflowBuilderComponent implements OnInit {
   } {
     const nodes: Record<string, IWorkflowNode> = {};
     const connections: Record<string, IWorkflowConnection> = {};
-    const orderedKeys: string[] = [];
+    const trunk: string[] = [];
+    let connSeq = 0;
 
     const X_START = 50;
     const X_GAP = 280;
     const Y_BASE = 100;
+    const Y_BRANCH_GAP = 140;
     let col = 0;
 
+    const link = (src: string, tgt: string): void => {
+      const key = `conn-r-${connSeq++}`;
+      connections[key] = {
+        key,
+        source: src,
+        target: tgt,
+        type: EWorkflowConnectionType.DEFAULT,
+      };
+    };
+
     if (dto.trigger) {
-      const triggerNode = createNodeFromDefault(
+      const tn = createNodeFromDefault(
         EWorkflowNodeType.TRIGGER,
-        { x: X_START + col * X_GAP, y: Y_BASE },
+        { x: X_START, y: Y_BASE },
       );
       const raw = dto.trigger as Record<string, unknown>;
       const cfg = raw["config"];
       if (cfg && typeof cfg === "object") {
-        triggerNode.configuration = {
-          ...triggerNode.configuration,
+        tn.configuration = {
+          ...tn.configuration,
           ...(cfg as Record<string, unknown>),
         };
       }
-      triggerNode.configuration["mode"] =
+      tn.configuration["mode"] =
         (raw["mode"] as string) ?? "shared";
-      nodes[triggerNode.key] = triggerNode;
-      orderedKeys.push(triggerNode.key);
+      nodes[tn.key] = tn;
+      trunk.push(tn.key);
       col++;
     }
 
     if (Array.isArray(dto.actions)) {
-      for (const action of dto.actions) {
-        const a = action as Record<string, unknown>;
+      for (const raw of dto.actions) {
+        const a = raw as Record<string, unknown>;
         const activity = a["activity"] as string;
         const type = this.activityToNodeType(activity);
         if (!type) continue;
@@ -505,31 +516,97 @@ export class WorkflowBuilderComponent implements OnInit {
           y: Y_BASE,
         });
         node.name = (a["name"] as string) ?? node.name;
+        nodes[node.key] = node;
+        trunk.push(node.key);
+        col++;
 
-        if (a["args"] && typeof a["args"] === "object") {
+        if (activity === "branch") {
+          const paths = this.extractBranchPaths(a);
+          node.configuration["branches"] =
+            paths.map(([name]) => name);
+          const mid = (paths.length - 1) / 2;
+
+          for (let pi = 0; pi < paths.length; pi++) {
+            const pathY =
+              Y_BASE + (pi - mid) * Y_BRANCH_GAP;
+            const keys = this.deserializeChain(
+              paths[pi][1],
+              nodes,
+              X_START + col * X_GAP,
+              pathY,
+              X_GAP,
+            );
+            if (keys.length === 0) continue;
+            link(node.key, keys[0]);
+            for (let i = 0; i < keys.length - 1; i++) {
+              link(keys[i], keys[i + 1]);
+            }
+          }
+        } else if (
+          a["args"] &&
+          typeof a["args"] === "object"
+        ) {
           node.configuration = {
             ...node.configuration,
             ...(a["args"] as Record<string, unknown>),
           };
         }
-
-        nodes[node.key] = node;
-        orderedKeys.push(node.key);
-        col++;
       }
     }
 
-    for (let i = 0; i < orderedKeys.length - 1; i++) {
-      const connKey = `conn-restore-${i}`;
-      connections[connKey] = {
-        key: connKey,
-        source: orderedKeys[i],
-        target: orderedKeys[i + 1],
-        type: EWorkflowConnectionType.DEFAULT,
-      };
+    for (let i = 0; i < trunk.length - 1; i++) {
+      link(trunk[i], trunk[i + 1]);
     }
 
     return { nodes, connections };
+  }
+
+  /** Extracts dynamic branch path keys from a branch action. */
+  private extractBranchPaths(
+    action: Record<string, unknown>,
+  ): Array<[string, unknown[]]> {
+    const skip = new Set(["activity", "name", "args"]);
+    const paths: Array<[string, unknown[]]> = [];
+    for (const [k, v] of Object.entries(action)) {
+      if (!skip.has(k) && Array.isArray(v)) {
+        paths.push([k, v]);
+      }
+    }
+    return paths;
+  }
+
+  /** Deserializes a linear chain of actions into nodes. */
+  private deserializeChain(
+    actions: unknown[],
+    nodes: Record<string, IWorkflowNode>,
+    startX: number,
+    y: number,
+    xGap: number,
+  ): string[] {
+    const keys: string[] = [];
+    let offset = 0;
+    for (const raw of actions) {
+      const a = raw as Record<string, unknown>;
+      const type = this.activityToNodeType(
+        a["activity"] as string,
+      );
+      if (!type) continue;
+      const node = createNodeFromDefault(type, {
+        x: startX + offset * xGap,
+        y,
+      });
+      node.name = (a["name"] as string) ?? node.name;
+      if (a["args"] && typeof a["args"] === "object") {
+        node.configuration = {
+          ...node.configuration,
+          ...(a["args"] as Record<string, unknown>),
+        };
+      }
+      nodes[node.key] = node;
+      keys.push(node.key);
+      offset++;
+    }
+    return keys;
   }
 
   private activityToNodeType(
