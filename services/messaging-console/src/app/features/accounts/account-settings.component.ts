@@ -16,6 +16,7 @@ import {
   LucideAngularModule,
   ArrowLeft,
   Key,
+  RefreshCw,
   Shield,
   Info,
   Save,
@@ -186,6 +187,45 @@ import {
           </div>
         </div>
 
+        <!-- Refresh Meta Token (long-lived exchange) -->
+        @if (account()!.channel !== "telegram") {
+        <div class="section-card">
+          <div class="section-card-header">
+            <div class="section-title-row">
+              <lucide-icon [img]="RefreshCw" [size]="16" />
+              <span class="section-card-title">
+                Refresh Token (Long-Lived)
+              </span>
+            </div>
+          </div>
+          <div class="section-card-body">
+            @if (account()!.appId && account()!.appSecret) {
+              <p class="hint">
+                Exchange the current access token for a long-lived one
+                (~60 days) using Meta's <code>fb_exchange_token</code>
+                grant. The server will call the Graph API with your
+                App ID and App Secret.
+              </p>
+              <button class="btn btn-primary"
+                      (click)="refreshMetaToken()"
+                      [disabled]="refreshingToken()">
+                @if (refreshingToken()) {
+                  <mat-spinner diameter="14" />
+                } @else {
+                  <lucide-icon [img]="RefreshCw" [size]="14" />
+                  Refresh Token
+                }
+              </button>
+            } @else {
+              <p class="hint hint-warn">
+                Meta App ID and App Secret are required to exchange
+                tokens. Fill in the credentials below first.
+              </p>
+            }
+          </div>
+        </div>
+        }
+
         <!-- Update Meta Credentials -->
         @if (account()!.channel !== "telegram") {
         <div class="section-card">
@@ -316,11 +356,15 @@ import {
       align-self: flex-end;
       margin-top: 4px;
     }
+    .hint-warn {
+      color: var(--yellow, #d97706);
+    }
   `,
 })
 export class AccountSettingsComponent implements OnInit {
   protected readonly ArrowLeft = ArrowLeft;
   protected readonly Key = Key;
+  protected readonly RefreshCw = RefreshCw;
   protected readonly Shield = Shield;
   protected readonly Info = Info;
   protected readonly Save = Save;
@@ -339,6 +383,7 @@ export class AccountSettingsComponent implements OnInit {
 
   readonly savingToken = signal(false);
   readonly savingCreds = signal(false);
+  readonly refreshingToken = signal(false);
 
   newToken = "";
   newAppId = "";
@@ -383,6 +428,32 @@ export class AccountSettingsComponent implements OnInit {
           });
         },
       });
+  }
+
+  refreshMetaToken(): void {
+    this.refreshingToken.set(true);
+    this.message.set(null);
+
+    this.channelService.refreshMetaToken(this.id()).subscribe({
+      next: (res) => {
+        this.refreshingToken.set(false);
+        const days = Math.round(res.expiresIn / 86_400);
+        this.message.set({
+          type: "ok",
+          text: `Token refreshed — expires in ~${days} days.`,
+        });
+      },
+      error: (err) => {
+        this.refreshingToken.set(false);
+        this.message.set({
+          type: "error",
+          text: getHttpErrorMessage(
+            err,
+            "Failed to refresh token",
+          ),
+        });
+      },
+    });
   }
 
   updateCredentials(): void {
