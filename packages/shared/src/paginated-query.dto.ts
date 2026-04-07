@@ -1,27 +1,23 @@
-import { Transform } from "class-transformer";
+import { Type } from "class-transformer";
 import { IsInt, IsOptional, Max, Min } from "class-validator";
-
-function toOptionalInt(value: unknown): number | undefined {
-  if (value === undefined || value === null || value === "") {
-    return undefined;
-  }
-  return Number(value);
-}
 
 /**
  * Shared limit/offset query DTO for list endpoints (audit, scheduler, etc.).
+ * 
+ * Note: @Type(() => Number) transforms string query params to numbers.
+ * class-validator will validate after transformation.
  */
 export class PaginatedQueryDto {
-  @Transform(({ value }) => toOptionalInt(value))
   @IsOptional()
-  @IsInt()
+  @Type(() => Number)
+  @IsInt({ message: "limit must be an integer" })
   @Min(1)
   @Max(500)
   limit?: number;
 
-  @Transform(({ value }) => toOptionalInt(value))
   @IsOptional()
-  @IsInt()
+  @Type(() => Number)
+  @IsInt({ message: "offset must be an integer" })
   @Min(0)
   offset?: number;
 }

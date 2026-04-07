@@ -62,7 +62,12 @@ export interface IYoizenclawAgentModelConfigLlm {
 }
 
 export interface IYoizenclawAgentModelConfig {
-  llm: IYoizenclawAgentModelConfigLlm;
+  llm?: IYoizenclawAgentModelConfigLlm;
+  /** Flat shape returned by the backend (provider/model/connectorId at root). */
+  provider?: string;
+  model?: string;
+  connectorId?: string | null;
+  credential_profile_id?: string | null;
   rules: string;
   soul: string;
   subagents: IYoizenclawSubagentConfig[];
@@ -168,10 +173,17 @@ export function getAgentLlmConfig(modelConfig: IYoizenclawAgentModelConfig): {
   model: string;
   connectorId: string | null;
 } {
+  if (modelConfig.llm) {
+    return {
+      provider: modelConfig.llm.provider,
+      model: modelConfig.llm.model,
+      connectorId: modelConfig.llm.connectorId,
+    };
+  }
   return {
-    provider: modelConfig.llm.provider,
-    model: modelConfig.llm.model,
-    connectorId: modelConfig.llm.connectorId,
+    provider: modelConfig.provider ?? "",
+    model: modelConfig.model ?? "",
+    connectorId: modelConfig.connectorId ?? null,
   };
 }
 

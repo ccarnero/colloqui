@@ -48,6 +48,9 @@ export async function bootstrapFastifyApp(
         whitelist: true,
         forbidNonWhitelisted: true,
         transform: true,
+        transformOptions: {
+          enableImplicitConversion: true,
+        },
       }),
     );
   }

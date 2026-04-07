@@ -8,6 +8,7 @@ import {
 } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { MatFormFieldModule } from "@angular/material/form-field";
+import { MatIconModule } from "@angular/material/icon";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { MatSelectModule } from "@angular/material/select";
 import { MatTabsModule } from "@angular/material/tabs";
@@ -22,6 +23,7 @@ import {
   type IYoizenclawAgentDraft,
   type IYoizenclawSubagentDraft,
   type IYoizenclawTemplate,
+  getAgentLlmConfig,
 } from "../../../core/models/yoizenclaw.model";
 import { YoizenclawAgentConfigComponent } from "./agent-config.component";
 import { YoizenclawChatPanelComponent } from "./chat-panel.component";
@@ -50,6 +52,7 @@ import type { Observable } from "rxjs";
   imports: [
     FormsModule,
     MatFormFieldModule,
+    MatIconModule,
     MatProgressSpinnerModule,
     MatSelectModule,
     MatTabsModule,
@@ -61,127 +64,148 @@ import type { Observable } from "rxjs";
   ],
   styleUrl: "./yoizenclaw.component.scss",
   template: `
-    <app-yoizenclaw-top-bar
-      [editingAgentId]="editingAgentId()"
-      [saving]="saving()"
-      [loading]="loading()"
-      [canSave]="isValid()"
-      [errorMessage]="errorMessage()"
-      [successMessage]="successMessage()"
-      (cancelEdit)="cancelEdit()"
-      (reset)="resetToTemplate()"
-      (save)="saveAgent()"
-    />
-
-    <section class="info-banner">
-      <div class="info-content">
-        <div class="info-text">
-          <span class="info-badge">YoizenClaw MVP</span>
-          <h2 class="info-title">
-            Compose a production-ready system prompt with skills.
-          </h2>
+    @if (viewMode() === 'list') {
+      <div class="ws-header">
+        <div>
+          <div class="ws-title">Agents</div>
         </div>
-
-        <div class="info-actions">
-          <mat-form-field appearance="outline" class="template-select-mini">
-            <mat-label>Template</mat-label>
-            <mat-select
-              [(ngModel)]="selectedTemplateId"
-              (ngModelChange)="applyTemplateById($event)"
-            >
-              @for (option of templates(); track option.id) {
-                <mat-option [value]="option.id">
-                  {{ option.label }}
-                </mat-option>
-              }
-            </mat-select>
-          </mat-form-field>
-
-          <div class="info-metrics">
-            <div class="metric-item">
-              <span class="metric-label">Agents</span>
-              <strong class="metric-value">{{ agents().length }}</strong>
-            </div>
-            <div class="metric-item">
-              <span class="metric-label">Connectors</span>
-              <strong class="metric-value">{{
-                llmConnectors().length
-              }}</strong>
-            </div>
-            <div class="metric-item">
-              <span class="metric-label">Skills</span>
-              <strong class="metric-value">{{ subagents.length }}</strong>
-            </div>
-          </div>
+        <div class="ws-actions">
+          <button class="btn btn-secondary btn-sm" type="button" (click)="ngOnInit()">
+            <mat-icon>sync</mat-icon>
+            Sync from Seed
+          </button>
+          <button class="btn btn-primary btn-sm" type="button" (click)="createNewAgent()">
+            <mat-icon>add</mat-icon>
+            New Agent
+          </button>
         </div>
       </div>
-    </section>
 
-    <div class="workspace-grid">
-      <section class="section-card editor-card">
-        <div class="section-card-header">
-          <div>
-            <div class="section-card-title">Agent Configuration</div>
-            <div class="section-card-sub">
-              Compose your AI agent settings, instructions, and sub-delegations.
+      <div class="workspace-grid single-column">
+        <app-yoizenclaw-existing-agents
+          class="full-width-panel"
+          [agents]="agents()"
+          [loading]="loading()"
+          [editingAgentId]="editingAgentId()"
+          [publishingId]="publishingId()"
+          (edit)="loadAgentForEdit($event)"
+          (publish)="publishAgent($event)"
+          (unpublish)="unpublishAgent($event)"
+        />
+      </div>
+    } @else {
+      <app-yoizenclaw-top-bar
+        [editingAgentId]="editingAgentId()"
+        [saving]="saving()"
+        [loading]="loading()"
+        [canSave]="isValid()"
+        [errorMessage]="errorMessage()"
+        [successMessage]="successMessage()"
+        (cancelEdit)="cancelEdit()"
+        (reset)="resetToTemplate()"
+        (save)="saveAgent()"
+      />
+
+      <section class="info-banner">
+        <div class="info-content">
+          <div class="info-text">
+            <span class="info-badge">YoizenClaw MVP</span>
+            <h2 class="info-title">
+              Compose a production-ready system prompt with skills.
+            </h2>
+          </div>
+
+          <div class="info-actions">
+            <mat-form-field appearance="outline" class="template-select-mini">
+              <mat-label>Template</mat-label>
+              <mat-select
+                [(ngModel)]="selectedTemplateId"
+                (ngModelChange)="applyTemplateById($event)"
+              >
+                @for (option of templates(); track option.id) {
+                  <mat-option [value]="option.id">
+                    {{ option.label }}
+                  </mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+
+            <div class="info-metrics">
+              <div class="metric-item">
+                <span class="metric-label">Agents</span>
+                <strong class="metric-value">{{ agents().length }}</strong>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Connectors</span>
+                <strong class="metric-value">{{
+                  llmConnectors().length
+                }}</strong>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Skills</span>
+                <strong class="metric-value">{{ subagents.length }}</strong>
+              </div>
             </div>
           </div>
-          @if (loading()) {
-            <mat-spinner diameter="24" />
-          }
         </div>
-
-        <mat-tab-group class="app-tabs">
-          <mat-tab label="General">
-            <app-yoizenclaw-agent-config
-              section="general"
-              [llmConnectors]="llmConnectors()"
-              [editorOptions]="editorOptions"
-              [(agentName)]="agentName"
-              [(description)]="description"
-              [(provider)]="provider"
-              [(model)]="model"
-              [(connectorId)]="connectorId"
-            />
-          </mat-tab>
-
-          <mat-tab label="Instructions">
-            <app-yoizenclaw-chat-panel
-              [editorOptions]="editorOptions"
-              [availableSkills]="availableSkills()"
-              [availableTools]="availableTools()"
-              [extractedMentions]="extractedMentions()"
-              [(systemPrompt)]="systemPrompt"
-              [(rules)]="rules"
-              [(soul)]="soul"
-            />
-          </mat-tab>
-
-          <mat-tab label="Skills ({{ subagents.length }})">
-            <app-yoizenclaw-agent-config
-              section="skills"
-              [llmConnectors]="llmConnectors()"
-              [editorOptions]="editorOptions"
-              [(subagents)]="subagents"
-            />
-          </mat-tab>
-
-          <mat-tab label="Tools ({{ tools.length }})">
-            <app-yoizenclaw-tool-config [(tools)]="tools" />
-          </mat-tab>
-        </mat-tab-group>
       </section>
 
-      <app-yoizenclaw-existing-agents
-        [agents]="agents()"
-        [loading]="loading()"
-        [editingAgentId]="editingAgentId()"
-        [publishingId]="publishingId()"
-        (edit)="loadAgentForEdit($event)"
-        (publish)="publishAgent($event)"
-        (unpublish)="unpublishAgent($event)"
-      />
-    </div>
+      <div class="workspace-grid single-column">
+        <section class="section-card editor-card">
+          <div class="section-card-header">
+            <div>
+              <div class="section-card-title">Agent Configuration</div>
+              <div class="section-card-sub">
+                Compose your AI agent settings, instructions, and sub-delegations.
+              </div>
+            </div>
+            @if (loading()) {
+              <mat-spinner diameter="24" />
+            }
+          </div>
+
+          <mat-tab-group class="app-tabs">
+            <mat-tab label="General">
+              <app-yoizenclaw-agent-config
+                section="general"
+                [llmConnectors]="llmConnectors()"
+                [editorOptions]="editorOptions"
+                [(agentName)]="agentName"
+                [(description)]="description"
+                [(provider)]="provider"
+                [(model)]="model"
+                [(connectorId)]="connectorId"
+              />
+            </mat-tab>
+
+            <mat-tab label="Instructions">
+              <app-yoizenclaw-chat-panel
+                [editorOptions]="editorOptions"
+                [availableSkills]="availableSkills()"
+                [availableTools]="availableTools()"
+                [extractedMentions]="extractedMentions()"
+                [(systemPrompt)]="systemPrompt"
+                [(rules)]="rules"
+                [(soul)]="soul"
+              />
+            </mat-tab>
+
+            <mat-tab label="Skills ({{ subagents.length }})">
+              <app-yoizenclaw-agent-config
+                section="skills"
+                [llmConnectors]="llmConnectors()"
+                [editorOptions]="editorOptions"
+                [(subagents)]="subagents"
+              />
+            </mat-tab>
+
+            <mat-tab label="Tools ({{ tools.length }})">
+              <app-yoizenclaw-tool-config [(tools)]="tools" />
+            </mat-tab>
+          </mat-tab-group>
+        </section>
+      </div>
+    }
   `,
 })
 export class YoizenclawComponent implements OnInit {
@@ -191,6 +215,7 @@ export class YoizenclawComponent implements OnInit {
   readonly templates = signal<IYoizenclawTemplate[]>([]);
   readonly loading = signal(false);
   readonly saving = signal(false);
+  readonly viewMode = signal<'list' | 'editor'>('list');
   readonly publishingId = signal<string | null>(null);
   readonly editingAgentId = signal<string | null>(null);
   readonly agents = signal<IYoizenclawAgent[]>([]);
@@ -250,6 +275,12 @@ export class YoizenclawComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadData();
+  }
+
+  createNewAgent(): void {
+    this.editingAgentId.set(null);
+    this.resetToTemplate();
+    this.viewMode.set('editor');
   }
 
   isValid(): boolean {
@@ -421,9 +452,10 @@ export class YoizenclawComponent implements OnInit {
     this.agentName = agent.name;
     this.description = agent.description || "";
     this.systemPrompt = agent.system_prompt;
-    this.provider = agent.model_config.llm.provider;
-    this.model = agent.model_config.llm.model;
-    this.connectorId = agent.model_config.llm.connectorId;
+    const llm = getAgentLlmConfig(agent.model_config);
+    this.provider = llm.provider;
+    this.model = llm.model;
+    this.connectorId = llm.connectorId;
     this.rules = agent.model_config.rules;
     this.soul = agent.model_config.soul;
 
@@ -437,6 +469,7 @@ export class YoizenclawComponent implements OnInit {
     this.errorMessage.set("");
 
     window.scrollTo({ top: 0, behavior: "smooth" });
+    this.viewMode.set('editor');
   }
 
   cancelEdit(): void {
@@ -444,6 +477,7 @@ export class YoizenclawComponent implements OnInit {
     this.resetToTemplate();
     this.successMessage.set("");
     this.errorMessage.set("");
+    this.viewMode.set('list');
   }
 
   private loadData(): void {
@@ -454,7 +488,9 @@ export class YoizenclawComponent implements OnInit {
       next: (response) => {
         this.templates.set(response.templates);
         if (response.templates.length > 0 && !this.editingAgentId()) {
-          this.applyTemplateById(response.templates[0].id);
+          // Keep template loaded behind the scenes
+          const template = response.templates.find(t => t.id === DEFAULT_TEMPLATE_ID) || response.templates[0];
+          this.applyTemplateById(template.id);
         }
       },
       error: () => {

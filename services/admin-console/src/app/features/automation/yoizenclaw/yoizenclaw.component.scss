@@ -99,6 +99,10 @@ code {
   align-items: start;
 }
 
+.workspace-grid.single-column {
+  grid-template-columns: 1fr;
+}
+
 .editor-card {
   min-width: 0;
 }

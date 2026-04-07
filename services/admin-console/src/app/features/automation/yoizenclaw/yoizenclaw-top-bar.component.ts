@@ -18,17 +18,15 @@ import { MatIconModule } from "@angular/material/icon";
         <div class="ws-title">YoizenClaw Agents</div>
       </div>
       <div class="ws-actions">
-        @if (editingAgentId()) {
-          <button
-            class="btn btn-secondary btn-sm"
-            type="button"
-            [disabled]="saving()"
-            (click)="cancelEdit.emit()"
-          >
-            <mat-icon>close</mat-icon>
-            Cancel
-          </button>
-        }
+        <button
+          class="btn btn-secondary btn-sm"
+          type="button"
+          [disabled]="saving()"
+          (click)="cancelEdit.emit()"
+        >
+          <mat-icon>{{ editingAgentId() ? 'close' : 'arrow_back' }}</mat-icon>
+          {{ editingAgentId() ? 'Cancel' : 'Back to List' }}
+        </button>
         <button
           class="btn btn-secondary btn-sm"
           type="button"
