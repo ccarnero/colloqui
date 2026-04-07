@@ -60,7 +60,7 @@ const ALL_SECTIONS: INavSection[] = [
       { label: "Workflows", icon: "account_tree", route: "/workflows" },
       { label: "Hosted Services", icon: "webhook", route: "/hosted-services" },
       {
-        label: "YoizenClaw",
+        label: "AI Agents",
         icon: "psychology",
         items: [
           { label: "Agents", icon: "support_agent", route: "/yoizenclaw/agents" },
