@@ -52,9 +52,6 @@ export const WORKFLOW_ORCHESTRATOR_TASK_QUEUE = 'workflow-orchestrator';
 export const WORKFLOW_HTTP_TASK_QUEUE = 'workflow-http';
 export const WORKFLOW_DEFAULT_TIMEOUT_MS = 60_000;
 
-export const DEFAULT_ADAPTER_SERVICE_URL =
-  "http://adapter-service.platform-services.svc.cluster.local";
-
 export const GATEWAY_AUDIT_STREAM_NAME = 'GATEWAY_AUDIT';
 export const GATEWAY_AUDIT_STREAM_SUBJECTS = ['audit.gateway.>'] as const;
 export const GATEWAY_AUDIT_SUBJECT = 'audit.gateway.request';

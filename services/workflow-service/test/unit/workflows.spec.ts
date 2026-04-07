@@ -9,6 +9,9 @@ const executeJsFunction = mock(() => Promise.resolve({ computed: 1 }));
 const executeServiceBusCall = mock(() =>
   Promise.resolve({ published: true as const, subject: "events.test" }),
 );
+const executeServiceCall = mock(() =>
+  Promise.resolve({ status: 200, data: { result: "svc" }, headers: {} }),
+);
 
 let runWorkflow: (
   workflow: WorkflowDefinition,
@@ -20,6 +23,7 @@ beforeAll(async () => {
       executeEndpointCall,
       executeJsFunction,
       executeServiceBusCall,
+      executeServiceCall,
     }),
   }));
   ({ runWorkflow } = await import("../../src/temporal/workflows"));
@@ -106,6 +110,30 @@ describe("runWorkflow (temporal/workflows)", () => {
     });
     expect(ctx.results.branchA).toBeDefined();
     expect(ctx.results.branchB).toBeDefined();
+  });
+
+  it("runs serviceCall via http activities", async () => {
+    executeServiceCall.mockClear();
+    const ctx = await runWorkflow({
+      ...base,
+      actions: [
+        {
+          activity: "serviceCall",
+          name: "svc",
+          args: {
+            serviceId: "my-service-id",
+            method: "POST",
+            path: "/api/process",
+          },
+        },
+      ],
+    });
+    expect(executeServiceCall).toHaveBeenCalled();
+    expect(ctx.results.svc).toEqual({
+      status: 200,
+      data: { result: "svc" },
+      headers: {},
+    });
   });
 
   it("propagates activity errors", async () => {

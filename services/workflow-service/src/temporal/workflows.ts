@@ -6,6 +6,7 @@ import type {
   EndpointCallArgs,
   JsFunctionArgs,
   ServiceBusCallArgs,
+  ServiceCallArgs,
 } from "@yoizen/shared";
 import { WORKFLOW_HTTP_TASK_QUEUE } from "./workflow-queue";
 
@@ -23,6 +24,14 @@ interface IOrchestratorActivities {
 interface IHttpActivities {
   executeEndpointCall(
     args: EndpointCallArgs,
+    tenantId: string,
+  ): Promise<{
+    status: number;
+    data: unknown;
+    headers: Record<string, string>;
+  }>;
+  executeServiceCall(
+    args: ServiceCallArgs,
     tenantId: string,
   ): Promise<{
     status: number;
@@ -104,6 +113,12 @@ async function executeAction(
 
     case "serviceBusCall":
       return local.executeServiceBusCall(
+        resolveTemplates(action.args, context),
+        tenant,
+      );
+
+    case "serviceCall":
+      return http.executeServiceCall(
         resolveTemplates(action.args, context),
         tenant,
       );

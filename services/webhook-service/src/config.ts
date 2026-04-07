@@ -1,4 +1,6 @@
-import { DEFAULT_ADAPTER_SERVICE_URL } from "@yoizen/shared";
+import { platformServiceUrl } from "@yoizen/shared";
+
+const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
 
 type WebhookServiceConfig = {
   readonly port: number;
@@ -8,5 +10,6 @@ type WebhookServiceConfig = {
 export const webhookServiceConfig: WebhookServiceConfig = {
   port: Number.parseInt(process.env.PORT ?? "3000", 10),
   adapterServiceUrl:
-    process.env.ADAPTER_SERVICE_URL ?? DEFAULT_ADAPTER_SERVICE_URL,
+    process.env.ADAPTER_SERVICE_URL ??
+    platformServiceUrl("adapter-service", env),
 };

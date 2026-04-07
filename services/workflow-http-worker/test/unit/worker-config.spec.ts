@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { DEFAULT_ADAPTER_SERVICE_URL } from "@yoizen/shared";
+import { platformServiceUrl } from "@yoizen/shared";
 import { workflowHttpWorkerConfig } from "../../src/config";
 
 describe("workflowHttpWorkerConfig", () => {
@@ -9,10 +9,20 @@ describe("workflowHttpWorkerConfig", () => {
     expect(Number.isFinite(workflowHttpWorkerConfig.redisPort)).toBe(true);
   });
 
-  it("defaults adapter URL to shared constant when ADAPTER_SERVICE_URL unset", () => {
+  it("defaults adapter URL to env-aware URL when ADAPTER_SERVICE_URL unset", () => {
+    const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
     const expected =
-      process.env.ADAPTER_SERVICE_URL ?? DEFAULT_ADAPTER_SERVICE_URL;
+      process.env.ADAPTER_SERVICE_URL ??
+      platformServiceUrl("adapter-service", env);
     expect(workflowHttpWorkerConfig.adapterServiceUrl).toBe(expected);
+  });
+
+  it("defaults registry URL to env-aware URL when REGISTRY_SERVICE_URL unset", () => {
+    const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
+    const expected =
+      process.env.REGISTRY_SERVICE_URL ??
+      platformServiceUrl("registry-service", env);
+    expect(workflowHttpWorkerConfig.registryServiceUrl).toBe(expected);
   });
 
   it("defaults temporal address and namespace", () => {

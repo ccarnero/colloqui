@@ -27,6 +27,7 @@
     "monaco-editor": "^0.55.1",
     "ng2-charts": "^10.0.0",
     "ngx-monaco-editor-v2": "^21.1.4",
+    "@foblex/flow": "^18.3.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },

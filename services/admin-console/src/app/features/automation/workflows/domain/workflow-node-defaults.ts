@@ -1,0 +1,80 @@
+import { EWorkflowNodeType } from "./workflow-node.types";
+import type { IWorkflowNode } from "./workflow-node.types";
+
+export interface INodeDefault {
+  name: string;
+  icon: string;
+  group: string;
+  configuration: Record<string, unknown>;
+}
+
+export const DEFAULT_NODE_MAP: Record<EWorkflowNodeType, INodeDefault> = {
+  [EWorkflowNodeType.TRIGGER]: {
+    name: "Message Trigger",
+    icon: "bolt",
+    group: "Triggers",
+    configuration: {
+      accountIds: [],
+      channels: [],
+      providers: [],
+      patterns: [],
+      mode: "shared",
+    },
+  },
+  [EWorkflowNodeType.JS_FUNCTION]: {
+    name: "JS Function",
+    icon: "code",
+    group: "Logic",
+    configuration: { code: "" },
+  },
+  [EWorkflowNodeType.ENDPOINT_CALL]: {
+    name: "HTTP Connector",
+    icon: "http",
+    group: "Integrations",
+    configuration: {
+      method: "GET",
+      url: "",
+      adapterId: "",
+      endpointId: "",
+    },
+  },
+  [EWorkflowNodeType.SERVICE_CALL]: {
+    name: "Service Call",
+    icon: "dns",
+    group: "Integrations",
+    configuration: {
+      serviceId: "",
+      method: "GET",
+      path: "/",
+    },
+  },
+  [EWorkflowNodeType.SERVICE_BUS_CALL]: {
+    name: "Publish Event",
+    icon: "send",
+    group: "Integrations",
+    configuration: { subject: "", payload: null },
+  },
+  [EWorkflowNodeType.BRANCH]: {
+    name: "Parallel Branch",
+    icon: "call_split",
+    group: "Flow Control",
+    configuration: { branches: ["pathA", "pathB"] },
+  },
+};
+
+let nextId = 1;
+
+export function createNodeFromDefault(
+  type: EWorkflowNodeType,
+  position: { x: number; y: number },
+): IWorkflowNode {
+  const defaults = DEFAULT_NODE_MAP[type];
+  return {
+    key: `node-${Date.now()}-${nextId++}`,
+    type,
+    name: defaults.name,
+    icon: defaults.icon,
+    position,
+    configuration: { ...defaults.configuration },
+  };
+}

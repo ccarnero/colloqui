@@ -6,5 +6,6 @@ import { WorkflowsRepository } from "./workflows.repository";
 @Module({
   controllers: [WorkflowsController],
   providers: [WorkflowsService, WorkflowsRepository],
+  exports: [WorkflowsService, WorkflowsRepository],
 })
 export class WorkflowsModule {}

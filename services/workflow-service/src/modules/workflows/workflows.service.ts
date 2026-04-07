@@ -8,6 +8,7 @@ import {
 import type {
   WorkflowDefinition,
   WorkflowAction,
+  WorkflowTrigger,
   WorkflowExecutionContext,
 } from "@yoizen/shared";
 import { TEMPORAL_CLIENT } from "../../providers/temporal.provider";
@@ -37,15 +38,25 @@ export interface ICreateWorkflowResult {
   application: string;
   tenantId: string;
   actions: unknown;
+  trigger: unknown;
   createdAt: Date;
 }
 
-/** Parameters for creating a workflow definition row. */
 interface ICreateWorkflowParams {
   readonly tenantId: string;
   readonly name: string;
   readonly application: string;
   readonly actions: WorkflowAction[];
+  readonly trigger?: WorkflowTrigger;
+}
+
+interface IUpdateWorkflowParams {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly name: string;
+  readonly application: string;
+  readonly actions: WorkflowAction[];
+  readonly trigger?: WorkflowTrigger;
 }
 
 export interface IExecuteWorkflowResult {
@@ -82,7 +93,7 @@ export class WorkflowsService {
   async createWorkflow(
     params: ICreateWorkflowParams,
   ): Promise<ICreateWorkflowResult> {
-    const { tenantId, name, application, actions } = params;
+    const { tenantId, name, application, actions, trigger } = params;
     const id = nanoid();
     const row = await this.repository.createDefinition({
       id,
@@ -90,10 +101,32 @@ export class WorkflowsService {
       name,
       application,
       actions,
+      trigger,
     });
 
     this.logger.log(
       `Created workflow definition ${row.id} (${name}) for tenant ${tenantId}`,
+    );
+
+    return this.toCreateResult(row);
+  }
+
+  /**
+   * Updates an existing workflow definition.
+   *
+   * @param params - Definition id, tenant, and updated fields.
+   * @returns Updated row metadata.
+   */
+  async updateWorkflow(
+    params: IUpdateWorkflowParams,
+  ): Promise<ICreateWorkflowResult> {
+    const row = await this.repository.updateDefinition(params);
+    if (!row) {
+      throw new NotFoundException("Workflow definition not found");
+    }
+
+    this.logger.log(
+      `Updated workflow definition ${row.id} for tenant ${params.tenantId}`,
     );
 
     return this.toCreateResult(row);
@@ -299,6 +332,7 @@ export class WorkflowsService {
       application: row.application,
       tenantId: row.tenant_id,
       actions: row.actions,
+      trigger: row.trigger,
       createdAt: row.created_at,
     };
   }

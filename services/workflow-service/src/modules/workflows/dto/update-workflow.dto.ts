@@ -13,7 +13,7 @@ import type { WorkflowAction } from "@yoizen/shared";
 import { IsWorkflowActionArrayConstraint } from "./workflow-action.validator";
 import { WorkflowTriggerDto } from "./workflow-trigger.dto";
 
-export class CreateWorkflowDto {
+export class UpdateWorkflowDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(128)
