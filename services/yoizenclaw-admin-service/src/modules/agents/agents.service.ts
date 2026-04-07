@@ -206,9 +206,10 @@ export class AgentsService {
       );
     }
 
-    if (adapter.category !== "llm") {
+    const hasLlmTag = adapter.tags?.includes("llm") ?? false;
+    if (!hasLlmTag) {
       throw new BadRequestException(
-        `Adapter '${connectorId}' has category '${adapter.category}'; expected 'llm'`,
+        `Adapter '${connectorId}' is not tagged as 'llm'`,
       );
     }
 

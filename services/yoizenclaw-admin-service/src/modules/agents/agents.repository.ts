@@ -1,12 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { JsonValue } from "@yoizen/shared";
-import {
-  appendSqlSetFragment,
-  composeUpdateSetClause,
-} from "../../common/repository-sql.util";
 import { TenantScopedRepository } from "../../providers/tenant-scoped.repository";
-import { TenantConnectionManager, type Sql } from "@yoizen/database";
+import { TenantConnectionManager } from "@yoizen/database";
 import { AGENT_ROW_COLUMNS } from "./agents-sql.constants";
 
 export interface IAgent {
@@ -173,66 +169,40 @@ export class AgentsRepository extends TenantScopedRepository {
     data: IUpdateAgentData,
   ): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
-    const setClause = this.composeAgentUpdateSetClause(sql, data);
+
+    if (data.name !== undefined) {
+      await sql`UPDATE agents SET name = ${data.name}, updated_at = NOW() WHERE id = ${id} AND is_active = true`;
+    }
+    if (data.description !== undefined) {
+      await sql`UPDATE agents SET description = ${data.description}, updated_at = NOW() WHERE id = ${id} AND is_active = true`;
+    }
+    if (data.system_prompt !== undefined) {
+      await sql`UPDATE agents SET system_prompt = ${data.system_prompt}, updated_at = NOW() WHERE id = ${id} AND is_active = true`;
+    }
+    if (data.model_config !== undefined) {
+      await sql`UPDATE agents SET model_config = ${sql.json(data.model_config as JsonValue)}, updated_at = NOW() WHERE id = ${id} AND is_active = true`;
+    }
+    if (data.tools !== undefined) {
+      await sql`UPDATE agents SET tools = ${sql.json(data.tools as JsonValue)}, updated_at = NOW() WHERE id = ${id} AND is_active = true`;
+    }
+    if (data.channels !== undefined) {
+      await sql`UPDATE agents SET channels = ${sql.json(data.channels as JsonValue)}, updated_at = NOW() WHERE id = ${id} AND is_active = true`;
+    }
+    if (data.status !== undefined) {
+      await sql`UPDATE agents SET status = ${data.status}, updated_at = NOW() WHERE id = ${id} AND is_active = true`;
+    }
+    if (data.is_active !== undefined) {
+      await sql`UPDATE agents SET is_active = ${data.is_active}, updated_at = NOW() WHERE id = ${id} AND is_active = true`;
+    }
 
     const results = await sql<IAgent[]>`
-      UPDATE agents
-      SET ${sql.unsafe(setClause)}
+      SELECT ${sql.unsafe(AGENT_ROW_COLUMNS)}
+      FROM agents
       WHERE id = ${id} AND is_active = true
-      RETURNING ${sql.unsafe(AGENT_ROW_COLUMNS)}
+      LIMIT 1
     `;
 
     return results[0] ?? null;
-  }
-
-  private composeAgentUpdateSetClause(sql: Sql, data: IUpdateAgentData): string {
-    const updates: string[] = [];
-    appendSqlSetFragment(updates, sql`updated_at = NOW()`);
-
-    if (data.name !== undefined) {
-      appendSqlSetFragment(updates, sql`name = ${data.name}`);
-    }
-    if (data.description !== undefined) {
-      appendSqlSetFragment(
-        updates,
-        sql`description = ${data.description}`,
-      );
-    }
-    if (data.system_prompt !== undefined) {
-      appendSqlSetFragment(
-        updates,
-        sql`system_prompt = ${data.system_prompt}`,
-      );
-    }
-    if (data.model_config !== undefined) {
-      appendSqlSetFragment(
-        updates,
-        sql`model_config = ${sql.json(data.model_config as JsonValue)}`,
-      );
-    }
-    if (data.tools !== undefined) {
-      appendSqlSetFragment(
-        updates,
-        sql`tools = ${sql.json(data.tools as JsonValue)}`,
-      );
-    }
-    if (data.channels !== undefined) {
-      appendSqlSetFragment(
-        updates,
-        sql`channels = ${sql.json(data.channels as JsonValue)}`,
-      );
-    }
-    if (data.status !== undefined) {
-      appendSqlSetFragment(updates, sql`status = ${data.status}`);
-    }
-    if (data.is_active !== undefined) {
-      appendSqlSetFragment(
-        updates,
-        sql`is_active = ${data.is_active}`,
-      );
-    }
-
-    return composeUpdateSetClause(updates);
   }
 
   /**
