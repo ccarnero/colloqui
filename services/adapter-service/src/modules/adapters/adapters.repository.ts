@@ -143,17 +143,46 @@ export class AdaptersRepository {
     offset: number,
     tag?: string,
   ): Promise<IAdapterRow[]> {
-    let query = this.sql<IAdapterRow[]>`SELECT * FROM http_adapters WHERE tenant_id = ${tenantId}`;
-    
+    // Build query dynamically based on filters
+    if (context && tag) {
+      return this.sql<IAdapterRow[]>`
+        SELECT * FROM http_adapters
+        WHERE tenant_id = ${tenantId}
+          AND context = ${context}
+          AND ${tag} = ANY(tags)
+          AND tags IS NOT NULL
+        ORDER BY created_at ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    }
+
     if (context) {
-      query = query.append(this.sql` AND context = ${context}`);
+      return this.sql<IAdapterRow[]>`
+        SELECT * FROM http_adapters
+        WHERE tenant_id = ${tenantId}
+          AND context = ${context}
+        ORDER BY created_at ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
     }
-    
+
     if (tag) {
-      query = query.append(this.sql` AND ${tag} = ANY(tags) AND tags IS NOT NULL`);
+      return this.sql<IAdapterRow[]>`
+        SELECT * FROM http_adapters
+        WHERE tenant_id = ${tenantId}
+          AND ${tag} = ANY(tags)
+          AND tags IS NOT NULL
+        ORDER BY created_at ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
     }
-    
-    return query.append(this.sql` ORDER BY created_at ASC LIMIT ${limit} OFFSET ${offset}`);
+
+    return this.sql<IAdapterRow[]>`
+      SELECT * FROM http_adapters
+      WHERE tenant_id = ${tenantId}
+      ORDER BY created_at ASC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
   }
 
   async listEndpointsForAdapters(adapterIds: string[]): Promise<IEndpointRow[]> {
@@ -184,8 +213,8 @@ export class AdaptersRepository {
   async adapterExists(tenantId: string, id: string): Promise<boolean> {
     const [existing] = await this.sql<{ id: string }[]>`
       SELECT id FROM http_adapters
-      WHERE id = $1 AND tenant_id = $2
-    `([id, tenantId]);
+      WHERE id = ${id} AND tenant_id = ${tenantId}
+    `;
     return Boolean(existing);
   }
 
@@ -194,50 +223,42 @@ export class AdaptersRepository {
     id: string,
     dto: UpdateAdapterDto,
   ): Promise<void> {
-    const updates: string[] = [];
-    const values: (string | number | boolean | null)[] = [];
+    // Build update queries for each field individually
+    // This is safer than dynamic SQL generation
 
-    // Safe field mapping - only allow predefined columns
-    const safeFields: Record<string, string> = {
-      name: "name",
-      context: "context", 
-      baseUrl: "base_url",
-      authType: "auth_type",
-      authConfig: "auth_config",
-      headers: "headers",
-      timeoutMs: "timeout_ms",
-      maxRetries: "max_retries",
-      retryBackoffMs: "retry_backoff_ms",
-      healthCheckPath: "health_check_path",
-      status: "status",
-      tags: "tags",
-    };
-
-    for (const [dtoKey, dbColumn] of Object.entries(safeFields)) {
-      const value = (dto as Record<string, unknown>)[dtoKey];
-      if (value !== undefined) {
-        updates.push(`${dbColumn} = $${updates.length + 3}`);
-        
-        // Safe serialization
-        if (Array.isArray(value)) {
-          values.push(JSON.stringify(value));
-        } else if (typeof value === "object" && value !== null) {
-          values.push(JSON.stringify(value));
-        } else {
-          values.push(value as string | number | boolean | null);
-        }
-      }
+    if (dto.name !== undefined) {
+      await this.sql`UPDATE http_adapters SET name = ${dto.name}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
     }
-
-    if (updates.length === 0) return;
-
-    const setClause = updates.join(", ");
-
-    await this.sql`
-      UPDATE http_adapters 
-      SET ${setClause}, updated_at = NOW() 
-      WHERE id = $1 AND tenant_id = $2
-    `([id, tenantId, ...values]);
+    if (dto.baseUrl !== undefined) {
+      await this.sql`UPDATE http_adapters SET base_url = ${dto.baseUrl}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+    }
+    if (dto.authType !== undefined) {
+      await this.sql`UPDATE http_adapters SET auth_type = ${dto.authType}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+    }
+    if (dto.authConfig !== undefined) {
+      await this.sql`UPDATE http_adapters SET auth_config = ${this.sql.json(dto.authConfig as never)}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+    }
+    if (dto.headers !== undefined) {
+      await this.sql`UPDATE http_adapters SET headers = ${this.sql.json(dto.headers as never)}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+    }
+    if (dto.timeoutMs !== undefined) {
+      await this.sql`UPDATE http_adapters SET timeout_ms = ${dto.timeoutMs}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+    }
+    if (dto.maxRetries !== undefined) {
+      await this.sql`UPDATE http_adapters SET max_retries = ${dto.maxRetries}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+    }
+    if (dto.retryBackoffMs !== undefined) {
+      await this.sql`UPDATE http_adapters SET retry_backoff_ms = ${dto.retryBackoffMs}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+    }
+    if (dto.healthCheckPath !== undefined) {
+      await this.sql`UPDATE http_adapters SET health_check_path = ${dto.healthCheckPath}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+    }
+    if (dto.status !== undefined) {
+      await this.sql`UPDATE http_adapters SET status = ${dto.status}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+    }
+    if (dto.tags !== undefined) {
+      await this.sql`UPDATE http_adapters SET tags = ${dto.tags}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+    }
   }
 
   async deleteAdapter(tenantId: string, id: string): Promise<number> {

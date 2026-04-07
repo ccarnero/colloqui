@@ -150,7 +150,7 @@ export class AdaptersService {
       return this.get(tenantId, id);
     }
 
-    await this.adaptersRepository.updateAdapterDynamic(tenantId, id, dto);
+    await this.adaptersRepository.updateAdapter(tenantId, id, dto);
 
     this.logger.log(`Updated adapter '${id}' for tenant ${tenantId}`);
     return this.get(tenantId, id);
