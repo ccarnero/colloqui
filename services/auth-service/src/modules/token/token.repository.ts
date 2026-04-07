@@ -8,7 +8,7 @@ import { POSTGRES_SQL, type Sql } from "../../providers/postgres.provider";
 export class TokenRepository {
   constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
 
-  findClientByClientId(clientId: string) {
+  findClientByClientId(clientId: string): ReturnType<Sql> {
     return this.sql`
       SELECT id, client_secret_hash, scope, is_active
       FROM api_clients
@@ -17,7 +17,7 @@ export class TokenRepository {
     `;
   }
 
-  findPlatformUserById(userId: string) {
+  findPlatformUserById(userId: string): ReturnType<Sql> {
     return this.sql`
       SELECT id, email, role, is_active
       FROM platform_users
@@ -26,7 +26,7 @@ export class TokenRepository {
     `;
   }
 
-  findTenantUserForRefresh(userId: string) {
+  findTenantUserForRefresh(userId: string): ReturnType<Sql> {
     return this.sql`
       SELECT tu.id, tu.tenant_id, tu.email, tu.is_active,
              tr.name AS role_name, tr.is_system
@@ -37,7 +37,7 @@ export class TokenRepository {
     `;
   }
 
-  findPlatformUserByEmail(email: string) {
+  findPlatformUserByEmail(email: string): ReturnType<Sql> {
     return this.sql`
       SELECT id, email, password_hash, role, is_active
       FROM platform_users
@@ -46,7 +46,7 @@ export class TokenRepository {
     `;
   }
 
-  findTenantUserWithTenant(email: string, tenantId: string) {
+  findTenantUserWithTenant(email: string, tenantId: string): ReturnType<Sql> {
     return this.sql`
       SELECT tu.id, tu.tenant_id, tu.email, tu.password_hash,
              tr.name AS role_name, tr.is_system
@@ -59,7 +59,7 @@ export class TokenRepository {
     `;
   }
 
-  findTenantUserByEmailAnyTenant(email: string) {
+  findTenantUserByEmailAnyTenant(email: string): ReturnType<Sql> {
     return this.sql`
       SELECT tu.id, tu.tenant_id, tu.email, tu.password_hash,
              tr.name AS role_name, tr.is_system
@@ -69,7 +69,7 @@ export class TokenRepository {
     `;
   }
 
-  resolvePermissionsForUser(userId: string) {
+  resolvePermissionsForUser(userId: string): ReturnType<Sql> {
     return this.sql`
       SELECT trp.resource, trp.action
       FROM tenant_role_permissions trp

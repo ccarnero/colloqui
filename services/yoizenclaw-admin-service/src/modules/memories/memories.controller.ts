@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { TenantGuard } from '../../providers/tenant.guard';
+import { TenantGuard } from '../../guards/tenant.guard';
 import { TenantId } from '../../providers/tenant.decorator';
 import {
   MemoryDecisionDto,

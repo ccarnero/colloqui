@@ -16,7 +16,7 @@ export interface IInsertTenantUserOptions {
 export class TenantUsersRepository {
   constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
 
-  findByTenantAndEmail(tenantId: string, email: string) {
+  findByTenantAndEmail(tenantId: string, email: string): ReturnType<Sql> {
     return this.sql`
       SELECT id FROM tenant_users
       WHERE tenant_id = ${tenantId} AND email = ${email}
@@ -24,7 +24,7 @@ export class TenantUsersRepository {
     `;
   }
 
-  async insertUser(options: IInsertTenantUserOptions) {
+  async insertUser(options: IInsertTenantUserOptions): Promise<ReturnType<Sql>> {
     const { id, tenantId, email, passwordHash, roleId, displayName } = options;
     return this.sql`
       INSERT INTO tenant_users (id, tenant_id, email, password_hash, role_id, display_name)
@@ -33,13 +33,13 @@ export class TenantUsersRepository {
     `;
   }
 
-  selectRoleName(roleId: string) {
+  selectRoleName(roleId: string): ReturnType<Sql> {
     return this.sql`
       SELECT name FROM tenant_roles WHERE id = ${roleId} LIMIT 1
     `;
   }
 
-  listByTenant(tenantId: string) {
+  listByTenant(tenantId: string): ReturnType<Sql> {
     return this.sql`
       SELECT tu.id, tu.tenant_id, tu.email, tu.role_id,
              tr.name AS role, tu.display_name,
@@ -51,7 +51,7 @@ export class TenantUsersRepository {
     `;
   }
 
-  findActiveById(id: string) {
+  findActiveById(id: string): ReturnType<Sql> {
     return this.sql`
       SELECT tu.id, tu.tenant_id, tu.email, tu.role_id,
              tr.name AS role, tu.display_name,
@@ -63,7 +63,7 @@ export class TenantUsersRepository {
     `;
   }
 
-  findByIdAny(id: string) {
+  findByIdAny(id: string): ReturnType<Sql> {
     return this.sql`
       SELECT id, tenant_id FROM tenant_users WHERE id = ${id} LIMIT 1
     `;
@@ -85,7 +85,7 @@ export class TenantUsersRepository {
     `;
   }
 
-  findId(id: string) {
+  findId(id: string): ReturnType<Sql> {
     return this.sql`
       SELECT id FROM tenant_users WHERE id = ${id} LIMIT 1
     `;
@@ -98,7 +98,7 @@ export class TenantUsersRepository {
     `;
   }
 
-  resolveRoleById(roleIdOrName: string, tenantId: string) {
+  resolveRoleById(roleIdOrName: string, tenantId: string): ReturnType<Sql> {
     return this.sql`
       SELECT id FROM tenant_roles
       WHERE id = ${roleIdOrName}
@@ -108,7 +108,7 @@ export class TenantUsersRepository {
     `;
   }
 
-  resolveRoleByName(roleIdOrName: string, tenantId: string) {
+  resolveRoleByName(roleIdOrName: string, tenantId: string): ReturnType<Sql> {
     return this.sql`
       SELECT id FROM tenant_roles
       WHERE name = ${roleIdOrName}

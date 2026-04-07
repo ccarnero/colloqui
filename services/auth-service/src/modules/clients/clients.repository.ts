@@ -35,7 +35,7 @@ export class ClientsRepository {
     return rows as unknown as IClientRow[];
   }
 
-  listForTenant(tenantScope: string) {
+  listForTenant(tenantScope: string): ReturnType<Sql> {
     return this.sql`
       SELECT id, client_id, name, scope, created_at, updated_at
       FROM api_clients
@@ -45,7 +45,7 @@ export class ClientsRepository {
     `;
   }
 
-  listAllActive() {
+  listAllActive(): ReturnType<Sql> {
     return this.sql`
       SELECT id, client_id, name, scope, created_at, updated_at
       FROM api_clients

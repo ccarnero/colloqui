@@ -32,7 +32,7 @@ export interface ICreateRoleWithPermissionsOptions {
 export class TenantRolesRepository {
   constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
 
-  findSystemRoleId(tenantId: string) {
+  findSystemRoleId(tenantId: string): ReturnType<Sql> {
     return this.sql`
       SELECT id FROM tenant_roles
       WHERE tenant_id = ${tenantId}
@@ -58,7 +58,7 @@ export class TenantRolesRepository {
     `;
   }
 
-  findRoleByTenantAndName(tenantId: string, name: string) {
+  findRoleByTenantAndName(tenantId: string, name: string): ReturnType<Sql> {
     return this.sql`
       SELECT id FROM tenant_roles
       WHERE tenant_id = ${tenantId} AND name = ${name}
@@ -87,7 +87,7 @@ export class TenantRolesRepository {
     });
   }
 
-  listSummariesByTenant(tenantId: string) {
+  listSummariesByTenant(tenantId: string): ReturnType<Sql> {
     return this.sql`
       SELECT
         r.id, r.tenant_id, r.name, r.description,
@@ -102,7 +102,7 @@ export class TenantRolesRepository {
     `;
   }
 
-  findActiveRoleBase(id: string) {
+  findActiveRoleBase(id: string): ReturnType<Sql> {
     return this.sql`
       SELECT id, tenant_id, name, description,
              is_system, is_active, created_at, updated_at
@@ -124,7 +124,7 @@ export class TenantRolesRepository {
     return rows as unknown as Array<{ resource: string; action: string }>;
   }
 
-  findRoleForUpdate(id: string) {
+  findRoleForUpdate(id: string): ReturnType<Sql> {
     return this.sql`
       SELECT id, is_system, tenant_id, name
       FROM tenant_roles
@@ -133,7 +133,7 @@ export class TenantRolesRepository {
     `;
   }
 
-  findDuplicateName(tenantId: string, name: string, excludeId: string) {
+  findDuplicateName(tenantId: string, name: string, excludeId: string): ReturnType<Sql> {
     return this.sql`
       SELECT id FROM tenant_roles
       WHERE tenant_id = ${tenantId}
@@ -175,7 +175,7 @@ export class TenantRolesRepository {
     });
   }
 
-  findForDelete(id: string) {
+  findForDelete(id: string): ReturnType<Sql> {
     return this.sql`
       SELECT id, is_system FROM tenant_roles
       WHERE id = ${id} AND is_active = true

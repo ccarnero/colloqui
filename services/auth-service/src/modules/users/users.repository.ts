@@ -23,13 +23,13 @@ export interface IInsertUserParams {
 export class UsersRepository {
   constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
 
-  findByEmail(email: string) {
+  findByEmail(email: string): ReturnType<Sql> {
     return this.sql`
       SELECT id FROM platform_users WHERE email = ${email} LIMIT 1
     `;
   }
 
-  insertUser(params: IInsertUserParams) {
+  insertUser(params: IInsertUserParams): ReturnType<Sql> {
     const { id, email, passwordHash, role } = params;
     return this.sql`
       INSERT INTO platform_users (id, email, password_hash, role)
@@ -38,7 +38,7 @@ export class UsersRepository {
     `;
   }
 
-  listActive() {
+  listActive(): ReturnType<Sql> {
     return this.sql`
       SELECT id, email, role, created_at, updated_at
       FROM platform_users
@@ -47,7 +47,7 @@ export class UsersRepository {
     `;
   }
 
-  findAdmin() {
+  findAdmin(): ReturnType<Sql> {
     return this.sql`
       SELECT id FROM platform_users WHERE role = 'admin' LIMIT 1
     `;

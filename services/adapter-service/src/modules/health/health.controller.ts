@@ -1,5 +1,5 @@
 import { Controller, Get, Inject } from "@nestjs/common";
-import type { Sql } from "postgres";
+import type { Sql } from "@yoizen/database";
 import { checkPostgres } from "@yoizen/database";
 import { POSTGRES_SQL } from "../../providers/postgres.provider";
 

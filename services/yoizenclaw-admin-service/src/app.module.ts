@@ -9,7 +9,6 @@ import {
 import { REDIS_CLIENT, redisProvider } from "./providers/redis.provider";
 import { initYoizenClawTenantSchema } from "./providers/yoizenclaw-schema-initializer";
 import { AgentsModule } from "./modules/agents/agents.module";
-import { CredentialsModule } from "./modules/credentials/credentials.module";
 import { JobsModule } from "./modules/jobs/jobs.module";
 import { ConfigFilesModule } from "./modules/config-files/config-files.module";
 import { RuntimeModule } from "./modules/runtime/runtime.module";
@@ -30,7 +29,6 @@ function createYoizenClawTenantConnectionManager(): TenantConnectionManager {
   imports: [
     ObservabilityModule.forRoot({ serviceName: "yoizenclaw-admin-service" }),
     AgentsModule,
-    CredentialsModule,
     JobsModule,
     ConfigFilesModule,
     RuntimeModule,

@@ -1,6 +1,6 @@
 import { Controller, Get, Inject } from "@nestjs/common";
 import type * as k8s from "@kubernetes/client-node";
-import type { Sql } from "postgres";
+import type { Sql } from "@yoizen/database";
 import { checkK8s, checkPostgres } from "@yoizen/database";
 import { K8S_CORE_API } from "../../providers/kubernetes.provider";
 import { POSTGRES_SQL } from "../../providers/postgres.provider";
