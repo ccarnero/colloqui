@@ -93,6 +93,7 @@ class LazyNatsConnection {
       this.logger.log(`Connecting to NATS at ${this.servers}...`);
       this.connectionPromise = connect({
         servers: this.servers,
+        name: "yoizenclaw-admin-service",
         timeout: this.timeoutMs,
         maxReconnectAttempts: this.maxReconnectAttempts,
       })

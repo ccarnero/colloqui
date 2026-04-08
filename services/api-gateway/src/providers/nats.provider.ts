@@ -18,7 +18,7 @@ export { NATS_CONNECTION } from "@yoizen/database";
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM = "JETSTREAM";
 
-export const natsProvider: FactoryProvider = createNatsConnectionProvider();
+export const natsProvider: FactoryProvider = createNatsConnectionProvider("api-gateway");
 
 export const jetStreamManagerProvider: FactoryProvider = {
   provide: JETSTREAM_MANAGER,

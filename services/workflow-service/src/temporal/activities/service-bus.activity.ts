@@ -9,7 +9,7 @@ const encoder = new TextEncoder();
 async function getConnection(): Promise<NatsConnection> {
   if (nc && !nc.isClosed()) return nc;
   const url = workflowServiceConfig.natsUrl;
-  nc = await connect({ servers: url });
+  nc = await connect({ servers: url, name: "workflow-service" });
   return nc;
 }
 

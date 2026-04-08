@@ -17,13 +17,15 @@ export const NATS_CONNECTION = "NATS_CONNECTION";
  * Creates a NestJS `FactoryProvider` that connects to NATS.
  * Reads `NATS_URL` from environment (default: `nats://localhost:4222`).
  */
-export function createNatsConnectionProvider(): FactoryProvider<Promise<NatsConnection>> {
+export function createNatsConnectionProvider(
+  name: string,
+): FactoryProvider<Promise<NatsConnection>> {
   return {
     provide: NATS_CONNECTION,
     useFactory: async (): Promise<NatsConnection> => {
       const url =
         process.env.NATS_URL ?? "nats://localhost:4222";
-      return connect({ servers: url });
+      return connect({ servers: url, name });
     },
   };
 }

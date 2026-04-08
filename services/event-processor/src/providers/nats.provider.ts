@@ -23,7 +23,7 @@ export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM_CLIENT = "JETSTREAM_CLIENT";
 export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
 
-export const natsProvider: FactoryProvider = createNatsConnectionProvider();
+export const natsProvider: FactoryProvider = createNatsConnectionProvider("event-processor");
 
 export const jetStreamManagerProvider: FactoryProvider =
   createJetStreamManagerProvider(JETSTREAM_MANAGER, {

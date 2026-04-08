@@ -6,7 +6,7 @@ import {
   NATS_CONNECTION,
 } from "@yoizen/database";
 
-const natsProvider = createNatsConnectionProvider();
+const natsProvider = createNatsConnectionProvider("workflow-service");
 
 @Global()
 @Module({
