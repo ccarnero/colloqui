@@ -12,9 +12,11 @@ const executeServiceBusCall = mock(() =>
 const executeServiceCall = mock(() =>
   Promise.resolve({ status: 200, data: { result: "svc" }, headers: {} }),
 );
+const syncExecutionStatus = mock(() => Promise.resolve());
 
 let runWorkflow: (
   workflow: WorkflowDefinition,
+  executionId?: string,
 ) => Promise<import("@yoizen/shared").WorkflowExecutionContext>;
 
 beforeAll(async () => {
@@ -24,6 +26,7 @@ beforeAll(async () => {
       executeJsFunction,
       executeServiceBusCall,
       executeServiceCall,
+      syncExecutionStatus,
     }),
   }));
   ({ runWorkflow } = await import("../../src/temporal/workflows"));
@@ -148,5 +151,55 @@ describe("runWorkflow (temporal/workflows)", () => {
         ],
       }),
     ).rejects.toThrow("activity failed");
+  });
+
+  it("calls syncExecutionStatus with COMPLETED on success", async () => {
+    syncExecutionStatus.mockClear();
+    await runWorkflow(
+      {
+        ...base,
+        actions: [
+          {
+            activity: "jsFunction",
+            name: "step",
+            args: { code: "return 1" },
+          },
+        ],
+      },
+      "exec-123",
+    );
+    expect(syncExecutionStatus).toHaveBeenCalledWith("exec-123", "COMPLETED");
+  });
+
+  it("calls syncExecutionStatus with FAILED on error", async () => {
+    syncExecutionStatus.mockClear();
+    executeJsFunction.mockImplementationOnce(() =>
+      Promise.reject(new Error("boom")),
+    );
+    await expect(
+      runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "jsFunction",
+              name: "bad",
+              args: { code: "throw" },
+            },
+          ],
+        },
+        "exec-456",
+      ),
+    ).rejects.toThrow("boom");
+    expect(syncExecutionStatus).toHaveBeenCalledWith("exec-456", "FAILED");
+  });
+
+  it("skips sync when executionId is not provided", async () => {
+    syncExecutionStatus.mockClear();
+    await runWorkflow({
+      ...base,
+      actions: [],
+    });
+    expect(syncExecutionStatus).not.toHaveBeenCalled();
   });
 });

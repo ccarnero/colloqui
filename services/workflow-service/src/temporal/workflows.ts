@@ -21,6 +21,13 @@ interface IOrchestratorActivities {
   ): Promise<{ published: true; subject: string }>;
 }
 
+interface ISyncActivities {
+  syncExecutionStatus(
+    executionId: string,
+    status: string,
+  ): Promise<void>;
+}
+
 interface IHttpActivities {
   executeEndpointCall(
     args: EndpointCallArgs,
@@ -43,6 +50,11 @@ interface IHttpActivities {
 const local = proxyActivities<IOrchestratorActivities>({
   startToCloseTimeout: "30s",
   retry: { maximumAttempts: 3 },
+});
+
+const sync = proxyActivities<ISyncActivities>({
+  startToCloseTimeout: "5s",
+  retry: { maximumAttempts: 2 },
 });
 
 const http = proxyActivities<IHttpActivities>({
@@ -164,6 +176,7 @@ async function executeAction(
 
 export async function runWorkflow(
   workflow: WorkflowDefinition,
+  executionId?: string,
 ): Promise<WorkflowExecutionContext> {
   const context: WorkflowExecutionContext = {
     workflow: {
@@ -174,6 +187,19 @@ export async function runWorkflow(
     request: workflow.request,
     results: {},
   };
-  await executeActions(workflow.actions, context);
-  return context;
+
+  let status = "FAILED";
+  try {
+    await executeActions(workflow.actions, context);
+    status = "COMPLETED";
+    return context;
+  } finally {
+    if (executionId) {
+      try {
+        await sync.syncExecutionStatus(executionId, status);
+      } catch (_) {
+        /* best-effort: don't mask the original outcome */
+      }
+    }
+  }
 }

@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import type { Client } from "@temporalio/client";
+import { WorkflowFailedError, type Client } from "@temporalio/client";
+import { ActivityFailure, TemporalFailure } from "@temporalio/common";
 import { nanoid } from "nanoid";
 import {
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
@@ -66,12 +67,20 @@ export interface IExecuteWorkflowResult {
   runId: string;
 }
 
+export interface IWorkflowFailureInfo {
+  message: string;
+  type: string;
+  activityName?: string;
+  cause?: string;
+}
+
 export interface IExecutionStatusResult {
   executionId: string;
   definitionId: string;
   temporalWorkflowId: string;
   status: string;
   result?: WorkflowExecutionContext;
+  failure?: IWorkflowFailureInfo;
   createdAt: Date;
 }
 
@@ -209,7 +218,7 @@ export class WorkflowsService {
     const handle = await this.temporal.workflow.start("runWorkflow", {
       taskQueue: WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
       workflowId: temporalWorkflowId,
-      args: [workflowDef],
+      args: [workflowDef, executionId],
       workflowExecutionTimeout: WORKFLOW_DEFAULT_TIMEOUT_MS,
       searchAttributes: {
         TenantId: [tenantId],
@@ -297,8 +306,23 @@ export class WorkflowsService {
     }
 
     let result: WorkflowExecutionContext | undefined;
+    let failure: IWorkflowFailureInfo | undefined;
+
     if (currentStatus === "COMPLETED") {
       result = await handle.result();
+    } else if (currentStatus === "FAILED") {
+      try {
+        await handle.result();
+      } catch (err) {
+        if (err instanceof WorkflowFailedError) {
+          failure = this.extractFailureInfo(err);
+        } else {
+          failure = {
+            message: err instanceof Error ? err.message : String(err),
+            type: "Unknown",
+          };
+        }
+      }
     }
 
     return {
@@ -307,8 +331,35 @@ export class WorkflowsService {
       temporalWorkflowId: execution.temporal_workflow_id,
       status: currentStatus,
       result,
+      failure,
       createdAt: execution.created_at,
     };
+  }
+
+  private extractFailureInfo(err: WorkflowFailedError): IWorkflowFailureInfo {
+    const rootCause = err.cause;
+    if (!rootCause) {
+      return { message: err.message, type: "WorkflowFailedError" };
+    }
+
+    const info: IWorkflowFailureInfo = {
+      message: rootCause.message,
+      type: rootCause.constructor.name,
+    };
+
+    if (rootCause instanceof ActivityFailure) {
+      info.activityName = rootCause.activityType;
+    }
+
+    let nested: unknown = rootCause.cause;
+    while (nested instanceof TemporalFailure && nested.cause) {
+      nested = nested.cause;
+    }
+    if (nested && nested !== rootCause && nested instanceof Error) {
+      info.cause = nested.message;
+    }
+
+    return info;
   }
 
   private mapExecutionRow(row: IWorkflowExecutionRow): IWorkflowExecutionListItem {
