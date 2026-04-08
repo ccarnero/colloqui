@@ -38,6 +38,20 @@ export interface ServiceCallArgs {
   headers?: Record<string, string>;
 }
 
+export interface ChannelSendArgs {
+  accountId: string;
+  channel: Channel;
+  provider: ChannelProvider;
+  to: string;
+  type: "text" | "template" | "image" | "document";
+  text?: string;
+  templateName?: string;
+  templateLanguage?: string;
+  templateComponents?: Record<string, unknown>[];
+  mediaUrl?: string;
+  caption?: string;
+}
+
 // ── Activity actions ───────────────────────────────────────────────
 
 export interface EndpointCallAction {
@@ -64,6 +78,12 @@ export interface ServiceCallAction {
   args: ServiceCallArgs;
 }
 
+export interface ChannelSendAction {
+  activity: "channelSend";
+  name: string;
+  args: ChannelSendArgs;
+}
+
 export interface BranchAction {
   activity: "branch";
   name: string;
@@ -75,6 +95,7 @@ export type WorkflowAction =
   | JsFunctionAction
   | ServiceBusCallAction
   | ServiceCallAction
+  | ChannelSendAction
   | BranchAction;
 
 // ── Triggers ───────────────────────────────────────────────────────

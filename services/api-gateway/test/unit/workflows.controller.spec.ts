@@ -4,8 +4,11 @@ import { Test } from "@nestjs/testing";
 import { WorkflowsController } from "../../src/modules/workflows/workflows.controller";
 import { WorkflowProxyService } from "../../src/modules/workflows/workflow-proxy.service";
 import type { ITenantScopedRequest } from "../../src/types/yoizen-request";
-import type { CreateWorkflowGatewayDto } from "../../src/modules/workflows/workflows-gateway.dto";
-import type { ExecuteWorkflowGatewayDto } from "../../src/modules/workflows/workflows-gateway.dto";
+import type {
+  CreateWorkflowGatewayDto,
+  UpdateWorkflowGatewayDto,
+  ExecuteWorkflowGatewayDto,
+} from "../../src/modules/workflows/workflows-gateway.dto";
 
 describe("WorkflowsController", () => {
   let controller: WorkflowsController;
@@ -45,6 +48,21 @@ describe("WorkflowsController", () => {
     expect(proxy).toHaveBeenCalledWith({
       method: "POST",
       path: "/workflows",
+      tenantId: "tenant-x",
+      body: body as unknown as Record<string, unknown>,
+    });
+  });
+
+  it("updateWorkflow delegates", async () => {
+    const body = {
+      name: "updated",
+      application: "app",
+      actions: [{ type: "noop" }],
+    } as UpdateWorkflowGatewayDto;
+    await controller.updateWorkflow(req, "wf-1", body);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "PUT",
+      path: "/workflows/wf-1",
       tenantId: "tenant-x",
       body: body as unknown as Record<string, unknown>,
     });

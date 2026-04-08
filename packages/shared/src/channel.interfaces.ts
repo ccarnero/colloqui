@@ -5,7 +5,8 @@ export type MessageKind =
   | "sent"
   | "delivered"
   | "read"
-  | "failed";
+  | "failed"
+  | "send";
 
 export interface ChannelEnvelope {
   id: string;

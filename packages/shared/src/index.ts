@@ -121,6 +121,8 @@ export type {
   JsFunctionAction,
   ServiceBusCallAction,
   ServiceCallAction,
+  ChannelSendArgs,
+  ChannelSendAction,
   BranchAction,
   WorkflowAction,
   WorkflowDefinition,
@@ -182,6 +184,7 @@ export {
   CLAIM_CHECK_THRESHOLD_BYTES,
   CLAIM_CHECK_BUCKET_PREFIX,
   CHANNEL_AUDIT_SUBJECT_PATTERN,
+  CHANNEL_SEND_SUBJECT_PATTERN,
 } from './channel.constants';
 
 export type {

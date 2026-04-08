@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Delete,
   Param,
   Body,
@@ -13,6 +14,7 @@ import { WorkflowProxyService } from "./workflow-proxy.service";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
 import {
   CreateWorkflowGatewayDto,
+  UpdateWorkflowGatewayDto,
   ExecuteWorkflowGatewayDto,
 } from "./workflows-gateway.dto";
 
@@ -29,6 +31,20 @@ export class WorkflowsController {
     return this.proxy.proxy({
       method: "POST",
       path: "/workflows",
+      tenantId: req.tenantId,
+      body: body as unknown as Record<string, unknown>,
+    });
+  }
+
+  @Put(":id")
+  async updateWorkflow(
+    @Req() req: ITenantScopedRequest,
+    @Param("id") id: string,
+    @Body() body: UpdateWorkflowGatewayDto,
+  ) {
+    return this.proxy.proxy({
+      method: "PUT",
+      path: `/workflows/${encodeURIComponent(id)}`,
       tenantId: req.tenantId,
       body: body as unknown as Record<string, unknown>,
     });

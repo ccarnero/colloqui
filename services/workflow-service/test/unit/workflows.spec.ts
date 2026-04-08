@@ -9,6 +9,12 @@ const executeJsFunction = mock(() => Promise.resolve({ computed: 1 }));
 const executeServiceBusCall = mock(() =>
   Promise.resolve({ published: true as const, subject: "events.test" }),
 );
+const executeChannelSend = mock(() =>
+  Promise.resolve({
+    published: true as const,
+    subject: "evt.tenant-1.messaging.whatsapp.meta.send.v1",
+  }),
+);
 const executeServiceCall = mock(() =>
   Promise.resolve({ status: 200, data: { result: "svc" }, headers: {} }),
 );
@@ -25,6 +31,7 @@ beforeAll(async () => {
       executeEndpointCall,
       executeJsFunction,
       executeServiceBusCall,
+      executeChannelSend,
       executeServiceCall,
       syncExecutionStatus,
     }),
@@ -137,6 +144,29 @@ describe("runWorkflow (temporal/workflows)", () => {
       data: { result: "svc" },
       headers: {},
     });
+  });
+
+  it("runs channelSend actions", async () => {
+    executeChannelSend.mockClear();
+    const ctx = await runWorkflow({
+      ...base,
+      actions: [
+        {
+          activity: "channelSend",
+          name: "send",
+          args: {
+            accountId: "acc-1",
+            channel: "whatsapp",
+            provider: "meta",
+            to: "+5491112345678",
+            type: "text",
+            text: "Hello from workflow",
+          },
+        },
+      ],
+    });
+    expect(executeChannelSend).toHaveBeenCalled();
+    expect(ctx.results.send).toBeDefined();
   });
 
   it("propagates activity errors", async () => {

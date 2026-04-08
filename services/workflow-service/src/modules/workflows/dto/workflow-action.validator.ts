@@ -29,7 +29,7 @@ export class IsWorkflowActionArrayConstraint
   defaultMessage(): string {
     return (
       "actions must be a non-empty array of WorkflowAction objects " +
-      "(activity: endpointCall | jsFunction | serviceBusCall | serviceCall | branch)"
+      "(activity: endpointCall | jsFunction | serviceBusCall | serviceCall | channelSend | branch)"
     );
   }
 
@@ -58,6 +58,9 @@ export class IsWorkflowActionArrayConstraint
     }
     if (activity === "serviceCall") {
       return this.isServiceCallArgs(o.args);
+    }
+    if (activity === "channelSend") {
+      return this.isChannelSendArgs(o.args);
     }
     if (activity === "branch") {
       return this.isBranch(o, depth);
@@ -98,6 +101,20 @@ export class IsWorkflowActionArrayConstraint
       typeof a.serviceId === "string" &&
       typeof a.method === "string" &&
       typeof a.path === "string"
+    );
+  }
+
+  private isChannelSendArgs(args: unknown): boolean {
+    if (typeof args !== "object" || args === null) {
+      return false;
+    }
+    const a = args as Record<string, unknown>;
+    return (
+      typeof a.accountId === "string" &&
+      typeof a.channel === "string" &&
+      typeof a.provider === "string" &&
+      typeof a.to === "string" &&
+      typeof a.type === "string"
     );
   }
 

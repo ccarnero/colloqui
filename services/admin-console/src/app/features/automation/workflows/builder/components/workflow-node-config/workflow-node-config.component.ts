@@ -63,44 +63,291 @@ import { RegistryService } from "../../../../../../core/services/registry.servic
           </mat-form-field>
 
           @switch (n.type) {
-            @case (types.TRIGGER) {
-              <mat-form-field appearance="outline" class="config-field">
-                <mat-label>Mode</mat-label>
+            @case (types.CHANNEL) {
+              <mat-form-field
+                appearance="outline"
+                class="config-field"
+              >
+                <mat-label>Direction</mat-label>
                 <mat-select
-                  [ngModel]="n.configuration['mode']"
-                  (ngModelChange)="updateConfig('mode', $event)"
+                  [ngModel]="n.configuration['direction']"
+                  (ngModelChange)="
+                    updateConfig('direction', $event)
+                  "
                 >
-                  <mat-option value="shared">Shared</mat-option>
-                  <mat-option value="exclusive">Exclusive</mat-option>
+                  <mat-option value="inbound">
+                    Inbound (receive)
+                  </mat-option>
+                  <mat-option value="outbound">
+                    Outbound (send)
+                  </mat-option>
                 </mat-select>
               </mat-form-field>
 
-              <mat-form-field appearance="outline" class="config-field">
-                <mat-label>Channel Accounts</mat-label>
-                <mat-select
-                  multiple
-                  [ngModel]="n.configuration['accountIds']"
-                  (ngModelChange)="updateConfig('accountIds', $event)"
+              @if (n.configuration['direction'] === 'inbound') {
+                <mat-form-field
+                  appearance="outline"
+                  class="config-field"
                 >
-                  @for (acc of channelAccounts(); track acc.id) {
-                    <mat-option [value]="acc.id">
-                      {{ acc.name }} ({{ acc.channel }})
+                  <mat-label>Mode</mat-label>
+                  <mat-select
+                    [ngModel]="n.configuration['mode']"
+                    (ngModelChange)="
+                      updateConfig('mode', $event)
+                    "
+                  >
+                    <mat-option value="shared">
+                      Shared
                     </mat-option>
-                  }
-                </mat-select>
-                <mat-hint>Leave empty to match all accounts</mat-hint>
-              </mat-form-field>
+                    <mat-option value="exclusive">
+                      Exclusive
+                    </mat-option>
+                  </mat-select>
+                </mat-form-field>
 
-              <mat-form-field appearance="outline" class="config-field">
-                <mat-label>Keyword Patterns</mat-label>
-                <input
-                  matInput
-                  [ngModel]="joinPatterns(n.configuration['patterns'])"
-                  (ngModelChange)="updatePatterns($event)"
-                  placeholder="e.g. hello, help, start"
-                />
-                <mat-hint>Comma-separated; empty matches all messages</mat-hint>
-              </mat-form-field>
+                <mat-form-field
+                  appearance="outline"
+                  class="config-field"
+                >
+                  <mat-label>Channel Accounts</mat-label>
+                  <mat-select
+                    multiple
+                    [ngModel]="n.configuration['accountIds']"
+                    (ngModelChange)="
+                      updateConfig('accountIds', $event)
+                    "
+                  >
+                    @for (
+                      acc of channelAccounts();
+                      track acc.id
+                    ) {
+                      <mat-option [value]="acc.id">
+                        {{ acc.name }} ({{ acc.channel }})
+                      </mat-option>
+                    }
+                  </mat-select>
+                  <mat-hint>
+                    Leave empty to match all accounts
+                  </mat-hint>
+                </mat-form-field>
+
+                <mat-form-field
+                  appearance="outline"
+                  class="config-field"
+                >
+                  <mat-label>Keyword Patterns</mat-label>
+                  <input
+                    matInput
+                    [ngModel]="
+                      joinPatterns(n.configuration['patterns'])
+                    "
+                    (ngModelChange)="updatePatterns($event)"
+                    placeholder="e.g. hello, help, start"
+                  />
+                  <mat-hint>
+                    Comma-separated; empty matches all
+                  </mat-hint>
+                </mat-form-field>
+              }
+
+              @if (
+                n.configuration['direction'] === 'outbound'
+              ) {
+                <mat-form-field
+                  appearance="outline"
+                  class="config-field"
+                >
+                  <mat-label>Channel Account</mat-label>
+                  <mat-select
+                    [ngModel]="n.configuration['accountId']"
+                    (ngModelChange)="
+                      onOutboundAccountChange($event)
+                    "
+                  >
+                    @for (
+                      acc of channelAccounts();
+                      track acc.id
+                    ) {
+                      <mat-option [value]="acc.id">
+                        {{ acc.name }} ({{ acc.channel }})
+                      </mat-option>
+                    }
+                  </mat-select>
+                </mat-form-field>
+
+                <mat-form-field
+                  appearance="outline"
+                  class="config-field"
+                >
+                  <mat-label>Recipient</mat-label>
+                  <mat-select
+                    [ngModel]="
+                      n.configuration['recipientMode']
+                    "
+                    (ngModelChange)="
+                      onRecipientModeChange($event)
+                    "
+                  >
+                    <mat-option value="sender">
+                      Reply to sender
+                    </mat-option>
+                    <mat-option value="custom">
+                      Custom number
+                    </mat-option>
+                  </mat-select>
+                  <mat-hint>
+                    "Reply to sender" uses the number
+                    that initiated the conversation
+                  </mat-hint>
+                </mat-form-field>
+
+                @if (
+                  n.configuration['recipientMode'] ===
+                  'custom'
+                ) {
+                  <mat-form-field
+                    appearance="outline"
+                    class="config-field"
+                  >
+                    <mat-label>Phone number</mat-label>
+                    <input
+                      matInput
+                      [ngModel]="n.configuration['to']"
+                      (ngModelChange)="
+                        updateConfig('to', $event)
+                      "
+                      placeholder="e.g. +1234567890"
+                    />
+                    <mat-hint>
+                      Supports
+                      {{ '{{' }}path{{ '}}' }}
+                      expressions
+                    </mat-hint>
+                  </mat-form-field>
+                }
+
+                <mat-form-field
+                  appearance="outline"
+                  class="config-field"
+                >
+                  <mat-label>Message Type</mat-label>
+                  <mat-select
+                    [ngModel]="
+                      n.configuration['messageType']
+                    "
+                    (ngModelChange)="
+                      updateConfig('messageType', $event)
+                    "
+                  >
+                    <mat-option value="text">Text</mat-option>
+                    <mat-option value="template">
+                      Template
+                    </mat-option>
+                    <mat-option value="image">
+                      Image
+                    </mat-option>
+                    <mat-option value="document">
+                      Document
+                    </mat-option>
+                  </mat-select>
+                </mat-form-field>
+
+                @if (
+                  n.configuration['messageType'] === 'text'
+                ) {
+                  <mat-form-field
+                    appearance="outline"
+                    class="config-field"
+                  >
+                    <mat-label>Text</mat-label>
+                    <textarea
+                      matInput
+                      rows="3"
+                      [ngModel]="n.configuration['text']"
+                      (ngModelChange)="
+                        updateConfig('text', $event)
+                      "
+                    ></textarea>
+                  </mat-form-field>
+                }
+
+                @if (
+                  n.configuration['messageType'] ===
+                  'template'
+                ) {
+                  <mat-form-field
+                    appearance="outline"
+                    class="config-field"
+                  >
+                    <mat-label>Template Name</mat-label>
+                    <input
+                      matInput
+                      [ngModel]="
+                        n.configuration['templateName']
+                      "
+                      (ngModelChange)="
+                        updateConfig('templateName', $event)
+                      "
+                    />
+                  </mat-form-field>
+                  <mat-form-field
+                    appearance="outline"
+                    class="config-field"
+                  >
+                    <mat-label>Template Language</mat-label>
+                    <input
+                      matInput
+                      [ngModel]="
+                        n.configuration['templateLanguage']
+                      "
+                      (ngModelChange)="
+                        updateConfig(
+                          'templateLanguage',
+                          $event
+                        )
+                      "
+                      placeholder="e.g. en_US"
+                    />
+                  </mat-form-field>
+                }
+
+                @if (
+                  n.configuration['messageType'] === 'image' ||
+                  n.configuration['messageType'] ===
+                    'document'
+                ) {
+                  <mat-form-field
+                    appearance="outline"
+                    class="config-field"
+                  >
+                    <mat-label>Media URL</mat-label>
+                    <input
+                      matInput
+                      [ngModel]="
+                        n.configuration['mediaUrl']
+                      "
+                      (ngModelChange)="
+                        updateConfig('mediaUrl', $event)
+                      "
+                    />
+                  </mat-form-field>
+                  <mat-form-field
+                    appearance="outline"
+                    class="config-field"
+                  >
+                    <mat-label>Caption</mat-label>
+                    <input
+                      matInput
+                      [ngModel]="
+                        n.configuration['caption']
+                      "
+                      (ngModelChange)="
+                        updateConfig('caption', $event)
+                      "
+                    />
+                  </mat-form-field>
+                }
+              }
             }
 
             @case (types.JS_FUNCTION) {
@@ -364,5 +611,33 @@ export class WorkflowNodeConfigComponent implements OnInit {
       .map((s) => s.trim())
       .filter(Boolean);
     this.updateConfig("patterns", patterns);
+  }
+
+  /**
+   * Switches between "reply to sender" (uses the inbound
+   * message's `from` field at runtime) and a custom number.
+   */
+  onRecipientModeChange(mode: string): void {
+    this.updateConfig("recipientMode", mode);
+    if (mode === "sender") {
+      this.updateConfig("to", "{{request.from}}");
+    } else {
+      this.updateConfig("to", "");
+    }
+  }
+
+  /**
+   * When user picks an outbound account, auto-populate
+   * `channel` and `provider` from the account object.
+   */
+  onOutboundAccountChange(accountId: string): void {
+    this.updateConfig("accountId", accountId);
+    const acc = this.channelAccounts().find(
+      (a) => a.id === accountId,
+    );
+    if (acc) {
+      this.updateConfig("channel", acc.channel);
+      this.updateConfig("provider", acc.provider);
+    }
   }
 }

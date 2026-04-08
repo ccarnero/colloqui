@@ -7,6 +7,7 @@ import type {
   JsFunctionArgs,
   ServiceBusCallArgs,
   ServiceCallArgs,
+  ChannelSendArgs,
 } from "@yoizen/shared";
 import { WORKFLOW_HTTP_TASK_QUEUE } from "./workflow-queue";
 
@@ -17,6 +18,10 @@ interface IOrchestratorActivities {
   ): Promise<unknown>;
   executeServiceBusCall(
     args: ServiceBusCallArgs,
+    tenantId: string,
+  ): Promise<{ published: true; subject: string }>;
+  executeChannelSend(
+    args: ChannelSendArgs,
     tenantId: string,
   ): Promise<{ published: true; subject: string }>;
 }
@@ -125,6 +130,12 @@ async function executeAction(
 
     case "serviceBusCall":
       return local.executeServiceBusCall(
+        resolveTemplates(action.args, context),
+        tenant,
+      );
+
+    case "channelSend":
+      return local.executeChannelSend(
         resolveTemplates(action.args, context),
         tenant,
       );
