@@ -168,7 +168,7 @@ export class WorkflowsComponent implements OnInit {
     if (!wf.trigger) return "No trigger";
     const t = wf.trigger as { type: string };
     return t.type === "message_received"
-      ? "Message trigger"
+      ? "Channel"
       : t.type;
   }
 

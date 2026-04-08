@@ -486,7 +486,7 @@ export class WorkflowBuilderComponent implements OnInit {
 
     if (dto.trigger) {
       const tn = createNodeFromDefault(
-        EWorkflowNodeType.TRIGGER,
+        EWorkflowNodeType.CHANNEL,
         { x: X_START, y: Y_BASE },
       );
       const raw = dto.trigger as Record<string, unknown>;
@@ -497,6 +497,7 @@ export class WorkflowBuilderComponent implements OnInit {
           ...(cfg as Record<string, unknown>),
         };
       }
+      tn.configuration["direction"] = "inbound";
       tn.configuration["mode"] =
         (raw["mode"] as string) ?? "shared";
       nodes[tn.key] = tn;
@@ -551,6 +552,21 @@ export class WorkflowBuilderComponent implements OnInit {
             ...(a["args"] as Record<string, unknown>),
           };
         }
+
+        if (activity === "channelSend") {
+          node.configuration["direction"] = "outbound";
+          const args = a["args"] as
+            | Record<string, unknown>
+            | undefined;
+          if (args) {
+            node.configuration["messageType"] =
+              args["type"] ?? "text";
+          }
+          const to =
+            node.configuration["to"] as string | undefined;
+          node.configuration["recipientMode"] =
+            to === "{{request.from}}" ? "sender" : "custom";
+        }
       }
     }
 
@@ -602,6 +618,20 @@ export class WorkflowBuilderComponent implements OnInit {
           ...(a["args"] as Record<string, unknown>),
         };
       }
+      if ((a["activity"] as string) === "channelSend") {
+        node.configuration["direction"] = "outbound";
+        const args = a["args"] as
+          | Record<string, unknown>
+          | undefined;
+        if (args) {
+          node.configuration["messageType"] =
+            args["type"] ?? "text";
+        }
+        const to =
+          node.configuration["to"] as string | undefined;
+        node.configuration["recipientMode"] =
+          to === "{{request.from}}" ? "sender" : "custom";
+      }
       nodes[node.key] = node;
       keys.push(node.key);
       offset++;
@@ -617,6 +647,7 @@ export class WorkflowBuilderComponent implements OnInit {
       endpointCall: EWorkflowNodeType.ENDPOINT_CALL,
       serviceCall: EWorkflowNodeType.SERVICE_CALL,
       serviceBusCall: EWorkflowNodeType.SERVICE_BUS_CALL,
+      channelSend: EWorkflowNodeType.CHANNEL,
       branch: EWorkflowNodeType.BRANCH,
     };
     return map[activity] ?? null;

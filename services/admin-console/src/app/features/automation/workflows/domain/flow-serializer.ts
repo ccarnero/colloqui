@@ -34,24 +34,24 @@ export function serializeFlow(flow: IWorkflowFlow): SerializedWorkflow {
   const incoming = buildReverseAdjacencyMap(flow.connections);
   const nodes = flow.nodes;
 
-  const triggerNode = findTriggerNode(nodes);
+  const inboundNode = findInboundChannelNode(nodes);
   let trigger: WorkflowTrigger | undefined;
 
-  if (triggerNode) {
+  if (inboundNode) {
     trigger = {
       type: "message_received",
       mode:
-        (triggerNode.configuration["mode"] as string) ?? "shared",
+        (inboundNode.configuration["mode"] as string) ?? "shared",
       config: {
-        accountIds: triggerNode.configuration["accountIds"] ?? [],
-        channels: triggerNode.configuration["channels"] ?? [],
-        providers: triggerNode.configuration["providers"] ?? [],
-        patterns: triggerNode.configuration["patterns"] ?? [],
+        accountIds: inboundNode.configuration["accountIds"] ?? [],
+        channels: inboundNode.configuration["channels"] ?? [],
+        providers: inboundNode.configuration["providers"] ?? [],
+        patterns: inboundNode.configuration["patterns"] ?? [],
       },
     };
   }
 
-  const startKey = triggerNode?.key ?? findRootNode(nodes, incoming);
+  const startKey = inboundNode?.key ?? findRootNode(nodes, incoming);
   if (!startKey) {
     return { name: flow.name, application: flow.application, actions: [], trigger };
   }
@@ -97,11 +97,13 @@ function buildReverseAdjacencyMap(
   return map;
 }
 
-function findTriggerNode(
+function findInboundChannelNode(
   nodes: Record<string, IWorkflowNode>,
 ): IWorkflowNode | undefined {
   return Object.values(nodes).find(
-    (n) => n.type === EWorkflowNodeType.TRIGGER,
+    (n) =>
+      n.type === EWorkflowNodeType.CHANNEL &&
+      n.configuration["direction"] === "inbound",
   );
 }
 
@@ -129,7 +131,11 @@ function walkActions(
     const node = nodes[current];
     if (!node) break;
 
-    if (node.type !== EWorkflowNodeType.TRIGGER) {
+    const isInboundChannel =
+      node.type === EWorkflowNodeType.CHANNEL &&
+      node.configuration["direction"] === "inbound";
+
+    if (!isInboundChannel) {
       const action = nodeToAction(node, nodes, outgoing, visited);
       if (action) actions.push(action);
     }
@@ -154,6 +160,33 @@ function nodeToAction(
   visited: Set<string>,
 ): WorkflowAction | null {
   switch (node.type) {
+    case EWorkflowNodeType.CHANNEL:
+      return {
+        activity: "channelSend",
+        name: node.name,
+        args: {
+          accountId:
+            (node.configuration["accountId"] as string) ?? "",
+          channel:
+            (node.configuration["channel"] as string) ?? "",
+          provider:
+            (node.configuration["provider"] as string) ?? "",
+          to: (node.configuration["to"] as string) ?? "",
+          type:
+            (node.configuration["messageType"] as string) ??
+            "text",
+          text: node.configuration["text"] ?? undefined,
+          templateName:
+            node.configuration["templateName"] ?? undefined,
+          templateLanguage:
+            node.configuration["templateLanguage"] ?? undefined,
+          mediaUrl:
+            node.configuration["mediaUrl"] ?? undefined,
+          caption:
+            node.configuration["caption"] ?? undefined,
+        },
+      };
+
     case EWorkflowNodeType.JS_FUNCTION:
       return {
         activity: "jsFunction",

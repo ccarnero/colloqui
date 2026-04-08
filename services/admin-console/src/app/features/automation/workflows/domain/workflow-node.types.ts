@@ -1,5 +1,5 @@
 export enum EWorkflowNodeType {
-  TRIGGER = "trigger",
+  CHANNEL = "channel",
   JS_FUNCTION = "jsFunction",
   ENDPOINT_CALL = "endpointCall",
   SERVICE_CALL = "serviceCall",

@@ -18,7 +18,7 @@ import {
   template: `
     <div
       class="wf-builder-node"
-      [class.is-trigger]="node().type === triggerType"
+      [class.is-channel]="node().type === channelType"
       [class.is-branch]="node().type === branchType"
     >
       <div
@@ -65,7 +65,7 @@ import {
       border-color: var(--accent);
       box-shadow: 0 0 0 2px var(--accent-dim);
     }
-    .wf-builder-node.is-trigger {
+    .wf-builder-node.is-channel {
       border-color: var(--green);
     }
     .wf-builder-node.is-branch {
@@ -138,12 +138,12 @@ export class WorkflowNodeComponent {
   readonly node = input.required<IWorkflowNode>();
   readonly selected = output<string>();
 
-  readonly triggerType = EWorkflowNodeType.TRIGGER;
+  readonly channelType = EWorkflowNodeType.CHANNEL;
   readonly branchType = EWorkflowNodeType.BRANCH;
 
   typeLabel(): string {
     const labels: Record<string, string> = {
-      trigger: "Trigger",
+      channel: "Channel",
       jsFunction: "JS Function",
       endpointCall: "HTTP Connector",
       serviceCall: "Service Call",

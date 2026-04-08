@@ -9,16 +9,24 @@ export interface INodeDefault {
 }
 
 export const DEFAULT_NODE_MAP: Record<EWorkflowNodeType, INodeDefault> = {
-  [EWorkflowNodeType.TRIGGER]: {
-    name: "Message Trigger",
-    icon: "bolt",
-    group: "Triggers",
+  [EWorkflowNodeType.CHANNEL]: {
+    name: "Channel",
+    icon: "swap_horiz",
+    group: "Channels",
     configuration: {
+      direction: "inbound",
       accountIds: [],
       channels: [],
       providers: [],
       patterns: [],
       mode: "shared",
+      accountId: "",
+      channel: "",
+      provider: "",
+      recipientMode: "sender",
+      to: "{{request.from}}",
+      messageType: "text",
+      text: "",
     },
   },
   [EWorkflowNodeType.JS_FUNCTION]: {

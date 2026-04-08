@@ -30,6 +30,28 @@ export class CreateWorkflowGatewayDto {
   trigger?: Record<string, unknown>;
 }
 
+/** Mirrors workflow-service update body for gateway validation. */
+export class UpdateWorkflowGatewayDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  name!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  application!: string;
+
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsObject({ each: true })
+  actions!: Record<string, unknown>[];
+
+  @IsOptional()
+  @IsObject()
+  trigger?: Record<string, unknown>;
+}
+
 /** Mirrors workflow-service execute body. */
 export class ExecuteWorkflowGatewayDto {
   @IsObject()

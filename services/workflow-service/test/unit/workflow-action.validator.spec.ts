@@ -62,6 +62,29 @@ describe("IsWorkflowActionArrayConstraint", () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 
+  it("accepts channelSend action", async () => {
+    const dto = plainToInstance(CreateWorkflowDto, {
+      name: "w",
+      application: "app",
+      actions: [
+        {
+          activity: "channelSend",
+          name: "send",
+          args: {
+            accountId: "acc-1",
+            channel: "whatsapp",
+            provider: "meta",
+            to: "{{request.from}}",
+            type: "text",
+            text: "Hello",
+          },
+        },
+      ],
+    });
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+  });
+
   it("rejects branch with no child arrays", async () => {
     const dto = plainToInstance(CreateWorkflowDto, {
       name: "w",
