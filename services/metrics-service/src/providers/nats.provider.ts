@@ -19,7 +19,7 @@ export { NATS_CONNECTION } from "@yoizen/database";
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM_CLIENT = "JETSTREAM_CLIENT";
 
-export const natsProvider: FactoryProvider = createNatsConnectionProvider();
+export const natsProvider: FactoryProvider = createNatsConnectionProvider("metrics-service");
 
 export const jetStreamManagerProvider: FactoryProvider =
   createJetStreamManagerProvider(JETSTREAM_MANAGER, {

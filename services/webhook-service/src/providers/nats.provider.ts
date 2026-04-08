@@ -24,7 +24,7 @@ export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM_CONSUMER = "JETSTREAM_CONSUMER";
 export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
 
-export const natsProvider: FactoryProvider = createNatsConnectionProvider();
+export const natsProvider: FactoryProvider = createNatsConnectionProvider("webhook-service");
 
 export const jetStreamManagerProvider: FactoryProvider =
   createJetStreamManagerProvider(JETSTREAM_MANAGER, {
