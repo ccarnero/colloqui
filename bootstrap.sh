@@ -55,27 +55,29 @@ resolve_minikube_memory_mb() {
 }
 
 usage() {
-  printf '%s\n' \
-    "Usage: $0 [OPTIONS] [ENV...] [GROUP]" \
-    "" \
-    "Environments: ${ALL_ENVIRONMENTS[*]}" \
-    "  (defaults to all if omitted)" \
-    "" \
-    "Groups: ${ALL_GROUPS[*]}" \
-    "  (defaults to both if omitted)" \
-    "" \
-    "Options:" \
-    "  -h, --help    Show this help message" \
-    "" \
-    "Environment variables:" \
-    "  MINIKUBE_CPUS         Override the Minikube CPU count" \
-    "  MINIKUBE_MEMORY_MB    Override the Minikube memory limit in MB" \
-    "" \
-    "Examples:" \
-    "  $0 dev support-services       # Cluster init + infrastructure only" \
-    "  $0 dev platform-services      # Build images + deploy Knative services" \
-    "  $0 dev                        # Full bootstrap (both groups)" \
-    "  $0 dev qa support-services    # Infrastructure for dev and qa"
+  cat <<EOF
+Usage: $0 [OPTIONS] [ENV|GROUP]...
+
+Environments: ${ALL_ENVIRONMENTS[*]}
+  (defaults to all if omitted)
+
+Groups: ${ALL_GROUPS[*]}
+  (defaults to both if omitted)
+
+Options:
+  -h, --help    Show this help message
+
+Environment variables:
+  MINIKUBE_CPUS         Override the Minikube CPU count
+  MINIKUBE_MEMORY_MB    Override the Minikube memory limit in MB
+
+Examples:
+  $0 support-services           # Infra only for all environments
+  $0 dev support-services       # Cluster init + infrastructure only
+  $0 support-services dev       # Same as above (order does not matter)
+  $0 platform-services dev qa   # Build + deploy for dev and qa
+  $0 dev                        # Full bootstrap (both groups)
+EOF
 }
 
 parse_args() {
@@ -91,28 +93,32 @@ parse_args() {
     esac
   done
 
-  if (( ${#positional[@]} > 0 )); then
-    local last="${positional[-1]}"
+  for arg in "${positional[@]+"${positional[@]}"}"; do
     local is_group=0
     for g in "${ALL_GROUPS[@]}"; do
-      [[ "$last" == "$g" ]] && is_group=1 && break
+      [[ "$arg" == "$g" ]] && is_group=1 && break
     done
-    if (( is_group )); then
-      SERVICE_GROUP="$last"
-      unset 'positional[-1]'
-    fi
-  fi
 
-  for arg in "${positional[@]+"${positional[@]}"}"; do
-    local valid=0
+    if (( is_group )); then
+      if [[ -n "$SERVICE_GROUP" ]]; then
+        err "Only one group can be selected."
+        echo "Valid groups: ${ALL_GROUPS[*]}"
+        exit 1
+      fi
+      SERVICE_GROUP="$arg"
+      continue
+    fi
+
+    local valid_env=0
     for e in "${ALL_ENVIRONMENTS[@]}"; do
-      [[ "$arg" == "$e" ]] && valid=1 && break
+      [[ "$arg" == "$e" ]] && valid_env=1 && break
     done
-    if (( valid )); then
+    if (( valid_env )); then
       ENVIRONMENTS+=("$arg")
     else
-      err "Invalid environment: $arg"
-      echo "Valid: ${ALL_ENVIRONMENTS[*]}"
+      err "Invalid environment or group: $arg"
+      echo "Valid environments: ${ALL_ENVIRONMENTS[*]}"
+      echo "Valid groups: ${ALL_GROUPS[*]}"
       exit 1
     fi
   done
@@ -183,6 +189,11 @@ start_minikube() {
 }
 
 install_knative_serving() {
+  if kubectl get crd services.serving.knative.dev &>/dev/null; then
+    log "Knative Serving CRDs already installed — skipping"
+    return
+  fi
+
   log "Installing Knative Serving CRDs (${KNATIVE_VERSION})"
   kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-crds.yaml"
 
@@ -200,6 +211,11 @@ install_knative_serving() {
 }
 
 install_kourier() {
+  if kubectl get deployment/net-kourier-controller --namespace kourier-system &>/dev/null; then
+    log "Kourier already installed — skipping"
+    return
+  fi
+
   log "Installing Kourier networking layer (${KOURIER_VERSION})"
   kubectl apply -f "https://github.com/knative/net-kourier/releases/download/knative-${KOURIER_VERSION}/kourier.yaml"
 
@@ -468,7 +484,10 @@ print_summary() {
       echo "    kubectl get ksvc -n platform-services-${env}"
     done
     echo "    kubectl get pods --all-namespaces -l app.kubernetes.io/part-of=yoizen-arch"
+    echo "    kubectl get storageclass"
     echo "    minikube tunnel -p ${PROFILE}"
+    echo ""
+    echo "  API Gateway (dev): http://api-gateway.platform-services-dev.${minikube_ip}.sslip.io"
     echo ""
     echo "  Port-forwarding (run in a separate terminal):"
     echo "    ./port-forward.sh ${ENVIRONMENTS[0]}"

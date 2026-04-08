@@ -149,7 +149,9 @@ install_knative_serving() {
   kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-crds.yaml"
 
   log "Installing Knative Serving core (${KNATIVE_VERSION})"
-  kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-core.yaml"
+  # The serving-core install can briefly race the webhook startup on fresh
+  # clusters, so retry until the webhook is ready to accept ConfigMap updates.
+  retry 10 5 kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-core.yaml"
 
   log "Waiting for Knative Serving deployments..."
   kubectl wait deployment --all \
