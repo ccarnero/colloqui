@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Put,
   Delete,
   Param,
   Body,
@@ -11,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { TenantGuard, TenantId } from "@yoizen/database";
 import { CreateWorkflowDto } from "./dto/create-workflow.dto";
+import { UpdateWorkflowDto } from "./dto/update-workflow.dto";
 import { ExecuteWorkflowDto } from "./dto/execute-workflow.dto";
 import { WorkflowsService } from "./workflows.service";
 
@@ -30,6 +32,23 @@ export class WorkflowsController {
       name: dto.name,
       application: dto.application,
       actions: dto.actions,
+      trigger: dto.trigger,
+    });
+  }
+
+  @Put(":id")
+  async updateWorkflow(
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
+    @Body() dto: UpdateWorkflowDto,
+  ) {
+    return this.workflowsService.updateWorkflow({
+      id,
+      tenantId,
+      name: dto.name,
+      application: dto.application,
+      actions: dto.actions,
+      trigger: dto.trigger,
     });
   }
 

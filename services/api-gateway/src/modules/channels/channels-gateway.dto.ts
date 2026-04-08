@@ -16,6 +16,12 @@ export class ChannelStreamQueryDto {
   @IsOptional()
   @IsString()
   kinds?: string;
+  @IsOptional()
+  @IsString()
+  token?: string;
+  @IsOptional()
+  @IsString()
+  tenant?: string;
 }
 
 export class ListAutoReplyRulesQueryDto {

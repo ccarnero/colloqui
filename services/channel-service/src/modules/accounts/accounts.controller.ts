@@ -18,6 +18,7 @@ import { AccountsService } from "./accounts.service";
 import {
   CreateAccountDto,
   ListAccountsQueryDto,
+  type RefreshTokenResponseDto,
   UpdateAccountDto,
 } from "./accounts.dto";
 
@@ -82,6 +83,32 @@ export class AccountsController {
     const account = await this.accounts.update(tenantId, id, dto);
     if (!account) throw new NotFoundException("Account not found");
     return account;
+  }
+
+  /**
+   * Exchanges the current Meta access token for a long-lived one (~60 days).
+   *
+   * @param tenantId Resolved from `x-yoizen-tenant`.
+   * @param id       Account ID whose token should be refreshed.
+   * @returns The new token metadata (token is masked in response).
+   */
+  @Post(":id/refresh-token")
+  async refreshToken(
+    @Headers(TENANT_HEADER) tenantId: string,
+    @Param("id") id: string,
+  ): Promise<RefreshTokenResponseDto> {
+    const result = await this.accounts.refreshMetaToken(tenantId, id);
+
+    const masked =
+      result.accessToken.length > 12
+        ? `${result.accessToken.slice(0, 6)}..${result.accessToken.slice(-4)}`
+        : "***";
+
+    return {
+      accessToken: masked,
+      tokenType: result.tokenType,
+      expiresIn: result.expiresIn,
+    };
   }
 
   @Delete(":id")

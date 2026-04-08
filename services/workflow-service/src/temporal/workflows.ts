@@ -6,6 +6,7 @@ import type {
   EndpointCallArgs,
   JsFunctionArgs,
   ServiceBusCallArgs,
+  ServiceCallArgs,
 } from "@yoizen/shared";
 import { WORKFLOW_HTTP_TASK_QUEUE } from "./workflow-queue";
 
@@ -20,9 +21,24 @@ interface IOrchestratorActivities {
   ): Promise<{ published: true; subject: string }>;
 }
 
+interface ISyncActivities {
+  syncExecutionStatus(
+    executionId: string,
+    status: string,
+  ): Promise<void>;
+}
+
 interface IHttpActivities {
   executeEndpointCall(
     args: EndpointCallArgs,
+    tenantId: string,
+  ): Promise<{
+    status: number;
+    data: unknown;
+    headers: Record<string, string>;
+  }>;
+  executeServiceCall(
+    args: ServiceCallArgs,
     tenantId: string,
   ): Promise<{
     status: number;
@@ -34,6 +50,11 @@ interface IHttpActivities {
 const local = proxyActivities<IOrchestratorActivities>({
   startToCloseTimeout: "30s",
   retry: { maximumAttempts: 3 },
+});
+
+const sync = proxyActivities<ISyncActivities>({
+  startToCloseTimeout: "5s",
+  retry: { maximumAttempts: 2 },
 });
 
 const http = proxyActivities<IHttpActivities>({
@@ -108,6 +129,12 @@ async function executeAction(
         tenant,
       );
 
+    case "serviceCall":
+      return http.executeServiceCall(
+        resolveTemplates(action.args, context),
+        tenant,
+      );
+
     case "branch": {
       const branchEntries: Array<[string, WorkflowAction[]]> = [];
       const keys = Object.keys(action);
@@ -149,6 +176,7 @@ async function executeAction(
 
 export async function runWorkflow(
   workflow: WorkflowDefinition,
+  executionId?: string,
 ): Promise<WorkflowExecutionContext> {
   const context: WorkflowExecutionContext = {
     workflow: {
@@ -159,6 +187,19 @@ export async function runWorkflow(
     request: workflow.request,
     results: {},
   };
-  await executeActions(workflow.actions, context);
-  return context;
+
+  let status = "FAILED";
+  try {
+    await executeActions(workflow.actions, context);
+    status = "COMPLETED";
+    return context;
+  } finally {
+    if (executionId) {
+      try {
+        await sync.syncExecutionStatus(executionId, status);
+      } catch (_) {
+        /* best-effort: don't mask the original outcome */
+      }
+    }
+  }
 }

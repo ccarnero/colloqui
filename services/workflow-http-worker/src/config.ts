@@ -1,4 +1,6 @@
-import { DEFAULT_ADAPTER_SERVICE_URL } from "@yoizen/shared";
+import { platformServiceUrl } from "@yoizen/shared";
+
+const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
 
 type WorkflowHttpWorkerConfig = {
   readonly port: number;
@@ -7,6 +9,7 @@ type WorkflowHttpWorkerConfig = {
   readonly redisHost: string;
   readonly redisPort: number;
   readonly adapterServiceUrl: string;
+  readonly registryServiceUrl: string;
 };
 
 export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
@@ -16,5 +19,9 @@ export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
   redisHost: process.env.REDIS_HOST ?? "localhost",
   redisPort: Number.parseInt(process.env.REDIS_PORT ?? "6379", 10),
   adapterServiceUrl:
-    process.env.ADAPTER_SERVICE_URL ?? DEFAULT_ADAPTER_SERVICE_URL,
+    process.env.ADAPTER_SERVICE_URL ??
+    platformServiceUrl("adapter-service", env),
+  registryServiceUrl:
+    process.env.REGISTRY_SERVICE_URL ??
+    platformServiceUrl("registry-service", env),
 };

@@ -77,6 +77,12 @@ export interface ICreateAutoReplyDto {
   replyText: string;
 }
 
+export interface IRefreshTokenResponse {
+  accessToken: string;
+  tokenType: string;
+  expiresIn: number;
+}
+
 @Injectable({ providedIn: "root" })
 export class ChannelService {
   private readonly http = inject(HttpClient);
@@ -115,6 +121,19 @@ export class ChannelService {
   deleteAccount(id: string): Observable<void> {
     return this.http.delete<void>(
       `${this.base}/accounts/${encodeURIComponent(id)}`,
+    );
+  }
+
+  /**
+   * Exchanges the current Meta token for a long-lived one (~60 days).
+   *
+   * @param id Account ID.
+   * @returns Masked token, type, and expiry in seconds.
+   */
+  refreshMetaToken(id: string): Observable<IRefreshTokenResponse> {
+    return this.http.post<IRefreshTokenResponse>(
+      `${this.base}/accounts/${encodeURIComponent(id)}/refresh-token`,
+      {},
     );
   }
 

@@ -1,10 +1,17 @@
 import { Global, Module } from "@nestjs/common";
 import { temporalClientProvider, TEMPORAL_CLIENT } from "./temporal.provider";
-import { postgresProvider, POSTGRES_SQL } from "./postgres.provider";
+import { PostgresModule } from "./postgres.provider";
+import {
+  createNatsConnectionProvider,
+  NATS_CONNECTION,
+} from "@yoizen/database";
+
+const natsProvider = createNatsConnectionProvider();
 
 @Global()
 @Module({
-  providers: [temporalClientProvider, postgresProvider],
-  exports: [TEMPORAL_CLIENT, POSTGRES_SQL],
+  imports: [PostgresModule],
+  providers: [temporalClientProvider, natsProvider],
+  exports: [PostgresModule, TEMPORAL_CLIENT, NATS_CONNECTION],
 })
 export class ProvidersModule {}

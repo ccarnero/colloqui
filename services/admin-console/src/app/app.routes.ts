@@ -102,10 +102,29 @@ export const routes: Routes = [
       },
       {
         path: "workflows",
-        loadComponent: () =>
-          import("./features/automation/workflows/workflows.component").then(
-            (m) => m.WorkflowsComponent,
-          ),
+        children: [
+          {
+            path: "",
+            loadComponent: () =>
+              import(
+                "./features/automation/workflows/workflows.component"
+              ).then((m) => m.WorkflowsComponent),
+          },
+          {
+            path: "new",
+            loadComponent: () =>
+              import(
+                "./features/automation/workflows/builder/workflow-builder.component"
+              ).then((m) => m.WorkflowBuilderComponent),
+          },
+          {
+            path: ":id/edit",
+            loadComponent: () =>
+              import(
+                "./features/automation/workflows/builder/workflow-builder.component"
+              ).then((m) => m.WorkflowBuilderComponent),
+          },
+        ],
       },
       {
         path: "webhooks",

@@ -45,7 +45,6 @@ export {
   GATEWAY_AUDIT_SUBJECT,
   GATEWAY_AUDIT_CONSUMER_NAME,
   GATEWAY_AUDIT_STREAM_MAX_BYTES,
-  DEFAULT_ADAPTER_SERVICE_URL,
   YOIZENCLAW_PRODUCER,
   YOIZENCLAW_DOMAIN,
   YOIZENCLAW_CHANNEL,
@@ -117,12 +116,18 @@ export type {
   EndpointCallArgs,
   JsFunctionArgs,
   ServiceBusCallArgs,
+  ServiceCallArgs,
   EndpointCallAction,
   JsFunctionAction,
   ServiceBusCallAction,
+  ServiceCallAction,
   BranchAction,
   WorkflowAction,
   WorkflowDefinition,
+  TriggerMode,
+  MessageReceivedTriggerConfig,
+  MessageReceivedTrigger,
+  WorkflowTrigger,
 } from './workflow.interfaces';
 
 export type {
@@ -177,7 +182,6 @@ export {
   CLAIM_CHECK_THRESHOLD_BYTES,
   CLAIM_CHECK_BUCKET_PREFIX,
   CHANNEL_AUDIT_SUBJECT_PATTERN,
-  DEFAULT_CHANNEL_SERVICE_URL,
 } from './channel.constants';
 
 export type {
@@ -252,6 +256,8 @@ export {
   tenantKubernetesNamespaceName,
   invalidPlatformEnvironmentMessage,
 } from "./tenant-namespace";
+
+export { platformServiceUrl } from "./platform-service-url";
 
 export { METRICS_SCHEMA_SQL } from "./metrics-schema";
 

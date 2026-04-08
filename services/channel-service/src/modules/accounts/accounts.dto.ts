@@ -76,6 +76,13 @@ export class UpdateAccountDto {
   isActive?: boolean;
 }
 
+/** Response shape for `POST /channels/accounts/:id/refresh-token`. */
+export class RefreshTokenResponseDto {
+  accessToken!: string;
+  tokenType!: string;
+  expiresIn!: number;
+}
+
 /** Query params for `GET /channels/accounts`. */
 export class ListAccountsQueryDto {
   @IsOptional()

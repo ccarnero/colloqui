@@ -3,6 +3,7 @@ import {
   ArrayNotEmpty,
   IsNotEmpty,
   IsObject,
+  IsOptional,
   IsString,
   MaxLength,
 } from "class-validator";
@@ -23,6 +24,10 @@ export class CreateWorkflowGatewayDto {
   @ArrayNotEmpty()
   @IsObject({ each: true })
   actions!: Record<string, unknown>[];
+
+  @IsOptional()
+  @IsObject()
+  trigger?: Record<string, unknown>;
 }
 
 /** Mirrors workflow-service execute body. */

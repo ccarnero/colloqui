@@ -8,6 +8,7 @@ export interface IWorkflowDefinitionRow {
   name: string;
   application: string;
   actions: unknown;
+  trigger: unknown;
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;
@@ -31,6 +32,16 @@ export interface ICreateDefinitionParams {
   readonly name: string;
   readonly application: string;
   readonly actions: unknown[];
+  readonly trigger?: unknown;
+}
+
+export interface IUpdateDefinitionParams {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly name: string;
+  readonly application: string;
+  readonly actions: unknown[];
+  readonly trigger?: unknown;
 }
 
 export interface ICreateExecutionParams {
@@ -51,11 +62,36 @@ export class WorkflowsRepository {
   async createDefinition(
     params: ICreateDefinitionParams,
   ): Promise<IWorkflowDefinitionRow> {
-    const { id, tenantId, name, application, actions } = params;
+    const { id, tenantId, name, application, actions, trigger } = params;
+    const triggerJson = trigger ? this.sql.json(trigger as never) : null;
     const [row] = await this.sql<IWorkflowDefinitionRow[]>`
-      INSERT INTO workflow_definitions (id, tenant_id, name, application, actions)
-      VALUES (${id}, ${tenantId}, ${name}, ${application}, ${this.sql.json(actions as never)})
-      RETURNING id, tenant_id, name, application, actions,
+      INSERT INTO workflow_definitions
+        (id, tenant_id, name, application, actions, trigger)
+      VALUES
+        (${id}, ${tenantId}, ${name}, ${application},
+         ${this.sql.json(actions as never)}, ${triggerJson})
+      RETURNING id, tenant_id, name, application, actions, trigger,
+                created_at, updated_at, deleted_at
+    `;
+    return row;
+  }
+
+  async updateDefinition(
+    params: IUpdateDefinitionParams,
+  ): Promise<IWorkflowDefinitionRow | undefined> {
+    const { id, tenantId, name, application, actions, trigger } = params;
+    const triggerJson = trigger ? this.sql.json(trigger as never) : null;
+    const [row] = await this.sql<IWorkflowDefinitionRow[]>`
+      UPDATE workflow_definitions
+      SET name = ${name},
+          application = ${application},
+          actions = ${this.sql.json(actions as never)},
+          trigger = ${triggerJson},
+          updated_at = NOW()
+      WHERE id = ${id}
+        AND tenant_id = ${tenantId}
+        AND deleted_at IS NULL
+      RETURNING id, tenant_id, name, application, actions, trigger,
                 created_at, updated_at, deleted_at
     `;
     return row;
@@ -66,7 +102,7 @@ export class WorkflowsRepository {
     tenantId: string,
   ): Promise<IWorkflowDefinitionRow | undefined> {
     const [row] = await this.sql<IWorkflowDefinitionRow[]>`
-      SELECT id, tenant_id, name, application, actions,
+      SELECT id, tenant_id, name, application, actions, trigger,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
       WHERE id = ${id}
@@ -80,12 +116,32 @@ export class WorkflowsRepository {
     tenantId: string,
   ): Promise<IWorkflowDefinitionRow[]> {
     return this.sql<IWorkflowDefinitionRow[]>`
-      SELECT id, tenant_id, name, application, actions,
+      SELECT id, tenant_id, name, application, actions, trigger,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
       WHERE tenant_id = ${tenantId}
         AND deleted_at IS NULL
       ORDER BY created_at DESC
+    `;
+  }
+
+  /**
+   * Finds active definitions with a trigger matching the given type,
+   * scoped to a specific tenant.
+   */
+  async findDefinitionsByTriggerType(
+    tenantId: string,
+    triggerType: string,
+  ): Promise<IWorkflowDefinitionRow[]> {
+    return this.sql<IWorkflowDefinitionRow[]>`
+      SELECT id, tenant_id, name, application, actions, trigger,
+             created_at, updated_at, deleted_at
+      FROM workflow_definitions
+      WHERE tenant_id = ${tenantId}
+        AND deleted_at IS NULL
+        AND trigger IS NOT NULL
+        AND trigger->>'type' = ${triggerType}
+      ORDER BY created_at ASC
     `;
   }
 

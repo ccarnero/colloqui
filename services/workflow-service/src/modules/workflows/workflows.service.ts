@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import type { Client } from "@temporalio/client";
+import { WorkflowFailedError, type Client } from "@temporalio/client";
+import { ActivityFailure, TemporalFailure } from "@temporalio/common";
 import { nanoid } from "nanoid";
 import {
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
@@ -8,6 +9,7 @@ import {
 import type {
   WorkflowDefinition,
   WorkflowAction,
+  WorkflowTrigger,
   WorkflowExecutionContext,
 } from "@yoizen/shared";
 import { TEMPORAL_CLIENT } from "../../providers/temporal.provider";
@@ -37,15 +39,25 @@ export interface ICreateWorkflowResult {
   application: string;
   tenantId: string;
   actions: unknown;
+  trigger: unknown;
   createdAt: Date;
 }
 
-/** Parameters for creating a workflow definition row. */
 interface ICreateWorkflowParams {
   readonly tenantId: string;
   readonly name: string;
   readonly application: string;
   readonly actions: WorkflowAction[];
+  readonly trigger?: WorkflowTrigger;
+}
+
+interface IUpdateWorkflowParams {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly name: string;
+  readonly application: string;
+  readonly actions: WorkflowAction[];
+  readonly trigger?: WorkflowTrigger;
 }
 
 export interface IExecuteWorkflowResult {
@@ -55,12 +67,20 @@ export interface IExecuteWorkflowResult {
   runId: string;
 }
 
+export interface IWorkflowFailureInfo {
+  message: string;
+  type: string;
+  activityName?: string;
+  cause?: string;
+}
+
 export interface IExecutionStatusResult {
   executionId: string;
   definitionId: string;
   temporalWorkflowId: string;
   status: string;
   result?: WorkflowExecutionContext;
+  failure?: IWorkflowFailureInfo;
   createdAt: Date;
 }
 
@@ -82,7 +102,7 @@ export class WorkflowsService {
   async createWorkflow(
     params: ICreateWorkflowParams,
   ): Promise<ICreateWorkflowResult> {
-    const { tenantId, name, application, actions } = params;
+    const { tenantId, name, application, actions, trigger } = params;
     const id = nanoid();
     const row = await this.repository.createDefinition({
       id,
@@ -90,10 +110,32 @@ export class WorkflowsService {
       name,
       application,
       actions,
+      trigger,
     });
 
     this.logger.log(
       `Created workflow definition ${row.id} (${name}) for tenant ${tenantId}`,
+    );
+
+    return this.toCreateResult(row);
+  }
+
+  /**
+   * Updates an existing workflow definition.
+   *
+   * @param params - Definition id, tenant, and updated fields.
+   * @returns Updated row metadata.
+   */
+  async updateWorkflow(
+    params: IUpdateWorkflowParams,
+  ): Promise<ICreateWorkflowResult> {
+    const row = await this.repository.updateDefinition(params);
+    if (!row) {
+      throw new NotFoundException("Workflow definition not found");
+    }
+
+    this.logger.log(
+      `Updated workflow definition ${row.id} for tenant ${params.tenantId}`,
     );
 
     return this.toCreateResult(row);
@@ -176,7 +218,7 @@ export class WorkflowsService {
     const handle = await this.temporal.workflow.start("runWorkflow", {
       taskQueue: WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
       workflowId: temporalWorkflowId,
-      args: [workflowDef],
+      args: [workflowDef, executionId],
       workflowExecutionTimeout: WORKFLOW_DEFAULT_TIMEOUT_MS,
       searchAttributes: {
         TenantId: [tenantId],
@@ -264,8 +306,23 @@ export class WorkflowsService {
     }
 
     let result: WorkflowExecutionContext | undefined;
+    let failure: IWorkflowFailureInfo | undefined;
+
     if (currentStatus === "COMPLETED") {
       result = await handle.result();
+    } else if (currentStatus === "FAILED") {
+      try {
+        await handle.result();
+      } catch (err) {
+        if (err instanceof WorkflowFailedError) {
+          failure = this.extractFailureInfo(err);
+        } else {
+          failure = {
+            message: err instanceof Error ? err.message : String(err),
+            type: "Unknown",
+          };
+        }
+      }
     }
 
     return {
@@ -274,8 +331,35 @@ export class WorkflowsService {
       temporalWorkflowId: execution.temporal_workflow_id,
       status: currentStatus,
       result,
+      failure,
       createdAt: execution.created_at,
     };
+  }
+
+  private extractFailureInfo(err: WorkflowFailedError): IWorkflowFailureInfo {
+    const rootCause = err.cause;
+    if (!rootCause) {
+      return { message: err.message, type: "WorkflowFailedError" };
+    }
+
+    const info: IWorkflowFailureInfo = {
+      message: rootCause.message,
+      type: rootCause.constructor.name,
+    };
+
+    if (rootCause instanceof ActivityFailure) {
+      info.activityName = rootCause.activityType;
+    }
+
+    let nested: unknown = rootCause.cause;
+    while (nested instanceof TemporalFailure && nested.cause) {
+      nested = nested.cause;
+    }
+    if (nested && nested !== rootCause && nested instanceof Error) {
+      info.cause = nested.message;
+    }
+
+    return info;
   }
 
   private mapExecutionRow(row: IWorkflowExecutionRow): IWorkflowExecutionListItem {
@@ -299,6 +383,7 @@ export class WorkflowsService {
       application: row.application,
       tenantId: row.tenant_id,
       actions: row.actions,
+      trigger: row.trigger,
       createdAt: row.created_at,
     };
   }

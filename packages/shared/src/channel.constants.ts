@@ -13,6 +13,3 @@ export const CLAIM_CHECK_THRESHOLD_BYTES = 256 * 1024;
 export const CLAIM_CHECK_BUCKET_PREFIX = "PAYLOAD";
 
 export const CHANNEL_AUDIT_SUBJECT_PATTERN = "evt.*.messaging.>" as const;
-
-export const DEFAULT_CHANNEL_SERVICE_URL =
-  "http://channel-service.platform-services.svc.cluster.local";

@@ -210,10 +210,18 @@ data:
       name        VARCHAR(128) NOT NULL,
       application VARCHAR(64)  NOT NULL,
       actions     JSONB       NOT NULL,
+      trigger     JSONB       DEFAULT NULL,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       deleted_at  TIMESTAMPTZ
     );
+
+    ALTER TABLE workflow_definitions
+      ADD COLUMN IF NOT EXISTS trigger JSONB DEFAULT NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_workflow_definitions_trigger_type
+      ON workflow_definitions (tenant_id, ((trigger->>'type')))
+      WHERE deleted_at IS NULL AND trigger IS NOT NULL;
 
     CREATE INDEX IF NOT EXISTS idx_wf_def_tenant
       ON workflow_definitions (tenant_id) WHERE deleted_at IS NULL;

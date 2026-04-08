@@ -1,4 +1,6 @@
-import { DEFAULT_CHANNEL_SERVICE_URL } from "@yoizen/shared";
+import { platformServiceUrl } from "@yoizen/shared";
+
+const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
 
 type ChannelServiceConfig = {
   readonly port: number;
@@ -10,7 +12,8 @@ type ChannelServiceConfig = {
 export const channelServiceConfig: ChannelServiceConfig = {
   port: Number.parseInt(process.env.PORT ?? "3000", 10),
   channelServicePublicUrl:
-    process.env.CHANNEL_SERVICE_PUBLIC_URL ?? DEFAULT_CHANNEL_SERVICE_URL,
+    process.env.CHANNEL_SERVICE_PUBLIC_URL ??
+    platformServiceUrl("channel-service", env),
   defaultPostgresHost:
     process.env.POSTGRES_HOST ??
     "postgres.support-services-dev.svc.cluster.local",

@@ -1,6 +1,7 @@
-const K8S_DOMAIN = "svc.cluster.local";
+import { platformServiceUrl } from "@yoizen/shared";
 
 const gatewayPort = Number.parseInt(process.env.PORT ?? "3000", 10);
+const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
 
 /**
  * Centralized gateway configuration derived from environment variables.
@@ -12,7 +13,7 @@ export const gatewayConfig = {
   selfBaseUrl:
     process.env.API_GATEWAY_SELF_URL ?? `http://127.0.0.1:${gatewayPort}`,
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:4200",
-  environment: process.env.PLATFORM_ENVIRONMENT ?? "dev",
+  environment: env,
   /** Read at access time so tests can set JWT_SECRET before first use. */
   get jwtSecret(): string {
     return process.env.JWT_SECRET ?? "";
@@ -21,46 +22,46 @@ export const gatewayConfig = {
   services: {
     auth:
       process.env.AUTH_SERVICE_URL ??
-      `http://auth-service.platform-services.${K8S_DOMAIN}`,
+      platformServiceUrl("auth-service", env),
     audit:
       process.env.AUDIT_SERVICE_URL ??
-      `http://audit-service.platform-services-dev.${K8S_DOMAIN}`,
+      platformServiceUrl("audit-service", env),
     tenant:
       process.env.TENANT_SERVICE_URL ??
-      `http://tenant-service.platform-services-dev.${K8S_DOMAIN}`,
+      platformServiceUrl("tenant-service", env),
     scheduler:
       process.env.SCHEDULER_SERVICE_URL ??
-      `http://scheduler-service.platform-services.${K8S_DOMAIN}`,
+      platformServiceUrl("scheduler-service", env),
     registry:
       process.env.REGISTRY_SERVICE_URL ??
-      `http://registry-service.platform-services.${K8S_DOMAIN}`,
+      platformServiceUrl("registry-service", env),
     workflow:
       process.env.WORKFLOW_SERVICE_URL ??
-      `http://workflow-api.platform-services.${K8S_DOMAIN}`,
+      platformServiceUrl("workflow-api", env),
     adapter:
       process.env.ADAPTER_SERVICE_URL ??
-      `http://adapter-service.platform-services-dev.${K8S_DOMAIN}`,
+      platformServiceUrl("adapter-service", env),
     cache:
       process.env.CACHE_SERVICE_URL ??
-      `http://cache-service.platform-services-dev.${K8S_DOMAIN}`,
+      platformServiceUrl("cache-service", env),
     webhook:
       process.env.WEBHOOK_SERVICE_URL ??
-      `http://webhook-service.platform-services-dev.${K8S_DOMAIN}`,
+      platformServiceUrl("webhook-service", env),
     eventProcessor:
       process.env.EVENT_PROCESSOR_URL ??
-      `http://event-processor.platform-services-dev.${K8S_DOMAIN}`,
+      platformServiceUrl("event-processor", env),
     metrics:
       process.env.METRICS_SERVICE_URL ??
-      `http://metrics-service.platform-services-dev.${K8S_DOMAIN}`,
+      platformServiceUrl("metrics-service", env),
     proxy:
       process.env.PROXY_SERVICE_URL ??
-      `http://proxy-service.platform-services-dev.${K8S_DOMAIN}`,
+      platformServiceUrl("proxy-service", env),
     channel:
       process.env.CHANNEL_SERVICE_URL ??
-      `http://channel-service.platform-services-dev.${K8S_DOMAIN}`,
+      platformServiceUrl("channel-service", env),
     admin:
       process.env.ADMIN_SERVICE_URL ??
-      `http://yoizenclaw-admin-service.platform-services-dev.${K8S_DOMAIN}`,
+      platformServiceUrl("yoizenclaw-admin-service", env),
   },
 
   rateLimit: {

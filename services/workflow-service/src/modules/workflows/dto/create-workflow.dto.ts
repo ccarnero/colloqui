@@ -2,12 +2,16 @@ import {
   IsString,
   IsNotEmpty,
   IsArray,
+  IsOptional,
   MaxLength,
   ArrayNotEmpty,
   Validate,
+  ValidateNested,
 } from "class-validator";
+import { Type } from "class-transformer";
 import type { WorkflowAction } from "@yoizen/shared";
 import { IsWorkflowActionArrayConstraint } from "./workflow-action.validator";
+import { WorkflowTriggerDto } from "./workflow-trigger.dto";
 
 export class CreateWorkflowDto {
   @IsString()
@@ -24,4 +28,9 @@ export class CreateWorkflowDto {
   @ArrayNotEmpty()
   @Validate(IsWorkflowActionArrayConstraint)
   actions!: WorkflowAction[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WorkflowTriggerDto)
+  trigger?: WorkflowTriggerDto;
 }

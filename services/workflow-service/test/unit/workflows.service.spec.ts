@@ -178,6 +178,11 @@ describe("WorkflowsService", () => {
     expect(result.runId).toBe("run-xyz");
     expect(mockTemporal.workflow.start).toHaveBeenCalled();
     expect(mockRepo.createExecution).toHaveBeenCalled();
+
+    const startCall = mockTemporal.workflow.start.mock.calls[0];
+    const startArgs = startCall[1].args as unknown[];
+    expect(startArgs).toHaveLength(2);
+    expect(startArgs[1]).toBe(result.executionId);
   });
 
   it("deleteWorkflow soft-deletes via repository", async () => {

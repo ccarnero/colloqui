@@ -1,7 +1,15 @@
-import { Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import type { Channel, ChannelAccount, ChannelProvider } from "@yoizen/shared";
 import { PinoLoggerService } from "@yoizen/observability";
 import { channelServiceConfig } from "../../config";
+import {
+  exchangeForLongLivedToken,
+  type ITokenExchangeResult,
+} from "../../providers/meta/meta-token";
 import { TelegramProvider } from "../../providers/telegram/telegram.provider";
 import {
   AccountsRepository,
@@ -151,6 +159,52 @@ export class AccountsService {
     );
 
     return result.count > 0;
+  }
+
+  /**
+   * Exchanges the current Meta access token for a long-lived one (~60 days)
+   * and persists it on the account.
+   *
+   * @param tenantId  Tenant owning the account.
+   * @param accountId Account whose token should be refreshed.
+   * @returns The exchange result including the (masked) new token and expiry.
+   */
+  async refreshMetaToken(
+    tenantId: string,
+    accountId: string,
+  ): Promise<ITokenExchangeResult> {
+    const account = await this.findById(tenantId, accountId);
+    if (!account) {
+      throw new NotFoundException("Account not found");
+    }
+
+    if (account.provider !== "meta") {
+      throw new BadRequestException(
+        "Token refresh is only supported for Meta (WhatsApp/Instagram) accounts",
+      );
+    }
+
+    if (!account.appId || !account.appSecret) {
+      throw new BadRequestException(
+        "Meta App ID and App Secret are required for token refresh",
+      );
+    }
+
+    const result = await exchangeForLongLivedToken({
+      currentToken: account.accessToken,
+      appId: account.appId,
+      appSecret: account.appSecret,
+    });
+
+    await this.update(tenantId, accountId, {
+      accessToken: result.accessToken,
+    });
+
+    this.logger.log(
+      `Meta token refreshed for account=${accountId}, expires_in=${result.expiresIn}s`,
+    );
+
+    return result;
   }
 
   private async registerTelegramWebhook(
