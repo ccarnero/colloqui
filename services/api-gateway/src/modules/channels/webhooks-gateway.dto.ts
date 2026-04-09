@@ -1,4 +1,10 @@
-import { IsOptional, IsString, IsArray } from "class-validator";
+import {
+  IsOptional,
+  IsString,
+  IsArray,
+  IsNumber,
+  IsObject,
+} from "class-validator";
 
 /** Meta / WhatsApp webhook verification query (hub.*). */
 export class WebhookVerificationQueryDto {
@@ -16,10 +22,12 @@ export class WebhookVerificationQueryDto {
 }
 
 /**
- * Minimal validated shape for inbound webhook JSON. Gateway uses a permissive
- * `ValidationPipe` on this controller so unknown Meta fields are not stripped.
+ * Passthrough DTO for inbound webhook JSON from all providers (Meta, Telegram).
+ * Every known top-level field is whitelisted so the global ValidationPipe
+ * (forbidNonWhitelisted) does not reject provider-specific payloads.
  */
 export class WebhookInboundBodyDto {
+  /** Meta / WhatsApp */
   @IsOptional()
   @IsString()
   object?: string;
@@ -27,4 +35,29 @@ export class WebhookInboundBodyDto {
   @IsOptional()
   @IsArray()
   entry?: unknown[];
+
+  /** Telegram */
+  @IsOptional()
+  @IsNumber()
+  update_id?: number;
+
+  @IsOptional()
+  @IsObject()
+  message?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  edited_message?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  channel_post?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  edited_channel_post?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  callback_query?: Record<string, unknown>;
 }
