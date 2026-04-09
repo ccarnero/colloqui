@@ -12,6 +12,6 @@ runNestFastifyServiceMain("workflow-service", async () => {
     serviceName: "workflow-service",
     module: AppModule,
     port: workflowServiceConfig.port,
-    withValidationPipe: true,
+    withValidationPipe: false,
   });
 });

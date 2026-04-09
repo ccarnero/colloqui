@@ -12,41 +12,39 @@ import {
 } from "@nestjs/common";
 import { WorkflowProxyService } from "./workflow-proxy.service";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
-import {
-  CreateWorkflowGatewayDto,
-  UpdateWorkflowGatewayDto,
-  ExecuteWorkflowGatewayDto,
-} from "./workflows-gateway.dto";
+import { ExecuteWorkflowGatewayDto } from "./workflows-gateway.dto";
 
 @Controller("workflows")
 export class WorkflowsController {
   constructor(private readonly proxy: WorkflowProxyService) {}
 
+  /**
+   * Proxied as-is — workflow-service validates the full payload
+   * (actions/trigger contain opaque nested objects that
+   * class-transformer's enableImplicitConversion corrupts).
+   */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createWorkflow(
-    @Req() req: ITenantScopedRequest,
-    @Body() body: CreateWorkflowGatewayDto,
-  ) {
+  async createWorkflow(@Req() req: ITenantScopedRequest) {
     return this.proxy.proxy({
       method: "POST",
       path: "/workflows",
       tenantId: req.tenantId,
-      body: body as unknown as Record<string, unknown>,
+      body: req.body as Record<string, unknown>,
     });
   }
 
+  /** @see {@link createWorkflow} — same raw-body rationale. */
   @Put(":id")
   async updateWorkflow(
     @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
-    @Body() body: UpdateWorkflowGatewayDto,
   ) {
     return this.proxy.proxy({
       method: "PUT",
       path: `/workflows/${encodeURIComponent(id)}`,
       tenantId: req.tenantId,
-      body: body as unknown as Record<string, unknown>,
+      body: req.body as Record<string, unknown>,
     });
   }
 
