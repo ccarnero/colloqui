@@ -52,6 +52,23 @@ export interface ChannelSendArgs {
   caption?: string;
 }
 
+/** Matches YoizenClaw admin chat request context entries. */
+export interface AgentCallContextEntry {
+  sender: "customer" | "agent";
+  content: string;
+}
+
+/** YoizenClaw agent chat (`POST /admin/agents/:id/chat`). */
+export interface AgentCallArgs {
+  agentId: string;
+  message: string;
+  conversationId?: string;
+  customerName?: string;
+  userId?: string;
+  channel?: string;
+  context?: AgentCallContextEntry[];
+}
+
 // ── Activity actions ───────────────────────────────────────────────
 
 export interface EndpointCallAction {
@@ -84,6 +101,12 @@ export interface ChannelSendAction {
   args: ChannelSendArgs;
 }
 
+export interface AgentCallAction {
+  activity: "agentCall";
+  name: string;
+  args: AgentCallArgs;
+}
+
 export interface BranchAction {
   activity: "branch";
   name: string;
@@ -96,6 +119,7 @@ export type WorkflowAction =
   | ServiceBusCallAction
   | ServiceCallAction
   | ChannelSendAction
+  | AgentCallAction
   | BranchAction;
 
 // ── Triggers ───────────────────────────────────────────────────────

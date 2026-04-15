@@ -11,6 +11,17 @@ import {
   ValidateNested,
 } from "class-validator";
 
+/** Declared headers for outbound adapter HTTP calls (whitelist-safe nested shape). */
+export class HeaderEntryDto {
+  @IsString()
+  @IsNotEmpty()
+  key!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  value!: string;
+}
+
 export class CreateEndpointDto {
   @IsString()
   @IsNotEmpty()
@@ -47,8 +58,10 @@ export class CreateAdapterDto {
   authConfig?: Record<string, unknown>;
 
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HeaderEntryDto)
   @IsOptional()
-  headers?: Array<{ key: string; value: string }>;
+  headers?: HeaderEntryDto[];
 
   @IsInt()
   @Min(100)
@@ -99,8 +112,10 @@ export class UpdateAdapterDto {
   authConfig?: Record<string, unknown>;
 
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HeaderEntryDto)
   @IsOptional()
-  headers?: Array<{ key: string; value: string }>;
+  headers?: HeaderEntryDto[];
 
   @IsInt()
   @Min(100)

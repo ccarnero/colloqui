@@ -5,7 +5,8 @@ description = "Lightweight agent runtime for conversation recovery"
 requires-python = ">=3.11"
 
 dependencies = [
-    "pydantic-ai[anthropic,bedrock,cohere,google,groq,huggingface,mistral,openai,xai]>=0.0.50",
+    # Use slim + explicit extras (omit `mistral`): `pydantic-ai` meta depends on slim[...,mistral,...] and pulls mistralai, which pins semantic-conventions<0.61.
+    "pydantic-ai-slim[anthropic,bedrock,cohere,google,groq,huggingface,openai,xai]>=1.82.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
     "fastapi>=0.100",
@@ -17,14 +18,16 @@ dependencies = [
     "apscheduler>=3.10.0",
     "alembic>=1.13",
     "sqlalchemy[asyncio]>=2.0",
-    "opentelemetry-api>=1.20",
-    "opentelemetry-sdk>=1.20",
-    "opentelemetry-instrumentation-fastapi>=0.40b0",
-    "opentelemetry-instrumentation-httpx>=0.40b0",
-    "opentelemetry-instrumentation-asyncpg>=0.40b0",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.20",
-
-    "opentelemetry-exporter-otlp>=1.20",
+    # One instrumentation line; semantic-conventions 0.61b0 -> opentelemetry-api==1.40.x.
+    # Exporters stay on 1.40.x so logfire (pydantic-ai) stays satisfied (proto-http <1.41).
+    "opentelemetry-api~=1.40.0",
+    "opentelemetry-sdk~=1.40.0",
+    "opentelemetry-instrumentation==0.61b0",
+    "opentelemetry-instrumentation-fastapi==0.61b0",
+    "opentelemetry-instrumentation-httpx==0.61b0",
+    "opentelemetry-instrumentation-asyncpg==0.61b0",
+    "opentelemetry-exporter-otlp-proto-grpc~=1.40.0",
+    "opentelemetry-exporter-otlp~=1.40.0",
     "prometheus_client>=0.17",
 ]
 

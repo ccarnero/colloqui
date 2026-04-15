@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import asyncio
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -202,15 +201,13 @@ class LLMClient:
                 raise RequiredFieldMissingError(
                     "llm configuration not received from backend"
                 )
+            rc_llm = runtime_config.llm
             config = {
-                "provider": runtime_config.llm.provider,
-                "model": runtime_config.llm.model,
-                "credential_id": runtime_config.llm.credential_id,
-                "credential_mode": getattr(
-                    runtime_config.llm,
-                    "credential_mode",
-                    None,
-                ),
+                "provider": rc_llm.provider,
+                "model": rc_llm.model,
+                "credential_id": rc_llm.credential_id,
+                "credential_mode": getattr(rc_llm, "credential_mode", None),
+                "connector_id": getattr(rc_llm, "connector_id", "") or "",
             }
 
         self.provider = _normalize_provider(config.get("provider"))
@@ -225,13 +222,11 @@ class LLMClient:
 
         self._connector_id: str | None = None
         raw_connector = config.get("connector_id", config.get("connectorId"))
-        if isinstance(raw_connector, str) and raw_connector.strip():
-            connector_id = raw_connector.strip()
-            # Standard UUID validation (case-insensitive)
-            if re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', connector_id, re.IGNORECASE):
-                self._connector_id = connector_id
-            else:
-                self._connector_id = None
+        if isinstance(raw_connector, str):
+            stripped = raw_connector.strip()
+            # Adapter IDs may be UUIDs or opaque strings from adapter-service / admin UI
+            if stripped and len(stripped) <= 256:
+                self._connector_id = stripped
 
         if self._connector_id is not None:
             self.credentials = CredentialSettings()
@@ -277,13 +272,14 @@ class LLMClient:
                         self.provider, self.credentials
                     )
                 else:
-                    from src.utils.di import AppContainer
+                    from src.utils.adapter_client import ensure_adapter_client_in_container
 
-                    adapter_client = AppContainer.get().adapter_client
+                    adapter_client = ensure_adapter_client_in_container()
                     if adapter_client is None:
                         raise RuntimeError(
-                            "AdapterClient is not available in AppContainer. "
-                            f"Cannot resolve LLM credentials from connector_id '{self._connector_id}'"
+                            "AdapterClient is not available: set ADAPTER_SERVICE_URL "
+                            "and TENANT_ID so the runtime can fetch adapter credentials "
+                            f"(connector_id={self._connector_id!r}).",
                         )
 
                     self.credentials = await resolve_from_adapter(

@@ -647,6 +647,7 @@ export class WorkflowBuilderComponent implements OnInit {
       endpointCall: EWorkflowNodeType.ENDPOINT_CALL,
       serviceCall: EWorkflowNodeType.SERVICE_CALL,
       serviceBusCall: EWorkflowNodeType.SERVICE_BUS_CALL,
+      agentCall: EWorkflowNodeType.AGENT_CALL,
       channelSend: EWorkflowNodeType.CHANNEL,
       branch: EWorkflowNodeType.BRANCH,
     };

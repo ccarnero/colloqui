@@ -18,6 +18,13 @@ const executeChannelSend = mock(() =>
 const executeServiceCall = mock(() =>
   Promise.resolve({ status: 200, data: { result: "svc" }, headers: {} }),
 );
+const executeAgentCall = mock(() =>
+  Promise.resolve({
+    status: 200,
+    data: { reply: "agent-said" },
+    headers: {},
+  }),
+);
 const syncExecutionStatus = mock(() => Promise.resolve());
 
 let runWorkflow: (
@@ -33,6 +40,7 @@ beforeAll(async () => {
       executeServiceBusCall,
       executeChannelSend,
       executeServiceCall,
+      executeAgentCall,
       syncExecutionStatus,
     }),
   }));
@@ -142,6 +150,29 @@ describe("runWorkflow (temporal/workflows)", () => {
     expect(ctx.results.svc).toEqual({
       status: 200,
       data: { result: "svc" },
+      headers: {},
+    });
+  });
+
+  it("runs agentCall via http activities", async () => {
+    executeAgentCall.mockClear();
+    const ctx = await runWorkflow({
+      ...base,
+      actions: [
+        {
+          activity: "agentCall",
+          name: "yc",
+          args: {
+            agentId: "550e8400-e29b-41d4-a716-446655440000",
+            message: "Hello",
+          },
+        },
+      ],
+    });
+    expect(executeAgentCall).toHaveBeenCalled();
+    expect(ctx.results.yc).toEqual({
+      status: 200,
+      data: { reply: "agent-said" },
       headers: {},
     });
   });

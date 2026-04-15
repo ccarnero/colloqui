@@ -12,6 +12,9 @@ function requirePostgresPassword(): string {
   return pw;
 }
 
+/** Default matches platform `infrastructure/base/postgres` (pgvector-enabled). */
+const DEFAULT_TENANT_POSTGRES_IMAGE = "pgvector/pgvector:pg17";
+
 type TenantServiceConfig = {
   readonly port: number;
   readonly platformEnvironment: string;
@@ -20,6 +23,8 @@ type TenantServiceConfig = {
   readonly postgresDb: string;
   readonly postgresUser: string;
   readonly postgresPassword: string;
+  /** Container image for per-tenant PostgreSQL StatefulSet (main + init-permissions). */
+  readonly tenantPostgresContainerImage: string;
 };
 
 /** Lazy getters so tests can set `process.env` before first read. */
@@ -44,5 +49,8 @@ export const tenantServiceConfig: TenantServiceConfig = {
   },
   get postgresPassword() {
     return requirePostgresPassword();
+  },
+  get tenantPostgresContainerImage() {
+    return process.env.TENANT_POSTGRES_IMAGE ?? DEFAULT_TENANT_POSTGRES_IMAGE;
   },
 };

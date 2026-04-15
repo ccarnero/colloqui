@@ -62,6 +62,16 @@ export const DEFAULT_NODE_MAP: Record<EWorkflowNodeType, INodeDefault> = {
     group: "Integrations",
     configuration: { subject: "", payload: null },
   },
+  [EWorkflowNodeType.AGENT_CALL]: {
+    name: "Agent",
+    icon: "smart_toy",
+    group: "AI",
+    configuration: {
+      agentId: "",
+      message: "",
+      conversationId: "",
+    },
+  },
   [EWorkflowNodeType.BRANCH]: {
     name: "Parallel Branch",
     icon: "call_split",

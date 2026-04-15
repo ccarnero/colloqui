@@ -12,6 +12,7 @@ from typing import Optional, TYPE_CHECKING
 from src.domain.entities.memory import MemoryBackend
 from src.utils.config.settings import bootstrap_settings
 from src.infra.database.memory_postgres_schema import (
+    LEGACY_RUNTIME_JOBS_RENAME_SQL,
     SCHEMA_SQL,
     SCHEMA_COMPAT_ALTER_SQL,
     RUNTIME_STATE_SCHEMA_SQL,
@@ -90,23 +91,24 @@ class Memory(MemoryBackend):
 
         async with self._pool.acquire() as conn:
             await conn.execute(SCHEMA_SQL["enable_pgvector"])
+            await conn.execute(LEGACY_RUNTIME_JOBS_RENAME_SQL)
             await self._create_tables(conn)
 
         self._initialized = True
 
     async def _create_tables(self, conn: asyncpg.Connection) -> None:
         """Create all required database tables."""
-        await conn.execute(SCHEMA_SQL["create_jobs_table"])
-        await conn.execute(SCHEMA_SQL["create_job_executions_table"])
+        await conn.execute(SCHEMA_SQL["create_runtime_jobs_table"])
+        await conn.execute(SCHEMA_SQL["create_runtime_job_executions_table"])
 
         for sql in SCHEMA_COMPAT_ALTER_SQL:
             await conn.execute(sql)
 
-        await conn.execute(SCHEMA_SQL["idx_jobs_enabled"])
-        await conn.execute(SCHEMA_SQL["idx_jobs_tenant_id_id"])
-        await conn.execute(SCHEMA_SQL["idx_job_executions_job_id"])
-        await conn.execute(SCHEMA_SQL["idx_job_executions_tenant_id_job_id"])
-        await conn.execute(SCHEMA_SQL["idx_job_executions_status"])
+        await conn.execute(SCHEMA_SQL["idx_runtime_jobs_enabled"])
+        await conn.execute(SCHEMA_SQL["idx_runtime_jobs_tenant_id_id"])
+        await conn.execute(SCHEMA_SQL["idx_runtime_job_executions_job_id"])
+        await conn.execute(SCHEMA_SQL["idx_runtime_job_executions_tenant_id_job_id"])
+        await conn.execute(SCHEMA_SQL["idx_runtime_job_executions_status"])
         await self._initialize_runtime_state_schema(conn)
         await conn.execute(SCHEMA_SQL["create_embeddings_table"])
         await conn.execute(SCHEMA_SQL["idx_embeddings_vector"])

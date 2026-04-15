@@ -62,6 +62,41 @@ describe("IsWorkflowActionArrayConstraint", () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 
+  it("accepts agentCall action", async () => {
+    const dto = plainToInstance(CreateWorkflowDto, {
+      name: "w",
+      application: "app",
+      actions: [
+        {
+          activity: "agentCall",
+          name: "chat",
+          args: {
+            agentId: "a1",
+            message: "Summarize {{results.prev.data}}",
+          },
+        },
+      ],
+    });
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+  });
+
+  it("rejects agentCall with empty message", async () => {
+    const dto = plainToInstance(CreateWorkflowDto, {
+      name: "w",
+      application: "app",
+      actions: [
+        {
+          activity: "agentCall",
+          name: "chat",
+          args: { agentId: "a1", message: "" },
+        },
+      ],
+    });
+    const errors = await validate(dto);
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
   it("accepts channelSend action", async () => {
     const dto = plainToInstance(CreateWorkflowDto, {
       name: "w",

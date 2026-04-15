@@ -99,6 +99,32 @@ describe("E2E: workflow-service", () => {
     createdDefinitionIds.push(body.id);
   });
 
+  it("should create a workflow definition with agentCall action (validation only)", async () => {
+    const h = await authHeaders();
+    const { status, body } = await httpPost<WorkflowDefinitionCreated>(
+      `${GW}/workflows`,
+      {
+        name: `e2e-agentcall-${Date.now()}`,
+        application: "e2e-tests",
+        actions: [
+          {
+            activity: "agentCall",
+            name: "claw",
+            args: {
+              agentId: "550e8400-e29b-41d4-a716-446655440000",
+              message: "Summarize: {{results.prior.data}}",
+            },
+          },
+        ],
+      },
+      { headers: h },
+    );
+
+    expect(status).toBe(201);
+    expect(body.id).toBeDefined();
+    createdDefinitionIds.push(body.id);
+  });
+
   it("should list workflow definitions", async () => {
     const h = await authHeaders();
     const { status, body } = await httpGet<WorkflowDefinitionCreated[]>(

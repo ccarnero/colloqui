@@ -3,6 +3,7 @@ import type {
   WorkflowDefinition,
   WorkflowExecutionContext,
   WorkflowAction,
+  AgentCallArgs,
   EndpointCallArgs,
   JsFunctionArgs,
   ServiceBusCallArgs,
@@ -52,6 +53,18 @@ interface IHttpActivities {
   }>;
 }
 
+/** YoizenClaw chat can exceed default HTTP activity timeouts. */
+interface IAgentHttpActivities {
+  executeAgentCall(
+    args: AgentCallArgs,
+    tenantId: string,
+  ): Promise<{
+    status: number;
+    data: unknown;
+    headers: Record<string, string>;
+  }>;
+}
+
 const local = proxyActivities<IOrchestratorActivities>({
   startToCloseTimeout: "30s",
   retry: { maximumAttempts: 3 },
@@ -65,6 +78,12 @@ const sync = proxyActivities<ISyncActivities>({
 const http = proxyActivities<IHttpActivities>({
   taskQueue: WORKFLOW_HTTP_TASK_QUEUE,
   startToCloseTimeout: "30s",
+  retry: { maximumAttempts: 3 },
+});
+
+const httpAgent = proxyActivities<IAgentHttpActivities>({
+  taskQueue: WORKFLOW_HTTP_TASK_QUEUE,
+  startToCloseTimeout: "5m",
   retry: { maximumAttempts: 3 },
 });
 
@@ -142,6 +161,12 @@ async function executeAction(
 
     case "serviceCall":
       return http.executeServiceCall(
+        resolveTemplates(action.args, context),
+        tenant,
+      );
+
+    case "agentCall":
+      return httpAgent.executeAgentCall(
         resolveTemplates(action.args, context),
         tenant,
       );

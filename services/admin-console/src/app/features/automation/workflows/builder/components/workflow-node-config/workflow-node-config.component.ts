@@ -25,6 +25,8 @@ import {
   type IAdapterEndpointDto,
 } from "../../../../../../core/services/http-adapter.service";
 import { RegistryService } from "../../../../../../core/services/registry.service";
+import { YoizenclawAdminService } from "../../../../../../core/services/yoizenclaw-admin.service";
+import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.model";
 
 @Component({
   selector: "app-workflow-node-config",
@@ -478,6 +480,51 @@ import { RegistryService } from "../../../../../../core/services/registry.servic
               </mat-form-field>
             }
 
+            @case (types.AGENT_CALL) {
+              <mat-form-field appearance="outline" class="config-field">
+                <mat-label>YoizenClaw agent</mat-label>
+                <mat-select
+                  [ngModel]="n.configuration['agentId']"
+                  (ngModelChange)="updateConfig('agentId', $event)"
+                >
+                  <mat-option [value]="''">Select an agent</mat-option>
+                  @for (ag of yoizenclawAgents(); track ag.id) {
+                    <mat-option [value]="ag.id">
+                      {{ ag.name }}
+                    </mat-option>
+                  }
+                </mat-select>
+                <mat-hint>Published agents only</mat-hint>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" class="config-field">
+                <mat-label>Message</mat-label>
+                <textarea
+                  matInput
+                  rows="4"
+                  [ngModel]="n.configuration['message']"
+                  (ngModelChange)="updateConfig('message', $event)"
+                  placeholder="User prompt; use prior step output, e.g. {{ '{{' }}results.StepName.data.reply{{ '}}' }}"
+                ></textarea>
+                <mat-hint>
+                  Templates use
+                  {{ '{{' }}results.&lt;stepName&gt;.data…{{ '}}' }} from
+                  earlier activities, or
+                  {{ '{{' }}request…{{ '}}' }} from the trigger.
+                </mat-hint>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" class="config-field">
+                <mat-label>Conversation ID (optional)</mat-label>
+                <input
+                  matInput
+                  [ngModel]="n.configuration['conversationId']"
+                  (ngModelChange)="updateConfig('conversationId', $event)"
+                  placeholder="{{ '{{' }}request.conversationId{{ '}}' }}"
+                />
+              </mat-form-field>
+            }
+
             @case (types.BRANCH) {
               <p class="config-hint">
                 Connect multiple outputs from this node to create
@@ -552,6 +599,7 @@ import { RegistryService } from "../../../../../../core/services/registry.servic
 export class WorkflowNodeConfigComponent implements OnInit {
   private readonly channelAdmin = inject(ChannelAdminService);
   private readonly adapterService = inject(HttpAdapterService);
+  private readonly yoizenclawAdmin = inject(YoizenclawAdminService);
   readonly registryService = inject(RegistryService);
 
   readonly node = input<IWorkflowNode | null>(null);
@@ -567,6 +615,7 @@ export class WorkflowNodeConfigComponent implements OnInit {
   readonly types = EWorkflowNodeType;
   readonly channelAccounts = signal<IChannelAccount[]>([]);
   readonly adapters = signal<IAdapterDto[]>([]);
+  readonly yoizenclawAgents = signal<IYoizenclawAgent[]>([]);
 
   ngOnInit(): void {
     this.channelAdmin.listAccounts().subscribe({
@@ -576,6 +625,10 @@ export class WorkflowNodeConfigComponent implements OnInit {
       next: (list) => this.adapters.set(list),
     });
     this.registryService.loadServices();
+    this.yoizenclawAdmin.listAgents({ status: "published", limit: 100 }).subscribe({
+      next: (res) => this.yoizenclawAgents.set(res.agents),
+      error: () => this.yoizenclawAgents.set([]),
+    });
   }
 
   endpointsForAdapter(adapterId: unknown): IAdapterEndpointDto[] {

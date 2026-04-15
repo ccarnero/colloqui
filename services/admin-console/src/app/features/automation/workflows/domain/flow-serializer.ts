@@ -231,6 +231,33 @@ function nodeToAction(
         },
       };
 
+    case EWorkflowNodeType.AGENT_CALL: {
+      const conv = node.configuration["conversationId"];
+      const cust = node.configuration["customerName"];
+      const uid = node.configuration["userId"];
+      const ch = node.configuration["channel"];
+      return {
+        activity: "agentCall",
+        name: node.name,
+        args: {
+          agentId: (node.configuration["agentId"] as string) ?? "",
+          message: (node.configuration["message"] as string) ?? "",
+          ...(typeof conv === "string" && conv.length > 0
+            ? { conversationId: conv }
+            : {}),
+          ...(typeof cust === "string" && cust.length > 0
+            ? { customerName: cust }
+            : {}),
+          ...(typeof uid === "string" && uid.length > 0
+            ? { userId: uid }
+            : {}),
+          ...(typeof ch === "string" && ch.length > 0
+            ? { channel: ch }
+            : {}),
+        },
+      };
+    }
+
     case EWorkflowNodeType.BRANCH: {
       const targets = outgoing.get(node.key) ?? [];
       const branchAction: WorkflowAction = {

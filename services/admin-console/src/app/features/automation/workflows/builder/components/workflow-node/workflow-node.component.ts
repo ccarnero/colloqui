@@ -148,6 +148,7 @@ export class WorkflowNodeComponent {
       endpointCall: "HTTP Connector",
       serviceCall: "Service Call",
       serviceBusCall: "Publish Event",
+      agentCall: "Agent",
       branch: "Parallel Branch",
     };
     return labels[this.node().type] ?? this.node().type;

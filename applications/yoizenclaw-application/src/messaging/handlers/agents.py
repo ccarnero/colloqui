@@ -121,6 +121,43 @@ async def handle_agent_published(
             raise
 
 
+def _extract_llm_from_model_config(model_config: dict[str, Any]) -> dict[str, Any]:
+    """Build the ``llm`` dict from admin ``model_config``.
+
+    Aligns with admin-console ``getAgentLlmConfig``: prefer non-empty nested
+    ``model_config.llm``; otherwise read provider/model/credentials from the
+    root (legacy flat shape).
+    """
+    nested = model_config.get("llm")
+    if isinstance(nested, dict) and nested:
+        source: dict[str, Any] = nested
+    else:
+        source = model_config
+
+    credential_profile_id = source.get(
+        "credential_profile_id", source.get("credentialProfileId")
+    )
+    credential_id = source.get(
+        "credentialId",
+        source.get("credential_id", credential_profile_id),
+    )
+    credential_mode = source.get(
+        "credentialMode", source.get("credential_mode")
+    )
+    connector_id = source.get("connectorId", source.get("connector_id"))
+
+    if credential_mode is None:
+        credential_mode = "profile" if credential_id else "runtime-default"
+
+    return {
+        "provider": source.get("provider"),
+        "model": source.get("model"),
+        "credential_mode": credential_mode,
+        "credential_id": credential_id,
+        "connector_id": connector_id,
+    }
+
+
 def _build_agent_config_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Build a runtime agent config from published agent payload."""
     system_prompt = payload.get("system_prompt", "")
@@ -139,27 +176,9 @@ def _build_agent_config_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "system_prompt": system_prompt,
     }
 
-    # Build LLM config from model_config
-    llm = {}
+    llm: dict[str, Any] = {}
     if isinstance(model_config, dict):
-        credential_profile_id = model_config.get(
-            "credential_profile_id", model_config.get("credentialProfileId")
-        )
-        credential_id = model_config.get(
-            "credentialId",
-            model_config.get("credential_id", credential_profile_id),
-        )
-        credential_mode = model_config.get(
-            "credentialMode", model_config.get("credential_mode")
-        )
-
-        if credential_mode is None:
-            credential_mode = "profile" if credential_id else "runtime-default"
-
-        llm["provider"] = model_config.get("provider")
-        llm["model"] = model_config.get("model")
-        llm["credential_mode"] = credential_mode
-        llm["credential_id"] = credential_id
+        llm = _extract_llm_from_model_config(model_config)
 
     return {
         "name": payload.get("name", "Agent"),

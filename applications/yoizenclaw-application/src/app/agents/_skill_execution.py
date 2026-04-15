@@ -136,6 +136,7 @@ async def execute_skill_with_llm(
 
     instructions = "\n\n".join(filter(None, instructions_parts))
 
+    await llm_client._ensure_credentials()
     # Create skill agent with allowed tools
     skill_agent = PydanticAgent(
         llm_client._get_pydantic_model(),

@@ -189,8 +189,10 @@ class AgentManager:
 
             logger.info("Initializing agent manager runtime infrastructure...")
             self._prompts.reload_all()
-            self._reset_runtime_state()
-            await self._sync_runtime_store()
+            await self._channel_store.reload()
+            # Load persisted agent YAML from disk (agents/runtime/*.yaml) so a
+            # restart or cold start is configured before NATS republishes.
+            await self._reload()
             self._initialized = True
             logger.info("Agent manager runtime infrastructure initialized")
 

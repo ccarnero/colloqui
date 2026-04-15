@@ -24,7 +24,7 @@ def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     op.execute("""
-        CREATE TABLE IF NOT EXISTS jobs (
+        CREATE TABLE IF NOT EXISTS runtime_jobs (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             description TEXT,
@@ -41,16 +41,16 @@ def upgrade() -> None:
         )
     """)
     op.execute("""
-        CREATE INDEX IF NOT EXISTS idx_jobs_enabled
-        ON jobs(enabled)
+        CREATE INDEX IF NOT EXISTS idx_runtime_jobs_enabled
+        ON runtime_jobs(enabled)
     """)
     op.execute("""
-        CREATE INDEX IF NOT EXISTS idx_jobs_schedule_type
-        ON jobs(schedule_type)
+        CREATE INDEX IF NOT EXISTS idx_runtime_jobs_schedule_type
+        ON runtime_jobs(schedule_type)
     """)
 
     op.execute("""
-        CREATE TABLE IF NOT EXISTS job_executions (
+        CREATE TABLE IF NOT EXISTS runtime_job_executions (
             id TEXT PRIMARY KEY,
             job_id TEXT NOT NULL,
             status TEXT NOT NULL,
@@ -62,20 +62,20 @@ def upgrade() -> None:
             error_message TEXT,
             logs JSONB,
             retry_count INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+            FOREIGN KEY (job_id) REFERENCES runtime_jobs(id) ON DELETE CASCADE
         )
     """)
     op.execute("""
-        CREATE INDEX IF NOT EXISTS idx_job_executions_job_id
-        ON job_executions(job_id)
+        CREATE INDEX IF NOT EXISTS idx_runtime_job_executions_job_id
+        ON runtime_job_executions(job_id)
     """)
     op.execute("""
-        CREATE INDEX IF NOT EXISTS idx_job_executions_status
-        ON job_executions(status)
+        CREATE INDEX IF NOT EXISTS idx_runtime_job_executions_status
+        ON runtime_job_executions(status)
     """)
     op.execute("""
-        CREATE INDEX IF NOT EXISTS idx_job_executions_started_at
-        ON job_executions(started_at DESC)
+        CREATE INDEX IF NOT EXISTS idx_runtime_job_executions_started_at
+        ON runtime_job_executions(started_at DESC)
     """)
 
     op.execute("""
@@ -192,6 +192,6 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS channels")
     op.execute("DROP TABLE IF EXISTS agent_runtime_overrides")
     op.execute("DROP TABLE IF EXISTS embeddings")
-    op.execute("DROP TABLE IF EXISTS job_executions")
-    op.execute("DROP TABLE IF EXISTS jobs")
+    op.execute("DROP TABLE IF EXISTS runtime_job_executions")
+    op.execute("DROP TABLE IF EXISTS runtime_jobs")
     op.execute("DROP EXTENSION IF EXISTS vector")

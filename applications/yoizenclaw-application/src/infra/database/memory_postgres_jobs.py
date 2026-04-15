@@ -128,7 +128,7 @@ async def save_job(
     async with pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO jobs
+            INSERT INTO runtime_jobs
             (id, tenant_id, name, description, enabled, schedule_type,
              schedule_config, action_type, action_config, retry_policy,
              timeout_seconds, tags, created_at, updated_at)
@@ -173,7 +173,7 @@ async def get_job(
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM jobs WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+            "SELECT * FROM runtime_jobs WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
             job_id,
             tenant_id,
         )
@@ -207,7 +207,7 @@ async def get_all_jobs(
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT * FROM jobs WHERE tenant_id = $1 AND deleted_at IS NULL",
+            "SELECT * FROM runtime_jobs WHERE tenant_id = $1 AND deleted_at IS NULL",
             tenant_id,
         )
 
@@ -251,13 +251,13 @@ async def delete_job(
     async with pool.acquire() as conn:
         if hard_delete:
             result = await conn.execute(
-                "DELETE FROM jobs WHERE id = $1 AND tenant_id = $2",
+                "DELETE FROM runtime_jobs WHERE id = $1 AND tenant_id = $2",
                 job_id,
                 tenant_id,
             )
         else:
             result = await conn.execute(
-                "UPDATE jobs SET deleted_at = NOW() WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+                "UPDATE runtime_jobs SET deleted_at = NOW() WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
                 job_id,
                 tenant_id,
             )
@@ -273,7 +273,7 @@ async def save_job_execution(
     async with pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO job_executions
+            INSERT INTO runtime_job_executions
             (id, tenant_id, job_id, status, triggered_by, event_payload,
              started_at, finished_at, result, error_message, logs, retry_count)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -314,7 +314,7 @@ async def get_job_executions(
 
     async with pool.acquire() as conn:
         count_query = (
-            "SELECT COUNT(*) FROM job_executions"
+            "SELECT COUNT(*) FROM runtime_job_executions"
             " WHERE job_id = $1 AND tenant_id = $2"
         )
         count_params: list[object] = [job_id, tenant_id]
@@ -327,7 +327,7 @@ async def get_job_executions(
         if status:
             rows = await conn.fetch(
                 """
-                SELECT * FROM job_executions
+                SELECT * FROM runtime_job_executions
                 WHERE job_id = $1 AND tenant_id = $2 AND status = $3
                 ORDER BY started_at DESC
                 LIMIT $4 OFFSET $5
@@ -337,7 +337,7 @@ async def get_job_executions(
         else:
             rows = await conn.fetch(
                 """
-                SELECT * FROM job_executions
+                SELECT * FROM runtime_job_executions
                 WHERE job_id = $1 AND tenant_id = $2
                 ORDER BY started_at DESC
                 LIMIT $3 OFFSET $4
@@ -366,7 +366,7 @@ async def get_recent_job_executions(
     """Retrieve recent executions across all jobs or a single job."""
     from src.services.domain.entities import JobExecution
 
-    count_query = "SELECT COUNT(*) FROM job_executions"
+    count_query = "SELECT COUNT(*) FROM runtime_job_executions"
     count_conditions: list[str] = []
     count_params: list[object] = [tenant_id]
     count_conditions.append("tenant_id = $1")
@@ -385,7 +385,7 @@ async def get_recent_job_executions(
     async with pool.acquire() as conn:
         total = await conn.fetchval(count_query, *count_params)
 
-    data_query = "SELECT * FROM job_executions"
+    data_query = "SELECT * FROM runtime_job_executions"
     data_conditions: list[str] = []
     params: list[object] = [tenant_id]
     data_conditions.append("tenant_id = $1")
@@ -456,7 +456,7 @@ async def get_job_metrics(
                 COUNT(*) FILTER (WHERE status = 'cancelled') as cancelled,
                 COUNT(*) FILTER (WHERE status = 'skipped') as skipped,
                 AVG(EXTRACT(EPOCH FROM (finished_at - started_at))) as avg_duration
-            FROM job_executions
+            FROM runtime_job_executions
             WHERE job_id = $1 AND tenant_id = $2
             """,
             job_id,
@@ -487,7 +487,7 @@ async def get_overall_job_metrics(
                         ELSE NULL
                     END
                 ) as avg_duration
-            FROM job_executions
+            FROM runtime_job_executions
             WHERE tenant_id = $1
             """,
             tenant_id,
@@ -504,7 +504,7 @@ async def cleanup_old_job_executions(
     """Remove old job execution records for a tenant."""
     async with pool.acquire() as conn:
         result = await conn.execute(
-            "DELETE FROM job_executions WHERE tenant_id = $1 AND started_at < NOW() - (INTERVAL '1 day' * $2)",
+            "DELETE FROM runtime_job_executions WHERE tenant_id = $1 AND started_at < NOW() - (INTERVAL '1 day' * $2)",
             tenant_id,
             retention_days,
         )
