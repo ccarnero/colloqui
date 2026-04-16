@@ -16,6 +16,7 @@ import {
   FCanvasComponent,
   type FCreateNodeEvent,
   type FCreateConnectionEvent,
+  type FReassignConnectionEvent,
 } from "@foblex/flow";
 
 import {
@@ -32,6 +33,57 @@ import { WorkflowApiService } from "../services/workflow-api.service";
 import { WorkflowNodeComponent } from "./components/workflow-node/workflow-node.component";
 import { WorkflowPaletteComponent } from "./components/workflow-palette/workflow-palette.component";
 import { WorkflowNodeConfigComponent } from "./components/workflow-node-config/workflow-node-config.component";
+
+const CONNECTOR_OUTPUT_SUFFIX = "-out";
+const CONNECTOR_INPUT_SUFFIX = "-in";
+
+/**
+ * Maps a node output connector id (`{nodeKey}-out`) to the workflow node key.
+ */
+function connectorOutputToNodeKey(connectorId: string): string {
+  return connectorId.endsWith(CONNECTOR_OUTPUT_SUFFIX)
+    ? connectorId.slice(0, -CONNECTOR_OUTPUT_SUFFIX.length)
+    : connectorId;
+}
+
+/**
+ * Maps a node input connector id (`{nodeKey}-in`) to the workflow node key.
+ */
+function connectorInputToNodeKey(connectorId: string): string {
+  return connectorId.endsWith(CONNECTOR_INPUT_SUFFIX)
+    ? connectorId.slice(0, -CONNECTOR_INPUT_SUFFIX.length)
+    : connectorId;
+}
+
+/**
+ * Keeps a single incoming edge per target and at most one outgoing edge per
+ * non-branch source, matching the canvas rules used on create/reassign.
+ */
+function pruneConflictingConnections(
+  all: Record<string, IWorkflowConnection>,
+  winner: IWorkflowConnection,
+  winnerKey: string,
+  nodes: Record<string, IWorkflowNode>,
+): Record<string, IWorkflowConnection> {
+  const sourceAllowsMany =
+    nodes[winner.source]?.type === EWorkflowNodeType.BRANCH;
+
+  const next: Record<string, IWorkflowConnection> = {};
+  for (const [k, c] of Object.entries(all)) {
+    if (k === winnerKey) {
+      continue;
+    }
+    if (c.target === winner.target) {
+      continue;
+    }
+    if (!sourceAllowsMany && c.source === winner.source) {
+      continue;
+    }
+    next[k] = c;
+  }
+  next[winnerKey] = winner;
+  return next;
+}
 
 @Component({
   selector: "app-workflow-builder",
@@ -91,6 +143,7 @@ import { WorkflowNodeConfigComponent } from "./components/workflow-node-config/w
             (fLoaded)="onCanvasLoaded()"
             (fCreateNode)="onCreateNode($event)"
             (fCreateConnection)="onCreateConnection($event)"
+            (fReassignConnection)="onReassignConnection($event)"
           >
             <f-background />
 
@@ -102,6 +155,7 @@ import { WorkflowNodeConfigComponent } from "./components/workflow-node-config/w
                   [fConnectionId]="conn.key"
                   [fOutputId]="conn.source + '-out'"
                   [fInputId]="conn.target + '-in'"
+                  [fReassignableStart]="true"
                   fType="bezier"
                   fBehavior="floating"
                 />
@@ -315,8 +369,8 @@ export class WorkflowBuilderComponent implements OnInit {
   onCreateConnection(event: FCreateConnectionEvent): void {
     if (!event.fInputId) return;
 
-    const sourceNode = event.fOutputId.replace("-out", "");
-    const targetNode = event.fInputId.replace("-in", "");
+    const sourceNode = connectorOutputToNodeKey(event.fOutputId);
+    const targetNode = connectorInputToNodeKey(event.fInputId);
 
     const conn: IWorkflowConnection = {
       key: `conn-${Date.now()}`,
@@ -325,10 +379,61 @@ export class WorkflowBuilderComponent implements OnInit {
       type: EWorkflowConnectionType.DEFAULT,
     };
 
-    this.flow.update((f) => ({
-      ...f,
-      connections: { ...f.connections, [conn.key]: conn },
-    }));
+    this.flow.update((f) => {
+      const merged = { ...f.connections, [conn.key]: conn };
+      const connections = pruneConflictingConnections(
+        merged,
+        conn,
+        conn.key,
+        f.nodes,
+      );
+      return { ...f, connections };
+    });
+  }
+
+  /**
+   * Persists drag-to-reconnect after Foblex emits the final endpoint ids.
+   *
+   * @param event - Completed reassignment from `f-flow[fDraggable]`.
+   */
+  onReassignConnection(event: FReassignConnectionEvent): void {
+    let nextSourceKey: string | undefined;
+    let nextTargetKey: string | undefined;
+
+    if (event.endpoint === "source") {
+      if (event.nextSourceId === undefined) {
+        return;
+      }
+      nextSourceKey = connectorOutputToNodeKey(event.nextSourceId);
+    } else {
+      if (event.nextTargetId === undefined) {
+        return;
+      }
+      nextTargetKey = connectorInputToNodeKey(event.nextTargetId);
+    }
+
+    this.flow.update((f) => {
+      const existing = f.connections[event.connectionId];
+      if (!existing) {
+        return f;
+      }
+
+      const updated: IWorkflowConnection = {
+        ...existing,
+        source: nextSourceKey ?? existing.source,
+        target: nextTargetKey ?? existing.target,
+      };
+
+      const merged = { ...f.connections, [event.connectionId]: updated };
+      const connections = pruneConflictingConnections(
+        merged,
+        updated,
+        event.connectionId,
+        f.nodes,
+      );
+
+      return { ...f, connections };
+    });
   }
 
   selectNode(key: string): void {

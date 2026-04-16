@@ -29,7 +29,7 @@ describe("HttpAdapterService", () => {
   });
 
   it("lists adapters with context query", () => {
-    service.list("internal").subscribe();
+    service.list({ context: "internal" }).subscribe();
     const req = httpMock.expectOne(
       `${environment.apiUrl}/adapters?context=internal`,
     );

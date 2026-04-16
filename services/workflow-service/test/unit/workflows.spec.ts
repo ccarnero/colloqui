@@ -154,6 +154,53 @@ describe("runWorkflow (temporal/workflows)", () => {
     });
   });
 
+  it("resolves templates in serviceCall path and nested data", async () => {
+    executeJsFunction.mockImplementation(() =>
+      Promise.resolve({
+        status: 200,
+        data: { sku: "SKU1" },
+        headers: {},
+      }),
+    );
+    executeServiceCall.mockClear();
+    await runWorkflow({
+      ...base,
+      actions: [
+        {
+          activity: "jsFunction",
+          name: "prev",
+          args: { code: "return {}" },
+        },
+        {
+          activity: "serviceCall",
+          name: "svc",
+          args: {
+            serviceId: "svc-id",
+            method: "POST",
+            path: "/items/{{results.prev.data.sku}}/detail",
+            data: {
+              ref: "{{results.prev.data.sku}}",
+            },
+          },
+        },
+      ],
+    });
+    expect(executeServiceCall).toHaveBeenCalledWith(
+      {
+        serviceId: "svc-id",
+        method: "POST",
+        path: "/items/SKU1/detail",
+        data: {
+          ref: "SKU1",
+        },
+      },
+      "tenant-1",
+    );
+    executeJsFunction.mockImplementation(() =>
+      Promise.resolve({ computed: 1 }),
+    );
+  });
+
   it("runs agentCall via http activities", async () => {
     executeAgentCall.mockClear();
     const ctx = await runWorkflow({

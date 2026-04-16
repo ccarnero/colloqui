@@ -46,6 +46,7 @@ export const DEFAULT_NODE_MAP: Record<EWorkflowNodeType, INodeDefault> = {
       endpointId: "",
     },
   },
+  // Optional `data` (JSON body) is edited in the builder for POST/PUT/PATCH; GET/DELETE ignore it.
   [EWorkflowNodeType.SERVICE_CALL]: {
     name: "Service Call",
     icon: "dns",

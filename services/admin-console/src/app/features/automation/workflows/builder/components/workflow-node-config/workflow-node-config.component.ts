@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  effect,
   inject,
   input,
   output,
@@ -197,10 +198,6 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                       Custom number
                     </mat-option>
                   </mat-select>
-                  <mat-hint>
-                    "Reply to sender" uses the number
-                    that initiated the conversation
-                  </mat-hint>
                 </mat-form-field>
 
                 @if (
@@ -445,7 +442,6 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                     </mat-option>
                   }
                 </mat-select>
-                <mat-hint>Select a registered service</mat-hint>
               </mat-form-field>
               <mat-form-field appearance="outline" class="config-field">
                 <mat-label>Method</mat-label>
@@ -456,6 +452,7 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                   <mat-option value="GET">GET</mat-option>
                   <mat-option value="POST">POST</mat-option>
                   <mat-option value="PUT">PUT</mat-option>
+                  <mat-option value="PATCH">PATCH</mat-option>
                   <mat-option value="DELETE">DELETE</mat-option>
                 </mat-select>
               </mat-form-field>
@@ -465,8 +462,26 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                   matInput
                   [ngModel]="n.configuration['path']"
                   (ngModelChange)="updateConfig('path', $event)"
+                  placeholder="/resource/{{ '{{' }}results.StepName.data.id{{ '}}' }}"
                 />
               </mat-form-field>
+              @if (serviceCallMethodHasBody(n.configuration["method"])) {
+                <mat-form-field appearance="outline" class="config-field">
+                  <mat-label>JSON object or array; put templates in string values (same
+                    {{ '{{' }}results.&lt;stepName&gt;.data…{{ '}}' }} as Path).</mat-label>
+                  <textarea
+                    matInput
+                    class="config-json-textarea"
+                    rows="8"
+                    [ngModel]="serviceCallBodyDraft()"
+                    (ngModelChange)="onServiceCallBodyDraft($event)"
+                    (blur)="onServiceCallBodyBlur()"
+                  ></textarea>
+                  @if (serviceCallBodyError()) {
+                    <mat-error>{{ serviceCallBodyError() }}</mat-error>
+                  }
+                </mat-form-field>
+              }
             }
 
             @case (types.SERVICE_BUS_CALL) {
@@ -506,12 +521,6 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                   (ngModelChange)="updateConfig('message', $event)"
                   placeholder="User prompt; use prior step output, e.g. {{ '{{' }}results.StepName.data.reply{{ '}}' }}"
                 ></textarea>
-                <mat-hint>
-                  Templates use
-                  {{ '{{' }}results.&lt;stepName&gt;.data…{{ '}}' }} from
-                  earlier activities, or
-                  {{ '{{' }}request…{{ '}}' }} from the trigger.
-                </mat-hint>
               </mat-form-field>
 
               <mat-form-field appearance="outline" class="config-field">
@@ -594,6 +603,10 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
       padding: 12px 16px;
       border-top: 1px solid var(--border);
     }
+    .config-json-textarea {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
   `,
 })
 export class WorkflowNodeConfigComponent implements OnInit {
@@ -616,6 +629,28 @@ export class WorkflowNodeConfigComponent implements OnInit {
   readonly channelAccounts = signal<IChannelAccount[]>([]);
   readonly adapters = signal<IAdapterDto[]>([]);
   readonly yoizenclawAgents = signal<IYoizenclawAgent[]>([]);
+
+  /** Draft JSON for Service Call body; synced when the selected node key changes. */
+  readonly serviceCallBodyDraft = signal("");
+  readonly serviceCallBodyError = signal<string | null>(null);
+  private lastServiceCallSyncKey: string | null = null;
+
+  constructor() {
+    effect(() => {
+      const n = this.node();
+      if (n?.type !== EWorkflowNodeType.SERVICE_CALL) {
+        this.lastServiceCallSyncKey = null;
+        return;
+      }
+      if (this.lastServiceCallSyncKey !== n.key) {
+        this.lastServiceCallSyncKey = n.key;
+        this.serviceCallBodyDraft.set(
+          this.formatServiceCallData(n.configuration["data"]),
+        );
+        this.serviceCallBodyError.set(null);
+      }
+    });
+  }
 
   ngOnInit(): void {
     this.channelAdmin.listAccounts().subscribe({
@@ -691,6 +726,60 @@ export class WorkflowNodeConfigComponent implements OnInit {
     if (acc) {
       this.updateConfig("channel", acc.channel);
       this.updateConfig("provider", acc.provider);
+    }
+  }
+
+  /**
+   * Whether the HTTP method typically carries a JSON body in the builder.
+   */
+  serviceCallMethodHasBody(method: unknown): boolean {
+    return method === "POST" || method === "PUT" || method === "PATCH";
+  }
+
+  private formatServiceCallData(data: unknown): string {
+    if (data === undefined || data === null) {
+      return "";
+    }
+    if (typeof data !== "object") {
+      return String(data);
+    }
+    try {
+      return JSON.stringify(data, null, 2);
+    } catch {
+      return "";
+    }
+  }
+
+  onServiceCallBodyDraft(value: string): void {
+    this.serviceCallBodyDraft.set(value);
+  }
+
+  /**
+   * Parses and persists `data` on blur; empty input clears the body.
+   */
+  onServiceCallBodyBlur(): void {
+    const n = this.node();
+    if (!n || n.type !== EWorkflowNodeType.SERVICE_CALL) {
+      return;
+    }
+    const raw = this.serviceCallBodyDraft().trim();
+    if (raw === "") {
+      this.serviceCallBodyError.set(null);
+      this.updateConfig("data", undefined);
+      return;
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null) {
+        this.serviceCallBodyError.set(
+          "Body must be a JSON object or array.",
+        );
+        return;
+      }
+      this.serviceCallBodyError.set(null);
+      this.updateConfig("data", parsed);
+    } catch {
+      this.serviceCallBodyError.set("Invalid JSON.");
     }
   }
 }
