@@ -6,9 +6,14 @@ import {
   AuditService,
   type IAuditEvent,
 } from "../../src/modules/audit/audit.service";
-import { JETSTREAM_CLIENT } from "../../src/providers/nats.provider";
+import { NATS_CONNECTION } from "../../src/providers/nats.provider";
 import { TenantConnectionManager, type Sql } from "@yoizen/database";
-import { makeMockJetStreamConsumer } from "../make-mock-consumer";
+
+const mockNatsConnection = {
+  subscribe: mock(() => ({
+    unsubscribe: mock(() => {}),
+  })),
+};
 
 describe("AuditService", () => {
   let service: AuditService;
@@ -46,7 +51,7 @@ describe("AuditService", () => {
       providers: [
         AuditRepository,
         AuditService,
-        { provide: JETSTREAM_CLIENT, useValue: makeMockJetStreamConsumer() },
+        { provide: NATS_CONNECTION, useValue: mockNatsConnection },
         { provide: TenantConnectionManager, useValue: mockTenantMgr },
       ],
     }).compile();

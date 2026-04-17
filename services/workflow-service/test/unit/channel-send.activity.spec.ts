@@ -53,25 +53,26 @@ describe("executeChannelSend", () => {
 
     expect(result.published).toBe(true);
     expect(result.subject).toBe(
-      "evt.acme.messaging.whatsapp.meta.send.v1",
+      "evt.acme.channel-service.messaging.whatsapp.meta.send.v1",
     );
     expect(mockPublish).toHaveBeenCalledTimes(1);
 
     const [subject, payload] = mockPublish.mock.calls[0];
     expect(subject).toBe(
-      "evt.acme.messaging.whatsapp.meta.send.v1",
+      "evt.acme.channel-service.messaging.whatsapp.meta.send.v1",
     );
     expect(payload).toBeDefined();
 
     const envelope = JSON.parse(
       new TextDecoder().decode(payload as Uint8Array),
     );
-    expect(envelope.tenantId).toBe("acme");
+    expect(envelope.tenant).toBe("acme");
     expect(envelope.kind).toBe("send");
-    expect(envelope.data.to).toBe("+5491100000000");
-    expect(envelope.data.type).toBe("text");
-    expect(envelope.data.text).toBe("Hello");
-    expect(envelope.data.accountId).toBe("acc-1");
+    const payloadData = envelope.data.payload ?? envelope.data;
+    expect(payloadData.to).toBe("+5491100000000");
+    expect(payloadData.type).toBe("text");
+    expect(payloadData.text).toBe("Hello");
+    expect(payloadData.accountId).toBe("acc-1");
   });
 
   it("publishes telegram messages correctly", async () => {
@@ -88,7 +89,7 @@ describe("executeChannelSend", () => {
     );
 
     expect(result.subject).toBe(
-      "evt.tenant-x.messaging.telegram.telegram.send.v1",
+      "evt.tenant-x.channel-service.messaging.telegram.telegram.send.v1",
     );
   });
 

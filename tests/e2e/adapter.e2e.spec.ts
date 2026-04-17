@@ -135,7 +135,7 @@ async function pollEvent(eventId: string): Promise<ProcessedResult> {
       }
       return null;
     },
-    { timeoutMs: 30_000 },
+    { timeoutMs: 60_000 },
   );
 }
 

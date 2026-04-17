@@ -4,10 +4,20 @@ import {
   OnModuleInit,
   OnModuleDestroy,
 } from "@nestjs/common";
-import type { NatsConnection, Subscription } from "nats";
-import { PinoLoggerService } from "@yoizen/observability";
+import type { MsgHdrs, NatsConnection, Subscription } from "nats";
+import { headers as natsHeaders } from "nats";
+import { context as otelContext } from "@opentelemetry/api";
+import {
+  PinoLoggerService,
+  logWithEnvelope,
+  startNatsConsumerSpan,
+} from "@yoizen/observability";
 import type { ChannelEnvelope, AutoReplyRule, Channel } from "@yoizen/shared";
-import { CHANNEL_SUBJECT_PREFIX, CHANNEL_DOMAIN } from "@yoizen/shared";
+import {
+  CHANNEL_SUBJECT_PREFIX,
+  CHANNEL_PRODUCER,
+  CHANNEL_DOMAIN,
+} from "@yoizen/shared";
 import { NATS_CONNECTION } from "../../providers/nats.provider";
 import { EgressService } from "../egress/egress.service";
 import { AutoReplyRepository } from "./auto-reply.repository";
@@ -49,10 +59,12 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
       30_000,
     );
 
-    const subject = `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_DOMAIN}.*.*.received.v1`;
+    const subject = `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_PRODUCER}.${CHANNEL_DOMAIN}.*.*.received.v1`;
     this.subscription = this.nc.subscribe(subject, {
       callback: (_err, msg) => {
-        this.handleMessage(msg).catch((err) => {
+        this.handleMessage(
+          msg as { data: Uint8Array; headers?: MsgHdrs; subject: string },
+        ).catch((err) => {
           this.logger.warn(
             `Auto-reply handler error: ${err instanceof Error ? err.message : err}`,
           );
@@ -72,14 +84,27 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async handleMessage(msg: { data: Uint8Array }): Promise<void> {
+  private async handleMessage(msg: {
+    data: Uint8Array;
+    headers?: MsgHdrs;
+    subject: string;
+  }): Promise<void> {
     const decoder = new TextDecoder();
     const envelope = JSON.parse(decoder.decode(msg.data)) as ChannelEnvelope;
 
-    const text = envelope.data.text as string | undefined;
+    const payload: Record<string, unknown> =
+      (envelope.data?.payload as Record<string, unknown> | null | undefined) ??
+      (envelope.data as unknown as Record<string, unknown>);
+    const text = payload.text as string | undefined;
     if (!text) return;
 
-    const cacheKey = `${envelope.tenantId}:${envelope.data.accountId}`;
+    const tenantId = envelope.tenant;
+    const accountId =
+      (payload.accountId as string | undefined) ??
+      (envelope.accountid as string | undefined);
+    if (!tenantId || !accountId) return;
+
+    const cacheKey = `${tenantId}:${accountId}`;
     const rules = this.rulesCache.get(cacheKey);
     if (!rules || rules.length === 0) return;
 
@@ -91,18 +116,42 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
 
     if (!matchedRule) return;
 
-    const from = envelope.data.from as string;
-    const accountId = envelope.data.accountId as string;
+    const from = payload.from as string;
 
-    this.logger.log(
-      `Auto-reply triggered: rule=${matchedRule.id} from=${from} tenant=${envelope.tenantId}`,
+    logWithEnvelope(
+      this.logger,
+      envelope,
+      "auto_reply.triggered",
+      `Auto-reply triggered rule=${matchedRule.id} from=${from}`,
     );
 
-    await this.egress.send(envelope.tenantId, accountId, {
-      to: from,
-      type: "text",
-      text: matchedRule.replyText,
-    });
+    const incomingHeaders = msg.headers ?? natsHeaders();
+    const { span, context: spanCtx } = startNatsConsumerSpan(
+      "channel-service",
+      msg.subject,
+      incomingHeaders,
+    );
+
+    try {
+      await otelContext.with(spanCtx, () =>
+        this.egress.send(
+          tenantId,
+          accountId,
+          {
+            to: from,
+            type: "text",
+            text: matchedRule.replyText,
+          },
+          {
+            causationId: envelope.id ?? null,
+            correlationId: envelope.correlation_id ?? undefined,
+            incomingDepth: envelope.transport?.depth ?? 0,
+          },
+        ),
+      );
+    } finally {
+      span.end();
+    }
   }
 
   private async refreshRulesCache(): Promise<void> {

@@ -1,10 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { JetStreamClient, NatsConnection } from "nats";
+import type { JetStreamClient, JetStreamManager, NatsConnection } from "nats";
 import { headers as natsHeaders } from "nats";
 import type Redis from "ioredis";
 import type { Observable } from "rxjs";
 import {
-  SUBJECT_PREFIX,
   RESULT_KEY_PREFIX,
   PENDING_KEY_PREFIX,
   CALLBACK_KEY_PREFIX,
@@ -12,13 +11,35 @@ import {
   CALLBACK_TTL,
   RESULT_CACHE_MAX,
   TENANT_HEADER,
+  canonicalByteLength,
+  computeIdempotencyKey,
+  computePayloadChecksum,
 } from "@yoizen/shared";
 import type { EventEnvelope } from "@yoizen/shared";
-import { JETSTREAM, NATS_CONNECTION } from "../../providers/nats.provider";
+import {
+  activeOrRandomTraceId,
+  injectTraceContext,
+  startNatsProducerSpan,
+} from "@yoizen/observability";
+import {
+  JETSTREAM,
+  JETSTREAM_MANAGER,
+  NATS_CONNECTION,
+  ensureTenantIngressStream,
+} from "../../providers/nats.provider";
 import { REDIS_CLIENT } from "../../providers/redis.provider";
-import { randomUUID, createHash } from "crypto";
+import { randomUUID } from "crypto";
 import type { ISseEvent } from "../../constants";
 import { createNatsMultiSubjectObservable } from "../../utils/nats-stream-observable.util";
+
+/**
+ * Canonical 8-token subject for platform events published by the
+ * api-gateway (wdocs 02 §9.2).
+ * Format: `evt.<tenant>.api-gateway.platform.events.gateway.<type>.v1`.
+ */
+function buildCanonicalGatewaySubject(tenantId: string, type: string): string {
+  return `evt.${tenantId}.api-gateway.platform.events.gateway.${type}.v1`;
+}
 
 /** Single options bag for {@link EventsService.publish} (avoids long positional args). */
 interface IPublishEventParams {
@@ -29,6 +50,14 @@ interface IPublishEventParams {
   enrichAdapter?: { adapterId: string; endpointId: string };
   forwardAdapter?: { adapterId: string; endpointId: string };
   adapterId?: string;
+  /**
+   * Optional business-level correlation id. Reused across the entire
+   * causal chain triggered by this publish. Defaults to the new event
+   * id when not provided by the caller.
+   */
+  correlationId?: string;
+  /** Optional causation id. Defaults to `null` (root event). */
+  causationId?: string;
 }
 
 @Injectable()
@@ -38,6 +67,7 @@ export class EventsService {
 
   constructor(
     @Inject(JETSTREAM) private readonly js: JetStreamClient,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
@@ -57,34 +87,36 @@ export class EventsService {
       enrichAdapter,
       forwardAdapter,
       adapterId,
+      correlationId,
+      causationId,
     } = params;
     const id = randomUUID();
-    const subject = `${SUBJECT_PREFIX}.${type}`;
+    const subject = buildCanonicalGatewaySubject(tenantId, type);
     const now = new Date().toISOString();
-    const payloadJson = JSON.stringify(payload);
-    const payloadBytes = Buffer.byteLength(payloadJson, "utf8");
-    const payloadChecksum = createHash("sha256")
-      .update(payloadJson)
-      .digest("hex");
+
+    const payloadBytes = canonicalByteLength(payload);
+    const payloadChecksum = computePayloadChecksum(payload);
+    const idempotencykey = computeIdempotencyKey(payload);
+    const traceid = activeOrRandomTraceId();
 
     const envelope: EventEnvelope = {
       specversion: "1.0",
       id,
-      source: subject,
+      source: "//api-gateway/events",
       type,
-      resource: type,
+      resource: `tenant/${tenantId}/event/${type}`,
       time: now,
-      traceid: id,
-      causation_id: null,
-      correlation_id: id,
+      traceid,
+      causation_id: causationId ?? null,
+      correlation_id: correlationId ?? id,
       tenant: tenantId,
       producer: "api-gateway",
       domain: "platform",
       channel: "events",
       provider: "gateway",
       accountid: tenantId,
-      idempotencykey: id,
-      transport: { method: "stream", protocol: "internal" },
+      idempotencykey,
+      transport: { method: "stream", protocol: "internal", depth: 0 },
       data: {
         received_at: now,
         payload_inline: true,
@@ -102,6 +134,16 @@ export class EventsService {
 
     const hdrs = natsHeaders();
     hdrs.set(TENANT_HEADER, tenantId);
+    hdrs.set("Nats-Msg-Id", idempotencykey);
+    if (envelope.correlation_id) {
+      hdrs.set("X-Correlation-Id", envelope.correlation_id);
+    }
+    if (envelope.causation_id) {
+      hdrs.set("X-Causation-Id", envelope.causation_id);
+    }
+    injectTraceContext(hdrs);
+
+    const { span } = startNatsProducerSpan("api-gateway", subject, hdrs);
 
     const pipeline = this.redis.pipeline();
     pipeline.setex(
@@ -117,10 +159,21 @@ export class EventsService {
       );
     }
 
-    await Promise.all([
-      this.js.publish(subject, this.encoder.encode(body), { headers: hdrs }),
-      pipeline.exec(),
-    ]);
+    // Ensure the per-tenant INGRESS stream exists before publishing
+    // (wdocs 02 §11). Idempotent — first call per tenant creates the
+    // stream; subsequent calls short-circuit via cache.
+    await ensureTenantIngressStream(this.jsm, tenantId);
+
+    const bodyBytes = this.encoder.encode(body);
+
+    try {
+      await Promise.all([
+        this.js.publish(subject, bodyBytes, { headers: hdrs }),
+        pipeline.exec(),
+      ]);
+    } finally {
+      span.end();
+    }
 
     return id;
   }
@@ -152,16 +205,25 @@ export class EventsService {
   }
 
   /**
-   * SSE stream of events for the tenant, filtered by optional type list.
+   * SSE stream of canonical platform events for the tenant, filtered
+   * by optional type list.
    *
-   * @param types - Empty array means subscribe to `events.>`.
+   * Subscribes to per-tenant `evt.<tenant>.>` (wdocs 02 §11). When
+   * `types` is non-empty, subscribes to the specific gateway kinds
+   * `evt.<tenant>.api-gateway.platform.events.gateway.<type>.v1`.
+   *
+   * @param types - Empty array means subscribe to all canonical events
+   *                for this tenant.
    * @param tenantId - Tenant scope (drops foreign tenant messages).
    */
   streamEvents(types: string[], tenantId: string): Observable<ISseEvent> {
     const subjects =
       types.length === 0
-        ? [`${SUBJECT_PREFIX}.>`]
-        : types.map((t) => `${SUBJECT_PREFIX}.${t}`);
+        ? [`evt.${tenantId}.>`]
+        : types.map(
+            (t) =>
+              `evt.${tenantId}.api-gateway.platform.events.gateway.${t}.v1`,
+          );
 
     return createNatsMultiSubjectObservable(this.nc, subjects, (msg) => {
       const data = msg.json() as EventEnvelope;

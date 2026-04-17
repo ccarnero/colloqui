@@ -4,11 +4,7 @@ import { MetricsModule } from "./modules/metrics/metrics.module";
 import { HealthModule } from "./modules/health/health.module";
 import {
   NATS_CONNECTION,
-  JETSTREAM_MANAGER,
-  JETSTREAM_CLIENT,
   natsProvider,
-  jetStreamManagerProvider,
-  jetStreamClientProvider,
 } from "./providers/nats.provider";
 import { TenantConnectionManager } from "@yoizen/database";
 
@@ -22,14 +18,10 @@ import { TenantConnectionManager } from "@yoizen/database";
   ],
   providers: [
     natsProvider,
-    jetStreamManagerProvider,
-    jetStreamClientProvider,
     TenantConnectionManager,
   ],
   exports: [
     NATS_CONNECTION,
-    JETSTREAM_MANAGER,
-    JETSTREAM_CLIENT,
     TenantConnectionManager,
   ],
 })

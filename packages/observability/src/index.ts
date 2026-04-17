@@ -48,6 +48,14 @@ export {
 } from './trace-utils';
 
 export {
+  envelopeLogFields,
+  logWithEnvelope,
+  activeOrRandomTraceId,
+  type IEnvelopeLogContext,
+  type IStructuredLogFields,
+} from './envelope-logging';
+
+export {
   trace,
   context,
   SpanKind,

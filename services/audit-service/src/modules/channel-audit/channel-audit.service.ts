@@ -4,8 +4,13 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import type { NatsConnection, Subscription } from "nats";
-import { PinoLoggerService } from "@yoizen/observability";
+import type { Msg, NatsConnection, Subscription } from "nats";
+import { context as otelContext } from "@opentelemetry/api";
+import {
+  PinoLoggerService,
+  logWithEnvelope,
+  startNatsConsumerSpan,
+} from "@yoizen/observability";
 import { NATS_CONNECTION } from "../../providers/nats.provider";
 import { TenantConnectionManager } from "@yoizen/database";
 import {
@@ -75,20 +80,65 @@ export class ChannelAuditService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async handleMessage(msg: {
-    data: Uint8Array;
-    subject: string;
-  }): Promise<void> {
+  private async handleMessage(msg: Msg): Promise<void> {
     const decoder = new TextDecoder();
     const envelope = JSON.parse(decoder.decode(msg.data)) as ChannelEnvelope;
 
-    const { tenantId } = envelope;
-    if (!tenantId) return;
+    const incomingHeaders = msg.headers ?? {
+      keys: () => [],
+      values: () => [],
+      get: () => "",
+      set: () => {},
+    };
+    const { span, context: ctx } = startNatsConsumerSpan(
+      "audit-service",
+      msg.subject,
+      incomingHeaders,
+    );
+    try {
+      await otelContext.with(ctx, () =>
+        this.persistChannelEnvelope(envelope, msg.subject),
+      );
+    } finally {
+      span.end();
+    }
+  }
+
+  private async persistChannelEnvelope(
+    envelope: ChannelEnvelope,
+    natsSubject: string,
+  ): Promise<void> {
+    const tenantId = envelope.tenant;
+    if (!tenantId) {
+      logWithEnvelope(
+        this.logger,
+        envelope,
+        "channel-audit.dropped",
+        "Dropping channel event: missing tenant",
+        "warn",
+      );
+      return;
+    }
 
     await this.ensureChannelEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
 
-    const data = envelope.data ?? {};
+    const data = (envelope.data ?? {}) as unknown as Record<string, unknown>;
+    const payload: Record<string, unknown> =
+    (envelope.data?.payload as Record<string, unknown> | null | undefined) ??
+    (envelope as unknown as Record<string, unknown>);
+  
+
+    const accountId =
+      envelope.accountid ?? (payload.accountId as string | undefined) ?? null;
+    const fromId = (payload.from as string | undefined) ?? null;
+    const toId = (payload.to as string | undefined) ?? null;
+    const messageType = (payload.type as string | undefined) ?? null;
+    const messageText = (payload.text as string | undefined) ?? null;
+    const providerMessageId =
+      (payload.messageId as string | undefined) ??
+      (payload.providerMessageId as string | undefined) ??
+      null;
 
     await sql`
       INSERT INTO channel_events (
@@ -102,18 +152,25 @@ export class ChannelAuditService implements OnModuleInit, OnModuleDestroy {
         ${envelope.channel},
         ${envelope.provider},
         ${envelope.kind},
-        ${(data.accountId as string) ?? null},
-        ${(data.from as string) ?? null},
-        ${(data.to as string) ?? null},
-        ${(data.type as string) ?? null},
-        ${(data.text as string) ?? null},
-        ${(data.providerMessageId as string) ?? null},
+        ${accountId},
+        ${fromId},
+        ${toId},
+        ${messageType},
+        ${messageText},
+        ${providerMessageId},
         ${JSON.stringify(data)},
-        ${msg.subject},
+        ${natsSubject},
         ${envelope.time ?? new Date().toISOString()}
       )
       ON CONFLICT (id) DO NOTHING
     `;
+
+    logWithEnvelope(
+      this.logger,
+      envelope,
+      "channel-audit.persist.ok",
+      `Channel event persisted (subject=${natsSubject})`,
+    );
   }
 
   private async ensureChannelEventsTable(tenantId: string): Promise<void> {

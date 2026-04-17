@@ -6,6 +6,7 @@ import {
   Param,
   Query,
   Req,
+  Headers,
   Sse,
   HttpCode,
   HttpStatus,
@@ -28,6 +29,8 @@ export class EventsController {
   async publish(
     @Req() req: ITenantScopedRequest,
     @Body() dto: EventDto,
+    @Headers("x-correlation-id") correlationId?: string,
+    @Headers("x-causation-id") causationId?: string,
   ): Promise<{ id: string; status: string }> {
     const id = await this.eventsService.publish({
       type: dto.type,
@@ -37,6 +40,8 @@ export class EventsController {
       enrichAdapter: dto.enrichAdapter,
       forwardAdapter: dto.forwardAdapter,
       adapterId: dto.adapterId,
+      correlationId: correlationId?.trim() || undefined,
+      causationId: causationId?.trim() || undefined,
     });
     return { id, status: "accepted" };
   }

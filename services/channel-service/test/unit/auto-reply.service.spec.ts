@@ -45,7 +45,7 @@ describe("AutoReplyService.handleMessage", () => {
     ).refreshRulesCache();
 
     const envelope = {
-      tenantId: "t1",
+      tenant: "t1",
       data: {
         text: "hello world",
         from: "user-1",
@@ -63,11 +63,18 @@ describe("AutoReplyService.handleMessage", () => {
     ).handleMessage(msg);
 
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith("t1", "a1", {
-      to: "user-1",
-      type: "text",
-      text: "Hi there",
-    });
+    expect(send).toHaveBeenCalledWith(
+      "t1",
+      "a1",
+      {
+        to: "user-1",
+        type: "text",
+        text: "Hi there",
+      },
+      expect.objectContaining({
+        incomingDepth: 0,
+      }),
+    );
   });
 
   it("does not send when no rule matches", async () => {

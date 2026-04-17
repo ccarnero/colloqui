@@ -38,7 +38,7 @@ export class ChannelStreamService {
 
     return createNatsMultiSubjectObservable(this.nc, subjects, (msg) => {
       const envelope = msg.json() as ChannelEnvelope;
-      if (envelope.tenantId !== tenantId) return null;
+      if (envelope.tenant !== tenantId) return null;
       return { data: envelope, type: msg.subject };
     });
   }

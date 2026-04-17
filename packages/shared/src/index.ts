@@ -1,15 +1,4 @@
 export {
-  STREAM_NAME,
-  STREAM_SUBJECTS,
-  CONSUMER_NAME,
-  AUDIT_CONSUMER_NAME,
-  METRICS_CONSUMER_NAME,
-  METRICS_SUBJECT,
-  SUBJECT_PREFIX,
-  RESULTS_STREAM_NAME,
-  RESULTS_STREAM_SUBJECTS,
-  RESULTS_SUBJECT_PREFIX,
-  WEBHOOK_CONSUMER_NAME,
   WEBHOOK_DLQ_SUBJECT,
   WEBHOOK_MAX_RETRIES,
   WEBHOOK_RETRY_DELAYS,
@@ -24,8 +13,6 @@ export {
   CALLBACK_TTL,
   RESULT_CACHE_MAX,
   STREAM_MAX_AGE_NS,
-  STREAM_MAX_BYTES,
-  RESULTS_STREAM_MAX_BYTES,
   MAX_DELIVER,
   TENANT_HEADER,
   SCHEDULER_DEFAULT_TIMEOUT_MS,
@@ -86,6 +73,28 @@ export type {
   CompletionEvent,
   MetricsPayload,
 } from './interfaces';
+
+export {
+  canonicalJson,
+  sha256Canonical,
+  computeIdempotencyKey,
+  computePayloadChecksum,
+  canonicalByteLength,
+  buildSubject,
+  parseSubject,
+  deriveEnvelope,
+  DepthExceededError,
+  MAX_DEPTH_BY_CATEGORY,
+  DEFAULT_MAX_DEPTH,
+  isCompliantEnvelope,
+} from './envelope.utils';
+
+export type {
+  ProducerCategory,
+  BuildSubjectParams,
+  ParsedSubject,
+  DeriveEnvelopeOverrides,
+} from './envelope.utils';
 
 export {
   ACCESS_TOKEN_TTL,
@@ -180,6 +189,7 @@ export {
   CHANNEL_STREAM_SUBJECTS_PATTERN,
   CHANNEL_CONSUMER_NAME,
   CHANNEL_SUBJECT_PREFIX,
+  CHANNEL_PRODUCER,
   CHANNEL_DOMAIN,
   CHANNEL_STREAM_MAX_AGE_NS,
   CHANNEL_STREAM_MAX_BYTES,

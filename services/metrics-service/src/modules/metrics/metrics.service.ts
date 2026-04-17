@@ -4,10 +4,14 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import type { Consumer } from "nats";
-import { NatsConsumerRunner } from "@yoizen/database";
-import { PinoLoggerService } from "@yoizen/observability";
-import { JETSTREAM_CLIENT } from "../../providers/nats.provider";
+import type { Msg, NatsConnection, Subscription } from "nats";
+import { context as otelContext } from "@opentelemetry/api";
+import {
+  PinoLoggerService,
+  logWithEnvelope,
+  startNatsConsumerSpan,
+} from "@yoizen/observability";
+import { NATS_CONNECTION } from "../../providers/nats.provider";
 import { TenantConnectionManager } from "@yoizen/database";
 import type { EventEnvelope } from "@yoizen/shared";
 import type { IMetricsQueryParams } from "../../common/metrics-query-params";
@@ -18,33 +22,60 @@ import {
 
 export type { IMetricRecord };
 
+/**
+ * Canonical metrics subject (wdocs 02 §9.2). Api-gateway publishes
+ * metrics events into each `INGRESS-<tenant>` stream with this exact
+ * 8-token subject; metrics-service subscribes via Core NATS across
+ * all tenants.
+ */
+const CANONICAL_METRICS_PATTERN =
+  "evt.*.api-gateway.platform.events.gateway.metrics.v1";
+
 @Injectable()
 export class MetricsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new PinoLoggerService(MetricsService.name);
-  private readonly runner: NatsConsumerRunner;
+  private subscription: Subscription | null = null;
 
   constructor(
-    @Inject(JETSTREAM_CLIENT) consumer: Consumer,
+    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
     private readonly tenantConnections: TenantConnectionManager,
     private readonly metricsRepository: MetricsRepository,
-  ) {
-    this.runner = new NatsConsumerRunner(
-      consumer,
-      (msg) => this.persistMessage(msg),
-      this.logger,
-    );
-  }
+  ) {}
 
   async onModuleInit(): Promise<void> {
-    await this.runner.start();
+    this.subscription = this.nc.subscribe(CANONICAL_METRICS_PATTERN, {
+      callback: (_err, msg) => {
+        this.persistMessage(msg).catch((err) => {
+          this.logger.warn(
+            `metrics persist error: ${err instanceof Error ? err.message : err}`,
+          );
+        });
+      },
+    });
+    this.logger.log(`Metrics subscribed to: ${CANONICAL_METRICS_PATTERN}`);
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.runner.stop();
+    if (this.subscription) {
+      this.subscription.unsubscribe();
+      this.subscription = null;
+    }
   }
 
-  private async persistMessage(msg: import("nats").JsMsg): Promise<void> {
-    await this.persistMetricEnvelope(msg.json() as EventEnvelope);
+  private async persistMessage(msg: Msg): Promise<void> {
+    const envelope = JSON.parse(
+      new TextDecoder().decode(msg.data),
+    ) as EventEnvelope;
+    const { span, context: ctx } = startNatsConsumerSpan(
+      "metrics-service",
+      msg.subject,
+      msg.headers ?? { keys: () => [], values: () => [], get: () => "", set: () => {} },
+    );
+    try {
+      await otelContext.with(ctx, () => this.persistMetricEnvelope(envelope));
+    } finally {
+      span.end();
+    }
   }
 
   /**
@@ -59,7 +90,13 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
   private async persistMetricEnvelope(envelope: EventEnvelope): Promise<void> {
     const tenantId = envelope.tenant;
     if (!tenantId) {
-      this.logger.warn(`Dropping metric ${envelope.id}: missing tenant`);
+      logWithEnvelope(
+        this.logger,
+        envelope,
+        "metrics.persist.dropped",
+        "Dropping metric: missing tenant",
+        "warn",
+      );
       return;
     }
 
@@ -68,6 +105,12 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
       sql,
       tenantId,
       envelope,
+    );
+    logWithEnvelope(
+      this.logger,
+      envelope,
+      "metrics.persist.ok",
+      "Metric persisted",
     );
   }
 

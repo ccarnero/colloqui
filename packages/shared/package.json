@@ -19,5 +19,8 @@
   "peerDependenciesMeta": {
     "class-transformer": { "optional": false },
     "class-validator": { "optional": false }
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
   }
 }

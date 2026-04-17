@@ -125,7 +125,7 @@ describe("TriggerConsumerService", () => {
 
     await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
       .handleMessage(
-        buildMessage("evt.t1.messaging.whatsapp.meta.received.v1", baseEnvelope),
+        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
       );
 
     expect(executeWorkflow).not.toHaveBeenCalled();
@@ -139,7 +139,7 @@ describe("TriggerConsumerService", () => {
 
     await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
       .handleMessage(
-        buildMessage("evt.t1.messaging.whatsapp.meta.received.v1", baseEnvelope),
+        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
       );
 
     expect(executeWorkflow).toHaveBeenCalledTimes(2);
@@ -152,7 +152,7 @@ describe("TriggerConsumerService", () => {
 
     await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
       .handleMessage(
-        buildMessage("evt.t1.messaging.whatsapp.meta.received.v1", baseEnvelope),
+        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
       );
 
     expect(executeWorkflow).not.toHaveBeenCalled();
@@ -166,7 +166,7 @@ describe("TriggerConsumerService", () => {
 
     await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
       .handleMessage(
-        buildMessage("evt.t1.messaging.whatsapp.meta.received.v1", baseEnvelope),
+        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
       );
 
     expect(executeWorkflow).toHaveBeenCalledTimes(1);
@@ -179,7 +179,7 @@ describe("TriggerConsumerService", () => {
 
     await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
       .handleMessage(
-        buildMessage("evt.t1.messaging.whatsapp.meta.received.v1", baseEnvelope),
+        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
       );
 
     expect(executeWorkflow).toHaveBeenCalledTimes(1);
@@ -197,7 +197,7 @@ describe("TriggerConsumerService", () => {
 
     await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
       .handleMessage(
-        buildMessage("evt.t1.messaging.whatsapp.meta.received.v1", noMatchEnvelope),
+        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", noMatchEnvelope),
       );
 
     expect(executeWorkflow).not.toHaveBeenCalled();
@@ -210,7 +210,7 @@ describe("TriggerConsumerService", () => {
 
     await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
       .handleMessage(
-        buildMessage("evt.t1.messaging.whatsapp.meta.received.v1", baseEnvelope),
+        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
       );
 
     expect(executeWorkflow).toHaveBeenCalledTimes(1);
@@ -223,7 +223,7 @@ describe("TriggerConsumerService", () => {
 
     await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
       .handleMessage(
-        buildMessage("evt.t1.messaging.whatsapp.meta.received.v1", baseEnvelope),
+        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
       );
 
     expect(executeWorkflow).not.toHaveBeenCalled();

@@ -1,3 +1,5 @@
+import type { EventEnvelope } from "./interfaces";
+
 export type Channel = "whatsapp" | "instagram" | "telegram";
 export type ChannelProvider = "meta" | "telegram";
 export type MessageKind =
@@ -8,21 +10,16 @@ export type MessageKind =
   | "failed"
   | "send";
 
-export interface ChannelEnvelope {
-  id: string;
-  specversion: "1.0";
-  type: string;
-  source: string;
-  time: string;
-  datacontenttype: "application/json";
-  subject: string;
-  data: Record<string, unknown>;
-  resource?: string;
-  traceid?: string;
-  correlationId?: string;
-  causationId?: string;
-  idempotencyKey: string;
-  tenantId: string;
+/**
+ * Channel envelope — canonical `EventEnvelope` (wdocs 02 §2) tagged
+ * with the channel taxonomy (`channel`, `provider`, `kind`).
+ *
+ * Subject is reconstructed via `buildChannelSubject` on publish;
+ * consumers can parse it back with `parseChannelSubject` from the
+ * NATS message metadata. All identity / causal fields live in the
+ * canonical snake_case properties of `EventEnvelope`.
+ */
+export interface ChannelEnvelope extends EventEnvelope {
   channel: Channel;
   provider: ChannelProvider;
   kind: MessageKind;

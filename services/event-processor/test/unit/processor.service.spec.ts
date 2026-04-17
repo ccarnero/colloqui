@@ -3,8 +3,9 @@ import { Test } from "@nestjs/testing";
 import { DiscoveryModule } from "@nestjs/core";
 import { ProcessorService } from "../../src/modules/processor/processor.service";
 import {
-  JETSTREAM_CLIENT,
+  JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
+  NATS_CONNECTION,
 } from "../../src/providers/nats.provider";
 import { REDIS_CLIENT } from "@yoizen/database";
 import { HandlerRegistry } from "../../src/handlers/handler-registry";
@@ -55,22 +56,23 @@ function makeEnvelope(
 describe("ProcessorService", () => {
   let service: ProcessorService;
   let mockRedis: { setex: ReturnType<typeof mock> };
+  let mockPublisher: { publish: ReturnType<typeof mock> };
 
   beforeEach(async () => {
     mockRedis = { setex: mock(() => Promise.resolve("OK")) };
 
-    const mockConsumer = {
-      consume: mock(() =>
-        Promise.resolve({
-          [Symbol.asyncIterator]: () => ({
-            next: () => Promise.resolve({ done: true, value: undefined }),
-          }),
-          stop: mock(),
-        }),
-      ),
+    const mockNc = {
+      subscribe: mock(() => ({ unsubscribe: mock(() => {}) })),
     };
 
-    const mockPublisher = {
+    const mockJsm = {
+      streams: {
+        info: mock(() => Promise.resolve({})),
+        add: mock(() => Promise.resolve({})),
+      },
+    };
+
+    mockPublisher = {
       publish: mock(() => Promise.resolve({ seq: 1 })),
     };
 
@@ -89,7 +91,8 @@ describe("ProcessorService", () => {
         UpdatedHandler,
         DeletedHandler,
         { provide: PipelineRunner, useValue: mockPipelineRunner },
-        { provide: JETSTREAM_CLIENT, useValue: mockConsumer },
+        { provide: NATS_CONNECTION, useValue: mockNc },
+        { provide: JETSTREAM_MANAGER, useValue: mockJsm },
         { provide: JETSTREAM_PUBLISHER, useValue: mockPublisher },
         { provide: REDIS_CLIENT, useValue: mockRedis },
       ],
@@ -166,6 +169,33 @@ describe("ProcessorService", () => {
 
       const parsed = JSON.parse(mockRedis.setex.mock.calls[0][2]);
       expect(parsed.processed).toBe(true);
+    });
+
+    it("wraps completion in an envelope with causation_id=incoming.id and depth+1", async () => {
+      const incoming = makeEnvelope({
+        id: "parent-1",
+        type: "created",
+        correlation_id: "corr-xyz",
+        transport: { method: "stream", protocol: "internal", depth: 2 },
+      });
+
+      await service.processEvent(incoming, "test-tenant");
+
+      const publishCall = mockPublisher.publish.mock.calls[0];
+      expect(publishCall).toBeDefined();
+      const [subject, body, opts] = publishCall;
+      expect(subject).toBe(
+        "evt.test-tenant.event-processor.platform.events.gateway.completed.v1",
+      );
+
+      const envelope = JSON.parse(new TextDecoder().decode(body));
+      expect(envelope.causation_id).toBe("parent-1");
+      expect(envelope.correlation_id).toBe("corr-xyz");
+      expect(envelope.transport.depth).toBe(3);
+      expect(envelope.idempotencykey).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(opts.headers.get("Nats-Msg-Id")).toBe(envelope.idempotencykey);
+      expect(opts.headers.get("X-Correlation-Id")).toBe("corr-xyz");
+      expect(opts.headers.get("X-Causation-Id")).toBe("parent-1");
     });
   });
 });

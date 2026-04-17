@@ -75,7 +75,17 @@ const ALL_SECTIONS: INavSection[] = [
     requiredPermission: "adapters:read",
     items: [
       { label: "Connectors", icon: "hub", route: "/connectors" },
-      { label: "API Keys", icon: "vpn_key", route: "/api-keys" },
+      { 
+        label: "SMCC", 
+        icon: "vpn_key", 
+        route: "/smcc",
+        items: [
+          { label: "ySocial", icon: "vpn_key", route: "/ysocial-smcc" },
+          { label: "Infinity", icon: "vpn_key", route: "/infinity-smcc" },
+          { label: "Genesis", icon: "vpn_key", route: "/genesis-smcc" },
+        ]
+      },
+      { label: "MCP", icon: "hub", route: "/mcp" },
     ],
   },
 ];

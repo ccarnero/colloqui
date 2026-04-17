@@ -5,8 +5,12 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import type { Consumer } from "nats";
+import { context as otelContext } from "@opentelemetry/api";
 import { NatsConsumerRunner } from "@yoizen/database";
-import { PinoLoggerService } from "@yoizen/observability";
+import {
+  PinoLoggerService,
+  startNatsConsumerSpan,
+} from "@yoizen/observability";
 import { GATEWAY_AUDIT_CONSUMER } from "../../providers/nats.provider";
 import { TenantConnectionManager, type Sql } from "@yoizen/database";
 import type {
@@ -119,6 +123,24 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
     const tenantId = event.tenantId;
     if (!tenantId) return;
 
+    const { span, context: ctx } = startNatsConsumerSpan(
+      "audit-service",
+      msg.subject,
+      msg.headers ?? { keys: () => [], values: () => [], get: () => "", set: () => {} },
+    );
+    try {
+      await otelContext.with(ctx, () =>
+        this.persistGatewayEvent(tenantId, event),
+      );
+    } finally {
+      span.end();
+    }
+  }
+
+  private async persistGatewayEvent(
+    tenantId: string,
+    event: GatewayAuditEvent,
+  ): Promise<void> {
     await this.ensureGatewayAuditTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
 

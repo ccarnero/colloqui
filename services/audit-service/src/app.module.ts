@@ -7,11 +7,9 @@ import { HealthModule } from "./modules/health/health.module";
 import {
   NATS_CONNECTION,
   JETSTREAM_MANAGER,
-  JETSTREAM_CLIENT,
   GATEWAY_AUDIT_CONSUMER,
   natsProvider,
   jetStreamManagerProvider,
-  jetStreamClientProvider,
   gatewayAuditConsumerProvider,
 } from "./providers/nats.provider";
 import { TenantConnectionManager } from "@yoizen/database";
@@ -29,14 +27,12 @@ import { TenantConnectionManager } from "@yoizen/database";
   providers: [
     natsProvider,
     jetStreamManagerProvider,
-    jetStreamClientProvider,
     gatewayAuditConsumerProvider,
     TenantConnectionManager,
   ],
   exports: [
     NATS_CONNECTION,
     JETSTREAM_MANAGER,
-    JETSTREAM_CLIENT,
     GATEWAY_AUDIT_CONSUMER,
     TenantConnectionManager,
   ],

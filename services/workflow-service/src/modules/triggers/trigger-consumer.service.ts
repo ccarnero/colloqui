@@ -9,6 +9,7 @@ import { NATS_CONNECTION } from "@yoizen/database";
 import { PinoLoggerService } from "@yoizen/observability";
 import {
   CHANNEL_SUBJECT_PREFIX,
+  CHANNEL_PRODUCER,
   CHANNEL_DOMAIN,
   parseChannelSubject,
 } from "@yoizen/shared";
@@ -39,7 +40,7 @@ export class TriggerConsumerService
 
   async onModuleInit(): Promise<void> {
     const subject =
-      `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_DOMAIN}.*.*.received.v1`;
+      `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_PRODUCER}.${CHANNEL_DOMAIN}.*.*.received.v1`;
 
     this.subscription = this.nc.subscribe(subject, {
       callback: (_err, msg) => {
@@ -90,12 +91,16 @@ export class TriggerConsumerService
 
     const toExecute = this.applyExclusiveSharedLogic(matching);
 
+    const payload: Record<string, unknown> =
+      (envelope.data?.payload as Record<string, unknown> | null | undefined) ??
+      (envelope.data as unknown as Record<string, unknown>);
+
     const request: Record<string, unknown> = {
-      envelope: envelope.data,
+      envelope: payload,
       channel,
       provider,
-      from: envelope.data.from,
-      text: envelope.data.text,
+      from: payload.from,
+      text: payload.text,
       messageId: envelope.id,
       tenantId: tenant,
     };
@@ -137,11 +142,15 @@ export class TriggerConsumerService
       const trigger = def.trigger as WorkflowTrigger | null;
       if (!trigger || trigger.type !== "message_received") continue;
 
+      const payload: Record<string, unknown> =
+        (envelope.data?.payload as Record<string, unknown> | null | undefined) ??
+        (envelope.data as unknown as Record<string, unknown>);
+
       const cfg = trigger.config;
 
       if (cfg.accountIds && cfg.accountIds.length > 0) {
-        const incomingAccountId =
-          envelope.data.accountId as string | undefined;
+        const incomingAccountId = payload.accountId as string | undefined;
+
         if (
           !incomingAccountId ||
           !cfg.accountIds.includes(incomingAccountId)
@@ -167,8 +176,8 @@ export class TriggerConsumerService
       }
 
       if (cfg.patterns && cfg.patterns.length > 0) {
-        const text =
-          (envelope.data.text as string | undefined) ?? "";
+        const text = (payload.text as string | undefined) ?? "";
+
         const matched = cfg.patterns.some((pattern) => {
           try {
             return new RegExp(pattern, "i").test(text);
