@@ -205,7 +205,11 @@ describe("AdaptersService", () => {
   describe("remove", () => {
     it("throws when nothing deleted", async () => {
       const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("DELETE FROM http_adapters")) {
+        const head = strings[0] ?? "";
+        if (head.includes("SELECT * FROM http_adapters")) {
+          return Promise.resolve([adapterRow]);
+        }
+        if (head.includes("DELETE FROM http_adapters")) {
           return Promise.resolve({ count: 0 } as never);
         }
         return Promise.resolve([]);
@@ -219,7 +223,11 @@ describe("AdaptersService", () => {
 
     it("deletes when row exists", async () => {
       const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("DELETE FROM http_adapters")) {
+        const head = strings[0] ?? "";
+        if (head.includes("SELECT * FROM http_adapters")) {
+          return Promise.resolve([adapterRow]);
+        }
+        if (head.includes("DELETE FROM http_adapters")) {
           return Promise.resolve({ count: 1 } as never);
         }
         return Promise.resolve([]);
@@ -227,6 +235,21 @@ describe("AdaptersService", () => {
       const service = await createAdaptersServiceWithSql(sql);
 
       await service.remove("t1", "a1");
+    });
+
+    it("throws ConflictException when adapter is managed by registry", async () => {
+      const managedRow = { ...adapterRow, managed_by: "registry-service" };
+      const sql = makeSqlTestDouble((strings) => {
+        if ((strings[0] ?? "").includes("SELECT * FROM http_adapters")) {
+          return Promise.resolve([managedRow]);
+        }
+        return Promise.resolve([]);
+      });
+      const service = await createAdaptersServiceWithSql(sql);
+
+      await expect(service.remove("t1", "a1")).rejects.toBeInstanceOf(
+        ConflictException,
+      );
     });
   });
 
@@ -249,8 +272,8 @@ describe("AdaptersService", () => {
 
       const sql = makeSqlTestDouble((strings) => {
         const head = strings[0] ?? "";
-        if (head.includes("SELECT id FROM http_adapters")) {
-          return Promise.resolve([{ id: "a1" }]);
+        if (head.includes("SELECT * FROM http_adapters")) {
+          return Promise.resolve([adapterRow]);
         }
         if (head.includes("INSERT INTO adapter_endpoints")) {
           return Promise.resolve([newEpRow]);
@@ -269,7 +292,7 @@ describe("AdaptersService", () => {
 
     it("throws NotFoundException when adapter does not exist", async () => {
       const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("SELECT id FROM http_adapters")) {
+        if ((strings[0] ?? "").includes("SELECT * FROM http_adapters")) {
           return Promise.resolve([]);
         }
         return Promise.resolve([]);
@@ -281,13 +304,26 @@ describe("AdaptersService", () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
+    it("throws ConflictException when adapter is managed by registry", async () => {
+      const managedRow = { ...adapterRow, managed_by: "registry-service" };
+      const sql = makeSqlTestDouble((strings) => {
+        if ((strings[0] ?? "").includes("SELECT * FROM http_adapters")) {
+          return Promise.resolve([managedRow]);
+        }
+        return Promise.resolve([]);
+      });
+      const service = await createAdaptersServiceWithSql(sql);
+
+      await expect(
+        service.addEndpoint("t1", "a1", epDto),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
     it("throws ConflictException on duplicate endpoint (23505)", async () => {
-      let callIdx = 0;
       const sql = makeSqlTestDouble((strings) => {
         const head = strings[0] ?? "";
-        if (head.includes("SELECT id FROM http_adapters") && callIdx === 0) {
-          callIdx++;
-          return Promise.resolve([{ id: "a1" }]);
+        if (head.includes("SELECT * FROM http_adapters")) {
+          return Promise.resolve([adapterRow]);
         }
         if (head.includes("INSERT INTO adapter_endpoints")) {
           return Promise.reject(
@@ -306,12 +342,10 @@ describe("AdaptersService", () => {
 
   describe("removeEndpoint", () => {
     it("removes an existing endpoint", async () => {
-      let callIdx = 0;
       const sql = makeSqlTestDouble((strings) => {
         const head = strings[0] ?? "";
-        if (head.includes("SELECT id FROM http_adapters") && callIdx === 0) {
-          callIdx++;
-          return Promise.resolve([{ id: "a1" }]);
+        if (head.includes("SELECT * FROM http_adapters")) {
+          return Promise.resolve([adapterRow]);
         }
         if (head.includes("DELETE FROM adapter_endpoints")) {
           return Promise.resolve({ count: 1 } as never);
@@ -325,7 +359,7 @@ describe("AdaptersService", () => {
 
     it("throws NotFoundException when adapter does not exist", async () => {
       const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("SELECT id FROM http_adapters")) {
+        if ((strings[0] ?? "").includes("SELECT * FROM http_adapters")) {
           return Promise.resolve([]);
         }
         return Promise.resolve([]);
@@ -338,12 +372,10 @@ describe("AdaptersService", () => {
     });
 
     it("throws NotFoundException when endpoint does not exist", async () => {
-      let callIdx = 0;
       const sql = makeSqlTestDouble((strings) => {
         const head = strings[0] ?? "";
-        if (head.includes("SELECT id FROM http_adapters") && callIdx === 0) {
-          callIdx++;
-          return Promise.resolve([{ id: "a1" }]);
+        if (head.includes("SELECT * FROM http_adapters")) {
+          return Promise.resolve([adapterRow]);
         }
         if (head.includes("DELETE FROM adapter_endpoints")) {
           return Promise.resolve({ count: 0 } as never);
@@ -355,6 +387,21 @@ describe("AdaptersService", () => {
       await expect(
         service.removeEndpoint("t1", "a1", "missing"),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("throws ConflictException when adapter is managed", async () => {
+      const managedRow = { ...adapterRow, managed_by: "registry-service" };
+      const sql = makeSqlTestDouble((strings) => {
+        if ((strings[0] ?? "").includes("SELECT * FROM http_adapters")) {
+          return Promise.resolve([managedRow]);
+        }
+        return Promise.resolve([]);
+      });
+      const service = await createAdaptersServiceWithSql(sql);
+
+      await expect(
+        service.removeEndpoint("t1", "a1", "e1"),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 });

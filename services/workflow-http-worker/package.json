@@ -17,7 +17,9 @@
     "ioredis": "^5.4.1"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.0",
     "@types/node": "^22.10.1",
+    "reflect-metadata": "^0.2.2",
     "typescript": "^5.7.2"
   }
 }

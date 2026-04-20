@@ -10,6 +10,12 @@ import type {
 } from "@yoizen/shared";
 import { TENANT_HEADER, buildChannelSubject } from "@yoizen/shared";
 import {
+  DistributedCircuitBreaker,
+  computeBreakerKey,
+  PermanentError,
+} from "@yoizen/shared";
+import { EGRESS_BREAKER } from "./egress-breaker.provider";
+import {
   JETSTREAM_PUBLISHER,
   JETSTREAM_MANAGER,
   ensureTenantIngressStream,
@@ -60,6 +66,8 @@ export class EgressService {
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     private readonly router: ChannelRouter,
     private readonly accounts: AccountsService,
+    @Inject(EGRESS_BREAKER)
+    private readonly breaker: DistributedCircuitBreaker,
   ) {}
 
   /**
@@ -85,12 +93,43 @@ export class EgressService {
 
     const provider = this.router.getOrThrow(account.channel);
     const attrs = { channel: account.channel, tenant: tenantId };
+
+    const breakerKey = computeBreakerKey({
+      tenantId,
+      kind: "egress",
+      target: `${account.channel}:${account.provider}`,
+    });
+    const decision = await this.breaker.canProceed(breakerKey);
+    if (decision.action === "deny") {
+      egressSendFailures.add(1, { ...attrs, reason: "circuit_open" });
+      /**
+       * Fast-fail without touching the upstream provider. Marked as
+       * a PermanentError so the send-command consumer TERMs the
+       * message and routes it to DLQ-<tenant>. Redelivery would
+       * just pile more load on a known-broken provider.
+       */
+      throw new PermanentError(
+        `circuit_open: ${account.channel}:${account.provider} for tenant=${tenantId} ` +
+          `(status=${decision.status}, reason=${decision.reason})`,
+        "egress.circuit_breaker",
+      );
+    }
+
     const start = performance.now();
-    const result = await provider.sendMessage(account, message);
+    let result: SendMessageResult;
+    try {
+      result = await provider.sendMessage(account, message);
+    } catch (err) {
+      egressSendDuration.record(performance.now() - start, attrs);
+      egressSendFailures.add(1, attrs);
+      this.breaker.recordFailure(breakerKey);
+      throw err;
+    }
     egressSendDuration.record(performance.now() - start, attrs);
 
     if (result.success) {
       egressMessagesSent.add(1, attrs);
+      this.breaker.recordSuccess(breakerKey);
       await this.shadowPublish({
         tenantId,
         channel: account.channel,
@@ -102,6 +141,7 @@ export class EgressService {
       });
     } else {
       egressSendFailures.add(1, attrs);
+      this.breaker.recordFailure(breakerKey);
     }
 
     return result;

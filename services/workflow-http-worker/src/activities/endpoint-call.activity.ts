@@ -1,46 +1,30 @@
-import Redis from "ioredis";
-import { tracedFetch } from "@yoizen/observability";
-import {
-  createAdapterClientWithRedisAndFetch,
-  sleep,
-  TENANT_HEADER,
-} from "@yoizen/shared";
+import { ApplicationFailure } from "@temporalio/activity";
+import { TENANT_HEADER, computeBreakerKey } from "@yoizen/shared";
 import type { EndpointCallArgs } from "@yoizen/shared";
-import { workflowHttpWorkerConfig } from "../config";
+import { getAdapterClient } from "./_shared/adapter-client.provider";
+import { getHttpBreaker } from "./_shared/breaker";
+import {
+  applyJsonBody,
+  buildUrl,
+  httpCallWithRetry,
+  type IHttpCallResult,
+} from "./_shared/http-call-with-retry";
+import { tracedFetch } from "@yoizen/observability";
 
-interface IEndpointCallResult {
-  status: number;
-  data: unknown;
-  headers: Record<string, string>;
-}
+type IEndpointCallResult = IHttpCallResult;
 
-let adapterClient: ReturnType<
-  typeof createAdapterClientWithRedisAndFetch
-> | null = null;
-
-function getAdapterClient(): ReturnType<
-  typeof createAdapterClientWithRedisAndFetch
-> {
-  if (adapterClient) return adapterClient;
-
-  const redis = new Redis({
-    host: workflowHttpWorkerConfig.redisHost,
-    port: workflowHttpWorkerConfig.redisPort,
-    lazyConnect: true,
-    maxRetriesPerRequest: 2,
-  });
-
-  adapterClient = createAdapterClientWithRedisAndFetch(
-    workflowHttpWorkerConfig.adapterServiceUrl,
-    redis,
-    tracedFetch,
-  );
-
-  return adapterClient;
-}
+const RAW_TIMEOUT_MS = 30_000;
 
 /**
- * Temporal activity: performs an HTTP call, optionally resolved via {@link AdapterClient}.
+ * Temporal activity: performs an HTTP call, optionally resolved via
+ * {@link AdapterClient}. Raw calls (no adapter/endpoint) use a fixed
+ * 30s timeout with no retries — same semantics as before refactor.
+ *
+ * A distributed circuit breaker gates every call at tenant+target
+ * granularity. When OPEN we fast-fail with a non-retryable
+ * `ApplicationFailure` so Temporal releases the activity slot in
+ * milliseconds rather than burning the full `timeoutMs × maxAttempts`
+ * budget (~90 s per call) against a known-dead upstream.
  *
  * @param args - Method, URL, body, optional adapter/endpoint ids.
  * @param tenantId - Injected tenant for adapter resolution and `x-yoizen-tenant`.
@@ -50,10 +34,35 @@ export async function executeEndpointCall(
   args: EndpointCallArgs,
   tenantId: string,
 ): Promise<IEndpointCallResult> {
-  if (args.adapterId && args.endpointId) {
-    return executeWithAdapter(args, tenantId);
+  const breaker = getHttpBreaker();
+  const key = computeBreakerKey({
+    tenantId,
+    kind: "endpoint",
+    adapterId: args.adapterId,
+    endpointId: args.endpointId,
+    url: args.adapterId && args.endpointId ? undefined : args.url,
+  });
+
+  const decision = await breaker.canProceed(key);
+  if (decision.action === "deny") {
+    throw ApplicationFailure.nonRetryable(
+      `Circuit breaker ${decision.status} for endpoint call (${decision.reason})`,
+      "CIRCUIT_OPEN",
+      { key, status: decision.status, reason: decision.reason },
+    );
   }
-  return executeRaw(args, tenantId);
+
+  try {
+    const result =
+      args.adapterId && args.endpointId
+        ? await executeWithAdapter(args, tenantId)
+        : await executeRaw(args, tenantId);
+    breaker.recordSuccess(key);
+    return result;
+  } catch (err) {
+    breaker.recordFailure(key);
+    throw err;
+  }
 }
 
 async function executeWithAdapter(
@@ -76,34 +85,15 @@ async function executeWithAdapter(
   const url = buildUrl(resolved.url, args.params);
   const body = applyJsonBody(args.data, mergedHeaders);
 
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt <= resolved.maxRetries; attempt++) {
-    if (attempt > 0) {
-      const delay = resolved.retryBackoffMs * (1 << (attempt - 1));
-      await sleep(delay);
-    }
-
-    try {
-      const res = await tracedFetch(url, {
-        method: resolved.method,
-        headers: mergedHeaders,
-        body,
-        signal: AbortSignal.timeout(resolved.timeoutMs),
-      });
-
-      if (res.ok || attempt === resolved.maxRetries || res.status < 500) {
-        return buildResult(res);
-      }
-
-      lastError = new Error(`HTTP ${res.status}`);
-    } catch (err) {
-      lastError = err;
-      if (attempt === resolved.maxRetries) break;
-    }
-  }
-
-  throw lastError;
+  return httpCallWithRetry({
+    url,
+    method: resolved.method,
+    headers: mergedHeaders,
+    body,
+    timeoutMs: resolved.timeoutMs,
+    maxRetries: resolved.maxRetries,
+    retryBackoffMs: resolved.retryBackoffMs,
+  });
 }
 
 async function executeRaw(
@@ -118,58 +108,13 @@ async function executeRaw(
   const url = buildUrl(args.url, args.params);
   const body = applyJsonBody(args.data, headers);
 
-  return fetchWithTenantTimeout({
-    method: args.method,
-    url,
-    headers,
-    body,
-    timeoutMs: 30_000,
-  });
-}
-
-function buildUrl(base: string, params?: Record<string, unknown>): string {
-  if (!params) return base;
-  const url = new URL(base);
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null) {
-      url.searchParams.set(k, String(v));
-    }
-  }
-  return url.toString();
-}
-
-/** Shared JSON body + Content-Type for POST-like payloads. */
-function applyJsonBody(
-  data: unknown,
-  headers: Record<string, string>,
-): string | undefined {
-  if (data === undefined) return undefined;
-  headers["Content-Type"] ??= "application/json";
-  return JSON.stringify(data);
-}
-
-interface IFetchWithTenantTimeoutOptions {
-  readonly method: string;
-  readonly url: string;
-  readonly headers: Record<string, string>;
-  readonly body: string | undefined;
-  readonly timeoutMs: number;
-}
-
-async function fetchWithTenantTimeout(
-  options: IFetchWithTenantTimeoutOptions,
-): Promise<IEndpointCallResult> {
-  const { method, url, headers, body, timeoutMs } = options;
   const res = await tracedFetch(url, {
-    method,
+    method: args.method,
     headers,
     body,
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.timeout(RAW_TIMEOUT_MS),
   });
-  return buildResult(res);
-}
 
-async function buildResult(res: Response): Promise<IEndpointCallResult> {
   const responseHeaders: Record<string, string> = {};
   res.headers.forEach((v, k) => {
     responseHeaders[k] = v;

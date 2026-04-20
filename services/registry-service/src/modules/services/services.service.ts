@@ -39,6 +39,7 @@ import {
   getNamespacedKnativeService,
   replaceNamespacedKnativeService,
 } from "../../common/registry-row-mappers";
+import { ServiceEventsPublisher } from "./service-events.publisher";
 
 interface IServiceDetail extends IRegisteredService {
   knativeStatus?: Record<string, unknown>;
@@ -83,6 +84,7 @@ export class ServicesService {
     @Inject(K8S_CUSTOM_OBJECTS_API)
     private readonly customApi: k8s.CustomObjectsApi,
     private readonly servicesRepository: ServicesRepository,
+    private readonly eventsPublisher: ServiceEventsPublisher,
   ) {
     const env = registryServiceConfig.platformEnvironment;
     if (!VALID_ENVIRONMENTS.includes(env as Environment)) {
@@ -141,8 +143,19 @@ export class ServicesService {
       ns,
     });
 
+    const mapped = mapRegisteredServiceRow(row);
+    await this.eventsPublisher.publishUpserted({
+      serviceId: mapped.id,
+      tenantId: mapped.tenantId,
+      name: mapped.name,
+      knativeName: mapped.knativeName,
+      namespace: mapped.namespace,
+      port: mapped.port,
+      status: mapped.status,
+    });
+
     this.logger.log(`Registered service ${ksvcName} in ${ns}`);
-    return mapRegisteredServiceRow(row);
+    return mapped;
   }
 
   async list(tenantId: string): Promise<IRegisteredService[]> {
@@ -228,8 +241,19 @@ export class ServicesService {
       envVars,
     });
 
+    const mapped = mapRegisteredServiceRow(updated);
+    await this.eventsPublisher.publishUpserted({
+      serviceId: mapped.id,
+      tenantId: mapped.tenantId,
+      name: mapped.name,
+      knativeName: mapped.knativeName,
+      namespace: mapped.namespace,
+      port: mapped.port,
+      status: mapped.status,
+    });
+
     this.logger.log(`Updated service ${row.knative_name}`);
-    return mapRegisteredServiceRow(updated);
+    return mapped;
   }
 
   async remove(tenantId: string, id: string): Promise<void> {
@@ -253,6 +277,13 @@ export class ServicesService {
     }
 
     await this.servicesRepository.deleteById(id);
+
+    await this.eventsPublisher.publishDeleted({
+      serviceId: id,
+      tenantId,
+      name: String(row.name ?? ""),
+    });
+
     this.logger.log(`Removed service ${row.knative_name}`);
   }
 

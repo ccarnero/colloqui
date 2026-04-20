@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import type { NatsConnection } from "nats";
+import type { JetStreamClient, JetStreamManager } from "nats";
 import { SendCommandConsumerService } from "../../src/modules/egress/send-command-consumer.service";
 import type { EgressService } from "../../src/modules/egress/egress.service";
 
@@ -14,13 +14,12 @@ describe("SendCommandConsumerService", () => {
   );
   const egress = { send } as unknown as EgressService;
 
-  const nc = {
-    subscribe: mock(() => ({ unsubscribe: mock(() => {}) })),
-  } as unknown as NatsConnection;
+  const jsm = {} as unknown as JetStreamManager;
+  const js = {} as unknown as JetStreamClient;
 
   beforeEach(() => {
     send.mockClear();
-    service = new SendCommandConsumerService(nc, egress);
+    service = new SendCommandConsumerService(jsm, js, egress);
   });
 
   function buildMessage(

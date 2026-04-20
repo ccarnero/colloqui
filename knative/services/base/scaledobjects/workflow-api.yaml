@@ -1,0 +1,51 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: workflow-api-scaler
+  labels:
+    app.kubernetes.io/name: workflow-api
+    app.kubernetes.io/component: autoscaler
+  annotations:
+    scaledobject.keda.sh/transfer-hpa-ownership: "true"
+spec:
+  scaleTargetRef:
+    apiVersion: serving.knative.dev/v1
+    kind: Service
+    name: workflow-api
+  pollingInterval: 15
+  cooldownPeriod: 180
+  idleReplicaCount: 0
+  minReplicaCount: 1
+  maxReplicaCount: 15
+  fallback:
+    failureThreshold: 3
+    replicas: 2
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+        scaleDown:
+          stabilizationWindowSeconds: 180
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 60
+  triggers:
+    # workflow-triggers: starts Temporal workflow executions.
+    # Moderate threshold — back-pressure is OK, lag is cheap compared
+    # to the cost of spinning up extra workflow-api replicas.
+    - type: prometheus
+      name: workflow-triggers-lag
+      metadata:
+        serverAddress: http://prometheus.default.svc:9090
+        metricName: workflow_triggers_lag
+        threshold: "1000"
+        query: |
+          sum(jetstream_consumer_num_pending{consumer_name="workflow-triggers"})
+          +
+          sum(jetstream_consumer_num_ack_pending{consumer_name="workflow-triggers"})

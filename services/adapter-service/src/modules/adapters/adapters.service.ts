@@ -81,6 +81,7 @@ export class AdaptersService {
     limit: number,
     offset: number,
     tag?: string,
+    name?: string,
   ) {
     const rows = await this.adaptersRepository.listRows(
       tenantId,
@@ -88,6 +89,7 @@ export class AdaptersService {
       limit,
       offset,
       tag,
+      name,
     );
     const adapterIds = rows.map((r) => r.id);
     const endpoints =
@@ -131,6 +133,27 @@ export class AdaptersService {
   }
 
   /**
+   * Rejects mutations on adapters managed by an automated sync (e.g.
+   * `registry-service` internal mirrors). The externally managed lifecycle
+   * is authoritative; manual edits would be overwritten on next sync.
+   */
+  private async assertNotManaged(
+    tenantId: string,
+    id: string,
+    operation: string,
+  ): Promise<void> {
+    const row = await this.adaptersRepository.getAdapterRow(tenantId, id);
+    if (!row) {
+      throw new NotFoundException(`Adapter '${id}' not found`);
+    }
+    if (row.managed_by) {
+      throw new ConflictException(
+        `Cannot ${operation} adapter '${id}' managed by '${row.managed_by}'`,
+      );
+    }
+  }
+
+  /**
    * Applies a partial update; no-op fields yield a fresh read via {@link get}.
    *
    * @param tenantId - Tenant scope.
@@ -138,10 +161,7 @@ export class AdaptersService {
    * @param dto - Partial update DTO.
    */
   async update(tenantId: string, id: string, dto: UpdateAdapterDto) {
-    const exists = await this.adaptersRepository.adapterExists(tenantId, id);
-    if (!exists) {
-      throw new NotFoundException(`Adapter '${id}' not found`);
-    }
+    await this.assertNotManaged(tenantId, id, "update");
 
     const hasField = ADAPTER_UPDATE_FIELD_KEYS.some(
       (k) => (dto as Record<string, unknown>)[k] !== undefined,
@@ -163,6 +183,7 @@ export class AdaptersService {
    * @param id - Adapter id.
    */
   async remove(tenantId: string, id: string): Promise<void> {
+    await this.assertNotManaged(tenantId, id, "delete");
     const count = await this.adaptersRepository.deleteAdapter(tenantId, id);
     if (count === 0) {
       throw new NotFoundException(`Adapter '${id}' not found`);
@@ -182,13 +203,7 @@ export class AdaptersService {
     adapterId: string,
     dto: CreateEndpointDto,
   ) {
-    const exists = await this.adaptersRepository.adapterExists(
-      tenantId,
-      adapterId,
-    );
-    if (!exists) {
-      throw new NotFoundException(`Adapter '${adapterId}' not found`);
-    }
+    await this.assertNotManaged(tenantId, adapterId, "add endpoint to");
 
     return this.runWithUniqueConflict(
       `Endpoint '${dto.method} ${dto.path}' already exists on this adapter`,
@@ -214,13 +229,7 @@ export class AdaptersService {
     adapterId: string,
     endpointId: string,
   ): Promise<void> {
-    const exists = await this.adaptersRepository.adapterExists(
-      tenantId,
-      adapterId,
-    );
-    if (!exists) {
-      throw new NotFoundException(`Adapter '${adapterId}' not found`);
-    }
+    await this.assertNotManaged(tenantId, adapterId, "remove endpoint from");
 
     const count = await this.adaptersRepository.deleteEndpoint(
       adapterId,

@@ -1,7 +1,9 @@
+import { ApplicationFailure } from "@temporalio/activity";
 import { tracedFetch } from "@yoizen/observability";
-import { TENANT_HEADER } from "@yoizen/shared";
+import { TENANT_HEADER, computeBreakerKey } from "@yoizen/shared";
 import type { AgentCallArgs } from "@yoizen/shared";
 import { workflowHttpWorkerConfig } from "../config";
+import { getAgentBreaker } from "./_shared/breaker";
 
 const YOIZEN_USER_ID_HEADER = "x-yoizen-user-id";
 
@@ -17,11 +19,43 @@ interface IAgentCallResult {
 /**
  * POST /admin/agents/:id/chat on yoizenclaw-admin-service (tenant header required).
  *
+ * Gated by a distributed circuit breaker keyed per tenant+agent so
+ * a chronically failing agent cannot starve the Temporal activity
+ * pool for other agents or other tenants. The breaker uses the
+ * agent-tuned configuration (looser thresholds, longer probe window)
+ * because LLM latency/error profiles differ from plain HTTP.
+ *
  * @param args - Agent id and chat payload (message may include `{{results.*}}` templates).
  * @param tenantId - `x-yoizen-tenant` value.
  * @returns Normalized HTTP result (same shape as endpoint/service call activities).
  */
 export async function executeAgentCall(
+  args: AgentCallArgs,
+  tenantId: string,
+): Promise<IAgentCallResult> {
+  const breaker = getAgentBreaker();
+  const key = computeBreakerKey({ tenantId, agentId: args.agentId });
+
+  const decision = await breaker.canProceed(key);
+  if (decision.action === "deny") {
+    throw ApplicationFailure.nonRetryable(
+      `Circuit breaker ${decision.status} for agent '${args.agentId}' (${decision.reason})`,
+      "CIRCUIT_OPEN",
+      { key, status: decision.status, reason: decision.reason },
+    );
+  }
+
+  try {
+    const result = await executeAgentCallInner(args, tenantId);
+    breaker.recordSuccess(key);
+    return result;
+  } catch (err) {
+    breaker.recordFailure(key);
+    throw err;
+  }
+}
+
+async function executeAgentCallInner(
   args: AgentCallArgs,
   tenantId: string,
 ): Promise<IAgentCallResult> {

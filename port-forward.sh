@@ -4,6 +4,7 @@ set -euo pipefail
 MINIKUBE_PROFILE="yoizen-arch"
 ENVIRONMENT="${1:-dev}"
 NAMESPACE="platform-services-${ENVIRONMENT}"
+SUPPORT_NAMESPACE="support-services-${ENVIRONMENT}"
 
 SERVICES=(api-gateway admin-console messaging-console)
 declare -A CONTAINER_PORTS=(
@@ -15,6 +16,22 @@ declare -A LOCAL_PORTS=(
   [api-gateway]="${API_GATEWAY_PORT:-8080}"
   [admin-console]="${ADMIN_CONSOLE_PORT:-4200}"
   [messaging-console]="${MESSAGING_CONSOLE_PORT:-4300}"
+)
+
+# Native k8s Services in the support-services namespace we want exposed
+# locally so the e2e test suite can reach them. Unlike the Knative-based
+# services above, these are plain ClusterIP Services, so we forward
+# `svc/<name>` directly (no ksvc Ready-wait, no pod lookup).
+#
+# Only consumers that actually need NATS locally (e.g. dedup.e2e.spec.ts,
+# which connects to `nats://localhost:4222`) should rely on this; the
+# in-cluster services keep using the in-namespace DNS name as before.
+SUPPORT_SERVICES=(nats)
+declare -A SUPPORT_CONTAINER_PORTS=(
+  [nats]=4222
+)
+declare -A SUPPORT_LOCAL_PORTS=(
+  [nats]="${NATS_PORT:-4222}"
 )
 
 FORWARD_PIDS=()
@@ -46,13 +63,14 @@ usage() {
     "  ENV   Environment name (default: dev)" \
     "" \
     "Environment variables:" \
-    "  API_GATEWAY_PORT          Local port for api-gateway       (default: 3000)" \
+    "  API_GATEWAY_PORT          Local port for api-gateway       (default: 8080)" \
     "  ADMIN_CONSOLE_PORT        Local port for admin-console     (default: 4200)" \
     "  MESSAGING_CONSOLE_PORT    Local port for messaging-console (default: 4300)" \
+    "  NATS_PORT                 Local port for NATS client       (default: 4222)" \
     "" \
     "Examples:" \
-    "  $0              # Forward services in platform-services-dev" \
-    "  $0 qa           # Forward services in platform-services-qa"
+    "  $0              # Forward services in platform-services-dev + NATS" \
+    "  $0 qa           # Forward services in platform-services-qa + NATS"
   exit 0
 }
 
@@ -119,6 +137,23 @@ start_forward() {
   FORWARD_PIDS+=($!)
 }
 
+# Forward a native k8s Service (not a ksvc) from the support-services
+# namespace. Used for infra components like NATS that need to be
+# reachable from the host running the e2e test suite.
+start_support_forward() {
+  local svc=$1 local_port=$2 container_port=$3
+
+  if ! kubectl get svc "$svc" -n "$SUPPORT_NAMESPACE" &>/dev/null; then
+    warn "Service '${svc}' not found in ${SUPPORT_NAMESPACE}, skipping"
+    return 1
+  fi
+
+  log "Forwarding ${svc}  localhost:${local_port} -> svc/${svc}:${container_port}  (${SUPPORT_NAMESPACE})"
+  kubectl port-forward -n "$SUPPORT_NAMESPACE" "svc/${svc}" \
+    "${local_port}:${container_port}" >/dev/null 2>&1 &
+  FORWARD_PIDS+=($!)
+}
+
 main() {
   detect_context
 
@@ -136,6 +171,19 @@ main() {
     start_forward "$svc" "${LOCAL_PORTS[$svc]}" "${CONTAINER_PORTS[$svc]}" || true
   done
 
+  # Support-services forwards are best-effort: the namespace may not exist
+  # in non-dev environments, in which case we just skip instead of failing.
+  if kubectl get namespace "$SUPPORT_NAMESPACE" &>/dev/null; then
+    for svc in "${SUPPORT_SERVICES[@]}"; do
+      start_support_forward \
+        "$svc" \
+        "${SUPPORT_LOCAL_PORTS[$svc]}" \
+        "${SUPPORT_CONTAINER_PORTS[$svc]}" || true
+    done
+  else
+    warn "Namespace '${SUPPORT_NAMESPACE}' not found — skipping support-services forwards (NATS, etc.)"
+  fi
+
   if (( ${#FORWARD_PIDS[@]} == 0 )); then
     err "No port-forwards were started. Exiting."
     exit 1
@@ -149,6 +197,10 @@ main() {
   for svc in "${SERVICES[@]}"; do
     local lp="${LOCAL_PORTS[$svc]}"
     echo "  ${svc}:  http://localhost:${lp}"
+  done
+  for svc in "${SUPPORT_SERVICES[@]}"; do
+    local lp="${SUPPORT_LOCAL_PORTS[$svc]}"
+    echo "  ${svc}:         localhost:${lp}  (${SUPPORT_NAMESPACE})"
   done
   echo ""
   log "Press Ctrl+C to stop all port-forwards."

@@ -33,6 +33,23 @@ export const REGISTRY_KNATIVE_REVISIONS_PLURAL = 'revisions';
 /** Default container port when registering a Knative service without explicit port. */
 export const REGISTRY_DEFAULT_SERVICE_PORT = 3000;
 
+/**
+ * Producer/domain tokens for platform-level events (wdocs 02 §3).
+ * Used by registry-service when emitting service lifecycle events that
+ * other services (adapter-service) materialize as internal adapters.
+ */
+export const REGISTRY_PRODUCER = 'registry-service';
+export const PLATFORM_DOMAIN = 'platform';
+/**
+ * Placeholder token for the 5th/6th positions (channel/provider) when
+ * the event is domain-agnostic (not tied to a messaging channel).
+ * Keeps the canonical 8-token subject shape.
+ */
+export const PLATFORM_NON_CHANNEL_TOKEN = 'system';
+
+/** Internal adapter marker: adapters created by the registry-sync consumer. */
+export const ADAPTER_MANAGED_BY_REGISTRY = 'registry-service';
+
 export const WORKFLOW_ORCHESTRATOR_TASK_QUEUE = 'workflow-orchestrator';
 export const WORKFLOW_HTTP_TASK_QUEUE = 'workflow-http';
 export const WORKFLOW_DEFAULT_TIMEOUT_MS = 60_000;

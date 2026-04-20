@@ -6,7 +6,11 @@ import {
   AuditService,
   type IAuditEvent,
 } from "../../src/modules/audit/audit.service";
-import { NATS_CONNECTION } from "../../src/providers/nats.provider";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+  NATS_CONNECTION,
+} from "../../src/providers/nats.provider";
 import { TenantConnectionManager, type Sql } from "@yoizen/database";
 
 const mockNatsConnection = {
@@ -14,6 +18,22 @@ const mockNatsConnection = {
     unsubscribe: mock(() => {}),
   })),
 };
+
+async function* emptyStreamList(): AsyncGenerator<never> {
+  return;
+}
+const mockJsm = {
+  streams: {
+    info: mock(() => Promise.resolve({})),
+    add: mock(() => Promise.resolve({})),
+    list: mock(() => emptyStreamList()),
+  },
+  consumers: {
+    info: mock(() => Promise.reject(new Error("consumer not found"))),
+    add: mock(() => Promise.resolve({})),
+  },
+};
+const mockJs = { consumers: { get: mock(() => Promise.reject(new Error("skip"))) } };
 
 describe("AuditService", () => {
   let service: AuditService;
@@ -52,6 +72,8 @@ describe("AuditService", () => {
         AuditRepository,
         AuditService,
         { provide: NATS_CONNECTION, useValue: mockNatsConnection },
+        { provide: JETSTREAM_MANAGER, useValue: mockJsm },
+        { provide: JETSTREAM_PUBLISHER, useValue: mockJs },
         { provide: TenantConnectionManager, useValue: mockTenantMgr },
       ],
     }).compile();

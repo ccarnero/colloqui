@@ -1,6 +1,25 @@
+import "reflect-metadata";
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 
 let tracedFetchMock: ReturnType<typeof mock>;
+
+const mockRedisInstance = {
+  script: mock(() => Promise.resolve("sha-fake")),
+  evalsha: mock(() => Promise.resolve(["allow", "closed", ""])),
+  eval: mock(() => Promise.resolve(["allow", "closed", ""])),
+  options: {},
+  status: "ready",
+};
+
+mock.module("ioredis", () => {
+  return {
+    default: class Redis {
+      constructor() {
+        return mockRedisInstance;
+      }
+    },
+  };
+});
 
 mock.module("@yoizen/observability", () => {
   tracedFetchMock = mock(() =>
@@ -11,7 +30,22 @@ mock.module("@yoizen/observability", () => {
       }),
     ),
   );
-  return { tracedFetch: tracedFetchMock };
+  class FakeLogger {
+    log() {}
+    warn() {}
+    error() {}
+  }
+  return {
+    tracedFetch: tracedFetchMock,
+    PinoLoggerService: FakeLogger,
+    createCircuitBreakerMetrics: () => ({
+      recordDecision() {},
+      recordTransition() {},
+      recordL1Hit() {},
+      recordRedisError() {},
+      recordDecideDuration() {},
+    }),
+  };
 });
 
 const { executeAgentCall } = await import(

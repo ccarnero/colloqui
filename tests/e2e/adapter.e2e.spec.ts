@@ -4,9 +4,14 @@ import { authHeaders } from "./auth.setup";
 
 const GW = getBaseUrl("api-gateway");
 
-/** Bun's default per-test timeout is 5s; polls and workflows need longer. */
-const SLOW_IT = { timeout: 90_000 };
-const VERY_SLOW_IT = { timeout: 120_000 };
+/**
+ * Bun's default per-test timeout is 5s; polls and workflows need longer.
+ * Single-node minikube under full-suite contention can stall the
+ * enrich/forward/webhook pipeline past the 60s pollEvent deadline, so the
+ * `it` timeout must always comfortably exceed it.
+ */
+const SLOW_IT = { timeout: 150_000 };
+const VERY_SLOW_IT = { timeout: 180_000 };
 
 interface AdapterResponse {
   id: string;
@@ -135,7 +140,7 @@ async function pollEvent(eventId: string): Promise<ProcessedResult> {
       }
       return null;
     },
-    { timeoutMs: 60_000 },
+    { timeoutMs: 120_000 },
   );
 }
 
@@ -253,7 +258,7 @@ describe("E2E: adapter integration", () => {
         `${GW}/events`,
         {
           type: "adapter-enrich-e2e",
-          payload: { data: "enrich-test" },
+          payload: { data: `enrich-test-${Date.now()}` },
           enrichAdapter: { adapterId, endpointId: enrichEndpointId },
         },
         { headers: h },
@@ -398,7 +403,13 @@ describe("E2E: adapter integration", () => {
         `${GW}/events`,
         {
           type: "adapter-webhook-e2e",
-          payload: { data: "webhook-test" },
+          // Payload MUST be unique across the whole e2e suite: the
+          // api-gateway derives `Nats-Msg-Id` from `sha256(payload)`
+          // (see wdocs/02 §7), so two publishes with identical payloads
+          // within the JetStream dedup window (default 2 min) are silently
+          // collapsed. `{ data: "webhook-test" }` is also used by
+          // webhook.e2e.spec.ts — we disambiguate here.
+          payload: { data: `adapter-webhook-test-${Date.now()}` },
           callbackUrl: "https://httpbin.org/post",
           adapterId,
         },
@@ -424,7 +435,7 @@ describe("E2E: adapter integration", () => {
         `${GW}/events`,
         {
           type: "adapter-full-pipeline-e2e",
-          payload: { data: "full-pipeline" },
+          payload: { data: `full-pipeline-${Date.now()}` },
           callbackUrl: "https://httpbin.org/post",
           adapterId,
           enrichAdapter: { adapterId, endpointId: enrichEndpointId },

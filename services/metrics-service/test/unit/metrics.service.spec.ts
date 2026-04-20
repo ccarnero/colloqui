@@ -5,13 +5,35 @@ import {
   MetricsService,
   type IMetricRecord,
 } from "../../src/modules/metrics/metrics.service";
-import { NATS_CONNECTION } from "../../src/providers/nats.provider";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+  NATS_CONNECTION,
+} from "../../src/providers/nats.provider";
 import { TenantConnectionManager, type Sql } from "@yoizen/database";
 
 const mockNatsConnection = {
   subscribe: mock(() => ({
     unsubscribe: mock(() => {}),
   })),
+};
+
+async function* emptyStreamList(): AsyncGenerator<never> {
+  return;
+}
+const mockJsm = {
+  streams: {
+    info: mock(() => Promise.resolve({})),
+    add: mock(() => Promise.resolve({})),
+    list: mock(() => emptyStreamList()),
+  },
+  consumers: {
+    info: mock(() => Promise.reject(new Error("consumer not found"))),
+    add: mock(() => Promise.resolve({})),
+  },
+};
+const mockJs = {
+  consumers: { get: mock(() => Promise.reject(new Error("skip"))) },
 };
 
 describe("MetricsService", () => {
@@ -52,6 +74,8 @@ describe("MetricsService", () => {
         MetricsRepository,
         MetricsService,
         { provide: NATS_CONNECTION, useValue: mockNatsConnection },
+        { provide: JETSTREAM_MANAGER, useValue: mockJsm },
+        { provide: JETSTREAM_PUBLISHER, useValue: mockJs },
         { provide: TenantConnectionManager, useValue: mockTenantMgr },
       ],
     }).compile();

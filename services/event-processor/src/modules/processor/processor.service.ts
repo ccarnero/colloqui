@@ -7,9 +7,8 @@ import {
 import type {
   JetStreamClient,
   JetStreamManager,
-  Msg,
-  NatsConnection,
-  Subscription,
+  JsMsg,
+  MsgHdrs,
 } from "nats";
 import {
   PinoLoggerService,
@@ -17,6 +16,7 @@ import {
   logWithEnvelope,
   startNatsConsumerSpan,
   startNatsProducerSpan,
+  createNatsConsumerMetrics,
 } from "@yoizen/observability";
 import { context as otelContext } from "@opentelemetry/api";
 import { headers as natsHeaders } from "nats";
@@ -34,11 +34,14 @@ import type {
   CompletionEvent,
   JsonValue,
 } from "@yoizen/shared";
-import { REDIS_CLIENT } from "@yoizen/database";
+import {
+  MultiTenantConsumerManager,
+  REDIS_CLIENT,
+  type IMultiTenantConsumerConfig,
+} from "@yoizen/database";
 import {
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
-  NATS_CONNECTION,
   ensureTenantIngressStream,
 } from "../../providers/nats.provider";
 import { ProcessorPipelineDeps } from "./processor-pipeline-deps";
@@ -50,6 +53,16 @@ import type { IPipelineContext } from "../../pipeline/pipeline-stage.interface";
  */
 const CANONICAL_GATEWAY_EVENT_PATTERN =
   "evt.*.api-gateway.platform.events.gateway.>";
+const DURABLE_NAME = "event-processor";
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
+/**
+ * Handler concurrency per replica. The pipeline performs up to two
+ * external `tracedFetch` calls (enrichment + forward) per message, so
+ * serial processing (concurrency=1) head-of-line-blocks the tenant
+ * queue when any single downstream is slow. Bounded by
+ * `max_ack_pending` on the server side.
+ */
+const HANDLER_CONCURRENCY = 32;
 
 /**
  * Consumes JetStream messages, runs the enrichment pipeline, dispatches to
@@ -60,43 +73,49 @@ const CANONICAL_GATEWAY_EVENT_PATTERN =
 export class ProcessorService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new PinoLoggerService(ProcessorService.name);
   private readonly encoder = new TextEncoder();
-  private subscription: Subscription | null = null;
+  private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
     @Inject(JETSTREAM_PUBLISHER) private readonly publisher: JetStreamClient,
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
-    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly pipelineDeps: ProcessorPipelineDeps,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    // Canonical consumer (wdocs 02 §9.2 / §11): Core NATS subscription
-    // on `evt.*.api-gateway.platform.>`. Api-gateway publishes into
-    // each `INGRESS-<tenant>` stream; `Nats-Msg-Id` handles dedup at
-    // the stream level so no in-memory dedup is required here.
-    this.subscription = this.nc.subscribe(CANONICAL_GATEWAY_EVENT_PATTERN, {
-      callback: (_err, msg) => {
-        this.handleMessage(msg).catch((err) => {
-          this.logger.warn(
-            `processor handler error: ${err instanceof Error ? err.message : err}`,
-          );
-        });
-      },
-    });
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: CANONICAL_GATEWAY_EVENT_PATTERN,
+      description: "Event processor — gateway events pipeline",
+      metrics: createNatsConsumerMetrics("event-processor"),
+      runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+    };
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.publisher,
+      config,
+      (msg: JsMsg) => this.handleJsMessage(msg),
+      this.logger,
+    );
+    await this.manager.start();
     this.logger.log(
-      `Processor subscribed to: ${CANONICAL_GATEWAY_EVENT_PATTERN}`,
+      `Processor durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.subscription) {
-      this.subscription.unsubscribe();
-      this.subscription = null;
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
     }
   }
 
-  private async handleMessage(msg: Msg): Promise<void> {
+  /**
+   * JetStream-path handler: throws on failure so the runner can nak
+   * and trigger redelivery with backoff.
+   */
+  private async handleJsMessage(msg: JsMsg): Promise<void> {
     const envelope = JSON.parse(
       new TextDecoder().decode(msg.data),
     ) as EventEnvelope;
@@ -106,7 +125,7 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
   private async dispatch(
     envelope: EventEnvelope,
     subject: string,
-    headers: Msg["headers"],
+    headers: MsgHdrs | undefined,
   ): Promise<void> {
     const tenantId =
       envelope.tenant || headers?.get(TENANT_HEADER) || undefined;

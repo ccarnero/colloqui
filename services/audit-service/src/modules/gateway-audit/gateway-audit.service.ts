@@ -10,6 +10,7 @@ import { NatsConsumerRunner } from "@yoizen/database";
 import {
   PinoLoggerService,
   startNatsConsumerSpan,
+  createNatsConsumerMetrics,
 } from "@yoizen/observability";
 import { GATEWAY_AUDIT_CONSUMER } from "../../providers/nats.provider";
 import { TenantConnectionManager, type Sql } from "@yoizen/database";
@@ -71,6 +72,10 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
       consumer,
       (msg) => this.persistMessage(msg),
       this.logger,
+      { concurrency: 16 },
+      undefined,
+      createNatsConsumerMetrics("audit-service"),
+      "gateway-audit",
     );
   }
 

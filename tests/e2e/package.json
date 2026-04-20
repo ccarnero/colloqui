@@ -17,7 +17,11 @@
     "test:webhook": "bun test webhook.e2e.spec.ts",
     "test:adapter": "bun test adapter.e2e.spec.ts",
     "test:error-propagation": "bun test error-propagation.e2e.spec.ts",
-    "test:channel": "bun test channel.e2e.spec.ts"
+    "test:channel": "bun test channel.e2e.spec.ts",
+    "test:dedup": "bun test dedup.e2e.spec.ts"
+  },
+  "dependencies": {
+    "nats": "^2.28.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

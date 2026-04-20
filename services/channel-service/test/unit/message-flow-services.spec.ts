@@ -42,11 +42,23 @@ describe("Channel message flow services", () => {
 
   describe("EgressService", () => {
     it("throws NotFoundException when account does not exist", async () => {
+      const breaker = {
+        canProceed: mock(() =>
+          Promise.resolve({
+            action: "allow" as const,
+            status: "closed" as const,
+            reason: "fresh",
+          }),
+        ),
+        recordSuccess: mock(() => undefined),
+        recordFailure: mock(() => undefined),
+      } as unknown as import("@yoizen/shared").DistributedCircuitBreaker;
       const service = new EgressService(
         { publish: mock(() => Promise.resolve({ seq: 1 })) } as unknown as import("nats").JetStreamClient,
         {} as import("nats").JetStreamManager,
         { getOrThrow: mock() } as unknown as import("../../src/providers/channel-router").ChannelRouter,
-        { findById: mock(() => Promise.resolve(null)) } as unknown as import("../../src/modules/accounts/accounts.service").AccountsService
+        { findById: mock(() => Promise.resolve(null)) } as unknown as import("../../src/modules/accounts/accounts.service").AccountsService,
+        breaker,
       );
 
       try {
@@ -64,12 +76,6 @@ describe("Channel message flow services", () => {
 
   describe("AutoReplyService", () => {
     it("creates and lists rules", async () => {
-      const nc = {
-        subscribe: mock(() => ({
-          unsubscribe: mock(),
-        })),
-      } as unknown as import("nats").NatsConnection;
-
       const egress = {
         send: mock(() => Promise.resolve({ success: true })),
       } as unknown as import("../../src/modules/egress/egress.service").EgressService;
@@ -81,7 +87,9 @@ describe("Channel message flow services", () => {
         deleteRule: mock(() => Promise.resolve({ count: 0 })),
       } as unknown as AutoReplyRepository;
 
-      const service = new AutoReplyService(nc, repo, egress);
+      const jsm = {} as unknown as import("nats").JetStreamManager;
+      const js = {} as unknown as import("nats").JetStreamClient;
+      const service = new AutoReplyService(jsm, js, repo, egress);
 
       const rule = await service.createRule({
         tenantId: "tenant-a",

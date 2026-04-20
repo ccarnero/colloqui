@@ -30,6 +30,19 @@ export {
 } from './http-metrics';
 
 export {
+  createNatsConsumerMetrics,
+  __resetNatsConsumerMetricsCacheForTests,
+  type INatsConsumerMetricsSink,
+  type NatsMessageResult,
+} from './nats-consumer-metrics';
+
+export {
+  createCircuitBreakerMetrics,
+  __resetCircuitBreakerMetricsCacheForTests,
+  type ICircuitBreakerMetricsSink,
+} from './circuit-breaker-metrics';
+
+export {
   tracedFetch,
 } from './traced-fetch';
 

@@ -4,13 +4,19 @@ import {
   OnModuleInit,
   OnModuleDestroy,
 } from "@nestjs/common";
-import type { MsgHdrs, NatsConnection, Subscription } from "nats";
+import type {
+  JetStreamClient,
+  JetStreamManager,
+  JsMsg,
+  MsgHdrs,
+} from "nats";
 import { headers as natsHeaders } from "nats";
 import { context as otelContext } from "@opentelemetry/api";
 import {
   PinoLoggerService,
   logWithEnvelope,
   startNatsConsumerSpan,
+  createNatsConsumerMetrics,
 } from "@yoizen/observability";
 import type { ChannelEnvelope, AutoReplyRule, Channel } from "@yoizen/shared";
 import {
@@ -18,10 +24,20 @@ import {
   CHANNEL_PRODUCER,
   CHANNEL_DOMAIN,
 } from "@yoizen/shared";
-import { NATS_CONNECTION } from "../../providers/nats.provider";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+} from "../../providers/nats.provider";
+import {
+  MultiTenantConsumerManager,
+  type IMultiTenantConsumerConfig,
+} from "@yoizen/database";
 import { EgressService } from "../egress/egress.service";
 import { AutoReplyRepository } from "./auto-reply.repository";
 import { matchAutoReplyPattern } from "./auto-reply.pattern";
+
+const DURABLE_NAME = "auto-reply";
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
 
 /** Options for creating an auto-reply rule. */
 interface ICreateRuleOptions {
@@ -35,13 +51,14 @@ interface ICreateRuleOptions {
 @Injectable()
 export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new PinoLoggerService(AutoReplyService.name);
-  private subscription: Subscription | null = null;
+  private manager: MultiTenantConsumerManager | null = null;
 
   private readonly rulesCache = new Map<string, AutoReplyRule[]>();
   private cacheRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
+    @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
     private readonly autoReplyRepository: AutoReplyRepository,
     private readonly egress: EgressService,
   ) {}
@@ -60,28 +77,46 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
     );
 
     const subject = `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_PRODUCER}.${CHANNEL_DOMAIN}.*.*.received.v1`;
-    this.subscription = this.nc.subscribe(subject, {
-      callback: (_err, msg) => {
-        this.handleMessage(
-          msg as { data: Uint8Array; headers?: MsgHdrs; subject: string },
-        ).catch((err) => {
-          this.logger.warn(
-            `Auto-reply handler error: ${err instanceof Error ? err.message : err}`,
-          );
-        });
-      },
-    });
 
-    this.logger.log(`Auto-reply subscribed to: ${subject}`);
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: subject,
+      description: "Auto-reply rule dispatcher",
+      metrics: createNatsConsumerMetrics("channel-service"),
+      // Matches rules then dispatches egress — parallel-safe, I/O bound.
+      runnerOptions: { concurrency: 16 },
+    };
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.js,
+      config,
+      (msg: JsMsg) => this.handleJsMessage(msg),
+      this.logger,
+    );
+    await this.manager.start();
+    this.logger.log(
+      `Auto-reply durable consumer ('${DURABLE_NAME}') started (filter=${subject})`,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
     if (this.cacheRefreshInterval) {
       clearInterval(this.cacheRefreshInterval);
     }
-    if (this.subscription) {
-      this.subscription.unsubscribe();
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
     }
+  }
+
+  /** JetStream-path handler — throws on failure so runner NAKs. */
+  private async handleJsMessage(msg: JsMsg): Promise<void> {
+    await this.handleMessage({
+      data: msg.data,
+      headers: msg.headers,
+      subject: msg.subject,
+    });
   }
 
   private async handleMessage(msg: {

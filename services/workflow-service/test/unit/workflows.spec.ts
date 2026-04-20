@@ -25,7 +25,7 @@ const executeAgentCall = mock(() =>
     headers: {},
   }),
 );
-const syncExecutionStatus = mock(() => Promise.resolve());
+const publishExecutionCompletedEvent = mock(() => Promise.resolve());
 
 let runWorkflow: (
   workflow: WorkflowDefinition,
@@ -41,7 +41,7 @@ beforeAll(async () => {
       executeChannelSend,
       executeServiceCall,
       executeAgentCall,
-      syncExecutionStatus,
+      publishExecutionCompletedEvent,
     }),
   }));
   ({ runWorkflow } = await import("../../src/temporal/workflows"));
@@ -261,8 +261,8 @@ describe("runWorkflow (temporal/workflows)", () => {
     ).rejects.toThrow("activity failed");
   });
 
-  it("calls syncExecutionStatus with COMPLETED on success", async () => {
-    syncExecutionStatus.mockClear();
+  it("calls publishExecutionCompletedEvent with COMPLETED on success", async () => {
+    publishExecutionCompletedEvent.mockClear();
     await runWorkflow(
       {
         ...base,
@@ -276,11 +276,16 @@ describe("runWorkflow (temporal/workflows)", () => {
       },
       "exec-123",
     );
-    expect(syncExecutionStatus).toHaveBeenCalledWith("exec-123", "COMPLETED");
+    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith(
+      "exec-123",
+      "COMPLETED",
+      "tenant-1",
+      "wf",
+    );
   });
 
-  it("calls syncExecutionStatus with FAILED on error", async () => {
-    syncExecutionStatus.mockClear();
+  it("calls publishExecutionCompletedEvent with FAILED on error", async () => {
+    publishExecutionCompletedEvent.mockClear();
     executeJsFunction.mockImplementationOnce(() =>
       Promise.reject(new Error("boom")),
     );
@@ -299,15 +304,20 @@ describe("runWorkflow (temporal/workflows)", () => {
         "exec-456",
       ),
     ).rejects.toThrow("boom");
-    expect(syncExecutionStatus).toHaveBeenCalledWith("exec-456", "FAILED");
+    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith(
+      "exec-456",
+      "FAILED",
+      "tenant-1",
+      "wf",
+    );
   });
 
-  it("skips sync when executionId is not provided", async () => {
-    syncExecutionStatus.mockClear();
+  it("skips publish when executionId is not provided", async () => {
+    publishExecutionCompletedEvent.mockClear();
     await runWorkflow({
       ...base,
       actions: [],
     });
-    expect(syncExecutionStatus).not.toHaveBeenCalled();
+    expect(publishExecutionCompletedEvent).not.toHaveBeenCalled();
   });
 });

@@ -1,13 +1,19 @@
-import { tracedFetch } from "@yoizen/observability";
-import { TENANT_HEADER } from "@yoizen/shared";
-import type { ServiceCallArgs } from "@yoizen/shared";
+import { ApplicationFailure } from "@temporalio/activity";
+import { tracedFetch, PinoLoggerService } from "@yoizen/observability";
+import { TENANT_HEADER, computeBreakerKey } from "@yoizen/shared";
+import type { ResolvedAdapterRequest, ServiceCallArgs } from "@yoizen/shared";
 import { workflowHttpWorkerConfig } from "../config";
+import { getAdapterClient } from "./_shared/adapter-client.provider";
+import { getHttpBreaker } from "./_shared/breaker";
+import {
+  applyJsonBody,
+  buildResult,
+  httpCallWithRetry,
+  type IHttpCallResult,
+} from "./_shared/http-call-with-retry";
+import { serviceCallResolutionSourceTotal } from "./_shared/metrics";
 
-interface IServiceCallResult {
-  status: number;
-  data: unknown;
-  headers: Record<string, string>;
-}
+type IServiceCallResult = IHttpCallResult;
 
 interface IRegisteredServiceResponse {
   knativeName: string | null;
@@ -15,33 +21,161 @@ interface IRegisteredServiceResponse {
 }
 
 const SERVICE_CALL_TIMEOUT_MS = 30_000;
+const SERVICE_CALL_REGISTRY_LOOKUP_TIMEOUT_MS = 10_000;
+
+const logger = new PinoLoggerService("service-call.activity");
 
 /**
- * Resolves a registered service URL from registry-service, then
- * performs the HTTP call against the resolved Kubernetes DNS endpoint.
+ * Mirror-first service call.
  *
- * @param args - Service id, HTTP method, path, optional body/headers.
- * @param tenantId - Tenant for registry lookup and x-yoizen-tenant header.
- * @returns Normalized status, body, and string headers.
+ * 1. Look up the internal-adapter mirror (`context=internal`, `name=serviceId`).
+ *    If present, route the request through `AdapterClient`:
+ *     - `args.endpointId` set  → resolve to the adapter endpoint's method/path.
+ *     - `args.endpointId` absent → hybrid mode: baseUrl + `args.path`, `args.method`.
+ * 2. Otherwise, fall back to the legacy `registry-service /services/:id` lookup
+ *    and Knative DNS construction — preserves behaviour while adoption ramps up.
  */
 export async function executeServiceCall(
   args: ServiceCallArgs,
   tenantId: string,
 ): Promise<IServiceCallResult> {
-  const baseUrl = await resolveServiceUrl(args.serviceId, tenantId);
+  const breaker = getHttpBreaker();
+  const key = computeBreakerKey({
+    tenantId,
+    kind: "service",
+    serviceId: args.serviceId,
+    endpointId: args.endpointId,
+  });
 
+  const decision = await breaker.canProceed(key);
+  if (decision.action === "deny") {
+    throw ApplicationFailure.nonRetryable(
+      `Circuit breaker ${decision.status} for service call '${args.serviceId}' (${decision.reason})`,
+      "CIRCUIT_OPEN",
+      { key, status: decision.status, reason: decision.reason },
+    );
+  }
+
+  try {
+    const result = await executeServiceCallInner(args, tenantId);
+    breaker.recordSuccess(key);
+    return result;
+  } catch (err) {
+    breaker.recordFailure(key);
+    throw err;
+  }
+}
+
+async function executeServiceCallInner(
+  args: ServiceCallArgs,
+  tenantId: string,
+): Promise<IServiceCallResult> {
+  const client = getAdapterClient();
+  const mirror = await client.findInternalByServiceId(tenantId, args.serviceId);
+
+  if (mirror) {
+    try {
+      const resolved = await resolveViaMirror(
+        tenantId,
+        args,
+        mirror.id,
+        args.endpointId,
+      );
+      const result = await performRequest(resolved, args, tenantId);
+      serviceCallResolutionSourceTotal.add(1, {
+        source: "mirror",
+        result: "ok",
+      });
+      return result;
+    } catch (err) {
+      serviceCallResolutionSourceTotal.add(1, {
+        source: "mirror",
+        result: "error",
+      });
+      throw err;
+    }
+  }
+
+  logger.log(
+    `service-call mirror miss: falling back to registry for '${args.serviceId}' tenant=${tenantId}`,
+  );
+  try {
+    const result = await resolveAndCallViaRegistry(args, tenantId);
+    serviceCallResolutionSourceTotal.add(1, {
+      source: "registry",
+      result: "ok",
+    });
+    return result;
+  } catch (err) {
+    serviceCallResolutionSourceTotal.add(1, {
+      source: "registry",
+      result: "error",
+    });
+    throw err;
+  }
+}
+
+async function resolveViaMirror(
+  tenantId: string,
+  args: ServiceCallArgs,
+  adapterId: string,
+  endpointId: string | undefined,
+): Promise<ResolvedAdapterRequest> {
+  const client = getAdapterClient();
+  if (endpointId) {
+    return client.resolveRequest(tenantId, adapterId, endpointId);
+  }
+  const resolved = await client.resolveForInternalService(
+    tenantId,
+    args.serviceId,
+    {
+      path: args.path,
+      method: args.method,
+    },
+  );
+  if (!resolved) {
+    throw new Error(
+      `Adapter mirror for service '${args.serviceId}' disappeared mid-call`,
+    );
+  }
+  return resolved;
+}
+
+async function performRequest(
+  resolved: ResolvedAdapterRequest,
+  args: ServiceCallArgs,
+  tenantId: string,
+): Promise<IServiceCallResult> {
+  const headers: Record<string, string> = {
+    ...resolved.headers,
+    [TENANT_HEADER]: tenantId,
+    ...args.headers,
+  };
+  const body = applyJsonBody(args.data, headers);
+
+  return httpCallWithRetry({
+    url: resolved.url,
+    method: resolved.method,
+    headers,
+    body,
+    timeoutMs: resolved.timeoutMs,
+    maxRetries: resolved.maxRetries,
+    retryBackoffMs: resolved.retryBackoffMs,
+  });
+}
+
+async function resolveAndCallViaRegistry(
+  args: ServiceCallArgs,
+  tenantId: string,
+): Promise<IServiceCallResult> {
+  const baseUrl = await resolveServiceUrl(args.serviceId, tenantId);
   const url = `${baseUrl}${args.path}`;
 
   const headers: Record<string, string> = {
     [TENANT_HEADER]: tenantId,
     ...args.headers,
   };
-
-  let body: string | undefined;
-  if (args.data !== undefined) {
-    headers["Content-Type"] ??= "application/json";
-    body = JSON.stringify(args.data);
-  }
+  const body = applyJsonBody(args.data, headers);
 
   const res = await tracedFetch(url, {
     method: args.method,
@@ -57,13 +191,12 @@ async function resolveServiceUrl(
   serviceId: string,
   tenantId: string,
 ): Promise<string> {
-  const registryUrl =
-    `${workflowHttpWorkerConfig.registryServiceUrl}/services/${serviceId}`;
+  const registryUrl = `${workflowHttpWorkerConfig.registryServiceUrl}/services/${serviceId}`;
 
   const res = await tracedFetch(registryUrl, {
     method: "GET",
     headers: { [TENANT_HEADER]: tenantId },
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(SERVICE_CALL_REGISTRY_LOOKUP_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -81,21 +214,4 @@ async function resolveServiceUrl(
   }
 
   return `http://${svc.knativeName}.${svc.namespace}.svc.cluster.local`;
-}
-
-async function buildResult(res: Response): Promise<IServiceCallResult> {
-  const responseHeaders: Record<string, string> = {};
-  res.headers.forEach((v, k) => {
-    responseHeaders[k] = v;
-  });
-
-  let data: unknown;
-  const contentType = res.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    data = await res.json();
-  } else {
-    data = await res.text();
-  }
-
-  return { status: res.status, data, headers: responseHeaders };
 }

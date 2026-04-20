@@ -11,11 +11,20 @@ interface CachedAdapter {
   softExpiresAt: number;
 }
 
+interface CachedInternalLookup {
+  /** `null` means "no mirror exists" — negative caching to avoid repeated 404s. */
+  data: AdapterConfig | null;
+  softExpiresAt: number;
+}
+
 const DEFAULT_CACHE_TTL_S = 60;
 const STALE_MULTIPLIER = 5;
 const OAUTH_TOKEN_BUFFER_S = 30;
 const ADAPTER_KEY_PREFIX = "adapter:config:";
 const OAUTH_KEY_PREFIX = "adapter:oauth:";
+const INTERNAL_BY_SERVICE_KEY_PREFIX = "adapter:internal-by-service:";
+/** Shorter negative-cache TTL: new mirrors should propagate fast. */
+const NEGATIVE_CACHE_TTL_S = 10;
 
 export interface AdapterClientOptions {
   baseUrl: string;
@@ -116,6 +125,90 @@ export class AdapterClient {
     await this.cache.del(`${OAUTH_KEY_PREFIX}${adapterId}`);
   }
 
+  async invalidateInternalByServiceId(
+    tenantId: string,
+    serviceId: string,
+  ): Promise<void> {
+    const key = `${INTERNAL_BY_SERVICE_KEY_PREFIX}${tenantId}:${serviceId}`;
+    await this.cache.del(key);
+  }
+
+  /**
+   * Finds the internal-adapter mirror for a given `serviceId` (the name
+   * of a service registered in `registry-service`). The adapter-service
+   * materializes one adapter per registered service with `context=internal`
+   * and `name=serviceId`.
+   *
+   * Returns `null` when no mirror exists. Caller can fall back to the
+   * legacy registry-service resolution path. Both hits and misses are
+   * cached to keep the hot path O(1) against Redis.
+   *
+   * SWR behaviour mirrors {@link getAdapter}: soft TTL drives refresh
+   * attempts; stale data (or cached null) stays available as fallback.
+   */
+  async findInternalByServiceId(
+    tenantId: string,
+    serviceId: string,
+  ): Promise<AdapterConfig | null> {
+    const key = `${INTERNAL_BY_SERVICE_KEY_PREFIX}${tenantId}:${serviceId}`;
+    const raw = await this.cache.get(key);
+
+    if (raw) {
+      const entry = JSON.parse(raw) as CachedInternalLookup;
+      if (Date.now() < entry.softExpiresAt) {
+        return entry.data;
+      }
+      return this.refreshInternalOrStale(tenantId, serviceId, key, entry.data);
+    }
+
+    return this.fetchAndCacheInternal(tenantId, serviceId, key);
+  }
+
+  /**
+   * Resolves a request for an internal service through its adapter
+   * mirror. Hybrid model:
+   *  - If `opts.endpointId` is provided, the adapter endpoint's method
+   *    and path are used (strict endpoint-based resolution).
+   *  - Otherwise, `opts.path` is concatenated onto `adapter.baseUrl` and
+   *    `opts.method` is honoured verbatim (dynamic-path mode).
+   *
+   * Returns `null` when no mirror exists so the caller can fall back.
+   */
+  async resolveForInternalService(
+    tenantId: string,
+    serviceId: string,
+    opts: { endpointId?: string; path?: string; method?: string },
+  ): Promise<ResolvedAdapterRequest | null> {
+    const adapter = await this.findInternalByServiceId(tenantId, serviceId);
+    if (!adapter) return null;
+
+    if (opts.endpointId) {
+      return this.resolveRequest(tenantId, adapter.id, opts.endpointId);
+    }
+
+    const base = adapter.baseUrl.replace(/\/+$/, "");
+    const rawPath = opts.path ?? "";
+    const path = rawPath.length === 0 || rawPath.startsWith("/")
+      ? rawPath
+      : `/${rawPath}`;
+
+    const headers: Record<string, string> = {};
+    for (let i = 0; i < adapter.headers.length; i++) {
+      const h = adapter.headers[i]!;
+      headers[h.key] = h.value;
+    }
+    await this.injectAuthHeaders(adapter, headers);
+
+    return {
+      url: `${base}${path}`,
+      method: opts.method ?? "GET",
+      headers,
+      timeoutMs: adapter.timeoutMs,
+      maxRetries: adapter.maxRetries,
+      retryBackoffMs: adapter.retryBackoffMs,
+    };
+  }
+
   private async refreshOrStale(
     tenantId: string,
     adapterId: string,
@@ -127,6 +220,71 @@ export class AdapterClient {
     } catch {
       return staleData;
     }
+  }
+
+  private async refreshInternalOrStale(
+    tenantId: string,
+    serviceId: string,
+    key: string,
+    staleData: AdapterConfig | null,
+  ): Promise<AdapterConfig | null> {
+    try {
+      return await this.fetchAndCacheInternal(tenantId, serviceId, key);
+    } catch {
+      return staleData;
+    }
+  }
+
+  private async fetchAndCacheInternal(
+    tenantId: string,
+    serviceId: string,
+    key: string,
+  ): Promise<AdapterConfig | null> {
+    const config = await this.fetchInternalByServiceId(tenantId, serviceId);
+    const ttlS = config ? this.cacheTtlS : NEGATIVE_CACHE_TTL_S;
+    const entry: CachedInternalLookup = {
+      data: config,
+      softExpiresAt: Date.now() + ttlS * 1_000,
+    };
+    const hardTtl = ttlS * STALE_MULTIPLIER;
+    await this.cache.setex(key, hardTtl, JSON.stringify(entry));
+    return config;
+  }
+
+  /**
+   * Lists internal adapters filtered by `name=serviceId` and returns the
+   * first match (there should be at most one since `(tenant_id, name)`
+   * is unique). Returns `null` when none exists — caller caches that
+   * as a negative hit.
+   */
+  private async fetchInternalByServiceId(
+    tenantId: string,
+    serviceId: string,
+  ): Promise<AdapterConfig | null> {
+    const qs = new URLSearchParams({
+      context: "internal",
+      name: serviceId,
+      limit: "1",
+    });
+    const url = `${this.baseUrl}/adapters?${qs.toString()}`;
+    const res = await this.fetchFn(url, {
+      method: "GET",
+      headers: {
+        [TENANT_HEADER]: tenantId,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(5_000),
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `Failed to list internal adapters for service '${serviceId}': HTTP ${res.status}`,
+      );
+    }
+
+    const list = (await res.json()) as AdapterConfig[];
+    if (!Array.isArray(list) || list.length === 0) return null;
+    return list[0]!;
   }
 
   private async fetchAndCache(

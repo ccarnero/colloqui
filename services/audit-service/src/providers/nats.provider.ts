@@ -3,6 +3,7 @@ import {
   createNatsConnectionProvider,
   createJetStreamManagerProvider,
   createJetStreamDurableConsumerProvider,
+  createJetStreamPublisherProvider,
   NATS_CONNECTION,
 } from "@yoizen/database";
 import {
@@ -15,6 +16,7 @@ import {
 
 export { NATS_CONNECTION } from "@yoizen/database";
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
+export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
 export const GATEWAY_AUDIT_CONSUMER = "GATEWAY_AUDIT_CONSUMER";
 
 export const natsProvider: FactoryProvider = createNatsConnectionProvider("audit-service");
@@ -51,4 +53,15 @@ export const gatewayAuditConsumerProvider: FactoryProvider =
     managerToken: JETSTREAM_MANAGER,
     streamName: GATEWAY_AUDIT_STREAM_NAME,
     durableName: GATEWAY_AUDIT_CONSUMER_NAME,
+  });
+
+/**
+ * JetStream publisher used by the multi-tenant durable consumer
+ * managers (audit-events / channel-audit) to obtain `Consumer`
+ * handles across `INGRESS-<tenant>` streams.
+ */
+export const jetStreamPublisherProvider: FactoryProvider =
+  createJetStreamPublisherProvider({
+    provide: JETSTREAM_PUBLISHER,
+    managerToken: JETSTREAM_MANAGER,
   });

@@ -4,15 +4,27 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import type { Msg, NatsConnection, Subscription } from "nats";
+import type {
+  JetStreamClient,
+  JetStreamManager,
+  JsMsg,
+} from "nats";
 import { context as otelContext } from "@opentelemetry/api";
 import {
   PinoLoggerService,
   logWithEnvelope,
   startNatsConsumerSpan,
+  createNatsConsumerMetrics,
 } from "@yoizen/observability";
-import { NATS_CONNECTION } from "../../providers/nats.provider";
-import { TenantConnectionManager } from "@yoizen/database";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+} from "../../providers/nats.provider";
+import {
+  MultiTenantConsumerManager,
+  TenantConnectionManager,
+  type IMultiTenantConsumerConfig,
+} from "@yoizen/database";
 import type { EventEnvelope } from "@yoizen/shared";
 import type { IMetricsQueryParams } from "../../common/metrics-query-params";
 import {
@@ -25,51 +37,72 @@ export type { IMetricRecord };
 /**
  * Canonical metrics subject (wdocs 02 §9.2). Api-gateway publishes
  * metrics events into each `INGRESS-<tenant>` stream with this exact
- * 8-token subject; metrics-service subscribes via Core NATS across
- * all tenants.
+ * 8-token subject; metrics-service consumes from a durable pull
+ * consumer (queue-group: `metrics`) across every `INGRESS-<tenant>`
+ * stream, keeping at-least-once semantics and per-group scale-out.
  */
 const CANONICAL_METRICS_PATTERN =
   "evt.*.api-gateway.platform.events.gateway.metrics.v1";
+const DURABLE_NAME = "metrics";
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
+/** Metric inserts are I/O-bound; parallel safe because each row is independent. */
+const HANDLER_CONCURRENCY = 16;
 
 @Injectable()
 export class MetricsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new PinoLoggerService(MetricsService.name);
-  private subscription: Subscription | null = null;
+  private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
-    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
+    @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
     private readonly tenantConnections: TenantConnectionManager,
     private readonly metricsRepository: MetricsRepository,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    this.subscription = this.nc.subscribe(CANONICAL_METRICS_PATTERN, {
-      callback: (_err, msg) => {
-        this.persistMessage(msg).catch((err) => {
-          this.logger.warn(
-            `metrics persist error: ${err instanceof Error ? err.message : err}`,
-          );
-        });
-      },
-    });
-    this.logger.log(`Metrics subscribed to: ${CANONICAL_METRICS_PATTERN}`);
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: CANONICAL_METRICS_PATTERN,
+      description: "Metrics persistence",
+      metrics: createNatsConsumerMetrics("metrics-service"),
+      runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+    };
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.js,
+      config,
+      (msg: JsMsg) => this.persistJsMessage(msg),
+      this.logger,
+    );
+    await this.manager.start();
+    this.logger.log(
+      `Metrics durable consumer ('${DURABLE_NAME}') started`,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.subscription) {
-      this.subscription.unsubscribe();
-      this.subscription = null;
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
     }
   }
 
-  private async persistMessage(msg: Msg): Promise<void> {
+  /** JetStream-path handler — throws on failure so runner NAKs. */
+  private async persistJsMessage(msg: JsMsg): Promise<void> {
     const envelope = JSON.parse(
       new TextDecoder().decode(msg.data),
     ) as EventEnvelope;
     const { span, context: ctx } = startNatsConsumerSpan(
       "metrics-service",
       msg.subject,
-      msg.headers ?? { keys: () => [], values: () => [], get: () => "", set: () => {} },
+      msg.headers ?? {
+        keys: () => [],
+        values: () => [],
+        get: () => "",
+        set: () => {},
+      },
     );
     try {
       await otelContext.with(ctx, () => this.persistMetricEnvelope(envelope));

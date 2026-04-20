@@ -534,6 +534,10 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: REGISTRY_EMIT_ADAPTER_SYNC
+              value: "true"
             - name: POSTGRES_HOST
               value: "postgres.support-services-dev.svc.cluster.local"
             - name: POSTGRES_USER
@@ -650,16 +654,10 @@ spec:
               value: "temporal.support-services-dev.svc.cluster.local:7233"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
-            - name: POSTGRES_HOST
-              value: "postgres.support-services-dev.svc.cluster.local"
-            - name: POSTGRES_USER
-              value: "yoizen"
-            - name: POSTGRES_PASSWORD
-              value: "yoizen-dev-password"
-            - name: POSTGRES_DB
-              value: "yoizen"
-            - name: POSTGRES_PORT
-              value: "5432"
+            # Postgres creds intentionally removed: since Phase 7 the
+            # Temporal worker emits `workflow.execution.completed` events
+            # to NATS instead of writing to `workflow_executions`.
+            # The `workflow-api` projector owns the DB now.
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -774,6 +772,8 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
             - name: POSTGRES_HOST
               value: "postgres.support-services-dev.svc.cluster.local"
             - name: POSTGRES_USER

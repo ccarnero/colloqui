@@ -53,6 +53,7 @@ export class AdaptersController {
       limit,
       offset,
       query.tag,
+      query.name,
     );
   }
 

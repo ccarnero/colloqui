@@ -769,3 +769,209 @@ data:
       "uid": "nats-subjects",
       "refresh": "10s"
     }
+  dlq-monitoring.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "name": "DLQ activity",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "enable": true,
+            "iconColor": "red",
+            "expr": "sum(increase(jetstream_stream_messages{job=\"nats\", stream_name=~\"DLQ-.*\"}[1m])) > 0",
+            "titleFormat": "New DLQ message",
+            "tagKeys": "stream_name"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "title": "Total DLQ Messages (all tenants)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(jetstream_stream_messages{job=\"nats\", stream_name=~\"DLQ-.*\"})",
+              "legendFormat": "total messages"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 100 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "DLQ Streams (tenants impacted)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "count(count by (stream_name) (jetstream_stream_messages{job=\"nats\", stream_name=~\"DLQ-.*\"}))",
+              "legendFormat": "tenants"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 5 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "DLQ Ingest Rate (msgs/s)",
+          "type": "timeseries",
+          "gridPos": { "h": 4, "w": 12, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(jetstream_stream_messages{job=\"nats\", stream_name=~\"DLQ-.*\"}[5m]))",
+              "legendFormat": "total/s"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cps",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "DLQ Messages per Tenant",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jetstream_stream_messages{job=\"nats\", stream_name=~\"DLQ-.*\"}",
+              "legendFormat": "{{stream_name}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "DLQ Storage per Tenant",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jetstream_stream_bytes{job=\"nats\", stream_name=~\"DLQ-.*\"}",
+              "legendFormat": "{{stream_name}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "DLQ Streams Detail",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jetstream_stream_messages{job=\"nats\", stream_name=~\"DLQ-.*\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            },
+            {
+              "expr": "jetstream_stream_bytes{job=\"nats\", stream_name=~\"DLQ-.*\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "B"
+            },
+            {
+              "expr": "jetstream_stream_last_seq{job=\"nats\", stream_name=~\"DLQ-.*\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "C"
+            }
+          ],
+          "transformations": [
+            { "id": "merge" },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "instance": true,
+                  "job": true,
+                  "server_id": true,
+                  "account": true
+                },
+                "renameByName": {
+                  "stream_name": "Tenant DLQ",
+                  "Value #A": "Messages",
+                  "Value #B": "Bytes",
+                  "Value #C": "Last Seq"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Bytes" },
+                "properties": [{ "id": "unit", "value": "bytes" }]
+              }
+            ]
+          }
+        },
+        {
+          "title": "DLQ Ingest Rate per Tenant (msgs/5m)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(jetstream_stream_messages{job=\"nats\", stream_name=~\"DLQ-.*\"}[5m])",
+              "legendFormat": "{{stream_name}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cps",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["nats", "dlq", "observability", "alerts"],
+      "templating": { "list": [] },
+      "time": { "from": "now-6h", "to": "now" },
+      "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+      "timezone": "browser",
+      "title": "NATS DLQ Monitoring",
+      "uid": "nats-dlq",
+      "refresh": "30s"
+    }

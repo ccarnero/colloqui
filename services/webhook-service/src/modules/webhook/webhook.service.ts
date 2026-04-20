@@ -6,9 +6,9 @@ import {
 } from "@nestjs/common";
 import type {
   JetStreamClient,
-  Msg,
-  NatsConnection,
-  Subscription,
+  JetStreamManager,
+  JsMsg,
+  MsgHdrs,
 } from "nats";
 import type Redis from "ioredis";
 import {
@@ -30,8 +30,8 @@ import { headers as natsHeaders } from "nats";
 import { context as otelContext } from "@opentelemetry/api";
 import { webhookServiceConfig } from "../../config";
 import {
+  JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
-  NATS_CONNECTION,
 } from "../../providers/nats.provider";
 
 /**
@@ -41,13 +41,27 @@ import {
  */
 const CANONICAL_COMPLETION_PATTERN =
   "evt.*.event-processor.platform.events.gateway.>";
+const DURABLE_NAME = "webhook-dispatcher";
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
+/**
+ * Each delivery performs an adapter-service lookup + an external
+ * `tracedFetch` to the customer callback URL. Both are I/O bound and
+ * can run in parallel without contention — serial processing here was
+ * the main source of 60s+ polls in the e2e suite.
+ */
+const HANDLER_CONCURRENCY = 32;
 
-import { REDIS_CLIENT } from "@yoizen/database";
+import {
+  MultiTenantConsumerManager,
+  REDIS_CLIENT,
+  type IMultiTenantConsumerConfig,
+} from "@yoizen/database";
 import {
   PinoLoggerService,
   logWithEnvelope,
   startNatsConsumerSpan,
   tracedFetch,
+  createNatsConsumerMetrics,
 } from "@yoizen/observability";
 
 @Injectable()
@@ -58,11 +72,11 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
   private readonly adapterClient: ReturnType<
     typeof createAdapterClientWithRedisAndFetch
   >;
-  private subscription: Subscription | null = null;
+  private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
     @Inject(JETSTREAM_PUBLISHER) private readonly publisher: JetStreamClient,
-    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(REDIS_CLIENT) redis: Redis,
   ) {
     this.adapterClient = createAdapterClientWithRedisAndFetch(
@@ -73,28 +87,36 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    this.subscription = this.nc.subscribe(CANONICAL_COMPLETION_PATTERN, {
-      callback: (_err, msg) => {
-        this.handleMessage(msg).catch((err) => {
-          this.logger.warn(
-            `webhook handler error: ${err instanceof Error ? err.message : err}`,
-          );
-        });
-      },
-    });
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: CANONICAL_COMPLETION_PATTERN,
+      description: "Webhook completion dispatcher",
+      metrics: createNatsConsumerMetrics("webhook-service"),
+      runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+    };
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.publisher,
+      config,
+      (msg: JsMsg) => this.handleJsMessage(msg),
+      this.logger,
+    );
+    await this.manager.start();
     this.logger.log(
-      `Webhook subscribed to: ${CANONICAL_COMPLETION_PATTERN}`,
+      `Webhook durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.subscription) {
-      this.subscription.unsubscribe();
-      this.subscription = null;
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
     }
   }
 
-  private async handleMessage(msg: Msg): Promise<void> {
+  /** JetStream-path handler — throws on failure so runner NAKs. */
+  private async handleJsMessage(msg: JsMsg): Promise<void> {
     const body = JSON.parse(new TextDecoder().decode(msg.data)) as
       | EventEnvelope
       | CompletionEvent;
@@ -104,7 +126,7 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
   private async dispatch(
     body: EventEnvelope | CompletionEvent,
     subject: string,
-    headers: Msg["headers"],
+    headers: MsgHdrs | undefined,
   ): Promise<void> {
     const { envelope, completion } = unwrapCompletion(body);
 

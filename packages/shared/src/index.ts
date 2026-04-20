@@ -24,6 +24,10 @@ export {
   REGISTRY_KNATIVE_SERVICES_PLURAL,
   REGISTRY_KNATIVE_REVISIONS_PLURAL,
   REGISTRY_DEFAULT_SERVICE_PORT,
+  REGISTRY_PRODUCER,
+  PLATFORM_DOMAIN,
+  PLATFORM_NON_CHANNEL_TOKEN,
+  ADAPTER_MANAGED_BY_REGISTRY,
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
   WORKFLOW_HTTP_TASK_QUEUE,
   WORKFLOW_DEFAULT_TIMEOUT_MS,
@@ -198,7 +202,27 @@ export {
   CLAIM_CHECK_BUCKET_PREFIX,
   CHANNEL_AUDIT_SUBJECT_PATTERN,
   CHANNEL_SEND_SUBJECT_PATTERN,
+  DLQ_TENANT_STREAM_PREFIX,
+  DLQ_TENANT_SUBJECT_PREFIX,
+  DLQ_TENANT_STREAM_MAX_AGE_NS,
+  DLQ_TENANT_STREAM_MAX_BYTES,
+  buildDlqStreamName,
+  buildDlqSubjectPattern,
+  buildDlqMessageSubject,
 } from './channel.constants';
+
+export { PermanentError, isPermanentError } from './permanent-error';
+
+export {
+  DistributedCircuitBreaker,
+  computeBreakerKey,
+  type BreakerStatus,
+  type BreakerDecision,
+  type IBreakerConfig,
+  type ICircuitBreakerRedis,
+  type ICircuitBreakerLogger,
+  type ICircuitBreakerMetrics,
+} from './circuit-breaker';
 
 export type {
   Channel,
@@ -221,6 +245,22 @@ export {
   buildTenantWildcard,
   parseChannelSubject,
 } from './channel.utils';
+
+export {
+  buildRegistryPlatformSubject,
+  buildRegistryPlatformWildcard,
+  PLATFORM_RESOURCE_SERVICE,
+  PLATFORM_KIND_SERVICE_UPSERTED,
+  PLATFORM_KIND_SERVICE_DELETED,
+  SERVICE_UPSERTED_EVENT_TYPE,
+  SERVICE_DELETED_EVENT_TYPE,
+  REGISTRY_EVENT_SOURCE,
+} from './platform.utils';
+
+export type {
+  IServiceConfigUpsertedPayload,
+  IServiceConfigDeletedPayload,
+} from './platform.utils';
 
 export type { ParsedSenderId, SenderIdType } from './phone.utils';
 export { parseSenderId, normalizeRecipient } from './phone.utils';

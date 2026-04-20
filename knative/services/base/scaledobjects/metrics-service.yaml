@@ -1,0 +1,49 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: metrics-service-scaler
+  labels:
+    app.kubernetes.io/name: metrics-service
+    app.kubernetes.io/component: autoscaler
+  annotations:
+    scaledobject.keda.sh/transfer-hpa-ownership: "true"
+spec:
+  scaleTargetRef:
+    apiVersion: serving.knative.dev/v1
+    kind: Service
+    name: metrics-service
+  pollingInterval: 30
+  cooldownPeriod: 180
+  idleReplicaCount: 0
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  fallback:
+    failureThreshold: 3
+    replicas: 2
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 15
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 30
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 60
+  triggers:
+    # metrics: aggregates counters/histograms — tolerates a seconds-level lag.
+    - type: prometheus
+      name: metrics-lag
+      metadata:
+        serverAddress: http://prometheus.default.svc:9090
+        metricName: metrics_lag
+        threshold: "5000"
+        query: |
+          sum(jetstream_consumer_num_pending{consumer_name="metrics"})
+          +
+          sum(jetstream_consumer_num_ack_pending{consumer_name="metrics"})

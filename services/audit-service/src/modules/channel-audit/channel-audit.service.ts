@@ -4,21 +4,38 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import type { Msg, NatsConnection, Subscription } from "nats";
+import type {
+  JetStreamClient,
+  JetStreamManager,
+  JsMsg,
+} from "nats";
 import { context as otelContext } from "@opentelemetry/api";
 import {
   PinoLoggerService,
   logWithEnvelope,
   startNatsConsumerSpan,
+  createNatsConsumerMetrics,
 } from "@yoizen/observability";
-import { NATS_CONNECTION } from "../../providers/nats.provider";
-import { TenantConnectionManager } from "@yoizen/database";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+} from "../../providers/nats.provider";
+import {
+  MultiTenantConsumerManager,
+  TenantConnectionManager,
+  type IMultiTenantConsumerConfig,
+} from "@yoizen/database";
 import {
   CHANNEL_AUDIT_SUBJECT_PATTERN,
   type ChannelEnvelope,
 } from "@yoizen/shared";
 import { CHANNEL_AUDIT_SELECT_PROJECTION } from "../../common/channel-audit-projection";
 import { ensureTenantNamespaceOnce } from "../../common/ensure-tenant-schema";
+
+const DURABLE_NAME = "channel-audit";
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
+/** Audit writes are I/O-bound Postgres inserts — parallel is safe + faster. */
+const HANDLER_CONCURRENCY = 16;
 
 export interface IStoredChannelEvent {
   id: string;
@@ -50,37 +67,45 @@ interface IChannelAuditQueryParams {
 @Injectable()
 export class ChannelAuditService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new PinoLoggerService(ChannelAuditService.name);
-  private subscription: Subscription | null = null;
+  private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
-    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
+    @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
     private readonly tenantConnections: TenantConnectionManager,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    this.subscription = this.nc.subscribe(CHANNEL_AUDIT_SUBJECT_PATTERN, {
-      callback: (_err, msg) => {
-        this.handleMessage(msg).catch((err) => {
-          this.logger.warn(
-            `Channel audit persist error: ${err instanceof Error ? err.message : err}`,
-          );
-        });
-      },
-    });
-
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: CHANNEL_AUDIT_SUBJECT_PATTERN,
+      description: "Channel messaging events audit writer",
+      metrics: createNatsConsumerMetrics("audit-service"),
+      runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+    };
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.js,
+      config,
+      (msg: JsMsg) => this.handleJsMessage(msg),
+      this.logger,
+    );
+    await this.manager.start();
     this.logger.log(
-      `Channel audit subscribed to: ${CHANNEL_AUDIT_SUBJECT_PATTERN}`,
+      `Channel audit durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.subscription) {
-      this.subscription.unsubscribe();
-      this.subscription = null;
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
     }
   }
 
-  private async handleMessage(msg: Msg): Promise<void> {
+  /** JetStream-path handler — throws on failure so runner NAKs. */
+  private async handleJsMessage(msg: JsMsg): Promise<void> {
     const decoder = new TextDecoder();
     const envelope = JSON.parse(decoder.decode(msg.data)) as ChannelEnvelope;
 

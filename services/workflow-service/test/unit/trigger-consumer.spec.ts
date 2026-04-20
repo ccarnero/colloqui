@@ -4,6 +4,10 @@ import { Test } from "@nestjs/testing";
 import { NATS_CONNECTION } from "@yoizen/database";
 import type { WorkflowTrigger } from "@yoizen/shared";
 import { TriggerConsumerService } from "../../src/modules/triggers/trigger-consumer.service";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+} from "../../src/providers/providers.module";
 import { WorkflowsService } from "../../src/modules/workflows/workflows.service";
 import { WorkflowsRepository } from "../../src/modules/workflows/workflows.repository";
 import type { IWorkflowDefinitionRow } from "../../src/modules/workflows/workflows.repository";
@@ -87,6 +91,8 @@ describe("TriggerConsumerService", () => {
       providers: [
         TriggerConsumerService,
         { provide: NATS_CONNECTION, useValue: ncMock },
+        { provide: JETSTREAM_MANAGER, useValue: {} },
+        { provide: JETSTREAM_PUBLISHER, useValue: {} },
         {
           provide: WorkflowsService,
           useValue: { executeWorkflow },

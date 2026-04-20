@@ -112,3 +112,55 @@ data:
             annotations:
               summary: "NATS connection count above 1000"
               description: "NATS currently has {{ $value }} active connections."
+
+      - name: nats-dlq
+        rules:
+          - alert: DlqMessageDetected
+            expr: >
+              sum by (stream_name) (
+                increase(jetstream_stream_messages{stream_name=~"DLQ-.*"}[1m])
+              ) > 0
+            for: 0m
+            labels:
+              severity: critical
+              category: poison-pill
+            annotations:
+              summary: "New DLQ message on {{ $labels.stream_name }}"
+              description: >
+                A permanent-failure message was terminated and routed to
+                {{ $labels.stream_name }}. Inspect the envelope headers
+                (X-Dlq-Reason / X-Dlq-Stage / X-Dlq-Original-Subject)
+                to identify the poison-pill and tenant.
+
+          - alert: DlqIngestRateSustained
+            expr: >
+              sum by (stream_name) (
+                rate(jetstream_stream_messages{stream_name=~"DLQ-.*"}[5m])
+              ) > 0.05
+            for: 10m
+            labels:
+              severity: warning
+              category: poison-pill
+            annotations:
+              summary: "Sustained DLQ ingest on {{ $labels.stream_name }}"
+              description: >
+                DLQ ingest rate on {{ $labels.stream_name }} is
+                {{ $value | humanize }} msg/s over the last 10 minutes —
+                indicates repeated permanent failures (likely a bad
+                deploy or a misconfigured tenant endpoint).
+
+          - alert: DlqBacklogGrowing
+            expr: >
+              deriv(
+                jetstream_stream_messages{stream_name=~"DLQ-.*"}[15m]
+              ) > 0
+            for: 30m
+            labels:
+              severity: warning
+              category: poison-pill
+            annotations:
+              summary: "DLQ {{ $labels.stream_name }} backlog is growing"
+              description: >
+                {{ $labels.stream_name }} has been accumulating messages
+                for 30+ minutes with no drainage. Triage the DLQ consumer
+                or replay the envelopes once the root cause is fixed.

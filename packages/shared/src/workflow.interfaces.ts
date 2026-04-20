@@ -36,6 +36,14 @@ export interface ServiceCallArgs {
   path: string;
   data?: unknown;
   headers?: Record<string, string>;
+  /**
+   * Optional endpoint id from the internal-adapter mirror. When provided,
+   * the worker resolves the request through {@link AdapterClient} and
+   * uses the endpoint's pre-declared method/path (see wdocs D-service-adapter).
+   * When absent, the worker falls back to concatenating `args.path` onto
+   * the mirror's `baseUrl` (hybrid mode).
+   */
+  endpointId?: string;
 }
 
 export interface ChannelSendArgs {

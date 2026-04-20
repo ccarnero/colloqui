@@ -26,3 +26,4 @@ resources:
   - admin-console.yaml
   - messaging-console.yaml
   - yoizenclaw-admin-service.yaml
+  - scaledobjects

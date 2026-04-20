@@ -30,3 +30,38 @@ export const CHANNEL_AUDIT_SUBJECT_PATTERN =
  */
 export const CHANNEL_SEND_SUBJECT_PATTERN =
   "evt.*.channel-service.messaging.*.*.send.v1" as const;
+
+/** Prefix for per-tenant dead-letter JetStream streams. */
+export const DLQ_TENANT_STREAM_PREFIX = "DLQ" as const;
+export const DLQ_TENANT_SUBJECT_PREFIX = "dlq" as const;
+export const DLQ_TENANT_STREAM_MAX_AGE_NS = 30 * 24 * 60 * 60 * 1_000_000_000;
+export const DLQ_TENANT_STREAM_MAX_BYTES = 512 * 1024 * 1024;
+
+/**
+ * Returns the dead-letter JetStream stream name for a tenant.
+ * Shape: `DLQ-<tenantId>`. O(1), deterministic.
+ */
+export function buildDlqStreamName(tenantId: string): string {
+  return `${DLQ_TENANT_STREAM_PREFIX}-${tenantId}`;
+}
+
+/**
+ * Returns the catch-all subject for a tenant's DLQ stream.
+ * Shape: `dlq.<tenantId>.>`. Each terminated message is republished
+ * using `dlq.<tenantId>.<original-subject>` to preserve routing info.
+ */
+export function buildDlqSubjectPattern(tenantId: string): string {
+  return `${DLQ_TENANT_SUBJECT_PREFIX}.${tenantId}.>`;
+}
+
+/**
+ * Builds the concrete DLQ subject for a terminated message.
+ * Preserves the original subject as a suffix so Grafana/consumers can
+ * still filter by stage/event type.
+ */
+export function buildDlqMessageSubject(
+  tenantId: string,
+  originalSubject: string,
+): string {
+  return `${DLQ_TENANT_SUBJECT_PREFIX}.${tenantId}.${originalSubject}`;
+}

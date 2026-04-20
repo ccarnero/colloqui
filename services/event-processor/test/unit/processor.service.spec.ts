@@ -65,10 +65,14 @@ describe("ProcessorService", () => {
       subscribe: mock(() => ({ unsubscribe: mock(() => {}) })),
     };
 
+    async function* emptyStreamList(): AsyncGenerator<never> {
+      return;
+    }
     const mockJsm = {
       streams: {
         info: mock(() => Promise.resolve({})),
         add: mock(() => Promise.resolve({})),
+        list: mock(() => emptyStreamList()),
       },
     };
 

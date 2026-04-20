@@ -4,9 +4,19 @@ import {
   OnModuleInit,
   OnModuleDestroy,
 } from "@nestjs/common";
-import type { NatsConnection, Subscription } from "nats";
-import { NATS_CONNECTION } from "@yoizen/database";
-import { PinoLoggerService } from "@yoizen/observability";
+import type {
+  JetStreamClient,
+  JetStreamManager,
+  JsMsg,
+} from "nats";
+import {
+  MultiTenantConsumerManager,
+  type IMultiTenantConsumerConfig,
+} from "@yoizen/database";
+import {
+  PinoLoggerService,
+  createNatsConsumerMetrics,
+} from "@yoizen/observability";
 import {
   CHANNEL_SUBJECT_PREFIX,
   CHANNEL_PRODUCER,
@@ -19,10 +29,28 @@ import type {
   Channel,
   ChannelProvider,
 } from "@yoizen/shared";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+} from "../../providers/providers.module";
 import { WorkflowsService } from "../workflows/workflows.service";
 import { WorkflowsRepository } from "../workflows/workflows.repository";
 import type { IWorkflowDefinitionRow } from "../workflows/workflows.repository";
 
+const DURABLE_NAME = "workflow-triggers";
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
+/** `evt.*.channel-service.messaging.*.*.received.v1` — 8-token canonical. */
+const TRIGGER_SUBJECT = `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_PRODUCER}.${CHANNEL_DOMAIN}.*.*.received.v1`;
+
+/**
+ * Consumes `channel.message.received` events from JetStream and starts
+ * matching `message_received` workflow triggers.
+ *
+ * Triggers are idempotent: the Temporal workflowId is derived from
+ * `envelope.idempotencykey + def.id`, so redelivery by JetStream OR a
+ * race between replicas results in `WorkflowExecutionAlreadyStartedError`
+ * on every attempt after the first — which we silently acknowledge.
+ */
 @Injectable()
 export class TriggerConsumerService
   implements OnModuleInit, OnModuleDestroy
@@ -30,35 +58,48 @@ export class TriggerConsumerService
   private readonly logger = new PinoLoggerService(
     TriggerConsumerService.name,
   );
-  private subscription: Subscription | null = null;
+  private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
-    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
+    @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
     private readonly workflowsService: WorkflowsService,
     private readonly workflowsRepository: WorkflowsRepository,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const subject =
-      `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_PRODUCER}.${CHANNEL_DOMAIN}.*.*.received.v1`;
-
-    this.subscription = this.nc.subscribe(subject, {
-      callback: (_err, msg) => {
-        this.handleMessage(msg).catch((err: unknown) => {
-          this.logger.warn(
-            `Trigger handler error: ${err instanceof Error ? err.message : err}`,
-          );
-        });
-      },
-    });
-
-    this.logger.log(`Workflow trigger consumer subscribed to: ${subject}`);
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: TRIGGER_SUBJECT,
+      description:
+        "Workflow triggers — message_received → Temporal workflow start",
+      metrics: createNatsConsumerMetrics("workflow-service"),
+      // Each trigger boots a Temporal workflow over gRPC — I/O bound.
+      runnerOptions: { concurrency: 16 },
+    };
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.js,
+      config,
+      (msg: JsMsg) => this.handleJsMessage(msg),
+      this.logger,
+    );
+    await this.manager.start();
+    this.logger.log(
+      `Workflow triggers durable consumer ('${DURABLE_NAME}') started`,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.subscription) {
-      this.subscription.unsubscribe();
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
     }
+  }
+
+  private async handleJsMessage(msg: JsMsg): Promise<void> {
+    await this.handleMessage({ subject: msg.subject, data: msg.data });
   }
 
   private async handleMessage(
@@ -105,25 +146,40 @@ export class TriggerConsumerService
       tenantId: tenant,
     };
 
-    await Promise.all(
-      toExecute.map(async (def) => {
-        try {
-          const result =
-            await this.workflowsService.executeWorkflow(
-              def.id,
-              tenant,
-              request,
-            );
+    const baseIdempotencyKey = envelope.idempotencykey;
+
+    for (let i = 0; i < toExecute.length; i++) {
+      const def = toExecute[i]!;
+      const triggerIdempotencyKey = baseIdempotencyKey
+        ? `${baseIdempotencyKey}:${def.id}`
+        : undefined;
+      try {
+        const result = await this.workflowsService.executeWorkflow(
+          def.id,
+          tenant,
+          request,
+          triggerIdempotencyKey
+            ? { idempotencyKey: triggerIdempotencyKey }
+            : undefined,
+        );
+        if (result.alreadyStarted) {
+          this.logger.log(
+            `Duplicate trigger for workflow ${def.name} (${def.id}) — temporal=${result.temporalWorkflowId} already started`,
+          );
+        } else {
           this.logger.log(
             `Triggered workflow ${def.name} (${def.id}) -> execution ${result.executionId}`,
           );
-        } catch (err: unknown) {
-          this.logger.warn(
-            `Failed to trigger workflow ${def.id}: ${err instanceof Error ? err.message : err}`,
-          );
         }
-      }),
-    );
+      } catch (err: unknown) {
+        this.logger.warn(
+          `Failed to trigger workflow ${def.id}: ${err instanceof Error ? err.message : err}`,
+        );
+        throw err instanceof Error
+          ? err
+          : new Error(`Failed to trigger workflow ${def.id}`);
+      }
+    }
   }
 
   /**

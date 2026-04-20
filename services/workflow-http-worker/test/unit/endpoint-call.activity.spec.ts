@@ -1,3 +1,4 @@
+import "reflect-metadata";
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 
 const fakeAdapterConfig = {
@@ -37,6 +38,9 @@ const mockRedisInstance = {
   }),
   setex: mock(() => Promise.resolve("OK")),
   del: mock((..._keys: string[]) => Promise.resolve(0)),
+  script: mock(() => Promise.resolve("sha-fake")),
+  evalsha: mock(() => Promise.resolve(["allow", "closed", ""])),
+  eval: mock(() => Promise.resolve(["allow", "closed", ""])),
   options: {},
   status: "ready",
 };
@@ -62,7 +66,31 @@ mock.module("@yoizen/observability", () => {
       }),
     ),
   );
-  return { tracedFetch: tracedFetchMock };
+  class FakeLogger {
+    log() {}
+    warn() {}
+    error() {}
+  }
+  return {
+    tracedFetch: tracedFetchMock,
+    PinoLoggerService: FakeLogger,
+    getMeter: () => ({
+      createCounter: () => ({ add() {} }),
+      createHistogram: () => ({ record() {} }),
+    }),
+    startNatsProducerSpan: () => ({ span: { end() {} } }),
+    startNatsConsumerSpan: () => ({ span: { end() {} } }),
+    injectTraceContext: () => {},
+    activeOrRandomTraceId: () => "trace-1",
+    logWithEnvelope: () => {},
+    createCircuitBreakerMetrics: () => ({
+      recordDecision() {},
+      recordTransition() {},
+      recordL1Hit() {},
+      recordRedisError() {},
+      recordDecideDuration() {},
+    }),
+  };
 });
 
 const { executeEndpointCall } = await import(
@@ -164,6 +192,29 @@ describe("executeEndpointCall", () => {
 
     expect(result.status).toBe(400);
     expect(tracedFetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("fast-fails with CIRCUIT_OPEN when the breaker denies (no HTTP call)", async () => {
+    // One-shot deny. L1 cache makes subsequent tests that already
+    // interacted with the breaker immune, so we toggle only for this
+    // single assertion and then reset.
+    mockRedisInstance.evalsha.mockImplementationOnce(() =>
+      Promise.resolve(["deny", "open", "cooldown"]),
+    );
+
+    let caught: unknown = null;
+    try {
+      await executeEndpointCall(
+        { method: "GET", url: "https://cb-target.example.com/x" },
+        "t-cb",
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).not.toBeNull();
+    expect((caught as { type?: string }).type).toBe("CIRCUIT_OPEN");
+    expect((caught as { nonRetryable?: boolean }).nonRetryable).toBe(true);
   });
 
   it("should append query params to URL", async () => {

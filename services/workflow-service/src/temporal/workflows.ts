@@ -27,10 +27,12 @@ interface IOrchestratorActivities {
   ): Promise<{ published: true; subject: string }>;
 }
 
-interface ISyncActivities {
-  syncExecutionStatus(
+interface IExecutionPublisherActivities {
+  publishExecutionCompletedEvent(
     executionId: string,
     status: string,
+    tenantId?: string,
+    workflowName?: string,
   ): Promise<void>;
 }
 
@@ -70,7 +72,7 @@ const local = proxyActivities<IOrchestratorActivities>({
   retry: { maximumAttempts: 3 },
 });
 
-const sync = proxyActivities<ISyncActivities>({
+const publisher = proxyActivities<IExecutionPublisherActivities>({
   startToCloseTimeout: "5s",
   retry: { maximumAttempts: 2 },
 });
@@ -232,7 +234,12 @@ export async function runWorkflow(
   } finally {
     if (executionId) {
       try {
-        await sync.syncExecutionStatus(executionId, status);
+        await publisher.publishExecutionCompletedEvent(
+          executionId,
+          status,
+          workflow.tenant,
+          workflow.name,
+        );
       } catch (_) {
         /* best-effort: don't mask the original outcome */
       }

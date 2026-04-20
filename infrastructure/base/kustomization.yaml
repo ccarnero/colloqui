@@ -7,3 +7,10 @@ resources:
   - postgres
   - temporal
   - observability
+# NOTE: KEDA is installed via Helm (`helm install keda kedacore/keda
+# --namespace keda --create-namespace`). Do NOT include a kustomize
+# resource for its namespace here: an overlay-level `namespace:` directive
+# would rename the KEDA Namespace object to the target namespace and leak
+# its `pod-security.kubernetes.io/enforce: restricted` labels onto it,
+# which would reject every non-PSS-compliant workload (NATS, Postgres,
+# Temporal, Promtail, ...). See `infrastructure/base/keda/README.md`.

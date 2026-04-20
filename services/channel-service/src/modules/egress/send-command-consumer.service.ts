@@ -4,22 +4,41 @@ import {
   OnModuleInit,
   OnModuleDestroy,
 } from "@nestjs/common";
-import type { MsgHdrs, NatsConnection, Subscription } from "nats";
+import type {
+  JetStreamClient,
+  JetStreamManager,
+  JsMsg,
+  MsgHdrs,
+} from "nats";
 import { headers as natsHeaders } from "nats";
 import {
   PinoLoggerService,
   logWithEnvelope,
   startNatsConsumerSpan,
+  createNatsConsumerMetrics,
 } from "@yoizen/observability";
 import {
   CHANNEL_SEND_SUBJECT_PATTERN,
   parseChannelSubject,
 } from "@yoizen/shared";
 import type { ChannelEnvelope, OutboundMessage } from "@yoizen/shared";
+import {
+  MultiTenantConsumerManager,
+  type IMultiTenantConsumerConfig,
+} from "@yoizen/database";
 import { context as otelContext } from "@opentelemetry/api";
-import { NATS_CONNECTION } from "../../providers/nats.provider";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+} from "../../providers/nats.provider";
 import { EgressService } from "./egress.service";
 
+const DURABLE_NAME = "channel-egress";
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
+/** Egress does HTTP calls to Telegram/WhatsApp providers — heavily I/O bound. */
+const HANDLER_CONCURRENCY = 16;
+
+/** Minimal shape shared between the JsMsg runner and the handler. */
 interface INatsSubMessage {
   readonly subject: string;
   readonly data: Uint8Array;
@@ -27,8 +46,14 @@ interface INatsSubMessage {
 }
 
 /**
- * Consumes `send` commands published by workflow activities
- * and delivers them through the EgressService.
+ * Consumes `send` commands published by workflow activities and
+ * delivers them through {@link EgressService}.
+ *
+ * Binds a JetStream durable pull consumer (`channel-egress`) per
+ * tenant stream, with queue-group semantics — across N replicas of
+ * `channel-service` only one replica consumes each message. This
+ * eliminates the 5×duplication of outbound WhatsApp/Telegram
+ * messages that `nc.subscribe` produced under multi-replica setups.
  */
 @Injectable()
 export class SendCommandConsumerService
@@ -37,33 +62,53 @@ export class SendCommandConsumerService
   private readonly logger = new PinoLoggerService(
     SendCommandConsumerService.name,
   );
-  private subscription: Subscription | null = null;
+  private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
-    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
+    @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
     private readonly egress: EgressService,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    this.subscription = this.nc.subscribe(CHANNEL_SEND_SUBJECT_PATTERN, {
-      callback: (_err, msg) => {
-        this.handleMessage(msg as INatsSubMessage).catch((err: unknown) => {
-          this.logger.warn(
-            `Send command handler error: ${err instanceof Error ? err.message : err}`,
-          );
-        });
-      },
-    });
-
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: CHANNEL_SEND_SUBJECT_PATTERN,
+      description: "Channel egress — outbound send commands",
+      metrics: createNatsConsumerMetrics("channel-service"),
+      runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+    };
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.js,
+      config,
+      (msg: JsMsg) => this.handleJsMessage(msg),
+      this.logger,
+    );
+    await this.manager.start();
     this.logger.log(
-      `Channel send consumer subscribed to: ${CHANNEL_SEND_SUBJECT_PATTERN}`,
+      `Channel egress durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.subscription) {
-      this.subscription.unsubscribe();
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
     }
+  }
+
+  /**
+   * JetStream-path handler: re-throws on failure so the runner can
+   * nak the message and trigger redelivery with backoff.
+   */
+  private async handleJsMessage(msg: JsMsg): Promise<void> {
+    await this.handleMessage({
+      subject: msg.subject,
+      data: msg.data,
+      headers: msg.headers,
+    });
   }
 
   private async handleMessage(msg: INatsSubMessage): Promise<void> {
@@ -106,7 +151,6 @@ export class SendCommandConsumerService
       caption: source.caption as string | undefined,
     };
 
-    // Resume distributed trace from the publisher span.
     const incomingHeaders = msg.headers ?? natsHeaders();
     const { span, context: spanCtx } = startNatsConsumerSpan(
       "channel-service",
@@ -137,6 +181,7 @@ export class SendCommandConsumerService
             `Send failed for ${accountId}: ${result.error ?? "unknown"}`,
             "warn",
           );
+          throw new Error(result.error ?? "egress send failed");
         }
       });
     } finally {
