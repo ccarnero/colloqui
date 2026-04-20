@@ -16,6 +16,7 @@ import {
   WORKFLOW_DEFAULT_TIMEOUT_MS,
 } from "@yoizen/shared";
 import type {
+  EventCausalContext,
   WorkflowDefinition,
   WorkflowAction,
   WorkflowTrigger,
@@ -95,6 +96,14 @@ export interface IExecuteWorkflowOptions {
    * envelope `idempotencykey` scoped with the workflow definition id).
    */
   readonly idempotencyKey?: string;
+  /**
+   * Causal-chain context inherited from the triggering envelope.
+   * When present, publishing activities (e.g. `channelSend`) will set
+   * `causation_id = causal.causation_id`, copy `correlation_id`, and
+   * increment `transport.depth`, keeping the bus chain traceable
+   * (wdocs-02 §6).
+   */
+  readonly causal?: EventCausalContext;
 }
 
 export interface IWorkflowFailureInfo {
@@ -247,6 +256,7 @@ export class WorkflowsService {
       application: definition.application,
       request,
       actions: definition.actions as WorkflowAction[],
+      ...(options.causal && { causal: options.causal }),
     };
 
     try {

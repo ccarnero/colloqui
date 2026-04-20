@@ -148,19 +148,45 @@ export class TriggerConsumerService
 
     const baseIdempotencyKey = envelope.idempotencykey;
 
+    /**
+     * Causal chain snapshot from the triggering envelope (wdocs-02 §6).
+     * Passed to every workflow started from this message so publishing
+     * activities can emit derived envelopes with `causation_id`,
+     * `correlation_id`, and `transport.depth` correctly inherited.
+     * Falls back gracefully when an older envelope omits any of the
+     * three so no regression is introduced for pre-migration events.
+     */
+    const incomingDepth = envelope.transport?.depth;
+    const causal =
+      typeof envelope.id === "string" &&
+      typeof envelope.correlation_id === "string"
+        ? {
+            causation_id: envelope.id,
+            correlation_id: envelope.correlation_id,
+            depth: typeof incomingDepth === "number" ? incomingDepth : 0,
+          }
+        : undefined;
+
     for (let i = 0; i < toExecute.length; i++) {
       const def = toExecute[i]!;
       const triggerIdempotencyKey = baseIdempotencyKey
         ? `${baseIdempotencyKey}:${def.id}`
         : undefined;
       try {
+        const options =
+          triggerIdempotencyKey || causal
+            ? {
+                ...(triggerIdempotencyKey && {
+                  idempotencyKey: triggerIdempotencyKey,
+                }),
+                ...(causal && { causal }),
+              }
+            : undefined;
         const result = await this.workflowsService.executeWorkflow(
           def.id,
           tenant,
           request,
-          triggerIdempotencyKey
-            ? { idempotencyKey: triggerIdempotencyKey }
-            : undefined,
+          options,
         );
         if (result.alreadyStarted) {
           this.logger.log(

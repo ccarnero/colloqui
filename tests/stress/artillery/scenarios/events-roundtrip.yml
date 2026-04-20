@@ -1,0 +1,20 @@
+scenarios:
+  - name: "events-roundtrip"
+    flow:
+      - function: "ensureAuthContext"
+      - loop:
+          - function: "setEventRequest"
+          - post:
+              url: "/api/events"
+              beforeRequest: "setGatewayAuthHeaders"
+              afterResponse: "captureEventId"
+              body: "{{ eventPayloadJson }}"
+          - loop:
+              - function: "setResultPathFromEvent"
+              - get:
+                  url: "{{ resultPath }}"
+                  beforeRequest: "setGatewayAuthHeaders"
+                  afterResponse: "captureResultStatus"
+              - think: "{{ $processEnvironment.ARTILLERY_RESULT_POLL_SLEEP_SECONDS }}"
+            count: "{{ $processEnvironment.ARTILLERY_RESULT_POLL_COUNT }}"
+        count: "{{ $processEnvironment.ARTILLERY_EVENTS_PER_VU }}"

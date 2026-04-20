@@ -126,6 +126,7 @@ export type {
 
 export type {
   WorkflowExecutionContext,
+  EventCausalContext,
   EndpointCallArgs,
   JsFunctionArgs,
   ServiceBusCallArgs,

@@ -1,0 +1,20 @@
+{
+  "global": {
+    "maxErrorRate": 0.01,
+    "maxP99Ms": 3000
+  },
+  "services": {
+    "event-processor": {
+      "minPeakReplicas": 2,
+      "scaleUpSlaSeconds": 120
+    },
+    "webhook-service": {
+      "minPeakReplicas": 2,
+      "scaleUpSlaSeconds": 120
+    },
+    "channel-service": {
+      "minPeakReplicas": 2,
+      "scaleUpSlaSeconds": 120
+    }
+  }
+}

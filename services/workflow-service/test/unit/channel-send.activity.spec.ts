@@ -160,4 +160,155 @@ describe("executeChannelSend", () => {
 
     expect(mockFlush).toHaveBeenCalledTimes(1);
   });
+
+  it("propagates causal chain (causation_id, correlation_id, depth) when provided", async () => {
+    await executeChannelSend(
+      {
+        accountId: "acc-1",
+        channel: "telegram",
+        provider: "telegram",
+        to: "5621931457",
+        type: "text" as const,
+        text: "outbound",
+      },
+      "acme",
+      {
+        causation_id: "31a5659a-ac2c-46f7-a07e-09146cd66097",
+        correlation_id: "31a5659a-ac2c-46f7-a07e-09146cd66097",
+        depth: 0,
+      },
+    );
+
+    const [, payload] = mockPublish.mock.calls[0];
+    const envelope = JSON.parse(
+      new TextDecoder().decode(payload as Uint8Array),
+    );
+    expect(envelope.causation_id).toBe(
+      "31a5659a-ac2c-46f7-a07e-09146cd66097",
+    );
+    expect(envelope.correlation_id).toBe(
+      "31a5659a-ac2c-46f7-a07e-09146cd66097",
+    );
+    expect(envelope.transport.depth).toBe(1);
+
+    const causationHeader = mockHeaderSet.mock.calls.find(
+      ([k]) => k === "X-Causation-Id",
+    );
+    expect(causationHeader?.[1]).toBe(
+      "31a5659a-ac2c-46f7-a07e-09146cd66097",
+    );
+    const correlationHeader = mockHeaderSet.mock.calls.find(
+      ([k]) => k === "X-Correlation-Id",
+    );
+    expect(correlationHeader?.[1]).toBe(
+      "31a5659a-ac2c-46f7-a07e-09146cd66097",
+    );
+  });
+
+  it("falls back to causal root when no causal context is provided", async () => {
+    await executeChannelSend(
+      {
+        accountId: "acc-1",
+        channel: "whatsapp",
+        provider: "meta",
+        to: "+1",
+        type: "text" as const,
+      },
+      "acme",
+    );
+
+    const [, payload] = mockPublish.mock.calls[0];
+    const envelope = JSON.parse(
+      new TextDecoder().decode(payload as Uint8Array),
+    );
+    expect(envelope.causation_id).toBeNull();
+    /* correlation_id falls back to the envelope's own id (root). */
+    expect(envelope.correlation_id).toBe(envelope.id);
+    expect(envelope.transport.depth).toBe(1);
+  });
+
+  it("increments depth from the incoming envelope depth", async () => {
+    await executeChannelSend(
+      {
+        accountId: "acc-1",
+        channel: "whatsapp",
+        provider: "meta",
+        to: "+1",
+        type: "text" as const,
+      },
+      "acme",
+      {
+        causation_id: "parent-evt",
+        correlation_id: "conv-123",
+        depth: 3,
+      },
+    );
+
+    const [, payload] = mockPublish.mock.calls[0];
+    const envelope = JSON.parse(
+      new TextDecoder().decode(payload as Uint8Array),
+    );
+    expect(envelope.transport.depth).toBe(4);
+  });
+
+  it("produces distinct idempotency keys for identical payloads across different causal chains", async () => {
+    const args = {
+      accountId: "acc-1",
+      channel: "telegram" as const,
+      provider: "telegram" as const,
+      to: "5621931457",
+      type: "text" as const,
+      text: "cheke cheka",
+    };
+
+    await executeChannelSend(args, "acme", {
+      causation_id: "trigger-evt-1",
+      correlation_id: "conv-1",
+      depth: 0,
+    });
+    await executeChannelSend(args, "acme", {
+      causation_id: "trigger-evt-2",
+      correlation_id: "conv-2",
+      depth: 0,
+    });
+
+    const envelopes = mockPublish.mock.calls.map(([, buf]) =>
+      JSON.parse(new TextDecoder().decode(buf as Uint8Array)),
+    );
+    expect(envelopes[0].data.payload).toEqual(envelopes[1].data.payload);
+    expect(envelopes[0].data.payload_checksum).toBe(
+      envelopes[1].data.payload_checksum,
+    );
+    expect(envelopes[0].idempotencykey).not.toBe(envelopes[1].idempotencykey);
+
+    const msgIdCalls = mockHeaderSet.mock.calls.filter(
+      ([k]) => k === "Nats-Msg-Id",
+    );
+    expect(msgIdCalls).toHaveLength(2);
+    expect(msgIdCalls[0][1]).not.toBe(msgIdCalls[1][1]);
+  });
+
+  it("produces identical idempotency keys for the same causal chain (Temporal retries collapse)", async () => {
+    const args = {
+      accountId: "acc-1",
+      channel: "telegram" as const,
+      provider: "telegram" as const,
+      to: "5621931457",
+      type: "text" as const,
+      text: "cheke cheka",
+    };
+    const causal = {
+      causation_id: "trigger-evt-1",
+      correlation_id: "conv-1",
+      depth: 0,
+    };
+
+    await executeChannelSend(args, "acme", causal);
+    await executeChannelSend(args, "acme", causal);
+
+    const envelopes = mockPublish.mock.calls.map(([, buf]) =>
+      JSON.parse(new TextDecoder().decode(buf as Uint8Array)),
+    );
+    expect(envelopes[0].idempotencykey).toBe(envelopes[1].idempotencykey);
+  });
 });

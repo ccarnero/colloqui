@@ -123,6 +123,8 @@ describe("TriggerConsumerService", () => {
     channel: "whatsapp",
     provider: "meta",
     kind: "received",
+    correlation_id: "conv-abc",
+    transport: { method: "webhook", protocol: "https", depth: 0 },
     data: { from: "+1234", text: "hello world", accountId: "acc-1" },
   };
 
@@ -233,5 +235,73 @@ describe("TriggerConsumerService", () => {
       );
 
     expect(executeWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("forwards causal chain (id, correlation_id, transport.depth) to executeWorkflow", async () => {
+    findByTriggerType.mockResolvedValue([
+      makeDefinition({ id: "def-1", trigger: sharedTrigger }),
+    ]);
+
+    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
+      .handleMessage(
+        buildMessage(
+          "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+          baseEnvelope,
+        ),
+      );
+
+    expect(executeWorkflow).toHaveBeenCalledTimes(1);
+    const [, , , options] = executeWorkflow.mock.calls[0];
+    expect(options?.causal).toEqual({
+      causation_id: "msg-1",
+      correlation_id: "conv-abc",
+      depth: 0,
+    });
+  });
+
+  it("inherits depth from transport.depth when set (multi-hop chain)", async () => {
+    findByTriggerType.mockResolvedValue([
+      makeDefinition({ id: "def-1", trigger: sharedTrigger }),
+    ]);
+    const deepEnvelope = {
+      ...baseEnvelope,
+      transport: { method: "stream", protocol: "internal", depth: 2 },
+    };
+
+    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
+      .handleMessage(
+        buildMessage(
+          "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+          deepEnvelope,
+        ),
+      );
+
+    const [, , , options] = executeWorkflow.mock.calls[0];
+    expect(options?.causal?.depth).toBe(2);
+  });
+
+  it("omits causal when envelope lacks id/correlation_id (legacy events)", async () => {
+    findByTriggerType.mockResolvedValue([
+      makeDefinition({ id: "def-1", trigger: sharedTrigger }),
+    ]);
+    const legacyEnvelope: Record<string, unknown> = {
+      tenantId: "t1",
+      channel: "whatsapp",
+      provider: "meta",
+      kind: "received",
+      data: { from: "+1234", text: "hello world", accountId: "acc-1" },
+    };
+
+    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
+      .handleMessage(
+        buildMessage(
+          "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+          legacyEnvelope,
+        ),
+      );
+
+    expect(executeWorkflow).toHaveBeenCalledTimes(1);
+    const [, , , options] = executeWorkflow.mock.calls[0];
+    expect(options?.causal).toBeUndefined();
   });
 });

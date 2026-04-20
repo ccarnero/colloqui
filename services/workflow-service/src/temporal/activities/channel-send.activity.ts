@@ -4,6 +4,7 @@ import type {
   ChannelEnvelope,
   ChannelProvider,
   ChannelSendArgs,
+  EventCausalContext,
   JsonValue,
 } from "@yoizen/shared";
 import {
@@ -37,22 +38,35 @@ async function getConnection(): Promise<NatsConnection> {
  * JetStream stream. The channel-service picks it up and
  * delivers via the appropriate provider (WhatsApp / Telegram).
  *
- * The envelope is wdocs-02 compliant: deterministic
- * `idempotencykey = sha256:canonical(args)`, `traceid` from the active
- * OTEL span, `causation_id` / `correlation_id` propagated when the
- * caller provides them in `args`.
+ * The envelope is wdocs-02 compliant: `payload_checksum` is the pure
+ * canonical hash of the outbound payload; `idempotencykey` (and the
+ * `Nats-Msg-Id` header derived from it) is scoped by
+ * `{payload, correlation_id, causation_id}` so that:
  *
- * @param args - Outbound message details (account, recipient, content)
- * @param tenantId - Tenant that owns the workflow
- * @returns Confirmation with the NATS subject used
+ *  - Temporal activity retries for the same trigger collapse to a
+ *    single stream entry (same scope → same hash → JetStream dedup).
+ *  - Distinct trigger events producing identical outbound payloads
+ *    (e.g. the classic "send `hi` to the same user twice") yield
+ *    distinct scopes and therefore distinct keys, so both reach the
+ *    channel-service consumer.
+ *
+ * `traceid` comes from the active OTEL span; when an
+ * {@link EventCausalContext} is provided, `causation_id`,
+ * `correlation_id` and `transport.depth` are inherited from the
+ * triggering envelope (§6 of wdocs-02).
+ *
+ * @param args - Outbound message details (account, recipient, content).
+ * @param tenantId - Tenant that owns the workflow.
+ * @param causal - Optional causal chain inherited from the upstream
+ *   event. When absent the envelope is treated as a causal root
+ *   (`causation_id = null`, self-referencing `correlation_id`,
+ *   `transport.depth = 1` — one step from the implicit root).
+ * @returns Confirmation with the NATS subject used.
  */
 export async function executeChannelSend(
-  args: ChannelSendArgs & {
-    causationId?: string | null;
-    correlationId?: string;
-    incomingDepth?: number;
-  },
+  args: ChannelSendArgs,
   tenantId: string,
+  causal?: EventCausalContext,
 ): Promise<{ published: true; subject: string }> {
   const conn = await getConnection();
 
@@ -63,7 +77,7 @@ export async function executeChannelSend(
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   const traceid = activeOrRandomTraceId();
-  const depth = (args.incomingDepth ?? 0) + 1;
+  const depth = (causal?.depth ?? 0) + 1;
 
   const payload: Record<string, JsonValue> = {
     accountId: args.accountId,
@@ -81,11 +95,22 @@ export async function executeChannelSend(
     ...(args.caption !== undefined && { caption: args.caption }),
   };
 
-  const idempotencykey = computeIdempotencyKey(payload);
+  const correlationId = causal?.correlation_id ?? id;
+  const causationId = causal?.causation_id ?? null;
+  /**
+   * Scope the dedup key to the causal chain so that repeated triggers
+   * with identical payloads do NOT collapse inside JetStream's
+   * `duplicate_window` (default 2 min). Temporal retries of the same
+   * activity invocation keep the same scope and therefore the same
+   * key, so legitimate retries still dedup server-side.
+   */
+  const idempotencykey = computeIdempotencyKey({
+    payload,
+    correlation_id: correlationId,
+    causation_id: causationId,
+  });
   const payloadChecksum = computePayloadChecksum(payload);
   const payloadBytes = canonicalByteLength(payload);
-  const correlationId = args.correlationId ?? id;
-  const causationId = args.causationId ?? null;
   const resource = `tenant/${tenantId}/account/${args.accountId}/channel/${channel}/provider/${provider}`;
 
   const envelope: ChannelEnvelope = {

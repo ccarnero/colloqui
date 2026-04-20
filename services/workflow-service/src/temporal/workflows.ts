@@ -5,6 +5,7 @@ import type {
   WorkflowAction,
   AgentCallArgs,
   EndpointCallArgs,
+  EventCausalContext,
   JsFunctionArgs,
   ServiceBusCallArgs,
   ServiceCallArgs,
@@ -24,6 +25,7 @@ interface IOrchestratorActivities {
   executeChannelSend(
     args: ChannelSendArgs,
     tenantId: string,
+    causal?: EventCausalContext,
   ): Promise<{ published: true; subject: string }>;
 }
 
@@ -159,6 +161,7 @@ async function executeAction(
       return local.executeChannelSend(
         resolveTemplates(action.args, context),
         tenant,
+        context.causal,
       );
 
     case "serviceCall":
@@ -191,6 +194,7 @@ async function executeAction(
             workflow: context.workflow,
             request: context.request,
             results: { ...context.results },
+            ...(context.causal && { causal: context.causal }),
           };
           await executeActions(branchActions, branchCtx);
           return branchCtx.results;
@@ -224,6 +228,7 @@ export async function runWorkflow(
     },
     request: workflow.request,
     results: {},
+    ...(workflow.causal && { causal: workflow.causal }),
   };
 
   let status = "FAILED";

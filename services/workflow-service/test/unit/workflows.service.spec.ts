@@ -185,6 +185,45 @@ describe("WorkflowsService", () => {
     expect(startArgs[1]).toBe(result.executionId);
   });
 
+  it("executeWorkflow forwards causal context into the WorkflowDefinition", async () => {
+    mockRepo.findDefinitionById.mockResolvedValueOnce({
+      ...baseRow,
+      actions,
+    });
+
+    const causal = {
+      causation_id: "evt-root",
+      correlation_id: "conv-1",
+      depth: 0,
+    };
+
+    await service.executeWorkflow(
+      "def-1",
+      "t1",
+      { orderId: "o1" },
+      { causal },
+    );
+
+    const startCall = mockTemporal.workflow.start.mock.calls[0];
+    const startArgs = startCall[1].args as unknown[];
+    const workflowDef = startArgs[0] as { causal?: typeof causal };
+    expect(workflowDef.causal).toEqual(causal);
+  });
+
+  it("executeWorkflow omits causal when option is not provided", async () => {
+    mockRepo.findDefinitionById.mockResolvedValueOnce({
+      ...baseRow,
+      actions,
+    });
+
+    await service.executeWorkflow("def-1", "t1", { orderId: "o1" });
+
+    const startCall = mockTemporal.workflow.start.mock.calls[0];
+    const startArgs = startCall[1].args as unknown[];
+    const workflowDef = startArgs[0] as { causal?: unknown };
+    expect(workflowDef.causal).toBeUndefined();
+  });
+
   it("deleteWorkflow soft-deletes via repository", async () => {
     await service.deleteWorkflow("def-1", "t1");
     expect(mockRepo.softDeleteDefinition).toHaveBeenCalledWith("def-1", "t1");

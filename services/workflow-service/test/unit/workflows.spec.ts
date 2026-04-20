@@ -247,6 +247,62 @@ describe("runWorkflow (temporal/workflows)", () => {
     expect(ctx.results.send).toBeDefined();
   });
 
+  it("threads workflow.causal into channelSend activity", async () => {
+    executeChannelSend.mockClear();
+    await runWorkflow({
+      ...base,
+      causal: {
+        causation_id: "evt-root",
+        correlation_id: "conv-1",
+        depth: 0,
+      },
+      actions: [
+        {
+          activity: "channelSend",
+          name: "send",
+          args: {
+            accountId: "acc-1",
+            channel: "telegram",
+            provider: "telegram",
+            to: "123",
+            type: "text",
+            text: "hi",
+          },
+        },
+      ],
+    });
+    const call = executeChannelSend.mock.calls[0];
+    /* args, tenantId, causal */
+    expect(call).toHaveLength(3);
+    expect(call[2]).toEqual({
+      causation_id: "evt-root",
+      correlation_id: "conv-1",
+      depth: 0,
+    });
+  });
+
+  it("passes undefined causal to channelSend when workflow is a causal root", async () => {
+    executeChannelSend.mockClear();
+    await runWorkflow({
+      ...base,
+      actions: [
+        {
+          activity: "channelSend",
+          name: "send",
+          args: {
+            accountId: "acc-1",
+            channel: "telegram",
+            provider: "telegram",
+            to: "123",
+            type: "text",
+          },
+        },
+      ],
+    });
+    const call = executeChannelSend.mock.calls[0];
+    expect(call[2]).toBeUndefined();
+  });
+
   it("propagates activity errors", async () => {
     executeJsFunction.mockImplementationOnce(() =>
       Promise.reject(new Error("activity failed")),
