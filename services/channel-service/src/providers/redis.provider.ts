@@ -1,5 +1,6 @@
 import Redis from "ioredis";
 import type { FactoryProvider, OnModuleDestroy } from "@nestjs/common";
+import { PinoLoggerService } from "@yoizen/observability";
 
 export const REDIS_CLIENT = "CHANNEL_SERVICE_REDIS_CLIENT";
 
@@ -15,19 +16,49 @@ export const REDIS_CLIENT = "CHANNEL_SERVICE_REDIS_CLIENT";
  * defaults. `lazyConnect: true` keeps the process startable even if
  * Redis is temporarily down (the breaker itself falls back to a
  * local in-memory view in that case).
+ *
+ * An `error` listener is attached so transient connectivity issues
+ * surface as structured log lines instead of Node's noisy
+ * `[ioredis] Unhandled error event` output. Messages are throttled
+ * via a best-effort de-dup on `message + code` — on a prolonged
+ * outage ioredis re-emits on every reconnect attempt and we don't
+ * want to flood the log pipeline.
  */
 export const redisProvider: FactoryProvider<Redis> = {
   provide: REDIS_CLIENT,
   useFactory: (): Redis => {
     const host = process.env.REDIS_HOST ?? "localhost";
     const port = Number(process.env.REDIS_PORT) || 6379;
-    return new Redis({
+    const logger = new PinoLoggerService("channel-service-redis");
+    const client = new Redis({
       host,
       port,
       lazyConnect: true,
       enableReadyCheck: true,
       maxRetriesPerRequest: 1,
     });
+
+    const seenErrors = new Map<string, number>();
+    const LOG_EVERY = 30; // log 1-in-N repeats to avoid flooding
+    client.on("error", (err: Error & { code?: string }) => {
+      const key = `${err.code ?? "ERR"}:${err.message}`;
+      const count = (seenErrors.get(key) ?? 0) + 1;
+      seenErrors.set(key, count);
+      if (count === 1 || count % LOG_EVERY === 0) {
+        logger.warn(
+          `redis error (host=${host}:${port}, code=${err.code ?? "n/a"}, repeat=${count}): ${err.message}`,
+        );
+      }
+    });
+    client.on("ready", () => {
+      logger.log(`redis ready at ${host}:${port}`);
+      seenErrors.clear();
+    });
+    client.on("end", () => {
+      logger.warn(`redis connection ended (${host}:${port})`);
+    });
+
+    return client;
   },
 };
 

@@ -10,6 +10,22 @@ export interface WorkflowExecutionContext {
 
 // ── Activity arguments ─────────────────────────────────────────────
 
+/**
+ * Arguments for the `endpointCall` activity. Three valid shapes:
+ *
+ *  1. `adapterId` + `endpointId` → fully adapter-resolved (method,
+ *     path, headers, auth, timeouts all come from the adapter).
+ *     `url` is ignored in this mode.
+ *  2. `adapterId` (no `endpointId`) + `url` as a path (e.g. `/resource`)
+ *     → adapter's `baseUrl` is joined with `url`, `method` is honoured.
+ *     Adapter headers/auth/timeouts/retries still apply.
+ *  3. No `adapterId` → `url` MUST be absolute (`http(s)://…`). Fixed
+ *     30 s timeout, no retries.
+ *
+ * Shape (1) and (3) are the production-normalised forms; shape (2)
+ * exists to support UI flows that pre-select an adapter but let the
+ * user type an ad-hoc path without registering an endpoint upfront.
+ */
 export interface EndpointCallArgs {
   method: string;
   url: string;

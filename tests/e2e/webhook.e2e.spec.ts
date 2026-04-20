@@ -14,6 +14,24 @@ const SLOW_IT = { timeout: 90_000 };
 
 describe('E2E: webhook-service', () => {
   it(
+    'should accept inbound provider webhook through api-gateway',
+    async () => {
+      const tenantId = `webhook-e2e-${Date.now()}`;
+      const { status, body } = await httpPost<{ status: string }>(
+        `${GW}/webhooks/whatsapp/${tenantId}`,
+        {
+          object: 'whatsapp_business_account',
+          entry: [],
+        },
+      );
+
+      expect(status).toBe(200);
+      expect(body.status).toBe('accepted');
+    },
+    SLOW_IT,
+  );
+
+  it(
     'should accept an event with callbackUrl and process it',
     async () => {
       const h = await authHeaders();

@@ -1,0 +1,28 @@
+import type { Channel } from "./channel.interfaces";
+import type { EventData, EventEnvelope } from "./interfaces";
+
+export interface IWebhookVerifyRequest {
+  tenantId: string;
+  channel: Channel;
+  verifyToken: string;
+  challenge: string;
+}
+
+export type IWebhookVerifyResponse =
+  | { ok: true; challenge: string }
+  | { ok: false; reason: "invalid_token" | "unsupported_channel" | "bad_request" };
+
+export interface IWebhookIngressData extends EventData {
+  payload: Record<string, unknown>;
+  raw_body_b64: string;
+  headers: Record<string, string>;
+}
+
+export interface WebhookIngressEnvelope extends EventEnvelope {
+  producer: "api-gateway";
+  domain: "messaging";
+  provider: "webhook";
+  channel: Channel;
+  kind: "webhook_received";
+  data: IWebhookIngressData;
+}

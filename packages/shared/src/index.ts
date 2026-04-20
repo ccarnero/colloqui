@@ -202,6 +202,12 @@ export {
   CLAIM_CHECK_BUCKET_PREFIX,
   CHANNEL_AUDIT_SUBJECT_PATTERN,
   CHANNEL_SEND_SUBJECT_PATTERN,
+  WEBHOOK_VERIFY_RPC_SUBJECT,
+  WEBHOOK_INGRESS_RECEIVED_KIND,
+  WEBHOOK_INGRESS_RECEIVED_VERSION,
+  WEBHOOK_INGRESS_SUBJECT_FILTER,
+  WEBHOOK_FORWARDED_HEADERS,
+  WEBHOOK_FORWARDED_HEADERS_SET,
   DLQ_TENANT_STREAM_PREFIX,
   DLQ_TENANT_SUBJECT_PREFIX,
   DLQ_TENANT_STREAM_MAX_AGE_NS,
@@ -244,7 +250,16 @@ export {
   buildClaimCheckBucket,
   buildTenantWildcard,
   parseChannelSubject,
+  buildWebhookIngressSubject,
+  parseWebhookIngressSubject,
 } from './channel.utils';
+
+export type {
+  IWebhookVerifyRequest,
+  IWebhookVerifyResponse,
+  IWebhookIngressData,
+  WebhookIngressEnvelope,
+} from './webhook.interfaces';
 
 export {
   buildRegistryPlatformSubject,

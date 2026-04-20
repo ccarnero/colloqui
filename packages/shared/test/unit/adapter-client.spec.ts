@@ -154,6 +154,53 @@ describe("AdapterClient", () => {
     });
   });
 
+  describe("resolveAdapterRequest", () => {
+    it("joins adapter baseUrl with a leading-slash path", async () => {
+      const resolved = await client.resolveAdapterRequest("t1", "adp-1", {
+        method: "GET",
+        path: "/eventit",
+      });
+
+      expect(resolved.url).toBe("https://api.example.com/eventit");
+      expect(resolved.method).toBe("GET");
+      expect(resolved.headers["X-Custom"]).toBe("yes");
+      expect(resolved.timeoutMs).toBe(5000);
+      expect(resolved.maxRetries).toBe(2);
+      expect(resolved.retryBackoffMs).toBe(200);
+    });
+
+    it("prepends a slash when the path is missing one", async () => {
+      const resolved = await client.resolveAdapterRequest("t1", "adp-1", {
+        method: "POST",
+        path: "eventit",
+      });
+
+      expect(resolved.url).toBe("https://api.example.com/eventit");
+      expect(resolved.method).toBe("POST");
+    });
+
+    it("returns baseUrl only when path is empty or undefined", async () => {
+      const resolved = await client.resolveAdapterRequest("t1", "adp-1", {
+        method: "GET",
+      });
+      expect(resolved.url).toBe("https://api.example.com");
+    });
+
+    it("strips trailing slashes on baseUrl before joining", async () => {
+      const staleEntry = {
+        data: makeAdapter({ baseUrl: "https://api.example.com/" }),
+        softExpiresAt: Date.now() + 60_000,
+      };
+      cache.get = mock(() => Promise.resolve(JSON.stringify(staleEntry)));
+
+      const resolved = await client.resolveAdapterRequest("t1", "adp-1", {
+        method: "GET",
+        path: "/ping",
+      });
+      expect(resolved.url).toBe("https://api.example.com/ping");
+    });
+  });
+
   describe("auth injection", () => {
     it("should add no auth header for type 'none'", async () => {
       const resolved = await client.resolveRequest("t1", "adp-1", "ep-1");

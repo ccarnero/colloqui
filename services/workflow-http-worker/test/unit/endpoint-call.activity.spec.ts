@@ -232,4 +232,82 @@ describe("executeEndpointCall", () => {
     expect(parsed.searchParams.get("page")).toBe("1");
     expect(parsed.searchParams.get("q")).toBe("test");
   });
+
+  it("resolves against the adapter baseUrl when endpointId is empty", async () => {
+    const result = await executeEndpointCall(
+      {
+        method: "GET",
+        url: "/eventit",
+        adapterId: "adp-1",
+        endpointId: "",
+      },
+      "t1",
+    );
+
+    expect(result.status).toBe(200);
+    expect(tracedFetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = tracedFetchMock.mock.calls[0];
+    expect(url).toBe("https://api.example.com/eventit");
+    expect(init.method).toBe("GET");
+    expect(init.headers["X-Custom"]).toBe("yes");
+    expect(init.headers["X-API-Key"]).toBe("secret-key");
+  });
+
+  it("adapter-base branch retries on 5xx using adapter retry policy", async () => {
+    let callCount = 0;
+    tracedFetchMock.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve(new Response("Server Error", { status: 500 }));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    const result = await executeEndpointCall(
+      { method: "GET", url: "/eventit", adapterId: "adp-1" },
+      "t1",
+    );
+
+    expect(result.status).toBe(200);
+    // maxRetries=1 on the fake adapter config → up to 2 attempts.
+    expect(tracedFetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws a clear non-retryable error when raw URL is relative", async () => {
+    let caught: unknown = null;
+    try {
+      await executeEndpointCall({ method: "GET", url: "/eventit" }, "t1");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).not.toBeNull();
+    expect((caught as { type?: string }).type).toBe("INVALID_ENDPOINT_CALL_URL");
+    expect((caught as { nonRetryable?: boolean }).nonRetryable).toBe(true);
+    expect(tracedFetchMock).not.toHaveBeenCalled();
+  });
+
+  it("throws INVALID_ENDPOINT_CALL_ARGS when adapterId is set but url is empty", async () => {
+    let caught: unknown = null;
+    try {
+      await executeEndpointCall(
+        { method: "GET", url: "", adapterId: "adp-1" },
+        "t1",
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).not.toBeNull();
+    expect((caught as { type?: string }).type).toBe(
+      "INVALID_ENDPOINT_CALL_ARGS",
+    );
+    expect((caught as { nonRetryable?: boolean }).nonRetryable).toBe(true);
+    expect(tracedFetchMock).not.toHaveBeenCalled();
+  });
 });

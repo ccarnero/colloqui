@@ -31,6 +31,37 @@ export const CHANNEL_AUDIT_SUBJECT_PATTERN =
 export const CHANNEL_SEND_SUBJECT_PATTERN =
   "evt.*.channel-service.messaging.*.*.send.v1" as const;
 
+/**
+ * Request/reply subject for webhook verification (Meta `hub.challenge`).
+ * `api-gateway` sends a request and `channel-service` responds.
+ */
+export const WEBHOOK_VERIFY_RPC_SUBJECT =
+  "rpc.channel-service.webhook.verify.v1" as const;
+
+/**
+ * Canonical webhook ingress subject:
+ * `evt.<tenant>.api-gateway.messaging.<channel>.webhook.webhook_received.v1`.
+ */
+export const WEBHOOK_INGRESS_RECEIVED_KIND = "webhook_received" as const;
+export const WEBHOOK_INGRESS_RECEIVED_VERSION = "v1" as const;
+export const WEBHOOK_INGRESS_SUBJECT_FILTER =
+  "evt.*.api-gateway.messaging.*.webhook.webhook_received.v1" as const;
+
+/** Allowlist of webhook headers forwarded through the ingress envelope. */
+export const WEBHOOK_FORWARDED_HEADERS = Object.freeze([
+  "content-type",
+  "x-hub-signature-256",
+  "x-hub-signature",
+  "x-telegram-bot-api-secret-token",
+  "x-request-id",
+  "user-agent",
+] as const);
+
+/** O(1) header allowlist lookup for webhook envelope building. */
+export const WEBHOOK_FORWARDED_HEADERS_SET = new Set<string>(
+  WEBHOOK_FORWARDED_HEADERS,
+);
+
 /** Prefix for per-tenant dead-letter JetStream streams. */
 export const DLQ_TENANT_STREAM_PREFIX = "DLQ" as const;
 export const DLQ_TENANT_SUBJECT_PREFIX = "dlq" as const;

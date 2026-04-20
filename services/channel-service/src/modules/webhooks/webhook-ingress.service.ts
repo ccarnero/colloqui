@@ -1,9 +1,6 @@
 import {
-  BadRequestException,
   Injectable,
-  type RawBodyRequest,
 } from "@nestjs/common";
-import type { FastifyRequest } from "fastify";
 import { PinoLoggerService } from "@yoizen/observability";
 import type { Channel, IChannelProvider, InboundMessage } from "@yoizen/shared";
 import { ChannelRouter } from "../../providers/channel-router";
@@ -22,26 +19,11 @@ type IAccountWithSecret = Awaited<
 /** Options for webhook signature verification against active accounts. */
 interface ICheckSignatureMismatchOptions {
   provider: IChannelProvider;
-  request: RawBodyRequest<FastifyRequest>;
+  headers: Record<string, string>;
+  rawBody: Buffer;
   channel: string;
   tenantId: string;
   activeAccounts: IAccountWithSecret[];
-}
-
-/**
- * Meta HMAC is computed over the exact raw bytes Meta sent. Re-serializing JSON
- * breaks verification (key order / whitespace).
- */
-function getWebhookRawBodyForSignature(
-  request: RawBodyRequest<FastifyRequest>,
-): Buffer {
-  const raw = request.rawBody;
-  if (Buffer.isBuffer(raw) && raw.length > 0) {
-    return raw;
-  }
-  throw new BadRequestException(
-    "Missing raw request body; webhook signature verification requires raw bytes",
-  );
 }
 
 @Injectable()
@@ -55,19 +37,25 @@ export class WebhookIngressService {
   ) {}
 
   /**
-   * Meta webhook callback: validates channel, verifies HMAC, parses messages,
-   * schedules ingress processing. Returns 200 immediately per Meta best practices.
+   * Processes a webhook envelope produced by api-gateway.
+   * Validates channel, verifies signature against active accounts, parses inbound
+   * messages, and schedules ingress processing.
    */
-  async handleMetaWebhookPost(
+  async processEnvelope(
     channel: string,
     tenantId: string,
-    request: RawBodyRequest<FastifyRequest>,
+    rawBody: Buffer,
+    headers: Record<string, string>,
+    parsedBody: unknown,
   ): Promise<{ status: string }> {
     const channelType = channel as Channel;
     webhookRequests.add(1, { channel, tenant: tenantId });
     const provider = this.router.get(channelType);
     if (!provider) {
-      throw new BadRequestException(`Unsupported channel: ${channel}`);
+      this.logger.warn(
+        `Unsupported webhook channel=${channel} tenant=${tenantId}`,
+      );
+      return { status: "unsupported_channel" };
     }
 
     const activeAccounts = await this.accounts.listActive(
@@ -83,7 +71,8 @@ export class WebhookIngressService {
 
     const signatureMismatch = this.checkSignatureMismatch({
       provider,
-      request,
+      rawBody,
+      headers,
       channel,
       tenantId,
       activeAccounts,
@@ -92,7 +81,14 @@ export class WebhookIngressService {
       return signatureMismatch;
     }
 
-    const body = request.body as Record<string, unknown>;
+    const body = this.toBody(parsedBody);
+    if (body === null) {
+      this.logger.warn(
+        `Webhook payload is not a JSON object for tenant=${tenantId} channel=${channel}`,
+      );
+      return { status: "invalid_payload" };
+    }
+
     const messages = provider.parseWebhook(body);
     if (messages.length === 0) {
       return { status: "no_messages" };
@@ -116,19 +112,16 @@ export class WebhookIngressService {
   private checkSignatureMismatch(
     options: ICheckSignatureMismatchOptions,
   ): { status: string } | null {
-    const { provider, request, channel, tenantId, activeAccounts } = options;
+    const { provider, headers, rawBody, channel, tenantId, activeAccounts } =
+      options;
     const signature = provider.signatureHeader
-      ? (request.headers[provider.signatureHeader] as string | undefined)
-      : undefined;
-
-    const rawBodyForSignature = signature
-      ? getWebhookRawBodyForSignature(request)
+      ? this.readHeader(headers, provider.signatureHeader)
       : undefined;
 
     const verified = activeAccounts.some((account) => {
-      if (!account.appSecret || !signature || !rawBodyForSignature) return false;
+      if (!account.appSecret || !signature) return false;
       return provider.verifySignature(
-        rawBodyForSignature,
+        rawBody,
         signature,
         account.appSecret,
       );
@@ -142,6 +135,26 @@ export class WebhookIngressService {
       return { status: "signature_mismatch" };
     }
     return null;
+  }
+
+  private toBody(parsedBody: unknown): Record<string, unknown> | null {
+    if (
+      typeof parsedBody === "object" &&
+      parsedBody !== null &&
+      !Array.isArray(parsedBody)
+    ) {
+      return parsedBody as Record<string, unknown>;
+    }
+    return null;
+  }
+
+  private readHeader(
+    headers: Record<string, string>,
+    headerName: string,
+  ): string | undefined {
+    const direct = headers[headerName];
+    if (direct) return direct;
+    return headers[headerName.toLowerCase()];
   }
 
   private scheduleIngress(options: {

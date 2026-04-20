@@ -142,7 +142,10 @@ async function bootstrap(): Promise<void> {
         (req.headers[REQUEST_ID_HEADER] as string | undefined) ??
         crypto.randomUUID(),
     }),
-    { logger: pinoLogger },
+    {
+      logger: pinoLogger,
+      rawBody: true,
+    },
   );
 
   configureGlobalMiddleware(app);

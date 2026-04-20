@@ -116,6 +116,32 @@ export class AdapterClient {
     };
   }
 
+  /**
+   * Resolves a request against an adapter using its `baseUrl` joined
+   * with a caller-provided `path` and `method`. Used when the caller
+   * knows which adapter to hit but no endpoint is defined (e.g. ad-hoc
+   * HTTP calls from a workflow's `endpointCall` action when the user
+   * picks an adapter and types a relative path).
+   *
+   * URL join is done via string concatenation after slash normalization
+   * — NOT `new URL(path, base)` — because we want `/a/b` on base
+   * `https://host/api` to yield `https://host/api/a/b`, not
+   * `https://host/a/b` (which is what WHATWG URL resolution does when
+   * the path starts with `/`). Callers rely on the "adapter base is
+   * the prefix" mental model.
+   */
+  async resolveAdapterRequest(
+    tenantId: string,
+    adapterId: string,
+    opts: { method: string; path?: string },
+  ): Promise<ResolvedAdapterRequest> {
+    const adapter = await this.getAdapter(tenantId, adapterId);
+    return this.buildRequestFromAdapterBase(adapter, {
+      method: opts.method,
+      path: opts.path,
+    });
+  }
+
   async invalidate(tenantId: string, adapterId: string): Promise<void> {
     const key = `${ADAPTER_KEY_PREFIX}${tenantId}:${adapterId}`;
     await this.cache.del(key);
@@ -186,11 +212,28 @@ export class AdapterClient {
       return this.resolveRequest(tenantId, adapter.id, opts.endpointId);
     }
 
+    return this.buildRequestFromAdapterBase(adapter, {
+      method: opts.method ?? "GET",
+      path: opts.path,
+    });
+  }
+
+  /**
+   * Shared base-URL + path builder used by {@link resolveAdapterRequest}
+   * and the dynamic-path branch of {@link resolveForInternalService}.
+   *
+   * Keeps header composition (`adapter.headers` + auth) in a single
+   * place so both paths stay in lockstep if we add e.g. tenant-scoped
+   * headers or a new auth flavour.
+   */
+  private async buildRequestFromAdapterBase(
+    adapter: AdapterConfig,
+    opts: { method: string; path?: string },
+  ): Promise<ResolvedAdapterRequest> {
     const base = adapter.baseUrl.replace(/\/+$/, "");
     const rawPath = opts.path ?? "";
-    const path = rawPath.length === 0 || rawPath.startsWith("/")
-      ? rawPath
-      : `/${rawPath}`;
+    const path =
+      rawPath.length === 0 || rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
 
     const headers: Record<string, string> = {};
     for (let i = 0; i < adapter.headers.length; i++) {
@@ -201,7 +244,7 @@ export class AdapterClient {
 
     return {
       url: `${base}${path}`,
-      method: opts.method ?? "GET",
+      method: opts.method,
       headers,
       timeoutMs: adapter.timeoutMs,
       maxRetries: adapter.maxRetries,

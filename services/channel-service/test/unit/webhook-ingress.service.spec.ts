@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { BadRequestException } from "@nestjs/common";
 import { WebhookIngressService } from "../../src/modules/webhooks/webhook-ingress.service";
 import { ChannelRouter } from "../../src/providers/channel-router";
 import { IngressService } from "../../src/modules/ingress/ingress.service";
@@ -39,16 +38,17 @@ describe("WebhookIngressService", () => {
 
   it("returns no_messages when parse yields none", async () => {
     const raw = Buffer.from("{}", "utf8");
-    const req = {
-      body: {},
-      rawBody: raw,
-      headers: { "x-hub-signature-256": "sha256=aa" },
-    } as never;
-    const out = await service.handleMetaWebhookPost("whatsapp", "t1", req);
+    const out = await service.processEnvelope(
+      "whatsapp",
+      "t1",
+      raw,
+      { "x-hub-signature-256": "sha256=aa" },
+      {},
+    );
     expect(out.status).toBe("no_messages");
   });
 
-  it("throws when channel unsupported", async () => {
+  it("returns unsupported_channel when channel is unknown", async () => {
     const mockRouter = { get: mock(() => undefined) };
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -62,11 +62,13 @@ describe("WebhookIngressService", () => {
       ],
     }).compile();
     const svc = moduleRef.get(WebhookIngressService);
-    await expect(
-      svc.handleMetaWebhookPost("unknown", "t1", {
-        body: {},
-        rawBody: Buffer.from("{}"),
-      } as never),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    const out = await svc.processEnvelope(
+      "unknown",
+      "t1",
+      Buffer.from("{}"),
+      {},
+      {},
+    );
+    expect(out.status).toBe("unsupported_channel");
   });
 });
