@@ -5,7 +5,6 @@ import { tenantServiceConfig } from "../config";
 import { K8S_CORE_API, K8S_APPS_API } from "./kubernetes.provider";
 import { PinoLoggerService } from "@yoizen/observability";
 
-const PG_IMAGE = "postgres:17-alpine";
 const PG_PORT = 5432;
 
 interface IKubernetesApiError {
@@ -42,7 +41,9 @@ effective_io_concurrency = 200
 default_statistics_target = 100
 `;
 
-const INIT_SQL = `CREATE TABLE IF NOT EXISTS events (
+const INIT_SQL = `CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS events (
   id          TEXT        PRIMARY KEY,
   type        TEXT        NOT NULL,
   payload     JSONB       NOT NULL DEFAULT '{}',
@@ -193,7 +194,7 @@ export class TenantPostgresProvisioner {
   private buildPostgresInitContainer(): k8s.V1Container {
     return {
       name: "init-permissions",
-      image: PG_IMAGE,
+      image: tenantServiceConfig.tenantPostgresContainerImage,
       command: ["sh", "-c", "chown -R 70:70 /var/lib/postgresql/data"],
       securityContext: { runAsUser: 0 },
       volumeMounts: [
@@ -216,7 +217,7 @@ export class TenantPostgresProvisioner {
     ];
     return {
       name: "postgres",
-      image: PG_IMAGE,
+      image: tenantServiceConfig.tenantPostgresContainerImage,
       ports: [
         { name: "postgres", containerPort: PG_PORT, protocol: "TCP" },
       ],

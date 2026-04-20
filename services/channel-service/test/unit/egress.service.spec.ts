@@ -9,6 +9,7 @@ import {
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
 } from "../../src/providers/nats.provider";
+import { EGRESS_BREAKER } from "../../src/modules/egress/egress-breaker.provider";
 
 describe("EgressService", () => {
   let service: EgressService;
@@ -58,6 +59,18 @@ describe("EgressService", () => {
       })),
     };
 
+    const breaker = {
+      canProceed: mock(() =>
+        Promise.resolve({
+          action: "allow" as const,
+          status: "closed" as const,
+          reason: "fresh",
+        }),
+      ),
+      recordSuccess: mock(() => undefined),
+      recordFailure: mock(() => undefined),
+    };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         EgressService,
@@ -65,6 +78,7 @@ describe("EgressService", () => {
         { provide: JETSTREAM_MANAGER, useValue: jsm },
         { provide: ChannelRouter, useValue: router },
         { provide: AccountsService, useValue: accounts },
+        { provide: EGRESS_BREAKER, useValue: breaker },
       ],
     }).compile();
 

@@ -10,6 +10,7 @@ type WorkflowHttpWorkerConfig = {
   readonly redisPort: number;
   readonly adapterServiceUrl: string;
   readonly registryServiceUrl: string;
+  readonly yoizenclawAdminServiceUrl: string;
 };
 
 export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
@@ -24,4 +25,7 @@ export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
   registryServiceUrl:
     process.env.REGISTRY_SERVICE_URL ??
     platformServiceUrl("registry-service", env),
+  yoizenclawAdminServiceUrl:
+    process.env.YOIZENCLAW_ADMIN_SERVICE_URL ??
+    platformServiceUrl("yoizenclaw-admin-service", env),
 };

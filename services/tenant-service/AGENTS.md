@@ -69,7 +69,7 @@ Each tenant namespace (`<tenant>-<env>-ns`) contains:
 - K8s Secret: `postgres-credentials` (DB, user, password)
 - ConfigMap: `postgres-config` (postgresql.conf + init.sql for schema)
 - Headless Service: `postgres` (ClusterIP: None, port 5432)
-- StatefulSet: `postgres` (1 replica, 1Gi PVC, postgres:17-alpine)
+- StatefulSet: `postgres` (1 replica, 1Gi PVC; image from `TENANT_POSTGRES_IMAGE`, default `pgvector/pgvector:pg17`)
 
 ### Namespace Labels
 

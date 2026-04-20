@@ -51,6 +51,15 @@ export class ListAdaptersQueryDto extends PaginatedQueryDto {
   @IsOptional()
   @IsString()
   tag?: string;
+
+  /**
+   * Filter by exact adapter name. Combined with `context=internal` this
+   * is used by `AdapterClient.findInternalByServiceId()` to look up the
+   * internal-adapter mirror for a given serviceId.
+   */
+  @IsOptional()
+  @IsString()
+  name?: string;
 }
 
 export class CreateEndpointDto {

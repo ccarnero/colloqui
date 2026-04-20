@@ -117,6 +117,10 @@ async def lifespan(app: FastAPI):
 
         await get_agent_manager().initialize()
 
+        from src.utils.adapter_client import ensure_adapter_client_in_container
+
+        ensure_adapter_client_in_container()
+
         # Initialize conversation memory store
         from src.app.conversation.memory_store import get_conversation_store
 

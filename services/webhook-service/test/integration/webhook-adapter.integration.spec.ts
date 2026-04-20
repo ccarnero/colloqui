@@ -14,11 +14,10 @@ import {
   RetentionPolicy,
 } from "nats";
 import {
-  RESULTS_STREAM_NAME,
-  RESULTS_STREAM_SUBJECTS,
-  RESULTS_SUBJECT_PREFIX,
-  RESULTS_STREAM_MAX_BYTES,
-  STREAM_MAX_AGE_NS,
+  CHANNEL_STREAM_MAX_AGE_NS,
+  CHANNEL_STREAM_MAX_BYTES,
+  getTenantStreamName,
+  getTenantSubjectPattern,
 } from "@yoizen/shared";
 import type { CompletionEvent, ProcessedEvent } from "@yoizen/shared";
 import type { Server } from "bun";
@@ -100,15 +99,16 @@ describe("webhook-service adapter integration", () => {
     nc = await connect({ servers: "nats://localhost:4222" });
 
     const jsm = await nc.jetstreamManager();
+    const ingressStreamName = getTenantStreamName("t1");
     try {
-      await jsm.streams.info(RESULTS_STREAM_NAME);
+      await jsm.streams.info(ingressStreamName);
     } catch {
       await jsm.streams.add({
-        name: RESULTS_STREAM_NAME,
-        subjects: [...RESULTS_STREAM_SUBJECTS],
+        name: ingressStreamName,
+        subjects: [getTenantSubjectPattern("t1")],
         retention: RetentionPolicy.Limits,
-        max_age: STREAM_MAX_AGE_NS,
-        max_bytes: RESULTS_STREAM_MAX_BYTES,
+        max_age: CHANNEL_STREAM_MAX_AGE_NS,
+        max_bytes: CHANNEL_STREAM_MAX_BYTES,
       });
     }
 
@@ -154,7 +154,7 @@ describe("webhook-service adapter integration", () => {
     };
 
     await js.publish(
-      `${RESULTS_SUBJECT_PREFIX}.created`,
+      "evt.t1.event-processor.platform.events.gateway.completed.v1",
       new TextEncoder().encode(JSON.stringify(completion)),
     );
 
@@ -188,7 +188,7 @@ describe("webhook-service adapter integration", () => {
     };
 
     await js.publish(
-      `${RESULTS_SUBJECT_PREFIX}.created`,
+      "evt.t1.event-processor.platform.events.gateway.completed.v1",
       new TextEncoder().encode(JSON.stringify(completion)),
     );
 
@@ -235,7 +235,7 @@ describe("webhook-service adapter integration", () => {
     };
 
     await js.publish(
-      `${RESULTS_SUBJECT_PREFIX}.created`,
+      "evt.t1.event-processor.platform.events.gateway.completed.v1",
       new TextEncoder().encode(JSON.stringify(completion)),
     );
 

@@ -7,6 +7,7 @@ import { AuthService } from "./auth.service";
 
 describe("AuthService", () => {
   beforeEach(() => {
+    localStorage.clear();
     TestBed.configureTestingModule({
       providers: [
         AuthService,
@@ -22,9 +23,10 @@ describe("AuthService", () => {
     expect(service).toBeTruthy();
   });
 
-  it("exposes login and logout", () => {
+  it("exposes login, logout, and refreshToken", () => {
     const service = TestBed.inject(AuthService);
     expect(typeof service.login).toBe("function");
     expect(typeof service.logout).toBe("function");
+    expect(typeof service.refreshToken).toBe("function");
   });
 });

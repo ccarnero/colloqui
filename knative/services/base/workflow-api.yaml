@@ -9,11 +9,14 @@ spec:
   template:
     metadata:
       annotations:
-        autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
-        autoscaling.knative.dev/metric: concurrency
-        autoscaling.knative.dev/target: "100"
+        # HPA class: KEDA owns replica count based on JetStream
+        # workflow-triggers consumer lag (see
+        # knative/services/base/scaledobjects/workflow-api.yaml).
+        autoscaling.knative.dev/class: hpa.autoscaling.knative.dev
+        autoscaling.knative.dev/metric: cpu
+        autoscaling.knative.dev/target: "80"
         autoscaling.knative.dev/min-scale: "1"
-        autoscaling.knative.dev/max-scale: "10"
+        autoscaling.knative.dev/max-scale: "15"
     spec:
       containerConcurrency: 0
       containers:

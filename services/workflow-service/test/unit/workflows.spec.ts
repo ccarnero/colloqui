@@ -18,7 +18,14 @@ const executeChannelSend = mock(() =>
 const executeServiceCall = mock(() =>
   Promise.resolve({ status: 200, data: { result: "svc" }, headers: {} }),
 );
-const syncExecutionStatus = mock(() => Promise.resolve());
+const executeAgentCall = mock(() =>
+  Promise.resolve({
+    status: 200,
+    data: { reply: "agent-said" },
+    headers: {},
+  }),
+);
+const publishExecutionCompletedEvent = mock(() => Promise.resolve());
 
 let runWorkflow: (
   workflow: WorkflowDefinition,
@@ -33,7 +40,8 @@ beforeAll(async () => {
       executeServiceBusCall,
       executeChannelSend,
       executeServiceCall,
-      syncExecutionStatus,
+      executeAgentCall,
+      publishExecutionCompletedEvent,
     }),
   }));
   ({ runWorkflow } = await import("../../src/temporal/workflows"));
@@ -146,6 +154,76 @@ describe("runWorkflow (temporal/workflows)", () => {
     });
   });
 
+  it("resolves templates in serviceCall path and nested data", async () => {
+    executeJsFunction.mockImplementation(() =>
+      Promise.resolve({
+        status: 200,
+        data: { sku: "SKU1" },
+        headers: {},
+      }),
+    );
+    executeServiceCall.mockClear();
+    await runWorkflow({
+      ...base,
+      actions: [
+        {
+          activity: "jsFunction",
+          name: "prev",
+          args: { code: "return {}" },
+        },
+        {
+          activity: "serviceCall",
+          name: "svc",
+          args: {
+            serviceId: "svc-id",
+            method: "POST",
+            path: "/items/{{results.prev.data.sku}}/detail",
+            data: {
+              ref: "{{results.prev.data.sku}}",
+            },
+          },
+        },
+      ],
+    });
+    expect(executeServiceCall).toHaveBeenCalledWith(
+      {
+        serviceId: "svc-id",
+        method: "POST",
+        path: "/items/SKU1/detail",
+        data: {
+          ref: "SKU1",
+        },
+      },
+      "tenant-1",
+    );
+    executeJsFunction.mockImplementation(() =>
+      Promise.resolve({ computed: 1 }),
+    );
+  });
+
+  it("runs agentCall via http activities", async () => {
+    executeAgentCall.mockClear();
+    const ctx = await runWorkflow({
+      ...base,
+      actions: [
+        {
+          activity: "agentCall",
+          name: "yc",
+          args: {
+            agentId: "550e8400-e29b-41d4-a716-446655440000",
+            message: "Hello",
+          },
+        },
+      ],
+    });
+    expect(executeAgentCall).toHaveBeenCalled();
+    expect(ctx.results.yc).toEqual({
+      status: 200,
+      data: { reply: "agent-said" },
+      headers: {},
+    });
+  });
+
   it("runs channelSend actions", async () => {
     executeChannelSend.mockClear();
     const ctx = await runWorkflow({
@@ -169,6 +247,62 @@ describe("runWorkflow (temporal/workflows)", () => {
     expect(ctx.results.send).toBeDefined();
   });
 
+  it("threads workflow.causal into channelSend activity", async () => {
+    executeChannelSend.mockClear();
+    await runWorkflow({
+      ...base,
+      causal: {
+        causation_id: "evt-root",
+        correlation_id: "conv-1",
+        depth: 0,
+      },
+      actions: [
+        {
+          activity: "channelSend",
+          name: "send",
+          args: {
+            accountId: "acc-1",
+            channel: "telegram",
+            provider: "telegram",
+            to: "123",
+            type: "text",
+            text: "hi",
+          },
+        },
+      ],
+    });
+    const call = executeChannelSend.mock.calls[0];
+    /* args, tenantId, causal */
+    expect(call).toHaveLength(3);
+    expect(call[2]).toEqual({
+      causation_id: "evt-root",
+      correlation_id: "conv-1",
+      depth: 0,
+    });
+  });
+
+  it("passes undefined causal to channelSend when workflow is a causal root", async () => {
+    executeChannelSend.mockClear();
+    await runWorkflow({
+      ...base,
+      actions: [
+        {
+          activity: "channelSend",
+          name: "send",
+          args: {
+            accountId: "acc-1",
+            channel: "telegram",
+            provider: "telegram",
+            to: "123",
+            type: "text",
+          },
+        },
+      ],
+    });
+    const call = executeChannelSend.mock.calls[0];
+    expect(call[2]).toBeUndefined();
+  });
+
   it("propagates activity errors", async () => {
     executeJsFunction.mockImplementationOnce(() =>
       Promise.reject(new Error("activity failed")),
@@ -183,8 +317,8 @@ describe("runWorkflow (temporal/workflows)", () => {
     ).rejects.toThrow("activity failed");
   });
 
-  it("calls syncExecutionStatus with COMPLETED on success", async () => {
-    syncExecutionStatus.mockClear();
+  it("calls publishExecutionCompletedEvent with COMPLETED on success", async () => {
+    publishExecutionCompletedEvent.mockClear();
     await runWorkflow(
       {
         ...base,
@@ -198,11 +332,16 @@ describe("runWorkflow (temporal/workflows)", () => {
       },
       "exec-123",
     );
-    expect(syncExecutionStatus).toHaveBeenCalledWith("exec-123", "COMPLETED");
+    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith(
+      "exec-123",
+      "COMPLETED",
+      "tenant-1",
+      "wf",
+    );
   });
 
-  it("calls syncExecutionStatus with FAILED on error", async () => {
-    syncExecutionStatus.mockClear();
+  it("calls publishExecutionCompletedEvent with FAILED on error", async () => {
+    publishExecutionCompletedEvent.mockClear();
     executeJsFunction.mockImplementationOnce(() =>
       Promise.reject(new Error("boom")),
     );
@@ -221,15 +360,20 @@ describe("runWorkflow (temporal/workflows)", () => {
         "exec-456",
       ),
     ).rejects.toThrow("boom");
-    expect(syncExecutionStatus).toHaveBeenCalledWith("exec-456", "FAILED");
+    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith(
+      "exec-456",
+      "FAILED",
+      "tenant-1",
+      "wf",
+    );
   });
 
-  it("skips sync when executionId is not provided", async () => {
-    syncExecutionStatus.mockClear();
+  it("skips publish when executionId is not provided", async () => {
+    publishExecutionCompletedEvent.mockClear();
     await runWorkflow({
       ...base,
       actions: [],
     });
-    expect(syncExecutionStatus).not.toHaveBeenCalled();
+    expect(publishExecutionCompletedEvent).not.toHaveBeenCalled();
   });
 });

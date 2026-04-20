@@ -1,26 +1,40 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import type { Consumer } from "nats";
 import { MetricsRepository } from "../../src/modules/metrics/metrics.repository";
 import {
   MetricsService,
   type IMetricRecord,
 } from "../../src/modules/metrics/metrics.service";
-import { JETSTREAM_CLIENT } from "../../src/providers/nats.provider";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+  NATS_CONNECTION,
+} from "../../src/providers/nats.provider";
 import { TenantConnectionManager, type Sql } from "@yoizen/database";
 
-function makeMockConsumer(): Consumer {
-  return {
-    consume: mock(() =>
-      Promise.resolve({
-        [Symbol.asyncIterator]: () => ({
-          next: () => Promise.resolve({ done: true, value: undefined }),
-        }),
-        stop: mock(),
-      }),
-    ),
-  } as unknown as Consumer;
+const mockNatsConnection = {
+  subscribe: mock(() => ({
+    unsubscribe: mock(() => {}),
+  })),
+};
+
+async function* emptyStreamList(): AsyncGenerator<never> {
+  return;
 }
+const mockJsm = {
+  streams: {
+    info: mock(() => Promise.resolve({})),
+    add: mock(() => Promise.resolve({})),
+    list: mock(() => emptyStreamList()),
+  },
+  consumers: {
+    info: mock(() => Promise.reject(new Error("consumer not found"))),
+    add: mock(() => Promise.resolve({})),
+  },
+};
+const mockJs = {
+  consumers: { get: mock(() => Promise.reject(new Error("skip"))) },
+};
 
 describe("MetricsService", () => {
   let service: MetricsService;
@@ -59,7 +73,9 @@ describe("MetricsService", () => {
       providers: [
         MetricsRepository,
         MetricsService,
-        { provide: JETSTREAM_CLIENT, useValue: makeMockConsumer() },
+        { provide: NATS_CONNECTION, useValue: mockNatsConnection },
+        { provide: JETSTREAM_MANAGER, useValue: mockJsm },
+        { provide: JETSTREAM_PUBLISHER, useValue: mockJs },
         { provide: TenantConnectionManager, useValue: mockTenantMgr },
       ],
     }).compile();

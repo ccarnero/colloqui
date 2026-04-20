@@ -94,6 +94,7 @@ async def _get_chat_agent(request: ChatRequest) -> RuntimeAgent:
         RuntimeNotConfiguredError: If runtime is not configured.
     """
     agent_manager = get_agent_manager()
+    await agent_manager.initialize()
 
     if not agent_manager.is_configured():
         raise RuntimeNotConfiguredError(

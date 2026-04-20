@@ -1,15 +1,4 @@
 export {
-  STREAM_NAME,
-  STREAM_SUBJECTS,
-  CONSUMER_NAME,
-  AUDIT_CONSUMER_NAME,
-  METRICS_CONSUMER_NAME,
-  METRICS_SUBJECT,
-  SUBJECT_PREFIX,
-  RESULTS_STREAM_NAME,
-  RESULTS_STREAM_SUBJECTS,
-  RESULTS_SUBJECT_PREFIX,
-  WEBHOOK_CONSUMER_NAME,
   WEBHOOK_DLQ_SUBJECT,
   WEBHOOK_MAX_RETRIES,
   WEBHOOK_RETRY_DELAYS,
@@ -24,8 +13,6 @@ export {
   CALLBACK_TTL,
   RESULT_CACHE_MAX,
   STREAM_MAX_AGE_NS,
-  STREAM_MAX_BYTES,
-  RESULTS_STREAM_MAX_BYTES,
   MAX_DELIVER,
   TENANT_HEADER,
   SCHEDULER_DEFAULT_TIMEOUT_MS,
@@ -37,6 +24,10 @@ export {
   REGISTRY_KNATIVE_SERVICES_PLURAL,
   REGISTRY_KNATIVE_REVISIONS_PLURAL,
   REGISTRY_DEFAULT_SERVICE_PORT,
+  REGISTRY_PRODUCER,
+  PLATFORM_DOMAIN,
+  PLATFORM_NON_CHANNEL_TOKEN,
+  ADAPTER_MANAGED_BY_REGISTRY,
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
   WORKFLOW_HTTP_TASK_QUEUE,
   WORKFLOW_DEFAULT_TIMEOUT_MS,
@@ -88,6 +79,28 @@ export type {
 } from './interfaces';
 
 export {
+  canonicalJson,
+  sha256Canonical,
+  computeIdempotencyKey,
+  computePayloadChecksum,
+  canonicalByteLength,
+  buildSubject,
+  parseSubject,
+  deriveEnvelope,
+  DepthExceededError,
+  MAX_DEPTH_BY_CATEGORY,
+  DEFAULT_MAX_DEPTH,
+  isCompliantEnvelope,
+} from './envelope.utils';
+
+export type {
+  ProducerCategory,
+  BuildSubjectParams,
+  ParsedSubject,
+  DeriveEnvelopeOverrides,
+} from './envelope.utils';
+
+export {
   ACCESS_TOKEN_TTL,
   REFRESH_TOKEN_TTL,
   PUBLIC_ROUTES_CACHE_KEY_PREFIX,
@@ -113,16 +126,20 @@ export type {
 
 export type {
   WorkflowExecutionContext,
+  EventCausalContext,
   EndpointCallArgs,
   JsFunctionArgs,
   ServiceBusCallArgs,
   ServiceCallArgs,
+  AgentCallArgs,
+  AgentCallContextEntry,
   EndpointCallAction,
   JsFunctionAction,
   ServiceBusCallAction,
   ServiceCallAction,
   ChannelSendArgs,
   ChannelSendAction,
+  AgentCallAction,
   BranchAction,
   WorkflowAction,
   WorkflowDefinition,
@@ -177,6 +194,7 @@ export {
   CHANNEL_STREAM_SUBJECTS_PATTERN,
   CHANNEL_CONSUMER_NAME,
   CHANNEL_SUBJECT_PREFIX,
+  CHANNEL_PRODUCER,
   CHANNEL_DOMAIN,
   CHANNEL_STREAM_MAX_AGE_NS,
   CHANNEL_STREAM_MAX_BYTES,
@@ -185,7 +203,33 @@ export {
   CLAIM_CHECK_BUCKET_PREFIX,
   CHANNEL_AUDIT_SUBJECT_PATTERN,
   CHANNEL_SEND_SUBJECT_PATTERN,
+  WEBHOOK_VERIFY_RPC_SUBJECT,
+  WEBHOOK_INGRESS_RECEIVED_KIND,
+  WEBHOOK_INGRESS_RECEIVED_VERSION,
+  WEBHOOK_INGRESS_SUBJECT_FILTER,
+  WEBHOOK_FORWARDED_HEADERS,
+  WEBHOOK_FORWARDED_HEADERS_SET,
+  DLQ_TENANT_STREAM_PREFIX,
+  DLQ_TENANT_SUBJECT_PREFIX,
+  DLQ_TENANT_STREAM_MAX_AGE_NS,
+  DLQ_TENANT_STREAM_MAX_BYTES,
+  buildDlqStreamName,
+  buildDlqSubjectPattern,
+  buildDlqMessageSubject,
 } from './channel.constants';
+
+export { PermanentError, isPermanentError } from './permanent-error';
+
+export {
+  DistributedCircuitBreaker,
+  computeBreakerKey,
+  type BreakerStatus,
+  type BreakerDecision,
+  type IBreakerConfig,
+  type ICircuitBreakerRedis,
+  type ICircuitBreakerLogger,
+  type ICircuitBreakerMetrics,
+} from './circuit-breaker';
 
 export type {
   Channel,
@@ -207,7 +251,32 @@ export {
   buildClaimCheckBucket,
   buildTenantWildcard,
   parseChannelSubject,
+  buildWebhookIngressSubject,
+  parseWebhookIngressSubject,
 } from './channel.utils';
+
+export type {
+  IWebhookVerifyRequest,
+  IWebhookVerifyResponse,
+  IWebhookIngressData,
+  WebhookIngressEnvelope,
+} from './webhook.interfaces';
+
+export {
+  buildRegistryPlatformSubject,
+  buildRegistryPlatformWildcard,
+  PLATFORM_RESOURCE_SERVICE,
+  PLATFORM_KIND_SERVICE_UPSERTED,
+  PLATFORM_KIND_SERVICE_DELETED,
+  SERVICE_UPSERTED_EVENT_TYPE,
+  SERVICE_DELETED_EVENT_TYPE,
+  REGISTRY_EVENT_SOURCE,
+} from './platform.utils';
+
+export type {
+  IServiceConfigUpsertedPayload,
+  IServiceConfigDeletedPayload,
+} from './platform.utils';
 
 export type { ParsedSenderId, SenderIdType } from './phone.utils';
 export { parseSenderId, normalizeRecipient } from './phone.utils';

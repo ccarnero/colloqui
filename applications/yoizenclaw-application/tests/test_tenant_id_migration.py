@@ -21,8 +21,8 @@ TENANT_TABLES: list[str] = [
     "agent_runtime_overrides",
     "config_files",
     "channels",
-    "jobs",
-    "job_executions",
+    "runtime_jobs",
+    "runtime_job_executions",
     "embeddings",
 ]
 
@@ -30,8 +30,8 @@ EXPECTED_COMPOSITE_INDEXES: dict[str, tuple[str, str]] = {
     "agent_runtime_overrides": ("tenant_id", "agent_id"),
     "config_files": ("tenant_id", "path"),
     "channels": ("tenant_id", "channel"),
-    "jobs": ("tenant_id", "id"),
-    "job_executions": ("tenant_id", "job_id"),
+    "runtime_jobs": ("tenant_id", "id"),
+    "runtime_job_executions": ("tenant_id", "job_id"),
     "embeddings": ("tenant_id", "id"),
 }
 
@@ -214,28 +214,28 @@ class TestDowngradeRemovesTenantId:
 
 class TestSchemaSqlIncludesTenantId:
     def test_jobs_table_has_tenant_id(self) -> None:
-        from src.infrastructure.database.memory_postgres_schema import SCHEMA_SQL
+        from src.infra.database.memory_postgres_schema import SCHEMA_SQL
 
-        sql = SCHEMA_SQL["create_jobs_table"]
-        assert "tenant_id" in sql, "jobs table must include tenant_id"
+        sql = SCHEMA_SQL["create_runtime_jobs_table"]
+        assert "tenant_id" in sql, "runtime_jobs table must include tenant_id"
         assert "NOT NULL" in sql
 
     def test_job_executions_table_has_tenant_id(self) -> None:
-        from src.infrastructure.database.memory_postgres_schema import SCHEMA_SQL
+        from src.infra.database.memory_postgres_schema import SCHEMA_SQL
 
-        sql = SCHEMA_SQL["create_job_executions_table"]
+        sql = SCHEMA_SQL["create_runtime_job_executions_table"]
         assert "tenant_id" in sql
         assert "NOT NULL" in sql
 
     def test_embeddings_table_has_tenant_id(self) -> None:
-        from src.infrastructure.database.memory_postgres_schema import SCHEMA_SQL
+        from src.infra.database.memory_postgres_schema import SCHEMA_SQL
 
         sql = SCHEMA_SQL["create_embeddings_table"]
         assert "tenant_id" in sql
         assert "NOT NULL" in sql
 
     def test_agent_runtime_overrides_has_tenant_id(self) -> None:
-        from src.infrastructure.database.memory_postgres_schema import (
+        from src.infra.database.memory_postgres_schema import (
             RUNTIME_STATE_SCHEMA_SQL,
         )
 
@@ -246,7 +246,7 @@ class TestSchemaSqlIncludesTenantId:
         assert "NOT NULL" in sql
 
     def test_channels_has_tenant_id(self) -> None:
-        from src.infrastructure.database.memory_postgres_schema import (
+        from src.infra.database.memory_postgres_schema import (
             RUNTIME_STATE_SCHEMA_SQL,
         )
 
@@ -259,7 +259,7 @@ class TestSchemaSqlIncludesTenantId:
         assert "NOT NULL" in channels_sql
 
     def test_config_files_has_tenant_id(self) -> None:
-        from src.infrastructure.database.memory_postgres_schema import (
+        from src.infra.database.memory_postgres_schema import (
             RUNTIME_STATE_SCHEMA_SQL,
         )
 
@@ -328,7 +328,7 @@ class TestCompositeIndexOptimization:
             )
 
     def test_schema_sql_composite_indexes_match_migration(self) -> None:
-        from src.infrastructure.database.memory_postgres_schema import (
+        from src.infra.database.memory_postgres_schema import (
             RUNTIME_STATE_SCHEMA_SQL,
             SCHEMA_SQL,
         )

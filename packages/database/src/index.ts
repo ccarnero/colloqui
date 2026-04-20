@@ -64,6 +64,18 @@ export {
 export type {
   INatsConsumerRunnerOptions,
   INatsConsumerLogger,
+  INatsConsumerRunnerHandlers,
+  NatsPermanentHandler,
+  INatsConsumerMetrics,
+  NatsMessageResult,
 } from "./nats-consumer-runner";
+export { ensureTenantDlqStream } from "./nats-dlq";
+export {
+  ensureDurableConsumer,
+  getDurableConsumer,
+} from "./nats-durable-consumer";
+export type { IDurableConsumerOptions } from "./nats-durable-consumer";
+export { MultiTenantConsumerManager } from "./multi-tenant-consumer-manager";
+export type { IMultiTenantConsumerConfig } from "./multi-tenant-consumer-manager";
 export { TenantGuard, TenantId } from "./tenant-guard";
 export { isPostgresUniqueViolation } from "./postgres-errors";

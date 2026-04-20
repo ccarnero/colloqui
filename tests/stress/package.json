@@ -1,0 +1,25 @@
+{
+  "name": "stress-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "stress:publish": "./scale/run-with-scaling.sh --scenario events-publish --with-sampler false",
+    "stress:roundtrip": "./scale/run-with-scaling.sh --scenario events-roundtrip --with-sampler false",
+    "stress:webhook": "./scale/run-with-scaling.sh --scenario webhook-ingress --with-sampler false",
+    "stress:all": "for scenario in events-publish events-roundtrip webhook-ingress; do ./scale/run-with-scaling.sh --scenario \"$scenario\" --with-sampler false; done",
+    "stress:publish:scale": "./scale/run-with-scaling.sh --scenario events-publish --with-sampler true",
+    "stress:roundtrip:scale": "./scale/run-with-scaling.sh --scenario events-roundtrip --with-sampler true",
+    "stress:webhook:scale": "./scale/run-with-scaling.sh --scenario webhook-ingress --with-sampler true",
+    "stress:report": "bun run scale/report.ts",
+    "stress:lint": "npx @biomejs/biome check src scale"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.2",
+    "@types/node": "^22.10.1",
+    "artillery": "^2.0.27",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

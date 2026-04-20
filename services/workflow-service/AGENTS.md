@@ -83,6 +83,8 @@ Actions support `{{path.to.value}}` templates resolved against the `WorkflowExec
 - `{{results.actionName.data}}` — from a previous action's result
 - `{{workflow.tenant}}` — tenant ID
 
+The same resolution applies to `serviceCall` `path` and to string values inside `serviceCall` `args.data` (JSON body) before the HTTP worker runs.
+
 ### Data Flow
 
 1. **Start workflow**: `POST /workflows` -> validate DTO -> `temporal.workflow.start('runWorkflow', ...)` with `TenantId` search attribute -> 202 Accepted

@@ -328,6 +328,7 @@ class EnhancedAgent(Agent):
                 # Build pydantic-ai tools from discovery tools + base agent tools
                 pydantic_tools = self._build_llm_driven_tools(state)
 
+                await self.llm_client._ensure_credentials()
                 agent = PydanticAgent(
                     self.llm_client._get_pydantic_model(),
                     instructions=rendered_system_prompt,

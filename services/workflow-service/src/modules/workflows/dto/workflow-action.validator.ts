@@ -8,7 +8,7 @@ const MAX_BRANCH_DEPTH = 12;
 
 /**
  * Validates each element matches the `WorkflowAction` discriminated union
- * from `@yoizen/shared` (endpointCall, jsFunction, serviceBusCall, branch).
+ * from `@yoizen/shared` (endpointCall, jsFunction, serviceBusCall, agentCall, branch).
  */
 @ValidatorConstraint({ name: "isWorkflowActionArray", async: false })
 export class IsWorkflowActionArrayConstraint
@@ -29,7 +29,7 @@ export class IsWorkflowActionArrayConstraint
   defaultMessage(): string {
     return (
       "actions must be a non-empty array of WorkflowAction objects " +
-      "(activity: endpointCall | jsFunction | serviceBusCall | serviceCall | channelSend | branch)"
+      "(activity: endpointCall | jsFunction | serviceBusCall | serviceCall | channelSend | agentCall | branch)"
     );
   }
 
@@ -61,6 +61,9 @@ export class IsWorkflowActionArrayConstraint
     }
     if (activity === "channelSend") {
       return this.isChannelSendArgs(o.args);
+    }
+    if (activity === "agentCall") {
+      return this.isAgentCallArgs(o.args);
     }
     if (activity === "branch") {
       return this.isBranch(o, depth);
@@ -116,6 +119,52 @@ export class IsWorkflowActionArrayConstraint
       typeof a.to === "string" &&
       typeof a.type === "string"
     );
+  }
+
+  private isAgentCallArgs(args: unknown): boolean {
+    if (typeof args !== "object" || args === null) {
+      return false;
+    }
+    const a = args as Record<string, unknown>;
+    if (
+      typeof a.agentId !== "string" ||
+      a.agentId.length === 0 ||
+      typeof a.message !== "string" ||
+      a.message.length === 0
+    ) {
+      return false;
+    }
+    if (a.conversationId !== undefined && typeof a.conversationId !== "string") {
+      return false;
+    }
+    if (a.customerName !== undefined && typeof a.customerName !== "string") {
+      return false;
+    }
+    if (a.userId !== undefined && typeof a.userId !== "string") {
+      return false;
+    }
+    if (a.channel !== undefined && typeof a.channel !== "string") {
+      return false;
+    }
+    if (a.context !== undefined) {
+      if (!Array.isArray(a.context)) {
+        return false;
+      }
+      for (let i = 0; i < a.context.length; i++) {
+        const e = a.context[i];
+        if (typeof e !== "object" || e === null) {
+          return false;
+        }
+        const row = e as Record<string, unknown>;
+        if (
+          (row.sender !== "customer" && row.sender !== "agent") ||
+          typeof row.content !== "string"
+        ) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   private isBranch(o: Record<string, unknown>, depth: number): boolean {

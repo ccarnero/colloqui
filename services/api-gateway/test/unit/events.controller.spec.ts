@@ -4,7 +4,11 @@ import { NotFoundException } from "@nestjs/common";
 import { EventsController } from "../../src/modules/events/events.controller";
 import { EventsService } from "../../src/modules/events/events.service";
 import { EventDto } from "../../src/modules/events/event.dto";
-import { JETSTREAM, NATS_CONNECTION } from "../../src/providers/nats.provider";
+import {
+  JETSTREAM,
+  JETSTREAM_MANAGER,
+  NATS_CONNECTION,
+} from "../../src/providers/nats.provider";
 import { REDIS_CLIENT } from "../../src/providers/redis.provider";
 import { REQUEST_TENANT_KEY } from "../../src/guards/tenant.guard";
 import type { ITenantScopedRequest } from "../../src/types/yoizen-request";
@@ -34,6 +38,15 @@ describe("EventsController", () => {
         {
           provide: JETSTREAM,
           useValue: { publish: mock(() => Promise.resolve({ seq: 1 })) },
+        },
+        {
+          provide: JETSTREAM_MANAGER,
+          useValue: {
+            streams: {
+              info: mock(() => Promise.resolve({})),
+              add: mock(() => Promise.resolve({})),
+            },
+          },
         },
         {
           provide: NATS_CONNECTION,

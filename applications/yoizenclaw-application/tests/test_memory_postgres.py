@@ -107,7 +107,7 @@ def _build_job_execution() -> JobExecution:
 def _make_memory(
     fake_connection: _FakeConnection,
 ) -> object:
-    memory = importlib.import_module("src.core.memory_postgres").Memory(
+    memory = importlib.import_module("src.infra.database.memory_postgres").Memory(
         "postgresql://example"
     )
     memory._initialized = True  # noqa: SLF001
@@ -118,7 +118,7 @@ def _make_memory(
 def test_memory_uses_database_url_when_present(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://example")
 
-    memory = importlib.import_module("src.core.memory_postgres").Memory()
+    memory = importlib.import_module("src.infra.database.memory_postgres").Memory()
 
     assert memory.connection_string == "postgresql://example"
 
@@ -145,7 +145,7 @@ async def test_runtime_state_schema_adds_channels_config_column() -> None:
         sys.modules[name] = module
 
     try:
-        memory_module = importlib.import_module("src.core.memory_postgres")
+        memory_module = importlib.import_module("src.infra.database.memory_postgres")
         memory = memory_module.Memory("postgresql://example")
     finally:
         for name, module in original_modules.items():
@@ -178,7 +178,7 @@ async def test_save_job_passes_tenant_id_in_insert(monkeypatch: pytest.MonkeyPat
 
     insert_statement, insert_args = fake_connection.executed_statements[-1]
 
-    assert "INSERT INTO jobs" in insert_statement
+    assert "INSERT INTO runtime_jobs" in insert_statement
     assert len(insert_args) == 14
     assert insert_args[0] == "job-1"
     assert insert_args[1] == TENANT_ID
@@ -207,7 +207,7 @@ async def test_save_job_execution_passes_tenant_id_in_insert(
 
     insert_statement, insert_args = fake_connection.executed_statements[-1]
 
-    assert "INSERT INTO job_executions" in insert_statement
+    assert "INSERT INTO runtime_job_executions" in insert_statement
     assert len(insert_args) == 12
     assert insert_args[0] == "execution-1"
     assert insert_args[1] == TENANT_ID
@@ -266,7 +266,7 @@ async def test_get_recent_job_executions_parses_json_arguments(
 
     fetch_statement, fetch_args = fake_connection.fetch_calls[-1]
 
-    assert "SELECT * FROM job_executions" in fetch_statement
+    assert "SELECT * FROM runtime_job_executions" in fetch_statement
     assert "tenant_id" in fetch_statement
     assert fetch_args[0] == TENANT_ID
     assert fetch_args[1] == "job-1"
@@ -424,7 +424,7 @@ async def test_delete_job_hard_delete_includes_tenant_id(
     await memory.delete_job("job-1", hard_delete=True)
 
     execute_statement, execute_args = fake_connection.executed_statements[-1]
-    assert "DELETE FROM jobs" in execute_statement
+    assert "DELETE FROM runtime_jobs" in execute_statement
     assert "tenant_id" in execute_statement
     assert execute_args[0] == "job-1"
     assert execute_args[1] == TENANT_ID
@@ -463,7 +463,7 @@ async def test_save_job_execution_includes_tenant_id(
     await memory.save_job_execution(_build_job_execution())
 
     insert_statement, insert_args = fake_connection.executed_statements[-1]
-    assert "INSERT INTO job_executions" in insert_statement
+    assert "INSERT INTO runtime_job_executions" in insert_statement
     assert insert_args[1] == "acme-corp"
 
 

@@ -22,6 +22,22 @@ export const ingressClaimCheckCount = meter.createCounter(
   { description: "Total messages that used claim-check pattern" },
 );
 
+export const ingressClaimCheckStored = meter.createCounter(
+  "channel.ingress.claimcheck.stored",
+  {
+    description:
+      "Total claim-check payloads successfully stored in NATS Object Store",
+  },
+);
+
+export const ingressClaimCheckStoreFailed = meter.createCounter(
+  "channel.ingress.claimcheck.store_failed",
+  {
+    description:
+      "Total claim-check payloads that failed to be stored in Object Store",
+  },
+);
+
 export const ingressPublishDuration = meter.createHistogram(
   "channel.ingress.publish_duration_ms",
   { description: "Duration of JetStream publish in milliseconds" },

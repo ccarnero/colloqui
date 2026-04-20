@@ -5,6 +5,7 @@ import { ProvidersModule } from "./providers/providers.module";
 import { WorkflowsModule } from "./modules/workflows/workflows.module";
 import { TriggersModule } from "./modules/triggers/triggers.module";
 import { HealthModule } from "./modules/health/health.module";
+import { ExecutionsProjectorModule } from "./modules/executions-projector/executions-projector.module";
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { HealthModule } from "./modules/health/health.module";
     ProvidersModule,
     WorkflowsModule,
     TriggersModule,
+    ExecutionsProjectorModule,
     HealthModule,
   ],
   providers: [

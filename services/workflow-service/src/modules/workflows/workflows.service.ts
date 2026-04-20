@@ -1,12 +1,22 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { WorkflowFailedError, type Client } from "@temporalio/client";
-import { ActivityFailure, TemporalFailure } from "@temporalio/common";
+import {
+  WorkflowExecutionAlreadyStartedError,
+  WorkflowFailedError,
+  type Client,
+} from "@temporalio/client";
+import {
+  ActivityFailure,
+  TemporalFailure,
+  WorkflowIdConflictPolicy,
+  WorkflowIdReusePolicy,
+} from "@temporalio/common";
 import { nanoid } from "nanoid";
 import {
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
   WORKFLOW_DEFAULT_TIMEOUT_MS,
 } from "@yoizen/shared";
 import type {
+  EventCausalContext,
   WorkflowDefinition,
   WorkflowAction,
   WorkflowTrigger,
@@ -65,6 +75,35 @@ export interface IExecuteWorkflowResult {
   definitionId: string;
   temporalWorkflowId: string;
   runId: string;
+  /**
+   * `true` when this call did NOT start a new Temporal workflow because
+   * one with the same deterministic id already existed (redelivery or
+   * cross-pod race). Callers should treat it as an idempotent ack.
+   */
+  alreadyStarted?: boolean;
+}
+
+/**
+ * Optional inputs for {@link WorkflowsService.executeWorkflow} that
+ * make a trigger source idempotent. When `idempotencyKey` is provided
+ * the Temporal workflowId becomes deterministic
+ * (`<tenant>:<name>:<idempotencyKey>`) and duplicate starts are
+ * rejected by Temporal itself.
+ */
+export interface IExecuteWorkflowOptions {
+  /**
+   * Stable id derived from the triggering message (typically the
+   * envelope `idempotencykey` scoped with the workflow definition id).
+   */
+  readonly idempotencyKey?: string;
+  /**
+   * Causal-chain context inherited from the triggering envelope.
+   * When present, publishing activities (e.g. `channelSend`) will set
+   * `causation_id = causal.causation_id`, copy `correlation_id`, and
+   * increment `transport.depth`, keeping the bus chain traceable
+   * (wdocs-02 §6).
+   */
+  readonly causal?: EventCausalContext;
 }
 
 export interface IWorkflowFailureInfo {
@@ -195,6 +234,7 @@ export class WorkflowsService {
     definitionId: string,
     tenantId: string,
     request: Record<string, unknown>,
+    options: IExecuteWorkflowOptions = {},
   ): Promise<IExecuteWorkflowResult> {
     const definition = await this.repository.findDefinitionById(
       definitionId,
@@ -204,7 +244,10 @@ export class WorkflowsService {
       throw new NotFoundException("Workflow definition not found");
     }
 
-    const temporalWorkflowId = `${tenantId}:${definition.name}:${nanoid()}`;
+    const isIdempotent = options.idempotencyKey !== undefined;
+    const temporalWorkflowId = isIdempotent
+      ? `${tenantId}:${definition.name}:${options.idempotencyKey!}`
+      : `${tenantId}:${definition.name}:${nanoid()}`;
     const executionId = nanoid();
 
     const workflowDef: WorkflowDefinition = {
@@ -213,38 +256,61 @@ export class WorkflowsService {
       application: definition.application,
       request,
       actions: definition.actions as WorkflowAction[],
+      ...(options.causal && { causal: options.causal }),
     };
 
-    const handle = await this.temporal.workflow.start("runWorkflow", {
-      taskQueue: WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
-      workflowId: temporalWorkflowId,
-      args: [workflowDef, executionId],
-      workflowExecutionTimeout: WORKFLOW_DEFAULT_TIMEOUT_MS,
-      searchAttributes: {
-        TenantId: [tenantId],
-      },
-    });
+    try {
+      const handle = await this.temporal.workflow.start("runWorkflow", {
+        taskQueue: WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
+        workflowId: temporalWorkflowId,
+        args: [workflowDef, executionId],
+        workflowExecutionTimeout: WORKFLOW_DEFAULT_TIMEOUT_MS,
+        ...(isIdempotent
+          ? {
+              workflowIdReusePolicy: WorkflowIdReusePolicy.REJECT_DUPLICATE,
+              workflowIdConflictPolicy: WorkflowIdConflictPolicy.FAIL,
+            }
+          : {}),
+        searchAttributes: {
+          TenantId: [tenantId],
+        },
+      });
 
-    const row = await this.repository.createExecution({
-      id: executionId,
-      definitionId,
-      tenantId,
-      temporalWorkflowId,
-      temporalRunId: handle.firstExecutionRunId,
-      request,
-    });
+      const row = await this.repository.createExecution({
+        id: executionId,
+        definitionId,
+        tenantId,
+        temporalWorkflowId,
+        temporalRunId: handle.firstExecutionRunId,
+        request,
+      });
 
-    this.logger.log(
-      `Started execution ${row.id} for definition ${definitionId} ` +
-        `(temporal=${temporalWorkflowId}, runId=${handle.firstExecutionRunId})`,
-    );
+      this.logger.log(
+        `Started execution ${row.id} for definition ${definitionId} ` +
+          `(temporal=${temporalWorkflowId}, runId=${handle.firstExecutionRunId})`,
+      );
 
-    return {
-      executionId: row.id,
-      definitionId,
-      temporalWorkflowId,
-      runId: handle.firstExecutionRunId,
-    };
+      return {
+        executionId: row.id,
+        definitionId,
+        temporalWorkflowId,
+        runId: handle.firstExecutionRunId,
+      };
+    } catch (err: unknown) {
+      if (isIdempotent && err instanceof WorkflowExecutionAlreadyStartedError) {
+        this.logger.log(
+          `Duplicate trigger ignored: workflow ${temporalWorkflowId} already started`,
+        );
+        return {
+          executionId,
+          definitionId,
+          temporalWorkflowId,
+          runId: "",
+          alreadyStarted: true,
+        };
+      }
+      throw err;
+    }
   }
 
   /**

@@ -107,7 +107,7 @@ detect_context() {
 start_forward() {
   local svc=$1 local_port=$2
   local log_file
-  log_file="$(mktemp -t "${svc}.port-forward.XXXXXX")"
+  log_file="$(mktemp -t "${svc}.port-forward")"
   FORWARD_LOGS+=("$log_file")
 
   log "Forwarding ${svc}  localhost:${local_port} -> ${KOURIER_SVC}:80 (kourier-system)"

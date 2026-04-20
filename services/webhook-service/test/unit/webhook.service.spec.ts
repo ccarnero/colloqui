@@ -2,9 +2,25 @@ import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { WebhookService } from "../../src/modules/webhook/webhook.service";
 import {
-  JETSTREAM_CONSUMER,
+  JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
+  NATS_CONNECTION,
 } from "../../src/providers/nats.provider";
+
+async function* emptyStreamList(): AsyncGenerator<never> {
+  return;
+}
+const mockJsm = {
+  streams: {
+    info: mock(() => Promise.resolve({})),
+    add: mock(() => Promise.resolve({})),
+    list: mock(() => emptyStreamList()),
+  },
+  consumers: {
+    info: mock(() => Promise.reject(new Error("consumer not found"))),
+    add: mock(() => Promise.resolve({})),
+  },
+};
 import { REDIS_CLIENT } from "@yoizen/database";
 import { WEBHOOK_DLQ_SUBJECT, applyAdapterAuthHeadersSync } from "@yoizen/shared";
 import type { AdapterConfig, CompletionEvent } from "@yoizen/shared";
@@ -85,15 +101,8 @@ describe("WebhookService", () => {
       Promise.resolve(new Response("OK", { status: 200 })),
     );
 
-    const mockConsumer = {
-      consume: mock(() =>
-        Promise.resolve({
-          [Symbol.asyncIterator]: () => ({
-            next: () => Promise.resolve({ done: true, value: undefined }),
-          }),
-          stop: mock(),
-        }),
-      ),
+    const mockNc = {
+      subscribe: mock(() => ({ unsubscribe: mock(() => {}) })),
     };
 
     mockPublisher = {
@@ -103,7 +112,8 @@ describe("WebhookService", () => {
     const module = await Test.createTestingModule({
       providers: [
         WebhookService,
-        { provide: JETSTREAM_CONSUMER, useValue: mockConsumer },
+        { provide: NATS_CONNECTION, useValue: mockNc },
+        { provide: JETSTREAM_MANAGER, useValue: mockJsm },
         { provide: JETSTREAM_PUBLISHER, useValue: mockPublisher },
         { provide: REDIS_CLIENT, useValue: buildMockRedis() },
       ],
@@ -157,21 +167,15 @@ describe("WebhookService", () => {
       tracedFetch: failFetch,
     }));
 
-    const mockConsumer = {
-      consume: mock(() =>
-        Promise.resolve({
-          [Symbol.asyncIterator]: () => ({
-            next: () => Promise.resolve({ done: true, value: undefined }),
-          }),
-          stop: mock(),
-        }),
-      ),
+    const mockNc = {
+      subscribe: mock(() => ({ unsubscribe: mock(() => {}) })),
     };
 
     const module = await Test.createTestingModule({
       providers: [
         WebhookService,
-        { provide: JETSTREAM_CONSUMER, useValue: mockConsumer },
+        { provide: NATS_CONNECTION, useValue: mockNc },
+        { provide: JETSTREAM_MANAGER, useValue: mockJsm },
         {
           provide: JETSTREAM_PUBLISHER,
           useValue: { publish: mock(() => Promise.resolve()) },

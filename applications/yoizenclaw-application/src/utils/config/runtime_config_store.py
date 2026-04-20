@@ -55,6 +55,7 @@ class LLMConfig:
     credential_id: str
     temperature: float
     max_tokens: int
+    connector_id: str = ""
 
 
 @dataclass
@@ -171,6 +172,11 @@ class RuntimeConfigStore:
         if not model:
             raise RequiredFieldMissingError("llm.model")
 
+        raw_connector = (
+            llm_config.get("connector_id") or llm_config.get("connectorId") or ""
+        )
+        connector_id = raw_connector.strip() if isinstance(raw_connector, str) else ""
+
         llm = LLMConfig(
             provider=provider,
             model=model,
@@ -188,6 +194,7 @@ class RuntimeConfigStore:
             or llm_config.get("credentialId", ""),
             temperature=float(llm_config.get("temperature", 0.7)),
             max_tokens=int(llm_config.get("max_tokens", 2048)),
+            connector_id=connector_id,
         )
 
         prompts = config.get("prompts", {})

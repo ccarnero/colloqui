@@ -9,7 +9,10 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./constants": "./src/constants.ts"
+    "./constants": "./src/constants.ts",
+    "./channel-constants": "./src/channel.constants.ts",
+    "./permanent-error": "./src/permanent-error.ts",
+    "./circuit-breaker": "./src/circuit-breaker.ts"
   },
   "sideEffects": false,
   "peerDependencies": {
@@ -19,5 +22,8 @@
   "peerDependenciesMeta": {
     "class-transformer": { "optional": false },
     "class-validator": { "optional": false }
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
   }
 }

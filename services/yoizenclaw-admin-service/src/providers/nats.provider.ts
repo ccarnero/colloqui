@@ -1,8 +1,9 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   connect,
   RetentionPolicy,
   StorageType,
+  headers as natsHeaders,
   type JetStreamClient,
   type JetStreamManager,
   type NatsConnection,
@@ -15,8 +16,16 @@ import {
   ServiceUnavailableException,
   type FactoryProvider,
 } from "@nestjs/common";
-import { PinoLoggerService } from "@yoizen/observability";
 import {
+  activeOrRandomTraceId,
+  injectTraceContext,
+  logWithEnvelope,
+  PinoLoggerService,
+  startNatsProducerSpan,
+} from "@yoizen/observability";
+import {
+  DepthExceededError,
+  MAX_DEPTH_BY_CATEGORY,
   YOIZENCLAW_ACCOUNT_ID,
   YOIZENCLAW_AGENT_PUBLISHED,
   YOIZENCLAW_AGENT_UNPUBLISHED,
@@ -61,6 +70,10 @@ interface IBuildEventOptions {
   resource: string;
   correlationId: string;
   source: string;
+  /** Optional causation id for cascaded events (wdocs 02 §6). */
+  causationId?: string | null;
+  /** Optional causal depth (wdocs 02 §6.3). Defaults to 0. */
+  depth?: number;
 }
 
 const NATS_CONNECT_TIMEOUT_MS = 10_000;
@@ -146,10 +159,6 @@ export const lazyNatsProvider: FactoryProvider<LazyNatsConnection> = {
   },
 };
 
-function createTraceId(): string {
-  return randomBytes(16).toString("hex");
-}
-
 function buildEventData(
   payload: Record<string, unknown>,
   occurredAt: string,
@@ -170,6 +179,21 @@ function buildEventEnvelope(
   tenantId: string,
   options: IBuildEventOptions,
 ): EventEnvelope {
+  const depth = options.depth ?? 0;
+  const maxDepth = MAX_DEPTH_BY_CATEGORY.internal_service;
+  if (depth > maxDepth) {
+    throw new DepthExceededError(
+      `Causal depth ${depth} exceeds MAX_DEPTH=${maxDepth} for category=internal_service ` +
+        `(event_type=${options.eventType}, tenant=${tenantId})`,
+      {
+        incomingId: options.causationId ?? "",
+        newDepth: depth,
+        maxDepth,
+        category: "internal_service",
+      },
+    );
+  }
+
   const eventId = randomUUID();
   const data = buildEventData(options.payload, options.occurredAt);
 
@@ -180,8 +204,8 @@ function buildEventEnvelope(
     type: options.eventType,
     resource: options.resource,
     time: options.occurredAt,
-    traceid: createTraceId(),
-    causation_id: null,
+    traceid: activeOrRandomTraceId(),
+    causation_id: options.causationId ?? null,
     correlation_id: options.correlationId,
     tenant: tenantId,
     producer: YOIZENCLAW_PRODUCER,
@@ -190,7 +214,7 @@ function buildEventEnvelope(
     provider: YOIZENCLAW_PROVIDER,
     accountid: YOIZENCLAW_ACCOUNT_ID,
     idempotencykey: calculateChecksum(options.payload),
-    transport: DEFAULT_TRANSPORT,
+    transport: { ...DEFAULT_TRANSPORT, depth },
     data,
   };
 }
@@ -306,14 +330,44 @@ export class NatsPublisher implements OnModuleDestroy {
     try {
       await this.ensureTenantStream(tenantId);
       const js = await this.lazyNats.jetstream();
-      const ack = await js.publish(subject, JSON.stringify(event), {
-        msgID: event.idempotencykey,
-      });
-      this.logger.debug(`Published event to ${subject}: ${event.type}`);
-      return ack;
+
+      const hdrs = natsHeaders();
+      hdrs.set("Nats-Msg-Id", event.idempotencykey);
+      hdrs.set("X-Correlation-Id", event.correlation_id);
+      if (event.causation_id) hdrs.set("X-Causation-Id", event.causation_id);
+      injectTraceContext(hdrs);
+
+      const { span } = startNatsProducerSpan(
+        "yoizenclaw-admin-service",
+        subject,
+        hdrs,
+      );
+
+      try {
+        const ack = await js.publish(subject, JSON.stringify(event), {
+          msgID: event.idempotencykey,
+          headers: hdrs,
+        });
+        logWithEnvelope(
+          this.logger,
+          event,
+          "yoizenclaw.publish.ok",
+          `Published event to ${subject}`,
+          "debug",
+        );
+        return ack;
+      } finally {
+        span.end();
+      }
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Failed to publish event to ${subject}: ${msg}`);
+      logWithEnvelope(
+        this.logger,
+        event,
+        "yoizenclaw.publish.error",
+        `Failed to publish event to ${subject}: ${msg}`,
+        "error",
+      );
       throw error;
     }
   }
@@ -322,11 +376,20 @@ export class NatsPublisher implements OnModuleDestroy {
     tenantId: string,
     agentId: string,
     name: string,
-    agent?: { system_prompt: string; model_config: Record<string, unknown>; tools: unknown[]; channels: unknown[]; description?: string },
+    agent?: {
+      system_prompt: string;
+      model_config: Record<string, unknown>;
+      tools: unknown[];
+      channels: unknown[];
+      description?: string;
+    },
+    causal?: ICausalContext,
   ): Promise<PubAck | null> {
     const publishedAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
-      correlationId: `agent:${agentId}`,
+      correlationId: causal?.correlationId ?? `agent:${agentId}`,
+      causationId: causal?.causationId ?? null,
+      depth: causal ? (causal.incomingDepth ?? 0) + 1 : 0,
       eventType: EVENT_TYPES.AGENT_PUBLISHED,
       occurredAt: publishedAt,
       payload: {
@@ -353,10 +416,13 @@ export class NatsPublisher implements OnModuleDestroy {
     tenantId: string,
     agentId: string,
     name: string,
+    causal?: ICausalContext,
   ): Promise<PubAck | null> {
     const unpublishedAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
-      correlationId: `agent:${agentId}`,
+      correlationId: causal?.correlationId ?? `agent:${agentId}`,
+      causationId: causal?.causationId ?? null,
+      depth: causal ? (causal.incomingDepth ?? 0) + 1 : 0,
       eventType: EVENT_TYPES.AGENT_UNPUBLISHED,
       occurredAt: unpublishedAt,
       payload: {
@@ -376,10 +442,13 @@ export class NatsPublisher implements OnModuleDestroy {
     tenantId: string,
     files: Array<{ content: string; format: string; path: string }>,
     deletePaths: string[] = [],
+    causal?: ICausalContext,
   ): Promise<PubAck | null> {
     const syncedAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
-      correlationId: `runtime:${tenantId}:config`,
+      correlationId: causal?.correlationId ?? `runtime:${tenantId}:config`,
+      causationId: causal?.causationId ?? null,
+      depth: causal ? (causal.incomingDepth ?? 0) + 1 : 0,
       eventType: EVENT_TYPES.RUNTIME_CONFIG_SYNC,
       occurredAt: syncedAt,
       payload: {
@@ -400,11 +469,15 @@ export class NatsPublisher implements OnModuleDestroy {
     jobId: string;
     executionId: string;
     eventPayload: Record<string, unknown>;
+    causal?: ICausalContext;
   }): Promise<PubAck | null> {
-    const { tenantId, jobId, executionId, eventPayload } = options;
+    const { tenantId, jobId, executionId, eventPayload, causal } = options;
     const triggeredAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
-      correlationId: `job:${jobId}:execution:${executionId}`,
+      correlationId:
+        causal?.correlationId ?? `job:${jobId}:execution:${executionId}`,
+      causationId: causal?.causationId ?? null,
+      depth: causal ? (causal.incomingDepth ?? 0) + 1 : 0,
       eventType: EVENT_TYPES.JOB_TRIGGER,
       occurredAt: triggeredAt,
       payload: {
@@ -420,4 +493,14 @@ export class NatsPublisher implements OnModuleDestroy {
 
     return this.publishEvent(tenantId, YOIZENCLAW_JOB_TRIGGER, event);
   }
+}
+
+/**
+ * Causal context accepted by the `publish*` helpers. Used to chain
+ * derived events to the request that triggered them (wdocs 02 §6).
+ */
+export interface ICausalContext {
+  readonly causationId?: string | null;
+  readonly correlationId?: string;
+  readonly incomingDepth?: number;
 }

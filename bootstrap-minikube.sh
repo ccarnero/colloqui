@@ -8,6 +8,8 @@ ENVIRONMENTS=()
 SERVICE_GROUP=""
 KNATIVE_VERSION="v1.17.0"
 KOURIER_VERSION="v1.17.0"
+KEDA_VERSION="2.16.1"
+KEDA_NAMESPACE="keda"
 DEFAULT_MINIKUBE_CPUS=6
 DEFAULT_MINIKUBE_MEMORY_MB=16384
 MINIKUBE_MEMORY_RESERVE_MB=1024
@@ -130,7 +132,7 @@ parse_args() {
 
 check_deps() {
   local missing=()
-  for cmd in minikube kubectl docker; do
+  for cmd in minikube kubectl docker helm; do
     command -v "$cmd" &>/dev/null || missing+=("$cmd")
   done
   if (( ${#missing[@]} )); then
@@ -189,19 +191,33 @@ start_minikube() {
 }
 
 install_knative_serving() {
-  if kubectl get crd services.serving.knative.dev &>/dev/null; then
-    log "Knative Serving CRDs already installed — skipping"
+  if kubectl get crd services.serving.knative.dev &>/dev/null \
+    && kubectl get deployment/autoscaler-hpa --namespace knative-serving &>/dev/null; then
+    log "Knative Serving CRDs + HPA autoscaler already installed — skipping"
     return
   fi
 
-  log "Installing Knative Serving CRDs (${KNATIVE_VERSION})"
-  kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-crds.yaml"
+  if ! kubectl get crd services.serving.knative.dev &>/dev/null; then
+    log "Installing Knative Serving CRDs (${KNATIVE_VERSION})"
+    kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-crds.yaml"
 
-  log "Installing Knative Serving core (${KNATIVE_VERSION})"
-  # The serving-core install can briefly race the webhook startup on fresh or
-  # partially initialized clusters, so retry the full apply until the webhook
-  # is ready to accept ConfigMap updates.
-  retry 10 5 kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-core.yaml"
+    log "Installing Knative Serving core (${KNATIVE_VERSION})"
+    # The serving-core install can briefly race the webhook startup on fresh or
+    # partially initialized clusters, so retry the full apply until the webhook
+    # is ready to accept ConfigMap updates.
+    retry 10 5 kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-core.yaml"
+  fi
+
+  if ! kubectl get deployment/autoscaler-hpa --namespace knative-serving &>/dev/null; then
+    # serving-hpa ships the `autoscaler-hpa` controller that reconciles
+    # PodAutoscaler objects created by Knative Services annotated with
+    # `autoscaling.knative.dev/class: hpa.autoscaling.knative.dev` into
+    # native HPAs. Without it those Revisions stay stuck in Deploying,
+    # which in turn prevents KEDA from transferring HPA ownership via
+    # `scaledobject.keda.sh/transfer-hpa-ownership`.
+    log "Installing Knative Serving HPA autoscaler (${KNATIVE_VERSION})"
+    retry 10 5 kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-hpa.yaml"
+  fi
 
   log "Waiting for Knative Serving deployments..."
   kubectl wait deployment --all \
@@ -230,6 +246,37 @@ install_kourier() {
   log "Waiting for Kourier..."
   kubectl wait deployment --all \
     --namespace kourier-system \
+    --for=condition=Available \
+    --timeout=180s
+}
+
+install_keda() {
+  # KEDA is a cluster-wide dependency (CRDs + operator) shared by every
+  # environment. We install it once via the official Helm chart; running
+  # this after an existing install is a no-op thanks to the CRD guard.
+  # Chart docs: infrastructure/base/keda/README.md
+  if kubectl get crd scaledobjects.keda.sh &>/dev/null; then
+    log "KEDA CRDs already installed — skipping"
+    return
+  fi
+
+  log "Adding kedacore Helm repo"
+  helm repo add kedacore https://kedacore.github.io/charts &>/dev/null || true
+  retry 3 3 helm repo update kedacore
+
+  log "Installing KEDA ${KEDA_VERSION} into '${KEDA_NAMESPACE}' namespace"
+  retry 3 5 helm upgrade --install keda kedacore/keda \
+    --namespace "$KEDA_NAMESPACE" \
+    --create-namespace \
+    --version "$KEDA_VERSION" \
+    --set prometheus.metricServer.enabled=true \
+    --set prometheus.operator.enabled=true \
+    --wait \
+    --timeout 180s
+
+  log "Waiting for KEDA deployments..."
+  kubectl wait deployment --all \
+    --namespace "$KEDA_NAMESPACE" \
     --for=condition=Available \
     --timeout=180s
 }
@@ -393,6 +440,12 @@ verify_support_services() {
   local core_deployments=(redis otel-collector tempo prometheus loki grafana)
   local core_statefulsets=(nats postgres)
 
+  if ! kubectl get crd scaledobjects.keda.sh &>/dev/null; then
+    err "KEDA CRDs not found in cluster."
+    err "The platform services require KEDA — run './bootstrap.sh <env> support-services' first."
+    exit 1
+  fi
+
   for env in "${ENVIRONMENTS[@]}"; do
     local ns="support-services-${env}"
     if ! kubectl get namespace "$ns" &>/dev/null; then
@@ -427,6 +480,7 @@ run_support_services() {
   start_minikube
   install_knative_serving
   install_kourier
+  install_keda
   configure_dns
   configure_local_registry
   apply_namespaces

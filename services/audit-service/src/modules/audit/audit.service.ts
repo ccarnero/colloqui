@@ -4,42 +4,107 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import type { Consumer } from "nats";
-import { NatsConsumerRunner } from "@yoizen/database";
-import { PinoLoggerService } from "@yoizen/observability";
-import { JETSTREAM_CLIENT } from "../../providers/nats.provider";
+import type {
+  JetStreamClient,
+  JetStreamManager,
+  JsMsg,
+} from "nats";
+import { context as otelContext } from "@opentelemetry/api";
+import {
+  PinoLoggerService,
+  logWithEnvelope,
+  startNatsConsumerSpan,
+  createNatsConsumerMetrics,
+} from "@yoizen/observability";
+import {
+  MultiTenantConsumerManager,
+  type IMultiTenantConsumerConfig,
+} from "@yoizen/database";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+} from "../../providers/nats.provider";
 import type { EventEnvelope } from "@yoizen/shared";
 import type { IAuditQueryParams } from "../../common/audit-query-params";
 import { AuditRepository, type IAuditEvent } from "./audit.repository";
 
 export type { IAuditEvent };
 
+/**
+ * Canonical platform-event pattern (wdocs 02 §9.2 / §9.3). Matches
+ * `evt.<tenant>.<producer>.platform.<channel>.<provider>.<kind>.v1`
+ * across every tenant. Audit-service persists one row per message
+ * from the per-tenant `INGRESS-<tenant>` streams via a durable pull
+ * consumer (queue-group: `audit-events`).
+ */
+const CANONICAL_AUDIT_PATTERN = "evt.*.*.platform.>";
+const DURABLE_NAME = "audit-events";
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
+/** Audit writes are I/O-bound Postgres inserts — parallel is safe + faster. */
+const HANDLER_CONCURRENCY = 16;
+
 @Injectable()
 export class AuditService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new PinoLoggerService(AuditService.name);
-  private readonly runner: NatsConsumerRunner;
+  private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
-    @Inject(JETSTREAM_CLIENT) consumer: Consumer,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
+    @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
     private readonly auditRepository: AuditRepository,
-  ) {
-    this.runner = new NatsConsumerRunner(
-      consumer,
-      (msg) => this.persistMessage(msg),
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: CANONICAL_AUDIT_PATTERN,
+      description: "Canonical platform events audit writer",
+      metrics: createNatsConsumerMetrics("audit-service"),
+      runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+    };
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.js,
+      config,
+      (msg: JsMsg) => this.persistJsMessage(msg),
       this.logger,
+    );
+    await this.manager.start();
+    this.logger.log(
+      `Audit durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
-  async onModuleInit(): Promise<void> {
-    await this.runner.start();
-  }
-
   async onModuleDestroy(): Promise<void> {
-    await this.runner.stop();
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
+    }
   }
 
-  private async persistMessage(msg: import("nats").JsMsg): Promise<void> {
-    await this.persistAuditEnvelope(msg.json() as EventEnvelope, msg.subject);
+  /** JetStream-path handler — throws on failure so runner NAKs. */
+  private async persistJsMessage(msg: JsMsg): Promise<void> {
+    const envelope = JSON.parse(
+      new TextDecoder().decode(msg.data),
+    ) as EventEnvelope;
+    const { span, context: ctx } = startNatsConsumerSpan(
+      "audit-service",
+      msg.subject,
+      msg.headers ?? {
+        keys: () => [],
+        values: () => [],
+        get: () => "",
+        set: () => {},
+      },
+    );
+    try {
+      await otelContext.with(ctx, () =>
+        this.persistAuditEnvelope(envelope, msg.subject),
+      );
+    } finally {
+      span.end();
+    }
   }
 
   private async persistAuditEnvelope(
@@ -48,11 +113,23 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     const tenantId = envelope.tenant;
     if (!tenantId) {
-      this.logger.warn(`Dropping event ${envelope.id}: missing tenant`);
+      logWithEnvelope(
+        this.logger,
+        envelope,
+        "audit.persist.dropped",
+        "Dropping event: missing tenant",
+        "warn",
+      );
       return;
     }
 
     await this.auditRepository.insertAuditEvent(tenantId, envelope, subject);
+    logWithEnvelope(
+      this.logger,
+      envelope,
+      "audit.persist.ok",
+      `Audit event persisted (subject=${subject})`,
+    );
   }
 
   /**

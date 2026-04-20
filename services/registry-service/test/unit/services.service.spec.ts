@@ -9,6 +9,7 @@ import { createQueuedSql } from "@yoizen/testing";
 import type { Sql } from "postgres";
 import { ServicesRepository } from "../../src/modules/services/services.repository";
 import { ServicesService } from "../../src/modules/services/services.service";
+import { ServiceEventsPublisher } from "../../src/modules/services/service-events.publisher";
 import { K8S_CUSTOM_OBJECTS_API } from "../../src/providers/kubernetes.provider";
 import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
 
@@ -42,6 +43,10 @@ describe("ServicesService", () => {
   };
   let sqlQueue: unknown[][];
   let service: ServicesService;
+  let eventsPublisher: {
+    publishUpserted: ReturnType<typeof mock>;
+    publishDeleted: ReturnType<typeof mock>;
+  };
 
   beforeEach(async () => {
     process.env.PLATFORM_ENVIRONMENT = "dev";
@@ -59,12 +64,18 @@ describe("ServicesService", () => {
       listNamespacedCustomObject: mock(() => Promise.resolve({ items: [] })),
     };
 
+    eventsPublisher = {
+      publishUpserted: mock(() => Promise.resolve()),
+      publishDeleted: mock(() => Promise.resolve()),
+    };
+
     const module = await Test.createTestingModule({
       providers: [
         ServicesRepository,
         ServicesService,
         { provide: K8S_CUSTOM_OBJECTS_API, useValue: customApi },
         { provide: POSTGRES_SQL, useValue: sql },
+        { provide: ServiceEventsPublisher, useValue: eventsPublisher },
       ],
     }).compile();
 
@@ -193,6 +204,81 @@ describe("ServicesService", () => {
       sqlQueue.push([baseRegisteredRow()], []);
       await service.remove("tenant-a", "svc-1");
       expect(customApi.deleteNamespacedCustomObject).toHaveBeenCalled();
+    });
+  });
+
+  describe("adapter-sync events", () => {
+    it("publishes upserted event after register", async () => {
+      sqlQueue.push([], [baseRegisteredRow()]);
+      await service.register("tenant-a", {
+        name: "my-service",
+        image: "registry.io/img:v1",
+      });
+      expect(eventsPublisher.publishUpserted).toHaveBeenCalledTimes(1);
+      const [payload] = eventsPublisher.publishUpserted.mock.calls[0];
+      expect(payload).toEqual(
+        expect.objectContaining({
+          serviceId: "svc-1",
+          tenantId: "tenant-a",
+          name: "my-service",
+          knativeName: "my-service-tenant-a",
+          namespace: "tenant-a-dev-ns",
+        }),
+      );
+    });
+
+    it("publishes upserted event after update", async () => {
+      const row = baseRegisteredRow();
+      sqlQueue.push(
+        [row],
+        [{ ...row, image: "registry.io/img:v2" }],
+      );
+      customApi.getNamespacedCustomObject.mockResolvedValueOnce({
+        spec: {
+          template: {
+            metadata: { annotations: {} },
+            spec: {
+              containers: [
+                {
+                  name: "user-container",
+                  image: "old",
+                  ports: [{ containerPort: 3000, protocol: "TCP" }],
+                },
+              ],
+            },
+          },
+        },
+      });
+      await service.update("tenant-a", "svc-1", { image: "registry.io/img:v2" });
+      expect(eventsPublisher.publishUpserted).toHaveBeenCalledTimes(1);
+    });
+
+    it("publishes deleted event after remove", async () => {
+      sqlQueue.push([baseRegisteredRow()], []);
+      await service.remove("tenant-a", "svc-1");
+      expect(eventsPublisher.publishDeleted).toHaveBeenCalledTimes(1);
+      const [payload] = eventsPublisher.publishDeleted.mock.calls[0];
+      expect(payload).toEqual(
+        expect.objectContaining({
+          serviceId: "svc-1",
+          tenantId: "tenant-a",
+          name: "my-service",
+        }),
+      );
+    });
+
+    it("does not publish when register fails (knative error)", async () => {
+      sqlQueue.push([]);
+      customApi.createNamespacedCustomObject.mockImplementationOnce(() =>
+        Promise.reject(new Error("boom")),
+      );
+      await expect(
+        service.register("tenant-a", {
+          name: "x",
+          image: "img",
+        }),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+      expect(eventsPublisher.publishUpserted).not.toHaveBeenCalled();
     });
   });
 

@@ -41,7 +41,14 @@ describe("AdaptersController", () => {
 
   it("list delegates to AdaptersService.list with tenant, context, limit, offset", async () => {
     await controller.list("tenant-a", { context: "internal" });
-    expect(list).toHaveBeenCalledWith("tenant-a", "internal", 50, 0);
+    expect(list).toHaveBeenCalledWith(
+      "tenant-a",
+      "internal",
+      50,
+      0,
+      undefined,
+      undefined,
+    );
   });
 
   it("list passes clamped limit and offset", async () => {
@@ -50,7 +57,29 @@ describe("AdaptersController", () => {
       limit: 10,
       offset: 5,
     });
-    expect(list).toHaveBeenCalledWith("tenant-a", "external", 10, 5);
+    expect(list).toHaveBeenCalledWith(
+      "tenant-a",
+      "external",
+      10,
+      5,
+      undefined,
+      undefined,
+    );
+  });
+
+  it("list forwards name filter for internal mirror lookups", async () => {
+    await controller.list("tenant-a", {
+      context: "internal",
+      name: "svc-1",
+    });
+    expect(list).toHaveBeenCalledWith(
+      "tenant-a",
+      "internal",
+      50,
+      0,
+      undefined,
+      "svc-1",
+    );
   });
 
   it("create delegates", async () => {

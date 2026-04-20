@@ -4,10 +4,54 @@ Provides database schema creation and migration SQL statements
 for the memory PostgreSQL backend.
 """
 
+# Renames legacy Python scheduler tables if they still use names that collide
+# with yoizenclaw-admin-service (public.jobs / public.job_executions).
+LEGACY_RUNTIME_JOBS_RENAME_SQL: str = """
+DO $migration$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'jobs'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'jobs'
+      AND column_name = 'agent_id'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'runtime_jobs'
+  )
+  THEN
+    ALTER TABLE jobs RENAME TO runtime_jobs;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'job_executions'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'runtime_job_executions'
+  )
+  AND EXISTS (
+    SELECT 1 FROM information_schema.columns c
+    WHERE c.table_schema = 'public'
+      AND c.table_name = 'job_executions'
+      AND c.column_name = 'job_id'
+      AND c.data_type IN ('text', 'character varying')
+  )
+  THEN
+    ALTER TABLE job_executions RENAME TO runtime_job_executions;
+  END IF;
+END
+$migration$;
+"""
+
 SCHEMA_SQL: dict[str, str] = {
     "enable_pgvector": "CREATE EXTENSION IF NOT EXISTS vector",
-    "create_jobs_table": """
-        CREATE TABLE IF NOT EXISTS jobs (
+    "create_runtime_jobs_table": """
+        CREATE TABLE IF NOT EXISTS runtime_jobs (
             id TEXT PRIMARY KEY,
             tenant_id VARCHAR(64) NOT NULL,
             name TEXT NOT NULL,
@@ -25,16 +69,16 @@ SCHEMA_SQL: dict[str, str] = {
             deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
         )
     """,
-    "idx_jobs_enabled": """
-        CREATE INDEX IF NOT EXISTS idx_jobs_enabled
-        ON jobs(enabled)
+    "idx_runtime_jobs_enabled": """
+        CREATE INDEX IF NOT EXISTS idx_runtime_jobs_enabled
+        ON runtime_jobs(enabled)
     """,
-    "idx_jobs_tenant_id_id": """
-        CREATE INDEX IF NOT EXISTS idx_jobs_tenant_id_id
-        ON jobs(tenant_id, id)
+    "idx_runtime_jobs_tenant_id_id": """
+        CREATE INDEX IF NOT EXISTS idx_runtime_jobs_tenant_id_id
+        ON runtime_jobs(tenant_id, id)
     """,
-    "create_job_executions_table": """
-        CREATE TABLE IF NOT EXISTS job_executions (
+    "create_runtime_job_executions_table": """
+        CREATE TABLE IF NOT EXISTS runtime_job_executions (
             id TEXT PRIMARY KEY,
             tenant_id VARCHAR(64) NOT NULL,
             job_id TEXT NOT NULL,
@@ -47,32 +91,32 @@ SCHEMA_SQL: dict[str, str] = {
             error_message TEXT,
             logs JSONB,
             retry_count INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+            FOREIGN KEY (job_id) REFERENCES runtime_jobs(id) ON DELETE CASCADE
         )
     """,
-    "idx_job_executions_job_id": """
-        CREATE INDEX IF NOT EXISTS idx_job_executions_job_id
-        ON job_executions(job_id)
+    "idx_runtime_job_executions_job_id": """
+        CREATE INDEX IF NOT EXISTS idx_runtime_job_executions_job_id
+        ON runtime_job_executions(job_id)
     """,
-    "idx_job_executions_tenant_id_job_id": """
-        CREATE INDEX IF NOT EXISTS idx_job_executions_tenant_id_job_id
-        ON job_executions(tenant_id, job_id)
+    "idx_runtime_job_executions_tenant_id_job_id": """
+        CREATE INDEX IF NOT EXISTS idx_runtime_job_executions_tenant_id_job_id
+        ON runtime_job_executions(tenant_id, job_id)
     """,
-    "idx_job_executions_status": """
-        CREATE INDEX IF NOT EXISTS idx_job_executions_status
-        ON job_executions(status)
+    "idx_runtime_job_executions_status": """
+        CREATE INDEX IF NOT EXISTS idx_runtime_job_executions_status
+        ON runtime_job_executions(status)
     """,
-    "idx_jobs_schedule_type": """
-        CREATE INDEX IF NOT EXISTS idx_jobs_schedule_type
-        ON jobs(schedule_type)
+    "idx_runtime_jobs_schedule_type": """
+        CREATE INDEX IF NOT EXISTS idx_runtime_jobs_schedule_type
+        ON runtime_jobs(schedule_type)
     """,
-    "idx_jobs_deleted_at": """
-        CREATE INDEX IF NOT EXISTS idx_jobs_deleted_at
-        ON jobs(deleted_at)
+    "idx_runtime_jobs_deleted_at": """
+        CREATE INDEX IF NOT EXISTS idx_runtime_jobs_deleted_at
+        ON runtime_jobs(deleted_at)
     """,
-    "idx_job_executions_started_at": """
-        CREATE INDEX IF NOT EXISTS idx_job_executions_started_at
-        ON job_executions(started_at DESC)
+    "idx_runtime_job_executions_started_at": """
+        CREATE INDEX IF NOT EXISTS idx_runtime_job_executions_started_at
+        ON runtime_job_executions(started_at DESC)
     """,
     "create_embeddings_table": """
         CREATE TABLE IF NOT EXISTS embeddings (
@@ -95,21 +139,21 @@ SCHEMA_SQL: dict[str, str] = {
 }
 
 SCHEMA_COMPAT_ALTER_SQL: list[str] = [
-    # jobs compatibility columns (for shared schema with admin-service)
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(64)",
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS description TEXT",
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE",
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS schedule_type TEXT DEFAULT 'cron'",
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS schedule_config JSONB DEFAULT '{}'::jsonb",
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS action_type TEXT DEFAULT 'noop'",
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS action_config JSONB DEFAULT '{}'::jsonb",
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS retry_policy JSONB DEFAULT '{}'::jsonb",
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS timeout_seconds INTEGER DEFAULT 60",
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb",
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL",
-    # job_executions compatibility columns
-    "ALTER TABLE job_executions ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(64)",
-    "ALTER TABLE job_executions ADD COLUMN IF NOT EXISTS triggered_by TEXT DEFAULT 'system'",
+    # runtime_jobs: additive columns for older runtime_jobs rows
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(64)",
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS description TEXT",
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE",
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS schedule_type TEXT DEFAULT 'cron'",
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS schedule_config JSONB DEFAULT '{}'::jsonb",
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS action_type TEXT DEFAULT 'noop'",
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS action_config JSONB DEFAULT '{}'::jsonb",
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS retry_policy JSONB DEFAULT '{}'::jsonb",
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS timeout_seconds INTEGER DEFAULT 60",
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb",
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL",
+    # runtime_job_executions compatibility columns
+    "ALTER TABLE runtime_job_executions ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(64)",
+    "ALTER TABLE runtime_job_executions ADD COLUMN IF NOT EXISTS triggered_by TEXT DEFAULT 'system'",
 ]
 
 RUNTIME_STATE_SCHEMA_SQL: list[str] = [
@@ -298,7 +342,7 @@ RUNTIME_STATE_ALTER_SQL: list[str] = [
     "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS subject TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}'::jsonb",
     "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS created_by TEXT",
-    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL",
+    "ALTER TABLE runtime_jobs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL",
     "ALTER TABLE agent_runtime_overrides ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL",
     "ALTER TABLE channels ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL",
     "ALTER TABLE config_files ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL",

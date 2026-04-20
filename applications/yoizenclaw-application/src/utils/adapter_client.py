@@ -160,7 +160,12 @@ def _inject_bearer(
     auth_config: dict[str, Any], headers: dict[str, str]
 ) -> None:
     """Inject Authorization: Bearer for 'bearer' type."""
-    token = auth_config.get("token", "")
+    token = (
+        auth_config.get("token")
+        or auth_config.get("bearerToken")
+        or auth_config.get("bearer_token")
+        or ""
+    )
     if token and "Authorization" not in headers:
         headers["Authorization"] = f"Bearer {token}"
 
@@ -418,3 +423,50 @@ def _merge_adapter_headers(
         if key:
             merged[key] = value
     return merged
+
+
+def ensure_adapter_client_in_container() -> AdapterClient | None:
+    """Create ``AdapterClient`` and store it on ``AppContainer`` when configured.
+
+    Requires ``ADAPTER_SERVICE_URL`` and ``TENANT_ID`` (bootstrap env). Safe to
+    call repeatedly; returns the existing client after the first successful
+    registration.
+
+    Returns:
+        The registered client, or ``None`` if adapter-service URL or tenant
+        is missing (connector-based LLM credentials cannot be resolved).
+    """
+    from src.utils.di import AppContainer
+
+    container = AppContainer.get()
+    if container.adapter_client is not None:
+        return container.adapter_client
+
+    url = (bootstrap_settings.ADAPTER_SERVICE_URL or "").strip()
+    tenant = (bootstrap_settings.TENANT_ID or "").strip()
+    if not url:
+        logger.warning(
+            "ADAPTER_SERVICE_URL is not set; connector-based LLM credentials "
+            "and adapter tools will not work.",
+        )
+        return None
+    if not tenant:
+        logger.warning(
+            "TENANT_ID is not set; adapter client cannot fetch tenant-scoped "
+            "adapter definitions.",
+        )
+        return None
+
+    client = AdapterClient(
+        url,
+        tenant,
+        cache_soft_ttl_seconds=bootstrap_settings.ADAPTER_CACHE_TTL_SECONDS,
+        cache_hard_ttl_seconds=bootstrap_settings.ADAPTER_CACHE_HARD_TTL_SECONDS,
+    )
+    container.adapter_client = client
+    logger.info(
+        "AdapterClient registered for tenant-scoped adapter resolution "
+        "(base_url=%s)",
+        url,
+    )
+    return client

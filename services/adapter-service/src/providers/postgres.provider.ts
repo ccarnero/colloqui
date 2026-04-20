@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS http_adapters (
   status            TEXT NOT NULL DEFAULT 'enabled' CHECK (status IN ('enabled', 'disabled')),
   is_encrypted      BOOLEAN NOT NULL DEFAULT false,
   tags              TEXT[] NOT NULL DEFAULT '{}',
+  managed_by        TEXT,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenant_id, name)
@@ -30,6 +31,9 @@ CREATE INDEX IF NOT EXISTS idx_http_adapters_context
   ON http_adapters (tenant_id, context);
 CREATE INDEX IF NOT EXISTS idx_http_adapters_tags
   ON http_adapters USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_http_adapters_managed_by
+  ON http_adapters (tenant_id, managed_by)
+  WHERE managed_by IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS adapter_endpoints (
   id          TEXT PRIMARY KEY,
@@ -85,6 +89,19 @@ BEGIN
       ADD COLUMN tags TEXT[] NOT NULL DEFAULT '{}';
     CREATE INDEX IF NOT EXISTS idx_http_adapters_tags
       ON http_adapters USING GIN (tags);
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'http_adapters' AND column_name = 'managed_by'
+  ) THEN
+    ALTER TABLE http_adapters ADD COLUMN managed_by TEXT;
+    CREATE INDEX IF NOT EXISTS idx_http_adapters_managed_by
+      ON http_adapters (tenant_id, managed_by)
+      WHERE managed_by IS NOT NULL;
   END IF;
 END $$;
 

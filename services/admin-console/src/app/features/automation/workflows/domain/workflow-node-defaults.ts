@@ -46,6 +46,7 @@ export const DEFAULT_NODE_MAP: Record<EWorkflowNodeType, INodeDefault> = {
       endpointId: "",
     },
   },
+  // Optional `data` (JSON body) is edited in the builder for POST/PUT/PATCH; GET/DELETE ignore it.
   [EWorkflowNodeType.SERVICE_CALL]: {
     name: "Service Call",
     icon: "dns",
@@ -61,6 +62,16 @@ export const DEFAULT_NODE_MAP: Record<EWorkflowNodeType, INodeDefault> = {
     icon: "send",
     group: "Integrations",
     configuration: { subject: "", payload: null },
+  },
+  [EWorkflowNodeType.AGENT_CALL]: {
+    name: "Agent",
+    icon: "smart_toy",
+    group: "AI",
+    configuration: {
+      agentId: "",
+      message: "",
+      conversationId: "",
+    },
   },
   [EWorkflowNodeType.BRANCH]: {
     name: "Parallel Branch",

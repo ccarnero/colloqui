@@ -5,10 +5,10 @@ import { HealthModule } from "./modules/health/health.module";
 import {
   NATS_CONNECTION,
   JETSTREAM_MANAGER,
-  JETSTREAM_CLIENT,
+  JETSTREAM_PUBLISHER,
   natsProvider,
   jetStreamManagerProvider,
-  jetStreamClientProvider,
+  jetStreamPublisherProvider,
 } from "./providers/nats.provider";
 import { TenantConnectionManager } from "@yoizen/database";
 
@@ -23,13 +23,13 @@ import { TenantConnectionManager } from "@yoizen/database";
   providers: [
     natsProvider,
     jetStreamManagerProvider,
-    jetStreamClientProvider,
+    jetStreamPublisherProvider,
     TenantConnectionManager,
   ],
   exports: [
     NATS_CONNECTION,
     JETSTREAM_MANAGER,
-    JETSTREAM_CLIENT,
+    JETSTREAM_PUBLISHER,
     TenantConnectionManager,
   ],
 })

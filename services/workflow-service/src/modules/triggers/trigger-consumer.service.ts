@@ -4,11 +4,22 @@ import {
   OnModuleInit,
   OnModuleDestroy,
 } from "@nestjs/common";
-import type { NatsConnection, Subscription } from "nats";
-import { NATS_CONNECTION } from "@yoizen/database";
-import { PinoLoggerService } from "@yoizen/observability";
+import type {
+  JetStreamClient,
+  JetStreamManager,
+  JsMsg,
+} from "nats";
+import {
+  MultiTenantConsumerManager,
+  type IMultiTenantConsumerConfig,
+} from "@yoizen/database";
+import {
+  PinoLoggerService,
+  createNatsConsumerMetrics,
+} from "@yoizen/observability";
 import {
   CHANNEL_SUBJECT_PREFIX,
+  CHANNEL_PRODUCER,
   CHANNEL_DOMAIN,
   parseChannelSubject,
 } from "@yoizen/shared";
@@ -18,10 +29,28 @@ import type {
   Channel,
   ChannelProvider,
 } from "@yoizen/shared";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+} from "../../providers/providers.module";
 import { WorkflowsService } from "../workflows/workflows.service";
 import { WorkflowsRepository } from "../workflows/workflows.repository";
 import type { IWorkflowDefinitionRow } from "../workflows/workflows.repository";
 
+const DURABLE_NAME = "workflow-triggers";
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
+/** `evt.*.channel-service.messaging.*.*.received.v1` — 8-token canonical. */
+const TRIGGER_SUBJECT = `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_PRODUCER}.${CHANNEL_DOMAIN}.*.*.received.v1`;
+
+/**
+ * Consumes `channel.message.received` events from JetStream and starts
+ * matching `message_received` workflow triggers.
+ *
+ * Triggers are idempotent: the Temporal workflowId is derived from
+ * `envelope.idempotencykey + def.id`, so redelivery by JetStream OR a
+ * race between replicas results in `WorkflowExecutionAlreadyStartedError`
+ * on every attempt after the first — which we silently acknowledge.
+ */
 @Injectable()
 export class TriggerConsumerService
   implements OnModuleInit, OnModuleDestroy
@@ -29,35 +58,48 @@ export class TriggerConsumerService
   private readonly logger = new PinoLoggerService(
     TriggerConsumerService.name,
   );
-  private subscription: Subscription | null = null;
+  private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
-    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
+    @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
     private readonly workflowsService: WorkflowsService,
     private readonly workflowsRepository: WorkflowsRepository,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const subject =
-      `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_DOMAIN}.*.*.received.v1`;
-
-    this.subscription = this.nc.subscribe(subject, {
-      callback: (_err, msg) => {
-        this.handleMessage(msg).catch((err: unknown) => {
-          this.logger.warn(
-            `Trigger handler error: ${err instanceof Error ? err.message : err}`,
-          );
-        });
-      },
-    });
-
-    this.logger.log(`Workflow trigger consumer subscribed to: ${subject}`);
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: TRIGGER_SUBJECT,
+      description:
+        "Workflow triggers — message_received → Temporal workflow start",
+      metrics: createNatsConsumerMetrics("workflow-service"),
+      // Each trigger boots a Temporal workflow over gRPC — I/O bound.
+      runnerOptions: { concurrency: 16 },
+    };
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.js,
+      config,
+      (msg: JsMsg) => this.handleJsMessage(msg),
+      this.logger,
+    );
+    await this.manager.start();
+    this.logger.log(
+      `Workflow triggers durable consumer ('${DURABLE_NAME}') started`,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.subscription) {
-      this.subscription.unsubscribe();
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
     }
+  }
+
+  private async handleJsMessage(msg: JsMsg): Promise<void> {
+    await this.handleMessage({ subject: msg.subject, data: msg.data });
   }
 
   private async handleMessage(
@@ -90,35 +132,80 @@ export class TriggerConsumerService
 
     const toExecute = this.applyExclusiveSharedLogic(matching);
 
+    const payload: Record<string, unknown> =
+      (envelope.data?.payload as Record<string, unknown> | null | undefined) ??
+      (envelope.data as unknown as Record<string, unknown>);
+
     const request: Record<string, unknown> = {
-      envelope: envelope.data,
+      envelope: payload,
       channel,
       provider,
-      from: envelope.data.from,
-      text: envelope.data.text,
+      from: payload.from,
+      text: payload.text,
       messageId: envelope.id,
       tenantId: tenant,
     };
 
-    await Promise.all(
-      toExecute.map(async (def) => {
-        try {
-          const result =
-            await this.workflowsService.executeWorkflow(
-              def.id,
-              tenant,
-              request,
-            );
+    const baseIdempotencyKey = envelope.idempotencykey;
+
+    /**
+     * Causal chain snapshot from the triggering envelope (wdocs-02 §6).
+     * Passed to every workflow started from this message so publishing
+     * activities can emit derived envelopes with `causation_id`,
+     * `correlation_id`, and `transport.depth` correctly inherited.
+     * Falls back gracefully when an older envelope omits any of the
+     * three so no regression is introduced for pre-migration events.
+     */
+    const incomingDepth = envelope.transport?.depth;
+    const causal =
+      typeof envelope.id === "string" &&
+      typeof envelope.correlation_id === "string"
+        ? {
+            causation_id: envelope.id,
+            correlation_id: envelope.correlation_id,
+            depth: typeof incomingDepth === "number" ? incomingDepth : 0,
+          }
+        : undefined;
+
+    for (let i = 0; i < toExecute.length; i++) {
+      const def = toExecute[i]!;
+      const triggerIdempotencyKey = baseIdempotencyKey
+        ? `${baseIdempotencyKey}:${def.id}`
+        : undefined;
+      try {
+        const options =
+          triggerIdempotencyKey || causal
+            ? {
+                ...(triggerIdempotencyKey && {
+                  idempotencyKey: triggerIdempotencyKey,
+                }),
+                ...(causal && { causal }),
+              }
+            : undefined;
+        const result = await this.workflowsService.executeWorkflow(
+          def.id,
+          tenant,
+          request,
+          options,
+        );
+        if (result.alreadyStarted) {
+          this.logger.log(
+            `Duplicate trigger for workflow ${def.name} (${def.id}) — temporal=${result.temporalWorkflowId} already started`,
+          );
+        } else {
           this.logger.log(
             `Triggered workflow ${def.name} (${def.id}) -> execution ${result.executionId}`,
           );
-        } catch (err: unknown) {
-          this.logger.warn(
-            `Failed to trigger workflow ${def.id}: ${err instanceof Error ? err.message : err}`,
-          );
         }
-      }),
-    );
+      } catch (err: unknown) {
+        this.logger.warn(
+          `Failed to trigger workflow ${def.id}: ${err instanceof Error ? err.message : err}`,
+        );
+        throw err instanceof Error
+          ? err
+          : new Error(`Failed to trigger workflow ${def.id}`);
+      }
+    }
   }
 
   /**
@@ -137,11 +224,15 @@ export class TriggerConsumerService
       const trigger = def.trigger as WorkflowTrigger | null;
       if (!trigger || trigger.type !== "message_received") continue;
 
+      const payload: Record<string, unknown> =
+        (envelope.data?.payload as Record<string, unknown> | null | undefined) ??
+        (envelope.data as unknown as Record<string, unknown>);
+
       const cfg = trigger.config;
 
       if (cfg.accountIds && cfg.accountIds.length > 0) {
-        const incomingAccountId =
-          envelope.data.accountId as string | undefined;
+        const incomingAccountId = payload.accountId as string | undefined;
+
         if (
           !incomingAccountId ||
           !cfg.accountIds.includes(incomingAccountId)
@@ -167,8 +258,8 @@ export class TriggerConsumerService
       }
 
       if (cfg.patterns && cfg.patterns.length > 0) {
-        const text =
-          (envelope.data.text as string | undefined) ?? "";
+        const text = (payload.text as string | undefined) ?? "";
+
         const matched = cfg.patterns.some((pattern) => {
           try {
             return new RegExp(pattern, "i").test(text);

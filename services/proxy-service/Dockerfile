@@ -5,9 +5,11 @@ WORKDIR /app
 COPY packages/shared ./packages/shared
 RUN cd packages/shared && bun install
 COPY packages/observability ./packages/observability
+RUN cd packages/observability && bun install
 COPY services/proxy-service/package.json ./services/proxy-service/
 WORKDIR /app/services/proxy-service
 RUN bun install
+
 RUN rm -rf ../../packages/observability/node_modules/@nestjs \
   && mkdir -p ../../packages/observability/node_modules \
   && ln -sfn ../../../services/proxy-service/node_modules/@nestjs \

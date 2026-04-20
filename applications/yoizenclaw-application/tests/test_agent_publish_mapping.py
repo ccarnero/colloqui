@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from src.messaging.handlers.agents import _build_agent_config_from_payload
+from src.messaging.handlers.agents import (
+    _build_agent_config_from_payload,
+    _extract_llm_from_model_config,
+)
 
 
 def test_build_agent_config_maps_subagents_into_skills() -> None:
@@ -50,6 +53,7 @@ def test_build_agent_config_maps_subagents_into_skills() -> None:
         "model": "qwen/qwen3.5-9b",
         "credential_mode": "runtime-default",
         "credential_id": None,
+        "connector_id": None,
     }
 
     skills = config["skills"]
@@ -100,3 +104,62 @@ def test_build_agent_config_prefers_explicit_skills_over_subagents() -> None:
     assert len(skills) == 1
     assert skills[0]["id"] == "explicit-skill"
     assert skills[0]["name"] == "explicit"
+
+
+def test_build_agent_config_reads_llm_from_nested_model_config_llm() -> None:
+    """Admin console stores provider/model under model_config.llm (see getAgentLlmConfig)."""
+    payload = {
+        "name": "Sales Assistant Agent",
+        "system_prompt": "You are helpful.",
+        "model_config": {
+            "llm": {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "connectorId": "conn-adapter-1",
+            },
+            "soul": "Professional",
+            "rules": [],
+        },
+        "tools": [],
+    }
+
+    config = _build_agent_config_from_payload(payload)
+
+    assert config["llm"]["provider"] == "openai"
+    assert config["llm"]["model"] == "gpt-4o-mini"
+    assert config["llm"]["connector_id"] == "conn-adapter-1"
+    assert config["llm"]["credential_mode"] == "runtime-default"
+    assert config["llm"]["credential_id"] is None
+
+
+def test_build_agent_config_nested_llm_with_credential_id() -> None:
+    payload = {
+        "name": "Agent",
+        "system_prompt": "Hi",
+        "model_config": {
+            "llm": {
+                "provider": "anthropic",
+                "model": "claude-3-5-sonnet-20241022",
+                "credentialId": "cred-uuid",
+            },
+        },
+        "tools": [],
+    }
+
+    config = _build_agent_config_from_payload(payload)
+
+    assert config["llm"]["provider"] == "anthropic"
+    assert config["llm"]["credential_id"] == "cred-uuid"
+    assert config["llm"]["credential_mode"] == "profile"
+
+
+def test_extract_llm_empty_nested_dict_falls_back_to_flat() -> None:
+    """Empty model_config.llm {} is falsy; use root-level provider/model."""
+    mc = {
+        "llm": {},
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+    }
+    llm = _extract_llm_from_model_config(mc)
+    assert llm["provider"] == "openai"
+    assert llm["model"] == "gpt-4o-mini"

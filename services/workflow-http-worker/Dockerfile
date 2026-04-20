@@ -5,9 +5,11 @@ WORKDIR /app
 COPY packages/shared ./packages/shared
 RUN cd packages/shared && bun install
 COPY packages/observability ./packages/observability
+RUN cd packages/observability && bun install
 COPY services/workflow-http-worker/package.json ./services/workflow-http-worker/
 WORKDIR /app/services/workflow-http-worker
 RUN bun install
+
 RUN rm -rf ../../packages/observability/node_modules/@nestjs \
   && mkdir -p ../../packages/observability/node_modules \
   && ln -sfn ../../../services/workflow-http-worker/node_modules/@nestjs \

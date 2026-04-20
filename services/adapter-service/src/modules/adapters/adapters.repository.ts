@@ -26,8 +26,27 @@ export interface IAdapterRow {
   is_encrypted: boolean;
   tags: string[];
   status: AdapterStatusValue;
+  managed_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Params for upserting an internal-adapter mirror materialized from a
+ * registry-service `service.upserted` event. The caller sets
+ * `managedBy="registry-service"` so the row is flagged as externally
+ * managed and read-only via the public API.
+ */
+export interface IUpsertMirrorParams {
+  readonly tenantId: string;
+  readonly serviceName: string;
+  readonly baseUrl: string;
+  readonly healthCheckPath: string;
+  readonly status: AdapterStatusValue;
+  readonly managedBy: string;
+  readonly timeoutMs?: number;
+  readonly maxRetries?: number;
+  readonly retryBackoffMs?: number;
 }
 
 export interface IEndpointRow {
@@ -65,6 +84,7 @@ export function mapAdapter(row: IAdapterRow) {
     status: row.status,
     isEncrypted: row.is_encrypted,
     tags: row.tags ?? [],
+    managedBy: row.managed_by ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -136,52 +156,150 @@ export class AdaptersRepository {
     return isPostgresUniqueViolation(e);
   }
 
+  /**
+   * Paged list with optional filters. All filters are composable.
+   * Uses `sql.unsafe` free dynamic fragments so the query plan stays
+   * stable (indexes on `tenant_id`, `(tenant_id, context)`, GIN on `tags`).
+   */
   async listRows(
     tenantId: string,
     context: string | undefined,
     limit: number,
     offset: number,
     tag?: string,
+    name?: string,
   ): Promise<IAdapterRow[]> {
-    // Build query dynamically based on filters
-    if (context && tag) {
-      return this.sql<IAdapterRow[]>`
-        SELECT * FROM http_adapters
-        WHERE tenant_id = ${tenantId}
-          AND context = ${context}
-          AND ${tag} = ANY(tags)
-          AND tags IS NOT NULL
-        ORDER BY created_at ASC
-        LIMIT ${limit} OFFSET ${offset}
+    const sql = this.sql;
+    const ctxFragment = context
+      ? sql`AND context = ${context}`
+      : sql``;
+    const nameFragment = name ? sql`AND name = ${name}` : sql``;
+    const tagFragment = tag
+      ? sql`AND ${tag} = ANY(tags) AND tags IS NOT NULL`
+      : sql``;
+
+    return sql<IAdapterRow[]>`
+      SELECT * FROM http_adapters
+      WHERE tenant_id = ${tenantId}
+        ${ctxFragment}
+        ${nameFragment}
+        ${tagFragment}
+      ORDER BY created_at ASC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+  }
+
+  /**
+   * Finds the internal-adapter mirror for a service name. At most one
+   * row exists due to the `(tenant_id, name)` uniqueness constraint.
+   */
+  async findInternalMirror(
+    tenantId: string,
+    serviceName: string,
+    managedBy: string,
+  ): Promise<IAdapterRow | null> {
+    const [row] = await this.sql<IAdapterRow[]>`
+      SELECT * FROM http_adapters
+      WHERE tenant_id = ${tenantId}
+        AND name = ${serviceName}
+        AND managed_by = ${managedBy}
+      LIMIT 1
+    `;
+    return row ?? null;
+  }
+
+  /**
+   * Idempotent upsert of an internal-adapter mirror. Only overwrites
+   * registry-managed fields (baseUrl, healthCheckPath, status). Does NOT
+   * touch headers/auth/timeouts/retries on UPDATE so future operator
+   * overrides on those fields aren't clobbered.
+   *
+   * Guards against clobbering a manually-owned adapter with the same
+   * name: if the existing row has a different `managed_by`, throws.
+   */
+  async upsertMirror(params: IUpsertMirrorParams): Promise<IAdapterRow> {
+    const {
+      tenantId,
+      serviceName,
+      baseUrl,
+      healthCheckPath,
+      status,
+      managedBy,
+      timeoutMs = 30_000,
+      maxRetries = 0,
+      retryBackoffMs = 0,
+    } = params;
+
+    const [existing] = await this.sql<IAdapterRow[]>`
+      SELECT * FROM http_adapters
+      WHERE tenant_id = ${tenantId} AND name = ${serviceName}
+      LIMIT 1
+    `;
+
+    if (existing) {
+      if (existing.managed_by && existing.managed_by !== managedBy) {
+        throw new Error(
+          `Adapter '${serviceName}' for tenant '${tenantId}' is managed by '${existing.managed_by}'`,
+        );
+      }
+      const [updated] = await this.sql<IAdapterRow[]>`
+        UPDATE http_adapters SET
+          base_url = ${baseUrl},
+          health_check_path = ${healthCheckPath},
+          status = ${status},
+          managed_by = ${managedBy},
+          updated_at = NOW()
+        WHERE id = ${existing.id}
+        RETURNING *
       `;
+      return updated!;
     }
 
-    if (context) {
-      return this.sql<IAdapterRow[]>`
-        SELECT * FROM http_adapters
-        WHERE tenant_id = ${tenantId}
-          AND context = ${context}
-        ORDER BY created_at ASC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    }
+    const id = generateId();
+    const [row] = await this.sql<IAdapterRow[]>`
+      INSERT INTO http_adapters (
+        id, tenant_id, name, context, base_url, auth_type,
+        timeout_ms, max_retries, retry_backoff_ms,
+        health_check_path, status, managed_by
+      )
+      VALUES (
+        ${id}, ${tenantId}, ${serviceName}, 'internal', ${baseUrl}, 'none',
+        ${timeoutMs}, ${maxRetries}, ${retryBackoffMs},
+        ${healthCheckPath}, ${status}, ${managedBy}
+      )
+      RETURNING *
+    `;
+    return row!;
+  }
 
-    if (tag) {
-      return this.sql<IAdapterRow[]>`
-        SELECT * FROM http_adapters
-        WHERE tenant_id = ${tenantId}
-          AND ${tag} = ANY(tags)
-          AND tags IS NOT NULL
-        ORDER BY created_at ASC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    }
+  /**
+   * Deletes the internal-adapter mirror for a service by name. Safe to
+   * call when no row exists. Returns the count of deleted rows.
+   */
+  async deleteMirrorByServiceName(
+    tenantId: string,
+    serviceName: string,
+    managedBy: string,
+  ): Promise<number> {
+    const result = await this.sql`
+      DELETE FROM http_adapters
+      WHERE tenant_id = ${tenantId}
+        AND name = ${serviceName}
+        AND managed_by = ${managedBy}
+    `;
+    return result.count;
+  }
 
+  /** All internal mirrors for a tenant (used by backfill/diagnostics). */
+  async listMirrorsByTenant(
+    tenantId: string,
+    managedBy: string,
+  ): Promise<IAdapterRow[]> {
     return this.sql<IAdapterRow[]>`
       SELECT * FROM http_adapters
       WHERE tenant_id = ${tenantId}
+        AND managed_by = ${managedBy}
       ORDER BY created_at ASC
-      LIMIT ${limit} OFFSET ${offset}
     `;
   }
 

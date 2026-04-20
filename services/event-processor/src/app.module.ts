@@ -5,11 +5,9 @@ import { HealthModule } from "./modules/health/health.module";
 import {
   NATS_CONNECTION,
   JETSTREAM_MANAGER,
-  JETSTREAM_CLIENT,
   JETSTREAM_PUBLISHER,
   natsProvider,
   jetStreamManagerProvider,
-  jetStreamClientProvider,
   jetStreamPublisherProvider,
 } from "./providers/nats.provider";
 import { REDIS_CLIENT, redisProvider } from "@yoizen/database";
@@ -29,7 +27,6 @@ import {
   providers: [
     natsProvider,
     jetStreamManagerProvider,
-    jetStreamClientProvider,
     jetStreamPublisherProvider,
     redisProvider,
     adapterClientProvider,
@@ -37,7 +34,6 @@ import {
   exports: [
     NATS_CONNECTION,
     JETSTREAM_MANAGER,
-    JETSTREAM_CLIENT,
     JETSTREAM_PUBLISHER,
     REDIS_CLIENT,
     ADAPTER_CLIENT,

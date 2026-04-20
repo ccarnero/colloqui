@@ -286,6 +286,7 @@ class Agent:
 
                 instructions = "\n\n".join(filter(None, instructions_parts))
 
+                await self.llm_client._ensure_credentials()
                 skill_agent = PydanticAgent(
                     self.llm_client._get_pydantic_model(),
                     instructions=instructions,

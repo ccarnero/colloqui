@@ -1,6 +1,6 @@
-node_modules
-dist
-*.md
+**/node_modules
+**/dist
+**/*.md
 .git
 .gitignore
 infrastructure

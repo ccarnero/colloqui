@@ -4,6 +4,7 @@ export enum EWorkflowNodeType {
   ENDPOINT_CALL = "endpointCall",
   SERVICE_CALL = "serviceCall",
   SERVICE_BUS_CALL = "serviceBusCall",
+  AGENT_CALL = "agentCall",
   BRANCH = "branch",
 }
 

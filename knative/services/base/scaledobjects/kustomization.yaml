@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# ScaledObjects live in the Knative services overlay so they are
+# deployed + torn down together with the services they scale.
+# See ../../../infrastructure/base/keda/README.md for install notes
+# (the KEDA operator itself is installed via Helm, not kustomize).
+
+resources:
+  - channel-service.yaml
+  - workflow-api.yaml
+  - event-processor.yaml
+  - audit-service.yaml
+  - metrics-service.yaml
+  - webhook-service.yaml

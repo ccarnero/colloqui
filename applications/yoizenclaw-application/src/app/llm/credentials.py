@@ -311,7 +311,13 @@ async def resolve_from_adapter(
         raise ValueError(f"Adapter '{connector_id}' missing auth configuration")
 
     if auth_type == "bearer":
-        api_key = auth_config.get("token", "")
+        # Admin API uses bearerToken; legacy / docs use token
+        api_key = (
+            auth_config.get("token")
+            or auth_config.get("bearerToken")
+            or auth_config.get("bearer_token")
+            or ""
+        )
     elif auth_type == "api-key":
         api_key = auth_config.get("key", "")
     else:

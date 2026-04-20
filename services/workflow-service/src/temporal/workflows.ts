@@ -3,7 +3,9 @@ import type {
   WorkflowDefinition,
   WorkflowExecutionContext,
   WorkflowAction,
+  AgentCallArgs,
   EndpointCallArgs,
+  EventCausalContext,
   JsFunctionArgs,
   ServiceBusCallArgs,
   ServiceCallArgs,
@@ -23,13 +25,16 @@ interface IOrchestratorActivities {
   executeChannelSend(
     args: ChannelSendArgs,
     tenantId: string,
+    causal?: EventCausalContext,
   ): Promise<{ published: true; subject: string }>;
 }
 
-interface ISyncActivities {
-  syncExecutionStatus(
+interface IExecutionPublisherActivities {
+  publishExecutionCompletedEvent(
     executionId: string,
     status: string,
+    tenantId?: string,
+    workflowName?: string,
   ): Promise<void>;
 }
 
@@ -52,12 +57,24 @@ interface IHttpActivities {
   }>;
 }
 
+/** YoizenClaw chat can exceed default HTTP activity timeouts. */
+interface IAgentHttpActivities {
+  executeAgentCall(
+    args: AgentCallArgs,
+    tenantId: string,
+  ): Promise<{
+    status: number;
+    data: unknown;
+    headers: Record<string, string>;
+  }>;
+}
+
 const local = proxyActivities<IOrchestratorActivities>({
   startToCloseTimeout: "30s",
   retry: { maximumAttempts: 3 },
 });
 
-const sync = proxyActivities<ISyncActivities>({
+const publisher = proxyActivities<IExecutionPublisherActivities>({
   startToCloseTimeout: "5s",
   retry: { maximumAttempts: 2 },
 });
@@ -65,6 +82,12 @@ const sync = proxyActivities<ISyncActivities>({
 const http = proxyActivities<IHttpActivities>({
   taskQueue: WORKFLOW_HTTP_TASK_QUEUE,
   startToCloseTimeout: "30s",
+  retry: { maximumAttempts: 3 },
+});
+
+const httpAgent = proxyActivities<IAgentHttpActivities>({
+  taskQueue: WORKFLOW_HTTP_TASK_QUEUE,
+  startToCloseTimeout: "5m",
   retry: { maximumAttempts: 3 },
 });
 
@@ -138,10 +161,17 @@ async function executeAction(
       return local.executeChannelSend(
         resolveTemplates(action.args, context),
         tenant,
+        context.causal,
       );
 
     case "serviceCall":
       return http.executeServiceCall(
+        resolveTemplates(action.args, context),
+        tenant,
+      );
+
+    case "agentCall":
+      return httpAgent.executeAgentCall(
         resolveTemplates(action.args, context),
         tenant,
       );
@@ -164,6 +194,7 @@ async function executeAction(
             workflow: context.workflow,
             request: context.request,
             results: { ...context.results },
+            ...(context.causal && { causal: context.causal }),
           };
           await executeActions(branchActions, branchCtx);
           return branchCtx.results;
@@ -197,6 +228,7 @@ export async function runWorkflow(
     },
     request: workflow.request,
     results: {},
+    ...(workflow.causal && { causal: workflow.causal }),
   };
 
   let status = "FAILED";
@@ -207,7 +239,12 @@ export async function runWorkflow(
   } finally {
     if (executionId) {
       try {
-        await sync.syncExecutionStatus(executionId, status);
+        await publisher.publishExecutionCompletedEvent(
+          executionId,
+          status,
+          workflow.tenant,
+          workflow.name,
+        );
       } catch (_) {
         /* best-effort: don't mask the original outcome */
       }
