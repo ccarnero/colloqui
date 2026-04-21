@@ -8,27 +8,63 @@ SUPPORT_NAMESPACE="support-services-${ENVIRONMENT}"
 KOURIER_NAMESPACE="kourier-system"
 
 SERVICES=(api-gateway admin-console messaging-console)
-declare -A CONTAINER_PORTS=(
-  [api-gateway]=3000
-  [admin-console]=8080
-  [messaging-console]=8080
-)
-declare -A LOCAL_PORTS=(
-  [api-gateway]="${API_GATEWAY_PORT:-8080}"
-  [admin-console]="${ADMIN_CONSOLE_PORT:-4200}"
-  [messaging-console]="${MESSAGING_CONSOLE_PORT:-4300}"
-)
-
 SUPPORT_SERVICES=(nats)
-declare -A SUPPORT_CONTAINER_PORTS=(
-  [nats]=4222
-)
-declare -A SUPPORT_LOCAL_PORTS=(
-  [nats]="${NATS_PORT:-4222}"
-)
 
-declare -A HOST_FOR_SVC=()
-declare -A SSLIP_STATUS_FOR_SVC=()
+# Bash 3.2 (macOS) lacks associative arrays; use case-based lookups.
+container_port_for() {
+  case "$1" in
+    api-gateway)       echo 3000 ;;
+    admin-console)     echo 8080 ;;
+    messaging-console) echo 8080 ;;
+    *) return 1 ;;
+  esac
+}
+
+local_port_for() {
+  case "$1" in
+    api-gateway)       echo "${API_GATEWAY_PORT:-8080}" ;;
+    admin-console)     echo "${ADMIN_CONSOLE_PORT:-4200}" ;;
+    messaging-console) echo "${MESSAGING_CONSOLE_PORT:-4300}" ;;
+    *) return 1 ;;
+  esac
+}
+
+support_container_port_for() {
+  case "$1" in
+    nats) echo 4222 ;;
+    *) return 1 ;;
+  esac
+}
+
+support_local_port_for() {
+  case "$1" in
+    nats) echo "${NATS_PORT:-4222}" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Dynamic per-service state — emulated associative arrays via namespaced vars
+# (e.g. HOST_FOR_SVC__api_gateway). Safe under `set -u` because get_ns uses
+# parameter-default expansion.
+_ns_key() {
+  local k="${1//-/_}"
+  printf '%s' "${k//./_}"
+}
+
+set_ns() {
+  local prefix=$1 key=$2 value=$3
+  local safe
+  safe="$(_ns_key "$key")"
+  eval "${prefix}__${safe}=\$value"
+}
+
+get_ns() {
+  local prefix=$1 key=$2 default=${3:-}
+  local safe var
+  safe="$(_ns_key "$key")"
+  var="${prefix}__${safe}"
+  eval "printf '%s' \"\${${var}:-\$default}\""
+}
 
 FORWARD_PIDS=()
 FORWARD_LOGS=()
@@ -191,7 +227,7 @@ get_kourier_external_ip() {
 populate_host_map() {
   local svc
   for svc in "${SERVICES[@]}"; do
-    HOST_FOR_SVC["$svc"]="${svc}.${NAMESPACE}.${SSLIP_DOMAIN}"
+    set_ns HOST_FOR_SVC "$svc" "${svc}.${NAMESPACE}.${SSLIP_DOMAIN}"
   done
 }
 
@@ -308,7 +344,7 @@ set_sslip_statuses() {
   local status=$1
   local svc
   for svc in "${SERVICES[@]}"; do
-    SSLIP_STATUS_FOR_SVC["$svc"]="$status"
+    set_ns SSLIP_STATUS_FOR_SVC "$svc" "$status"
   done
 }
 
@@ -382,10 +418,10 @@ print_summary() {
   echo ""
 
   for svc in "${SERVICES[@]}"; do
-    local_port="${LOCAL_PORTS[$svc]}"
+    local_port="$(local_port_for "$svc")"
     local_url="http://localhost:${local_port}"
-    sslip_url="http://${HOST_FOR_SVC[$svc]}/"
-    sslip_status="${SSLIP_STATUS_FOR_SVC[$svc]:-unknown}"
+    sslip_url="http://$(get_ns HOST_FOR_SVC "$svc")/"
+    sslip_status="$(get_ns SSLIP_STATUS_FOR_SVC "$svc" unknown)"
 
     echo "  ${svc}:"
     echo "    localhost : ${local_url}"
@@ -400,17 +436,17 @@ print_summary() {
     echo ""
     for svc in "${SUPPORT_SERVICES[@]}"; do
       echo "  ${svc}:"
-      echo "    localhost : localhost:${SUPPORT_LOCAL_PORTS[$svc]} (${SUPPORT_NAMESPACE})"
+      echo "    localhost : localhost:$(support_local_port_for "$svc") (${SUPPORT_NAMESPACE})"
     done
   fi
 
   echo ""
   echo "  curl examples:"
-  echo "    curl http://localhost:${LOCAL_PORTS[api-gateway]}/health"
+  echo "    curl http://localhost:$(local_port_for api-gateway)/health"
   if [[ "$DOMAIN_DRIFT" == "true" && -n "$EXPECTED_SSLIP_DOMAIN" ]]; then
     echo "    curl http://api-gateway.${NAMESPACE}.${EXPECTED_SSLIP_DOMAIN}/health"
   else
-    echo "    curl http://${HOST_FOR_SVC[api-gateway]}/health"
+    echo "    curl http://$(get_ns HOST_FOR_SVC api-gateway)/health"
   fi
 
   if [[ "$DOMAIN_DRIFT" == "true" && "$IS_ORBSTACK" == "false" ]]; then
@@ -444,15 +480,15 @@ main() {
       warn "Skipping ${svc}"
       continue
     fi
-    start_app_forward "$svc" "${LOCAL_PORTS[$svc]}" "${CONTAINER_PORTS[$svc]}" || true
+    start_app_forward "$svc" "$(local_port_for "$svc")" "$(container_port_for "$svc")" || true
   done
 
   if kubectl get namespace "$SUPPORT_NAMESPACE" &>/dev/null; then
     for svc in "${SUPPORT_SERVICES[@]}"; do
       start_support_forward \
         "$svc" \
-        "${SUPPORT_LOCAL_PORTS[$svc]}" \
-        "${SUPPORT_CONTAINER_PORTS[$svc]}" || true
+        "$(support_local_port_for "$svc")" \
+        "$(support_container_port_for "$svc")" || true
     done
   else
     warn "Namespace '${SUPPORT_NAMESPACE}' not found — skipping support-services forwards (NATS, etc.)"
