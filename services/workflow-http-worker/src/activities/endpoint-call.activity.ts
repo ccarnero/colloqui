@@ -1,7 +1,12 @@
 import { ApplicationFailure } from "@temporalio/activity";
 import { TENANT_HEADER, computeBreakerKey } from "@yoizen/shared";
 import type { EndpointCallArgs } from "@yoizen/shared";
-import { getAdapterClient } from "./_shared/adapter-client.provider";
+import { tracedFetch } from "@yoizen/observability";
+import { workflowHttpWorkerConfig } from "../config";
+import {
+  getAdapterClient,
+  getHttpResponseCache,
+} from "./_shared/adapter-client.provider";
 import { getHttpBreaker } from "./_shared/breaker";
 import {
   applyJsonBody,
@@ -9,7 +14,12 @@ import {
   httpCallWithRetry,
   type IHttpCallResult,
 } from "./_shared/http-call-with-retry";
-import { tracedFetch } from "@yoizen/observability";
+import { cachedFetch } from "./_shared/http-cache/cached-fetch";
+import {
+  createBypassHttpResponseCacheDecision,
+  resolveHttpResponseCachePolicy,
+} from "./_shared/http-cache/cache-policy";
+import { HttpResponseCacheReason } from "./_shared/metrics";
 
 type IEndpointCallResult = IHttpCallResult;
 
@@ -103,6 +113,15 @@ async function executeWithAdapterEndpoint(
 
   const url = buildUrl(resolved.url, args.params);
   const body = applyJsonBody(args.data, mergedHeaders);
+  const decision = resolveHttpResponseCachePolicy({
+    enabled: workflowHttpWorkerConfig.httpResponseCacheEnabled,
+    strategy: resolved.cache,
+    tenantId,
+    method: resolved.method,
+    url,
+    headers: mergedHeaders,
+    body,
+  });
 
   return httpCallWithRetry({
     url,
@@ -112,6 +131,10 @@ async function executeWithAdapterEndpoint(
     timeoutMs: resolved.timeoutMs,
     maxRetries: resolved.maxRetries,
     retryBackoffMs: resolved.retryBackoffMs,
+    cache: {
+      decision,
+      store: getHttpResponseCache(),
+    },
   });
 }
 
@@ -151,6 +174,15 @@ async function executeWithAdapterBase(
 
   const url = buildUrl(resolved.url, args.params);
   const body = applyJsonBody(args.data, mergedHeaders);
+  const decision = resolveHttpResponseCachePolicy({
+    enabled: workflowHttpWorkerConfig.httpResponseCacheEnabled,
+    strategy: resolved.cache,
+    tenantId,
+    method: resolved.method,
+    url,
+    headers: mergedHeaders,
+    body,
+  });
 
   return httpCallWithRetry({
     url,
@@ -160,6 +192,10 @@ async function executeWithAdapterBase(
     timeoutMs: resolved.timeoutMs,
     maxRetries: resolved.maxRetries,
     retryBackoffMs: resolved.retryBackoffMs,
+    cache: {
+      decision,
+      store: getHttpResponseCache(),
+    },
   });
 }
 
@@ -176,13 +212,25 @@ async function executeRaw(
 
   const url = buildUrl(args.url, args.params);
   const body = applyJsonBody(args.data, headers);
+  const decision = createBypassHttpResponseCacheDecision(
+    args.method,
+    HttpResponseCacheReason.UNSUPPORTED_TARGET,
+  );
 
-  const res = await tracedFetch(url, {
-    method: args.method,
-    headers,
-    body,
-    signal: AbortSignal.timeout(RAW_TIMEOUT_MS),
-  });
+  const res = await cachedFetch(
+    url,
+    {
+      method: args.method,
+      headers,
+      body,
+      signal: AbortSignal.timeout(RAW_TIMEOUT_MS),
+    },
+    {
+      decision,
+      cache: getHttpResponseCache(),
+      fetchFn: tracedFetch,
+    },
+  );
 
   const responseHeaders: Record<string, string> = {};
   res.headers.forEach((v, k) => {

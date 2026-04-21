@@ -17,9 +17,19 @@ describe("AdapterEndpointConfigComponent", () => {
     fb = TestBed.inject(FormBuilder);
     const endpoints = fb.array([
       fb.group({
+        id: ["ep-1"],
         label: ["default"],
         method: ["GET"],
         path: ["/"],
+        cache: fb.group({
+          enabled: [false],
+          ttlSeconds: [60],
+          methods: [["GET", "HEAD"]],
+          keyBody: [false],
+          keyHeaders: [[]],
+          queryParamsMode: ["all"],
+          keyQueryParamsList: [[]],
+        }),
       }),
     ]);
 
@@ -33,12 +43,16 @@ describe("AdapterEndpointConfigComponent", () => {
     expect(el.textContent).toContain("Endpoints");
     expect(el.textContent).toContain("Method");
     expect(el.textContent).toContain("Path");
+    expect(el.textContent).toContain("Cache");
   });
 
-  it("addEndpoint appends a form group", () => {
+  it("addEndpoint appends a form group with cache controls", () => {
     const comp = fixture.componentInstance;
     const before = comp.endpoints().length;
     comp.addEndpoint();
+    const added = comp.endpointGroup(before);
+
     expect(comp.endpoints().length).toBe(before + 1);
+    expect(added.get("cache")).toBeTruthy();
   });
 });

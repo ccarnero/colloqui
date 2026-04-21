@@ -16,6 +16,7 @@ import {
   CreateAdapterDto,
   CreateEndpointDto,
   UpdateAdapterDto,
+  UpdateEndpointDto,
 } from "./adapters.dto";
 import { REQUEST_TENANT_KEY } from "../../guards/tenant.guard";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
@@ -95,6 +96,21 @@ export class AdaptersController {
     return this.proxy.proxy({
       method: "POST",
       path: `/adapters/${encodeURIComponent(id)}/endpoints`,
+      tenantId: req[REQUEST_TENANT_KEY],
+      body,
+    });
+  }
+
+  @Patch(":id/endpoints/:epId")
+  async updateEndpoint(
+    @Req() req: ITenantScopedRequest,
+    @Param("id") id: string,
+    @Param("epId") epId: string,
+    @Body() body: UpdateEndpointDto,
+  ) {
+    return this.proxy.proxy({
+      method: "PATCH",
+      path: `/adapters/${encodeURIComponent(id)}/endpoints/${encodeURIComponent(epId)}`,
       tenantId: req[REQUEST_TENANT_KEY],
       body,
     });

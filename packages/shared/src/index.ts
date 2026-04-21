@@ -174,11 +174,19 @@ export type {
 export type {
   AdapterCache,
   AdapterConfig,
+  AdapterCacheStrategy,
+  AdapterCacheMethodValue,
+  AdapterCacheQueryParamsModeValue,
   AdapterEndpointConfig,
+  IAdapterHeaderEntry,
   ResolvedAdapterRequest,
   AdapterReference,
 } from './adapter.interfaces';
-export { AdapterStatus } from './adapter.interfaces';
+export {
+  AdapterCacheMethod,
+  AdapterCacheQueryParamsMode,
+  AdapterStatus,
+} from './adapter.interfaces';
 export type { AdapterStatusValue } from './adapter.interfaces';
 
 export { applyAdapterAuthHeadersSync } from './adapter-auth-headers';

@@ -3,7 +3,10 @@ import { tracedFetch, PinoLoggerService } from "@yoizen/observability";
 import { TENANT_HEADER, computeBreakerKey } from "@yoizen/shared";
 import type { ResolvedAdapterRequest, ServiceCallArgs } from "@yoizen/shared";
 import { workflowHttpWorkerConfig } from "../config";
-import { getAdapterClient } from "./_shared/adapter-client.provider";
+import {
+  getAdapterClient,
+  getHttpResponseCache,
+} from "./_shared/adapter-client.provider";
 import { getHttpBreaker } from "./_shared/breaker";
 import {
   applyJsonBody,
@@ -11,7 +14,15 @@ import {
   httpCallWithRetry,
   type IHttpCallResult,
 } from "./_shared/http-call-with-retry";
-import { serviceCallResolutionSourceTotal } from "./_shared/metrics";
+import { cachedFetch } from "./_shared/http-cache/cached-fetch";
+import {
+  createBypassHttpResponseCacheDecision,
+  resolveHttpResponseCachePolicy,
+} from "./_shared/http-cache/cache-policy";
+import {
+  HttpResponseCacheReason,
+  serviceCallResolutionSourceTotal,
+} from "./_shared/metrics";
 
 type IServiceCallResult = IHttpCallResult;
 
@@ -152,6 +163,15 @@ async function performRequest(
     ...args.headers,
   };
   const body = applyJsonBody(args.data, headers);
+  const decision = resolveHttpResponseCachePolicy({
+    enabled: workflowHttpWorkerConfig.httpResponseCacheEnabled,
+    strategy: resolved.cache,
+    tenantId,
+    method: resolved.method,
+    url: resolved.url,
+    headers,
+    body,
+  });
 
   return httpCallWithRetry({
     url: resolved.url,
@@ -161,6 +181,10 @@ async function performRequest(
     timeoutMs: resolved.timeoutMs,
     maxRetries: resolved.maxRetries,
     retryBackoffMs: resolved.retryBackoffMs,
+    cache: {
+      decision,
+      store: getHttpResponseCache(),
+    },
   });
 }
 
@@ -176,13 +200,24 @@ async function resolveAndCallViaRegistry(
     ...args.headers,
   };
   const body = applyJsonBody(args.data, headers);
-
-  const res = await tracedFetch(url, {
-    method: args.method,
-    headers,
-    body,
-    signal: AbortSignal.timeout(SERVICE_CALL_TIMEOUT_MS),
-  });
+  const decision = createBypassHttpResponseCacheDecision(
+    args.method,
+    HttpResponseCacheReason.UNSUPPORTED_TARGET,
+  );
+  const res = await cachedFetch(
+    url,
+    {
+      method: args.method,
+      headers,
+      body,
+      signal: AbortSignal.timeout(SERVICE_CALL_TIMEOUT_MS),
+    },
+    {
+      decision,
+      cache: getHttpResponseCache(),
+      fetchFn: tracedFetch,
+    },
+  );
 
   return buildResult(res);
 }

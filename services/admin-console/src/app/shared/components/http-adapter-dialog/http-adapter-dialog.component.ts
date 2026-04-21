@@ -1,9 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  computed,
   inject,
-  type OnInit,
   signal,
 } from "@angular/core";
 import {
@@ -28,12 +26,14 @@ import { COMMA, ENTER } from "@angular/cdk/keycodes";
 import {
   type AuthType,
   type IHttpAdapter,
+  type IHttpAdapterCacheStrategy,
   type IHttpAdapterContext,
   type IHttpAdapterDialogData,
   type IHttpAdapterDialogResult,
   type HttpMethod,
 } from "../../models/http-adapter.model";
 import { AdapterAuthConfigComponent } from "./adapter-auth-config.component";
+import { AdapterCacheStrategyFormComponent } from "./adapter-cache-strategy-form.component";
 import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.component";
 
 @Component({
@@ -50,6 +50,7 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
     MatChipsModule,
     MatIconModule,
     AdapterAuthConfigComponent,
+    AdapterCacheStrategyFormComponent,
     AdapterEndpointConfigComponent,
   ],
   styleUrl: "./http-adapter-dialog.component.scss",
@@ -189,6 +190,19 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
           </div>
         </div>
 
+        <div class="section-card">
+          <div class="section-card-header">
+            <div class="section-card-title">Default Cache</div>
+          </div>
+          <div class="section-card-body">
+            <app-adapter-cache-strategy-form
+              [group]="defaultCacheFormGroup"
+              [title]="'Default cache'"
+              [subtitle]="'Used when the workflow targets the adapter base path directly'"
+            />
+          </div>
+        </div>
+
         <app-adapter-endpoint-config [endpoints]="endpoints" />
 
         <div class="form-row-even">
@@ -264,7 +278,7 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
     </div>
   `,
 })
-export class HttpAdapterDialogComponent implements OnInit {
+export class HttpAdapterDialogComponent {
   private readonly fb = inject(FormBuilder);
   readonly dialogRef = inject(
     MatDialogRef<HttpAdapterDialogComponent, IHttpAdapterDialogResult>,
@@ -298,6 +312,10 @@ export class HttpAdapterDialogComponent implements OnInit {
     return this.form.get("headers") as FormArray;
   }
 
+  get defaultCacheFormGroup(): FormGroup {
+    return this.form.get("defaultCache") as FormGroup;
+  }
+
   headerGroup(index: number): FormGroup {
     return this.headers.at(index) as FormGroup;
   }
@@ -319,8 +337,6 @@ export class HttpAdapterDialogComponent implements OnInit {
     return this.form.get("endpoints") as FormArray;
   }
 
-  ngOnInit(): void {}
-
   addTag(event: { value: string; chipInput: { clear: () => void } }): void {
     const value = (event.value ?? "").trim().toLowerCase();
     if (value && !this.tags().includes(value)) {
@@ -340,6 +356,7 @@ export class HttpAdapterDialogComponent implements OnInit {
 
     const v = this.form.getRawValue();
     const authTypeVal = v.auth.type ?? "none";
+    const endpointValues = v.endpoints as Array<Record<string, unknown>>;
 
     const adapter: IHttpAdapter = {
       name: v.name ?? "",
@@ -367,10 +384,25 @@ export class HttpAdapterDialogComponent implements OnInit {
         key: h.key ?? "",
         value: h.value ?? "",
       })),
-      endpoints: v.endpoints.map((e) => ({
-        label: e.label ?? "",
-        method: (e.method ?? "GET") as HttpMethod,
-        path: e.path ?? "",
+      defaultCache: this.serializeCacheStrategyFormValue(v.defaultCache),
+      endpoints: endpointValues.map((endpointValue) => ({
+        id: (endpointValue["id"] as string | null | undefined) ?? undefined,
+        label: (endpointValue["label"] as string | undefined) ?? "",
+        method: ((endpointValue["method"] as HttpMethod | undefined) ?? "GET") as HttpMethod,
+        path: (endpointValue["path"] as string | undefined) ?? "",
+        cache: this.serializeCacheStrategyFormValue(
+          endpointValue["cache"] as
+            | {
+                enabled?: boolean;
+                ttlSeconds?: number;
+                methods?: HttpMethod[];
+                keyBody?: boolean;
+                keyHeaders?: string[];
+                queryParamsMode?: string;
+                keyQueryParamsList?: string[];
+              }
+            | undefined,
+        ),
       })),
       timeoutMs: v.timeoutMs ?? 5000,
       maxRetries: v.maxRetries ?? 3,
@@ -411,14 +443,9 @@ export class HttpAdapterDialogComponent implements OnInit {
           }),
         ),
       ),
+      defaultCache: this.createCacheFormGroup(a?.defaultCache),
       endpoints: this.fb.array(
-        (a?.endpoints ?? []).map((e) =>
-          this.fb.group({
-            label: [e.label, Validators.required],
-            method: [e.method as HttpMethod, Validators.required],
-            path: [e.path, Validators.required],
-          }),
-        ),
+        (a?.endpoints ?? []).map((e) => this.createEndpointGroup(e)),
       ),
       timeoutMs: [
         a?.timeoutMs ?? 5000,
@@ -442,5 +469,78 @@ export class HttpAdapterDialogComponent implements OnInit {
     });
 
     return form;
+  }
+
+  private createEndpointGroup(endpoint?: IHttpAdapter["endpoints"][number]): FormGroup {
+    return this.fb.group({
+      id: [endpoint?.id ?? null],
+      label: [endpoint?.label ?? "", Validators.required],
+      method: [endpoint?.method ?? ("GET" as HttpMethod), Validators.required],
+      path: [endpoint?.path ?? "", Validators.required],
+      cache: this.createCacheFormGroup(endpoint?.cache, endpoint?.method),
+    });
+  }
+
+  private createCacheFormGroup(
+    strategy?: IHttpAdapterCacheStrategy,
+    method?: HttpMethod,
+  ): FormGroup {
+    const selectedMethod = method ?? strategy?.methods?.[0] ?? "GET";
+    const queryParamsMode = Array.isArray(strategy?.keyQueryParams)
+      ? "custom"
+      : "all";
+    const keyBodyDefault =
+      selectedMethod === "POST" ||
+      selectedMethod === "PUT" ||
+      selectedMethod === "PATCH" ||
+      selectedMethod === "DELETE";
+
+    return this.fb.group({
+      enabled: [strategy?.enabled ?? false],
+      ttlSeconds: [
+        strategy?.ttlSeconds ?? 60,
+        [Validators.required, Validators.min(1)],
+      ],
+      methods: [
+        strategy?.methods ?? (["GET", "HEAD"] as HttpMethod[]),
+        Validators.required,
+      ],
+      keyBody: [strategy?.keyBody ?? keyBodyDefault],
+      keyHeaders: [strategy?.keyHeaders ?? []],
+      queryParamsMode: [queryParamsMode],
+      keyQueryParamsList: [
+        Array.isArray(strategy?.keyQueryParams) ? strategy.keyQueryParams : [],
+      ],
+    });
+  }
+
+  private serializeCacheStrategyFormValue(
+    value:
+      | {
+          enabled?: boolean;
+          ttlSeconds?: number;
+          methods?: HttpMethod[];
+          keyBody?: boolean;
+          keyHeaders?: string[];
+          queryParamsMode?: string;
+          keyQueryParamsList?: string[];
+        }
+      | undefined,
+  ): IHttpAdapterCacheStrategy | undefined {
+    if (!value?.enabled) {
+      return undefined;
+    }
+
+    return {
+      enabled: true,
+      ttlSeconds: Math.max(1, value.ttlSeconds ?? 60),
+      methods: value.methods ?? ["GET", "HEAD"],
+      keyBody: value.keyBody ?? false,
+      keyHeaders: value.keyHeaders ?? [],
+      keyQueryParams:
+        value.queryParamsMode === "custom"
+          ? (value.keyQueryParamsList ?? [])
+          : "all",
+    };
   }
 }

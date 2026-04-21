@@ -16,8 +16,12 @@ describe("ConnectorsComponent", () => {
           provide: HttpAdapterService,
           useValue: {
             list: vi.fn().mockReturnValue(of([])),
+            get: vi.fn().mockReturnValue(of({})),
             create: vi.fn().mockReturnValue(of({})),
             update: vi.fn().mockReturnValue(of({})),
+            updateEndpoint: vi.fn().mockReturnValue(of({})),
+            addEndpoint: vi.fn().mockReturnValue(of({})),
+            removeEndpoint: vi.fn().mockReturnValue(of(undefined)),
             remove: vi.fn().mockReturnValue(of(undefined)),
           },
         },

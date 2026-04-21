@@ -1,4 +1,6 @@
 import {
+  ArrayUnique,
+  IsBoolean,
   IsString,
   IsNotEmpty,
   IsIn,
@@ -9,9 +11,16 @@ import {
   ValidateNested,
   IsObject,
   IsUrl,
+  registerDecorator,
+  type ValidationArguments,
+  type ValidationOptions,
 } from "class-validator";
 import { Type } from "class-transformer";
-import { PaginatedQueryDto } from "@yoizen/shared";
+import {
+  AdapterCacheMethod,
+  AdapterCacheQueryParamsMode,
+  PaginatedQueryDto,
+} from "@yoizen/shared";
 
 const HTTP_METHODS = [
   "GET",
@@ -31,6 +40,44 @@ const ADAPTER_AUTH_TYPES = [
   "oauth2-client",
 ] as const;
 
+const CACHE_METHODS = [
+  AdapterCacheMethod.GET,
+  AdapterCacheMethod.HEAD,
+  AdapterCacheMethod.POST,
+  AdapterCacheMethod.PUT,
+  AdapterCacheMethod.PATCH,
+  AdapterCacheMethod.DELETE,
+] as const;
+
+function IsStringArrayOrAll(validationOptions?: ValidationOptions) {
+  return function (object: object, propertyName: string): void {
+    registerDecorator({
+      name: "isStringArrayOrAll",
+      target: object.constructor,
+      propertyName,
+      options: validationOptions,
+      validator: {
+        validate(value: unknown): boolean {
+          if (value === undefined || value === null) {
+            return true;
+          }
+          if (value === AdapterCacheQueryParamsMode.ALL) {
+            return true;
+          }
+          return (
+            Array.isArray(value) &&
+            value.every(
+              (entry) => typeof entry === "string" && entry.trim().length > 0,
+            )
+          );
+        },
+        defaultMessage(args: ValidationArguments): string {
+          return `${args.property} must be "all" or an array of non-empty strings`;
+        },
+      },
+    });
+  };
+}
 
 export class HeaderEntryDto {
   @IsString()
@@ -73,6 +120,40 @@ export class CreateEndpointDto {
   @IsString()
   @IsNotEmpty()
   path!: string;
+
+  @ValidateNested()
+  @Type(() => CacheStrategyDto)
+  @IsOptional()
+  cache?: CacheStrategyDto;
+}
+
+export class CacheStrategyDto {
+  @IsBoolean()
+  enabled!: boolean;
+
+  @IsInt()
+  @Min(1)
+  ttlSeconds!: number;
+
+  @IsArray()
+  @ArrayUnique()
+  @IsIn([...CACHE_METHODS], { each: true })
+  @IsOptional()
+  methods?: string[];
+
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsOptional()
+  keyHeaders?: string[];
+
+  @IsStringArrayOrAll()
+  @IsOptional()
+  keyQueryParams?: string[] | typeof AdapterCacheQueryParamsMode.ALL;
+
+  @IsBoolean()
+  @IsOptional()
+  keyBody?: boolean;
 }
 
 export class CreateAdapterDto {
@@ -131,6 +212,11 @@ export class CreateAdapterDto {
   @Type(() => CreateEndpointDto)
   @IsOptional()
   endpoints?: CreateEndpointDto[];
+
+  @ValidateNested()
+  @Type(() => CacheStrategyDto)
+  @IsOptional()
+  defaultCache?: CacheStrategyDto;
 }
 
 export class UpdateAdapterDto {
@@ -184,4 +270,28 @@ export class UpdateAdapterDto {
   @IsString({ each: true })
   @IsOptional()
   tags?: string[];
+
+  @ValidateNested()
+  @Type(() => CacheStrategyDto)
+  @IsOptional()
+  defaultCache?: CacheStrategyDto | null;
+}
+
+export class UpdateEndpointDto {
+  @IsString()
+  @IsOptional()
+  label?: string;
+
+  @IsIn([...HTTP_METHODS])
+  @IsOptional()
+  method?: string;
+
+  @IsString()
+  @IsOptional()
+  path?: string;
+
+  @ValidateNested()
+  @Type(() => CacheStrategyDto)
+  @IsOptional()
+  cache?: CacheStrategyDto | null;
 }

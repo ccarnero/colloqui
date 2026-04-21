@@ -38,4 +38,59 @@ describe("AdaptersController", () => {
       tenantId: "t1",
     });
   });
+
+  it("create forwards nested cache config unchanged", async () => {
+    const body = {
+      name: "json",
+      context: "external",
+      baseUrl: "https://jsonplaceholder.typicode.com",
+      endpoints: [
+        {
+          label: "todo",
+          method: "GET",
+          path: "/todos/1",
+          cache: {
+            enabled: true,
+            ttlSeconds: 60,
+            methods: ["GET", "HEAD"],
+            keyBody: false,
+            keyHeaders: [],
+            keyQueryParams: "all",
+          },
+        },
+      ],
+      defaultCache: {
+        enabled: true,
+        ttlSeconds: 30,
+        methods: ["GET"],
+      },
+    };
+
+    await controller.create(req as never, body as never);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "POST",
+      path: "/adapters",
+      tenantId: "t1",
+      body,
+    });
+  });
+
+  it("updateEndpoint proxies the endpoint patch route", async () => {
+    const body = {
+      cache: {
+        enabled: true,
+        ttlSeconds: 45,
+        methods: ["POST"],
+        keyBody: true,
+      },
+    };
+
+    await controller.updateEndpoint(req as never, "adp/1", "ep/1", body as never);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "PATCH",
+      path: "/adapters/adp%2F1/endpoints/ep%2F1",
+      tenantId: "t1",
+      body,
+    });
+  });
 });

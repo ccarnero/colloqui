@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import type { AdapterCache, AdapterConfig } from "../../src/adapter.interfaces";
+import {
+  AdapterCacheMethod,
+  type AdapterCache,
+  type AdapterConfig,
+} from "../../src/adapter.interfaces";
 import { AdapterClient } from "../../src/adapter-client";
 
 function makeAdapter(overrides: Partial<AdapterConfig> = {}): AdapterConfig {
@@ -16,7 +20,13 @@ function makeAdapter(overrides: Partial<AdapterConfig> = {}): AdapterConfig {
     maxRetries: 2,
     retryBackoffMs: 200,
     healthCheckPath: "/health",
-    status: "active",
+    status: "enabled",
+    tags: [],
+    defaultCache: {
+      enabled: true,
+      ttlSeconds: 60,
+      methods: [AdapterCacheMethod.GET],
+    },
     endpoints: [
       {
         id: "ep-1",
@@ -24,6 +34,11 @@ function makeAdapter(overrides: Partial<AdapterConfig> = {}): AdapterConfig {
         label: "Get Data",
         method: "GET",
         path: "/data",
+        cache: {
+          enabled: true,
+          ttlSeconds: 120,
+          methods: [AdapterCacheMethod.GET],
+        },
       },
       {
         id: "ep-2",
@@ -140,6 +155,7 @@ describe("AdapterClient", () => {
       expect(resolved.timeoutMs).toBe(5000);
       expect(resolved.maxRetries).toBe(2);
       expect(resolved.retryBackoffMs).toBe(200);
+      expect(resolved.cache?.ttlSeconds).toBe(120);
     });
 
     it("should prepend slash to endpoint path if missing", async () => {
@@ -167,6 +183,7 @@ describe("AdapterClient", () => {
       expect(resolved.timeoutMs).toBe(5000);
       expect(resolved.maxRetries).toBe(2);
       expect(resolved.retryBackoffMs).toBe(200);
+      expect(resolved.cache?.ttlSeconds).toBe(60);
     });
 
     it("prepends a slash when the path is missing one", async () => {

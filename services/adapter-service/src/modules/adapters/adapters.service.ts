@@ -10,6 +10,7 @@ import type {
   CreateAdapterDto,
   UpdateAdapterDto,
   CreateEndpointDto,
+  UpdateEndpointDto,
 } from "./adapters.dto";
 import { ADAPTER_UPDATE_FIELD_KEYS } from "./adapter-update-fields";
 import {
@@ -18,6 +19,13 @@ import {
   mapEndpoint,
   type IEndpointRow,
 } from "./adapters.repository";
+
+const ENDPOINT_UPDATE_FIELD_KEYS = [
+  "label",
+  "method",
+  "path",
+  "cache",
+] as const;
 
 @Injectable()
 export class AdaptersService {
@@ -241,6 +249,54 @@ export class AdaptersService {
     this.logger.log(
       `Removed endpoint '${endpointId}' from adapter ${adapterId}`,
     );
+  }
+
+  /**
+   * Applies a partial update to an adapter endpoint.
+   *
+   * @param tenantId - Tenant scope.
+   * @param adapterId - Parent adapter id.
+   * @param endpointId - Endpoint id to update.
+   * @param dto - Partial endpoint fields.
+   * @returns Updated endpoint.
+   */
+  async updateEndpoint(
+    tenantId: string,
+    adapterId: string,
+    endpointId: string,
+    dto: UpdateEndpointDto,
+  ) {
+    await this.assertNotManaged(tenantId, adapterId, "update endpoint on");
+
+    const hasField = ENDPOINT_UPDATE_FIELD_KEYS.some(
+      (key) => (dto as Record<string, unknown>)[key] !== undefined,
+    );
+    if (!hasField) {
+      return this.getEndpointOrThrow(adapterId, endpointId);
+    }
+
+    return this.runWithUniqueConflict(
+      `Endpoint '${endpointId}' already conflicts with an existing method/path`,
+      async () => {
+        await this.adaptersRepository.updateEndpoint(adapterId, endpointId, dto);
+        this.logger.log(`Updated endpoint '${endpointId}' on adapter ${adapterId}`);
+        return this.getEndpointOrThrow(adapterId, endpointId);
+      },
+    );
+  }
+
+  private async getEndpointOrThrow(
+    adapterId: string,
+    endpointId: string,
+  ): Promise<ReturnType<typeof mapEndpoint>> {
+    const endpoint = await this.adaptersRepository.getEndpointRow(
+      adapterId,
+      endpointId,
+    );
+    if (!endpoint) {
+      throw new NotFoundException(`Endpoint '${endpointId}' not found`);
+    }
+    return mapEndpoint(endpoint);
   }
 
 }

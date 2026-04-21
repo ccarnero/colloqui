@@ -1,9 +1,43 @@
+export const AdapterCacheMethod = {
+  GET: "GET",
+  HEAD: "HEAD",
+  POST: "POST",
+  PUT: "PUT",
+  PATCH: "PATCH",
+  DELETE: "DELETE",
+} as const;
+
+export type AdapterCacheMethodValue =
+  (typeof AdapterCacheMethod)[keyof typeof AdapterCacheMethod];
+
+export const AdapterCacheQueryParamsMode = {
+  ALL: "all",
+} as const;
+
+export type AdapterCacheQueryParamsModeValue =
+  (typeof AdapterCacheQueryParamsMode)[keyof typeof AdapterCacheQueryParamsMode];
+
+export interface IAdapterHeaderEntry {
+  key: string;
+  value: string;
+}
+
+export interface AdapterCacheStrategy {
+  enabled: boolean;
+  ttlSeconds: number;
+  methods?: AdapterCacheMethodValue[];
+  keyHeaders?: string[];
+  keyQueryParams?: string[] | AdapterCacheQueryParamsModeValue;
+  keyBody?: boolean;
+}
+
 export interface AdapterEndpointConfig {
   id: string;
   adapterId: string;
   label: string;
   method: string;
   path: string;
+  cache?: AdapterCacheStrategy;
 }
 
 export const AdapterStatus = {
@@ -22,13 +56,14 @@ export interface AdapterConfig {
   baseUrl: string;
   authType: string;
   authConfig: Record<string, unknown>;
-  headers: Array<{ key: string; value: string }>;
+  headers: IAdapterHeaderEntry[];
   timeoutMs: number;
   maxRetries: number;
   retryBackoffMs: number;
   healthCheckPath: string;
   status: AdapterStatusValue;
   tags: string[];
+  defaultCache?: AdapterCacheStrategy;
   endpoints: AdapterEndpointConfig[];
 }
 
@@ -39,6 +74,7 @@ export interface ResolvedAdapterRequest {
   timeoutMs: number;
   maxRetries: number;
   retryBackoffMs: number;
+  cache?: AdapterCacheStrategy;
 }
 
 export interface AdapterReference {

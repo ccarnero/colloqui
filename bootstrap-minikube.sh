@@ -3,7 +3,8 @@ set -euo pipefail
 
 PROFILE="yoizen-arch"
 ALL_ENVIRONMENTS=(dev qa staging production)
-ALL_GROUPS=(support-services platform-services)
+ALL_GROUPS=(support-services platform-services refresh-dns)
+KOURIER_EXTERNAL_IP_WAIT_SECONDS="${KOURIER_EXTERNAL_IP_WAIT_SECONDS:-90}"
 ENVIRONMENTS=()
 SERVICE_GROUP=""
 KNATIVE_VERSION="v1.17.0"
@@ -70,8 +71,9 @@ Options:
   -h, --help    Show this help message
 
 Environment variables:
-  MINIKUBE_CPUS         Override the Minikube CPU count
-  MINIKUBE_MEMORY_MB    Override the Minikube memory limit in MB
+  MINIKUBE_CPUS                         Override the Minikube CPU count
+  MINIKUBE_MEMORY_MB                    Override the Minikube memory limit in MB
+  KOURIER_EXTERNAL_IP_WAIT_SECONDS      Seconds to wait for Kourier LB IP (default: 90)
 
 Examples:
   $0 support-services           # Infra only for all environments
@@ -79,6 +81,8 @@ Examples:
   $0 support-services dev       # Same as above (order does not matter)
   $0 platform-services dev qa   # Build + deploy for dev and qa
   $0 dev                        # Full bootstrap (both groups)
+  $0 dev refresh-dns            # Re-sync config-domain with Kourier EXTERNAL-IP
+                                # (use after starting/stopping minikube tunnel)
 EOF
 }
 
@@ -281,12 +285,154 @@ install_keda() {
     --timeout=180s
 }
 
-configure_dns() {
-  log "Configuring DNS with sslip.io"
+get_kourier_external_ip() {
+  kubectl get svc kourier \
+    --namespace kourier-system \
+    -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true
+}
+
+# Waits up to KOURIER_EXTERNAL_IP_WAIT_SECONDS for svc/kourier to be assigned
+# an EXTERNAL-IP by the LoadBalancer controller (usually `minikube tunnel` on
+# Docker-driver). Prints the IP on stdout if obtained. Exits with non-zero
+# status and prints "" otherwise — callers decide whether to bail out or
+# fall back.
+wait_for_kourier_external_ip() {
+  local deadline elapsed kourier_ip
+  deadline=$KOURIER_EXTERNAL_IP_WAIT_SECONDS
+  elapsed=0
+
+  while (( elapsed < deadline )); do
+    kourier_ip="$(get_kourier_external_ip)"
+    if [[ -n "$kourier_ip" && "$kourier_ip" != "<pending>" ]]; then
+      printf '%s\n' "$kourier_ip"
+      return 0
+    fi
+    sleep 2
+    (( elapsed += 2 ))
+  done
+
+  printf '%s\n' ""
+  return 1
+}
+
+# Returns the current sslip.io domain configured in Knative's config-domain
+# ConfigMap (i.e. the key ending in `.sslip.io`, excluding the `_example`
+# comment). Empty string if none.
+get_current_sslip_domain() {
+  kubectl get configmap config-domain -n knative-serving \
+    -o go-template='{{range $k, $v := .data}}{{if ne $k "_example"}}{{$k}}{{"\n"}}{{end}}{{end}}' \
+    2>/dev/null | grep -E '\.sslip\.io$' | head -n1
+}
+
+# Re-patches config-domain so Knative Routes advertise the given ingress IP.
+# Removes the previous sslip.io key so `config-domain` never has two
+# conflicting entries at the same time.
+patch_config_domain_to() {
+  local ingress_ip=$1
+  local previous_domain
+  previous_domain="$(get_current_sslip_domain || true)"
+
+  local patch="{\"data\":{\"${ingress_ip}.sslip.io\":\"\""
+  if [[ -n "$previous_domain" && "$previous_domain" != "${ingress_ip}.sslip.io" ]]; then
+    patch+=",\"${previous_domain}\":null"
+  fi
+  patch+="}}"
+
+  log "Patching config-domain -> ${ingress_ip}.sslip.io"
   retry 5 3 kubectl patch configmap/config-domain \
     --namespace knative-serving \
     --type merge \
-    --patch "{\"data\":{\"$(minikube ip -p "$PROFILE").sslip.io\":\"\"}}"
+    --patch "$patch"
+}
+
+# Waits until at least one Knative Service in the given namespace advertises
+# `status.url` under the expected sslip.io domain. This protects the summary
+# output from printing stale URLs right after reconfiguring config-domain.
+wait_for_ksvc_url_reconcile() {
+  local namespace=$1 expected_domain=$2 timeout_s=${3:-60}
+  local elapsed=0
+
+  local ksvc
+  ksvc="$(kubectl get ksvc -n "$namespace" \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  if [[ -z "$ksvc" ]]; then
+    return 0
+  fi
+
+  while (( elapsed < timeout_s )); do
+    local url
+    url="$(kubectl get ksvc "$ksvc" -n "$namespace" \
+      -o jsonpath='{.status.url}' 2>/dev/null || true)"
+    if [[ "$url" == *"${expected_domain}"* ]]; then
+      return 0
+    fi
+    sleep 2
+    (( elapsed += 2 ))
+  done
+
+  warn "Timed out waiting for ksvc URLs in ${namespace} to use ${expected_domain}."
+  warn "Current: $(kubectl get ksvc "$ksvc" -n "$namespace" -o jsonpath='{.status.url}' 2>/dev/null || true)"
+  return 1
+}
+
+configure_dns() {
+  log "Waiting for svc/kourier to obtain an EXTERNAL-IP (up to ${KOURIER_EXTERNAL_IP_WAIT_SECONDS}s)"
+  local ingress_ip
+  if ingress_ip="$(wait_for_kourier_external_ip)" && [[ -n "$ingress_ip" ]]; then
+    log "Kourier EXTERNAL-IP acquired: ${ingress_ip}"
+  else
+    ingress_ip="$(minikube ip -p "$PROFILE")"
+    warn "Kourier LoadBalancer IP did not become available in time."
+    warn "Falling back to the Minikube node IP (${ingress_ip})."
+    warn "This is only useful if you later run 'minikube tunnel -p ${PROFILE}' AND re-run:"
+    warn "    ./bootstrap-minikube.sh ${ENVIRONMENTS[0]:-dev} refresh-dns"
+    warn "so that config-domain and the Knative Routes get re-synced."
+  fi
+
+  patch_config_domain_to "$ingress_ip"
+}
+
+# Standalone runner: re-patches config-domain using the current Kourier
+# EXTERNAL-IP and waits for Knative Routes to reconcile. Safe to call any
+# time `minikube tunnel` comes up/down or Kourier gets a new LB IP.
+run_refresh_dns() {
+  log "===== refresh-dns (re-sync Knative config-domain with Kourier LB) ====="
+  echo ""
+  verify_cluster
+
+  if ! kubectl get namespace kourier-system &>/dev/null; then
+    err "Namespace 'kourier-system' not found. Run support-services first."
+    exit 1
+  fi
+
+  local ingress_ip
+  if ! ingress_ip="$(wait_for_kourier_external_ip)" || [[ -z "$ingress_ip" ]]; then
+    err "Kourier EXTERNAL-IP is still <pending> after ${KOURIER_EXTERNAL_IP_WAIT_SECONDS}s."
+    err "Start 'sudo minikube tunnel -p ${PROFILE}' in another terminal and retry."
+    exit 1
+  fi
+
+  local previous_domain
+  previous_domain="$(get_current_sslip_domain || true)"
+  log "Kourier EXTERNAL-IP: ${ingress_ip}"
+  log "Previous domain:     ${previous_domain:-<none>}"
+  log "Target domain:       ${ingress_ip}.sslip.io"
+
+  if [[ "$previous_domain" == "${ingress_ip}.sslip.io" ]]; then
+    log "config-domain is already up to date — nothing to do"
+    return
+  fi
+
+  patch_config_domain_to "$ingress_ip"
+
+  for env in "${ENVIRONMENTS[@]}"; do
+    local ns="platform-services-${env}"
+    if ! kubectl get namespace "$ns" &>/dev/null; then
+      continue
+    fi
+    log "Waiting for ksvc URLs in ${ns} to reconcile..."
+    wait_for_ksvc_url_reconcile "$ns" "${ingress_ip}.sslip.io" 60 || true
+  done
 }
 
 configure_local_registry() {
@@ -502,8 +648,15 @@ run_platform_services() {
 # ---------------------------------------------------------------------------
 
 print_summary() {
-  local minikube_ip
+  local minikube_ip ingress_ip kourier_ip current_domain
   minikube_ip="$(minikube ip -p "$PROFILE")"
+  kourier_ip="$(get_kourier_external_ip)"
+  current_domain="$(get_current_sslip_domain || true)"
+  if [[ -n "$kourier_ip" && "$kourier_ip" != "<pending>" ]]; then
+    ingress_ip="$kourier_ip"
+  else
+    ingress_ip="$minikube_ip"
+  fi
   local group_label="${SERVICE_GROUP:-all}"
 
   echo ""
@@ -511,11 +664,19 @@ print_summary() {
   log " Setup complete! [${group_label}]"
   log "=============================="
   echo ""
-  echo "  Minikube IP:   ${minikube_ip}"
-  echo "  DNS domain:    ${minikube_ip}.sslip.io"
-  echo "  Environments:  ${ENVIRONMENTS[*]}"
-  echo "  Group:         ${group_label}"
+  echo "  Minikube IP:       ${minikube_ip}"
+  echo "  Kourier LB IP:     ${kourier_ip:-<pending>}"
+  echo "  Ingress IP in use: ${ingress_ip}"
+  echo "  DNS domain (cfg):  ${current_domain:-${ingress_ip}.sslip.io}"
+  echo "  Environments:      ${ENVIRONMENTS[*]}"
+  echo "  Group:             ${group_label}"
   echo ""
+
+  if [[ -n "$kourier_ip" && -n "$current_domain" && "$current_domain" != "${kourier_ip}.sslip.io" ]]; then
+    warn "config-domain (${current_domain}) does not match Kourier EXTERNAL-IP (${kourier_ip})."
+    warn "Run './bootstrap-minikube.sh ${ENVIRONMENTS[0]:-dev} refresh-dns' to re-sync."
+    echo ""
+  fi
 
   if [[ "$SERVICE_GROUP" != "platform-services" ]]; then
     echo "  Namespaces:"
@@ -541,7 +702,7 @@ print_summary() {
     echo "    kubectl get storageclass"
     echo "    minikube tunnel -p ${PROFILE}"
     echo ""
-    echo "  API Gateway (dev): http://api-gateway.platform-services-dev.${minikube_ip}.sslip.io"
+    echo "  API Gateway (dev): http://api-gateway.platform-services-dev.${ingress_ip}.sslip.io"
     echo ""
     echo "  Port-forwarding (run in a separate terminal):"
     echo "    ./port-forward.sh ${ENVIRONMENTS[0]}"
@@ -569,6 +730,11 @@ main() {
       ;;
     platform-services)
       run_platform_services
+      ;;
+    refresh-dns)
+      run_refresh_dns
+      print_summary
+      return
       ;;
     "")
       run_support_services

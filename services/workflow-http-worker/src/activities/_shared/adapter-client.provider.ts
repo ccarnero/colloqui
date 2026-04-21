@@ -2,12 +2,32 @@ import Redis from "ioredis";
 import { tracedFetch } from "@yoizen/observability";
 import { createAdapterClientWithRedisAndFetch } from "@yoizen/shared";
 import { workflowHttpWorkerConfig } from "../../config";
+import {
+  createHttpResponseCache,
+  type IHttpResponseCache,
+} from "./http-cache/http-response-cache";
 
 type AdapterClientInstance = ReturnType<
   typeof createAdapterClientWithRedisAndFetch
 >;
 
 let adapterClient: AdapterClientInstance | null = null;
+let httpResponseCache: IHttpResponseCache | null = null;
+let redis: Redis | null = null;
+
+function getRedis(): Redis {
+  if (redis) {
+    return redis;
+  }
+
+  redis = new Redis({
+    host: workflowHttpWorkerConfig.redisHost,
+    port: workflowHttpWorkerConfig.redisPort,
+    lazyConnect: true,
+    maxRetriesPerRequest: 2,
+  });
+  return redis;
+}
 
 /**
  * Process-wide singleton `AdapterClient`. Centralized here so both
@@ -17,18 +37,20 @@ let adapterClient: AdapterClientInstance | null = null;
 export function getAdapterClient(): AdapterClientInstance {
   if (adapterClient) return adapterClient;
 
-  const redis = new Redis({
-    host: workflowHttpWorkerConfig.redisHost,
-    port: workflowHttpWorkerConfig.redisPort,
-    lazyConnect: true,
-    maxRetriesPerRequest: 2,
-  });
-
   adapterClient = createAdapterClientWithRedisAndFetch(
     workflowHttpWorkerConfig.adapterServiceUrl,
-    redis,
+    getRedis(),
     tracedFetch,
   );
 
   return adapterClient;
+}
+
+export function getHttpResponseCache(): IHttpResponseCache {
+  if (httpResponseCache) {
+    return httpResponseCache;
+  }
+
+  httpResponseCache = createHttpResponseCache(getRedis());
+  return httpResponseCache;
 }

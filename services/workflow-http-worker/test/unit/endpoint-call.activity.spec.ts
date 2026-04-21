@@ -14,7 +14,12 @@ const fakeAdapterConfig = {
   maxRetries: 1,
   retryBackoffMs: 10,
   healthCheckPath: "/health",
-  status: "active",
+  status: "enabled",
+  defaultCache: {
+    enabled: true,
+    ttlSeconds: 30,
+    methods: ["GET"],
+  },
   endpoints: [
     {
       id: "ep-1",
@@ -22,6 +27,11 @@ const fakeAdapterConfig = {
       label: "Get",
       method: "GET",
       path: "/data",
+      cache: {
+        enabled: true,
+        ttlSeconds: 45,
+        methods: ["GET"],
+      },
     },
   ],
 };

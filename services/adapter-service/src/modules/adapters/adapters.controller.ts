@@ -19,6 +19,7 @@ import {
   UpdateAdapterDto,
   CreateEndpointDto,
   ListAdaptersQueryDto,
+  UpdateEndpointDto,
 } from "./adapters.dto";
 
 @Controller("adapters")
@@ -121,5 +122,21 @@ export class AdaptersController {
     @Param("epId") epId: string,
   ) {
     return this.adaptersService.removeEndpoint(tenantId, id, epId);
+  }
+
+  /**
+   * @param tenantId - Validated tenant from `x-yoizen-tenant`.
+   * @param id - Adapter primary key.
+   * @param epId - Endpoint primary key.
+   * @param dto - Partial endpoint fields to merge.
+   */
+  @Patch(":id/endpoints/:epId")
+  async updateEndpoint(
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
+    @Param("epId") epId: string,
+    @Body() dto: UpdateEndpointDto,
+  ) {
+    return this.adaptersService.updateEndpoint(tenantId, id, epId, dto);
   }
 }

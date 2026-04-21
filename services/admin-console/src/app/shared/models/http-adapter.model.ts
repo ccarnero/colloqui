@@ -1,5 +1,24 @@
 export type AuthType = "none" | "api-key" | "bearer" | "basic" | "oauth2";
 
+export const HTTP_ADAPTER_METHOD = {
+  GET: "GET",
+  HEAD: "HEAD",
+  POST: "POST",
+  PUT: "PUT",
+  PATCH: "PATCH",
+  DELETE: "DELETE",
+} as const;
+
+export type HttpMethod =
+  (typeof HTTP_ADAPTER_METHOD)[keyof typeof HTTP_ADAPTER_METHOD];
+
+export const HTTP_ADAPTER_CACHE_QUERY_PARAMS_MODE = {
+  ALL: "all",
+} as const;
+
+export type HttpAdapterCacheQueryParamsMode =
+  (typeof HTTP_ADAPTER_CACHE_QUERY_PARAMS_MODE)[keyof typeof HTTP_ADAPTER_CACHE_QUERY_PARAMS_MODE];
+
 export interface IHttpAdapterAuth {
   type: AuthType;
   apiKey?: string;
@@ -17,12 +36,21 @@ export interface IHttpAdapterHeader {
   value: string;
 }
 
-export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+export interface IHttpAdapterCacheStrategy {
+  enabled: boolean;
+  ttlSeconds: number;
+  methods?: HttpMethod[];
+  keyHeaders?: string[];
+  keyQueryParams?: string[] | HttpAdapterCacheQueryParamsMode;
+  keyBody?: boolean;
+}
 
 export interface IHttpAdapterEndpoint {
+  id?: string;
   label: string;
   method: HttpMethod;
   path: string;
+  cache?: IHttpAdapterCacheStrategy;
 }
 
 export interface IHttpAdapter {
@@ -30,6 +58,7 @@ export interface IHttpAdapter {
   baseUrl: string;
   auth: IHttpAdapterAuth;
   headers: IHttpAdapterHeader[];
+  defaultCache?: IHttpAdapterCacheStrategy;
   endpoints: IHttpAdapterEndpoint[];
   timeoutMs: number;
   maxRetries: number;

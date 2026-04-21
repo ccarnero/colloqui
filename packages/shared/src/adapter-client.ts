@@ -105,6 +105,7 @@ export class AdapterClient {
     }
 
     await this.injectAuthHeaders(adapter, headers);
+    const cache = endpoint.cache ?? adapter.defaultCache;
 
     return {
       url: `${base}${path}`,
@@ -113,6 +114,7 @@ export class AdapterClient {
       timeoutMs: adapter.timeoutMs,
       maxRetries: adapter.maxRetries,
       retryBackoffMs: adapter.retryBackoffMs,
+      cache,
     };
   }
 
@@ -249,6 +251,7 @@ export class AdapterClient {
       timeoutMs: adapter.timeoutMs,
       maxRetries: adapter.maxRetries,
       retryBackoffMs: adapter.retryBackoffMs,
+      cache: adapter.defaultCache,
     };
   }
 

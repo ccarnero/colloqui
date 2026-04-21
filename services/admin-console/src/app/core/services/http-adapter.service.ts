@@ -3,6 +3,16 @@ import { HttpClient, HttpParams } from "@angular/common/http";
 import type { Observable } from "rxjs";
 import { environment } from "../../../environments/environment";
 import type { AdapterStatus } from "../models/adapter-status";
+import type { IHttpAdapterCacheStrategy } from "../../shared/models/http-adapter.model";
+
+export interface IAdapterCacheStrategyDto {
+  enabled: boolean;
+  ttlSeconds: number;
+  methods?: string[];
+  keyHeaders?: string[];
+  keyQueryParams?: string[] | "all";
+  keyBody?: boolean;
+}
 
 export interface IAdapterEndpointDto {
   id: string;
@@ -10,6 +20,7 @@ export interface IAdapterEndpointDto {
   label: string;
   method: string;
   path: string;
+  cache?: IAdapterCacheStrategyDto | null;
   createdAt: string;
 }
 
@@ -24,6 +35,7 @@ export interface IAdapterDto {
   authType: string;
   authConfig: Record<string, unknown>;
   headers: Array<{ key: string; value: string }>;
+  defaultCache?: IAdapterCacheStrategyDto | null;
   timeoutMs: number;
   maxRetries: number;
   retryBackoffMs: number;
@@ -43,12 +55,18 @@ export interface ICreateAdapterPayload {
   authType?: string;
   authConfig?: Record<string, unknown>;
   headers?: Array<{ key: string; value: string }>;
+  defaultCache?: IHttpAdapterCacheStrategy;
   timeoutMs?: number;
   maxRetries?: number;
   retryBackoffMs?: number;
   healthCheckPath?: string;
   tags?: string[];
-  endpoints?: Array<{ label: string; method: string; path: string }>;
+  endpoints?: Array<{
+    label: string;
+    method: string;
+    path: string;
+    cache?: IHttpAdapterCacheStrategy;
+  }>;
 }
 
 export interface IUpdateAdapterPayload {
@@ -57,6 +75,7 @@ export interface IUpdateAdapterPayload {
   authType?: string;
   authConfig?: Record<string, unknown>;
   headers?: Array<{ key: string; value: string }>;
+  defaultCache?: IHttpAdapterCacheStrategy | null;
   timeoutMs?: number;
   maxRetries?: number;
   retryBackoffMs?: number;
@@ -104,7 +123,12 @@ export class HttpAdapterService {
 
   addEndpoint(
     adapterId: string,
-    endpoint: { label: string; method: string; path: string },
+    endpoint: {
+      label: string;
+      method: string;
+      path: string;
+      cache?: IHttpAdapterCacheStrategy;
+    },
   ): Observable<IAdapterEndpointDto> {
     return this.http.post<IAdapterEndpointDto>(
       `${this.base}/${adapterId}/endpoints`,
@@ -115,6 +139,22 @@ export class HttpAdapterService {
   removeEndpoint(adapterId: string, endpointId: string): Observable<void> {
     return this.http.delete<void>(
       `${this.base}/${adapterId}/endpoints/${endpointId}`,
+    );
+  }
+
+  updateEndpoint(
+    adapterId: string,
+    endpointId: string,
+    payload: {
+      label?: string;
+      method?: string;
+      path?: string;
+      cache?: IHttpAdapterCacheStrategy | null;
+    },
+  ): Observable<IAdapterEndpointDto> {
+    return this.http.patch<IAdapterEndpointDto>(
+      `${this.base}/${adapterId}/endpoints/${endpointId}`,
+      payload,
     );
   }
 }

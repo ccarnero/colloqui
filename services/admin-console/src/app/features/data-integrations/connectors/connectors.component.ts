@@ -12,9 +12,11 @@ import { MatDialog } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
+import { concatMap, from, of, switchMap, toArray } from "rxjs";
 import { HttpAdapterDialogComponent } from "../../../shared/components/http-adapter-dialog/http-adapter-dialog.component";
 import {
   type IHttpAdapter,
+  type IHttpAdapterCacheStrategy,
   type IHttpAdapterContext,
   type IHttpAdapterDialogData,
   type IHttpAdapterDialogResult,
@@ -35,6 +37,23 @@ interface IConnectorRow {
   status: string;
 }
 
+function toCacheStrategy(
+  cache?: IAdapterDto["defaultCache"],
+): IHttpAdapterCacheStrategy | undefined {
+  if (!cache) {
+    return undefined;
+  }
+
+  return {
+    enabled: cache.enabled,
+    ttlSeconds: cache.ttlSeconds,
+    methods: cache.methods as IHttpAdapterCacheStrategy["methods"],
+    keyBody: cache.keyBody,
+    keyHeaders: cache.keyHeaders,
+    keyQueryParams: cache.keyQueryParams,
+  };
+}
+
 function toRow(dto: IAdapterDto): IConnectorRow {
   return {
     id: dto.id,
@@ -48,10 +67,13 @@ function toRow(dto: IAdapterDto): IConnectorRow {
         ...(dto.authConfig as Record<string, unknown>),
       },
       headers: dto.headers,
+      defaultCache: toCacheStrategy(dto.defaultCache),
       endpoints: dto.endpoints.map((ep) => ({
+        id: ep.id,
         label: ep.label,
         method: ep.method as IHttpAdapter["endpoints"][number]["method"],
         path: ep.path,
+        cache: toCacheStrategy(ep.cache),
       })),
       timeoutMs: dto.timeoutMs,
       maxRetries: dto.maxRetries,
@@ -75,6 +97,7 @@ function toCreatePayload(
     authType: adapter.auth.type,
     authConfig: adapter.auth as unknown as Record<string, unknown>,
     headers: adapter.headers,
+    defaultCache: adapter.defaultCache,
     timeoutMs: adapter.timeoutMs,
     maxRetries: adapter.maxRetries,
     retryBackoffMs: adapter.retryBackoffMs,
@@ -84,6 +107,7 @@ function toCreatePayload(
       label: ep.label,
       method: ep.method,
       path: ep.path,
+      cache: ep.cache,
     })),
   };
 }
@@ -95,6 +119,7 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
     authType: adapter.auth.type,
     authConfig: adapter.auth as unknown as Record<string, unknown>,
     headers: adapter.headers,
+    defaultCache: adapter.defaultCache ?? null,
     timeoutMs: adapter.timeoutMs,
     maxRetries: adapter.maxRetries,
     retryBackoffMs: adapter.retryBackoffMs,
@@ -354,8 +379,25 @@ export class ConnectorsComponent implements OnInit {
       .afterClosed()
       .subscribe((result?: IHttpAdapterDialogResult) => {
         if (!result) return;
+        const endpointOperations = this.buildEndpointOperations(
+          row.id,
+          row.adapter,
+          result.adapter,
+        );
+        const endpointSync$ =
+          endpointOperations.length === 0
+            ? of([])
+            : from(endpointOperations).pipe(
+                concatMap((operation) => operation),
+                toArray(),
+              );
+
         this.adapterService
           .update(row.id, toUpdatePayload(result.adapter))
+          .pipe(
+            switchMap(() => endpointSync$),
+            switchMap(() => this.adapterService.get(row.id)),
+          )
           .subscribe((dto) => {
             this.connectors.update((rows) =>
               rows.map((r) => (r.id === row.id ? toRow(dto) : r)),
@@ -382,5 +424,56 @@ export class ConnectorsComponent implements OnInit {
         this.loading.set(false);
       },
     });
+  }
+
+  private buildEndpointOperations(
+    adapterId: string,
+    current: IHttpAdapter,
+    next: IHttpAdapter,
+  ) {
+    const currentById = new Map(
+      current.endpoints
+        .filter((endpoint) => endpoint.id)
+        .map((endpoint) => [endpoint.id!, endpoint]),
+    );
+    const nextById = new Map(
+      next.endpoints
+        .filter((endpoint) => endpoint.id)
+        .map((endpoint) => [endpoint.id!, endpoint]),
+    );
+    const operations = [];
+
+    for (const endpointId of currentById.keys()) {
+      if (!nextById.has(endpointId)) {
+        operations.push(this.adapterService.removeEndpoint(adapterId, endpointId));
+      }
+    }
+
+    for (const [endpointId, endpoint] of nextById.entries()) {
+      operations.push(
+        this.adapterService.updateEndpoint(adapterId, endpointId, {
+          label: endpoint.label,
+          method: endpoint.method,
+          path: endpoint.path,
+          cache: endpoint.cache ?? null,
+        }),
+      );
+    }
+
+    for (let i = 0; i < next.endpoints.length; i++) {
+      const endpoint = next.endpoints[i]!;
+      if (!endpoint.id) {
+        operations.push(
+          this.adapterService.addEndpoint(adapterId, {
+            label: endpoint.label,
+            method: endpoint.method,
+            path: endpoint.path,
+            cache: endpoint.cache,
+          }),
+        );
+      }
+    }
+
+    return operations;
   }
 }

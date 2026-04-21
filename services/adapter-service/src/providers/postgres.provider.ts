@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS http_adapters (
   auth_type         TEXT NOT NULL DEFAULT 'none',
   auth_config       JSONB NOT NULL DEFAULT '{}',
   headers           JSONB NOT NULL DEFAULT '[]',
+  default_cache_strategy JSONB,
   timeout_ms        INTEGER NOT NULL DEFAULT 5000,
   max_retries       INTEGER NOT NULL DEFAULT 3,
   retry_backoff_ms  INTEGER NOT NULL DEFAULT 1000,
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS adapter_endpoints (
   label       TEXT NOT NULL,
   method      TEXT NOT NULL,
   path        TEXT NOT NULL,
+  cache_strategy JSONB,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(adapter_id, method, path)
 );
@@ -72,6 +74,18 @@ DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'http_adapters'
+      AND column_name = 'default_cache_strategy'
+  ) THEN
+    ALTER TABLE http_adapters
+      ADD COLUMN default_cache_strategy JSONB;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
     WHERE table_name = 'http_adapters' AND column_name = 'is_encrypted'
   ) THEN
     ALTER TABLE http_adapters
@@ -89,6 +103,18 @@ BEGIN
       ADD COLUMN tags TEXT[] NOT NULL DEFAULT '{}';
     CREATE INDEX IF NOT EXISTS idx_http_adapters_tags
       ON http_adapters USING GIN (tags);
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'adapter_endpoints'
+      AND column_name = 'cache_strategy'
+  ) THEN
+    ALTER TABLE adapter_endpoints
+      ADD COLUMN cache_strategy JSONB;
   END IF;
 END $$;
 

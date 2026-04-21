@@ -1,5 +1,8 @@
 import { tracedFetch } from "@yoizen/observability";
 import { sleep } from "@yoizen/shared";
+import { cachedFetch } from "./http-cache/cached-fetch";
+import type { IHttpResponseCachePolicyDecision } from "./http-cache/cache-policy";
+import type { IHttpResponseCache } from "./http-cache/http-response-cache";
 
 export interface IHttpCallResult {
   status: number;
@@ -15,6 +18,10 @@ export interface IHttpCallOptions {
   readonly timeoutMs: number;
   readonly maxRetries: number;
   readonly retryBackoffMs: number;
+  readonly cache?: {
+    readonly decision: IHttpResponseCachePolicyDecision;
+    readonly store: IHttpResponseCache;
+  };
 }
 
 /**
@@ -44,12 +51,19 @@ export async function httpCallWithRetry(
     }
 
     try {
-      const res = await tracedFetch(url, {
+      const requestInit: RequestInit = {
         method,
         headers,
         body,
         signal: AbortSignal.timeout(timeoutMs),
-      });
+      };
+      const res = options.cache
+        ? await cachedFetch(url, requestInit, {
+            decision: options.cache.decision,
+            cache: options.cache.store,
+            fetchFn: tracedFetch,
+          })
+        : await tracedFetch(url, requestInit);
 
       if (res.ok || attempt === maxRetries || res.status < 500) {
         return buildResult(res);

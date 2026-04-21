@@ -14,6 +14,7 @@ export const ADAPTER_UPDATE_FIELD_MAP = {
   healthCheckPath: "health_check_path",
   status: "status",
   tags: "tags",
+  defaultCache: "default_cache_strategy",
 } as const;
 
 type AdapterUpdateDtoKey = keyof typeof ADAPTER_UPDATE_FIELD_MAP;

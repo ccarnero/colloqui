@@ -1,14 +1,19 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Sql } from "postgres";
-import { AdapterStatus, generateId, type AdapterStatusValue } from "@yoizen/shared";
+import {
+  AdapterStatus,
+  generateId,
+  type AdapterCacheStrategy,
+  type AdapterStatusValue,
+} from "@yoizen/shared";
 import { isPostgresUniqueViolation } from "@yoizen/database";
 import { POSTGRES_SQL } from "../../providers/postgres.provider";
 import type {
   CreateAdapterDto,
   UpdateAdapterDto,
   CreateEndpointDto,
+  UpdateEndpointDto,
 } from "./adapters.dto";
-import { ADAPTER_UPDATE_FIELD_MAP } from "./adapter-update-fields";
 
 export interface IAdapterRow {
   id: string;
@@ -19,6 +24,7 @@ export interface IAdapterRow {
   auth_type: string;
   auth_config: Record<string, unknown>;
   headers: Array<{ key: string; value: string }>;
+  default_cache_strategy: AdapterCacheStrategy | null;
   timeout_ms: number;
   max_retries: number;
   retry_backoff_ms: number;
@@ -55,6 +61,7 @@ export interface IEndpointRow {
   label: string;
   method: string;
   path: string;
+  cache_strategy: AdapterCacheStrategy | null;
   created_at: string;
 }
 
@@ -77,6 +84,7 @@ export function mapAdapter(row: IAdapterRow) {
     authType: row.auth_type,
     authConfig: parseJsonb(row.auth_config, {}),
     headers: parseJsonb(row.headers, []),
+    defaultCache: parseJsonb(row.default_cache_strategy, null),
     timeoutMs: row.timeout_ms,
     maxRetries: row.max_retries,
     retryBackoffMs: row.retry_backoff_ms,
@@ -97,6 +105,7 @@ export function mapEndpoint(row: IEndpointRow) {
     label: row.label,
     method: row.method,
     path: row.path,
+    cache: parseJsonb(row.cache_strategy, null),
     createdAt: row.created_at,
   };
 }
@@ -129,17 +138,20 @@ export class AdaptersRepository {
     const healthCheckPath = dto.healthCheckPath ?? "/health";
     const status = AdapterStatus.ENABLED;
     const tags = dto.tags ?? [];
+    const defaultCache = dto.defaultCache ?? null;
 
     const [row] = await this.sql<IAdapterRow[]>`
       INSERT INTO http_adapters
         (id, tenant_id, name, context, base_url, auth_type, auth_config,
-         headers, timeout_ms, max_retries, retry_backoff_ms,
+         headers, default_cache_strategy, timeout_ms, max_retries, retry_backoff_ms,
          health_check_path, status, tags)
       VALUES
         (${id}, ${tenantId}, ${dto.name}, ${dto.context},
          ${dto.baseUrl ?? ""}, ${authType},
          ${this.sql.json(authConfig as never)},
-         ${this.sql.json(headers as never)}, ${timeoutMs},
+         ${this.sql.json(headers as never)},
+         ${defaultCache === null ? null : this.sql.json(defaultCache as never)},
+         ${timeoutMs},
          ${maxRetries}, ${retryBackoffMs}, ${healthCheckPath},
          ${status}, ${tags})
       RETURNING *
@@ -377,6 +389,17 @@ export class AdaptersRepository {
     if (dto.tags !== undefined) {
       await this.sql`UPDATE http_adapters SET tags = ${dto.tags}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
     }
+    if (dto.defaultCache !== undefined) {
+      await this.sql`
+        UPDATE http_adapters
+        SET default_cache_strategy = ${
+          dto.defaultCache === null
+            ? null
+            : this.sql.json(dto.defaultCache as never)
+        }, updated_at = NOW()
+        WHERE id = ${id} AND tenant_id = ${tenantId}
+      `;
+    }
   }
 
   async deleteAdapter(tenantId: string, id: string): Promise<number> {
@@ -392,6 +415,54 @@ export class AdaptersRepository {
     dto: CreateEndpointDto,
   ): Promise<IEndpointRow> {
     return this.insertOneEndpointRow(adapterId, dto);
+  }
+
+  async getEndpointRow(
+    adapterId: string,
+    endpointId: string,
+  ): Promise<IEndpointRow | null> {
+    const [row] = await this.sql<IEndpointRow[]>`
+      SELECT * FROM adapter_endpoints
+      WHERE id = ${endpointId} AND adapter_id = ${adapterId}
+    `;
+    return row ?? null;
+  }
+
+  async updateEndpoint(
+    adapterId: string,
+    endpointId: string,
+    dto: UpdateEndpointDto,
+  ): Promise<void> {
+    if (dto.label !== undefined) {
+      await this.sql`
+        UPDATE adapter_endpoints
+        SET label = ${dto.label}
+        WHERE id = ${endpointId} AND adapter_id = ${adapterId}
+      `;
+    }
+    if (dto.method !== undefined) {
+      await this.sql`
+        UPDATE adapter_endpoints
+        SET method = ${dto.method}
+        WHERE id = ${endpointId} AND adapter_id = ${adapterId}
+      `;
+    }
+    if (dto.path !== undefined) {
+      await this.sql`
+        UPDATE adapter_endpoints
+        SET path = ${dto.path}
+        WHERE id = ${endpointId} AND adapter_id = ${adapterId}
+      `;
+    }
+    if (dto.cache !== undefined) {
+      await this.sql`
+        UPDATE adapter_endpoints
+        SET cache_strategy = ${
+          dto.cache === null ? null : this.sql.json(dto.cache as never)
+        }
+        WHERE id = ${endpointId} AND adapter_id = ${adapterId}
+      `;
+    }
   }
 
   async deleteEndpoint(adapterId: string, endpointId: string): Promise<number> {
@@ -419,8 +490,16 @@ export class AdaptersRepository {
   ): Promise<IEndpointRow> {
     const epId = generateId();
     const [row] = await this.sql<IEndpointRow[]>`
-      INSERT INTO adapter_endpoints (id, adapter_id, label, method, path)
-      VALUES (${epId}, ${adapterId}, ${dto.label}, ${dto.method}, ${dto.path})
+      INSERT INTO adapter_endpoints
+        (id, adapter_id, label, method, path, cache_strategy)
+      VALUES (
+        ${epId},
+        ${adapterId},
+        ${dto.label},
+        ${dto.method},
+        ${dto.path},
+        ${dto.cache ? this.sql.json(dto.cache as never) : null}
+      )
       RETURNING *
     `;
     return row;

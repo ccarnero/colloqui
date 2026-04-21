@@ -5,6 +5,7 @@ import type {
 
 export const HTTP_METHODS: readonly HttpMethod[] = [
   "GET",
+  "HEAD",
   "POST",
   "PUT",
   "PATCH",
