@@ -82,7 +82,7 @@ NATS (results.>) -> consumer.consume(batch=50, expires=30s)
 | Stream | Subjects | Purpose |
 |--------|----------|---------|
 | `RESULTS` | `results.>` | Inbound completion events |
-| `DLQ` | `dlq.>` | Failed webhook deliveries (64 MB max, 7-day retention) |
+| `DLQ` | `dlq.webhook` | Failed webhook deliveries only (64 MB max, 7-day retention). Scoped to the single `WEBHOOK_DLQ_SUBJECT` so per-tenant DLQs (`DLQ-<tenant>`, `dlq.<tenant>.>`) can coexist without JetStream subject overlap. |
 
 ### Module Dependency Graph
 

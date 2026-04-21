@@ -6,6 +6,7 @@ resources:
   - redis
   - postgres
   - temporal
+  - temporal-ui
   - observability
 # NOTE: KEDA is installed via Helm (`helm install keda kedacore/keda
 # --namespace keda --create-namespace`). Do NOT include a kustomize

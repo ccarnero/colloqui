@@ -416,4 +416,4 @@ Los siguientes símbolos están programados para eliminarse en una iteración po
 - `STREAM_NAME`, `STREAM_SUBJECTS`, `SUBJECT_PREFIX`
 - `RESULTS_STREAM_NAME`, `RESULTS_STREAM_SUBJECTS`, `RESULTS_SUBJECT_PREFIX`
 - `METRICS_SUBJECT = "events.metrics"` → reemplazar por subject tenant-scoped.
-- `WEBHOOK_DLQ_SUBJECT = "dlq.webhook"` → conservar (stream `DLQ` es cross-tenant).
+- `WEBHOOK_DLQ_SUBJECT = "dlq.webhook"` → conservar. El stream `DLQ` queda restringido al único subject `dlq.webhook` (reentregas agotadas del webhook-service). El namespace `dlq.<tenant>.>` lo consumen los streams per-tenant `DLQ-<tenant>` aprovisionados por `ensureTenantDlqStream`, y la separación de subjects evita el error "subjects overlap with an existing stream" de JetStream.

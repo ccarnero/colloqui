@@ -8,7 +8,7 @@ SUPPORT_NAMESPACE="support-services-${ENVIRONMENT}"
 KOURIER_NAMESPACE="kourier-system"
 
 SERVICES=(api-gateway admin-console messaging-console)
-SUPPORT_SERVICES=(nats)
+SUPPORT_SERVICES=(nats temporal-ui)
 
 # Bash 3.2 (macOS) lacks associative arrays; use case-based lookups.
 container_port_for() {
@@ -31,14 +31,16 @@ local_port_for() {
 
 support_container_port_for() {
   case "$1" in
-    nats) echo 4222 ;;
+    nats)        echo 4222 ;;
+    temporal-ui) echo 80 ;;
     *) return 1 ;;
   esac
 }
 
 support_local_port_for() {
   case "$1" in
-    nats) echo "${NATS_PORT:-4222}" ;;
+    nats)        echo "${NATS_PORT:-4222}" ;;
+    temporal-ui) echo "${TEMPORAL_UI_PORT:-8233}" ;;
     *) return 1 ;;
   esac
 }
@@ -115,6 +117,7 @@ usage() {
     "  ADMIN_CONSOLE_PORT        Local port for admin-console     (default: 4200)" \
     "  MESSAGING_CONSOLE_PORT    Local port for messaging-console (default: 4300)" \
     "  NATS_PORT                 Local port for NATS client       (default: 4222)" \
+    "  TEMPORAL_UI_PORT          Local port for Temporal Web UI   (default: 8233)" \
     "" \
     "Examples:" \
     "  $0              # Forward services in platform-services-dev" \

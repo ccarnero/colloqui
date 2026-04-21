@@ -4,6 +4,7 @@ set -euo pipefail
 MINIKUBE_PROFILE="yoizen-arch"
 ENVIRONMENT="${1:-dev}"
 NAMESPACE="platform-services-${ENVIRONMENT}"
+SUPPORT_NAMESPACE="support-services-${ENVIRONMENT}"
 KOURIER_NAMESPACE="kourier-system"
 KOURIER_SVC="svc/kourier"
 
@@ -11,6 +12,12 @@ SERVICES=(
   "api-gateway:${API_GATEWAY_PORT:-8080}"
   "admin-console:${ADMIN_CONSOLE_PORT:-4200}"
   "messaging-console:${MESSAGING_CONSOLE_PORT:-4300}"
+)
+
+# Support-namespace services forwarded directly (bypassing Kourier). Each entry
+# is "<service>:<local_port>:<container_port>".
+SUPPORT_FORWARDS=(
+  "temporal-ui:${TEMPORAL_UI_PORT:-8233}:80"
 )
 
 FORWARD_PIDS=()
@@ -54,6 +61,7 @@ usage() {
     "  API_GATEWAY_PORT          Local port for api-gateway       (default: 8080)" \
     "  ADMIN_CONSOLE_PORT        Local port for admin-console     (default: 4200)" \
     "  MESSAGING_CONSOLE_PORT    Local port for messaging-console (default: 4300)" \
+    "  TEMPORAL_UI_PORT          Local port for Temporal Web UI   (default: 8233)" \
     "" \
     "Examples:" \
     "  $0              # Forward services in platform-services-dev" \
@@ -134,6 +142,42 @@ start_forward() {
   done
 }
 
+start_support_forward() {
+  local svc=$1 local_port=$2 container_port=$3
+  local log_file
+
+  if ! kubectl get svc "$svc" -n "$SUPPORT_NAMESPACE" &>/dev/null; then
+    warn "Service '${svc}' not found in ${SUPPORT_NAMESPACE}, skipping"
+    return 1
+  fi
+
+  log_file="$(mktemp -t "${svc}.port-forward")"
+  FORWARD_LOGS+=("$log_file")
+
+  log "Forwarding ${svc}  localhost:${local_port} -> svc/${svc}:${container_port} (${SUPPORT_NAMESPACE})"
+  kubectl port-forward -n "$SUPPORT_NAMESPACE" "svc/${svc}" \
+    "${local_port}:${container_port}" >"$log_file" 2>&1 &
+
+  local pid=$!
+  FORWARD_PIDS+=("$pid")
+
+  local attempt=0
+  local max_attempts=30
+  while ! nc -z localhost "$local_port" 2>/dev/null; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      print_forward_error "$svc" "$local_port" "$log_file"
+      return 1
+    fi
+    if (( attempt >= max_attempts )); then
+      print_forward_error "$svc" "$local_port" "$log_file"
+      kill "$pid" 2>/dev/null || true
+      return 1
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+}
+
 main() {
   detect_context
 
@@ -149,12 +193,24 @@ main() {
     exit 1
   fi
 
-  local entry svc local_port
+  local entry svc local_port container_port
   for entry in "${SERVICES[@]}"; do
     svc="${entry%%:*}"
     local_port="${entry##*:}"
     start_forward "$svc" "$local_port" || true
   done
+
+  if kubectl get namespace "$SUPPORT_NAMESPACE" &>/dev/null; then
+    for entry in "${SUPPORT_FORWARDS[@]}"; do
+      svc="${entry%%:*}"
+      local rest="${entry#*:}"
+      local_port="${rest%%:*}"
+      container_port="${rest#*:}"
+      start_support_forward "$svc" "$local_port" "$container_port" || true
+    done
+  else
+    warn "Namespace '${SUPPORT_NAMESPACE}' not found — skipping support-services forwards (Temporal UI, etc.)"
+  fi
 
   if (( ${#FORWARD_PIDS[@]} == 0 )); then
     err "No port-forwards were started. Exiting."
@@ -174,6 +230,18 @@ main() {
     echo "    localhost : http://localhost:${local_port}"
     echo "    Host hdr  : ${host_hdr}"
   done
+
+  if kubectl get namespace "$SUPPORT_NAMESPACE" &>/dev/null; then
+    echo ""
+    for entry in "${SUPPORT_FORWARDS[@]}"; do
+      svc="${entry%%:*}"
+      local rest="${entry#*:}"
+      local_port="${rest%%:*}"
+      echo "  ${svc}:"
+      echo "    localhost : http://localhost:${local_port} (${SUPPORT_NAMESPACE})"
+    done
+  fi
+
   echo ""
   echo "  Direct ingress (no port-forward):"
   for entry in "${SERVICES[@]}"; do

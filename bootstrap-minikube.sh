@@ -490,6 +490,11 @@ apply_infrastructure() {
       --namespace "$ns" \
       --timeout=180s
 
+    log "Waiting for Temporal UI in ${ns}..."
+    kubectl rollout status deployment/temporal-ui \
+      --namespace "$ns" \
+      --timeout=120s
+
     log "Waiting for OTel Collector in ${ns}..."
     kubectl rollout status deployment/otel-collector \
       --namespace "$ns" \
@@ -612,6 +617,10 @@ verify_support_services() {
 
     if ! kubectl get deployment/temporal --namespace "$ns" &>/dev/null; then
       warn "Deployment 'temporal' not found in ${ns}"
+    fi
+
+    if ! kubectl get deployment/temporal-ui --namespace "$ns" &>/dev/null; then
+      warn "Deployment 'temporal-ui' not found in ${ns}"
     fi
   done
 }

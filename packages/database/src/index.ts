@@ -28,6 +28,7 @@ export {
 export type {
   EnsureStreamOptions,
   EnsureConsumerOptions,
+  IEnsureStreamLogger,
   IJetStreamManagerBootstrapOptions,
   IJetStreamDurableConsumerProviderOptions,
   IJetStreamPublisherProviderOptions,

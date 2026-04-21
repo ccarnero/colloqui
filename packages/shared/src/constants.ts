@@ -3,7 +3,16 @@ export const WEBHOOK_MAX_RETRIES = 3;
 export const WEBHOOK_RETRY_DELAYS = [1_000, 5_000, 30_000] as const;
 
 export const DLQ_STREAM_NAME = 'DLQ';
-export const DLQ_STREAM_SUBJECTS = ['dlq.>'] as const;
+/**
+ * Subjects owned by the global `DLQ` stream.
+ *
+ * Scoped to the single subject produced by `webhook-service` when a
+ * callback delivery exhausts its retries (`dlq.webhook`). The
+ * `dlq.<tenant>.>` namespace is reserved for per-tenant DLQ streams
+ * (`DLQ-<tenant>`) provisioned by `ensureTenantDlqStream`, so the two
+ * designs coexist without JetStream subject overlap.
+ */
+export const DLQ_STREAM_SUBJECTS = ['dlq.webhook'] as const;
 export const DLQ_STREAM_MAX_BYTES = 64 * 1024 * 1024;
 
 export const RESULT_KEY_PREFIX = 'result:';

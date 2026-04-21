@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-ui
+  labels:
+    app.kubernetes.io/name: temporal-ui
+    app.kubernetes.io/component: workflow-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: temporal-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: temporal-ui
+        app.kubernetes.io/component: workflow-ui
+    spec:
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: temporal-ui
+          image: temporalio/ui:2.48.4
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: "temporal:7233"
+            - name: TEMPORAL_UI_PORT
+              value: "8080"
+            # Allow the browser (accessing through kubectl port-forward on
+            # localhost:8233) to talk to the UI over HTTP.
+            - name: TEMPORAL_CORS_ORIGINS
+              value: "http://localhost:8233"
+            - name: TEMPORAL_CSRF_COOKIE_INSECURE
+              value: "true"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          # startupProbe gives the UI room to keep retrying while the Temporal
+          # frontend finishes auto-setup. The UI process itself binds the HTTP
+          # port quickly, but upstream readiness against :7233 may lag.
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 0
+            periodSeconds: 20
+            timeoutSeconds: 5
