@@ -198,7 +198,7 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
             <app-adapter-cache-strategy-form
               [group]="defaultCacheFormGroup"
               [title]="'Default cache'"
-              [subtitle]="'Used when the workflow targets the adapter base path directly'"
+              [subtitle]="'Default adapter cache strategy'"
             />
           </div>
         </div>

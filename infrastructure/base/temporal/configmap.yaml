@@ -7,4 +7,9 @@ metadata:
     app.kubernetes.io/component: workflow-engine
 data:
   development-sql.yaml: |
-    {}
+    frontend.workerHeartbeatsEnabled:
+      - value: true
+    # Optional: make the listing endpoint richer too. Both keys have the same
+    # one-liner format — a list of { value, constraints? } entries.
+    frontend.listWorkersEnabled:
+      - value: true

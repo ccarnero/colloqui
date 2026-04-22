@@ -159,6 +159,7 @@ const MUTATING_METHODS = new Set<HttpMethod>(["POST", "PUT", "PATCH", "DELETE"])
   styles: `
     .cache-panel {
       width: 100%;
+      --mat-expansion-container-background-color: var(--bg-card);
     }
 
     .cache-body {
