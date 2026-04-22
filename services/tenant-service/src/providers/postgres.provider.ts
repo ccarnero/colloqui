@@ -1,6 +1,6 @@
 import { Global, Inject, Injectable, Module } from "@nestjs/common";
 import type * as k8s from "@kubernetes/client-node";
-import { METRICS_SCHEMA_SQL } from "@yoizen/shared";
+import { METRICS_SCHEMA_SQL, WORKFLOW_SCHEMA_SQL } from "@yoizen/shared";
 import { tenantServiceConfig } from "../config";
 import { K8S_CORE_API, K8S_APPS_API } from "./kubernetes.provider";
 import { PinoLoggerService } from "@yoizen/observability";
@@ -56,6 +56,8 @@ CREATE INDEX IF NOT EXISTS idx_events_created_at ON events (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_type_created ON events (type, created_at DESC);
 
 ${METRICS_SCHEMA_SQL}
+
+${WORKFLOW_SCHEMA_SQL}
 `;
 
 @Injectable()

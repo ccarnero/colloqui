@@ -1,6 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
-import type { Sql } from "postgres";
-import { POSTGRES_SQL } from "../../providers/postgres.provider";
+import { Injectable } from "@nestjs/common";
+import { WorkflowTenantConnectionManager } from "../../providers/tenant-connection-manager";
 
 export interface IExecutionStatusRow {
   id: string;
@@ -8,11 +7,12 @@ export interface IExecutionStatusRow {
 }
 
 /**
- * Batched writer for workflow_executions status projections.
+ * Batched writer for workflow_executions status projections, scoped
+ * per-tenant since each tenant has its own Postgres instance.
  *
- * Performs a single SQL round-trip per batch using UNNEST expansion
- * of two parallel arrays (ids, statuses) — this is O(N) in the DB
- * engine but one network hop, which is the critical cost.
+ * A flush performs one SQL round-trip per tenant using UNNEST expansion
+ * of two parallel arrays (ids, statuses) — O(N) in the DB engine but
+ * one network hop per tenant, which is the critical cost.
  *
  * We use UPDATE (not UPSERT) because the primary row is always
  * created by `WorkflowsService.executeWorkflow` before any status
@@ -21,15 +21,20 @@ export interface IExecutionStatusRow {
  */
 @Injectable()
 export class ExecutionsProjectionRepository {
-  constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
+  constructor(
+    private readonly connections: WorkflowTenantConnectionManager,
+  ) {}
 
   /**
-   * Applies a batch of status updates in a single statement.
+   * Applies a batch of status updates for a single tenant in one statement.
    *
    * @returns Number of rows actually updated. When less than
    *   `rows.length`, some executions were missing from the DB.
    */
-  async applyStatusBatch(rows: IExecutionStatusRow[]): Promise<number> {
+  async applyStatusBatch(
+    tenantId: string,
+    rows: IExecutionStatusRow[],
+  ): Promise<number> {
     if (rows.length === 0) return 0;
 
     const ids = new Array<string>(rows.length);
@@ -39,16 +44,13 @@ export class ExecutionsProjectionRepository {
       statuses[i] = rows[i]!.status;
     }
 
-    // `workflow_executions.id` is declared as TEXT (see the DDL in
-    // `infrastructure/base/postgres/configmap.yaml`) and execution ids
-    // are produced with `nanoid()` in `WorkflowsService.executeWorkflow`
-    // — they are NOT UUIDs. Casting to `uuid[]` here used to blow up
-    // every batch with `invalid input syntax for type uuid`, which
-    // NAK'd the whole batch and trapped the `workflow-projector`
-    // consumer in a redelivery loop (observed: ack_floor.stream_seq=0,
-    // num_redelivered=109). Plain `text[]` matches the column type and
-    // keeps `WHERE we.id = v.id` a safe string compare.
-    const result = await this.sql`
+    const sql = await this.connections.ensureSchema(tenantId);
+
+    // `workflow_executions.id` is declared TEXT (nanoid, not UUID). Using
+    // `text[]` matches the column type and keeps `WHERE we.id = v.id`
+    // a safe string compare; casting to `uuid[]` would blow up every
+    // batch and NAK the whole consumer.
+    const result = await sql`
       UPDATE workflow_executions we
       SET status = v.status,
           updated_at = NOW()

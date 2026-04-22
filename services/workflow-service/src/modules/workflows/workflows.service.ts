@@ -156,7 +156,7 @@ export class WorkflowsService {
       `Created workflow definition ${row.id} (${name}) for tenant ${tenantId}`,
     );
 
-    return this.toCreateResult(row);
+    return this.toCreateResult(row, tenantId);
   }
 
   /**
@@ -177,7 +177,7 @@ export class WorkflowsService {
       `Updated workflow definition ${row.id} for tenant ${params.tenantId}`,
     );
 
-    return this.toCreateResult(row);
+    return this.toCreateResult(row, params.tenantId);
   }
 
   /**
@@ -194,7 +194,7 @@ export class WorkflowsService {
     if (!row) {
       throw new NotFoundException("Workflow definition not found");
     }
-    return this.toCreateResult(row);
+    return this.toCreateResult(row, tenantId);
   }
 
   /**
@@ -204,7 +204,7 @@ export class WorkflowsService {
    */
   async listWorkflows(tenantId: string): Promise<ICreateWorkflowResult[]> {
     const rows = await this.repository.findDefinitionsByTenant(tenantId);
-    return rows.map((r) => this.toCreateResult(r));
+    return rows.map((r) => this.toCreateResult(r, tenantId));
   }
 
   /**
@@ -335,7 +335,7 @@ export class WorkflowsService {
       definitionId,
       tenantId,
     );
-    return rows.map((r) => this.mapExecutionRow(r));
+    return rows.map((r) => this.mapExecutionRow(r, tenantId));
   }
 
   /**
@@ -368,7 +368,11 @@ export class WorkflowsService {
     const currentStatus = describe.status.name;
 
     if (currentStatus !== execution.status) {
-      await this.repository.updateExecutionStatus(executionId, currentStatus);
+      await this.repository.updateExecutionStatus(
+        executionId,
+        tenantId,
+        currentStatus,
+      );
     }
 
     let result: WorkflowExecutionContext | undefined;
@@ -428,11 +432,14 @@ export class WorkflowsService {
     return info;
   }
 
-  private mapExecutionRow(row: IWorkflowExecutionRow): IWorkflowExecutionListItem {
+  private mapExecutionRow(
+    row: IWorkflowExecutionRow,
+    tenantId: string,
+  ): IWorkflowExecutionListItem {
     return {
       id: row.id,
       definitionId: row.definition_id,
-      tenantId: row.tenant_id,
+      tenantId,
       temporalWorkflowId: row.temporal_workflow_id,
       temporalRunId: row.temporal_run_id,
       request: row.request,
@@ -442,12 +449,15 @@ export class WorkflowsService {
     };
   }
 
-  private toCreateResult(row: IWorkflowDefinitionRow): ICreateWorkflowResult {
+  private toCreateResult(
+    row: IWorkflowDefinitionRow,
+    tenantId: string,
+  ): ICreateWorkflowResult {
     return {
       id: row.id,
       name: row.name,
       application: row.application,
-      tenantId: row.tenant_id,
+      tenantId,
       actions: row.actions,
       trigger: row.trigger,
       createdAt: row.created_at,

@@ -1,10 +1,9 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import type { Sql } from "postgres";
-import { POSTGRES_SQL } from "../../providers/postgres.provider";
+import { WorkflowTenantConnectionManager } from "../../providers/tenant-connection-manager";
 
 export interface IWorkflowDefinitionRow {
   id: string;
-  tenant_id: string;
   name: string;
   application: string;
   actions: unknown;
@@ -17,7 +16,6 @@ export interface IWorkflowDefinitionRow {
 export interface IWorkflowExecutionRow {
   id: string;
   definition_id: string;
-  tenant_id: string;
   temporal_workflow_id: string;
   temporal_run_id: string;
   request: unknown;
@@ -53,45 +51,59 @@ export interface ICreateExecutionParams {
   readonly request: Record<string, unknown>;
 }
 
+/**
+ * Persistence for workflow definitions and executions.
+ *
+ * Each tenant has a dedicated Postgres instance (provisioned by
+ * `tenant-service` in its own Kubernetes namespace), so no `tenant_id`
+ * column is stored — the DB itself is the tenant boundary. The
+ * `tenantId` method parameter is used purely to resolve the correct
+ * pool from `WorkflowTenantConnectionManager`.
+ */
 @Injectable()
 export class WorkflowsRepository {
   constructor(
-    @Inject(POSTGRES_SQL) private readonly sql: Sql,
+    private readonly connections: WorkflowTenantConnectionManager,
   ) {}
+
+  private sqlFor(tenantId: string): Promise<Sql> {
+    return this.connections.ensureSchema(tenantId);
+  }
 
   async createDefinition(
     params: ICreateDefinitionParams,
   ): Promise<IWorkflowDefinitionRow> {
     const { id, tenantId, name, application, actions, trigger } = params;
-    const triggerJson = trigger ? this.sql.json(trigger as never) : null;
-    const [row] = await this.sql<IWorkflowDefinitionRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    const triggerJson = trigger ? sql.json(trigger as never) : null;
+    const [row] = await sql<IWorkflowDefinitionRow[]>`
       INSERT INTO workflow_definitions
-        (id, tenant_id, name, application, actions, trigger)
+        (id, name, application, actions, trigger)
       VALUES
-        (${id}, ${tenantId}, ${name}, ${application},
-         ${this.sql.json(actions as never)}, ${triggerJson})
-      RETURNING id, tenant_id, name, application, actions, trigger,
+        (${id}, ${name}, ${application},
+         ${sql.json(actions as never)}, ${triggerJson})
+      RETURNING id, name, application, actions, trigger,
                 created_at, updated_at, deleted_at
     `;
-    return row;
+    return row!;
   }
 
   async updateDefinition(
     params: IUpdateDefinitionParams,
   ): Promise<IWorkflowDefinitionRow | undefined> {
     const { id, tenantId, name, application, actions, trigger } = params;
-    const triggerJson = trigger ? this.sql.json(trigger as never) : null;
-    const [row] = await this.sql<IWorkflowDefinitionRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    const triggerJson = trigger ? sql.json(trigger as never) : null;
+    const [row] = await sql<IWorkflowDefinitionRow[]>`
       UPDATE workflow_definitions
       SET name = ${name},
           application = ${application},
-          actions = ${this.sql.json(actions as never)},
+          actions = ${sql.json(actions as never)},
           trigger = ${triggerJson},
           updated_at = NOW()
       WHERE id = ${id}
-        AND tenant_id = ${tenantId}
         AND deleted_at IS NULL
-      RETURNING id, tenant_id, name, application, actions, trigger,
+      RETURNING id, name, application, actions, trigger,
                 created_at, updated_at, deleted_at
     `;
     return row;
@@ -101,12 +113,12 @@ export class WorkflowsRepository {
     id: string,
     tenantId: string,
   ): Promise<IWorkflowDefinitionRow | undefined> {
-    const [row] = await this.sql<IWorkflowDefinitionRow[]>`
-      SELECT id, tenant_id, name, application, actions, trigger,
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<IWorkflowDefinitionRow[]>`
+      SELECT id, name, application, actions, trigger,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
       WHERE id = ${id}
-        AND tenant_id = ${tenantId}
         AND deleted_at IS NULL
     `;
     return row;
@@ -115,12 +127,12 @@ export class WorkflowsRepository {
   async findDefinitionsByTenant(
     tenantId: string,
   ): Promise<IWorkflowDefinitionRow[]> {
-    return this.sql<IWorkflowDefinitionRow[]>`
-      SELECT id, tenant_id, name, application, actions, trigger,
+    const sql = await this.sqlFor(tenantId);
+    return sql<IWorkflowDefinitionRow[]>`
+      SELECT id, name, application, actions, trigger,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
-      WHERE tenant_id = ${tenantId}
-        AND deleted_at IS NULL
+      WHERE deleted_at IS NULL
       ORDER BY created_at DESC
     `;
   }
@@ -133,12 +145,12 @@ export class WorkflowsRepository {
     tenantId: string,
     triggerType: string,
   ): Promise<IWorkflowDefinitionRow[]> {
-    return this.sql<IWorkflowDefinitionRow[]>`
-      SELECT id, tenant_id, name, application, actions, trigger,
+    const sql = await this.sqlFor(tenantId);
+    return sql<IWorkflowDefinitionRow[]>`
+      SELECT id, name, application, actions, trigger,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
-      WHERE tenant_id = ${tenantId}
-        AND deleted_at IS NULL
+      WHERE deleted_at IS NULL
         AND trigger IS NOT NULL
         AND trigger->>'type' = ${triggerType}
       ORDER BY created_at ASC
@@ -146,11 +158,11 @@ export class WorkflowsRepository {
   }
 
   async softDeleteDefinition(id: string, tenantId: string): Promise<boolean> {
-    const result = await this.sql`
+    const sql = await this.sqlFor(tenantId);
+    const result = await sql`
       UPDATE workflow_definitions
       SET deleted_at = NOW(), updated_at = NOW()
       WHERE id = ${id}
-        AND tenant_id = ${tenantId}
         AND deleted_at IS NULL
     `;
     return result.count > 0;
@@ -167,23 +179,29 @@ export class WorkflowsRepository {
       temporalRunId,
       request,
     } = params;
-    const [row] = await this.sql<IWorkflowExecutionRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<IWorkflowExecutionRow[]>`
       INSERT INTO workflow_executions
-        (id, definition_id, tenant_id, temporal_workflow_id,
+        (id, definition_id, temporal_workflow_id,
          temporal_run_id, request)
       VALUES
-        (${id}, ${definitionId}, ${tenantId},
+        (${id}, ${definitionId},
          ${temporalWorkflowId}, ${temporalRunId},
-         ${this.sql.json(request as never)})
-      RETURNING id, definition_id, tenant_id,
+         ${sql.json(request as never)})
+      RETURNING id, definition_id,
                 temporal_workflow_id, temporal_run_id,
                 request, status, created_at, updated_at
     `;
-    return row;
+    return row!;
   }
 
-  async updateExecutionStatus(id: string, status: string): Promise<boolean> {
-    const result = await this.sql`
+  async updateExecutionStatus(
+    id: string,
+    tenantId: string,
+    status: string,
+  ): Promise<boolean> {
+    const sql = await this.sqlFor(tenantId);
+    const result = await sql`
       UPDATE workflow_executions
       SET status = ${status}, updated_at = NOW()
       WHERE id = ${id}
@@ -195,13 +213,13 @@ export class WorkflowsRepository {
     id: string,
     tenantId: string,
   ): Promise<IWorkflowExecutionRow | undefined> {
-    const [row] = await this.sql<IWorkflowExecutionRow[]>`
-      SELECT id, definition_id, tenant_id,
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<IWorkflowExecutionRow[]>`
+      SELECT id, definition_id,
              temporal_workflow_id, temporal_run_id,
              request, status, created_at, updated_at
       FROM workflow_executions
       WHERE id = ${id}
-        AND tenant_id = ${tenantId}
     `;
     return row;
   }
@@ -210,13 +228,13 @@ export class WorkflowsRepository {
     definitionId: string,
     tenantId: string,
   ): Promise<IWorkflowExecutionRow[]> {
-    return this.sql<IWorkflowExecutionRow[]>`
-      SELECT id, definition_id, tenant_id,
+    const sql = await this.sqlFor(tenantId);
+    return sql<IWorkflowExecutionRow[]>`
+      SELECT id, definition_id,
              temporal_workflow_id, temporal_run_id,
              request, status, created_at, updated_at
       FROM workflow_executions
       WHERE definition_id = ${definitionId}
-        AND tenant_id = ${tenantId}
       ORDER BY created_at DESC
     `;
   }

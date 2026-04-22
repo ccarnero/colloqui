@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import type { Sql } from "postgres";
 import { WorkflowsRepository } from "../../src/modules/workflows/workflows.repository";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
+import { WorkflowTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
 import type {
   IWorkflowDefinitionRow,
   IWorkflowExecutionRow,
@@ -19,12 +19,23 @@ function makeSql(
   }) as Sql;
 }
 
+/**
+ * Minimal stand-in for {@link WorkflowTenantConnectionManager} — exposes
+ * an `ensureSchema` that always resolves to the provided Sql so the
+ * repository's per-tenant pool lookup is side-effect free in tests.
+ */
+function makeConnections(sql: Sql): WorkflowTenantConnectionManager {
+  return {
+    ensureSchema: () => Promise.resolve(sql),
+  } as unknown as WorkflowTenantConnectionManager;
+}
+
 const definitionRow: IWorkflowDefinitionRow = {
   id: "def-1",
-  tenant_id: "t1",
   name: "Flow",
   application: "app",
   actions: [{ activity: "jsFunction", name: "n1", args: { code: "return 1" } }],
+  trigger: null,
   created_at: new Date("2024-06-01T00:00:00.000Z"),
   updated_at: new Date("2024-06-01T00:00:00.000Z"),
   deleted_at: null,
@@ -33,7 +44,6 @@ const definitionRow: IWorkflowDefinitionRow = {
 const executionRow: IWorkflowExecutionRow = {
   id: "exe-1",
   definition_id: "def-1",
-  tenant_id: "t1",
   temporal_workflow_id: "tw-1",
   temporal_run_id: "run-1",
   request: { k: 1 },
@@ -44,6 +54,19 @@ const executionRow: IWorkflowExecutionRow = {
 
 function querySignature(strings: TemplateStringsArray): string {
   return strings.join("");
+}
+
+async function buildRepo(sql: Sql): Promise<WorkflowsRepository> {
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      WorkflowsRepository,
+      {
+        provide: WorkflowTenantConnectionManager,
+        useValue: makeConnections(sql),
+      },
+    ],
+  }).compile();
+  return moduleRef.get(WorkflowsRepository);
 }
 
 describe("WorkflowsRepository", () => {
@@ -58,14 +81,7 @@ describe("WorkflowsRepository", () => {
         }
         return Promise.resolve([]);
       });
-
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      repo = moduleRef.get(WorkflowsRepository);
+      repo = await buildRepo(sql);
     });
 
     it("inserts a workflow definition and returns the row", async () => {
@@ -77,19 +93,12 @@ describe("WorkflowsRepository", () => {
         actions: definitionRow.actions as unknown[],
       });
       expect(row.id).toBe("def-1");
-      expect(row.tenant_id).toBe("t1");
       expect(row.actions).toEqual(definitionRow.actions);
     });
 
     it("propagates SQL errors", async () => {
       const sql = makeSql(() => Promise.reject(new Error("db unavailable")));
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const r = moduleRef.get(WorkflowsRepository);
+      const r = await buildRepo(sql);
 
       await expect(
         r.createDefinition({
@@ -115,13 +124,7 @@ describe("WorkflowsRepository", () => {
         }
         return Promise.resolve([]);
       });
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       const row = await repo.findDefinitionById("def-1", "t1");
       expect(row?.id).toBe("def-1");
@@ -129,13 +132,7 @@ describe("WorkflowsRepository", () => {
 
     it("returns undefined when no row", async () => {
       const sql = makeSql(() => Promise.resolve([]));
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       const row = await repo.findDefinitionById("missing", "t1");
       expect(row).toBeUndefined();
@@ -143,13 +140,7 @@ describe("WorkflowsRepository", () => {
 
     it("propagates SQL errors", async () => {
       const sql = makeSql(() => Promise.reject(new Error("timeout")));
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       await expect(repo.findDefinitionById("def-1", "t1")).rejects.toThrow(
         "timeout",
@@ -169,28 +160,16 @@ describe("WorkflowsRepository", () => {
         }
         return Promise.resolve([]);
       });
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       const rows = await repo.findDefinitionsByTenant("t1");
       expect(rows).toHaveLength(1);
-      expect(rows[0]?.tenant_id).toBe("t1");
+      expect(rows[0]?.id).toBe("def-1");
     });
 
     it("propagates SQL errors", async () => {
       const sql = makeSql(() => Promise.reject(new Error("read failed")));
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       await expect(repo.findDefinitionsByTenant("t1")).rejects.toThrow(
         "read failed",
@@ -207,13 +186,7 @@ describe("WorkflowsRepository", () => {
         }
         return Promise.resolve({ count: 0 });
       });
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       const ok = await repo.softDeleteDefinition("def-1", "t1");
       expect(ok).toBe(true);
@@ -221,13 +194,7 @@ describe("WorkflowsRepository", () => {
 
     it("returns false when no row matched", async () => {
       const sql = makeSql(() => Promise.resolve({ count: 0 }));
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       const ok = await repo.softDeleteDefinition("missing", "t1");
       expect(ok).toBe(false);
@@ -243,13 +210,7 @@ describe("WorkflowsRepository", () => {
         }
         return Promise.resolve([]);
       });
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       const row = await repo.createExecution({
         id: "exe-1",
@@ -265,13 +226,7 @@ describe("WorkflowsRepository", () => {
 
     it("propagates SQL errors", async () => {
       const sql = makeSql(() => Promise.reject(new Error("insert failed")));
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       await expect(
         repo.createExecution({
@@ -295,44 +250,26 @@ describe("WorkflowsRepository", () => {
         }
         return Promise.resolve({ count: 0 });
       });
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
-      const ok = await repo.updateExecutionStatus("exe-1", "COMPLETED");
+      const ok = await repo.updateExecutionStatus("exe-1", "t1", "COMPLETED");
       expect(ok).toBe(true);
     });
 
     it("returns false when no row matched", async () => {
       const sql = makeSql(() => Promise.resolve({ count: 0 }));
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
-      const ok = await repo.updateExecutionStatus("missing", "COMPLETED");
+      const ok = await repo.updateExecutionStatus("missing", "t1", "COMPLETED");
       expect(ok).toBe(false);
     });
 
     it("propagates SQL errors", async () => {
       const sql = makeSql(() => Promise.reject(new Error("update failed")));
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       await expect(
-        repo.updateExecutionStatus("exe-1", "FAILED"),
+        repo.updateExecutionStatus("exe-1", "t1", "FAILED"),
       ).rejects.toThrow("update failed");
     });
   });
@@ -349,13 +286,7 @@ describe("WorkflowsRepository", () => {
         }
         return Promise.resolve([]);
       });
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       const row = await repo.findExecutionById("exe-1", "t1");
       expect(row?.id).toBe("exe-1");
@@ -371,13 +302,7 @@ describe("WorkflowsRepository", () => {
         }
         return Promise.resolve([]);
       });
-      const moduleRef = await Test.createTestingModule({
-        providers: [
-          WorkflowsRepository,
-          { provide: POSTGRES_SQL, useValue: sql },
-        ],
-      }).compile();
-      const repo = moduleRef.get(WorkflowsRepository);
+      const repo = await buildRepo(sql);
 
       const rows = await repo.findExecutionsByDefinition("def-1", "t1");
       expect(rows).toHaveLength(1);

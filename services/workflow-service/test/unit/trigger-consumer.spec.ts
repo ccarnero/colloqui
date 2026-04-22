@@ -19,7 +19,6 @@ function makeDefinition(
 ): IWorkflowDefinitionRow {
   return {
     id: overrides.id ?? "def-1",
-    tenant_id: overrides.tenant_id ?? "t1",
     name: overrides.name ?? "wf",
     application: overrides.application ?? "app",
     actions: [],

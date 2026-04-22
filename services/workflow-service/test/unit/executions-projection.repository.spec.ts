@@ -1,6 +1,7 @@
 import "reflect-metadata";
-import { describe, it, expect, mock } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import { ExecutionsProjectionRepository } from "../../src/modules/executions-projector/executions.repository";
+import type { WorkflowTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
 
 /**
  * Builds a `sql` tag mock that records its calls and returns a
@@ -13,9 +14,7 @@ function buildSqlMock(count: number) {
     calls.push({ strings, args });
     return Promise.resolve(
       Object.assign([] as unknown[], { count }),
-    ) as unknown as Promise<
-      { count: number } & unknown[]
-    >;
+    ) as unknown as Promise<{ count: number } & unknown[]>;
   }) as unknown as (
     strings: TemplateStringsArray,
     ...args: unknown[]
@@ -23,23 +22,26 @@ function buildSqlMock(count: number) {
   return { sqlFn, calls };
 }
 
+function buildRepo(sqlFn: unknown): ExecutionsProjectionRepository {
+  const connections = {
+    ensureSchema: () => Promise.resolve(sqlFn),
+  } as unknown as WorkflowTenantConnectionManager;
+  return new ExecutionsProjectionRepository(connections);
+}
+
 describe("ExecutionsProjectionRepository.applyStatusBatch", () => {
   it("returns 0 and performs no query when rows is empty", async () => {
     const { sqlFn, calls } = buildSqlMock(0);
-    const repo = new ExecutionsProjectionRepository(
-      sqlFn as unknown as never,
-    );
-    const n = await repo.applyStatusBatch([]);
+    const repo = buildRepo(sqlFn);
+    const n = await repo.applyStatusBatch("t1", []);
     expect(n).toBe(0);
     expect(calls.length).toBe(0);
   });
 
   it("emits a single batched UPDATE statement for N rows", async () => {
     const { sqlFn, calls } = buildSqlMock(3);
-    const repo = new ExecutionsProjectionRepository(
-      sqlFn as unknown as never,
-    );
-    const n = await repo.applyStatusBatch([
+    const repo = buildRepo(sqlFn);
+    const n = await repo.applyStatusBatch("t1", [
       { id: "11111111-1111-1111-1111-111111111111", status: "COMPLETED" },
       { id: "22222222-2222-2222-2222-222222222222", status: "COMPLETED" },
       { id: "33333333-3333-3333-3333-333333333333", status: "FAILED" },
@@ -62,10 +64,8 @@ describe("ExecutionsProjectionRepository.applyStatusBatch", () => {
 
   it("returns the raw affected-row count from the driver", async () => {
     const { sqlFn } = buildSqlMock(7);
-    const repo = new ExecutionsProjectionRepository(
-      sqlFn as unknown as never,
-    );
-    const n = await repo.applyStatusBatch([
+    const repo = buildRepo(sqlFn);
+    const n = await repo.applyStatusBatch("t1", [
       { id: "a", status: "COMPLETED" },
       { id: "b", status: "COMPLETED" },
       { id: "c", status: "COMPLETED" },
@@ -75,18 +75,12 @@ describe("ExecutionsProjectionRepository.applyStatusBatch", () => {
 
   // Regression: `WorkflowsService.executeWorkflow` assigns execution ids
   // with `nanoid()` (e.g. "V1StGXR8_Z5jdHi6B") which do NOT parse as
-  // UUIDs. The previous implementation cast the array to `uuid[]` which
-  // blew up every batch with `invalid input syntax for type uuid`,
-  // deadlocking the `workflow-projector` consumer in a redelivery loop.
-  // The cast must be `text[]` to match the `workflow_executions.id TEXT`
-  // column.
+  // UUIDs. The cast must be `text[]` to match `workflow_executions.id TEXT`.
   it("passes non-UUID (nanoid) ids through unchanged and casts to text[], not uuid[]", async () => {
     const { sqlFn, calls } = buildSqlMock(2);
-    const repo = new ExecutionsProjectionRepository(
-      sqlFn as unknown as never,
-    );
+    const repo = buildRepo(sqlFn);
     const nanoLikeIds = ["V1StGXR8_Z5jdHi6B-myT", "abc_123-DEF"];
-    const n = await repo.applyStatusBatch([
+    const n = await repo.applyStatusBatch("t1", [
       { id: nanoLikeIds[0]!, status: "COMPLETED" },
       { id: nanoLikeIds[1]!, status: "FAILED" },
     ]);

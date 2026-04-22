@@ -23,9 +23,9 @@ src/
 ├── main.ts                                     # API server bootstrap: Fastify adapter, ValidationPipe
 ├── app.module.ts                               # Root module: ProvidersModule, WorkflowsModule, HealthModule
 ├── providers/
-│   ├── providers.module.ts                     # @Global() exporting TEMPORAL_CLIENT, POSTGRES_SQL
+│   ├── providers.module.ts                     # @Global() exporting TEMPORAL_CLIENT, NATS_CONNECTION, WorkflowTenantConnectionManager
 │   ├── temporal.provider.ts                    # TEMPORAL_CLIENT token, TenantId search attribute registration
-│   └── postgres.provider.ts                    # PostgreSQL for workflow definitions
+│   └── tenant-connection-manager.ts            # Per-tenant Postgres pool manager (subclass of @yoizen/database TenantConnectionManager)
 ├── modules/
 │   ├── workflows/
 │   │   ├── workflows.module.ts
@@ -37,7 +37,7 @@ src/
 │   │       └── workflow-action.validator.ts    # Action array validation
 │   └── health/
 │       ├── health.module.ts
-│       └── health.controller.ts                # GET /health (Temporal connectivity)
+│       └── health.controller.ts                # GET /health (Temporal + NATS + per-tenant Postgres)
 └── temporal/
     ├── workflows.ts                            # runWorkflow + {{path.to.value}} template resolution (TEMPLATE_RE, resolveTemplates)
     ├── worker.ts                               # Standalone Temporal worker process (orchestrator task queue)
@@ -85,6 +85,16 @@ Actions support `{{path.to.value}}` templates resolved against the `WorkflowExec
 
 The same resolution applies to `serviceCall` `path` and to string values inside `serviceCall` `args.data` (JSON body) before the HTTP worker runs.
 
+### Per-tenant Postgres storage
+
+`workflow_definitions` and `workflow_executions` are stored in **each tenant's own Postgres instance** (one per Kubernetes namespace: `postgres.{tenant}-{env}-ns.svc.cluster.local`), not in the platform Postgres. The DB itself is the tenant boundary, so neither table carries a `tenant_id` column.
+
+- The canonical DDL lives in `@yoizen/shared` as `WORKFLOW_SCHEMA_SQL` (single source of truth).
+- `tenant-service` bakes `WORKFLOW_SCHEMA_SQL` into each tenant's `init.sql` ConfigMap at provisioning time.
+- `WorkflowTenantConnectionManager` also registers it via `setSchema([...])` so any older tenant gets the tables lazily on first access (idempotent via `IF NOT EXISTS`).
+- Repositories resolve the per-tenant pool with `connections.ensureSchema(tenantId)` before every query.
+- `ExecutionProjectorService` partitions its in-memory buffer by `tenantId` (parsed from the canonical subject token) and emits one `UPDATE ... FROM unnest(...)` per tenant on flush, so a DB failure on one tenant does not NAK sibling tenants' batches.
+
 ### Data Flow
 
 1. **Start workflow**: `POST /workflows` -> validate DTO -> `temporal.workflow.start('runWorkflow', ...)` with `TenantId` search attribute -> 202 Accepted
@@ -96,7 +106,7 @@ The same resolution applies to `serviceCall` `path` and to string values inside 
 
 ```
 AppModule
-├── ProvidersModule (@Global) ─── TEMPORAL_CLIENT, POSTGRES_SQL
+├── ProvidersModule (@Global) ─── TEMPORAL_CLIENT, NATS_CONNECTION, WorkflowTenantConnectionManager
 ├── WorkflowsModule ─── WorkflowsController, WorkflowsService
 └── HealthModule ─── HealthController
 ```
@@ -115,7 +125,8 @@ NATS is not registered in `ProvidersModule`. The service-bus activity (`service-
 | Token | Type | Source |
 |-------|------|--------|
 | `TEMPORAL_CLIENT` | `Client` (@temporalio/client) | `temporal.provider.ts` |
-| `POSTGRES_SQL` | `Sql` (postgres.js) | `postgres.provider.ts` |
+| `WorkflowTenantConnectionManager` | per-tenant `Sql` pool manager | `tenant-connection-manager.ts` |
+| `NATS_CONNECTION` | `NatsConnection` | `@yoizen/database` (via `providers.module.ts`) |
 
 ## Configuration
 

@@ -13,7 +13,11 @@ import {
   PinoLoggerService,
   createNatsConsumerMetrics,
 } from "@yoizen/observability";
-import type { EventEnvelope, JsonValue } from "@yoizen/shared";
+import {
+  parseSubject,
+  type EventEnvelope,
+  type JsonValue,
+} from "@yoizen/shared";
 import {
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
@@ -29,10 +33,16 @@ const TENANT_STREAM_PATTERN = /^INGRESS-/;
 const FILTER_SUBJECT =
   "evt.*.workflow-service.workflow.internal.native.execution_completed.v1";
 
-/** Upper bound on the batch size to cap one SQL statement's cost. */
+/** Upper bound on per-tenant batch size to cap one SQL statement's cost. */
 const MAX_BATCH_SIZE = 100;
 /** Max time a message waits in the buffer before being flushed. */
 const MAX_BATCH_WAIT_MS = 250;
+/**
+ * Hard cap on the total number of pending messages queued across all
+ * tenants. Protects the service from unbounded memory growth when a
+ * single flush cycle sees many different tenants at once.
+ */
+const TOTAL_MAX_BUFFER = 1_000;
 
 interface IPendingItem {
   readonly msg: JsMsg;
@@ -41,13 +51,11 @@ interface IPendingItem {
   reject: (err: unknown) => void;
 }
 
-/**
- * Feature flag (defaults on) kept as an emergency kill-switch. When
- * `WORKFLOW_PROJECTOR_ENABLED=false` the service starts silently and
- * does not bind the consumer. The Temporal activity always emits the
- * event regardless — during a projector outage the messages sit in
- * JetStream and are drained when the flag is flipped back on.
- */
+interface IExtractedRow {
+  readonly tenantId: string;
+  readonly row: IExecutionStatusRow;
+}
+
 function isEnabled(): boolean {
   const v = process.env.WORKFLOW_PROJECTOR_ENABLED;
   if (v === undefined) return true;
@@ -57,19 +65,21 @@ function isEnabled(): boolean {
 /**
  * Consumes `workflow.execution.completed` canonical envelopes from
  * every `INGRESS-<tenant>` stream and projects terminal status into
- * the `workflow_executions` Postgres table.
+ * the `workflow_executions` table of that tenant's own Postgres
+ * instance.
  *
  * Decouples the Temporal worker from direct DB writes:
  *  - Worker emits one NATS message per finished workflow.
- *  - Projector batches up to `MAX_BATCH_SIZE` (or `MAX_BATCH_WAIT_MS`
- *    of queueing) and performs a single `UPDATE ... FROM (unnest(...))`
- *    roundtrip — so DB IOPS are decoupled from workflow throughput.
+ *  - Projector groups the buffer by `tenantId` (parsed from the
+ *    subject) and performs a single `UPDATE ... FROM (unnest(...))`
+ *    roundtrip per tenant — so DB IOPS are decoupled from workflow
+ *    throughput while respecting the per-tenant DB isolation.
  *
  * Ack semantics:
  *  - Each message is ack'd only after its batch has been committed.
  *    If the SQL fails, messages are nak'd so JetStream redelivers
- *    them and we retry under the durable's `max_deliver` policy.
- *  - Same envelope re-delivered → `updated_at` just moves forward,
+ *    them under the durable's `max_deliver` policy.
+ *  - Same envelope re-delivered -> `updated_at` just moves forward,
  *    `status` stays the same. Idempotent by construction.
  */
 @Injectable()
@@ -80,7 +90,12 @@ export class ExecutionProjectorService
     ExecutionProjectorService.name,
   );
   private manager: MultiTenantConsumerManager | null = null;
-  private buffer: IPendingItem[] = [];
+  /**
+   * Per-tenant pending buffers. A `Map` gives O(1) get/insert and
+   * preserves insertion order for predictable flush fairness.
+   */
+  private buffers: Map<string, IPendingItem[]> = new Map();
+  private pendingTotal = 0;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
 
@@ -105,12 +120,6 @@ export class ExecutionProjectorService
       description:
         "Projects workflow.execution.completed events to workflow_executions.status",
       metrics: createNatsConsumerMetrics("workflow-service"),
-      /**
-       * Handlers enqueue into a batch buffer and await the next flush
-       * (size=100 or 250ms). Concurrency lets the buffer fill quickly
-       * enough to hit size-triggered flushes instead of always waiting
-       * the 250ms timer.
-       */
       runnerOptions: { concurrency: 16 },
     };
 
@@ -135,7 +144,7 @@ export class ExecutionProjectorService
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    if (this.buffer.length > 0) {
+    if (this.pendingTotal > 0) {
       await this.flush().catch((err) =>
         this.logger.warn(
           `Final flush on shutdown failed: ${err instanceof Error ? err.message : err}`,
@@ -155,14 +164,8 @@ export class ExecutionProjectorService
    * consumer runner and ensures at-least-once semantics.
    */
   private enqueue(msg: JsMsg): Promise<void> {
-    const row = this.extractStatusRow(msg);
-    if (!row) {
-      /**
-       * Unparseable or out-of-schema message: treat as non-retryable
-       * and resolve so the runner ack's it. We don't route to DLQ
-       * here because a garbled envelope at this subject is benign —
-       * nothing to project.
-       */
+    const extracted = this.extractStatusRow(msg);
+    if (!extracted) {
       this.logger.warn(
         `ExecutionProjector: dropping unparseable message subject=${msg.subject}`,
       );
@@ -170,9 +173,25 @@ export class ExecutionProjectorService
     }
 
     return new Promise<void>((resolve, reject) => {
-      this.buffer.push({ msg, row, resolve, reject });
+      const item: IPendingItem = {
+        msg,
+        row: extracted.row,
+        resolve,
+        reject,
+      };
 
-      if (this.buffer.length >= MAX_BATCH_SIZE) {
+      let bucket = this.buffers.get(extracted.tenantId);
+      if (!bucket) {
+        bucket = [];
+        this.buffers.set(extracted.tenantId, bucket);
+      }
+      bucket.push(item);
+      this.pendingTotal++;
+
+      if (
+        bucket.length >= MAX_BATCH_SIZE ||
+        this.pendingTotal >= TOTAL_MAX_BUFFER
+      ) {
         void this.flushNow();
       } else if (!this.flushTimer && !this.stopped) {
         this.flushTimer = setTimeout(() => {
@@ -192,31 +211,48 @@ export class ExecutionProjectorService
   }
 
   /**
-   * Drains the entire buffer, batches the UPDATE, and resolves
-   * each pending handler-promise. On DB error, rejects every pending
-   * promise so the runner NAKs the messages — JetStream will redeliver
-   * under the durable's `max_deliver` policy.
+   * Drains all per-tenant buffers, batches an UPDATE per tenant, and
+   * resolves each pending handler-promise. On DB error for a tenant,
+   * rejects every pending promise in that tenant's sub-batch so the
+   * runner NAKs those messages — JetStream will redeliver under the
+   * durable's `max_deliver` policy. Other tenants' sub-batches are
+   * unaffected by a single tenant's DB failure.
    */
   private async flush(): Promise<void> {
-    if (this.buffer.length === 0) return;
-    const items = this.buffer;
-    this.buffer = [];
+    if (this.pendingTotal === 0) return;
+
+    const snapshot = this.buffers;
+    this.buffers = new Map();
+    this.pendingTotal = 0;
+
+    const tasks: Promise<void>[] = [];
+    for (const [tenantId, items] of snapshot) {
+      tasks.push(this.flushTenant(tenantId, items));
+    }
+    await Promise.all(tasks);
+  }
+
+  private async flushTenant(
+    tenantId: string,
+    items: IPendingItem[],
+  ): Promise<void> {
+    if (items.length === 0) return;
 
     const rows = new Array<IExecutionStatusRow>(items.length);
     for (let i = 0; i < items.length; i++) rows[i] = items[i]!.row;
 
     try {
-      const affected = await this.repo.applyStatusBatch(rows);
+      const affected = await this.repo.applyStatusBatch(tenantId, rows);
       if (affected < items.length) {
         this.logger.warn(
-          `ExecutionProjector: projected ${affected}/${items.length} — ` +
+          `ExecutionProjector[${tenantId}]: projected ${affected}/${items.length} — ` +
             `some executions not found in workflow_executions`,
         );
       }
       for (let i = 0; i < items.length; i++) items[i]!.resolve();
     } catch (err) {
       this.logger.error(
-        `ExecutionProjector batch of ${items.length} failed: ${
+        `ExecutionProjector[${tenantId}] batch of ${items.length} failed: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -225,12 +261,17 @@ export class ExecutionProjectorService
   }
 
   /**
-   * Parses an incoming NATS message into an update row.
+   * Parses an incoming NATS message into an update row + tenantId.
    * Returns `null` when the envelope is malformed so the handler
    * can ack and move on.
    */
-  private extractStatusRow(msg: JsMsg): IExecutionStatusRow | null {
+  private extractStatusRow(msg: JsMsg): IExtractedRow | null {
     try {
+      const parsed = parseSubject(msg.subject);
+      if (!parsed) return null;
+      const tenantId = parsed.tenant;
+      if (!tenantId) return null;
+
       const envelope = JSON.parse(new TextDecoder().decode(msg.data)) as
         | EventEnvelope
         | null;
@@ -244,7 +285,7 @@ export class ExecutionProjectorService
       const id = payload["executionId"];
       const status = payload["status"];
       if (typeof id !== "string" || typeof status !== "string") return null;
-      return { id, status };
+      return { tenantId, row: { id, status } };
     } catch {
       return null;
     }

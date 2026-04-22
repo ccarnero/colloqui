@@ -14,10 +14,10 @@ describe("WorkflowsService", () => {
 
   const baseRow: IWorkflowDefinitionRow = {
     id: "def-1",
-    tenant_id: "t1",
     name: "My workflow",
     application: "orders",
     actions,
+    trigger: null,
     created_at: new Date("2024-06-01T00:00:00.000Z"),
     updated_at: new Date("2024-06-01T00:00:00.000Z"),
     deleted_at: null,
@@ -63,7 +63,6 @@ describe("WorkflowsService", () => {
         Promise.resolve({
           ...baseRow,
           id: params.id,
-          tenant_id: params.tenantId,
           name: params.name,
           application: params.application,
           actions: params.actions,
@@ -83,7 +82,6 @@ describe("WorkflowsService", () => {
           Promise.resolve({
             id: params.id,
             definition_id: params.definitionId,
-            tenant_id: params.tenantId,
             temporal_workflow_id: params.temporalWorkflowId,
             temporal_run_id: params.temporalRunId,
             request: params.request,
@@ -98,7 +96,6 @@ describe("WorkflowsService", () => {
           {
             id: "ex-1",
             definition_id: "def-1",
-            tenant_id: "t1",
             temporal_workflow_id: "tw-1",
             temporal_run_id: "run-1",
             request: {},
@@ -112,7 +109,6 @@ describe("WorkflowsService", () => {
         Promise.resolve({
           id: "ex-1",
           definition_id: "def-1",
-          tenant_id: "t1",
           temporal_workflow_id: "tw-1",
           temporal_run_id: "run-1",
           request: {},

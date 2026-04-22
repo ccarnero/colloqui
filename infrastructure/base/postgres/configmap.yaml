@@ -204,44 +204,12 @@ data:
     CREATE INDEX IF NOT EXISTS idx_tenant_users_email ON tenant_users (email);
     CREATE INDEX IF NOT EXISTS idx_tenant_users_role ON tenant_users (role_id);
 
-    CREATE TABLE IF NOT EXISTS workflow_definitions (
-      id          TEXT        PRIMARY KEY,
-      tenant_id   TEXT        NOT NULL,
-      name        VARCHAR(128) NOT NULL,
-      application VARCHAR(64)  NOT NULL,
-      actions     JSONB       NOT NULL,
-      trigger     JSONB       DEFAULT NULL,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      deleted_at  TIMESTAMPTZ
-    );
-
-    ALTER TABLE workflow_definitions
-      ADD COLUMN IF NOT EXISTS trigger JSONB DEFAULT NULL;
-
-    CREATE INDEX IF NOT EXISTS idx_workflow_definitions_trigger_type
-      ON workflow_definitions (tenant_id, ((trigger->>'type')))
-      WHERE deleted_at IS NULL AND trigger IS NOT NULL;
-
-    CREATE INDEX IF NOT EXISTS idx_wf_def_tenant
-      ON workflow_definitions (tenant_id) WHERE deleted_at IS NULL;
-
-    CREATE TABLE IF NOT EXISTS workflow_executions (
-      id                    TEXT        PRIMARY KEY,
-      definition_id         TEXT        NOT NULL REFERENCES workflow_definitions(id),
-      tenant_id             TEXT        NOT NULL,
-      temporal_workflow_id  TEXT        NOT NULL,
-      temporal_run_id       TEXT        NOT NULL,
-      request               JSONB      NOT NULL,
-      status                TEXT        NOT NULL DEFAULT 'RUNNING',
-      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_wf_exec_definition
-      ON workflow_executions (definition_id);
-    CREATE INDEX IF NOT EXISTS idx_wf_exec_tenant
-      ON workflow_executions (tenant_id);
+    -- Workflow definitions and executions moved to per-tenant
+    -- Postgres instances (see `@yoizen/shared` WORKFLOW_SCHEMA_SQL and
+    -- tenant-service `init.sql`). Any leftover tables in an existing
+    -- platform DB are dropped on bootstrap as a fresh cut-over.
+    DROP TABLE IF EXISTS workflow_executions CASCADE;
+    DROP TABLE IF EXISTS workflow_definitions CASCADE;
 
     -- Channel Service tables
     CREATE TABLE IF NOT EXISTS channel_accounts (

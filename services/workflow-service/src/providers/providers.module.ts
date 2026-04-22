@@ -5,7 +5,7 @@ import type {
   NatsConnection,
 } from "nats";
 import { temporalClientProvider, TEMPORAL_CLIENT } from "./temporal.provider";
-import { PostgresModule } from "./postgres.provider";
+import { WorkflowTenantConnectionManager } from "./tenant-connection-manager";
 import {
   createNatsConnectionProvider,
   NATS_CONNECTION,
@@ -32,19 +32,19 @@ const jetStreamPublisherProvider: FactoryProvider<JetStreamClient> = {
 
 @Global()
 @Module({
-  imports: [PostgresModule],
   providers: [
     temporalClientProvider,
     natsProvider,
     jetStreamManagerProvider,
     jetStreamPublisherProvider,
+    WorkflowTenantConnectionManager,
   ],
   exports: [
-    PostgresModule,
     TEMPORAL_CLIENT,
     NATS_CONNECTION,
     JETSTREAM_MANAGER,
     JETSTREAM_PUBLISHER,
+    WorkflowTenantConnectionManager,
   ],
 })
 export class ProvidersModule {}
