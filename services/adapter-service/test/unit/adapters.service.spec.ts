@@ -3,8 +3,8 @@ import { Test } from "@nestjs/testing";
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { AdaptersRepository } from "../../src/modules/adapters/adapters.repository";
 import { AdaptersService } from "../../src/modules/adapters/adapters.service";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
-import { makeSqlTestDouble } from "../make-sql-mock";
+import { AdapterTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
+import { makeSqlTestDouble, makeFakeTenantConnections } from "../make-sql-mock";
 import type {
   CreateAdapterDto,
   CreateEndpointDto,
@@ -14,11 +14,12 @@ import type { Sql } from "postgres";
 async function createAdaptersServiceWithSql(
   sql: Sql,
 ): Promise<AdaptersService> {
+  const connections = makeFakeTenantConnections(sql);
   const moduleRef = await Test.createTestingModule({
     providers: [
       AdaptersRepository,
       AdaptersService,
-      { provide: POSTGRES_SQL, useValue: sql },
+      { provide: AdapterTenantConnectionManager, useValue: connections },
     ],
   }).compile();
   return moduleRef.get(AdaptersService);
@@ -26,18 +27,21 @@ async function createAdaptersServiceWithSql(
 
 const adapterRow = {
   id: "a1",
-  tenant_id: "t1",
   name: "Adapter One",
   context: "internal",
   base_url: "https://api.example.com",
   auth_type: "none",
   auth_config: {},
   headers: [] as Array<{ key: string; value: string }>,
+  default_cache_strategy: null,
   timeout_ms: 5000,
   max_retries: 3,
   retry_backoff_ms: 1000,
   health_check_path: "/health",
+  is_encrypted: false,
+  tags: [] as string[],
   status: "enabled" as const,
+  managed_by: null,
   created_at: "2024-01-01T00:00:00.000Z",
   updated_at: "2024-01-01T00:00:00.000Z",
 };
@@ -48,6 +52,7 @@ const endpointRow = {
   label: "default",
   method: "GET",
   path: "/v1",
+  cache_strategy: null,
   created_at: "2024-01-01T00:00:00.000Z",
 };
 
@@ -77,6 +82,7 @@ describe("AdaptersService", () => {
       const result = await service.create("t1", baseDto);
       expect(result.id).toBe("a1");
       expect(result.name).toBe("Adapter One");
+      expect(result.tenantId).toBe("t1");
       expect(result.endpoints).toEqual([]);
     });
 
@@ -125,6 +131,7 @@ describe("AdaptersService", () => {
 
       const rows = await service.list("t1", undefined, 50, 0);
       expect(rows).toHaveLength(1);
+      expect(rows[0]?.tenantId).toBe("t1");
       expect(rows[0]?.endpoints).toHaveLength(1);
       expect(rows[0]?.endpoints[0]?.path).toBe("/v1");
     });
@@ -162,6 +169,7 @@ describe("AdaptersService", () => {
 
       const row = await service.get("t1", "a1");
       expect(row.id).toBe("a1");
+      expect(row.tenantId).toBe("t1");
       expect(row.endpoints).toHaveLength(1);
     });
   });
@@ -184,9 +192,6 @@ describe("AdaptersService", () => {
     it("applies partial update and returns fresh row", async () => {
       const sql = makeSqlTestDouble((strings) => {
         const head = strings[0] ?? "";
-        if (head.includes("SELECT id FROM http_adapters")) {
-          return Promise.resolve([{ id: "a1" }]);
-        }
         if (head.includes("SELECT * FROM http_adapters")) {
           return Promise.resolve([{ ...adapterRow, name: "Renamed" }]);
         }
@@ -267,6 +272,7 @@ describe("AdaptersService", () => {
         label: "Get Users",
         method: "GET",
         path: "/users",
+        cache_strategy: null,
         created_at: "2024-01-01T00:00:00.000Z",
       };
 

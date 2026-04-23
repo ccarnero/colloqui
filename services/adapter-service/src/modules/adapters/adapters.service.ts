@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
-  BadRequestException,
 } from "@nestjs/common";
 
 import { PinoLoggerService } from "@yoizen/observability";
@@ -68,7 +67,7 @@ export class AdaptersService {
           );
         this.logger.log(`Created adapter '${dto.name}' for tenant ${tenantId}`);
         return {
-          ...mapAdapter(row),
+          ...mapAdapter(row, tenantId),
           endpoints: endpoints.map(mapEndpoint),
         };
       },
@@ -100,8 +99,10 @@ export class AdaptersService {
       name,
     );
     const adapterIds = rows.map((r) => r.id);
-    const endpoints =
-      await this.adaptersRepository.listEndpointsForAdapters(adapterIds);
+    const endpoints = await this.adaptersRepository.listEndpointsForAdapters(
+      tenantId,
+      adapterIds,
+    );
 
     const endpointsByAdapter = new Map<string, IEndpointRow[]>();
     for (const ep of endpoints) {
@@ -114,7 +115,7 @@ export class AdaptersService {
     }
 
     return rows.map((row) => ({
-      ...mapAdapter(row),
+      ...mapAdapter(row, tenantId),
       endpoints: (endpointsByAdapter.get(row.id) ?? []).map(mapEndpoint),
     }));
   }
@@ -131,11 +132,13 @@ export class AdaptersService {
       throw new NotFoundException(`Adapter '${id}' not found`);
     }
 
-    const endpoints =
-      await this.adaptersRepository.listEndpointsForAdapter(id);
+    const endpoints = await this.adaptersRepository.listEndpointsForAdapter(
+      tenantId,
+      id,
+    );
 
     return {
-      ...mapAdapter(row),
+      ...mapAdapter(row, tenantId),
       endpoints: endpoints.map(mapEndpoint),
     };
   }
@@ -216,7 +219,11 @@ export class AdaptersService {
     return this.runWithUniqueConflict(
       `Endpoint '${dto.method} ${dto.path}' already exists on this adapter`,
       async () => {
-        const row = await this.adaptersRepository.insertEndpoint(adapterId, dto);
+        const row = await this.adaptersRepository.insertEndpoint(
+          tenantId,
+          adapterId,
+          dto,
+        );
         this.logger.log(
           `Added endpoint '${dto.method} ${dto.path}' to adapter ${adapterId}`,
         );
@@ -240,6 +247,7 @@ export class AdaptersService {
     await this.assertNotManaged(tenantId, adapterId, "remove endpoint from");
 
     const count = await this.adaptersRepository.deleteEndpoint(
+      tenantId,
       adapterId,
       endpointId,
     );
@@ -272,24 +280,31 @@ export class AdaptersService {
       (key) => (dto as Record<string, unknown>)[key] !== undefined,
     );
     if (!hasField) {
-      return this.getEndpointOrThrow(adapterId, endpointId);
+      return this.getEndpointOrThrow(tenantId, adapterId, endpointId);
     }
 
     return this.runWithUniqueConflict(
       `Endpoint '${endpointId}' already conflicts with an existing method/path`,
       async () => {
-        await this.adaptersRepository.updateEndpoint(adapterId, endpointId, dto);
+        await this.adaptersRepository.updateEndpoint(
+          tenantId,
+          adapterId,
+          endpointId,
+          dto,
+        );
         this.logger.log(`Updated endpoint '${endpointId}' on adapter ${adapterId}`);
-        return this.getEndpointOrThrow(adapterId, endpointId);
+        return this.getEndpointOrThrow(tenantId, adapterId, endpointId);
       },
     );
   }
 
   private async getEndpointOrThrow(
+    tenantId: string,
     adapterId: string,
     endpointId: string,
   ): Promise<ReturnType<typeof mapEndpoint>> {
     const endpoint = await this.adaptersRepository.getEndpointRow(
+      tenantId,
       adapterId,
       endpointId,
     );
@@ -298,5 +313,4 @@ export class AdaptersService {
     }
     return mapEndpoint(endpoint);
   }
-
 }

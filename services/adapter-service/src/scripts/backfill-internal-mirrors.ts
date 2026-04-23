@@ -7,19 +7,24 @@
  * Env:
  *   REGISTRY_SERVICE_URL (defaults to http://registry-service)
  *   BACKFILL_TENANT_IDS  (comma-separated tenant ids to backfill; required)
- *   POSTGRES_*           (standard postgres env for adapter-service)
+ *   POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_PORT
+ *   PLATFORM_ENVIRONMENT (e.g. `dev`, `prod` — used to resolve per-tenant
+ *                         Postgres host `postgres.<tenant>-<env>-ns.svc.cluster.local`)
  *
  * Idempotent: safe to re-run. Uses the same `upsertMirror()` path the
  * event-driven consumer uses, so the state-machine is identical.
+ *
+ * Each tenant's data lives in its own Postgres; the connection manager
+ * routes queries to the right pool transparently.
  */
 import "reflect-metadata";
-import postgres from "postgres";
 import {
   ADAPTER_MANAGED_BY_REGISTRY,
   AdapterStatus,
   TENANT_HEADER,
 } from "@yoizen/shared";
 import { AdaptersRepository } from "../modules/adapters/adapters.repository";
+import { AdapterTenantConnectionManager } from "../providers/tenant-connection-manager";
 
 interface IRegisteredServiceResponse {
   id: string;
@@ -121,18 +126,8 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const sql = postgres({
-    host: process.env.POSTGRES_HOST ?? "postgres",
-    port: Number.parseInt(process.env.POSTGRES_PORT ?? "5432", 10),
-    database: process.env.POSTGRES_DB ?? "postgres",
-    user: process.env.POSTGRES_USER ?? "postgres",
-    password: process.env.POSTGRES_PASSWORD ?? "",
-    ssl: process.env.POSTGRES_SSL === "true" ? "require" : false,
-    max: 2,
-    prepare: true,
-  });
-
-  const repo = new AdaptersRepository(sql);
+  const connections = new AdapterTenantConnectionManager();
+  const repo = new AdaptersRepository(connections);
 
   try {
     for (const tenantId of tenantIds) {
@@ -141,7 +136,7 @@ async function main(): Promise<void> {
       console.log(`[backfill] ${JSON.stringify(summary)}`);
     }
   } finally {
-    await sql.end();
+    await connections.onModuleDestroy();
   }
 }
 

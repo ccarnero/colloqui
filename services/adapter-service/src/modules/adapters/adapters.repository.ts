@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import type { Sql } from "postgres";
 import {
   AdapterStatus,
@@ -7,7 +7,7 @@ import {
   type AdapterStatusValue,
 } from "@yoizen/shared";
 import { isPostgresUniqueViolation } from "@yoizen/database";
-import { POSTGRES_SQL } from "../../providers/postgres.provider";
+import { AdapterTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import type {
   CreateAdapterDto,
   UpdateAdapterDto,
@@ -17,7 +17,6 @@ import type {
 
 export interface IAdapterRow {
   id: string;
-  tenant_id: string;
   name: string;
   context: string;
   base_url: string;
@@ -74,10 +73,16 @@ function parseJsonb<T>(value: T | string, fallback: T): T {
   }
 }
 
-export function mapAdapter(row: IAdapterRow) {
+/**
+ * Maps a raw row into the HTTP response shape. `tenantId` is supplied by
+ * the caller (controller/service) from `x-yoizen-tenant`, NOT from a
+ * DB column — each tenant's adapters live in the tenant's own Postgres,
+ * so the DB itself is the tenant boundary.
+ */
+export function mapAdapter(row: IAdapterRow, tenantId: string) {
   return {
     id: row.id,
-    tenantId: row.tenant_id,
+    tenantId,
     name: row.name,
     context: row.context,
     baseUrl: row.base_url,
@@ -112,15 +117,28 @@ export function mapEndpoint(row: IEndpointRow) {
 
 /**
  * Persists `http_adapters` and `adapter_endpoints` rows via postgres.js.
+ *
+ * Each tenant has a dedicated Postgres instance (provisioned by
+ * `tenant-service` in its own Kubernetes namespace), so no `tenant_id`
+ * column is stored — the DB itself is the tenant boundary. The
+ * `tenantId` method parameter is used purely to resolve the correct
+ * pool from `AdapterTenantConnectionManager` via `ensureSchema(tenantId)`
+ * (O(1) amortised — DDL runs once per tenant).
  */
 @Injectable()
 export class AdaptersRepository {
-  constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
+  constructor(
+    private readonly connections: AdapterTenantConnectionManager,
+  ) {}
+
+  private sqlFor(tenantId: string): Promise<Sql> {
+    return this.connections.ensureSchema(tenantId);
+  }
 
   /**
    * Inserts one adapter and optional inline endpoints.
    *
-   * @param tenantId - Owning tenant.
+   * @param tenantId - Owning tenant (resolves the per-tenant pool).
    * @param dto - Create payload; may include `endpoints` to insert in the same round-trip.
    * @returns Raw rows for mapping in the service layer.
    */
@@ -128,6 +146,7 @@ export class AdaptersRepository {
     tenantId: string,
     dto: CreateAdapterDto,
   ): Promise<{ row: IAdapterRow; endpoints: IEndpointRow[] }> {
+    const sql = await this.sqlFor(tenantId);
     const id = generateId();
     const authType = dto.authType ?? "none";
     const authConfig = dto.authConfig ?? {};
@@ -140,17 +159,17 @@ export class AdaptersRepository {
     const tags = dto.tags ?? [];
     const defaultCache = dto.defaultCache ?? null;
 
-    const [row] = await this.sql<IAdapterRow[]>`
+    const [row] = await sql<IAdapterRow[]>`
       INSERT INTO http_adapters
-        (id, tenant_id, name, context, base_url, auth_type, auth_config,
+        (id, name, context, base_url, auth_type, auth_config,
          headers, default_cache_strategy, timeout_ms, max_retries, retry_backoff_ms,
          health_check_path, status, tags)
       VALUES
-        (${id}, ${tenantId}, ${dto.name}, ${dto.context},
+        (${id}, ${dto.name}, ${dto.context},
          ${dto.baseUrl ?? ""}, ${authType},
-         ${this.sql.json(authConfig as never)},
-         ${this.sql.json(headers as never)},
-         ${defaultCache === null ? null : this.sql.json(defaultCache as never)},
+         ${sql.json(authConfig as never)},
+         ${sql.json(headers as never)},
+         ${defaultCache === null ? null : sql.json(defaultCache as never)},
          ${timeoutMs},
          ${maxRetries}, ${retryBackoffMs}, ${healthCheckPath},
          ${status}, ${tags})
@@ -159,9 +178,9 @@ export class AdaptersRepository {
 
     let endpoints: IEndpointRow[] = [];
     if (dto.endpoints?.length) {
-      endpoints = await this.insertEndpoints(id, dto.endpoints);
+      endpoints = await this.insertEndpoints(sql, id, dto.endpoints);
     }
-    return { row, endpoints };
+    return { row: row!, endpoints };
   }
 
   isUniqueViolation(e: unknown): boolean {
@@ -170,8 +189,8 @@ export class AdaptersRepository {
 
   /**
    * Paged list with optional filters. All filters are composable.
-   * Uses `sql.unsafe` free dynamic fragments so the query plan stays
-   * stable (indexes on `tenant_id`, `(tenant_id, context)`, GIN on `tags`).
+   * Uses `sql` free dynamic fragments so the query plan stays stable
+   * (indexes on `context`, GIN on `tags`).
    */
   async listRows(
     tenantId: string,
@@ -181,7 +200,7 @@ export class AdaptersRepository {
     tag?: string,
     name?: string,
   ): Promise<IAdapterRow[]> {
-    const sql = this.sql;
+    const sql = await this.sqlFor(tenantId);
     const ctxFragment = context
       ? sql`AND context = ${context}`
       : sql``;
@@ -192,7 +211,7 @@ export class AdaptersRepository {
 
     return sql<IAdapterRow[]>`
       SELECT * FROM http_adapters
-      WHERE tenant_id = ${tenantId}
+      WHERE TRUE
         ${ctxFragment}
         ${nameFragment}
         ${tagFragment}
@@ -203,17 +222,17 @@ export class AdaptersRepository {
 
   /**
    * Finds the internal-adapter mirror for a service name. At most one
-   * row exists due to the `(tenant_id, name)` uniqueness constraint.
+   * row exists due to the `name` uniqueness constraint within a tenant's DB.
    */
   async findInternalMirror(
     tenantId: string,
     serviceName: string,
     managedBy: string,
   ): Promise<IAdapterRow | null> {
-    const [row] = await this.sql<IAdapterRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<IAdapterRow[]>`
       SELECT * FROM http_adapters
-      WHERE tenant_id = ${tenantId}
-        AND name = ${serviceName}
+      WHERE name = ${serviceName}
         AND managed_by = ${managedBy}
       LIMIT 1
     `;
@@ -242,9 +261,10 @@ export class AdaptersRepository {
       retryBackoffMs = 0,
     } = params;
 
-    const [existing] = await this.sql<IAdapterRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    const [existing] = await sql<IAdapterRow[]>`
       SELECT * FROM http_adapters
-      WHERE tenant_id = ${tenantId} AND name = ${serviceName}
+      WHERE name = ${serviceName}
       LIMIT 1
     `;
 
@@ -254,7 +274,7 @@ export class AdaptersRepository {
           `Adapter '${serviceName}' for tenant '${tenantId}' is managed by '${existing.managed_by}'`,
         );
       }
-      const [updated] = await this.sql<IAdapterRow[]>`
+      const [updated] = await sql<IAdapterRow[]>`
         UPDATE http_adapters SET
           base_url = ${baseUrl},
           health_check_path = ${healthCheckPath},
@@ -268,14 +288,14 @@ export class AdaptersRepository {
     }
 
     const id = generateId();
-    const [row] = await this.sql<IAdapterRow[]>`
+    const [row] = await sql<IAdapterRow[]>`
       INSERT INTO http_adapters (
-        id, tenant_id, name, context, base_url, auth_type,
+        id, name, context, base_url, auth_type,
         timeout_ms, max_retries, retry_backoff_ms,
         health_check_path, status, managed_by
       )
       VALUES (
-        ${id}, ${tenantId}, ${serviceName}, 'internal', ${baseUrl}, 'none',
+        ${id}, ${serviceName}, 'internal', ${baseUrl}, 'none',
         ${timeoutMs}, ${maxRetries}, ${retryBackoffMs},
         ${healthCheckPath}, ${status}, ${managedBy}
       )
@@ -293,10 +313,10 @@ export class AdaptersRepository {
     serviceName: string,
     managedBy: string,
   ): Promise<number> {
-    const result = await this.sql`
+    const sql = await this.sqlFor(tenantId);
+    const result = await sql`
       DELETE FROM http_adapters
-      WHERE tenant_id = ${tenantId}
-        AND name = ${serviceName}
+      WHERE name = ${serviceName}
         AND managed_by = ${managedBy}
     `;
     return result.count;
@@ -307,17 +327,21 @@ export class AdaptersRepository {
     tenantId: string,
     managedBy: string,
   ): Promise<IAdapterRow[]> {
-    return this.sql<IAdapterRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    return sql<IAdapterRow[]>`
       SELECT * FROM http_adapters
-      WHERE tenant_id = ${tenantId}
-        AND managed_by = ${managedBy}
+      WHERE managed_by = ${managedBy}
       ORDER BY created_at ASC
     `;
   }
 
-  async listEndpointsForAdapters(adapterIds: string[]): Promise<IEndpointRow[]> {
+  async listEndpointsForAdapters(
+    tenantId: string,
+    adapterIds: string[],
+  ): Promise<IEndpointRow[]> {
     if (adapterIds.length === 0) return [];
-    return this.sql<IEndpointRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    return sql<IEndpointRow[]>`
       SELECT * FROM adapter_endpoints
       WHERE adapter_id = ANY(${adapterIds})
       ORDER BY created_at ASC
@@ -325,15 +349,20 @@ export class AdaptersRepository {
   }
 
   async getAdapterRow(tenantId: string, id: string): Promise<IAdapterRow | null> {
-    const [row] = await this.sql<IAdapterRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<IAdapterRow[]>`
       SELECT * FROM http_adapters
-      WHERE id = ${id} AND tenant_id = ${tenantId}
+      WHERE id = ${id}
     `;
     return row ?? null;
   }
 
-  async listEndpointsForAdapter(adapterId: string): Promise<IEndpointRow[]> {
-    return this.sql<IEndpointRow[]>`
+  async listEndpointsForAdapter(
+    tenantId: string,
+    adapterId: string,
+  ): Promise<IEndpointRow[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql<IEndpointRow[]>`
       SELECT * FROM adapter_endpoints
       WHERE adapter_id = ${adapterId}
       ORDER BY created_at ASC
@@ -341,9 +370,10 @@ export class AdaptersRepository {
   }
 
   async adapterExists(tenantId: string, id: string): Promise<boolean> {
-    const [existing] = await this.sql<{ id: string }[]>`
+    const sql = await this.sqlFor(tenantId);
+    const [existing] = await sql<{ id: string }[]>`
       SELECT id FROM http_adapters
-      WHERE id = ${id} AND tenant_id = ${tenantId}
+      WHERE id = ${id}
     `;
     return Boolean(existing);
   }
@@ -353,75 +383,79 @@ export class AdaptersRepository {
     id: string,
     dto: UpdateAdapterDto,
   ): Promise<void> {
-    // Build update queries for each field individually
-    // This is safer than dynamic SQL generation
+    const sql = await this.sqlFor(tenantId);
 
     if (dto.name !== undefined) {
-      await this.sql`UPDATE http_adapters SET name = ${dto.name}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+      await sql`UPDATE http_adapters SET name = ${dto.name}, updated_at = NOW() WHERE id = ${id}`;
     }
     if (dto.baseUrl !== undefined) {
-      await this.sql`UPDATE http_adapters SET base_url = ${dto.baseUrl}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+      await sql`UPDATE http_adapters SET base_url = ${dto.baseUrl}, updated_at = NOW() WHERE id = ${id}`;
     }
     if (dto.authType !== undefined) {
-      await this.sql`UPDATE http_adapters SET auth_type = ${dto.authType}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+      await sql`UPDATE http_adapters SET auth_type = ${dto.authType}, updated_at = NOW() WHERE id = ${id}`;
     }
     if (dto.authConfig !== undefined) {
-      await this.sql`UPDATE http_adapters SET auth_config = ${this.sql.json(dto.authConfig as never)}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+      await sql`UPDATE http_adapters SET auth_config = ${sql.json(dto.authConfig as never)}, updated_at = NOW() WHERE id = ${id}`;
     }
     if (dto.headers !== undefined) {
-      await this.sql`UPDATE http_adapters SET headers = ${this.sql.json(dto.headers as never)}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+      await sql`UPDATE http_adapters SET headers = ${sql.json(dto.headers as never)}, updated_at = NOW() WHERE id = ${id}`;
     }
     if (dto.timeoutMs !== undefined) {
-      await this.sql`UPDATE http_adapters SET timeout_ms = ${dto.timeoutMs}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+      await sql`UPDATE http_adapters SET timeout_ms = ${dto.timeoutMs}, updated_at = NOW() WHERE id = ${id}`;
     }
     if (dto.maxRetries !== undefined) {
-      await this.sql`UPDATE http_adapters SET max_retries = ${dto.maxRetries}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+      await sql`UPDATE http_adapters SET max_retries = ${dto.maxRetries}, updated_at = NOW() WHERE id = ${id}`;
     }
     if (dto.retryBackoffMs !== undefined) {
-      await this.sql`UPDATE http_adapters SET retry_backoff_ms = ${dto.retryBackoffMs}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+      await sql`UPDATE http_adapters SET retry_backoff_ms = ${dto.retryBackoffMs}, updated_at = NOW() WHERE id = ${id}`;
     }
     if (dto.healthCheckPath !== undefined) {
-      await this.sql`UPDATE http_adapters SET health_check_path = ${dto.healthCheckPath}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+      await sql`UPDATE http_adapters SET health_check_path = ${dto.healthCheckPath}, updated_at = NOW() WHERE id = ${id}`;
     }
     if (dto.status !== undefined) {
-      await this.sql`UPDATE http_adapters SET status = ${dto.status}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+      await sql`UPDATE http_adapters SET status = ${dto.status}, updated_at = NOW() WHERE id = ${id}`;
     }
     if (dto.tags !== undefined) {
-      await this.sql`UPDATE http_adapters SET tags = ${dto.tags}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId}`;
+      await sql`UPDATE http_adapters SET tags = ${dto.tags}, updated_at = NOW() WHERE id = ${id}`;
     }
     if (dto.defaultCache !== undefined) {
-      await this.sql`
+      await sql`
         UPDATE http_adapters
         SET default_cache_strategy = ${
           dto.defaultCache === null
             ? null
-            : this.sql.json(dto.defaultCache as never)
+            : sql.json(dto.defaultCache as never)
         }, updated_at = NOW()
-        WHERE id = ${id} AND tenant_id = ${tenantId}
+        WHERE id = ${id}
       `;
     }
   }
 
   async deleteAdapter(tenantId: string, id: string): Promise<number> {
-    const result = await this.sql`
+    const sql = await this.sqlFor(tenantId);
+    const result = await sql`
       DELETE FROM http_adapters
-      WHERE id = ${id} AND tenant_id = ${tenantId}
+      WHERE id = ${id}
     `;
     return result.count;
   }
 
   async insertEndpoint(
+    tenantId: string,
     adapterId: string,
     dto: CreateEndpointDto,
   ): Promise<IEndpointRow> {
-    return this.insertOneEndpointRow(adapterId, dto);
+    const sql = await this.sqlFor(tenantId);
+    return this.insertOneEndpointRow(sql, adapterId, dto);
   }
 
   async getEndpointRow(
+    tenantId: string,
     adapterId: string,
     endpointId: string,
   ): Promise<IEndpointRow | null> {
-    const [row] = await this.sql<IEndpointRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<IEndpointRow[]>`
       SELECT * FROM adapter_endpoints
       WHERE id = ${endpointId} AND adapter_id = ${adapterId}
     `;
@@ -429,44 +463,51 @@ export class AdaptersRepository {
   }
 
   async updateEndpoint(
+    tenantId: string,
     adapterId: string,
     endpointId: string,
     dto: UpdateEndpointDto,
   ): Promise<void> {
+    const sql = await this.sqlFor(tenantId);
     if (dto.label !== undefined) {
-      await this.sql`
+      await sql`
         UPDATE adapter_endpoints
         SET label = ${dto.label}
         WHERE id = ${endpointId} AND adapter_id = ${adapterId}
       `;
     }
     if (dto.method !== undefined) {
-      await this.sql`
+      await sql`
         UPDATE adapter_endpoints
         SET method = ${dto.method}
         WHERE id = ${endpointId} AND adapter_id = ${adapterId}
       `;
     }
     if (dto.path !== undefined) {
-      await this.sql`
+      await sql`
         UPDATE adapter_endpoints
         SET path = ${dto.path}
         WHERE id = ${endpointId} AND adapter_id = ${adapterId}
       `;
     }
     if (dto.cache !== undefined) {
-      await this.sql`
+      await sql`
         UPDATE adapter_endpoints
         SET cache_strategy = ${
-          dto.cache === null ? null : this.sql.json(dto.cache as never)
+          dto.cache === null ? null : sql.json(dto.cache as never)
         }
         WHERE id = ${endpointId} AND adapter_id = ${adapterId}
       `;
     }
   }
 
-  async deleteEndpoint(adapterId: string, endpointId: string): Promise<number> {
-    const result = await this.sql`
+  async deleteEndpoint(
+    tenantId: string,
+    adapterId: string,
+    endpointId: string,
+  ): Promise<number> {
+    const sql = await this.sqlFor(tenantId);
+    const result = await sql`
       DELETE FROM adapter_endpoints
       WHERE id = ${endpointId} AND adapter_id = ${adapterId}
     `;
@@ -474,22 +515,24 @@ export class AdaptersRepository {
   }
 
   private async insertEndpoints(
+    sql: Sql,
     adapterId: string,
     dtos: CreateEndpointDto[],
   ): Promise<IEndpointRow[]> {
     const rows: IEndpointRow[] = [];
     for (const dto of dtos) {
-      rows.push(await this.insertOneEndpointRow(adapterId, dto));
+      rows.push(await this.insertOneEndpointRow(sql, adapterId, dto));
     }
     return rows;
   }
 
   private async insertOneEndpointRow(
+    sql: Sql,
     adapterId: string,
     dto: CreateEndpointDto,
   ): Promise<IEndpointRow> {
     const epId = generateId();
-    const [row] = await this.sql<IEndpointRow[]>`
+    const [row] = await sql<IEndpointRow[]>`
       INSERT INTO adapter_endpoints
         (id, adapter_id, label, method, path, cache_strategy)
       VALUES (
@@ -498,10 +541,10 @@ export class AdaptersRepository {
         ${dto.label},
         ${dto.method},
         ${dto.path},
-        ${dto.cache ? this.sql.json(dto.cache as never) : null}
+        ${dto.cache ? sql.json(dto.cache as never) : null}
       )
       RETURNING *
     `;
-    return row;
+    return row!;
   }
 }

@@ -1,26 +1,78 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
+import type { ChannelAccount, InboundMessage } from "@yoizen/shared";
 import { WebhookIngressService } from "../../src/modules/webhooks/webhook-ingress.service";
 import { ChannelRouter } from "../../src/providers/channel-router";
 import { IngressService } from "../../src/modules/ingress/ingress.service";
 import { AccountsService } from "../../src/modules/accounts/accounts.service";
 
+function createAccount(
+  overrides: Partial<ChannelAccount> = {},
+): ChannelAccount {
+  return {
+    id: overrides.id ?? "a1",
+    tenantId: overrides.tenantId ?? "t1",
+    channel: overrides.channel ?? "whatsapp",
+    provider: overrides.provider ?? "meta",
+    name: overrides.name ?? "Primary",
+    externalId: overrides.externalId ?? "ext-1",
+    accessToken: overrides.accessToken ?? "token",
+    appSecret: overrides.appSecret ?? "secret",
+    isActive: overrides.isActive ?? true,
+    createdAt: overrides.createdAt ?? "2026-01-01T00:00:00.000Z",
+    updatedAt: overrides.updatedAt ?? "2026-01-01T00:00:00.000Z",
+    ...(overrides.phoneNumberId && { phoneNumberId: overrides.phoneNumberId }),
+    ...(overrides.igUserId && { igUserId: overrides.igUserId }),
+    ...(overrides.telegramBotToken && {
+      telegramBotToken: overrides.telegramBotToken,
+    }),
+  };
+}
+
+function createInboundMessage(
+  overrides: Partial<InboundMessage> = {},
+): InboundMessage {
+  return {
+    messageId: overrides.messageId ?? "m1",
+    from: overrides.from ?? "123",
+    timestamp: overrides.timestamp ?? "1700000000",
+    type: overrides.type ?? "text",
+    raw: overrides.raw ?? {},
+    ...(overrides.text && { text: overrides.text }),
+    ...(overrides.media && { media: overrides.media }),
+  };
+}
+
+async function flushImmediate(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
 describe("WebhookIngressService", () => {
   let service: WebhookIngressService;
+  let mockProvider: {
+    provider: "meta" | "telegram";
+    signatureHeader: string;
+    parseWebhook: ReturnType<typeof mock>;
+    verifySignature: ReturnType<typeof mock>;
+  };
+  let mockRouter: { get: ReturnType<typeof mock> };
+  let mockIngress: { processInbound: ReturnType<typeof mock> };
+  let mockAccounts: { listActive: ReturnType<typeof mock> };
 
   beforeEach(async () => {
-    const mockProvider = {
+    mockProvider = {
+      provider: "meta",
       signatureHeader: "x-hub-signature-256",
       parseWebhook: mock(() => []),
       verifySignature: mock(() => true),
     };
-    const mockRouter = {
+    mockRouter = {
       get: mock(() => mockProvider),
     };
-    const mockIngress = { processInbound: mock(() => Promise.resolve()) };
-    const mockAccounts = {
+    mockIngress = { processInbound: mock(() => Promise.resolve()) };
+    mockAccounts = {
       listActive: mock(() =>
-        Promise.resolve([{ id: "a1", appSecret: "secret" }]),
+        Promise.resolve([createAccount()]),
       ),
     };
 
@@ -70,5 +122,190 @@ describe("WebhookIngressService", () => {
       {},
     );
     expect(out.status).toBe("unsupported_channel");
+  });
+
+  it("uses the second Telegram account when its secret token matches", async () => {
+    mockProvider.provider = "telegram";
+    mockProvider.signatureHeader = "x-telegram-bot-api-secret-token";
+    mockProvider.parseWebhook.mockReturnValue([
+      createInboundMessage({ text: "chocho" }),
+    ]);
+    mockProvider.verifySignature.mockImplementation(
+      (_rawBody: Buffer, _signature: string, secret: string) =>
+        secret === "secret-2",
+    );
+    mockAccounts.listActive.mockResolvedValue([
+      createAccount({
+        id: "a1",
+        channel: "telegram",
+        provider: "telegram",
+        appSecret: "secret-1",
+      }),
+      createAccount({
+        id: "a2",
+        channel: "telegram",
+        provider: "telegram",
+        appSecret: "secret-2",
+      }),
+    ]);
+
+    const out = await service.processEnvelope(
+      "telegram",
+      "t1",
+      Buffer.from("{}"),
+      { "x-telegram-bot-api-secret-token": "token" },
+      { message: { text: "chocho" } },
+    );
+
+    expect(out.status).toBe("accepted");
+    await flushImmediate();
+    expect(mockIngress.processInbound).toHaveBeenCalledWith({
+      tenantId: "t1",
+      channel: "telegram",
+      provider: "telegram",
+      accountId: "a2",
+      messages: [createInboundMessage({ text: "chocho" })],
+    });
+  });
+
+  it("disambiguates WhatsApp accounts by phone_number_id when multiple verify", async () => {
+    const inbound = createInboundMessage({ text: "hello" });
+    mockProvider.parseWebhook.mockReturnValue([inbound]);
+    mockProvider.verifySignature.mockReturnValue(true);
+    mockAccounts.listActive.mockResolvedValue([
+      createAccount({
+        id: "wa-1",
+        channel: "whatsapp",
+        provider: "meta",
+        phoneNumberId: "pn-1",
+        appSecret: "shared-secret",
+      }),
+      createAccount({
+        id: "wa-2",
+        channel: "whatsapp",
+        provider: "meta",
+        phoneNumberId: "pn-2",
+        appSecret: "shared-secret",
+      }),
+    ]);
+
+    const out = await service.processEnvelope(
+      "whatsapp",
+      "t1",
+      Buffer.from("{}"),
+      { "x-hub-signature-256": "sha256=ok" },
+      {
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  metadata: { phone_number_id: "pn-2" },
+                  messages: [{ text: { body: "hello" } }],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    );
+
+    expect(out.status).toBe("accepted");
+    await flushImmediate();
+    expect(mockIngress.processInbound).toHaveBeenCalledWith({
+      tenantId: "t1",
+      channel: "whatsapp",
+      provider: "meta",
+      accountId: "wa-2",
+      messages: [inbound],
+    });
+  });
+
+  it("rejects ambiguous Meta webhooks when it cannot resolve a unique account", async () => {
+    mockProvider.parseWebhook.mockReturnValue([createInboundMessage()]);
+    mockProvider.verifySignature.mockReturnValue(true);
+    mockAccounts.listActive.mockResolvedValue([
+      createAccount({
+        id: "ig-1",
+        channel: "instagram",
+        provider: "meta",
+        appSecret: "shared-secret",
+        igUserId: "ig-1",
+      }),
+      createAccount({
+        id: "ig-2",
+        channel: "instagram",
+        provider: "meta",
+        appSecret: "shared-secret",
+        igUserId: "ig-2",
+      }),
+    ]);
+
+    const out = await service.processEnvelope(
+      "instagram",
+      "t1",
+      Buffer.from("{}"),
+      { "x-hub-signature-256": "sha256=ok" },
+      {
+        entry: [
+          {
+            messaging: [
+              {
+                sender: { id: "user-1" },
+                message: { mid: "mid-1", text: "hello" },
+                timestamp: 123,
+              },
+            ],
+          },
+        ],
+      },
+    );
+
+    expect(out.status).toBe("signature_mismatch");
+    await flushImmediate();
+    expect(mockIngress.processInbound).not.toHaveBeenCalled();
+  });
+
+  it("keeps single-account behavior when no signature header is present", async () => {
+    const inbound = createInboundMessage({ text: "hello" });
+    mockProvider.parseWebhook.mockReturnValue([inbound]);
+    mockAccounts.listActive.mockResolvedValue([
+      createAccount({
+        id: "single",
+        channel: "whatsapp",
+        provider: "meta",
+      }),
+    ]);
+
+    const out = await service.processEnvelope(
+      "whatsapp",
+      "t1",
+      Buffer.from("{}"),
+      {},
+      {
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  metadata: { phone_number_id: "pn-1" },
+                  messages: [{ text: { body: "hello" } }],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    );
+
+    expect(out.status).toBe("accepted");
+    await flushImmediate();
+    expect(mockIngress.processInbound).toHaveBeenCalledWith({
+      tenantId: "t1",
+      channel: "whatsapp",
+      provider: "meta",
+      accountId: "single",
+      messages: [inbound],
+    });
   });
 });

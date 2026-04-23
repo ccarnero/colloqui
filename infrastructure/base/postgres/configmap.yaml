@@ -211,6 +211,13 @@ data:
     DROP TABLE IF EXISTS workflow_executions CASCADE;
     DROP TABLE IF EXISTS workflow_definitions CASCADE;
 
+    -- HTTP adapters and endpoints moved to per-tenant Postgres
+    -- instances (see `@yoizen/shared` ADAPTER_SCHEMA_SQL and
+    -- tenant-service `init.sql`). Any leftover tables in an existing
+    -- platform DB are dropped on bootstrap as a fresh cut-over.
+    DROP TABLE IF EXISTS adapter_endpoints CASCADE;
+    DROP TABLE IF EXISTS http_adapters CASCADE;
+
     -- Channel Service tables
     CREATE TABLE IF NOT EXISTS channel_accounts (
       id                TEXT        PRIMARY KEY,

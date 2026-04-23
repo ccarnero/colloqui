@@ -125,6 +125,23 @@ export interface IAccountDialogResult {
           </mat-form-field>
         }
 
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>
+            {{ channel() === "telegram" ? "App Secret Token (optional)" : "App Secret (optional)" }}
+          </mat-label>
+          <input
+            matInput
+            type="password"
+            [ngModel]="appSecret()"
+            (ngModelChange)="appSecret.set($event)"
+            [placeholder]="
+              channel() === 'telegram'
+                ? 'Used as Telegram webhook secret token'
+                : ''
+            "
+          />
+        </mat-form-field>
+
         @if (channel() !== "telegram") {
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>Access Token</mat-label>
@@ -142,16 +159,6 @@ export interface IAccountDialogResult {
               matInput
               [ngModel]="appId()"
               (ngModelChange)="appId.set($event)"
-            />
-          </mat-form-field>
-
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>App Secret (optional)</mat-label>
-            <input
-              matInput
-              type="password"
-              [ngModel]="appSecret()"
-              (ngModelChange)="appSecret.set($event)"
             />
           </mat-form-field>
 

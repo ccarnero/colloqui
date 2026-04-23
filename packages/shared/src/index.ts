@@ -343,6 +343,8 @@ export { METRICS_SCHEMA_SQL } from "./metrics-schema";
 
 export { WORKFLOW_SCHEMA_SQL } from "./workflow-schema";
 
+export { ADAPTER_SCHEMA_SQL } from "./adapter-schema";
+
 export type {
   IHealthConnectionState,
   IHealthAggregateStatus,

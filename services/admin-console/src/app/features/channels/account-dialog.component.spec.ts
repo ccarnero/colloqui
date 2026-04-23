@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { NoopAnimationsModule } from "@angular/platform-browser/animations";
 import { MAT_DIALOG_DATA, MatDialogRef } from "@angular/material/dialog";
+import { By } from "@angular/platform-browser";
 import { vi } from "vitest";
 import { of } from "rxjs";
 import { AccountDialogComponent } from "./account-dialog.component";
@@ -31,5 +32,16 @@ describe("AccountDialogComponent", () => {
 
   it("creates", () => {
     expect(fixture.componentInstance).toBeTruthy();
+  });
+
+  it("shows app secret token input for telegram", () => {
+    fixture.componentInstance.channel.set("telegram");
+    fixture.detectChanges();
+
+    const labels = fixture.debugElement
+      .queryAll(By.css("mat-label"))
+      .map((element) => (element.nativeElement.textContent as string).trim());
+
+    expect(labels).toContain("App Secret Token (optional)");
   });
 });
