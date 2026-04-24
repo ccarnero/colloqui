@@ -4,7 +4,12 @@ import {
   IsOptional,
   IsBoolean,
   IsArray,
+  IsISO8601,
+  IsInt,
+  Min,
+  Max,
 } from "class-validator";
+import { Type } from "class-transformer";
 
 export class ListChannelAccountsQueryDto {
   @IsOptional()
@@ -138,6 +143,69 @@ export class SendChannelMessageBodyDto {
   @IsOptional()
   @IsString()
   caption?: string;
+}
+
+export class UsageQueryGatewayDto {
+  @IsISO8601()
+  from!: string;
+
+  @IsISO8601()
+  to!: string;
+
+  @IsOptional()
+  @IsIn(["hour", "day"])
+  bucket?: "hour" | "day";
+
+  @IsOptional()
+  @IsString()
+  accountId?: string;
+
+  @IsOptional()
+  @IsString()
+  channel?: string;
+
+  @IsOptional()
+  @IsIn(["ingress", "egress", "dlq"])
+  direction?: "ingress" | "egress" | "dlq";
+}
+
+export class UsageTotalsQueryGatewayDto {
+  @IsISO8601()
+  from!: string;
+
+  @IsISO8601()
+  to!: string;
+
+  @IsOptional()
+  @IsString()
+  accountId?: string;
+
+  @IsOptional()
+  @IsString()
+  channel?: string;
+}
+
+export const STREAM_INSPECTION_MODES = [
+  "last-per-subject",
+  "tail",
+] as const;
+export type StreamInspectionMode = (typeof STREAM_INSPECTION_MODES)[number];
+
+export class StreamMessagesQueryGatewayDto {
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @IsOptional()
+  @IsIn(STREAM_INSPECTION_MODES as unknown as string[])
+  mode?: StreamInspectionMode;
 }
 
 /** Mirrors channel-service `CreateAutoReplyRuleDto`. */

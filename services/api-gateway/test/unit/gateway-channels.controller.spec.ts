@@ -50,6 +50,85 @@ describe("ChannelsController", () => {
     });
   });
 
+  it("listUsage forwards GET /channels/usage with query", async () => {
+    await controller.listUsage(req, {
+      from: "2026-04-20T00:00:00Z",
+      to: "2026-04-23T00:00:00Z",
+      bucket: "hour",
+      accountId: "acct-1",
+      channel: "whatsapp",
+    } as never);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/channels/usage",
+      tenantId: "tenant-1",
+      query: expect.objectContaining({
+        from: "2026-04-20T00:00:00Z",
+        to: "2026-04-23T00:00:00Z",
+        accountId: "acct-1",
+        channel: "whatsapp",
+        bucket: "hour",
+      }),
+    });
+  });
+
+  it("usageTotals forwards GET /channels/usage/totals", async () => {
+    await controller.usageTotals(req, {
+      from: "2026-04-20T00:00:00Z",
+      to: "2026-04-23T00:00:00Z",
+    } as never);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/channels/usage/totals",
+      tenantId: "tenant-1",
+      query: expect.objectContaining({
+        from: "2026-04-20T00:00:00Z",
+        to: "2026-04-23T00:00:00Z",
+      }),
+    });
+  });
+
+  it("listStreams forwards GET /channels/streams", async () => {
+    await controller.listStreams(req);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/channels/streams",
+      tenantId: "tenant-1",
+    });
+  });
+
+  it("streamMessages URL-encodes the key and forwards query", async () => {
+    await controller.streamMessages(req, "ingress", {
+      subject: "ingress.whatsapp.*",
+      limit: 10,
+    } as never);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/channels/streams/ingress/messages",
+      tenantId: "tenant-1",
+      query: expect.objectContaining({
+        subject: "ingress.whatsapp.*",
+        limit: 10,
+      }),
+    });
+  });
+
+  it("streamMessages forwards the mode query flag when provided", async () => {
+    await controller.streamMessages(req, "ingress", {
+      limit: 20,
+      mode: "tail",
+    } as never);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/channels/streams/ingress/messages",
+      tenantId: "tenant-1",
+      query: expect.objectContaining({
+        limit: 20,
+        mode: "tail",
+      }),
+    });
+  });
+
   it("stream delegates to ChannelStreamService with parsed kinds", async () => {
     const obs = controller.stream(req, { kinds: "a,b" } as never);
     expect(obs).toBeDefined();

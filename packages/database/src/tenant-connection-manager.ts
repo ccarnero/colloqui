@@ -3,7 +3,37 @@ import postgres from "postgres";
 import type { Sql } from "./types";
 import { requireEnv } from "./require-env";
 
-const PG_DATABASE = "yoizen";
+/**
+ * Optional constructor overrides for {@link TenantConnectionManager}
+ * subclasses that need to point at a **different** per-tenant Postgres
+ * flavour than the default (`postgres` service, main OLTP DB).
+ *
+ * Primary motivation: the dedicated `postgres-usage` TimescaleDB
+ * instance provisioned alongside the main tenant DB — a subclass
+ * passes `{ serviceName: "postgres-usage" }` and gets correctly
+ * addressed pools without touching the rest of the class.
+ *
+ * All fields fall back to env-vars first (so ops can override per
+ * deployment without code changes) and then to legacy defaults, so
+ * zero-arg `super()` callers preserve exact pre-existing behavior.
+ */
+export interface ITenantConnectionManagerOptions {
+  /** Kubernetes Service hostname for the tenant Postgres. Default `postgres`. */
+  readonly serviceName?: string;
+  /** Override TCP port. Falls back to `POSTGRES_PORT` env then `5432`. */
+  readonly port?: number;
+  /** Override username. Falls back to `POSTGRES_USER` env then `yoizen`. */
+  readonly username?: string;
+  /** Override password. Falls back to `POSTGRES_PASSWORD` (required). */
+  readonly password?: string;
+  /** Override DB name. Falls back to `yoizen`. */
+  readonly database?: string;
+}
+
+const DEFAULT_SERVICE_NAME = "postgres";
+const DEFAULT_DATABASE = "yoizen";
+const DEFAULT_USERNAME = "yoizen";
+const DEFAULT_PORT = 5432;
 
 @Injectable()
 export class TenantConnectionManager implements OnModuleDestroy {
@@ -15,10 +45,54 @@ export class TenantConnectionManager implements OnModuleDestroy {
     null;
   private readonly pendingSchemaInit = new Map<string, Promise<void>>();
 
-  private readonly port = Number(process.env.POSTGRES_PORT) || 5432;
-  private readonly username = process.env.POSTGRES_USER ?? "yoizen";
-  private readonly password = requireEnv("POSTGRES_PASSWORD");
-  private readonly env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
+  protected serviceName: string;
+  protected port: number;
+  protected username: string;
+  protected password: string;
+  protected database: string;
+  protected readonly env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
+
+  /**
+   * Parameter-less by design: Nest's DI reflects `design:paramtypes`
+   * from the constructor signature, so adding an `options` arg here
+   * would break every service that provides `TenantConnectionManager`
+   * directly (it would try to inject `Object`). Subclasses that need
+   * to point at a non-default Postgres flavour (e.g. `postgres-usage`)
+   * call {@link configure} inside their own constructor **before any
+   * pool is opened** (pool creation is lazy in {@link getConnection}).
+   */
+  constructor() {
+    this.serviceName =
+      process.env.POSTGRES_SERVICE_NAME ?? DEFAULT_SERVICE_NAME;
+    this.port = Number(process.env.POSTGRES_PORT) || DEFAULT_PORT;
+    this.username = process.env.POSTGRES_USER ?? DEFAULT_USERNAME;
+    this.password = requireEnv("POSTGRES_PASSWORD");
+    this.database = process.env.POSTGRES_DB ?? DEFAULT_DATABASE;
+  }
+
+  /**
+   * Applies non-default connection settings. Must be called from a
+   * subclass constructor before any tenant pool is created; mutating
+   * these fields later would leave already-open pools pointing at
+   * stale hosts/credentials.
+   */
+  protected configure(options: ITenantConnectionManagerOptions): void {
+    if (options.serviceName !== undefined) {
+      this.serviceName = options.serviceName;
+    }
+    if (options.port !== undefined) {
+      this.port = options.port;
+    }
+    if (options.username !== undefined) {
+      this.username = options.username;
+    }
+    if (options.password !== undefined) {
+      this.password = options.password;
+    }
+    if (options.database !== undefined) {
+      this.database = options.database;
+    }
+  }
 
   /**
    * Registers DDL statements to run once per tenant on first `ensureSchema` call.
@@ -95,11 +169,11 @@ export class TenantConnectionManager implements OnModuleDestroy {
     const existing = this.pools.get(tenantId);
     if (existing) return existing;
 
-    const host = `postgres.${tenantId}-${this.env}-ns.svc.cluster.local`;
+    const host = `${this.serviceName}.${tenantId}-${this.env}-ns.svc.cluster.local`;
     const pool = postgres({
       host,
       port: this.port,
-      database: PG_DATABASE,
+      database: this.database,
       username: this.username,
       password: this.password,
       max: 10,
@@ -108,7 +182,7 @@ export class TenantConnectionManager implements OnModuleDestroy {
     });
     this.pools.set(tenantId, pool);
     this.logger.log(
-      `Created connection pool for tenant '${tenantId}' -> ${host}/${PG_DATABASE}`,
+      `Created connection pool for tenant '${tenantId}' -> ${host}/${this.database}`,
     );
     return pool;
   }

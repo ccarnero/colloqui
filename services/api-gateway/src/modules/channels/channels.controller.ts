@@ -25,7 +25,10 @@ import {
   ListChannelAccountsQueryDto,
   ChannelStreamQueryDto,
   SendChannelMessageBodyDto,
+  StreamMessagesQueryGatewayDto,
   UpdateChannelAccountBodyDto,
+  UsageQueryGatewayDto,
+  UsageTotalsQueryGatewayDto,
 } from "./channels-gateway.dto";
 
 @Controller("channels")
@@ -166,6 +169,55 @@ export class ChannelsController {
       path: "/channels/auto-reply",
       tenantId: req.tenantId,
       query: { accountId: query.accountId },
+    });
+  }
+
+  @Get("usage")
+  async listUsage(
+    @Req() req: ITenantScopedRequest,
+    @Query() query: UsageQueryGatewayDto,
+  ) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/channels/usage",
+      tenantId: req.tenantId,
+      query: query as unknown as Record<string, string | undefined>,
+    });
+  }
+
+  @Get("usage/totals")
+  async usageTotals(
+    @Req() req: ITenantScopedRequest,
+    @Query() query: UsageTotalsQueryGatewayDto,
+  ) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/channels/usage/totals",
+      tenantId: req.tenantId,
+      query: query as unknown as Record<string, string | undefined>,
+    });
+  }
+
+  @Get("streams")
+  async listStreams(@Req() req: ITenantScopedRequest) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/channels/streams",
+      tenantId: req.tenantId,
+    });
+  }
+
+  @Get("streams/:key/messages")
+  async streamMessages(
+    @Req() req: ITenantScopedRequest,
+    @Param("key") key: string,
+    @Query() query: StreamMessagesQueryGatewayDto,
+  ) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: `/channels/streams/${encodeURIComponent(key)}/messages`,
+      tenantId: req.tenantId,
+      query: query as unknown as Record<string, string | undefined>,
     });
   }
 

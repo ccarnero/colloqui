@@ -18,11 +18,25 @@ export interface IWebhookIngressData extends EventData {
   headers: Record<string, string>;
 }
 
-export interface WebhookIngressEnvelope extends EventEnvelope {
+/**
+ * Pre-ingress envelope emitted by `api-gateway` as soon as a provider
+ * webhook is received, **before** the signature is verified and the
+ * request is mapped to a concrete account.
+ *
+ * Intentionally does **not** carry `accountid`: at this stage the
+ * account is unknown, and using the tenant id as a placeholder
+ * corrupts downstream aggregations (e.g. usage billing per account).
+ * The `channel-service` webhook ingress consumer verifies the
+ * signature, resolves the real account, and re-emits a canonical
+ * `ChannelEnvelope` (with `accountid` populated) on the
+ * `evt.<tenant>.channel-service.messaging.*` subject tree. Anything
+ * that needs the account id MUST consume that downstream envelope.
+ */
+export type WebhookIngressEnvelope = Omit<EventEnvelope, "accountid"> & {
   producer: "api-gateway";
   domain: "messaging";
   provider: "webhook";
   channel: Channel;
   kind: "webhook_received";
   data: IWebhookIngressData;
-}
+};

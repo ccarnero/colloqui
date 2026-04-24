@@ -56,7 +56,26 @@ export {
 
 export { buildYoizenClawSubject } from './constants';
 
-export { extractTenantId, validateTenantId } from './tenant.utils';
+export {
+  extractTenantId,
+  validateTenantId,
+  isPlatformTenantRowIdParam,
+} from './tenant.utils';
+
+export {
+  ProvisioningStatus,
+  isProvisioningStatus,
+  PLATFORM_TENANTS_STREAM_NAME,
+  PLATFORM_TENANTS_SUBJECT_PATTERN,
+  TENANT_PROVISION_REQUESTED_SUBJECT,
+  TENANT_PROVISIONER_DURABLE,
+  TENANT_PROVISION_MAX_DELIVER,
+  isTenantProvisionRequestedMessageV1,
+} from './tenant-events';
+export type {
+  ProvisioningStatusValue,
+  TenantProvisionRequestedMessageV1,
+} from './tenant-events';
 
 export { generateId } from './id.utils';
 
@@ -344,6 +363,8 @@ export { METRICS_SCHEMA_SQL } from "./metrics-schema";
 export { WORKFLOW_SCHEMA_SQL } from "./workflow-schema";
 
 export { ADAPTER_SCHEMA_SQL } from "./adapter-schema";
+
+export { CHANNEL_USAGE_SCHEMA_SQL } from "./channel-usage-schema";
 
 export type {
   IHealthConnectionState,

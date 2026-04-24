@@ -15,6 +15,8 @@ import { EgressModule } from "./modules/egress/egress.module";
 import { AccountsModule } from "./modules/accounts/accounts.module";
 import { AutoReplyModule } from "./modules/auto-reply/auto-reply.module";
 import { HealthModule } from "./modules/health/health.module";
+import { UsageModule } from "./modules/usage/usage.module";
+import { StreamsModule } from "./modules/streams/streams.module";
 
 /** Registers Postgres, NATS, and JetStream as global providers for channel modules. */
 @Global()
@@ -27,6 +29,8 @@ import { HealthModule } from "./modules/health/health.module";
     EgressModule,
     AccountsModule,
     AutoReplyModule,
+    UsageModule,
+    StreamsModule,
     HealthModule,
   ],
   providers: [

@@ -1,5 +1,9 @@
 import { describe, test, expect } from "bun:test";
-import { extractTenantId, validateTenantId } from "../tenant.utils";
+import {
+  extractTenantId,
+  validateTenantId,
+  isPlatformTenantRowIdParam,
+} from "../tenant.utils";
 
 describe("extractTenantId", () => {
   test("extracts tenant from x-yoizen-tenant header", () => {
@@ -74,5 +78,23 @@ describe("validateTenantId", () => {
 
   test("rejects special characters", () => {
     expect(validateTenantId("tenant!")).toBe(false);
+  });
+});
+
+describe("isPlatformTenantRowIdParam", () => {
+  test("accepts 36-char lowercase UUID v4", () => {
+    expect(
+      isPlatformTenantRowIdParam("550e8400-e29b-41d4-a716-446655440000"),
+    ).toBe(true);
+  });
+
+  test("rejects DNS tenant name (shorter than UUID)", () => {
+    expect(isPlatformTenantRowIdParam("acme")).toBe(false);
+  });
+
+  test("rejects 36 non-hex chars", () => {
+    expect(
+      isPlatformTenantRowIdParam("gggggggg-gggg-gggg-gggg-gggggggggggg"),
+    ).toBe(false);
   });
 });

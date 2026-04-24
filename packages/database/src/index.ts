@@ -1,4 +1,5 @@
 export { TenantConnectionManager } from "./tenant-connection-manager";
+export type { ITenantConnectionManagerOptions } from "./tenant-connection-manager";
 export { requireEnv } from "./require-env";
 export {
   POSTGRES_SQL,

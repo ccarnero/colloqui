@@ -22,7 +22,7 @@ VALID_SERVICES=(
   scheduler-service registry-service adapter-service
   channel-service workflow-service workflow-http-worker
   proxy-service yoizenclaw-admin-service admin-console messaging-console
-  yoizenclaw-runtime
+  yoizenclaw-runtime usage-aggregator-service
 )
 
 VALID_ENVIRONMENTS=(dev qa staging production)

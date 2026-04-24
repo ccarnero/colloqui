@@ -14,6 +14,9 @@ function requirePostgresPassword(): string {
 
 /** Default matches platform `infrastructure/base/postgres` (pgvector-enabled). */
 const DEFAULT_TENANT_POSTGRES_IMAGE = "pgvector/pgvector:pg17";
+/** Dedicated per-tenant TimescaleDB instance for usage metrics. */
+const DEFAULT_TENANT_USAGE_POSTGRES_IMAGE = "timescale/timescaledb-ha:pg17";
+const DEFAULT_TENANT_USAGE_POSTGRES_STORAGE = "2Gi";
 
 type TenantServiceConfig = {
   readonly port: number;
@@ -25,6 +28,10 @@ type TenantServiceConfig = {
   readonly postgresPassword: string;
   /** Container image for per-tenant PostgreSQL StatefulSet (main + init-permissions). */
   readonly tenantPostgresContainerImage: string;
+  /** Container image for per-tenant dedicated TimescaleDB (usage metrics) StatefulSet. */
+  readonly tenantUsagePostgresContainerImage: string;
+  /** PVC storage size for the per-tenant TimescaleDB (usage) instance. */
+  readonly tenantUsagePostgresStorage: string;
 };
 
 /** Lazy getters so tests can set `process.env` before first read. */
@@ -52,5 +59,17 @@ export const tenantServiceConfig: TenantServiceConfig = {
   },
   get tenantPostgresContainerImage() {
     return process.env.TENANT_POSTGRES_IMAGE ?? DEFAULT_TENANT_POSTGRES_IMAGE;
+  },
+  get tenantUsagePostgresContainerImage() {
+    return (
+      process.env.TENANT_USAGE_POSTGRES_IMAGE ??
+      DEFAULT_TENANT_USAGE_POSTGRES_IMAGE
+    );
+  },
+  get tenantUsagePostgresStorage() {
+    return (
+      process.env.TENANT_USAGE_POSTGRES_STORAGE ??
+      DEFAULT_TENANT_USAGE_POSTGRES_STORAGE
+    );
   },
 };

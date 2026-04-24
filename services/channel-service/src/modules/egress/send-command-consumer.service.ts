@@ -37,6 +37,26 @@ const DURABLE_NAME = "channel-egress";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
 /** Egress does HTTP calls to Telegram/WhatsApp providers — heavily I/O bound. */
 const HANDLER_CONCURRENCY = 16;
+/**
+ * Lower than the platform default of 5 on purpose. External chat
+ * providers (Telegram, WhatsApp) have no client-side idempotency key
+ * support, so a redelivered `send` almost always ends up delivering
+ * the message again to the end user. Keeping the retry ceiling at 2
+ * means "one honest retry, then DLQ" — we trade availability for not
+ * spamming users with 3x+ duplicate replies on transient failures.
+ *
+ * NATS invariant: `max_deliver` must be strictly greater than
+ * `backoff.length`, so the backoff below must have exactly 1 entry.
+ */
+const MAX_DELIVER = 2;
+/**
+ * Single 60s delay before the single allowed retry. Matches the
+ * platform default `ack_wait` so the redelivery cadence is uniform
+ * with the first delivery — NATS uses `backoff[i]` as the effective
+ * `ack_wait` for the (i+1)th delivery, so a value below 60s here would
+ * silently shorten the redelivery window for the second attempt.
+ */
+const BACKOFF_MS: readonly number[] = [60_000];
 
 /** Minimal shape shared between the JsMsg runner and the handler. */
 interface INatsSubMessage {
@@ -76,6 +96,8 @@ export class SendCommandConsumerService
       durableName: DURABLE_NAME,
       filterSubject: CHANNEL_SEND_SUBJECT_PATTERN,
       description: "Channel egress — outbound send commands",
+      maxDeliver: MAX_DELIVER,
+      backoffMs: BACKOFF_MS,
       metrics: createNatsConsumerMetrics("channel-service"),
       runnerOptions: { concurrency: HANDLER_CONCURRENCY },
     };

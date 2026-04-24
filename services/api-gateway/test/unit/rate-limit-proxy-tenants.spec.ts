@@ -114,7 +114,7 @@ describe("Rate limit, proxy, and tenants controller", () => {
 
     it("throws NotFoundException when tenant is missing", async () => {
       try {
-        await controller.get("missing");
+        await controller.getOne("missing");
         expect(true).toBe(false);
       } catch (error) {
         expect(error).toBeInstanceOf(NotFoundException);

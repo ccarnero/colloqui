@@ -9,5 +9,8 @@ describe("TENANTS_PLATFORM_SCHEMA_SQL", () => {
     expect(TENANTS_PLATFORM_SCHEMA_SQL).toContain(
       "idx_tenants_name ON tenants",
     );
+    expect(TENANTS_PLATFORM_SCHEMA_SQL).toContain(
+      "idx_tenants_provisioning_incomplete",
+    );
   });
 });

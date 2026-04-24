@@ -19,9 +19,23 @@ CREATE TABLE IF NOT EXISTS tenants (
   name          TEXT        UNIQUE NOT NULL,
   configuration JSONB       NOT NULL DEFAULT '{}',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  provisioning_status         TEXT        NOT NULL DEFAULT 'pending',
+  provisioning_error          TEXT,
+  provisioning_started_at     TIMESTAMPTZ,
+  provisioning_completed_at   TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_tenants_name ON tenants (name);
+
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS provisioning_status
+  TEXT NOT NULL DEFAULT 'ready';
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS provisioning_error TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS provisioning_started_at TIMESTAMPTZ;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS provisioning_completed_at TIMESTAMPTZ;
+ALTER TABLE tenants ALTER COLUMN provisioning_status SET DEFAULT 'pending';
+CREATE INDEX IF NOT EXISTS idx_tenants_provisioning_incomplete
+  ON tenants (provisioning_status)
+  WHERE provisioning_status IN ('pending', 'provisioning', 'failed');
 `;
 
 const sqlProvider: FactoryProvider<Sql> = {

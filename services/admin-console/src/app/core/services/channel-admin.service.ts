@@ -1,11 +1,20 @@
 import { Injectable, inject } from "@angular/core";
-import { HttpClient } from "@angular/common/http";
+import { HttpClient, HttpParams } from "@angular/common/http";
 import type { Observable } from "rxjs";
 import { environment } from "../../../environments/environment";
 import type {
   IChannelAccount,
   IChannelAccountOption,
 } from "../models/channel-account.model";
+import type {
+  IStreamMessage,
+  IStreamMessagesQueryParams,
+  IStreamSummary,
+  IUsageBucketRow,
+  IUsageQueryParams,
+  IUsageTotalsQueryParams,
+  IUsageTotalsRow,
+} from "../models/channel-streams.model";
 
 const BASE = `${environment.apiUrl}/channels`;
 
@@ -61,4 +70,56 @@ export class ChannelAdminService {
   }): Observable<unknown> {
     return this.http.post(`${BASE}/auto-reply`, body);
   }
+
+  getUsage(
+    params: IUsageQueryParams,
+  ): Observable<{ items: IUsageBucketRow[] }> {
+    return this.http.get<{ items: IUsageBucketRow[] }>(`${BASE}/usage`, {
+      params: buildParams(params as unknown as Record<string, string | undefined>),
+    });
+  }
+
+  getUsageTotals(
+    params: IUsageTotalsQueryParams,
+  ): Observable<{ items: IUsageTotalsRow[] }> {
+    return this.http.get<{ items: IUsageTotalsRow[] }>(
+      `${BASE}/usage/totals`,
+      {
+        params: buildParams(
+          params as unknown as Record<string, string | undefined>,
+        ),
+      },
+    );
+  }
+
+  getStreams(): Observable<{ items: IStreamSummary[] }> {
+    return this.http.get<{ items: IStreamSummary[] }>(`${BASE}/streams`);
+  }
+
+  getStreamMessages(
+    key: "ingress" | "dlq",
+    params: IStreamMessagesQueryParams = {},
+  ): Observable<{ items: IStreamMessage[] }> {
+    const rawParams: Record<string, string | undefined> = {};
+    if (params.subject !== undefined) rawParams["subject"] = params.subject;
+    if (params.limit !== undefined) rawParams["limit"] = String(params.limit);
+    if (params.mode !== undefined) rawParams["mode"] = params.mode;
+    return this.http.get<{ items: IStreamMessage[] }>(
+      `${BASE}/streams/${encodeURIComponent(key)}/messages`,
+      { params: buildParams(rawParams) },
+    );
+  }
+}
+
+function buildParams(
+  source: Record<string, string | undefined>,
+): HttpParams {
+  let p = new HttpParams();
+  for (const key of Object.keys(source)) {
+    const value = source[key];
+    if (value !== undefined && value !== null && value !== "") {
+      p = p.set(key, value);
+    }
+  }
+  return p;
 }

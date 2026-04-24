@@ -50,6 +50,17 @@ export class WebhookIngressPublisherService {
     const idempotencykey = computeIdempotencyKey(payload);
     const correlationId = id;
 
+    /**
+     * `accountid` is deliberately absent: at this stage of the pipeline
+     * the webhook request has not been signature-verified yet, and the
+     * provider-level account (`whatsapp_business_id`, telegram bot id,
+     * etc.) has not been mapped to a `Channel Account` row. Populating
+     * it with a placeholder (e.g. `tenantId`) would poison downstream
+     * aggregations that group by `account_id` — billing in particular.
+     *
+     * `channel-service` will emit a canonical `ChannelEnvelope` with the
+     * real `accountid` once signature verification succeeds.
+     */
     const envelope: WebhookIngressEnvelope = {
       specversion: "1.0",
       id,
@@ -65,7 +76,6 @@ export class WebhookIngressPublisherService {
       domain: "messaging",
       channel,
       provider: "webhook",
-      accountid: tenantId,
       kind: "webhook_received",
       idempotencykey,
       transport: {

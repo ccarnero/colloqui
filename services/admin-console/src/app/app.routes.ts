@@ -94,6 +94,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: "channels/:channel/accounts/:accountId",
+        loadComponent: () =>
+          import(
+            "./features/channels/detail/channel-detail.component"
+          ).then((m) => m.ChannelDetailComponent),
+      },
+      {
         path: "auto-reply",
         loadComponent: () =>
           import("./features/channels/auto-reply/auto-reply.component").then(

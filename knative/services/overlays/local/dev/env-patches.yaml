@@ -916,3 +916,58 @@ spec:
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: usage-aggregator-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/usage-aggregator-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: TENANT_SERVICE_URL
+              value: "http://tenant-service.platform-services-dev.svc.cluster.local"
+            # Per-tenant `postgres-usage` StatefulSets are resolved
+            # dynamically by `UsageTenantConnectionManager` against
+            # `postgres-usage.{tenant}-{env}-ns.svc.cluster.local`; only
+            # shared credentials travel via env.
+            - name: POSTGRES_USER
+              value: "yoizen"
+            - name: POSTGRES_PASSWORD
+              value: "yoizen-dev-password"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "usage-aggregator-service"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5

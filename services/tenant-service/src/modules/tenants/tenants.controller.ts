@@ -11,10 +11,12 @@ import {
 } from "@nestjs/common";
 import {
   TenantsService,
+  type ICreateTenantAccepted,
   type ITenantDetail,
   type ITenantSummary,
 } from "./tenants.service";
 import { CreateTenantDto, UpdateTenantDto } from "./tenant.dto";
+import { isPlatformTenantRowIdParam } from "@yoizen/shared";
 
 /** Kubernetes namespace + PostgreSQL provisioning per tenant. */
 @Controller("tenants")
@@ -22,45 +24,34 @@ export class TenantsController {
   constructor(private readonly tenantsService: TenantsService) {}
 
   /**
-   * Creates a tenant namespace and database resources.
-   *
-   * @param dto  Tenant name and optional configuration payload.
-   * @returns Created tenant detail.
+   * Creates a platform tenant record and enqueues async provisioning.
    */
   @Post()
-  @HttpCode(HttpStatus.CREATED)
-  async create(@Body() dto: CreateTenantDto): Promise<ITenantDetail> {
+  @HttpCode(HttpStatus.ACCEPTED)
+  async create(
+    @Body() dto: CreateTenantDto,
+  ): Promise<ICreateTenantAccepted> {
     return this.tenantsService.createTenant(dto.name, dto.configuration);
   }
 
-  /**
-   * Lists all tenants visible to this service instance.
-   *
-   * @returns Tenant id/name summaries.
-   */
   @Get()
   async list(): Promise<ITenantSummary[]> {
     return this.tenantsService.listTenants();
   }
 
   /**
-   * Fetches one tenant by unique name.
-   *
-   * @param name  Tenant identifier.
-   * @returns Full tenant detail.
+   * Resolves a tenant by UUID (async status polling) or by name (registry).
    */
-  @Get(":name")
-  async get(@Param("name") name: string): Promise<ITenantDetail> {
-    return this.tenantsService.getTenant(name);
+  @Get(":nameOrId")
+  async getOne(
+    @Param("nameOrId") nameOrId: string,
+  ): Promise<ITenantDetail> {
+    if (isPlatformTenantRowIdParam(nameOrId)) {
+      return this.tenantsService.getTenantById(nameOrId);
+    }
+    return this.tenantsService.getTenant(nameOrId);
   }
 
-  /**
-   * Updates tenant configuration in place.
-   *
-   * @param name  Tenant identifier.
-   * @param dto   Partial configuration patch.
-   * @returns Updated tenant detail.
-   */
   @Patch(":name")
   async update(
     @Param("name") name: string,
@@ -69,11 +60,6 @@ export class TenantsController {
     return this.tenantsService.updateTenant(name, dto.configuration);
   }
 
-  /**
-   * Deletes a tenant and tears down associated resources.
-   *
-   * @param name  Tenant identifier.
-   */
   @Delete(":name")
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param("name") name: string): Promise<void> {

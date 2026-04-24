@@ -3,8 +3,17 @@ import { describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { createQueuedSql } from "@yoizen/testing";
 import type { Sql } from "postgres";
+import { ProvisioningStatus } from "@yoizen/shared";
 import { TenantsRepository } from "../../src/modules/tenants/tenants.repository";
 import { PLATFORM_POSTGRES_SQL } from "../../src/providers/platform-postgres.provider";
+
+const rowTemplate = {
+  configuration: {} as Record<string, unknown>,
+  provisioning_status: ProvisioningStatus.Pending,
+  provisioning_error: null as string | null,
+  provisioning_started_at: null as Date | null,
+  provisioning_completed_at: null as Date | null,
+};
 
 describe("TenantsRepository", () => {
   it("creates and loads tenants via SQL adapter", async () => {
@@ -14,7 +23,7 @@ describe("TenantsRepository", () => {
           {
             id: "id-1",
             name: "tenant-a",
-            configuration: {},
+            ...rowTemplate,
             created_at: new Date(),
             updated_at: new Date(),
           },
@@ -44,6 +53,7 @@ describe("TenantsRepository", () => {
     const row = {
       id: "i1",
       name: "n1",
+      ...rowTemplate,
       configuration: {},
       created_at: new Date(),
       updated_at: new Date(),
@@ -66,6 +76,7 @@ describe("TenantsRepository", () => {
     const row = {
       id: "i1",
       name: "n1",
+      ...rowTemplate,
       configuration: { k: "v" },
       created_at: new Date(),
       updated_at: new Date(),

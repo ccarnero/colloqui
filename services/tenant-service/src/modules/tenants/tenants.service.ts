@@ -8,19 +8,22 @@ import {
 import { PinoLoggerService } from "@yoizen/observability";
 import type * as k8s from "@kubernetes/client-node";
 import { randomUUID } from "node:crypto";
+import {
+  invalidPlatformEnvironmentMessage,
+  ProvisioningStatus,
+  tenantKubernetesNamespaceName,
+  type ProvisioningStatusValue,
+} from "@yoizen/shared";
 import { tenantServiceConfig } from "../../config";
 import { K8S_CORE_API } from "../../providers/kubernetes.provider";
-import { TenantPostgresProvisioner } from "../../providers/postgres.provider";
+import { TenantProvisionPublisher } from "../../providers/tenant-provision-publisher.service";
 import { TenantsRepository } from "./tenants.repository";
 import {
   type Environment,
+  type ITenantRow,
   type TenantConfiguration,
   VALID_ENVIRONMENTS,
 } from "./tenant.dto";
-import {
-  invalidPlatformEnvironmentMessage,
-  tenantKubernetesNamespaceName,
-} from "@yoizen/shared";
 
 const LABEL_TENANT = "yoizen.io/tenant";
 const LABEL_ENVIRONMENT = "yoizen.io/environment";
@@ -36,18 +39,33 @@ interface INamespaceStatus {
 }
 
 export interface ITenantDetail {
+  id: string;
   name: string;
   configuration: TenantConfiguration;
   namespaces: INamespaceStatus[];
   postgresHost: string;
+  provisioningStatus: ProvisioningStatusValue;
+  provisioningError: string | null;
+  provisioningStartedAt: Date | null;
+  provisioningCompletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface ITenantSummary {
+  id: string;
   name: string;
   environment: string;
   configuration: TenantConfiguration;
+  provisioningStatus: ProvisioningStatusValue;
+}
+
+/** 202 Accepted body for POST /tenants (public path: /api/tenants/:id for status). */
+export interface ICreateTenantAccepted {
+  id: string;
+  name: string;
+  provisioningStatus: ProvisioningStatusValue;
+  statusUrl: string;
 }
 
 function postgresHost(tenant: string, env: Environment): string {
@@ -61,8 +79,8 @@ export class TenantsService {
 
   constructor(
     @Inject(K8S_CORE_API) private readonly k8sApi: k8s.CoreV1Api,
-    private readonly pgProvisioner: TenantPostgresProvisioner,
     private readonly repository: TenantsRepository,
+    private readonly provisionPublisher: TenantProvisionPublisher,
   ) {
     const env = tenantServiceConfig.platformEnvironment;
     if (!VALID_ENVIRONMENTS.includes(env as Environment)) {
@@ -75,98 +93,65 @@ export class TenantsService {
   }
 
   /**
-   * Creates DB row, Kubernetes namespace, and provisions PostgreSQL for the tenant.
-   *
-   * @param name - DNS-safe tenant name.
-   * @param configuration - Arbitrary JSON configuration blob.
+   * Inserts platform row (pending), enqueues JetStream provision job, returns 202 payload.
    */
   async createTenant(
     name: string,
     configuration: TenantConfiguration = {},
-  ): Promise<ITenantDetail> {
+  ): Promise<ICreateTenantAccepted> {
     const existing = await this.repository.findByName(name);
     if (existing) {
       throw new ConflictException(`Tenant '${name}' already exists`);
     }
 
-    const row = await this.repository.create(randomUUID(), name, configuration);
-
-    const nsName = tenantKubernetesNamespaceName(name, this.environment);
-    const body = {
-      metadata: {
-        name: nsName,
-        labels: {
-          [LABEL_PART_OF]: PART_OF_VALUE,
-          [LABEL_TENANT]: name,
-          [LABEL_ENVIRONMENT]: this.environment,
-          [LABEL_MANAGED_BY]: MANAGED_BY_VALUE,
-        },
-      },
-    };
-
-    const created = await this.k8sApi.createNamespace({ body });
-
-    await this.pgProvisioner.provision(nsName);
-    await this.pgProvisioner.waitForReady(nsName);
-
-    this.logger.log(`Created tenant '${name}' with namespace ${nsName}`);
-
-    const ns: INamespaceStatus = {
-      name: nsName,
-      environment: this.environment,
-      phase: created.status?.phase ?? "Active",
-    };
+    const id = randomUUID();
+    const row = await this.repository.create(id, name, configuration);
+    await this.provisionPublisher.publishProvisionRequested({
+      tenantId: row.id,
+      name: row.name,
+      configuration: row.configuration,
+    });
 
     return {
-      name,
-      configuration: row.configuration,
-      namespaces: [ns],
-      postgresHost: postgresHost(name, this.environment),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      id: row.id,
+      name: row.name,
+      provisioningStatus: ProvisioningStatus.Pending,
+      statusUrl: `/api/tenants/${row.id}`,
     };
   }
 
-  /**
-   * Lists tenant summaries for the current platform environment.
-   */
   async listTenants(): Promise<ITenantSummary[]> {
     const rows = await this.repository.findAll();
     return rows.map((row) => ({
+      id: row.id,
       name: row.name,
       environment: this.environment,
       configuration: row.configuration,
+      provisioningStatus: row.provisioning_status,
     }));
+  }
+
+  async getTenantById(id: string): Promise<ITenantDetail> {
+    const row = await this.repository.findById(id);
+    if (!row) {
+      throw new NotFoundException(`Tenant id '${id}' not found`);
+    }
+    return this.buildDetail(row);
   }
 
   /**
    * Returns tenant detail including namespace phases and Postgres host.
-   *
-   * @param name - Tenant name.
    */
   async getTenant(name: string): Promise<ITenantDetail> {
     const row = await this.repository.findByName(name);
     if (!row) {
       throw new NotFoundException(`Tenant '${name}' not found`);
     }
-
-    const items = await this.findNamespacesByTenant(name);
-
-    return {
-      name,
-      configuration: row.configuration,
-      namespaces: this.mapNamespacesToStatuses(items),
-      postgresHost: postgresHost(name, this.environment),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
+    return this.buildDetail(row);
   }
 
   /**
    * Updates stored configuration JSON for the tenant.
-   *
-   * @param name - Tenant name.
-   * @param configuration - Full replacement configuration object.
    */
   async updateTenant(
     name: string,
@@ -176,25 +161,13 @@ export class TenantsService {
     if (!row) {
       throw new NotFoundException(`Tenant '${name}' not found`);
     }
-
     const items = await this.findNamespacesByTenant(name);
-
     this.logger.log(`Updated configuration for tenant '${name}'`);
-
-    return {
-      name,
-      configuration: row.configuration,
-      namespaces: this.mapNamespacesToStatuses(items),
-      postgresHost: postgresHost(name, this.environment),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
+    return this.mapRowToDetail(row, items);
   }
 
   /**
    * Deletes all labeled namespaces (cascades workloads) then removes the DB row.
-   *
-   * @param name - Tenant name.
    */
   async deleteTenant(name: string): Promise<void> {
     const row = await this.repository.findByName(name);
@@ -218,6 +191,27 @@ export class TenantsService {
       );
     }
     this.logger.log(`Deleted tenant '${name}' from database`);
+  }
+
+  private async buildDetail(row: ITenantRow): Promise<ITenantDetail> {
+    const items = await this.findNamespacesByTenant(row.name);
+    return this.mapRowToDetail(row, items);
+  }
+
+  private mapRowToDetail(row: ITenantRow, items: k8s.V1Namespace[]): ITenantDetail {
+    return {
+      id: row.id,
+      name: row.name,
+      configuration: row.configuration,
+      namespaces: this.mapNamespacesToStatuses(items),
+      postgresHost: postgresHost(row.name, this.environment),
+      provisioningStatus: row.provisioning_status,
+      provisioningError: row.provisioning_error,
+      provisioningStartedAt: row.provisioning_started_at,
+      provisioningCompletedAt: row.provisioning_completed_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
   }
 
   private mapNamespacesToStatuses(

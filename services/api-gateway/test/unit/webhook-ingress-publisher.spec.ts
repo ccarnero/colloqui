@@ -47,6 +47,10 @@ describe("WebhookIngressPublisherService", () => {
     const envelope = JSON.parse(new TextDecoder().decode(bytes));
     expect(envelope.tenant).toBe("tenant-a");
     expect(envelope.kind).toBe("webhook_received");
+    // `accountid` MUST be absent — the account is unresolved at this
+    // stage and using a placeholder would corrupt per-account usage
+    // aggregations downstream (billing).
+    expect("accountid" in envelope).toBe(false);
     expect(envelope.data.raw_body_b64).toBe(rawBody.toString("base64"));
     expect(envelope.data.headers).toEqual({
       "content-type": "application/json",

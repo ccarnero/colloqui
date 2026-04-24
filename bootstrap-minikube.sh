@@ -564,7 +564,7 @@ build_images() {
              scheduler-service registry-service adapter-service \
              channel-service workflow-service workflow-http-worker \
              proxy-service yoizenclaw-admin-service admin-console \
-             messaging-console; do
+             messaging-console usage-aggregator-service; do
     log "Building image: dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \

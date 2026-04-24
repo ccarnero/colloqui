@@ -7,7 +7,7 @@ import {
   signal,
 } from "@angular/core";
 import { DatePipe, TitleCasePipe } from "@angular/common";
-import { ActivatedRoute } from "@angular/router";
+import { ActivatedRoute, RouterLink } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
@@ -28,6 +28,7 @@ import type { IChannelAccount } from "../../core/models/channel-account.model";
   imports: [
     DatePipe,
     TitleCasePipe,
+    RouterLink,
     MatButtonModule,
     MatIconModule,
     MatTableModule,
@@ -74,7 +75,12 @@ import type { IChannelAccount } from "../../core/models/channel-account.model";
         <ng-container matColumnDef="name">
           <th mat-header-cell *matHeaderCellDef>Name</th>
           <td mat-cell *matCellDef="let a">
-            <strong>{{ a.name }}</strong>
+            <a
+              class="account-name-link"
+              [routerLink]="['/channels', channelFilter(), 'accounts', a.id]"
+            >
+              {{ a.name }}
+            </a>
           </td>
         </ng-container>
 
@@ -162,6 +168,16 @@ import type { IChannelAccount } from "../../core/models/channel-account.model";
     .badge-red {
       background: rgba(239, 68, 68, 0.15);
       color: #ef4444;
+    }
+
+    .account-name-link {
+      color: var(--text);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .account-name-link:hover {
+      color: var(--accent, var(--text));
+      text-decoration: underline;
     }
   `,
 })

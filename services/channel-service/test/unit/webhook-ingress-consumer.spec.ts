@@ -31,7 +31,6 @@ describe("WebhookIngressConsumerService", () => {
       domain: "messaging",
       channel: "whatsapp",
       provider: "webhook",
-      accountid: tenant,
       kind: "webhook_received",
       idempotencykey: "sha256:test",
       transport: { method: "webhook", protocol: "https", depth: 0 },

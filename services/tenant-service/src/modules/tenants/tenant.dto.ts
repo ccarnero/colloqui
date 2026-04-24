@@ -6,11 +6,14 @@ import {
   IsOptional,
   IsObject,
 } from "class-validator";
-import type { JsonValue } from "@yoizen/shared";
+import type { JsonValue, ProvisioningStatusValue } from "@yoizen/shared";
 
-export { VALID_ENVIRONMENTS, type Environment } from "@yoizen/shared";
-
-export type { JsonValue };
+export {
+  VALID_ENVIRONMENTS,
+  type Environment,
+  type JsonValue,
+  type ProvisioningStatusValue,
+} from "@yoizen/shared";
 
 export type TenantConfiguration = { [key: string]: JsonValue };
 
@@ -20,6 +23,10 @@ export interface ITenantRow {
   configuration: TenantConfiguration;
   created_at: Date;
   updated_at: Date;
+  provisioning_status: ProvisioningStatusValue;
+  provisioning_error: string | null;
+  provisioning_started_at: Date | null;
+  provisioning_completed_at: Date | null;
 }
 
 export class CreateTenantDto {
