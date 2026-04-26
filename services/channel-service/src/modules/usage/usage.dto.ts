@@ -59,4 +59,6 @@ export interface IUsageBucketRow {
 export interface IUsageTotalsRow {
   readonly direction: "ingress" | "egress" | "dlq";
   readonly events: number;
+  readonly firstTs: string | null;
+  readonly lastTs: string | null;
 }

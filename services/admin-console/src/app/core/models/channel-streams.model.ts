@@ -12,6 +12,8 @@ export interface IUsageBucketRow {
 export interface IUsageTotalsRow {
   readonly direction: UsageDirection;
   readonly events: number;
+  readonly firstTs: string | null;
+  readonly lastTs: string | null;
 }
 
 export interface IUsageQueryParams {
@@ -58,6 +60,7 @@ export type StreamInspectionMode = "last-per-subject" | "tail";
 
 export interface IStreamMessagesQueryParams {
   readonly subject?: string;
+  readonly accountId?: string;
   readonly limit?: number;
   readonly mode?: StreamInspectionMode;
 }

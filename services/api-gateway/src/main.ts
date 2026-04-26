@@ -58,7 +58,10 @@ function configureGlobalMiddleware(app: NestFastifyApplication): void {
   });
 
   app.setGlobalPrefix("api", {
-    exclude: [{ path: "health", method: RequestMethod.GET }],
+    exclude: [
+      { path: "health", method: RequestMethod.GET },
+      { path: "readyz", method: RequestMethod.GET },
+    ],
   });
 
   const fastify = app.getHttpAdapter().getInstance();

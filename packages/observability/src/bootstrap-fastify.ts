@@ -82,9 +82,16 @@ export function runNestFastifyServiceMain(
 ): void {
   void bootstrap().catch((err: unknown) => {
     const logger = new PinoLoggerService(serviceName);
+    const detail =
+      err instanceof Error
+        ? `${err.name}: ${err.message}`
+        : typeof err === "string"
+          ? err
+          : JSON.stringify(err);
+    const stack = err instanceof Error ? err.stack : undefined;
     logger.error(
-      "Bootstrap failed",
-      err instanceof Error ? err.stack : String(err),
+      `Bootstrap failed — ${detail}`,
+      stack ?? detail,
     );
     process.exit(1);
   });

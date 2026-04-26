@@ -113,6 +113,27 @@ describe("ChannelAdminService", () => {
     httpMock.verify();
   });
 
+  it("getStreamMessages serializes accountId when provided", async () => {
+    const promise = firstValueFrom(
+      service.getStreamMessages("ingress", {
+        subject: "evt.t1.>",
+        accountId: "acc-99",
+        limit: 10,
+      }),
+    );
+    const req = httpMock.expectOne(
+      (r) =>
+        r.url === `${environment.apiUrl}/channels/streams/ingress/messages` &&
+        r.params.get("subject") === "evt.t1.>" &&
+        r.params.get("accountId") === "acc-99" &&
+        r.params.get("limit") === "10",
+    );
+    expect(req.request.method).toBe("GET");
+    req.flush({ items: [] });
+    await promise;
+    httpMock.verify();
+  });
+
   it("getStreamMessages serializes the mode param when provided", async () => {
     const promise = firstValueFrom(
       service.getStreamMessages("ingress", {

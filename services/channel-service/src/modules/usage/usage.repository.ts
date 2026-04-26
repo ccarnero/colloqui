@@ -35,13 +35,16 @@ interface IBucketRawRow {
 interface ITotalsRawRow {
   direction: string;
   events: string | number;
+  first_ts: Date | string | null;
+  last_ts: Date | string | null;
 }
 
 /**
  * Read-only repository over the dedicated per-tenant TimescaleDB.
- * Queries the continuous aggregates (`channel_events_hourly` /
- * `channel_events_daily`) so the UI never hits the raw hypertable —
- * response time stays predictable even for long date ranges.
+ * Bucket queries use continuous aggregates (`channel_events_hourly` /
+ * `channel_events_daily`). Totals read the raw `channel_events` hypertable
+ * so `MIN(ts)` / `MAX(ts)` match the selected range (CAGG buckets would
+ * truncate window edges).
  *
  * Query filters are composed with tagged template literals so the
  * `postgres` driver parametrises them; no string concatenation.
@@ -56,21 +59,47 @@ export class UsageRepository {
     const sql = await this.connections.ensureSchema(filters.tenantId);
     const view =
       filters.bucket === "day" ? "channel_events_daily" : "channel_events_hourly";
+    const bucketInterval = filters.bucket === "day" ? "1 day" : "1 hour";
 
     const rows = (await sql.unsafe(
       `
-      SELECT
-        bucket,
-        account_id,
-        channel,
-        direction,
-        events
-      FROM ${view}
-      WHERE bucket >= $1
-        AND bucket <  $2
-        AND ($3::text IS NULL OR account_id = $3)
-        AND ($4::text IS NULL OR channel = $4)
-        AND ($5::text IS NULL OR direction = $5)
+      WITH bounds AS (
+        SELECT time_bucket($6::interval, now() - INTERVAL '10 minutes') AS tail_bucket
+      ),
+      cagg AS (
+        SELECT
+          bucket,
+          account_id,
+          channel,
+          direction,
+          events
+        FROM ${view}
+        CROSS JOIN bounds
+        WHERE bucket >= $1
+          AND bucket < LEAST($2::timestamptz, bounds.tail_bucket)
+          AND ($3::text IS NULL OR account_id = $3)
+          AND ($4::text IS NULL OR channel = $4)
+          AND ($5::text IS NULL OR direction = $5)
+      ),
+      tail AS (
+        SELECT
+          time_bucket($6::interval, ts) AS bucket,
+          account_id,
+          channel,
+          direction,
+          count(*)::BIGINT AS events
+        FROM channel_events
+        CROSS JOIN bounds
+        WHERE ts >= GREATEST($1::timestamptz, bounds.tail_bucket)
+          AND ts < $2
+          AND ($3::text IS NULL OR account_id = $3)
+          AND ($4::text IS NULL OR channel = $4)
+          AND ($5::text IS NULL OR direction = $5)
+        GROUP BY bucket, account_id, channel, direction
+      )
+      SELECT * FROM cagg
+      UNION ALL
+      SELECT * FROM tail
       ORDER BY bucket ASC
     `,
       [
@@ -79,6 +108,7 @@ export class UsageRepository {
         filters.accountId ?? null,
         filters.channel ?? null,
         filters.direction ?? null,
+        bucketInterval,
       ],
     )) as IBucketRawRow[];
 
@@ -104,10 +134,12 @@ export class UsageRepository {
       `
       SELECT
         direction,
-        SUM(events)::BIGINT AS events
-      FROM channel_events_hourly
-      WHERE bucket >= $1
-        AND bucket <  $2
+        count(*)::BIGINT AS events,
+        MIN(ts) AS first_ts,
+        MAX(ts) AS last_ts
+      FROM channel_events
+      WHERE ts >= $1
+        AND ts <  $2
         AND ($3::text IS NULL OR account_id = $3)
         AND ($4::text IS NULL OR channel = $4)
       GROUP BY direction
@@ -123,9 +155,19 @@ export class UsageRepository {
     const out: IUsageTotalsRow[] = new Array(rows.length);
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i]!;
+      const firstTs =
+        r.first_ts == null
+          ? null
+          : new Date(r.first_ts as string | number | Date).toISOString();
+      const lastTs =
+        r.last_ts == null
+          ? null
+          : new Date(r.last_ts as string | number | Date).toISOString();
       out[i] = {
         direction: r.direction as "ingress" | "egress" | "dlq",
         events: Number(r.events),
+        firstTs,
+        lastTs,
       };
     }
     return out;

@@ -5,12 +5,11 @@ import type { Sql } from "postgres";
 import { AccountsService } from "../../src/modules/accounts/accounts.service";
 import { AccountsRepository } from "../../src/modules/accounts/accounts.repository";
 import { TelegramProvider } from "../../src/providers/telegram/telegram.provider";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
+import { ChannelTenantConnectionManager } from "../../src/providers/channel-tenant-connection-manager";
 
 function accountRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "acc-1",
-    tenant_id: "tenant-a",
     channel: "whatsapp",
     provider: "meta",
     name: "Primary",
@@ -34,11 +33,14 @@ describe("AccountsService", () => {
   let registerWebhook: ReturnType<typeof mock>;
 
   async function compile(sql: Sql) {
+    const tcm = {
+      ensureSchema: mock(() => Promise.resolve(sql)),
+    };
     const module = await Test.createTestingModule({
       providers: [
         AccountsService,
         AccountsRepository,
-        { provide: POSTGRES_SQL, useValue: sql },
+        { provide: ChannelTenantConnectionManager, useValue: tcm },
         {
           provide: TelegramProvider,
           useValue: { registerWebhook },

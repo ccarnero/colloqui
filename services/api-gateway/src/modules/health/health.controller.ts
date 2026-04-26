@@ -10,6 +10,13 @@ export class HealthController {
 
   @Public()
   @SkipTenant()
+  @Get("readyz")
+  ready(): { status: "ok" } {
+    return { status: "ok" };
+  }
+
+  @Public()
+  @SkipTenant()
   @Get("health")
   async check(): Promise<IApiGatewayHealthResponse> {
     return this.gatewayHealth.check();

@@ -3,12 +3,11 @@ import { Test } from "@nestjs/testing";
 import { createQueuedSql } from "@yoizen/testing";
 import type { Sql } from "postgres";
 import { AccountsRepository } from "../../src/modules/accounts/accounts.repository";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
+import { ChannelTenantConnectionManager } from "../../src/providers/channel-tenant-connection-manager";
 
 function accountRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "acc-1",
-    tenant_id: "tenant-a",
     channel: "whatsapp",
     provider: "meta",
     name: "Primary",
@@ -28,13 +27,22 @@ function accountRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function wrapTcm(sql: Sql) {
+  return {
+    ensureSchema: mock(() => Promise.resolve(sql)),
+  };
+}
+
 describe("AccountsRepository", () => {
   it("insertAccount returns inserted row", async () => {
     const sql = createQueuedSql([[accountRow()]], mock);
     const moduleRef = await Test.createTestingModule({
       providers: [
         AccountsRepository,
-        { provide: POSTGRES_SQL, useValue: sql },
+        {
+          provide: ChannelTenantConnectionManager,
+          useValue: wrapTcm(sql),
+        },
       ],
     }).compile();
 
@@ -69,7 +77,10 @@ describe("AccountsRepository", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         AccountsRepository,
-        { provide: POSTGRES_SQL, useValue: sql },
+        {
+          provide: ChannelTenantConnectionManager,
+          useValue: wrapTcm(sql),
+        },
       ],
     }).compile();
 
@@ -80,7 +91,9 @@ describe("AccountsRepository", () => {
   });
 
   it("updateAccount delegates to sql.unsafe when patch non-empty", async () => {
-    const unsafe = mock(() => Promise.resolve([accountRow({ name: "Renamed" })]));
+    const unsafe = mock(() =>
+      Promise.resolve([accountRow({ name: "Renamed" })]),
+    );
     const fn = mock(() => Promise.resolve([]));
     const sql = Object.assign(fn, {
       json: (v: unknown) => v,
@@ -90,7 +103,10 @@ describe("AccountsRepository", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         AccountsRepository,
-        { provide: POSTGRES_SQL, useValue: sql },
+        {
+          provide: ChannelTenantConnectionManager,
+          useValue: wrapTcm(sql),
+        },
       ],
     }).compile();
 

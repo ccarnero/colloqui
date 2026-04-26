@@ -364,6 +364,13 @@ export { WORKFLOW_SCHEMA_SQL } from "./workflow-schema";
 
 export { ADAPTER_SCHEMA_SQL } from "./adapter-schema";
 
+export {
+  CHANNEL_ACCOUNTS_SCHEMA_SQL,
+  AUTO_REPLY_SCHEMA_SQL,
+} from "./channel-schema";
+
+export { TENANT_AUTH_SCHEMA_SQL } from "./tenant-auth-schema";
+
 export { CHANNEL_USAGE_SCHEMA_SQL } from "./channel-usage-schema";
 
 export type {

@@ -1,16 +1,12 @@
-/** Tenant roles and permission rows with transactional updates. */
+/** Tenant roles and permission rows in per-tenant Postgres. */
 import { Inject, Injectable } from "@nestjs/common";
-import {
-  POSTGRES_SQL,
-  type Sql,
-  type TxSql,
-} from "../../providers/postgres.provider";
+import { AuthTenantConnectionManager } from "../../providers/auth-tenant-connection-manager";
+import type { TxSql } from "../../providers/postgres.provider";
 import { SYSTEM_ROLE_TENANT_ADMIN } from "@yoizen/shared";
 import type { PermissionDto } from "./tenant-role.dto";
 
 export interface ITenantRoleRow {
   id: string;
-  tenant_id: string;
   name: string;
   description: string | null;
   is_system: boolean;
@@ -22,6 +18,7 @@ export interface ITenantRoleRow {
 /** Options for creating a role with permission rows. */
 export interface ICreateRoleWithPermissionsOptions {
   id: string;
+  /** Resolves pool only. */
   tenantId: string;
   name: string;
   description: string | null;
@@ -30,13 +27,20 @@ export interface ICreateRoleWithPermissionsOptions {
 
 @Injectable()
 export class TenantRolesRepository {
-  constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
+  constructor(
+    @Inject(AuthTenantConnectionManager)
+    private readonly tenantSql: AuthTenantConnectionManager,
+  ) {}
 
-  findSystemRoleId(tenantId: string): ReturnType<Sql> {
-    return this.sql`
+  private async sqlFor(tenantId: string) {
+    return this.tenantSql.ensureSchema(tenantId);
+  }
+
+  async findSystemRoleId(tenantId: string): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       SELECT id FROM tenant_roles
-      WHERE tenant_id = ${tenantId}
-        AND name = ${SYSTEM_ROLE_TENANT_ADMIN}
+      WHERE name = ${SYSTEM_ROLE_TENANT_ADMIN}
       LIMIT 1
     `;
   }
@@ -45,23 +49,27 @@ export class TenantRolesRepository {
     id: string,
     tenantId: string,
   ): Promise<void> {
-    await this.sql`
-      INSERT INTO tenant_roles (id, tenant_id, name, description, is_system)
+    const sql = await this.sqlFor(tenantId);
+    await sql`
+      INSERT INTO tenant_roles (id, name, description, is_system)
       VALUES (
         ${id},
-        ${tenantId},
         ${SYSTEM_ROLE_TENANT_ADMIN},
         ${"Full administrative access — bypasses all permission checks"},
         true
       )
-      ON CONFLICT (tenant_id, name) DO NOTHING
+      ON CONFLICT (name) DO NOTHING
     `;
   }
 
-  findRoleByTenantAndName(tenantId: string, name: string): ReturnType<Sql> {
-    return this.sql`
+  async findRoleByTenantAndName(
+    tenantId: string,
+    name: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       SELECT id FROM tenant_roles
-      WHERE tenant_id = ${tenantId} AND name = ${name}
+      WHERE name = ${name}
       LIMIT 1
     `;
   }
@@ -70,11 +78,12 @@ export class TenantRolesRepository {
     options: ICreateRoleWithPermissionsOptions,
   ): Promise<void> {
     const { id, tenantId, name, description, permissions } = options;
-    await this.sql.begin(async (_tx) => {
+    const sql = await this.sqlFor(tenantId);
+    await sql.begin(async (_tx) => {
       const tx = _tx as unknown as TxSql;
       await tx`
-        INSERT INTO tenant_roles (id, tenant_id, name, description)
-        VALUES (${id}, ${tenantId}, ${name}, ${description})
+        INSERT INTO tenant_roles (id, name, description)
+        VALUES (${id}, ${name}, ${description})
       `;
 
       for (const p of permissions) {
@@ -87,24 +96,31 @@ export class TenantRolesRepository {
     });
   }
 
-  listSummariesByTenant(tenantId: string): ReturnType<Sql> {
-    return this.sql`
+  async listSummariesByTenant(
+    tenantId: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       SELECT
-        r.id, r.tenant_id, r.name, r.description,
+        r.id, r.name, r.description,
         r.is_system, r.is_active, r.created_at, r.updated_at,
         COUNT(DISTINCT tu.id)::int AS user_count
       FROM tenant_roles r
       LEFT JOIN tenant_users tu
         ON tu.role_id = r.id AND tu.is_active = true
-      WHERE r.tenant_id = ${tenantId} AND r.is_active = true
+      WHERE r.is_active = true
       GROUP BY r.id
       ORDER BY r.is_system DESC, r.name ASC
     `;
   }
 
-  findActiveRoleBase(id: string): ReturnType<Sql> {
-    return this.sql`
-      SELECT id, tenant_id, name, description,
+  async findActiveRoleBase(
+    tenantId: string,
+    id: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
+      SELECT id, name, description,
              is_system, is_active, created_at, updated_at
       FROM tenant_roles
       WHERE id = ${id} AND is_active = true
@@ -113,9 +129,11 @@ export class TenantRolesRepository {
   }
 
   async listPermissionsForRole(
+    tenantId: string,
     roleId: string,
   ): Promise<Array<{ resource: string; action: string }>> {
-    const rows = await this.sql`
+    const sql = await this.sqlFor(tenantId);
+    const rows = await sql`
       SELECT resource, action
       FROM tenant_role_permissions
       WHERE role_id = ${roleId}
@@ -124,26 +142,35 @@ export class TenantRolesRepository {
     return rows as unknown as Array<{ resource: string; action: string }>;
   }
 
-  findRoleForUpdate(id: string): ReturnType<Sql> {
-    return this.sql`
-      SELECT id, is_system, tenant_id, name
+  async findRoleForUpdate(
+    tenantId: string,
+    id: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
+      SELECT id, is_system, name
       FROM tenant_roles
       WHERE id = ${id} AND is_active = true
       LIMIT 1
     `;
   }
 
-  findDuplicateName(tenantId: string, name: string, excludeId: string): ReturnType<Sql> {
-    return this.sql`
+  async findDuplicateName(
+    tenantId: string,
+    name: string,
+    excludeId: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       SELECT id FROM tenant_roles
-      WHERE tenant_id = ${tenantId}
-        AND name = ${name}
+      WHERE name = ${name}
         AND id != ${excludeId}
       LIMIT 1
     `;
   }
 
   async updateRoleTransaction(
+    tenantId: string,
     id: string,
     patch: {
       name?: string;
@@ -151,7 +178,8 @@ export class TenantRolesRepository {
       permissions?: PermissionDto[];
     },
   ): Promise<void> {
-    await this.sql.begin(async (_tx) => {
+    const sql = await this.sqlFor(tenantId);
+    await sql.begin(async (_tx) => {
       const tx = _tx as unknown as TxSql;
       await tx`
         UPDATE tenant_roles SET
@@ -175,19 +203,21 @@ export class TenantRolesRepository {
     });
   }
 
-  findForDelete(id: string): ReturnType<Sql> {
-    return this.sql`
+  async findForDelete(
+    tenantId: string,
+    id: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       SELECT id, is_system FROM tenant_roles
       WHERE id = ${id} AND is_active = true
       LIMIT 1
     `;
   }
 
-  /**
-   * Returns whether any active tenant user is still assigned to this role.
-   */
-  async hasActiveUsersForRole(roleId: string): Promise<boolean> {
-    const rows = await this.sql`
+  async hasActiveUsersForRole(tenantId: string, roleId: string): Promise<boolean> {
+    const sql = await this.sqlFor(tenantId);
+    const rows = await sql`
       SELECT id FROM tenant_users
       WHERE role_id = ${roleId} AND is_active = true
       LIMIT 1
@@ -195,8 +225,9 @@ export class TenantRolesRepository {
     return rows.length > 0;
   }
 
-  async softDeleteRole(id: string): Promise<void> {
-    await this.sql`
+  async softDeleteRole(tenantId: string, id: string): Promise<void> {
+    const sql = await this.sqlFor(tenantId);
+    await sql`
       UPDATE tenant_roles SET is_active = false, updated_at = NOW()
       WHERE id = ${id}
     `;

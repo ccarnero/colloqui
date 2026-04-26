@@ -1,10 +1,18 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# Local dev overlay (minikube / orbstack). Same scale-to-zero policy
+# as cloud/dev so devs see the production-like cold-start behavior
+# locally before changes ship. `api-gateway` stays warm so the inner
+# loop (save → reload) is not blocked by KPA pre-warm.
+
 namespace: platform-services-dev
 
 resources:
   - ../../../base
+
+components:
+  - ../../_components/scale-to-zero-non-prod
 
 patches:
   - path: env-patches.yaml

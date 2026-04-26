@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'bun:test';
-import { getRawBaseUrl, getBaseUrl, httpGet } from './helpers';
+import { describe, it, expect, beforeAll } from 'bun:test';
+import { getRawBaseUrl, getBaseUrl, httpGet, poll } from './helpers';
 
 const GW = getRawBaseUrl('api-gateway');
 const EP = getBaseUrl('event-processor');
@@ -29,22 +29,53 @@ const DOWNSTREAM_SERVICES = [
   'workflow-service',
 ] as const;
 
+/**
+ * Total budget for the gateway's aggregate health to converge to `ok`.
+ * This is the worst-case stack-wide cold-start: every downstream coming
+ * up from 0 in parallel after `warmup.ts` finishes its initial poke.
+ *
+ * `gateway-health.service.ts` uses a 3s per-downstream timeout, so any
+ * service still cold-starting is reported `unreachable` for that probe;
+ * we re-check until the aggregate flips to `ok`.
+ */
+const HEALTH_CONVERGENCE_BUDGET_MS = 120_000;
+const HEALTH_POLL_INITIAL_MS = 1_000;
+const HEALTH_POLL_MAX_MS = 5_000;
+
 describe('E2E: health checks', () => {
   let gatewayHealth: GatewayHealthResponse;
 
-  it('api-gateway /health should report ok with all dependencies', async () => {
-    const { status, body } = await httpGet<GatewayHealthResponse>(`${GW}/health`);
+  beforeAll(async () => {
+    gatewayHealth = await poll<GatewayHealthResponse>(
+      async () => {
+        const { status, body } = await httpGet<GatewayHealthResponse>(
+          `${GW}/health`,
+        );
+        // The gateway aggregator returns 200 even when degraded, so we
+        // gate on the `status` field — `unreachable` downstreams flip the
+        // aggregate to `degraded` while pods are still cold-starting.
+        if (status !== 200) return null;
+        if (body.status === 'ok') return body;
+        return null;
+      },
+      {
+        timeoutMs: HEALTH_CONVERGENCE_BUDGET_MS,
+        initialDelayMs: HEALTH_POLL_INITIAL_MS,
+        maxDelayMs: HEALTH_POLL_MAX_MS,
+      },
+    );
+  }, HEALTH_CONVERGENCE_BUDGET_MS + 5_000);
 
-    expect(status).toBe(200);
-    expect(body.status).toBe('ok');
-    expect(body.nats).toBe('connected');
-    expect(body.redis).toBe('connected');
-    expect(body.services).toBeDefined();
-    gatewayHealth = body;
+  it('api-gateway /health should report ok with all dependencies', () => {
+    expect(gatewayHealth).toBeDefined();
+    expect(gatewayHealth.status).toBe('ok');
+    expect(gatewayHealth.nats).toBe('connected');
+    expect(gatewayHealth.redis).toBe('connected');
+    expect(gatewayHealth.services).toBeDefined();
   });
 
   for (const svc of DOWNSTREAM_SERVICES) {
-    it(`${svc} should be healthy (via gateway)`, async () => {
+    it(`${svc} should be healthy (via gateway)`, () => {
       expect(gatewayHealth).toBeDefined();
 
       const svcHealth = gatewayHealth.services[svc];

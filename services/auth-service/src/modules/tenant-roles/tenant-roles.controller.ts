@@ -35,18 +35,35 @@ export class TenantRolesController {
   }
 
   @Get(":id")
-  async findOne(@Param("id") id: string) {
-    return this.tenantRolesService.getWithPermissions(id);
+  async findOne(
+    @Headers(TENANT_HEADER) tenantId: string | undefined,
+    @Param("id") id: string,
+  ) {
+    return this.tenantRolesService.getWithPermissions(
+      requireTenantHeader(tenantId),
+      id,
+    );
   }
 
   @Patch(":id")
-  async update(@Param("id") id: string, @Body() dto: UpdateTenantRoleDto) {
-    return this.tenantRolesService.update(id, dto);
+  async update(
+    @Headers(TENANT_HEADER) tenantId: string | undefined,
+    @Param("id") id: string,
+    @Body() dto: UpdateTenantRoleDto,
+  ) {
+    return this.tenantRolesService.update(
+      requireTenantHeader(tenantId),
+      id,
+      dto,
+    );
   }
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param("id") id: string) {
-    return this.tenantRolesService.delete(id);
+  async remove(
+    @Headers(TENANT_HEADER) tenantId: string | undefined,
+    @Param("id") id: string,
+  ) {
+    return this.tenantRolesService.delete(requireTenantHeader(tenantId), id);
   }
 }

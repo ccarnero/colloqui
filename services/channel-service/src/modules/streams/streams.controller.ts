@@ -25,6 +25,7 @@ export class StreamsController {
         query.subject,
         query.limit,
         query.mode,
+        query.accountId,
       ),
     };
   }

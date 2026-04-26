@@ -129,6 +129,24 @@ describe("ChannelsController", () => {
     });
   });
 
+  it("streamMessages forwards accountId when provided", async () => {
+    await controller.streamMessages(req, "dlq", {
+      subject: "dlq.t1.>",
+      accountId: "7b0f2c27-792c-4345-b768-9e901eb7044f",
+      limit: 15,
+    } as never);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/channels/streams/dlq/messages",
+      tenantId: "tenant-1",
+      query: expect.objectContaining({
+        subject: "dlq.t1.>",
+        accountId: "7b0f2c27-792c-4345-b768-9e901eb7044f",
+        limit: 15,
+      }),
+    });
+  });
+
   it("stream delegates to ChannelStreamService with parsed kinds", async () => {
     const obs = controller.stream(req, { kinds: "a,b" } as never);
     expect(obs).toBeDefined();

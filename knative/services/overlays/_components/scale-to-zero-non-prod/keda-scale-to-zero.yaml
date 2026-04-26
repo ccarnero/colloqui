@@ -1,0 +1,36 @@
+# KEDA ScaledObject patches shared by dev/qa overlays (local + cloud).
+# Drops `minReplicaCount` and `idleReplicaCount` to 0 so KEDA can fully
+# drain the deployment when the Temporal task queue is empty.
+#
+# Scope is intentionally narrow: only the Temporal-driven workers,
+# which are plain `apps/v1.Deployment` resources (NOT Knative
+# Services). KEDA cannot scale Knative Services because they don't
+# expose a `/scale` subresource — see
+# `knative/services/base/scaledobjects/kustomization.yaml` and
+# `knative/services/overlays/cloud/README.md` for the full rationale.
+#
+# Temporal persists task state server-side, so a scaled-down worker
+# rebinds on the next pending task without losing any work. The 5-min
+# `cooldownPeriod` baked into the base ScaledObjects protects
+# in-flight activities from premature SIGTERM. See
+# https://keda.sh/docs/scalers/temporal/ for the scale-to-zero
+# vs in-flight task contract.
+#
+# Cooldown stays at the per-ScaledObject base (300s) — staging uses
+# the same value via the dedicated `scale-to-zero-staging` patch.
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: workflow-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: workflow-http-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0

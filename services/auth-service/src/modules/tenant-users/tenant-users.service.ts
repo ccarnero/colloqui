@@ -13,22 +13,28 @@ import { TenantUsersRepository } from "./tenant-users.repository";
 
 interface ITenantUserRow {
   id: string;
+  email: string;
+  role_id: string;
+  role: string;
+  display_name: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface TenantUserPublic {
+  id: string;
   tenant_id: string;
   email: string;
   role_id: string;
   role: string;
   display_name: string | null;
-  is_active: boolean;
   created_at: Date;
   updated_at: Date;
 }
 
-type TenantUserPublic = Omit<ITenantUserRow, "is_active">;
-
 /** Columns returned by {@link TenantUsersRepository.insertUser}. */
 interface ITenantUserInsertRow {
   id: string;
-  tenant_id: string;
   email: string;
   role_id: string;
   display_name: string | null;
@@ -54,7 +60,15 @@ export class TenantUsersService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    await this.seedTenantAdmin();
+    try {
+      await this.seedTenantAdmin();
+    } catch (error) {
+      this.logger.warn(
+        `Skipping tenant admin seed on startup: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   async create(options: ICreateTenantUserOptions): Promise<TenantUserPublic> {
@@ -86,7 +100,10 @@ export class TenantUsersService implements OnModuleInit {
     });
 
     const row = rows[0] as ITenantUserInsertRow;
-    const roleRows = await this.tenantUsersRepository.selectRoleName(roleId);
+    const roleRows = await this.tenantUsersRepository.selectRoleName(
+      tenantId,
+      roleId,
+    );
     const roleName =
       (roleRows[0] as { name: string } | undefined)?.name ?? "";
 
@@ -96,7 +113,7 @@ export class TenantUsersService implements OnModuleInit {
 
     return {
       id: row.id,
-      tenant_id: row.tenant_id,
+      tenant_id: tenantId,
       email: row.email,
       role_id: row.role_id,
       role: roleName,
@@ -108,18 +125,20 @@ export class TenantUsersService implements OnModuleInit {
 
   async listByTenant(tenantId: string): Promise<TenantUserPublic[]> {
     const rows = await this.tenantUsersRepository.listByTenant(tenantId);
-    return rows as unknown as TenantUserPublic[];
+    const list = rows as unknown as ITenantUserRow[];
+    return list.map((r) => ({ ...r, tenant_id: tenantId }));
   }
 
-  async findById(id: string): Promise<TenantUserPublic> {
-    const rows = await this.tenantUsersRepository.findActiveById(id);
+  async findById(tenantId: string, id: string): Promise<TenantUserPublic> {
+    const rows = await this.tenantUsersRepository.findActiveById(tenantId, id);
     if (rows.length === 0) {
       throw new NotFoundException("Tenant user not found");
     }
-    return rows[0] as TenantUserPublic;
+    return { ...(rows[0] as ITenantUserRow), tenant_id: tenantId };
   }
 
   async update(
+    tenantId: string,
     id: string,
     updates: {
       role_id?: string;
@@ -127,20 +146,21 @@ export class TenantUsersService implements OnModuleInit {
       is_active?: boolean;
     },
   ): Promise<TenantUserPublic> {
-    const existing = await this.tenantUsersRepository.findByIdAny(id);
+    const existing = await this.tenantUsersRepository.findByIdAny(
+      tenantId,
+      id,
+    );
     if (existing.length === 0) {
       throw new NotFoundException("Tenant user not found");
     }
 
     let resolvedRoleId: string | null = updates.role_id ?? null;
     if (updates.role_id) {
-      resolvedRoleId = await this.resolveRoleId(
-        updates.role_id,
-        (existing[0] as { tenant_id: string }).tenant_id,
-      );
+      resolvedRoleId = await this.resolveRoleId(updates.role_id, tenantId);
     }
 
     await this.tenantUsersRepository.updateUser(
+      tenantId,
       id,
       resolvedRoleId,
       updates.display_name ?? null,
@@ -148,16 +168,16 @@ export class TenantUsersService implements OnModuleInit {
     );
 
     this.logger.log(`Updated tenant user ${id}`);
-    return this.findById(id);
+    return this.findById(tenantId, id);
   }
 
-  async deactivate(id: string): Promise<void> {
-    const existing = await this.tenantUsersRepository.findId(id);
+  async deactivate(tenantId: string, id: string): Promise<void> {
+    const existing = await this.tenantUsersRepository.findId(tenantId, id);
     if (existing.length === 0) {
       throw new NotFoundException("Tenant user not found");
     }
 
-    await this.tenantUsersRepository.deactivate(id);
+    await this.tenantUsersRepository.deactivate(tenantId, id);
     this.logger.log(`Deactivated tenant user ${id}`);
   }
 

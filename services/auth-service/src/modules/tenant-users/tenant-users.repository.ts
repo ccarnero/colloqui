@@ -1,10 +1,11 @@
-/** Tenant-scoped user accounts (`tenant_users`). */
+/** Tenant-scoped user accounts (`tenant_users`) in per-tenant Postgres. */
 import { Inject, Injectable } from "@nestjs/common";
-import { POSTGRES_SQL, type Sql } from "../../providers/postgres.provider";
+import { AuthTenantConnectionManager } from "../../providers/auth-tenant-connection-manager";
 
 /** Options for inserting a tenant user row. */
 export interface IInsertTenantUserOptions {
   id: string;
+  /** Resolves pool only. */
   tenantId: string;
   email: string;
   passwordHash: string;
@@ -14,46 +15,69 @@ export interface IInsertTenantUserOptions {
 
 @Injectable()
 export class TenantUsersRepository {
-  constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
+  constructor(
+    @Inject(AuthTenantConnectionManager)
+    private readonly tenantSql: AuthTenantConnectionManager,
+  ) {}
 
-  findByTenantAndEmail(tenantId: string, email: string): ReturnType<Sql> {
-    return this.sql`
+  private async sqlFor(tenantId: string) {
+    return this.tenantSql.ensureSchema(tenantId);
+  }
+
+  async findByTenantAndEmail(
+    tenantId: string,
+    email: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       SELECT id FROM tenant_users
-      WHERE tenant_id = ${tenantId} AND email = ${email}
+      WHERE email = ${email}
       LIMIT 1
     `;
   }
 
-  async insertUser(options: IInsertTenantUserOptions): Promise<ReturnType<Sql>> {
+  async insertUser(
+    options: IInsertTenantUserOptions,
+  ): Promise<readonly unknown[]> {
     const { id, tenantId, email, passwordHash, roleId, displayName } = options;
-    return this.sql`
-      INSERT INTO tenant_users (id, tenant_id, email, password_hash, role_id, display_name)
-      VALUES (${id}, ${tenantId}, ${email}, ${passwordHash}, ${roleId}, ${displayName})
-      RETURNING id, tenant_id, email, role_id, display_name, created_at, updated_at
+    const sql = await this.sqlFor(tenantId);
+    return sql`
+      INSERT INTO tenant_users (id, email, password_hash, role_id, display_name)
+      VALUES (${id}, ${email}, ${passwordHash}, ${roleId}, ${displayName})
+      RETURNING id, email, role_id, display_name, created_at, updated_at
     `;
   }
 
-  selectRoleName(roleId: string): ReturnType<Sql> {
-    return this.sql`
+  async selectRoleName(
+    tenantId: string,
+    roleId: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       SELECT name FROM tenant_roles WHERE id = ${roleId} LIMIT 1
     `;
   }
 
-  listByTenant(tenantId: string): ReturnType<Sql> {
-    return this.sql`
-      SELECT tu.id, tu.tenant_id, tu.email, tu.role_id,
+  async listByTenant(tenantId: string): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
+      SELECT tu.id, tu.email, tu.role_id,
              tr.name AS role, tu.display_name,
              tu.created_at, tu.updated_at
       FROM tenant_users tu
       JOIN tenant_roles tr ON tr.id = tu.role_id
-      WHERE tu.tenant_id = ${tenantId} AND tu.is_active = true
+      WHERE tu.is_active = true
       ORDER BY tu.created_at DESC
     `;
   }
 
-  findActiveById(id: string): ReturnType<Sql> {
-    return this.sql`
-      SELECT tu.id, tu.tenant_id, tu.email, tu.role_id,
+  async findActiveById(
+    tenantId: string,
+    id: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
+      SELECT tu.id, tu.email, tu.role_id,
              tr.name AS role, tu.display_name,
              tu.created_at, tu.updated_at
       FROM tenant_users tu
@@ -63,19 +87,25 @@ export class TenantUsersRepository {
     `;
   }
 
-  findByIdAny(id: string): ReturnType<Sql> {
-    return this.sql`
-      SELECT id, tenant_id FROM tenant_users WHERE id = ${id} LIMIT 1
+  async findByIdAny(
+    tenantId: string,
+    id: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
+      SELECT id FROM tenant_users WHERE id = ${id} LIMIT 1
     `;
   }
 
   async updateUser(
+    tenantId: string,
     id: string,
     roleId: string | null,
     displayName: string | null,
     isActive: boolean | null,
   ): Promise<void> {
-    await this.sql`
+    const sql = await this.sqlFor(tenantId);
+    await sql`
       UPDATE tenant_users SET
         role_id = COALESCE(${roleId}, role_id),
         display_name = COALESCE(${displayName}, display_name),
@@ -85,34 +115,42 @@ export class TenantUsersRepository {
     `;
   }
 
-  findId(id: string): ReturnType<Sql> {
-    return this.sql`
+  async findId(tenantId: string, id: string): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       SELECT id FROM tenant_users WHERE id = ${id} LIMIT 1
     `;
   }
 
-  async deactivate(id: string): Promise<void> {
-    await this.sql`
+  async deactivate(tenantId: string, id: string): Promise<void> {
+    const sql = await this.sqlFor(tenantId);
+    await sql`
       UPDATE tenant_users SET is_active = false, updated_at = NOW()
       WHERE id = ${id}
     `;
   }
 
-  resolveRoleById(roleIdOrName: string, tenantId: string): ReturnType<Sql> {
-    return this.sql`
+  async resolveRoleById(
+    roleIdOrName: string,
+    tenantId: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       SELECT id FROM tenant_roles
       WHERE id = ${roleIdOrName}
-        AND tenant_id = ${tenantId}
         AND is_active = true
       LIMIT 1
     `;
   }
 
-  resolveRoleByName(roleIdOrName: string, tenantId: string): ReturnType<Sql> {
-    return this.sql`
+  async resolveRoleByName(
+    roleIdOrName: string,
+    tenantId: string,
+  ): Promise<readonly unknown[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       SELECT id FROM tenant_roles
       WHERE name = ${roleIdOrName}
-        AND tenant_id = ${tenantId}
         AND is_active = true
       LIMIT 1
     `;

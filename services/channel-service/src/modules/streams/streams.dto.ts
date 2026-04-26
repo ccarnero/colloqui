@@ -19,6 +19,11 @@ export class StreamMessagesQueryDto {
   @IsString()
   subject?: string;
 
+  /** When set, only messages whose envelope `accountid` matches are returned. */
+  @IsOptional()
+  @IsString()
+  accountId?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

@@ -31,7 +31,7 @@ describe("E2E: error propagation", () => {
       { name: TENANT_NAME },
       { headers: h },
     );
-    expect(first.status).toBe(201);
+    expect(first.status).toBe(202);
     createdTenants.push(TENANT_NAME);
 
     const duplicate = await httpPost<ErrorBody>(

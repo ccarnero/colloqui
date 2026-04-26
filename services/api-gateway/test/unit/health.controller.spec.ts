@@ -68,6 +68,11 @@ describe("HealthController (api-gateway)", () => {
     expect(result.services["scheduler-service"]).toEqual({ status: "ok" });
   });
 
+  it("should return fast readiness payload", async () => {
+    const controller = await createController(true, true);
+    expect(controller.ready()).toEqual({ status: "ok" });
+  });
+
   it("should return degraded when NATS is disconnected", async () => {
     const controller = await createController(false, true);
     const result = await controller.check();

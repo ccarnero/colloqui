@@ -5,11 +5,24 @@ kind: Kustomization
 # deployed + torn down together with the services they scale.
 # See ../../../infrastructure/base/keda/README.md for install notes
 # (the KEDA operator itself is installed via Helm, not kustomize).
+#
+# IMPORTANT: KEDA cannot scale Knative Services directly because
+# `serving.knative.dev/v1.Service` does not expose a `/scale`
+# subresource — KEDA's HPA shim fails with
+# `Target resource doesn't expose /scale subresource`. Only plain
+# `apps/v1.Deployment` workloads are listed here. The Temporal
+# task-queue workers (workflow-worker, workflow-http-worker) were
+# deliberately migrated off Knative for this reason; see
+# `knative/services/base/workflow-worker.yaml`.
+#
+# HTTP-bound services that mix NATS consumers and HTTP controllers
+# (channel-service, metrics-service, workflow-api, audit-service,
+# event-processor, webhook-service, usage-aggregator-service) stay
+# on Knative KPA (`class: kpa`) with `min-scale: 1` — splitting the
+# consumer side off into a separate deployment is tracked as a
+# follow-up; see `docs/plan/cost-efficiency.md` and
+# `knative/services/overlays/cloud/README.md`.
 
 resources:
-  - channel-service.yaml
-  - workflow-api.yaml
-  - event-processor.yaml
-  - audit-service.yaml
-  - metrics-service.yaml
-  - webhook-service.yaml
+  - workflow-worker.yaml
+  - workflow-http-worker.yaml

@@ -36,18 +36,31 @@ export class TenantUsersController {
   }
 
   @Get(":id")
-  async findOne(@Param("id") id: string) {
-    return this.tenantUsersService.findById(id);
+  async findOne(
+    @Headers(TENANT_HEADER) tenantId: string | undefined,
+    @Param("id") id: string,
+  ) {
+    return this.tenantUsersService.findById(
+      requireTenantHeader(tenantId),
+      id,
+    );
   }
 
   @Patch(":id")
-  async update(@Param("id") id: string, @Body() dto: UpdateTenantUserDto) {
-    return this.tenantUsersService.update(id, dto);
+  async update(
+    @Headers(TENANT_HEADER) tenantId: string | undefined,
+    @Param("id") id: string,
+    @Body() dto: UpdateTenantUserDto,
+  ) {
+    return this.tenantUsersService.update(requireTenantHeader(tenantId), id, dto);
   }
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param("id") id: string) {
-    return this.tenantUsersService.deactivate(id);
+  async remove(
+    @Headers(TENANT_HEADER) tenantId: string | undefined,
+    @Param("id") id: string,
+  ) {
+    return this.tenantUsersService.deactivate(requireTenantHeader(tenantId), id);
   }
 }

@@ -2,7 +2,10 @@ import { Global, Inject, Injectable, Module } from "@nestjs/common";
 import type * as k8s from "@kubernetes/client-node";
 import {
   ADAPTER_SCHEMA_SQL,
+  AUTO_REPLY_SCHEMA_SQL,
+  CHANNEL_ACCOUNTS_SCHEMA_SQL,
   METRICS_SCHEMA_SQL,
+  TENANT_AUTH_SCHEMA_SQL,
   WORKFLOW_SCHEMA_SQL,
 } from "@yoizen/shared";
 import { tenantServiceConfig } from "../config";
@@ -64,6 +67,12 @@ ${METRICS_SCHEMA_SQL}
 ${WORKFLOW_SCHEMA_SQL}
 
 ${ADAPTER_SCHEMA_SQL}
+
+${CHANNEL_ACCOUNTS_SCHEMA_SQL}
+
+${AUTO_REPLY_SCHEMA_SQL}
+
+${TENANT_AUTH_SCHEMA_SQL}
 `;
 
 @Injectable()

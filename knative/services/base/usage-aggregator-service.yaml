@@ -9,10 +9,10 @@ spec:
   template:
     metadata:
       annotations:
-        # Long-lived NATS JetStream consumer loop — scale-to-zero would
-        # drop the pull durable. Pin min-scale=1. Concurrency lives in
-        # the aggregator engine (one worker per tenant/stream) so we keep
-        # the replica count low.
+        # HPA class: KEDA owns replica count via JetStream agg-INGRESS +
+        # agg-DLQ consumer lag (see scaledobjects/usage-aggregator-service.yaml).
+        # The pull durables persist server-side, so the consumer rebinds on
+        # cold-start. Base keeps min-scale=1; non-prod overlays drop to 0.
         autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
         autoscaling.knative.dev/metric: concurrency
         autoscaling.knative.dev/target: "100"

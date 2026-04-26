@@ -1,6 +1,7 @@
 import { Global, Module } from "@nestjs/common";
 import { ObservabilityModule } from "@yoizen/observability";
 import { PostgresModule } from "./providers/postgres.provider";
+import { ChannelTenantDbModule } from "./providers/channel-tenant-db.module";
 import {
   natsProvider,
   jetStreamManagerProvider,
@@ -24,6 +25,7 @@ import { StreamsModule } from "./modules/streams/streams.module";
   imports: [
     ObservabilityModule.forRoot({ serviceName: "channel-service" }),
     PostgresModule,
+    ChannelTenantDbModule,
     WebhooksModule,
     IngressModule,
     EgressModule,

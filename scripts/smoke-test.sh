@@ -51,9 +51,17 @@ ALL_KNATIVE_SERVICES=(
   registry-service
   yoizenclaw-admin-service
   workflow-api
+  proxy-service
+)
+
+# Plain `apps/v1.Deployment` workloads — pull-based Temporal workers
+# that do NOT have a Knative Service / Route. KEDA's Temporal scaler
+# (knative/services/base/scaledobjects/workflow-worker.yaml,
+# workflow-http-worker.yaml) drives their replicas from
+# `workflow-orchestrator` / `workflow-http` task-queue depth.
+ALL_PLAIN_DEPLOYMENTS=(
   workflow-worker
   workflow-http-worker
-  proxy-service
 )
 
 preflight_check() {
@@ -68,13 +76,32 @@ preflight_check() {
       ok=false
     fi
   done
+  for dep in "${ALL_PLAIN_DEPLOYMENTS[@]}"; do
+    # KEDA scales these to 0 when the Temporal queue is drained, so we
+    # accept "Available=False with desired=0" as healthy. We only fail
+    # the preflight when the Deployment doesn't exist at all or has
+    # `spec.replicas > 0` AND `status.availableReplicas == 0`.
+    local desired available
+    desired=$(kubectl get deploy "$dep" -n "$NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "")
+    if [[ -z "$desired" ]]; then
+      warn "deploy/$dep is missing"
+      ok=false
+      continue
+    fi
+    available=$(kubectl get deploy "$dep" -n "$NAMESPACE" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo "0")
+    if [[ "$desired" -gt 0 && "${available:-0}" -lt 1 ]]; then
+      warn "deploy/$dep has desired=$desired but available=${available:-0}"
+      ok=false
+    fi
+  done
   if [[ "$ok" == "false" ]]; then
-    err "Some Knative services are not ready. Check:"
+    err "Some workloads are not ready. Check:"
     err "  kubectl get ksvc -n $NAMESPACE"
+    err "  kubectl get deploy -n $NAMESPACE"
     err "  kubectl get events -n $NAMESPACE --sort-by='.lastTimestamp' | tail -10"
     exit 1
   fi
-  log "All Knative services are Ready"
+  log "All Knative services + plain Deployments are Ready"
 }
 
 start_kourier_port_forward() {

@@ -112,15 +112,15 @@ describe("Auth controllers coverage", () => {
         role_id: "role-1",
       } as import("../../src/modules/tenant-users/tenant-user.dto").CreateTenantUserDto);
       await controller.list("tenant-a");
-      await controller.findOne("tu-1");
-      await controller.update("tu-1", {});
-      await controller.remove("tu-1");
+      await controller.findOne("tenant-a", "tu-1");
+      await controller.update("tenant-a", "tu-1", {});
+      await controller.remove("tenant-a", "tu-1");
 
       expect(service.create).toHaveBeenCalledTimes(1);
       expect(service.listByTenant).toHaveBeenCalledTimes(1);
-      expect(service.findById).toHaveBeenCalledTimes(1);
-      expect(service.update).toHaveBeenCalledTimes(1);
-      expect(service.deactivate).toHaveBeenCalledTimes(1);
+      expect(service.findById).toHaveBeenCalledWith("tenant-a", "tu-1");
+      expect(service.update).toHaveBeenCalledWith("tenant-a", "tu-1", {});
+      expect(service.deactivate).toHaveBeenCalledWith("tenant-a", "tu-1");
     });
   });
 
@@ -145,15 +145,18 @@ describe("Auth controllers coverage", () => {
         permissions: [{ resource: "roles", action: "read" }],
       } as import("../../src/modules/tenant-roles/tenant-role.dto").CreateTenantRoleDto);
       await controller.list("tenant-a");
-      await controller.findOne("tr-1");
-      await controller.update("tr-1", {});
-      await controller.remove("tr-1");
+      await controller.findOne("tenant-a", "tr-1");
+      await controller.update("tenant-a", "tr-1", {});
+      await controller.remove("tenant-a", "tr-1");
 
       expect(service.create).toHaveBeenCalledTimes(1);
       expect(service.listByTenant).toHaveBeenCalledTimes(1);
-      expect(service.getWithPermissions).toHaveBeenCalledTimes(1);
-      expect(service.update).toHaveBeenCalledTimes(1);
-      expect(service.delete).toHaveBeenCalledTimes(1);
+      expect(service.getWithPermissions).toHaveBeenCalledWith(
+        "tenant-a",
+        "tr-1",
+      );
+      expect(service.update).toHaveBeenCalledWith("tenant-a", "tr-1", {});
+      expect(service.delete).toHaveBeenCalledWith("tenant-a", "tr-1");
     });
   });
 });

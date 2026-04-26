@@ -2,7 +2,11 @@ import {
   Injectable,
 } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
-import type { Channel, IChannelProvider, InboundMessage } from "@yoizen/shared";
+import type {
+  Channel,
+  IChannelProvider,
+  InboundMessage,
+} from "@yoizen/shared";
 import { ChannelRouter } from "../../providers/channel-router";
 import { IngressService } from "../ingress/ingress.service";
 import { AccountsService } from "../accounts/accounts.service";
@@ -16,14 +20,36 @@ type IAccountWithSecret = Awaited<
   ReturnType<AccountsService["listActive"]>
 >[number];
 
-/** Options for webhook signature verification against active accounts. */
-interface ICheckSignatureMismatchOptions {
-  provider: IChannelProvider;
-  headers: Record<string, string>;
-  rawBody: Buffer;
-  channel: string;
-  tenantId: string;
-  activeAccounts: IAccountWithSecret[];
+function extractMetaPhoneNumberId(
+  body: Record<string, unknown>,
+): string | undefined {
+  const entry = body.entry;
+  if (!Array.isArray(entry) || entry.length === 0) return undefined;
+  const first = entry[0] as Record<string, unknown>;
+  const changes = first.changes;
+  if (!Array.isArray(changes) || changes.length === 0) return undefined;
+  const value = (changes[0] as { value?: { metadata?: { phone_number_id?: string } } })
+    ?.value;
+  return value?.metadata?.phone_number_id;
+}
+
+/** Best-effort Instagram business account id from Graph webhook JSON. */
+function extractInstagramBusinessIdHint(
+  body: Record<string, unknown>,
+): string | undefined {
+  const entry = body.entry;
+  if (!Array.isArray(entry) || entry.length === 0) return undefined;
+  for (const ent of entry) {
+    const e = ent as Record<string, unknown>;
+    const messaging = e.messaging;
+    if (Array.isArray(messaging)) {
+      for (const m of messaging) {
+        const mid = (m as { recipient?: { id?: string } })?.recipient?.id;
+        if (typeof mid === "string") return mid;
+      }
+    }
+  }
+  return undefined;
 }
 
 @Injectable()
@@ -69,18 +95,6 @@ export class WebhookIngressService {
       return { status: "no_active_accounts" };
     }
 
-    const signatureMismatch = this.checkSignatureMismatch({
-      provider,
-      rawBody,
-      headers,
-      channel,
-      tenantId,
-      activeAccounts,
-    });
-    if (signatureMismatch !== null) {
-      return signatureMismatch;
-    }
-
     const body = this.toBody(parsedBody);
     if (body === null) {
       this.logger.warn(
@@ -88,6 +102,24 @@ export class WebhookIngressService {
       );
       return { status: "invalid_payload" };
     }
+
+    const signature = provider.signatureHeader
+      ? this.readHeader(headers, provider.signatureHeader)
+      : undefined;
+
+    const resolution = this.resolveAccount({
+      provider,
+      rawBody,
+      signature,
+      channel: channelType,
+      tenantId,
+      activeAccounts,
+      body,
+    });
+    if ("status" in resolution) {
+      return resolution;
+    }
+    const account = resolution.account;
 
     const messages = provider.parseWebhook(body);
     if (messages.length === 0) {
@@ -103,38 +135,82 @@ export class WebhookIngressService {
       tenantId,
       channelType,
       provider,
-      account: activeAccounts[0],
+      account,
       messages,
     });
     return { status: "accepted" };
   }
 
-  private checkSignatureMismatch(
-    options: ICheckSignatureMismatchOptions,
-  ): { status: string } | null {
-    const { provider, headers, rawBody, channel, tenantId, activeAccounts } =
-      options;
-    const signature = provider.signatureHeader
-      ? this.readHeader(headers, provider.signatureHeader)
-      : undefined;
+  /**
+   * Picks the account for ingress: verifies HMAC when a signature header is
+   * present; disambiguates multiple Meta accounts via payload metadata.
+   */
+  private resolveAccount(options: {
+    provider: IChannelProvider;
+    rawBody: Buffer;
+    signature: string | undefined;
+    channel: Channel;
+    tenantId: string;
+    activeAccounts: IAccountWithSecret[];
+    body: Record<string, unknown>;
+  }):
+    | { account: IAccountWithSecret }
+    | { status: string } {
+    const {
+      provider,
+      rawBody,
+      signature,
+      channel,
+      tenantId,
+      activeAccounts,
+      body,
+    } = options;
 
-    const verified = activeAccounts.some((account) => {
-      if (!account.appSecret || !signature) return false;
-      return provider.verifySignature(
-        rawBody,
-        signature,
-        account.appSecret,
+    if (!signature) {
+      return { account: activeAccounts[0] };
+    }
+
+    const verified = activeAccounts.filter((account) => {
+      const secret = account.appSecret;
+      return (
+        typeof secret === "string" &&
+        provider.verifySignature(rawBody, signature, secret)
       );
     });
 
-    if (signature && !verified) {
+    if (verified.length === 0) {
       webhookVerificationFailures.add(1, { channel, tenant: tenantId });
       this.logger.warn(
         `Webhook signature verification failed for tenant=${tenantId} channel=${channel}`,
       );
       return { status: "signature_mismatch" };
     }
-    return null;
+
+    if (verified.length === 1) {
+      return { account: verified[0] };
+    }
+
+    if (channel === "whatsapp") {
+      const phoneId = extractMetaPhoneNumberId(body);
+      if (phoneId) {
+        const match = verified.find((a) => a.phoneNumberId === phoneId);
+        if (match) return { account: match };
+      }
+    }
+
+    if (channel === "instagram") {
+      const igFromBody = extractInstagramBusinessIdHint(body);
+      if (igFromBody) {
+        const match = verified.find((a) => a.igUserId === igFromBody);
+        if (match) return { account: match };
+      }
+    }
+
+    webhookVerificationFailures.add(1, { channel, tenant: tenantId });
+    this.logger.warn(
+      `Ambiguous webhook: ${verified.length} accounts verify for tenant=${tenantId} channel=${channel}`,
+    );
+    return { status: "signature_mismatch" };
   }
 
   private toBody(parsedBody: unknown): Record<string, unknown> | null {

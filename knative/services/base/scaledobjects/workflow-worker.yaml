@@ -1,0 +1,105 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: workflow-worker-scaler
+  labels:
+    app.kubernetes.io/name: workflow-worker
+    app.kubernetes.io/component: autoscaler
+spec:
+  # Plain Deployment (not Knative Service) — see
+  # knative/services/base/workflow-worker.yaml for why. Knative Service
+  # does not expose `/scale`, so KEDA can't manage its replicas.
+  # Deployment exposes `/scale` natively and KEDA scales it directly.
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: workflow-worker
+  # 15s polling matches the e2e test budget — first pending workflow task
+  # waits ≤15s before activation fires and the pod boots from cold.
+  pollingInterval: 15
+  # Long cooldown protects in-flight activities. The Temporal worker holds
+  # `maxConcurrentActivityTaskExecutions: 100` slots; a mid-execution
+  # SIGTERM would forfeit unacked activities until heartbeat-timeout
+  # reassignment (~30s default), which costs latency. 5 min covers most
+  # workflow durations without leaving pods around forever.
+  cooldownPeriod: 300
+  # Base keeps min=1 so production has hot capacity; non-prod overlays
+  # patch this to 0 + idleReplicaCount: 0 for full scale-to-zero. KEDA
+  # constraint: when idleReplicaCount is set it must be < minReplicaCount,
+  # but setting both to 0 in patches is the conventional way to express
+  # "scale fully to zero between bursts" (HPA still respects the floor of
+  # 1 once activation fires; idle/min-zero just removes the always-on
+  # replica).
+  idleReplicaCount: 0
+  minReplicaCount: 1
+  # Mirrors the previous Knative `max-scale: 10`. The orchestrator runs
+  # workflow tasks (CPU-bound, low memory) — a 10-pod ceiling at 1 CPU /
+  # 512Mi each is ~10 CPU / 5Gi worth of headroom, well under the dev
+  # cluster footprint.
+  maxReplicaCount: 10
+  fallback:
+    failureThreshold: 3
+    replicas: 1
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          # Scale out aggressively: workflow latency is cumulative, every
+          # second a pending task waits is a second the calling client
+          # waits. No stabilization window so the first poll-after-spike
+          # immediately bumps replicas.
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+            - type: Pods
+              value: 2
+              periodSeconds: 15
+          selectPolicy: Max
+        scaleDown:
+          # 5-min stabilization mirrors `cooldownPeriod`; both have to
+          # agree before HPA actually drops a pod. This is the main
+          # safeguard against premature shutdown of pods with in-flight
+          # activities (KEDA Temporal scaler sees only backlog, not
+          # in-flight work — see KEDA scaler docs note on scale-to-zero).
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 60
+  triggers:
+    # workflow-orchestrator queue: receives both workflow tasks and
+    # activity tasks (the orchestrator worker registers `workflowsPath`
+    # AND `activities`, see services/workflow-service/src/temporal/worker.ts).
+    # `queueTypes: workflow,activity` reports the SUM of both backlogs
+    # so a single replica processing 50 activities + 1 pending workflow
+    # task is correctly seen as "1 + 50 = 51 in queue", scaling up if
+    # that exceeds `targetQueueSize * replicas`.
+    - type: temporal
+      name: workflow-orchestrator-backlog
+      metadata:
+        # NOTE: endpoint hardcodes the dev support stack (`support-services-dev`).
+        # Non-dev overlays (qa/staging/production) MUST patch this via a
+        # strategic-merge patch on the ScaledObject because KEDA executes
+        # the gRPC call from the keda-operator namespace and needs the
+        # FQDN of the Temporal frontend reachable from there. See
+        # knative/services/overlays/_components/README.md for the pattern.
+        endpoint: temporal.support-services-dev.svc.cluster.local:7233
+        namespace: default
+        taskQueue: workflow-orchestrator
+        queueTypes: workflow,activity
+        # Each replica processes up to ~50 concurrent workflow tasks +
+        # 100 concurrent activities (`maxConcurrentWorkflowTaskExecutions`
+        # / `maxConcurrentActivityTaskExecutions` in worker.ts). Target
+        # backlog of 5 means "add a replica when 5 tasks are waiting per
+        # active worker" — gives ~3-5s p95 enqueue latency before scale-out.
+        targetQueueSize: "5"
+        # KEDA activation uses STRICTLY GREATER-THAN semantics: the trigger
+        # is "active" when `value > activationTargetQueueSize`. Setting this
+        # to "0" means "wake the pod as soon as backlog ≥ 1" — which is the
+        # behavior we want. With `idleReplicaCount: 0` in non-prod, this is
+        # what un-pauses the pipeline after a quiet period (e.g. dev ran
+        # the test suite once, idled for 5min, then re-runs).
+        # See: https://keda.sh/docs/scalers/temporal/#parameter-list
+        activationTargetQueueSize: "0"

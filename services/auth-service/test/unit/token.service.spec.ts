@@ -6,6 +6,7 @@ import { createMockPostgresSql } from "@yoizen/testing";
 import { TokenRepository } from "../../src/modules/token/token.repository";
 import { TokenService } from "../../src/modules/token/token.service";
 import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
+import { AuthTenantConnectionManager } from "../../src/providers/auth-tenant-connection-manager";
 
 const JWT_SECRET = "test-secret-at-least-32-characters-long";
 
@@ -18,12 +19,16 @@ describe("TokenService", () => {
     process.env.PLATFORM_ENVIRONMENT = "test";
 
     sql = createMockPostgresSql(mock);
+    const authTcm = {
+      ensureSchema: mock(() => Promise.resolve(sql)),
+    };
 
     const module = await Test.createTestingModule({
       providers: [
         TokenRepository,
         TokenService,
         { provide: POSTGRES_SQL, useValue: sql },
+        { provide: AuthTenantConnectionManager, useValue: authTcm },
       ],
     }).compile();
 

@@ -4,6 +4,14 @@ import { authHeaders } from "./auth.setup";
 
 const GW = getBaseUrl("api-gateway");
 
+/**
+ * Tests that drive a workflow execution must wait on the Temporal worker
+ * pipeline (`workflow-api` enqueues, `workflow-worker` processes activities).
+ * With scale-to-zero enabled in non-prod, both can be cold; budget is sized
+ * for sequential cold-starts of api + worker + the first activity batch.
+ */
+const WORKFLOW_IT = { timeout: 120_000 };
+
 const createdDefinitionIds: string[] = [];
 
 afterAll(async () => {
@@ -171,37 +179,45 @@ describe("E2E: workflow-service", () => {
     firstExecutionId = body.executionId;
   });
 
-  it("should poll execution until completion", async () => {
-    if (!definitionId || !firstExecutionId) {
-      return;
-    }
+  it(
+    "should poll execution until completion",
+    async () => {
+      if (!definitionId || !firstExecutionId) {
+        return;
+      }
 
-    const result = await pollExecution(definitionId, firstExecutionId);
+      const result = await pollExecution(definitionId, firstExecutionId);
 
-    expect(result.executionId).toBe(firstExecutionId);
-    expect(result.definitionId).toBe(definitionId);
-    expect(result.status).toBe("COMPLETED");
-  });
+      expect(result.executionId).toBe(firstExecutionId);
+      expect(result.definitionId).toBe(definitionId);
+      expect(result.status).toBe("COMPLETED");
+    },
+    WORKFLOW_IT.timeout,
+  );
 
-  it("should execute the same workflow a second time", async () => {
-    if (!definitionId) {
-      return;
-    }
-    const h = await authHeaders();
-    const { status, body } = await httpPost<ExecuteWorkflowResult>(
-      `${GW}/workflows/${definitionId}/execute`,
-      { request: { input: "second run" } },
-      { headers: h },
-    );
+  it(
+    "should execute the same workflow a second time",
+    async () => {
+      if (!definitionId) {
+        return;
+      }
+      const h = await authHeaders();
+      const { status, body } = await httpPost<ExecuteWorkflowResult>(
+        `${GW}/workflows/${definitionId}/execute`,
+        { request: { input: "second run" } },
+        { headers: h },
+      );
 
-    expect(status).toBe(202);
-    expect(body.executionId).toBeDefined();
-    expect(body.executionId).not.toBe(firstExecutionId);
-    expect(body.definitionId).toBe(definitionId);
+      expect(status).toBe(202);
+      expect(body.executionId).toBeDefined();
+      expect(body.executionId).not.toBe(firstExecutionId);
+      expect(body.definitionId).toBe(definitionId);
 
-    const result = await pollExecution(definitionId, body.executionId);
-    expect(result.status).toBe("COMPLETED");
-  });
+      const result = await pollExecution(definitionId, body.executionId);
+      expect(result.status).toBe("COMPLETED");
+    },
+    WORKFLOW_IT.timeout,
+  );
 
   it("should list executions for a definition", async () => {
     if (!definitionId) {

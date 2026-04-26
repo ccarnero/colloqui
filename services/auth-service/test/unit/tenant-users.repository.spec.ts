@@ -1,7 +1,7 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { TenantUsersRepository } from "../../src/modules/tenant-users/tenant-users.repository";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
+import { AuthTenantConnectionManager } from "../../src/providers/auth-tenant-connection-manager";
 import type { Sql } from "../../src/providers/postgres.provider";
 
 describe("TenantUsersRepository", () => {
@@ -18,10 +18,15 @@ describe("TenantUsersRepository", () => {
       {},
     ) as unknown as Sql;
 
+    const ensureSchema = mock(() => Promise.resolve(mockSql));
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         TenantUsersRepository,
-        { provide: POSTGRES_SQL, useValue: mockSql },
+        {
+          provide: AuthTenantConnectionManager,
+          useValue: { ensureSchema },
+        },
       ],
     }).compile();
 
@@ -35,6 +40,7 @@ describe("TenantUsersRepository", () => {
       displayName: "Name",
     });
 
+    expect(ensureSchema).toHaveBeenCalledWith("t1");
     expect(captured).toContain("INSERT INTO tenant_users");
     expect(captured).toContain("e@x.com");
   });

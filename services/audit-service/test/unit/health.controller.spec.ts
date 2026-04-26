@@ -40,6 +40,10 @@ describe("HealthController", () => {
     expect(result.postgres).toBe(true);
   });
 
+  it("returns fast readiness payload", () => {
+    expect(controller.ready()).toEqual({ status: "ok" });
+  });
+
   it("returns degraded when NATS connection is closed", async () => {
     mockNc.isClosed.mockReturnValue(true);
     const result = await controller.check();

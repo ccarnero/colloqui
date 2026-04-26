@@ -13,7 +13,7 @@ helm repo update
 helm install keda kedacore/keda \
   --namespace keda \
   --create-namespace \
-  --version 2.16.1 \
+  --version 2.18.3 \
   --set prometheus.metricServer.enabled=true \
   --set prometheus.operator.enabled=true
 ```
@@ -51,9 +51,11 @@ of tenants. The trade-off (polling latency) is acceptable because:
 
 ## Relationship with Knative Serving
 
+### Consumer services (HTTP / event-driven)
+
 Knative Services by default use KPA (`kpa.autoscaling.knative.dev`).
-Consumer services need the HPA class so KEDA can own their replica
-count:
+Consumer services that want HPA-style scaling set the HPA class and
+scaling bounds:
 
 ```yaml
 metadata:
@@ -63,10 +65,36 @@ metadata:
     autoscaling.knative.dev/max-scale: "20"
 ```
 
-The ScaledObject targets the Knative `Service` object; KEDA translates
-this to an HPA against the underlying Deployment that Knative Serving
-manages. The `min-scale` / `max-scale` Knative annotations act as hard
-bounds; KEDA never overrides them.
+> **Caveat:** the `serving.knative.dev/v1.Service` resource does NOT
+> expose the `/scale` subresource (the Knative `PodAutoscaler` /
+> `Deployment` it spawns does). When KEDA's ScaledObject points at a
+> Knative Service it logs `Target resource doesn't expose /scale
+> subresource` and the trigger never fires. The `class=hpa` Knative
+> annotation still spawns a CPU-based HPA on the underlying Deployment,
+> which IS what scales those services today — the JetStream / Prometheus
+> triggers in `scaledobjects/*.yaml` are currently decorative for the
+> Knative-targeted ScaledObjects (audit / metrics / webhook /
+> event-processor / channel / workflow-api / usage-aggregator). Tracked
+> as a follow-up: convert those triggers to target the underlying
+> Deployment by name, OR migrate the consumers to plain Deployments
+> like the Temporal workers (next section).
+
+### Temporal workers (pull-based, no inbound HTTP)
+
+`workflow-worker` and `workflow-http-worker` are plain
+`apps/v1.Deployment` resources, NOT Knative Services. KPA's
+HTTP-driven scale-from-zero is irrelevant to a Temporal worker (gRPC
+long-poll, no incoming HTTP). KEDA's `temporal` scaler (added in
+KEDA 2.17) drives their replicas based on `workflow-orchestrator` /
+`workflow-http` task-queue depth — see
+`knative/services/base/scaledobjects/workflow-{worker,http-worker}.yaml`
+for the trigger spec. Because the target is a plain Deployment,
+`/scale` is exposed natively and KEDA scales them directly (no HPA
+ownership transfer dance needed).
+
+KEDA must be 2.17 or higher for the Temporal scaler to be available
+(`KEDAScalerFailed: no scaler found for type: temporal` on older
+versions). The `bootstrap-*.sh` scripts pin `KEDA_VERSION="2.18.3"`.
 
 ## Multi-consumer services
 

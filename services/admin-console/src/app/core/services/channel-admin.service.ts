@@ -102,6 +102,8 @@ export class ChannelAdminService {
   ): Observable<{ items: IStreamMessage[] }> {
     const rawParams: Record<string, string | undefined> = {};
     if (params.subject !== undefined) rawParams["subject"] = params.subject;
+    if (params.accountId !== undefined)
+      rawParams["accountId"] = params.accountId;
     if (params.limit !== undefined) rawParams["limit"] = String(params.limit);
     if (params.mode !== undefined) rawParams["mode"] = params.mode;
     return this.http.get<{ items: IStreamMessage[] }>(

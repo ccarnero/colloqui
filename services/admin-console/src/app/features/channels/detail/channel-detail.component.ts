@@ -15,19 +15,20 @@ import { MatIconModule } from "@angular/material/icon";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { Subject, forkJoin, takeUntil } from "rxjs";
 import { ChannelAdminService } from "../../../core/services/channel-admin.service";
+import { AuthService } from "../../../core/services/auth.service";
 import type {
-  IStreamSummary,
   IUsageBucketRow,
   IUsageTotalsRow,
   UsageBucket,
 } from "../../../core/models/channel-streams.model";
 import {
   RangeSelectorComponent,
-  type UsageRange,
+  type IUsageRangeSelection,
+  type UsagePresetRange,
 } from "./range-selector.component";
 import { UsageChartComponent } from "./usage-chart.component";
 import { KpiCardsComponent } from "./kpi-cards.component";
-import { StreamMetaCardsComponent } from "./stream-meta-cards.component";
+import { ScopedStreamCardsComponent } from "./scoped-stream-cards.component";
 import {
   MessageInspectorDialogComponent,
   type IMessageInspectorDialogData,
@@ -38,16 +39,32 @@ interface IRangeSpec {
   readonly bucket: UsageBucket;
 }
 
-const RANGE_SPECS: ReadonlyMap<UsageRange, IRangeSpec> = new Map<
-  UsageRange,
+interface IResolvedUsageRange {
+  readonly from: string;
+  readonly to: string;
+  readonly bucket: UsageBucket;
+  readonly label: string;
+}
+
+const RANGE_SPECS: ReadonlyMap<UsagePresetRange, IRangeSpec> = new Map<
+  UsagePresetRange,
   IRangeSpec
 >([
-  ["1h", { durationMs: 60 * 60 * 1000, bucket: "hour" }],
   ["6h", { durationMs: 6 * 60 * 60 * 1000, bucket: "hour" }],
   ["24h", { durationMs: 24 * 60 * 60 * 1000, bucket: "hour" }],
   ["7d", { durationMs: 7 * 24 * 60 * 60 * 1000, bucket: "day" }],
   ["30d", { durationMs: 30 * 24 * 60 * 60 * 1000, bucket: "day" }],
 ]);
+
+const DEFAULT_PRESET_RANGE: UsagePresetRange = "24h";
+const MAX_USAGE_RANGE_MS = 90 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const CUSTOM_RANGE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 @Component({
   selector: "app-channel-detail",
@@ -63,7 +80,7 @@ const RANGE_SPECS: ReadonlyMap<UsageRange, IRangeSpec> = new Map<
     RangeSelectorComponent,
     UsageChartComponent,
     KpiCardsComponent,
-    StreamMetaCardsComponent,
+    ScopedStreamCardsComponent,
   ],
   template: `
     <div class="ws-header">
@@ -81,7 +98,7 @@ const RANGE_SPECS: ReadonlyMap<UsageRange, IRangeSpec> = new Map<
       </div>
       <div class="ws-actions">
         <app-range-selector
-          [value]="range()"
+          [value]="rangeSelection()"
           (valueChange)="onRangeChange($event)"
         />
         <button mat-stroked-button type="button" (click)="reload()">
@@ -96,7 +113,7 @@ const RANGE_SPECS: ReadonlyMap<UsageRange, IRangeSpec> = new Map<
     }
 
     <section class="section">
-      <h3 class="section-title">Totals ({{ range() }})</h3>
+      <h3 class="section-title">Totals ({{ rangeLabel() }})</h3>
       <app-kpi-cards [totals]="totals()" />
     </section>
 
@@ -109,15 +126,18 @@ const RANGE_SPECS: ReadonlyMap<UsageRange, IRangeSpec> = new Map<
         </div>
       } @else {
         <div class="chart-wrap">
-          <app-usage-chart [data]="usage()" />
+          <app-usage-chart
+            [data]="usage()"
+            [hasRecentActivity]="hasRecentActivity()"
+          />
         </div>
       }
     </section>
 
     <section class="section">
-      <h3 class="section-title">Streams</h3>
-      <app-stream-meta-cards
-        [streams]="streams()"
+      <h3 class="section-title">Streams (this account)</h3>
+      <app-scoped-stream-cards
+        [totals]="totals()"
         (inspect)="openInspector($event)"
       />
     </section>
@@ -180,28 +200,30 @@ const RANGE_SPECS: ReadonlyMap<UsageRange, IRangeSpec> = new Map<
 export class ChannelDetailComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly channels = inject(ChannelAdminService);
+  private readonly auth = inject(AuthService);
   private readonly dialog = inject(MatDialog);
 
   private readonly destroy$ = new Subject<void>();
 
   readonly channel = signal<string>("");
   readonly accountId = signal<string>("");
-  readonly range = signal<UsageRange>("24h");
+  readonly rangeSelection = signal<IUsageRangeSelection>({
+    mode: "preset",
+    preset: DEFAULT_PRESET_RANGE,
+  });
 
   readonly usage = signal<ReadonlyArray<IUsageBucketRow>>([]);
   readonly totals = signal<ReadonlyArray<IUsageTotalsRow>>([]);
-  readonly streams = signal<ReadonlyArray<IStreamSummary>>([]);
-
   readonly loading = signal<boolean>(false);
   readonly errorMessage = signal<string | null>(null);
 
-  readonly rangeSpec = computed<IRangeSpec>(() => {
-    const spec = RANGE_SPECS.get(this.range());
-    if (!spec) {
-      return { durationMs: 24 * 60 * 60 * 1000, bucket: "hour" };
-    }
-    return spec;
-  });
+  readonly hasRecentActivity = computed<boolean>(() =>
+    this.totals().some((row) => row.events > 0),
+  );
+
+  readonly rangeLabel = computed<string>(() =>
+    this.formatRangeSelectionLabel(this.rangeSelection()),
+  );
 
   ngOnInit(): void {
     this.route.paramMap.pipe(takeUntil(this.destroy$)).subscribe((params) => {
@@ -216,8 +238,8 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
-  onRangeChange(next: UsageRange): void {
-    this.range.set(next);
+  onRangeChange(next: IUsageRangeSelection): void {
+    this.rangeSelection.set(next);
     this.reload();
   }
 
@@ -226,36 +248,40 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
     const channel = this.channel();
     if (!accountId || !channel) return;
 
-    const now = Date.now();
-    const spec = this.rangeSpec();
-    const from = new Date(now - spec.durationMs).toISOString();
-    const to = new Date(now).toISOString();
+    let resolved: IResolvedUsageRange;
+    try {
+      resolved = this.resolveRange(this.rangeSelection());
+    } catch (err: unknown) {
+      this.errorMessage.set(
+        err instanceof Error ? err.message : "Invalid date range",
+      );
+      this.loading.set(false);
+      return;
+    }
 
     this.loading.set(true);
     this.errorMessage.set(null);
 
     forkJoin({
       usage: this.channels.getUsage({
-        from,
-        to,
-        bucket: spec.bucket,
+        from: resolved.from,
+        to: resolved.to,
+        bucket: resolved.bucket,
         accountId,
         channel,
       }),
       totals: this.channels.getUsageTotals({
-        from,
-        to,
+        from: resolved.from,
+        to: resolved.to,
         accountId,
         channel,
       }),
-      streams: this.channels.getStreams(),
     })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: ({ usage, totals, streams }) => {
+        next: ({ usage, totals }) => {
           this.usage.set(usage.items);
           this.totals.set(totals.items);
-          this.streams.set(streams.items);
           this.loading.set(false);
         },
         error: (err: unknown) => {
@@ -268,19 +294,18 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
   }
 
   openInspector(streamKey: "ingress" | "dlq"): void {
-    const stream = this.streams().find((s) => s.kind === streamKey);
-    if (!stream) return;
-    const basePattern = stream.subjects[0] ?? "";
+    const basePattern = this.defaultStreamSubjectPattern(streamKey);
     const channelFilter = this.buildChannelScopedFilter(
       basePattern,
       this.channel(),
     );
     const data: IMessageInspectorDialogData = {
       streamKey,
-      streamName: stream.name,
+      streamName: streamKey === "ingress" ? "Ingress" : "DLQ",
       defaultSubject: channelFilter,
       subjectPlaceholder:
         channelFilter || basePattern || "e.g. evt.<tenant>.>",
+      accountId: this.accountId() || undefined,
     };
     this.dialog.open(MessageInspectorDialogComponent, {
       data,
@@ -304,5 +329,75 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
     if (!basePattern.endsWith(".>")) return "";
     const prefix = basePattern.slice(0, basePattern.length - 1); // keeps trailing dot
     return `${prefix}channel-service.messaging.${channel}.>`;
+  }
+
+  /**
+   * JetStream streams bind `evt.<tenant>.>` or `dlq.<tenant>.>` — same
+   * shape as {@link getTenantStreamName} / DLQ subjects in `@yoizen/shared`.
+   */
+  private defaultStreamSubjectPattern(streamKey: "ingress" | "dlq"): string {
+    const tid = this.auth.tenantId();
+    if (!tid) return "";
+    return streamKey === "ingress" ? `evt.${tid}.>` : `dlq.${tid}.>`;
+  }
+
+  private resolveRange(selection: IUsageRangeSelection): IResolvedUsageRange {
+    if (selection.mode === "custom") {
+      if (!selection.from || !selection.to) {
+        throw new Error("Custom range requires start and end dates");
+      }
+      const fromDate = new Date(selection.from);
+      const toDate = new Date(selection.to);
+      if (
+        Number.isNaN(fromDate.getTime()) ||
+        Number.isNaN(toDate.getTime())
+      ) {
+        throw new Error("Invalid custom date range");
+      }
+      if (fromDate >= toDate) {
+        throw new Error("Start date must be before end date");
+      }
+      const durationMs = toDate.getTime() - fromDate.getTime();
+      if (durationMs > MAX_USAGE_RANGE_MS) {
+        throw new Error("Date range exceeds 90 days");
+      }
+      return {
+        from: fromDate.toISOString(),
+        to: toDate.toISOString(),
+        bucket: this.pickBucket(durationMs),
+        label: this.formatCustomRangeLabel(fromDate, toDate),
+      };
+    }
+
+    const preset = selection.preset ?? DEFAULT_PRESET_RANGE;
+    const spec = RANGE_SPECS.get(preset) ?? RANGE_SPECS.get(DEFAULT_PRESET_RANGE)!;
+    const now = Date.now();
+    return {
+      from: new Date(now - spec.durationMs).toISOString(),
+      to: new Date(now).toISOString(),
+      bucket: spec.bucket,
+      label: preset,
+    };
+  }
+
+  private pickBucket(durationMs: number): UsageBucket {
+    return durationMs <= DAY_MS ? "hour" : "day";
+  }
+
+  private formatRangeSelectionLabel(selection: IUsageRangeSelection): string {
+    if (selection.mode !== "custom") {
+      return selection.preset ?? DEFAULT_PRESET_RANGE;
+    }
+    if (!selection.from || !selection.to) return "Custom";
+    const fromDate = new Date(selection.from);
+    const toDate = new Date(selection.to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      return "Custom";
+    }
+    return this.formatCustomRangeLabel(fromDate, toDate);
+  }
+
+  private formatCustomRangeLabel(from: Date, to: Date): string {
+    return `${CUSTOM_RANGE_FORMATTER.format(from)} - ${CUSTOM_RANGE_FORMATTER.format(to)}`;
   }
 }

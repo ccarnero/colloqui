@@ -2,7 +2,13 @@ import { describe, it, expect, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { createQueuedSql } from "@yoizen/testing";
 import { AutoReplyRepository } from "../../src/modules/auto-reply/auto-reply.repository";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
+import { ChannelTenantConnectionManager } from "../../src/providers/channel-tenant-connection-manager";
+
+function wrapTcm(sql: ReturnType<typeof createQueuedSql>) {
+  return {
+    ensureSchema: mock(() => Promise.resolve(sql)),
+  };
+}
 
 describe("AutoReplyRepository", () => {
   it("insertRule inserts with options fields", async () => {
@@ -10,7 +16,10 @@ describe("AutoReplyRepository", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         AutoReplyRepository,
-        { provide: POSTGRES_SQL, useValue: sql },
+        {
+          provide: ChannelTenantConnectionManager,
+          useValue: wrapTcm(sql),
+        },
       ],
     }).compile();
 
@@ -27,17 +36,20 @@ describe("AutoReplyRepository", () => {
     expect(sql).toHaveBeenCalled();
   });
 
-  it("loadActiveRules selects active rules", async () => {
+  it("listActiveRulesForTenant selects active rules for tenant", async () => {
     const sql = createQueuedSql([[]], mock);
     const moduleRef = await Test.createTestingModule({
       providers: [
         AutoReplyRepository,
-        { provide: POSTGRES_SQL, useValue: sql },
+        {
+          provide: ChannelTenantConnectionManager,
+          useValue: wrapTcm(sql),
+        },
       ],
     }).compile();
 
     const repo = moduleRef.get(AutoReplyRepository);
-    await repo.loadActiveRules();
+    await repo.listActiveRulesForTenant("tenant-a");
     expect(sql).toHaveBeenCalled();
   });
 });

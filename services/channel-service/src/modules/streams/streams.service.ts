@@ -31,9 +31,21 @@ import type {
 } from "./streams.dto";
 
 const MESSAGE_FETCH_LIMIT = 50;
+/** Upper bound on JetStream fetch batch when post-filtering by accountId. */
+const MAX_ACCOUNT_INSPECT_FETCH = 200;
+const ACCOUNT_INSPECT_SCAN_FACTOR = 4;
 const MESSAGE_FETCH_TIMEOUT_MS = 2_000;
 
 const TRAILING_GT = ".>";
+
+/** Reads CloudEvents-style `accountid` from a decoded JetStream payload. */
+export function extractEnvelopeAccountId(data: unknown): string | null {
+  if (data !== null && typeof data === "object" && "accountid" in data) {
+    const v = (data as { accountid?: unknown }).accountid;
+    return typeof v === "string" && v.length > 0 ? v : null;
+  }
+  return null;
+}
 
 interface IStreamInfoShape {
   config?: {
@@ -73,8 +85,8 @@ interface IStreamInfoShape {
  *     subject, using `DeliverPolicy.StartSequence` with a computed
  *     `opt_start_seq`. Useful for "show me what just happened".
  *
- * All filtering operations are O(L) where L is the configured
- * `limit` (≤ 200). No data is persisted by this service.
+ * With optional `accountId`, fetches up to `min(limit·4, 200)` candidates
+ * and post-filters by `envelope.accountid` — O(fetchCap) per request.
  */
 @Injectable()
 export class StreamsService {
@@ -106,6 +118,7 @@ export class StreamsService {
     subject: string | undefined,
     limit: number | undefined,
     mode: StreamInspectionMode = "last-per-subject",
+    accountId?: string,
   ): Promise<readonly IStreamMessage[]> {
     const kind = this.parseKind(key);
     const streamName = streamNameFor(kind, tenantId);
@@ -121,7 +134,13 @@ export class StreamsService {
       );
     }
 
-    const cap = Math.min(limit ?? 20, MESSAGE_FETCH_LIMIT);
+    const resultLimit = Math.min(limit ?? 20, MESSAGE_FETCH_LIMIT);
+    const scanCap = accountId
+      ? Math.min(
+          resultLimit * ACCOUNT_INSPECT_SCAN_FACTOR,
+          MAX_ACCOUNT_INSPECT_FETCH,
+        )
+      : resultLimit;
     const ephemeralName = `ui-inspect-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     const consumerConfig = this.buildConsumerConfig({
@@ -131,7 +150,7 @@ export class StreamsService {
       streamName,
       streamSubjects,
       state: info.state ?? {},
-      cap,
+      scanCap,
     });
 
     try {
@@ -145,15 +164,20 @@ export class StreamsService {
     try {
       const consumer = await this.js.consumers.get(streamName, ephemeralName);
       const iter = await consumer.fetch({
-        max_messages: cap,
+        max_messages: scanCap,
         expires: MESSAGE_FETCH_TIMEOUT_MS,
       });
 
       const decoder = new TextDecoder();
       const out: IStreamMessage[] = [];
       for await (const msg of iter) {
-        out.push(this.toMessage(msg, decoder));
-        if (out.length >= cap) break;
+        const row = this.toMessage(msg, decoder);
+        if (accountId) {
+          const envAccount = extractEnvelopeAccountId(row.data);
+          if (envAccount !== accountId) continue;
+        }
+        out.push(row);
+        if (out.length >= resultLimit) break;
       }
       return out;
     } finally {
@@ -173,7 +197,8 @@ export class StreamsService {
     readonly streamName: string;
     readonly streamSubjects: readonly string[];
     readonly state: NonNullable<IStreamInfoShape["state"]>;
-    readonly cap: number;
+    /** Window size for tail start-seq and max fetch batch. */
+    readonly scanCap: number;
   }): Record<string, unknown> {
     const {
       mode,
@@ -182,7 +207,7 @@ export class StreamsService {
       streamName,
       streamSubjects,
       state,
-      cap,
+      scanCap,
     } = input;
 
     const base = {
@@ -195,7 +220,8 @@ export class StreamsService {
     if (mode === "tail") {
       const lastSeq = Number(state.last_seq ?? 0);
       const firstSeq = Number(state.first_seq ?? 0);
-      const startSeq = lastSeq > 0 ? Math.max(firstSeq || 1, lastSeq - cap + 1) : 1;
+      const startSeq =
+        lastSeq > 0 ? Math.max(firstSeq || 1, lastSeq - scanCap + 1) : 1;
       return {
         ...base,
         deliver_policy: DeliverPolicy.StartSequence,

@@ -73,7 +73,7 @@ spec:
               memory: 256Mi
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
               port: 3000
             initialDelaySeconds: 3
             periodSeconds: 5
@@ -169,7 +169,7 @@ spec:
               memory: 256Mi
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 5
@@ -634,8 +634,13 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
-apiVersion: serving.knative.dev/v1
-kind: Service
+# NOTE: workflow-worker / workflow-http-worker are plain Deployments
+# (NOT Knative Services) — see knative/services/base/workflow-worker.yaml
+# for the rationale. The patches below target `apps/v1.Deployment`
+# accordingly; the env injection still happens here so the dev overlay
+# remains the single place that wires service URLs / Temporal endpoints.
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: workflow-worker
 spec:
@@ -643,10 +648,6 @@ spec:
     spec:
       containers:
         - name: user-container
-          image: dev.local/workflow-service:local
-          ports:
-            - containerPort: 3000
-              protocol: TCP
           env:
             - name: ENTRYPOINT
               value: "dist/temporal/worker.js"
@@ -662,23 +663,9 @@ spec:
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
               value: "workflow-worker"
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            seccompProfile:
-              type: RuntimeDefault
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: "1"
-              memory: 512Mi
 ---
-apiVersion: serving.knative.dev/v1
-kind: Service
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: workflow-http-worker
 spec:
@@ -686,7 +673,6 @@ spec:
     spec:
       containers:
         - name: user-container
-          image: dev.local/workflow-http-worker:local
           env:
             - name: TEMPORAL_ADDRESS
               value: "temporal.support-services-dev.svc.cluster.local:7233"
@@ -700,20 +686,6 @@ spec:
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
               value: "workflow-http-worker"
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            seccompProfile:
-              type: RuntimeDefault
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: "1"
-              memory: 512Mi
 ---
 apiVersion: serving.knative.dev/v1
 kind: Service

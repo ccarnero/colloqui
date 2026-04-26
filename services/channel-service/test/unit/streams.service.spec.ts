@@ -1,6 +1,9 @@
 import { describe, it, expect, mock } from "bun:test";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
-import { StreamsService } from "../../src/modules/streams/streams.service";
+import {
+  StreamsService,
+  extractEnvelopeAccountId,
+} from "../../src/modules/streams/streams.service";
 
 function makeInfo(overrides: Record<string, unknown> = {}): unknown {
   return {
@@ -52,6 +55,7 @@ function makeJs(
     readonly subject: string;
     readonly data: Uint8Array;
   }>,
+  fetchCalls: Array<{ max_messages?: number }> = [],
 ) {
   const iter = {
     [Symbol.asyncIterator]: async function* () {
@@ -68,12 +72,28 @@ function makeJs(
     consumers: {
       get: mock(() =>
         Promise.resolve({
-          fetch: mock(() => Promise.resolve(iter)),
+          fetch: mock((opts: { max_messages?: number }) => {
+            fetchCalls.push(opts);
+            return Promise.resolve(iter);
+          }),
         }),
       ),
     },
   };
 }
+
+describe("extractEnvelopeAccountId", () => {
+  it("returns the account id when present", () => {
+    expect(
+      extractEnvelopeAccountId({ accountid: "a1", channel: "telegram" }),
+    ).toBe("a1");
+  });
+  it("returns null when missing or empty", () => {
+    expect(extractEnvelopeAccountId({})).toBeNull();
+    expect(extractEnvelopeAccountId({ accountid: "" })).toBeNull();
+    expect(extractEnvelopeAccountId(null)).toBeNull();
+  });
+});
 
 describe("StreamsService", () => {
   it("lists existing ingress + dlq streams with summaries", async () => {
@@ -169,6 +189,65 @@ describe("StreamsService", () => {
     expect(cfg.filter_subject).toBe("ingress.whatsapp.*");
     await new Promise((r) => setTimeout(r, 0));
     expect(deleted[0]![0]).toBe("INGRESS-TENANT-1");
+  });
+
+  it("post-filters by accountId and requests a larger fetch batch", async () => {
+    const infos = new Map<string, unknown>([
+      ["INGRESS-TENANT-1", makeInfo()],
+    ]);
+    const { jsm, deleted } = makeJsm(infos);
+    const fetchCalls: Array<{ max_messages?: number }> = [];
+    const enc = (o: Record<string, unknown>) =>
+      new TextEncoder().encode(JSON.stringify(o));
+    const js = makeJs(
+      [
+        { seq: 1, subject: "s1", data: enc({ accountid: "other" }) },
+        { seq: 2, subject: "s2", data: enc({ accountid: "target" }) },
+        { seq: 3, subject: "s3", data: enc({ accountid: "target" }) },
+      ],
+      fetchCalls,
+    );
+    const service = new StreamsService(jsm as never, js as never);
+
+    const out = await service.getMessages(
+      "tenant-1",
+      "ingress",
+      undefined,
+      2,
+      "last-per-subject",
+      "target",
+    );
+    expect(out).toHaveLength(2);
+    expect(out[0]!.seq).toBe(2);
+    expect(out[1]!.seq).toBe(3);
+    expect(fetchCalls[0]!.max_messages).toBe(8);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(deleted[0]![0]).toBe("INGRESS-TENANT-1");
+  });
+
+  it("tail mode uses scanCap for opt_start_seq when accountId is set", async () => {
+    const infos = new Map<string, unknown>([
+      ["INGRESS-TENANT-1", makeInfo()],
+    ]);
+    const { jsm } = makeJsm(infos);
+    const js = makeJs([]);
+    const service = new StreamsService(jsm as never, js as never);
+
+    await service.getMessages(
+      "tenant-1",
+      "ingress",
+      undefined,
+      10,
+      "tail",
+      "acct-1",
+    );
+
+    const addCalls = (jsm.consumers.add as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls;
+    const cfg = addCalls[0]![1] as { opt_start_seq?: number };
+    // last_seq=100, scanCap=40 => start at 61
+    expect(cfg.opt_start_seq).toBe(61);
   });
 
   it("falls back to the stream's first subject when no filter is provided (last-per-subject)", async () => {

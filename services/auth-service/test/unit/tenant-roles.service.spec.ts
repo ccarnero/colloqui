@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { TenantRolesRepository } from "../../src/modules/tenant-roles/tenant-roles.repository";
 import { TenantRolesService } from "../../src/modules/tenant-roles/tenant-roles.service";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
+import { AuthTenantConnectionManager } from "../../src/providers/auth-tenant-connection-manager";
 
 function createMockSql() {
   const fn = mock((..._args: unknown[]) => Promise.resolve([]));
@@ -27,12 +27,15 @@ describe("TenantRolesService", () => {
 
   beforeEach(async () => {
     sql = createMockSql();
+    const authTcm = {
+      ensureSchema: mock(() => Promise.resolve(sql)),
+    };
 
     const module = await Test.createTestingModule({
       providers: [
         TenantRolesRepository,
         TenantRolesService,
-        { provide: POSTGRES_SQL, useValue: sql },
+        { provide: AuthTenantConnectionManager, useValue: authTcm },
       ],
     }).compile();
 
@@ -89,7 +92,6 @@ describe("TenantRolesService", () => {
       const rows = [
         {
           id: "r1",
-          tenant_id: "t1",
           name: "admin",
           description: null,
           is_system: true,
@@ -103,6 +105,7 @@ describe("TenantRolesService", () => {
       const result = await service.listByTenant("t1");
       expect(result).toHaveLength(1);
       expect(result[0].user_count).toBe(2);
+      expect(result[0].tenant_id).toBe("t1");
     });
   });
 
@@ -110,14 +113,13 @@ describe("TenantRolesService", () => {
     it("should throw NotFoundException if role not found", async () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
       await expect(
-        service.getWithPermissions("nonexistent"),
+        service.getWithPermissions("t1", "nonexistent"),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("should return role with permissions", async () => {
       const role = {
         id: "r1",
-        tenant_id: "t1",
         name: "editor",
         description: null,
         is_system: false,
@@ -129,16 +131,17 @@ describe("TenantRolesService", () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
         { resource: "agents", action: "read" },
       ]);
-      const result = await service.getWithPermissions("r1");
+      const result = await service.getWithPermissions("t1", "r1");
       expect(result.permissions).toHaveLength(1);
       expect(result.permissions[0].resource).toBe("agents");
+      expect(result.tenant_id).toBe("t1");
     });
   });
 
   describe("delete", () => {
     it("should throw NotFoundException if role not found", async () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
-      await expect(service.delete("nonexistent")).rejects.toBeInstanceOf(
+      await expect(service.delete("t1", "nonexistent")).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -147,7 +150,7 @@ describe("TenantRolesService", () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
         { id: "r1", is_system: true },
       ]);
-      await expect(service.delete("r1")).rejects.toBeInstanceOf(
+      await expect(service.delete("t1", "r1")).rejects.toBeInstanceOf(
         ForbiddenException,
       );
     });
@@ -159,7 +162,7 @@ describe("TenantRolesService", () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
         { id: "u1" },
       ]);
-      await expect(service.delete("r1")).rejects.toBeInstanceOf(
+      await expect(service.delete("t1", "r1")).rejects.toBeInstanceOf(
         BadRequestException,
       );
     });
@@ -170,7 +173,7 @@ describe("TenantRolesService", () => {
       ]);
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
-      await expect(service.delete("r1")).resolves.toBeUndefined();
+      await expect(service.delete("t1", "r1")).resolves.toBeUndefined();
     });
   });
 
@@ -178,7 +181,7 @@ describe("TenantRolesService", () => {
     it("throws NotFoundException when role missing", async () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
       await expect(
-        service.update("missing", { name: "x" }),
+        service.update("t1", "missing", { name: "x" }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -186,13 +189,12 @@ describe("TenantRolesService", () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
         {
           id: "r1",
-          tenant_id: "t1",
           name: "tenant_admin",
           is_system: true,
         },
       ]);
       await expect(
-        service.update("r1", { name: "other" }),
+        service.update("t1", "r1", { name: "other" }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -200,7 +202,6 @@ describe("TenantRolesService", () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
         {
           id: "r1",
-          tenant_id: "t1",
           name: "editor",
           is_system: false,
         },
@@ -209,7 +210,7 @@ describe("TenantRolesService", () => {
         { id: "other" },
       ]);
       await expect(
-        service.update("r1", { name: "taken" }),
+        service.update("t1", "r1", { name: "taken" }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
   });

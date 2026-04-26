@@ -9,7 +9,7 @@ import { createMockPostgresSql } from "@yoizen/testing";
 import { TenantUsersRepository } from "../../src/modules/tenant-users/tenant-users.repository";
 import { TenantUsersService } from "../../src/modules/tenant-users/tenant-users.service";
 import { TenantRolesService } from "../../src/modules/tenant-roles/tenant-roles.service";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
+import { AuthTenantConnectionManager } from "../../src/providers/auth-tenant-connection-manager";
 
 describe("TenantUsersService", () => {
   let service: TenantUsersService;
@@ -24,6 +24,9 @@ describe("TenantUsersService", () => {
     delete process.env.TENANT_ADMIN_PASSWORD;
 
     sql = createMockPostgresSql(mock);
+    const authTcm = {
+      ensureSchema: mock(() => Promise.resolve(sql)),
+    };
     mockTenantRolesService.seedSystemRole.mockReset();
     mockTenantRolesService.seedSystemRole.mockResolvedValue("system-role-id");
 
@@ -31,7 +34,7 @@ describe("TenantUsersService", () => {
       providers: [
         TenantUsersRepository,
         TenantUsersService,
-        { provide: POSTGRES_SQL, useValue: sql },
+        { provide: AuthTenantConnectionManager, useValue: authTcm },
         { provide: TenantRolesService, useValue: mockTenantRolesService },
       ],
     }).compile();
@@ -74,7 +77,6 @@ describe("TenantUsersService", () => {
       const now = new Date();
       const insertedRow = {
         id: "u-new",
-        tenant_id: "t1",
         email: "new@test.com",
         role_id: "role-1",
         display_name: "New User",
@@ -97,6 +99,7 @@ describe("TenantUsersService", () => {
       });
       expect(result.id).toBe("u-new");
       expect(result.email).toBe("new@test.com");
+      expect(result.tenant_id).toBe("t1");
       expect(result.role).toBe("editor");
     });
   });
@@ -104,7 +107,7 @@ describe("TenantUsersService", () => {
   describe("findById", () => {
     it("should throw NotFoundException if user not found", async () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
-      await expect(service.findById("nonexistent")).rejects.toBeInstanceOf(
+      await expect(service.findById("t1", "nonexistent")).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -112,7 +115,6 @@ describe("TenantUsersService", () => {
     it("should return user by id", async () => {
       const row = {
         id: "u1",
-        tenant_id: "t1",
         email: "user@test.com",
         role_id: "r1",
         role: "editor",
@@ -121,8 +123,9 @@ describe("TenantUsersService", () => {
         updated_at: new Date(),
       };
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([row]);
-      const result = await service.findById("u1");
+      const result = await service.findById("t1", "u1");
       expect(result.email).toBe("user@test.com");
+      expect(result.tenant_id).toBe("t1");
     });
   });
 
@@ -131,7 +134,6 @@ describe("TenantUsersService", () => {
       const rows = [
         {
           id: "u1",
-          tenant_id: "t1",
           email: "a@test.com",
           role_id: "r1",
           role: "admin",
@@ -143,6 +145,7 @@ describe("TenantUsersService", () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce(rows);
       const result = await service.listByTenant("t1");
       expect(result).toHaveLength(1);
+      expect(result[0].tenant_id).toBe("t1");
     });
   });
 
@@ -150,7 +153,7 @@ describe("TenantUsersService", () => {
     it("should throw NotFoundException if user not found", async () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
       await expect(
-        service.update("nonexistent", { role_id: "r2" }),
+        service.update("t1", "nonexistent", { role_id: "r2" }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -158,7 +161,6 @@ describe("TenantUsersService", () => {
       const now = new Date();
       const updatedRow = {
         id: "u1",
-        tenant_id: "t1",
         email: "user@test.com",
         role_id: "r2",
         role: "admin",
@@ -168,12 +170,12 @@ describe("TenantUsersService", () => {
       };
 
       const sqlMock = sql as unknown as ReturnType<typeof mock>;
-      sqlMock.mockResolvedValueOnce([{ id: "u1", tenant_id: "t1" }]);
+      sqlMock.mockResolvedValueOnce([{ id: "u1" }]);
       sqlMock.mockResolvedValueOnce([{ id: "r2" }]);
       sqlMock.mockResolvedValueOnce([]);
       sqlMock.mockResolvedValueOnce([updatedRow]);
 
-      const result = await service.update("u1", { role_id: "r2" });
+      const result = await service.update("t1", "u1", { role_id: "r2" });
       expect(result.role).toBe("admin");
       expect(result.role_id).toBe("r2");
     });
@@ -182,9 +184,9 @@ describe("TenantUsersService", () => {
   describe("deactivate", () => {
     it("should throw NotFoundException if user not found", async () => {
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
-      await expect(service.deactivate("nonexistent")).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.deactivate("t1", "nonexistent"),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("should deactivate an existing user", async () => {
@@ -192,7 +194,7 @@ describe("TenantUsersService", () => {
         { id: "u1" },
       ]);
       (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
-      await expect(service.deactivate("u1")).resolves.toBeUndefined();
+      await expect(service.deactivate("t1", "u1")).resolves.toBeUndefined();
     });
   });
 });

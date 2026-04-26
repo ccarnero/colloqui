@@ -31,6 +31,7 @@ export interface IMessageInspectorDialogData {
   readonly defaultSubject?: string;
   readonly subjectPlaceholder?: string;
   readonly defaultMode?: StreamInspectionMode;
+  readonly accountId?: string;
 }
 
 @Component({
@@ -279,6 +280,7 @@ export class MessageInspectorDialogComponent {
     this.channels
       .getStreamMessages(this.data.streamKey, {
         subject: this.subject.trim() || undefined,
+        accountId: this.data.accountId,
         limit: this.limit,
         mode: this.mode,
       })

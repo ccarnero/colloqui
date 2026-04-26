@@ -89,7 +89,14 @@ const DIRECTION_ORDER: ReadonlyArray<UsageDirection> = ["ingress", "egress", "dl
           }
         </svg>
       } @else {
-        <div class="usage-chart__empty">No usage data for the selected range.</div>
+        @if (hasRecentActivity()) {
+          <div class="usage-chart__empty">
+            Selected range has activity, but it is too narrow to draw a timeline.
+            Expand the range.
+          </div>
+        } @else {
+          <div class="usage-chart__empty">No usage data for the selected range.</div>
+        }
       }
     </div>
   `,
@@ -135,6 +142,7 @@ const DIRECTION_ORDER: ReadonlyArray<UsageDirection> = ["ingress", "egress", "dl
 })
 export class UsageChartComponent {
   readonly data = input<ReadonlyArray<IUsageBucketRow>>([]);
+  readonly hasRecentActivity = input<boolean>(false);
 
   readonly chart = computed<IChartModel>(() => {
     const rows = this.data();

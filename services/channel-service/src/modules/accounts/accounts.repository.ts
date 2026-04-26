@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Sql } from "postgres";
 import type { Channel, ChannelAccount } from "@yoizen/shared";
-import { POSTGRES_SQL } from "../../providers/postgres.provider";
+import { ChannelTenantConnectionManager } from "../../providers/channel-tenant-connection-manager";
 
 /** Mutable channel_accounts columns for PATCH-style updates. */
 export interface IAccountUpdatePatch {
@@ -16,6 +16,7 @@ export interface IAccountUpdatePatch {
 /** Parameters for inserting a channel account row. */
 export interface IInsertAccountParams {
   readonly id: string;
+  /** Used only to resolve the tenant pool; not stored. */
   readonly tenantId: string;
   readonly data: Omit<
     ChannelAccount,
@@ -26,7 +27,6 @@ export interface IInsertAccountParams {
 
 export interface IAccountRow {
   id: string;
-  tenant_id: string;
   channel: string;
   provider: string;
   name: string;
@@ -46,17 +46,25 @@ export interface IAccountRow {
 
 @Injectable()
 export class AccountsRepository {
-  constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
+  constructor(
+    @Inject(ChannelTenantConnectionManager)
+    private readonly tenantSql: ChannelTenantConnectionManager,
+  ) {}
+
+  private async sqlFor(tenantId: string): Promise<Sql> {
+    return this.tenantSql.ensureSchema(tenantId);
+  }
 
   async insertAccount(params: IInsertAccountParams): Promise<IAccountRow[]> {
     const { id, tenantId, data, appSecret } = params;
-    return this.sql<IAccountRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    return sql<IAccountRow[]>`
       INSERT INTO channel_accounts (
-        id, tenant_id, channel, provider, name, external_id,
+        id, channel, provider, name, external_id,
         phone_number_id, waba_id, ig_user_id, telegram_bot_token,
         access_token, app_id, app_secret, verify_token, is_active
       ) VALUES (
-        ${id}, ${tenantId}, ${data.channel}, ${data.provider}, ${data.name},
+        ${id}, ${data.channel}, ${data.provider}, ${data.name},
         ${data.externalId}, ${data.phoneNumberId ?? null},
         ${data.wabaId ?? null}, ${data.igUserId ?? null},
         ${data.telegramBotToken ?? null},
@@ -72,15 +80,15 @@ export class AccountsRepository {
     tenantId: string,
     channel?: Channel,
   ): Promise<IAccountRow[]> {
+    const sql = await this.sqlFor(tenantId);
     return channel
-      ? this.sql<IAccountRow[]>`
+      ? sql<IAccountRow[]>`
           SELECT * FROM channel_accounts
-          WHERE tenant_id = ${tenantId} AND channel = ${channel}
+          WHERE channel = ${channel}
           ORDER BY created_at DESC
         `
-      : this.sql<IAccountRow[]>`
+      : sql<IAccountRow[]>`
           SELECT * FROM channel_accounts
-          WHERE tenant_id = ${tenantId}
           ORDER BY created_at DESC
         `;
   }
@@ -89,10 +97,10 @@ export class AccountsRepository {
     tenantId: string,
     channel: Channel,
   ): Promise<IAccountRow[]> {
-    return this.sql<IAccountRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    return sql<IAccountRow[]>`
       SELECT * FROM channel_accounts
-      WHERE tenant_id = ${tenantId}
-        AND channel = ${channel}
+      WHERE channel = ${channel}
         AND is_active = true
       ORDER BY created_at ASC
     `;
@@ -102,9 +110,10 @@ export class AccountsRepository {
     tenantId: string,
     accountId: string,
   ): Promise<IAccountRow[]> {
-    return this.sql<IAccountRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    return sql<IAccountRow[]>`
       SELECT * FROM channel_accounts
-      WHERE id = ${accountId} AND tenant_id = ${tenantId}
+      WHERE id = ${accountId}
       LIMIT 1
     `;
   }
@@ -114,10 +123,10 @@ export class AccountsRepository {
     channel: Channel,
     verifyToken: string,
   ): Promise<IAccountRow[]> {
-    return this.sql<IAccountRow[]>`
+    const sql = await this.sqlFor(tenantId);
+    return sql<IAccountRow[]>`
       SELECT * FROM channel_accounts
-      WHERE tenant_id = ${tenantId}
-        AND channel = ${channel}
+      WHERE channel = ${channel}
         AND verify_token = ${verifyToken}
         AND is_active = true
       LIMIT 1
@@ -164,31 +173,33 @@ export class AccountsRepository {
       return this.findById(tenantId, accountId);
     }
 
-    const setClause = sets.map((col, i) => `${col} = $${i + 3}`).join(", ");
+    const setClause = sets.map((col, i) => `${col} = $${i + 2}`).join(", ");
 
     const query = `
       UPDATE channel_accounts
       SET ${setClause}, updated_at = NOW()
-      WHERE id = $1 AND tenant_id = $2
+      WHERE id = $1
       RETURNING *
     `;
 
-    const params = [accountId, tenantId, ...values] as (
+    const params = [accountId, ...values] as (
       | string
       | boolean
       | number
       | null
     )[];
-    return this.sql.unsafe<IAccountRow[]>(query, params);
+    const sql = await this.sqlFor(tenantId);
+    return sql.unsafe<IAccountRow[]>(query, params);
   }
 
   async deleteAccount(
     tenantId: string,
     accountId: string,
   ): Promise<{ count: number }> {
-    return this.sql`
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       DELETE FROM channel_accounts
-      WHERE id = ${accountId} AND tenant_id = ${tenantId}
+      WHERE id = ${accountId}
     `;
   }
 }

@@ -78,43 +78,63 @@ export function getTenant(): string {
   return E2E_TENANT;
 }
 
+interface ITenantDetailResponse {
+  name: string;
+  provisioningStatus: 'pending' | 'provisioning' | 'ready' | 'failed';
+  provisioningError?: string | null;
+}
+
 /**
- * Provisions the E2E tenant if it doesn't exist and waits until its
- * per-tenant Postgres is reachable (audit/metrics queries depend on it).
+ * Provisions the E2E tenant if it doesn't exist and waits until BOTH its
+ * per-tenant `postgres` and `postgres-usage` StatefulSets are Ready.
+ *
+ * `tenant-service` flips `provisioningStatus` to `'ready'` only after
+ * `TenantProvisioningExecutor.run()` awaits `waitForReady` for both DBs,
+ * so polling that single field covers both backends in O(1) per poll.
+ *
  * Uses GET-then-POST as an idempotent check before creation.
  */
 async function ensureTenantProvisioned(): Promise<void> {
   const token = await getAuthToken();
   const h: Record<string, string> = { Authorization: `Bearer ${token}` };
 
-  const existing = await httpGet<{ name: string }>(
+  const existing = await httpGet<ITenantDetailResponse>(
     `${GW}/tenants/${encodeURIComponent(E2E_TENANT)}`,
     { headers: h },
   );
-  if (existing.status === 200) return;
 
-  const { status } = await httpPost(
-    `${GW}/tenants`,
-    { name: E2E_TENANT },
-    { headers: h },
-  );
-
-  if (status !== 201) {
-    throw new Error(
-      `Failed to provision E2E tenant '${E2E_TENANT}' (${status})`,
+  if (existing.status !== 200) {
+    const { status } = await httpPost(
+      `${GW}/tenants`,
+      { name: E2E_TENANT },
+      { headers: h },
     );
+    // tenant-service returns 202 Accepted for async provisioning;
+    // tolerate 201 for backwards compat with older builds.
+    if (status !== 201 && status !== 202) {
+      throw new Error(
+        `Failed to provision E2E tenant '${E2E_TENANT}' (${status})`,
+      );
+    }
   }
 
-  await poll(
+  await poll<ITenantDetailResponse>(
     async () => {
-      const res = await httpGet<{ name: string }>(
+      const res = await httpGet<ITenantDetailResponse>(
         `${GW}/tenants/${encodeURIComponent(E2E_TENANT)}`,
         { headers: h },
       );
-      if (res.status === 200) return res.body;
+      if (res.status !== 200) return null;
+      const status = res.body.provisioningStatus;
+      if (status === 'failed') {
+        throw new Error(
+          `Tenant '${E2E_TENANT}' provisioning failed: ${res.body.provisioningError ?? 'unknown'}`,
+        );
+      }
+      if (status === 'ready') return res.body;
       return null;
     },
-    { timeoutMs: 120_000, initialDelayMs: 2_000, maxDelayMs: 5_000 },
+    { timeoutMs: 180_000, initialDelayMs: 2_000, maxDelayMs: 5_000 },
   );
 }
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { NotFoundException } from "@nestjs/common";
+import { createMockPostgresSql } from "@yoizen/testing";
 import { IngressService } from "../../src/modules/ingress/ingress.service";
 import { EgressService } from "../../src/modules/egress/egress.service";
 import { AutoReplyService } from "../../src/modules/auto-reply/auto-reply.service";
@@ -81,7 +82,7 @@ describe("Channel message flow services", () => {
       } as unknown as import("../../src/modules/egress/egress.service").EgressService;
 
       const repo = {
-        loadActiveRules: mock(() => Promise.resolve([])),
+        listActiveRulesForTenant: mock(() => Promise.resolve([])),
         insertRule: mock(() => Promise.resolve()),
         listRulesForTenant: mock(() => Promise.resolve([])),
         deleteRule: mock(() => Promise.resolve({ count: 0 })),
@@ -89,7 +90,15 @@ describe("Channel message flow services", () => {
 
       const jsm = {} as unknown as import("nats").JetStreamManager;
       const js = {} as unknown as import("nats").JetStreamClient;
-      const service = new AutoReplyService(jsm, js, repo, egress);
+      const platformSql = createMockPostgresSql(mock);
+      platformSql.mockResolvedValueOnce([]);
+      const service = new AutoReplyService(
+        jsm,
+        js,
+        platformSql,
+        repo,
+        egress,
+      );
 
       const rule = await service.createRule({
         tenantId: "tenant-a",

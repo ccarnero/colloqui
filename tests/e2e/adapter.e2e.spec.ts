@@ -7,11 +7,14 @@ const GW = getBaseUrl("api-gateway");
 /**
  * Bun's default per-test timeout is 5s; polls and workflows need longer.
  * Single-node minikube under full-suite contention can stall the
- * enrich/forward/webhook pipeline past the 60s pollEvent deadline, so the
- * `it` timeout must always comfortably exceed it.
+ * enrich/forward/webhook pipeline past the 120s pollEvent deadline, so
+ * the `it` timeout must comfortably exceed it. Phase-1 scale-to-zero
+ * adds a one-time ~25s cold-start for `workflow-worker` /
+ * `workflow-http-worker` (consumers that don't appear in the gateway
+ * aggregator and so aren't pre-warmed by `warmup.ts`).
  */
-const SLOW_IT = { timeout: 150_000 };
-const VERY_SLOW_IT = { timeout: 180_000 };
+const SLOW_IT = { timeout: 180_000 };
+const VERY_SLOW_IT = { timeout: 240_000 };
 
 interface AdapterResponse {
   id: string;
@@ -185,7 +188,7 @@ async function createAndExecuteWorkflow(
 async function pollWorkflow(
   definitionId: string,
   executionId: string,
-  timeoutMs = 60_000,
+  timeoutMs = 120_000,
 ): Promise<ExecutionStatus> {
   const h = await authHeaders();
   return poll<ExecutionStatus>(

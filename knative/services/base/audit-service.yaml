@@ -12,9 +12,9 @@ spec:
         # HPA class: KEDA owns replica count based on JetStream
         # gateway-audit + channel-audit consumer lag (see
         # knative/services/base/scaledobjects/audit-service.yaml).
-        autoscaling.knative.dev/class: hpa.autoscaling.knative.dev
-        autoscaling.knative.dev/metric: cpu
-        autoscaling.knative.dev/target: "80"
+        autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
+        autoscaling.knative.dev/metric: concurrency
+        autoscaling.knative.dev/target: "100"
         autoscaling.knative.dev/min-scale: "1"
         autoscaling.knative.dev/max-scale: "10"
     spec:
@@ -57,7 +57,7 @@ spec:
               memory: 256Mi
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 5

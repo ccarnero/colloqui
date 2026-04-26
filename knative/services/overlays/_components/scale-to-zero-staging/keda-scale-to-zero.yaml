@@ -1,0 +1,29 @@
+# KEDA ScaledObject patches shared by staging overlays (local + cloud).
+# Scale-to-zero with the same 300s cooldown baked into the base
+# ScaledObjects — staging uses overlapping canary releases / nightly
+# suites, so a longer cooldown avoids constant pod churn.
+#
+# Scope is intentionally narrow: only the Temporal-driven workers,
+# which are plain `apps/v1.Deployment` resources (NOT Knative
+# Services). KEDA cannot scale Knative Services because they don't
+# expose a `/scale` subresource — see
+# `knative/services/base/scaledobjects/kustomization.yaml` for the
+# full rationale.
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: workflow-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+  cooldownPeriod: 300
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: workflow-http-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+  cooldownPeriod: 300

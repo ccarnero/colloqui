@@ -35,7 +35,7 @@ describe("UsageRepository", () => {
     repo = new UsageRepository(makeConnections(sql));
   });
 
-  it("queries the hourly view by default and normalises rows", async () => {
+  it("queries the hourly view with a raw tail and normalises rows", async () => {
     const { sql, calls } = makeSql([
       {
         bucket: "2026-04-23T09:00:00.000Z",
@@ -56,6 +56,9 @@ describe("UsageRepository", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]!.query).toContain("FROM channel_events_hourly");
+    expect(calls[0]!.query).toContain("FROM channel_events");
+    expect(calls[0]!.query).toContain("UNION ALL");
+    expect(calls[0]!.query).toContain("time_bucket($6::interval, ts)");
     expect(rows).toEqual([
       {
         bucket: "2026-04-23T09:00:00.000Z",
@@ -77,6 +80,7 @@ describe("UsageRepository", () => {
       bucket: "day",
     });
     expect(calls[0]!.query).toContain("FROM channel_events_daily");
+    expect(calls[0]!.params[5]).toBe("1 day");
   });
 
   it("binds accountId/channel/direction filters as parameters", async () => {
@@ -97,13 +101,24 @@ describe("UsageRepository", () => {
       "acct-1",
       "whatsapp",
       "egress",
+      "1 hour",
     ]);
   });
 
-  it("aggregates totals per direction", async () => {
-    const { sql } = makeSql([
-      { direction: "ingress", events: "100" },
-      { direction: "egress", events: "50" },
+  it("aggregates totals per direction from channel_events with first/last ts", async () => {
+    const { sql, calls } = makeSql([
+      {
+        direction: "ingress",
+        events: "100",
+        first_ts: new Date("2026-04-20T10:00:00Z"),
+        last_ts: new Date("2026-04-22T15:30:00Z"),
+      },
+      {
+        direction: "egress",
+        events: "50",
+        first_ts: new Date("2026-04-21T08:00:00Z"),
+        last_ts: new Date("2026-04-21T18:00:00Z"),
+      },
     ]);
     repo = new UsageRepository(makeConnections(sql));
     const rows = await repo.getTotals({
@@ -111,9 +126,21 @@ describe("UsageRepository", () => {
       from: new Date("2026-04-20T00:00:00Z"),
       to: new Date("2026-04-23T00:00:00Z"),
     });
+    expect(calls[0]!.query).toContain("FROM channel_events");
+    expect(calls[0]!.query).toContain("MIN(ts)");
     expect(rows).toEqual([
-      { direction: "ingress", events: 100 },
-      { direction: "egress", events: 50 },
+      {
+        direction: "ingress",
+        events: 100,
+        firstTs: "2026-04-20T10:00:00.000Z",
+        lastTs: "2026-04-22T15:30:00.000Z",
+      },
+      {
+        direction: "egress",
+        events: 50,
+        firstTs: "2026-04-21T08:00:00.000Z",
+        lastTs: "2026-04-21T18:00:00.000Z",
+      },
     ]);
   });
 });

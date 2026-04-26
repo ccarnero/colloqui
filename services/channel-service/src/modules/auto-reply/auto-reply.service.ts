@@ -28,10 +28,12 @@ import {
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
 } from "../../providers/nats.provider";
+import { POSTGRES_SQL } from "../../providers/postgres.provider";
 import {
   MultiTenantConsumerManager,
   type IMultiTenantConsumerConfig,
 } from "@yoizen/database";
+import type { Sql } from "@yoizen/database";
 import { EgressService } from "../egress/egress.service";
 import { AutoReplyRepository } from "./auto-reply.repository";
 import { matchAutoReplyPattern } from "./auto-reply.pattern";
@@ -59,6 +61,7 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
+    @Inject(POSTGRES_SQL) private readonly platformSql: Sql,
     private readonly autoReplyRepository: AutoReplyRepository,
     private readonly egress: EgressService,
   ) {}
@@ -190,31 +193,44 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async refreshRulesCache(): Promise<void> {
-    const rows = await this.autoReplyRepository.loadActiveRules();
+    // `name` is the K8s-namespace slug (e.g. "acme") used by
+    // `TenantConnectionManager` to build `postgres.<slug>-<env>-ns...`.
+    // It's also the value carried in `envelope.tenant`, so the cache
+    // keys built below match what `handleMessage` looks up at runtime.
+    const tenantRows = await this.platformSql<{ name: string }[]>`
+      SELECT name FROM tenants ORDER BY name
+    `;
 
     this.rulesCache.clear();
 
-    for (const row of rows) {
-      const key = `${row.tenant_id}:${row.account_id}`;
-      const rule: AutoReplyRule = {
-        id: row.id,
-        tenantId: row.tenant_id,
-        accountId: row.account_id,
-        channel: row.channel as Channel,
-        triggerPattern: row.trigger_pattern,
-        replyText: row.reply_text,
-        isActive: row.is_active,
-      };
+    let total = 0;
+    for (const { name: tenantId } of tenantRows) {
+      const rows =
+        await this.autoReplyRepository.listActiveRulesForTenant(tenantId);
+      total += rows.length;
 
-      const existing = this.rulesCache.get(key);
-      if (existing) {
-        existing.push(rule);
-      } else {
-        this.rulesCache.set(key, [rule]);
+      for (const row of rows) {
+        const key = `${tenantId}:${row.account_id}`;
+        const rule: AutoReplyRule = {
+          id: row.id,
+          tenantId,
+          accountId: row.account_id,
+          channel: row.channel as Channel,
+          triggerPattern: row.trigger_pattern,
+          replyText: row.reply_text,
+          isActive: row.is_active,
+        };
+
+        const existing = this.rulesCache.get(key);
+        if (existing) {
+          existing.push(rule);
+        } else {
+          this.rulesCache.set(key, [rule]);
+        }
       }
     }
 
-    this.logger.log(`Auto-reply rules cache refreshed: ${rows.length} rules`);
+    this.logger.log(`Auto-reply rules cache refreshed: ${total} rules`);
   }
 
   async createRule(options: ICreateRuleOptions): Promise<AutoReplyRule> {
@@ -262,7 +278,7 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
 
     return rows.map((row) => ({
       id: row.id,
-      tenantId: row.tenant_id,
+      tenantId,
       accountId: row.account_id,
       channel: row.channel as Channel,
       triggerPattern: row.trigger_pattern,

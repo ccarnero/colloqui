@@ -28,7 +28,6 @@ interface ICreateTenantRoleOptions {
 interface IRoleForUpdateRow {
   id: string;
   is_system: boolean;
-  tenant_id: string;
   name: string;
 }
 
@@ -43,7 +42,8 @@ export class TenantRolesService {
    * @returns The system role ID.
    */
   async seedSystemRole(tenantId: string): Promise<string> {
-    const existing = await this.tenantRolesRepository.findSystemRoleId(tenantId);
+    const existing =
+      await this.tenantRolesRepository.findSystemRoleId(tenantId);
 
     if (existing.length > 0) {
       return (existing[0] as { id: string }).id;
@@ -91,18 +91,26 @@ export class TenantRolesService {
     this.logger.log(
       `Created role '${name}' with ${permissions.length} permissions for tenant ${tenantId}`,
     );
-    return this.getWithPermissions(id);
+    return this.getWithPermissions(tenantId, id);
   }
 
   async listByTenant(tenantId: string): Promise<ITenantRoleSummary[]> {
-    const rows = await this.tenantRolesRepository.listSummariesByTenant(
-      tenantId,
-    );
-    return rows as unknown as ITenantRoleSummary[];
+    const rows =
+      await this.tenantRolesRepository.listSummariesByTenant(tenantId);
+    const list = rows as unknown as Array<
+      Omit<ITenantRoleSummary, "tenant_id"> & { tenant_id?: string }
+    >;
+    return list.map((r) => ({ ...r, tenant_id: tenantId })) as ITenantRoleSummary[];
   }
 
-  async getWithPermissions(id: string): Promise<ITenantRoleWithPermissions> {
-    const rows = await this.tenantRolesRepository.findActiveRoleBase(id);
+  async getWithPermissions(
+    tenantId: string,
+    id: string,
+  ): Promise<ITenantRoleWithPermissions> {
+    const rows = await this.tenantRolesRepository.findActiveRoleBase(
+      tenantId,
+      id,
+    );
 
     if (rows.length === 0) {
       throw new NotFoundException("Role not found");
@@ -110,15 +118,17 @@ export class TenantRolesService {
 
     const role = rows[0] as ITenantRoleRow;
     const permRows =
-      await this.tenantRolesRepository.listPermissionsForRole(id);
+      await this.tenantRolesRepository.listPermissionsForRole(tenantId, id);
 
     return {
       ...role,
+      tenant_id: tenantId,
       permissions: permRows,
-    };
+    } as ITenantRoleWithPermissions;
   }
 
   async update(
+    tenantId: string,
     id: string,
     patch: {
       name?: string;
@@ -126,7 +136,10 @@ export class TenantRolesService {
       permissions?: PermissionDto[];
     },
   ): Promise<ITenantRoleWithPermissions> {
-    const existing = await this.tenantRolesRepository.findRoleForUpdate(id);
+    const existing = await this.tenantRolesRepository.findRoleForUpdate(
+      tenantId,
+      id,
+    );
 
     if (existing.length === 0) {
       throw new NotFoundException("Role not found");
@@ -146,7 +159,7 @@ export class TenantRolesService {
 
     if (patch.name) {
       const dup = await this.tenantRolesRepository.findDuplicateName(
-        role.tenant_id,
+        tenantId,
         patch.name,
         id,
       );
@@ -157,14 +170,21 @@ export class TenantRolesService {
       }
     }
 
-    await this.tenantRolesRepository.updateRoleTransaction(id, patch);
+    await this.tenantRolesRepository.updateRoleTransaction(
+      tenantId,
+      id,
+      patch,
+    );
 
     this.logger.log(`Updated role ${id}`);
-    return this.getWithPermissions(id);
+    return this.getWithPermissions(tenantId, id);
   }
 
-  async delete(id: string): Promise<void> {
-    const existing = await this.tenantRolesRepository.findForDelete(id);
+  async delete(tenantId: string, id: string): Promise<void> {
+    const existing = await this.tenantRolesRepository.findForDelete(
+      tenantId,
+      id,
+    );
 
     if (existing.length === 0) {
       throw new NotFoundException("Role not found");
@@ -175,7 +195,7 @@ export class TenantRolesService {
     }
 
     const hasAssignedUsers =
-      await this.tenantRolesRepository.hasActiveUsersForRole(id);
+      await this.tenantRolesRepository.hasActiveUsersForRole(tenantId, id);
 
     if (hasAssignedUsers) {
       throw new BadRequestException(
@@ -183,7 +203,7 @@ export class TenantRolesService {
       );
     }
 
-    await this.tenantRolesRepository.softDeleteRole(id);
+    await this.tenantRolesRepository.softDeleteRole(tenantId, id);
 
     this.logger.log(`Soft-deleted role ${id}`);
   }

@@ -1,11 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { Sql } from "postgres";
 import type { Channel } from "@yoizen/shared";
-import { POSTGRES_SQL } from "../../providers/postgres.provider";
+import { ChannelTenantConnectionManager } from "../../providers/channel-tenant-connection-manager";
 
 export interface IRuleRow {
   id: string;
-  tenant_id: string;
   account_id: string;
   channel: string;
   trigger_pattern: string;
@@ -16,6 +14,7 @@ export interface IRuleRow {
 /** Options for inserting an auto-reply rule. */
 export interface IInsertRuleOptions {
   id: string;
+  /** Resolves tenant pool only; not stored. */
   tenantId: string;
   accountId: string;
   channel: Channel;
@@ -25,10 +24,18 @@ export interface IInsertRuleOptions {
 
 @Injectable()
 export class AutoReplyRepository {
-  constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
+  constructor(
+    @Inject(ChannelTenantConnectionManager)
+    private readonly tenantSql: ChannelTenantConnectionManager,
+  ) {}
 
-  async loadActiveRules(): Promise<IRuleRow[]> {
-    return this.sql<IRuleRow[]>`
+  private async sqlFor(tenantId: string) {
+    return this.tenantSql.ensureSchema(tenantId);
+  }
+
+  async listActiveRulesForTenant(tenantId: string): Promise<IRuleRow[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql<IRuleRow[]>`
       SELECT * FROM auto_reply_rules WHERE is_active = true
     `;
   }
@@ -42,9 +49,10 @@ export class AutoReplyRepository {
       triggerPattern,
       replyText,
     } = options;
-    await this.sql`
-      INSERT INTO auto_reply_rules (id, tenant_id, account_id, channel, trigger_pattern, reply_text)
-      VALUES (${id}, ${tenantId}, ${accountId}, ${channel}, ${triggerPattern}, ${replyText})
+    const sql = await this.sqlFor(tenantId);
+    await sql`
+      INSERT INTO auto_reply_rules (id, account_id, channel, trigger_pattern, reply_text)
+      VALUES (${id}, ${accountId}, ${channel}, ${triggerPattern}, ${replyText})
     `;
   }
 
@@ -52,23 +60,27 @@ export class AutoReplyRepository {
     tenantId: string,
     accountId?: string,
   ): Promise<IRuleRow[]> {
+    const sql = await this.sqlFor(tenantId);
     return accountId
-      ? this.sql<IRuleRow[]>`
+      ? sql<IRuleRow[]>`
           SELECT * FROM auto_reply_rules
-          WHERE tenant_id = ${tenantId} AND account_id = ${accountId}
+          WHERE account_id = ${accountId}
           ORDER BY created_at ASC
         `
-      : this.sql<IRuleRow[]>`
+      : sql<IRuleRow[]>`
           SELECT * FROM auto_reply_rules
-          WHERE tenant_id = ${tenantId}
           ORDER BY created_at ASC
         `;
   }
 
-  async deleteRule(tenantId: string, ruleId: string): Promise<{ count: number }> {
-    return this.sql`
+  async deleteRule(
+    tenantId: string,
+    ruleId: string,
+  ): Promise<{ count: number }> {
+    const sql = await this.sqlFor(tenantId);
+    return sql`
       DELETE FROM auto_reply_rules
-      WHERE id = ${ruleId} AND tenant_id = ${tenantId}
+      WHERE id = ${ruleId}
     `;
   }
 }

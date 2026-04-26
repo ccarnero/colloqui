@@ -91,6 +91,11 @@ SELECT add_continuous_aggregate_policy(
   if_not_exists => TRUE
 );
 
+ALTER MATERIALIZED VIEW channel_events_hourly
+  SET (timescaledb.materialized_only = false);
+ALTER MATERIALIZED VIEW channel_events_daily
+  SET (timescaledb.materialized_only = false);
+
 ALTER TABLE channel_events SET (
   timescaledb.compress,
   timescaledb.compress_segmentby = 'account_id, channel, direction'

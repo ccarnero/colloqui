@@ -17,10 +17,10 @@ import {
   type IAccountUpdatePatch,
 } from "./accounts.repository";
 
-function mapRow(row: IAccountRow): ChannelAccount {
+function mapRow(row: IAccountRow, tenantId: string): ChannelAccount {
   return {
     id: row.id,
-    tenantId: row.tenant_id,
+    tenantId,
     channel: row.channel as Channel,
     provider: row.provider as ChannelProvider,
     name: row.name,
@@ -66,7 +66,7 @@ export class AccountsService {
       appSecret,
     });
 
-    const account = mapRow(rows[0]);
+    const account = mapRow(rows[0], tenantId);
 
     if (account.channel === "telegram" && account.isActive) {
       await this.registerTelegramWebhook(account);
@@ -78,7 +78,7 @@ export class AccountsService {
   async list(tenantId: string, channel?: Channel): Promise<ChannelAccount[]> {
     const rows = await this.accountsRepository.listByTenant(tenantId, channel);
 
-    return rows.map(mapRow);
+    return rows.map((r) => mapRow(r, tenantId));
   }
 
   async listActive(
@@ -90,7 +90,7 @@ export class AccountsService {
       channel,
     );
 
-    return rows.map(mapRow);
+    return rows.map((r) => mapRow(r, tenantId));
   }
 
   async findById(
@@ -99,7 +99,7 @@ export class AccountsService {
   ): Promise<ChannelAccount | null> {
     const rows = await this.accountsRepository.findById(tenantId, accountId);
 
-    return rows.length > 0 ? mapRow(rows[0]) : null;
+    return rows.length > 0 ? mapRow(rows[0], tenantId) : null;
   }
 
   async findByVerifyToken(
@@ -113,7 +113,7 @@ export class AccountsService {
       verifyToken,
     );
 
-    return rows.length > 0 ? mapRow(rows[0]) : null;
+    return rows.length > 0 ? mapRow(rows[0], tenantId) : null;
   }
 
   async update(
@@ -149,7 +149,7 @@ export class AccountsService {
       patch,
     );
 
-    return rows.length > 0 ? mapRow(rows[0]) : null;
+    return rows.length > 0 ? mapRow(rows[0], tenantId) : null;
   }
 
   async remove(tenantId: string, accountId: string): Promise<boolean> {

@@ -23,6 +23,12 @@ interface ITokenClaims {
   env: string;
 }
 
+interface IRefreshPayload {
+  sub: string;
+  token_scope?: string;
+  tenant_id?: string;
+}
+
 @Injectable()
 export class TokenService implements OnModuleInit {
   private readonly environment: string;
@@ -114,7 +120,7 @@ export class TokenService implements OnModuleInit {
    * @param refreshToken - HS256 refresh token with `token_scope: refresh`.
    */
   async refresh(refreshToken: string): Promise<TokenResponse> {
-    let payload: { sub: string };
+    let payload: IRefreshPayload;
     try {
       const { payload: decoded } = await jwtVerify(refreshToken, this.secret, {
         algorithms: ["HS256"],
@@ -122,9 +128,53 @@ export class TokenService implements OnModuleInit {
       if (decoded.token_scope !== REFRESH_TOKEN_SCOPE) {
         throw new UnauthorizedException("Not a refresh token");
       }
-      payload = { sub: decoded.sub as string };
+      payload = {
+        sub: decoded.sub as string,
+        token_scope: decoded.token_scope as string | undefined,
+        tenant_id: decoded.tenant_id as string | undefined,
+      };
     } catch {
       throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    const tenantIdClaim = payload.tenant_id;
+
+    if (tenantIdClaim) {
+      const tenantRows = await this.tokenRepository.findTenantUserForRefresh(
+        tenantIdClaim,
+        payload.sub,
+      );
+
+      if (
+        tenantRows.length === 0 ||
+        !(tenantRows[0] as { is_active: boolean }).is_active
+      ) {
+        throw new UnauthorizedException("User not found or deactivated");
+      }
+
+      const tUser = tenantRows[0] as {
+        id: string;
+        email: string;
+        role_name: string;
+        is_system: boolean;
+      };
+      const scope: TokenScope = `tenant:${tenantIdClaim}`;
+      const permissions = await this.resolvePermissions(
+        tUser.is_system,
+        tenantIdClaim,
+        tUser.id,
+      );
+
+      return this.issueTokens({
+        sub: tUser.id,
+        type: "user",
+        scope,
+        role: tUser.role_name as UserRole,
+        permissions,
+        tenant_id: tenantIdClaim,
+        email: tUser.email,
+        env: this.environment,
+      });
     }
 
     const platformRows = await this.tokenRepository.findPlatformUserById(
@@ -151,37 +201,7 @@ export class TokenService implements OnModuleInit {
       });
     }
 
-    const tenantRows = await this.tokenRepository.findTenantUserForRefresh(
-      payload.sub,
-    );
-
-    if (tenantRows.length === 0 || !(tenantRows[0] as { is_active: boolean }).is_active) {
-      throw new UnauthorizedException("User not found or deactivated");
-    }
-
-    const tUser = tenantRows[0] as {
-      id: string;
-      tenant_id: string;
-      email: string;
-      role_name: string;
-      is_system: boolean;
-    };
-    const scope: TokenScope = `tenant:${tUser.tenant_id}`;
-    const permissions = await this.resolvePermissions(
-      tUser.is_system,
-      tUser.id,
-    );
-
-    return this.issueTokens({
-      sub: tUser.id,
-      type: "user",
-      scope,
-      role: tUser.role_name as UserRole,
-      permissions,
-      tenant_id: tUser.tenant_id,
-      email: tUser.email,
-      env: this.environment,
-    });
+    throw new UnauthorizedException("User not found or deactivated");
   }
 
   private async tryPlatformLogin(
@@ -231,39 +251,45 @@ export class TokenService implements OnModuleInit {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    if (rows.length > 1) {
+    if (!tenantId && rows.length > 1) {
       throw new UnauthorizedException(
         "Email exists in multiple tenants. Please provide tenant_id.",
       );
     }
 
-    const user = rows[0] as {
+    const row = rows[0] as {
       id: string;
-      tenant_id: string;
       email: string;
       password_hash: string;
       role_name: string;
       is_system: boolean;
+      tenant_id?: string;
     };
-    const valid = await Bun.password.verify(password, user.password_hash);
+    const effectiveTenantId = row.tenant_id ?? tenantId;
+    if (!effectiveTenantId) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+
+    const valid = await Bun.password.verify(password, row.password_hash);
     if (!valid) {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    const scope: TokenScope = `tenant:${user.tenant_id}`;
+    const scope: TokenScope = `tenant:${effectiveTenantId}`;
     const permissions = await this.resolvePermissions(
-      user.is_system,
-      user.id,
+      row.is_system,
+      effectiveTenantId,
+      row.id,
     );
 
     return this.issueTokens({
-      sub: user.id,
+      sub: row.id,
       type: "user",
       scope,
-      role: user.role_name as UserRole,
+      role: row.role_name as UserRole,
       permissions,
-      tenant_id: user.tenant_id,
-      email: user.email,
+      tenant_id: effectiveTenantId,
+      email: row.email,
       env: this.environment,
     });
   }
@@ -271,7 +297,7 @@ export class TokenService implements OnModuleInit {
   private async issueTokens(claims: ITokenClaims): Promise<TokenResponse> {
     const [accessToken, refreshToken] = await Promise.all([
       this.signToken(claims),
-      this.signRefreshToken(claims.sub),
+      this.signRefreshToken(claims.sub, claims.tenant_id),
     ]);
 
     return {
@@ -289,11 +315,15 @@ export class TokenService implements OnModuleInit {
    */
   private async resolvePermissions(
     isSystem: boolean,
+    tenantId: string,
     userId: string,
   ): Promise<string[]> {
     if (isSystem) return ["*"];
 
-    const rows = await this.tokenRepository.resolvePermissionsForUser(userId);
+    const rows = await this.tokenRepository.resolvePermissionsForUser(
+      tenantId,
+      userId,
+    );
 
     const len = rows.length;
     const perms: string[] = new Array(len);
@@ -325,8 +355,18 @@ export class TokenService implements OnModuleInit {
     return builder.sign(this.secret);
   }
 
-  private async signRefreshToken(sub: string): Promise<string> {
-    return new SignJWT({ token_scope: REFRESH_TOKEN_SCOPE })
+  private async signRefreshToken(
+    sub: string,
+    tenantId?: string,
+  ): Promise<string> {
+    const body: Record<string, unknown> = {
+      token_scope: REFRESH_TOKEN_SCOPE,
+    };
+    if (tenantId) {
+      body.tenant_id = tenantId;
+    }
+
+    return new SignJWT(body)
       .setProtectedHeader({ alg: "HS256" })
       .setSubject(sub)
       .setIssuedAt()

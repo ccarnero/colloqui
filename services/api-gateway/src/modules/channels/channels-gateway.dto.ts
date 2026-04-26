@@ -197,6 +197,10 @@ export class StreamMessagesQueryGatewayDto {
   subject?: string;
 
   @IsOptional()
+  @IsString()
+  accountId?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
