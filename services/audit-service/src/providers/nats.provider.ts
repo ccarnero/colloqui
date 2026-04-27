@@ -6,6 +6,7 @@ import {
   createJetStreamPublisherProvider,
   NATS_CONNECTION,
 } from "@yoizen/database";
+import { resolveServiceName } from "@yoizen/observability";
 import {
   MAX_DELIVER,
   GATEWAY_AUDIT_STREAM_NAME,
@@ -19,7 +20,9 @@ export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
 export const GATEWAY_AUDIT_CONSUMER = "GATEWAY_AUDIT_CONSUMER";
 
-export const natsProvider: FactoryProvider = createNatsConnectionProvider("audit-service");
+export const natsProvider: FactoryProvider = createNatsConnectionProvider(
+  resolveServiceName("audit-service"),
+);
 
 /**
  * AuditService now consumes canonical platform events straight from

@@ -10,19 +10,38 @@ kind: Kustomization
 # `serving.knative.dev/v1.Service` does not expose a `/scale`
 # subresource — KEDA's HPA shim fails with
 # `Target resource doesn't expose /scale subresource`. Only plain
-# `apps/v1.Deployment` workloads are listed here. The Temporal
-# task-queue workers (workflow-worker, workflow-http-worker) were
-# deliberately migrated off Knative for this reason; see
-# `knative/services/base/workflow-worker.yaml`.
+# `apps/v1.Deployment` workloads are listed here.
 #
-# HTTP-bound services that mix NATS consumers and HTTP controllers
-# (channel-service, metrics-service, workflow-api, audit-service,
-# event-processor, webhook-service, usage-aggregator-service) stay
-# on Knative KPA (`class: kpa`) with `min-scale: 1` — splitting the
-# consumer side off into a separate deployment is tracked as a
-# follow-up; see `docs/plan/cost-efficiency.md` and
-# `knative/services/overlays/cloud/README.md`.
+# Two families of ScaledObjects:
+#
+#   1. Temporal task-queue workers (Phase 1):
+#        - workflow-worker        (orchestrator pull queue)
+#        - workflow-http-worker   (activity-only pull queue)
+#      Trigger: `temporal` scaler reading task-queue depth.
+#
+#   2. NATS JetStream consumer workers (Phase 1.5 split):
+#        - audit-service-worker      (gateway-audit + channel-audit)
+#        - channel-service-worker    (egress + auto-reply + webhook-ingress)
+#        - event-processor-worker    (event-processor on EVENTS stream)
+#        - metrics-service-worker    (metrics persistence)
+#        - usage-aggregator-worker   (agg-ingress + agg-dlq)
+#        - webhook-service-worker    (webhook-dispatcher)
+#        - workflow-service-worker   (workflow-triggers + workflow-executions)
+#      Trigger: `prometheus` scaler aggregating
+#      `jetstream_consumer_num_pending + num_ack_pending` per consumer.
+#
+# Each *-worker pod runs `SERVICE_MODE=worker`; the *-api side
+# (Knative Service, KPA-managed) runs `SERVICE_MODE=api` and skips
+# `onModuleInit` for every consumer (see
+# `packages/observability/src/runtime-mode.ts` `isWorkerMode()`).
 
 resources:
   - workflow-worker.yaml
   - workflow-http-worker.yaml
+  - audit-service-worker.yaml
+  - channel-service-worker.yaml
+  - event-processor-worker.yaml
+  - metrics-service-worker.yaml
+  - usage-aggregator-worker.yaml
+  - webhook-service-worker.yaml
+  - workflow-service-worker.yaml

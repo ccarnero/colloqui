@@ -16,6 +16,8 @@ import {
 import {
   PinoLoggerService,
   createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
 } from "@yoizen/observability";
 import {
   CHANNEL_SUBJECT_PREFIX,
@@ -68,15 +70,17 @@ export class TriggerConsumerService
   ) {}
 
   async onModuleInit(): Promise<void> {
+    const ensureOnly = !isWorkerMode();
     const config: IMultiTenantConsumerConfig = {
       streamPattern: TENANT_STREAM_PATTERN,
       durableName: DURABLE_NAME,
       filterSubject: TRIGGER_SUBJECT,
       description:
         "Workflow triggers — message_received → Temporal workflow start",
-      metrics: createNatsConsumerMetrics("workflow-service"),
+      metrics: createNatsConsumerMetrics(resolveServiceName("workflow-service")),
       // Each trigger boots a Temporal workflow over gRPC — I/O bound.
       runnerOptions: { concurrency: 16 },
+      ensureOnly,
     };
     this.manager = new MultiTenantConsumerManager(
       this.jsm,
@@ -87,7 +91,9 @@ export class TriggerConsumerService
     );
     await this.manager.start();
     this.logger.log(
-      `Workflow triggers durable consumer ('${DURABLE_NAME}') started`,
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `Workflow triggers durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 

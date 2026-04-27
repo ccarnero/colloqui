@@ -1,0 +1,86 @@
+# audit-service API pod (HTTP).
+#
+# Phase 1.5 split: audit-service was historically a single pod that
+# hosted both an HTTP controller (read-side, audit-log queries) AND
+# durable JetStream consumers (write-side, gateway-audit + channel-audit
+# persistence). That coupling forced `min-scale: 1` because Knative KPA
+# would scale the API pod to zero based on HTTP idleness, but the NATS
+# consumers also lived in the same pod and would stop processing.
+#
+# Solution: same Docker image, two manifests.
+#   • audit-service-api  → this file. Knative Service, scales 1↔N on
+#     concurrency, can scale to zero in non-prod via overlays. Runs
+#     `SERVICE_MODE=api` so consumers stay disabled (see
+#     `services/audit-service/src/modules/*/*.service.ts` `isWorkerMode()`
+#     guards).
+#   • audit-service-worker → see `audit-service-worker.yaml`. Plain
+#     `apps/v1.Deployment` (KEDA-managed), runs `SERVICE_MODE=worker`
+#     so the Fastify HTTP server is never started and only the durables
+#     are active.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: audit-service-api
+  labels:
+    app.kubernetes.io/name: audit-service-api
+    app.kubernetes.io/component: audit
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit-service-api
+        app.kubernetes.io/component: audit
+      annotations:
+        autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
+        autoscaling.knative.dev/metric: concurrency
+        autoscaling.knative.dev/target: "100"
+        autoscaling.knative.dev/min-scale: "1"
+        autoscaling.knative.dev/max-scale: "10"
+    spec:
+      containerConcurrency: 0
+      containers:
+        - name: user-container
+          image: dev.local/audit-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: SERVICE_MODE
+              value: "api"
+            - name: OTEL_SERVICE_NAME
+              value: "audit-service-api"
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5

@@ -1,18 +1,23 @@
+# event-processor API pod (HTTP). Phase 1.5 split.
+#
+# Runs `SERVICE_MODE=api` — the EVENTS-stream durable consumer
+# (services/event-processor/src/modules/processor/processor.service.ts)
+# stays disabled. Only the HealthController and any future query
+# controllers are exposed.
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: channel-service
+  name: event-processor-api
   labels:
-    app.kubernetes.io/name: channel-service
-    app.kubernetes.io/component: messaging
+    app.kubernetes.io/name: event-processor-api
+    app.kubernetes.io/component: processor
 spec:
   template:
     metadata:
+      labels:
+        app.kubernetes.io/name: event-processor-api
+        app.kubernetes.io/component: processor
       annotations:
-        # HPA class: KEDA owns the replica count (see
-        # knative/services/base/scaledobjects/channel-service.yaml)
-        # via an HPA that aggregates JetStream lag across the
-        # channel-egress and auto-reply durables.
         autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
         autoscaling.knative.dev/metric: concurrency
         autoscaling.knative.dev/target: "100"
@@ -22,26 +27,15 @@ spec:
       containerConcurrency: 0
       containers:
         - name: user-container
-          image: dev.local/channel-service:local
+          image: dev.local/event-processor:local
           ports:
             - containerPort: 3000
               protocol: TCP
           env:
-            - name: POSTGRES_DB
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_DB
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_PASSWORD
+            - name: SERVICE_MODE
+              value: "api"
+            - name: OTEL_SERVICE_NAME
+              value: "event-processor-api"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -54,11 +48,11 @@ spec:
               cpu: 100m
               memory: 128Mi
             limits:
-              cpu: 500m
-              memory: 256Mi
+              cpu: "1"
+              memory: 512Mi
           readinessProbe:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 5
+            initialDelaySeconds: 3
             periodSeconds: 5

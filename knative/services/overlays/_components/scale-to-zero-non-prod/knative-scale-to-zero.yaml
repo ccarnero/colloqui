@@ -15,25 +15,15 @@
 # (one pod for ~30-60s per deploy) and not worth fighting the
 # admission webhook for.
 #
-# Services NOT included here (kept at `min-scale: 1` from base):
-#   • `api-gateway`             — DX entry point, cold-start hostile.
-#   • `audit-service`           — runs an internal NATS durable consumer
-#   • `event-processor`           (`audit-events` / `event-processor` /
-#   • `metrics-service`           `metrics` / `webhook-dispatcher` /
-#   • `webhook-service`           `workflow-triggers` / `channel-egress`
-#   • `workflow-api`              + `auto-reply` / `agg-INGRESS` +
-#   • `channel-service`           `agg-DLQ`). Going to zero would block
-#   • `usage-aggregator-service`  message processing while idle, since
-#                                 KPA only wakes the pod on HTTP
-#                                 traffic. Splitting the consumer side
-#                                 off into a separate `apps/v1.Deployment`
-#                                 + KEDA scaler is tracked as follow-up.
+# Phase 1.5 (split api ↔ worker):
+#   • Every `*-api` Knative Service now scales to zero — the worker
+#     pair handles NATS durable consumers / RPC subjects, so dropping
+#     HTTP replicas to zero no longer blocks message processing.
+#   • Every `*-worker` is a plain `apps/v1.Deployment` driven by KEDA
+#     (see `keda-scale-to-zero.yaml`); not patched here.
 #
-# `workflow-worker` and `workflow-http-worker` are NOT in this file —
-# they were converted from Knative Services to plain `apps/v1.Deployment`
-# resources because Knative Service does not expose `/scale` and KEDA
-# could not drive scaling. The KEDA Temporal scaler now owns those two
-# directly. See `keda-scale-to-zero.yaml` for their min/idle override.
+# Services NOT included here (kept at `min-scale: 1` from base):
+#   • `api-gateway` — DX entry point, cold-start hostile.
 ---
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -147,6 +137,91 @@ apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
   name: yoizenclaw-admin-service
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/scale-down-delay: "30s"
+        autoscaling.knative.dev/window: "60s"
+---
+# ----- Phase 1.5: *-api KSVCs (HTTP-only, scale-to-zero safe) -----
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: audit-service-api
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/scale-down-delay: "30s"
+        autoscaling.knative.dev/window: "60s"
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: channel-service-api
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/scale-down-delay: "30s"
+        autoscaling.knative.dev/window: "60s"
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: event-processor-api
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/scale-down-delay: "30s"
+        autoscaling.knative.dev/window: "60s"
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: metrics-service-api
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/scale-down-delay: "30s"
+        autoscaling.knative.dev/window: "60s"
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: usage-aggregator-api
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/scale-down-delay: "30s"
+        autoscaling.knative.dev/window: "60s"
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: webhook-service-api
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/scale-down-delay: "30s"
+        autoscaling.knative.dev/window: "60s"
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: workflow-service-api
 spec:
   template:
     metadata:

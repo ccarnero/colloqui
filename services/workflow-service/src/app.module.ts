@@ -1,6 +1,6 @@
 import { Module, ValidationPipe } from "@nestjs/common";
 import { APP_PIPE } from "@nestjs/core";
-import { ObservabilityModule } from "@yoizen/observability";
+import { ObservabilityModule, resolveServiceName } from "@yoizen/observability";
 import { ProvidersModule } from "./providers/providers.module";
 import { WorkflowsModule } from "./modules/workflows/workflows.module";
 import { TriggersModule } from "./modules/triggers/triggers.module";
@@ -9,7 +9,9 @@ import { ExecutionsProjectorModule } from "./modules/executions-projector/execut
 
 @Module({
   imports: [
-    ObservabilityModule.forRoot({ serviceName: "workflow-service" }),
+    ObservabilityModule.forRoot({
+      serviceName: resolveServiceName("workflow-service"),
+    }),
     ProvidersModule,
     WorkflowsModule,
     TriggersModule,

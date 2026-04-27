@@ -16,6 +16,8 @@ import {
   logWithEnvelope,
   startNatsConsumerSpan,
   createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
 } from "@yoizen/observability";
 import {
   CHANNEL_SEND_SUBJECT_PATTERN,
@@ -91,6 +93,7 @@ export class SendCommandConsumerService
   ) {}
 
   async onModuleInit(): Promise<void> {
+    const ensureOnly = !isWorkerMode();
     const config: IMultiTenantConsumerConfig = {
       streamPattern: TENANT_STREAM_PATTERN,
       durableName: DURABLE_NAME,
@@ -98,8 +101,9 @@ export class SendCommandConsumerService
       description: "Channel egress — outbound send commands",
       maxDeliver: MAX_DELIVER,
       backoffMs: BACKOFF_MS,
-      metrics: createNatsConsumerMetrics("channel-service"),
+      metrics: createNatsConsumerMetrics(resolveServiceName("channel-service")),
       runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+      ensureOnly,
     };
     this.manager = new MultiTenantConsumerManager(
       this.jsm,
@@ -110,7 +114,9 @@ export class SendCommandConsumerService
     );
     await this.manager.start();
     this.logger.log(
-      `Channel egress durable consumer ('${DURABLE_NAME}') started`,
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `Channel egress durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
@@ -175,7 +181,7 @@ export class SendCommandConsumerService
 
     const incomingHeaders = msg.headers ?? natsHeaders();
     const { span, context: spanCtx } = startNatsConsumerSpan(
-      "channel-service",
+      resolveServiceName("channel-service"),
       msg.subject,
       incomingHeaders,
     );

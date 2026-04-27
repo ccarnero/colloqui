@@ -3,12 +3,13 @@ import { describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { createQueuedSql } from "@yoizen/testing";
 import type { Sql } from "postgres";
-import { ProvisioningStatus } from "@yoizen/shared";
+import { ProvisioningStatus, TenantDatabaseTier } from "@yoizen/shared";
 import { TenantsRepository } from "../../src/modules/tenants/tenants.repository";
 import { PLATFORM_POSTGRES_SQL } from "../../src/providers/platform-postgres.provider";
 
 const rowTemplate = {
   configuration: {} as Record<string, unknown>,
+  tier: TenantDatabaseTier.Shared,
   provisioning_status: ProvisioningStatus.Pending,
   provisioning_error: null as string | null,
   provisioning_started_at: null as Date | null,
@@ -42,7 +43,12 @@ describe("TenantsRepository", () => {
     }).compile();
 
     const repository = moduleRef.get(TenantsRepository);
-    const created = await repository.create("id-1", "tenant-a", {});
+    const created = await repository.create(
+      "id-1",
+      "tenant-a",
+      TenantDatabaseTier.Shared,
+      {},
+    );
     const byName = await repository.findByName("tenant-a");
 
     expect(created.name).toBe("tenant-a");

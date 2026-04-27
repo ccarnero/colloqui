@@ -1,0 +1,65 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: audit-service-worker-scaler
+  labels:
+    app.kubernetes.io/name: audit-service-worker
+    app.kubernetes.io/component: autoscaler
+spec:
+  # Plain Deployment, not Knative Service — see worker manifest for
+  # rationale (KEDA cannot scale Knative Services).
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: audit-service-worker
+  pollingInterval: 30
+  cooldownPeriod: 180
+  # Base keeps a hot replica; non-prod overlays drop both to 0 for
+  # full scale-to-zero between idle windows.
+  idleReplicaCount: 0
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  fallback:
+    failureThreshold: 3
+    replicas: 1
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 15
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 30
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 60
+  # Audit lag is best-effort bounded — these durables persist gateway
+  # + channel events for compliance, not real-time UX. Higher
+  # threshold keeps replica count from oscillating during normal load.
+  triggers:
+    - type: prometheus
+      name: gateway-audit-lag
+      metadata:
+        serverAddress: http://prometheus.support-services-dev.svc.cluster.local:9090
+        metricName: gateway_audit_lag
+        threshold: "5000"
+        activationThreshold: "0"
+        query: |
+          sum(jetstream_consumer_num_pending{consumer_name="audit-events"})
+          +
+          sum(jetstream_consumer_num_ack_pending{consumer_name="audit-events"})
+    - type: prometheus
+      name: channel-audit-lag
+      metadata:
+        serverAddress: http://prometheus.support-services-dev.svc.cluster.local:9090
+        metricName: channel_audit_lag
+        threshold: "5000"
+        activationThreshold: "0"
+        query: |
+          sum(jetstream_consumer_num_pending{consumer_name="channel-audit"})
+          +
+          sum(jetstream_consumer_num_ack_pending{consumer_name="channel-audit"})

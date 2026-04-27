@@ -17,6 +17,8 @@ import {
   startNatsConsumerSpan,
   startNatsProducerSpan,
   createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
 } from "@yoizen/observability";
 import { context as otelContext } from "@opentelemetry/api";
 import { headers as natsHeaders } from "nats";
@@ -83,13 +85,15 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    const ensureOnly = !isWorkerMode();
     const config: IMultiTenantConsumerConfig = {
       streamPattern: TENANT_STREAM_PATTERN,
       durableName: DURABLE_NAME,
       filterSubject: CANONICAL_GATEWAY_EVENT_PATTERN,
       description: "Event processor — gateway events pipeline",
-      metrics: createNatsConsumerMetrics("event-processor"),
+      metrics: createNatsConsumerMetrics(resolveServiceName("event-processor")),
       runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+      ensureOnly,
     };
     this.manager = new MultiTenantConsumerManager(
       this.jsm,
@@ -100,7 +104,9 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
     );
     await this.manager.start();
     this.logger.log(
-      `Processor durable consumer ('${DURABLE_NAME}') started`,
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `Processor durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
@@ -133,7 +139,7 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
     // Resume distributed trace from the publisher (wdocs 06 §6).
     const incomingHeaders = headers ?? natsHeaders();
     const { span, context: spanCtx } = startNatsConsumerSpan(
-      "event-processor",
+      resolveServiceName("event-processor"),
       subject,
       incomingHeaders,
     );
@@ -270,7 +276,7 @@ export class ProcessorService implements OnModuleInit, OnModuleDestroy {
     injectTraceContext(hdrs);
 
     const { span } = startNatsProducerSpan(
-      "event-processor",
+      resolveServiceName("event-processor"),
       completionSubject,
       hdrs,
     );

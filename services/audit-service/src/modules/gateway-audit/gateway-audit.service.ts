@@ -11,6 +11,8 @@ import {
   PinoLoggerService,
   startNatsConsumerSpan,
   createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
 } from "@yoizen/observability";
 import { GATEWAY_AUDIT_CONSUMER } from "../../providers/nats.provider";
 import { TenantConnectionManager, type Sql } from "@yoizen/database";
@@ -74,16 +76,23 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
       this.logger,
       { concurrency: 16 },
       undefined,
-      createNatsConsumerMetrics("audit-service"),
+      createNatsConsumerMetrics(resolveServiceName("audit-service")),
       "gateway-audit",
     );
   }
 
   async onModuleInit(): Promise<void> {
+    if (!isWorkerMode()) {
+      this.logger.log(
+        `Skipping gateway-audit consumer in api mode (SERVICE_MODE=api)`,
+      );
+      return;
+    }
     await this.runner.start();
   }
 
   async onModuleDestroy(): Promise<void> {
+    if (!isWorkerMode()) return;
     await this.runner.stop();
   }
 
@@ -129,7 +138,7 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
     if (!tenantId) return;
 
     const { span, context: ctx } = startNatsConsumerSpan(
-      "audit-service",
+      resolveServiceName("audit-service"),
       msg.subject,
       msg.headers ?? { keys: () => [], values: () => [], get: () => "", set: () => {} },
     );

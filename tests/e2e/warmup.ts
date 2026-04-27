@@ -18,13 +18,13 @@
  * ────────
  * We hit `${API_GATEWAY_URL}/health` repeatedly. The gateway's
  * `GatewayHealthService.checkServices()` fans out an HTTP probe to every
- * downstream listed in `gateway-health.service.ts` (auth, audit, cache,
- * webhook, event-processor, metrics, tenant, scheduler, registry,
- * workflow-api, proxy, adapter, channel, admin) with a 3s per-target
- * timeout. Even when the timeout aborts the call, the Knative Activator
- * has already started scaling the target pod from 0 — so successive
- * polls see the aggregate flip from `degraded` → `ok` as each downstream
- * comes online.
+ * downstream listed in `gateway-health.service.ts`. After the Phase 1.5
+ * api↔worker split, the *-api Knative Service is the HTTP target — the
+ * gateway maps logical names (`audit-service`, `event-processor`, …) to
+ * the corresponding `*-api` URL via `gatewayConfig.services`. Even when
+ * the 3s per-target timeout aborts the call, Knative's Activator has
+ * already started scaling the target pod from 0, so successive polls
+ * see the aggregate flip from `degraded` → `ok`.
  *
  * Why not poke each service directly?
  *   The `port-forward.sh` workflow only exposes `api-gateway` on

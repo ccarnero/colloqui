@@ -65,4 +65,24 @@ describe("TenantPostgresProvisioner", () => {
       namespace: "ns-unit",
     });
   });
+
+  it("deprovisionShared drops database with FORCE and the matching role", async () => {
+    const unsafe = mock(() => Promise.resolve());
+    const fakeSql = { unsafe };
+    const provisioner = new TenantPostgresProvisioner(
+      {} as never,
+      {} as never,
+    );
+    Reflect.set(
+      provisioner as unknown as Record<string, unknown>,
+      "adminSqlPromise",
+      Promise.resolve(fakeSql),
+    );
+    await provisioner.deprovisionShared("acme");
+    const calls = unsafe.mock.calls.map((c) => c[0]);
+    expect(calls).toEqual([
+      'DROP DATABASE IF EXISTS "tenant_acme" WITH (FORCE)',
+      'DROP ROLE IF EXISTS "tenant_acme_app"',
+    ]);
+  });
 });

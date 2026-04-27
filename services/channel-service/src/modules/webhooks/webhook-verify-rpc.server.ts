@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import type { Msg, NatsConnection, Subscription } from "nats";
-import { PinoLoggerService } from "@yoizen/observability";
+import { PinoLoggerService, isWorkerMode } from "@yoizen/observability";
 import {
   WEBHOOK_VERIFY_RPC_SUBJECT,
   type Channel,
@@ -30,6 +30,12 @@ export class WebhookVerifyRpcServer implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    if (!isWorkerMode()) {
+      this.logger.log(
+        `Skipping webhook-verify RPC server in api mode (SERVICE_MODE=api)`,
+      );
+      return;
+    }
     this.subscription = this.nc.subscribe(WEBHOOK_VERIFY_RPC_SUBJECT, {
       queue: VERIFY_QUEUE,
       callback: (_err, msg) => {

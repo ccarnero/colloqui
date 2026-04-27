@@ -7,11 +7,27 @@ resources:
   - tenant-service-sa.yaml
   - api-gateway.yaml
   - auth-service.yaml
-  - event-processor.yaml
+  # ----- Phase 1.5 split services (api ↔ worker pairs) -----
+  # Each pair shares one Docker image and branches on `SERVICE_MODE`
+  # at startup. *-api pods host HTTP controllers (Knative Service,
+  # KPA-managed); *-worker pods host JetStream durable consumers
+  # (apps/v1.Deployment, KEDA-managed). See `scaledobjects/`.
+  - audit-service-api.yaml
+  - audit-service-worker.yaml
+  - channel-service-api.yaml
+  - channel-service-worker.yaml
+  - event-processor-api.yaml
+  - event-processor-worker.yaml
+  - metrics-service-api.yaml
+  - metrics-service-worker.yaml
+  - usage-aggregator-api.yaml
+  - usage-aggregator-worker.yaml
+  - webhook-service-api.yaml
+  - webhook-service-worker.yaml
+  - workflow-service-api.yaml
+  - workflow-service-worker.yaml
+  # ----- Single-pod Knative-only services (HTTP-only or stateful) -----
   - cache-service.yaml
-  - audit-service.yaml
-  - webhook-service.yaml
-  - metrics-service.yaml
   - tenant-service.yaml
   - scheduler-service.yaml
   - scheduler-service-sa.yaml
@@ -19,12 +35,10 @@ resources:
   - registry-service.yaml
   - registry-service-sa.yaml
   - adapter-service.yaml
-  - workflow-api.yaml
-  - workflow-worker.yaml
-  - workflow-http-worker.yaml
-  - channel-service.yaml
   - admin-console.yaml
   - messaging-console.yaml
   - yoizenclaw-admin-service.yaml
-  - usage-aggregator-service.yaml
+  # ----- Plain Deployments + KEDA Temporal scalers (Phase 1) -----
+  - workflow-worker.yaml
+  - workflow-http-worker.yaml
   - scaledobjects

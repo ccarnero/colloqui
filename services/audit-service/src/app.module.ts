@@ -1,5 +1,5 @@
 import { Global, Module } from "@nestjs/common";
-import { ObservabilityModule } from "@yoizen/observability";
+import { ObservabilityModule, resolveServiceName } from "@yoizen/observability";
 import { AuditModule } from "./modules/audit/audit.module";
 import { GatewayAuditModule } from "./modules/gateway-audit/gateway-audit.module";
 import { ChannelAuditModule } from "./modules/channel-audit/channel-audit.module";
@@ -20,7 +20,9 @@ import { TenantConnectionManager } from "@yoizen/database";
 @Global()
 @Module({
   imports: [
-    ObservabilityModule.forRoot({ serviceName: "audit-service" }),
+    ObservabilityModule.forRoot({
+      serviceName: resolveServiceName("audit-service"),
+    }),
     AuditModule,
     GatewayAuditModule,
     ChannelAuditModule,

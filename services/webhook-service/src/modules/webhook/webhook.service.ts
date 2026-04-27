@@ -62,6 +62,8 @@ import {
   startNatsConsumerSpan,
   tracedFetch,
   createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
 } from "@yoizen/observability";
 
 @Injectable()
@@ -87,13 +89,15 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    const ensureOnly = !isWorkerMode();
     const config: IMultiTenantConsumerConfig = {
       streamPattern: TENANT_STREAM_PATTERN,
       durableName: DURABLE_NAME,
       filterSubject: CANONICAL_COMPLETION_PATTERN,
       description: "Webhook completion dispatcher",
-      metrics: createNatsConsumerMetrics("webhook-service"),
+      metrics: createNatsConsumerMetrics(resolveServiceName("webhook-service")),
       runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+      ensureOnly,
     };
     this.manager = new MultiTenantConsumerManager(
       this.jsm,
@@ -104,7 +108,9 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
     );
     await this.manager.start();
     this.logger.log(
-      `Webhook durable consumer ('${DURABLE_NAME}') started`,
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `Webhook durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
@@ -139,7 +145,7 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
     // Resume distributed trace (wdocs 06 §6).
     const incomingHeaders = headers ?? natsHeaders();
     const { span, context: spanCtx } = startNatsConsumerSpan(
-      "webhook-service",
+      resolveServiceName("webhook-service"),
       subject,
       incomingHeaders,
     );

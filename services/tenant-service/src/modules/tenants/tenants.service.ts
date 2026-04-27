@@ -9,13 +9,16 @@ import { PinoLoggerService } from "@yoizen/observability";
 import type * as k8s from "@kubernetes/client-node";
 import { randomUUID } from "node:crypto";
 import {
+  TenantDatabaseTier,
   invalidPlatformEnvironmentMessage,
   ProvisioningStatus,
   tenantKubernetesNamespaceName,
   type ProvisioningStatusValue,
+  type TenantDatabaseTierValue,
 } from "@yoizen/shared";
 import { tenantServiceConfig } from "../../config";
 import { K8S_CORE_API } from "../../providers/kubernetes.provider";
+import { TenantPostgresProvisioner } from "../../providers/postgres.provider";
 import { TenantProvisionPublisher } from "../../providers/tenant-provision-publisher.service";
 import { TenantsRepository } from "./tenants.repository";
 import {
@@ -28,9 +31,7 @@ import {
 const LABEL_TENANT = "yoizen.io/tenant";
 const LABEL_ENVIRONMENT = "yoizen.io/environment";
 const LABEL_MANAGED_BY = "yoizen.io/managed-by";
-const LABEL_PART_OF = "app.kubernetes.io/part-of";
 const MANAGED_BY_VALUE = "tenant-service";
-const PART_OF_VALUE = "yoizen-arch";
 
 interface INamespaceStatus {
   name: string;
@@ -41,6 +42,7 @@ interface INamespaceStatus {
 export interface ITenantDetail {
   id: string;
   name: string;
+  tier: TenantDatabaseTierValue;
   configuration: TenantConfiguration;
   namespaces: INamespaceStatus[];
   postgresHost: string;
@@ -58,17 +60,32 @@ export interface ITenantSummary {
   environment: string;
   configuration: TenantConfiguration;
   provisioningStatus: ProvisioningStatusValue;
+  tier: TenantDatabaseTierValue;
 }
 
 /** 202 Accepted body for POST /tenants (public path: /api/tenants/:id for status). */
 export interface ICreateTenantAccepted {
   id: string;
   name: string;
+  tier: TenantDatabaseTierValue;
   provisioningStatus: ProvisioningStatusValue;
   statusUrl: string;
 }
 
-function postgresHost(tenant: string, env: Environment): string {
+/**
+ * Returns the Postgres host that owns the tenant's logical database:
+ *  - shared:    `postgres-shared.support-services-<env>.svc.cluster.local`
+ *               (resolved through `tenantServiceConfig.sharedPostgresHost`).
+ *  - dedicated: `postgres.<tenant>-<env>-ns.svc.cluster.local`.
+ */
+function postgresHost(
+  tenant: string,
+  env: Environment,
+  tier: TenantDatabaseTierValue,
+): string {
+  if (tier === TenantDatabaseTier.Shared) {
+    return tenantServiceConfig.sharedPostgresHost;
+  }
   return `postgres.${tenantKubernetesNamespaceName(tenant, env)}.svc.cluster.local`;
 }
 
@@ -81,6 +98,7 @@ export class TenantsService {
     @Inject(K8S_CORE_API) private readonly k8sApi: k8s.CoreV1Api,
     private readonly repository: TenantsRepository,
     private readonly provisionPublisher: TenantProvisionPublisher,
+    private readonly pgProvisioner: TenantPostgresProvisioner,
   ) {
     const env = tenantServiceConfig.platformEnvironment;
     if (!VALID_ENVIRONMENTS.includes(env as Environment)) {
@@ -97,6 +115,7 @@ export class TenantsService {
    */
   async createTenant(
     name: string,
+    tier: TenantDatabaseTierValue = TenantDatabaseTier.Shared,
     configuration: TenantConfiguration = {},
   ): Promise<ICreateTenantAccepted> {
     const existing = await this.repository.findByName(name);
@@ -105,7 +124,7 @@ export class TenantsService {
     }
 
     const id = randomUUID();
-    const row = await this.repository.create(id, name, configuration);
+    const row = await this.repository.create(id, name, tier, configuration);
     await this.provisionPublisher.publishProvisionRequested({
       tenantId: row.id,
       name: row.name,
@@ -115,6 +134,7 @@ export class TenantsService {
     return {
       id: row.id,
       name: row.name,
+      tier: row.tier,
       provisioningStatus: ProvisioningStatus.Pending,
       statusUrl: `/api/tenants/${row.id}`,
     };
@@ -122,13 +142,20 @@ export class TenantsService {
 
   async listTenants(): Promise<ITenantSummary[]> {
     const rows = await this.repository.findAll();
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      environment: this.environment,
-      configuration: row.configuration,
-      provisioningStatus: row.provisioning_status,
-    }));
+    const len = rows.length;
+    const summaries: ITenantSummary[] = new Array(len);
+    for (let i = 0; i < len; i++) {
+      const row = rows[i]!;
+      summaries[i] = {
+        id: row.id,
+        name: row.name,
+        environment: this.environment,
+        tier: row.tier,
+        configuration: row.configuration,
+        provisioningStatus: row.provisioning_status,
+      };
+    }
+    return summaries;
   }
 
   async getTenantById(id: string): Promise<ITenantDetail> {
@@ -161,13 +188,27 @@ export class TenantsService {
     if (!row) {
       throw new NotFoundException(`Tenant '${name}' not found`);
     }
-    const items = await this.findNamespacesByTenant(name);
+    const items = await this.findNamespacesByTenant(row.name);
     this.logger.log(`Updated configuration for tenant '${name}'`);
     return this.mapRowToDetail(row, items);
   }
 
   /**
-   * Deletes all labeled namespaces (cascades workloads) then removes the DB row.
+   * Tier-aware delete (both branches always cascade-delete the tenant
+   * namespace, which is the deployment scope for Knative Services and
+   * scheduled K8s Jobs regardless of tier):
+   *  - **Shared**: in parallel, drops the tenant database + role on the
+   *    `postgres-shared` cluster (`DROP DATABASE ... WITH (FORCE)` terminates
+   *    lingering connections) and requests namespace deletion. The DB+role
+   *    drop is required because the logical database lives outside the
+   *    tenant namespace.
+   *  - **Dedicated**: requests namespace deletion; the cascade tears down the
+   *    per-tenant Postgres + TimescaleDB StatefulSets and PVCs that own the
+   *    data.
+   *
+   * The platform DB row is removed only after infrastructure cleanup, so a
+   * partial failure leaves the row visible (`provisioning_status` unchanged)
+   * and the caller can retry the DELETE idempotently.
    */
   async deleteTenant(name: string): Promise<void> {
     const row = await this.repository.findByName(name);
@@ -175,19 +216,35 @@ export class TenantsService {
       throw new NotFoundException(`Tenant '${name}' not found`);
     }
 
+    const sharedDeprovision: Promise<unknown> | null =
+      row.tier === TenantDatabaseTier.Shared
+        ? this.pgProvisioner.deprovisionShared(row.name)
+        : null;
+
     const items = await this.findNamespacesByTenant(name);
-    await Promise.all(
-      items.map(async (ns) => {
-        const nsName = ns.metadata!.name!;
-        await this.k8sApi.deleteNamespace({ name: nsName });
-        this.logger.log(`Deleted namespace ${nsName} (cascades PG resources)`);
-      }),
+    const len = items.length;
+    const cleanup: Promise<unknown>[] = new Array(
+      len + (sharedDeprovision ? 1 : 0),
     );
+    for (let i = 0; i < len; i++) {
+      const nsName = items[i]!.metadata!.name!;
+      cleanup[i] = this.k8sApi
+        .deleteNamespace({ name: nsName })
+        .then(() =>
+          this.logger.log(
+            `Deleted namespace ${nsName} (cascades K8s resources)`,
+          ),
+        );
+    }
+    if (sharedDeprovision) {
+      cleanup[len] = sharedDeprovision;
+    }
+    await Promise.all(cleanup);
 
     const deleted = await this.repository.deleteByName(name);
     if (!deleted) {
       this.logger.warn(
-        `Tenant '${name}' was not found in database after namespace cleanup`,
+        `Tenant '${name}' was not found in database after infrastructure cleanup`,
       );
     }
     this.logger.log(`Deleted tenant '${name}' from database`);
@@ -202,9 +259,10 @@ export class TenantsService {
     return {
       id: row.id,
       name: row.name,
+      tier: row.tier,
       configuration: row.configuration,
       namespaces: this.mapNamespacesToStatuses(items),
-      postgresHost: postgresHost(row.name, this.environment),
+      postgresHost: postgresHost(row.name, this.environment, row.tier),
       provisioningStatus: row.provisioning_status,
       provisioningError: row.provisioning_error,
       provisioningStartedAt: row.provisioning_started_at,
@@ -217,11 +275,17 @@ export class TenantsService {
   private mapNamespacesToStatuses(
     items: k8s.V1Namespace[],
   ): INamespaceStatus[] {
-    return items.map((ns) => ({
-      name: ns.metadata!.name!,
-      environment: ns.metadata!.labels![LABEL_ENVIRONMENT] as Environment,
-      phase: ns.status?.phase ?? "Unknown",
-    }));
+    const len = items.length;
+    const out: INamespaceStatus[] = new Array(len);
+    for (let i = 0; i < len; i++) {
+      const ns = items[i]!;
+      out[i] = {
+        name: ns.metadata!.name!,
+        environment: ns.metadata!.labels![LABEL_ENVIRONMENT] as Environment,
+        phase: ns.status?.phase ?? "Unknown",
+      };
+    }
+    return out;
   }
 
   private async findNamespacesByTenant(

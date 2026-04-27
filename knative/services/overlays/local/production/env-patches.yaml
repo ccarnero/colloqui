@@ -18,8 +18,9 @@ spec:
               value: "redis.support-services-production.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            # ----- DNS for split services (Phase 1.5): use *-api ------
             - name: AUDIT_SERVICE_URL
-              value: "http://audit-service.platform-services-production.svc.cluster.local"
+              value: "http://audit-service-api.platform-services-production.svc.cluster.local"
             - name: TENANT_SERVICE_URL
               value: "http://tenant-service.platform-services-production.svc.cluster.local"
             - name: AUTH_SERVICE_URL
@@ -27,17 +28,21 @@ spec:
             - name: CACHE_SERVICE_URL
               value: "http://cache-service.platform-services-production.svc.cluster.local"
             - name: WEBHOOK_SERVICE_URL
-              value: "http://webhook-service.platform-services-production.svc.cluster.local"
+              value: "http://webhook-service-api.platform-services-production.svc.cluster.local"
             - name: EVENT_PROCESSOR_URL
-              value: "http://event-processor.platform-services-production.svc.cluster.local"
+              value: "http://event-processor-api.platform-services-production.svc.cluster.local"
             - name: METRICS_SERVICE_URL
-              value: "http://metrics-service.platform-services-production.svc.cluster.local"
+              value: "http://metrics-service-api.platform-services-production.svc.cluster.local"
             - name: SCHEDULER_SERVICE_URL
               value: "http://scheduler-service.platform-services-production.svc.cluster.local"
             - name: REGISTRY_SERVICE_URL
               value: "http://registry-service.platform-services-production.svc.cluster.local"
+            - name: WORKFLOW_SERVICE_URL
+              value: "http://workflow-service-api.platform-services-production.svc.cluster.local"
             - name: PROXY_SERVICE_URL
               value: "http://proxy-service.platform-services-production.svc.cluster.local"
+            - name: CHANNEL_SERVICE_URL
+              value: "http://channel-service-api.platform-services-production.svc.cluster.local"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -70,10 +75,11 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
 ---
+# ----- event-processor: split api ↔ worker (Phase 1.5) -----
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: event-processor
+  name: event-processor-api
 spec:
   template:
     spec:
@@ -93,7 +99,9 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-production.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
-              value: "event-processor"
+              value: "event-processor-api"
+            - name: SERVICE_MODE
+              value: "api"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -115,10 +123,34 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-processor-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-production.svc.cluster.local:4222"
+            - name: REDIS_HOST
+              value: "redis.support-services-production.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-production.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "event-processor-worker"
+            - name: SERVICE_MODE
+              value: "worker"
+---
+# ----- audit-service: split api ↔ worker (Phase 1.5) -----
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: audit-service
+  name: audit-service-api
 spec:
   template:
     spec:
@@ -142,7 +174,9 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-production.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
-              value: "audit-service"
+              value: "audit-service-api"
+            - name: SERVICE_MODE
+              value: "api"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -159,10 +193,38 @@ spec:
               memory: 256Mi
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-service-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD come from the
+          # `postgres-credentials` Secret declared in base. We deliberately
+          # do NOT redeclare them here: kustomize strategic-merge on a core
+          # Deployment merges env entries field-by-field by `name`, leaving
+          # both `value` AND `valueFrom` set, which kube-apiserver rejects.
+          env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-production.svc.cluster.local:4222"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: PLATFORM_ENVIRONMENT
+              value: "production"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-production.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "audit-service-worker"
+            - name: SERVICE_MODE
+              value: "worker"
 ---
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -207,10 +269,11 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
 ---
+# ----- webhook-service: split api ↔ worker (Phase 1.5) -----
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: webhook-service
+  name: webhook-service-api
 spec:
   template:
     spec:
@@ -226,7 +289,9 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-production.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
-              value: "webhook-service"
+              value: "webhook-service-api"
+            - name: SERVICE_MODE
+              value: "api"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -247,6 +312,25 @@ spec:
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-service-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-production.svc.cluster.local:4222"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-production.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "webhook-service-worker"
+            - name: SERVICE_MODE
+              value: "worker"
 ---
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -303,10 +387,11 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
 ---
+# ----- metrics-service: split api ↔ worker (Phase 1.5) -----
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: metrics-service
+  name: metrics-service-api
 spec:
   template:
     spec:
@@ -330,7 +415,9 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-production.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
-              value: "metrics-service"
+              value: "metrics-service-api"
+            - name: SERVICE_MODE
+              value: "api"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -351,6 +438,32 @@ spec:
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-service-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD come from the
+          # `postgres-credentials` Secret declared in base — see the comment
+          # on audit-service-worker above for the full kustomize rationale.
+          env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-production.svc.cluster.local:4222"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: PLATFORM_ENVIRONMENT
+              value: "production"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-production.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "metrics-service-worker"
+            - name: SERVICE_MODE
+              value: "worker"
 ---
 apiVersion: serving.knative.dev/v1
 kind: Service

@@ -1,5 +1,5 @@
 import { Global, Module } from "@nestjs/common";
-import { ObservabilityModule } from "@yoizen/observability";
+import { ObservabilityModule, resolveServiceName } from "@yoizen/observability";
 import { ProcessorModule } from "./modules/processor/processor.module";
 import { HealthModule } from "./modules/health/health.module";
 import {
@@ -20,7 +20,9 @@ import {
 @Global()
 @Module({
   imports: [
-    ObservabilityModule.forRoot({ serviceName: "event-processor" }),
+    ObservabilityModule.forRoot({
+      serviceName: resolveServiceName("event-processor"),
+    }),
     ProcessorModule,
     HealthModule,
   ],

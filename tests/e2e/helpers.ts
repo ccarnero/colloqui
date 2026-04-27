@@ -32,11 +32,14 @@ function knativeUrl(service: string): string {
   return `http://${service}.${NAMESPACE}.${MINIKUBE_DOMAIN}`;
 }
 
+// Phase 1.5: e2e suites continue to use the *logical* short name
+// (`event-processor`, `metrics-service`) but resolve to the corresponding
+// `*-api` Knative Service hostname. Worker pods do NOT have an HTTP route.
 const RAW_SERVICE_URLS = new Map<string, string>([
   ['api-gateway', process.env.API_GATEWAY_URL ?? knativeUrl('api-gateway')],
-  ['event-processor', process.env.EVENT_PROCESSOR_URL ?? knativeUrl('event-processor')],
+  ['event-processor', process.env.EVENT_PROCESSOR_URL ?? knativeUrl('event-processor-api')],
   ['cache-service', process.env.CACHE_SERVICE_URL ?? knativeUrl('cache-service')],
-  ['metrics-service', process.env.METRICS_SERVICE_URL ?? knativeUrl('metrics-service')],
+  ['metrics-service', process.env.METRICS_SERVICE_URL ?? knativeUrl('metrics-service-api')],
 ]);
 
 const API_PREFIX = '/api';

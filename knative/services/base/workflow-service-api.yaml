@@ -1,0 +1,73 @@
+# workflow-service API pod (HTTP — REST/admin). Phase 1.5 split.
+#
+# This pod hosts the REST controllers that drive Temporal:
+# trigger creation, on-demand execution, execution queries.
+# The two NATS consumers that handle `workflow.triggers.*` and
+# `workflow.executions.*` projection events stay disabled here
+# (`SERVICE_MODE=api`) and only run in `workflow-service-worker`.
+#
+# Note: the previous K8s name was `workflow-api` (without `-service`).
+# Renamed to `workflow-service-api` for consistency with the rest of
+# the split pairs.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: workflow-service-api
+  labels:
+    app.kubernetes.io/name: workflow-service-api
+    app.kubernetes.io/component: workflow
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: workflow-service-api
+        app.kubernetes.io/component: workflow
+      annotations:
+        autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
+        autoscaling.knative.dev/metric: concurrency
+        autoscaling.knative.dev/target: "100"
+        autoscaling.knative.dev/min-scale: "1"
+        autoscaling.knative.dev/max-scale: "15"
+    spec:
+      containerConcurrency: 0
+      containers:
+        - name: user-container
+          image: dev.local/workflow-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: ENTRYPOINT
+              value: "dist/main.js"
+            - name: SERVICE_MODE
+              value: "api"
+            - name: OTEL_SERVICE_NAME
+              value: "workflow-service-api"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          # The /health endpoint probes Temporal (gRPC getSystemInfo) + NATS
+          # + per-tenant Postgres. The Temporal call alone can spike past the
+          # 1s default probe timeout under load or cold-start, marking the pod
+          # NotReady and triggering SKS/Deployment reconcile loops with 409
+          # conflicts that block scale-to-zero. Generous timeout + failure
+          # threshold prevent flickering.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3

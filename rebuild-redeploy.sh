@@ -125,11 +125,42 @@ build_image() {
     "${SCRIPT_DIR}"
 }
 
+# Phase 1.5 mapping: each "logical service" (the directory name under
+# services/ used as the Docker tag) translates into 0..N Knative Services
+# (`*-api`) and 0..N plain Deployments (`*-worker` / Temporal workers).
+#
+# Implemented as two parallel pure functions instead of a Bash associative
+# array so the script stays portable to bash 3.x (macOS default).
 get_ksvc_names() {
   local svc="$1"
   case "$svc" in
-    workflow-service) echo "workflow-api workflow-worker" ;;
-    *)               echo "$svc" ;;
+    audit-service)            echo "audit-service-api" ;;
+    channel-service)          echo "channel-service-api" ;;
+    event-processor)          echo "event-processor-api" ;;
+    metrics-service)          echo "metrics-service-api" ;;
+    usage-aggregator-service) echo "usage-aggregator-api" ;;
+    webhook-service)          echo "webhook-service-api" ;;
+    workflow-service)         echo "workflow-service-api" ;;
+    *)                        echo "$svc" ;;
+  esac
+}
+
+# Plain Kubernetes Deployments associated with a logical service. Empty
+# string means "no Deployment, KSVC only" (which is the default case).
+get_deployment_names() {
+  local svc="$1"
+  case "$svc" in
+    audit-service)            echo "audit-service-worker" ;;
+    channel-service)          echo "channel-service-worker" ;;
+    event-processor)          echo "event-processor-worker" ;;
+    metrics-service)          echo "metrics-service-worker" ;;
+    usage-aggregator-service) echo "usage-aggregator-worker" ;;
+    webhook-service)          echo "webhook-service-worker" ;;
+    # workflow-service ships three pods: api KSVC, NATS worker Deployment,
+    # and the Temporal worker Deployment (workflow-worker).
+    workflow-service)         echo "workflow-service-worker workflow-worker" ;;
+    workflow-http-worker)     echo "workflow-http-worker" ;;
+    *)                        echo "" ;;
   esac
 }
 
@@ -159,6 +190,36 @@ rollout_ksvc() {
       log "ksvc/${ksvc} is Ready"
     else
       warn "Timed out waiting for ksvc/${ksvc} — check pods in ${ns}"
+    fi
+  done
+}
+
+rollout_deployments() {
+  local svc="$1"
+  local env="$2"
+  local ns="platform-services-${env}"
+
+  local deploy_names
+  deploy_names="$(get_deployment_names "$svc")"
+
+  if [[ -z "$deploy_names" ]]; then
+    return
+  fi
+
+  for deploy in $deploy_names; do
+    if ! kubectl get deployment "$deploy" -n "$ns" &>/dev/null; then
+      warn "Deployment '${deploy}' not found in namespace '${ns}' — skipping"
+      continue
+    fi
+
+    step "Restarting deployment/${deploy} in ${ns} to pick up the new image"
+    kubectl rollout restart deployment "$deploy" -n "$ns"
+
+    step "Waiting for deployment/${deploy} to finish rolling out..."
+    if kubectl rollout status deployment "$deploy" -n "$ns" --timeout=180s; then
+      log "deployment/${deploy} is Ready"
+    else
+      warn "Timed out waiting for deployment/${deploy} — check pods in ${ns}"
     fi
   done
 }
@@ -280,12 +341,15 @@ main() {
       rollout_yoizenclaw_runtime "$environment"
     else
       rollout_ksvc "$service_name" "$environment"
+      rollout_deployments "$service_name" "$environment"
     fi
     echo ""
   fi
 
   local ksvc_names
+  local deploy_names
   ksvc_names="$(get_ksvc_names "$service_name")"
+  deploy_names="$(get_deployment_names "$service_name")"
 
   log "=============================="
   log " Done!"
@@ -309,7 +373,10 @@ main() {
     for ksvc in $ksvc_names; do
       echo "    kubectl get ksvc ${ksvc} -n platform-services-${environment}"
     done
-    echo "    kubectl get pods -n platform-services-${environment} -l serving.knative.dev/service=${service_name}"
+    for deploy in $deploy_names; do
+      echo "    kubectl get deployment ${deploy} -n platform-services-${environment}"
+    done
+    echo "    kubectl get pods -n platform-services-${environment} -l app.kubernetes.io/name=${service_name}"
   fi
   echo ""
 }

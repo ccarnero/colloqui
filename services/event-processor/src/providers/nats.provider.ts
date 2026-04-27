@@ -6,6 +6,7 @@ import {
   createJetStreamManagerProvider,
   createJetStreamPublisherProvider,
 } from "@yoizen/database";
+import { resolveServiceName } from "@yoizen/observability";
 import {
   CHANNEL_STREAM_MAX_AGE_NS,
   CHANNEL_STREAM_MAX_BYTES,
@@ -17,8 +18,9 @@ export { NATS_CONNECTION } from "@yoizen/database";
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
 
-export const natsProvider: FactoryProvider =
-  createNatsConnectionProvider("event-processor");
+export const natsProvider: FactoryProvider = createNatsConnectionProvider(
+  resolveServiceName("event-processor"),
+);
 
 export const jetStreamManagerProvider: FactoryProvider =
   createJetStreamManagerProvider(JETSTREAM_MANAGER, {

@@ -5,7 +5,12 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import type { JetStreamClient, JetStreamManager, JsMsg } from "nats";
-import { PinoLoggerService, createNatsConsumerMetrics } from "@yoizen/observability";
+import {
+  PinoLoggerService,
+  createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
+} from "@yoizen/observability";
 import {
   MultiTenantConsumerManager,
   type IMultiTenantConsumerConfig,
@@ -43,13 +48,15 @@ export class WebhookIngressConsumerService
   ) {}
 
   async onModuleInit(): Promise<void> {
+    const ensureOnly = !isWorkerMode();
     const config: IMultiTenantConsumerConfig = {
       streamPattern: TENANT_STREAM_PATTERN,
       durableName: DURABLE_NAME,
       filterSubject: WEBHOOK_INGRESS_SUBJECT_FILTER,
       description: "Channel webhook ingress from api-gateway",
-      metrics: createNatsConsumerMetrics("channel-service"),
+      metrics: createNatsConsumerMetrics(resolveServiceName("channel-service")),
       runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+      ensureOnly,
     };
     this.manager = new MultiTenantConsumerManager(
       this.jsm,
@@ -60,7 +67,9 @@ export class WebhookIngressConsumerService
     );
     await this.manager.start();
     this.logger.log(
-      `Webhook ingress durable consumer ('${DURABLE_NAME}') started`,
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `Webhook ingress durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 

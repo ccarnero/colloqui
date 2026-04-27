@@ -1,22 +1,16 @@
 import { Global, Inject, Injectable, Module } from "@nestjs/common";
 import type * as k8s from "@kubernetes/client-node";
-import { CHANNEL_USAGE_SCHEMA_SQL } from "@yoizen/shared";
+import {
+  CHANNEL_USAGE_SCHEMA_SQL,
+  TenantDatabaseTier,
+  type TenantDatabaseTierValue,
+} from "@yoizen/shared";
 import { tenantServiceConfig } from "../config";
+import { isKubernetesConflictError } from "./kubernetes-errors";
 import { K8S_CORE_API, K8S_APPS_API } from "./kubernetes.provider";
 import { PinoLoggerService } from "@yoizen/observability";
 
 const PG_PORT = 5432;
-
-interface IKubernetesApiError {
-  response?: {
-    statusCode?: number;
-  };
-}
-
-function isConflictError(error: unknown): boolean {
-  const apiError = error as IKubernetesApiError;
-  return apiError.response?.statusCode === 409;
-}
 
 const APP_NAME = "postgres-usage";
 const CONFIG_NAME = "postgres-usage-config";
@@ -80,7 +74,16 @@ export class TenantUsagePostgresProvisioner {
     @Inject(K8S_APPS_API) private readonly appsApi: k8s.AppsV1Api,
   ) {}
 
-  async provisionUsage(namespace: string): Promise<void> {
+  async provisionUsage(
+    namespace: string,
+    tier: TenantDatabaseTierValue = TenantDatabaseTier.Dedicated,
+  ): Promise<void> {
+    if (tier === TenantDatabaseTier.Shared) {
+      this.logger.log(
+        `Skipping dedicated TimescaleDB provisioning for shared tenant namespace ${namespace}`,
+      );
+      return;
+    }
     await this.createSecret(namespace);
     await this.createConfigMap(namespace);
     await this.createHeadlessService(namespace);
@@ -95,13 +98,23 @@ export class TenantUsagePostgresProvisioner {
     try {
       await create();
     } catch (error: unknown) {
-      if (isConflictError(error)) return;
+      if (isKubernetesConflictError(error)) return;
       throw error;
     }
   }
 
-  async waitForReady(namespace: string, timeoutMs = 180_000): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
+  async waitForReady(
+    namespace: string,
+    tierOrTimeout: TenantDatabaseTierValue | number = TenantDatabaseTier.Dedicated,
+    timeoutMs = 180_000,
+  ): Promise<void> {
+    const tier =
+      typeof tierOrTimeout === "number"
+        ? TenantDatabaseTier.Dedicated
+        : tierOrTimeout;
+    const timeout = typeof tierOrTimeout === "number" ? tierOrTimeout : timeoutMs;
+    if (tier === TenantDatabaseTier.Shared) return;
+    const deadline = Date.now() + timeout;
     const pollInterval = 2_000;
 
     while (Date.now() < deadline) {

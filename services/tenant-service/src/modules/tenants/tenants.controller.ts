@@ -31,7 +31,7 @@ export class TenantsController {
   async create(
     @Body() dto: CreateTenantDto,
   ): Promise<ICreateTenantAccepted> {
-    return this.tenantsService.createTenant(dto.name, dto.configuration);
+    return this.tenantsService.createTenant(dto.name, dto.tier, dto.configuration);
   }
 
   @Get()

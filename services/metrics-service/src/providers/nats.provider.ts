@@ -5,13 +5,15 @@ import {
   createJetStreamPublisherProvider,
   NATS_CONNECTION,
 } from "@yoizen/database";
+import { resolveServiceName } from "@yoizen/observability";
 
 export { NATS_CONNECTION } from "@yoizen/database";
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
 
-export const natsProvider: FactoryProvider =
-  createNatsConnectionProvider("metrics-service");
+export const natsProvider: FactoryProvider = createNatsConnectionProvider(
+  resolveServiceName("metrics-service"),
+);
 
 export const jetStreamManagerProvider: FactoryProvider =
   createJetStreamManagerProvider(JETSTREAM_MANAGER, {

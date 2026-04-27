@@ -15,6 +15,8 @@ import {
   logWithEnvelope,
   startNatsConsumerSpan,
   createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
 } from "@yoizen/observability";
 import {
   JETSTREAM_MANAGER,
@@ -76,13 +78,15 @@ export class ChannelAuditService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    const ensureOnly = !isWorkerMode();
     const config: IMultiTenantConsumerConfig = {
       streamPattern: TENANT_STREAM_PATTERN,
       durableName: DURABLE_NAME,
       filterSubject: CHANNEL_AUDIT_SUBJECT_PATTERN,
       description: "Channel messaging events audit writer",
-      metrics: createNatsConsumerMetrics("audit-service"),
+      metrics: createNatsConsumerMetrics(resolveServiceName("audit-service")),
       runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+      ensureOnly,
     };
     this.manager = new MultiTenantConsumerManager(
       this.jsm,
@@ -93,7 +97,9 @@ export class ChannelAuditService implements OnModuleInit, OnModuleDestroy {
     );
     await this.manager.start();
     this.logger.log(
-      `Channel audit durable consumer ('${DURABLE_NAME}') started`,
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `Channel audit durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
@@ -116,7 +122,7 @@ export class ChannelAuditService implements OnModuleInit, OnModuleDestroy {
       set: () => {},
     };
     const { span, context: ctx } = startNatsConsumerSpan(
-      "audit-service",
+      resolveServiceName("audit-service"),
       msg.subject,
       incomingHeaders,
     );

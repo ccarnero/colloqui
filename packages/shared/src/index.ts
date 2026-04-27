@@ -77,6 +77,14 @@ export type {
   TenantProvisionRequestedMessageV1,
 } from './tenant-events';
 
+export {
+  TenantDatabaseTier,
+  isTenantDatabaseTier,
+  tenantPostgresDatabaseName,
+  tenantPostgresRoleName,
+} from './tenant-database-tier';
+export type { TenantDatabaseTierValue } from './tenant-database-tier';
+
 export { generateId } from './id.utils';
 
 export { sleep } from './async.utils';
@@ -371,7 +379,10 @@ export {
 
 export { TENANT_AUTH_SCHEMA_SQL } from "./tenant-auth-schema";
 
-export { CHANNEL_USAGE_SCHEMA_SQL } from "./channel-usage-schema";
+export {
+  CHANNEL_USAGE_SCHEMA_SQL,
+  SHARED_CHANNEL_USAGE_SCHEMA_SQL,
+} from "./channel-usage-schema";
 
 export type {
   IHealthConnectionState,

@@ -79,6 +79,21 @@ export interface IMultiTenantConsumerConfig {
    * rolls up across tenants naturally. No-op when unset.
    */
   readonly metrics?: INatsConsumerMetrics;
+  /**
+   * When `true`, only ensures the durable consumer exists on each
+   * matching tenant stream and never starts a runner — no message is
+   * consumed. Reconciliation still picks up new tenant streams so
+   * they get their durable too.
+   *
+   * Use case (Phase 1.5): `*-api` pods run in `ensureOnly` mode so
+   * `jetstream_consumer_num_pending{consumer_name="<durable>"}` is
+   * always populated in Prometheus, breaking the chicken-and-egg
+   * loop where KEDA can't scale `*-worker` from zero because the
+   * consumer doesn't exist yet.
+   *
+   * @default false
+   */
+  readonly ensureOnly?: boolean;
 }
 
 /**
@@ -117,6 +132,12 @@ interface IRunnerEntry {
  */
 export class MultiTenantConsumerManager {
   private readonly runners = new Map<string, IRunnerEntry>();
+  /**
+   * Streams whose durable consumer was ensured in `ensureOnly` mode.
+   * Tracked separately from {@link runners} so reconciliation skips
+   * already-handled streams in O(1) without spinning up runners.
+   */
+  private readonly ensuredStreams = new Set<string>();
   private reconcileHandle: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
 
@@ -157,7 +178,8 @@ export class MultiTenantConsumerManager {
 
   /**
    * Stops every active runner and halts reconciliation. Safe to call
-   * multiple times (idempotent).
+   * multiple times (idempotent). In `ensureOnly` mode there are no
+   * runners to stop — only the reconcile interval is cleared.
    */
   async stop(): Promise<void> {
     this.stopped = true;
@@ -168,6 +190,7 @@ export class MultiTenantConsumerManager {
 
     const entries = Array.from(this.runners.values());
     this.runners.clear();
+    this.ensuredStreams.clear();
     await Promise.all(entries.map((e) => e.runner.stop()));
   }
 
@@ -176,8 +199,15 @@ export class MultiTenantConsumerManager {
     return this.runners.get(streamName)?.runner;
   }
 
-  /** O(T) snapshot of bound stream names (for observability/tests). */
+  /**
+   * O(T) snapshot of bound stream names (for observability/tests).
+   * Includes both runner-bound streams and ensure-only streams when
+   * the manager runs in `ensureOnly` mode.
+   */
   getBoundStreams(): string[] {
+    if (this.config.ensureOnly === true) {
+      return Array.from(this.ensuredStreams);
+    }
     return Array.from(this.runners.keys());
   }
 
@@ -206,13 +236,17 @@ export class MultiTenantConsumerManager {
       return;
     }
 
+    const ensureOnly = this.config.ensureOnly === true;
     for (let i = 0; i < streams.length; i++) {
       const stream = streams[i]!;
       if (this.runners.has(stream)) continue;
+      if (ensureOnly && this.ensuredStreams.has(stream)) continue;
       try {
         await this.bindStream(stream);
         this.logger.log?.(
-          `Bound durable '${this.config.durableName}' on stream '${stream}'`,
+          ensureOnly
+            ? `Ensured durable '${this.config.durableName}' on stream '${stream}' (ensure-only)`
+            : `Bound durable '${this.config.durableName}' on stream '${stream}'`,
         );
       } catch (err: unknown) {
         this.logger.error(
@@ -236,8 +270,13 @@ export class MultiTenantConsumerManager {
     };
 
     await ensureDurableConsumer(this.jsm, opts);
-    const consumer = await this.js.consumers.get(stream, this.config.durableName);
 
+    if (this.config.ensureOnly === true) {
+      this.ensuredStreams.add(stream);
+      return;
+    }
+
+    const consumer = await this.js.consumers.get(stream, this.config.durableName);
     const onPermanent = this.resolvePermanentHandler(stream);
     const runner = new NatsConsumerRunner(
       consumer,

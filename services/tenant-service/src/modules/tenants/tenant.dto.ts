@@ -5,14 +5,21 @@ import {
   Matches,
   IsOptional,
   IsObject,
+  IsIn,
 } from "class-validator";
-import type { JsonValue, ProvisioningStatusValue } from "@yoizen/shared";
+import {
+  TenantDatabaseTier,
+  type JsonValue,
+  type ProvisioningStatusValue,
+  type TenantDatabaseTierValue,
+} from "@yoizen/shared";
 
 export {
   VALID_ENVIRONMENTS,
   type Environment,
   type JsonValue,
   type ProvisioningStatusValue,
+  type TenantDatabaseTierValue,
 } from "@yoizen/shared";
 
 export type TenantConfiguration = { [key: string]: JsonValue };
@@ -20,6 +27,7 @@ export type TenantConfiguration = { [key: string]: JsonValue };
 export interface ITenantRow {
   id: string;
   name: string;
+  tier: TenantDatabaseTierValue;
   configuration: TenantConfiguration;
   created_at: Date;
   updated_at: Date;
@@ -38,6 +46,10 @@ export class CreateTenantDto {
       "name must be lowercase alphanumeric with optional hyphens, cannot start or end with a hyphen",
   })
   name!: string;
+
+  @IsOptional()
+  @IsIn(Object.values(TenantDatabaseTier))
+  tier?: TenantDatabaseTierValue;
 
   @IsOptional()
   @IsObject()

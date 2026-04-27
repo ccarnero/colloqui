@@ -41,27 +41,41 @@ wait_for_port() {
 ALL_KNATIVE_SERVICES=(
   api-gateway
   auth-service
-  event-processor
   cache-service
-  audit-service
-  webhook-service
-  metrics-service
   tenant-service
   scheduler-service
   registry-service
   yoizenclaw-admin-service
-  workflow-api
   proxy-service
+  adapter-service
+  channel-service-api
+  audit-service-api
+  event-processor-api
+  metrics-service-api
+  usage-aggregator-api
+  webhook-service-api
+  workflow-service-api
 )
 
-# Plain `apps/v1.Deployment` workloads — pull-based Temporal workers
-# that do NOT have a Knative Service / Route. KEDA's Temporal scaler
-# (knative/services/base/scaledobjects/workflow-worker.yaml,
-# workflow-http-worker.yaml) drives their replicas from
-# `workflow-orchestrator` / `workflow-http` task-queue depth.
+# Plain `apps/v1.Deployment` workloads driven by KEDA. Two flavors:
+#   • Temporal-driven workers (workflow-{worker,http-worker}) — replicas
+#     follow `workflow-orchestrator` / `workflow-http` task-queue depth.
+#   • Phase 1.5 NATS workers (`*-worker`) — replicas follow JetStream
+#     consumer lag (jetstream_consumer_num_pending +
+#     jetstream_consumer_num_ack_pending). See
+#     `knative/services/base/scaledobjects/*.yaml`.
+# All of these can sit at 0 replicas in non-prod; the preflight only
+# fails when `spec.replicas > 0` AND `availableReplicas < 1`.
 ALL_PLAIN_DEPLOYMENTS=(
   workflow-worker
   workflow-http-worker
+  audit-service-worker
+  channel-service-worker
+  event-processor-worker
+  metrics-service-worker
+  usage-aggregator-worker
+  webhook-service-worker
+  workflow-service-worker
 )
 
 preflight_check() {
@@ -128,9 +142,12 @@ run_tests() {
   local domain="${minikube_ip}.sslip.io"
 
   export API_GATEWAY_URL="http://api-gateway.${NAMESPACE}.${domain}:${KOURIER_PORT}"
-  export EVENT_PROCESSOR_URL="http://event-processor.${NAMESPACE}.${domain}:${KOURIER_PORT}"
+  # Phase 1.5: e2e suites talk to the `*-api` Knative Services for direct
+  # health/CRUD probes. The `*-worker` Deployments are NOT exposed via
+  # Kourier — they consume NATS subjects only.
+  export EVENT_PROCESSOR_URL="http://event-processor-api.${NAMESPACE}.${domain}:${KOURIER_PORT}"
   export CACHE_SERVICE_URL="http://cache-service.${NAMESPACE}.${domain}:${KOURIER_PORT}"
-  export METRICS_SERVICE_URL="http://metrics-service.${NAMESPACE}.${domain}:${KOURIER_PORT}"
+  export METRICS_SERVICE_URL="http://metrics-service-api.${NAMESPACE}.${domain}:${KOURIER_PORT}"
   export KOURIER_HOST="localhost"
   export KOURIER_PORT="${KOURIER_PORT}"
 
@@ -139,10 +156,10 @@ run_tests() {
   export E2E_TENANT="${E2E_TENANT:-e2e-test}"
 
   log "Service URLs (routed through Kourier):"
-  echo "  api-gateway     -> $API_GATEWAY_URL  (all service tests route through this)"
-  echo "  event-processor -> $EVENT_PROCESSOR_URL  (direct health check)"
-  echo "  cache-service   -> $CACHE_SERVICE_URL  (direct CRUD + health)"
-  echo "  metrics-service -> $METRICS_SERVICE_URL  (direct — not proxied by gateway)"
+  echo "  api-gateway         -> $API_GATEWAY_URL  (all service tests route through this)"
+  echo "  event-processor-api -> $EVENT_PROCESSOR_URL  (direct health check)"
+  echo "  cache-service       -> $CACHE_SERVICE_URL  (direct CRUD + health)"
+  echo "  metrics-service-api -> $METRICS_SERVICE_URL  (direct — not proxied by gateway)"
   echo ""
 
   local test_filter="${1:-}"

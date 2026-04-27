@@ -1,0 +1,53 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: postgres-shared-pooler
+  labels:
+    app.kubernetes.io/name: postgres-shared
+    app.kubernetes.io/component: pgbouncer
+spec:
+  cluster:
+    name: postgres-shared
+  instances: 1
+  type: rw
+  serviceTemplate:
+    metadata:
+      name: postgres-shared-pooler
+      labels:
+        app.kubernetes.io/name: postgres-shared
+        app.kubernetes.io/component: pgbouncer
+    spec:
+      type: ClusterIP
+  pgbouncer:
+    poolMode: session
+    parameters:
+      max_client_conn: "1000"
+      default_pool_size: "20"
+      reserve_pool_size: "10"
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: postgres-usage-shared-pooler
+  labels:
+    app.kubernetes.io/name: postgres-usage-shared
+    app.kubernetes.io/component: pgbouncer
+spec:
+  cluster:
+    name: postgres-usage-shared
+  instances: 1
+  type: rw
+  serviceTemplate:
+    metadata:
+      name: postgres-usage-shared-pooler
+      labels:
+        app.kubernetes.io/name: postgres-usage-shared
+        app.kubernetes.io/component: pgbouncer
+    spec:
+      type: ClusterIP
+  pgbouncer:
+    poolMode: session
+    parameters:
+      max_client_conn: "1000"
+      default_pool_size: "20"
+      reserve_pool_size: "10"

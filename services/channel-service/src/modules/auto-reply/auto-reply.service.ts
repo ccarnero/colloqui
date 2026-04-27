@@ -17,6 +17,8 @@ import {
   logWithEnvelope,
   startNatsConsumerSpan,
   createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
 } from "@yoizen/observability";
 import type { ChannelEnvelope, AutoReplyRule, Channel } from "@yoizen/shared";
 import {
@@ -67,17 +69,23 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    await this.refreshRulesCache();
+    const ensureOnly = !isWorkerMode();
 
-    this.cacheRefreshInterval = setInterval(
-      () =>
-        this.refreshRulesCache().catch((err: unknown) => {
-          this.logger.warn(
-            `Rules cache refresh failed: ${err instanceof Error ? err.message : err}`,
-          );
-        }),
-      30_000,
-    );
+    // Rules cache is only useful for worker mode (where messages get
+    // processed). API pods just pre-create the consumer for KEDA.
+    if (!ensureOnly) {
+      await this.refreshRulesCache();
+
+      this.cacheRefreshInterval = setInterval(
+        () =>
+          this.refreshRulesCache().catch((err: unknown) => {
+            this.logger.warn(
+              `Rules cache refresh failed: ${err instanceof Error ? err.message : err}`,
+            );
+          }),
+        30_000,
+      );
+    }
 
     const subject = `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_PRODUCER}.${CHANNEL_DOMAIN}.*.*.received.v1`;
 
@@ -86,9 +94,9 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
       durableName: DURABLE_NAME,
       filterSubject: subject,
       description: "Auto-reply rule dispatcher",
-      metrics: createNatsConsumerMetrics("channel-service"),
-      // Matches rules then dispatches egress — parallel-safe, I/O bound.
+      metrics: createNatsConsumerMetrics(resolveServiceName("channel-service")),
       runnerOptions: { concurrency: 16 },
+      ensureOnly,
     };
     this.manager = new MultiTenantConsumerManager(
       this.jsm,
@@ -99,7 +107,9 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
     );
     await this.manager.start();
     this.logger.log(
-      `Auto-reply durable consumer ('${DURABLE_NAME}') started (filter=${subject})`,
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `Auto-reply durable consumer ('${DURABLE_NAME}') started (filter=${subject})`,
     );
   }
 
@@ -165,7 +175,7 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
 
     const incomingHeaders = msg.headers ?? natsHeaders();
     const { span, context: spanCtx } = startNatsConsumerSpan(
-      "channel-service",
+      resolveServiceName("channel-service"),
       msg.subject,
       incomingHeaders,
     );

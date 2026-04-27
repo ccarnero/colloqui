@@ -1,6 +1,12 @@
 import { Injectable } from "@nestjs/common";
-import { TenantConnectionManager as BaseTenantConnectionManager } from "@yoizen/database";
-import { CHANNEL_USAGE_SCHEMA_SQL } from "@yoizen/shared";
+import {
+  SharedTenantDatabaseMode,
+  TenantConnectionManager as BaseTenantConnectionManager,
+} from "@yoizen/database";
+import {
+  CHANNEL_USAGE_SCHEMA_SQL,
+  SHARED_CHANNEL_USAGE_SCHEMA_SQL,
+} from "@yoizen/shared";
 
 export type { Sql } from "@yoizen/database";
 
@@ -19,7 +25,24 @@ export type { Sql } from "@yoizen/database";
 export class UsageTenantConnectionManager extends BaseTenantConnectionManager {
   constructor() {
     super();
-    this.configure({ serviceName: "postgres-usage" });
-    this.setSchema([CHANNEL_USAGE_SCHEMA_SQL]);
+    this.configure({
+      serviceName: "postgres-usage",
+      sharedDatabaseMode: SharedTenantDatabaseMode.SingleDatabase,
+      sharedDatabase: process.env.TENANT_POSTGRES_SHARED_USAGE_DB ?? "yoizen_usage",
+      sharedUsername:
+        process.env.TENANT_POSTGRES_SHARED_USAGE_USER ??
+        process.env.TENANT_POSTGRES_SHARED_USER,
+      sharedPassword:
+        process.env.TENANT_POSTGRES_SHARED_USAGE_PASSWORD ??
+        process.env.TENANT_POSTGRES_SHARED_PASSWORD,
+    });
+    this.setSchemaInitializer(async (tenantId, sql) => {
+      const target = await this.resolveDatabaseTarget(tenantId);
+      const schema =
+        target.sharedDatabaseMode === SharedTenantDatabaseMode.SingleDatabase
+          ? SHARED_CHANNEL_USAGE_SCHEMA_SQL
+          : CHANNEL_USAGE_SCHEMA_SQL;
+      await sql.unsafe(schema);
+    });
   }
 }

@@ -1,18 +1,26 @@
+# usage-aggregator API pod (HTTP). Phase 1.5 split.
+#
+# Note: the package directory is `services/usage-aggregator-service/` but
+# the K8s name drops the `-service` suffix to align with the rest of the
+# split pairs (`*-api` / `*-worker`).
+#
+# Runs `SERVICE_MODE=api` — the per-tenant `agg-INGRESS-*` and `agg-DLQ`
+# durable consumers stay disabled (see
+# `services/usage-aggregator-service/src/modules/aggregator/aggregator.engine.ts`).
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: usage-aggregator-service
+  name: usage-aggregator-api
   labels:
-    app.kubernetes.io/name: usage-aggregator-service
+    app.kubernetes.io/name: usage-aggregator-api
     app.kubernetes.io/component: billing-metrics
 spec:
   template:
     metadata:
+      labels:
+        app.kubernetes.io/name: usage-aggregator-api
+        app.kubernetes.io/component: billing-metrics
       annotations:
-        # HPA class: KEDA owns replica count via JetStream agg-INGRESS +
-        # agg-DLQ consumer lag (see scaledobjects/usage-aggregator-service.yaml).
-        # The pull durables persist server-side, so the consumer rebinds on
-        # cold-start. Base keeps min-scale=1; non-prod overlays drop to 0.
         autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
         autoscaling.knative.dev/metric: concurrency
         autoscaling.knative.dev/target: "100"
@@ -26,6 +34,11 @@ spec:
           ports:
             - containerPort: 3000
               protocol: TCP
+          env:
+            - name: SERVICE_MODE
+              value: "api"
+            - name: OTEL_SERVICE_NAME
+              value: "usage-aggregator-api"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

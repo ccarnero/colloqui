@@ -1,5 +1,5 @@
 import { Global, Module } from "@nestjs/common";
-import { ObservabilityModule } from "@yoizen/observability";
+import { ObservabilityModule, resolveServiceName } from "@yoizen/observability";
 import { PostgresModule } from "./providers/postgres.provider";
 import { ChannelTenantDbModule } from "./providers/channel-tenant-db.module";
 import {
@@ -23,7 +23,9 @@ import { StreamsModule } from "./modules/streams/streams.module";
 @Global()
 @Module({
   imports: [
-    ObservabilityModule.forRoot({ serviceName: "channel-service" }),
+    ObservabilityModule.forRoot({
+      serviceName: resolveServiceName("channel-service"),
+    }),
     PostgresModule,
     ChannelTenantDbModule,
     WebhooksModule,

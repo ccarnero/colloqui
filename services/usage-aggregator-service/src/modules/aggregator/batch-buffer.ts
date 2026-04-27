@@ -17,6 +17,7 @@ export interface IBatchBufferHooks {
 
 export interface IBatchBufferOptions {
   readonly sql: Sql;
+  readonly tenantId?: string;
   /** Rows flushed together. @default 500 */
   readonly batchSize?: number;
   /** Max time a partial batch waits before flushing. @default 1000 ms */
@@ -110,7 +111,7 @@ export class BatchBuffer {
 
     const started = performance.now();
     try {
-      await insertBatch(this.options.sql, rows);
+      await insertBatch(this.options.sql, rows, this.options.tenantId);
       const elapsed = performance.now() - started;
       this.options.hooks?.onFlushSuccess(rows, elapsed);
       for (let i = 0; i < waiters.length; i++) waiters[i]!.resolve();

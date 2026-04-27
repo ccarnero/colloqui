@@ -15,6 +15,8 @@ import {
   logWithEnvelope,
   startNatsConsumerSpan,
   createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
 } from "@yoizen/observability";
 import {
   JETSTREAM_MANAGER,
@@ -61,13 +63,15 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    const ensureOnly = !isWorkerMode();
     const config: IMultiTenantConsumerConfig = {
       streamPattern: TENANT_STREAM_PATTERN,
       durableName: DURABLE_NAME,
       filterSubject: CANONICAL_METRICS_PATTERN,
       description: "Metrics persistence",
-      metrics: createNatsConsumerMetrics("metrics-service"),
+      metrics: createNatsConsumerMetrics(resolveServiceName("metrics-service")),
       runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+      ensureOnly,
     };
     this.manager = new MultiTenantConsumerManager(
       this.jsm,
@@ -78,7 +82,9 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
     );
     await this.manager.start();
     this.logger.log(
-      `Metrics durable consumer ('${DURABLE_NAME}') started`,
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `Metrics durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
@@ -95,7 +101,7 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
       new TextDecoder().decode(msg.data),
     ) as EventEnvelope;
     const { span, context: ctx } = startNatsConsumerSpan(
-      "metrics-service",
+      resolveServiceName("metrics-service"),
       msg.subject,
       msg.headers ?? {
         keys: () => [],

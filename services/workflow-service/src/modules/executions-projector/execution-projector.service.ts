@@ -12,6 +12,8 @@ import {
 import {
   PinoLoggerService,
   createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
 } from "@yoizen/observability";
 import {
   parseSubject,
@@ -113,14 +115,16 @@ export class ExecutionProjectorService
       return;
     }
 
+    const ensureOnly = !isWorkerMode();
     const config: IMultiTenantConsumerConfig = {
       streamPattern: TENANT_STREAM_PATTERN,
       durableName: DURABLE_NAME,
       filterSubject: FILTER_SUBJECT,
       description:
         "Projects workflow.execution.completed events to workflow_executions.status",
-      metrics: createNatsConsumerMetrics("workflow-service"),
+      metrics: createNatsConsumerMetrics(resolveServiceName("workflow-service")),
       runnerOptions: { concurrency: 16 },
+      ensureOnly,
     };
 
     this.manager = new MultiTenantConsumerManager(
@@ -133,8 +137,9 @@ export class ExecutionProjectorService
 
     await this.manager.start();
     this.logger.log(
-      `ExecutionProjectorService started durable='${DURABLE_NAME}' ` +
-        `filter='${FILTER_SUBJECT}'`,
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `ExecutionProjectorService started durable='${DURABLE_NAME}' filter='${FILTER_SUBJECT}'`,
     );
   }
 

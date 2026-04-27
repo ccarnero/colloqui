@@ -71,6 +71,15 @@ describe('E2E: audit-service', () => {
     expect(page2.status).toBe(200);
   });
 
+  // Polls up to 90s for the audit projector to persist the event. The
+  // worst-case latency is dominated by audit-service-worker cold-start
+  // under KEDA scale-to-zero in non-prod overlays:
+  //   • Prometheus scrape of `jetstream_consumer_num_pending` (≤ 30s)
+  //   • KEDA `pollingInterval: 30s` (≤ 30s)
+  //   • Pod boot + readiness + JetStream consumer bind (5-15s)
+  // Sum is up to ~75s, so 90s leaves a small cushion. The outer `it`
+  // timeout must exceed the inner poll budget plus per-request
+  // round-trip slack — 120s.
   it('should get a specific audit event by ID', async () => {
     if (!publishedEventId) return;
 
@@ -84,12 +93,12 @@ describe('E2E: audit-service', () => {
         if (res.status === 200) return res.body;
         return null;
       },
-      { timeoutMs: 15_000 },
+      { timeoutMs: 90_000 },
     );
 
     expect(event).toBeDefined();
     expect(event.id).toBe(publishedEventId);
-  });
+  }, 120_000);
 
   it('should return 404 for a nonexistent audit event', async () => {
     const h = await authHeaders();

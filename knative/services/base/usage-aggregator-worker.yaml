@@ -1,0 +1,62 @@
+# usage-aggregator worker pod (NATS aggregation engine). Phase 1.5 split.
+#
+# Runs `SERVICE_MODE=worker` — bootstraps the aggregator engine which
+# attaches per-tenant `agg-INGRESS-*` and `agg-DLQ` durable consumers
+# (`services/usage-aggregator-service/src/modules/aggregator/aggregator.engine.ts`).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: usage-aggregator-worker
+  labels:
+    app.kubernetes.io/name: usage-aggregator-worker
+    app.kubernetes.io/component: billing-metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: usage-aggregator-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: usage-aggregator-worker
+        app.kubernetes.io/component: billing-metrics
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: user-container
+          image: dev.local/usage-aggregator-service:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: SERVICE_MODE
+              value: "worker"
+            - name: OTEL_SERVICE_NAME
+              value: "usage-aggregator-worker"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

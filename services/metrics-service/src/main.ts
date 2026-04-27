@@ -1,17 +1,19 @@
 import "./instrumentation";
 import "reflect-metadata";
 import {
-  bootstrapFastifyApp,
+  bootstrapSplitService,
   runNestFastifyServiceMain,
 } from "@yoizen/observability";
 import { AppModule } from "./app.module";
 import { metricsServiceConfig } from "./config";
 
 runNestFastifyServiceMain("metrics-service", async () => {
-  await bootstrapFastifyApp({
-    serviceName: "metrics-service",
+  await bootstrapSplitService({
+    baseServiceName: "metrics-service",
     module: AppModule,
     port: metricsServiceConfig.port,
-    withValidationPipe: true,
+    apiOptions: {
+      withValidationPipe: true,
+    },
   });
 });

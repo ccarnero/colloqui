@@ -1,31 +1,45 @@
-apiVersion: serving.knative.dev/v1
-kind: Service
+# metrics-service worker pod (NATS persistence). Phase 1.5 split.
+#
+# Runs `SERVICE_MODE=worker` — the JetStream `metrics` durable consumer
+# is the only active component. HTTP query handlers live in
+# `metrics-service-api` and read the same Postgres tables.
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: metrics-service
+  name: metrics-service-worker
   labels:
-    app.kubernetes.io/name: metrics-service
+    app.kubernetes.io/name: metrics-service-worker
     app.kubernetes.io/component: metrics
 spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: metrics-service-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
-      annotations:
-        # HPA class: KEDA owns replica count based on JetStream
-        # metrics consumer lag (see
-        # knative/services/base/scaledobjects/metrics-service.yaml).
-        autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
-        autoscaling.knative.dev/metric: concurrency
-        autoscaling.knative.dev/target: "100"
-        autoscaling.knative.dev/min-scale: "1"
-        autoscaling.knative.dev/max-scale: "10"
+      labels:
+        app.kubernetes.io/name: metrics-service-worker
+        app.kubernetes.io/component: metrics
     spec:
-      containerConcurrency: 0
+      terminationGracePeriodSeconds: 30
       containers:
         - name: user-container
           image: dev.local/metrics-service:local
+          imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 3000
+            - name: http
+              containerPort: 3000
               protocol: TCP
           env:
+            - name: SERVICE_MODE
+              value: "worker"
+            - name: OTEL_SERVICE_NAME
+              value: "metrics-service-worker"
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
@@ -41,6 +55,12 @@ spec:
                 secretKeyRef:
                   name: postgres-credentials
                   key: POSTGRES_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -55,9 +75,3 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 3000
-            initialDelaySeconds: 5
-            periodSeconds: 5

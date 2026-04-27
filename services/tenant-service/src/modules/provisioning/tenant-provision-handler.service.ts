@@ -68,7 +68,7 @@ export class TenantProvisionHandler {
 
     try {
       await this.repository.markProvisioningStarted(tenantId);
-      await this.executor.run({ name, configuration });
+      await this.executor.run({ name, tier: row.tier, configuration });
       await this.repository.markProvisioningReady(tenantId);
     } catch (err: unknown) {
       if (err instanceof PermanentError) {

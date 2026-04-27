@@ -1,15 +1,19 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Sql } from "postgres";
 import {
+  isTenantDatabaseTier,
   isProvisioningStatus,
   ProvisioningStatus,
+  TenantDatabaseTier,
   type ProvisioningStatusValue,
+  type TenantDatabaseTierValue,
 } from "@yoizen/shared";
 import { PLATFORM_POSTGRES_SQL } from "../../providers/platform-postgres.provider";
 import type { ITenantRow, TenantConfiguration } from "./tenant.dto";
 
 function mapRow(row: ITenantRow): ITenantRow {
   const raw = row.provisioning_status;
+  const rawTier = row.tier;
   const ps: ProvisioningStatusValue =
     raw === undefined || raw === null
       ? ProvisioningStatus.Ready
@@ -20,8 +24,17 @@ function mapRow(row: ITenantRow): ITenantRow {
               `Invalid provisioning_status in DB: ${String(raw)}`,
             );
           })();
+  const tier: TenantDatabaseTierValue =
+    rawTier === undefined || rawTier === null
+      ? TenantDatabaseTier.Shared
+      : isTenantDatabaseTier(rawTier)
+        ? rawTier
+        : (() => {
+            throw new Error(`Invalid tenant tier in DB: ${String(rawTier)}`);
+          })();
   return {
     ...row,
+    tier,
     provisioning_status: ps,
     provisioning_error: row.provisioning_error ?? null,
     provisioning_started_at: row.provisioning_started_at ?? null,
@@ -38,12 +51,13 @@ export class TenantsRepository {
   async create(
     id: string,
     name: string,
+    tier: TenantDatabaseTierValue = TenantDatabaseTier.Shared,
     configuration: TenantConfiguration = {},
   ): Promise<ITenantRow> {
     const [row] = await this.sql<ITenantRow[]>`
-      INSERT INTO tenants (id, name, configuration, provisioning_status)
-      VALUES (${id}, ${name}, ${this.sql.json(configuration)}, 'pending')
-      RETURNING id, name, configuration, created_at, updated_at,
+      INSERT INTO tenants (id, name, tier, configuration, provisioning_status)
+      VALUES (${id}, ${name}, ${tier}, ${this.sql.json(configuration)}, 'pending')
+      RETURNING id, name, tier, configuration, created_at, updated_at,
                 provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
     `;
     return mapRow(row);
@@ -52,6 +66,7 @@ export class TenantsRepository {
   async findById(id: string): Promise<ITenantRow | undefined> {
     const [row] = await this.sql<ITenantRow[]>`
       SELECT id, name, configuration, created_at, updated_at,
+             tier,
              provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
       FROM tenants
       WHERE id = ${id}
@@ -62,6 +77,7 @@ export class TenantsRepository {
   async findByName(name: string): Promise<ITenantRow | undefined> {
     const [row] = await this.sql<ITenantRow[]>`
       SELECT id, name, configuration, created_at, updated_at,
+             tier,
              provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
       FROM tenants
       WHERE name = ${name}
@@ -72,6 +88,7 @@ export class TenantsRepository {
   async findAll(): Promise<ITenantRow[]> {
     const rows = await this.sql<ITenantRow[]>`
       SELECT id, name, configuration, created_at, updated_at,
+             tier,
              provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
       FROM tenants
       ORDER BY created_at ASC
@@ -140,6 +157,7 @@ export class TenantsRepository {
           updated_at = NOW()
       WHERE name = ${name}
       RETURNING id, name, configuration, created_at, updated_at,
+                tier,
                 provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
     `;
     return row ? mapRow(row) : undefined;

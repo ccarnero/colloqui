@@ -13,10 +13,11 @@ import type {
 import { PermanentError } from "@yoizen/shared";
 import {
   MultiTenantConsumerManager,
+  SharedTenantDatabaseMode,
   type INatsConsumerLogger,
   NATS_CONNECTION,
 } from "@yoizen/database";
-import { PinoLoggerService } from "@yoizen/observability";
+import { PinoLoggerService, isWorkerMode } from "@yoizen/observability";
 import {
   JETSTREAM,
   JETSTREAM_MANAGER,
@@ -78,6 +79,7 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    const ensureOnly = !isWorkerMode();
     const cfg = usageAggregatorServiceConfig;
     const runnerLogger: INatsConsumerLogger & {
       log?: (m: string) => void;
@@ -97,6 +99,7 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
         description: "usage-aggregator ingress/egress counter",
         maxAckPending: 1_000,
         dlq: { enabled: false },
+        ensureOnly,
       },
       (msg) => this.handleMessage(msg, "ingress"),
       runnerLogger,
@@ -111,6 +114,7 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
         description: "usage-aggregator dlq counter",
         maxAckPending: 1_000,
         dlq: { enabled: false },
+        ensureOnly,
       },
       (msg) => this.handleMessage(msg, "dlq"),
       runnerLogger,
@@ -122,7 +126,9 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
     ]);
 
     this.logger.log(
-      "AggregatorEngine started: ingress + dlq durables reconciling tenant streams",
+      ensureOnly
+        ? `Pre-created '${cfg.ingressDurableName}' + '${cfg.dlqDurableName}' durable consumers (api mode, ensure-only)`
+        : "AggregatorEngine started: ingress + dlq durables reconciling tenant streams",
     );
   }
 
@@ -131,6 +137,7 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
       this.ingressManager?.stop(),
       this.dlqManager?.stop(),
     ]);
+    if (!isWorkerMode()) return;
     const tasks: Promise<void>[] = [];
     for (const buf of this.buffers.values()) tasks.push(buf.stop());
     await Promise.allSettled(tasks);
@@ -186,7 +193,12 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
     const cached = this.buffers.get(tenantId);
     if (cached) return cached;
 
+    const target = await this.usageConnections.resolveDatabaseTarget(tenantId);
     const sql = await this.usageConnections.ensureSchema(tenantId);
+    const sharedTenantId =
+      target.sharedDatabaseMode === SharedTenantDatabaseMode.SingleDatabase
+        ? tenantId
+        : undefined;
     const hooks: IBatchBufferHooks = {
       onFlushSuccess: (rows, durationMs) =>
         this.recordFlushSuccess(tenantId, rows, durationMs),
@@ -195,6 +207,7 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
     };
     const buf = new BatchBuffer({
       sql,
+      ...(sharedTenantId !== undefined && { tenantId: sharedTenantId }),
       batchSize: usageAggregatorServiceConfig.batchSize,
       batchFlushMs: usageAggregatorServiceConfig.batchFlushMs,
       hooks,

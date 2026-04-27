@@ -57,6 +57,20 @@ describe("insertBatch", () => {
     expect(capturedArrays[4]).toEqual(["ingress", "egress"]);
   });
 
+  it("adds tenant_id as the first array for shared TimescaleDB", async () => {
+    const { sql, capturedArrays } = makeSqlMock(2);
+    const rows = [
+      makeRow({ idempotencyKey: "k1", direction: "ingress" }),
+      makeRow({ idempotencyKey: "k2", direction: "dlq" }),
+    ];
+    const count = await insertBatch(sql, rows, "tenant-a");
+    expect(count).toBe(2);
+    expect(capturedArrays).toHaveLength(8);
+    expect(capturedArrays[0]).toEqual(["tenant-a", "tenant-a"]);
+    expect(capturedArrays[2]).toEqual(["k1", "k2"]);
+    expect(capturedArrays[5]).toEqual(["ingress", "dlq"]);
+  });
+
   it("uses rows.length when the driver does not report a count", async () => {
     const capturedArrays: unknown[][] = [];
     const fn = mock(() => Promise.resolve({}));

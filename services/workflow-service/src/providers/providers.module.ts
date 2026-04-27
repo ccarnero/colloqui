@@ -10,11 +10,14 @@ import {
   createNatsConnectionProvider,
   NATS_CONNECTION,
 } from "@yoizen/database";
+import { resolveServiceName } from "@yoizen/observability";
 
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
 
-const natsProvider = createNatsConnectionProvider("workflow-service");
+const natsProvider = createNatsConnectionProvider(
+  resolveServiceName("workflow-service"),
+);
 
 const jetStreamManagerProvider: FactoryProvider<Promise<JetStreamManager>> = {
   provide: JETSTREAM_MANAGER,

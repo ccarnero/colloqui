@@ -11,9 +11,10 @@ type ChannelServiceConfig = {
 
 export const channelServiceConfig: ChannelServiceConfig = {
   port: Number.parseInt(process.env.PORT ?? "3000", 10),
+  // Phase 1.5: webhook callbacks land on the HTTP-bound `*-api` pod.
   channelServicePublicUrl:
     process.env.CHANNEL_SERVICE_PUBLIC_URL ??
-    platformServiceUrl("channel-service", env),
+    platformServiceUrl("channel-service-api", env),
   defaultPostgresHost:
     process.env.POSTGRES_HOST ??
     "postgres.support-services-dev.svc.cluster.local",

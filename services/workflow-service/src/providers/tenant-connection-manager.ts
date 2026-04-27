@@ -5,13 +5,10 @@ import { WORKFLOW_SCHEMA_SQL } from "@yoizen/shared";
 export type { Sql } from "@yoizen/database";
 
 /**
- * Per-tenant Postgres connection manager for workflow-service.
- *
- * Each tenant has its own Postgres instance provisioned by `tenant-service`
- * in its own Kubernetes namespace. `WORKFLOW_SCHEMA_SQL` is baked into that
- * tenant's `init.sql` ConfigMap at provisioning time, but we also register
- * it here via `setSchema()` so that tenants provisioned before this change
- * get the tables lazily on first access (idempotent via `IF NOT EXISTS`).
+ * Per-tenant Postgres for workflow definitions/executions. Tier `dedicated`
+ * uses the in-namespace `postgres` service; tier `shared` uses the
+ * platform `postgres-shared` cluster (per-tenant database + role). Schema
+ * is applied via `setSchema()` for lazy backfill (`IF NOT EXISTS`).
  */
 @Injectable()
 export class WorkflowTenantConnectionManager extends BaseTenantConnectionManager {

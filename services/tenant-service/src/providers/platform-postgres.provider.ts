@@ -8,6 +8,7 @@ import { PinoLoggerService } from "@yoizen/observability";
 import type { FactoryProvider } from "@nestjs/common";
 import postgres from "postgres";
 import type { Sql } from "postgres";
+import { TenantDatabaseTier } from "@yoizen/shared";
 import { tenantServiceConfig } from "../config";
 
 export const PLATFORM_POSTGRES_SQL = "PLATFORM_POSTGRES_SQL";
@@ -17,6 +18,8 @@ export const TENANTS_PLATFORM_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS tenants (
   id            TEXT        PRIMARY KEY,
   name          TEXT        UNIQUE NOT NULL,
+  tier          TEXT        NOT NULL DEFAULT '${TenantDatabaseTier.Shared}'
+                CHECK (tier IN ('${TenantDatabaseTier.Shared}', '${TenantDatabaseTier.Dedicated}')),
   configuration JSONB       NOT NULL DEFAULT '{}',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -26,6 +29,26 @@ CREATE TABLE IF NOT EXISTS tenants (
   provisioning_completed_at   TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_tenants_name ON tenants (name);
+
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tier
+  TEXT NOT NULL DEFAULT '${TenantDatabaseTier.Shared}';
+ALTER TABLE tenants ALTER COLUMN tier SET DEFAULT '${TenantDatabaseTier.Shared}';
+UPDATE tenants
+  SET tier = '${TenantDatabaseTier.Shared}'
+  WHERE tier IS NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'tenants_tier_check'
+  ) THEN
+    ALTER TABLE tenants
+      ADD CONSTRAINT tenants_tier_check
+      CHECK (tier IN ('${TenantDatabaseTier.Shared}', '${TenantDatabaseTier.Dedicated}'));
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_tenants_tier ON tenants (tier);
 
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS provisioning_status
   TEXT NOT NULL DEFAULT 'ready';

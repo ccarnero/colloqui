@@ -54,6 +54,33 @@ export {
 } from "./bootstrap-fastify";
 
 export {
+  bootstrapWorkerApp,
+  registerWorkerShutdownHandler,
+  runNestWorkerServiceMain,
+  type IBootstrapWorkerOptions,
+  type IBootstrappedWorker,
+} from "./bootstrap-worker";
+
+export {
+  startWorkerHealthServer,
+  type IWorkerHealthServer,
+} from "./worker-health-server";
+
+export {
+  serviceMode,
+  isWorkerMode,
+  isApiMode,
+  resolveServiceName,
+  __resetServiceModeCacheForTests,
+  type ServiceMode,
+} from "./runtime-mode";
+
+export {
+  bootstrapSplitService,
+  type IBootstrapSplitServiceOptions,
+} from "./bootstrap-split-service";
+
+export {
   startSpan,
   withSpan,
   getActiveTraceId,

@@ -1,5 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import { TenantConnectionManager as BaseTenantConnectionManager } from "@yoizen/database";
+import {
+  SharedTenantDatabaseMode,
+  TenantConnectionManager as BaseTenantConnectionManager,
+} from "@yoizen/database";
 import {
   AUTO_REPLY_SCHEMA_SQL,
   CHANNEL_ACCOUNTS_SCHEMA_SQL,
@@ -16,6 +19,9 @@ export type { Sql } from "@yoizen/database";
 export class ChannelTenantConnectionManager extends BaseTenantConnectionManager {
   constructor() {
     super();
+    this.configure({
+      sharedDatabaseMode: SharedTenantDatabaseMode.PerTenantDatabase,
+    });
     this.setSchema([CHANNEL_ACCOUNTS_SCHEMA_SQL, AUTO_REPLY_SCHEMA_SQL]);
   }
 }

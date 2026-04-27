@@ -6,6 +6,7 @@ import {
   createJetStreamPublisherProvider,
   createNatsConnectionProvider,
 } from "@yoizen/database";
+import { resolveServiceName } from "@yoizen/observability";
 
 export { NATS_CONNECTION } from "@yoizen/database";
 
@@ -18,7 +19,7 @@ export const JETSTREAM = "JETSTREAM";
  * neither owns nor mutates stream configuration.
  */
 export const natsProvider: FactoryProvider = createNatsConnectionProvider(
-  "usage-aggregator-service",
+  resolveServiceName("usage-aggregator"),
 );
 
 /**

@@ -26,6 +26,12 @@ type TenantServiceConfig = {
   readonly postgresDb: string;
   readonly postgresUser: string;
   readonly postgresPassword: string;
+  readonly sharedPostgresHost: string;
+  readonly sharedPostgresPort: number;
+  readonly sharedPostgresAdminDb: string;
+  readonly sharedPostgresAdminUser: string;
+  readonly sharedPostgresAdminPassword: string;
+  readonly sharedPostgresTenantPassword: string;
   /** Container image for per-tenant PostgreSQL StatefulSet (main + init-permissions). */
   readonly tenantPostgresContainerImage: string;
   /** Container image for per-tenant dedicated TimescaleDB (usage metrics) StatefulSet. */
@@ -56,6 +62,37 @@ export const tenantServiceConfig: TenantServiceConfig = {
   },
   get postgresPassword() {
     return requirePostgresPassword();
+  },
+  get sharedPostgresHost() {
+    const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
+    return (
+      process.env.TENANT_POSTGRES_SHARED_HOST ??
+      `postgres-shared.support-services-${env}.svc.cluster.local`
+    );
+  },
+  get sharedPostgresPort() {
+    return Number.parseInt(process.env.TENANT_POSTGRES_SHARED_PORT ?? "5432", 10);
+  },
+  get sharedPostgresAdminDb() {
+    return process.env.TENANT_POSTGRES_SHARED_ADMIN_DB ?? "postgres";
+  },
+  get sharedPostgresAdminUser() {
+    return (
+      process.env.TENANT_POSTGRES_SHARED_ADMIN_USER ??
+      process.env.POSTGRES_USER ??
+      "yoizen"
+    );
+  },
+  get sharedPostgresAdminPassword() {
+    return (
+      process.env.TENANT_POSTGRES_SHARED_ADMIN_PASSWORD ??
+      requirePostgresPassword()
+    );
+  },
+  get sharedPostgresTenantPassword() {
+    return (
+      process.env.TENANT_POSTGRES_SHARED_PASSWORD ?? requirePostgresPassword()
+    );
   },
   get tenantPostgresContainerImage() {
     return process.env.TENANT_POSTGRES_IMAGE ?? DEFAULT_TENANT_POSTGRES_IMAGE;

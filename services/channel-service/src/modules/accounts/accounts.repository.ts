@@ -1,7 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { Sql } from "postgres";
 import type { Channel, ChannelAccount } from "@yoizen/shared";
-import { ChannelTenantConnectionManager } from "../../providers/channel-tenant-connection-manager";
+import {
+  ChannelTenantConnectionManager,
+  type Sql,
+} from "../../providers/channel-tenant-connection-manager";
 
 /** Mutable channel_accounts columns for PATCH-style updates. */
 export interface IAccountUpdatePatch {

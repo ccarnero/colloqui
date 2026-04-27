@@ -23,9 +23,13 @@ export const gatewayConfig = {
     auth:
       process.env.AUTH_SERVICE_URL ??
       platformServiceUrl("auth-service", env),
+    // Phase 1.5: every service that was split into api ↔ worker now
+    // resolves to the `*-api` Knative Service. Worker pods don't expose
+    // an HTTP route. Override via the corresponding *_SERVICE_URL env var
+    // (set by the overlay env-patches.yaml).
     audit:
       process.env.AUDIT_SERVICE_URL ??
-      platformServiceUrl("audit-service", env),
+      platformServiceUrl("audit-service-api", env),
     tenant:
       process.env.TENANT_SERVICE_URL ??
       platformServiceUrl("tenant-service", env),
@@ -37,7 +41,7 @@ export const gatewayConfig = {
       platformServiceUrl("registry-service", env),
     workflow:
       process.env.WORKFLOW_SERVICE_URL ??
-      platformServiceUrl("workflow-api", env),
+      platformServiceUrl("workflow-service-api", env),
     adapter:
       process.env.ADAPTER_SERVICE_URL ??
       platformServiceUrl("adapter-service", env),
@@ -46,19 +50,19 @@ export const gatewayConfig = {
       platformServiceUrl("cache-service", env),
     webhook:
       process.env.WEBHOOK_SERVICE_URL ??
-      platformServiceUrl("webhook-service", env),
+      platformServiceUrl("webhook-service-api", env),
     eventProcessor:
       process.env.EVENT_PROCESSOR_URL ??
-      platformServiceUrl("event-processor", env),
+      platformServiceUrl("event-processor-api", env),
     metrics:
       process.env.METRICS_SERVICE_URL ??
-      platformServiceUrl("metrics-service", env),
+      platformServiceUrl("metrics-service-api", env),
     proxy:
       process.env.PROXY_SERVICE_URL ??
       platformServiceUrl("proxy-service", env),
     channel:
       process.env.CHANNEL_SERVICE_URL ??
-      platformServiceUrl("channel-service", env),
+      platformServiceUrl("channel-service-api", env),
     admin:
       process.env.ADMIN_SERVICE_URL ??
       platformServiceUrl("yoizenclaw-admin-service", env),

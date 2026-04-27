@@ -15,6 +15,8 @@ import {
   logWithEnvelope,
   startNatsConsumerSpan,
   createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
 } from "@yoizen/observability";
 import {
   MultiTenantConsumerManager,
@@ -55,13 +57,15 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    const ensureOnly = !isWorkerMode();
     const config: IMultiTenantConsumerConfig = {
       streamPattern: TENANT_STREAM_PATTERN,
       durableName: DURABLE_NAME,
       filterSubject: CANONICAL_AUDIT_PATTERN,
       description: "Canonical platform events audit writer",
-      metrics: createNatsConsumerMetrics("audit-service"),
+      metrics: createNatsConsumerMetrics(resolveServiceName("audit-service")),
       runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+      ensureOnly,
     };
     this.manager = new MultiTenantConsumerManager(
       this.jsm,
@@ -72,7 +76,9 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     );
     await this.manager.start();
     this.logger.log(
-      `Audit durable consumer ('${DURABLE_NAME}') started`,
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `Audit durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
@@ -89,7 +95,7 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
       new TextDecoder().decode(msg.data),
     ) as EventEnvelope;
     const { span, context: ctx } = startNatsConsumerSpan(
-      "audit-service",
+      resolveServiceName("audit-service"),
       msg.subject,
       msg.headers ?? {
         keys: () => [],

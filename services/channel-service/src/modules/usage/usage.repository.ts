@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { SharedTenantDatabaseMode } from "@yoizen/database";
 import { UsageTenantConnectionManager } from "./tenant-connection-manager";
 import type {
   IUsageBucketRow,
@@ -56,7 +57,11 @@ export class UsageRepository {
   async getBuckets(
     filters: IUsageQueryFilters,
   ): Promise<readonly IUsageBucketRow[]> {
+    const target = await this.connections.resolveDatabaseTarget(filters.tenantId);
     const sql = await this.connections.ensureSchema(filters.tenantId);
+    if (target.sharedDatabaseMode === SharedTenantDatabaseMode.SingleDatabase) {
+      return this.getSharedBuckets(sql, filters);
+    }
     const view =
       filters.bucket === "day" ? "channel_events_daily" : "channel_events_hourly";
     const bucketInterval = filters.bucket === "day" ? "1 day" : "1 hour";
@@ -129,7 +134,11 @@ export class UsageRepository {
   async getTotals(
     filters: IUsageTotalsFilters,
   ): Promise<readonly IUsageTotalsRow[]> {
+    const target = await this.connections.resolveDatabaseTarget(filters.tenantId);
     const sql = await this.connections.ensureSchema(filters.tenantId);
+    if (target.sharedDatabaseMode === SharedTenantDatabaseMode.SingleDatabase) {
+      return this.getSharedTotals(sql, filters);
+    }
     const rows = (await sql.unsafe(
       `
       SELECT
@@ -172,4 +181,136 @@ export class UsageRepository {
     }
     return out;
   }
+
+  private async getSharedBuckets(
+    sql: Awaited<ReturnType<UsageTenantConnectionManager["ensureSchema"]>>,
+    filters: IUsageQueryFilters,
+  ): Promise<readonly IUsageBucketRow[]> {
+    const view =
+      filters.bucket === "day" ? "channel_events_daily" : "channel_events_hourly";
+    const bucketInterval = filters.bucket === "day" ? "1 day" : "1 hour";
+    const rows = (await sql.unsafe(
+      `
+      WITH bounds AS (
+        SELECT time_bucket($7::interval, now() - INTERVAL '10 minutes') AS tail_bucket
+      ),
+      cagg AS (
+        SELECT
+          bucket,
+          account_id,
+          channel,
+          direction,
+          events
+        FROM ${view}
+        CROSS JOIN bounds
+        WHERE tenant_id = $1
+          AND bucket >= $2
+          AND bucket < LEAST($3::timestamptz, bounds.tail_bucket)
+          AND ($4::text IS NULL OR account_id = $4)
+          AND ($5::text IS NULL OR channel = $5)
+          AND ($6::text IS NULL OR direction = $6)
+      ),
+      tail AS (
+        SELECT
+          time_bucket($7::interval, ts) AS bucket,
+          account_id,
+          channel,
+          direction,
+          count(*)::BIGINT AS events
+        FROM channel_events
+        CROSS JOIN bounds
+        WHERE tenant_id = $1
+          AND ts >= GREATEST($2::timestamptz, bounds.tail_bucket)
+          AND ts < $3
+          AND ($4::text IS NULL OR account_id = $4)
+          AND ($5::text IS NULL OR channel = $5)
+          AND ($6::text IS NULL OR direction = $6)
+        GROUP BY bucket, account_id, channel, direction
+      )
+      SELECT * FROM cagg
+      UNION ALL
+      SELECT * FROM tail
+      ORDER BY bucket ASC
+    `,
+      [
+        filters.tenantId,
+        filters.from,
+        filters.to,
+        filters.accountId ?? null,
+        filters.channel ?? null,
+        filters.direction ?? null,
+        bucketInterval,
+      ],
+    )) as IBucketRawRow[];
+
+    return mapBucketRows(rows);
+  }
+
+  private async getSharedTotals(
+    sql: Awaited<ReturnType<UsageTenantConnectionManager["ensureSchema"]>>,
+    filters: IUsageTotalsFilters,
+  ): Promise<readonly IUsageTotalsRow[]> {
+    const rows = (await sql.unsafe(
+      `
+      SELECT
+        direction,
+        count(*)::BIGINT AS events,
+        MIN(ts) AS first_ts,
+        MAX(ts) AS last_ts
+      FROM channel_events
+      WHERE tenant_id = $1
+        AND ts >= $2
+        AND ts <  $3
+        AND ($4::text IS NULL OR account_id = $4)
+        AND ($5::text IS NULL OR channel = $5)
+      GROUP BY direction
+    `,
+      [
+        filters.tenantId,
+        filters.from,
+        filters.to,
+        filters.accountId ?? null,
+        filters.channel ?? null,
+      ],
+    )) as ITotalsRawRow[];
+
+    return mapTotalsRows(rows);
+  }
+}
+
+function mapBucketRows(rows: readonly IBucketRawRow[]): IUsageBucketRow[] {
+  const out: IUsageBucketRow[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]!;
+    out[i] = {
+      bucket: new Date(r.bucket).toISOString(),
+      accountId: r.account_id,
+      channel: r.channel,
+      direction: r.direction as "ingress" | "egress" | "dlq",
+      events: Number(r.events),
+    };
+  }
+  return out;
+}
+
+function mapTotalsRows(rows: readonly ITotalsRawRow[]): IUsageTotalsRow[] {
+  const out: IUsageTotalsRow[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]!;
+    const firstTs =
+      r.first_ts == null
+        ? null
+        : new Date(r.first_ts as string | number | Date).toISOString();
+    const lastTs =
+      r.last_ts == null
+        ? null
+        : new Date(r.last_ts as string | number | Date).toISOString();
+    out[i] = {
+      direction: r.direction as "ingress" | "egress" | "dlq",
+      events: Number(r.events),
+      firstTs,
+      lastTs,
+    };
+  }
+  return out;
 }

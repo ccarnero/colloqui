@@ -6,9 +6,10 @@ const GW = getBaseUrl("api-gateway");
 
 /**
  * Tests that drive a workflow execution must wait on the Temporal worker
- * pipeline (`workflow-api` enqueues, `workflow-worker` processes activities).
- * With scale-to-zero enabled in non-prod, both can be cold; budget is sized
- * for sequential cold-starts of api + worker + the first activity batch.
+ * pipeline (`workflow-service-api` enqueues, `workflow-worker` processes
+ * activities). With scale-to-zero enabled in non-prod, both can be cold;
+ * budget is sized for sequential cold-starts of api + worker + the first
+ * activity batch.
  */
 const WORKFLOW_IT = { timeout: 120_000 };
 

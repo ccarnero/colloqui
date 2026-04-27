@@ -1,8 +1,14 @@
 import { Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 import type * as k8s from "@kubernetes/client-node";
-import { invalidPlatformEnvironmentMessage, tenantKubernetesNamespaceName } from "@yoizen/shared";
+import {
+  TenantDatabaseTier,
+  invalidPlatformEnvironmentMessage,
+  tenantKubernetesNamespaceName,
+  type TenantDatabaseTierValue,
+} from "@yoizen/shared";
 import { K8S_CORE_API } from "../../providers/kubernetes.provider";
+import { isKubernetesConflictError } from "../../providers/kubernetes-errors";
 import { TenantPostgresProvisioner } from "../../providers/postgres.provider";
 import { TenantUsagePostgresProvisioner } from "../../providers/postgres-usage.provider";
 import { tenantServiceConfig } from "../../config";
@@ -19,9 +25,10 @@ const LABEL_PART_OF = "app.kubernetes.io/part-of";
 const MANAGED_BY_VALUE = "tenant-service";
 const PART_OF_VALUE = "yoizen-arch";
 
-function isConflictError(error: unknown): boolean {
-  const apiError = error as { response?: { statusCode?: number } };
-  return apiError.response?.statusCode === 409;
+interface ITenantProvisioningRunParams {
+  readonly name: string;
+  readonly tier?: TenantDatabaseTierValue;
+  readonly configuration: TenantConfiguration;
 }
 
 function unwrapNamespace(res: unknown): k8s.V1Namespace {
@@ -53,15 +60,26 @@ export class TenantProvisioningExecutor {
   }
 
   /**
-   * Creates or reconciles the tenant namespace, provisions OLTP + usage
-   * PostgreSQL, and blocks until both report ready. Idempotent: namespace
-   * create conflict (409) continues with read.
+   * Creates or reconciles the tenant namespace, then provisions OLTP + usage
+   * PostgreSQL according to `tier`:
+   *
+   * - **Shared**: only creates a logical database + role on the shared
+   *   CloudNativePG cluster (no per-tenant Postgres StatefulSet/PVC). The
+   *   namespace itself is still created because it is the per-tenant
+   *   deployment scope for `registry-service` (Knative Services) and
+   *   `scheduler-service` (Job-mode executions). An empty namespace is
+   *   essentially free in K8s (one metadata object + default ServiceAccount).
+   * - **Dedicated**: provisions per-tenant Postgres + TimescaleDB StatefulSets
+   *   inside the namespace and blocks until both report ready.
+   *
+   * Idempotent: namespace create conflict (409) continues with `readNamespace`.
    */
-  async run(params: { name: string; configuration: TenantConfiguration }): Promise<{
+  async run(params: ITenantProvisioningRunParams): Promise<{
     nsName: string;
     namespacePhase: string;
   }> {
     const { name } = params;
+    const tier = params.tier ?? TenantDatabaseTier.Shared;
     const nsName = tenantKubernetesNamespaceName(name, this.environment);
     const body: k8s.V1Namespace = {
       metadata: {
@@ -81,7 +99,7 @@ export class TenantProvisioningExecutor {
       const ns = unwrapNamespace(created);
       phase = ns.status?.phase ?? "Active";
     } catch (err: unknown) {
-      if (isConflictError(err)) {
+      if (isKubernetesConflictError(err)) {
         this.logger.log(
           `Namespace ${nsName} already exists, continuing provisioning`,
         );
@@ -94,12 +112,12 @@ export class TenantProvisioningExecutor {
     }
 
     await Promise.all([
-      this.pgProvisioner.provision(nsName),
-      this.pgUsageProvisioner.provisionUsage(nsName),
+      this.pgProvisioner.provision({ namespace: nsName, tenantId: name, tier }),
+      this.pgUsageProvisioner.provisionUsage(nsName, tier),
     ]);
     await Promise.all([
-      this.pgProvisioner.waitForReady(nsName),
-      this.pgUsageProvisioner.waitForReady(nsName),
+      this.pgProvisioner.waitForReady(nsName, tier),
+      this.pgUsageProvisioner.waitForReady(nsName, tier),
     ]);
 
     this.logger.log(

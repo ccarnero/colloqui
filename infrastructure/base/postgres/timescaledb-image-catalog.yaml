@@ -1,0 +1,11 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ImageCatalog
+metadata:
+  name: timescaledb-ha
+  labels:
+    app.kubernetes.io/name: postgres-usage-shared
+    app.kubernetes.io/component: shared-usage-database
+spec:
+  images:
+    - major: 17
+      image: timescale/timescaledb-ha:pg17

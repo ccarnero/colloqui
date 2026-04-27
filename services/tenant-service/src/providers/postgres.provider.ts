@@ -1,28 +1,44 @@
-import { Global, Inject, Injectable, Module } from "@nestjs/common";
+import {
+  Global,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  Module,
+  type OnModuleDestroy,
+} from "@nestjs/common";
 import type * as k8s from "@kubernetes/client-node";
+import postgres from "postgres";
+import type { Sql } from "postgres";
 import {
   ADAPTER_SCHEMA_SQL,
   AUTO_REPLY_SCHEMA_SQL,
   CHANNEL_ACCOUNTS_SCHEMA_SQL,
   METRICS_SCHEMA_SQL,
+  TenantDatabaseTier,
   TENANT_AUTH_SCHEMA_SQL,
   WORKFLOW_SCHEMA_SQL,
+  tenantPostgresDatabaseName,
+  tenantPostgresRoleName,
+  type TenantDatabaseTierValue,
 } from "@yoizen/shared";
 import { tenantServiceConfig } from "../config";
+import {
+  decodeKubernetesSecretData,
+  extractCnpgApplicationPassword,
+  unwrapNamespacedSecretRead,
+} from "./cnpg-credentials";
+import { isKubernetesConflictError } from "./kubernetes-errors";
 import { K8S_CORE_API, K8S_APPS_API } from "./kubernetes.provider";
 import { PinoLoggerService } from "@yoizen/observability";
 
 const PG_PORT = 5432;
 
-interface IKubernetesApiError {
-  response?: {
-    statusCode?: number;
-  };
+function quoteIdentifier(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
-function isConflictError(error: unknown): boolean {
-  const apiError = error as IKubernetesApiError;
-  return apiError.response?.statusCode === 409;
+function quoteLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 const LABELS = {
@@ -75,22 +91,112 @@ ${AUTO_REPLY_SCHEMA_SQL}
 ${TENANT_AUTH_SCHEMA_SQL}
 `;
 
+interface ITenantPostgresProvisionInput {
+  readonly namespace: string;
+  readonly tenantId: string;
+  readonly tier: TenantDatabaseTierValue;
+}
+
+interface ISharedTenantDatabaseNames {
+  readonly database: string;
+  readonly role: string;
+}
+
+interface ISharedBootstrapCredentials {
+  readonly username: string;
+  readonly password: string;
+}
+
 @Injectable()
-export class TenantPostgresProvisioner {
+export class TenantPostgresProvisioner implements OnModuleDestroy {
   private readonly logger = new PinoLoggerService(TenantPostgresProvisioner.name);
+  private sharedBootstrapCredentialsPromise: Promise<ISharedBootstrapCredentials> | null =
+    null;
+  private adminSqlPromise: Promise<Sql> | null = null;
 
   constructor(
     @Inject(K8S_CORE_API) private readonly coreApi: k8s.CoreV1Api,
     @Inject(K8S_APPS_API) private readonly appsApi: k8s.AppsV1Api,
   ) {}
 
-  async provision(namespace: string): Promise<void> {
+  async onModuleDestroy(): Promise<void> {
+    if (this.adminSqlPromise) {
+      try {
+        const sql = await this.adminSqlPromise;
+        await sql.end({ timeout: 5 });
+      } catch {
+        /* ignore shutdown races */
+      }
+      this.adminSqlPromise = null;
+    }
+    this.sharedBootstrapCredentialsPromise = null;
+  }
+
+  async provision(input: string | ITenantPostgresProvisionInput): Promise<void> {
+    const request = this.normalizeProvisionInput(input);
+    if (request.tier === TenantDatabaseTier.Shared) {
+      await this.provisionShared(request.tenantId);
+      this.logger.log(
+        `Provisioned shared PostgreSQL database for tenant ${request.tenantId}`,
+      );
+      return;
+    }
+    const namespace = request.namespace;
     await this.createSecret(namespace);
     await this.createConfigMap(namespace);
     await this.createHeadlessService(namespace);
     await this.createService(namespace);
     await this.createStatefulSet(namespace);
     this.logger.log(`Provisioned PostgreSQL in namespace ${namespace}`);
+  }
+
+  private normalizeProvisionInput(
+    input: string | ITenantPostgresProvisionInput,
+  ): ITenantPostgresProvisionInput {
+    if (typeof input !== "string") {
+      return input;
+    }
+    return {
+      namespace: input,
+      tenantId: input,
+      tier: TenantDatabaseTier.Dedicated,
+    };
+  }
+
+  private async provisionShared(tenantId: string): Promise<void> {
+    const names = this.sharedNames(tenantId);
+    const admin = await this.getAdminSql();
+    await this.ensureSharedRole(admin, names);
+    await this.ensureSharedDatabase(admin, names);
+    await this.ensureSharedDatabaseGrants(names);
+  }
+
+  /**
+   * Drops the shared-tier tenant database and login role on the shared cluster.
+   *
+   * Uses PostgreSQL 17 `DROP DATABASE ... WITH (FORCE)` to terminate any
+   * lingering tenant connections (channel-service, auth-service pools) so the
+   * caller doesn't have to coordinate connection draining across services.
+   * Idempotent: missing database/role is treated as success so a tenant row
+   * removed mid-provisioning still cleans up.
+   */
+  async deprovisionShared(tenantId: string): Promise<void> {
+    const names = this.sharedNames(tenantId);
+    const sql = await this.getAdminSql();
+    await sql.unsafe(
+      `DROP DATABASE IF EXISTS ${quoteIdentifier(names.database)} WITH (FORCE)`,
+    );
+    await sql.unsafe(`DROP ROLE IF EXISTS ${quoteIdentifier(names.role)}`);
+    this.logger.log(
+      `Deprovisioned shared PostgreSQL database for tenant ${tenantId}`,
+    );
+  }
+
+  private sharedNames(tenantId: string): ISharedTenantDatabaseNames {
+    return {
+      database: tenantPostgresDatabaseName(tenantId),
+      role: tenantPostgresRoleName(tenantId),
+    };
   }
 
   /**
@@ -102,13 +208,221 @@ export class TenantPostgresProvisioner {
     try {
       await create();
     } catch (error: unknown) {
-      if (isConflictError(error)) return;
+      if (isKubernetesConflictError(error)) return;
       throw error;
     }
   }
 
-  async waitForReady(namespace: string, timeoutMs = 120_000): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
+  /**
+   * Shared-tier provisioning runs `CREATE ROLE` / `CREATE DATABASE`, which require
+   * superuser or equivalent. CloudNativePG's app user (`yoizen`) cannot do that.
+   * Use Secret `{cluster}-superuser` (requires `spec.enableSuperuserAccess: true`).
+   */
+  private async getSharedBootstrapCredentials(): Promise<ISharedBootstrapCredentials> {
+    if (!this.sharedBootstrapCredentialsPromise) {
+      this.sharedBootstrapCredentialsPromise =
+        this.resolveSharedBootstrapCredentials();
+    }
+    return this.sharedBootstrapCredentialsPromise;
+  }
+
+  private async resolveSharedBootstrapCredentials(): Promise<ISharedBootstrapCredentials> {
+    const explicit = process.env.TENANT_POSTGRES_SHARED_SUPERUSER_PASSWORD;
+    if (explicit !== undefined && explicit.length > 0) {
+      return {
+        username:
+          process.env.TENANT_POSTGRES_SHARED_SUPERUSER_USER ?? "postgres",
+        password: explicit,
+      };
+    }
+    return this.fetchCnpgSharedClusterSuperuserCredentials();
+  }
+
+  private async fetchCnpgSharedClusterSuperuserCredentials(): Promise<ISharedBootstrapCredentials> {
+    const env = tenantServiceConfig.platformEnvironment;
+    const namespace =
+      process.env.TENANT_POSTGRES_SHARED_CREDENTIALS_NAMESPACE ??
+      `support-services-${env}`;
+    const secretName =
+      process.env.TENANT_POSTGRES_SHARED_SUPERUSER_SECRET_NAME ??
+      "postgres-shared-superuser";
+    try {
+      const res = await this.coreApi.readNamespacedSecret({
+        name: secretName,
+        namespace,
+      });
+      const secret = unwrapNamespacedSecretRead(res);
+      const password = extractCnpgApplicationPassword(secret);
+      const username =
+        decodeKubernetesSecretData(secret, "username") ?? "postgres";
+      if (!password) {
+        throw new InternalServerErrorException(
+          `CNPG superuser secret ${namespace}/${secretName} has no usable credentials (enable spec.enableSuperuserAccess on the Cluster and re-apply infrastructure, or set TENANT_POSTGRES_SHARED_SUPERUSER_PASSWORD).`,
+        );
+      }
+      return { username, password };
+    } catch (err: unknown) {
+      if (err instanceof InternalServerErrorException) throw err;
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new InternalServerErrorException(
+        `Could not load CloudNativePG superuser credentials from ${namespace}/${secretName}: ${detail}. Set TENANT_POSTGRES_SHARED_SUPERUSER_PASSWORD or ensure the Cluster has enableSuperuserAccess: true and the superuser Secret exists.`,
+      );
+    }
+  }
+
+  private async getAdminSql(): Promise<Sql> {
+    if (!this.adminSqlPromise) {
+      this.adminSqlPromise = this.buildAdminSql();
+    }
+    return this.adminSqlPromise;
+  }
+
+  private async buildAdminSql(): Promise<Sql> {
+    const { username, password } = await this.getSharedBootstrapCredentials();
+    return postgres({
+      host: tenantServiceConfig.sharedPostgresHost,
+      port: tenantServiceConfig.sharedPostgresPort,
+      database: tenantServiceConfig.sharedPostgresAdminDb,
+      username,
+      password,
+      max: 2,
+      idle_timeout: 20,
+      connect_timeout: 10,
+      prepare: false,
+    });
+  }
+
+  private async ensureSharedRole(
+    sql: Sql,
+    names: ISharedTenantDatabaseNames,
+  ): Promise<void> {
+    const [existing] = await sql<{ exists: boolean }[]>`
+      SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = ${names.role}) AS exists
+    `;
+    const role = quoteIdentifier(names.role);
+    const password = quoteLiteral(tenantServiceConfig.sharedPostgresTenantPassword);
+    if (existing?.exists) {
+      await sql.unsafe(`ALTER ROLE ${role} LOGIN PASSWORD ${password}`);
+      return;
+    }
+    await sql.unsafe(`CREATE ROLE ${role} LOGIN PASSWORD ${password}`);
+  }
+
+  private async ensureSharedDatabase(
+    sql: Sql,
+    names: ISharedTenantDatabaseNames,
+  ): Promise<void> {
+    const [existing] = await sql<{ exists: boolean }[]>`
+      SELECT EXISTS(
+        SELECT 1 FROM pg_database WHERE datname = ${names.database}
+      ) AS exists
+    `;
+    if (existing?.exists) {
+      await sql.unsafe(
+        `ALTER DATABASE ${quoteIdentifier(names.database)} OWNER TO ${quoteIdentifier(names.role)}`,
+      );
+      return;
+    }
+    await sql.unsafe(
+      `CREATE DATABASE ${quoteIdentifier(names.database)} OWNER ${quoteIdentifier(names.role)}`,
+    );
+  }
+
+  private async ensureSharedDatabaseGrants(
+    names: ISharedTenantDatabaseNames,
+  ): Promise<void> {
+    const { username, password } = await this.getSharedBootstrapCredentials();
+    const tenantSql = postgres({
+      host: tenantServiceConfig.sharedPostgresHost,
+      port: tenantServiceConfig.sharedPostgresPort,
+      database: names.database,
+      username,
+      password,
+      max: 1,
+      idle_timeout: 5,
+      connect_timeout: 10,
+      prepare: false,
+    });
+    try {
+      await tenantSql.unsafe(INIT_SQL);
+      // INIT_SQL runs as the CNPG bootstrap superuser (`postgres`, OID 10).
+      // Tables/sequences/indexes/views/materialized views in `public` end up
+      // owned by that role, so tenant DDL such as `CREATE INDEX IF NOT EXISTS`
+      // or `ALTER TABLE` from each service's lazy `ensureSchema` fails with
+      // `must be owner of table <name>`. We can't `REASSIGN OWNED BY postgres`
+      // (PostgreSQL rejects it: "cannot reassign ownership of objects owned by
+      // role postgres because they are required by the database system"), so
+      // we walk the user-owned objects in the public schema and re-own each
+      // one. Idempotent: re-running on a tenant whose tables already point at
+      // the tenant role is a no-op (filtered by `relowner <> tenant role`).
+      await tenantSql.unsafe(
+        `DO $do$
+DECLARE
+  r record;
+  target_role CONSTANT name := ${quoteLiteral(names.role)};
+  object_kind text;
+BEGIN
+  FOR r IN
+    SELECT c.oid, c.relname, c.relkind, n.nspname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_roles owner_role ON owner_role.oid = c.relowner
+    WHERE n.nspname = 'public'
+      AND c.relkind IN ('r','p','v','m','S')
+      AND owner_role.rolname <> target_role
+  LOOP
+    object_kind := CASE r.relkind
+      WHEN 'r' THEN 'TABLE'
+      WHEN 'p' THEN 'TABLE'
+      WHEN 'v' THEN 'VIEW'
+      WHEN 'm' THEN 'MATERIALIZED VIEW'
+      WHEN 'S' THEN 'SEQUENCE'
+    END;
+    EXECUTE format('ALTER %s %I.%I OWNER TO %I',
+      object_kind, r.nspname, r.relname, target_role);
+  END LOOP;
+END
+$do$;`,
+      );
+      await tenantSql.unsafe(
+        `GRANT CONNECT ON DATABASE ${quoteIdentifier(names.database)} TO ${quoteIdentifier(names.role)}`,
+      );
+      await tenantSql.unsafe(
+        `GRANT USAGE, CREATE ON SCHEMA public TO ${quoteIdentifier(names.role)}`,
+      );
+      await tenantSql.unsafe(
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${quoteIdentifier(names.role)}`,
+      );
+      await tenantSql.unsafe(
+        `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO ${quoteIdentifier(names.role)}`,
+      );
+      await tenantSql.unsafe(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${quoteIdentifier(names.role)}`,
+      );
+      await tenantSql.unsafe(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO ${quoteIdentifier(names.role)}`,
+      );
+    } finally {
+      await tenantSql.end();
+    }
+  }
+
+  async waitForReady(
+    namespace: string,
+    tierOrTimeout: TenantDatabaseTierValue | number = TenantDatabaseTier.Dedicated,
+    timeoutMs = 120_000,
+  ): Promise<void> {
+    const tier =
+      typeof tierOrTimeout === "number"
+        ? TenantDatabaseTier.Dedicated
+        : tierOrTimeout;
+    const timeout = typeof tierOrTimeout === "number" ? tierOrTimeout : timeoutMs;
+    if (tier === TenantDatabaseTier.Shared) {
+      const sql = await this.getAdminSql();
+      await sql`SELECT 1`;
+      return;
+    }
+    const deadline = Date.now() + timeout;
     const pollInterval = 2_000;
 
     while (Date.now() < deadline) {

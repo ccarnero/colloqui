@@ -5,6 +5,7 @@ import {
   createJetStreamManagerProvider,
   createJetStreamPublisherProvider,
 } from "@yoizen/database";
+import { resolveServiceName } from "@yoizen/observability";
 import {
   STREAM_MAX_AGE_NS,
   DLQ_STREAM_NAME,
@@ -16,8 +17,9 @@ export { NATS_CONNECTION } from "@yoizen/database";
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
 
-export const natsProvider: FactoryProvider =
-  createNatsConnectionProvider("webhook-service");
+export const natsProvider: FactoryProvider = createNatsConnectionProvider(
+  resolveServiceName("webhook-service"),
+);
 
 export const jetStreamManagerProvider: FactoryProvider =
   createJetStreamManagerProvider(JETSTREAM_MANAGER, {

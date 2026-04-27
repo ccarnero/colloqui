@@ -1,4 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { SharedTenantDatabaseMode } from "@yoizen/database";
 import { UsageRepository } from "../../src/modules/usage/usage.repository";
 import type { UsageTenantConnectionManager } from "../../src/modules/usage/tenant-connection-manager";
 
@@ -24,6 +25,30 @@ function makeSql(rows: unknown[]) {
 function makeConnections(sql: unknown): UsageTenantConnectionManager {
   return {
     ensureSchema: mock(() => Promise.resolve(sql)),
+    resolveDatabaseTarget: mock(() =>
+      Promise.resolve({
+        tier: "dedicated",
+        host: "postgres.tenant-1-dev-ns.svc.cluster.local",
+        port: 5432,
+        database: "yoizen",
+        sharedDatabaseMode: null,
+      }),
+    ),
+  } as unknown as UsageTenantConnectionManager;
+}
+
+function makeSharedConnections(sql: unknown): UsageTenantConnectionManager {
+  return {
+    ensureSchema: mock(() => Promise.resolve(sql)),
+    resolveDatabaseTarget: mock(() =>
+      Promise.resolve({
+        tier: "shared",
+        host: "postgres-usage-shared.support-services-dev.svc.cluster.local",
+        port: 5432,
+        database: "yoizen_usage",
+        sharedDatabaseMode: SharedTenantDatabaseMode.SingleDatabase,
+      }),
+    ),
   } as unknown as UsageTenantConnectionManager;
 }
 
@@ -81,6 +106,19 @@ describe("UsageRepository", () => {
     });
     expect(calls[0]!.query).toContain("FROM channel_events_daily");
     expect(calls[0]!.params[5]).toBe("1 day");
+  });
+
+  it("filters shared TimescaleDB queries by tenant_id", async () => {
+    const { sql, calls } = makeSql([]);
+    repo = new UsageRepository(makeSharedConnections(sql));
+    await repo.getBuckets({
+      tenantId: "tenant-1",
+      from: new Date("2026-04-20T00:00:00Z"),
+      to: new Date("2026-04-23T00:00:00Z"),
+      bucket: "hour",
+    });
+    expect(calls[0]!.query).toContain("WHERE tenant_id = $1");
+    expect(calls[0]!.params[0]).toBe("tenant-1");
   });
 
   it("binds accountId/channel/direction filters as parameters", async () => {

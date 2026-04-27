@@ -1,17 +1,19 @@
 import "./instrumentation";
 import "reflect-metadata";
 import {
-  bootstrapFastifyApp,
+  bootstrapSplitService,
   runNestFastifyServiceMain,
 } from "@yoizen/observability";
 import { AppModule } from "./app.module";
 import { workflowServiceConfig } from "./config";
 
 runNestFastifyServiceMain("workflow-service", async () => {
-  await bootstrapFastifyApp({
-    serviceName: "workflow-service",
+  await bootstrapSplitService({
+    baseServiceName: "workflow-service",
     module: AppModule,
     port: workflowServiceConfig.port,
-    withValidationPipe: false,
+    apiOptions: {
+      withValidationPipe: false,
+    },
   });
 });

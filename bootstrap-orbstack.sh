@@ -9,6 +9,8 @@ KNATIVE_VERSION="v1.17.0"
 KOURIER_VERSION="v1.17.0"
 KEDA_VERSION="2.18.3"
 KEDA_NAMESPACE="keda"
+CNPG_CHART_VERSION="0.27.1"
+CNPG_NAMESPACE="cnpg-system"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -232,6 +234,36 @@ install_keda() {
     --timeout=180s
 }
 
+install_cloudnative_pg() {
+  # CloudNativePG owns postgresql.cnpg.io resources used by the shared
+  # Postgres clusters in infrastructure/base/postgres. Install it before
+  # applying infrastructure so kubectl can recognize Cluster and Pooler CRDs.
+  if kubectl get crd clusters.postgresql.cnpg.io &>/dev/null \
+    && kubectl get crd poolers.postgresql.cnpg.io &>/dev/null \
+    && kubectl get deployment/cnpg-controller-manager --namespace "$CNPG_NAMESPACE" &>/dev/null; then
+    log "CloudNativePG CRDs + operator already installed — skipping"
+    return
+  fi
+
+  log "Adding CloudNativePG Helm repo"
+  helm repo add cnpg https://cloudnative-pg.github.io/charts &>/dev/null || true
+  retry 3 3 helm repo update cnpg
+
+  log "Installing CloudNativePG chart ${CNPG_CHART_VERSION} into '${CNPG_NAMESPACE}' namespace"
+  retry 3 5 helm upgrade --install cnpg cnpg/cloudnative-pg \
+    --namespace "$CNPG_NAMESPACE" \
+    --create-namespace \
+    --version "$CNPG_CHART_VERSION" \
+    --wait \
+    --timeout 180s
+
+  log "Waiting for CloudNativePG deployments..."
+  kubectl wait deployment --all \
+    --namespace "$CNPG_NAMESPACE" \
+    --for=condition=Available \
+    --timeout=180s
+}
+
 configure_dns() {
   log "Configuring DNS with sslip.io (127.0.0.1)"
   retry 5 3 kubectl patch configmap/config-domain \
@@ -289,6 +321,18 @@ apply_infrastructure() {
     kubectl rollout status statefulset/postgres \
       --namespace "$ns" \
       --timeout=180s
+
+    log "Waiting for CloudNativePG shared Postgres in ${ns}..."
+    kubectl wait cluster.postgresql.cnpg.io/postgres-shared \
+      --namespace "$ns" \
+      --for=condition=Ready \
+      --timeout=300s
+
+    log "Waiting for CloudNativePG shared usage Postgres in ${ns}..."
+    kubectl wait cluster.postgresql.cnpg.io/postgres-usage-shared \
+      --namespace "$ns" \
+      --for=condition=Ready \
+      --timeout=300s
 
     log "Waiting for Temporal in ${ns}..."
     kubectl rollout status deployment/temporal \
@@ -394,6 +438,13 @@ verify_support_services() {
     exit 1
   fi
 
+  if ! kubectl get crd clusters.postgresql.cnpg.io &>/dev/null \
+    || ! kubectl get crd poolers.postgresql.cnpg.io &>/dev/null; then
+    err "CloudNativePG CRDs not found in cluster."
+    err "Run './bootstrap-orbstack.sh <env> support-services' before platform-services."
+    exit 1
+  fi
+
   for env in "${ENVIRONMENTS[@]}"; do
     local ns="support-services-${env}"
     if ! kubectl get namespace "$ns" &>/dev/null; then
@@ -409,6 +460,12 @@ verify_support_services() {
     for sts in "${core_statefulsets[@]}"; do
       if ! kubectl get statefulset/"$sts" --namespace "$ns" &>/dev/null; then
         warn "StatefulSet '${sts}' not found in ${ns}"
+      fi
+    done
+
+    for cnpg_cluster in postgres-shared postgres-usage-shared; do
+      if ! kubectl get cluster.postgresql.cnpg.io "$cnpg_cluster" --namespace "$ns" &>/dev/null; then
+        warn "CloudNativePG Cluster '${cnpg_cluster}' not found in ${ns}"
       fi
     done
 
@@ -433,6 +490,7 @@ run_support_services() {
   install_knative_serving
   install_kourier
   install_keda
+  install_cloudnative_pg
   configure_dns
   configure_local_registry
   apply_namespaces
