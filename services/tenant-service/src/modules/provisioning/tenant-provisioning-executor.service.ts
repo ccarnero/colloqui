@@ -73,6 +73,12 @@ export class TenantProvisioningExecutor {
    *   inside the namespace and blocks until both report ready.
    *
    * Idempotent: namespace create conflict (409) continues with `readNamespace`.
+   *
+   * Each phase is wrapped in `runPhase` which logs entry/exit + duration so
+   * a hang in any one step (most often `pgProvisioner.provision` for shared
+   * waiting on the CNPG superuser secret, or `*.waitForReady` for dedicated
+   * waiting on a StatefulSet) shows up as a "phase started but never ended"
+   * gap in the structured logs instead of a silent JetStream redelivery loop.
    */
   async run(params: ITenantProvisioningRunParams): Promise<{
     nsName: string;
@@ -81,6 +87,53 @@ export class TenantProvisioningExecutor {
     const { name } = params;
     const tier = params.tier ?? TenantDatabaseTier.Shared;
     const nsName = tenantKubernetesNamespaceName(name, this.environment);
+    const totalStarted = performance.now();
+    const phaseTag = `tenant=${name} tier=${tier} ns=${nsName}`;
+
+    const phase = await this.runPhase(`namespace.ensure ${phaseTag}`, () =>
+      this.ensureNamespace(name, nsName),
+    );
+
+    // OLTP + usage tracks run in parallel (different K8s resources, different
+    // pools); each track is wrapped individually so a hang in one branch is
+    // attributable on its own — Promise.all would otherwise mask which leg
+    // is stuck. `runPhase` itself rethrows, so the outer Promise.all still
+    // surfaces the first failure with the full error chain preserved.
+    await Promise.all([
+      this.runPhase(`postgres.provision ${phaseTag}`, () =>
+        this.pgProvisioner.provision({
+          namespace: nsName,
+          tenantId: name,
+          tier,
+        }),
+      ),
+      this.runPhase(`postgres-usage.provision ${phaseTag}`, () =>
+        this.pgUsageProvisioner.provisionUsage(nsName, tier),
+      ),
+    ]);
+    await Promise.all([
+      this.runPhase(`postgres.waitForReady ${phaseTag}`, () =>
+        this.pgProvisioner.waitForReady(nsName, tier),
+      ),
+      this.runPhase(`postgres-usage.waitForReady ${phaseTag}`, () =>
+        this.pgUsageProvisioner.waitForReady(nsName, tier),
+      ),
+    ]);
+
+    const totalElapsedMs = Math.round(performance.now() - totalStarted);
+    this.logger.log(
+      `Background provisioning complete for tenant '${name}' in ${nsName} (tier=${tier}, total=${totalElapsedMs}ms)`,
+    );
+
+    return { nsName, namespacePhase: phase };
+  }
+
+  /**
+   * Creates the tenant namespace; returns its observed phase. On 409 Conflict
+   * (already exists) re-reads the namespace so a retried provision still
+   * returns a coherent phase value.
+   */
+  private async ensureNamespace(name: string, nsName: string): Promise<string> {
     const body: k8s.V1Namespace = {
       metadata: {
         name: nsName,
@@ -93,11 +146,10 @@ export class TenantProvisioningExecutor {
       },
     };
 
-    let phase = "Active";
     try {
       const created = await this.k8sApi.createNamespace({ body });
       const ns = unwrapNamespace(created);
-      phase = ns.status?.phase ?? "Active";
+      return ns.status?.phase ?? "Active";
     } catch (err: unknown) {
       if (isKubernetesConflictError(err)) {
         this.logger.log(
@@ -105,25 +157,38 @@ export class TenantProvisioningExecutor {
         );
         const read = await this.k8sApi.readNamespace({ name: nsName });
         const ns = unwrapNamespace(read);
-        phase = ns.status?.phase ?? "Active";
-      } else {
-        throw err;
+        return ns.status?.phase ?? "Active";
       }
+      throw err;
     }
+  }
 
-    await Promise.all([
-      this.pgProvisioner.provision({ namespace: nsName, tenantId: name, tier }),
-      this.pgUsageProvisioner.provisionUsage(nsName, tier),
-    ]);
-    await Promise.all([
-      this.pgProvisioner.waitForReady(nsName, tier),
-      this.pgUsageProvisioner.waitForReady(nsName, tier),
-    ]);
-
-    this.logger.log(
-      `Background provisioning complete for tenant '${name}' in ${nsName}`,
-    );
-
-    return { nsName, namespacePhase: phase };
+  /**
+   * Runs `fn` and logs `phase started` / `phase ok in Nms` markers around it.
+   * Errors are rethrown after `phase failed in Nms` is emitted so the caller
+   * (handler → JetStream) decides retry vs term — we only contribute an
+   * audit trail with a stable `phase=...` tag for log greps / Loki alerts.
+   */
+  private async runPhase<T>(
+    phaseLabel: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const started = performance.now();
+    this.logger.log(`phase=${phaseLabel} status=started`);
+    try {
+      const result = await fn();
+      const elapsedMs = Math.round(performance.now() - started);
+      this.logger.log(
+        `phase=${phaseLabel} status=ok elapsedMs=${elapsedMs}`,
+      );
+      return result;
+    } catch (err: unknown) {
+      const elapsedMs = Math.round(performance.now() - started);
+      const detail = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `phase=${phaseLabel} status=failed elapsedMs=${elapsedMs} error=${detail}`,
+      );
+      throw err;
+    }
   }
 }

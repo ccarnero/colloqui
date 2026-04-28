@@ -10,7 +10,7 @@ const GW = getBaseUrl('api-gateway');
 const TENANT_TIERS = new Set<string>(['shared', 'dedicated']);
 type TenantTier = 'shared' | 'dedicated';
 
-const E2E_TENANT = process.env.E2E_TENANT ?? 'acme';
+const E2E_TENANT = process.env.E2E_TENANT ?? 'acme-'+Date.now().toString(12);
 
 function readTier(): TenantTier {
   const raw = (process.env.E2E_TENANT_TIER ?? 'shared').toLowerCase();

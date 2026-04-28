@@ -27,7 +27,10 @@ const mockJs = {
 
 describe("ChannelAuditService", () => {
   let service: ChannelAuditService;
-  let mockTenantMgr: { getConnection: ReturnType<typeof mock> };
+  let mockTenantMgr: {
+    ensureSchema: ReturnType<typeof mock>;
+    getConnection: ReturnType<typeof mock>;
+  };
 
   const sampleRow = {
     id: "evt-1",
@@ -53,7 +56,10 @@ describe("ChannelAuditService", () => {
       { unsafe: (s: string) => s },
     ) as Sql;
 
+    // ensureTenantNamespaceOnce now resolves the tenant tier asynchronously
+    // through ensureSchema BEFORE running DDL — mirror that contract here.
     mockTenantMgr = {
+      ensureSchema: mock(async () => mockSql),
       getConnection: mock(() => mockSql),
     };
 

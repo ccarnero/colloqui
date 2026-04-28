@@ -39,6 +39,7 @@ describe("AuditService", () => {
   let service: AuditService;
   let mockSql: Sql;
   let mockTenantMgr: {
+    ensureSchema: ReturnType<typeof mock>;
     getConnection: ReturnType<typeof mock>;
     isInitialized: ReturnType<typeof mock>;
     markInitialized: ReturnType<typeof mock>;
@@ -61,7 +62,11 @@ describe("AuditService", () => {
       {},
     ) as Sql;
 
+    // ensureSchema mirrors getConnection — repositories now warm the tier
+    // cache through ensureTenantSchemaOnce/ensureTenantNamespaceOnce before
+    // any sync getConnection is reached.
     mockTenantMgr = {
+      ensureSchema: mock(async () => mockSql),
       getConnection: mock(() => mockSql),
       isInitialized: mock(() => true),
       markInitialized: mock(() => {}),
@@ -122,6 +127,7 @@ describe("AuditService", () => {
     ) as Sql;
 
     mockTenantMgr.isInitialized.mockReturnValue(false);
+    mockTenantMgr.ensureSchema.mockResolvedValue(trackingSql);
     mockTenantMgr.getConnection.mockReturnValue(trackingSql);
 
     const persist = service as unknown as {

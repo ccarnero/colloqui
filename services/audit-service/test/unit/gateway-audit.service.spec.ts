@@ -7,7 +7,10 @@ import { makeMockJetStreamConsumer } from "../make-mock-consumer";
 
 describe("GatewayAuditService", () => {
   let service: GatewayAuditService;
-  let mockTenantMgr: { getConnection: ReturnType<typeof mock> };
+  let mockTenantMgr: {
+    ensureSchema: ReturnType<typeof mock>;
+    getConnection: ReturnType<typeof mock>;
+  };
 
   const sampleRow = {
     requestId: "r1",
@@ -37,7 +40,10 @@ describe("GatewayAuditService", () => {
       { unsafe: (s: string) => s },
     ) as Sql;
 
+    // ensureTenantNamespaceOnce now resolves the tenant tier asynchronously
+    // through ensureSchema BEFORE running DDL — mirror that contract here.
     mockTenantMgr = {
+      ensureSchema: mock(async () => mockSql),
       getConnection: mock(() => mockSql),
     };
 
@@ -120,6 +126,7 @@ describe("GatewayAuditService", () => {
         {
           provide: TenantConnectionManager,
           useValue: {
+            ensureSchema: mock(async () => makeSql()),
             getConnection: mock(() => makeSql()),
             isInitialized: mock(() => false),
             markInitialized: mock(() => {}),

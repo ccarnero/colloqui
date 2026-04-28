@@ -201,7 +201,7 @@ export class TenantConnectionManager implements OnModuleDestroy {
     this.catalogHost =
       process.env.TENANT_POSTGRES_CATALOG_HOST ??
       process.env.POSTGRES_HOST ??
-      "localhost";
+      `postgres.support-services-${this.env}.svc.cluster.local`;
     this.catalogPort =
       Number(process.env.TENANT_POSTGRES_CATALOG_PORT) || this.port;
     this.catalogDatabase =
@@ -459,30 +459,58 @@ export class TenantConnectionManager implements OnModuleDestroy {
     const cached = this.tierCache.get(tenantId);
     if (cached !== undefined) return cached;
 
-    const tier = await this.lookupTenantTier(tenantId);
-    this.tierCache.set(tenantId, tier);
-    return tier;
+    const lookup = await this.lookupTenantTier(tenantId);
+    if (lookup !== null) {
+      this.tierCache.set(tenantId, lookup);
+      return lookup;
+    }
+    // Catalog unreachable or tenant absent: return the default but DON'T
+    // cache it. Caching here would permanently mis-route a tenant whose
+    // first request hit a transient catalog outage; without caching, the
+    // very next request retries the catalog and resolves correctly.
+    return this.defaultTier;
   }
 
   /**
-   * Routing for synchronous {@link getConnection} only.
+   * Routing for synchronous {@link getConnection}.
    *
-   * Intentionally does **not** read {@link tierCache} from async catalog
-   * lookups: those can label a tenant `dedicated` while sync defaults stay
-   * `shared`, producing two pools for one tenant and wrong hosts on cold
-   * paths. Use {@link TENANT_POSTGRES_TIER_OVERRIDES} or {@link defaultTier}.
+   * Reads {@link tierCache} so that a {@link getConnection} call that
+   * follows {@link ensureSchema} routes to the same tier the async
+   * resolver already discovered. Without this, a caller that does
+   * `await ensureSchema(t); getConnection(t)` would open two pools
+   * (one per resolver) and the sync side would point at the wrong host
+   * whenever the async resolver disagreed with `defaultTier`.
+   *
+   * Order of precedence: env override → resolved tier cache → defaultTier.
+   *
+   * `protected` (vs `private`) so tests can subclass and exercise the
+   * resolver without opening a real Postgres pool through `getConnection`.
    */
-  private resolveTenantTierSync(tenantId: string): TenantDatabaseTierValue {
+  protected resolveTenantTierSync(tenantId: string): TenantDatabaseTierValue {
     const override = this.tierOverrides.get(tenantId);
     if (override !== undefined) {
       return override;
     }
+    const cached = this.tierCache.get(tenantId);
+    if (cached !== undefined) {
+      return cached;
+    }
     return this.defaultTier;
   }
 
-  private async lookupTenantTier(
+  /**
+   * Returns the tenant's tier from the platform catalog, or `null` when
+   * the catalog is unreachable / has no row for the tenant. Returning
+   * `null` (instead of {@link defaultTier}) lets the caller distinguish
+   * "catalog says shared" from "catalog couldn't answer", and avoid
+   * caching the latter.
+   *
+   * `protected` so tests can override with a deterministic stub instead
+   * of standing up a real Postgres catalog.
+   */
+  protected async lookupTenantTier(
     tenantId: string,
-  ): Promise<TenantDatabaseTierValue> {
+  ): Promise<TenantDatabaseTierValue | null> {
     try {
       const [row] = await this.getCatalogSql()<{
         tier: string;
@@ -504,7 +532,7 @@ export class TenantConnectionManager implements OnModuleDestroy {
         this.catalogLookupWarned = true;
       }
     }
-    return this.defaultTier;
+    return null;
   }
 
   private getCatalogSql(): Sql {

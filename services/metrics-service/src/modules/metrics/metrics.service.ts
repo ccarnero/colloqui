@@ -139,7 +139,12 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const sql = this.tenantConnections.getConnection(tenantId);
+    // Async ensureSchema warms the tier cache through the platform catalog
+    // BEFORE any pool is opened. The sync getConnection fast-path only reads
+    // tierOverrides → tierCache → defaultTier; without warming, dedicated
+    // tenants get mis-routed to the shared CNPG cluster and every insert
+    // throws "database does not exist" / "role does not exist".
+    const sql = await this.tenantConnections.ensureSchema(tenantId);
     await this.metricsRepository.insertMetricFromEnvelope(
       sql,
       tenantId,
@@ -162,7 +167,7 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
     params: IMetricsQueryParams,
     tenantId: string,
   ): Promise<IMetricRecord[]> {
-    const sql = this.tenantConnections.getConnection(tenantId);
+    const sql = await this.tenantConnections.ensureSchema(tenantId);
     return this.metricsRepository.queryMetrics(sql, tenantId, params);
   }
 
@@ -175,7 +180,7 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
     id: string,
     tenantId: string,
   ): Promise<IMetricRecord | null> {
-    const sql = this.tenantConnections.getConnection(tenantId);
+    const sql = await this.tenantConnections.ensureSchema(tenantId);
     return this.metricsRepository.getMetricById(sql, tenantId, id);
   }
 }

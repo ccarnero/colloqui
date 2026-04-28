@@ -180,7 +180,7 @@ spec:
             - name: POSTGRES_DB
               value: "yoizen"
             - name: TENANT_POSTGRES_TIER_OVERRIDES
-              value: '{"acme":"shared","acme-dedicated":"dedicated"}'
+              value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -230,7 +230,7 @@ spec:
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
             - name: TENANT_POSTGRES_TIER_OVERRIDES
-              value: '{"acme":"shared","acme-dedicated":"dedicated"}'
+              value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -443,7 +443,7 @@ spec:
             - name: POSTGRES_DB
               value: "yoizen"
             - name: TENANT_POSTGRES_TIER_OVERRIDES
-              value: '{"acme":"shared","acme-dedicated":"dedicated"}'
+              value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -491,7 +491,7 @@ spec:
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
             - name: TENANT_POSTGRES_TIER_OVERRIDES
-              value: '{"acme":"shared","acme-dedicated":"dedicated"}'
+              value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -631,7 +631,7 @@ spec:
             # CREATE/LIST then 500s. Keep the JSON in sync with the tenants
             # actually exercised by the e2e matrix.
             - name: TENANT_POSTGRES_TIER_OVERRIDES
-              value: '{"acme":"shared","acme-dedicated":"dedicated"}'
+              value: '{}'
             - name: TENANT_SERVICE_URL
               value: "http://tenant-service.platform-services-dev.svc.cluster.local"
             - name: NODE_EXTRA_CA_CERTS
@@ -753,7 +753,7 @@ spec:
             - name: POSTGRES_DB
               value: "yoizen"
             - name: TENANT_POSTGRES_TIER_OVERRIDES
-              value: '{"acme":"shared","acme-dedicated":"dedicated"}'
+              value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -810,7 +810,7 @@ spec:
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
             - name: TENANT_POSTGRES_TIER_OVERRIDES
-              value: '{"acme":"shared","acme-dedicated":"dedicated"}'
+              value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -939,7 +939,7 @@ spec:
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
             - name: TENANT_POSTGRES_TIER_OVERRIDES
-              value: '{"acme":"shared","acme-dedicated":"dedicated"}'
+              value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME

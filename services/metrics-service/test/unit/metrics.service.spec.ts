@@ -40,6 +40,7 @@ describe("MetricsService", () => {
   let service: MetricsService;
   let mockSql: Sql;
   let mockTenantMgr: {
+    ensureSchema: ReturnType<typeof mock>;
     getConnection: ReturnType<typeof mock>;
     isInitialized: ReturnType<typeof mock>;
     markInitialized: ReturnType<typeof mock>;
@@ -63,7 +64,12 @@ describe("MetricsService", () => {
       {},
     ) as Sql;
 
+    // Service now awaits `ensureSchema` (which warms the tier cache via
+    // the platform catalog) instead of the sync `getConnection` fast-path.
+    // Test doubles must mirror that contract or the prod path will be
+    // mis-routed for dedicated tenants.
     mockTenantMgr = {
+      ensureSchema: mock(async () => mockSql),
       getConnection: mock(() => mockSql),
       isInitialized: mock(() => true),
       markInitialized: mock(() => {}),
@@ -90,7 +96,7 @@ describe("MetricsService", () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.name).toBe("latency");
-    expect(mockTenantMgr.getConnection).toHaveBeenCalledWith("tenant-a");
+    expect(mockTenantMgr.ensureSchema).toHaveBeenCalledWith("tenant-a");
   });
 
   it("getMetricById returns a row when present", async () => {
@@ -101,7 +107,7 @@ describe("MetricsService", () => {
 
   it("getMetricById returns null when no row", async () => {
     const emptySql = Object.assign(() => Promise.resolve([]), {}) as Sql;
-    mockTenantMgr.getConnection.mockReturnValue(emptySql);
+    mockTenantMgr.ensureSchema.mockResolvedValue(emptySql);
 
     const row = await service.getMetricById("missing", "tenant-a");
     expect(row).toBeNull();
@@ -120,7 +126,7 @@ describe("MetricsService", () => {
       {},
     ) as Sql;
 
-    mockTenantMgr.getConnection.mockReturnValue(trackingSql);
+    mockTenantMgr.ensureSchema.mockResolvedValue(trackingSql);
 
     await service.persistMetricEnvelopeForTest({
       specversion: "1.0",
