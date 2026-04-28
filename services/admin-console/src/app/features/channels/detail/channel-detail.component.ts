@@ -26,7 +26,10 @@ import {
   type IUsageRangeSelection,
   type UsagePresetRange,
 } from "./range-selector.component";
-import { UsageChartComponent } from "./usage-chart.component";
+import {
+  UsageChartComponent,
+  type IUsageChartRange,
+} from "./usage-chart.component";
 import { KpiCardsComponent } from "./kpi-cards.component";
 import { ScopedStreamCardsComponent } from "./scoped-stream-cards.component";
 import {
@@ -128,6 +131,7 @@ const CUSTOM_RANGE_FORMATTER = new Intl.DateTimeFormat(undefined, {
         <div class="chart-wrap">
           <app-usage-chart
             [data]="usage()"
+            [range]="resolvedRangeForChart()"
             [hasRecentActivity]="hasRecentActivity()"
           />
         </div>
@@ -216,10 +220,17 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
   readonly totals = signal<ReadonlyArray<IUsageTotalsRow>>([]);
   readonly loading = signal<boolean>(false);
   readonly errorMessage = signal<string | null>(null);
+  readonly resolvedRange = signal<IResolvedUsageRange | null>(null);
 
   readonly hasRecentActivity = computed<boolean>(() =>
     this.totals().some((row) => row.events > 0),
   );
+
+  readonly resolvedRangeForChart = computed<IUsageChartRange | null>(() => {
+    const r = this.resolvedRange();
+    if (!r) return null;
+    return { from: r.from, to: r.to, bucket: r.bucket };
+  });
 
   readonly rangeLabel = computed<string>(() =>
     this.formatRangeSelectionLabel(this.rangeSelection()),
@@ -259,6 +270,7 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
       return;
     }
 
+    this.resolvedRange.set(resolved);
     this.loading.set(true);
     this.errorMessage.set(null);
 

@@ -146,23 +146,39 @@ describe("ChannelDetailComponent", () => {
     );
   });
 
-  it("shows too-narrow message when totals have events but the chart lacks buckets", () => {
+  it("renders the densified chart even when usage has a single sparse bucket", () => {
     const component = fixture.componentInstance;
-    component.usage.set([]);
+    component.resolvedRange.set({
+      from: "2026-04-24T00:00:00.000Z",
+      to: "2026-04-25T00:00:00.000Z",
+      bucket: "hour",
+      label: "24h",
+    });
+    component.usage.set([
+      {
+        bucket: "2026-04-24T17:00:00.000Z",
+        accountId: "acct-1",
+        channel: "whatsapp",
+        direction: "ingress",
+        events: 5,
+      },
+    ]);
     component.totals.set([
       {
         direction: "ingress",
         events: 5,
         firstTs: "2026-04-24T17:31:41.000Z",
-        lastTs: "2026-04-24T18:29:50.000Z",
+        lastTs: "2026-04-24T17:59:50.000Z",
       },
     ]);
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain(
+    expect(el.textContent).not.toContain(
       "Selected range has activity, but it is too narrow",
     );
+    expect(el.querySelector("svg.usage-chart__svg")).not.toBeNull();
+    expect(el.querySelectorAll("svg.usage-chart__svg polyline").length).toBe(3);
   });
 
   it("shows empty message when totals and chart buckets are empty", () => {

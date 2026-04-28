@@ -114,6 +114,9 @@ bun.lock
 # Local development
 *.local
 
+# scale-all-to-one.sh backups (live cluster state snapshots, never commit)
+scripts/.scale-backup/*.json
+
 GEMINI.md
 CURSOR.md
 CLAUDE.md
