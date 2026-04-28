@@ -1,7 +1,12 @@
 import "../setup-env";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  NotFoundException,
+} from "@nestjs/common";
 import { ProvisioningStatus, TenantDatabaseTier } from "@yoizen/shared";
 import { TenantsService } from "../../src/modules/tenants/tenants.service";
 import { TenantsRepository } from "../../src/modules/tenants/tenants.repository";
@@ -245,5 +250,61 @@ describe("TenantsService", () => {
     expect(pgProvisioner.deprovisionShared).not.toHaveBeenCalled();
     expect(k8sApi.deleteNamespace).not.toHaveBeenCalled();
     expect(repository.deleteByName).not.toHaveBeenCalled();
+  });
+
+  it("deleteTenant returns 409 Conflict while the tenant is still provisioning (race protection)", async () => {
+    repository.findByName.mockResolvedValueOnce({
+      id: "tid-1",
+      name: "tenant-a",
+      configuration: {},
+      ...baseRow,
+      provisioning_status: ProvisioningStatus.Provisioning,
+    });
+    let thrown: HttpException | null = null;
+    try {
+      await service.deleteTenant("tenant-a");
+    } catch (err) {
+      thrown = err as HttpException;
+    }
+    expect(thrown).toBeInstanceOf(HttpException);
+    expect(thrown!.getStatus()).toBe(HttpStatus.CONFLICT);
+    const body = thrown!.getResponse() as Record<string, unknown>;
+    expect(body.provisioningStatus).toBe(ProvisioningStatus.Provisioning);
+    // Cleanup must NOT have run — the race protection's whole point is
+    // to leave the in-flight provisioning untouched.
+    expect(pgProvisioner.deprovisionShared).not.toHaveBeenCalled();
+    expect(k8sApi.deleteNamespace).not.toHaveBeenCalled();
+    expect(repository.deleteByName).not.toHaveBeenCalled();
+  });
+
+  it("deleteTenant proceeds normally when the tenant is in 'pending' state (no provisioning resources to race)", async () => {
+    repository.findByName.mockResolvedValueOnce({
+      id: "tid-1",
+      name: "tenant-a",
+      configuration: {},
+      ...baseRow,
+      provisioning_status: ProvisioningStatus.Pending,
+    });
+    k8sApi.listNamespace.mockResolvedValueOnce({ items: [] });
+    await service.deleteTenant("tenant-a");
+    // Shared tier deprovision is still attempted (idempotent: drops
+    // DROP DATABASE IF EXISTS, DROP ROLE IF EXISTS); the consumer will
+    // term its in-flight message via PermanentError [lookup] when it
+    // eventually picks it up.
+    expect(pgProvisioner.deprovisionShared).toHaveBeenCalledWith("tenant-a");
+    expect(repository.deleteByName).toHaveBeenCalledWith("tenant-a");
+  });
+
+  it("deleteTenant proceeds normally when the tenant is in 'failed' state", async () => {
+    repository.findByName.mockResolvedValueOnce({
+      id: "tid-1",
+      name: "tenant-a",
+      configuration: {},
+      ...baseRow,
+      provisioning_status: ProvisioningStatus.Failed,
+    });
+    k8sApi.listNamespace.mockResolvedValueOnce({ items: [] });
+    await service.deleteTenant("tenant-a");
+    expect(repository.deleteByName).toHaveBeenCalledWith("tenant-a");
   });
 });

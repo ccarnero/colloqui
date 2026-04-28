@@ -1,5 +1,7 @@
 import {
   ConflictException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -209,11 +211,45 @@ export class TenantsService {
    * The platform DB row is removed only after infrastructure cleanup, so a
    * partial failure leaves the row visible (`provisioning_status` unchanged)
    * and the caller can retry the DELETE idempotently.
+   *
+   * **Provisioning race protection (added 2026-04-28):** when the row is
+   * currently `provisioning_status: 'provisioning'`, an in-flight handler
+   * is racing this DELETE. Allowing the cascade would leak K8s/postgres
+   * resources (the executor's mid-flight `pg.provision` lands AFTER the
+   * `deprovisionShared` here, recreating the tenant DB outside any
+   * namespace) AND leave the JetStream message in `Outstanding Acks`
+   * indefinitely — exactly the failure mode that produced the
+   * "stuck pending" zombie messages observed in the RCA. We refuse the
+   * delete with HTTP 409 + `Retry-After: 10`; the consumer terminates
+   * the in-flight provision (success → `ready`, exhaustion → `failed`)
+   * within at most `TENANT_PROVISION_MAX_DELIVER * worst_phase_duration`
+   * (≈ 30 s for shared, ≈ 90 s for dedicated). The caller retries
+   * idempotently — no operator intervention required.
    */
   async deleteTenant(name: string): Promise<void> {
     const row = await this.repository.findByName(name);
     if (!row) {
       throw new NotFoundException(`Tenant '${name}' not found`);
+    }
+
+    if (row.provisioning_status === ProvisioningStatus.Provisioning) {
+      // 409 Conflict + Retry-After header so HTTP clients (and our own
+      // e2e cleanup) implement the "wait for the row to settle" contract
+      // automatically. We deliberately do NOT block here — that would
+      // pin a Fastify worker for up to a couple of minutes during
+      // dedicated-tier provisioning and starve the rest of the API.
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.CONFLICT,
+          error: "Conflict",
+          message: `Tenant '${name}' is currently provisioning; retry the delete after the provisioning_status flips to 'ready' or 'failed'.`,
+          provisioningStatus: row.provisioning_status,
+        },
+        HttpStatus.CONFLICT,
+        // Note: setting headers on the response itself is the
+        // controller's responsibility; this body shape includes
+        // `provisioningStatus` so callers can decide how long to wait.
+      );
     }
 
     const sharedDeprovision: Promise<unknown> | null =

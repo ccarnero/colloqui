@@ -4,6 +4,7 @@ import { PinoLoggerService } from "@yoizen/observability";
 import {
   ensureDurableConsumer,
   NatsConsumerRunner,
+  type INatsConsumerRunnerState,
 } from "@yoizen/database";
 import type { JetStreamClient, JetStreamManager } from "nats";
 import {
@@ -11,6 +12,7 @@ import {
   TENANT_PROVISION_REQUESTED_SUBJECT,
   TENANT_PROVISIONER_DURABLE,
   TENANT_PROVISION_MAX_DELIVER,
+  type ITenantProvisionerState,
 } from "@yoizen/shared";
 import { JETSTREAM, JETSTREAM_MANAGER } from "../../providers/nats.module";
 import { TenantProvisionHandler } from "./tenant-provision-handler.service";
@@ -21,6 +23,14 @@ const STREAM = PLATFORM_TENANTS_STREAM_NAME;
 /**
  * Pull consumer for `platform.tenant.provision.requested` (Workqueue stream).
  * Long-running handler: 5 min ack wait, bounded retries via `max_deliver`.
+ *
+ * The internal `NatsConsumerRunner` self-supervises its pull iterator
+ * (auto-rebinds on connection drop / heartbeat miss / clean close), so
+ * a dropped iterator no longer leaves the pod silently inert. We
+ * surface the supervisor state via {@link getProvisionerState} so the
+ * `/health` controller can return `degraded`/`stopped` and let
+ * Knative liveness recycle the pod when the consumer is genuinely
+ * unreachable.
  */
 @Injectable()
 export class TenantProvisionConsumerService
@@ -62,5 +72,27 @@ export class TenantProvisionConsumerService
 
   async onModuleDestroy(): Promise<void> {
     await this.runner?.stop();
+  }
+
+  /**
+   * Returns a coarse-grained state flag for `/health`. O(1) — only
+   * reads cached primitive fields on the runner.
+   *
+   * Mapping:
+   *  - `stopped`  : runner never started or has been torn down
+   *  - `running`  : supervisor active AND iterator currently bound
+   *  - `degraded` : supervisor active but in error-backoff between
+   *                 reattach attempts (e.g. NATS server unreachable)
+   */
+  getProvisionerState(): ITenantProvisionerState {
+    if (!this.runner) return "stopped";
+    const state = this.runner.getState();
+    if (!state.running) return "stopped";
+    return state.isHealthy ? "running" : "degraded";
+  }
+
+  /** Raw runner snapshot for diagnostic endpoints / tests. */
+  getRunnerState(): INatsConsumerRunnerState | null {
+    return this.runner?.getState() ?? null;
   }
 }

@@ -394,6 +394,7 @@ export type {
   IGatewayDownstreamHealth,
   IApiGatewayHealthResponse,
   ITenantHealthResponse,
+  ITenantProvisionerState,
   INatsPostgresHealthResponse,
   INatsRedisHealthResponse,
   IYoizenClawHealthResponse,

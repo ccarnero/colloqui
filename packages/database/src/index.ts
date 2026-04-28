@@ -77,6 +77,8 @@ export type {
   NatsPermanentHandler,
   INatsConsumerMetrics,
   NatsMessageResult,
+  INatsConsumerRunnerState,
+  NatsReattachReason,
 } from "./nats-consumer-runner";
 export { ensureTenantDlqStream } from "./nats-dlq";
 export {

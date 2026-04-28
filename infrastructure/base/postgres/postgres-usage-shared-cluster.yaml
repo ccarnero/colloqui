@@ -43,6 +43,20 @@ spec:
   storage:
     size: 20Gi
   managed:
+    # `roles` declaratively reconciles the `yoizen` application user's
+    # password to the value in `postgres-shared-yoizen-credentials`
+    # (basic-auth Secret committed in `secret.yaml`). The TimescaleDB
+    # cluster is reached in single-database mode by channel-service and
+    # usage-aggregator-service; without this both fall back to
+    # `POSTGRES_PASSWORD=yoizen-dev-password` and fail with `password
+    # authentication failed for user "yoizen"`.
+    roles:
+      - name: yoizen
+        ensure: present
+        login: true
+        superuser: false
+        passwordSecret:
+          name: postgres-shared-yoizen-credentials
     services:
       additional:
         - selectorType: rw

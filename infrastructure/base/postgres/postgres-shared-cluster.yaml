@@ -36,6 +36,20 @@ spec:
   storage:
     size: 20Gi
   managed:
+    # `roles` declaratively reconciles the `yoizen` application user's
+    # password to the value in `postgres-shared-yoizen-credentials`
+    # (basic-auth Secret committed in `secret.yaml`). Without this, CNPG
+    # auto-generates a random password into `postgres-shared-app` that
+    # platform services don't know — every shared-tenant single-database
+    # connect path falls back to `POSTGRES_PASSWORD=yoizen-dev-password`
+    # and fails with `password authentication failed for user "yoizen"`.
+    roles:
+      - name: yoizen
+        ensure: present
+        login: true
+        superuser: false
+        passwordSecret:
+          name: postgres-shared-yoizen-credentials
     services:
       additional:
         - selectorType: rw

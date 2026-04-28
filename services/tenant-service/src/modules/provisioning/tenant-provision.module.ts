@@ -21,5 +21,6 @@ import { TenantProvisioningExecutor } from "./tenant-provisioning-executor.servi
     TenantProvisionHandler,
     TenantProvisionConsumerService,
   ],
+  exports: [TenantProvisionConsumerService],
 })
 export class TenantProvisionModule {}

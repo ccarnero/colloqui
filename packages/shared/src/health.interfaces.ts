@@ -38,11 +38,29 @@ export interface IGatewayCoreHealthResponse {
 
 export type IApiGatewayHealthResponse = IGatewayCoreHealthResponse;
 
-/** K8s + platform DB (tenant-service). */
+/**
+ * Provisioning consumer state (tenant-service). `running` means the
+ * JetStream pull-iterator supervisor is alive and bound; `stopped`
+ * means the supervisor has exited or never started; `degraded` means
+ * it is currently in the error-backoff path between iterator failures.
+ *
+ * Exposed in `/health` so Knative liveness can restart the pod when
+ * the consumer is dead even though Fastify is still serving HTTP.
+ */
+export type ITenantProvisionerState = "running" | "degraded" | "stopped";
+
+/** K8s + platform DB + provisioning consumer (tenant-service). */
 export interface ITenantHealthResponse {
   status: HealthStatusLevel;
   kubernetes: IHealthConnectionState;
   postgres: IHealthConnectionState;
+  /**
+   * Provisioning consumer (`PLATFORM_TENANTS / tenant-provisioner`).
+   * Optional for backward compatibility with older tenant-service
+   * builds that didn't surface this field — clients should treat
+   * `undefined` as "unknown" rather than "running".
+   */
+  provisioner?: ITenantProvisionerState;
 }
 
 /** NATS + per-tenant PostgreSQL (audit, metrics, scheduler). */
