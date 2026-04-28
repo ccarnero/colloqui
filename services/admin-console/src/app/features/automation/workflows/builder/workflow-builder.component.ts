@@ -638,15 +638,14 @@ export class WorkflowBuilderComponent implements OnInit {
             const keys = this.deserializeChain(
               paths[pi][1],
               nodes,
+              link,
               X_START + col * X_GAP,
               pathY,
               X_GAP,
+              Y_BRANCH_GAP,
             );
             if (keys.length === 0) continue;
             link(node.key, keys[0]);
-            for (let i = 0; i < keys.length - 1; i++) {
-              link(keys[i], keys[i + 1]);
-            }
           }
         } else if (
           a["args"] &&
@@ -696,34 +695,71 @@ export class WorkflowBuilderComponent implements OnInit {
     return paths;
   }
 
-  /** Deserializes a linear chain of actions into nodes. */
+  /**
+   * Deserializes a chain of actions into nodes, handling nested branches
+   * recursively. Internal sequential links (and branch -> path links) are
+   * created here, so callers only need to link the previous node to the
+   * first key returned. Runs in O(N) over the total action tree.
+   */
   private deserializeChain(
     actions: unknown[],
     nodes: Record<string, IWorkflowNode>,
+    link: (src: string, tgt: string) => void,
     startX: number,
     y: number,
     xGap: number,
+    yBranchGap: number,
   ): string[] {
     const keys: string[] = [];
     let offset = 0;
+    let prevKey: string | null = null;
     for (const raw of actions) {
       const a = raw as Record<string, unknown>;
-      const type = this.activityToNodeType(
-        a["activity"] as string,
-      );
+      const activity = a["activity"] as string;
+      const type = this.activityToNodeType(activity);
       if (!type) continue;
+
       const node = createNodeFromDefault(type, {
         x: startX + offset * xGap,
         y,
       });
       node.name = (a["name"] as string) ?? node.name;
-      if (a["args"] && typeof a["args"] === "object") {
+      nodes[node.key] = node;
+      keys.push(node.key);
+      if (prevKey !== null) {
+        link(prevKey, node.key);
+      }
+
+      if (activity === "branch") {
+        const paths = this.extractBranchPaths(a);
+        node.configuration["branches"] = paths.map(
+          ([name]) => name,
+        );
+        const mid = (paths.length - 1) / 2;
+        const childOffset = offset + 1;
+
+        for (let pi = 0; pi < paths.length; pi++) {
+          const pathY = y + (pi - mid) * yBranchGap;
+          const childKeys = this.deserializeChain(
+            paths[pi][1],
+            nodes,
+            link,
+            startX + childOffset * xGap,
+            pathY,
+            xGap,
+            yBranchGap,
+          );
+          if (childKeys.length === 0) continue;
+          link(node.key, childKeys[0]);
+        }
+      } else if (a["args"] && typeof a["args"] === "object") {
         node.configuration = {
           ...node.configuration,
           ...(a["args"] as Record<string, unknown>),
         };
       }
-      if ((a["activity"] as string) === "channelSend") {
+
+      if (activity === "channelSend") {
         node.configuration["direction"] = "outbound";
         const args = a["args"] as
           | Record<string, unknown>
@@ -737,8 +773,8 @@ export class WorkflowBuilderComponent implements OnInit {
         node.configuration["recipientMode"] =
           to === "{{request.from}}" ? "sender" : "custom";
       }
-      nodes[node.key] = node;
-      keys.push(node.key);
+
+      prevKey = node.key;
       offset++;
     }
     return keys;
