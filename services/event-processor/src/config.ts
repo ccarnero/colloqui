@@ -11,5 +11,5 @@ export const eventProcessorConfig: EventProcessorConfig = {
   port: Number.parseInt(process.env.PORT ?? "3000", 10),
   adapterServiceUrl:
     process.env.ADAPTER_SERVICE_URL ??
-    platformServiceUrl("adapter-service", env),
+    platformServiceUrl("adapter-service-api", env),
 };

@@ -34,7 +34,7 @@ export const yoizenclawAdminServiceConfig: YoizenclawAdminServiceConfig = {
   validateAdapterRefs:
     (process.env.VALIDATE_ADAPTER_REFS ?? "true") !== "false",
   adapterServiceUrl:
-    process.env.ADAPTER_SERVICE_URL ?? "http://adapter-service:3000",
+    process.env.ADAPTER_SERVICE_URL ?? "http://adapter-service-api:3000",
   natsUrl: process.env.NATS_URL ?? "nats://localhost:4222",
   templatesYamlPath: path.join(process.cwd(), "data", "templates.yaml"),
   chatRequestTimeoutMs: Number.parseInt(

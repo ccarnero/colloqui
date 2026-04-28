@@ -24,7 +24,7 @@ export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
     process.env.HTTP_RESPONSE_CACHE_ENABLED?.toLowerCase() !== "false",
   adapterServiceUrl:
     process.env.ADAPTER_SERVICE_URL ??
-    platformServiceUrl("adapter-service", env),
+    platformServiceUrl("adapter-service-api", env),
   registryServiceUrl:
     process.env.REGISTRY_SERVICE_URL ??
     platformServiceUrl("registry-service", env),

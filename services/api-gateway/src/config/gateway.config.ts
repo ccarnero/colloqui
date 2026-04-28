@@ -44,7 +44,7 @@ export const gatewayConfig = {
       platformServiceUrl("workflow-service-api", env),
     adapter:
       process.env.ADAPTER_SERVICE_URL ??
-      platformServiceUrl("adapter-service", env),
+      platformServiceUrl("adapter-service-api", env),
     cache:
       process.env.CACHE_SERVICE_URL ??
       platformServiceUrl("cache-service", env),

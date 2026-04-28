@@ -13,7 +13,7 @@ describe("workflowHttpWorkerConfig", () => {
     const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
     const expected =
       process.env.ADAPTER_SERVICE_URL ??
-      platformServiceUrl("adapter-service", env);
+      platformServiceUrl("adapter-service-api", env);
     expect(workflowHttpWorkerConfig.adapterServiceUrl).toBe(expected);
   });
 

@@ -42,7 +42,7 @@ spec:
             - name: PROXY_SERVICE_URL
               value: "http://proxy-service.platform-services-dev.svc.cluster.local"
             - name: ADAPTER_SERVICE_URL
-              value: "http://adapter-service.platform-services-dev.svc.cluster.local"
+              value: "http://adapter-service-api.platform-services-dev.svc.cluster.local"
             - name: CHANNEL_SERVICE_URL
               value: "http://channel-service-api.platform-services-dev.svc.cluster.local"
             - name: ADMIN_SERVICE_URL
@@ -299,7 +299,7 @@ spec:
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
             - name: ADAPTER_SERVICE_URL
-              value: "http://adapter-service.platform-services-dev.svc.cluster.local"
+              value: "http://adapter-service-api.platform-services-dev.svc.cluster.local"
             - name: REDIS_HOST
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
@@ -344,7 +344,7 @@ spec:
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
             - name: ADAPTER_SERVICE_URL
-              value: "http://adapter-service.platform-services-dev.svc.cluster.local"
+              value: "http://adapter-service-api.platform-services-dev.svc.cluster.local"
             - name: REDIS_HOST
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
@@ -857,7 +857,7 @@ spec:
             - name: TEMPORAL_ADDRESS
               value: "temporal.support-services-dev.svc.cluster.local:7233"
             - name: ADAPTER_SERVICE_URL
-              value: "http://adapter-service.platform-services-dev.svc.cluster.local"
+              value: "http://adapter-service-api.platform-services-dev.svc.cluster.local"
             - name: REDIS_HOST
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
@@ -1115,7 +1115,7 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: "yoizenclaw-admin-service"
             - name: ADAPTER_SERVICE_URL
-              value: "http://adapter-service.platform-services-dev.svc.cluster.local"
+              value: "http://adapter-service-api.platform-services-dev.svc.cluster.local"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
