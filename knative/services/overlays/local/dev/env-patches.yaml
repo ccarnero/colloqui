@@ -910,10 +910,11 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
 ---
+# ----- adapter-service: split api ↔ worker (Phase 1.5) -----
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: adapter-service
+  name: adapter-service-api
 spec:
   template:
     spec:
@@ -943,7 +944,9 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
-              value: "adapter-service"
+              value: "adapter-service-api"
+            - name: SERVICE_MODE
+              value: "api"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -960,10 +963,40 @@ spec:
               memory: 256Mi
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adapter-service-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD come from the
+          # `postgres-credentials` Secret declared in base — see the comment
+          # on audit-service-worker above for the full kustomize rationale.
+          env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: POSTGRES_HOST
+              value: "postgres.support-services-dev.svc.cluster.local"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: TENANT_POSTGRES_TIER_OVERRIDES
+              value: '{}'
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "adapter-service-worker"
+            - name: SERVICE_MODE
+              value: "worker"
 ---
 # ----- channel-service: split api ↔ worker (Phase 1.5) -----
 apiVersion: serving.knative.dev/v1

@@ -12,7 +12,7 @@ describe("Channel message flow services", () => {
       const publish = mock(() => Promise.resolve({ seq: 1 }));
       const jsm = {
         streams: {
-          info: mock(() => Promise.resolve({ config: { name: "s" } })),
+          add: mock(() => Promise.resolve({})),
         },
       } as unknown as import("nats").JetStreamManager;
       const ingress = new IngressService(

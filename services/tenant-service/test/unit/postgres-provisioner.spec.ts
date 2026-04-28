@@ -1,5 +1,6 @@
 import "../setup-env";
 import { describe, it, expect, mock } from "bun:test";
+import { TenantDatabaseTier } from "@yoizen/shared";
 import { TenantPostgresProvisioner } from "../../src/providers/postgres.provider";
 
 describe("TenantPostgresProvisioner", () => {
@@ -64,6 +65,107 @@ describe("TenantPostgresProvisioner", () => {
       name: "postgres",
       namespace: "ns-unit",
     });
+  });
+
+  it("provisionShared materializes postgres-credentials Secret + ExternalName Service in the tenant namespace", async () => {
+    const createNamespacedSecret = mock(() => Promise.resolve());
+    const createNamespacedService = mock(() => Promise.resolve());
+    const coreApi = {
+      createNamespacedSecret,
+      createNamespacedService,
+    };
+    const provisioner = new TenantPostgresProvisioner(
+      coreApi as never,
+      {} as never,
+    );
+    const fakeAdminSql = Object.assign(
+      mock(() => Promise.resolve([{ exists: false }])),
+      { unsafe: mock(() => Promise.resolve()) },
+    );
+    Reflect.set(
+      provisioner as unknown as Record<string, unknown>,
+      "adminSqlPromise",
+      Promise.resolve(fakeAdminSql),
+    );
+    Reflect.set(
+      provisioner as unknown as Record<string, unknown>,
+      "ensureSharedDatabaseGrants",
+      () => Promise.resolve(),
+    );
+
+    await provisioner.provision({
+      namespace: "acme-dev-ns",
+      tenantId: "acme",
+      tier: TenantDatabaseTier.Shared,
+    });
+
+    expect(createNamespacedSecret).toHaveBeenCalledTimes(1);
+    const secretCall = createNamespacedSecret.mock.calls[0]![0] as {
+      namespace: string;
+      body: {
+        metadata: { name: string; labels: Record<string, string> };
+        stringData: Record<string, string>;
+      };
+    };
+    expect(secretCall.namespace).toBe("acme-dev-ns");
+    expect(secretCall.body.metadata.name).toBe("postgres-credentials");
+    expect(secretCall.body.metadata.labels["yoizen.io/postgres-tier"]).toBe(
+      "shared",
+    );
+    expect(secretCall.body.stringData.POSTGRES_DB).toBe("tenant_acme");
+    expect(secretCall.body.stringData.POSTGRES_USER).toBe("tenant_acme_app");
+    expect(secretCall.body.stringData.POSTGRES_PASSWORD).toBeDefined();
+
+    expect(createNamespacedService).toHaveBeenCalledTimes(1);
+    const svcCall = createNamespacedService.mock.calls[0]![0] as {
+      namespace: string;
+      body: {
+        metadata: { name: string };
+        spec: { type: string; externalName: string };
+      };
+    };
+    expect(svcCall.namespace).toBe("acme-dev-ns");
+    expect(svcCall.body.metadata.name).toBe("postgres");
+    expect(svcCall.body.spec.type).toBe("ExternalName");
+    expect(svcCall.body.spec.externalName).toMatch(
+      /^postgres-shared\.support-services-[a-z0-9]+\.svc\.cluster\.local$/,
+    );
+  });
+
+  it("provisionShared is idempotent on Secret/Service 409 conflicts", async () => {
+    const conflict = () =>
+      Promise.reject({ response: { statusCode: 409 } });
+    const createNamespacedSecret = mock(conflict);
+    const createNamespacedService = mock(conflict);
+    const coreApi = { createNamespacedSecret, createNamespacedService };
+    const provisioner = new TenantPostgresProvisioner(
+      coreApi as never,
+      {} as never,
+    );
+    const fakeAdminSql = Object.assign(
+      mock(() => Promise.resolve([{ exists: true }])),
+      { unsafe: mock(() => Promise.resolve()) },
+    );
+    Reflect.set(
+      provisioner as unknown as Record<string, unknown>,
+      "adminSqlPromise",
+      Promise.resolve(fakeAdminSql),
+    );
+    Reflect.set(
+      provisioner as unknown as Record<string, unknown>,
+      "ensureSharedDatabaseGrants",
+      () => Promise.resolve(),
+    );
+
+    await expect(
+      provisioner.provision({
+        namespace: "acme-dev-ns",
+        tenantId: "acme",
+        tier: TenantDatabaseTier.Shared,
+      }),
+    ).resolves.toBeUndefined();
+    expect(createNamespacedSecret).toHaveBeenCalledTimes(1);
+    expect(createNamespacedService).toHaveBeenCalledTimes(1);
   });
 
   it("deprovisionShared drops database with FORCE and the matching role", async () => {

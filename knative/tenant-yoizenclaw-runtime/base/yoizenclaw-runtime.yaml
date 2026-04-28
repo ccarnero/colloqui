@@ -29,14 +29,30 @@ spec:
               value: "acme"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            # POSTGRES_HOST resolves to a Service named "postgres" in the
+            # tenant namespace. For dedicated tenants this is the per-tenant
+            # ClusterIP fronting the local StatefulSet; for shared tenants
+            # tenant-service materializes an ExternalName aliasing
+            # postgres-shared.support-services-<env>.svc.cluster.local. The
+            # runtime stays tier-agnostic.
             - name: POSTGRES_HOST
               value: "postgres"
             - name: POSTGRES_PORT
               value: "5432"
+            # DB name + role differ between tiers (yoizen/yoizen for dedicated,
+            # tenant_<id>/tenant_<id>_app for shared) so we read them from the
+            # per-namespace `postgres-credentials` Secret that tenant-service
+            # writes during provisioning instead of hard-coding values.
             - name: POSTGRES_DB
-              value: "yoizen"
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
             - name: POSTGRES_USER
-              value: "yoizen"
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:

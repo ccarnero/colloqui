@@ -10,6 +10,7 @@ import {
 import { ServicesController } from "./services.controller";
 import { ServicesRepository } from "./services.repository";
 import { ServicesService } from "./services.service";
+import { ServiceEventsMetrics } from "./service-events.metrics";
 import { ServiceEventsPublisher } from "./service-events.publisher";
 
 @Module({
@@ -20,6 +21,7 @@ import { ServiceEventsPublisher } from "./service-events.publisher";
     jetStreamProvider,
     ServicesRepository,
     ServicesService,
+    ServiceEventsMetrics,
     ServiceEventsPublisher,
   ],
   exports: [NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM],

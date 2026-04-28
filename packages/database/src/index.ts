@@ -29,6 +29,7 @@ export {
   createNatsConnectionProvider,
   ensureStream,
   ensureConsumer,
+  ensureTenantIngressStream,
   createJetStreamManagerProvider,
   createJetStreamDurableConsumerProvider,
   createJetStreamPublisherProvider,
@@ -67,9 +68,7 @@ export {
   KubernetesModule,
 } from "./kubernetes-provider";
 export type { Sql } from "./types";
-export {
-  NatsConsumerRunner,
-} from "./nats-consumer-runner";
+export { NatsConsumerRunner } from "./nats-consumer-runner";
 export type {
   INatsConsumerRunnerOptions,
   INatsConsumerLogger,

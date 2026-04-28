@@ -1,0 +1,96 @@
+# adapter-service API pod (HTTP).
+#
+# Phase 1.5 split: adapter-service was historically a single Knative
+# Service hosting both the HTTP CRUD surface (read/write of adapter
+# rows) AND the `adapter-internal-sync` durable that materialises
+# connector mirrors from `service.{upserted,deleted}.v1`. That coupling
+# blocked scale-to-zero — KPA would happily drop the Knative Service to
+# zero on HTTP idleness, silently killing the in-pod NATS consumer and
+# losing every registry event published while the adapter slept.
+#
+# Solution: same Docker image, two manifests.
+#   • adapter-service-api  → this file. Knative Service, scales 1↔3 on
+#     concurrency, can scale to zero in non-prod via overlays. Runs
+#     `SERVICE_MODE=api` so the `MultiTenantConsumerManager` boots in
+#     `ensureOnly: true` mode (registers durables on every tenant
+#     stream so KEDA has metric series, but never consumes — see
+#     `services/adapter-service/src/modules/internal-sync/internal-sync.service.ts`
+#     `isWorkerMode()` guards).
+#   • adapter-service-worker → see `adapter-service-worker.yaml`. Plain
+#     `apps/v1.Deployment` (KEDA-managed), runs `SERVICE_MODE=worker`
+#     so the `MultiTenantConsumerManager` consumes the
+#     `adapter-internal-sync` durable across every `INGRESS-<TENANT>`
+#     stream.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: adapter-service-api
+  labels:
+    app.kubernetes.io/name: adapter-service-api
+    app.kubernetes.io/component: adapter-persistence
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: adapter-service-api
+        app.kubernetes.io/component: adapter-persistence
+      annotations:
+        autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
+        autoscaling.knative.dev/metric: concurrency
+        autoscaling.knative.dev/target: "50"
+        autoscaling.knative.dev/min-scale: "1"
+        autoscaling.knative.dev/max-scale: "3"
+    spec:
+      containerConcurrency: 0
+      containers:
+        - name: user-container
+          image: dev.local/adapter-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: SERVICE_MODE
+              value: "api"
+            - name: OTEL_SERVICE_NAME
+              value: "adapter-service-api"
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30

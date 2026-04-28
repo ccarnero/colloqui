@@ -1,7 +1,17 @@
+import "reflect-metadata";
 import { describe, it, expect, mock } from "bun:test";
 import type { Mock } from "bun:test";
 import { RetentionPolicy } from "nats";
-import { ensureStream } from "../../src/nats-provider";
+import {
+  CHANNEL_STREAM_MAX_AGE_NS,
+  CHANNEL_STREAM_MAX_BYTES,
+  getTenantStreamName,
+  getTenantSubjectPattern,
+} from "@yoizen/shared";
+import {
+  ensureStream,
+  ensureTenantIngressStream,
+} from "../../src/nats-provider";
 
 interface StreamInfoStub {
   config: {
@@ -151,4 +161,142 @@ describe("ensureStream", () => {
 
     expect(jsm.streams.update).not.toHaveBeenCalled();
   });
+});
+
+interface MockTenantJsm {
+  streams: {
+    add: Mock<(cfg: Record<string, unknown>) => Promise<unknown>>;
+  };
+}
+
+function makeTenantJsmMock(
+  add: (cfg: Record<string, unknown>) => Promise<unknown> = (_cfg) =>
+    Promise.resolve({}),
+): MockTenantJsm {
+  return { streams: { add: mock(add) } };
+}
+
+describe("ensureTenantIngressStream", () => {
+  // NOTE: each test uses a unique tenantId so the module-level cache
+  // (a `Set<streamName>` keyed by `getTenantStreamName(tenantId)`) does
+  // not bleed test state across cases.
+
+  it(
+    "ensure-on-miss: calls streams.add with canonical name/subjects/policy",
+    async () => {
+      const tenantId = "miss-tenant";
+      const jsm = makeTenantJsmMock();
+
+      await ensureTenantIngressStream(jsm as never, tenantId);
+
+      expect(jsm.streams.add).toHaveBeenCalledTimes(1);
+      const [cfg] = jsm.streams.add.mock.calls[0] as [
+        Record<string, unknown>,
+      ];
+      expect(cfg.name).toBe(getTenantStreamName(tenantId));
+      expect(cfg.subjects).toEqual([getTenantSubjectPattern(tenantId)]);
+      expect(cfg.retention).toBe(RetentionPolicy.Limits);
+      expect(cfg.max_age).toBe(CHANNEL_STREAM_MAX_AGE_NS);
+      expect(cfg.max_bytes).toBe(CHANNEL_STREAM_MAX_BYTES);
+    },
+  );
+
+  it(
+    "ensure-on-hit: subsequent calls for the same tenant skip the broker",
+    async () => {
+      const tenantId = "hit-tenant";
+      const jsm = makeTenantJsmMock();
+
+      await ensureTenantIngressStream(jsm as never, tenantId);
+      await ensureTenantIngressStream(jsm as never, tenantId);
+      await ensureTenantIngressStream(jsm as never, tenantId);
+
+      expect(jsm.streams.add).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it(
+    "treats STREAM_NAME_IN_USE (10058) as success and seeds the cache",
+    async () => {
+      const tenantId = "existing-tenant";
+      const apiErr = Object.assign(new Error("api request failed"), {
+        api_error: {
+          code: 400,
+          err_code: 10058,
+          description: "stream name already in use",
+        },
+      });
+      const jsm = makeTenantJsmMock(() => Promise.reject(apiErr));
+
+      await ensureTenantIngressStream(jsm as never, tenantId);
+      // Cache should be seeded → second call must NOT hit the broker.
+      await ensureTenantIngressStream(jsm as never, tenantId);
+
+      expect(jsm.streams.add).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it(
+    'treats "stream name already in use" message as success when err_code is missing',
+    async () => {
+      const tenantId = "existing-msg-tenant";
+      const jsm = makeTenantJsmMock(() =>
+        Promise.reject(new Error("stream name already in use")),
+      );
+
+      await ensureTenantIngressStream(jsm as never, tenantId);
+      await ensureTenantIngressStream(jsm as never, tenantId);
+
+      expect(jsm.streams.add).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it(
+    "rethrows other broker errors and does NOT seed the cache",
+    async () => {
+      const tenantId = "broken-tenant";
+      const jsm = makeTenantJsmMock(() =>
+        Promise.reject(new Error("auth failure")),
+      );
+
+      await expect(
+        ensureTenantIngressStream(jsm as never, tenantId),
+      ).rejects.toThrow("auth failure");
+      // Cache must remain empty so the next call retries the broker.
+      await expect(
+        ensureTenantIngressStream(jsm as never, tenantId),
+      ).rejects.toThrow("auth failure");
+
+      expect(jsm.streams.add).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it(
+    "coalesces concurrent ensures for the same tenant into ONE streams.add",
+    async () => {
+      const tenantId = "concurrent-tenant";
+      let releaseAdd: (value: unknown) => void = () => {};
+      const addPromise = new Promise((resolve) => {
+        releaseAdd = resolve;
+      });
+      const jsm = makeTenantJsmMock(() => addPromise);
+
+      const p1 = ensureTenantIngressStream(jsm as never, tenantId);
+      const p2 = ensureTenantIngressStream(jsm as never, tenantId);
+      const p3 = ensureTenantIngressStream(jsm as never, tenantId);
+
+      // At this point all three callers must be parked on the SAME
+      // in-flight promise — only one streams.add should have been
+      // dispatched even though three callers raced to ensure.
+      expect(jsm.streams.add).toHaveBeenCalledTimes(1);
+
+      releaseAdd({});
+      await Promise.all([p1, p2, p3]);
+
+      // After the barrier releases, the cache is seeded and a follow-up
+      // call must short-circuit.
+      await ensureTenantIngressStream(jsm as never, tenantId);
+      expect(jsm.streams.add).toHaveBeenCalledTimes(1);
+    },
+  );
 });

@@ -7,20 +7,20 @@
 
 ## Phase 1: Foundation — shared `ensureTenantIngressStream`
 
-- [ ] 1.1 Lift `ensureTenantIngressStream(jsm, tenantId)` into `packages/database/src/nats-provider.ts` (preserve in-memory `Set<streamName>` cache; export idempotent helper) `[S]` → REQ-RSE-002
-- [ ] 1.2 Re-export `ensureTenantIngressStream` from `packages/database/src/index.ts` `[XS]` → REQ-RSE-002
-- [ ] ⊕ 1.3 Migrate `services/api-gateway/src/providers/nats.provider.ts` to `import { ensureTenantIngressStream } from "@yoizen/database"` and delete the local copy `[XS]`
-- [ ] ⊕ 1.4 Migrate `services/channel-service/src/providers/nats.provider.ts` to the shared helper and delete the local copy `[XS]`
-- [ ] ⊕ 1.5 Migrate `services/event-processor/src/providers/nats.provider.ts` to the shared helper and delete the local copy `[XS]`
-- [ ] 1.6 Add `packages/database/test/unit/nats-provider.spec.ts` covering: ensure-on-miss → `streams.add` invoked; ensure-on-hit → no broker call; broker reject → propagated `[S]` → REQ-RSE-002
+- [x] 1.1 Lift `ensureTenantIngressStream(jsm, tenantId)` into `packages/database/src/nats-provider.ts` (preserve in-memory `Set<streamName>` cache; export idempotent helper) `[S]` → REQ-RSE-002
+- [x] 1.2 Re-export `ensureTenantIngressStream` from `packages/database/src/index.ts` `[XS]` → REQ-RSE-002
+- [x] ⊕ 1.3 Migrate `services/api-gateway/src/providers/nats.provider.ts` to `import { ensureTenantIngressStream } from "@yoizen/database"` and delete the local copy `[XS]`
+- [x] ⊕ 1.4 Migrate `services/channel-service/src/providers/nats.provider.ts` to the shared helper and delete the local copy `[XS]`
+- [x] ⊕ 1.5 Migrate `services/event-processor/src/providers/nats.provider.ts` to the shared helper and delete the local copy `[XS]`
+- [x] 1.6 Add `packages/database/test/unit/nats-provider.spec.ts` covering: ensure-on-miss → `streams.add` invoked; ensure-on-hit → no broker call; broker reject → propagated `[S]` → REQ-RSE-002
 
 ## Phase 2: Publisher — `registry-service` JetStream emission (parallel to Phase 3)
 
-- [ ] 2.1 In `services/registry-service/src/providers/nats.provider.ts` expose `JETSTREAM` (`JetStreamClient`) and `JETSTREAM_MANAGER` (`JetStreamManager`) tokens; keep `streams: []` (registry does not own a stream — ensure runs per publish) `[S]` → REQ-RSE-001
-- [ ] 2.2 Wire `jetStreamProvider` + `jetStreamManagerProvider` into `services/registry-service/src/modules/services/services.module.ts` so `ServiceEventsPublisher` resolves the new tokens `[XS]` → REQ-RSE-001
-- [ ] ⊕ 2.3 Create `services/registry-service/src/modules/services/service-events.metrics.ts` with OTel counters `registry_publish_attempts`, `_successes`, `_failures{reason}`, `ensure_stream_calls{result=hit|miss}` `[S]` → NFR-RSE-001
-- [ ] 2.4 Rewrite `services/registry-service/src/modules/services/service-events.publisher.ts`: inject `JETSTREAM` + `JETSTREAM_MANAGER`; replace `conn.publish` + `flush()` with `js.publish(subject, bytes, { headers, msgID: idempotencykey })`; call `ensureTenantIngressStream(jsm, tenantId)` first; bounded retry (3 attempts, exp backoff capped 2s); short-circuit when `REGISTRY_EMIT_ADAPTER_SYNC=false` (no broker contact); drop with `reason=missing_tenant` metric on absent `tenantId`; never throw to caller (post-commit, best-effort) `[M]` → REQ-RSE-001, REQ-RSE-002, REQ-RSE-003, REQ-RSE-004, REQ-RSE-005, NFR-RSE-002
-- [ ] 2.5 Add unit tests in `services/registry-service/test/unit/service-events.publisher.spec.ts` covering:
+- [x] 2.1 In `services/registry-service/src/providers/nats.provider.ts` expose `JETSTREAM` (`JetStreamClient`) and `JETSTREAM_MANAGER` (`JetStreamManager`) tokens; keep `streams: []` (registry does not own a stream — ensure runs per publish) `[S]` → REQ-RSE-001
+- [x] 2.2 Wire `jetStreamProvider` + `jetStreamManagerProvider` into `services/registry-service/src/modules/services/services.module.ts` so `ServiceEventsPublisher` resolves the new tokens `[XS]` → REQ-RSE-001
+- [x] ⊕ 2.3 Create `services/registry-service/src/modules/services/service-events.metrics.ts` with OTel counters `registry_publish_attempts`, `_successes`, `_failures{reason}`, `ensure_stream_calls{result=hit|miss}` `[S]` → NFR-RSE-001
+- [x] 2.4 Rewrite `services/registry-service/src/modules/services/service-events.publisher.ts`: inject `JETSTREAM` + `JETSTREAM_MANAGER`; replace `conn.publish` + `flush()` with `js.publish(subject, bytes, { headers, msgID: idempotencykey })`; call `ensureTenantIngressStream(jsm, tenantId)` first; bounded retry (3 attempts, exp backoff capped 2s); short-circuit when `REGISTRY_EMIT_ADAPTER_SYNC=false` (no broker contact); drop with `reason=missing_tenant` metric on absent `tenantId`; never throw to caller (post-commit, best-effort) `[M]` → REQ-RSE-001, REQ-RSE-002, REQ-RSE-003, REQ-RSE-004, REQ-RSE-005, NFR-RSE-002
+- [x] 2.5 Add unit tests in `services/registry-service/test/unit/service-events.publisher.spec.ts` covering:
     - flag off → zero broker calls (REQ-RSE-004)
     - flag on + ensure cache miss → `streams.add` then `js.publish` ordered (REQ-RSE-001/002)
     - flag on + ensure cache hit → `js.publish` only, no `streams.add` (REQ-RSE-002)
@@ -30,17 +30,17 @@
 
 ## Phase 3: Consumer — `adapter-service` durable JetStream consumer (parallel to Phase 2)
 
-- [ ] 3.1 In `services/adapter-service/src/providers/nats.provider.ts` add `JETSTREAM_MANAGER` + `JETSTREAM` providers (mirror `services/workflow-service/src/providers/providers.module.ts`); keep existing `NATS_CONNECTION` for legacy paths `[S]` → REQ-ASIS-001
-- [ ] ⊕ 3.2 Update `services/adapter-service/src/modules/internal-sync/internal-sync.metrics.ts` to source the runner metrics via `createNatsConsumerMetrics(resolveServiceName("adapter-service"))` and pass them through `IMultiTenantConsumerConfig.metrics` `[XS]` → NFR-ASIS-001, NFR-XC-003
-- [ ] 3.3 Rewrite `services/adapter-service/src/modules/internal-sync/internal-sync.service.ts`:
+- [x] 3.1 In `services/adapter-service/src/providers/nats.provider.ts` add `JETSTREAM_MANAGER` + `JETSTREAM` providers (mirror `services/workflow-service/src/providers/providers.module.ts`); keep existing `NATS_CONNECTION` for legacy paths `[S]` → REQ-ASIS-001
+- [x] ⊕ 3.2 Update `services/adapter-service/src/modules/internal-sync/internal-sync.metrics.ts` to source the runner metrics via `createNatsConsumerMetrics(resolveServiceName("adapter-service"))` and pass them through `IMultiTenantConsumerConfig.metrics` `[XS]` → NFR-ASIS-001, NFR-XC-003
+- [x] 3.3 Rewrite `services/adapter-service/src/modules/internal-sync/internal-sync.service.ts`:
     - construct `MultiTenantConsumerManager(jsm, js, config, handler, logger)` in `onModuleInit`; call `start()`; `stop()` in `onModuleDestroy`
     - `config = { streamPattern: /^INGRESS-/, durableName: "adapter-internal-sync", filterSubject: "evt.*.registry-service.platform.service.system.*.v1", description, metrics, runnerOptions: { concurrency: 4 }, ensureOnly: !isWorkerMode() }`
     - handler: parse envelope → throw `PermanentError` on parse error / unknown CloudEvents `type` / `payload.tenantId !== subjectTenant` (cross-tenant attempt)
     - reuse `handleUpserted` / `handleDeleted` verbatim against `AdaptersRepository`
     - propagate transient errors (runner naks)
     - emit OTel span via `startNatsConsumerSpan(msg.subject, …)` `[M]` → REQ-ASIS-001, REQ-ASIS-003, REQ-ASIS-004, REQ-ASIS-005, REQ-ASIS-006
-- [ ] 3.4 Update `services/adapter-service/src/modules/internal-sync/internal-sync.module.ts` to inject `JETSTREAM_MANAGER` + `JETSTREAM`; the `MultiTenantConsumerManager` is constructed inside `InternalSyncService` regardless of mode — `ensureOnly` flag gates whether it consumes `[XS]` → REQ-AST-002
-- [ ] 3.5 Add unit tests in `services/adapter-service/test/unit/internal-sync.service.spec.ts` covering:
+- [x] 3.4 Update `services/adapter-service/src/modules/internal-sync/internal-sync.module.ts` to inject `JETSTREAM_MANAGER` + `JETSTREAM`; the `MultiTenantConsumerManager` is constructed inside `InternalSyncService` regardless of mode — `ensureOnly` flag gates whether it consumes `[XS]` → REQ-AST-002
+- [x] 3.5 Add unit tests in `services/adapter-service/test/unit/internal-sync.service.spec.ts` covering:
     - manager constructed with `ensureOnly: true` when `SERVICE_MODE=api`, `false` when `SERVICE_MODE=worker` (REQ-AST-002, REQ-ASIS-001)
     - same `service.upserted.v1` redelivered twice → handler issues two `upsertMirror` calls and the mock repository converges to one row (REQ-ASIS-002)
     - `service.deleted.v1` redelivered after delete → handler is no-op + ack (REQ-ASIS-002)
@@ -52,14 +52,14 @@
 
 ## Phase 4: Topology split — `adapter-service` api/worker bootstrap
 
-- [ ] 4.1 Replace `bootstrapFastifyApp` with `bootstrapSplitService({ baseServiceName: "adapter-service", module: AppModule, port: adapterServiceConfig.port, apiOptions: { withValidationPipe: true } })` in `services/adapter-service/src/main.ts` (mirror `services/audit-service/src/main.ts`); refuse to start on missing/unknown `SERVICE_MODE` `[S]` → REQ-AST-001, REQ-AST-002, REQ-AST-006, REQ-AST-007
-- [ ] 4.2 Update `services/adapter-service/src/modules/health/health.controller.ts` (and `health.service.ts`) for mode-aware probes:
+- [x] 4.1 Replace `bootstrapFastifyApp` with `bootstrapSplitService({ baseServiceName: "adapter-service", module: AppModule, port: adapterServiceConfig.port, apiOptions: { withValidationPipe: true } })` in `services/adapter-service/src/main.ts` (mirror `services/audit-service/src/main.ts`); refuse to start on missing/unknown `SERVICE_MODE` `[S]` → REQ-AST-001, REQ-AST-002, REQ-AST-006, REQ-AST-007
+- [x] 4.2 Update `services/adapter-service/src/modules/health/health.controller.ts` (and `health.service.ts`) for mode-aware probes:
     - `/healthz` always 200 while process up (REQ-AST-003 liveness)
     - worker `/readyz`: 200 only when `JetStreamManager` connected AND `getNatsTenantPostgresHealthStatus` reports DB green for ≥1 active tenant pool AND `MultiTenantConsumerManager.getRunner(stream).isHealthy()` is true for ≥1 stream; otherwise 503 with machine-readable failing-gate marker (REQ-AST-004, REQ-AST-007)
     - api `/readyz`: 200 when process + DB healthy, **independent** of NATS / durables (REQ-AST-005)
     - both modes: `/readyz` returns 503 once SIGTERM received (REQ-AST-003 graceful shutdown) `[M]`
-- [ ] 4.3 Update `services/adapter-service/src/modules/health/health.module.ts` to inject the consumer manager + tenant connection manager handles, gated by `isWorkerMode()` `[XS]` → REQ-AST-002
-- [ ] 4.4 Add unit tests in `services/adapter-service/test/unit/health.controller.spec.ts` covering:
+- [x] 4.3 Update `services/adapter-service/src/modules/health/health.module.ts` to inject the consumer manager + tenant connection manager handles, gated by `isWorkerMode()` `[XS]` → REQ-AST-002
+- [x] 4.4 Add unit tests in `services/adapter-service/test/unit/health.controller.spec.ts` covering:
     - worker `/readyz` 503 when NATS disconnected (REQ-AST-004 NATS gate)
     - worker `/readyz` 503 when DB ping fails (REQ-AST-004 DB gate)
     - worker `/readyz` 503 when no runner reports `isHealthy()` (REQ-AST-004 durable gate)
@@ -70,21 +70,21 @@
 
 ## Phase 5: Manifests — Knative + KEDA topology
 
-- [ ] ⊕ 5.1 Create `knative/services/base/adapter-service-api.yaml` (`serving.knative.dev/v1.Service`) cloned from current `adapter-service.yaml` with `SERVICE_MODE=api`, `OTEL_SERVICE_NAME=adapter-service-api`, `min-scale: "1"`, `max-scale: "3"`; mirror `audit-service-api.yaml` `[S]` → REQ-AST-001, REQ-AST-006, NFR-AST-001
-- [ ] ⊕ 5.2 Create `knative/services/base/adapter-service-worker.yaml` (`apps/v1.Deployment`) with `SERVICE_MODE=worker`, `OTEL_SERVICE_NAME=adapter-service-worker`, `replicas: 1`, `terminationGracePeriodSeconds: 30`, `readinessProbe: /readyz`, `livenessProbe: /healthz`; mirror `audit-service-worker.yaml` `[S]` → REQ-AST-002, REQ-AST-003, REQ-AST-006, REQ-ASIS-004, NFR-AST-001
-- [ ] 5.3 Delete legacy `knative/services/base/adapter-service.yaml` `[XS]` → REQ-AST-001
-- [ ] 5.4 Update `knative/services/base/kustomization.yaml` `resources` list: remove `adapter-service.yaml`, add `adapter-service-api.yaml` + `adapter-service-worker.yaml` `[XS]`
-- [ ] 5.5 Create `knative/services/base/scaledobjects/adapter-service-worker.yaml` targeting the worker `Deployment` with: `pollingInterval: 30`, `cooldownPeriod: 120`, `idleReplicaCount: 0`, `minReplicaCount: 1`, `maxReplicaCount: 3`, Prometheus trigger `query: sum(jetstream_consumer_num_pending{consumer_name="adapter-internal-sync"}) + sum(jetstream_consumer_num_ack_pending{consumer_name="adapter-internal-sync"})`, `threshold: "100"`, `activationThreshold: "0"`; mirror `event-processor-worker.yaml` `[S]` → REQ-ASA-001, REQ-ASA-002, REQ-ASA-003, REQ-ASA-004, REQ-ASA-005, REQ-ASA-006, NFR-ASA-002
-- [ ] 5.6 Update `knative/services/base/scaledobjects/kustomization.yaml` to append `adapter-service-worker.yaml` to `resources` `[XS]` → REQ-ASA-001
-- [ ] ⊕ 5.7 Patch `knative/services/overlays/_components/scale-to-zero-non-prod/knative-scale-to-zero.yaml`: rename the existing `adapter-service` patch target to `adapter-service-api` (keep `min-scale: "0"`) `[XS]` → REQ-AST-001, REQ-ASA-003
-- [ ] ⊕ 5.8 Patch `knative/services/overlays/_components/scale-to-zero-non-prod/keda-scale-to-zero.yaml` to add an `adapter-service-worker-scaler` block with `minReplicaCount: 0` / `idleReplicaCount: 0` `[XS]` → REQ-ASA-003
+- [x] ⊕ 5.1 Create `knative/services/base/adapter-service-api.yaml` (`serving.knative.dev/v1.Service`) cloned from current `adapter-service.yaml` with `SERVICE_MODE=api`, `OTEL_SERVICE_NAME=adapter-service-api`, `min-scale: "1"`, `max-scale: "3"`; mirror `audit-service-api.yaml` `[S]` → REQ-AST-001, REQ-AST-006, NFR-AST-001
+- [x] ⊕ 5.2 Create `knative/services/base/adapter-service-worker.yaml` (`apps/v1.Deployment`) with `SERVICE_MODE=worker`, `OTEL_SERVICE_NAME=adapter-service-worker`, `replicas: 1`, `terminationGracePeriodSeconds: 30`, `readinessProbe: /readyz`, `livenessProbe: /healthz`; mirror `audit-service-worker.yaml` `[S]` → REQ-AST-002, REQ-AST-003, REQ-AST-006, REQ-ASIS-004, NFR-AST-001
+- [x] 5.3 Delete legacy `knative/services/base/adapter-service.yaml` `[XS]` → REQ-AST-001
+- [x] 5.4 Update `knative/services/base/kustomization.yaml` `resources` list: remove `adapter-service.yaml`, add `adapter-service-api.yaml` + `adapter-service-worker.yaml` `[XS]`
+- [x] 5.5 Create `knative/services/base/scaledobjects/adapter-service-worker.yaml` targeting the worker `Deployment` with: `pollingInterval: 30`, `cooldownPeriod: 120`, `idleReplicaCount: 0`, `minReplicaCount: 1`, `maxReplicaCount: 3`, Prometheus trigger `query: sum(jetstream_consumer_num_pending{consumer_name="adapter-internal-sync"}) + sum(jetstream_consumer_num_ack_pending{consumer_name="adapter-internal-sync"})`, `threshold: "100"`, `activationThreshold: "0"`; mirror `event-processor-worker.yaml` `[S]` → REQ-ASA-001, REQ-ASA-002, REQ-ASA-003, REQ-ASA-004, REQ-ASA-005, REQ-ASA-006, NFR-ASA-002
+- [x] 5.6 Update `knative/services/base/scaledobjects/kustomization.yaml` to append `adapter-service-worker.yaml` to `resources` `[XS]` → REQ-ASA-001
+- [x] ⊕ 5.7 Patch `knative/services/overlays/_components/scale-to-zero-non-prod/knative-scale-to-zero.yaml`: rename the existing `adapter-service` patch target to `adapter-service-api` (keep `min-scale: "0"`) `[XS]` → REQ-AST-001, REQ-ASA-003
+- [x] ⊕ 5.8 Patch `knative/services/overlays/_components/scale-to-zero-non-prod/keda-scale-to-zero.yaml` to add an `adapter-service-worker-scaler` block with `minReplicaCount: 0` / `idleReplicaCount: 0` `[XS]` → REQ-ASA-003
 
 ## Phase 6: Tests — integration + E2E
 
-- [ ] ⊕ 6.1 Integration test: NATS testcontainer (`nats:2.10`) + JetStream — assert durable lifecycle for `adapter-internal-sync` across two synthetic tenant streams (`INGRESS-acme`, `INGRESS-globex`); publish 100 events, assert all 100 acked; redeliver scenario by simulating handler error first attempt → ack second attempt `[M]` → REQ-ASIS-001, REQ-ASIS-002, REQ-ASIS-003
-- [ ] ⊕ 6.2 Integration test: NATS testcontainer + per-tenant Postgres testcontainer (`pg:16`) for `upsertMirror`; publish 100 events across 3 tenants, kill the worker mid-publish, restart, assert mirror row count == published event count (zero loss) `[M]` → REQ-ASIS-002, REQ-ASIS-006, NFR-ASIS-002, NFR-XC-001
-- [ ] ⊕ 6.3 Integration test: SIGTERM with N in-flight messages — assert all messages either ack'd within grace OR nak'd before exit; no silent drops; `shutdown_naked_inflight` metric increments only when grace exceeded `[S]` → REQ-ASIS-004
-- [ ] 6.4 E2E test in `tests/e2e/`: spin up local-dev overlay (KEDA + Prometheus), seed two tenant ingress streams, register a service via `POST /registry/services` while `adapter-service-worker` is at 0 replicas; assert KEDA scales worker 0→1 within `pollingInterval + cooldown` window; assert mirror row appears within ≤90s p95; flip `REGISTRY_EMIT_ADAPTER_SYNC=false` and assert publisher silence (no broker activity) `[M]` → REQ-ASA-003, NFR-ASA-001, NFR-ASIS-003, NFR-XC-002
+- [x] ⊕ 6.1 Integration test: NATS testcontainer (`nats:2.10`) + JetStream — assert durable lifecycle for `adapter-internal-sync` across two synthetic tenant streams (`INGRESS-acme`, `INGRESS-globex`); publish 100 events, assert all 100 acked; redeliver scenario by simulating handler error first attempt → ack second attempt `[M]` → REQ-ASIS-001, REQ-ASIS-002, REQ-ASIS-003
+- [x] ⊕ 6.2 Integration test: NATS testcontainer + per-tenant Postgres testcontainer (`pg:16`) for `upsertMirror`; publish 100 events across 3 tenants, kill the worker mid-publish, restart, assert mirror row count == published event count (zero loss) `[M]` → REQ-ASIS-002, REQ-ASIS-006, NFR-ASIS-002, NFR-XC-001
+- [x] ⊕ 6.3 Integration test: SIGTERM with N in-flight messages — assert all messages either ack'd within grace OR nak'd before exit; no silent drops; `shutdown_naked_inflight` metric increments only when grace exceeded `[S]` → REQ-ASIS-004
+- [x] 6.4 E2E test in `tests/e2e/`: spin up local-dev overlay (KEDA + Prometheus), seed two tenant ingress streams, register a service via `POST /registry/services` while `adapter-service-worker` is at 0 replicas; assert KEDA scales worker 0→1 within `pollingInterval + cooldown` window; assert mirror row appears within ≤90s p95; flip `REGISTRY_EMIT_ADAPTER_SYNC=false` and assert publisher silence (no broker activity) `[M]` → REQ-ASA-003, NFR-ASA-001, NFR-ASIS-003, NFR-XC-002 — *KEDA + Prometheus + per-tenant SQL assertions gated behind `E2E_KEDA_HARNESS=1`; the soft path (registry HTTP contract) runs always. SLO numbers are deferred to manual gate **7.5** per the constraint in design.md "Testing Strategy".*
 
 ## Phase 7: Rollout — operational gates (executed manually during `sdd-apply`)
 
@@ -96,12 +96,12 @@
 
 ## Phase 8: Documentation
 
-- [ ] ⊕ 8.1 Update `services/adapter-service/AGENTS.md`: document split topology (`api` vs `worker`), `SERVICE_MODE` semantics, durable contract (`adapter-internal-sync`, filter, ack policy), `/readyz` gates per role, rollback procedure (flag flip + worker scale 0) `[S]` → docs (REQ-AST-001…007, REQ-ASIS-001/003)
-- [ ] ⊕ 8.2 Mirror Phase-8.1 changes into `services/adapter-service/CLAUDE.md` (same content, project rules tone) `[XS]`
-- [ ] ⊕ 8.3 Update `services/registry-service/AGENTS.md`: document JetStream publish path, `ensureTenantIngressStream` precondition, `REGISTRY_EMIT_ADAPTER_SYNC` flag, post-commit best-effort semantics, retry & metrics surface `[XS]` → docs (REQ-RSE-001…005)
-- [ ] ⊕ 8.4 Mirror Phase-8.3 changes into `services/registry-service/CLAUDE.md` `[XS]`
-- [ ] ⊕ 8.5 Update `infrastructure/base/keda/README.md` with an `adapter-service-worker` example entry (Prometheus query, threshold, activation, cold-start note) `[XS]` → REQ-ASA-001, NFR-XC-003
-- [ ] ⊕ 8.6 Document promoted `ensureTenantIngressStream` in `packages/database/README.md` (or the package's existing docstring/JSDoc): contract, idempotency, cache lifetime, error classes `[XS]` → REQ-RSE-002
+- [x] ⊕ 8.1 Update `services/adapter-service/AGENTS.md`: document split topology (`api` vs `worker`), `SERVICE_MODE` semantics, durable contract (`adapter-internal-sync`, filter, ack policy), `/readyz` gates per role, rollback procedure (flag flip + worker scale 0) `[S]` → docs (REQ-AST-001…007, REQ-ASIS-001/003)
+- [x] ⊕ 8.2 Mirror Phase-8.1 changes into `services/adapter-service/CLAUDE.md` (same content, project rules tone) `[XS]`
+- [x] ⊕ 8.3 Update `services/registry-service/AGENTS.md`: document JetStream publish path, `ensureTenantIngressStream` precondition, `REGISTRY_EMIT_ADAPTER_SYNC` flag, post-commit best-effort semantics, retry & metrics surface `[XS]` → docs (REQ-RSE-001…005)
+- [x] ⊕ 8.4 Mirror Phase-8.3 changes into `services/registry-service/CLAUDE.md` `[XS]`
+- [x] ⊕ 8.5 Update `infrastructure/base/keda/README.md` with an `adapter-service-worker` example entry (Prometheus query, threshold, activation, cold-start note) `[XS]` → REQ-ASA-001, NFR-XC-003
+- [x] ⊕ 8.6 Document promoted `ensureTenantIngressStream` — covered via comprehensive JSDoc on the function in `packages/database/src/nats-provider.ts` (no `packages/database/README.md` exists in repo); contract, idempotency, cache lifetime, error classes, concurrency coalescing all documented `[XS]` → REQ-RSE-002
 
 ---
 

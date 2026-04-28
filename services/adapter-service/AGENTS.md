@@ -255,11 +255,11 @@ Requires at least one per-tenant Postgres instance reachable at `postgres.<tenan
 | **PostgreSQL (per-tenant)** | Data store for adapter and endpoint configurations; one instance per tenant provisioned by `tenant-service` |
 | **tenant-service** | Provisions per-tenant Postgres and bakes `ADAPTER_SCHEMA_SQL` into each tenant's `init.sql` |
 | **registry-service** | Publishes `service.upserted.v1` / `service.deleted.v1` NATS events consumed by internal-sync |
-| **NATS JetStream** | Event bus for internal-sync |
+| **NATS JetStream** | Event bus for internal-sync (per-tenant `INGRESS-<TENANT>` streams) |
 | **api-gateway** | Upstream proxy (adapter endpoints proxied through the gateway at `/adapters`) |
 | **`@yoizen/shared`** | `TENANT_HEADER`, `AdapterConfig` interface, `ADAPTER_SCHEMA_SQL`, `ADAPTER_MANAGED_BY_REGISTRY` |
-| **`@yoizen/database`** | `TenantConnectionManager`, `NATS_CONNECTION`, `getNatsTenantPostgresHealthStatus` |
-| **`@yoizen/observability`** | Pino logger, OpenTelemetry tracing, HTTP metrics hooks |
+| **`@yoizen/database`** | `TenantConnectionManager`, `NATS_CONNECTION`, `JETSTREAM` / `JETSTREAM_MANAGER`, `MultiTenantConsumerManager`, `ensureTenantIngressStream`, `getNatsTenantPostgresHealthStatus` |
+| **`@yoizen/observability`** | Pino logger, OpenTelemetry tracing, HTTP metrics hooks, `bootstrapSplitService`, `isWorkerMode` |
 
 ### Consumed By (via `AdapterClient`)
 
@@ -276,3 +276,60 @@ Requires at least one per-tenant Postgres instance reachable at `postgres.<tenan
 - Prior to this migration, `http_adapters` and `adapter_endpoints` lived in the platform-shared Postgres with a `tenant_id` column and a `(tenant_id, name)` unique constraint. Those tables are dropped from the platform DB via `infrastructure/base/postgres/configmap.yaml` on fresh bootstraps.
 - Rollback would require re-introducing the `tenant_id` column and backfilling rows from each tenant's DB — keep the `ADAPTER_SCHEMA_SQL` export generic enough to make that trivial if ever needed.
 - Operator-owned (external) adapters need to be re-created after cut-over; internal-adapter mirrors repopulate automatically from registry-service `service.upserted.v1` events, or can be bulk-seeded via `scripts/backfill-internal-mirrors.ts`.
+
+## Topology (api / worker split)
+
+`adapter-service` ships as **two workloads** with the same image, selected at runtime via `SERVICE_MODE`:
+
+| Workload | Kind | `SERVICE_MODE` | Purpose | Scaling |
+|----------|------|-----------------|---------|---------|
+| `adapter-service-api` | `serving.knative.dev/v1.Service` | `api` | HTTP CRUD endpoints (`/adapters`, `/health`, `/healthz`, `/readyz`) | KPA. `min-scale: "1"` in prod, `"0"` in non-prod overlays. |
+| `adapter-service-worker` | `apps/v1.Deployment` | `worker` | Pull-based JetStream consumer (`adapter-internal-sync`). No HTTP CRUD. | KEDA `ScaledObject` → Prometheus trigger. `idleReplicaCount: 0`, `minReplicaCount: 1`, `maxReplicaCount: 3`. Scale-to-zero in non-prod. |
+
+Bootstrap is unified through `bootstrapSplitService({ baseServiceName: "adapter-service", module: AppModule, … })` from `@yoizen/observability`. Missing or unknown `SERVICE_MODE` (anything outside `["api", "worker"]`) is a fatal startup error.
+
+### Internal sync durable contract
+
+| Field | Value |
+|-------|-------|
+| Durable name | `adapter-internal-sync` (constant across all tenants) |
+| Bound stream | `INGRESS-<TENANT>` (one per tenant), reactively attached at runtime via `MultiTenantConsumerManager` |
+| Filter subject | `evt.<tenant>.registry-service.platform.service.system.*.v1` |
+| CloudEvents types accepted | `io.yoizen.registry.service.upserted.v1`, `io.yoizen.registry.service.deleted.v1` |
+| Ack policy | `Explicit` |
+| `max_deliver` | 5 |
+| `ack_wait` | 60s |
+| `backoff` | `[60s, 120s, 300s, 600s]` |
+| Concurrency | 4 (per-runner) |
+| Idempotency | `AdaptersRepository.upsertMirror` / `deleteMirrorByServiceName` are upserts — at-least-once redelivery is safe by design |
+| Tenant routing | the **subject** is the source of truth for the tenant. Payload `tenantId ≠ subject tenant` → `PermanentError("cross_tenant_attempt")` + `cross_tenant_attempt_total` metric, message is `term`'d (poison) |
+| Poison classes (`term`'d) | `parse_error`, `unknown_type`, `invalid_payload`, `cross_tenant_attempt`, `invalid_subject` |
+| Transient errors (`nak`'d) | DB unavailable, broker disconnect, anything that throws a plain `Error` (NOT `PermanentError`) |
+
+### `ensureOnly` mode
+
+The `MultiTenantConsumerManager` is constructed with `ensureOnly: !isWorkerMode()`:
+
+- **api pods** (`ensureOnly: true`): create the durable on every reachable `INGRESS-<TENANT>` stream but do NOT pull messages. This guarantees the JetStream `num_pending` metric is observable to Prometheus even when the worker Deployment is at 0 replicas — breaks the KEDA cold-start chicken-and-egg.
+- **worker pods** (`ensureOnly: false`): drive the runner with concurrency 4 and actually consume.
+
+### Health gates
+
+| Endpoint | api mode | worker mode |
+|----------|----------|-------------|
+| `/healthz` | 200 while process is up. No dependency probe. | Same — 200 while up. |
+| `/readyz` | 200 when the per-tenant DB connection manager is healthy. **Independent of NATS** — a dead broker does NOT block HTTP CRUD. | 200 only when **all three gates** are green: `JetStreamManager` connected, ≥1 active tenant pool reports DB green, ≥1 `MultiTenantConsumerManager` runner reports `isHealthy()`. Otherwise 503 with `{ status, mode, failed: ["nats" \| "db" \| "durables"] }`. |
+| Both modes on SIGTERM | `/readyz` flips to 503 with `failed: ["shutting_down"]` so kube stops sending traffic; in-flight messages drain through the runner before exit. |
+| Legacy `/health` | Aggregated `{ status, nats, postgres }` kept for backwards-compat with manifests that still probe the old path. Will be retired once all probes are migrated. |
+
+### Rollback
+
+The migration is reversible without redeploying source code:
+
+1. Set `REGISTRY_EMIT_ADAPTER_SYNC=false` on `registry-service` env. Publisher short-circuits; no broker contact.
+2. Scale `adapter-service-worker` Deployment to `replicas: 0` (or set `idleReplicaCount: 0` and let KEDA hold it idle).
+3. `adapter-service-api` keeps serving HTTP CRUD throughout — its `/readyz` does not depend on NATS.
+
+To re-enable: deploy registry first, run `scripts/backfill-internal-mirrors.ts` once to catch drift, then flip `REGISTRY_EMIT_ADAPTER_SYNC=true` and let KEDA wake the worker.
+
+> Cross-references: `REQ-AST-001..007`, `REQ-ASIS-001/003`, `REQ-ASA-001..006` in `.sdd/changes/adapter-internal-sync-durable/specs/`.

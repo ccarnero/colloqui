@@ -36,6 +36,14 @@ spec:
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
+  name: adapter-service-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
   name: audit-service-worker-scaler
 spec:
   minReplicaCount: 0

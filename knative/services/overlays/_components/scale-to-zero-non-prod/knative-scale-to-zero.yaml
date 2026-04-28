@@ -100,18 +100,6 @@ spec:
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: adapter-service
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
   name: admin-console
 spec:
   template:
@@ -146,6 +134,18 @@ spec:
         autoscaling.knative.dev/window: "60s"
 ---
 # ----- Phase 1.5: *-api KSVCs (HTTP-only, scale-to-zero safe) -----
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: adapter-service-api
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/scale-down-delay: "30s"
+        autoscaling.knative.dev/window: "60s"
+---
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:

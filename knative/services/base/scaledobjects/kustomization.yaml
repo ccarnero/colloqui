@@ -20,6 +20,7 @@ kind: Kustomization
 #      Trigger: `temporal` scaler reading task-queue depth.
 #
 #   2. NATS JetStream consumer workers (Phase 1.5 split):
+#        - adapter-service-worker    (adapter-internal-sync mirror)
 #        - audit-service-worker      (gateway-audit + channel-audit)
 #        - channel-service-worker    (egress + auto-reply + webhook-ingress)
 #        - event-processor-worker    (event-processor on EVENTS stream)
@@ -38,6 +39,7 @@ kind: Kustomization
 resources:
   - workflow-worker.yaml
   - workflow-http-worker.yaml
+  - adapter-service-worker.yaml
   - audit-service-worker.yaml
   - channel-service-worker.yaml
   - event-processor-worker.yaml

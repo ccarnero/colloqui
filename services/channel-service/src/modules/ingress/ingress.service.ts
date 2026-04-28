@@ -14,10 +14,10 @@ import {
   PinoLoggerService,
   startNatsProducerSpan,
 } from "@yoizen/observability";
+import { ensureTenantIngressStream } from "@yoizen/database";
 import {
   JETSTREAM_PUBLISHER,
   JETSTREAM_MANAGER,
-  ensureTenantIngressStream,
 } from "../../providers/nats.provider";
 import { createChannelEnvelope } from "../../domain/envelope.factory";
 import {

@@ -16,10 +16,10 @@ import {
   injectTraceContext,
   startNatsProducerSpan,
 } from "@yoizen/observability";
+import { ensureTenantIngressStream } from "@yoizen/database";
 import {
   JETSTREAM,
   JETSTREAM_MANAGER,
-  ensureTenantIngressStream,
 } from "../../providers/nats.provider";
 
 interface IPublishWebhookParams {

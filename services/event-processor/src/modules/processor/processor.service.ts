@@ -39,12 +39,12 @@ import type {
 import {
   MultiTenantConsumerManager,
   REDIS_CLIENT,
+  ensureTenantIngressStream,
   type IMultiTenantConsumerConfig,
 } from "@yoizen/database";
 import {
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
-  ensureTenantIngressStream,
 } from "../../providers/nats.provider";
 import { ProcessorPipelineDeps } from "./processor-pipeline-deps";
 import type { IPipelineContext } from "../../pipeline/pipeline-stage.interface";

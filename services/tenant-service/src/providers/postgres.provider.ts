@@ -135,7 +135,7 @@ export class TenantPostgresProvisioner implements OnModuleDestroy {
   async provision(input: string | ITenantPostgresProvisionInput): Promise<void> {
     const request = this.normalizeProvisionInput(input);
     if (request.tier === TenantDatabaseTier.Shared) {
-      await this.provisionShared(request.tenantId);
+      await this.provisionShared(request.tenantId, request.namespace);
       this.logger.log(
         `Provisioned shared PostgreSQL database for tenant ${request.tenantId}`,
       );
@@ -163,12 +163,34 @@ export class TenantPostgresProvisioner implements OnModuleDestroy {
     };
   }
 
-  private async provisionShared(tenantId: string): Promise<void> {
+  /**
+   * Provisions a shared-tier tenant on the platform-managed CloudNativePG
+   * cluster AND materializes the per-tenant Kubernetes view that workloads in
+   * the tenant namespace expect:
+   *
+   * - `Secret/postgres-credentials` with `POSTGRES_DB`, `POSTGRES_USER`,
+   *   `POSTGRES_PASSWORD` carrying the tenant role/database/password (so
+   *   manifests can `valueFrom.secretKeyRef` against the same Secret name as
+   *   the dedicated tier — the runtime stays tier-agnostic).
+   * - `Service/postgres` (`type: ExternalName`) aliasing the shared cluster's
+   *   FQDN so consumers can `POSTGRES_HOST=postgres` regardless of tier.
+   *
+   * `namespace` MUST be the tenant Kubernetes namespace produced by
+   * `tenantKubernetesNamespaceName(tenantId, env)`. The `createOrIgnore409`
+   * wrapper keeps re-provisioning idempotent for namespaces that already
+   * carry these objects from a previous run.
+   */
+  private async provisionShared(
+    tenantId: string,
+    namespace: string,
+  ): Promise<void> {
     const names = this.sharedNames(tenantId);
     const admin = await this.getAdminSql();
     await this.ensureSharedRole(admin, names);
     await this.ensureSharedDatabase(admin, names);
     await this.ensureSharedDatabaseGrants(names);
+    await this.createSharedSecret(namespace, names);
+    await this.createSharedExternalNameService(namespace);
   }
 
   /**
@@ -459,6 +481,67 @@ $do$;`,
     };
     await this.createOrIgnore409(() =>
       this.coreApi.createNamespacedSecret({ namespace, body }),
+    );
+  }
+
+  /**
+   * Shared-tier sibling of `createSecret`: the values are sourced from the
+   * shared CNPG cluster (per-tenant database `tenant_<id>`, role
+   * `tenant_<id>_app`, deterministic shared password) so consumers in the
+   * tenant namespace can read the same Secret keys regardless of tier.
+   */
+  private async createSharedSecret(
+    namespace: string,
+    names: ISharedTenantDatabaseNames,
+  ): Promise<void> {
+    const body: k8s.V1Secret = {
+      metadata: {
+        name: "postgres-credentials",
+        namespace,
+        labels: { ...LABELS, "yoizen.io/postgres-tier": "shared" },
+      },
+      type: "Opaque",
+      stringData: {
+        POSTGRES_DB: names.database,
+        POSTGRES_USER: names.role,
+        POSTGRES_PASSWORD: tenantServiceConfig.sharedPostgresTenantPassword,
+      },
+    };
+    await this.createOrIgnore409(() =>
+      this.coreApi.createNamespacedSecret({ namespace, body }),
+    );
+  }
+
+  /**
+   * Creates an `ExternalName` Service named `postgres` in the tenant namespace
+   * that DNS-aliases the shared CNPG cluster. Lets workloads keep the
+   * tier-agnostic `POSTGRES_HOST=postgres` env contract: dedicated tenants get
+   * the per-namespace ClusterIP Service, shared tenants get this alias.
+   */
+  private async createSharedExternalNameService(
+    namespace: string,
+  ): Promise<void> {
+    const body: k8s.V1Service = {
+      metadata: {
+        name: "postgres",
+        namespace,
+        labels: { ...LABELS, "yoizen.io/postgres-tier": "shared" },
+      },
+      spec: {
+        type: "ExternalName",
+        externalName: tenantServiceConfig.sharedPostgresHost,
+        ports: [
+          {
+            name: "postgres",
+            port: PG_PORT,
+            targetPort: PG_PORT,
+            protocol: "TCP",
+          },
+        ],
+      },
+    };
+    await this.createOrIgnore409(() =>
+      this.coreApi.createNamespacedService({ namespace, body }),
     );
   }
 

@@ -106,6 +106,7 @@ canary_deployments (
 | Kubernetes CustomObjects API | HTTPS | Create/update/delete Knative services, read revisions, apply traffic splits |
 | Kubernetes Core API | HTTPS | List namespaces (health check) |
 | PostgreSQL | TCP | Persist service registrations, routes, canary state |
+| NATS JetStream | NATS | Outbound publish of `service.{upserted,deleted}.v1` envelopes consumed by `adapter-service` internal-sync (best-effort, post-commit) |
 
 ### DI Tokens
 
@@ -181,6 +182,56 @@ Requires local PostgreSQL and Kubernetes cluster access.
 |---------|-------------|
 | **Kubernetes API** | Creates/manages Knative services, reads revisions, applies traffic splits |
 | **PostgreSQL** | Persists service registrations, routes, canary deployment state |
+| **NATS JetStream** | Publish-only — emits `service.{upserted,deleted}.v1` envelopes after every register/update/remove on the per-tenant `INGRESS-<TENANT>` stream |
 | **api-gateway** | Polls `GET /routes` every 15s for dynamic tenant routing |
 | **tenant-service** | Provisions tenant namespaces where registered services are deployed |
-| **`@yoizen/shared`** | Knative API constants, `TENANT_HEADER` |
+| **adapter-service** (consumer) | Materializes `service.upserted.v1` / `service.deleted.v1` events into per-tenant `http_adapters` mirrors via its `adapter-internal-sync` JetStream durable |
+| **`@yoizen/shared`** | Knative API constants, `TENANT_HEADER`, `SERVICE_UPSERTED_EVENT_TYPE`, `SERVICE_DELETED_EVENT_TYPE`, `buildRegistryPlatformSubject` |
+| **`@yoizen/database`** | `JETSTREAM` / `JETSTREAM_MANAGER` providers, `ensureTenantIngressStream` helper |
+
+## Service-events publisher (NATS JetStream)
+
+Registry emits a CloudEvents envelope to the per-tenant ingress stream after every `register` / `update` / `remove` operation on `ServicesService`. The publish is best-effort and runs **post-commit** — the HTTP response is independent of broker availability.
+
+### Subject and types
+
+- Subject: `evt.<tenantId>.registry-service.platform.service.system.<upserted|deleted>.v1`, built via `buildRegistryPlatformSubject(tenantId, "service", "upserted" | "deleted")`.
+- CloudEvents `type`: `SERVICE_UPSERTED_EVENT_TYPE` (`io.yoizen.registry.service.upserted.v1`) or `SERVICE_DELETED_EVENT_TYPE` (`io.yoizen.registry.service.deleted.v1`).
+- CloudEvents `source`: `REGISTRY_EVENT_SOURCE` (`//registry-service/services`).
+
+### Publish path
+
+```
+ServicesService.{register|update|remove}
+  -> Postgres commit
+  -> ServiceEventsPublisher.publishUpserted | publishDeleted
+       -> short-circuit if REGISTRY_EMIT_ADAPTER_SYNC=false (no broker contact)
+       -> short-circuit + missing_tenant metric if payload.tenantId is empty
+       -> ensureTenantIngressStream(jsm, tenantId)        // @yoizen/database
+       -> js.publish(subject, bytes, { headers, msgID })  // JetStream
+       -> bounded retry (3 attempts, exp backoff capped 2s)
+       -> classify failure: ack_timeout | broker_unavailable | ensure_stream_failed | unknown
+  -> never throws to the caller
+```
+
+`msgID` is the deterministic CloudEvents `id` of the envelope, so JetStream deduplicates retries across publisher restarts.
+
+### Feature flag
+
+`REGISTRY_EMIT_ADAPTER_SYNC=true|false` (read by `services/registry-service/src/config.ts`):
+
+- `false` (default): publisher short-circuits. No `streams.add`, no `js.publish`, no metric increment except an audit-friendly debug log. Use for safe rollout AND for emergency rollback without redeploying.
+- `true`: publisher emits to JetStream after the DB commit.
+
+Rollout order is interlocked: deploy `adapter-service-worker` → run `scripts/backfill-internal-mirrors.ts` once → flip flag to `true`.
+
+### Metrics
+
+| Metric | Labels | Notes |
+|--------|--------|-------|
+| `registry_publish_attempts_total` | `event_type` | Increments on every attempt (after flag short-circuit). |
+| `registry_publish_successes_total` | `event_type` | One increment per successful PubAck. |
+| `registry_publish_failures_total` | `event_type`, `reason` | `reason ∈ {ack_timeout, broker_unavailable, ensure_stream_failed, missing_tenant, unknown}`. |
+| `registry_ensure_stream_calls_total` | `result` | `result ∈ {hit, miss}` — observability of the per-tenant `ensureTenantIngressStream` cache. |
+
+> Cross-references: `REQ-RSE-001..005`, `NFR-RSE-001/002` in `.sdd/changes/adapter-internal-sync-durable/specs/registry-service-events.md`.

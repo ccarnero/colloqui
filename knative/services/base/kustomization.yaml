@@ -12,6 +12,8 @@ resources:
   # at startup. *-api pods host HTTP controllers (Knative Service,
   # KPA-managed); *-worker pods host JetStream durable consumers
   # (apps/v1.Deployment, KEDA-managed). See `scaledobjects/`.
+  - adapter-service-api.yaml
+  - adapter-service-worker.yaml
   - audit-service-api.yaml
   - audit-service-worker.yaml
   - channel-service-api.yaml
@@ -34,7 +36,6 @@ resources:
   - proxy-service.yaml
   - registry-service.yaml
   - registry-service-sa.yaml
-  - adapter-service.yaml
   - admin-console.yaml
   - messaging-console.yaml
   - yoizenclaw-admin-service.yaml

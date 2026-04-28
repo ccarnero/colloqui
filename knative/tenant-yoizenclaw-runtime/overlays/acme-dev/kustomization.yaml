@@ -5,3 +5,9 @@ namespace: acme-dev-ns
 
 resources:
   - ../../base
+  # Shared-tier backstop: declares `Secret/postgres-credentials` and
+  # `Service/postgres` (ExternalName → postgres-shared) so the runtime
+  # deploys cleanly even if `tenant-service` has not provisioned the
+  # namespace yet. Safe no-op when tenant-service has already written
+  # equivalent objects (kubectl apply reconciles by name).
+  - postgres-credentials.yaml

@@ -21,11 +21,11 @@ import {
   injectTraceContext,
   startNatsProducerSpan,
 } from "@yoizen/observability";
+import { ensureTenantIngressStream } from "@yoizen/database";
 import {
   JETSTREAM,
   JETSTREAM_MANAGER,
   NATS_CONNECTION,
-  ensureTenantIngressStream,
 } from "../../providers/nats.provider";
 import { REDIS_CLIENT } from "../../providers/redis.provider";
 import { randomUUID } from "crypto";

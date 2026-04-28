@@ -5,17 +5,15 @@ import { WebhookIngressPublisherService } from "../../src/modules/channels/webho
 
 describe("WebhookIngressPublisherService", () => {
   const publish = mock(() => Promise.resolve({ seq: 1 }));
-  const info = mock(() => Promise.resolve({}));
   const add = mock(() => Promise.resolve({}));
 
   const js = { publish } as unknown as JetStreamClient;
   const jsm = {
-    streams: { info, add },
+    streams: { add },
   } as unknown as JetStreamManager;
 
   beforeEach(() => {
     publish.mockClear();
-    info.mockClear();
     add.mockClear();
   });
 
@@ -79,7 +77,6 @@ describe("WebhookIngressPublisherService", () => {
       headers: {},
     });
 
-    expect(info).toHaveBeenCalledTimes(1);
-    expect(add).toHaveBeenCalledTimes(0);
+    expect(add).toHaveBeenCalledTimes(1);
   });
 });

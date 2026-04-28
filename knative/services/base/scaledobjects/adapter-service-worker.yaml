@@ -1,0 +1,59 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: adapter-service-worker-scaler
+  labels:
+    app.kubernetes.io/name: adapter-service-worker
+    app.kubernetes.io/component: autoscaler
+spec:
+  # Plain Deployment, not Knative Service — see worker manifest for
+  # rationale (KEDA cannot scale Knative Services).
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: adapter-service-worker
+  pollingInterval: 30
+  cooldownPeriod: 120
+  # Base keeps a hot replica; non-prod overlays drop both to 0 for
+  # full scale-to-zero between idle windows.
+  idleReplicaCount: 0
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  fallback:
+    failureThreshold: 3
+    replicas: 1
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 15
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 30
+        scaleDown:
+          stabilizationWindowSeconds: 180
+          policies:
+            - type: Percent
+              value: 50
+              periodSeconds: 60
+  # `adapter-internal-sync` is a single durable name shared across every
+  # `INGRESS-<TENANT>` stream — one durable per tenant, all tagged with
+  # the same `consumer_name` label by the NATS Prometheus exporter. The
+  # query sums pending + ack-pending across all tenants into a single
+  # backlog scalar (REQ-ASA-002). `activationThreshold: "0"` means any
+  # nonzero backlog wakes the worker from 0 replicas (REQ-ASA-003);
+  # `threshold: "100"` is the per-replica target so KEDA only adds
+  # replicas when sustained backlog warrants it (REQ-ASA-004).
+  triggers:
+    - type: prometheus
+      name: adapter-internal-sync-lag
+      metadata:
+        serverAddress: http://prometheus.support-services-dev.svc.cluster.local:9090
+        metricName: adapter_internal_sync_backlog
+        threshold: "100"
+        activationThreshold: "0"
+        query: |
+          sum(jetstream_consumer_num_pending{consumer_name="adapter-internal-sync"})
+          +
+          sum(jetstream_consumer_num_ack_pending{consumer_name="adapter-internal-sync"})

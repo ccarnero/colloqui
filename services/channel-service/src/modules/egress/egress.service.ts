@@ -15,10 +15,10 @@ import {
   PermanentError,
 } from "@yoizen/shared";
 import { EGRESS_BREAKER } from "./egress-breaker.provider";
+import { ensureTenantIngressStream } from "@yoizen/database";
 import {
   JETSTREAM_PUBLISHER,
   JETSTREAM_MANAGER,
-  ensureTenantIngressStream,
 } from "../../providers/nats.provider";
 import {
   PinoLoggerService,

@@ -104,3 +104,58 @@ both `channel-egress` and `auto-reply`; `audit-service` owns both
 per **service** with **multiple triggers** — KEDA scales the service to
 the `max()` of all trigger decisions. This avoids multiple ScaledObjects
 fighting over the same workload.
+
+## Reference example: `adapter-service-worker`
+
+Owns the `adapter-internal-sync` durable per tenant on each
+`INGRESS-<TENANT>` stream. The worker is a plain `apps/v1.Deployment`,
+so KEDA scales it directly via `/scale` (no Knative-HPA dance):
+
+```yaml
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: adapter-service-worker-scaler
+spec:
+  scaleTargetRef:
+    kind: Deployment
+    name: adapter-service-worker
+  pollingInterval: 30
+  cooldownPeriod: 120
+  idleReplicaCount: 0
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus.support-services-dev.svc.cluster.local:9090
+        metricName: adapter_internal_sync_backlog
+        threshold: "100"
+        activationThreshold: "0"
+        query: |
+          sum(jetstream_consumer_num_pending{consumer_name="adapter-internal-sync"}) +
+          sum(jetstream_consumer_num_ack_pending{consumer_name="adapter-internal-sync"})
+```
+
+### Cold-start interlock — `ensureOnly` on the api workload
+
+`adapter-service` ships as **two workloads** with the same image:
+`adapter-service-api` (Knative Service, `SERVICE_MODE=api`) and
+`adapter-service-worker` (`apps/v1.Deployment`, `SERVICE_MODE=worker`).
+The api pod constructs a `MultiTenantConsumerManager` with
+`ensureOnly: !isWorkerMode()` — it **registers** the durable on every
+reachable `INGRESS-<TENANT>` stream but never pulls messages. This
+guarantees the JetStream `num_pending` metric is observable to
+Prometheus even when the worker Deployment is at 0 replicas, breaking
+the otherwise-classic cold-start chicken-and-egg (no consumer →
+no metric → no scale-up trigger). The worker pod, when it eventually
+runs with `ensureOnly: false`, drains the backlog with concurrency 4.
+
+The `activationThreshold: "0"` means any non-zero backlog activates the
+worker; `idleReplicaCount: 0` (overlay-patched in non-prod) lets it
+scale all the way to zero. Cold-start budget is `~pollingInterval +
+worker boot` ≈ 60–90s p95 (matches the audit-service-worker SLO).
+
+> Cross-references:
+> `knative/services/base/scaledobjects/adapter-service-worker.yaml`,
+> `.sdd/changes/adapter-internal-sync-durable/specs/adapter-service-autoscaling.md`.
