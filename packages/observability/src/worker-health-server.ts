@@ -42,18 +42,26 @@ const NOT_FOUND_HEADERS = {
 
 /**
  * Starts the worker health server on `port` (default 3000) bound to all
- * interfaces. Both `/health` and `/readyz` answer 200 once `setReady(true)`
- * has been called and 503 before that (so kubelet keeps the pod
- * `NotReady` while NATS consumers are still wiring up in `OnModuleInit`).
+ * interfaces. `/health`, `/healthz` and `/readyz` answer 200 once
+ * `setReady(true)` has been called and 503 before that (so kubelet keeps
+ * the pod `NotReady` while NATS consumers are still wiring up in
+ * `OnModuleInit`). `/healthz` is accepted as an alias of `/health` to
+ * match the api-pod probe convention used by some worker manifests
+ * (e.g. `knative/services/base/adapter-service-worker.yaml`).
  *
  * Any other path returns 404 to keep curl-based smoke tests honest.
  */
+const HEALTH_PATHS: ReadonlySet<string> = new Set([
+  "/health",
+  "/healthz",
+  "/readyz",
+]);
+
 export function startWorkerHealthServer(port: number): IWorkerHealthServer {
   let ready = false;
   const server = createServer((req, res) => {
     const url = req.url ?? "/";
-    const isHealthPath = url === "/health" || url === "/readyz";
-    if (isHealthPath) {
+    if (HEALTH_PATHS.has(url)) {
       if (ready) {
         res.writeHead(200, READY_HEADERS);
         res.end(READY_BODY);

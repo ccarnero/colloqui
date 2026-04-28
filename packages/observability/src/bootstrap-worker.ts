@@ -44,24 +44,42 @@ export async function bootstrapWorkerApp(
   options: IBootstrapWorkerOptions,
 ): Promise<IBootstrappedWorker> {
   const logger = new PinoLoggerService(options.serviceName);
-  const app = await NestFactory.createApplicationContext(
-    options.module as Parameters<typeof NestFactory.createApplicationContext>[0],
-    { logger },
-  );
-  await app.init();
 
+  // Bind the health socket BEFORE Nest init so kubelet probes get a clean
+  // HTTP 503 (NotReady) during NATS/DB/consumer wiring instead of TCP
+  // ECONNREFUSED. `setReady(true)` is flipped only after `app.init()`
+  // resolves successfully — until then the server answers 503 on every
+  // health path (O(1) per request, see worker-health-server.ts).
   const healthPort = options.healthPort ?? 3000;
-  let healthServer: IWorkerHealthServer | null = null;
-  if (healthPort > 0) {
-    healthServer = startWorkerHealthServer(healthPort);
-    healthServer.setReady(true);
+  const healthServer: IWorkerHealthServer | null =
+    healthPort > 0 ? startWorkerHealthServer(healthPort) : null;
+  if (healthServer !== null) {
     logger.log(
-      `Worker health server listening on :${healthPort} (/health, /readyz)`,
+      `Worker health server listening on :${healthPort} (/health, /healthz, /readyz) — answering 503 until init completes`,
     );
   }
 
-  logger.log(`Worker context ready for ${options.serviceName}`);
-  return { app, healthServer };
+  try {
+    const app = await NestFactory.createApplicationContext(
+      options.module as Parameters<
+        typeof NestFactory.createApplicationContext
+      >[0],
+      { logger },
+    );
+    await app.init();
+
+    if (healthServer !== null) {
+      healthServer.setReady(true);
+    }
+
+    logger.log(`Worker context ready for ${options.serviceName}`);
+    return { app, healthServer };
+  } catch (err) {
+    if (healthServer !== null) {
+      await healthServer.close();
+    }
+    throw err;
+  }
 }
 
 /**

@@ -134,6 +134,7 @@ build_image() {
 get_ksvc_names() {
   local svc="$1"
   case "$svc" in
+    adapter-service)          echo "adapter-service-api" ;;
     audit-service)            echo "audit-service-api" ;;
     channel-service)          echo "channel-service-api" ;;
     event-processor)          echo "event-processor-api" ;;
@@ -150,6 +151,7 @@ get_ksvc_names() {
 get_deployment_names() {
   local svc="$1"
   case "$svc" in
+    adapter-service)          echo "adapter-service-worker" ;;
     audit-service)            echo "audit-service-worker" ;;
     channel-service)          echo "channel-service-worker" ;;
     event-processor)          echo "event-processor-worker" ;;
