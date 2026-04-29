@@ -29,6 +29,7 @@ import type {
   IWorkflowDefinitionRow,
   IWorkflowExecutionRow,
 } from "./workflows.repository";
+import type { IListExecutionsQuery } from "./dto/list-executions-query.dto";
 
 /** Execution row exposed over HTTP (camelCase). */
 export interface IWorkflowExecutionListItem {
@@ -41,6 +42,14 @@ export interface IWorkflowExecutionListItem {
   status: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** Paginated list response for `GET /workflows/:id/executions`. */
+export interface IWorkflowExecutionsPage {
+  items: IWorkflowExecutionListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface ICreateWorkflowResult {
@@ -314,15 +323,20 @@ export class WorkflowsService {
   }
 
   /**
-   * Lists execution rows for a definition.
+   * Lists execution rows for a definition with server-side pagination
+   * and `created_at` sort. Backed by the composite index
+   * `idx_workflow_executions_definition_created_at` for O(log n + k)
+   * page reads, where k = `query.pageSize`.
    *
    * @param definitionId - Parent definition id.
    * @param tenantId - Tenant scope.
+   * @param query - Validated pagination + sort options.
    */
   async listExecutions(
     definitionId: string,
     tenantId: string,
-  ): Promise<IWorkflowExecutionListItem[]> {
+    query: IListExecutionsQuery,
+  ): Promise<IWorkflowExecutionsPage> {
     const definition = await this.repository.findDefinitionById(
       definitionId,
       tenantId,
@@ -331,11 +345,48 @@ export class WorkflowsService {
       throw new NotFoundException("Workflow definition not found");
     }
 
-    const rows = await this.repository.findExecutionsByDefinition(
-      definitionId,
+    const { page, pageSize, sort } = query;
+    const offset = (page - 1) * pageSize;
+
+    // Issue both queries in parallel against the same per-tenant pool
+    // to keep total latency at max(rows, total) instead of rows + total.
+    const [rows, total] = await Promise.all([
+      this.repository.findExecutionsByDefinition({
+        definitionId,
+        tenantId,
+        limit: pageSize,
+        offset,
+        sort,
+      }),
+      this.repository.countExecutionsByDefinition(definitionId, tenantId),
+    ]);
+
+    return {
+      items: rows.map((r) => this.mapExecutionRow(r, tenantId)),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  /**
+   * Tenant-wide executions count grouped by definition. Returns a
+   * plain `Record<string, number>` so the wire format is JSON-friendly;
+   * the caller (admin-console) folds it into a `Map<string, number>`
+   * for O(1) per-card lookups.
+   */
+  async getExecutionCountsByTenant(
+    tenantId: string,
+  ): Promise<Record<string, number>> {
+    const rows = await this.repository.countExecutionsGroupedByDefinition(
       tenantId,
     );
-    return rows.map((r) => this.mapExecutionRow(r, tenantId));
+    const counts: Record<string, number> = {};
+    for (let i = 0, len = rows.length; i < len; i++) {
+      const row = rows[i]!;
+      counts[row.definition_id] = row.count;
+    }
+    return counts;
   }
 
   /**

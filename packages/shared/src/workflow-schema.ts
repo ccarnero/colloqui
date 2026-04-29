@@ -40,4 +40,6 @@ CREATE INDEX IF NOT EXISTS idx_workflow_executions_definition_id
   ON workflow_executions (definition_id);
 CREATE INDEX IF NOT EXISTS idx_workflow_executions_temporal_ids
   ON workflow_executions (temporal_workflow_id, temporal_run_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_executions_definition_created_at
+  ON workflow_executions (definition_id, created_at DESC);
 `;

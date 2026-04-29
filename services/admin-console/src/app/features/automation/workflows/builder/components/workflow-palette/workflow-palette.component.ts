@@ -43,6 +43,14 @@ interface IPaletteGroup {
       padding: 16px 12px;
       overflow-y: auto;
       flex-shrink: 0;
+      /*
+       * Prevent text selection while dragging palette items onto the
+       * canvas — without this, repeated drags accumulate selection
+       * highlights that block subsequent drags until the user clicks
+       * outside the builder.
+       */
+      user-select: none;
+      -webkit-user-select: none;
     }
     .palette-group {
       margin-bottom: 16px;

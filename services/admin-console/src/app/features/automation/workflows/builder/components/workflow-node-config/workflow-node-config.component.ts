@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   effect,
   inject,
   input,
@@ -112,7 +113,7 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                   appearance="outline"
                   class="config-field"
                 >
-                  <mat-label>Channel Accounts</mat-label>
+                  <mat-label>Channel Accounts *</mat-label>
                   <mat-select
                     multiple
                     [ngModel]="n.configuration['accountIds']"
@@ -129,9 +130,6 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                       </mat-option>
                     }
                   </mat-select>
-                  <mat-hint>
-                    Leave empty to match all accounts
-                  </mat-hint>
                 </mat-form-field>
 
                 <mat-form-field
@@ -160,7 +158,7 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                   appearance="outline"
                   class="config-field"
                 >
-                  <mat-label>Channel Account</mat-label>
+                  <mat-label>Channel Account *</mat-label>
                   <mat-select
                     [ngModel]="n.configuration['accountId']"
                     (ngModelChange)="
@@ -168,7 +166,7 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                     "
                   >
                     @for (
-                      acc of channelAccounts();
+                      acc of outboundAccounts();
                       track acc.id
                     ) {
                       <mat-option [value]="acc.id">
@@ -176,6 +174,15 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                       </mat-option>
                     }
                   </mat-select>
+                  @if (
+                    triggerAccountIds().length > 0 &&
+                    outboundAccounts().length === 0
+                  ) {
+                    <mat-hint>
+                      No accounts available. Update the trigger's
+                      Channel Accounts to enable sending.
+                    </mat-hint>
+                  }
                 </mat-form-field>
 
                 <mat-form-field
@@ -366,16 +373,15 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                 <mat-label>Adapter</mat-label>
                 <mat-select
                   [ngModel]="n.configuration['adapterId']"
-                  (ngModelChange)="updateConfig('adapterId', $event)"
+                  (ngModelChange)="onAdapterChange($event)"
                 >
-                  <mat-option [value]="''">None</mat-option>
+                  <mat-option [value]="''">None (custom URL)</mat-option>
                   @for (a of adapters(); track a.id) {
                     <mat-option [value]="a.id">
                       {{ a.name }}
                     </mat-option>
                   }
                 </mat-select>
-                <mat-hint>Select a connector</mat-hint>
               </mat-form-field>
 
               @if (n.configuration['adapterId']) {
@@ -383,12 +389,12 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                   appearance="outline"
                   class="config-field"
                 >
-                  <mat-label>Endpoint</mat-label>
+                  <mat-label>Endpoint *</mat-label>
                   <mat-select
                     [ngModel]="n.configuration['endpointId']"
-                    (ngModelChange)="updateConfig('endpointId', $event)"
+                    (ngModelChange)="onEndpointChange($event)"
                   >
-                    <mat-option [value]="''">None</mat-option>
+                    <mat-option [value]="''">Select an endpoint</mat-option>
                     @for (
                       ep of endpointsForAdapter(
                         n.configuration['adapterId']
@@ -401,29 +407,29 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                     }
                   </mat-select>
                 </mat-form-field>
+              } @else {
+                <mat-form-field appearance="outline" class="config-field">
+                  <mat-label>Method *</mat-label>
+                  <mat-select
+                    [ngModel]="n.configuration['method']"
+                    (ngModelChange)="updateConfig('method', $event)"
+                  >
+                    <mat-option value="GET">GET</mat-option>
+                    <mat-option value="POST">POST</mat-option>
+                    <mat-option value="PUT">PUT</mat-option>
+                    <mat-option value="PATCH">PATCH</mat-option>
+                    <mat-option value="DELETE">DELETE</mat-option>
+                  </mat-select>
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="config-field">
+                  <mat-label>URL *</mat-label>
+                  <input
+                    matInput
+                    [ngModel]="n.configuration['url']"
+                    (ngModelChange)="updateConfig('url', $event)"
+                  />
+                </mat-form-field>
               }
-
-              <mat-form-field appearance="outline" class="config-field">
-                <mat-label>Method</mat-label>
-                <mat-select
-                  [ngModel]="n.configuration['method']"
-                  (ngModelChange)="updateConfig('method', $event)"
-                >
-                  <mat-option value="GET">GET</mat-option>
-                  <mat-option value="POST">POST</mat-option>
-                  <mat-option value="PUT">PUT</mat-option>
-                  <mat-option value="PATCH">PATCH</mat-option>
-                  <mat-option value="DELETE">DELETE</mat-option>
-                </mat-select>
-              </mat-form-field>
-              <mat-form-field appearance="outline" class="config-field">
-                <mat-label>URL</mat-label>
-                <input
-                  matInput
-                  [ngModel]="n.configuration['url']"
-                  (ngModelChange)="updateConfig('url', $event)"
-                />
-              </mat-form-field>
             }
 
             @case (types.SERVICE_CALL) {
@@ -616,6 +622,11 @@ export class WorkflowNodeConfigComponent implements OnInit {
   readonly registryService = inject(RegistryService);
 
   readonly node = input<IWorkflowNode | null>(null);
+  /**
+   * Account IDs declared on the inbound trigger. When non-empty,
+   * outbound channelSend dropdowns are filtered to those accounts.
+   */
+  readonly triggerAccountIds = input<string[]>([]);
   readonly close = output<void>();
   readonly remove = output<string>();
   readonly configChange = output<{
@@ -629,6 +640,21 @@ export class WorkflowNodeConfigComponent implements OnInit {
   readonly channelAccounts = signal<IChannelAccount[]>([]);
   readonly adapters = signal<IAdapterDto[]>([]);
   readonly yoizenclawAgents = signal<IYoizenclawAgent[]>([]);
+
+  /**
+   * Channel accounts allowed in the outbound `channelSend` dropdown.
+   * Filtered by the trigger's accountIds so the user can only pick
+   * accounts the workflow is actually listening on. Falls back to
+   * the full list when the trigger hasn't picked any (transient
+   * state during construction).
+   */
+  readonly outboundAccounts = computed<IChannelAccount[]>(() => {
+    const all = this.channelAccounts();
+    const allowed = this.triggerAccountIds();
+    if (allowed.length === 0) return all;
+    const set = new Set(allowed);
+    return all.filter((a) => set.has(a.id));
+  });
 
   /** Draft JSON for Service Call body; synced when the selected node key changes. */
   readonly serviceCallBodyDraft = signal("");
@@ -672,6 +698,48 @@ export class WorkflowNodeConfigComponent implements OnInit {
       (a) => a.id === adapterId,
     );
     return adapter?.endpoints ?? [];
+  }
+
+  /**
+   * Switches between adapter mode and URL ad-hoc mode.
+   *
+   * When an adapter is selected we clear `method`/`url` and reset
+   * `endpointId` so the user must pick an endpoint explicitly. When
+   * the user goes back to "None" we clear adapter-related fields so
+   * the payload doesn't carry stale references.
+   */
+  onAdapterChange(adapterId: unknown): void {
+    const next = typeof adapterId === "string" ? adapterId : "";
+    this.updateConfig("adapterId", next);
+    this.updateConfig("endpointId", "");
+    if (next) {
+      // Entering adapter mode: clear URL ad-hoc fields.
+      this.updateConfig("method", "");
+      this.updateConfig("url", "");
+    }
+  }
+
+  /**
+   * Auto-fills `method`/`url` from the selected endpoint so the
+   * serialized payload remains valid for the backend (which still
+   * requires both fields as strings).
+   */
+  onEndpointChange(endpointId: unknown): void {
+    const next = typeof endpointId === "string" ? endpointId : "";
+    this.updateConfig("endpointId", next);
+    if (!next) {
+      this.updateConfig("method", "");
+      this.updateConfig("url", "");
+      return;
+    }
+    const adapterId = this.node()?.configuration["adapterId"];
+    const endpoint = this.endpointsForAdapter(adapterId).find(
+      (e) => e.id === next,
+    );
+    if (endpoint) {
+      this.updateConfig("method", endpoint.method);
+      this.updateConfig("url", endpoint.path);
+    }
   }
 
   updateConfig(field: string, value: unknown): void {

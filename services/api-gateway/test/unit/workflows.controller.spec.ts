@@ -95,16 +95,27 @@ describe("WorkflowsController", () => {
   });
 
   it("listExecutions and getExecutionStatus delegate", async () => {
-    await controller.listExecutions(req, "wf-1");
+    const query = { page: "1", pageSize: "20", sort: "desc" };
+    await controller.listExecutions(req, "wf-1", query);
     expect(proxy).toHaveBeenCalledWith({
       method: "GET",
       path: "/workflows/wf-1/executions",
       tenantId: "tenant-x",
+      query,
     });
     await controller.getExecutionStatus(req, "wf-1", "ex-1");
     expect(proxy).toHaveBeenCalledWith({
       method: "GET",
       path: "/workflows/wf-1/executions/ex-1",
+      tenantId: "tenant-x",
+    });
+  });
+
+  it("getExecutionCounts delegates to /workflows/executions/counts", async () => {
+    await controller.getExecutionCounts(req);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/workflows/executions/counts",
       tenantId: "tenant-x",
     });
   });

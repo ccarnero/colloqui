@@ -22,6 +22,7 @@ describe("WorkflowsController", () => {
   let executeWorkflow: ReturnType<typeof mock>;
   let listExecutions: ReturnType<typeof mock>;
   let getExecutionStatus: ReturnType<typeof mock>;
+  let getExecutionCountsByTenant: ReturnType<typeof mock>;
 
   beforeEach(async () => {
     getWorkflow = mock(() => Promise.resolve(null));
@@ -29,8 +30,11 @@ describe("WorkflowsController", () => {
     listWorkflows = mock(() => Promise.resolve([]));
     deleteWorkflow = mock(() => Promise.resolve());
     executeWorkflow = mock(() => Promise.resolve({ runId: "r1" }));
-    listExecutions = mock(() => Promise.resolve([]));
+    listExecutions = mock(() =>
+      Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 }),
+    );
     getExecutionStatus = mock(() => Promise.resolve({ status: "RUNNING" }));
+    getExecutionCountsByTenant = mock(() => Promise.resolve({}));
     const workflowsService = {
       createWorkflow,
       listWorkflows,
@@ -39,6 +43,7 @@ describe("WorkflowsController", () => {
       executeWorkflow,
       listExecutions,
       getExecutionStatus,
+      getExecutionCountsByTenant,
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -85,13 +90,48 @@ describe("WorkflowsController", () => {
     expect(executeWorkflow).toHaveBeenCalledWith("wf-1", "t1", { x: 1 });
   });
 
-  it("listExecutions delegates", async () => {
-    await controller.listExecutions("t1", "wf-1");
-    expect(listExecutions).toHaveBeenCalledWith("wf-1", "t1");
+  it("listExecutions delegates with parsed query (defaults)", async () => {
+    await controller.listExecutions("t1", "wf-1", {});
+    expect(listExecutions).toHaveBeenCalledWith("wf-1", "t1", {
+      page: 1,
+      pageSize: 20,
+      sort: "desc",
+    });
+  });
+
+  it("listExecutions parses page, pageSize and sort from query", async () => {
+    await controller.listExecutions("t1", "wf-1", {
+      page: "3",
+      pageSize: "10",
+      sort: "asc",
+    });
+    expect(listExecutions).toHaveBeenCalledWith("wf-1", "t1", {
+      page: 3,
+      pageSize: 10,
+      sort: "asc",
+    });
+  });
+
+  it("listExecutions clamps invalid query values to defaults", async () => {
+    await controller.listExecutions("t1", "wf-1", {
+      page: "-2",
+      pageSize: "999",
+      sort: "weird",
+    });
+    expect(listExecutions).toHaveBeenCalledWith("wf-1", "t1", {
+      page: 1,
+      pageSize: 100,
+      sort: "desc",
+    });
   });
 
   it("getExecutionStatus delegates", async () => {
     await controller.getExecutionStatus("t1", "wf-1", "ex-1");
     expect(getExecutionStatus).toHaveBeenCalledWith("wf-1", "ex-1", "t1");
+  });
+
+  it("getExecutionCounts delegates to service", async () => {
+    await controller.getExecutionCounts("t1");
+    expect(getExecutionCountsByTenant).toHaveBeenCalledWith("t1");
   });
 });

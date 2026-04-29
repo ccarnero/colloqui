@@ -9,6 +9,7 @@ import {
 } from "@angular/core";
 import { ActivatedRoute, Router } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
+import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatSnackBarModule, MatSnackBar } from "@angular/material/snack-bar";
 import {
@@ -28,11 +29,17 @@ import {
 } from "../domain/workflow-node.types";
 import { createNodeFromDefault } from "../domain/workflow-node-defaults";
 import { serializeFlow } from "../domain/flow-serializer";
+import { validateWorkflow } from "../domain/validation/workflow.validator";
+import type { ValidationError } from "../domain/validation/validation.types";
 import { WorkflowApiService } from "../services/workflow-api.service";
 
 import { WorkflowNodeComponent } from "./components/workflow-node/workflow-node.component";
 import { WorkflowPaletteComponent } from "./components/workflow-palette/workflow-palette.component";
 import { WorkflowNodeConfigComponent } from "./components/workflow-node-config/workflow-node-config.component";
+import {
+  WorkflowValidationDialogComponent,
+  type IWorkflowValidationDialogData,
+} from "./components/workflow-validation-dialog/workflow-validation-dialog.component";
 
 const CONNECTOR_OUTPUT_SUFFIX = "-out";
 const CONNECTOR_INPUT_SUFFIX = "-in";
@@ -91,6 +98,7 @@ function pruneConflictingConnections(
   imports: [
     FFlowModule,
     MatButtonModule,
+    MatDialogModule,
     MatIconModule,
     MatSnackBarModule,
     WorkflowNodeComponent,
@@ -167,6 +175,7 @@ function pruneConflictingConnections(
                   fDragHandle
                   [fNodePosition]="node.position"
                   [node]="node"
+                  [hasError]="errorNodeKeys().has(node.key)"
                   (click)="selectNode(node.key)"
                 />
               }
@@ -178,6 +187,7 @@ function pruneConflictingConnections(
         @if (selectedNode()) {
           <app-workflow-node-config
             [node]="selectedNode()"
+            [triggerAccountIds]="triggerAccountIds()"
             (close)="deselectNode()"
             (remove)="removeNode($event)"
             (configChange)="onNodeConfigChange($event)"
@@ -295,6 +305,7 @@ export class WorkflowBuilderComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly api = inject(WorkflowApiService);
   private readonly snackBar = inject(MatSnackBar);
+  private readonly dialog = inject(MatDialog);
   private readonly canvas = viewChild(FCanvasComponent);
 
   readonly flow = signal<IWorkflowFlow>({
@@ -307,6 +318,15 @@ export class WorkflowBuilderComponent implements OnInit {
 
   readonly selectedNodeKey = signal<string | null>(null);
   readonly saving = signal(false);
+  readonly validationErrors = signal<ValidationError[]>([]);
+  readonly errorNodeKeys = computed(
+    () =>
+      new Set(
+        this.validationErrors()
+          .map((e) => e.nodeKey)
+          .filter((k): k is string => typeof k === "string"),
+      ),
+  );
 
   readonly nodes = computed(() =>
     Object.values(this.flow().nodes),
@@ -319,6 +339,24 @@ export class WorkflowBuilderComponent implements OnInit {
   readonly selectedNode = computed<IWorkflowNode | null>(() => {
     const key = this.selectedNodeKey();
     return key ? (this.flow().nodes[key] ?? null) : null;
+  });
+
+  /**
+   * Account IDs declared on the inbound trigger (Channel In). Used by
+   * the config panel to constrain outbound `channelSend` to accounts
+   * the workflow is actually listening on.
+   */
+  readonly triggerAccountIds = computed<string[]>(() => {
+    const inbound = Object.values(this.flow().nodes).find(
+      (n) =>
+        n.type === EWorkflowNodeType.CHANNEL &&
+        n.configuration["direction"] === "inbound",
+    );
+    if (!inbound) return [];
+    const ids = inbound.configuration["accountIds"];
+    return Array.isArray(ids)
+      ? ids.filter((id): id is string => typeof id === "string")
+      : [];
   });
 
   ngOnInit(): void {
@@ -500,6 +538,14 @@ export class WorkflowBuilderComponent implements OnInit {
   }
 
   saveWorkflow(): void {
+    const result = validateWorkflow(this.flow());
+    if (!result.valid) {
+      this.validationErrors.set(result.errors);
+      this.openValidationDialog(result.errors);
+      return;
+    }
+    this.validationErrors.set([]);
+
     this.saving.set(true);
     const serialized = serializeFlow(this.flow());
 
@@ -516,12 +562,12 @@ export class WorkflowBuilderComponent implements OnInit {
       : this.api.create(payload);
 
     request$.subscribe({
-      next: (result) => {
+      next: (saved) => {
         this.saving.set(false);
         if (!id) {
-          this.flow.update((f) => ({ ...f, key: result.id }));
+          this.flow.update((f) => ({ ...f, key: saved.id }));
           this.router.navigate(
-            ["/workflows", result.id, "edit"],
+            ["/workflows", saved.id, "edit"],
             { replaceUrl: true },
           );
         }
@@ -535,6 +581,15 @@ export class WorkflowBuilderComponent implements OnInit {
           duration: 5000,
         });
       },
+    });
+  }
+
+  private openValidationDialog(errors: ValidationError[]): void {
+    const data: IWorkflowValidationDialogData = { errors };
+    this.dialog.open(WorkflowValidationDialogComponent, {
+      data,
+      autoFocus: false,
+      restoreFocus: true,
     });
   }
 

@@ -34,6 +34,8 @@ describe("WorkflowsService", () => {
     createExecution: ReturnType<typeof mock>;
     softDeleteDefinition: ReturnType<typeof mock>;
     findExecutionsByDefinition: ReturnType<typeof mock>;
+    countExecutionsByDefinition: ReturnType<typeof mock>;
+    countExecutionsGroupedByDefinition: ReturnType<typeof mock>;
     findExecutionById: ReturnType<typeof mock>;
     updateExecutionStatus: ReturnType<typeof mock>;
   };
@@ -104,6 +106,10 @@ describe("WorkflowsService", () => {
             updated_at: new Date(),
           },
         ]),
+      ),
+      countExecutionsByDefinition: mock(() => Promise.resolve(1)),
+      countExecutionsGroupedByDefinition: mock(() =>
+        Promise.resolve([{ definition_id: "def-1", count: 3 }]),
       ),
       findExecutionById: mock(() =>
         Promise.resolve({
@@ -232,19 +238,61 @@ describe("WorkflowsService", () => {
     );
   });
 
-  it("listExecutions returns rows when definition exists", async () => {
-    const rows = await service.listExecutions("def-1", "t1");
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.id).toBe("ex-1");
-    expect(rows[0]?.definitionId).toBe("def-1");
-    expect(rows[0]?.temporalWorkflowId).toBe("tw-1");
+  it("listExecutions returns paginated rows + total when definition exists", async () => {
+    const page = await service.listExecutions("def-1", "t1", {
+      page: 1,
+      pageSize: 20,
+      sort: "desc",
+    });
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]?.id).toBe("ex-1");
+    expect(page.items[0]?.definitionId).toBe("def-1");
+    expect(page.items[0]?.temporalWorkflowId).toBe("tw-1");
+    expect(page.total).toBe(1);
+    expect(page.page).toBe(1);
+    expect(page.pageSize).toBe(20);
+  });
+
+  it("listExecutions forwards limit/offset/sort to the repository", async () => {
+    await service.listExecutions("def-1", "t1", {
+      page: 3,
+      pageSize: 10,
+      sort: "asc",
+    });
+    const call = mockRepo.findExecutionsByDefinition.mock.calls[0];
+    expect(call[0]).toEqual({
+      definitionId: "def-1",
+      tenantId: "t1",
+      limit: 10,
+      offset: 20,
+      sort: "asc",
+    });
   });
 
   it("listExecutions throws when definition missing", async () => {
     mockRepo.findDefinitionById.mockResolvedValueOnce(undefined);
-    await expect(service.listExecutions("missing", "t1")).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      service.listExecutions("missing", "t1", {
+        page: 1,
+        pageSize: 20,
+        sort: "desc",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("getExecutionCountsByTenant folds rows into a record", async () => {
+    mockRepo.countExecutionsGroupedByDefinition.mockResolvedValueOnce([
+      { definition_id: "def-1", count: 3 },
+      { definition_id: "def-2", count: 7 },
+    ]);
+    const counts = await service.getExecutionCountsByTenant("t1");
+    expect(counts).toEqual({ "def-1": 3, "def-2": 7 });
+  });
+
+  it("getExecutionCountsByTenant returns empty object when no executions", async () => {
+    mockRepo.countExecutionsGroupedByDefinition.mockResolvedValueOnce([]);
+    const counts = await service.getExecutionCountsByTenant("t1");
+    expect(counts).toEqual({});
   });
 
   it("getExecutionStatus describes Temporal handle and returns status", async () => {

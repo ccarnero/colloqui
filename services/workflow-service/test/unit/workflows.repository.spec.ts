@@ -294,19 +294,92 @@ describe("WorkflowsRepository", () => {
   });
 
   describe("findExecutionsByDefinition", () => {
-    it("returns executions for definition", async () => {
+    it("returns paginated executions for definition", async () => {
       const sql = makeSql((strings) => {
         const q = querySignature(strings);
-        if (q.includes("WHERE definition_id =")) {
+        if (
+          q.includes("WHERE definition_id =") &&
+          q.includes("LIMIT") &&
+          q.includes("OFFSET")
+        ) {
           return Promise.resolve([executionRow]);
         }
         return Promise.resolve([]);
       });
       const repo = await buildRepo(sql);
 
-      const rows = await repo.findExecutionsByDefinition("def-1", "t1");
+      const rows = await repo.findExecutionsByDefinition({
+        definitionId: "def-1",
+        tenantId: "t1",
+        limit: 20,
+        offset: 0,
+        sort: "desc",
+      });
       expect(rows).toHaveLength(1);
       expect(rows[0]?.definition_id).toBe("def-1");
+    });
+
+    it("supports asc sort", async () => {
+      const captured: string[] = [];
+      const sql = makeSql((strings) => {
+        captured.push(querySignature(strings));
+        return Promise.resolve([]);
+      });
+      const repo = await buildRepo(sql);
+
+      await repo.findExecutionsByDefinition({
+        definitionId: "def-1",
+        tenantId: "t1",
+        limit: 20,
+        offset: 40,
+        sort: "asc",
+      });
+      expect(captured.some((q) => q.includes("ORDER BY"))).toBe(true);
+    });
+  });
+
+  describe("countExecutionsByDefinition", () => {
+    it("returns the integer total", async () => {
+      const sql = makeSql((strings) => {
+        const q = querySignature(strings);
+        if (q.includes("COUNT(*)::int AS total")) {
+          return Promise.resolve([{ total: 7 }]);
+        }
+        return Promise.resolve([]);
+      });
+      const repo = await buildRepo(sql);
+
+      const total = await repo.countExecutionsByDefinition("def-1", "t1");
+      expect(total).toBe(7);
+    });
+
+    it("returns 0 when there are no rows", async () => {
+      const sql = makeSql(() => Promise.resolve([]));
+      const repo = await buildRepo(sql);
+      const total = await repo.countExecutionsByDefinition("def-1", "t1");
+      expect(total).toBe(0);
+    });
+  });
+
+  describe("countExecutionsGroupedByDefinition", () => {
+    it("returns counts grouped by definition_id", async () => {
+      const sql = makeSql((strings) => {
+        const q = querySignature(strings);
+        if (q.includes("GROUP BY definition_id")) {
+          return Promise.resolve([
+            { definition_id: "def-1", count: 3 },
+            { definition_id: "def-2", count: 5 },
+          ]);
+        }
+        return Promise.resolve([]);
+      });
+      const repo = await buildRepo(sql);
+
+      const rows = await repo.countExecutionsGroupedByDefinition("t1");
+      expect(rows).toEqual([
+        { definition_id: "def-1", count: 3 },
+        { definition_id: "def-2", count: 5 },
+      ]);
     });
   });
 });

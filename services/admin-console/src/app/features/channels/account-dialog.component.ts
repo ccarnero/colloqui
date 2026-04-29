@@ -84,7 +84,9 @@ export interface IAccountDialogResult {
             matInput
             [ngModel]="name()"
             (ngModelChange)="name.set($event)"
-            placeholder="e.g. My WhatsApp Business"
+            [placeholder]="
+              channel() === 'whatsapp' ? 'e.g. My WhatsApp Business' : 'e.g. My Telegram Bot'
+            "
           />
         </mat-form-field>
 

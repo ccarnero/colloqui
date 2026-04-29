@@ -20,6 +20,7 @@ import {
       class="wf-builder-node"
       [class.is-channel]="node().type === channelType"
       [class.is-branch]="node().type === branchType"
+      [class.has-error]="hasError()"
     >
       <div
         class="wf-node-input"
@@ -70,6 +71,14 @@ import {
     }
     .wf-builder-node.is-branch {
       border-color: var(--purple);
+    }
+    .wf-builder-node.has-error {
+      border-color: var(--red, #dc2626);
+      box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.18);
+    }
+    .wf-builder-node.has-error:hover {
+      border-color: var(--red, #dc2626);
+      box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.32);
     }
     .wf-node-content {
       display: flex;
@@ -136,6 +145,7 @@ import {
 })
 export class WorkflowNodeComponent {
   readonly node = input.required<IWorkflowNode>();
+  readonly hasError = input<boolean>(false);
   readonly selected = output<string>();
 
   readonly channelType = EWorkflowNodeType.CHANNEL;

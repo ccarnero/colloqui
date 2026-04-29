@@ -9,11 +9,13 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  Query,
 } from "@nestjs/common";
 import { TenantGuard, TenantId } from "@yoizen/database";
 import { CreateWorkflowDto } from "./dto/create-workflow.dto";
 import { UpdateWorkflowDto } from "./dto/update-workflow.dto";
 import { ExecuteWorkflowDto } from "./dto/execute-workflow.dto";
+import { parseListExecutionsQuery } from "./dto/list-executions-query.dto";
 import { WorkflowsService } from "./workflows.service";
 
 @Controller("workflows")
@@ -57,6 +59,16 @@ export class WorkflowsController {
     return this.workflowsService.listWorkflows(tenantId);
   }
 
+  /**
+   * Tenant-wide executions count grouped by definition. Declared
+   * before `@Get(":id")` so Nest does not match `executions/counts`
+   * as a workflow id.
+   */
+  @Get("executions/counts")
+  async getExecutionCounts(@TenantId() tenantId: string) {
+    return this.workflowsService.getExecutionCountsByTenant(tenantId);
+  }
+
   @Get(":id")
   async getWorkflow(@TenantId() tenantId: string, @Param("id") id: string) {
     return this.workflowsService.getWorkflow(id, tenantId);
@@ -79,8 +91,13 @@ export class WorkflowsController {
   }
 
   @Get(":id/executions")
-  async listExecutions(@TenantId() tenantId: string, @Param("id") id: string) {
-    return this.workflowsService.listExecutions(id, tenantId);
+  async listExecutions(
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
+    @Query() query: Record<string, unknown>,
+  ) {
+    const parsed = parseListExecutionsQuery(query);
+    return this.workflowsService.listExecutions(id, tenantId, parsed);
   }
 
   @Get(":id/executions/:executionId")

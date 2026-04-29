@@ -51,6 +51,21 @@ export interface ICreateExecutionParams {
   readonly request: Record<string, unknown>;
 }
 
+export type ExecutionsSortDirection = "asc" | "desc";
+
+export interface IFindExecutionsParams {
+  readonly definitionId: string;
+  readonly tenantId: string;
+  readonly limit: number;
+  readonly offset: number;
+  readonly sort: ExecutionsSortDirection;
+}
+
+export interface IExecutionsCountByDefinition {
+  readonly definition_id: string;
+  readonly count: number;
+}
+
 /**
  * Persistence for workflow definitions and executions.
  *
@@ -224,18 +239,60 @@ export class WorkflowsRepository {
     return row;
   }
 
+  /**
+   * Paginated executions for a given definition. Sort direction is
+   * whitelisted to `asc | desc` to avoid SQL injection while still
+   * letting the caller pick the order via a single `sql\`ASC|DESC\``
+   * fragment. Backed by composite index
+   * `idx_workflow_executions_definition_created_at` so each page is
+   * O(log n + limit).
+   */
   async findExecutionsByDefinition(
-    definitionId: string,
-    tenantId: string,
+    params: IFindExecutionsParams,
   ): Promise<IWorkflowExecutionRow[]> {
+    const { definitionId, tenantId, limit, offset, sort } = params;
     const sql = await this.sqlFor(tenantId);
+    const orderFragment =
+      sort === "asc" ? sql`created_at ASC` : sql`created_at DESC`;
     return sql<IWorkflowExecutionRow[]>`
       SELECT id, definition_id,
              temporal_workflow_id, temporal_run_id,
              request, status, created_at, updated_at
       FROM workflow_executions
       WHERE definition_id = ${definitionId}
-      ORDER BY created_at DESC
+      ORDER BY ${orderFragment}
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+  }
+
+  /** Total executions for a single definition (paired with paginated list). */
+  async countExecutionsByDefinition(
+    definitionId: string,
+    tenantId: string,
+  ): Promise<number> {
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<{ total: number }[]>`
+      SELECT COUNT(*)::int AS total
+      FROM workflow_executions
+      WHERE definition_id = ${definitionId}
+    `;
+    return row?.total ?? 0;
+  }
+
+  /**
+   * Tenant-wide executions count grouped by definition. Single SQL
+   * roundtrip with `GROUP BY definition_id`, indexed by
+   * `idx_workflow_executions_definition_id`. Returns rows that the
+   * caller folds into a `Map<string, number>` for O(1) lookups.
+   */
+  async countExecutionsGroupedByDefinition(
+    tenantId: string,
+  ): Promise<IExecutionsCountByDefinition[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql<IExecutionsCountByDefinition[]>`
+      SELECT definition_id, COUNT(*)::int AS count
+      FROM workflow_executions
+      GROUP BY definition_id
     `;
   }
 }

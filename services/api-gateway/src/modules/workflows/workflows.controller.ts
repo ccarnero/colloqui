@@ -7,6 +7,7 @@ import {
   Param,
   Body,
   Req,
+  Query,
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
@@ -57,6 +58,20 @@ export class WorkflowsController {
     });
   }
 
+  /**
+   * Tenant-wide executions count grouped by definition. Declared
+   * before `@Get(":id")` so Nest does not match `executions/counts`
+   * as a workflow id.
+   */
+  @Get("executions/counts")
+  async getExecutionCounts(@Req() req: ITenantScopedRequest) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/workflows/executions/counts",
+      tenantId: req.tenantId,
+    });
+  }
+
   @Get(":id")
   async getWorkflow(
     @Req() req: ITenantScopedRequest,
@@ -101,11 +116,13 @@ export class WorkflowsController {
   async listExecutions(
     @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
+    @Query() query: Record<string, string>,
   ) {
     return this.proxy.proxy({
       method: "GET",
       path: `/workflows/${encodeURIComponent(id)}/executions`,
       tenantId: req.tenantId,
+      query,
     });
   }
 
