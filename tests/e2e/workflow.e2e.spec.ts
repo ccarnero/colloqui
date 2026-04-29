@@ -231,8 +231,10 @@ describe("E2E: workflow-service", () => {
     );
 
     expect(status).toBe(200);
-    expect(Array.isArray(body)).toBe(true);
-    expect(body.length).toBeGreaterThanOrEqual(2);
+    expect(body).toBeDefined();
+    expect(body.items).toBeDefined();
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(body.items.length).toBeGreaterThanOrEqual(2);
   });
 
   it("should soft-delete a workflow definition", async () => {
