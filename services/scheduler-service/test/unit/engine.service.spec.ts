@@ -235,6 +235,151 @@ describe("EngineService", () => {
     });
   });
 
+  describe("discoverTenants", () => {
+    function getDiscover(): () => Promise<string[]> {
+      return (
+        engine as unknown as { discoverTenants: () => Promise<string[]> }
+      ).discoverTenants.bind(engine);
+    }
+
+    function setTenantServiceUrl(url: string): void {
+      // Bypass `readonly` to drive the HTTP path without re-importing
+      // `schedulerServiceConfig` (which is read once at module load).
+      Object.defineProperty(engine, "tenantServiceUrl", {
+        value: url,
+        writable: true,
+        configurable: true,
+      });
+    }
+
+    it("falls back to known tenant ids when TENANT_SERVICE_URL is empty", async () => {
+      setTenantServiceUrl("");
+      tenantConnections.getKnownTenantIds.mockImplementation(() => [
+        "alpha",
+        "beta",
+      ]);
+      const out = await getDiscover()();
+      expect(out).toEqual(["alpha", "beta"]);
+      expect(tenantConnections.getKnownTenantIds).toHaveBeenCalled();
+    });
+
+    it("parses a flat ITenantSummary[] response (current tenant-service shape)", async () => {
+      setTenantServiceUrl("http://tenant.local");
+      const fetchMock = mock(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { name: "ready-a", provisioningStatus: "ready" },
+              { name: "skip-pending", provisioningStatus: "pending" },
+              { name: "skip-failed", provisioningStatus: "failed" },
+              { name: "skip-prov", provisioningStatus: "provisioning" },
+              { name: "ready-b", provisioningStatus: "ready" },
+            ]),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        ),
+      );
+      const origFetch = global.fetch;
+      try {
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const out = await getDiscover()();
+        expect(out).toEqual(["ready-a", "ready-b"]);
+        const callUrl = fetchMock.mock.calls[0]?.[0];
+        expect(String(callUrl)).toContain("/tenants?status=ready");
+      } finally {
+        global.fetch = origFetch;
+      }
+    });
+
+    it("includes entries that omit provisioningStatus (older tenant-service builds)", async () => {
+      setTenantServiceUrl("http://tenant.local");
+      const fetchMock = mock(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { name: "legacy-no-status" },
+              { name: "ready-a", provisioningStatus: "ready" },
+              { name: "skip", provisioningStatus: "failed" },
+            ]),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        ),
+      );
+      const origFetch = global.fetch;
+      try {
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const out = await getDiscover()();
+        expect(out).toEqual(["legacy-no-status", "ready-a"]);
+      } finally {
+        global.fetch = origFetch;
+      }
+    });
+
+    it("still accepts the legacy `{ tenants: [...] }` envelope", async () => {
+      setTenantServiceUrl("http://tenant.local");
+      const fetchMock = mock(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              tenants: [
+                { name: "ready-a", provisioningStatus: "ready" },
+                { name: "skip", provisioningStatus: "failed" },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        ),
+      );
+      const origFetch = global.fetch;
+      try {
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const out = await getDiscover()();
+        expect(out).toEqual(["ready-a"]);
+      } finally {
+        global.fetch = origFetch;
+      }
+    });
+
+    it("falls back to known tenant ids on transport failure", async () => {
+      setTenantServiceUrl("http://tenant.local");
+      tenantConnections.getKnownTenantIds.mockImplementation(() => [
+        "fallback",
+      ]);
+      const fetchMock = mock(() => Promise.reject(new Error("boom")));
+      const origFetch = global.fetch;
+      try {
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const out = await getDiscover()();
+        expect(out).toEqual(["fallback"]);
+      } finally {
+        global.fetch = origFetch;
+      }
+    });
+
+    it("falls back to known tenant ids on unexpected response shape", async () => {
+      setTenantServiceUrl("http://tenant.local");
+      tenantConnections.getKnownTenantIds.mockImplementation(() => [
+        "fallback",
+      ]);
+      const fetchMock = mock(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ unexpected: true }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+      );
+      const origFetch = global.fetch;
+      try {
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const out = await getDiscover()();
+        expect(out).toEqual(["fallback"]);
+      } finally {
+        global.fetch = origFetch;
+      }
+    });
+  });
+
   describe("onModuleInit interval wiring", () => {
     it("registers tick and discovery intervals", async () => {
       const origSetInterval = global.setInterval;

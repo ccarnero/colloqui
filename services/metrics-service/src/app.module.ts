@@ -10,7 +10,10 @@ import {
   jetStreamManagerProvider,
   jetStreamPublisherProvider,
 } from "./providers/nats.provider";
-import { TenantConnectionManager } from "@yoizen/database";
+import {
+  TenantConnectionManager,
+  TenantDeletionEvictionListener,
+} from "@yoizen/database";
 
 /** Registers shared infrastructure (NATS, tenant DB) as global providers for feature modules. */
 @Global()
@@ -27,6 +30,7 @@ import { TenantConnectionManager } from "@yoizen/database";
     jetStreamManagerProvider,
     jetStreamPublisherProvider,
     TenantConnectionManager,
+    TenantDeletionEvictionListener,
   ],
   exports: [
     NATS_CONNECTION,

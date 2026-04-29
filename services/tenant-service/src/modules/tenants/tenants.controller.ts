@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Post,
   Get,
@@ -6,6 +7,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   HttpCode,
   HttpException,
   HttpStatus,
@@ -19,7 +21,12 @@ import {
   type ITenantSummary,
 } from "./tenants.service";
 import { CreateTenantDto, UpdateTenantDto } from "./tenant.dto";
-import { isPlatformTenantRowIdParam } from "@yoizen/shared";
+import {
+  isPlatformTenantRowIdParam,
+  isProvisioningStatus,
+  ProvisioningStatus,
+  type ProvisioningStatusValue,
+} from "@yoizen/shared";
 
 /**
  * Default Retry-After (seconds) advertised when a DELETE arrives while
@@ -46,9 +53,33 @@ export class TenantsController {
     return this.tenantsService.createTenant(dto.name, dto.tier, dto.configuration);
   }
 
+  /**
+   * Lists tenants. Optional `?status=` query filters by `provisioningStatus`
+   * — accepts any value defined by the shared {@link ProvisioningStatus}
+   * enum (`pending` / `provisioning` / `ready` / `failed`). Validation uses
+   * the O(1) `isProvisioningStatus` set guard from `@yoizen/shared`; an
+   * unknown value yields `400 Bad Request` rather than silently returning
+   * the unfiltered set.
+   *
+   * Default behavior (no query param) is unchanged: every row is returned,
+   * preserving compatibility with admin tooling like `yoizenclaw-admin`.
+   */
   @Get()
-  async list(): Promise<ITenantSummary[]> {
-    return this.tenantsService.listTenants();
+  async list(
+    @Query("status") status?: string,
+  ): Promise<ITenantSummary[]> {
+    let parsed: ProvisioningStatusValue | undefined;
+    if (status !== undefined && status !== "") {
+      if (!isProvisioningStatus(status)) {
+        throw new BadRequestException(
+          `Invalid status='${status}'. Must be one of: ${Object.values(ProvisioningStatus).join(", ")}.`,
+        );
+      }
+      parsed = status;
+    }
+    return this.tenantsService.listTenants(
+      parsed === undefined ? undefined : { status: parsed },
+    );
   }
 
   /**

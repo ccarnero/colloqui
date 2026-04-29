@@ -1,6 +1,10 @@
 import "../setup-env";
 import { describe, expect, it, mock } from "bun:test";
-import { HttpException, HttpStatus } from "@nestjs/common";
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+} from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { FastifyReply } from "fastify";
 import { TenantsController } from "../../src/modules/tenants/tenants.controller";
@@ -109,6 +113,68 @@ describe("TenantsController", () => {
     expect(fakeReply.headers.get("retry-after")).toBe("10");
     // 204 must NOT have been set when we're propagating a 409
     expect(fakeReply.statusCode.value).toBeNull();
+  });
+
+  it("forwards a valid ?status= query as a filter to the service", async () => {
+    const serviceMock = {
+      createTenant: mock(() => Promise.reject(new Error("not used"))),
+      listTenants: mock(() => Promise.resolve([])),
+      getTenant: mock(() => Promise.reject(new Error("not used"))),
+      getTenantById: mock(() => Promise.reject(new Error("not used"))),
+      updateTenant: mock(() => Promise.reject(new Error("not used"))),
+      deleteTenant: mock(() => Promise.reject(new Error("not used"))),
+    };
+
+    const moduleRef = await Test.createTestingModule({
+      controllers: [TenantsController],
+      providers: [{ provide: TenantsService, useValue: serviceMock }],
+    }).compile();
+
+    const controller = moduleRef.get(TenantsController);
+    await controller.list("ready");
+    expect(serviceMock.listTenants).toHaveBeenCalledWith({ status: "ready" });
+  });
+
+  it("treats an empty ?status= as 'no filter' (compat with `?status=`)", async () => {
+    const serviceMock = {
+      createTenant: mock(() => Promise.reject(new Error("not used"))),
+      listTenants: mock(() => Promise.resolve([])),
+      getTenant: mock(() => Promise.reject(new Error("not used"))),
+      getTenantById: mock(() => Promise.reject(new Error("not used"))),
+      updateTenant: mock(() => Promise.reject(new Error("not used"))),
+      deleteTenant: mock(() => Promise.reject(new Error("not used"))),
+    };
+
+    const moduleRef = await Test.createTestingModule({
+      controllers: [TenantsController],
+      providers: [{ provide: TenantsService, useValue: serviceMock }],
+    }).compile();
+
+    const controller = moduleRef.get(TenantsController);
+    await controller.list("");
+    expect(serviceMock.listTenants).toHaveBeenCalledWith(undefined);
+  });
+
+  it("rejects an unknown ?status= with BadRequestException (no service call)", async () => {
+    const serviceMock = {
+      createTenant: mock(() => Promise.reject(new Error("not used"))),
+      listTenants: mock(() => Promise.reject(new Error("not used"))),
+      getTenant: mock(() => Promise.reject(new Error("not used"))),
+      getTenantById: mock(() => Promise.reject(new Error("not used"))),
+      updateTenant: mock(() => Promise.reject(new Error("not used"))),
+      deleteTenant: mock(() => Promise.reject(new Error("not used"))),
+    };
+
+    const moduleRef = await Test.createTestingModule({
+      controllers: [TenantsController],
+      providers: [{ provide: TenantsService, useValue: serviceMock }],
+    }).compile();
+
+    const controller = moduleRef.get(TenantsController);
+    await expect(controller.list("garbage")).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(serviceMock.listTenants).not.toHaveBeenCalled();
   });
 
   it("does not advertise Retry-After for non-409 errors", async () => {

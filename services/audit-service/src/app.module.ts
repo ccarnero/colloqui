@@ -14,7 +14,10 @@ import {
   jetStreamPublisherProvider,
   gatewayAuditConsumerProvider,
 } from "./providers/nats.provider";
-import { TenantConnectionManager } from "@yoizen/database";
+import {
+  TenantConnectionManager,
+  TenantDeletionEvictionListener,
+} from "@yoizen/database";
 
 /** Registers NATS and tenant DB access as global providers for audit feature modules. */
 @Global()
@@ -34,6 +37,7 @@ import { TenantConnectionManager } from "@yoizen/database";
     jetStreamPublisherProvider,
     gatewayAuditConsumerProvider,
     TenantConnectionManager,
+    TenantDeletionEvictionListener,
   ],
   exports: [
     NATS_CONNECTION,

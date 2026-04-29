@@ -5,6 +5,7 @@ import { PermanentError } from "@yoizen/shared";
 import { TenantProvisionHandler } from "../../src/modules/provisioning/tenant-provision-handler.service";
 import { TenantProvisioningExecutor } from "../../src/modules/provisioning/tenant-provisioning-executor.service";
 import { TenantsRepository } from "../../src/modules/tenants/tenants.repository";
+import { TenantReadyPublisher } from "../../src/providers/tenant-ready-publisher.service";
 
 function makeMsg(
   data: string,
@@ -17,6 +18,14 @@ function makeMsg(
     data: new TextEncoder().encode(data),
     info: { deliveryCount },
   };
+}
+
+interface ReadyPublisherStub {
+  publishTenantReady: ReturnType<typeof mock>;
+}
+
+function noopReadyPublisher(): ReadyPublisherStub {
+  return { publishTenantReady: mock(() => undefined) };
 }
 
 const validPayload = JSON.stringify({
@@ -38,14 +47,18 @@ describe("TenantProvisionHandler", () => {
       ),
     };
     const executor = { run: mock(() => Promise.resolve({ nsName: "n", namespacePhase: "Active" })) };
+    const readyPublisher = noopReadyPublisher();
     const handler = new TenantProvisionHandler(
       repository as unknown as TenantsRepository,
       executor as unknown as TenantProvisioningExecutor,
+      readyPublisher as unknown as TenantReadyPublisher,
     );
     await handler.handle(
       makeMsg(validPayload, 1) as Parameters<TenantProvisionHandler["handle"]>[0],
     );
     expect(executor.run).not.toHaveBeenCalled();
+    // Idempotent ack must NOT re-publish the ready event.
+    expect(readyPublisher.publishTenantReady).not.toHaveBeenCalled();
   });
 
   it("runs executor and marks ready on success", async () => {
@@ -54,6 +67,7 @@ describe("TenantProvisionHandler", () => {
         Promise.resolve({
           id: "tid-1",
           name: "acme",
+          tier: "shared",
           provisioning_status: ProvisioningStatus.Pending,
         }),
       ),
@@ -65,9 +79,11 @@ describe("TenantProvisionHandler", () => {
         Promise.resolve({ nsName: "ns", namespacePhase: "Active" }),
       ),
     };
+    const readyPublisher = noopReadyPublisher();
     const handler = new TenantProvisionHandler(
       repository as unknown as TenantsRepository,
       executor as unknown as TenantProvisioningExecutor,
+      readyPublisher as unknown as TenantReadyPublisher,
     );
     await handler.handle(
       makeMsg(validPayload, 1) as Parameters<TenantProvisionHandler["handle"]>[0],
@@ -75,6 +91,13 @@ describe("TenantProvisionHandler", () => {
     expect(repository.markProvisioningStarted).toHaveBeenCalled();
     expect(executor.run).toHaveBeenCalled();
     expect(repository.markProvisioningReady).toHaveBeenCalled();
+    // ready event must fire exactly once with the row's id/name/tier
+    expect(readyPublisher.publishTenantReady).toHaveBeenCalledTimes(1);
+    expect(readyPublisher.publishTenantReady).toHaveBeenCalledWith({
+      tenantId: "tid-1",
+      name: "acme",
+      tier: "shared",
+    });
   });
 
   it("naks on transient error when under max deliver", async () => {
@@ -93,9 +116,11 @@ describe("TenantProvisionHandler", () => {
     const executor = {
       run: mock(() => Promise.reject(new Error("transient"))),
     };
+    const readyPublisher = noopReadyPublisher();
     const handler = new TenantProvisionHandler(
       repository as unknown as TenantsRepository,
       executor as unknown as TenantProvisioningExecutor,
+      readyPublisher as unknown as TenantReadyPublisher,
     );
     await expect(
       handler.handle(
@@ -103,6 +128,8 @@ describe("TenantProvisionHandler", () => {
       ),
     ).rejects.toThrow("transient");
     expect(repository.markProvisioningFailed).not.toHaveBeenCalled();
+    // Failed/transient runs must NOT publish the ready event.
+    expect(readyPublisher.publishTenantReady).not.toHaveBeenCalled();
   });
 
   it("marks failed and throws PermanentError on last delivery", async () => {
@@ -121,9 +148,11 @@ describe("TenantProvisionHandler", () => {
     const executor = {
       run: mock(() => Promise.reject(new Error("still bad"))),
     };
+    const readyPublisher = noopReadyPublisher();
     const handler = new TenantProvisionHandler(
       repository as unknown as TenantsRepository,
       executor as unknown as TenantProvisioningExecutor,
+      readyPublisher as unknown as TenantReadyPublisher,
     );
     await expect(
       handler.handle(
@@ -131,19 +160,23 @@ describe("TenantProvisionHandler", () => {
       ),
     ).rejects.toBeInstanceOf(PermanentError);
     expect(repository.markProvisioningFailed).toHaveBeenCalled();
+    expect(readyPublisher.publishTenantReady).not.toHaveBeenCalled();
   });
 
   it("throws PermanentError for invalid JSON", async () => {
     const repository = { findById: mock(() => Promise.resolve(undefined)) };
     const executor = { run: mock(() => Promise.resolve()) };
+    const readyPublisher = noopReadyPublisher();
     const handler = new TenantProvisionHandler(
       repository as unknown as TenantsRepository,
       executor as unknown as TenantProvisioningExecutor,
+      readyPublisher as unknown as TenantReadyPublisher,
     );
     await expect(
       handler.handle(
         makeMsg("not-json{", 1) as Parameters<TenantProvisionHandler["handle"]>[0],
       ),
     ).rejects.toBeInstanceOf(PermanentError);
+    expect(readyPublisher.publishTenantReady).not.toHaveBeenCalled();
   });
 });

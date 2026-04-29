@@ -1,4 +1,6 @@
 import type { JsonValue } from "./interfaces";
+import { TenantDatabaseTier, isTenantDatabaseTier } from "./tenant-database-tier";
+import type { TenantDatabaseTierValue } from "./tenant-database-tier";
 
 /**
  * Provisioning state for a tenant in the platform database.
@@ -66,3 +68,92 @@ export function isTenantProvisionRequestedMessageV1(
   }
   return true;
 }
+
+/**
+ * Best-effort fan-out subject (Core NATS, NOT JetStream) emitted by
+ * `tenant-service` immediately after `markProvisioningReady` flips the
+ * platform DB row from `provisioning` → `ready` (i.e. the per-tenant
+ * Postgres + namespace are usable).
+ *
+ * Subscribers use it to **proactively** run per-tenant migrations and
+ * pre-warm pools before the first HTTP request hits them. The lazy
+ * `TenantConnectionManager.ensureSchema(tenantId)` path remains the
+ * source of truth — a missed message just means the first request
+ * after creation pays the DDL cost on the synchronous path. That's why
+ * Core NATS (broadcast, no replay) is sufficient and JetStream's
+ * durability isn't needed.
+ */
+export const TENANT_READY_SUBJECT = "platform.tenant.ready" as const;
+
+/**
+ * v1 message body for {@link TENANT_READY_SUBJECT}.
+ * `tier` is best-effort metadata — receivers MUST tolerate it being
+ * absent (older publishers, replay) and treat it as "ensure schema for
+ * this tenant against the catalog-resolved DB regardless of tier".
+ */
+export type TenantReadyMessageV1 = {
+  readonly schemaVersion: 1;
+  readonly tenantId: string;
+  readonly name: string;
+  readonly tier?: TenantDatabaseTierValue;
+};
+
+export function isTenantReadyMessageV1(
+  v: unknown,
+): v is TenantReadyMessageV1 {
+  if (v === null || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  if (o.schemaVersion !== 1) return false;
+  if (typeof o.tenantId !== "string" || o.tenantId.length < 1) return false;
+  if (typeof o.name !== "string" || o.name.length < 1) return false;
+  if (o.tier !== undefined && (typeof o.tier !== "string" || !isTenantDatabaseTier(o.tier))) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Best-effort fan-out subject (Core NATS, NOT JetStream) emitted by
+ * `tenant-service` immediately after the `DELETE /tenants/:name`
+ * cascade finishes its infra cleanup.
+ *
+ * Why Core NATS instead of the existing `PLATFORM_TENANTS` Workqueue
+ * stream: every long-lived service replica that caches a per-tenant
+ * Postgres pool needs to receive this — Workqueue retention delivers
+ * each message to **one** consumer, which would defeat fan-out.
+ * Misses (replica restart between publish and subscribe, broker
+ * reconnect) are recovered by the self-healing branch in
+ * `TenantConnectionManager.verifyConnectivity`.
+ */
+export const TENANT_DELETED_SUBJECT = "platform.tenant.deleted" as const;
+
+/**
+ * v1 message body for {@link TENANT_DELETED_SUBJECT}.
+ * `tier` is best-effort metadata — receivers MUST tolerate it being
+ * absent (older publishers, message replay) and treat it as "evict
+ * any pool keyed by this tenant regardless of tier".
+ */
+export type TenantDeletedMessageV1 = {
+  readonly schemaVersion: 1;
+  readonly tenantId: string;
+  readonly name: string;
+  readonly tier?: TenantDatabaseTierValue;
+};
+
+export function isTenantDeletedMessageV1(
+  v: unknown,
+): v is TenantDeletedMessageV1 {
+  if (v === null || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  if (o.schemaVersion !== 1) return false;
+  if (typeof o.tenantId !== "string" || o.tenantId.length < 1) return false;
+  if (typeof o.name !== "string" || o.name.length < 1) return false;
+  if (o.tier !== undefined && (typeof o.tier !== "string" || !isTenantDatabaseTier(o.tier))) {
+    return false;
+  }
+  return true;
+}
+
+// Re-export so callers building a {@link TenantDeletedMessageV1} don't
+// need a parallel import from `./tenant-database-tier`.
+export { TenantDatabaseTier };

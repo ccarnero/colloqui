@@ -22,6 +22,7 @@ import { tenantServiceConfig } from "../../config";
 import { K8S_CORE_API } from "../../providers/kubernetes.provider";
 import { TenantPostgresProvisioner } from "../../providers/postgres.provider";
 import { TenantProvisionPublisher } from "../../providers/tenant-provision-publisher.service";
+import { TenantDeletionPublisher } from "../../providers/tenant-deletion-publisher.service";
 import { TenantsRepository } from "./tenants.repository";
 import {
   type Environment,
@@ -100,6 +101,7 @@ export class TenantsService {
     @Inject(K8S_CORE_API) private readonly k8sApi: k8s.CoreV1Api,
     private readonly repository: TenantsRepository,
     private readonly provisionPublisher: TenantProvisionPublisher,
+    private readonly deletionPublisher: TenantDeletionPublisher,
     private readonly pgProvisioner: TenantPostgresProvisioner,
   ) {
     const env = tenantServiceConfig.platformEnvironment;
@@ -142,8 +144,16 @@ export class TenantsService {
     };
   }
 
-  async listTenants(): Promise<ITenantSummary[]> {
-    const rows = await this.repository.findAll();
+  /**
+   * Lists tenants. When `filter.status` is provided, the platform DB is
+   * queried with the filter pushed down so callers like scheduler-service
+   * can ask for `provisioning_status = 'ready'` and skip mid-provisioning
+   * or failed rows in O(1) per row at the source.
+   */
+  async listTenants(filter?: {
+    status?: ProvisioningStatusValue;
+  }): Promise<ITenantSummary[]> {
+    const rows = await this.repository.findAll(filter);
     const len = rows.length;
     const summaries: ITenantSummary[] = new Array(len);
     for (let i = 0; i < len; i++) {
@@ -284,6 +294,16 @@ export class TenantsService {
       );
     }
     this.logger.log(`Deleted tenant '${name}' from database`);
+
+    // Best-effort fan-out so every long-lived service replica that
+    // caches a per-tenant Postgres pool can evict it. Subscribers
+    // self-heal on misses (see TenantConnectionManager.verifyConnectivity),
+    // so we deliberately do NOT await or throw on publish failure.
+    this.deletionPublisher.publishTenantDeleted({
+      tenantId: row.id,
+      name: row.name,
+      tier: row.tier,
+    });
   }
 
   private async buildDetail(row: ITenantRow): Promise<ITenantDetail> {

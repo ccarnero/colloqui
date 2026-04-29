@@ -8,6 +8,7 @@ import {
 } from "@yoizen/shared";
 import type { JsMsg } from "nats";
 import { TenantsRepository } from "../tenants/tenants.repository";
+import { TenantReadyPublisher } from "../../providers/tenant-ready-publisher.service";
 import { TenantProvisioningExecutor } from "./tenant-provisioning-executor.service";
 
 @Injectable()
@@ -17,6 +18,7 @@ export class TenantProvisionHandler {
   constructor(
     private readonly repository: TenantsRepository,
     private readonly executor: TenantProvisioningExecutor,
+    private readonly readyPublisher: TenantReadyPublisher,
   ) {}
 
   /**
@@ -70,6 +72,17 @@ export class TenantProvisionHandler {
       await this.repository.markProvisioningStarted(tenantId);
       await this.executor.run({ name, tier: row.tier, configuration });
       await this.repository.markProvisioningReady(tenantId);
+      // Best-effort fan-out so subscribers (e.g. scheduler-service) can
+      // run per-tenant DDL eagerly and avoid the lazy first-request
+      // penalty. Publish AFTER the DB UPDATE so subscribers only see
+      // tenants whose `provisioning_status` is actually 'ready' if they
+      // double-check via tenant-service. Failure is non-fatal — the
+      // publisher already swallows + logs.
+      this.readyPublisher.publishTenantReady({
+        tenantId: row.id,
+        name: row.name,
+        tier: row.tier,
+      });
     } catch (err: unknown) {
       if (err instanceof PermanentError) {
         throw err;

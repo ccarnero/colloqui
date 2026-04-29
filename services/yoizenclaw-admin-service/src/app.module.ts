@@ -6,6 +6,7 @@ import {
   NatsPublisher,
   lazyNatsProvider,
 } from "./providers/nats.provider";
+import { TenantDeletionEvictionListener } from "./providers/tenant-deletion-eviction-listener";
 import { REDIS_CLIENT, redisProvider } from "./providers/redis.provider";
 import { initYoizenClawTenantSchema } from "./providers/yoizenclaw-schema-initializer";
 import { AgentsModule } from "./modules/agents/agents.module";
@@ -45,6 +46,7 @@ function createYoizenClawTenantConnectionManager(): TenantConnectionManager {
       useFactory: createYoizenClawTenantConnectionManager,
     },
     NatsPublisher,
+    TenantDeletionEvictionListener,
   ],
   exports: [LAZY_NATS, REDIS_CLIENT, TenantConnectionManager, NatsPublisher],
 })

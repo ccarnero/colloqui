@@ -216,24 +216,74 @@ export class EngineService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Pulls the current set of tenants the scheduler should iterate over
+   * each discovery cycle.
+   *
+   * Wire format: tenant-service `GET /tenants` returns a **flat array**
+   * of `ITenantSummary` objects; an earlier version of this method
+   * looked for `{ tenants: [...] }` and silently fell back to
+   * {@link TenantConnectionManager.getKnownTenantIds} on every cycle,
+   * which kept stale per-tenant pools alive forever once a tenant was
+   * destroyed (cron kept polling deleted DBs → DNS / auth errors).
+   *
+   * Filter strategy:
+   *  - Push down `?status=ready` to tenant-service so the platform DB
+   *    (the source of truth) does the filtering — O(1) per row at the
+   *    server, zero extra rows on the wire.
+   *  - Defensive client-side filter for backwards compatibility with
+   *    older tenant-service builds that don't honor the query param;
+   *    the per-element check is `t.provisioningStatus === 'ready'`,
+   *    O(N) over the response which is already linear.
+   *
+   * Fallback to `getKnownTenantIds()` (which `evictTenant` keeps
+   * pruned) is reserved for transport failures only — never for a
+   * shape mismatch.
+   */
   private async discoverTenants(): Promise<string[]> {
     if (!this.tenantServiceUrl) {
       return this.tenantConnections.getKnownTenantIds();
     }
 
     try {
-      const response = await fetch(`${this.tenantServiceUrl}/tenants`);
+      const response = await fetch(
+        `${this.tenantServiceUrl}/tenants?status=ready`,
+      );
       if (!response.ok) {
         this.logger.warn(`Tenant discovery failed: HTTP ${response.status}`);
         return this.tenantConnections.getKnownTenantIds();
       }
-      const data = (await response.json()) as {
-        tenants?: Array<{ name: string }>;
-      };
-      if (Array.isArray(data.tenants)) {
-        return data.tenants.map((t) => t.name);
+      const data = (await response.json()) as
+        | Array<{ name: string; provisioningStatus?: string }>
+        | { tenants?: Array<{ name: string; provisioningStatus?: string }> };
+
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray((data as { tenants?: unknown }).tenants)
+          ? (data as { tenants: Array<{ name: string; provisioningStatus?: string }> })
+              .tenants
+          : null;
+      if (list === null) {
+        this.logger.warn(
+          "Tenant discovery: unexpected response shape; falling back to known tenants",
+        );
+        return this.tenantConnections.getKnownTenantIds();
       }
-      return this.tenantConnections.getKnownTenantIds();
+
+      const len = list.length;
+      const out: string[] = new Array(len);
+      let n = 0;
+      for (let i = 0; i < len; i++) {
+        const t = list[i]!;
+        if (
+          t.provisioningStatus === undefined ||
+          t.provisioningStatus === "ready"
+        ) {
+          out[n++] = t.name;
+        }
+      }
+      out.length = n;
+      return out;
     } catch (err) {
       this.logger.warn(`Tenant discovery error: ${err}`);
       return this.tenantConnections.getKnownTenantIds();

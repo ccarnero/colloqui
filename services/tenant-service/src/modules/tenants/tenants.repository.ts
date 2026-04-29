@@ -85,12 +85,23 @@ export class TenantsRepository {
     return row ? mapRow(row) : undefined;
   }
 
-  async findAll(): Promise<ITenantRow[]> {
+  /**
+   * Lists tenants ordered by creation. When `filter.status` is provided,
+   * the WHERE branch is encoded as `(provisioning_status = $1 OR $1 IS NULL)`
+   * so the planner reuses a single prepared statement regardless of whether
+   * the caller filters or not — O(1) parse-cache lookup, no SQL string
+   * branching.
+   */
+  async findAll(filter?: {
+    status?: ProvisioningStatusValue;
+  }): Promise<ITenantRow[]> {
+    const status = filter?.status ?? null;
     const rows = await this.sql<ITenantRow[]>`
       SELECT id, name, configuration, created_at, updated_at,
              tier,
              provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
       FROM tenants
+      WHERE ${status}::text IS NULL OR provisioning_status = ${status}
       ORDER BY created_at ASC
     `;
     const out: ITenantRow[] = new Array(rows.length);

@@ -287,7 +287,7 @@ describe("E2E: adapter integration", () => {
         `${GW}/events`,
         {
           type: "adapter-fwd-e2e",
-          payload: { data: "forward-test" },
+          payload: { data: `forward-test-${Date.now()}` },
           forwardAdapter: { adapterId, endpointId: forwardEndpointId },
         },
         { headers: h },
@@ -312,7 +312,7 @@ describe("E2E: adapter integration", () => {
         `${GW}/events`,
         {
           type: "adapter-combined-e2e",
-          payload: { data: "combined-test" },
+          payload: { data: `combined-test-${Date.now()}` },
           enrichAdapter: { adapterId, endpointId: enrichEndpointId },
           forwardAdapter: { adapterId, endpointId: forwardEndpointId },
         },

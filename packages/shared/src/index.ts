@@ -70,11 +70,17 @@ export {
   TENANT_PROVISION_REQUESTED_SUBJECT,
   TENANT_PROVISIONER_DURABLE,
   TENANT_PROVISION_MAX_DELIVER,
+  TENANT_DELETED_SUBJECT,
+  TENANT_READY_SUBJECT,
   isTenantProvisionRequestedMessageV1,
+  isTenantDeletedMessageV1,
+  isTenantReadyMessageV1,
 } from './tenant-events';
 export type {
   ProvisioningStatusValue,
   TenantProvisionRequestedMessageV1,
+  TenantDeletedMessageV1,
+  TenantReadyMessageV1,
 } from './tenant-events';
 
 export {

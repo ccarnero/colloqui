@@ -9,6 +9,8 @@ import { WorkflowTenantConnectionManager } from "./tenant-connection-manager";
 import {
   createNatsConnectionProvider,
   NATS_CONNECTION,
+  TenantConnectionManager,
+  TenantDeletionEvictionListener,
 } from "@yoizen/database";
 import { resolveServiceName } from "@yoizen/observability";
 
@@ -41,6 +43,15 @@ const jetStreamPublisherProvider: FactoryProvider<JetStreamClient> = {
     jetStreamManagerProvider,
     jetStreamPublisherProvider,
     WorkflowTenantConnectionManager,
+    // Alias the base-class token to the same instance so
+    // `TenantDeletionEvictionListener` (which depends on the base token
+    // from @yoizen/database) operates on the very pool cache the rest
+    // of the service is using.
+    {
+      provide: TenantConnectionManager,
+      useExisting: WorkflowTenantConnectionManager,
+    },
+    TenantDeletionEvictionListener,
   ],
   exports: [
     TEMPORAL_CLIENT,

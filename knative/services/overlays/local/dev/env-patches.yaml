@@ -513,6 +513,11 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            # Used only for `platform.tenant.deleted` fan-out so the
+            # per-tenant Postgres pool cache evicts a destroyed tenant
+            # without waiting for the verifyConnectivity self-heal.
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
@@ -612,6 +617,11 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            # Used only for `platform.tenant.deleted` fan-out so the
+            # per-tenant pool cache evicts a destroyed tenant instead
+            # of waiting for the verifyConnectivity self-heal probe.
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
             - name: POSTGRES_HOST
               value: "postgres.support-services-dev.svc.cluster.local"
             - name: POSTGRES_DB

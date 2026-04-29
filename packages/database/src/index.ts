@@ -7,6 +7,8 @@ export type {
   ITenantDatabaseTarget,
   SharedTenantDatabaseModeValue,
 } from "./tenant-connection-manager";
+export { TenantDeletionEvictionListener } from "./tenant-deletion-eviction-listener";
+export { TenantReadySchemaListener } from "./tenant-ready-schema-listener";
 export { requireEnv } from "./require-env";
 export {
   POSTGRES_SQL,
@@ -88,4 +90,7 @@ export type { IDurableConsumerOptions } from "./nats-durable-consumer";
 export { MultiTenantConsumerManager } from "./multi-tenant-consumer-manager";
 export type { IMultiTenantConsumerConfig } from "./multi-tenant-consumer-manager";
 export { TenantGuard, TenantId } from "./tenant-guard";
-export { isPostgresUniqueViolation } from "./postgres-errors";
+export {
+  isPostgresUniqueViolation,
+  isFatalPoolError,
+} from "./postgres-errors";

@@ -11,6 +11,7 @@ import { ProvisioningStatus, TenantDatabaseTier } from "@yoizen/shared";
 import { TenantsService } from "../../src/modules/tenants/tenants.service";
 import { TenantsRepository } from "../../src/modules/tenants/tenants.repository";
 import { TenantProvisionPublisher } from "../../src/providers/tenant-provision-publisher.service";
+import { TenantDeletionPublisher } from "../../src/providers/tenant-deletion-publisher.service";
 import { TenantPostgresProvisioner } from "../../src/providers/postgres.provider";
 import { K8S_CORE_API } from "../../src/providers/kubernetes.provider";
 
@@ -40,6 +41,7 @@ describe("TenantsService", () => {
     deleteNamespace: ReturnType<typeof mock>;
   };
   let publisher: { publishProvisionRequested: ReturnType<typeof mock> };
+  let deletionPublisher: { publishTenantDeleted: ReturnType<typeof mock> };
   let pgProvisioner: { deprovisionShared: ReturnType<typeof mock> };
 
   beforeEach(async () => {
@@ -83,6 +85,10 @@ describe("TenantsService", () => {
       publishProvisionRequested: mock(() => Promise.resolve()),
     };
 
+    deletionPublisher = {
+      publishTenantDeleted: mock(() => undefined),
+    };
+
     pgProvisioner = {
       deprovisionShared: mock(() => Promise.resolve()),
     };
@@ -93,6 +99,7 @@ describe("TenantsService", () => {
         { provide: K8S_CORE_API, useValue: k8sApi },
         { provide: TenantsRepository, useValue: repository },
         { provide: TenantProvisionPublisher, useValue: publisher },
+        { provide: TenantDeletionPublisher, useValue: deletionPublisher },
         { provide: TenantPostgresProvisioner, useValue: pgProvisioner },
       ],
     }).compile();
@@ -223,6 +230,11 @@ describe("TenantsService", () => {
       name: "tenant-a-dev-ns",
     });
     expect(repository.deleteByName).toHaveBeenCalledWith("tenant-a");
+    expect(deletionPublisher.publishTenantDeleted).toHaveBeenCalledWith({
+      tenantId: "tid-1",
+      name: "tenant-a",
+      tier: TenantDatabaseTier.Shared,
+    });
   });
 
   it("deleteTenant for dedicated tier cascades the namespace only (no shared deprovision)", async () => {
@@ -240,6 +252,11 @@ describe("TenantsService", () => {
     });
     expect(pgProvisioner.deprovisionShared).not.toHaveBeenCalled();
     expect(repository.deleteByName).toHaveBeenCalledWith("tenant-a");
+    expect(deletionPublisher.publishTenantDeleted).toHaveBeenCalledWith({
+      tenantId: "tid-1",
+      name: "tenant-a",
+      tier: TenantDatabaseTier.Dedicated,
+    });
   });
 
   it("deleteTenant throws NotFound when the tenant row is absent", async () => {
@@ -250,6 +267,7 @@ describe("TenantsService", () => {
     expect(pgProvisioner.deprovisionShared).not.toHaveBeenCalled();
     expect(k8sApi.deleteNamespace).not.toHaveBeenCalled();
     expect(repository.deleteByName).not.toHaveBeenCalled();
+    expect(deletionPublisher.publishTenantDeleted).not.toHaveBeenCalled();
   });
 
   it("deleteTenant returns 409 Conflict while the tenant is still provisioning (race protection)", async () => {
@@ -275,6 +293,7 @@ describe("TenantsService", () => {
     expect(pgProvisioner.deprovisionShared).not.toHaveBeenCalled();
     expect(k8sApi.deleteNamespace).not.toHaveBeenCalled();
     expect(repository.deleteByName).not.toHaveBeenCalled();
+    expect(deletionPublisher.publishTenantDeleted).not.toHaveBeenCalled();
   });
 
   it("deleteTenant proceeds normally when the tenant is in 'pending' state (no provisioning resources to race)", async () => {

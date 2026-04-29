@@ -10,6 +10,8 @@ describe("GatewayAuditService", () => {
   let mockTenantMgr: {
     ensureSchema: ReturnType<typeof mock>;
     getConnection: ReturnType<typeof mock>;
+    isNamespaceInitialized: ReturnType<typeof mock>;
+    markNamespaceInitialized: ReturnType<typeof mock>;
   };
 
   const sampleRow = {
@@ -45,6 +47,8 @@ describe("GatewayAuditService", () => {
     mockTenantMgr = {
       ensureSchema: mock(async () => mockSql),
       getConnection: mock(() => mockSql),
+      isNamespaceInitialized: mock(() => false),
+      markNamespaceInitialized: mock(() => {}),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -130,6 +134,8 @@ describe("GatewayAuditService", () => {
             getConnection: mock(() => makeSql()),
             isInitialized: mock(() => false),
             markInitialized: mock(() => {}),
+            isNamespaceInitialized: mock(() => false),
+            markNamespaceInitialized: mock(() => {}),
           },
         },
       ],
