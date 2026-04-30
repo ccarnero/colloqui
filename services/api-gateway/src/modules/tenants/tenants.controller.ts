@@ -9,18 +9,20 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
-} from '@nestjs/common';
-import { TenantProxyService } from './tenant-proxy.service';
-import { SkipTenant } from '../../decorators/skip-tenant.decorator';
+} from "@nestjs/common";
+import { isPlatformTenantRowIdParam } from "@yoizen/shared";
+import { TenantProxyService } from "./tenant-proxy.service";
+import { SkipTenant } from "../../decorators/skip-tenant.decorator";
+import { CreateTenantBodyDto, UpdateTenantBodyDto } from "./tenants.dto";
 
 @SkipTenant()
-@Controller('tenants')
+@Controller("tenants")
 export class TenantsController {
   constructor(private readonly tenantProxy: TenantProxyService) {}
 
   @Post()
-  @HttpCode(HttpStatus.CREATED)
-  async create(@Body() body: object): Promise<object> {
+  @HttpCode(HttpStatus.ACCEPTED)
+  async create(@Body() body: CreateTenantBodyDto): Promise<object> {
     return this.tenantProxy.createTenant(body);
   }
 
@@ -29,26 +31,35 @@ export class TenantsController {
     return this.tenantProxy.listTenants();
   }
 
-  @Get(':name')
-  async get(@Param('name') name: string): Promise<object> {
-    const tenant = await this.tenantProxy.getTenant(name);
-    if (!tenant) throw new NotFoundException(`Tenant '${name}' not found`);
+  /**
+   * Resolves by platform row UUID (async provision status) or by tenant name.
+   */
+  @Get(":nameOrId")
+  async getOne(@Param("nameOrId") nameOrId: string): Promise<object> {
+    const tenant = await this.tenantProxy.getTenant(nameOrId);
+    if (!tenant) {
+      throw new NotFoundException(
+        isPlatformTenantRowIdParam(nameOrId)
+          ? `Tenant id '${nameOrId}' not found`
+          : `Tenant '${nameOrId}' not found`,
+      );
+    }
     return tenant;
   }
 
-  @Patch(':name')
+  @Patch(":name")
   async update(
-    @Param('name') name: string,
-    @Body() body: object,
+    @Param("name") name: string,
+    @Body() body: UpdateTenantBodyDto,
   ): Promise<object> {
     const tenant = await this.tenantProxy.updateTenant(name, body);
     if (!tenant) throw new NotFoundException(`Tenant '${name}' not found`);
     return tenant;
   }
 
-  @Delete(':name')
+  @Delete(":name")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('name') name: string): Promise<void> {
+  async remove(@Param("name") name: string): Promise<void> {
     const found = await this.tenantProxy.deleteTenant(name);
     if (!found) throw new NotFoundException(`Tenant '${name}' not found`);
   }

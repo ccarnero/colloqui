@@ -1,4 +1,4 @@
-import { Component } from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
@@ -6,7 +6,13 @@ import { StatusBadgeComponent } from "../../../shared/components/status-badge/st
 
 @Component({
   selector: "app-scheduler",
-  imports: [MatButtonModule, MatIconModule, MatTableModule, StatusBadgeComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    MatButtonModule,
+    MatIconModule,
+    MatTableModule,
+    StatusBadgeComponent,
+  ],
   template: `
     <div class="ws-header">
       <div>

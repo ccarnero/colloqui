@@ -3,6 +3,8 @@ import { getBaseUrl, httpGet, httpPost, httpPut, httpDelete } from './helpers';
 
 const CS = getBaseUrl('cache-service');
 
+const skip = !process.env.CACHE_SERVICE_URL;
+
 const createdKeys: string[] = [];
 
 function e2eKey(suffix: string): string {
@@ -12,11 +14,13 @@ function e2eKey(suffix: string): string {
 }
 
 afterAll(async () => {
+  if (skip) return;
   await Promise.all(createdKeys.map((k) => httpDelete(`${CS}/cache/${k}`)));
 });
 
 describe('E2E: cache-service CRUD', () => {
   it('should perform a full PUT -> GET -> DELETE -> GET cycle', async () => {
+    if (skip) return;
     const key = e2eKey('crud');
     const value = { message: 'hello', num: 42 };
 
@@ -38,6 +42,7 @@ describe('E2E: cache-service CRUD', () => {
   });
 
   it('should batch get multiple keys', async () => {
+    if (skip) return;
     const keys = ['batch-a', 'batch-b', 'batch-c'].map((s) => e2eKey(s));
     const values = ['alpha', 'bravo', 'charlie'];
 
@@ -57,6 +62,7 @@ describe('E2E: cache-service CRUD', () => {
   });
 
   it('should overwrite an existing key', async () => {
+    if (skip) return;
     const key = e2eKey('overwrite');
 
     await httpPut(`${CS}/cache/${key}`, { value: 'first' });
@@ -68,6 +74,7 @@ describe('E2E: cache-service CRUD', () => {
   });
 
   it('should expire a key after TTL', async () => {
+    if (skip) return;
     const key = e2eKey('ttl-expire');
 
     await httpPut(`${CS}/cache/${key}`, { value: 'ephemeral', ttl: 1 });
@@ -84,6 +91,7 @@ describe('E2E: cache-service CRUD', () => {
   });
 
   it('should scan keys matching a pattern', async () => {
+    if (skip) return;
     const k1 = e2eKey('scan-x');
     const k2 = e2eKey('scan-y');
 

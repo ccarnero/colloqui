@@ -1,10 +1,9 @@
 import { Injectable, inject, signal } from "@angular/core";
 import { HttpClient } from "@angular/common/http";
+import type { Observable } from "rxjs";
+import { tap } from "rxjs/operators";
 import { environment } from "../../../environments/environment";
-import type {
-  ITenantRole,
-  ITenantRolePermission,
-} from "../models/user.model";
+import type { ITenantRole, ITenantRolePermission } from "../models/user.model";
 
 const BASE_URL = `${environment.apiUrl}/auth/tenant-roles`;
 
@@ -65,5 +64,41 @@ export class RoleService {
 
   getRole(id: string) {
     return this.http.get<ITenantRole>(`${BASE_URL}/${id}`);
+  }
+
+  /**
+   * Fetches roles without updating the `roles` signal (e.g. user-create dialog).
+   */
+  listRoles$(): Observable<ITenantRole[]> {
+    return this.http.get<ITenantRole[]>(BASE_URL);
+  }
+
+  createRoleRequest(
+    tenantId: string,
+    name: string,
+    description: string,
+    permissions: ITenantRolePermission[],
+  ): Observable<ITenantRole> {
+    return this.http
+      .post<ITenantRole>(BASE_URL, {
+        tenant_id: tenantId,
+        name,
+        description,
+        permissions,
+      })
+      .pipe(tap(() => this.loadRoles()));
+  }
+
+  patchRoleRequest(
+    id: string,
+    patch: {
+      name?: string;
+      description?: string;
+      permissions?: ITenantRolePermission[];
+    },
+  ): Observable<ITenantRole> {
+    return this.http
+      .patch<ITenantRole>(`${BASE_URL}/${id}`, patch)
+      .pipe(tap(() => this.loadRoles()));
   }
 }

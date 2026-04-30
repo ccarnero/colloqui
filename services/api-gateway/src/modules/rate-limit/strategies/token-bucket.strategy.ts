@@ -1,8 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
-import type Redis from 'ioredis';
-import type { RateLimitResult, RateLimitTenantConfig } from '@yoizen/shared';
-import { REDIS_CLIENT } from '../../../providers/redis.provider';
-import type { RateLimitStrategy } from './rate-limit.strategy';
+import { Inject, Injectable } from "@nestjs/common";
+import type Redis from "ioredis";
+import type { RateLimitResult, RateLimitTenantConfig } from "@yoizen/shared";
+import { REDIS_CLIENT } from "../../../providers/redis.provider";
+import type { IRateLimitStrategy } from "./rate-limit.strategy";
 
 /**
  * Token bucket implemented as a Redis hash.
@@ -58,7 +58,7 @@ return {allowed, math.floor(tokens), secUntilFull}
 `;
 
 @Injectable()
-export class TokenBucketStrategy implements RateLimitStrategy {
+export class TokenBucketStrategy implements IRateLimitStrategy {
   private scriptSha: string | null = null;
 
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
@@ -71,10 +71,17 @@ export class TokenBucketStrategy implements RateLimitStrategy {
     const now = Date.now();
 
     const result = await this.evalScript(
-      redisKey, config.capacity, config.refillRate, now,
+      redisKey,
+      config.capacity,
+      config.refillRate,
+      now,
     );
 
-    const [allowed, remaining, secUntilFull] = result as [number, number, number];
+    const [allowed, remaining, secUntilFull] = result as [
+      number,
+      number,
+      number,
+    ];
 
     return {
       allowed: allowed === 1,
@@ -91,22 +98,32 @@ export class TokenBucketStrategy implements RateLimitStrategy {
     now: number,
   ): Promise<unknown> {
     if (!this.scriptSha) {
-      this.scriptSha = await this.redis.script(
-        'LOAD',
+      this.scriptSha = (await this.redis.script(
+        "LOAD",
         LUA_TOKEN_BUCKET,
-      ) as string;
+      )) as string;
     }
     try {
       return await this.redis.evalsha(
-        this.scriptSha, 1, redisKey, capacity, refillRate, now,
+        this.scriptSha,
+        1,
+        redisKey,
+        capacity,
+        refillRate,
+        now,
       );
     } catch {
-      this.scriptSha = await this.redis.script(
-        'LOAD',
+      this.scriptSha = (await this.redis.script(
+        "LOAD",
         LUA_TOKEN_BUCKET,
-      ) as string;
+      )) as string;
       return this.redis.evalsha(
-        this.scriptSha, 1, redisKey, capacity, refillRate, now,
+        this.scriptSha,
+        1,
+        redisKey,
+        capacity,
+        refillRate,
+        now,
       );
     }
   }

@@ -1,12 +1,8 @@
-import {
-  Injectable,
-  Logger,
-  type OnModuleInit,
-  type OnModuleDestroy,
-} from '@nestjs/common';
-import { tracedFetch } from '@yoizen/observability';
+import { Injectable, type OnModuleInit, type OnModuleDestroy } from "@nestjs/common";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
+import { gatewayConfig } from "../../config";
 
-interface RouteEntry {
+interface IRouteEntry {
   id: string;
   tenantId: string;
   serviceName: string;
@@ -19,7 +15,7 @@ interface RouteEntry {
   stripPrefix: boolean;
 }
 
-interface MatchResult {
+interface IMatchResult {
   knativeName: string;
   namespace: string;
   port: number;
@@ -34,15 +30,13 @@ const FETCH_TIMEOUT_MS = 5_000;
 
 @Injectable()
 export class DynamicRouteCacheService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(DynamicRouteCacheService.name);
-  private readonly routesByTenant = new Map<string, RouteEntry[]>();
+  private readonly logger = new PinoLoggerService(DynamicRouteCacheService.name);
+  private readonly routesByTenant = new Map<string, IRouteEntry[]>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly registryUrl: string;
 
   constructor() {
-    this.registryUrl =
-      process.env.REGISTRY_SERVICE_URL ??
-      'http://registry-service.platform-services.svc.cluster.local';
+    this.registryUrl = gatewayConfig.services.registry;
   }
 
   async onModuleInit(): Promise<void> {
@@ -57,7 +51,7 @@ export class DynamicRouteCacheService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  match(tenantId: string, method: string, path: string): MatchResult | null {
+  match(tenantId: string, method: string, path: string): IMatchResult | null {
     const routes = this.routesByTenant.get(tenantId);
     if (!routes) return null;
 
@@ -67,7 +61,7 @@ export class DynamicRouteCacheService implements OnModuleInit, OnModuleDestroy {
       if (!r.methods.includes(method)) continue;
 
       const upstreamPath = r.stripPrefix
-        ? path.slice(r.pathPrefix.length) || '/'
+        ? path.slice(r.pathPrefix.length) || "/"
         : path;
 
       return {
@@ -94,8 +88,8 @@ export class DynamicRouteCacheService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      const entries: RouteEntry[] = await res.json();
-      const grouped = new Map<string, RouteEntry[]>();
+      const entries: IRouteEntry[] = await res.json();
+      const grouped = new Map<string, IRouteEntry[]>();
 
       for (let i = 0; i < entries.length; i++) {
         const e = entries[i];

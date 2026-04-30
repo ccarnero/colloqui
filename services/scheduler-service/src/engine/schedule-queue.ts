@@ -1,4 +1,4 @@
-export interface QueueEntry {
+export interface IQueueEntry {
   scheduleId: string;
   tenantId: string;
   nextRunAt: number;
@@ -6,26 +6,22 @@ export interface QueueEntry {
 
 /**
  * Min-heap priority queue keyed by nextRunAt timestamp.
- * O(log n) insert, O(log n) pop, O(1) peek, O(n) remove-by-id.
+ * O(log n) insert, O(log n) pop, O(n) remove-by-id.
  * Uses a Map index for O(1) membership checks and O(1) entry lookup by scheduleId.
  */
 export class ScheduleQueue {
-  private heap: QueueEntry[] = [];
+  private heap: IQueueEntry[] = [];
   private readonly indexMap = new Map<string, number>();
 
   get size(): number {
     return this.heap.length;
   }
 
-  peek(): QueueEntry | undefined {
-    return this.heap[0];
-  }
-
   has(scheduleId: string): boolean {
     return this.indexMap.has(scheduleId);
   }
 
-  insert(entry: QueueEntry): void {
+  insert(entry: IQueueEntry): void {
     if (this.indexMap.has(entry.scheduleId)) {
       this.remove(entry.scheduleId);
     }
@@ -35,7 +31,7 @@ export class ScheduleQueue {
     this.bubbleUp(idx);
   }
 
-  pop(): QueueEntry | undefined {
+  pop(): IQueueEntry | undefined {
     if (this.heap.length === 0) return undefined;
     const top = this.heap[0];
     this.indexMap.delete(top.scheduleId);
@@ -48,8 +44,8 @@ export class ScheduleQueue {
     return top;
   }
 
-  popAllDue(now: number): QueueEntry[] {
-    const results: QueueEntry[] = [];
+  popAllDue(now: number): IQueueEntry[] {
+    const results: IQueueEntry[] = [];
     while (this.heap.length > 0 && this.heap[0].nextRunAt <= now) {
       results.push(this.pop()!);
     }
@@ -110,10 +106,16 @@ export class ScheduleQueue {
       const left = 2 * idx + 1;
       const right = 2 * idx + 2;
 
-      if (left < length && this.heap[left].nextRunAt < this.heap[smallest].nextRunAt) {
+      if (
+        left < length &&
+        this.heap[left].nextRunAt < this.heap[smallest].nextRunAt
+      ) {
         smallest = left;
       }
-      if (right < length && this.heap[right].nextRunAt < this.heap[smallest].nextRunAt) {
+      if (
+        right < length &&
+        this.heap[right].nextRunAt < this.heap[smallest].nextRunAt
+      ) {
         smallest = right;
       }
       if (smallest === idx) break;

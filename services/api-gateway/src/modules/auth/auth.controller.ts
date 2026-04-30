@@ -2,335 +2,232 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
   Req,
-  Headers,
-  BadRequestException,
-} from '@nestjs/common';
-import { SYSTEM_ROLE_TENANT_ADMIN, type JwtPayload } from '@yoizen/shared';
-import { AuthProxyService } from './auth-proxy.service';
-import { TenantProxyService } from '../tenants/tenant-proxy.service';
-import { Public } from '../../decorators/public.decorator';
-import { Scopes } from '../../decorators/scopes.decorator';
-import { RequirePermission } from '../../decorators/permissions.decorator';
-import { SkipTenant } from '../../decorators/skip-tenant.decorator';
-import { REQUEST_USER_KEY } from '../../guards/auth.guard';
-import { REQUEST_TENANT_KEY } from '../../guards/tenant.guard';
+} from "@nestjs/common";
+import { AuthFacadeService } from "./auth-facade.service";
+import { Public } from "../../decorators/public.decorator";
+import { Scopes } from "../../decorators/scopes.decorator";
+import { RequirePermission } from "../../decorators/permissions.decorator";
+import { SkipTenant } from "../../decorators/skip-tenant.decorator";
+import type { IYoizenRequest } from "../../types/yoizen-request";
+import {
+  AuthLoginBodyDto,
+  AuthRefreshBodyDto,
+  AuthTokenBodyDto,
+  CreateClientBodyDto,
+  CreatePublicRouteDto,
+  CreateTenantRoleDto,
+  CreateTenantUserBodyDto,
+  CreateUserBodyDto,
+  UpdateTenantRoleDto,
+  UpdateTenantUserBodyDto,
+} from "./auth.dto";
 
-const TENANT_SCOPE_PREFIX = 'tenant:';
-
-@Controller('auth')
+@Controller("auth")
 export class AuthController {
-  constructor(
-    private readonly authProxy: AuthProxyService,
-    private readonly tenantProxy: TenantProxyService,
-  ) {}
+  constructor(private readonly authFacade: AuthFacadeService) {}
 
   @Public()
   @SkipTenant()
-  @Post('token')
-  async token(@Body() body: object): Promise<object> {
-    const result = await this.authProxy.proxy('POST', '/auth/token', body);
-    const scope = (result as Record<string, unknown>).scope as string | undefined;
-    if (scope?.startsWith(TENANT_SCOPE_PREFIX)) {
-      const tenantName = scope.slice(TENANT_SCOPE_PREFIX.length);
-      await this.assertTenantExists(tenantName);
-    }
-    return result;
+  @Post("token")
+  async token(@Body() body: AuthTokenBodyDto): Promise<object> {
+    return this.authFacade.token(body);
   }
 
   @Public()
   @SkipTenant()
-  @Post('login')
-  async login(@Body() body: object): Promise<object> {
-    return this.authProxy.proxy('POST', '/auth/login', body);
+  @Post("login")
+  async login(@Body() body: AuthLoginBodyDto): Promise<object> {
+    return this.authFacade.login(body);
   }
 
   @Public()
   @SkipTenant()
-  @Post('refresh')
-  async refresh(@Body() body: object): Promise<object> {
-    return this.authProxy.proxy('POST', '/auth/refresh', body);
+  @Post("refresh")
+  async refresh(@Body() body: AuthRefreshBodyDto): Promise<object> {
+    return this.authFacade.refreshToken(body);
   }
 
-  @Scopes('platform')
-  @Get('public-routes')
+  @Scopes("platform")
+  @Get("public-routes")
   async listPublicRoutes(
-    @Req() req: any,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('GET', '/auth/public-routes', undefined, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.listPublicRoutes(req, auth);
   }
 
-  @Scopes('platform')
-  @Post('public-routes')
+  @Scopes("platform")
+  @Post("public-routes")
   async createPublicRoute(
-    @Req() req: any,
-    @Body() body: object,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Body() body: CreatePublicRouteDto,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('POST', '/auth/public-routes', body, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.createPublicRoute(req, body, auth);
   }
 
-  @Scopes('platform')
-  @Delete('public-routes/:id')
+  @Scopes("platform")
+  @Delete("public-routes/:id")
   async removePublicRoute(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Param("id") id: string,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('DELETE', `/auth/public-routes/${id}`, undefined, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.removePublicRoute(req, id, auth);
   }
 
-  @Scopes('platform')
-  @Post('users')
+  @Scopes("platform")
+  @Post("users")
   async createUser(
-    @Req() req: any,
-    @Body() body: object,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Body() body: CreateUserBodyDto,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('POST', '/auth/users', body, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.createUser(req, body, auth);
   }
 
-  @Scopes('platform')
-  @Get('users')
+  @Scopes("platform")
+  @Get("users")
   async listUsers(
-    @Req() req: any,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('GET', '/auth/users', undefined, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.listUsers(req, auth);
   }
 
-  @Scopes('platform')
-  @Post('clients')
+  @Scopes("platform")
+  @Post("clients")
   async createClient(
-    @Req() req: any,
-    @Body() body: object,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Body() body: CreateClientBodyDto,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    const scope = (body as Record<string, unknown>).scope as string | undefined;
-    if (scope?.startsWith(TENANT_SCOPE_PREFIX)) {
-      const tenantName = scope.slice(TENANT_SCOPE_PREFIX.length);
-      await this.assertTenantExists(tenantName);
-    }
-    return this.authProxy.proxy('POST', '/auth/clients', body, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.createClient(req, body, auth);
   }
 
-  @Scopes('platform')
-  @Get('clients')
+  @Scopes("platform")
+  @Get("clients")
   async listClients(
-    @Req() req: any,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('GET', '/auth/clients', undefined, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.listClients(req, auth);
   }
 
-  @Scopes('platform')
-  @Delete('clients/:id')
+  @Scopes("platform")
+  @Delete("clients/:id")
   async revokeClient(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Param("id") id: string,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('DELETE', `/auth/clients/${id}`, undefined, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.revokeClient(req, id, auth);
   }
 
-  @Scopes('platform', 'tenant')
-  @Post('tenant-users')
+  @Scopes("platform", "tenant")
+  @Post("tenant-users")
   async createTenantUser(
-    @Req() req: any,
-    @Body() body: object,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Body() body: CreateTenantUserBodyDto,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    const user = req[REQUEST_USER_KEY] as JwtPayload;
-    const record = body as Record<string, unknown>;
-    const tenantId = record.tenant_id as string | undefined;
-
-    if (user.scope !== 'platform') {
-      if (user.role !== SYSTEM_ROLE_TENANT_ADMIN) {
-        throw new ForbiddenException(
-          'Only tenant administrators can create users',
-        );
-      }
-      const scopeTenant = (user.scope as string).slice(
-        TENANT_SCOPE_PREFIX.length,
-      );
-      if (tenantId && tenantId !== scopeTenant) {
-        throw new ForbiddenException(
-          'Cannot create users for a different tenant',
-        );
-      }
-      if (!tenantId) {
-        record.tenant_id = scopeTenant;
-      }
-    }
-
-    if (record.tenant_id) {
-      await this.assertTenantExists(record.tenant_id as string);
-    }
-
-    return this.authProxy.proxy('POST', '/auth/tenant-users', body, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.createTenantUser(req, body, auth);
   }
 
-  @Get('tenant-users')
+  @Get("tenant-users")
   async listTenantUsers(
-    @Req() req: any,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('GET', '/auth/tenant-users', undefined, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.listTenantUsers(req, auth);
   }
 
-  @Get('tenant-users/:id')
+  @Get("tenant-users/:id")
   async getTenantUser(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Param("id") id: string,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('GET', `/auth/tenant-users/${id}`, undefined, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.getTenantUser(req, id, auth);
   }
 
-  @Patch('tenant-users/:id')
+  @Patch("tenant-users/:id")
   async updateTenantUser(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() body: object,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Param("id") id: string,
+    @Body() body: UpdateTenantUserBodyDto,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('PATCH', `/auth/tenant-users/${id}`, body, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.updateTenantUser(req, id, body, auth);
   }
 
-  @Delete('tenant-users/:id')
+  @Delete("tenant-users/:id")
   async removeTenantUser(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Param("id") id: string,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('DELETE', `/auth/tenant-users/${id}`, undefined, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.removeTenantUser(req, id, auth);
   }
 
-  @Scopes('platform', 'tenant')
-  @RequirePermission('roles:create')
-  @Post('tenant-roles')
+  @Scopes("platform", "tenant")
+  @RequirePermission("roles:create")
+  @Post("tenant-roles")
   async createTenantRole(
-    @Req() req: any,
-    @Body() body: object,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Body() body: CreateTenantRoleDto,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    const user = req[REQUEST_USER_KEY] as JwtPayload;
-    const record = body as Record<string, unknown>;
-
-    if (user.scope !== 'platform' && !record.tenant_id) {
-      const scopeTenant = (user.scope as string).slice(
-        TENANT_SCOPE_PREFIX.length,
-      );
-      record.tenant_id = scopeTenant;
-    }
-
-    return this.authProxy.proxy('POST', '/auth/tenant-roles', body, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.createTenantRole(req, body, auth);
   }
 
-  @Scopes('platform', 'tenant')
-  @RequirePermission('roles:read')
-  @Get('tenant-roles')
+  @Scopes("platform", "tenant")
+  @RequirePermission("roles:read")
+  @Get("tenant-roles")
   async listTenantRoles(
-    @Req() req: any,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy('GET', '/auth/tenant-roles', undefined, {
-      Authorization: auth,
-    }, req[REQUEST_TENANT_KEY]);
+    return this.authFacade.listTenantRoles(req, auth);
   }
 
-  @Scopes('platform', 'tenant')
-  @RequirePermission('roles:read')
-  @Get('tenant-roles/:id')
+  @Scopes("platform", "tenant")
+  @RequirePermission("roles:read")
+  @Get("tenant-roles/:id")
   async getTenantRole(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Param("id") id: string,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy(
-      'GET',
-      `/auth/tenant-roles/${id}`,
-      undefined,
-      { Authorization: auth },
-      req[REQUEST_TENANT_KEY],
-    );
+    return this.authFacade.getTenantRole(req, id, auth);
   }
 
-  @Scopes('platform', 'tenant')
-  @RequirePermission('roles:update')
-  @Patch('tenant-roles/:id')
+  @Scopes("platform", "tenant")
+  @RequirePermission("roles:update")
+  @Patch("tenant-roles/:id")
   async updateTenantRole(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() body: object,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Param("id") id: string,
+    @Body() body: UpdateTenantRoleDto,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy(
-      'PATCH',
-      `/auth/tenant-roles/${id}`,
-      body,
-      { Authorization: auth },
-      req[REQUEST_TENANT_KEY],
-    );
+    return this.authFacade.updateTenantRole(req, id, body, auth);
   }
 
-  @Scopes('platform', 'tenant')
-  @RequirePermission('roles:delete')
-  @Delete('tenant-roles/:id')
+  @Scopes("platform", "tenant")
+  @RequirePermission("roles:delete")
+  @Delete("tenant-roles/:id")
   async deleteTenantRole(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Headers('authorization') auth: string,
+    @Req() req: IYoizenRequest,
+    @Param("id") id: string,
+    @Headers("authorization") auth: string,
   ): Promise<object> {
-    return this.authProxy.proxy(
-      'DELETE',
-      `/auth/tenant-roles/${id}`,
-      undefined,
-      { Authorization: auth },
-      req[REQUEST_TENANT_KEY],
-    );
-  }
-
-  private async assertTenantExists(name: string): Promise<void> {
-    const tenant = await this.tenantProxy.getTenant(name);
-    if (!tenant) {
-      throw new BadRequestException(
-        `Tenant '${name}' does not exist in this environment`,
-      );
-    }
+    return this.authFacade.deleteTenantRole(req, id, auth);
   }
 }

@@ -6,11 +6,12 @@
     "build": "tsc -p tsconfig.json",
     "start": "bun run dist/main.js",
     "start:dev": "bun run --watch src/main.ts",
-    "test": "bun test",
-    "test:unit": "bun test test/unit",
+    "test": "bun run test:unit && bun run test:integration",
+    "test:unit": "bun test --preload ./test/unit/preload-database-mock.ts test/unit",
     "test:integration": "bun test test/integration"
   },
   "dependencies": {
+    "@yoizen/database": "file:../../packages/database",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-fastify": "^11.0.0",

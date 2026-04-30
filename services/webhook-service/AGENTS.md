@@ -23,8 +23,7 @@ src/
 ├── main.ts                         # Bootstrap: Fastify adapter, port binding
 ├── app.module.ts                   # @Global() root module with NATS providers
 ├── providers/
-│   ├── nats.provider.ts            # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CONSUMER, JETSTREAM_PUBLISHER
-│   └── redis.provider.ts           # REDIS_CLIENT token (ioredis)
+│   └── nats.provider.ts            # NATS + JetStream tokens
 └── modules/
     ├── webhook/
     │   ├── webhook.module.ts
@@ -34,9 +33,11 @@ src/
         └── health.controller.ts    # GET /health
 
 test/
-├── unit/                           # (scripts defined, tests not yet implemented)
-└── integration/                    # (scripts defined, tests not yet implemented)
+├── unit/                           # webhook.service, health.controller
+└── integration/                    # webhook-adapter.integration (requires NATS + Redis)
 ```
+
+**Redis:** `app.module.ts` registers `redisProvider` and `REDIS_CLIENT` from `@yoizen/database` (there is no `src/providers/redis.provider.ts` in this service).
 
 ## Key Files
 
@@ -81,7 +82,7 @@ NATS (results.>) -> consumer.consume(batch=50, expires=30s)
 | Stream | Subjects | Purpose |
 |--------|----------|---------|
 | `RESULTS` | `results.>` | Inbound completion events |
-| `DLQ` | `dlq.>` | Failed webhook deliveries (64 MB max, 7-day retention) |
+| `DLQ` | `dlq.webhook` | Failed webhook deliveries only (64 MB max, 7-day retention). Scoped to the single `WEBHOOK_DLQ_SUBJECT` so per-tenant DLQs (`DLQ-<tenant>`, `dlq.<tenant>.>`) can coexist without JetStream subject overlap. |
 
 ### Module Dependency Graph
 
@@ -108,7 +109,7 @@ No other HTTP endpoints -- this service is message-driven.
 | `JETSTREAM_MANAGER` | `JetStreamManager` | `nats.provider.ts` |
 | `JETSTREAM_CONSUMER` | `Consumer` | `nats.provider.ts` (RESULTS stream, `webhook-dispatcher` consumer) |
 | `JETSTREAM_PUBLISHER` | `JetStreamClient` | `nats.provider.ts` (for DLQ publishing) |
-| `REDIS_CLIENT` | `Redis` (ioredis) | `redis.provider.ts` |
+| `REDIS_CLIENT` | `Redis` (ioredis) | `app.module.ts` (`redisProvider` from `@yoizen/database`) |
 
 ## Configuration
 
@@ -135,7 +136,7 @@ No other HTTP endpoints -- this service is message-driven.
 | `bun test test/unit` | Unit tests |
 | `bun test test/integration` | Integration tests |
 
-Test scripts are defined but test files are not yet implemented. When adding tests, mock `JETSTREAM_CONSUMER` and `JETSTREAM_PUBLISHER` tokens for unit tests. Integration tests should require local NATS on `:4222`.
+Unit tests mock `JETSTREAM_CONSUMER`, `JETSTREAM_PUBLISHER`, and `REDIS_CLIENT`. Integration tests require local NATS on `:4222` and Redis.
 
 ## Code Style and Conventions
 

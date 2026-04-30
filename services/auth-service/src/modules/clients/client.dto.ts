@@ -1,9 +1,5 @@
-import {
-  IsNotEmpty,
-  IsString,
-  Matches,
-  MaxLength,
-} from 'class-validator';
+import { IsNotEmpty, IsString, Matches, MaxLength } from "class-validator";
+import { CLIENT_SCOPE_REGEX } from "../scope-constants";
 
 export class CreateClientDto {
   @IsString()
@@ -13,8 +9,9 @@ export class CreateClientDto {
 
   @IsString()
   @IsNotEmpty()
-  @Matches(/^(platform|tenant:[a-z0-9]([a-z0-9-]*[a-z0-9])?)$/, {
-    message: 'scope must be "platform" or "tenant:<name>" with lowercase alphanumeric tenant name',
+  @Matches(CLIENT_SCOPE_REGEX, {
+    message:
+      'scope must be "platform" or "tenant:<name>" with lowercase alphanumeric tenant name',
   })
   scope!: string;
 }

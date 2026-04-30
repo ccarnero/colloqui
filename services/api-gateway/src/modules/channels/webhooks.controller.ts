@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -7,10 +8,15 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  type RawBodyRequest,
 } from "@nestjs/common";
+import type { FastifyRequest } from "fastify";
+import type { Channel } from "@yoizen/shared";
 import { Public } from "../../decorators/public.decorator";
 import { SkipTenant } from "../../decorators/skip-tenant.decorator";
-import { ChannelsProxyService } from "./channels-proxy.service";
+import { WebhookVerificationQueryDto } from "./webhooks-gateway.dto";
+import { WebhookIngressPublisherService } from "./webhook-ingress-publisher.service";
+import { WebhookVerifyRpcClient } from "./webhook-verify-rpc.client";
 
 /**
  * Webhook endpoints are public (no JWT, no tenant guard).
@@ -18,7 +24,10 @@ import { ChannelsProxyService } from "./channels-proxy.service";
  */
 @Controller("webhooks")
 export class WebhooksController {
-  constructor(private readonly proxy: ChannelsProxyService) {}
+  constructor(
+    private readonly publisher: WebhookIngressPublisherService,
+    private readonly verifyClient: WebhookVerifyRpcClient,
+  ) {}
 
   @Get(":channel/:tenantId")
   @Public()
@@ -26,22 +35,13 @@ export class WebhooksController {
   async verify(
     @Param("channel") channel: string,
     @Param("tenantId") tenantId: string,
-    @Query("hub.mode") mode?: string,
-    @Query("hub.verify_token") verifyToken?: string,
-    @Query("hub.challenge") challenge?: string,
-  ): Promise<object> {
-    const qs: Record<string, string | undefined> = {
-      "hub.mode": mode,
-      "hub.verify_token": verifyToken,
-      "hub.challenge": challenge,
-    };
-
-    return this.proxy.proxy(
-      "GET",
-      `/webhooks/${encodeURIComponent(channel)}/${encodeURIComponent(tenantId)}`,
+    @Query() query: WebhookVerificationQueryDto,
+  ): Promise<string> {
+    return this.verifyClient.verify({
       tenantId,
-      qs,
-    );
+      channel,
+      query,
+    });
   }
 
   @Post(":channel/:tenantId")
@@ -51,22 +51,22 @@ export class WebhooksController {
   async receive(
     @Param("channel") channel: string,
     @Param("tenantId") tenantId: string,
-    @Req() req: Record<string, unknown>,
-  ): Promise<object> {
-    const headers: Record<string, string> = {};
-    const sigHeader = (req as { headers?: Record<string, string> }).headers?.[
-      "x-hub-signature-256"
-    ];
-    if (sigHeader) {
-      headers["x-hub-signature-256"] = sigHeader;
+    @Req() request: RawBodyRequest<FastifyRequest>,
+  ): Promise<{ status: string }> {
+    if (!Buffer.isBuffer(request.rawBody) || request.rawBody.length === 0) {
+      throw new BadRequestException(
+        "Missing raw request body for webhook ingress",
+      );
     }
 
-    return this.proxy.proxy(
-      "POST",
-      `/webhooks/${encodeURIComponent(channel)}/${encodeURIComponent(tenantId)}`,
+    await this.publisher.publishWebhook({
       tenantId,
-      undefined,
-      (req as { body?: unknown }).body,
-    );
+      channel: channel as Channel,
+      rawBody: request.rawBody,
+      headers: request.headers as Record<string, unknown>,
+      parsedBody: request.body,
+    });
+
+    return { status: "accepted" };
   }
 }

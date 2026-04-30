@@ -1,53 +1,21 @@
 import "./instrumentation";
 import "reflect-metadata";
-import { NestFactory } from "@nestjs/core";
-import { ValidationPipe } from "@nestjs/common";
 import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from "@nestjs/platform-fastify";
-import {
-  PinoLoggerService,
-  registerHttpMetricsHooks,
-  shutdownTelemetry,
+  bootstrapSplitService,
+  runNestFastifyServiceMain,
 } from "@yoizen/observability";
 import { AppModule } from "./app.module";
+import { channelServiceConfig } from "./config";
 
-const PORT = parseInt(process.env.PORT ?? "3000", 10);
-
-async function bootstrap(): Promise<void> {
-  const pinoLogger = new PinoLoggerService("channel-service");
-
-  const fastifyAdapter = new FastifyAdapter({
-    bodyLimit: 1_048_576,
+runNestFastifyServiceMain("channel-service", async () => {
+  await bootstrapSplitService({
+    baseServiceName: "channel-service",
+    module: AppModule,
+    port: channelServiceConfig.port,
+    apiOptions: {
+      withValidationPipe: true,
+      fastifyAdapterOptions: { bodyLimit: 1_048_576 },
+      nestApplicationOptions: { rawBody: true },
+    },
   });
-
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
-    fastifyAdapter,
-    { logger: pinoLogger, rawBody: true },
-  );
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-
-  const fastify = app.getHttpAdapter().getInstance();
-  registerHttpMetricsHooks(fastify, "channel-service");
-
-  await app.listen(PORT, "0.0.0.0");
-}
-
-bootstrap().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
-
-process.on("SIGTERM", async () => {
-  await shutdownTelemetry();
-  process.exit(0);
 });

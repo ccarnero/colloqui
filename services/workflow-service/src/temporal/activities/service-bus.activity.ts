@@ -1,14 +1,15 @@
-import { connect, headers as natsHeaders, type NatsConnection } from 'nats';
-import type { ServiceBusCallArgs } from '@yoizen/shared';
-import { TENANT_HEADER } from '@yoizen/shared';
+import { connect, headers as natsHeaders, type NatsConnection } from "nats";
+import type { ServiceBusCallArgs } from "@yoizen/shared";
+import { TENANT_HEADER } from "@yoizen/shared";
+import { workflowServiceConfig } from "../../config";
 
 let nc: NatsConnection | null = null;
 const encoder = new TextEncoder();
 
 async function getConnection(): Promise<NatsConnection> {
   if (nc && !nc.isClosed()) return nc;
-  const url = process.env.NATS_URL ?? 'nats://localhost:4222';
-  nc = await connect({ servers: url });
+  const url = workflowServiceConfig.natsUrl;
+  nc = await connect({ servers: url, name: "workflow-service" });
   return nc;
 }
 

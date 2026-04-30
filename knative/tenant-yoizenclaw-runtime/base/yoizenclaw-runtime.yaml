@@ -1,0 +1,91 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: yoizenclaw-runtime
+  labels:
+    app.kubernetes.io/name: yoizenclaw-runtime
+    app.kubernetes.io/component: yoizenclaw-runtime
+    app.kubernetes.io/part-of: yoizen-arch
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
+        autoscaling.knative.dev/metric: concurrency
+        autoscaling.knative.dev/target: "50"
+        autoscaling.knative.dev/min-scale: "1"
+        autoscaling.knative.dev/max-scale: "3"
+    spec:
+      containerConcurrency: 0
+      timeoutSeconds: 300
+      containers:
+        - name: user-container
+          image: dev.local/yoizenclaw-runtime:local
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          env:
+            - name: TENANT_ID
+              value: "acme"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            # POSTGRES_HOST resolves to a Service named "postgres" in the
+            # tenant namespace. For dedicated tenants this is the per-tenant
+            # ClusterIP fronting the local StatefulSet; for shared tenants
+            # tenant-service materializes an ExternalName aliasing
+            # postgres-shared.support-services-<env>.svc.cluster.local. The
+            # runtime stays tier-agnostic.
+            - name: POSTGRES_HOST
+              value: "postgres"
+            - name: POSTGRES_PORT
+              value: "5432"
+            # DB name + role differ between tiers (yoizen/yoizen for dedicated,
+            # tenant_<id>/tenant_<id>_app for shared) so we read them from the
+            # per-namespace `postgres-credentials` Secret that tenant-service
+            # writes during provisioning instead of hard-coding values.
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: ADAPTER_SERVICE_URL
+              value: "http://adapter-service-api.platform-services-dev.svc.cluster.local"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "yoizenclaw-runtime"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 20

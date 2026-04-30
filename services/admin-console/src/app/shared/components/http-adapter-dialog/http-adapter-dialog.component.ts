@@ -1,4 +1,9 @@
-import { Component, computed, inject, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+} from "@angular/core";
 import {
   FormArray,
   FormBuilder,
@@ -16,34 +21,25 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
+import { MatChipsModule } from "@angular/material/chips";
+import { COMMA, ENTER } from "@angular/cdk/keycodes";
 import {
   type AuthType,
-  type HttpAdapter,
-  type HttpAdapterContext,
-  type HttpAdapterDialogData,
-  type HttpAdapterDialogResult,
+  type IHttpAdapter,
+  type IHttpAdapterCacheStrategy,
+  type IHttpAdapterContext,
+  type IHttpAdapterDialogData,
+  type IHttpAdapterDialogResult,
   type HttpMethod,
 } from "../../models/http-adapter.model";
-
-const HTTP_METHODS: readonly HttpMethod[] = [
-  "GET",
-  "POST",
-  "PUT",
-  "PATCH",
-  "DELETE",
-];
-
-const AUTH_TYPE_LABELS: ReadonlyMap<AuthType, string> = new Map([
-  ["none", "None"],
-  ["api-key", "API Key"],
-  ["bearer", "Bearer Token"],
-  ["basic", "Basic Auth"],
-  ["oauth2", "OAuth2 (Client Credentials)"],
-]);
+import { AdapterAuthConfigComponent } from "./adapter-auth-config.component";
+import { AdapterCacheStrategyFormComponent } from "./adapter-cache-strategy-form.component";
+import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.component";
 
 @Component({
   selector: "app-http-adapter-dialog",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
     MatDialogModule,
@@ -51,12 +47,19 @@ const AUTH_TYPE_LABELS: ReadonlyMap<AuthType, string> = new Map([
     MatInputModule,
     MatSelectModule,
     MatButtonModule,
+    MatChipsModule,
     MatIconModule,
+    AdapterAuthConfigComponent,
+    AdapterCacheStrategyFormComponent,
+    AdapterEndpointConfigComponent,
   ],
+  styleUrl: "./http-adapter-dialog.component.scss",
   template: `
     <div class="dialog-header">
       <div>
-        <div class="dialog-title">{{ dialogTitle() }}</div>
+        <div class="dialog-title">
+          {{ data.mode === "create" ? "Create" : "Edit" }} Connector
+        </div>
         <div class="dialog-subtitle">
           Configure the HTTP adapter settings below
         </div>
@@ -104,127 +107,49 @@ const AUTH_TYPE_LABELS: ReadonlyMap<AuthType, string> = new Map([
                 <input
                   matInput
                   formControlName="baseUrl"
-                  placeholder="{{ urlPlaceholder() }}"
+                  [placeholder]="
+                    contextSignal() === 'internal'
+                      ? 'http://svc.namespace.svc:8080'
+                      : 'https://api.example.com'
+                  "
                 />
               </mat-form-field>
             </div>
           </div>
         </div>
 
-        <div class="section-card" formGroupName="auth">
+        <div class="section-card">
           <div class="section-card-header">
-            <div class="section-card-title">Authentication</div>
+            <div class="section-card-title">Tags</div>
           </div>
           <div class="section-card-body">
             <mat-form-field appearance="outline" class="form-field-full">
-              <mat-label>Auth Type</mat-label>
-              <mat-select formControlName="type">
-                @for (opt of authOptions; track opt.value) {
-                  <mat-option [value]="opt.value">
-                    {{ opt.label }}
-                  </mat-option>
+              <mat-label>Tags</mat-label>
+              <mat-chip-grid #chipGrid>
+                @for (tag of tags(); track tag) {
+                  <mat-chip-row (removed)="removeTag(tag)">
+                    {{ tag }}
+                    <button matChipRemove>
+                      <mat-icon>cancel</mat-icon>
+                    </button>
+                  </mat-chip-row>
                 }
-              </mat-select>
+              </mat-chip-grid>
+              <input
+                matInput
+                placeholder="Add tag..."
+                [matChipInputFor]="chipGrid"
+                [matChipInputSeparatorKeyCodes]="separatorKeyCodes"
+                (matChipInputTokenEnd)="addTag($event)"
+              />
             </mat-form-field>
-
-            @switch (authType()) {
-              @case ("api-key") {
-                <div class="form-row">
-                  <mat-form-field
-                    appearance="outline"
-                    class="form-field-half"
-                  >
-                    <mat-label>Header Name</mat-label>
-                    <input
-                      matInput
-                      formControlName="apiKeyHeader"
-                      placeholder="X-API-Key"
-                    />
-                  </mat-form-field>
-                  <mat-form-field
-                    appearance="outline"
-                    class="form-field-half"
-                  >
-                    <mat-label>API Key</mat-label>
-                    <input
-                      matInput
-                      formControlName="apiKey"
-                      type="password"
-                    />
-                  </mat-form-field>
-                </div>
-              }
-              @case ("bearer") {
-                <mat-form-field
-                  appearance="outline"
-                  class="form-field-full"
-                >
-                  <mat-label>Bearer Token</mat-label>
-                  <input
-                    matInput
-                    formControlName="bearerToken"
-                    type="password"
-                  />
-                </mat-form-field>
-              }
-              @case ("basic") {
-                <div class="form-row">
-                  <mat-form-field
-                    appearance="outline"
-                    class="form-field-half"
-                  >
-                    <mat-label>Username</mat-label>
-                    <input matInput formControlName="basicUsername" />
-                  </mat-form-field>
-                  <mat-form-field
-                    appearance="outline"
-                    class="form-field-half"
-                  >
-                    <mat-label>Password</mat-label>
-                    <input
-                      matInput
-                      formControlName="basicPassword"
-                      type="password"
-                    />
-                  </mat-form-field>
-                </div>
-              }
-              @case ("oauth2") {
-                <div class="form-row">
-                  <mat-form-field
-                    appearance="outline"
-                    class="form-field-half"
-                  >
-                    <mat-label>Client ID</mat-label>
-                    <input matInput formControlName="oauth2ClientId" />
-                  </mat-form-field>
-                  <mat-form-field
-                    appearance="outline"
-                    class="form-field-half"
-                  >
-                    <mat-label>Client Secret</mat-label>
-                    <input
-                      matInput
-                      formControlName="oauth2ClientSecret"
-                      type="password"
-                    />
-                  </mat-form-field>
-                </div>
-                <mat-form-field
-                  appearance="outline"
-                  class="form-field-full"
-                >
-                  <mat-label>Token URL</mat-label>
-                  <input
-                    matInput
-                    formControlName="oauth2TokenUrl"
-                    placeholder="https://auth.example.com/oauth/token"
-                  />
-                </mat-form-field>
-              }
-            }
           </div>
         </div>
+
+        <app-adapter-auth-config
+          [authForm]="authFormGroup"
+          [authType]="authType()"
+        />
 
         <div class="section-card">
           <div class="section-card-header">
@@ -240,21 +165,12 @@ const AUTH_TYPE_LABELS: ReadonlyMap<AuthType, string> = new Map([
           </div>
           <div class="section-card-body">
             @for (hdr of headers.controls; track hdr; let i = $index) {
-              <div
-                class="form-row list-row"
-                [formGroup]="headerGroup(i)"
-              >
-                <mat-form-field
-                  appearance="outline"
-                  class="form-field-half"
-                >
+              <div class="form-row list-row" [formGroup]="headerGroup(i)">
+                <mat-form-field appearance="outline" class="form-field-half">
                   <mat-label>Key</mat-label>
                   <input matInput formControlName="key" />
                 </mat-form-field>
-                <mat-form-field
-                  appearance="outline"
-                  class="form-field-half"
-                >
+                <mat-form-field appearance="outline" class="form-field-half">
                   <mat-label>Value</mat-label>
                   <input matInput formControlName="value" />
                 </mat-form-field>
@@ -276,70 +192,18 @@ const AUTH_TYPE_LABELS: ReadonlyMap<AuthType, string> = new Map([
 
         <div class="section-card">
           <div class="section-card-header">
-            <div class="section-card-title">Endpoints</div>
-            <button
-              type="button"
-              class="btn btn-secondary btn-sm"
-              (click)="addEndpoint()"
-            >
-              <mat-icon class="btn-add-icon">add</mat-icon>
-              Add
-            </button>
+            <div class="section-card-title">Default Cache</div>
           </div>
           <div class="section-card-body">
-            @for (ep of endpoints.controls; track ep; let i = $index) {
-              <div
-                class="form-row list-row"
-                [formGroup]="endpointGroup(i)"
-              >
-                <mat-form-field
-                  appearance="outline"
-                  class="form-field-method"
-                >
-                  <mat-label>Method</mat-label>
-                  <mat-select formControlName="method">
-                    @for (m of httpMethods; track m) {
-                      <mat-option [value]="m">{{ m }}</mat-option>
-                    }
-                  </mat-select>
-                </mat-form-field>
-                <mat-form-field
-                  appearance="outline"
-                  class="form-field-path"
-                >
-                  <mat-label>Path</mat-label>
-                  <input
-                    matInput
-                    formControlName="path"
-                    placeholder="/api/resource"
-                  />
-                </mat-form-field>
-                <mat-form-field
-                  appearance="outline"
-                  class="form-field-label"
-                >
-                  <mat-label>Label</mat-label>
-                  <input
-                    matInput
-                    formControlName="label"
-                    placeholder="Get resource"
-                  />
-                </mat-form-field>
-                <button
-                  type="button"
-                  class="btn btn-icon btn-danger-icon"
-                  aria-label="Remove endpoint"
-                  (click)="removeEndpoint(i)"
-                >
-                  <mat-icon>close</mat-icon>
-                </button>
-              </div>
-            }
-            @if (endpoints.length === 0) {
-              <div class="empty-hint">No endpoints configured</div>
-            }
+            <app-adapter-cache-strategy-form
+              [group]="defaultCacheFormGroup"
+              [title]="'Default cache'"
+              [subtitle]="'Default adapter cache strategy'"
+            />
           </div>
         </div>
+
+        <app-adapter-endpoint-config [endpoints]="endpoints" />
 
         <div class="form-row-even">
           <div class="section-card">
@@ -381,10 +245,7 @@ const AUTH_TYPE_LABELS: ReadonlyMap<AuthType, string> = new Map([
               <div class="section-card-title">Health Check</div>
             </div>
             <div class="section-card-body">
-              <mat-form-field
-                appearance="outline"
-                class="form-field-full"
-              >
+              <mat-form-field appearance="outline" class="form-field-full">
                 <mat-label>Endpoint Path</mat-label>
                 <input
                   matInput
@@ -416,167 +277,26 @@ const AUTH_TYPE_LABELS: ReadonlyMap<AuthType, string> = new Map([
       </button>
     </div>
   `,
-  styles: `
-    :host {
-      display: block;
-      font-size: 13px;
-    }
-
-    .dialog-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      padding: 16px 24px 10px;
-      gap: 12px;
-    }
-
-    .dialog-title {
-      font-size: 15px;
-      font-weight: 700;
-      letter-spacing: -0.2px;
-      color: var(--text);
-    }
-
-    .dialog-subtitle {
-      font-size: 11px;
-      color: var(--text3);
-      margin-top: 2px;
-    }
-
-    .dialog-footer {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 8px;
-      padding: 10px 24px 16px;
-      border-top: 1px solid var(--border);
-    }
-
-    .adapter-form {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .section-card-title {
-      font-size: 12px;
-    }
-
-    .section-card-header {
-      padding: 10px 14px;
-    }
-
-    .section-card-body {
-      padding: 14px;
-    }
-
-    .form-row {
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-    }
-
-    .form-row-triple {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 12px;
-    }
-
-    .form-row-even {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-    }
-
-    .form-row-even .section-card {
-      margin-bottom: 0;
-    }
-
-    .form-field-half {
-      flex: 1;
-    }
-
-    .form-field-full {
-      width: 100%;
-    }
-
-    .list-row {
-      margin-bottom: 4px;
-      align-items: center;
-    }
-
-    .form-field-method {
-      width: 110px;
-      flex-shrink: 0;
-    }
-
-    .form-field-path {
-      flex: 1;
-    }
-
-    .form-field-label {
-      flex: 1;
-    }
-
-    .btn-add-icon {
-      font-size: 16px;
-      width: 16px;
-      height: 16px;
-    }
-
-    .btn-danger-icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: none;
-      border: none;
-      color: var(--text3);
-      padding: 4px;
-      border-radius: var(--radius);
-      cursor: pointer;
-      transition: color 0.15s, background 0.15s;
-      flex-shrink: 0;
-    }
-
-    .btn-danger-icon:hover {
-      color: var(--red);
-      background: var(--red-dim);
-    }
-
-    .btn-danger-icon mat-icon {
-      font-size: 18px;
-      width: 18px;
-      height: 18px;
-    }
-
-    .empty-hint {
-      font-size: 12px;
-      color: var(--text3);
-      padding: 4px 0;
-    }
-  `,
 })
 export class HttpAdapterDialogComponent {
   private readonly fb = inject(FormBuilder);
   readonly dialogRef = inject(
-    MatDialogRef<HttpAdapterDialogComponent, HttpAdapterDialogResult>,
+    MatDialogRef<HttpAdapterDialogComponent, IHttpAdapterDialogResult>,
   );
-  readonly data = inject<HttpAdapterDialogData>(MAT_DIALOG_DATA);
-
-  readonly authOptions = [...AUTH_TYPE_LABELS.entries()].map(
-    ([value, label]) => ({ value, label }),
-  );
-
-  readonly httpMethods = HTTP_METHODS;
+  readonly data = inject<IHttpAdapterDialogData>(MAT_DIALOG_DATA);
 
   readonly form = this.buildForm();
+
+  readonly separatorKeyCodes = [ENTER, COMMA] as const;
 
   readonly showContextSelector =
     this.data.mode === "create" && !this.data.context;
 
-  readonly contextSignal = signal<HttpAdapterContext>(
+  readonly contextSignal = signal<IHttpAdapterContext>(
     this.data.context ?? "internal",
   );
+
+  readonly tags = signal<string[]>(this.data.adapter?.tags ?? []);
 
   private readonly authTypeSignal = signal<AuthType>(
     this.data.adapter?.auth.type ?? "none",
@@ -584,19 +304,16 @@ export class HttpAdapterDialogComponent {
 
   readonly authType = this.authTypeSignal.asReadonly();
 
-  readonly dialogTitle = computed(() => {
-    const action = this.data.mode === "create" ? "Create" : "Edit";
-    return `${action} Connector`;
-  });
-
-  readonly urlPlaceholder = computed(() =>
-    this.contextSignal() === "internal"
-      ? "http://svc.namespace.svc:8080"
-      : "https://api.example.com",
-  );
+  get authFormGroup(): FormGroup {
+    return this.form.get("auth") as FormGroup;
+  }
 
   get headers(): FormArray {
     return this.form.get("headers") as FormArray;
+  }
+
+  get defaultCacheFormGroup(): FormGroup {
+    return this.form.get("defaultCache") as FormGroup;
   }
 
   headerGroup(index: number): FormGroup {
@@ -620,22 +337,16 @@ export class HttpAdapterDialogComponent {
     return this.form.get("endpoints") as FormArray;
   }
 
-  endpointGroup(index: number): FormGroup {
-    return this.endpoints.at(index) as FormGroup;
+  addTag(event: { value: string; chipInput: { clear: () => void } }): void {
+    const value = (event.value ?? "").trim().toLowerCase();
+    if (value && !this.tags().includes(value)) {
+      this.tags.update((t) => [...t, value]);
+    }
+    event.chipInput.clear();
   }
 
-  addEndpoint(): void {
-    this.endpoints.push(
-      this.fb.group({
-        label: ["", Validators.required],
-        method: ["GET" as HttpMethod, Validators.required],
-        path: ["", Validators.required],
-      }),
-    );
-  }
-
-  removeEndpoint(index: number): void {
-    this.endpoints.removeAt(index);
+  removeTag(tag: string): void {
+    this.tags.update((t) => t.filter((v) => v !== tag));
   }
 
   submit(): void {
@@ -644,24 +355,26 @@ export class HttpAdapterDialogComponent {
     }
 
     const v = this.form.getRawValue();
-    const authType = v.auth.type ?? "none";
-    const adapter: HttpAdapter = {
+    const authTypeVal = v.auth.type ?? "none";
+    const endpointValues = v.endpoints as Array<Record<string, unknown>>;
+
+    const adapter: IHttpAdapter = {
       name: v.name ?? "",
       baseUrl: v.baseUrl ?? "",
       auth: {
-        type: authType,
-        ...(authType === "api-key" && {
+        type: authTypeVal,
+        ...(authTypeVal === "api-key" && {
           apiKeyHeader: v.auth.apiKeyHeader ?? "X-API-Key",
           apiKey: v.auth.apiKey ?? "",
         }),
-        ...(authType === "bearer" && {
+        ...(authTypeVal === "bearer" && {
           bearerToken: v.auth.bearerToken ?? "",
         }),
-        ...(authType === "basic" && {
+        ...(authTypeVal === "basic" && {
           basicUsername: v.auth.basicUsername ?? "",
           basicPassword: v.auth.basicPassword ?? "",
         }),
-        ...(authType === "oauth2" && {
+        ...(authTypeVal === "oauth2" && {
           oauth2ClientId: v.auth.oauth2ClientId ?? "",
           oauth2ClientSecret: v.auth.oauth2ClientSecret ?? "",
           oauth2TokenUrl: v.auth.oauth2TokenUrl ?? "",
@@ -671,18 +384,38 @@ export class HttpAdapterDialogComponent {
         key: h.key ?? "",
         value: h.value ?? "",
       })),
-      endpoints: v.endpoints.map((e) => ({
-        label: e.label ?? "",
-        method: (e.method ?? "GET") as HttpMethod,
-        path: e.path ?? "",
+      defaultCache: this.serializeCacheStrategyFormValue(v.defaultCache),
+      endpoints: endpointValues.map((endpointValue) => ({
+        id: (endpointValue["id"] as string | null | undefined) ?? undefined,
+        label: (endpointValue["label"] as string | undefined) ?? "",
+        method: ((endpointValue["method"] as HttpMethod | undefined) ?? "GET") as HttpMethod,
+        path: (endpointValue["path"] as string | undefined) ?? "",
+        cache: this.serializeCacheStrategyFormValue(
+          endpointValue["cache"] as
+            | {
+                enabled?: boolean;
+                ttlSeconds?: number;
+                methods?: HttpMethod[];
+                keyBody?: boolean;
+                keyHeaders?: string[];
+                queryParamsMode?: string;
+                keyQueryParamsList?: string[];
+              }
+            | undefined,
+        ),
       })),
       timeoutMs: v.timeoutMs ?? 5000,
       maxRetries: v.maxRetries ?? 3,
       retryBackoffMs: v.retryBackoffMs ?? 1000,
       healthCheckPath: v.healthCheckPath ?? "/health",
+      tags: this.tags(),
+      isEncrypted: false,
     };
 
-    this.dialogRef.close({ adapter, context: this.contextSignal() });
+    this.dialogRef.close({
+      adapter,
+      context: this.contextSignal(),
+    });
   }
 
   private buildForm() {
@@ -710,17 +443,18 @@ export class HttpAdapterDialogComponent {
           }),
         ),
       ),
+      defaultCache: this.createCacheFormGroup(a?.defaultCache),
       endpoints: this.fb.array(
-        (a?.endpoints ?? []).map((e) =>
-          this.fb.group({
-            label: [e.label, Validators.required],
-            method: [e.method as HttpMethod, Validators.required],
-            path: [e.path, Validators.required],
-          }),
-        ),
+        (a?.endpoints ?? []).map((e) => this.createEndpointGroup(e)),
       ),
-      timeoutMs: [a?.timeoutMs ?? 5000, [Validators.required, Validators.min(0)]],
-      maxRetries: [a?.maxRetries ?? 3, [Validators.required, Validators.min(0)]],
+      timeoutMs: [
+        a?.timeoutMs ?? 5000,
+        [Validators.required, Validators.min(0)],
+      ],
+      maxRetries: [
+        a?.maxRetries ?? 3,
+        [Validators.required, Validators.min(0)],
+      ],
       retryBackoffMs: [
         a?.retryBackoffMs ?? 1000,
         [Validators.required, Validators.min(0)],
@@ -735,5 +469,78 @@ export class HttpAdapterDialogComponent {
     });
 
     return form;
+  }
+
+  private createEndpointGroup(endpoint?: IHttpAdapter["endpoints"][number]): FormGroup {
+    return this.fb.group({
+      id: [endpoint?.id ?? null],
+      label: [endpoint?.label ?? "", Validators.required],
+      method: [endpoint?.method ?? ("GET" as HttpMethod), Validators.required],
+      path: [endpoint?.path ?? "", Validators.required],
+      cache: this.createCacheFormGroup(endpoint?.cache, endpoint?.method),
+    });
+  }
+
+  private createCacheFormGroup(
+    strategy?: IHttpAdapterCacheStrategy,
+    method?: HttpMethod,
+  ): FormGroup {
+    const selectedMethod = method ?? strategy?.methods?.[0] ?? "GET";
+    const queryParamsMode = Array.isArray(strategy?.keyQueryParams)
+      ? "custom"
+      : "all";
+    const keyBodyDefault =
+      selectedMethod === "POST" ||
+      selectedMethod === "PUT" ||
+      selectedMethod === "PATCH" ||
+      selectedMethod === "DELETE";
+
+    return this.fb.group({
+      enabled: [strategy?.enabled ?? false],
+      ttlSeconds: [
+        strategy?.ttlSeconds ?? 60,
+        [Validators.required, Validators.min(1)],
+      ],
+      methods: [
+        strategy?.methods ?? (["GET", "HEAD"] as HttpMethod[]),
+        Validators.required,
+      ],
+      keyBody: [strategy?.keyBody ?? keyBodyDefault],
+      keyHeaders: [strategy?.keyHeaders ?? []],
+      queryParamsMode: [queryParamsMode],
+      keyQueryParamsList: [
+        Array.isArray(strategy?.keyQueryParams) ? strategy.keyQueryParams : [],
+      ],
+    });
+  }
+
+  private serializeCacheStrategyFormValue(
+    value:
+      | {
+          enabled?: boolean;
+          ttlSeconds?: number;
+          methods?: HttpMethod[];
+          keyBody?: boolean;
+          keyHeaders?: string[];
+          queryParamsMode?: string;
+          keyQueryParamsList?: string[];
+        }
+      | undefined,
+  ): IHttpAdapterCacheStrategy | undefined {
+    if (!value?.enabled) {
+      return undefined;
+    }
+
+    return {
+      enabled: true,
+      ttlSeconds: Math.max(1, value.ttlSeconds ?? 60),
+      methods: value.methods ?? ["GET", "HEAD"],
+      keyBody: value.keyBody ?? false,
+      keyHeaders: value.keyHeaders ?? [],
+      keyQueryParams:
+        value.queryParamsMode === "custom"
+          ? (value.keyQueryParamsList ?? [])
+          : "all",
+    };
   }
 }

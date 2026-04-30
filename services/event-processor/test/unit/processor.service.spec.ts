@@ -1,36 +1,82 @@
-import { describe, it, expect, beforeEach, mock } from 'bun:test';
-import { Test } from '@nestjs/testing';
-import { DiscoveryModule } from '@nestjs/core';
-import { ProcessorService } from '../../src/modules/processor/processor.service';
-import { JETSTREAM_CLIENT, JETSTREAM_PUBLISHER } from '../../src/providers/nats.provider';
-import { REDIS_CLIENT } from '../../src/providers/redis.provider';
-import { HandlerRegistry } from '../../src/handlers/handler-registry';
-import { DefaultHandler } from '../../src/handlers/default.handler';
-import { CreatedHandler } from '../../src/handlers/created.handler';
-import { UpdatedHandler } from '../../src/handlers/updated.handler';
-import { DeletedHandler } from '../../src/handlers/deleted.handler';
-import { PipelineRunner } from '../../src/pipeline/pipeline-runner';
-import type { EventEnvelope } from '@yoizen/shared';
+import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { Test } from "@nestjs/testing";
+import { DiscoveryModule } from "@nestjs/core";
+import { ProcessorService } from "../../src/modules/processor/processor.service";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+  NATS_CONNECTION,
+} from "../../src/providers/nats.provider";
+import { REDIS_CLIENT } from "@yoizen/database";
+import { HandlerRegistry } from "../../src/handlers/handler-registry";
+import { DefaultHandler } from "../../src/handlers/default.handler";
+import {
+  CreatedHandler,
+  DeletedHandler,
+  UpdatedHandler,
+} from "../../src/handlers/lifecycle-handlers";
+import { PipelineRunner } from "../../src/pipeline/pipeline-runner";
+import { ProcessorPipelineDeps } from "../../src/modules/processor/processor-pipeline-deps";
+import type { EventEnvelope } from "@yoizen/shared";
 
-describe('ProcessorService', () => {
+function makeEnvelope(
+  overrides: Partial<EventEnvelope> & { id: string; type: string },
+): EventEnvelope {
+  const { id, type } = overrides;
+  return {
+    specversion: "1.0",
+    id,
+    source: `events.${type}`,
+    type,
+    resource: type,
+    time: new Date().toISOString(),
+    traceid: id,
+    causation_id: null,
+    correlation_id: id,
+    tenant: "test-tenant",
+    producer: "test",
+    domain: "platform",
+    channel: "events",
+    provider: "test",
+    accountid: "test-tenant",
+    idempotencykey: id,
+    transport: { method: "stream", protocol: "internal" },
+    data: {
+      received_at: new Date().toISOString(),
+      payload_inline: true,
+      payload_ref: null,
+      payload_bytes: 0,
+      payload_checksum: "",
+      payload: {},
+    },
+    ...overrides,
+  };
+}
+
+describe("ProcessorService", () => {
   let service: ProcessorService;
   let mockRedis: { setex: ReturnType<typeof mock> };
+  let mockPublisher: { publish: ReturnType<typeof mock> };
 
   beforeEach(async () => {
-    mockRedis = { setex: mock(() => Promise.resolve('OK')) };
+    mockRedis = { setex: mock(() => Promise.resolve("OK")) };
 
-    const mockConsumer = {
-      consume: mock(() =>
-        Promise.resolve({
-          [Symbol.asyncIterator]: () => ({
-            next: () => Promise.resolve({ done: true, value: undefined }),
-          }),
-          stop: mock(),
-        }),
-      ),
+    const mockNc = {
+      subscribe: mock(() => ({ unsubscribe: mock(() => {}) })),
     };
 
-    const mockPublisher = {
+    async function* emptyStreamList(): AsyncGenerator<never> {
+      return;
+    }
+    const mockJsm = {
+      streams: {
+        info: mock(() => Promise.resolve({})),
+        add: mock(() => Promise.resolve({})),
+        list: mock(() => emptyStreamList()),
+      },
+    };
+
+    mockPublisher = {
       publish: mock(() => Promise.resolve({ seq: 1 })),
     };
 
@@ -42,13 +88,15 @@ describe('ProcessorService', () => {
       imports: [DiscoveryModule],
       providers: [
         ProcessorService,
+        ProcessorPipelineDeps,
         HandlerRegistry,
         DefaultHandler,
         CreatedHandler,
         UpdatedHandler,
         DeletedHandler,
         { provide: PipelineRunner, useValue: mockPipelineRunner },
-        { provide: JETSTREAM_CLIENT, useValue: mockConsumer },
+        { provide: NATS_CONNECTION, useValue: mockNc },
+        { provide: JETSTREAM_MANAGER, useValue: mockJsm },
         { provide: JETSTREAM_PUBLISHER, useValue: mockPublisher },
         { provide: REDIS_CLIENT, useValue: mockRedis },
       ],
@@ -58,81 +106,100 @@ describe('ProcessorService', () => {
     service = module.get(ProcessorService);
   });
 
-  describe('processEvent', () => {
-    it('should write result to Redis with correct key and TTL', async () => {
-      const envelope: EventEnvelope = {
-        id: 'evt-1',
-        type: 'created',
-        payload: { data: true },
-      };
+  describe("processEvent", () => {
+    it("should write result to Redis with correct key and TTL", async () => {
+      const envelope = makeEnvelope({
+        id: "evt-1",
+        type: "created",
+        data: {
+          received_at: new Date().toISOString(),
+          payload_inline: true,
+          payload_ref: null,
+          payload_bytes: 0,
+          payload_checksum: "",
+          payload: { data: true },
+        },
+      });
       await service.processEvent(envelope);
 
       expect(mockRedis.setex).toHaveBeenCalledTimes(1);
       const [key, ttl, value] = mockRedis.setex.mock.calls[0];
-      expect(key).toBe('result:evt-1');
+      expect(key).toBe("result:evt-1");
       expect(ttl).toBe(3600);
 
       const parsed = JSON.parse(value);
-      expect(parsed.eventId).toBe('evt-1');
-      expect(parsed.type).toBe('created');
+      expect(parsed.eventId).toBe("evt-1");
+      expect(parsed.type).toBe("created");
       expect(parsed.processed).toBe(true);
-      expect(typeof parsed.timestamp).toBe('number');
+      expect(typeof parsed.timestamp).toBe("number");
     });
 
-    it('should set processed=true for known types (created, updated, deleted)', async () => {
-      for (const type of ['created', 'updated', 'deleted']) {
-        mockRedis.setex = mock(() => Promise.resolve('OK'));
-        await service.processEvent({ id: `id-${type}`, type, payload: {} });
+    it("should set processed=true for known types (created, updated, deleted)", async () => {
+      for (const type of ["created", "updated", "deleted"]) {
+        mockRedis.setex = mock(() => Promise.resolve("OK"));
+        await service.processEvent(makeEnvelope({ id: `id-${type}`, type }));
         const parsed = JSON.parse(mockRedis.setex.mock.calls[0][2]);
         expect(parsed.processed).toBe(true);
       }
     });
 
-    it('should set processed=false for unknown type with falsy payload', async () => {
-      await service.processEvent({
-        id: 'evt-2',
-        type: 'unknown',
-        payload: {},
-      });
+    it("should set processed=false for unknown type with falsy payload", async () => {
+      await service.processEvent(
+        makeEnvelope({
+          id: "evt-2",
+          type: "unknown",
+        }),
+      );
 
       const parsed = JSON.parse(mockRedis.setex.mock.calls[0][2]);
       expect(parsed.processed).toBe(false);
     });
 
-    it('should set processed=true for unknown type with truthy payload', async () => {
-      await service.processEvent({
-        id: 'evt-3',
-        type: 'custom',
-        payload: { data: 1 },
-      });
+    it("should set processed=true for unknown type with truthy payload", async () => {
+      await service.processEvent(
+        makeEnvelope({
+          id: "evt-3",
+          type: "custom",
+          data: {
+            received_at: new Date().toISOString(),
+            payload_inline: true,
+            payload_ref: null,
+            payload_bytes: 0,
+            payload_checksum: "",
+            payload: { data: 1 },
+          },
+        }),
+      );
 
       const parsed = JSON.parse(mockRedis.setex.mock.calls[0][2]);
       expect(parsed.processed).toBe(true);
     });
-  });
 
-  describe('getStats / type counting', () => {
-    it('should track event counts per type in O(1) Map', async () => {
-      await service.processEvent({ id: 'a1', type: 'created', payload: {} });
-      await service.processEvent({ id: 'a2', type: 'created', payload: {} });
-      await service.processEvent({ id: 'a3', type: 'created', payload: {} });
-      await service.processEvent({ id: 'b1', type: 'updated', payload: {} });
-      await service.processEvent({ id: 'b2', type: 'updated', payload: {} });
+    it("wraps completion in an envelope with causation_id=incoming.id and depth+1", async () => {
+      const incoming = makeEnvelope({
+        id: "parent-1",
+        type: "created",
+        correlation_id: "corr-xyz",
+        transport: { method: "stream", protocol: "internal", depth: 2 },
+      });
 
-      const stats = service.getStats();
-      expect(stats.get('created')).toBe(3);
-      expect(stats.get('updated')).toBe(2);
-      expect(stats.has('deleted')).toBe(false);
-    });
+      await service.processEvent(incoming, "test-tenant");
 
-    it('should return a copy of the map (not the internal reference)', async () => {
-      await service.processEvent({ id: 'x', type: 'test', payload: {} });
+      const publishCall = mockPublisher.publish.mock.calls[0];
+      expect(publishCall).toBeDefined();
+      const [subject, body, opts] = publishCall;
+      expect(subject).toBe(
+        "evt.test-tenant.event-processor.platform.events.gateway.completed.v1",
+      );
 
-      const stats = service.getStats();
-      stats.set('test', 999);
-
-      const freshStats = service.getStats();
-      expect(freshStats.get('test')).toBe(1);
+      const envelope = JSON.parse(new TextDecoder().decode(body));
+      expect(envelope.causation_id).toBe("parent-1");
+      expect(envelope.correlation_id).toBe("corr-xyz");
+      expect(envelope.transport.depth).toBe(3);
+      expect(envelope.idempotencykey).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(opts.headers.get("Nats-Msg-Id")).toBe(envelope.idempotencykey);
+      expect(opts.headers.get("X-Correlation-Id")).toBe("corr-xyz");
+      expect(opts.headers.get("X-Causation-Id")).toBe("parent-1");
     });
   });
 });

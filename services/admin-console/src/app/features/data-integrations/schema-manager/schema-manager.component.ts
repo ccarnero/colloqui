@@ -1,9 +1,9 @@
-import { Component, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, signal } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
 
-interface SchemaTableRow {
+interface ISchemaTableRow {
   name: string;
   columns: number;
   indexes: number;
@@ -13,6 +13,7 @@ interface SchemaTableRow {
 @Component({
   selector: "app-schema-manager",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatTableModule, MatButtonModule, MatIconModule],
   template: `
     <div class="ws-header">
@@ -54,7 +55,7 @@ interface SchemaTableRow {
 export class SchemaManagerComponent {
   readonly cols = ["name", "columns", "indexes", "rows"] as const;
 
-  readonly tables = signal<SchemaTableRow[]>([
+  readonly tables = signal<ISchemaTableRow[]>([
     { name: "public.users", columns: 14, indexes: 4, rows: "42.1K" },
     { name: "public.sessions", columns: 9, indexes: 3, rows: "128K" },
     { name: "public.audit_events", columns: 11, indexes: 5, rows: "3.4M" },

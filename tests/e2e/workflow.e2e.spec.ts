@@ -4,6 +4,15 @@ import { authHeaders } from "./auth.setup";
 
 const GW = getBaseUrl("api-gateway");
 
+/**
+ * Tests that drive a workflow execution must wait on the Temporal worker
+ * pipeline (`workflow-service-api` enqueues, `workflow-worker` processes
+ * activities). With scale-to-zero enabled in non-prod, both can be cold;
+ * budget is sized for sequential cold-starts of api + worker + the first
+ * activity batch.
+ */
+const WORKFLOW_IT = { timeout: 120_000 };
+
 const createdDefinitionIds: string[] = [];
 
 afterAll(async () => {
@@ -99,6 +108,32 @@ describe("E2E: workflow-service", () => {
     createdDefinitionIds.push(body.id);
   });
 
+  it("should create a workflow definition with agentCall action (validation only)", async () => {
+    const h = await authHeaders();
+    const { status, body } = await httpPost<WorkflowDefinitionCreated>(
+      `${GW}/workflows`,
+      {
+        name: `e2e-agentcall-${Date.now()}`,
+        application: "e2e-tests",
+        actions: [
+          {
+            activity: "agentCall",
+            name: "claw",
+            args: {
+              agentId: "550e8400-e29b-41d4-a716-446655440000",
+              message: "Summarize: {{results.prior.data}}",
+            },
+          },
+        ],
+      },
+      { headers: h },
+    );
+
+    expect(status).toBe(201);
+    expect(body.id).toBeDefined();
+    createdDefinitionIds.push(body.id);
+  });
+
   it("should list workflow definitions", async () => {
     const h = await authHeaders();
     const { status, body } = await httpGet<WorkflowDefinitionCreated[]>(
@@ -145,37 +180,45 @@ describe("E2E: workflow-service", () => {
     firstExecutionId = body.executionId;
   });
 
-  it("should poll execution until completion", async () => {
-    if (!definitionId || !firstExecutionId) {
-      return;
-    }
+  it(
+    "should poll execution until completion",
+    async () => {
+      if (!definitionId || !firstExecutionId) {
+        return;
+      }
 
-    const result = await pollExecution(definitionId, firstExecutionId);
+      const result = await pollExecution(definitionId, firstExecutionId);
 
-    expect(result.executionId).toBe(firstExecutionId);
-    expect(result.definitionId).toBe(definitionId);
-    expect(result.status).toBe("COMPLETED");
-  });
+      expect(result.executionId).toBe(firstExecutionId);
+      expect(result.definitionId).toBe(definitionId);
+      expect(result.status).toBe("COMPLETED");
+    },
+    WORKFLOW_IT.timeout,
+  );
 
-  it("should execute the same workflow a second time", async () => {
-    if (!definitionId) {
-      return;
-    }
-    const h = await authHeaders();
-    const { status, body } = await httpPost<ExecuteWorkflowResult>(
-      `${GW}/workflows/${definitionId}/execute`,
-      { request: { input: "second run" } },
-      { headers: h },
-    );
+  it(
+    "should execute the same workflow a second time",
+    async () => {
+      if (!definitionId) {
+        return;
+      }
+      const h = await authHeaders();
+      const { status, body } = await httpPost<ExecuteWorkflowResult>(
+        `${GW}/workflows/${definitionId}/execute`,
+        { request: { input: "second run" } },
+        { headers: h },
+      );
 
-    expect(status).toBe(202);
-    expect(body.executionId).toBeDefined();
-    expect(body.executionId).not.toBe(firstExecutionId);
-    expect(body.definitionId).toBe(definitionId);
+      expect(status).toBe(202);
+      expect(body.executionId).toBeDefined();
+      expect(body.executionId).not.toBe(firstExecutionId);
+      expect(body.definitionId).toBe(definitionId);
 
-    const result = await pollExecution(definitionId, body.executionId);
-    expect(result.status).toBe("COMPLETED");
-  });
+      const result = await pollExecution(definitionId, body.executionId);
+      expect(result.status).toBe("COMPLETED");
+    },
+    WORKFLOW_IT.timeout,
+  );
 
   it("should list executions for a definition", async () => {
     if (!definitionId) {
@@ -188,8 +231,10 @@ describe("E2E: workflow-service", () => {
     );
 
     expect(status).toBe(200);
-    expect(Array.isArray(body)).toBe(true);
-    expect(body.length).toBeGreaterThanOrEqual(2);
+    expect(body).toBeDefined();
+    expect(body.items).toBeDefined();
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(body.items.length).toBeGreaterThanOrEqual(2);
   });
 
   it("should soft-delete a workflow definition", async () => {

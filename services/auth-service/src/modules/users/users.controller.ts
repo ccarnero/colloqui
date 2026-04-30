@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
-import { UsersService } from './users.service';
-import { CreateUserDto } from './user.dto';
+import { Body, Controller, Get, Post } from "@nestjs/common";
+import { UsersService } from "./users.service";
+import { CreateUserDto } from "./user.dto";
 
-@Controller('auth/users')
+@Controller("auth/users")
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 

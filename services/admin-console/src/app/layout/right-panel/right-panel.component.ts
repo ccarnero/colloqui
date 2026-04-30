@@ -1,4 +1,9 @@
-import { Component, computed, inject } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+} from "@angular/core";
 import { DashboardService } from "../../core/services/dashboard.service";
 import { SparklineComponent } from "../../shared/components/sparkline/sparkline.component";
 import { ProgressBarComponent } from "../../shared/components/progress-bar/progress-bar.component";
@@ -6,6 +11,7 @@ import { DatePipe } from "@angular/common";
 
 @Component({
   selector: "app-right-panel",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SparklineComponent, ProgressBarComponent, DatePipe],
   template: `
     <aside class="panel">
@@ -103,13 +109,8 @@ import { DatePipe } from "@angular/common";
   `,
   styles: `
     .panel {
-      background: var(--bg2);
-      border-left: 1px solid var(--border);
-      overflow-y: auto;
       padding: 16px;
       height: 100%;
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
     }
     .activity-empty {
       color: var(--text3);

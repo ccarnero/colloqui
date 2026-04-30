@@ -68,9 +68,9 @@ export const routes: Routes = [
       {
         path: "billing",
         loadComponent: () =>
-          import(
-            "./features/tenant-management/billing/billing.component"
-          ).then((m) => m.BillingComponent),
+          import("./features/tenant-management/billing/billing.component").then(
+            (m) => m.BillingComponent,
+          ),
       },
       {
         path: "quotas",
@@ -94,18 +94,44 @@ export const routes: Routes = [
           ),
       },
       {
-        path: "auto-reply",
+        path: "channels/:channel/accounts/:accountId",
         loadComponent: () =>
           import(
-            "./features/channels/auto-reply/auto-reply.component"
-          ).then((m) => m.AutoReplyComponent),
+            "./features/channels/detail/channel-detail.component"
+          ).then((m) => m.ChannelDetailComponent),
+      },
+      {
+        path: "auto-reply",
+        loadComponent: () =>
+          import("./features/channels/auto-reply/auto-reply.component").then(
+            (m) => m.AutoReplyComponent,
+          ),
       },
       {
         path: "workflows",
-        loadComponent: () =>
-          import(
-            "./features/automation/workflows/workflows.component"
-          ).then((m) => m.WorkflowsComponent),
+        children: [
+          {
+            path: "",
+            loadComponent: () =>
+              import(
+                "./features/automation/workflows/workflows.component"
+              ).then((m) => m.WorkflowsComponent),
+          },
+          {
+            path: "new",
+            loadComponent: () =>
+              import(
+                "./features/automation/workflows/builder/workflow-builder.component"
+              ).then((m) => m.WorkflowBuilderComponent),
+          },
+          {
+            path: ":id/edit",
+            loadComponent: () =>
+              import(
+                "./features/automation/workflows/builder/workflow-builder.component"
+              ).then((m) => m.WorkflowBuilderComponent),
+          },
+        ],
       },
       {
         path: "webhooks",
@@ -124,9 +150,9 @@ export const routes: Routes = [
       {
         path: "scheduler",
         loadComponent: () =>
-          import(
-            "./features/automation/scheduler/scheduler.component"
-          ).then((m) => m.SchedulerComponent),
+          import("./features/automation/scheduler/scheduler.component").then(
+            (m) => m.SchedulerComponent,
+          ),
       },
       {
         path: "rules",
@@ -134,6 +160,37 @@ export const routes: Routes = [
           import("./features/automation/rules/rules.component").then(
             (m) => m.RulesComponent,
           ),
+      },
+      {
+        path: "yoizenclaw",
+        children: [
+          {
+            path: "",
+            redirectTo: "agents",
+            pathMatch: "full",
+          },
+          {
+            path: "agents",
+            loadComponent: () =>
+              import(
+                "./features/automation/yoizenclaw/yoizenclaw.component"
+              ).then((m) => m.YoizenclawComponent),
+          },
+          {
+            path: "playground",
+            loadComponent: () =>
+              import(
+                "./features/automation/yoizenclaw/playground.component"
+              ).then((m) => m.PlaygroundComponent),
+          },
+          {
+            path: "memories",
+            loadComponent: () =>
+              import(
+                "./features/automation/yoizenclaw/memories.component"
+              ).then((m) => m.YoizenclawMemoriesComponent),
+          },
+        ],
       },
       {
         path: "data-sources",
@@ -173,9 +230,9 @@ export const routes: Routes = [
       {
         path: "audit-log",
         loadComponent: () =>
-          import(
-            "./features/security/audit-log/audit-log.component"
-          ).then((m) => m.AuditLogComponent),
+          import("./features/security/audit-log/audit-log.component").then(
+            (m) => m.AuditLogComponent,
+          ),
       },
       {
         path: "security-center",
@@ -187,9 +244,9 @@ export const routes: Routes = [
       {
         path: "compliance",
         loadComponent: () =>
-          import(
-            "./features/security/compliance/compliance.component"
-          ).then((m) => m.ComplianceComponent),
+          import("./features/security/compliance/compliance.component").then(
+            (m) => m.ComplianceComponent,
+          ),
       },
       {
         path: "ip-allowlist",
@@ -245,9 +302,7 @@ export const routes: Routes = [
   {
     path: "login",
     loadComponent: () =>
-      import("./features/auth/login.component").then(
-        (m) => m.LoginComponent,
-      ),
+      import("./features/auth/login.component").then((m) => m.LoginComponent),
   },
   { path: "**", redirectTo: "dashboard" },
 ];

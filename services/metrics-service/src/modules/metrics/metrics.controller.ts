@@ -3,31 +3,28 @@ import {
   Get,
   Param,
   Query,
-  Headers,
   NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
-import { MetricsService } from './metrics.service';
-import { TENANT_HEADER } from '@yoizen/shared';
+  ParseUUIDPipe,
+  UseGuards,
+} from "@nestjs/common";
+import { clampListLimit, clampListOffset } from "@yoizen/shared";
+import { TenantGuard, TenantId } from "@yoizen/database";
+import { MetricsService } from "./metrics.service";
+import { QueryMetricsDto } from "./metrics.dto";
 
-@Controller('metrics')
+@Controller("metrics")
+@UseGuards(TenantGuard)
 export class MetricsController {
   constructor(private readonly metricsService: MetricsService) {}
 
   @Get()
   async queryMetrics(
-    @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Query('source') source?: string,
-    @Query('name') name?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('limit') limitStr?: string,
-    @Query('offset') offsetStr?: string,
+    @TenantId() tenantId: string,
+    @Query() query: QueryMetricsDto,
   ) {
-    if (!tenantId) throw new BadRequestException('Missing x-yoizen-tenant header');
-
-    const limit = Math.min(Math.max(Number(limitStr) || 50, 1), 500);
-    const offset = Math.max(Number(offsetStr) || 0, 0);
+    const { source, name, from, to } = query;
+    const limit = clampListLimit(query.limit);
+    const offset = clampListOffset(query.offset);
 
     const metrics = await this.metricsService.queryMetrics(
       { source, name, from, to, limit, offset },
@@ -37,13 +34,11 @@ export class MetricsController {
     return { metrics, limit, offset };
   }
 
-  @Get(':id')
+  @Get(":id")
   async getMetric(
-    @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Param("id", ParseUUIDPipe) id: string,
   ) {
-    if (!tenantId) throw new BadRequestException('Missing x-yoizen-tenant header');
-
     const metric = await this.metricsService.getMetricById(id, tenantId);
     if (!metric) {
       throw new NotFoundException(`Metric ${id} not found`);

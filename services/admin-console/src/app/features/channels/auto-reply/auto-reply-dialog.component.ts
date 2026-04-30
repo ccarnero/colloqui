@@ -1,7 +1,12 @@
-import { Component, inject, signal, type OnInit } from "@angular/core";
-import { HttpClient } from "@angular/common/http";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  type OnInit,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
-import { environment } from "../../../../environments/environment";
+import { ChannelAdminService } from "../../../core/services/channel-admin.service";
 import {
   MAT_DIALOG_DATA,
   MatDialogModule,
@@ -12,21 +17,17 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
+import type { IChannelAccountOption } from "../../../core/models/channel-account.model";
 
-interface ChannelAccount {
-  id: string;
-  channel: string;
-  name: string;
-}
+export interface IAutoReplyDialogData {}
 
-export interface AutoReplyDialogData {}
-
-export interface AutoReplyDialogResult {
+export interface IAutoReplyDialogResult {
   saved: boolean;
 }
 
 @Component({
   selector: "app-auto-reply-dialog",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatDialogModule,
@@ -166,13 +167,13 @@ export interface AutoReplyDialogResult {
   `,
 })
 export class AutoReplyDialogComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly channels = inject(ChannelAdminService);
   readonly dialogRef = inject(
-    MatDialogRef<AutoReplyDialogComponent, AutoReplyDialogResult>,
+    MatDialogRef<AutoReplyDialogComponent, IAutoReplyDialogResult>,
   );
-  private readonly data = inject<AutoReplyDialogData>(MAT_DIALOG_DATA);
+  private readonly data = inject<IAutoReplyDialogData>(MAT_DIALOG_DATA);
 
-  readonly accounts = signal<ChannelAccount[]>([]);
+  readonly accounts = signal<IChannelAccountOption[]>([]);
   readonly selectedAccountId = signal("");
   readonly selectedChannel = signal("");
   readonly triggerPattern = signal("");
@@ -181,7 +182,7 @@ export class AutoReplyDialogComponent implements OnInit {
   readonly errorMessage = signal("");
 
   ngOnInit(): void {
-    this.http.get<ChannelAccount[]>(`${environment.apiUrl}/channels/accounts`).subscribe({
+    this.channels.listAccountOptions().subscribe({
       next: (list) => {
         this.accounts.set(list);
         if (list.length > 0) {
@@ -210,8 +211,8 @@ export class AutoReplyDialogComponent implements OnInit {
     this.saving.set(true);
     this.errorMessage.set("");
 
-    this.http
-      .post(`${environment.apiUrl}/channels/auto-reply`, {
+    this.channels
+      .createAutoReplyRule({
         accountId: this.selectedAccountId(),
         channel: this.selectedChannel(),
         triggerPattern: this.triggerPattern().trim(),
@@ -224,9 +225,7 @@ export class AutoReplyDialogComponent implements OnInit {
         },
         error: (err) => {
           this.saving.set(false);
-          this.errorMessage.set(
-            err?.error?.message ?? "Failed to create rule",
-          );
+          this.errorMessage.set(err?.error?.message ?? "Failed to create rule");
         },
       });
   }

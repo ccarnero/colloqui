@@ -6,5 +6,6 @@ resources:
 
 patches:
   - path: patches/nats.yaml
+  - path: patches/nats-config.yaml
   - path: patches/redis.yaml
   - path: patches/postgres.yaml

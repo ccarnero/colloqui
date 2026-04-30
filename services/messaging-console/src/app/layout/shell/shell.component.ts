@@ -1,10 +1,11 @@
-import { Component } from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { RouterOutlet } from "@angular/router";
 import { HeaderComponent } from "../header/header.component";
 import { EventFeedComponent } from "../event-feed/event-feed.component";
 
 @Component({
   selector: "app-shell",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterOutlet, HeaderComponent, EventFeedComponent],
   template: `
     <div class="shell">

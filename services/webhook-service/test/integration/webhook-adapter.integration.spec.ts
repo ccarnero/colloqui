@@ -11,18 +11,13 @@ import {
   connect,
   type NatsConnection,
   type JetStreamClient,
-  type JetStreamManager,
-  AckPolicy,
-  DeliverPolicy,
-  ReplayPolicy,
   RetentionPolicy,
 } from "nats";
 import {
-  RESULTS_STREAM_NAME,
-  RESULTS_STREAM_SUBJECTS,
-  RESULTS_SUBJECT_PREFIX,
-  RESULTS_STREAM_MAX_BYTES,
-  STREAM_MAX_AGE_NS,
+  CHANNEL_STREAM_MAX_AGE_NS,
+  CHANNEL_STREAM_MAX_BYTES,
+  getTenantStreamName,
+  getTenantSubjectPattern,
 } from "@yoizen/shared";
 import type { CompletionEvent, ProcessedEvent } from "@yoizen/shared";
 import type { Server } from "bun";
@@ -104,15 +99,16 @@ describe("webhook-service adapter integration", () => {
     nc = await connect({ servers: "nats://localhost:4222" });
 
     const jsm = await nc.jetstreamManager();
+    const ingressStreamName = getTenantStreamName("t1");
     try {
-      await jsm.streams.info(RESULTS_STREAM_NAME);
+      await jsm.streams.info(ingressStreamName);
     } catch {
       await jsm.streams.add({
-        name: RESULTS_STREAM_NAME,
-        subjects: [...RESULTS_STREAM_SUBJECTS],
+        name: ingressStreamName,
+        subjects: [getTenantSubjectPattern("t1")],
         retention: RetentionPolicy.Limits,
-        max_age: STREAM_MAX_AGE_NS,
-        max_bytes: RESULTS_STREAM_MAX_BYTES,
+        max_age: CHANNEL_STREAM_MAX_AGE_NS,
+        max_bytes: CHANNEL_STREAM_MAX_BYTES,
       });
     }
 
@@ -137,7 +133,7 @@ describe("webhook-service adapter integration", () => {
     callbackServer.stop(true);
   });
 
-  it("should deliver webhook with adapter auth headers when adapterId is present", async () => {
+  it("should deliver webhook with adapter auth headers when adapter_id is present", async () => {
     callbackHits.length = 0;
     const eventId = `wh-integ-adapter-${Date.now()}`;
 
@@ -146,19 +142,19 @@ describe("webhook-service adapter integration", () => {
       type: "created",
       processed: true,
       timestamp: Date.now(),
-      metadata: { tenantId: "t1" },
+      tenant: "t1",
     };
 
     const completion: CompletionEvent = {
       eventId,
       type: "created",
       result,
-      callbackUrl: `http://localhost:${CALLBACK_PORT}/hook`,
-      adapterId: "adp-wh-integ",
+      callback_url: `http://localhost:${CALLBACK_PORT}/hook`,
+      adapter_id: "adp-wh-integ",
     };
 
     await js.publish(
-      `${RESULTS_SUBJECT_PREFIX}.created`,
+      "evt.t1.event-processor.platform.events.gateway.completed.v1",
       new TextEncoder().encode(JSON.stringify(completion)),
     );
 
@@ -173,7 +169,7 @@ describe("webhook-service adapter integration", () => {
     expect(hit.headers["x-webhook-custom"]).toBe("true");
   });
 
-  it("should deliver webhook with default headers when no adapterId", async () => {
+  it("should deliver webhook with default headers when no adapter_id", async () => {
     callbackHits.length = 0;
     const eventId = `wh-integ-default-${Date.now()}`;
 
@@ -188,11 +184,11 @@ describe("webhook-service adapter integration", () => {
       eventId,
       type: "created",
       result,
-      callbackUrl: `http://localhost:${CALLBACK_PORT}/hook`,
+      callback_url: `http://localhost:${CALLBACK_PORT}/hook`,
     };
 
     await js.publish(
-      `${RESULTS_SUBJECT_PREFIX}.created`,
+      "evt.t1.event-processor.platform.events.gateway.completed.v1",
       new TextEncoder().encode(JSON.stringify(completion)),
     );
 
@@ -227,19 +223,19 @@ describe("webhook-service adapter integration", () => {
       type: "created",
       processed: true,
       timestamp: Date.now(),
-      metadata: { tenantId: "t1" },
+      tenant: "t1",
     };
 
     const completion: CompletionEvent = {
       eventId,
       type: "created",
       result,
-      callbackUrl: `http://localhost:${CALLBACK_PORT}/hook`,
-      adapterId: "adp-wh-integ",
+      callback_url: `http://localhost:${CALLBACK_PORT}/hook`,
+      adapter_id: "adp-wh-integ",
     };
 
     await js.publish(
-      `${RESULTS_SUBJECT_PREFIX}.created`,
+      "evt.t1.event-processor.platform.events.gateway.completed.v1",
       new TextEncoder().encode(JSON.stringify(completion)),
     );
 

@@ -1,11 +1,7 @@
-import {
-  IsIn,
-  IsNotEmpty,
-  IsString,
-  Matches,
-} from 'class-validator';
+import { IsIn, IsNotEmpty, IsString, Matches } from "class-validator";
+import { CLIENT_SCOPE_REGEX } from "../scope-constants";
 
-const VALID_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', '*'] as const;
+const VALID_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "*"] as const;
 
 export class CreatePublicRouteDto {
   @IsString()
@@ -18,7 +14,7 @@ export class CreatePublicRouteDto {
 
   @IsString()
   @IsNotEmpty()
-  @Matches(/^(platform|tenant:[a-z0-9]([a-z0-9-]*[a-z0-9])?)$/, {
+  @Matches(CLIENT_SCOPE_REGEX, {
     message: 'scope must be "platform" or "tenant:<name>"',
   })
   scope!: string;

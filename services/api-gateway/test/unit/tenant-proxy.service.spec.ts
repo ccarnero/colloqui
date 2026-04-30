@@ -1,0 +1,41 @@
+import "reflect-metadata";
+import { describe, it, expect, beforeEach, mock, afterEach } from "bun:test";
+import { Test } from "@nestjs/testing";
+import { TENANT_HEADER } from "@yoizen/shared";
+import { TenantProxyService } from "../../src/modules/tenants/tenant-proxy.service";
+
+describe("TenantProxyService", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  beforeEach(() => {
+    globalThis.fetch = mock((url: string | URL, init?: RequestInit) => {
+      const u = typeof url === "string" ? url : url.toString();
+      expect(u).toContain("/tenants");
+      const h = init?.headers as Record<string, string> | Headers | undefined;
+      const tenant =
+        h instanceof Headers
+          ? h.get(TENANT_HEADER)
+          : h?.[TENANT_HEADER];
+      expect(tenant).toBe("platform");
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ tenants: [] }),
+      });
+    }) as typeof fetch;
+  });
+
+  it("listTenants forwards GET with tenant header when provided", async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [TenantProxyService],
+    }).compile();
+    const svc = moduleRef.get(TenantProxyService);
+
+    const out = await svc.listTenants("platform");
+    expect(out).toEqual({ tenants: [] });
+  });
+});

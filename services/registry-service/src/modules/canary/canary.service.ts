@@ -4,58 +4,81 @@ import {
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
-import type * as k8s from '@kubernetes/client-node';
-import type { Sql } from 'postgres';
-import { K8S_CUSTOM_OBJECTS_API } from '../../providers/kubernetes.provider';
-import { POSTGRES_SQL } from '../../providers/postgres.provider';
+} from "@nestjs/common";
+import { PinoLoggerService } from "@yoizen/observability";
+import type * as k8s from "@kubernetes/client-node";
+import { K8S_CUSTOM_OBJECTS_API } from "../../providers/kubernetes.provider";
+import { CanaryRepository } from "./canary.repository";
+import type { StartCanaryDto, UpdateCanaryDto } from "./canary.dto";
+import { generateId } from "@yoizen/shared";
+import { k8sApiErrorMessage } from "../../utils/k8s-error";
 import {
-  REGISTRY_KNATIVE_GROUP,
-  REGISTRY_KNATIVE_VERSION,
-  REGISTRY_KNATIVE_SERVICES_PLURAL,
-} from '@yoizen/shared';
-import type { StartCanaryDto, UpdateCanaryDto } from './canary.dto';
+  type ICanaryStatus,
+  mapCanaryDeploymentRow,
+  getNamespacedKnativeService,
+  replaceNamespacedKnativeService,
+} from "../../common/registry-row-mappers";
 
-interface CanaryStatus {
-  id: string;
-  serviceId: string;
-  stableRevision: string;
-  canaryRevision: string;
-  canaryPercent: number;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
+interface IKnativeTrafficTarget {
+  percent?: number;
+  tag?: string;
+  revisionName?: string;
 }
 
-function generateId(): string {
-  return crypto.randomUUID();
+interface IKnativeServiceSpecMutable {
+  template?: {
+    metadata?: { annotations?: Record<string, string> };
+    spec?: {
+      containers?: Array<Record<string, unknown>>;
+    };
+  };
+  traffic?: IKnativeTrafficEntry[];
+}
+
+interface IKnativeTrafficEntry {
+  revisionName: string;
+  percent: number;
+  tag: string;
+}
+
+interface IKnativeServiceBody {
+  apiVersion?: string;
+  kind?: string;
+  metadata?: Record<string, unknown>;
+  spec: IKnativeServiceSpecMutable;
+}
+
+interface IApplyTrafficSplitParams {
+  namespace: string;
+  name: string;
+  primaryRevision: string;
+  primaryPercent: number;
+  secondaryRevision: string | null;
+  secondaryPercent: number;
 }
 
 @Injectable()
 export class CanaryService {
-  private readonly logger = new Logger(CanaryService.name);
+  private readonly logger = new PinoLoggerService(CanaryService.name);
 
   constructor(
     @Inject(K8S_CUSTOM_OBJECTS_API)
     private readonly customApi: k8s.CustomObjectsApi,
-    @Inject(POSTGRES_SQL) private readonly sql: Sql,
+    private readonly canaryRepository: CanaryRepository,
   ) {}
 
   async start(
     tenantId: string,
     serviceId: string,
     dto: StartCanaryDto,
-  ): Promise<CanaryStatus> {
+  ): Promise<ICanaryStatus> {
     const svc = await this.getRegisteredService(tenantId, serviceId);
 
-    const existingCanary = await this.sql`
-      SELECT id FROM canary_deployments
-      WHERE service_id = ${serviceId} AND status = 'progressing'
-    `;
+    const existingCanary =
+      await this.canaryRepository.findProgressingCanary(serviceId);
     if (existingCanary.length > 0) {
       throw new BadRequestException(
-        'Active canary deployment already exists. Promote or rollback first.',
+        "Active canary deployment already exists. Promote or rollback first.",
       );
     }
 
@@ -64,7 +87,9 @@ export class CanaryService {
       svc.knative_name,
     );
     if (!stableRevision) {
-      throw new BadRequestException('No stable revision found for this service');
+      throw new BadRequestException(
+        "No stable revision found for this service",
+      );
     }
 
     await this.updateKnativeImage(svc.namespace, svc.knative_name, dto.image);
@@ -77,207 +102,214 @@ export class CanaryService {
     );
     if (!canaryRevision) {
       throw new InternalServerErrorException(
-        'Failed to create new revision for canary',
+        "Failed to create new revision for canary",
       );
     }
 
-    await this.applyTrafficSplit(
-      svc.namespace,
-      svc.knative_name,
-      stableRevision,
-      100 - dto.percent,
-      canaryRevision,
-      dto.percent,
-    );
+    await this.applyTrafficSplit({
+      namespace: svc.namespace,
+      name: svc.knative_name,
+      primaryRevision: stableRevision,
+      primaryPercent: 100 - dto.percent,
+      secondaryRevision: canaryRevision,
+      secondaryPercent: dto.percent,
+    });
 
     const id = generateId();
-    const [row] = await this.sql`
-      INSERT INTO canary_deployments
-        (id, service_id, stable_revision, canary_revision, canary_percent, status)
-      VALUES
-        (${id}, ${serviceId}, ${stableRevision}, ${canaryRevision}, ${dto.percent}, 'progressing')
-      RETURNING *
-    `;
+    const [row] = await this.canaryRepository.insertCanaryDeployment({
+      id,
+      serviceId,
+      stableRevision,
+      canaryRevision,
+      percent: dto.percent,
+    });
 
     this.logger.log(
       `Started canary for ${svc.knative_name}: ${stableRevision} -> ${canaryRevision} at ${dto.percent}%`,
     );
-    return this.mapRow(row);
+    return mapCanaryDeploymentRow(row);
   }
 
   async updatePercent(
     tenantId: string,
     serviceId: string,
     dto: UpdateCanaryDto,
-  ): Promise<CanaryStatus> {
+  ): Promise<ICanaryStatus> {
     const svc = await this.getRegisteredService(tenantId, serviceId);
     const canary = await this.getActiveCanary(serviceId);
 
-    await this.applyTrafficSplit(
-      svc.namespace,
-      svc.knative_name,
-      canary.stable_revision,
-      100 - dto.percent,
-      canary.canary_revision,
-      dto.percent,
-    );
+    await this.applyTrafficSplit({
+      namespace: svc.namespace,
+      name: svc.knative_name,
+      primaryRevision: canary.stable_revision,
+      primaryPercent: 100 - dto.percent,
+      secondaryRevision: canary.canary_revision,
+      secondaryPercent: dto.percent,
+    });
 
-    const [updated] = await this.sql`
-      UPDATE canary_deployments SET
-        canary_percent = ${dto.percent},
-        updated_at = NOW()
-      WHERE id = ${canary.id}
-      RETURNING *
-    `;
+    const [updated] = await this.canaryRepository.updateCanaryPercent(
+      String(canary.id),
+      dto,
+    );
 
     this.logger.log(
       `Updated canary for ${svc.knative_name} to ${dto.percent}%`,
     );
-    return this.mapRow(updated);
+    return mapCanaryDeploymentRow(updated);
   }
 
-  async promote(
-    tenantId: string,
-    serviceId: string,
-  ): Promise<CanaryStatus> {
+  async promote(tenantId: string, serviceId: string): Promise<ICanaryStatus> {
     const svc = await this.getRegisteredService(tenantId, serviceId);
     const canary = await this.getActiveCanary(serviceId);
 
-    await this.applyTrafficSplit(
-      svc.namespace,
-      svc.knative_name,
-      canary.canary_revision,
-      100,
-      null,
-      0,
-    );
+    await this.applyTrafficSplit({
+      namespace: svc.namespace,
+      name: svc.knative_name,
+      primaryRevision: canary.canary_revision,
+      primaryPercent: 100,
+      secondaryRevision: null,
+      secondaryPercent: 0,
+    });
 
-    const [updated] = await this.sql`
-      UPDATE canary_deployments SET
-        canary_percent = 100,
-        status = 'promoted',
-        updated_at = NOW()
-      WHERE id = ${canary.id}
-      RETURNING *
-    `;
+    const [updated] = await this.canaryRepository.updateCanaryPromoted(
+      String(canary.id),
+    );
 
     this.logger.log(`Promoted canary for ${svc.knative_name}`);
-    return this.mapRow(updated);
+    return mapCanaryDeploymentRow(updated);
   }
 
-  async rollback(
-    tenantId: string,
-    serviceId: string,
-  ): Promise<CanaryStatus> {
+  async rollback(tenantId: string, serviceId: string): Promise<ICanaryStatus> {
     const svc = await this.getRegisteredService(tenantId, serviceId);
     const canary = await this.getActiveCanary(serviceId);
 
-    await this.applyTrafficSplit(
-      svc.namespace,
-      svc.knative_name,
-      canary.stable_revision,
-      100,
-      null,
-      0,
+    await this.applyTrafficSplit({
+      namespace: svc.namespace,
+      name: svc.knative_name,
+      primaryRevision: canary.stable_revision,
+      primaryPercent: 100,
+      secondaryRevision: null,
+      secondaryPercent: 0,
+    });
+
+    const [updated] = await this.canaryRepository.updateCanaryRolledBack(
+      String(canary.id),
     );
 
-    const [updated] = await this.sql`
-      UPDATE canary_deployments SET
-        canary_percent = 0,
-        status = 'rolled_back',
-        updated_at = NOW()
-      WHERE id = ${canary.id}
-      RETURNING *
-    `;
-
     this.logger.log(`Rolled back canary for ${svc.knative_name}`);
-    return this.mapRow(updated);
+    return mapCanaryDeploymentRow(updated);
   }
 
   async getStatus(
     tenantId: string,
     serviceId: string,
-  ): Promise<CanaryStatus | null> {
+  ): Promise<ICanaryStatus | null> {
     await this.getRegisteredService(tenantId, serviceId);
 
-    const [row] = await this.sql`
-      SELECT * FROM canary_deployments
-      WHERE service_id = ${serviceId}
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-    return row ? this.mapRow(row) : null;
+    const [row] = await this.canaryRepository.getLatestCanaryForService(
+      serviceId,
+    );
+    return row ? mapCanaryDeploymentRow(row) : null;
   }
 
-  private async getRegisteredService(tenantId: string, serviceId: string) {
-    const [svc] = await this.sql`
-      SELECT * FROM registered_services
-      WHERE id = ${serviceId} AND tenant_id = ${tenantId}
-    `;
+  private async getRegisteredService(
+    tenantId: string,
+    serviceId: string,
+  ): Promise<{ namespace: string; knative_name: string }> {
+    const [svc] = await this.canaryRepository.findRegisteredService(
+      serviceId,
+      tenantId,
+    );
     if (!svc) {
       throw new NotFoundException(`Service '${serviceId}' not found`);
     }
-    if (!svc.knative_name || !svc.namespace) {
-      throw new BadRequestException('Service is not deployed');
+    const knative_name =
+      svc.knative_name != null ? String(svc.knative_name) : "";
+    const namespace = svc.namespace != null ? String(svc.namespace) : "";
+    if (!knative_name || !namespace) {
+      throw new BadRequestException("Service is not deployed");
     }
-    return svc;
+    return { namespace, knative_name };
   }
 
-  private async getActiveCanary(serviceId: string) {
-    const [canary] = await this.sql`
-      SELECT * FROM canary_deployments
-      WHERE service_id = ${serviceId} AND status = 'progressing'
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
+  private async getActiveCanary(serviceId: string): Promise<{
+    id: string;
+    stable_revision: string;
+    canary_revision: string;
+  }> {
+    const [canary] = await this.canaryRepository.findActiveCanary(serviceId);
     if (!canary) {
-      throw new NotFoundException('No active canary deployment found');
+      throw new NotFoundException("No active canary deployment found");
     }
-    return canary;
+    return {
+      id: String(canary.id),
+      stable_revision: String(canary.stable_revision),
+      canary_revision: String(canary.canary_revision),
+    };
+  }
+
+  /**
+   * Single K8s read for revision fields used by {@link getCurrentRevision} and
+   * {@link getLatestRevision}.
+   */
+  private async fetchKnativeRevisionInfo(
+    namespace: string,
+    name: string,
+  ): Promise<{
+    stableTrafficOrFirst: string | null;
+    latestReady: string | null;
+    latestCreated: string | null;
+  } | null> {
+    try {
+      const resp = await getNamespacedKnativeService(
+        this.customApi,
+        namespace,
+        name,
+      );
+      const obj = resp as Record<string, unknown>;
+      const status = obj.status as Record<string, unknown> | undefined;
+      const traffic = status?.traffic;
+      let stableTrafficOrFirst: string | null = null;
+      if (Array.isArray(traffic) && traffic.length > 0) {
+        const targets = traffic as IKnativeTrafficTarget[];
+        const stable = targets.find(
+          (t) => t.percent === 100 || t.tag === "stable",
+        );
+        const first = targets[0];
+        stableTrafficOrFirst =
+          stable?.revisionName ??
+          (typeof first?.revisionName === "string" ? first.revisionName : null);
+      }
+      const latestReady = status?.latestReadyRevisionName;
+      const latestCreated = status?.latestCreatedRevisionName;
+      return {
+        stableTrafficOrFirst,
+        latestReady: typeof latestReady === "string" ? latestReady : null,
+        latestCreated: typeof latestCreated === "string" ? latestCreated : null,
+      };
+    } catch (e: unknown) {
+      this.logger.warn(
+        `fetchKnativeRevisionInfo failed for ${namespace}/${name}: ${k8sApiErrorMessage(e)}`,
+      );
+      return null;
+    }
   }
 
   private async getCurrentRevision(
     namespace: string,
     name: string,
   ): Promise<string | null> {
-    try {
-      const resp = await this.customApi.getNamespacedCustomObject({
-        group: REGISTRY_KNATIVE_GROUP,
-        version: REGISTRY_KNATIVE_VERSION,
-        namespace,
-        plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
-        name,
-      });
-      const obj = resp as any;
-      const traffic = obj.status?.traffic;
-      if (Array.isArray(traffic) && traffic.length > 0) {
-        const stable = traffic.find(
-          (t: any) => t.percent === 100 || t.tag === 'stable',
-        );
-        return stable?.revisionName ?? traffic[0].revisionName ?? null;
-      }
-      return obj.status?.latestReadyRevisionName ?? null;
-    } catch {
-      return null;
-    }
+    const info = await this.fetchKnativeRevisionInfo(namespace, name);
+    if (!info) return null;
+    return info.stableTrafficOrFirst ?? info.latestReady;
   }
 
   private async getLatestRevision(
     namespace: string,
     name: string,
   ): Promise<string | null> {
-    try {
-      const resp = await this.customApi.getNamespacedCustomObject({
-        group: REGISTRY_KNATIVE_GROUP,
-        version: REGISTRY_KNATIVE_VERSION,
-        namespace,
-        plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
-        name,
-      });
-      return (resp as any).status?.latestCreatedRevisionName ?? null;
-    } catch {
-      return null;
-    }
+    const info = await this.fetchKnativeRevisionInfo(namespace, name);
+    return info?.latestCreated ?? null;
   }
 
   private async waitForNewRevision(
@@ -302,51 +334,56 @@ export class CanaryService {
     name: string,
     image: string,
   ): Promise<void> {
-    const current = await this.customApi.getNamespacedCustomObject({
-      group: REGISTRY_KNATIVE_GROUP,
-      version: REGISTRY_KNATIVE_VERSION,
+    const current = (await getNamespacedKnativeService(
+      this.customApi,
       namespace,
-      plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
       name,
-    }) as any;
+    )) as unknown as IKnativeServiceBody;
 
     const spec = structuredClone(current.spec);
+    if (!spec.template?.spec?.containers?.[0]) {
+      throw new InternalServerErrorException(
+        "Knative Service has no template or containers in spec",
+      );
+    }
     spec.template.metadata ??= {};
     spec.template.metadata.annotations = {
       ...spec.template.metadata.annotations,
-      'client.knative.dev/updateTimestamp': String(Date.now()),
+      "client.knative.dev/updateTimestamp": String(Date.now()),
     };
-    spec.template.spec.containers[0].image = image;
+    const containers = spec.template.spec.containers;
+    (containers[0] as { image: string }).image = image;
 
     try {
-      await this.customApi.replaceNamespacedCustomObject({
-        group: REGISTRY_KNATIVE_GROUP,
-        version: REGISTRY_KNATIVE_VERSION,
+      await replaceNamespacedKnativeService(
+        this.customApi,
         namespace,
-        plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
         name,
-        body: { ...current, spec },
-      });
-    } catch (e: any) {
+        { ...current, spec } as Record<string, unknown>,
+      );
+    } catch (e: unknown) {
       throw new InternalServerErrorException(
-        `Failed to update Knative image: ${e?.response?.body?.message ?? e.message}`,
+        `Failed to update Knative image: ${k8sApiErrorMessage(e)}`,
       );
     }
   }
 
   private async applyTrafficSplit(
-    namespace: string,
-    name: string,
-    primaryRevision: string,
-    primaryPercent: number,
-    secondaryRevision: string | null,
-    secondaryPercent: number,
+    params: IApplyTrafficSplitParams,
   ): Promise<void> {
-    const traffic: any[] = [
+    const {
+      namespace,
+      name,
+      primaryRevision,
+      primaryPercent,
+      secondaryRevision,
+      secondaryPercent,
+    } = params;
+    const traffic: IKnativeTrafficEntry[] = [
       {
         revisionName: primaryRevision,
         percent: primaryPercent,
-        tag: 'stable',
+        tag: "stable",
       },
     ];
 
@@ -354,47 +391,30 @@ export class CanaryService {
       traffic.push({
         revisionName: secondaryRevision,
         percent: secondaryPercent,
-        tag: 'canary',
+        tag: "canary",
       });
     }
 
-    const current = await this.customApi.getNamespacedCustomObject({
-      group: REGISTRY_KNATIVE_GROUP,
-      version: REGISTRY_KNATIVE_VERSION,
+    const current = (await getNamespacedKnativeService(
+      this.customApi,
       namespace,
-      plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
       name,
-    }) as any;
+    )) as unknown as IKnativeServiceBody;
 
     const spec = structuredClone(current.spec);
     spec.traffic = traffic;
 
     try {
-      await this.customApi.replaceNamespacedCustomObject({
-        group: REGISTRY_KNATIVE_GROUP,
-        version: REGISTRY_KNATIVE_VERSION,
+      await replaceNamespacedKnativeService(
+        this.customApi,
         namespace,
-        plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
         name,
-        body: { ...current, spec },
-      });
-    } catch (e: any) {
+        { ...current, spec } as Record<string, unknown>,
+      );
+    } catch (e: unknown) {
       throw new InternalServerErrorException(
-        `Failed to apply traffic split: ${e?.response?.body?.message ?? e.message}`,
+        `Failed to apply traffic split: ${k8sApiErrorMessage(e)}`,
       );
     }
-  }
-
-  private mapRow(row: any): CanaryStatus {
-    return {
-      id: row.id,
-      serviceId: row.service_id,
-      stableRevision: row.stable_revision,
-      canaryRevision: row.canary_revision,
-      canaryPercent: row.canary_percent,
-      status: row.status,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
   }
 }

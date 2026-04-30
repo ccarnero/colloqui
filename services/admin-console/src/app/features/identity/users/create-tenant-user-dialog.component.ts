@@ -1,5 +1,10 @@
-import { Component, inject, signal, type OnInit } from "@angular/core";
-import { HttpClient } from "@angular/common/http";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  type OnInit,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import {
   MAT_DIALOG_DATA,
@@ -11,15 +16,17 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
-import { environment } from "../../../../environments/environment";
 import type { ITenantRole } from "../../../core/models/user.model";
+import { RoleService } from "../../../core/services/role.service";
+import { TenantUsersService } from "../../../core/services/tenant-users.service";
 
-interface DialogData {
+interface IDialogData {
   tenantId: string | null;
 }
 
 @Component({
   selector: "app-create-tenant-user-dialog",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatDialogModule,
@@ -154,11 +161,10 @@ interface DialogData {
   `,
 })
 export class CreateTenantUserDialogComponent implements OnInit {
-  private readonly http = inject(HttpClient);
-  readonly dialogRef = inject(
-    MatDialogRef<CreateTenantUserDialogComponent>,
-  );
-  readonly data = inject<DialogData>(MAT_DIALOG_DATA);
+  private readonly roleService = inject(RoleService);
+  private readonly tenantUsers = inject(TenantUsersService);
+  readonly dialogRef = inject(MatDialogRef<CreateTenantUserDialogComponent>);
+  readonly data = inject<IDialogData>(MAT_DIALOG_DATA);
 
   readonly availableRoles = signal<ITenantRole[]>([]);
   readonly email = signal("");
@@ -169,24 +175,22 @@ export class CreateTenantUserDialogComponent implements OnInit {
   readonly errorMessage = signal("");
 
   ngOnInit(): void {
-    this.http
-      .get<ITenantRole[]>(`${environment.apiUrl}/auth/tenant-roles`)
-      .subscribe({
-        next: (roles) => {
-          this.availableRoles.set(roles);
-          if (roles.length > 0) {
-            this.selectedRoleId.set(roles[0].id);
-          }
-        },
-      });
+    this.roleService.listRoles$().subscribe({
+      next: (roles) => {
+        this.availableRoles.set(roles);
+        if (roles.length > 0) {
+          this.selectedRoleId.set(roles[0].id);
+        }
+      },
+    });
   }
 
   submit(): void {
     this.submitting.set(true);
     this.errorMessage.set("");
 
-    this.http
-      .post(`${environment.apiUrl}/auth/tenant-users`, {
+    this.tenantUsers
+      .createUser({
         tenant_id: this.data.tenantId,
         email: this.email(),
         password: this.password(),
@@ -200,8 +204,7 @@ export class CreateTenantUserDialogComponent implements OnInit {
         },
         error: (err) => {
           this.submitting.set(false);
-          const msg =
-            err?.error?.message ?? "Failed to create user";
+          const msg = err?.error?.message ?? "Failed to create user";
           this.errorMessage.set(msg);
         },
       });

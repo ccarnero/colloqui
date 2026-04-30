@@ -5,33 +5,36 @@ import {
   Matches,
   IsOptional,
   IsObject,
-} from 'class-validator';
+  IsIn,
+} from "class-validator";
+import {
+  TenantDatabaseTier,
+  type JsonValue,
+  type ProvisioningStatusValue,
+  type TenantDatabaseTierValue,
+} from "@yoizen/shared";
 
-export const VALID_ENVIRONMENTS = [
-  'dev',
-  'qa',
-  'staging',
-  'production',
-] as const;
-
-export type Environment = (typeof VALID_ENVIRONMENTS)[number];
-
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+export {
+  VALID_ENVIRONMENTS,
+  type Environment,
+  type JsonValue,
+  type ProvisioningStatusValue,
+  type TenantDatabaseTierValue,
+} from "@yoizen/shared";
 
 export type TenantConfiguration = { [key: string]: JsonValue };
 
-export interface TenantRow {
+export interface ITenantRow {
   id: string;
   name: string;
+  tier: TenantDatabaseTierValue;
   configuration: TenantConfiguration;
   created_at: Date;
   updated_at: Date;
+  provisioning_status: ProvisioningStatusValue;
+  provisioning_error: string | null;
+  provisioning_started_at: Date | null;
+  provisioning_completed_at: Date | null;
 }
 
 export class CreateTenantDto {
@@ -40,9 +43,13 @@ export class CreateTenantDto {
   @MaxLength(32)
   @Matches(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, {
     message:
-      'name must be lowercase alphanumeric with optional hyphens, cannot start or end with a hyphen',
+      "name must be lowercase alphanumeric with optional hyphens, cannot start or end with a hyphen",
   })
   name!: string;
+
+  @IsOptional()
+  @IsIn(Object.values(TenantDatabaseTier))
+  tier?: TenantDatabaseTierValue;
 
   @IsOptional()
   @IsObject()

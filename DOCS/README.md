@@ -221,12 +221,20 @@ The `packages/shared/` package (`@yoizen/shared`) contains all cross-service typ
 ```
 
 This script will:
-1. Start minikube with profile `yoizen-arch` (6 CPUs, 16GB RAM)
+1. Start minikube with profile `yoizen-arch` (6 CPUs, memory auto-scales to
+   Docker Desktop and stays below the 16GB cap)
 2. Enable `metrics-server` addon
 3. Install Knative Serving + Kourier networking layer
 4. Deploy NATS JetStream, Redis, PostgreSQL, and Temporal to all 4 `support-services-{env}` namespaces
 5. Build service Docker images inside minikube
 6. Deploy Knative Services to all 4 `platform-services-{env}` namespaces
+
+If you want to force a specific memory value, set `MINIKUBE_MEMORY_MB` before
+running the bootstrap. Example:
+
+```bash
+MINIKUBE_MEMORY_MB=14336 ./bootstrap.sh dev
+```
 
 ### OrbStack
 
@@ -380,6 +388,25 @@ kubectl get pods -n support-services-dev
 ```
 
 ### Access services
+
+#### OrbStack
+
+OrbStack exposes the local cluster through `127.0.0.1.sslip.io`, so no tunnel is required.
+
+```bash
+# Authenticate (get a token)
+curl -X POST http://api-gateway.platform-services-dev.127.0.0.1.sslip.io/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"grant_type":"client_credentials","client_id":"...","client_secret":"..."}'
+```
+
+For local localhost access to the frontends/API, you can also use:
+
+```bash
+./port-forward.sh dev
+```
+
+#### Minikube
 
 Start the minikube tunnel (required for Kourier LoadBalancer):
 

@@ -4,10 +4,10 @@ import {
   IsOptional,
   IsString,
   IsEnum,
-} from 'class-validator';
+} from "class-validator";
 
 export enum GrantType {
-  CLIENT_CREDENTIALS = 'client_credentials',
+  CLIENT_CREDENTIALS = "client_credentials",
 }
 
 export class ClientCredentialsDto {

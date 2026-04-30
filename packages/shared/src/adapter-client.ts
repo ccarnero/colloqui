@@ -1,3 +1,4 @@
+import { applyAdapterAuthHeadersSync } from "./adapter-auth-headers";
 import { TENANT_HEADER } from "./constants";
 import type {
   AdapterCache,
@@ -10,11 +11,20 @@ interface CachedAdapter {
   softExpiresAt: number;
 }
 
+interface CachedInternalLookup {
+  /** `null` means "no mirror exists" — negative caching to avoid repeated 404s. */
+  data: AdapterConfig | null;
+  softExpiresAt: number;
+}
+
 const DEFAULT_CACHE_TTL_S = 60;
 const STALE_MULTIPLIER = 5;
 const OAUTH_TOKEN_BUFFER_S = 30;
 const ADAPTER_KEY_PREFIX = "adapter:config:";
 const OAUTH_KEY_PREFIX = "adapter:oauth:";
+const INTERNAL_BY_SERVICE_KEY_PREFIX = "adapter:internal-by-service:";
+/** Shorter negative-cache TTL: new mirrors should propagate fast. */
+const NEGATIVE_CACHE_TTL_S = 10;
 
 export interface AdapterClientOptions {
   baseUrl: string;
@@ -68,8 +78,15 @@ export class AdapterClient {
     adapterId: string,
     endpointId: string,
   ): Promise<ResolvedAdapterRequest> {
-    const adapter = await this.getAdapter(tenantId, adapterId);
-    const endpoint = adapter.endpoints.find((ep) => ep.id === endpointId);
+    let adapter = await this.getAdapter(tenantId, adapterId);
+    let endpoint = adapter.endpoints.find((ep) => ep.id === endpointId);
+
+    if (!endpoint) {
+      await this.invalidate(tenantId, adapterId);
+      adapter = await this.getAdapter(tenantId, adapterId);
+      endpoint = adapter.endpoints.find((ep) => ep.id === endpointId);
+    }
+
     if (!endpoint) {
       throw new Error(
         `Endpoint '${endpointId}' not found on adapter '${adapterId}'`,
@@ -88,6 +105,7 @@ export class AdapterClient {
     }
 
     await this.injectAuthHeaders(adapter, headers);
+    const cache = endpoint.cache ?? adapter.defaultCache;
 
     return {
       url: `${base}${path}`,
@@ -96,7 +114,34 @@ export class AdapterClient {
       timeoutMs: adapter.timeoutMs,
       maxRetries: adapter.maxRetries,
       retryBackoffMs: adapter.retryBackoffMs,
+      cache,
     };
+  }
+
+  /**
+   * Resolves a request against an adapter using its `baseUrl` joined
+   * with a caller-provided `path` and `method`. Used when the caller
+   * knows which adapter to hit but no endpoint is defined (e.g. ad-hoc
+   * HTTP calls from a workflow's `endpointCall` action when the user
+   * picks an adapter and types a relative path).
+   *
+   * URL join is done via string concatenation after slash normalization
+   * — NOT `new URL(path, base)` — because we want `/a/b` on base
+   * `https://host/api` to yield `https://host/api/a/b`, not
+   * `https://host/a/b` (which is what WHATWG URL resolution does when
+   * the path starts with `/`). Callers rely on the "adapter base is
+   * the prefix" mental model.
+   */
+  async resolveAdapterRequest(
+    tenantId: string,
+    adapterId: string,
+    opts: { method: string; path?: string },
+  ): Promise<ResolvedAdapterRequest> {
+    const adapter = await this.getAdapter(tenantId, adapterId);
+    return this.buildRequestFromAdapterBase(adapter, {
+      method: opts.method,
+      path: opts.path,
+    });
   }
 
   async invalidate(tenantId: string, adapterId: string): Promise<void> {
@@ -106,6 +151,108 @@ export class AdapterClient {
 
   async invalidateOAuthToken(adapterId: string): Promise<void> {
     await this.cache.del(`${OAUTH_KEY_PREFIX}${adapterId}`);
+  }
+
+  async invalidateInternalByServiceId(
+    tenantId: string,
+    serviceId: string,
+  ): Promise<void> {
+    const key = `${INTERNAL_BY_SERVICE_KEY_PREFIX}${tenantId}:${serviceId}`;
+    await this.cache.del(key);
+  }
+
+  /**
+   * Finds the internal-adapter mirror for a given `serviceId` (the name
+   * of a service registered in `registry-service`). The adapter-service
+   * materializes one adapter per registered service with `context=internal`
+   * and `name=serviceId`.
+   *
+   * Returns `null` when no mirror exists. Caller can fall back to the
+   * legacy registry-service resolution path. Both hits and misses are
+   * cached to keep the hot path O(1) against Redis.
+   *
+   * SWR behaviour mirrors {@link getAdapter}: soft TTL drives refresh
+   * attempts; stale data (or cached null) stays available as fallback.
+   */
+  async findInternalByServiceId(
+    tenantId: string,
+    serviceId: string,
+  ): Promise<AdapterConfig | null> {
+    const key = `${INTERNAL_BY_SERVICE_KEY_PREFIX}${tenantId}:${serviceId}`;
+    const raw = await this.cache.get(key);
+
+    if (raw) {
+      const entry = JSON.parse(raw) as CachedInternalLookup;
+      if (Date.now() < entry.softExpiresAt) {
+        return entry.data;
+      }
+      return this.refreshInternalOrStale(tenantId, serviceId, key, entry.data);
+    }
+
+    return this.fetchAndCacheInternal(tenantId, serviceId, key);
+  }
+
+  /**
+   * Resolves a request for an internal service through its adapter
+   * mirror. Hybrid model:
+   *  - If `opts.endpointId` is provided, the adapter endpoint's method
+   *    and path are used (strict endpoint-based resolution).
+   *  - Otherwise, `opts.path` is concatenated onto `adapter.baseUrl` and
+   *    `opts.method` is honoured verbatim (dynamic-path mode).
+   *
+   * Returns `null` when no mirror exists so the caller can fall back.
+   */
+  async resolveForInternalService(
+    tenantId: string,
+    serviceId: string,
+    opts: { endpointId?: string; path?: string; method?: string },
+  ): Promise<ResolvedAdapterRequest | null> {
+    const adapter = await this.findInternalByServiceId(tenantId, serviceId);
+    if (!adapter) return null;
+
+    if (opts.endpointId) {
+      return this.resolveRequest(tenantId, adapter.id, opts.endpointId);
+    }
+
+    return this.buildRequestFromAdapterBase(adapter, {
+      method: opts.method ?? "GET",
+      path: opts.path,
+    });
+  }
+
+  /**
+   * Shared base-URL + path builder used by {@link resolveAdapterRequest}
+   * and the dynamic-path branch of {@link resolveForInternalService}.
+   *
+   * Keeps header composition (`adapter.headers` + auth) in a single
+   * place so both paths stay in lockstep if we add e.g. tenant-scoped
+   * headers or a new auth flavour.
+   */
+  private async buildRequestFromAdapterBase(
+    adapter: AdapterConfig,
+    opts: { method: string; path?: string },
+  ): Promise<ResolvedAdapterRequest> {
+    const base = adapter.baseUrl.replace(/\/+$/, "");
+    const rawPath = opts.path ?? "";
+    const path =
+      rawPath.length === 0 || rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+
+    const headers: Record<string, string> = {};
+    for (let i = 0; i < adapter.headers.length; i++) {
+      const h = adapter.headers[i]!;
+      headers[h.key] = h.value;
+    }
+    await this.injectAuthHeaders(adapter, headers);
+
+    return {
+      url: `${base}${path}`,
+      method: opts.method,
+      headers,
+      timeoutMs: adapter.timeoutMs,
+      maxRetries: adapter.maxRetries,
+      retryBackoffMs: adapter.retryBackoffMs,
+      cache: adapter.defaultCache,
+    };
   }
 
   private async refreshOrStale(
@@ -119,6 +266,71 @@ export class AdapterClient {
     } catch {
       return staleData;
     }
+  }
+
+  private async refreshInternalOrStale(
+    tenantId: string,
+    serviceId: string,
+    key: string,
+    staleData: AdapterConfig | null,
+  ): Promise<AdapterConfig | null> {
+    try {
+      return await this.fetchAndCacheInternal(tenantId, serviceId, key);
+    } catch {
+      return staleData;
+    }
+  }
+
+  private async fetchAndCacheInternal(
+    tenantId: string,
+    serviceId: string,
+    key: string,
+  ): Promise<AdapterConfig | null> {
+    const config = await this.fetchInternalByServiceId(tenantId, serviceId);
+    const ttlS = config ? this.cacheTtlS : NEGATIVE_CACHE_TTL_S;
+    const entry: CachedInternalLookup = {
+      data: config,
+      softExpiresAt: Date.now() + ttlS * 1_000,
+    };
+    const hardTtl = ttlS * STALE_MULTIPLIER;
+    await this.cache.setex(key, hardTtl, JSON.stringify(entry));
+    return config;
+  }
+
+  /**
+   * Lists internal adapters filtered by `name=serviceId` and returns the
+   * first match (there should be at most one since `(tenant_id, name)`
+   * is unique). Returns `null` when none exists — caller caches that
+   * as a negative hit.
+   */
+  private async fetchInternalByServiceId(
+    tenantId: string,
+    serviceId: string,
+  ): Promise<AdapterConfig | null> {
+    const qs = new URLSearchParams({
+      context: "internal",
+      name: serviceId,
+      limit: "1",
+    });
+    const url = `${this.baseUrl}/adapters?${qs.toString()}`;
+    const res = await this.fetchFn(url, {
+      method: "GET",
+      headers: {
+        [TENANT_HEADER]: tenantId,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(5_000),
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `Failed to list internal adapters for service '${serviceId}': HTTP ${res.status}`,
+      );
+    }
+
+    const list = (await res.json()) as AdapterConfig[];
+    if (!Array.isArray(list) || list.length === 0) return null;
+    return list[0]!;
   }
 
   private async fetchAndCache(
@@ -163,39 +375,10 @@ export class AdapterClient {
     adapter: AdapterConfig,
     headers: Record<string, string>,
   ): Promise<void> {
-    const { authType, authConfig } = adapter;
-
-    switch (authType) {
-      case "none":
-        break;
-
-      case "api-key": {
-        const apiKey = authConfig.apiKey as string;
-        const headerName =
-          (authConfig.apiKeyHeader as string) ?? "X-API-Key";
-        headers[headerName] = apiKey;
-        break;
-      }
-
-      case "bearer": {
-        const token = authConfig.bearerToken as string;
-        headers["Authorization"] = `Bearer ${token}`;
-        break;
-      }
-
-      case "basic": {
-        const user = authConfig.basicUsername as string;
-        const pass = authConfig.basicPassword as string;
-        const encoded = btoa(`${user}:${pass}`);
-        headers["Authorization"] = `Basic ${encoded}`;
-        break;
-      }
-
-      case "oauth2": {
-        const token = await this.getOAuthToken(adapter);
-        headers["Authorization"] = `Bearer ${token}`;
-        break;
-      }
+    applyAdapterAuthHeadersSync(adapter, headers);
+    if (adapter.authType === "oauth2") {
+      const token = await this.getOAuthToken(adapter);
+      headers["Authorization"] = `Bearer ${token}`;
     }
   }
 
@@ -238,4 +421,16 @@ export class AdapterClient {
 
     return body.access_token;
   }
+}
+
+/**
+ * Shared wiring for services and workers: {@link AdapterClient} with Redis cache
+ * and a custom fetch (e.g. `tracedFetch` from `@yoizen/observability`).
+ */
+export function createAdapterClientWithRedisAndFetch(
+  baseUrl: string,
+  cache: AdapterClientOptions["cache"],
+  fetchFn: AdapterClientOptions["fetchFn"],
+): AdapterClient {
+  return new AdapterClient({ baseUrl, cache, fetchFn });
 }

@@ -7,8 +7,8 @@ import {
   IsUrl,
   Matches,
   ValidateNested,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+} from "class-validator";
+import { Type } from "class-transformer";
 
 class AdapterRefDto {
   @IsString()

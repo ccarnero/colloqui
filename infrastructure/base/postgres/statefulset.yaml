@@ -22,7 +22,7 @@ spec:
         fsGroup: 70
       initContainers:
         - name: init-permissions
-          image: postgres:17-alpine
+          image: pgvector/pgvector:pg17
           command: ["sh", "-c", "chown -R 70:70 /var/lib/postgresql/data"]
           securityContext:
             runAsUser: 0
@@ -32,7 +32,7 @@ spec:
               subPath: pgdata
       containers:
         - name: postgres
-          image: postgres:17-alpine
+          image: pgvector/pgvector:pg17
           ports:
             - name: postgres
               containerPort: 5432

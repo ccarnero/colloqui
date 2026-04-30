@@ -1,6 +1,6 @@
-import type { Schedule } from '../modules/schedules/schedules.service';
-import type { ExecutionResult } from '../engine/engine.service';
+import type { ISchedule } from "../modules/schedules/schedules.service";
+import type { IExecutionResult } from "../engine/engine.service";
 
-export interface ScheduleExecutor {
-  execute(schedule: Schedule, tenantId: string): Promise<ExecutionResult>;
+export interface IScheduleExecutor {
+  execute(schedule: ISchedule, tenantId: string): Promise<IExecutionResult>;
 }

@@ -13,6 +13,7 @@ import {
   PeriodicExportingMetricReader,
 } from '@opentelemetry/sdk-metrics';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+import { resolveServiceName } from './runtime-mode';
 
 export interface TelemetryOptions {
   serviceName: string;
@@ -69,6 +70,19 @@ export function initTelemetry(options: TelemetryOptions): void {
     ],
   });
   metrics.setGlobalMeterProvider(meterProvider);
+}
+
+/**
+ * Initializes telemetry for a service. The effective service name is resolved
+ * via `resolveServiceName`, which prefers `OTEL_SERVICE_NAME` (set by manifests)
+ * and falls back to `<base>-<mode>` (mode driven by `SERVICE_MODE`) so split
+ * services emit role-specific metrics/traces (`audit-service-api`,
+ * `audit-service-worker`, ...) even when the env var isn't pre-set.
+ */
+export function initServiceTelemetry(defaultServiceName: string): void {
+  initTelemetry({
+    serviceName: resolveServiceName(defaultServiceName),
+  });
 }
 
 export async function shutdownTelemetry(): Promise<void> {

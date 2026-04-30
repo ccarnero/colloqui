@@ -1,20 +1,20 @@
-import { Component, inject } from "@angular/core";
-import { Router, RouterLink, RouterLinkActive } from "@angular/router";
-import { MatToolbarModule } from "@angular/material/toolbar";
-import { MatButtonModule } from "@angular/material/button";
-import { MatIconModule } from "@angular/material/icon";
+import { ChangeDetectionStrategy, Component, inject } from "@angular/core";
+import { RouterLink, RouterLinkActive } from "@angular/router";
 import { MatTooltipModule } from "@angular/material/tooltip";
-import { LucideAngularModule, MessageSquare, Radio, Shield, Settings, LogOut, Plus } from "lucide-angular";
+import {
+  LucideAngularModule,
+  LogOut,
+  MessageSquare,
+  Plus,
+} from "lucide-angular";
 import { AuthService } from "../../core/services/auth.service";
 
 @Component({
   selector: "app-header",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterLink,
     RouterLinkActive,
-    MatToolbarModule,
-    MatButtonModule,
-    MatIconModule,
     MatTooltipModule,
     LucideAngularModule,
   ],

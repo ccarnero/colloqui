@@ -1,0 +1,80 @@
+# channel-service API pod (HTTP). Phase 1.5 split.
+#
+# Hosts the webhook ingress endpoint (called by Telegram/WhatsApp/etc.
+# providers — these post inbound messages and verification challenges
+# over HTTP), the streams admin controller, accounts CRUD, and
+# auto-reply CRUD.
+#
+# Runs `SERVICE_MODE=api` so the four NATS consumer services keep their
+# `onModuleInit` no-op:
+#   - WebhookIngressConsumerService (channel-webhook-ingress durable)
+#   - SendCommandConsumerService    (channel-egress durable)
+#   - AutoReplyService              (auto-reply durable + cache)
+#   - WebhookVerifyRpcServer        (NATS RPC server)
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: channel-service-api
+  labels:
+    app.kubernetes.io/name: channel-service-api
+    app.kubernetes.io/component: messaging
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: channel-service-api
+        app.kubernetes.io/component: messaging
+      annotations:
+        autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
+        autoscaling.knative.dev/metric: concurrency
+        autoscaling.knative.dev/target: "100"
+        autoscaling.knative.dev/min-scale: "1"
+        autoscaling.knative.dev/max-scale: "20"
+    spec:
+      containerConcurrency: 0
+      containers:
+        - name: user-container
+          image: dev.local/channel-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: SERVICE_MODE
+              value: "api"
+            - name: OTEL_SERVICE_NAME
+              value: "channel-service-api"
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5

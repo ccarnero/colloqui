@@ -9,22 +9,7 @@ import { AppModule } from "../../src/app.module";
 import Redis from "ioredis";
 import { connect, type NatsConnection, type JetStreamClient } from "nats";
 import type { Server } from "bun";
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function waitForRedisKey(
-  redis: Redis,
-  key: string,
-  timeoutMs = 15_000,
-): Promise<string | null> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const val = await redis.get(key);
-    if (val !== null) return val;
-    await sleep(250);
-  }
-  return null;
-}
+import { waitForRedisKey } from "./redis-wait.helpers";
 
 const ADAPTER_PORT = 19998;
 const TARGET_PORT = 19999;
@@ -44,8 +29,20 @@ const fakeAdapterConfig = {
   healthCheckPath: "/health",
   status: "active",
   endpoints: [
-    { id: "ep-get", adapterId: "adp-integ", label: "Get", method: "GET", path: "/data" },
-    { id: "ep-post", adapterId: "adp-integ", label: "Post", method: "POST", path: "/ingest" },
+    {
+      id: "ep-get",
+      adapterId: "adp-integ",
+      label: "Get",
+      method: "GET",
+      path: "/data",
+    },
+    {
+      id: "ep-post",
+      adapterId: "adp-integ",
+      label: "Post",
+      method: "POST",
+      path: "/ingest",
+    },
   ],
 };
 
@@ -131,7 +128,7 @@ describe("event-processor adapter pipeline integration", () => {
       type: "created",
       payload: { original: true },
       metadata: { tenantId: "t1" },
-      enrichAdapter: { adapterId: "adp-integ", endpointId: "ep-get" },
+      enrich_adapter: { adapterId: "adp-integ", endpointId: "ep-get" },
     };
 
     await js.publish(
@@ -139,7 +136,7 @@ describe("event-processor adapter pipeline integration", () => {
       new TextEncoder().encode(JSON.stringify(payload)),
     );
 
-    const raw = await waitForRedisKey(redis, `result:${eventId}`);
+    const raw = await waitForRedisKey(redis, `result:${eventId}`, 15_000, 250);
     expect(raw).not.toBeNull();
 
     const result = JSON.parse(raw!);
@@ -157,7 +154,7 @@ describe("event-processor adapter pipeline integration", () => {
       type: "created",
       payload: { forwardMe: true },
       metadata: { tenantId: "t1" },
-      forwardAdapter: { adapterId: "adp-integ", endpointId: "ep-post" },
+      forward_adapter: { adapterId: "adp-integ", endpointId: "ep-post" },
     };
 
     await js.publish(
@@ -165,7 +162,7 @@ describe("event-processor adapter pipeline integration", () => {
       new TextEncoder().encode(JSON.stringify(payload)),
     );
 
-    const raw = await waitForRedisKey(redis, `result:${eventId}`);
+    const raw = await waitForRedisKey(redis, `result:${eventId}`, 15_000, 250);
     expect(raw).not.toBeNull();
 
     await sleep(500);
@@ -187,8 +184,8 @@ describe("event-processor adapter pipeline integration", () => {
       type: "created",
       payload: { data: true },
       metadata: { tenantId: "t1" },
-      enrichAdapter: { adapterId: "adp-integ", endpointId: "ep-get" },
-      forwardAdapter: { adapterId: "adp-integ", endpointId: "ep-post" },
+      enrich_adapter: { adapterId: "adp-integ", endpointId: "ep-get" },
+      forward_adapter: { adapterId: "adp-integ", endpointId: "ep-post" },
     };
 
     await js.publish(
@@ -196,7 +193,7 @@ describe("event-processor adapter pipeline integration", () => {
       new TextEncoder().encode(JSON.stringify(payload)),
     );
 
-    const raw = await waitForRedisKey(redis, `result:${eventId}`);
+    const raw = await waitForRedisKey(redis, `result:${eventId}`, 15_000, 250);
     expect(raw).not.toBeNull();
 
     await sleep(500);
@@ -216,7 +213,7 @@ describe("event-processor adapter pipeline integration", () => {
       type: "created",
       payload: { data: true },
       metadata: { tenantId: "t1" },
-      forwardAdapter: { adapterId: "adp-integ", endpointId: "ep-post" },
+      forward_adapter: { adapterId: "adp-integ", endpointId: "ep-post" },
     };
 
     await js.publish(
@@ -224,7 +221,7 @@ describe("event-processor adapter pipeline integration", () => {
       new TextEncoder().encode(JSON.stringify(payload)),
     );
 
-    const raw = await waitForRedisKey(redis, `result:${eventId}`, 20_000);
+    const raw = await waitForRedisKey(redis, `result:${eventId}`, 20_000, 250);
     expect(raw).not.toBeNull();
 
     const result = JSON.parse(raw!);
@@ -262,7 +259,7 @@ describe("event-processor adapter pipeline integration", () => {
       new TextEncoder().encode(JSON.stringify(payload)),
     );
 
-    const raw = await waitForRedisKey(redis, `result:${eventId}`);
+    const raw = await waitForRedisKey(redis, `result:${eventId}`, 15_000, 250);
     expect(raw).not.toBeNull();
 
     const result = JSON.parse(raw!);

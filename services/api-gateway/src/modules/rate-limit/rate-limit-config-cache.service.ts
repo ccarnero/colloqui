@@ -1,36 +1,30 @@
-import {
-  Injectable,
-  Logger,
-  type OnModuleInit,
-  type OnModuleDestroy,
-} from '@nestjs/common';
-import type { RateLimitAlgorithm, RateLimitTenantConfig } from '@yoizen/shared';
+import { Injectable, type OnModuleInit, type OnModuleDestroy } from "@nestjs/common";
+import type { RateLimitAlgorithm, RateLimitTenantConfig } from "@yoizen/shared";
 import {
   RATE_LIMIT_CONFIG_POLL_INTERVAL_MS,
   RATE_LIMIT_CONFIG_FETCH_TIMEOUT_MS,
   RATE_LIMIT_DEFAULT_ALGORITHM,
-  RATE_LIMIT_DEFAULT_LIMIT,
-  RATE_LIMIT_DEFAULT_WINDOW_MS,
-  RATE_LIMIT_DEFAULT_CAPACITY,
-  RATE_LIMIT_DEFAULT_REFILL_RATE,
-} from '@yoizen/shared';
-import { tracedFetch } from '@yoizen/observability';
+} from "@yoizen/shared";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
+import { gatewayConfig } from "../../config";
 
-interface TenantSummary {
+interface ITenantSummary {
   name: string;
   environment: string;
   configuration: Record<string, unknown>;
 }
 
 const VALID_ALGORITHMS = new Set<string>([
-  'fixed_window',
-  'sliding_window',
-  'token_bucket',
+  "fixed_window",
+  "sliding_window",
+  "token_bucket",
 ]);
 
 @Injectable()
-export class RateLimitConfigCacheService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(RateLimitConfigCacheService.name);
+export class RateLimitConfigCacheService
+  implements OnModuleInit, OnModuleDestroy
+{
+  private readonly logger = new PinoLoggerService(RateLimitConfigCacheService.name);
   private readonly configs = new Map<string, RateLimitTenantConfig>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly tenantServiceUrl: string;
@@ -38,25 +32,30 @@ export class RateLimitConfigCacheService implements OnModuleInit, OnModuleDestro
   readonly defaultConfig: RateLimitTenantConfig;
 
   constructor() {
-    this.tenantServiceUrl =
-      process.env.TENANT_SERVICE_URL ??
-      'http://tenant-service.platform-services.svc.cluster.local';
+    this.tenantServiceUrl = gatewayConfig.services.tenant;
 
-    const alg = process.env.RATE_LIMIT_ALGORITHM ?? RATE_LIMIT_DEFAULT_ALGORITHM;
+    const normalizedAlg = String(gatewayConfig.rateLimit.algorithm).replace(
+      /-/g,
+      "_",
+    );
+    const alg = VALID_ALGORITHMS.has(normalizedAlg)
+      ? (normalizedAlg as RateLimitAlgorithm)
+      : RATE_LIMIT_DEFAULT_ALGORITHM;
     this.defaultConfig = {
-      algorithm: VALID_ALGORITHMS.has(alg)
-        ? (alg as RateLimitAlgorithm)
-        : RATE_LIMIT_DEFAULT_ALGORITHM,
-      limit: parseInt(process.env.RATE_LIMIT_DEFAULT_LIMIT ?? '', 10) || RATE_LIMIT_DEFAULT_LIMIT,
-      windowMs: parseInt(process.env.RATE_LIMIT_DEFAULT_WINDOW_MS ?? '', 10) || RATE_LIMIT_DEFAULT_WINDOW_MS,
-      capacity: parseInt(process.env.RATE_LIMIT_DEFAULT_CAPACITY ?? '', 10) || RATE_LIMIT_DEFAULT_CAPACITY,
-      refillRate: parseInt(process.env.RATE_LIMIT_DEFAULT_REFILL_RATE ?? '', 10) || RATE_LIMIT_DEFAULT_REFILL_RATE,
+      algorithm: alg,
+      limit: gatewayConfig.rateLimit.defaultLimit,
+      windowMs: gatewayConfig.rateLimit.defaultWindowMs,
+      capacity: gatewayConfig.rateLimit.defaultCapacity,
+      refillRate: gatewayConfig.rateLimit.defaultRefillRate,
     };
   }
 
   async onModuleInit(): Promise<void> {
     await this.refresh();
-    this.timer = setInterval(() => this.refresh(), RATE_LIMIT_CONFIG_POLL_INTERVAL_MS);
+    this.timer = setInterval(
+      () => this.refresh(),
+      RATE_LIMIT_CONFIG_POLL_INTERVAL_MS,
+    );
   }
 
   onModuleDestroy(): void {
@@ -76,16 +75,20 @@ export class RateLimitConfigCacheService implements OnModuleInit, OnModuleDestro
         signal: AbortSignal.timeout(RATE_LIMIT_CONFIG_FETCH_TIMEOUT_MS),
       });
       if (!res.ok) {
-        this.logger.warn(`Tenant service returned ${res.status} during rate-limit config refresh`);
+        this.logger.warn(
+          `Tenant service returned ${res.status} during rate-limit config refresh`,
+        );
         return;
       }
 
-      const tenants: TenantSummary[] = await res.json();
+      const tenants: ITenantSummary[] = await res.json();
       const next = new Map<string, RateLimitTenantConfig>();
 
       for (let i = 0; i < tenants.length; i++) {
         const t = tenants[i];
-        const rl = t.configuration?.rateLimit as Record<string, unknown> | undefined;
+        const rl = t.configuration?.rateLimit as
+          | Record<string, unknown>
+          | undefined;
         if (!rl) continue;
 
         const parsed = this.parse(rl);
@@ -106,25 +109,30 @@ export class RateLimitConfigCacheService implements OnModuleInit, OnModuleDestro
   }
 
   private parse(raw: Record<string, unknown>): RateLimitTenantConfig | null {
-    const algorithm = typeof raw.algorithm === 'string' && VALID_ALGORITHMS.has(raw.algorithm)
-      ? (raw.algorithm as RateLimitAlgorithm)
-      : this.defaultConfig.algorithm;
+    const algorithm =
+      typeof raw.algorithm === "string" && VALID_ALGORITHMS.has(raw.algorithm)
+        ? (raw.algorithm as RateLimitAlgorithm)
+        : this.defaultConfig.algorithm;
 
-    const limit = typeof raw.limit === 'number' && raw.limit > 0
-      ? raw.limit
-      : this.defaultConfig.limit;
+    const limit =
+      typeof raw.limit === "number" && raw.limit > 0
+        ? raw.limit
+        : this.defaultConfig.limit;
 
-    const windowMs = typeof raw.windowMs === 'number' && raw.windowMs > 0
-      ? raw.windowMs
-      : this.defaultConfig.windowMs;
+    const windowMs =
+      typeof raw.windowMs === "number" && raw.windowMs > 0
+        ? raw.windowMs
+        : this.defaultConfig.windowMs;
 
-    const capacity = typeof raw.capacity === 'number' && raw.capacity > 0
-      ? raw.capacity
-      : this.defaultConfig.capacity;
+    const capacity =
+      typeof raw.capacity === "number" && raw.capacity > 0
+        ? raw.capacity
+        : this.defaultConfig.capacity;
 
-    const refillRate = typeof raw.refillRate === 'number' && raw.refillRate > 0
-      ? raw.refillRate
-      : this.defaultConfig.refillRate;
+    const refillRate =
+      typeof raw.refillRate === "number" && raw.refillRate > 0
+        ? raw.refillRate
+        : this.defaultConfig.refillRate;
 
     return { algorithm, limit, windowMs, capacity, refillRate };
   }

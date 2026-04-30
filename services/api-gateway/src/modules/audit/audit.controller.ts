@@ -5,32 +5,37 @@ import {
   Query,
   Req,
   NotFoundException,
-} from '@nestjs/common';
-import { AuditProxyService } from './audit.service';
-import { REQUEST_TENANT_KEY } from '../../guards/tenant.guard';
+} from "@nestjs/common";
+import { AuditProxyService } from "./audit-proxy.service";
+import { REQUEST_TENANT_KEY } from "../../guards/tenant.guard";
+import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { QueryAuditEventsProxyDto } from "./audit-proxy-query.dto";
+import { auditEventsToParams } from "./audit-query-params.util";
 
-@Controller('audit/events')
+@Controller("audit/events")
 export class AuditController {
   constructor(private readonly auditProxy: AuditProxyService) {}
 
   @Get()
   async queryEvents(
-    @Req() req: any,
-    @Query('type') type?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Req() req: ITenantScopedRequest,
+    @Query() query: QueryAuditEventsProxyDto,
   ): Promise<object> {
     return this.auditProxy.queryEvents(
-      { type, from, to, limit, offset },
+      auditEventsToParams(query),
       req[REQUEST_TENANT_KEY],
     );
   }
 
-  @Get(':id')
-  async getEvent(@Req() req: any, @Param('id') id: string): Promise<object> {
-    const event = await this.auditProxy.getEventById(id, req[REQUEST_TENANT_KEY]);
+  @Get(":id")
+  async getEvent(
+    @Req() req: ITenantScopedRequest,
+    @Param("id") id: string,
+  ): Promise<object> {
+    const event = await this.auditProxy.getEventById(
+      id,
+      req[REQUEST_TENANT_KEY],
+    );
     if (!event) throw new NotFoundException(`Event ${id} not found`);
     return event;
   }

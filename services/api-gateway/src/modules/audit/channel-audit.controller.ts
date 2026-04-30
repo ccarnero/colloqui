@@ -6,8 +6,11 @@ import {
   Req,
   NotFoundException,
 } from "@nestjs/common";
-import { AuditProxyService } from "./audit.service";
+import { AuditProxyService } from "./audit-proxy.service";
 import { REQUEST_TENANT_KEY } from "../../guards/tenant.guard";
+import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { QueryChannelEventsProxyDto } from "./audit-proxy-query.dto";
+import { channelEventsToParams } from "./audit-query-params.util";
 
 @Controller("audit/channel-events")
 export class ChannelAuditProxyController {
@@ -15,24 +18,18 @@ export class ChannelAuditProxyController {
 
   @Get()
   async queryChannelEvents(
-    @Req() req: any,
-    @Query("channel") channel?: string,
-    @Query("kind") kind?: string,
-    @Query("accountId") accountId?: string,
-    @Query("from") from?: string,
-    @Query("to") to?: string,
-    @Query("limit") limit?: string,
-    @Query("offset") offset?: string,
+    @Req() req: ITenantScopedRequest,
+    @Query() query: QueryChannelEventsProxyDto,
   ): Promise<object> {
     return this.auditProxy.queryChannelEvents(
-      { channel, kind, accountId, from, to, limit, offset },
+      channelEventsToParams(query),
       req[REQUEST_TENANT_KEY],
     );
   }
 
   @Get(":id")
   async getChannelEvent(
-    @Req() req: any,
+    @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
   ): Promise<object> {
     const event = await this.auditProxy.getChannelEventById(

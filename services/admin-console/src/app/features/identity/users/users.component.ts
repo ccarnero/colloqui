@@ -1,6 +1,11 @@
-import { Component, inject, signal, type OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  type OnInit,
+} from "@angular/core";
 import { DatePipe } from "@angular/common";
-import { HttpClient } from "@angular/common/http";
 import { FormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
@@ -14,12 +19,13 @@ import {
   StatusBadgeComponent,
   type StatusBadgeColor,
 } from "../../../shared/components/status-badge/status-badge.component";
-import { environment } from "../../../../environments/environment";
 import { CreateTenantUserDialogComponent } from "./create-tenant-user-dialog.component";
+import { TenantUsersService } from "../../../core/services/tenant-users.service";
 import type { IUser } from "../../../core/models";
 
 @Component({
   selector: "app-users",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     DatePipe,
     FormsModule,
@@ -109,7 +115,7 @@ import type { IUser } from "../../../core/models";
   `,
 })
 export class UsersComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly tenantUsers = inject(TenantUsersService);
   private readonly dialog = inject(MatDialog);
   protected readonly authService = inject(AuthService);
   protected readonly tenant = inject(TenantService);
@@ -142,11 +148,9 @@ export class UsersComponent implements OnInit {
   }
 
   deactivateUser(id: string): void {
-    this.http
-      .delete(`${environment.apiUrl}/auth/tenant-users/${id}`)
-      .subscribe({
-        next: () => this.loadUsers(),
-      });
+    this.tenantUsers.deleteUser(id).subscribe({
+      next: () => this.loadUsers(),
+    });
   }
 
   formatRole(role: string): string {
@@ -162,10 +166,8 @@ export class UsersComponent implements OnInit {
   }
 
   private loadUsers(): void {
-    this.http
-      .get<IUser[]>(`${environment.apiUrl}/auth/tenant-users`)
-      .subscribe({
-        next: (data) => this.users.set(data),
-      });
+    this.tenantUsers.listUsers().subscribe({
+      next: (data) => this.users.set(data),
+    });
   }
 }

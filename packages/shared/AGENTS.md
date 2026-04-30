@@ -25,7 +25,8 @@ src/
 ├── auth.interfaces.ts      # JwtPayload, TokenResponse, TokenScope, UserRole, PublicRouteEntry
 ├── workflow.interfaces.ts  # WorkflowDefinition, WorkflowAction, activity argument types
 ├── adapter.interfaces.ts   # AdapterConfig, AdapterEndpointConfig, AdapterCache, ResolvedAdapterRequest
-└── adapter-client.ts       # AdapterClient (runtime: SWR cache, OAuth2 tokens, request resolution)
+├── adapter-client.ts       # AdapterClient (runtime: SWR cache, OAuth2 tokens, request resolution)
+└── async.utils.ts          # sleep(ms) for backoff and tests
 ```
 
 ## Exports by Category
@@ -46,7 +47,8 @@ src/
 | `RESULTS_SUBJECT_PREFIX` | `results.` | Event Processor |
 | `WEBHOOK_CONSUMER_NAME` | `webhook-dispatcher` | Webhook Service |
 | `WEBHOOK_DLQ_SUBJECT` | `dlq.webhook` | Webhook Service |
-| `DLQ_STREAM_NAME` | `DLQ` | Webhook Service |
+| `DLQ_STREAM_NAME` | `DLQ` | Webhook Service (global stream, scoped to `dlq.webhook`) |
+| `DLQ_STREAM_SUBJECTS` | `['dlq.webhook']` | Webhook Service (narrowed to free the `dlq.<tenant>.>` namespace for `DLQ-<tenant>`) |
 | `STREAM_MAX_AGE_NS` | 7 days (ns) | Event Processor, Audit, Metrics |
 | `STREAM_MAX_BYTES` | 512 MB | Event Processor, Audit |
 | `MAX_DELIVER` | `5` | All consumers |

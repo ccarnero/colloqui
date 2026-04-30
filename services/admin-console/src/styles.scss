@@ -55,48 +55,85 @@ html.light-theme {
 }
 
 :root {
-  --accent: #4f7ef8;
-  --accent2: #6b9bff;
-  --accent-dim: rgba(79, 126, 248, 0.12);
+  // Yoizen UI Brand Palette
+  --primary: #1A66FF;
+  --secondary: #4A3ABF;
+  --accent-yz: #FD6421;
+  --yellow-yz: #FDBD27;
+
+  // Yoizen UI Backgrounds
+  --bg-background: #1a1a1a;
+  --bg-surface: #2d2d2d;
+  --bg-card: #3a3a3a;
+  --bg-sidebar: #050505;
+
+  // Yoizen UI Typography
+  --text-primary: #ffffff;
+  --text-secondary: #D4D4D4; // Better contrast (Neutral 300)
+  --text-muted: #A3A3A3;     // Meets WCAG AA against dark backgrounds (Neutral 400)
+  --text-accent: #60a5fa;    // Light blue for dark mode contrast
+
+  // Utilities
+  --border-subtle: #3f3f46;  // Marginally softer border in dark mode
+  --hover-accent: #2563eb;
+  --brand-gradient: linear-gradient(90deg, #1A66FF 0%, #4A3ABF 60%, #FD6421 100%);
+
+  // Existing variable mappings bridged to Yoizen UI
+  --accent: var(--primary);
+  --accent2: var(--hover-accent);
+  --accent-dim: rgba(26, 102, 255, 0.12);
   --green: #22c55e;
   --green-dim: rgba(34, 197, 94, 0.12);
-  --yellow: #f59e0b;
-  --yellow-dim: rgba(245, 158, 11, 0.12);
+  --yellow: var(--yellow-yz);
+  --yellow-dim: rgba(253, 189, 39, 0.12);
   --red: #ef4444;
   --red-dim: rgba(239, 68, 68, 0.12);
-  --purple: #a855f7;
-  --purple-dim: rgba(168, 85, 247, 0.12);
+  --purple: var(--secondary);
+  --purple-dim: rgba(74, 58, 191, 0.12);
   --cyan: #06b6d4;
   --cyan-dim: rgba(6, 182, 212, 0.12);
-  --radius: 8px;
-  --radius2: 12px;
-  --font: "Inter", system-ui, -apple-system, sans-serif;
+  --radius: 6px;   // SM
+  --radius2: 8px;  // MD
+  --radius3: 12px; // LG
+  --font: "Barlow", "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
 
   // Dark surfaces from boilerplate
-  --bg: #0f1117;
-  --bg2: #161b27;
-  --bg3: #1e2535;
-  --bg4: #252d3d;
-  --border: #2a3347;
-  --border2: #334060;
-  --text: #e2e8f0;
-  --text2: #94a3b8;
-  --text3: #64748b;
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow2: 0 4px 20px rgba(0, 0, 0, 0.5);
+  --bg: var(--bg-background);
+  --bg2: var(--bg-surface);
+  --bg3: var(--bg-card);
+  --bg4: #404040;
+  --border: var(--border-subtle);
+  --border2: #555555;
+  --text: var(--text-primary);
+  --text2: var(--text-secondary);
+  --text3: var(--text-muted);
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  --shadow2: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
 
 }
 
 .light-theme {
-  --bg: #f8fafc;
-  --bg2: #ffffff;
-  --bg3: #f1f5f9;
+  // Override Yoizen UI specific vars for light mode
+  --bg-background: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-sidebar: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --text-accent: #2563eb;    // Darker blue for light mode contrast
+  --border-subtle: #e2e8f0;
+
+  // Boilerplate variables mapped to light
+  --bg: var(--bg-background);
+  --bg2: var(--bg-surface);
+  --bg3: var(--bg-card);
   --bg4: #e2e8f0;
-  --border: #e2e8f0;
+  --border: var(--border-subtle);
   --border2: #cbd5e1;
-  --text: #0f172a;
-  --text2: #475569;
-  --text3: #94a3b8;
+  --text: var(--text-primary);
+  --text2: var(--text-secondary);
+  --text3: var(--text-muted);
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --shadow2: 0 4px 20px rgba(0, 0, 0, 0.12);
 }
@@ -190,30 +227,34 @@ body.light-theme {
 
 // Card styles
 .section-card {
-  background: var(--bg2);
-  border: 1px solid var(--border);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius2);
   margin-bottom: 16px;
   overflow: hidden;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
 }
 
 .section-card-header {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 16px;
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
 .section-card-title {
-  font-weight: 700;
-  font-size: 14px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-accent);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 
 .section-card-sub {
-  font-size: 12px;
-  color: var(--text3);
-  margin-top: 1px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 4px;
 }
 
 .section-card-body {
@@ -236,21 +277,21 @@ body.light-theme {
 }
 
 .btn-primary {
-  background: var(--accent);
+  background: var(--primary);
   color: #fff;
 }
 .btn-primary:hover {
-  background: var(--accent2);
+  background: var(--hover-accent);
 }
 
 .btn-secondary {
-  background: var(--bg3);
-  color: var(--text2);
-  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
 }
 .btn-secondary:hover {
-  background: var(--bg4);
-  color: var(--text);
+  background: var(--bg3);
+  color: var(--text-primary);
   border-color: var(--border2);
 }
 
@@ -261,6 +302,14 @@ body.light-theme {
 }
 .btn-danger:hover {
   background: rgba(239, 68, 68, 0.2);
+}
+
+.btn-accent {
+  background: var(--accent-yz);
+  color: #fff;
+}
+.btn-accent:hover {
+  background: #e55a1d; /* slightly darker orange */
 }
 
 .btn-sm {
@@ -307,8 +356,8 @@ body.light-theme {
 }
 
 .card {
-  background: var(--bg2);
-  border: 1px solid var(--border);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius2);
   padding: 16px;
   transition:
@@ -419,14 +468,30 @@ body.light-theme {
   border: 1px solid rgba(34, 197, 94, 0.25);
   color: var(--green);
 }
+.alert-error {
+  background: var(--red-dim);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: var(--red);
+}
 
 // Metric card
+// Layout Components
+.sidebar-panel {
+  background: var(--bg-sidebar);
+}
+
+.surface-panel {
+  background: var(--bg-surface);
+}
+
+// Cards
 .metric-card {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px;
-  margin-bottom: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius2);
+  padding: 16px; // Equivalent to p-4
+  margin-bottom: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); // shadow-lg
 }
 
 .metric-row {
@@ -585,10 +650,10 @@ body.light-theme {
 
 // Mat-dialog override
 .mat-mdc-dialog-container {
-  --mdc-dialog-container-color: var(--bg);
+  --mdc-dialog-container-color: var(--bg2);
 
   .mat-mdc-dialog-surface {
-    background: var(--bg) !important;
+    background: var(--bg2) !important;
   }
 }
 
@@ -605,3 +670,8 @@ body.light-theme {
     background: var(--bg) !important;
   }
 }
+
+/* Yoizen UI Utilities */
+.bg-brand-gradient { background: var(--brand-gradient); }
+.text-brand-accent { color: var(--accent); }
+

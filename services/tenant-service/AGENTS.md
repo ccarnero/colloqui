@@ -27,9 +27,9 @@ src/
 └── modules/
     ├── tenants/
     │   ├── tenants.module.ts
-    │   ├── tenants.controller.ts               # POST/GET/DELETE /tenants, GET /tenants/:name
+    │   ├── tenants.controller.ts               # POST/GET/PATCH/DELETE /tenants, GET /tenants/:name
     │   ├── tenants.service.ts                  # Namespace CRUD, PostgreSQL provisioning orchestration
-    │   └── tenant.dto.ts                       # CreateTenantDto (name validation)
+    │   └── tenant.dto.ts                       # CreateTenantDto, UpdateTenantDto (name validation)
     └── health/
         ├── health.module.ts
         └── health.controller.ts                # GET /health (K8s API connectivity)
@@ -42,7 +42,7 @@ src/
 | `src/providers/postgres.provider.ts` | `TenantPostgresProvisioner` — creates K8s Secret, ConfigMap (postgresql.conf + init.sql), headless Service, and StatefulSet for per-tenant PostgreSQL |
 | `src/providers/kubernetes.provider.ts` | Factory providers for `K8S_CORE_API` and `K8S_APPS_API` |
 | `src/modules/tenants/tenants.service.ts` | Namespace CRUD with K8s labels, orchestrates PostgreSQL provisioning and readiness wait |
-| `src/modules/tenants/tenant.dto.ts` | Tenant name validation: lowercase alphanumeric with hyphens, max 32 chars |
+| `src/modules/tenants/tenant.dto.ts` | `CreateTenantDto` / `UpdateTenantDto`; tenant name validation: lowercase alphanumeric with hyphens, max 32 chars |
 
 ## Architecture Highlights
 
@@ -69,7 +69,7 @@ Each tenant namespace (`<tenant>-<env>-ns`) contains:
 - K8s Secret: `postgres-credentials` (DB, user, password)
 - ConfigMap: `postgres-config` (postgresql.conf + init.sql for schema)
 - Headless Service: `postgres` (ClusterIP: None, port 5432)
-- StatefulSet: `postgres` (1 replica, 1Gi PVC, postgres:17-alpine)
+- StatefulSet: `postgres` (1 replica, 1Gi PVC; image from `TENANT_POSTGRES_IMAGE`, default `pgvector/pgvector:pg17`)
 
 ### Namespace Labels
 

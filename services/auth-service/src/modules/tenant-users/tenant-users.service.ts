@@ -1,52 +1,86 @@
 import {
   BadRequestException,
   ConflictException,
-  Inject,
   Injectable,
-  Logger,
   NotFoundException,
+  OnModuleInit,
 } from "@nestjs/common";
-import { POSTGRES_SQL, type Sql } from "../../providers/postgres.provider";
+import { PinoLoggerService } from "@yoizen/observability";
+import { authServiceConfig } from "../../config";
+import { hashSecret } from "../../utils/password";
 import { TenantRolesService } from "../tenant-roles/tenant-roles.service";
+import { TenantUsersRepository } from "./tenant-users.repository";
 
-export interface TenantUserRow {
+interface ITenantUserRow {
+  id: string;
+  email: string;
+  role_id: string;
+  role: string;
+  display_name: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface TenantUserPublic {
   id: string;
   tenant_id: string;
   email: string;
   role_id: string;
   role: string;
   display_name: string | null;
-  is_active: boolean;
   created_at: Date;
   updated_at: Date;
 }
 
-type TenantUserPublic = Omit<TenantUserRow, "is_active">;
+/** Columns returned by {@link TenantUsersRepository.insertUser}. */
+interface ITenantUserInsertRow {
+  id: string;
+  email: string;
+  role_id: string;
+  display_name: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface ICreateTenantUserOptions {
+  tenantId: string;
+  email: string;
+  password: string;
+  roleId: string;
+  displayName?: string;
+}
 
 @Injectable()
-export class TenantUsersService {
-  private readonly logger = new Logger(TenantUsersService.name);
+export class TenantUsersService implements OnModuleInit {
+  private readonly logger = new PinoLoggerService(TenantUsersService.name);
 
   constructor(
-    @Inject(POSTGRES_SQL) private readonly sql: Sql,
+    private readonly tenantUsersRepository: TenantUsersRepository,
     private readonly tenantRolesService: TenantRolesService,
   ) {}
 
-  async create(
-    tenantId: string,
-    email: string,
-    password: string,
-    roleId: string,
-    displayName?: string,
-  ): Promise<TenantUserPublic> {
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.seedTenantAdmin();
+    } catch (error) {
+      this.logger.warn(
+        `Skipping tenant admin seed on startup: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  async create(options: ICreateTenantUserOptions): Promise<TenantUserPublic> {
+    const { tenantId, email, password, displayName } = options;
+    let { roleId } = options;
     await this.tenantRolesService.seedSystemRole(tenantId);
     roleId = await this.resolveRoleId(roleId, tenantId);
 
-    const existing = await this.sql`
-      SELECT id FROM tenant_users
-      WHERE tenant_id = ${tenantId} AND email = ${email}
-      LIMIT 1
-    `;
+    const existing = await this.tenantUsersRepository.findByTenantAndEmail(
+      tenantId,
+      email,
+    );
     if (existing.length > 0) {
       throw new ConflictException(
         `User with email '${email}' already exists for this tenant`,
@@ -54,63 +88,57 @@ export class TenantUsersService {
     }
 
     const id = crypto.randomUUID();
-    const passwordHash = await Bun.password.hash(password, {
-      algorithm: "argon2id",
-      memoryCost: 19_456,
-      timeCost: 2,
+    const passwordHash = await hashSecret(password);
+
+    const rows = await this.tenantUsersRepository.insertUser({
+      id,
+      tenantId,
+      email,
+      passwordHash,
+      roleId,
+      displayName: displayName ?? null,
     });
 
-    const rows = await this.sql`
-      INSERT INTO tenant_users (id, tenant_id, email, password_hash, role_id, display_name)
-      VALUES (${id}, ${tenantId}, ${email}, ${passwordHash}, ${roleId}, ${displayName ?? null})
-      RETURNING id, tenant_id, email, role_id, display_name, created_at, updated_at
-    `;
-
-    const user = rows[0];
-    const role = await this.sql`
-      SELECT name FROM tenant_roles WHERE id = ${roleId} LIMIT 1
-    `;
+    const row = rows[0] as ITenantUserInsertRow;
+    const roleRows = await this.tenantUsersRepository.selectRoleName(
+      tenantId,
+      roleId,
+    );
+    const roleName =
+      (roleRows[0] as { name: string } | undefined)?.name ?? "";
 
     this.logger.log(
       `Created tenant user ${email} (role_id=${roleId}) for tenant ${tenantId}`,
     );
 
     return {
-      ...user,
-      role: role[0]?.name ?? "",
-    } as unknown as TenantUserPublic;
+      id: row.id,
+      tenant_id: tenantId,
+      email: row.email,
+      role_id: row.role_id,
+      role: roleName,
+      display_name: row.display_name,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
   }
 
   async listByTenant(tenantId: string): Promise<TenantUserPublic[]> {
-    const rows = await this.sql`
-      SELECT tu.id, tu.tenant_id, tu.email, tu.role_id,
-             tr.name AS role, tu.display_name,
-             tu.created_at, tu.updated_at
-      FROM tenant_users tu
-      JOIN tenant_roles tr ON tr.id = tu.role_id
-      WHERE tu.tenant_id = ${tenantId} AND tu.is_active = true
-      ORDER BY tu.created_at DESC
-    `;
-    return rows as unknown as TenantUserPublic[];
+    const rows = await this.tenantUsersRepository.listByTenant(tenantId);
+    const list = rows as unknown as ITenantUserRow[];
+    return list.map((r) => ({ ...r, tenant_id: tenantId }));
   }
 
-  async findById(id: string): Promise<TenantUserPublic> {
-    const rows = await this.sql`
-      SELECT tu.id, tu.tenant_id, tu.email, tu.role_id,
-             tr.name AS role, tu.display_name,
-             tu.created_at, tu.updated_at
-      FROM tenant_users tu
-      JOIN tenant_roles tr ON tr.id = tu.role_id
-      WHERE tu.id = ${id} AND tu.is_active = true
-      LIMIT 1
-    `;
+  async findById(tenantId: string, id: string): Promise<TenantUserPublic> {
+    const rows = await this.tenantUsersRepository.findActiveById(tenantId, id);
     if (rows.length === 0) {
       throw new NotFoundException("Tenant user not found");
     }
-    return rows[0] as unknown as TenantUserPublic;
+    return { ...(rows[0] as ITenantUserRow), tenant_id: tenantId };
   }
 
   async update(
+    tenantId: string,
     id: string,
     updates: {
       role_id?: string;
@@ -118,45 +146,38 @@ export class TenantUsersService {
       is_active?: boolean;
     },
   ): Promise<TenantUserPublic> {
-    const existing = await this.sql`
-      SELECT id, tenant_id FROM tenant_users WHERE id = ${id} LIMIT 1
-    `;
+    const existing = await this.tenantUsersRepository.findByIdAny(
+      tenantId,
+      id,
+    );
     if (existing.length === 0) {
       throw new NotFoundException("Tenant user not found");
     }
 
+    let resolvedRoleId: string | null = updates.role_id ?? null;
     if (updates.role_id) {
-      updates.role_id = await this.resolveRoleId(
-        updates.role_id,
-        existing[0].tenant_id as string,
-      );
+      resolvedRoleId = await this.resolveRoleId(updates.role_id, tenantId);
     }
 
-    await this.sql`
-      UPDATE tenant_users SET
-        role_id = COALESCE(${updates.role_id ?? null}, role_id),
-        display_name = COALESCE(${updates.display_name ?? null}, display_name),
-        is_active = COALESCE(${updates.is_active ?? null}, is_active),
-        updated_at = NOW()
-      WHERE id = ${id}
-    `;
+    await this.tenantUsersRepository.updateUser(
+      tenantId,
+      id,
+      resolvedRoleId,
+      updates.display_name ?? null,
+      updates.is_active ?? null,
+    );
 
     this.logger.log(`Updated tenant user ${id}`);
-    return this.findById(id);
+    return this.findById(tenantId, id);
   }
 
-  async deactivate(id: string): Promise<void> {
-    const existing = await this.sql`
-      SELECT id FROM tenant_users WHERE id = ${id} LIMIT 1
-    `;
+  async deactivate(tenantId: string, id: string): Promise<void> {
+    const existing = await this.tenantUsersRepository.findId(tenantId, id);
     if (existing.length === 0) {
       throw new NotFoundException("Tenant user not found");
     }
 
-    await this.sql`
-      UPDATE tenant_users SET is_active = false, updated_at = NOW()
-      WHERE id = ${id}
-    `;
+    await this.tenantUsersRepository.deactivate(tenantId, id);
     this.logger.log(`Deactivated tenant user ${id}`);
   }
 
@@ -168,26 +189,52 @@ export class TenantUsersService {
     roleIdOrName: string,
     tenantId: string,
   ): Promise<string> {
-    const byId = await this.sql`
-      SELECT id FROM tenant_roles
-      WHERE id = ${roleIdOrName}
-        AND tenant_id = ${tenantId}
-        AND is_active = true
-      LIMIT 1
-    `;
-    if (byId.length > 0) return byId[0].id as string;
+    const byId = await this.tenantUsersRepository.resolveRoleById(
+      roleIdOrName,
+      tenantId,
+    );
+    if (byId.length > 0) return (byId[0] as { id: string }).id;
 
-    const byName = await this.sql`
-      SELECT id FROM tenant_roles
-      WHERE name = ${roleIdOrName}
-        AND tenant_id = ${tenantId}
-        AND is_active = true
-      LIMIT 1
-    `;
-    if (byName.length > 0) return byName[0].id as string;
+    const byName = await this.tenantUsersRepository.resolveRoleByName(
+      roleIdOrName,
+      tenantId,
+    );
+    if (byName.length > 0) return (byName[0] as { id: string }).id;
 
     throw new BadRequestException(
       `Role '${roleIdOrName}' does not exist or does not belong to this tenant`,
     );
+  }
+
+  private async seedTenantAdmin(): Promise<void> {
+    const tenantId = authServiceConfig.tenantAdminTenantId;
+    const email = authServiceConfig.tenantAdminEmail;
+    const password = authServiceConfig.tenantAdminPassword;
+    const displayName = authServiceConfig.tenantAdminDisplayName;
+
+    if (!tenantId || !email || !password) {
+      return;
+    }
+
+    const existing = await this.tenantUsersRepository.findByTenantAndEmail(
+      tenantId,
+      email,
+    );
+
+    if (existing.length > 0) {
+      return;
+    }
+
+    const systemRoleId = await this.tenantRolesService.seedSystemRole(tenantId);
+
+    await this.create({
+      tenantId,
+      email,
+      password,
+      roleId: systemRoleId,
+      displayName,
+    });
+
+    this.logger.log(`Seeded tenant admin user: ${email} (${tenantId})`);
   }
 }

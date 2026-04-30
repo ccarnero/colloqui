@@ -1,22 +1,18 @@
-export const STREAM_NAME = 'EVENTS';
-export const STREAM_SUBJECTS = ['events.>'] as const;
-export const CONSUMER_NAME = 'event-processor';
-export const AUDIT_CONSUMER_NAME = 'audit-writer';
-export const METRICS_CONSUMER_NAME = 'metrics-writer';
-export const METRICS_SUBJECT = 'events.metrics';
-
-export const SUBJECT_PREFIX = 'events';
-
-export const RESULTS_STREAM_NAME = 'RESULTS';
-export const RESULTS_STREAM_SUBJECTS = ['results.>'] as const;
-export const RESULTS_SUBJECT_PREFIX = 'results';
-export const WEBHOOK_CONSUMER_NAME = 'webhook-dispatcher';
 export const WEBHOOK_DLQ_SUBJECT = 'dlq.webhook';
 export const WEBHOOK_MAX_RETRIES = 3;
 export const WEBHOOK_RETRY_DELAYS = [1_000, 5_000, 30_000] as const;
 
 export const DLQ_STREAM_NAME = 'DLQ';
-export const DLQ_STREAM_SUBJECTS = ['dlq.>'] as const;
+/**
+ * Subjects owned by the global `DLQ` stream.
+ *
+ * Scoped to the single subject produced by `webhook-service` when a
+ * callback delivery exhausts its retries (`dlq.webhook`). The
+ * `dlq.<tenant>.>` namespace is reserved for per-tenant DLQ streams
+ * (`DLQ-<tenant>`) provisioned by `ensureTenantDlqStream`, so the two
+ * designs coexist without JetStream subject overlap.
+ */
+export const DLQ_STREAM_SUBJECTS = ['dlq.webhook'] as const;
 export const DLQ_STREAM_MAX_BYTES = 64 * 1024 * 1024;
 
 export const RESULT_KEY_PREFIX = 'result:';
@@ -29,8 +25,6 @@ export const CALLBACK_TTL = 3600;
 export const RESULT_CACHE_MAX = 1024;
 
 export const STREAM_MAX_AGE_NS = 7 * 24 * 60 * 60 * 1_000_000_000;
-export const STREAM_MAX_BYTES = 512 * 1024 * 1024;
-export const RESULTS_STREAM_MAX_BYTES = 256 * 1024 * 1024;
 export const MAX_DELIVER = 5;
 
 export const TENANT_HEADER = 'x-yoizen-tenant';
@@ -45,15 +39,66 @@ export const REGISTRY_KNATIVE_VERSION = 'v1';
 export const REGISTRY_KNATIVE_SERVICES_PLURAL = 'services';
 export const REGISTRY_KNATIVE_REVISIONS_PLURAL = 'revisions';
 
+/** Default container port when registering a Knative service without explicit port. */
+export const REGISTRY_DEFAULT_SERVICE_PORT = 3000;
+
+/**
+ * Producer/domain tokens for platform-level events (wdocs 02 §3).
+ * Used by registry-service when emitting service lifecycle events that
+ * other services (adapter-service) materialize as internal adapters.
+ */
+export const REGISTRY_PRODUCER = 'registry-service';
+export const PLATFORM_DOMAIN = 'platform';
+/**
+ * Placeholder token for the 5th/6th positions (channel/provider) when
+ * the event is domain-agnostic (not tied to a messaging channel).
+ * Keeps the canonical 8-token subject shape.
+ */
+export const PLATFORM_NON_CHANNEL_TOKEN = 'system';
+
+/** Internal adapter marker: adapters created by the registry-sync consumer. */
+export const ADAPTER_MANAGED_BY_REGISTRY = 'registry-service';
+
 export const WORKFLOW_ORCHESTRATOR_TASK_QUEUE = 'workflow-orchestrator';
 export const WORKFLOW_HTTP_TASK_QUEUE = 'workflow-http';
 export const WORKFLOW_DEFAULT_TIMEOUT_MS = 60_000;
-
-export const DEFAULT_ADAPTER_SERVICE_URL =
-  "http://adapter-service.platform-services.svc.cluster.local";
 
 export const GATEWAY_AUDIT_STREAM_NAME = 'GATEWAY_AUDIT';
 export const GATEWAY_AUDIT_STREAM_SUBJECTS = ['audit.gateway.>'] as const;
 export const GATEWAY_AUDIT_SUBJECT = 'audit.gateway.request';
 export const GATEWAY_AUDIT_CONSUMER_NAME = 'gateway-audit-writer';
 export const GATEWAY_AUDIT_STREAM_MAX_BYTES = 128 * 1024 * 1024;
+
+export const YOIZENCLAW_PRODUCER = "yoizenclaw-admin-service";
+export const YOIZENCLAW_DOMAIN = "automation";
+export const YOIZENCLAW_CHANNEL = "yoizenclaw";
+export const YOIZENCLAW_PROVIDER = "internal";
+export const YOIZENCLAW_ACCOUNT_ID = "yoizenclaw-admin";
+
+export const YOIZENCLAW_SUBJECT_PREFIX =
+  "evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal";
+
+export const YOIZENCLAW_CONFIG_SYNC =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.config_sync.v1`;
+export const YOIZENCLAW_JOBS_SYNC =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.jobs_sync.v1`;
+export const YOIZENCLAW_JOB_TRIGGER =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.job_trigger.v1`;
+export const YOIZENCLAW_CHAT_RESPOND =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.chat_respond.v1`;
+export const YOIZENCLAW_ONLINE =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.online.v1`;
+export const YOIZENCLAW_AGENT_OUTBOUND =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.agent_outbound.v1`;
+export const YOIZENCLAW_EXECUTION_STATUS =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.execution_status.v1`;
+export const YOIZENCLAW_AGENT_PUBLISHED =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.agent_published.v1`;
+export const YOIZENCLAW_AGENT_UNPUBLISHED =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.agent_unpublished.v1`;
+export const YOIZENCLAW_EVENT =
+  `${YOIZENCLAW_SUBJECT_PREFIX}.event.v1`;
+
+export function buildYoizenClawSubject(template: string, tenantId: string): string {
+  return template.replaceAll("{tenant}", tenantId);
+}

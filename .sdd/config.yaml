@@ -1,0 +1,50 @@
+schema_version: 2
+project:
+  name: platform-cluster
+  type: monorepo
+  description: Microservices platform with Kubernetes/Knative, NestJS, and multi-tenancy
+  
+artifact_store:
+  mode: file
+  path: .sdd
+  
+conventions:
+  naming:
+    changes: kebab-case
+    specs: domain-driven
+  code_style:
+    linter: biome
+    formatter: biome
+    strict: true
+    
+context: |
+  NestJS 11 + Fastify + Bun runtime.
+  Multi-tenant microservices with PostgreSQL per tenant (K8s StatefulSet).
+  NATS JetStream for messaging.
+  Knative Serving for serverless scaling.
+  Clean Architecture pattern enforced.
+  
+rules:
+  proposal:
+    require_rollback_plan: true
+    require_effort_estimate: true
+    max_scope_lines: 50
+  spec:
+    require_acceptance_criteria: true
+    require_error_scenarios: true
+  design:
+    require_diagrams: false
+    require_rationale: true
+  tasks:
+    require_test_task: true
+    require_docs_task: true
+  verify:
+    require_checklist: true
+    auto_verify_syntax: true
+    
+defaults:
+  effort_scale: fibonacci
+  accepted_test_frameworks:
+    - bun:test
+    - jest
+  documentation_format: markdown

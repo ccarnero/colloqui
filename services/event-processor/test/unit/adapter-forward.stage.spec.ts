@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { AdapterForwardStage } from "../../src/pipeline/adapter-forward.stage";
-import { REDIS_CLIENT } from "../../src/providers/redis.provider";
+import { REDIS_CLIENT } from "@yoizen/database";
+import { adapterClientProvider } from "../../src/providers/adapter-client.provider";
 import type { EventEnvelope } from "@yoizen/shared";
-import type { PipelineContext } from "../../src/pipeline/pipeline-stage.interface";
+import type { IPipelineContext } from "../../src/pipeline/pipeline-stage.interface";
+import { makeTestEnvelope } from "./adapter-stage-test.fixtures";
 
 const fakeAdapterConfig = {
   id: "adp-1",
@@ -20,7 +22,13 @@ const fakeAdapterConfig = {
   healthCheckPath: "/health",
   status: "active",
   endpoints: [
-    { id: "ep-1", adapterId: "adp-1", label: "Post", method: "POST", path: "/ingest" },
+    {
+      id: "ep-1",
+      adapterId: "adp-1",
+      label: "Post",
+      method: "POST",
+      path: "/ingest",
+    },
   ],
 };
 
@@ -53,7 +61,7 @@ function buildMockRedis() {
 describe("AdapterForwardStage", () => {
   let stage: AdapterForwardStage;
 
-  const baseContext: PipelineContext = {
+  const baseContext: IPipelineContext = {
     subject: "events.created",
     tenantId: "t1",
   };
@@ -67,6 +75,7 @@ describe("AdapterForwardStage", () => {
     const module = await Test.createTestingModule({
       providers: [
         AdapterForwardStage,
+        adapterClientProvider,
         { provide: REDIS_CLIENT, useValue: buildMockRedis() },
       ],
     }).compile();
@@ -74,12 +83,19 @@ describe("AdapterForwardStage", () => {
     stage = module.get(AdapterForwardStage);
   });
 
-  it("should pass through when forwardAdapter is absent", async () => {
-    const envelope: EventEnvelope = {
+  it("should pass through when forward_adapter is absent", async () => {
+    const envelope = makeTestEnvelope({
       id: "evt-1",
       type: "created",
-      payload: { data: true },
-    };
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "",
+        payload: { data: true },
+      },
+    });
 
     const result = await stage.process(envelope, baseContext);
     expect(result).toEqual(envelope);
@@ -87,24 +103,30 @@ describe("AdapterForwardStage", () => {
   });
 
   it("should pass through when tenantId is missing", async () => {
-    const envelope: EventEnvelope = {
+    const envelope = makeTestEnvelope({
       id: "evt-2",
       type: "created",
-      payload: {},
-      forwardAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      forward_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, { subject: "events.created" });
     expect(result).toEqual(envelope);
   });
 
   it("should forward successfully on first attempt", async () => {
-    const envelope: EventEnvelope = {
+    const envelope = makeTestEnvelope({
       id: "evt-3",
       type: "created",
-      payload: { data: true },
-      forwardAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "",
+        payload: { data: true },
+      },
+      forward_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, baseContext);
 
@@ -127,12 +149,11 @@ describe("AdapterForwardStage", () => {
       return Promise.resolve(new Response("OK", { status: 200 }));
     });
 
-    const envelope: EventEnvelope = {
+    const envelope = makeTestEnvelope({
       id: "evt-4",
       type: "created",
-      payload: {},
-      forwardAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      forward_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, baseContext);
     expect(result).toEqual(envelope);
@@ -144,12 +165,11 @@ describe("AdapterForwardStage", () => {
       Promise.resolve(new Response("Bad Request", { status: 400 })),
     );
 
-    const envelope: EventEnvelope = {
+    const envelope = makeTestEnvelope({
       id: "evt-5",
       type: "created",
-      payload: {},
-      forwardAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      forward_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, baseContext);
     expect(result).toEqual(envelope);
@@ -161,15 +181,22 @@ describe("AdapterForwardStage", () => {
       Promise.resolve(new Response("Error", { status: 503 })),
     );
 
-    const envelope: EventEnvelope = {
+    const envelope = makeTestEnvelope({
       id: "evt-6",
       type: "created",
-      payload: { original: true },
-      forwardAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "",
+        payload: { original: true },
+      },
+      forward_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, baseContext);
-    expect(result.payload.original).toBe(true);
+    expect(result.data.payload?.original).toBe(true);
     expect(tracedFetchMock).toHaveBeenCalledTimes(3);
   });
 });

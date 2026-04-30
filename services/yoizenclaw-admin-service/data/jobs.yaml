@@ -1,0 +1,20 @@
+jobs:
+  - id: job-metrics-snapshot
+    name: "Metrics Snapshot"
+    description: "Collect conversation metrics snapshot every hour"
+    enabled: true
+    agent_id: "agent-default"
+    schedule: "interval:3600"
+    payload:
+      action: "collect_metrics"
+      metric_types: ["conversations", "response_times", "satisfaction"]
+
+  - id: job-demo-notification
+    name: "Demo Notification"
+    description: "Manual job for testing job execution from admin UI"
+    enabled: true
+    agent_id: "agent-sales-assistant"
+    schedule: "once"
+    payload:
+      action: "notify"
+      message: "Demo job triggered from admin panel"

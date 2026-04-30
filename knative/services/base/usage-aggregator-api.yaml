@@ -1,0 +1,61 @@
+# usage-aggregator API pod (HTTP). Phase 1.5 split.
+#
+# Note: the package directory is `services/usage-aggregator-service/` but
+# the K8s name drops the `-service` suffix to align with the rest of the
+# split pairs (`*-api` / `*-worker`).
+#
+# Runs `SERVICE_MODE=api` — the per-tenant `agg-INGRESS-*` and `agg-DLQ`
+# durable consumers stay disabled (see
+# `services/usage-aggregator-service/src/modules/aggregator/aggregator.engine.ts`).
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: usage-aggregator-api
+  labels:
+    app.kubernetes.io/name: usage-aggregator-api
+    app.kubernetes.io/component: billing-metrics
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: usage-aggregator-api
+        app.kubernetes.io/component: billing-metrics
+      annotations:
+        autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
+        autoscaling.knative.dev/metric: concurrency
+        autoscaling.knative.dev/target: "100"
+        autoscaling.knative.dev/min-scale: "1"
+        autoscaling.knative.dev/max-scale: "3"
+    spec:
+      containerConcurrency: 0
+      containers:
+        - name: user-container
+          image: dev.local/usage-aggregator-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: SERVICE_MODE
+              value: "api"
+            - name: OTEL_SERVICE_NAME
+              value: "usage-aggregator-api"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5

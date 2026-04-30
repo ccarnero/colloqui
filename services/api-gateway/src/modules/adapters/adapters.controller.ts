@@ -12,7 +12,14 @@ import {
   HttpStatus,
 } from "@nestjs/common";
 import { AdaptersProxyService } from "./adapters-proxy.service";
+import {
+  CreateAdapterDto,
+  CreateEndpointDto,
+  UpdateAdapterDto,
+  UpdateEndpointDto,
+} from "./adapters.dto";
 import { REQUEST_TENANT_KEY } from "../../guards/tenant.guard";
+import type { ITenantScopedRequest } from "../../types/yoizen-request";
 
 @Controller("adapters")
 export class AdaptersController {
@@ -20,84 +27,106 @@ export class AdaptersController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Req() req: any, @Body() body: unknown) {
-    return this.proxy.proxy(
-      "POST",
-      "/adapters",
-      req[REQUEST_TENANT_KEY],
-      undefined,
+  async create(
+    @Req() req: ITenantScopedRequest,
+    @Body() body: CreateAdapterDto,
+  ) {
+    return this.proxy.proxy({
+      method: "POST",
+      path: "/adapters",
+      tenantId: req[REQUEST_TENANT_KEY],
       body,
-    );
+    });
   }
 
   @Get()
-  async list(@Req() req: any, @Query("context") context?: string) {
-    return this.proxy.proxy("GET", "/adapters", req[REQUEST_TENANT_KEY], {
-      context,
+  async list(
+    @Req() req: ITenantScopedRequest,
+    @Query("context") context?: string,
+    @Query("tag") tag?: string,
+  ) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/adapters",
+      tenantId: req[REQUEST_TENANT_KEY],
+      query: { context, tag },
     });
   }
 
   @Get(":id")
-  async get(@Req() req: any, @Param("id") id: string) {
-    return this.proxy.proxy(
-      "GET",
-      `/adapters/${encodeURIComponent(id)}`,
-      req[REQUEST_TENANT_KEY],
-    );
+  async get(@Req() req: ITenantScopedRequest, @Param("id") id: string) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: `/adapters/${encodeURIComponent(id)}`,
+      tenantId: req[REQUEST_TENANT_KEY],
+    });
   }
 
   @Patch(":id")
   async update(
-    @Req() req: any,
+    @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
-    @Body() body: unknown,
+    @Body() body: UpdateAdapterDto,
   ) {
-    return this.proxy.proxy(
-      "PATCH",
-      `/adapters/${encodeURIComponent(id)}`,
-      req[REQUEST_TENANT_KEY],
-      undefined,
+    return this.proxy.proxy({
+      method: "PATCH",
+      path: `/adapters/${encodeURIComponent(id)}`,
+      tenantId: req[REQUEST_TENANT_KEY],
       body,
-    );
+    });
   }
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Req() req: any, @Param("id") id: string) {
-    return this.proxy.proxy(
-      "DELETE",
-      `/adapters/${encodeURIComponent(id)}`,
-      req[REQUEST_TENANT_KEY],
-    );
+  async remove(@Req() req: ITenantScopedRequest, @Param("id") id: string) {
+    return this.proxy.proxy({
+      method: "DELETE",
+      path: `/adapters/${encodeURIComponent(id)}`,
+      tenantId: req[REQUEST_TENANT_KEY],
+    });
   }
 
   @Post(":id/endpoints")
   @HttpCode(HttpStatus.CREATED)
   async addEndpoint(
-    @Req() req: any,
+    @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
-    @Body() body: unknown,
+    @Body() body: CreateEndpointDto,
   ) {
-    return this.proxy.proxy(
-      "POST",
-      `/adapters/${encodeURIComponent(id)}/endpoints`,
-      req[REQUEST_TENANT_KEY],
-      undefined,
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/adapters/${encodeURIComponent(id)}/endpoints`,
+      tenantId: req[REQUEST_TENANT_KEY],
       body,
-    );
+    });
+  }
+
+  @Patch(":id/endpoints/:epId")
+  async updateEndpoint(
+    @Req() req: ITenantScopedRequest,
+    @Param("id") id: string,
+    @Param("epId") epId: string,
+    @Body() body: UpdateEndpointDto,
+  ) {
+    return this.proxy.proxy({
+      method: "PATCH",
+      path: `/adapters/${encodeURIComponent(id)}/endpoints/${encodeURIComponent(epId)}`,
+      tenantId: req[REQUEST_TENANT_KEY],
+      body,
+    });
   }
 
   @Delete(":id/endpoints/:epId")
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeEndpoint(
-    @Req() req: any,
+    @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
     @Param("epId") epId: string,
   ) {
-    return this.proxy.proxy(
-      "DELETE",
-      `/adapters/${encodeURIComponent(id)}/endpoints/${encodeURIComponent(epId)}`,
-      req[REQUEST_TENANT_KEY],
-    );
+    return this.proxy.proxy({
+      method: "DELETE",
+      path: `/adapters/${encodeURIComponent(id)}/endpoints/${encodeURIComponent(epId)}`,
+      tenantId: req[REQUEST_TENANT_KEY],
+    });
   }
 }

@@ -7,8 +7,7 @@
     "start": "bun run dist/worker.js",
     "start:dev": "bun run --watch src/worker.ts",
     "test": "bun test",
-    "test:unit": "bun test test/unit",
-    "test:integration": "bun test test/integration"
+    "test:unit": "bun test test/unit"
   },
   "dependencies": {
     "@temporalio/worker": "^1.11.0",
@@ -18,7 +17,9 @@
     "ioredis": "^5.4.1"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.0",
     "@types/node": "^22.10.1",
+    "reflect-metadata": "^0.2.2",
     "typescript": "^5.7.2"
   }
 }

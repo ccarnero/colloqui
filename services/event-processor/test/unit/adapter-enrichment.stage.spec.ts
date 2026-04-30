@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { AdapterEnrichmentStage } from "../../src/pipeline/adapter-enrichment.stage";
-import { REDIS_CLIENT } from "../../src/providers/redis.provider";
+import { REDIS_CLIENT } from "@yoizen/database";
+import { adapterClientProvider } from "../../src/providers/adapter-client.provider";
 import type { EventEnvelope } from "@yoizen/shared";
-import type { PipelineContext } from "../../src/pipeline/pipeline-stage.interface";
+import type { IPipelineContext } from "../../src/pipeline/pipeline-stage.interface";
+import { makeTestEnvelope } from "./adapter-stage-test.fixtures";
 
 const fakeAdapterConfig = {
   id: "adp-1",
@@ -20,14 +22,20 @@ const fakeAdapterConfig = {
   healthCheckPath: "/health",
   status: "active",
   endpoints: [
-    { id: "ep-1", adapterId: "adp-1", label: "Get", method: "GET", path: "/data" },
+    {
+      id: "ep-1",
+      adapterId: "adp-1",
+      label: "Get",
+      method: "GET",
+      path: "/data",
+    },
   ],
 };
 
 let tracedFetchMock: ReturnType<typeof mock>;
 
 mock.module("@yoizen/observability", () => {
-  tracedFetchMock = mock((url: string, init?: RequestInit) => {
+  tracedFetchMock = mock((_url: string, _init?: RequestInit) => {
     return Promise.resolve(
       new Response(JSON.stringify({ enrichedField: true }), {
         status: 200,
@@ -59,7 +67,7 @@ describe("AdapterEnrichmentStage", () => {
   let stage: AdapterEnrichmentStage;
   let mockRedis: ReturnType<typeof buildMockRedis>;
 
-  const baseContext: PipelineContext = {
+  const baseContext: IPipelineContext = {
     subject: "events.created",
     tenantId: "t1",
   };
@@ -70,6 +78,7 @@ describe("AdapterEnrichmentStage", () => {
     const module = await Test.createTestingModule({
       providers: [
         AdapterEnrichmentStage,
+        adapterClientProvider,
         { provide: REDIS_CLIENT, useValue: mockRedis },
       ],
     }).compile();
@@ -77,24 +86,38 @@ describe("AdapterEnrichmentStage", () => {
     stage = module.get(AdapterEnrichmentStage);
   });
 
-  it("should pass through when enrichAdapter is absent", async () => {
-    const envelope: EventEnvelope = {
+  it("should pass through when enrich_adapter is absent", async () => {
+    const envelope = makeTestEnvelope({
       id: "evt-1",
       type: "created",
-      payload: { data: true },
-    };
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "",
+        payload: { data: true },
+      },
+    });
 
     const result = await stage.process(envelope, baseContext);
     expect(result).toEqual(envelope);
   });
 
   it("should pass through when tenantId is missing", async () => {
-    const envelope: EventEnvelope = {
+    const envelope = makeTestEnvelope({
       id: "evt-2",
       type: "created",
-      payload: { data: true },
-      enrichAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "",
+        payload: { data: true },
+      },
+      enrich_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, {
       subject: "events.created",
@@ -102,18 +125,25 @@ describe("AdapterEnrichmentStage", () => {
     expect(result).toEqual(envelope);
   });
 
-  it("should merge _enriched into payload on success", async () => {
-    const envelope: EventEnvelope = {
+  it("should merge _enriched into data.payload on success", async () => {
+    const envelope = makeTestEnvelope({
       id: "evt-3",
       type: "created",
-      payload: { original: true },
-      enrichAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "",
+        payload: { original: true },
+      },
+      enrich_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, baseContext);
 
-    expect(result.payload._enriched).toEqual({ enrichedField: true });
-    expect(result.payload.original).toBe(true);
+    expect(result.data.payload?._enriched).toEqual({ enrichedField: true });
+    expect(result.data.payload?.original).toBe(true);
   });
 
   it("should pass through on non-2xx response", async () => {
@@ -121,15 +151,22 @@ describe("AdapterEnrichmentStage", () => {
       Promise.resolve(new Response("Not Found", { status: 404 })),
     );
 
-    const envelope: EventEnvelope = {
+    const envelope = makeTestEnvelope({
       id: "evt-4",
       type: "created",
-      payload: { data: true },
-      enrichAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "",
+        payload: { data: true },
+      },
+      enrich_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, baseContext);
-    expect(result.payload._enriched).toBeUndefined();
+    expect(result.data.payload?._enriched).toBeUndefined();
   });
 
   it("should pass through on fetch exception", async () => {
@@ -137,14 +174,21 @@ describe("AdapterEnrichmentStage", () => {
       Promise.reject(new Error("network error")),
     );
 
-    const envelope: EventEnvelope = {
+    const envelope = makeTestEnvelope({
       id: "evt-5",
       type: "created",
-      payload: { data: true },
-      enrichAdapter: { adapterId: "adp-1", endpointId: "ep-1" },
-    };
+      data: {
+        received_at: new Date().toISOString(),
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "",
+        payload: { data: true },
+      },
+      enrich_adapter: { adapterId: "adp-1", endpointId: "ep-1" },
+    });
 
     const result = await stage.process(envelope, baseContext);
-    expect(result.payload._enriched).toBeUndefined();
+    expect(result.data.payload?._enriched).toBeUndefined();
   });
 });

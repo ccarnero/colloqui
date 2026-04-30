@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
-import { DiscoveryModule } from '@nestjs/core';
-import { ProcessorService } from './processor.service';
-import { PipelineModule } from '../../pipeline/pipeline.module';
+import { Module } from "@nestjs/common";
+import { DiscoveryModule } from "@nestjs/core";
+import { ProcessorService } from "./processor.service";
+import { ProcessorPipelineDeps } from "./processor-pipeline-deps";
+import { PipelineModule } from "../../pipeline/pipeline.module";
 import {
   HandlerRegistry,
   DefaultHandler,
@@ -9,12 +10,13 @@ import {
   UpdatedHandler,
   DeletedHandler,
   MetricsHandler,
-} from '../../handlers';
+} from "../../handlers";
 
 @Module({
   imports: [DiscoveryModule, PipelineModule],
   providers: [
     ProcessorService,
+    ProcessorPipelineDeps,
     HandlerRegistry,
     DefaultHandler,
     CreatedHandler,

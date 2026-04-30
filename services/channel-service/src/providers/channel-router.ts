@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import type { IChannelProvider, Channel } from "@yoizen/shared";
 import { ProviderRegistry } from "./meta/provider-registry";
 import { TelegramProvider } from "./telegram/telegram.provider";
@@ -14,10 +14,7 @@ import { TelegramProvider } from "./telegram/telegram.provider";
 export class ChannelRouter {
   private readonly providers: Map<Channel, IChannelProvider>;
 
-  constructor(
-    metaRegistry: ProviderRegistry,
-    telegram: TelegramProvider,
-  ) {
+  constructor(metaRegistry: ProviderRegistry, telegram: TelegramProvider) {
     this.providers = new Map<Channel, IChannelProvider>();
 
     for (const channel of metaRegistry.channels()) {
@@ -37,12 +34,10 @@ export class ChannelRouter {
   getOrThrow(channel: Channel): IChannelProvider {
     const provider = this.providers.get(channel);
     if (!provider) {
-      throw new Error(`No provider registered for channel: ${channel}`);
+      throw new NotFoundException(
+        `No provider registered for channel: ${channel}`,
+      );
     }
     return provider;
-  }
-
-  channels(): Channel[] {
-    return [...this.providers.keys()];
   }
 }

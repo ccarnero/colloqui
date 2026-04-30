@@ -15,29 +15,41 @@ afterAll(async () => {
   );
 });
 
+/**
+ * scheduler-service runs as a Knative svc with `min-scale: 0` in non-prod,
+ * so the first request of the suite triggers a cold-start (~10-25s on
+ * minikube). The transport layer (`helpers.ts`) already retries on 502/503,
+ * but the per-test budget needs explicit headroom over the default.
+ */
+const COLD_START_IT = { timeout: 90_000 };
+
 describe('E2E: scheduler-service', () => {
   let scheduleId: string;
 
-  it('should create a one-time schedule', async () => {
-    const h = await authHeaders();
-    const { status, body } = await httpPost<{ id: string; name: string; type: string }>(
-      `${GW}/schedulers/schedules`,
-      {
-        name: `e2e-schedule-${Date.now()}`,
-        type: 'one-time',
-        expression: new Date(Date.now() + 3_600_000).toISOString(),
-        exec_mode: 'js-inline',
-        config: { script: 'return { ok: true };' },
-      },
-      { headers: h },
-    );
+  it(
+    'should create a one-time schedule',
+    async () => {
+      const h = await authHeaders();
+      const { status, body } = await httpPost<{ id: string; name: string; type: string }>(
+        `${GW}/schedulers/schedules`,
+        {
+          name: `e2e-schedule-${Date.now()}`,
+          type: 'one-time',
+          expression: new Date(Date.now() + 3_600_000).toISOString(),
+          exec_mode: 'js-inline',
+          config: { script: 'return { ok: true };' },
+        },
+        { headers: h },
+      );
 
-    expect(status).toBe(201);
-    expect(body.id).toBeDefined();
-    expect(body.type).toBe('one-time');
-    scheduleId = body.id;
-    createdScheduleIds.push(scheduleId);
-  });
+      expect(status).toBe(201);
+      expect(body.id).toBeDefined();
+      expect(body.type).toBe('one-time');
+      scheduleId = body.id;
+      createdScheduleIds.push(scheduleId);
+    },
+    COLD_START_IT.timeout,
+  );
 
   it('should list schedules', async () => {
     const h = await authHeaders();

@@ -1,27 +1,27 @@
-import { Component, OnInit, inject, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnInit,
+  inject,
+  signal,
+} from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
-import { HttpClient } from "@angular/common/http";
-import { environment } from "../../../../environments/environment";
+import {
+  ChannelAdminService,
+  type IAutoReplyRuleDto,
+} from "../../../core/services/channel-admin.service";
 import {
   AutoReplyDialogComponent,
-  type AutoReplyDialogResult,
+  type IAutoReplyDialogResult,
 } from "./auto-reply-dialog.component";
-
-interface AutoReplyRule {
-  id: string;
-  accountId: string;
-  channel: string;
-  triggerPattern: string;
-  replyText: string;
-  isActive: boolean;
-}
 
 @Component({
   selector: "app-auto-reply",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatButtonModule, MatIconModule, MatTableModule, MatDialogModule],
   template: `
     <div class="ws-header">
@@ -104,7 +104,7 @@ interface AutoReplyRule {
   `,
 })
 export class AutoReplyComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly channels = inject(ChannelAdminService);
   private readonly dialog = inject(MatDialog);
 
   readonly cols = [
@@ -115,7 +115,7 @@ export class AutoReplyComponent implements OnInit {
     "actions",
   ] as const;
 
-  readonly rules = signal<AutoReplyRule[]>([]);
+  readonly rules = signal<IAutoReplyRuleDto[]>([]);
 
   ngOnInit(): void {
     this.loadRules();
@@ -126,24 +126,24 @@ export class AutoReplyComponent implements OnInit {
       data: {},
       width: "520px",
     });
-    ref.afterClosed().subscribe((result?: AutoReplyDialogResult) => {
+    ref.afterClosed().subscribe((result?: IAutoReplyDialogResult) => {
       if (result?.saved) this.loadRules();
     });
   }
 
-  confirmDelete(rule: AutoReplyRule): void {
+  confirmDelete(rule: IAutoReplyRuleDto): void {
     const confirmed = confirm(
       `Delete auto-reply rule for pattern "${rule.triggerPattern}"?`,
     );
     if (!confirmed) return;
 
-    this.http.delete(`${environment.apiUrl}/channels/auto-reply/${rule.id}`).subscribe({
+    this.channels.deleteAutoReplyRule(rule.id).subscribe({
       next: () => this.loadRules(),
     });
   }
 
   private loadRules(): void {
-    this.http.get<AutoReplyRule[]>(`${environment.apiUrl}/channels/auto-reply`).subscribe({
+    this.channels.listAutoReplyRules().subscribe({
       next: (data) => this.rules.set(data),
     });
   }

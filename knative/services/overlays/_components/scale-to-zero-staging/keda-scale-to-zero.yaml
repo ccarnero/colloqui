@@ -1,0 +1,93 @@
+# KEDA ScaledObject patches shared by staging overlays (local + cloud).
+# Scale-to-zero with a longer 300s cooldown — staging absorbs
+# overlapping canary releases / nightly suites, so a longer
+# cooldown avoids constant pod churn.
+#
+# Scope: every Phase 1.5 `*-worker` (NATS JetStream-driven) plus the
+# pre-existing Temporal workers. All targets are plain
+# `apps/v1.Deployment` resources (NOT Knative Services). KEDA cannot
+# scale Knative Services because they don't expose a `/scale`
+# subresource — see `knative/services/base/scaledobjects/kustomization.yaml`
+# for the full rationale.
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: workflow-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+  cooldownPeriod: 300
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: workflow-http-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+  cooldownPeriod: 300
+---
+# ----- Phase 1.5: NATS JetStream-driven workers -----
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: audit-service-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+  cooldownPeriod: 300
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: channel-service-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+  cooldownPeriod: 300
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: event-processor-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+  cooldownPeriod: 300
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: metrics-service-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+  cooldownPeriod: 300
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: usage-aggregator-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+  cooldownPeriod: 300
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: webhook-service-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+  cooldownPeriod: 300
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: workflow-service-worker-scaler
+spec:
+  minReplicaCount: 0
+  idleReplicaCount: 0
+  cooldownPeriod: 300

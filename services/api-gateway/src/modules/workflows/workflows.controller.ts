@@ -2,107 +2,140 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Delete,
   Param,
   Body,
   Req,
+  Query,
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
 import { WorkflowProxyService } from "./workflow-proxy.service";
-import { REQUEST_TENANT_KEY } from "../../guards/tenant.guard";
+import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { ExecuteWorkflowGatewayDto } from "./workflows-gateway.dto";
 
 @Controller("workflows")
 export class WorkflowsController {
   constructor(private readonly proxy: WorkflowProxyService) {}
 
+  /**
+   * Proxied as-is — workflow-service validates the full payload
+   * (actions/trigger contain opaque nested objects that
+   * class-transformer's enableImplicitConversion corrupts).
+   */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createWorkflow(
-    @Req() req: Record<string, unknown>,
-    @Body() body: unknown,
+  async createWorkflow(@Req() req: ITenantScopedRequest) {
+    return this.proxy.proxy({
+      method: "POST",
+      path: "/workflows",
+      tenantId: req.tenantId,
+      body: req.body as Record<string, unknown>,
+    });
+  }
+
+  /** @see {@link createWorkflow} — same raw-body rationale. */
+  @Put(":id")
+  async updateWorkflow(
+    @Req() req: ITenantScopedRequest,
+    @Param("id") id: string,
   ) {
-    return this.proxy.proxy(
-      "POST",
-      "/workflows",
-      req[REQUEST_TENANT_KEY] as string,
-      body,
-    );
+    return this.proxy.proxy({
+      method: "PUT",
+      path: `/workflows/${encodeURIComponent(id)}`,
+      tenantId: req.tenantId,
+      body: req.body as Record<string, unknown>,
+    });
   }
 
   @Get()
-  async listWorkflows(
-    @Req() req: Record<string, unknown>,
-  ) {
-    return this.proxy.proxy(
-      "GET",
-      "/workflows",
-      req[REQUEST_TENANT_KEY] as string,
-    );
+  async listWorkflows(@Req() req: ITenantScopedRequest) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/workflows",
+      tenantId: req.tenantId,
+    });
+  }
+
+  /**
+   * Tenant-wide executions count grouped by definition. Declared
+   * before `@Get(":id")` so Nest does not match `executions/counts`
+   * as a workflow id.
+   */
+  @Get("executions/counts")
+  async getExecutionCounts(@Req() req: ITenantScopedRequest) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/workflows/executions/counts",
+      tenantId: req.tenantId,
+    });
   }
 
   @Get(":id")
   async getWorkflow(
-    @Req() req: Record<string, unknown>,
+    @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
   ) {
-    return this.proxy.proxy(
-      "GET",
-      `/workflows/${encodeURIComponent(id)}`,
-      req[REQUEST_TENANT_KEY] as string,
-    );
+    return this.proxy.proxy({
+      method: "GET",
+      path: `/workflows/${encodeURIComponent(id)}`,
+      tenantId: req.tenantId,
+    });
   }
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteWorkflow(
-    @Req() req: Record<string, unknown>,
+    @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
   ) {
-    return this.proxy.proxy(
-      "DELETE",
-      `/workflows/${encodeURIComponent(id)}`,
-      req[REQUEST_TENANT_KEY] as string,
-    );
+    return this.proxy.proxy({
+      method: "DELETE",
+      path: `/workflows/${encodeURIComponent(id)}`,
+      tenantId: req.tenantId,
+    });
   }
 
   @Post(":id/execute")
   @HttpCode(HttpStatus.ACCEPTED)
   async executeWorkflow(
-    @Req() req: Record<string, unknown>,
+    @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
-    @Body() body: unknown,
+    @Body() body: ExecuteWorkflowGatewayDto,
   ) {
-    return this.proxy.proxy(
-      "POST",
-      `/workflows/${encodeURIComponent(id)}/execute`,
-      req[REQUEST_TENANT_KEY] as string,
-      body,
-    );
+    return this.proxy.proxy({
+      method: "POST",
+      path: `/workflows/${encodeURIComponent(id)}/execute`,
+      tenantId: req.tenantId,
+      body: body as unknown as Record<string, unknown>,
+    });
   }
 
   @Get(":id/executions")
   async listExecutions(
-    @Req() req: Record<string, unknown>,
+    @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
+    @Query() query: Record<string, string>,
   ) {
-    return this.proxy.proxy(
-      "GET",
-      `/workflows/${encodeURIComponent(id)}/executions`,
-      req[REQUEST_TENANT_KEY] as string,
-    );
+    return this.proxy.proxy({
+      method: "GET",
+      path: `/workflows/${encodeURIComponent(id)}/executions`,
+      tenantId: req.tenantId,
+      query,
+    });
   }
 
   @Get(":id/executions/:executionId")
   async getExecutionStatus(
-    @Req() req: Record<string, unknown>,
+    @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
     @Param("executionId") executionId: string,
   ) {
-    return this.proxy.proxy(
-      "GET",
-      `/workflows/${encodeURIComponent(id)}/executions/${encodeURIComponent(executionId)}`,
-      req[REQUEST_TENANT_KEY] as string,
-    );
+    return this.proxy.proxy({
+      method: "GET",
+      path: `/workflows/${encodeURIComponent(id)}/executions/${encodeURIComponent(executionId)}`,
+      tenantId: req.tenantId,
+    });
   }
 }

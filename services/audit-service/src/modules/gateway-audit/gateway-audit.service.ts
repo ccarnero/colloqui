@@ -1,24 +1,34 @@
 import {
   Inject,
   Injectable,
-  Logger,
   OnModuleDestroy,
   OnModuleInit,
-} from '@nestjs/common';
-import type { Consumer, JsMsg } from 'nats';
-import { GATEWAY_AUDIT_CONSUMER } from '../../providers/nats.provider';
-import { TenantConnectionManager, type Sql } from '../../providers/tenant-connection-manager';
+} from "@nestjs/common";
+import type { Consumer } from "nats";
+import { context as otelContext } from "@opentelemetry/api";
+import { NatsConsumerRunner } from "@yoizen/database";
+import {
+  PinoLoggerService,
+  startNatsConsumerSpan,
+  createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
+} from "@yoizen/observability";
+import { GATEWAY_AUDIT_CONSUMER } from "../../providers/nats.provider";
+import { TenantConnectionManager, type Sql } from "@yoizen/database";
 import type {
   GatewayAuditEvent,
   AuditDashboardStats,
   DashboardActivity,
-} from '@yoizen/shared';
+} from "@yoizen/shared";
+import { GATEWAY_AUDIT_SELECT_PROJECTION } from "../../common/gateway-audit-projection";
+import { ensureTenantNamespaceOnce } from "../../common/ensure-tenant-schema";
 
-export interface StoredGatewayAuditEvent extends GatewayAuditEvent {
+export interface IStoredGatewayAuditEvent extends GatewayAuditEvent {
   created_at: string;
 }
 
-interface GatewayAuditQueryParams {
+interface IGatewayAuditQueryParams {
   method?: string;
   routeType?: string;
   from?: string;
@@ -27,7 +37,7 @@ interface GatewayAuditQueryParams {
   offset: number;
 }
 
-interface AggregateRow {
+interface IAggregateRow {
   requests_today: string;
   requests_yesterday: string;
   error_count_today: string;
@@ -38,52 +48,61 @@ interface AggregateRow {
   active_sessions: string;
 }
 
-interface DailyRow {
+interface IDailyRow {
   day: string;
   requests: string;
   avg_latency_ms: string | null;
 }
 
-interface RecentRow {
+interface IRecentRow {
   method: string;
   path: string;
   status_code: number;
   created_at: string;
 }
 
-const TABLE_INIT_KEY_PREFIX = 'gw_audit:';
-
 @Injectable()
 export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(GatewayAuditService.name);
-  private consumeIterator: Awaited<ReturnType<Consumer['consume']>> | null = null;
-  private readonly initializedTenants = new Set<string>();
+  private readonly logger = new PinoLoggerService(GatewayAuditService.name);
+  private readonly runner: NatsConsumerRunner;
 
   constructor(
-    @Inject(GATEWAY_AUDIT_CONSUMER) private readonly consumer: Consumer,
+    @Inject(GATEWAY_AUDIT_CONSUMER) consumer: Consumer,
     private readonly tenantConnections: TenantConnectionManager,
-  ) {}
+  ) {
+    this.runner = new NatsConsumerRunner(
+      consumer,
+      (msg) => this.persistMessage(msg),
+      this.logger,
+      { concurrency: 16 },
+      undefined,
+      createNatsConsumerMetrics(resolveServiceName("audit-service")),
+      "gateway-audit",
+    );
+  }
 
   async onModuleInit(): Promise<void> {
-    this.consumeIterator = await this.consumer.consume({
-      max_messages: 100,
-      expires: 30_000,
-    });
-    this.runConsumer();
+    if (!isWorkerMode()) {
+      this.logger.log(
+        `Skipping gateway-audit consumer in api mode (SERVICE_MODE=api)`,
+      );
+      return;
+    }
+    await this.runner.start();
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.consumeIterator) {
-      this.consumeIterator.stop();
-      this.consumeIterator = null;
-    }
+    if (!isWorkerMode()) return;
+    await this.runner.stop();
   }
 
-  private async ensureTable(sql: Sql, tenantId: string): Promise<void> {
-    const key = `${TABLE_INIT_KEY_PREFIX}${tenantId}`;
-    if (this.initializedTenants.has(key)) return;
-
-    await sql`
+  private async ensureGatewayAuditTable(tenantId: string): Promise<void> {
+    await ensureTenantNamespaceOnce(
+      this.tenantConnections,
+      tenantId,
+      "gateway_audit",
+      async (s) => {
+        await s`
       CREATE TABLE IF NOT EXISTS gateway_audit_events (
         request_id        TEXT        PRIMARY KEY,
         trace_id          TEXT        NOT NULL DEFAULT '',
@@ -105,38 +124,39 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
         created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `;
-    await sql`CREATE INDEX IF NOT EXISTS idx_gw_audit_created ON gateway_audit_events (created_at DESC)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_gw_audit_method ON gateway_audit_events (method, created_at DESC)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_gw_audit_route_type ON gateway_audit_events (route_type, created_at DESC)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_gw_audit_trace ON gateway_audit_events (trace_id)`;
-
-    this.initializedTenants.add(key);
+        await s`CREATE INDEX IF NOT EXISTS idx_gw_audit_created ON gateway_audit_events (created_at DESC)`;
+        await s`CREATE INDEX IF NOT EXISTS idx_gw_audit_method ON gateway_audit_events (method, created_at DESC)`;
+        await s`CREATE INDEX IF NOT EXISTS idx_gw_audit_route_type ON gateway_audit_events (route_type, created_at DESC)`;
+        await s`CREATE INDEX IF NOT EXISTS idx_gw_audit_trace ON gateway_audit_events (trace_id)`;
+      },
+    );
   }
 
-  private async runConsumer(): Promise<void> {
-    if (!this.consumeIterator) return;
-    try {
-      for await (const msg of this.consumeIterator) {
-        try {
-          await this.persistMessage(msg);
-          msg.ack();
-        } catch (err) {
-          this.logger.error(`Failed to persist gateway audit event: ${err}`);
-          msg.nak();
-        }
-      }
-    } catch {
-      // iterator stopped
-    }
-  }
-
-  private async persistMessage(msg: JsMsg): Promise<void> {
+  private async persistMessage(msg: import("nats").JsMsg): Promise<void> {
     const event = msg.json() as GatewayAuditEvent;
     const tenantId = event.tenantId;
     if (!tenantId) return;
 
+    const { span, context: ctx } = startNatsConsumerSpan(
+      resolveServiceName("audit-service"),
+      msg.subject,
+      msg.headers ?? { keys: () => [], values: () => [], get: () => "", set: () => {} },
+    );
+    try {
+      await otelContext.with(ctx, () =>
+        this.persistGatewayEvent(tenantId, event),
+      );
+    } finally {
+      span.end();
+    }
+  }
+
+  private async persistGatewayEvent(
+    tenantId: string,
+    event: GatewayAuditEvent,
+  ): Promise<void> {
+    await this.ensureGatewayAuditTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
 
     await sql`
       INSERT INTO gateway_audit_events (
@@ -168,31 +188,16 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
     `;
   }
 
-  async queryEvents(params: GatewayAuditQueryParams, tenantId: string): Promise<StoredGatewayAuditEvent[]> {
+  async queryEvents(
+    params: IGatewayAuditQueryParams,
+    tenantId: string,
+  ): Promise<IStoredGatewayAuditEvent[]> {
     const { method, routeType, from, to, limit, offset } = params;
+    await this.ensureGatewayAuditTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
 
-    const rows = await sql<StoredGatewayAuditEvent[]>`
-      SELECT
-        request_id as "requestId",
-        trace_id as "traceId",
-        tenant_id as "tenantId",
-        method,
-        path,
-        status_code as "statusCode",
-        duration_ms as "durationMs",
-        client_ip as "clientIp",
-        user_agent as "userAgent",
-        jwt_subject as "jwtSubject",
-        route_type as "routeType",
-        upstream_url as "upstreamUrl",
-        upstream_status as "upstreamStatus",
-        upstream_duration as "upstreamDuration",
-        rate_limit_applied as "rateLimitApplied",
-        rate_limit_remaining as "rateLimitRemaining",
-        error,
-        created_at
+    const rows = await sql<IStoredGatewayAuditEvent[]>`
+      SELECT ${sql.unsafe(GATEWAY_AUDIT_SELECT_PROJECTION)}
       FROM gateway_audit_events
       WHERE 1=1
         ${method ? sql`AND method = ${method}` : sql``}
@@ -207,48 +212,24 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
     return rows;
   }
 
-  async getEventByRequestId(requestId: string, tenantId: string): Promise<StoredGatewayAuditEvent | null> {
+  async getEventByRequestId(
+    requestId: string,
+    tenantId: string,
+  ): Promise<IStoredGatewayAuditEvent | null> {
+    await this.ensureGatewayAuditTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
 
-    const rows = await sql<StoredGatewayAuditEvent[]>`
-      SELECT
-        request_id as "requestId",
-        trace_id as "traceId",
-        tenant_id as "tenantId",
-        method,
-        path,
-        status_code as "statusCode",
-        duration_ms as "durationMs",
-        client_ip as "clientIp",
-        user_agent as "userAgent",
-        jwt_subject as "jwtSubject",
-        route_type as "routeType",
-        upstream_url as "upstreamUrl",
-        upstream_status as "upstreamStatus",
-        upstream_duration as "upstreamDuration",
-        rate_limit_applied as "rateLimitApplied",
-        rate_limit_remaining as "rateLimitRemaining",
-        error,
-        created_at
+    const rows = await sql<IStoredGatewayAuditEvent[]>`
+      SELECT ${sql.unsafe(GATEWAY_AUDIT_SELECT_PROJECTION)}
       FROM gateway_audit_events
       WHERE request_id = ${requestId}
     `;
     return rows[0] ?? null;
   }
 
-  /**
-   * Aggregated dashboard statistics from gateway_audit_events.
-   * Runs three queries in parallel: KPIs, daily breakdown, recent activity.
-   */
-  async getDashboardStats(
-    tenantId: string,
-  ): Promise<AuditDashboardStats> {
-    const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
-
-    const [aggregateRows, dailyRows, recentRows] = await Promise.all([
-      sql<AggregateRow[]>`
+  /** Aggregate KPIs: request/error counts, latency, p95, active sessions (7d window). */
+  private async getRequestCounts(sql: Sql): Promise<IAggregateRow[]> {
+    return sql<IAggregateRow[]>`
         SELECT
           COUNT(*) FILTER (
             WHERE created_at >= DATE_TRUNC('day', NOW())
@@ -282,9 +263,12 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
           ) AS active_sessions
         FROM gateway_audit_events
         WHERE created_at >= NOW() - INTERVAL '7 days'
-      `,
+      `;
+  }
 
-      sql<DailyRow[]>`
+  /** Per-day request volume and average latency (7d window). */
+  private async getDailyVolumeAndLatencyByDay(sql: Sql): Promise<IDailyRow[]> {
+    return sql<IDailyRow[]>`
         SELECT
           DATE_TRUNC('day', created_at)::date::text AS day,
           COUNT(*)::text AS requests,
@@ -293,64 +277,68 @@ export class GatewayAuditService implements OnModuleInit, OnModuleDestroy {
         WHERE created_at >= NOW() - INTERVAL '7 days'
         GROUP BY DATE_TRUNC('day', created_at)
         ORDER BY day ASC
-      `,
+      `;
+  }
 
-      sql<RecentRow[]>`
+  /** Recent gateway requests (24h), ordered by time — activity feed (not ranked "top" endpoints). */
+  private async getRecentGatewayRequests(sql: Sql): Promise<IRecentRow[]> {
+    return sql<IRecentRow[]>`
         SELECT method, path, status_code, created_at
         FROM gateway_audit_events
         WHERE created_at >= NOW() - INTERVAL '24 hours'
         ORDER BY created_at DESC
         LIMIT 20
-      `,
+      `;
+  }
+
+  /**
+   * Aggregated dashboard statistics from gateway_audit_events.
+   * Runs three queries in parallel: KPIs, daily breakdown, recent activity.
+   */
+  async getDashboardStats(tenantId: string): Promise<AuditDashboardStats> {
+    await this.ensureGatewayAuditTable(tenantId);
+    const sql = this.tenantConnections.getConnection(tenantId);
+
+    const [aggregateRows, dailyRows, recentRows] = await Promise.all([
+      this.getRequestCounts(sql),
+      this.getDailyVolumeAndLatencyByDay(sql),
+      this.getRecentGatewayRequests(sql),
     ]);
 
     const agg = aggregateRows[0];
     const requestsToday = Number(agg?.requests_today ?? 0);
     const requestsYesterday = Number(agg?.requests_yesterday ?? 0);
     const errorCountToday = Number(agg?.error_count_today ?? 0);
-    const errorCountYesterday = Number(
-      agg?.error_count_yesterday ?? 0,
-    );
+    const errorCountYesterday = Number(agg?.error_count_yesterday ?? 0);
 
     const errorRate =
-      requestsToday > 0
-        ? (errorCountToday / requestsToday) * 100
-        : 0;
+      requestsToday > 0 ? (errorCountToday / requestsToday) * 100 : 0;
     const errorRateYesterday =
       requestsYesterday > 0
         ? (errorCountYesterday / requestsYesterday) * 100
         : 0;
 
-    const recentActivity: DashboardActivity[] = recentRows.map(
-      (r) => ({
-        type: "gateway.request",
-        text: `${r.method} ${r.path} -> ${r.status_code}`,
-        timestamp: r.created_at,
-      }),
-    );
+    const recentActivity: DashboardActivity[] = recentRows.map((r) => ({
+      type: "gateway.request",
+      text: `${r.method} ${r.path} -> ${r.status_code}`,
+      timestamp: r.created_at,
+    }));
 
     return {
       requestsToday,
       requestsYesterday,
-      avgResponseMs: Math.round(
-        Number(agg?.avg_response_ms ?? 0),
-      ),
+      avgResponseMs: Math.round(Number(agg?.avg_response_ms ?? 0)),
       avgResponseMsYesterday: Math.round(
         Number(agg?.avg_response_ms_yesterday ?? 0),
       ),
       errorRate: Math.round(errorRate * 100) / 100,
-      errorRateYesterday:
-        Math.round(errorRateYesterday * 100) / 100,
-      p95ResponseMs: Math.round(
-        Number(agg?.p95_response_ms ?? 0),
-      ),
+      errorRateYesterday: Math.round(errorRateYesterday * 100) / 100,
+      p95ResponseMs: Math.round(Number(agg?.p95_response_ms ?? 0)),
       activeSessions: Number(agg?.active_sessions ?? 0),
       dailyBreakdown: dailyRows.map((r) => ({
         date: r.day,
         requests: Number(r.requests),
-        avgLatencyMs: Math.round(
-          Number(r.avg_latency_ms ?? 0),
-        ),
+        avgLatencyMs: Math.round(Number(r.avg_latency_ms ?? 0)),
       })),
       recentActivity,
     };

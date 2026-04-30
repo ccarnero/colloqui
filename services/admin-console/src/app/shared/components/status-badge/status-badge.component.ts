@@ -1,4 +1,9 @@
-import { Component, computed, input } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  input,
+} from "@angular/core";
 
 export type StatusBadgeColor =
   | "purple"
@@ -11,6 +16,7 @@ export type StatusBadgeColor =
 @Component({
   selector: "app-status-badge",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [],
   template: `
     <span [class]="badgeClass()">{{ status() }}</span>

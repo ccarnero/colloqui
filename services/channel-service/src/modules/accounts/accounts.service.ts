@@ -1,34 +1,26 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import type { Sql } from "postgres";
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import type { Channel, ChannelAccount, ChannelProvider } from "@yoizen/shared";
-import { DEFAULT_CHANNEL_SERVICE_URL } from "@yoizen/shared";
-import { POSTGRES_SQL } from "../../providers/postgres.provider";
+import { PinoLoggerService } from "@yoizen/observability";
+import { channelServiceConfig } from "../../config";
+import {
+  exchangeForLongLivedToken,
+  type ITokenExchangeResult,
+} from "../../providers/meta/meta-token";
 import { TelegramProvider } from "../../providers/telegram/telegram.provider";
+import {
+  AccountsRepository,
+  type IAccountRow,
+  type IAccountUpdatePatch,
+} from "./accounts.repository";
 
-interface AccountRow {
-  id: string;
-  tenant_id: string;
-  channel: string;
-  provider: string;
-  name: string;
-  external_id: string;
-  phone_number_id: string | null;
-  waba_id: string | null;
-  ig_user_id: string | null;
-  telegram_bot_token: string | null;
-  access_token: string;
-  app_id: string | null;
-  app_secret: string | null;
-  verify_token: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-function mapRow(row: AccountRow): ChannelAccount {
+function mapRow(row: IAccountRow, tenantId: string): ChannelAccount {
   return {
     id: row.id,
-    tenantId: row.tenant_id,
+    tenantId,
     channel: row.channel as Channel,
     provider: row.provider as ChannelProvider,
     name: row.name,
@@ -49,10 +41,10 @@ function mapRow(row: AccountRow): ChannelAccount {
 
 @Injectable()
 export class AccountsService {
-  private readonly logger = new Logger(AccountsService.name);
+  private readonly logger = new PinoLoggerService(AccountsService.name);
 
   constructor(
-    @Inject(POSTGRES_SQL) private readonly sql: Sql,
+    private readonly accountsRepository: AccountsRepository,
     private readonly telegramProvider: TelegramProvider,
   ) {}
 
@@ -67,24 +59,14 @@ export class AccountsService {
       appSecret = crypto.randomUUID().replace(/-/g, "");
     }
 
-    const rows = await this.sql<AccountRow[]>`
-      INSERT INTO channel_accounts (
-        id, tenant_id, channel, provider, name, external_id,
-        phone_number_id, waba_id, ig_user_id, telegram_bot_token,
-        access_token, app_id, app_secret, verify_token, is_active
-      ) VALUES (
-        ${id}, ${tenantId}, ${data.channel}, ${data.provider}, ${data.name},
-        ${data.externalId}, ${data.phoneNumberId ?? null},
-        ${data.wabaId ?? null}, ${data.igUserId ?? null},
-        ${data.telegramBotToken ?? null},
-        ${data.accessToken}, ${data.appId ?? null},
-        ${appSecret}, ${data.verifyToken ?? null},
-        ${data.isActive}
-      )
-      RETURNING *
-    `;
+    const rows = await this.accountsRepository.insertAccount({
+      id,
+      tenantId,
+      data,
+      appSecret,
+    });
 
-    const account = mapRow(rows[0]);
+    const account = mapRow(rows[0], tenantId);
 
     if (account.channel === "telegram" && account.isActive) {
       await this.registerTelegramWebhook(account);
@@ -93,51 +75,31 @@ export class AccountsService {
     return account;
   }
 
-  async list(
-    tenantId: string,
-    channel?: Channel,
-  ): Promise<ChannelAccount[]> {
-    const rows = channel
-      ? await this.sql<AccountRow[]>`
-          SELECT * FROM channel_accounts
-          WHERE tenant_id = ${tenantId} AND channel = ${channel}
-          ORDER BY created_at DESC
-        `
-      : await this.sql<AccountRow[]>`
-          SELECT * FROM channel_accounts
-          WHERE tenant_id = ${tenantId}
-          ORDER BY created_at DESC
-        `;
+  async list(tenantId: string, channel?: Channel): Promise<ChannelAccount[]> {
+    const rows = await this.accountsRepository.listByTenant(tenantId, channel);
 
-    return rows.map(mapRow);
+    return rows.map((r) => mapRow(r, tenantId));
   }
 
   async listActive(
     tenantId: string,
     channel: Channel,
   ): Promise<ChannelAccount[]> {
-    const rows = await this.sql<AccountRow[]>`
-      SELECT * FROM channel_accounts
-      WHERE tenant_id = ${tenantId}
-        AND channel = ${channel}
-        AND is_active = true
-      ORDER BY created_at ASC
-    `;
+    const rows = await this.accountsRepository.listActiveByChannel(
+      tenantId,
+      channel,
+    );
 
-    return rows.map(mapRow);
+    return rows.map((r) => mapRow(r, tenantId));
   }
 
   async findById(
     tenantId: string,
     accountId: string,
   ): Promise<ChannelAccount | null> {
-    const rows = await this.sql<AccountRow[]>`
-      SELECT * FROM channel_accounts
-      WHERE id = ${accountId} AND tenant_id = ${tenantId}
-      LIMIT 1
-    `;
+    const rows = await this.accountsRepository.findById(tenantId, accountId);
 
-    return rows.length > 0 ? mapRow(rows[0]) : null;
+    return rows.length > 0 ? mapRow(rows[0], tenantId) : null;
   }
 
   async findByVerifyToken(
@@ -145,95 +107,111 @@ export class AccountsService {
     channel: Channel,
     verifyToken: string,
   ): Promise<ChannelAccount | null> {
-    const rows = await this.sql<AccountRow[]>`
-      SELECT * FROM channel_accounts
-      WHERE tenant_id = ${tenantId}
-        AND channel = ${channel}
-        AND verify_token = ${verifyToken}
-        AND is_active = true
-      LIMIT 1
-    `;
+    const rows = await this.accountsRepository.findByVerifyToken(
+      tenantId,
+      channel,
+      verifyToken,
+    );
 
-    return rows.length > 0 ? mapRow(rows[0]) : null;
+    return rows.length > 0 ? mapRow(rows[0], tenantId) : null;
   }
 
   async update(
     tenantId: string,
     accountId: string,
-    data: Partial<Pick<
-      ChannelAccount,
-      "name" | "accessToken" | "appId" | "appSecret" | "verifyToken" | "isActive"
-    >>,
+    data: Partial<
+      Pick<
+        ChannelAccount,
+        | "name"
+        | "accessToken"
+        | "appId"
+        | "appSecret"
+        | "verifyToken"
+        | "isActive"
+      >
+    >,
   ): Promise<ChannelAccount | null> {
-    const sets: string[] = [];
-    const values: unknown[] = [];
+    const patch: IAccountUpdatePatch = {};
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.accessToken !== undefined) patch.accessToken = data.accessToken;
+    if (data.appId !== undefined) patch.appId = data.appId;
+    if (data.appSecret !== undefined) patch.appSecret = data.appSecret;
+    if (data.verifyToken !== undefined) patch.verifyToken = data.verifyToken;
+    if (data.isActive !== undefined) patch.isActive = data.isActive;
 
-    if (data.name !== undefined) {
-      sets.push("name");
-      values.push(data.name);
-    }
-    if (data.accessToken !== undefined) {
-      sets.push("access_token");
-      values.push(data.accessToken);
-    }
-    if (data.appId !== undefined) {
-      sets.push("app_id");
-      values.push(data.appId);
-    }
-    if (data.appSecret !== undefined) {
-      sets.push("app_secret");
-      values.push(data.appSecret);
-    }
-    if (data.verifyToken !== undefined) {
-      sets.push("verify_token");
-      values.push(data.verifyToken);
-    }
-    if (data.isActive !== undefined) {
-      sets.push("is_active");
-      values.push(data.isActive);
-    }
-
-    if (sets.length === 0) {
+    if (Object.keys(patch).length === 0) {
       return this.findById(tenantId, accountId);
     }
 
-    const setClause = sets
-      .map((col, i) => `${col} = $${i + 3}`)
-      .join(", ");
+    const rows = await this.accountsRepository.updateAccount(
+      tenantId,
+      accountId,
+      patch,
+    );
 
-    const query = `
-      UPDATE channel_accounts
-      SET ${setClause}, updated_at = NOW()
-      WHERE id = $1 AND tenant_id = $2
-      RETURNING *
-    `;
-
-    const params = [accountId, tenantId, ...values] as (
-      | string
-      | boolean
-      | number
-      | null
-    )[];
-    const rows = await this.sql.unsafe<AccountRow[]>(query, params);
-
-    return rows.length > 0 ? mapRow(rows[0]) : null;
+    return rows.length > 0 ? mapRow(rows[0], tenantId) : null;
   }
 
   async remove(tenantId: string, accountId: string): Promise<boolean> {
-    const result = await this.sql`
-      DELETE FROM channel_accounts
-      WHERE id = ${accountId} AND tenant_id = ${tenantId}
-    `;
+    const result = await this.accountsRepository.deleteAccount(
+      tenantId,
+      accountId,
+    );
 
     return result.count > 0;
+  }
+
+  /**
+   * Exchanges the current Meta access token for a long-lived one (~60 days)
+   * and persists it on the account.
+   *
+   * @param tenantId  Tenant owning the account.
+   * @param accountId Account whose token should be refreshed.
+   * @returns The exchange result including the (masked) new token and expiry.
+   */
+  async refreshMetaToken(
+    tenantId: string,
+    accountId: string,
+  ): Promise<ITokenExchangeResult> {
+    const account = await this.findById(tenantId, accountId);
+    if (!account) {
+      throw new NotFoundException("Account not found");
+    }
+
+    if (account.provider !== "meta") {
+      throw new BadRequestException(
+        "Token refresh is only supported for Meta (WhatsApp/Instagram) accounts",
+      );
+    }
+
+    if (!account.appId || !account.appSecret) {
+      throw new BadRequestException(
+        "Meta App ID and App Secret are required for token refresh",
+      );
+    }
+
+    const result = await exchangeForLongLivedToken({
+      currentToken: account.accessToken,
+      appId: account.appId,
+      appSecret: account.appSecret,
+    });
+
+    await this.update(tenantId, accountId, {
+      accessToken: result.accessToken,
+    });
+
+    this.logger.log(
+      `Meta token refreshed for account=${accountId}, expires_in=${result.expiresIn}s`,
+    );
+
+    return result;
   }
 
   private async registerTelegramWebhook(
     account: ChannelAccount,
   ): Promise<void> {
     const botToken = account.telegramBotToken ?? account.accessToken;
-    const baseUrl =
-      process.env.CHANNEL_SERVICE_PUBLIC_URL ?? DEFAULT_CHANNEL_SERVICE_URL;
+    const baseUrl = channelServiceConfig.channelServicePublicUrl;
     const webhookUrl = `${baseUrl}/webhooks/telegram/${account.tenantId}`;
 
     try {

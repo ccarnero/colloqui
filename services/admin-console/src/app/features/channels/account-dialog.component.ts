@@ -1,7 +1,12 @@
-import { Component, inject, signal, type OnInit } from "@angular/core";
-import { HttpClient } from "@angular/common/http";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  type OnInit,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
-import { environment } from "../../../environments/environment";
+import { ChannelAdminService } from "../../core/services/channel-admin.service";
 import {
   MAT_DIALOG_DATA,
   MatDialogModule,
@@ -12,34 +17,20 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
+import type { IChannelAccount } from "../../core/models/channel-account.model";
 
-interface ChannelAccount {
-  id: string;
-  channel: string;
-  provider: string;
-  name: string;
-  externalId: string;
-  phoneNumberId?: string;
-  wabaId?: string;
-  telegramBotToken?: string;
-  accessToken: string;
-  appId?: string;
-  appSecret?: string;
-  verifyToken?: string;
-  isActive: boolean;
-}
-
-export interface AccountDialogData {
-  account?: ChannelAccount;
+export interface IAccountDialogData {
+  account?: IChannelAccount;
   defaultChannel?: string;
 }
 
-export interface AccountDialogResult {
+export interface IAccountDialogResult {
   saved: boolean;
 }
 
 @Component({
   selector: "app-account-dialog",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatDialogModule,
@@ -93,7 +84,9 @@ export interface AccountDialogResult {
             matInput
             [ngModel]="name()"
             (ngModelChange)="name.set($event)"
-            placeholder="e.g. My WhatsApp Business"
+            [placeholder]="
+              channel() === 'whatsapp' ? 'e.g. My WhatsApp Business' : 'e.g. My Telegram Bot'
+            "
           />
         </mat-form-field>
 
@@ -103,7 +96,9 @@ export interface AccountDialogResult {
             matInput
             [ngModel]="externalId()"
             (ngModelChange)="externalId.set($event)"
-            placeholder="WABA ID or Bot username"
+            [placeholder]="
+              channel() === 'whatsapp' ? 'WABA ID' : 'Bot username'
+            "
             [disabled]="isEdit"
           />
         </mat-form-field>
@@ -115,15 +110,6 @@ export interface AccountDialogResult {
               matInput
               [ngModel]="phoneNumberId()"
               (ngModelChange)="phoneNumberId.set($event)"
-            />
-          </mat-form-field>
-
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>WABA ID</mat-label>
-            <input
-              matInput
-              [ngModel]="wabaId()"
-              (ngModelChange)="wabaId.set($event)"
             />
           </mat-form-field>
         }
@@ -140,6 +126,23 @@ export interface AccountDialogResult {
             />
           </mat-form-field>
         }
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>
+            {{ channel() === "telegram" ? "App Secret Token (optional)" : "App Secret (optional)" }}
+          </mat-label>
+          <input
+            matInput
+            type="password"
+            [ngModel]="appSecret()"
+            (ngModelChange)="appSecret.set($event)"
+            [placeholder]="
+              channel() === 'telegram'
+                ? 'Used as Telegram webhook secret token'
+                : ''
+            "
+          />
+        </mat-form-field>
 
         @if (channel() !== "telegram") {
           <mat-form-field appearance="outline" class="full-width">
@@ -158,16 +161,6 @@ export interface AccountDialogResult {
               matInput
               [ngModel]="appId()"
               (ngModelChange)="appId.set($event)"
-            />
-          </mat-form-field>
-
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>App Secret (optional)</mat-label>
-            <input
-              matInput
-              type="password"
-              [ngModel]="appSecret()"
-              (ngModelChange)="appSecret.set($event)"
             />
           </mat-form-field>
 
@@ -249,11 +242,11 @@ export interface AccountDialogResult {
   `,
 })
 export class AccountDialogComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly channels = inject(ChannelAdminService);
   readonly dialogRef = inject(
-    MatDialogRef<AccountDialogComponent, AccountDialogResult>,
+    MatDialogRef<AccountDialogComponent, IAccountDialogResult>,
   );
-  private readonly data = inject<AccountDialogData>(MAT_DIALOG_DATA);
+  private readonly data = inject<IAccountDialogData>(MAT_DIALOG_DATA);
 
   isEdit = false;
   private editId = "";
@@ -262,7 +255,6 @@ export class AccountDialogComponent implements OnInit {
   readonly name = signal("");
   readonly externalId = signal("");
   readonly phoneNumberId = signal("");
-  readonly wabaId = signal("");
   readonly telegramBotToken = signal("");
   readonly accessToken = signal("");
   readonly appId = signal("");
@@ -280,7 +272,6 @@ export class AccountDialogComponent implements OnInit {
       this.name.set(account.name);
       this.externalId.set(account.externalId);
       this.phoneNumberId.set(account.phoneNumberId ?? "");
-      this.wabaId.set(account.wabaId ?? "");
       this.telegramBotToken.set(account.telegramBotToken ?? "");
       this.accessToken.set(account.accessToken);
       this.appId.set(account.appId ?? "");
@@ -309,8 +300,8 @@ export class AccountDialogComponent implements OnInit {
     this.errorMessage.set("");
 
     if (this.isEdit) {
-      this.http
-        .patch(`${environment.apiUrl}/channels/accounts/${this.editId}`, {
+      this.channels
+        .patchAccount(this.editId, {
           name: this.name().trim(),
           accessToken: this.accessToken().trim(),
           appId: this.appId().trim() || undefined,
@@ -333,13 +324,16 @@ export class AccountDialogComponent implements OnInit {
       const isTelegram = this.channel() === "telegram";
       const botToken = this.telegramBotToken().trim();
 
-      this.http
-        .post(`${environment.apiUrl}/channels/accounts`, {
+      this.channels
+        .createAccount({
           channel: this.channel(),
           name: this.name().trim(),
           externalId: this.externalId().trim(),
           phoneNumberId: this.phoneNumberId().trim() || undefined,
-          wabaId: this.wabaId().trim() || undefined,
+          wabaId:
+            this.channel() === "whatsapp"
+              ? this.externalId().trim()
+              : undefined,
           telegramBotToken: botToken || undefined,
           accessToken: isTelegram ? botToken : this.accessToken().trim(),
           appId: this.appId().trim() || undefined,

@@ -1,0 +1,15 @@
+# Bun reads this when `bun test` runs from `tests/e2e`.
+#
+# `[test].timeout` is silently ignored by the bunfig parser in Bun 1.3.x
+# (https://github.com/oven-sh/bun/issues/7789), so the global per-test
+# ceiling lives in package.json scripts as `--timeout 90000`. The 90s
+# budget is sized for the worst-case Knative cold-start + first request
+# (image pull is already cached locally; pure boot of bun + nest +
+# postgres is ~12-25s on minikube/orbstack).
+#
+# `preload` IS honored — `warmup.ts` runs once per `bun test` process and
+# pre-warms every Knative service so the first real test never pays the
+# cold-start tax twice (once at warmup, never again unless the cooldown
+# fires mid-suite).
+[test]
+preload = ["./warmup.ts"]

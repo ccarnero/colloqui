@@ -1,22 +1,45 @@
 import {
   Inject,
   Injectable,
-  Logger,
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import type { NatsConnection, Subscription } from "nats";
-import { NATS_CONNECTION } from "../../providers/nats.provider";
+import type {
+  JetStreamClient,
+  JetStreamManager,
+  JsMsg,
+} from "nats";
+import { context as otelContext } from "@opentelemetry/api";
 import {
+  PinoLoggerService,
+  logWithEnvelope,
+  startNatsConsumerSpan,
+  createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
+} from "@yoizen/observability";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+} from "../../providers/nats.provider";
+import {
+  MultiTenantConsumerManager,
   TenantConnectionManager,
-  type Sql,
-} from "../../providers/tenant-connection-manager";
+  type IMultiTenantConsumerConfig,
+} from "@yoizen/database";
 import {
   CHANNEL_AUDIT_SUBJECT_PATTERN,
   type ChannelEnvelope,
 } from "@yoizen/shared";
+import { CHANNEL_AUDIT_SELECT_PROJECTION } from "../../common/channel-audit-projection";
+import { ensureTenantNamespaceOnce } from "../../common/ensure-tenant-schema";
 
-export interface StoredChannelEvent {
+const DURABLE_NAME = "channel-audit";
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
+/** Audit writes are I/O-bound Postgres inserts — parallel is safe + faster. */
+const HANDLER_CONCURRENCY = 16;
+
+export interface IStoredChannelEvent {
   id: string;
   tenantId: string;
   channel: string;
@@ -33,7 +56,7 @@ export interface StoredChannelEvent {
   createdAt: string;
 }
 
-interface ChannelAuditQueryParams {
+interface IChannelAuditQueryParams {
   channel?: string;
   kind?: string;
   accountId?: string;
@@ -43,58 +66,110 @@ interface ChannelAuditQueryParams {
   offset: number;
 }
 
-const TABLE_INIT_KEY = "channel_audit:";
-
 @Injectable()
 export class ChannelAuditService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(ChannelAuditService.name);
-  private subscription: Subscription | null = null;
-  private readonly initializedTenants = new Set<string>();
+  private readonly logger = new PinoLoggerService(ChannelAuditService.name);
+  private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
-    @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
+    @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
     private readonly tenantConnections: TenantConnectionManager,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    this.subscription = this.nc.subscribe(CHANNEL_AUDIT_SUBJECT_PATTERN, {
-      callback: (_err, msg) => {
-        this.handleMessage(msg).catch((err) => {
-          this.logger.warn(
-            `Channel audit persist error: ${err instanceof Error ? err.message : err}`,
-          );
-        });
-      },
-    });
-
+    const ensureOnly = !isWorkerMode();
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: CHANNEL_AUDIT_SUBJECT_PATTERN,
+      description: "Channel messaging events audit writer",
+      metrics: createNatsConsumerMetrics(resolveServiceName("audit-service")),
+      runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+      ensureOnly,
+    };
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.js,
+      config,
+      (msg: JsMsg) => this.handleJsMessage(msg),
+      this.logger,
+    );
+    await this.manager.start();
     this.logger.log(
-      `Channel audit subscribed to: ${CHANNEL_AUDIT_SUBJECT_PATTERN}`,
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `Channel audit durable consumer ('${DURABLE_NAME}') started`,
     );
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.subscription) {
-      this.subscription.unsubscribe();
-      this.subscription = null;
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
     }
   }
 
-  private async handleMessage(msg: {
-    data: Uint8Array;
-    subject: string;
-  }): Promise<void> {
+  /** JetStream-path handler — throws on failure so runner NAKs. */
+  private async handleJsMessage(msg: JsMsg): Promise<void> {
     const decoder = new TextDecoder();
-    const envelope = JSON.parse(
-      decoder.decode(msg.data),
-    ) as ChannelEnvelope;
+    const envelope = JSON.parse(decoder.decode(msg.data)) as ChannelEnvelope;
 
-    const { tenantId } = envelope;
-    if (!tenantId) return;
+    const incomingHeaders = msg.headers ?? {
+      keys: () => [],
+      values: () => [],
+      get: () => "",
+      set: () => {},
+    };
+    const { span, context: ctx } = startNatsConsumerSpan(
+      resolveServiceName("audit-service"),
+      msg.subject,
+      incomingHeaders,
+    );
+    try {
+      await otelContext.with(ctx, () =>
+        this.persistChannelEnvelope(envelope, msg.subject),
+      );
+    } finally {
+      span.end();
+    }
+  }
 
+  private async persistChannelEnvelope(
+    envelope: ChannelEnvelope,
+    natsSubject: string,
+  ): Promise<void> {
+    const tenantId = envelope.tenant;
+    if (!tenantId) {
+      logWithEnvelope(
+        this.logger,
+        envelope,
+        "channel-audit.dropped",
+        "Dropping channel event: missing tenant",
+        "warn",
+      );
+      return;
+    }
+
+    await this.ensureChannelEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
 
-    const data = envelope.data ?? {};
+    const data = (envelope.data ?? {}) as unknown as Record<string, unknown>;
+    const payload: Record<string, unknown> =
+    (envelope.data?.payload as Record<string, unknown> | null | undefined) ??
+    (envelope as unknown as Record<string, unknown>);
+  
+
+    const accountId =
+      envelope.accountid ?? (payload.accountId as string | undefined) ?? null;
+    const fromId = (payload.from as string | undefined) ?? null;
+    const toId = (payload.to as string | undefined) ?? null;
+    const messageType = (payload.type as string | undefined) ?? null;
+    const messageText = (payload.text as string | undefined) ?? null;
+    const providerMessageId =
+      (payload.messageId as string | undefined) ??
+      (payload.providerMessageId as string | undefined) ??
+      null;
 
     await sql`
       INSERT INTO channel_events (
@@ -108,25 +183,34 @@ export class ChannelAuditService implements OnModuleInit, OnModuleDestroy {
         ${envelope.channel},
         ${envelope.provider},
         ${envelope.kind},
-        ${(data.accountId as string) ?? null},
-        ${(data.from as string) ?? null},
-        ${(data.to as string) ?? null},
-        ${(data.type as string) ?? null},
-        ${(data.text as string) ?? null},
-        ${(data.providerMessageId as string) ?? null},
+        ${accountId},
+        ${fromId},
+        ${toId},
+        ${messageType},
+        ${messageText},
+        ${providerMessageId},
         ${JSON.stringify(data)},
-        ${msg.subject},
+        ${natsSubject},
         ${envelope.time ?? new Date().toISOString()}
       )
       ON CONFLICT (id) DO NOTHING
     `;
+
+    logWithEnvelope(
+      this.logger,
+      envelope,
+      "channel-audit.persist.ok",
+      `Channel event persisted (subject=${natsSubject})`,
+    );
   }
 
-  private async ensureTable(sql: Sql, tenantId: string): Promise<void> {
-    const key = `${TABLE_INIT_KEY}${tenantId}`;
-    if (this.initializedTenants.has(key)) return;
-
-    await sql`
+  private async ensureChannelEventsTable(tenantId: string): Promise<void> {
+    await ensureTenantNamespaceOnce(
+      this.tenantConnections,
+      tenantId,
+      "channel_audit",
+      async (s) => {
+        await s`
       CREATE TABLE IF NOT EXISTS channel_events (
         id                  TEXT        PRIMARY KEY,
         tenant_id           TEXT        NOT NULL,
@@ -144,38 +228,24 @@ export class ChannelAuditService implements OnModuleInit, OnModuleDestroy {
         created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `;
-    await sql`CREATE INDEX IF NOT EXISTS idx_ch_evt_created ON channel_events (created_at DESC)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_ch_evt_channel ON channel_events (channel, created_at DESC)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_ch_evt_kind ON channel_events (kind, created_at DESC)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_ch_evt_account ON channel_events (account_id, created_at DESC)`;
-
-    this.initializedTenants.add(key);
+        await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_created ON channel_events (created_at DESC)`;
+        await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_channel ON channel_events (channel, created_at DESC)`;
+        await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_kind ON channel_events (kind, created_at DESC)`;
+        await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_account ON channel_events (account_id, created_at DESC)`;
+      },
+    );
   }
 
   async queryEvents(
-    params: ChannelAuditQueryParams,
+    params: IChannelAuditQueryParams,
     tenantId: string,
-  ): Promise<StoredChannelEvent[]> {
+  ): Promise<IStoredChannelEvent[]> {
     const { channel, kind, accountId, from, to, limit, offset } = params;
+    await this.ensureChannelEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
 
-    const rows = await sql<StoredChannelEvent[]>`
-      SELECT
-        id,
-        tenant_id     AS "tenantId",
-        channel,
-        provider,
-        kind,
-        account_id    AS "accountId",
-        from_id       AS "fromId",
-        to_id         AS "toId",
-        message_type  AS "messageType",
-        message_text  AS "messageText",
-        provider_message_id AS "providerMessageId",
-        data,
-        nats_subject  AS "natsSubject",
-        created_at    AS "createdAt"
+    const rows = await sql<IStoredChannelEvent[]>`
+      SELECT ${sql.unsafe(CHANNEL_AUDIT_SELECT_PROJECTION)}
       FROM channel_events
       WHERE 1=1
         ${channel ? sql`AND channel = ${channel}` : sql``}
@@ -194,26 +264,12 @@ export class ChannelAuditService implements OnModuleInit, OnModuleDestroy {
   async getEventById(
     id: string,
     tenantId: string,
-  ): Promise<StoredChannelEvent | null> {
+  ): Promise<IStoredChannelEvent | null> {
+    await this.ensureChannelEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
-    await this.ensureTable(sql, tenantId);
 
-    const rows = await sql<StoredChannelEvent[]>`
-      SELECT
-        id,
-        tenant_id     AS "tenantId",
-        channel,
-        provider,
-        kind,
-        account_id    AS "accountId",
-        from_id       AS "fromId",
-        to_id         AS "toId",
-        message_type  AS "messageType",
-        message_text  AS "messageText",
-        provider_message_id AS "providerMessageId",
-        data,
-        nats_subject  AS "natsSubject",
-        created_at    AS "createdAt"
+    const rows = await sql<IStoredChannelEvent[]>`
+      SELECT ${sql.unsafe(CHANNEL_AUDIT_SELECT_PROJECTION)}
       FROM channel_events
       WHERE id = ${id}
     `;

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-gc
+  namespace: knative-serving
+  labels:
+    app.kubernetes.io/part-of: knative-serving
+data:
+  # Keep at most 1 non-active revision per service (1 active + 1 previous = 2 total).
+  # This gives one rollback slot without accumulating stale revisions on every deploy.
+  min-non-active-revisions: "1"
+  max-non-active-revisions: "1"
+
+  # Disable time-based retention so old revisions are not kept just because
+  # they were recently created or recently active.
+  retain-since-create-time: "disabled"
+  retain-since-last-active-time: "disabled"

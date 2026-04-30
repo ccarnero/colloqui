@@ -1,11 +1,11 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { DiscoveryService, Reflector } from '@nestjs/core';
-import { EVENT_TYPE_KEY } from './event-type.decorator';
-import type { EventHandler } from './event-handler.interface';
+import { Injectable, OnModuleInit } from "@nestjs/common";
+import { DiscoveryService, Reflector } from "@nestjs/core";
+import { EVENT_TYPE_KEY } from "./event-type.decorator";
+import type { IEventHandler } from "./event-handler.interface";
 
 @Injectable()
 export class HandlerRegistry implements OnModuleInit {
-  private readonly handlers = new Map<string, EventHandler>();
+  private readonly handlers = new Map<string, IEventHandler>();
 
   constructor(
     private readonly discovery: DiscoveryService,
@@ -24,19 +24,11 @@ export class HandlerRegistry implements OnModuleInit {
       );
       if (eventType === undefined) continue;
 
-      this.handlers.set(eventType, instance as EventHandler);
+      this.handlers.set(eventType, instance as IEventHandler);
     }
   }
 
-  get(type: string): EventHandler | undefined {
+  get(type: string): IEventHandler | undefined {
     return this.handlers.get(type);
-  }
-
-  has(type: string): boolean {
-    return this.handlers.has(type);
-  }
-
-  registeredTypes(): string[] {
-    return [...this.handlers.keys()];
   }
 }

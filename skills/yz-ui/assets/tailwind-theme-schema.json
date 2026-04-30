@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Yoizen UI Theme Configuration",
+  "description": "Schema for validating Tailwind theme extensions matching YoizenClaw design system",
+  "type": "object",
+  "properties": {
+    "theme": {
+      "type": "object",
+      "properties": {
+        "extend": {
+          "type": "object",
+          "properties": {
+            "fontFamily": {
+              "type": "object",
+              "properties": {
+                "sans": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Primary sans-serif font stack"
+                },
+                "mono": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Monospace font stack for code"
+                },
+                "barlow": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Barlow font family"
+                }
+              }
+            },
+            "colors": {
+              "type": "object",
+              "properties": {
+                "primary": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$",
+                  "description": "Primary brand color (Royal Blue)"
+                },
+                "secondary": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$",
+                  "description": "Secondary brand color (Purple)"
+                },
+                "accent": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$",
+                  "description": "Accent color (Orange)"
+                },
+                "yellow": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$",
+                  "description": "Auxiliary yellow color"
+                },
+                "background": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$",
+                  "description": "Main background color"
+                },
+                "surface": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$",
+                  "description": "Surface/cards background"
+                },
+                "card": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$",
+                  "description": "Individual card background"
+                },
+                "muted": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$",
+                  "description": "Muted text color"
+                },
+                "subtle": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$",
+                  "description": "Subtle borders/dividers"
+                },
+                "brand": {
+                  "type": "object",
+                  "properties": {
+                    "blue": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+                    "purple": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+                    "orange": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+                  },
+                  "required": ["blue", "purple", "orange"]
+                },
+                "sidebar": {
+                  "type": "object",
+                  "properties": {
+                    "DEFAULT": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+                  },
+                  "required": ["DEFAULT"]
+                }
+              },
+              "required": ["primary", "secondary", "accent", "background", "surface", "card"]
+            },
+            "backgroundImage": {
+              "type": "object",
+              "properties": {
+                "brand-gradient": {
+                  "type": "string",
+                  "description": "Brand gradient definition"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "plugins": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Tailwind plugins to include"
+    }
+  },
+  "required": ["theme"]
+}

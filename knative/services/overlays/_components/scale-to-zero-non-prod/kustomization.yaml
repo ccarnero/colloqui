@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Shared scale-to-zero policy for `dev` and `qa`.
+# Composed by every non-prod overlay (local + cloud) via:
+#
+#   components:
+#     - ../../_components/scale-to-zero-non-prod
+#
+# `api-gateway` is intentionally NOT patched — it stays warm so devs
+# and CI smoke tests don't pay cold-start on every poke.
+
+patches:
+  - path: knative-scale-to-zero.yaml
+  - path: keda-scale-to-zero.yaml

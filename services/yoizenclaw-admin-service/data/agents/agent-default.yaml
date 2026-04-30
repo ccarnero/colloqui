@@ -1,0 +1,29 @@
+id: "agent-default"
+name: "Default Agent"
+description: "Default agent for basic operations"
+status: "published"
+
+role:
+  name: "Default Agent"
+  description: "General purpose AI assistant"
+  systemPrompt: |
+    You are a helpful AI assistant. You help users with their questions
+    and provide accurate, useful information. Be concise and professional.
+  temperature: 0.7
+  maxTokens: 1000
+
+rules:
+  - "Always be helpful and professional"
+  - "If you don't know something, admit it"
+  - "Keep responses concise and relevant"
+
+responseStyle: |
+  Professional, helpful, and concise.
+
+llm:
+  provider: "openai"
+  model: "gpt-5.4-nano"
+
+tools: []
+
+skills: []

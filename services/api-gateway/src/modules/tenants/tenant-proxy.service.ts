@@ -1,17 +1,17 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { TENANT_HEADER } from "@yoizen/shared";
-import { tracedFetch } from "@yoizen/observability";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
 import { throwProxyError } from "../../utils/proxy-error.util";
+import { gatewayConfig } from "../../config";
+import { PROXY_TIMEOUT_MS } from "../../constants";
 
 @Injectable()
 export class TenantProxyService {
-  private readonly logger = new Logger(TenantProxyService.name);
+  private readonly logger = new PinoLoggerService(TenantProxyService.name);
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl =
-      process.env.TENANT_SERVICE_URL ??
-      "http://tenant-service.platform-services.svc.cluster.local";
+    this.baseUrl = gatewayConfig.services.tenant;
   }
 
   async createTenant(body: object, tenantId?: string): Promise<object> {
@@ -25,6 +25,7 @@ export class TenantProxyService {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     });
     if (!res.ok) await throwProxyError(res, "Tenant service", this.logger);
     return res.json();
@@ -35,7 +36,10 @@ export class TenantProxyService {
     const headers: Record<string, string> = {};
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
-    const res = await tracedFetch(url, { headers });
+    const res = await tracedFetch(url, {
+      headers,
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+    });
     if (!res.ok) await throwProxyError(res, "Tenant service", this.logger);
     return res.json();
   }
@@ -45,7 +49,10 @@ export class TenantProxyService {
     const headers: Record<string, string> = {};
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
-    const res = await tracedFetch(url, { headers });
+    const res = await tracedFetch(url, {
+      headers,
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+    });
     if (res.status === 404) return null;
     if (!res.ok) await throwProxyError(res, "Tenant service", this.logger);
     return res.json();
@@ -66,6 +73,7 @@ export class TenantProxyService {
       method: "PATCH",
       headers,
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     });
     if (res.status === 404) return null;
     if (!res.ok) await throwProxyError(res, "Tenant service", this.logger);
@@ -77,7 +85,11 @@ export class TenantProxyService {
     const headers: Record<string, string> = {};
     if (tenantId) headers[TENANT_HEADER] = tenantId;
 
-    const res = await tracedFetch(url, { method: "DELETE", headers });
+    const res = await tracedFetch(url, {
+      method: "DELETE",
+      headers,
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+    });
     if (res.status === 404) return false;
     if (!res.ok) await throwProxyError(res, "Tenant service", this.logger);
     return true;

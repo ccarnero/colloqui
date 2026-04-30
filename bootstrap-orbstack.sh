@@ -7,6 +7,10 @@ ENVIRONMENTS=()
 SERVICE_GROUP=""
 KNATIVE_VERSION="v1.17.0"
 KOURIER_VERSION="v1.17.0"
+KEDA_VERSION="2.18.3"
+KEDA_NAMESPACE="keda"
+CNPG_CHART_VERSION="0.27.1"
+CNPG_NAMESPACE="cnpg-system"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -89,7 +93,7 @@ parse_args() {
 
 check_deps() {
   local missing=()
-  for cmd in kubectl docker; do
+  for cmd in kubectl docker helm; do
     command -v "$cmd" &>/dev/null || missing+=("$cmd")
   done
   if (( ${#missing[@]} )); then
@@ -140,16 +144,33 @@ wait_for_webhook() {
 }
 
 install_knative_serving() {
-  if kubectl get crd services.serving.knative.dev &>/dev/null; then
-    log "Knative Serving CRDs already installed — skipping"
+  if kubectl get crd services.serving.knative.dev &>/dev/null \
+    && kubectl get deployment/autoscaler-hpa --namespace knative-serving &>/dev/null; then
+    log "Knative Serving CRDs + HPA autoscaler already installed — skipping"
     return
   fi
 
-  log "Installing Knative Serving CRDs (${KNATIVE_VERSION})"
-  kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-crds.yaml"
+  if ! kubectl get crd services.serving.knative.dev &>/dev/null; then
+    log "Installing Knative Serving CRDs (${KNATIVE_VERSION})"
+    kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-crds.yaml"
 
-  log "Installing Knative Serving core (${KNATIVE_VERSION})"
-  kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-core.yaml"
+    log "Installing Knative Serving core (${KNATIVE_VERSION})"
+    # The serving-core install can briefly race the webhook startup on fresh or
+    # partially initialized clusters, so retry the full apply until the webhook
+    # is ready to accept ConfigMap updates.
+    retry 10 5 kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-core.yaml"
+  fi
+
+  if ! kubectl get deployment/autoscaler-hpa --namespace knative-serving &>/dev/null; then
+    # serving-hpa ships the `autoscaler-hpa` controller that reconciles
+    # PodAutoscaler objects created by Knative Services annotated with
+    # `autoscaling.knative.dev/class: hpa.autoscaling.knative.dev` into
+    # native HPAs. Without it those Revisions stay stuck in Deploying,
+    # which in turn prevents KEDA from transferring HPA ownership via
+    # `scaledobject.keda.sh/transfer-hpa-ownership`.
+    log "Installing Knative Serving HPA autoscaler (${KNATIVE_VERSION})"
+    retry 10 5 kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-hpa.yaml"
+  fi
 
   log "Waiting for Knative Serving deployments..."
   kubectl wait deployment --all \
@@ -178,6 +199,67 @@ install_kourier() {
   log "Waiting for Kourier..."
   kubectl wait deployment --all \
     --namespace kourier-system \
+    --for=condition=Available \
+    --timeout=180s
+}
+
+install_keda() {
+  # KEDA is a cluster-wide dependency (CRDs + operator) shared by every
+  # environment. We install it once via the official Helm chart; running
+  # this after an existing install is a no-op thanks to the CRD guard.
+  # Chart docs: infrastructure/base/keda/README.md
+  if kubectl get crd scaledobjects.keda.sh &>/dev/null; then
+    log "KEDA CRDs already installed — skipping"
+    return
+  fi
+
+  log "Adding kedacore Helm repo"
+  helm repo add kedacore https://kedacore.github.io/charts &>/dev/null || true
+  retry 3 3 helm repo update kedacore
+
+  log "Installing KEDA ${KEDA_VERSION} into '${KEDA_NAMESPACE}' namespace"
+  retry 3 5 helm upgrade --install keda kedacore/keda \
+    --namespace "$KEDA_NAMESPACE" \
+    --create-namespace \
+    --version "$KEDA_VERSION" \
+    --set prometheus.metricServer.enabled=true \
+    --set prometheus.operator.enabled=true \
+    --wait \
+    --timeout 180s
+
+  log "Waiting for KEDA deployments..."
+  kubectl wait deployment --all \
+    --namespace "$KEDA_NAMESPACE" \
+    --for=condition=Available \
+    --timeout=180s
+}
+
+install_cloudnative_pg() {
+  # CloudNativePG owns postgresql.cnpg.io resources used by the shared
+  # Postgres clusters in infrastructure/base/postgres. Install it before
+  # applying infrastructure so kubectl can recognize Cluster and Pooler CRDs.
+  if kubectl get crd clusters.postgresql.cnpg.io &>/dev/null \
+    && kubectl get crd poolers.postgresql.cnpg.io &>/dev/null \
+    && kubectl get deployment/cnpg-controller-manager --namespace "$CNPG_NAMESPACE" &>/dev/null; then
+    log "CloudNativePG CRDs + operator already installed — skipping"
+    return
+  fi
+
+  log "Adding CloudNativePG Helm repo"
+  helm repo add cnpg https://cloudnative-pg.github.io/charts &>/dev/null || true
+  retry 3 3 helm repo update cnpg
+
+  log "Installing CloudNativePG chart ${CNPG_CHART_VERSION} into '${CNPG_NAMESPACE}' namespace"
+  retry 3 5 helm upgrade --install cnpg cnpg/cloudnative-pg \
+    --namespace "$CNPG_NAMESPACE" \
+    --create-namespace \
+    --version "$CNPG_CHART_VERSION" \
+    --wait \
+    --timeout 180s
+
+  log "Waiting for CloudNativePG deployments..."
+  kubectl wait deployment --all \
+    --namespace "$CNPG_NAMESPACE" \
     --for=condition=Available \
     --timeout=180s
 }
@@ -240,10 +322,27 @@ apply_infrastructure() {
       --namespace "$ns" \
       --timeout=180s
 
+    log "Waiting for CloudNativePG shared Postgres in ${ns}..."
+    kubectl wait cluster.postgresql.cnpg.io/postgres-shared \
+      --namespace "$ns" \
+      --for=condition=Ready \
+      --timeout=300s
+
+    log "Waiting for CloudNativePG shared usage Postgres in ${ns}..."
+    kubectl wait cluster.postgresql.cnpg.io/postgres-usage-shared \
+      --namespace "$ns" \
+      --for=condition=Ready \
+      --timeout=300s
+
     log "Waiting for Temporal in ${ns}..."
     kubectl rollout status deployment/temporal \
       --namespace "$ns" \
       --timeout=180s
+
+    log "Waiting for Temporal UI in ${ns}..."
+    kubectl rollout status deployment/temporal-ui \
+      --namespace "$ns" \
+      --timeout=120s
 
     log "Waiting for OTel Collector in ${ns}..."
     kubectl rollout status deployment/otel-collector \
@@ -306,7 +405,8 @@ build_images() {
              audit-service webhook-service metrics-service tenant-service \
              scheduler-service registry-service adapter-service \
              channel-service workflow-service workflow-http-worker \
-             proxy-service admin-console; do
+             proxy-service yoizenclaw-admin-service admin-console \
+             messaging-console usage-aggregator-service; do
     log "Building image: dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \
@@ -332,6 +432,19 @@ verify_support_services() {
   local core_deployments=(redis otel-collector tempo prometheus loki grafana)
   local core_statefulsets=(nats postgres)
 
+  if ! kubectl get crd scaledobjects.keda.sh &>/dev/null; then
+    err "KEDA CRDs not found in cluster."
+    err "The platform services require KEDA — run './bootstrap-orbstack.sh <env> support-services' first."
+    exit 1
+  fi
+
+  if ! kubectl get crd clusters.postgresql.cnpg.io &>/dev/null \
+    || ! kubectl get crd poolers.postgresql.cnpg.io &>/dev/null; then
+    err "CloudNativePG CRDs not found in cluster."
+    err "Run './bootstrap-orbstack.sh <env> support-services' before platform-services."
+    exit 1
+  fi
+
   for env in "${ENVIRONMENTS[@]}"; do
     local ns="support-services-${env}"
     if ! kubectl get namespace "$ns" &>/dev/null; then
@@ -350,8 +463,18 @@ verify_support_services() {
       fi
     done
 
+    for cnpg_cluster in postgres-shared postgres-usage-shared; do
+      if ! kubectl get cluster.postgresql.cnpg.io "$cnpg_cluster" --namespace "$ns" &>/dev/null; then
+        warn "CloudNativePG Cluster '${cnpg_cluster}' not found in ${ns}"
+      fi
+    done
+
     if ! kubectl get deployment/temporal --namespace "$ns" &>/dev/null; then
       warn "Deployment 'temporal' not found in ${ns}"
+    fi
+
+    if ! kubectl get deployment/temporal-ui --namespace "$ns" &>/dev/null; then
+      warn "Deployment 'temporal-ui' not found in ${ns}"
     fi
   done
 }
@@ -366,6 +489,8 @@ run_support_services() {
   check_orbstack_context
   install_knative_serving
   install_kourier
+  install_keda
+  install_cloudnative_pg
   configure_dns
   configure_local_registry
   apply_namespaces
@@ -424,6 +549,9 @@ print_summary() {
     echo "    kubectl get storageclass"
     echo ""
     echo "  API Gateway (dev): http://api-gateway.platform-services-dev.127.0.0.1.sslip.io"
+    echo ""
+    echo "  Port-forwarding (run in a separate terminal):"
+    echo "    ./port-forward.sh ${ENVIRONMENTS[0]}"
     echo ""
   fi
 }

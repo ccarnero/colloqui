@@ -1,52 +1,36 @@
-import { Controller, Get, Inject } from '@nestjs/common';
-import type * as k8s from '@kubernetes/client-node';
-import type { Sql } from 'postgres';
-import { K8S_CORE_API } from '../../providers/kubernetes.provider';
-import { PLATFORM_POSTGRES_SQL } from '../../providers/platform-postgres.provider';
+import {
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+} from "@nestjs/common";
+import { HealthService } from "./health.service";
+import type { ITenantHealthResponse } from "@yoizen/shared";
 
-interface HealthStatus {
-  status: string;
-  kubernetes: string;
-  postgres: string;
-}
-
+/**
+ * Exposes `/health` for Knative liveness/readiness probes.
+ *
+ * Knative treats a 2xx as healthy and a 5xx as unhealthy: when the
+ * aggregate status is `error` (Kubernetes / Postgres down OR the
+ * JetStream provisioning consumer is in `stopped` state and the
+ * in-process supervisor has exhausted its self-recovery), we return
+ * HTTP 503 carrying the same JSON body so the dashboard still shows
+ * which sub-system failed AND Knative recycles the pod.
+ *
+ * `degraded` status keeps the 200 contract — it signals the supervisor
+ * is still actively trying to reattach (transient), so a pod restart
+ * would just lose the in-flight reattach progress for no benefit.
+ */
 @Controller()
 export class HealthController {
-  constructor(
-    @Inject(K8S_CORE_API) private readonly k8sApi: k8s.CoreV1Api,
-    @Inject(PLATFORM_POSTGRES_SQL) private readonly sql: Sql,
-  ) {}
+  constructor(private readonly healthService: HealthService) {}
 
-  @Get('health')
-  async check(): Promise<HealthStatus> {
-    const [k8sOk, pgOk] = await Promise.all([
-      this.checkKubernetes(),
-      this.checkPostgres(),
-    ]);
-
-    const allOk = k8sOk && pgOk;
-    return {
-      status: allOk ? 'ok' : 'degraded',
-      kubernetes: k8sOk ? 'connected' : 'disconnected',
-      postgres: pgOk ? 'connected' : 'disconnected',
-    };
-  }
-
-  private async checkKubernetes(): Promise<boolean> {
-    try {
-      await this.k8sApi.listNamespace({ limit: 1 });
-      return true;
-    } catch {
-      return false;
+  @Get("health")
+  async check(): Promise<ITenantHealthResponse> {
+    const body = await this.healthService.getStatus();
+    if (body.status === "error") {
+      throw new HttpException(body, HttpStatus.SERVICE_UNAVAILABLE);
     }
-  }
-
-  private async checkPostgres(): Promise<boolean> {
-    try {
-      await this.sql`SELECT 1`;
-      return true;
-    } catch {
-      return false;
-    }
+    return body;
   }
 }

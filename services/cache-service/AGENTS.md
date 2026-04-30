@@ -13,7 +13,7 @@ The Cache Service is an HTTP CRUD API backed by a two-tier cache: an L1 in-memor
 | Language | TypeScript 5.7 (strict) |
 | Cache | Redis via `ioredis` |
 
-No shared package dependency (`@yoizen/shared` is not used by this service).
+The service imports `TENANT_HEADER` from `@yoizen/shared` for tenant-scoped cache keys.
 
 ## Repository Structure
 
@@ -21,9 +21,7 @@ No shared package dependency (`@yoizen/shared` is not used by this service).
 src/
 ├── main.ts                         # Bootstrap: Fastify adapter, port binding
 ├── app.module.ts                   # Root module
-├── redis.module.ts                 # @Global() module exporting REDIS_CLIENT
-├── providers/
-│   └── redis.provider.ts           # REDIS_CLIENT factory provider (ioredis, lazy connect)
+├── redis.module.ts                 # @Global() re-exports redisProvider + REDIS_CLIENT from @yoizen/database
 └── modules/
     ├── cache/
     │   ├── cache.module.ts
@@ -48,8 +46,7 @@ test/
 |------|---------|
 | `src/main.ts` | App bootstrap with Fastify adapter |
 | `src/app.module.ts` | Imports RedisModule, CacheModule, HealthModule |
-| `src/redis.module.ts` | `@Global()` module exporting `REDIS_CLIENT` |
-| `src/providers/redis.provider.ts` | Factory provider: ioredis with `lazyConnect: true` |
+| `src/redis.module.ts` | `@Global()` module exporting `REDIS_CLIENT` from `@yoizen/database` |
 | `src/modules/cache/cache.service.ts` | Two-tier cache logic: L1 `Map<string, L1Entry>` with FIFO eviction + L2 Redis |
 | `src/modules/cache/cache.controller.ts` | HTTP endpoints for cache operations |
 | `src/modules/health/health.controller.ts` | Redis ping health check |
@@ -95,7 +92,7 @@ AppModule
 
 | Token | Type | Source |
 |-------|------|--------|
-| `REDIS_CLIENT` | `Redis` (ioredis) | `providers/redis.provider.ts` |
+| `REDIS_CLIENT` | `Redis` (ioredis) | `redis.module.ts` → `@yoizen/database` `redisProvider` |
 
 ## Configuration
 
@@ -160,4 +157,4 @@ Requires local Redis (`localhost:6379`).
 | **Redis** | L2 cache backend |
 | **api-gateway** | Calls `/health` for aggregated health checks |
 
-This service is standalone -- it does not depend on NATS, other microservices, or the `@yoizen/shared` package.
+This service does not depend on NATS or other microservices; it uses `@yoizen/shared` only for `TENANT_HEADER`.

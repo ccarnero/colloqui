@@ -3,10 +3,24 @@ FROM oven/bun:1.3-debian AS builder
 WORKDIR /app
 
 COPY packages/shared ./packages/shared
+RUN cd packages/shared && bun install
 COPY packages/observability ./packages/observability
+RUN cd packages/observability && bun install
+COPY packages/database ./packages/database
+RUN cd packages/database && bun install
 COPY services/workflow-service/package.json ./services/workflow-service/
 WORKDIR /app/services/workflow-service
 RUN bun install
+
+# Fix: bun install at service level corrupts packages/database/node_modules/@yoizen/shared
+# (file: deps with nested installs). Re-create the symlink so tsc resolves @yoizen/shared
+# from packages/database/src/*.ts.
+RUN rm -rf ../../packages/database/node_modules/@yoizen/shared \
+  && ln -sfn ../../../shared ../../packages/database/node_modules/@yoizen/shared
+RUN rm -rf ../../packages/observability/node_modules/@nestjs \
+  && mkdir -p ../../packages/observability/node_modules \
+  && ln -sfn ../../../services/workflow-service/node_modules/@nestjs \
+    ../../packages/observability/node_modules/@nestjs
 
 COPY services/workflow-service/src ./src
 COPY services/workflow-service/tsconfig.json ./
@@ -20,9 +34,11 @@ RUN groupadd -g 1001 app && useradd -u 1001 -g app -s /bin/sh app
 
 COPY --from=builder /app/packages/shared /app/packages/shared
 COPY --from=builder /app/packages/observability /app/packages/observability
+COPY --from=builder /app/packages/database /app/packages/database
 COPY --from=builder /app/services/workflow-service/node_modules ./node_modules
 COPY --from=builder /app/services/workflow-service/dist ./dist
 COPY --from=builder /app/services/workflow-service/package.json ./
+COPY --from=builder /app/services/workflow-service/tsconfig.json ./
 
 USER 1001:1001
 

@@ -1,119 +1,200 @@
 import {
   Inject,
   Injectable,
-  Logger,
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import type { Consumer, JetStreamClient } from "nats";
+import type {
+  JetStreamClient,
+  JetStreamManager,
+  JsMsg,
+  MsgHdrs,
+} from "nats";
 import type Redis from "ioredis";
 import {
-  AdapterClient,
-  DEFAULT_ADAPTER_SERVICE_URL,
+  applyAdapterAuthHeadersSync,
+  createAdapterClientWithRedisAndFetch,
+  evictOneOldestIfExceedsMax,
+  sleep,
   WEBHOOK_DLQ_SUBJECT,
   WEBHOOK_MAX_RETRIES,
   WEBHOOK_RETRY_DELAYS,
   TENANT_HEADER,
 } from "@yoizen/shared";
-import type { AdapterConfig, CompletionEvent } from "@yoizen/shared";
+import type {
+  AdapterConfig,
+  CompletionEvent,
+  EventEnvelope,
+} from "@yoizen/shared";
+import { headers as natsHeaders } from "nats";
+import { context as otelContext } from "@opentelemetry/api";
+import { webhookServiceConfig } from "../../config";
 import {
-  JETSTREAM_CONSUMER,
+  JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
 } from "../../providers/nats.provider";
-import { REDIS_CLIENT } from "../../providers/redis.provider";
-import { tracedFetch } from "@yoizen/observability";
+
+/**
+ * Canonical subject pattern (wdocs 02 §9.3) for completion envelopes
+ * emitted by the event-processor into per-tenant `INGRESS-<tenant>`
+ * streams.
+ */
+const CANONICAL_COMPLETION_PATTERN =
+  "evt.*.event-processor.platform.events.gateway.>";
+const DURABLE_NAME = "webhook-dispatcher";
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
+/**
+ * Each delivery performs an adapter-service lookup + an external
+ * `tracedFetch` to the customer callback URL. Both are I/O bound and
+ * can run in parallel without contention — serial processing here was
+ * the main source of 60s+ polls in the e2e suite.
+ */
+const HANDLER_CONCURRENCY = 32;
+
+import {
+  MultiTenantConsumerManager,
+  REDIS_CLIENT,
+  type IMultiTenantConsumerConfig,
+} from "@yoizen/database";
+import {
+  PinoLoggerService,
+  logWithEnvelope,
+  startNatsConsumerSpan,
+  tracedFetch,
+  createNatsConsumerMetrics,
+  isWorkerMode,
+  resolveServiceName,
+} from "@yoizen/observability";
 
 @Injectable()
 export class WebhookService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(WebhookService.name);
+  private readonly logger = new PinoLoggerService(WebhookService.name);
   private readonly encoder = new TextEncoder();
   private readonly deliveryCounts = new Map<string, number>();
-  private readonly adapterClient: AdapterClient;
-  private consumeIterator: Awaited<
-    ReturnType<Consumer["consume"]>
-  > | null = null;
+  private readonly adapterClient: ReturnType<
+    typeof createAdapterClientWithRedisAndFetch
+  >;
+  private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
-    @Inject(JETSTREAM_CONSUMER) private readonly consumer: Consumer,
     @Inject(JETSTREAM_PUBLISHER) private readonly publisher: JetStreamClient,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(REDIS_CLIENT) redis: Redis,
   ) {
-    this.adapterClient = new AdapterClient({
-      baseUrl:
-        process.env.ADAPTER_SERVICE_URL ?? DEFAULT_ADAPTER_SERVICE_URL,
-      fetchFn: tracedFetch,
-      cache: redis,
-    });
+    this.adapterClient = createAdapterClientWithRedisAndFetch(
+      webhookServiceConfig.adapterServiceUrl,
+      redis,
+      tracedFetch,
+    );
   }
 
   async onModuleInit(): Promise<void> {
-    this.consumeIterator = await this.consumer.consume({
-      max_messages: 50,
-      expires: 30_000,
-    });
-    this.runConsumer();
+    const ensureOnly = !isWorkerMode();
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: CANONICAL_COMPLETION_PATTERN,
+      description: "Webhook completion dispatcher",
+      metrics: createNatsConsumerMetrics(resolveServiceName("webhook-service")),
+      runnerOptions: { concurrency: HANDLER_CONCURRENCY },
+      ensureOnly,
+    };
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.publisher,
+      config,
+      (msg: JsMsg) => this.handleJsMessage(msg),
+      this.logger,
+    );
+    await this.manager.start();
+    this.logger.log(
+      ensureOnly
+        ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
+        : `Webhook durable consumer ('${DURABLE_NAME}') started`,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.consumeIterator) {
-      this.consumeIterator.stop();
-      this.consumeIterator = null;
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
     }
   }
 
-  private async runConsumer(): Promise<void> {
-    if (!this.consumeIterator) return;
+  /** JetStream-path handler — throws on failure so runner NAKs. */
+  private async handleJsMessage(msg: JsMsg): Promise<void> {
+    const body = JSON.parse(new TextDecoder().decode(msg.data)) as
+      | EventEnvelope
+      | CompletionEvent;
+    await this.dispatch(body, msg.subject, msg.headers);
+  }
+
+  private async dispatch(
+    body: EventEnvelope | CompletionEvent,
+    subject: string,
+    headers: MsgHdrs | undefined,
+  ): Promise<void> {
+    const { envelope, completion } = unwrapCompletion(body);
+
+    const tenantId =
+      envelope?.tenant ??
+      (completion.result?.tenant as string | undefined) ??
+      headers?.get(TENANT_HEADER) ??
+      undefined;
+
+    // Resume distributed trace (wdocs 06 §6).
+    const incomingHeaders = headers ?? natsHeaders();
+    const { span, context: spanCtx } = startNatsConsumerSpan(
+      resolveServiceName("webhook-service"),
+      subject,
+      incomingHeaders,
+    );
+
     try {
-      for await (const msg of this.consumeIterator) {
-        try {
-          const completion = msg.json() as CompletionEvent;
-
-          if (!completion.callbackUrl) {
-            msg.ack();
-            continue;
-          }
-
-          const tenantId =
-            (completion.result?.metadata?.tenantId as string | undefined) ??
-            msg.headers?.get(TENANT_HEADER) ??
-            undefined;
-
-          await this.dispatchWithRetry(completion, tenantId);
-          msg.ack();
-        } catch (err) {
-          this.logger.error(
-            `Failed to process completion: ${err instanceof Error ? err.message : err}`,
-          );
-          msg.nak();
-        }
-      }
-    } catch {
-      // iterator stopped
+      await otelContext.with(spanCtx, () =>
+        this.dispatchCompletionIfNeeded(completion, tenantId, envelope),
+      );
+    } finally {
+      span.end();
     }
+  }
+
+  /**
+   * Guard + dispatch (same as NATS handler after JSON parse).
+   * @internal For unit tests covering the no-`callback_url` early return.
+   */
+  async dispatchCompletionIfNeeded(
+    completion: CompletionEvent,
+    tenantId?: string,
+    envelope?: EventEnvelope,
+  ): Promise<void> {
+    if (!completion.callback_url) return;
+    await this.dispatchWithRetry(completion, tenantId, envelope);
   }
 
   private async dispatchWithRetry(
     completion: CompletionEvent,
     tenantId?: string,
+    envelope?: EventEnvelope,
   ): Promise<void> {
-    const { eventId, callbackUrl, result } = completion;
+    const { eventId, callback_url, result } = completion;
     const body = JSON.stringify(result);
 
     let adapter: AdapterConfig | null = null;
-    if (completion.adapterId && tenantId) {
+    if (completion.adapter_id && tenantId) {
       try {
         adapter = await this.adapterClient.getAdapter(
           tenantId,
-          completion.adapterId,
+          completion.adapter_id,
         );
       } catch (err) {
         this.logger.warn(
-          `Failed to fetch adapter '${completion.adapterId}' for event ${eventId}, using defaults: ${err instanceof Error ? err.message : err}`,
+          `Failed to fetch adapter '${completion.adapter_id}' for event ${eventId}, using defaults: ${err instanceof Error ? err.message : err}`,
         );
       }
     }
 
-    const headers = this.buildHeaders(adapter, tenantId);
+    const headers = this.buildHeaders(adapter, tenantId, envelope);
     const timeoutMs = adapter?.timeoutMs ?? 10_000;
     const maxRetries = adapter?.maxRetries ?? WEBHOOK_MAX_RETRIES;
     const retryDelays = adapter
@@ -122,7 +203,7 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const response = await tracedFetch(callbackUrl!, {
+        const response = await tracedFetch(callback_url!, {
           method: "POST",
           headers,
           body,
@@ -130,30 +211,45 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
         });
 
         if (response.ok) {
-          this.trackDelivery(eventId, true);
-          this.logger.log(
-            `Webhook delivered for ${eventId} to ${callbackUrl} (attempt ${attempt + 1})`,
+          this.trackDelivery(eventId);
+          logWithEnvelope(
+            this.logger,
+            envelope,
+            "webhook.delivered",
+            `Webhook delivered for ${eventId} to ${callback_url} (attempt ${attempt + 1})`,
           );
           return;
         }
 
-        this.logger.warn(
+        logWithEnvelope(
+          this.logger,
+          envelope,
+          "webhook.attempt_failed",
           `Webhook attempt ${attempt + 1}/${maxRetries} failed for ${eventId}: HTTP ${response.status}`,
+          "warn",
         );
       } catch (err) {
-        this.logger.warn(
+        logWithEnvelope(
+          this.logger,
+          envelope,
+          "webhook.attempt_failed",
           `Webhook attempt ${attempt + 1}/${maxRetries} failed for ${eventId}: ${err instanceof Error ? err.message : err}`,
+          "warn",
         );
       }
 
       if (attempt < maxRetries - 1) {
-        await this.sleep(retryDelays[attempt]);
+        await sleep(retryDelays[attempt]);
       }
     }
 
-    this.trackDelivery(eventId, false);
-    this.logger.error(
+    this.trackDelivery(eventId);
+    logWithEnvelope(
+      this.logger,
+      envelope,
+      "webhook.exhausted",
       `Webhook delivery exhausted for ${eventId}, publishing to DLQ`,
+      "error",
     );
 
     await this.publisher.publish(
@@ -165,10 +261,13 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
   /**
    * Merges adapter auth + custom headers with base webhook headers.
    * Adapter headers (if present) are injected first, then tenant header.
+   * When an envelope is available, propagates correlation/causation ids
+   * so downstream services can re-link the causal chain (wdocs 02 §6).
    */
   private buildHeaders(
     adapter: AdapterConfig | null,
     tenantId?: string,
+    envelope?: EventEnvelope,
   ): Record<string, string> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -178,39 +277,17 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
       for (const h of adapter.headers) {
         headers[h.key] = h.value;
       }
-      this.injectAuthHeaders(adapter, headers);
+      applyAdapterAuthHeadersSync(adapter, headers);
     }
 
     if (tenantId) headers[TENANT_HEADER] = tenantId;
-    return headers;
-  }
-
-  private injectAuthHeaders(
-    adapter: AdapterConfig,
-    headers: Record<string, string>,
-  ): void {
-    const { authType, authConfig } = adapter;
-
-    switch (authType) {
-      case "api-key": {
-        const key = authConfig.apiKey as string;
-        const headerName =
-          (authConfig.apiKeyHeader as string) ?? "X-API-Key";
-        headers[headerName] = key;
-        break;
-      }
-      case "bearer": {
-        headers["Authorization"] = `Bearer ${authConfig.bearerToken as string}`;
-        break;
-      }
-      case "basic": {
-        const encoded = btoa(
-          `${authConfig.basicUsername as string}:${authConfig.basicPassword as string}`,
-        );
-        headers["Authorization"] = `Basic ${encoded}`;
-        break;
-      }
+    if (envelope?.correlation_id) {
+      headers["X-Correlation-Id"] = envelope.correlation_id;
     }
+    if (envelope?.causation_id) {
+      headers["X-Causation-Id"] = envelope.causation_id;
+    }
+    return headers;
   }
 
   private buildRetryDelays(
@@ -224,21 +301,39 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
     return delays;
   }
 
-  private trackDelivery(eventId: string, _success: boolean): void {
+  private trackDelivery(eventId: string): void {
     const count = (this.deliveryCounts.get(eventId) ?? 0) + 1;
     this.deliveryCounts.set(eventId, count);
 
-    if (this.deliveryCounts.size > 10_000) {
-      const firstKey = this.deliveryCounts.keys().next().value;
-      if (firstKey !== undefined) this.deliveryCounts.delete(firstKey);
+    evictOneOldestIfExceedsMax(this.deliveryCounts, 10_000);
+  }
+}
+
+/**
+ * Accepts either the legacy `CompletionEvent` body (raw object) or the
+ * new wdocs-compliant `EventEnvelope` that wraps it in `data.payload`
+ * (see event-processor). Returns both the envelope (when available) and
+ * the unwrapped completion so the dispatcher can read either shape.
+ */
+export function unwrapCompletion(
+  body: EventEnvelope | CompletionEvent,
+): { envelope?: EventEnvelope; completion: CompletionEvent } {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    (body as EventEnvelope).specversion === "1.0" &&
+    typeof (body as EventEnvelope).data === "object" &&
+    (body as EventEnvelope).data !== null
+  ) {
+    const envelope = body as EventEnvelope;
+    const payload = envelope.data.payload ?? {};
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "eventId" in (payload as Record<string, unknown>)
+    ) {
+      return { envelope, completion: payload as unknown as CompletionEvent };
     }
   }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  getDeliveryCounts(): Map<string, number> {
-    return new Map(this.deliveryCounts);
-  }
+  return { completion: body as CompletionEvent };
 }

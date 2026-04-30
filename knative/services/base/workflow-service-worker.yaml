@@ -1,0 +1,69 @@
+# workflow-service worker pod (NATS-driven side). Phase 1.5 split.
+#
+# Hosts:
+#   - TriggerConsumerService    (workflow.triggers.* → start workflows)
+#   - ExecutionProjectorService (workflow.executions.* → projection)
+#
+# NOTE: this is NOT the Temporal worker — that role still lives in
+# `workflow-worker.yaml` (gRPC-driven, Temporal task-queue scaler).
+# This pod is the NATS-projection side that maps platform events
+# onto Temporal workflow startWorkflow calls.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-service-worker
+  labels:
+    app.kubernetes.io/name: workflow-service-worker
+    app.kubernetes.io/component: workflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: workflow-service-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: workflow-service-worker
+        app.kubernetes.io/component: workflow
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: user-container
+          image: dev.local/workflow-service:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: ENTRYPOINT
+              value: "dist/main.js"
+            - name: SERVICE_MODE
+              value: "worker"
+            - name: OTEL_SERVICE_NAME
+              value: "workflow-service-worker"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

@@ -1,13 +1,16 @@
-import { Injectable } from '@nestjs/common';
-import type { EventEnvelope } from '@yoizen/shared';
-import type { PipelineStage, PipelineContext } from './pipeline-stage.interface';
+import { Injectable } from "@nestjs/common";
+import type { EventEnvelope } from "@yoizen/shared";
+import type {
+  IPipelineStage,
+  IPipelineContext,
+} from "./pipeline-stage.interface";
 
-export type PayloadTransformer = (
+type PayloadTransformer = (
   payload: Record<string, unknown>,
 ) => Record<string, unknown>;
 
 @Injectable()
-export class TransformStage implements PipelineStage {
+export class TransformStage implements IPipelineStage {
   readonly order = 30;
 
   private readonly transformers: PayloadTransformer[] = [];
@@ -18,15 +21,18 @@ export class TransformStage implements PipelineStage {
 
   async process(
     envelope: EventEnvelope,
-    _context: PipelineContext,
+    _context: IPipelineContext,
   ): Promise<EventEnvelope> {
     if (this.transformers.length === 0) return envelope;
 
-    let payload = envelope.payload;
+    let payload: Record<string, unknown> = envelope.data.payload ?? {};
     for (let i = 0; i < this.transformers.length; i++) {
       payload = this.transformers[i](payload);
     }
 
-    return { ...envelope, payload };
+    return {
+      ...envelope,
+      data: { ...envelope.data, payload },
+    };
   }
 }

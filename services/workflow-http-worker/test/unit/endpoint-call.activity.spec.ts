@@ -1,3 +1,4 @@
+import "reflect-metadata";
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 
 const fakeAdapterConfig = {
@@ -13,9 +14,25 @@ const fakeAdapterConfig = {
   maxRetries: 1,
   retryBackoffMs: 10,
   healthCheckPath: "/health",
-  status: "active",
+  status: "enabled",
+  defaultCache: {
+    enabled: true,
+    ttlSeconds: 30,
+    methods: ["GET"],
+  },
   endpoints: [
-    { id: "ep-1", adapterId: "adp-1", label: "Get", method: "GET", path: "/data" },
+    {
+      id: "ep-1",
+      adapterId: "adp-1",
+      label: "Get",
+      method: "GET",
+      path: "/data",
+      cache: {
+        enabled: true,
+        ttlSeconds: 45,
+        methods: ["GET"],
+      },
+    },
   ],
 };
 
@@ -31,12 +48,21 @@ const mockRedisInstance = {
   }),
   setex: mock(() => Promise.resolve("OK")),
   del: mock((..._keys: string[]) => Promise.resolve(0)),
+  script: mock(() => Promise.resolve("sha-fake")),
+  evalsha: mock(() => Promise.resolve(["allow", "closed", ""])),
+  eval: mock(() => Promise.resolve(["allow", "closed", ""])),
   options: {},
   status: "ready",
 };
 
 mock.module("ioredis", () => {
-  return { default: class Redis { constructor() { return mockRedisInstance; } } };
+  return {
+    default: class Redis {
+      constructor() {
+        return mockRedisInstance;
+      }
+    },
+  };
 });
 
 let tracedFetchMock: ReturnType<typeof mock>;
@@ -50,7 +76,31 @@ mock.module("@yoizen/observability", () => {
       }),
     ),
   );
-  return { tracedFetch: tracedFetchMock };
+  class FakeLogger {
+    log() {}
+    warn() {}
+    error() {}
+  }
+  return {
+    tracedFetch: tracedFetchMock,
+    PinoLoggerService: FakeLogger,
+    getMeter: () => ({
+      createCounter: () => ({ add() {} }),
+      createHistogram: () => ({ record() {} }),
+    }),
+    startNatsProducerSpan: () => ({ span: { end() {} } }),
+    startNatsConsumerSpan: () => ({ span: { end() {} } }),
+    injectTraceContext: () => {},
+    activeOrRandomTraceId: () => "trace-1",
+    logWithEnvelope: () => {},
+    createCircuitBreakerMetrics: () => ({
+      recordDecision() {},
+      recordTransition() {},
+      recordL1Hit() {},
+      recordRedisError() {},
+      recordDecideDuration() {},
+    }),
+  };
 });
 
 const { executeEndpointCall } = await import(
@@ -106,9 +156,7 @@ describe("executeEndpointCall", () => {
     tracedFetchMock.mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
-        return Promise.resolve(
-          new Response("Server Error", { status: 500 }),
-        );
+        return Promise.resolve(new Response("Server Error", { status: 500 }));
       }
       return Promise.resolve(
         new Response(JSON.stringify({ ok: true }), {
@@ -156,6 +204,29 @@ describe("executeEndpointCall", () => {
     expect(tracedFetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("fast-fails with CIRCUIT_OPEN when the breaker denies (no HTTP call)", async () => {
+    // One-shot deny. L1 cache makes subsequent tests that already
+    // interacted with the breaker immune, so we toggle only for this
+    // single assertion and then reset.
+    mockRedisInstance.evalsha.mockImplementationOnce(() =>
+      Promise.resolve(["deny", "open", "cooldown"]),
+    );
+
+    let caught: unknown = null;
+    try {
+      await executeEndpointCall(
+        { method: "GET", url: "https://cb-target.example.com/x" },
+        "t-cb",
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).not.toBeNull();
+    expect((caught as { type?: string }).type).toBe("CIRCUIT_OPEN");
+    expect((caught as { nonRetryable?: boolean }).nonRetryable).toBe(true);
+  });
+
   it("should append query params to URL", async () => {
     await executeEndpointCall(
       {
@@ -170,5 +241,83 @@ describe("executeEndpointCall", () => {
     const parsed = new URL(url);
     expect(parsed.searchParams.get("page")).toBe("1");
     expect(parsed.searchParams.get("q")).toBe("test");
+  });
+
+  it("resolves against the adapter baseUrl when endpointId is empty", async () => {
+    const result = await executeEndpointCall(
+      {
+        method: "GET",
+        url: "/eventit",
+        adapterId: "adp-1",
+        endpointId: "",
+      },
+      "t1",
+    );
+
+    expect(result.status).toBe(200);
+    expect(tracedFetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = tracedFetchMock.mock.calls[0];
+    expect(url).toBe("https://api.example.com/eventit");
+    expect(init.method).toBe("GET");
+    expect(init.headers["X-Custom"]).toBe("yes");
+    expect(init.headers["X-API-Key"]).toBe("secret-key");
+  });
+
+  it("adapter-base branch retries on 5xx using adapter retry policy", async () => {
+    let callCount = 0;
+    tracedFetchMock.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve(new Response("Server Error", { status: 500 }));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    const result = await executeEndpointCall(
+      { method: "GET", url: "/eventit", adapterId: "adp-1" },
+      "t1",
+    );
+
+    expect(result.status).toBe(200);
+    // maxRetries=1 on the fake adapter config → up to 2 attempts.
+    expect(tracedFetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws a clear non-retryable error when raw URL is relative", async () => {
+    let caught: unknown = null;
+    try {
+      await executeEndpointCall({ method: "GET", url: "/eventit" }, "t1");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).not.toBeNull();
+    expect((caught as { type?: string }).type).toBe("INVALID_ENDPOINT_CALL_URL");
+    expect((caught as { nonRetryable?: boolean }).nonRetryable).toBe(true);
+    expect(tracedFetchMock).not.toHaveBeenCalled();
+  });
+
+  it("throws INVALID_ENDPOINT_CALL_ARGS when adapterId is set but url is empty", async () => {
+    let caught: unknown = null;
+    try {
+      await executeEndpointCall(
+        { method: "GET", url: "", adapterId: "adp-1" },
+        "t1",
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).not.toBeNull();
+    expect((caught as { type?: string }).type).toBe(
+      "INVALID_ENDPOINT_CALL_ARGS",
+    );
+    expect((caught as { nonRetryable?: boolean }).nonRetryable).toBe(true);
+    expect(tracedFetchMock).not.toHaveBeenCalled();
   });
 });

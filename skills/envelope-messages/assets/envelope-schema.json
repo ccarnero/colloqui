@@ -1,0 +1,184 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Message Envelope",
+  "description": "CloudEvents-inspired envelope for NATS messaging",
+  "type": "object",
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "resource",
+    "time",
+    "traceid",
+    "tenant",
+    "producer",
+    "domain",
+    "channel",
+    "provider",
+    "accountid",
+    "idempotencykey",
+    "transport",
+    "data"
+  ],
+  "properties": {
+    "specversion": {
+      "type": "string",
+      "enum": ["1.0"],
+      "description": "Versión de la especificación"
+    },
+    "id": {
+      "type": "string",
+      "description": "ID único del evento (ULID recomendado)"
+    },
+    "source": {
+      "type": "string",
+      "description": "URI del servicio + endpoint que produce el evento",
+      "example": "/services/coexistance/ingress/meta/whatsapp"
+    },
+    "type": {
+      "type": "string",
+      "description": "Tipo de evento en notación reverse-domain",
+      "example": "io.yoizen.messaging.ingress.received.v1"
+    },
+    "resource": {
+      "type": "string",
+      "description": "Identifica el recurso al que aplica el evento",
+      "example": "tenant/acme/account/69bea8cd/channel/whatsapp/provider/meta"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp ISO 8601 de creación del evento"
+    },
+    "traceid": {
+      "type": "string",
+      "description": "Trace ID de OpenTelemetry"
+    },
+    "causation_id": {
+      "type": ["string", "null"],
+      "description": "ID del evento que causó este. null si es raíz"
+    },
+    "correlation_id": {
+      "type": "string",
+      "description": "ID del flujo de negocio al que pertenece"
+    },
+    "tenant": {
+      "type": "string",
+      "description": "Identificador del tenant",
+      "example": "acme"
+    },
+    "producer": {
+      "type": "string",
+      "description": "Servicio que publicó el evento",
+      "example": "coexistance"
+    },
+    "domain": {
+      "type": "string",
+      "description": "Dominio de negocio",
+      "example": "messaging"
+    },
+    "channel": {
+      "type": "string",
+      "description": "Canal de comunicación",
+      "example": "whatsapp"
+    },
+    "provider": {
+      "type": "string",
+      "description": "Proveedor de infraestructura",
+      "example": "meta"
+    },
+    "accountid": {
+      "type": "string",
+      "description": "ID de cuenta del provider dentro del tenant"
+    },
+    "idempotencykey": {
+      "type": "string",
+      "description": "Clave determinística para deduplicación",
+      "example": "sha256:a1b2c3d4..."
+    },
+    "transport": {
+      "type": "object",
+      "required": ["method", "protocol"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["webhook", "poll", "stream", "queue_bridge", "agent"],
+          "description": "Método de transporte"
+        },
+        "protocol": {
+          "type": "string",
+          "enum": ["https", "wss", "amqp", "internal", "thirdparty", "platform"],
+          "description": "Protocolo de transporte"
+        },
+        "headers": {
+          "type": "object",
+          "description": "Headers específicos (solo para webhook)"
+        },
+        "poll_source": {
+          "type": "string",
+          "description": "URL de polling (solo para poll)"
+        },
+        "poll_cursor": {
+          "type": "string",
+          "description": "Cursor de polling (solo para poll)"
+        },
+        "connection_id": {
+          "type": "string",
+          "description": "ID de conexión (solo para stream)"
+        },
+        "source_queue": {
+          "type": "string",
+          "description": "Cola origen (solo para queue_bridge)"
+        },
+        "delivery_tag": {
+          "type": "string",
+          "description": "Tag de entrega (solo para queue_bridge)"
+        },
+        "agent_id": {
+          "type": "string",
+          "description": "ID del agente (solo para agent)"
+        },
+        "agent_model": {
+          "type": "string",
+          "description": "Modelo del agente (solo para agent)"
+        },
+        "depth": {
+          "type": "number",
+          "description": "Profundidad en la cadena causal (solo para agent)"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": ["received_at", "payload_inline", "payload_bytes", "payload_checksum"],
+      "properties": {
+        "received_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp ISO 8601 de recepción"
+        },
+        "payload_inline": {
+          "type": "boolean",
+          "description": "true si el payload viaja en el mensaje"
+        },
+        "payload_ref": {
+          "type": ["string", "null"],
+          "description": "URI de referencia al Object Store. null si inline"
+        },
+        "payload_bytes": {
+          "type": "number",
+          "description": "Tamaño en bytes del payload original"
+        },
+        "payload_checksum": {
+          "type": "string",
+          "description": "SHA256 del payload para verificación"
+        },
+        "payload": {
+          "type": ["object", "null"],
+          "description": "Raw payload cuando viaja inline. null si claim check"
+        }
+      }
+    }
+  }
+}

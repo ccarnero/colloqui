@@ -1,25 +1,9 @@
-import {
-  ApplicationConfig,
-  provideBrowserGlobalErrorListeners,
-} from "@angular/core";
-import { provideRouter, withComponentInputBinding } from "@angular/router";
-import {
-  provideHttpClient,
-  withInterceptors,
-} from "@angular/common/http";
-import { provideAnimationsAsync } from "@angular/platform-browser/animations/async";
+import { type ApplicationConfig } from "@angular/core";
 
+import { provideCoreApp } from "@yoizen/angular-shared";
 import { routes } from "./app.routes";
-import { authInterceptor } from "./core/interceptors/auth.interceptor";
-import { tenantInterceptor } from "./core/interceptors/tenant.interceptor";
+import { AuthService } from "./core/services/auth.service";
 
 export const appConfig: ApplicationConfig = {
-  providers: [
-    provideBrowserGlobalErrorListeners(),
-    provideRouter(routes, withComponentInputBinding()),
-    provideHttpClient(
-      withInterceptors([authInterceptor, tenantInterceptor]),
-    ),
-    provideAnimationsAsync(),
-  ],
+  providers: provideCoreApp({ routes, authServiceClass: AuthService }),
 };

@@ -4,11 +4,11 @@ import {
   IsNotEmpty,
   IsString,
   MinLength,
-} from 'class-validator';
+} from "class-validator";
 
 export enum UserRole {
-  ADMIN = 'admin',
-  OPERATOR = 'operator',
+  ADMIN = "admin",
+  OPERATOR = "operator",
 }
 
 export class CreateUserDto {

@@ -117,6 +117,13 @@ libs/ (or src/shared/)
 * **E2E Tests**: At least 1 success case and 1 error case per critical Controller.
 * **Mocking**: Do not depend on a real DB for unit tests.
 
+#### Angular consoles (`admin-console`, `messaging-console`)
+
+* **Stack**: Angular TestBed + `bun test` / Karma (per app `angular.json`). Prefer **shallow** component tests: stub child components and HTTP with `HttpClientTestingModule` + `HttpTestingController`.
+* **Priority order**: (1) `AuthService`, guards, HTTP interceptors (tenant + JWT). (2) Feature services that call the API gateway. (3) Smart/container components with user-visible branching. (4) Presentational components only where logic exists (validators, pipes).
+* **Patterns**: One spec file per component (`*.component.spec.ts`); use `provideRouter([])` or `RouterTestingHarness` for routed components; mock `MatDialog` / `Overlay` for Material dialogs; keep DOM assertions minimal—assert rendered text and disabled states, not layout CSS.
+* **E2E (optional later)**: Playwright or Cypress against a running gateway—limit to login + one critical flow per app to control flake cost.
+
 ---
 
 ## Part 5: AI Agent & Linter Directives
@@ -165,7 +172,7 @@ When asked to "Implement", "Refactor", or "Fix" something, follow this mental lo
 1.  **Controllers**: Keep them thin. Delegate logic to Services immediately.
 2.  **Services**: Use Dependency Injection via constructor.
 3.  **DTOs**: Always decorate properties with `class-validator` (e.g., `@IsString()`, `@IsOptional()`).
-4.  **Configs**: Never use `process.env.VAR` directly in code. Use `ConfigService.get('VAR')`.
+4.  **Configs**: Prefer `ConfigService.get('VAR')` when using Nest `ConfigModule`. **Repository pattern**: each service may expose a single `src/config.ts` (or `src/config/*.ts`) that reads `process.env` once and exports a typed object; feature modules **must not** read `process.env` directly — only import from that module.
 
 ---
 
@@ -181,6 +188,9 @@ Use these skills for detailed, project-specific patterns and workflows.
 | `git-commit` | Git commit standards and commit message formatting | [SKILL.md](skills/git-commit/SKILL.md) |
 | `skill-creator` | Create new AI agent skills | [SKILL.md](skills/skill-creator/SKILL.md) |
 | `skill-sync` | Sync skill metadata with AGENTS.md auto-invoke tables | [SKILL.md](skills/skill-sync/SKILL.md) |
+| `yz-ui` | YoizenClaw UI design system - colors, typography, components, and icons | [SKILL.md](skills/yz-ui/SKILL.md) |
+| `envelope-messages` | Manejo de envelopes de mensajes CloudEvents para NATS | [SKILL.md](skills/envelope-messages/SKILL.md) |
+| `multi-tenant` | Patrones de arquitectura multi-tenant: resolución, aislamiento, migración | [SKILL.md](skills/multi-tenant/SKILL.md) |
 
 ### Auto-invoke Skills
 

@@ -1,0 +1,61 @@
+name: "E2E Test Enhanced Agent"
+description: "An enhanced agent for E2E testing with new skill system"
+role:
+  name: "E2E Test Enhanced Agent"
+  description: "An enhanced agent for E2E testing with new skill system"
+  systemPrompt: "You are a helpful test assistant with enhanced skills."
+  temperature: 0.7
+  maxTokens: 500
+rules:
+  - "Be helpful and accurate"
+  - "Use enhanced skills when appropriate"
+responseStyle: "Friendly and professional"
+llm:
+  provider: "openai"
+  model: "lfm2.5-350m"
+skills:
+  # Enhanced skill with triggers and arguments
+  - id: "test-deploy-skill"
+    name: "test_deploy_skill"
+    description: "Deploy components to environments"
+    enabled: true
+    instructions: "Deploy $COMPONENT to $ENV environment. Version: $VERSION. All args: $ARGUMENTS"
+    when_to_use: "Use when the user wants to deploy a component"
+    triggers: ["/deploy", "/release"]
+    arguments: ["component", "env", "version"]
+    allowedTools: ["test_tool"]
+    context_mode: "inline"
+    priority: 10
+  
+  # Enhanced skill with fork mode
+  - id: "test-fork-skill"
+    name: "test_fork_skill"
+    description: "Complex processing in isolated mode"
+    enabled: true
+    instructions: "Process $TASK with $METHOD. Context: $ARGUMENTS"
+    when_to_use: "Use for complex tasks requiring isolation"
+    triggers: ["/process", "/analyze"]
+    arguments: ["task", "method"]
+    allowedTools: ["test_tool"]
+    context_mode: "fork"
+    modelOverride: "claude-3-haiku"
+    priority: 5
+  
+  # Legacy skill (will be auto-migrated)
+  - id: "test-legacy-skill"
+    name: "test_legacy_skill"
+    description: "Legacy skill for backward compatibility"
+    enabled: true
+    instructions: "Perform legacy operation"
+    allowedTools: ["test_tool"]
+tools:
+  - id: "test_tool"
+    name: "test_tool"
+    description: "A test tool for E2E testing"
+    endpoint: "https://httpbin.org/post"
+    method: "POST"
+    enabled: true
+# Enhanced features enabled
+enableEnhancedSkills: true
+enableSkillRouting: true
+enableDiscoveryTools: true

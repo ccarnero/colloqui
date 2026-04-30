@@ -1,65 +1,41 @@
-import {
-  Controller,
-  Get,
-  Param,
-  Query,
-  Headers,
-  NotFoundException,
-  BadRequestException,
-} from "@nestjs/common";
+import { Controller, Get, Param, Query, UseGuards } from "@nestjs/common";
+import { assertFoundOrThrow } from "../../common/audit-http.util";
+import { auditPaginatedQuery } from "../../common/audit-list-helpers";
+import { TenantGuard, TenantId } from "@yoizen/database";
 import { ChannelAuditService } from "./channel-audit.service";
-import { TENANT_HEADER } from "@yoizen/shared";
+import { QueryChannelEventsDto } from "./channel-audit.dto";
 
 @Controller("audit/channel-events")
+@UseGuards(TenantGuard)
 export class ChannelAuditController {
-  constructor(
-    private readonly channelAuditService: ChannelAuditService,
-  ) {}
+  constructor(private readonly channelAuditService: ChannelAuditService) {}
 
+  /**
+   * Paginated channel message audit events.
+   */
   @Get()
   async queryEvents(
-    @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Query("channel") channel?: string,
-    @Query("kind") kind?: string,
-    @Query("accountId") accountId?: string,
-    @Query("from") from?: string,
-    @Query("to") to?: string,
-    @Query("limit") limitStr?: string,
-    @Query("offset") offsetStr?: string,
+    @TenantId() tenantId: string,
+    @Query() query: QueryChannelEventsDto,
   ) {
-    if (!tenantId) {
-      throw new BadRequestException("Missing x-yoizen-tenant header");
-    }
-
-    const limit = Math.min(Math.max(Number(limitStr) || 50, 1), 500);
-    const offset = Math.max(Number(offsetStr) || 0, 0);
-
-    const events = await this.channelAuditService.queryEvents(
-      { channel, kind, accountId, from, to, limit, offset },
-      tenantId,
+    const { channel, kind, accountId, from, to } = query;
+    return auditPaginatedQuery(query.limit, query.offset, (limit, offset) =>
+      this.channelAuditService.queryEvents(
+        { channel, kind, accountId, from, to, limit, offset },
+        tenantId,
+      ),
     );
-
-    return { events, limit, offset };
   }
 
+  /**
+   * Single channel audit row by id.
+   */
   @Get(":id")
-  async getEvent(
-    @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Param("id") id: string,
-  ) {
-    if (!tenantId) {
-      throw new BadRequestException("Missing x-yoizen-tenant header");
-    }
-
-    const event = await this.channelAuditService.getEventById(
-      id,
-      tenantId,
+  async getEvent(@TenantId() tenantId: string, @Param("id") id: string) {
+    const event = await this.channelAuditService.getEventById(id, tenantId);
+    return assertFoundOrThrow(
+      event,
+      `Channel event ${id} not found`,
     );
-    if (!event) {
-      throw new NotFoundException(
-        `Channel event ${id} not found`,
-      );
-    }
-    return event;
   }
 }

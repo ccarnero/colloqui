@@ -1,161 +1,110 @@
 import {
-  Inject,
   Injectable,
   NotFoundException,
   ConflictException,
-  Logger,
 } from "@nestjs/common";
-import type { Sql } from "postgres";
-import { POSTGRES_SQL } from "../../providers/postgres.provider";
+
+import { PinoLoggerService } from "@yoizen/observability";
 import type {
   CreateAdapterDto,
   UpdateAdapterDto,
   CreateEndpointDto,
+  UpdateEndpointDto,
 } from "./adapters.dto";
+import { ADAPTER_UPDATE_FIELD_KEYS } from "./adapter-update-fields";
+import {
+  AdaptersRepository,
+  mapAdapter,
+  mapEndpoint,
+  type IEndpointRow,
+} from "./adapters.repository";
 
-interface AdapterRow {
-  id: string;
-  tenant_id: string;
-  name: string;
-  context: string;
-  base_url: string;
-  auth_type: string;
-  auth_config: Record<string, unknown>;
-  headers: Array<{ key: string; value: string }>;
-  timeout_ms: number;
-  max_retries: number;
-  retry_backoff_ms: number;
-  health_check_path: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface EndpointRow {
-  id: string;
-  adapter_id: string;
-  label: string;
-  method: string;
-  path: string;
-  created_at: string;
-}
-
-function generateId(): string {
-  return crypto.randomUUID();
-}
-
-function parseJsonb<T>(value: T | string): T {
-  return typeof value === "string" ? JSON.parse(value) : value;
-}
-
-function mapAdapter(row: AdapterRow) {
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    name: row.name,
-    context: row.context,
-    baseUrl: row.base_url,
-    authType: row.auth_type,
-    authConfig: parseJsonb(row.auth_config),
-    headers: parseJsonb(row.headers),
-    timeoutMs: row.timeout_ms,
-    maxRetries: row.max_retries,
-    retryBackoffMs: row.retry_backoff_ms,
-    healthCheckPath: row.health_check_path,
-    status: row.status,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function mapEndpoint(row: EndpointRow) {
-  return {
-    id: row.id,
-    adapterId: row.adapter_id,
-    label: row.label,
-    method: row.method,
-    path: row.path,
-    createdAt: row.created_at,
-  };
-}
+const ENDPOINT_UPDATE_FIELD_KEYS = [
+  "label",
+  "method",
+  "path",
+  "cache",
+] as const;
 
 @Injectable()
 export class AdaptersService {
-  private readonly logger = new Logger(AdaptersService.name);
+  private readonly logger = new PinoLoggerService(AdaptersService.name);
 
-  constructor(@Inject(POSTGRES_SQL) private readonly sql: Sql) {}
+  constructor(private readonly adaptersRepository: AdaptersRepository) {}
 
-  async create(tenantId: string, dto: CreateAdapterDto) {
-    const id = generateId();
-    const authType = dto.authType ?? "none";
-    const authConfig = dto.authConfig ?? {};
-    const headers = dto.headers ?? [];
-    const timeoutMs = dto.timeoutMs ?? 5000;
-    const maxRetries = dto.maxRetries ?? 3;
-    const retryBackoffMs = dto.retryBackoffMs ?? 1000;
-    const healthCheckPath = dto.healthCheckPath ?? "/health";
-
+  /**
+   * Maps Postgres unique violations (23505) to {@link ConflictException}.
+   */
+  private async runWithUniqueConflict<T>(
+    conflictMessage: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
     try {
-      const [row] = await this.sql<AdapterRow[]>`
-        INSERT INTO http_adapters
-          (id, tenant_id, name, context, base_url, auth_type, auth_config,
-           headers, timeout_ms, max_retries, retry_backoff_ms, health_check_path)
-        VALUES
-          (${id}, ${tenantId}, ${dto.name}, ${dto.context}, ${dto.baseUrl},
-           ${authType}, ${this.sql.json(authConfig as never)},
-           ${this.sql.json(headers as never)}, ${timeoutMs},
-           ${maxRetries}, ${retryBackoffMs}, ${healthCheckPath})
-        RETURNING *
-      `;
-
-      let endpoints: EndpointRow[] = [];
-      if (dto.endpoints?.length) {
-        endpoints = await this.insertEndpoints(id, dto.endpoints);
-      }
-
-      this.logger.log(`Created adapter '${dto.name}' for tenant ${tenantId}`);
-      return {
-        ...mapAdapter(row),
-        endpoints: endpoints.map(mapEndpoint),
-      };
+      return await fn();
     } catch (e: unknown) {
-      if (
-        typeof e === "object" &&
-        e !== null &&
-        "code" in e &&
-        (e as { code: string }).code === "23505"
-      ) {
-        throw new ConflictException(
-          `Adapter '${dto.name}' already exists for this tenant`,
-        );
+      if (this.adaptersRepository.isUniqueViolation(e)) {
+        throw new ConflictException(conflictMessage);
       }
       throw e;
     }
   }
 
-  async list(tenantId: string, context?: string) {
-    const rows = context
-      ? await this.sql<AdapterRow[]>`
-          SELECT * FROM http_adapters
-          WHERE tenant_id = ${tenantId} AND context = ${context}
-          ORDER BY created_at ASC
-        `
-      : await this.sql<AdapterRow[]>`
-          SELECT * FROM http_adapters
-          WHERE tenant_id = ${tenantId}
-          ORDER BY created_at ASC
-        `;
+  /**
+   * Creates an adapter and optional inline endpoints for the tenant.
+   *
+   * @param tenantId - Tenant scope from `x-yoizen-tenant`.
+   * @param dto - Validated create payload.
+   * @returns Mapped adapter with nested endpoints.
+   */
+  async create(tenantId: string, dto: CreateAdapterDto) {
+    return this.runWithUniqueConflict(
+      `Adapter '${dto.name}' already exists for this tenant`,
+      async () => {
+        const { row, endpoints } =
+          await this.adaptersRepository.insertAdapterWithEndpoints(
+            tenantId,
+            dto,
+          );
+        this.logger.log(`Created adapter '${dto.name}' for tenant ${tenantId}`);
+        return {
+          ...mapAdapter(row, tenantId),
+          endpoints: endpoints.map(mapEndpoint),
+        };
+      },
+    );
+  }
 
-    if (rows.length === 0) return [];
-
+  /**
+   * Lists adapters with endpoints, optionally filtered by `context`.
+   *
+   * @param tenantId - Tenant scope.
+   * @param context - When set, only adapters with this context.
+   * @param limit - Max rows (clamped upstream).
+   * @param offset - Pagination offset (clamped upstream).
+   */
+  async list(
+    tenantId: string,
+    context: string | undefined,
+    limit: number,
+    offset: number,
+    tag?: string,
+    name?: string,
+  ) {
+    const rows = await this.adaptersRepository.listRows(
+      tenantId,
+      context,
+      limit,
+      offset,
+      tag,
+      name,
+    );
     const adapterIds = rows.map((r) => r.id);
-    const endpoints = await this.sql<EndpointRow[]>`
-      SELECT * FROM adapter_endpoints
-      WHERE adapter_id = ANY(${adapterIds})
-      ORDER BY created_at ASC
-    `;
+    const endpoints = await this.adaptersRepository.listEndpointsForAdapters(
+      tenantId,
+      adapterIds,
+    );
 
-    const endpointsByAdapter = new Map<string, EndpointRow[]>();
+    const endpointsByAdapter = new Map<string, IEndpointRow[]>();
     for (const ep of endpoints) {
       const list = endpointsByAdapter.get(ep.adapter_id);
       if (list) {
@@ -166,167 +115,202 @@ export class AdaptersService {
     }
 
     return rows.map((row) => ({
-      ...mapAdapter(row),
+      ...mapAdapter(row, tenantId),
       endpoints: (endpointsByAdapter.get(row.id) ?? []).map(mapEndpoint),
     }));
   }
 
+  /**
+   * Returns a single adapter with all endpoints or throws {@link NotFoundException}.
+   *
+   * @param tenantId - Tenant scope.
+   * @param id - Adapter id.
+   */
   async get(tenantId: string, id: string) {
-    const [row] = await this.sql<AdapterRow[]>`
-      SELECT * FROM http_adapters
-      WHERE id = ${id} AND tenant_id = ${tenantId}
-    `;
+    const row = await this.adaptersRepository.getAdapterRow(tenantId, id);
     if (!row) {
       throw new NotFoundException(`Adapter '${id}' not found`);
     }
 
-    const endpoints = await this.sql<EndpointRow[]>`
-      SELECT * FROM adapter_endpoints
-      WHERE adapter_id = ${id}
-      ORDER BY created_at ASC
-    `;
+    const endpoints = await this.adaptersRepository.listEndpointsForAdapter(
+      tenantId,
+      id,
+    );
 
     return {
-      ...mapAdapter(row),
+      ...mapAdapter(row, tenantId),
       endpoints: endpoints.map(mapEndpoint),
     };
   }
 
-  async update(tenantId: string, id: string, dto: UpdateAdapterDto) {
-    const [existing] = await this.sql<AdapterRow[]>`
-      SELECT id FROM http_adapters
-      WHERE id = ${id} AND tenant_id = ${tenantId}
-    `;
-    if (!existing) {
+  /**
+   * Rejects mutations on adapters managed by an automated sync (e.g.
+   * `registry-service` internal mirrors). The externally managed lifecycle
+   * is authoritative; manual edits would be overwritten on next sync.
+   */
+  private async assertNotManaged(
+    tenantId: string,
+    id: string,
+    operation: string,
+  ): Promise<void> {
+    const row = await this.adaptersRepository.getAdapterRow(tenantId, id);
+    if (!row) {
       throw new NotFoundException(`Adapter '${id}' not found`);
     }
-
-    const sets: string[] = [];
-    const values: (string | number | boolean | null)[] = [];
-
-    const fieldMap: Record<string, string> = {
-      name: "name",
-      baseUrl: "base_url",
-      authType: "auth_type",
-      authConfig: "auth_config",
-      headers: "headers",
-      timeoutMs: "timeout_ms",
-      maxRetries: "max_retries",
-      retryBackoffMs: "retry_backoff_ms",
-      healthCheckPath: "health_check_path",
-      status: "status",
-    };
-
-    for (const [dtoKey, column] of Object.entries(fieldMap)) {
-      const value = (dto as Record<string, unknown>)[dtoKey];
-      if (value !== undefined) {
-        sets.push(column);
-        const serialized =
-          typeof value === "object" ? JSON.stringify(value) : value;
-        values.push(serialized as string | number | boolean | null);
-      }
+    if (row.managed_by) {
+      throw new ConflictException(
+        `Cannot ${operation} adapter '${id}' managed by '${row.managed_by}'`,
+      );
     }
+  }
 
-    if (sets.length === 0) {
+  /**
+   * Applies a partial update; no-op fields yield a fresh read via {@link get}.
+   *
+   * @param tenantId - Tenant scope.
+   * @param id - Adapter id.
+   * @param dto - Partial update DTO.
+   */
+  async update(tenantId: string, id: string, dto: UpdateAdapterDto) {
+    await this.assertNotManaged(tenantId, id, "update");
+
+    const hasField = ADAPTER_UPDATE_FIELD_KEYS.some(
+      (k) => (dto as Record<string, unknown>)[k] !== undefined,
+    );
+    if (!hasField) {
       return this.get(tenantId, id);
     }
 
-    const setClauses = sets
-      .map((col, i) => `${col} = $${i + 3}`)
-      .join(", ");
-
-    await this.sql.unsafe(
-      `UPDATE http_adapters SET ${setClauses}, updated_at = NOW() WHERE id = $1 AND tenant_id = $2`,
-      [id, tenantId, ...values],
-    );
+    await this.adaptersRepository.updateAdapter(tenantId, id, dto);
 
     this.logger.log(`Updated adapter '${id}' for tenant ${tenantId}`);
     return this.get(tenantId, id);
   }
 
+  /**
+   * Deletes an adapter (cascades endpoints).
+   *
+   * @param tenantId - Tenant scope.
+   * @param id - Adapter id.
+   */
   async remove(tenantId: string, id: string): Promise<void> {
-    const result = await this.sql`
-      DELETE FROM http_adapters
-      WHERE id = ${id} AND tenant_id = ${tenantId}
-    `;
-    if (result.count === 0) {
+    await this.assertNotManaged(tenantId, id, "delete");
+    const count = await this.adaptersRepository.deleteAdapter(tenantId, id);
+    if (count === 0) {
       throw new NotFoundException(`Adapter '${id}' not found`);
     }
     this.logger.log(`Removed adapter '${id}' for tenant ${tenantId}`);
   }
 
-  async addEndpoint(tenantId: string, adapterId: string, dto: CreateEndpointDto) {
-    const [adapter] = await this.sql<AdapterRow[]>`
-      SELECT id FROM http_adapters
-      WHERE id = ${adapterId} AND tenant_id = ${tenantId}
-    `;
-    if (!adapter) {
-      throw new NotFoundException(`Adapter '${adapterId}' not found`);
-    }
+  /**
+   * Adds an endpoint to an existing adapter.
+   *
+   * @param tenantId - Tenant scope.
+   * @param adapterId - Parent adapter id.
+   * @param dto - Endpoint definition.
+   */
+  async addEndpoint(
+    tenantId: string,
+    adapterId: string,
+    dto: CreateEndpointDto,
+  ) {
+    await this.assertNotManaged(tenantId, adapterId, "add endpoint to");
 
-    const epId = generateId();
-    try {
-      const [row] = await this.sql<EndpointRow[]>`
-        INSERT INTO adapter_endpoints (id, adapter_id, label, method, path)
-        VALUES (${epId}, ${adapterId}, ${dto.label}, ${dto.method}, ${dto.path})
-        RETURNING *
-      `;
-      this.logger.log(
-        `Added endpoint '${dto.method} ${dto.path}' to adapter ${adapterId}`,
-      );
-      return mapEndpoint(row);
-    } catch (e: unknown) {
-      if (
-        typeof e === "object" &&
-        e !== null &&
-        "code" in e &&
-        (e as { code: string }).code === "23505"
-      ) {
-        throw new ConflictException(
-          `Endpoint '${dto.method} ${dto.path}' already exists on this adapter`,
+    return this.runWithUniqueConflict(
+      `Endpoint '${dto.method} ${dto.path}' already exists on this adapter`,
+      async () => {
+        const row = await this.adaptersRepository.insertEndpoint(
+          tenantId,
+          adapterId,
+          dto,
         );
-      }
-      throw e;
-    }
+        this.logger.log(
+          `Added endpoint '${dto.method} ${dto.path}' to adapter ${adapterId}`,
+        );
+        return mapEndpoint(row);
+      },
+    );
   }
 
+  /**
+   * Removes an endpoint from an adapter.
+   *
+   * @param tenantId - Tenant scope.
+   * @param adapterId - Parent adapter id.
+   * @param endpointId - Endpoint id to delete.
+   */
   async removeEndpoint(
     tenantId: string,
     adapterId: string,
     endpointId: string,
   ): Promise<void> {
-    const [adapter] = await this.sql<AdapterRow[]>`
-      SELECT id FROM http_adapters
-      WHERE id = ${adapterId} AND tenant_id = ${tenantId}
-    `;
-    if (!adapter) {
-      throw new NotFoundException(`Adapter '${adapterId}' not found`);
-    }
+    await this.assertNotManaged(tenantId, adapterId, "remove endpoint from");
 
-    const result = await this.sql`
-      DELETE FROM adapter_endpoints
-      WHERE id = ${endpointId} AND adapter_id = ${adapterId}
-    `;
-    if (result.count === 0) {
+    const count = await this.adaptersRepository.deleteEndpoint(
+      tenantId,
+      adapterId,
+      endpointId,
+    );
+    if (count === 0) {
       throw new NotFoundException(`Endpoint '${endpointId}' not found`);
     }
-    this.logger.log(`Removed endpoint '${endpointId}' from adapter ${adapterId}`);
+    this.logger.log(
+      `Removed endpoint '${endpointId}' from adapter ${adapterId}`,
+    );
   }
 
-  private async insertEndpoints(
+  /**
+   * Applies a partial update to an adapter endpoint.
+   *
+   * @param tenantId - Tenant scope.
+   * @param adapterId - Parent adapter id.
+   * @param endpointId - Endpoint id to update.
+   * @param dto - Partial endpoint fields.
+   * @returns Updated endpoint.
+   */
+  async updateEndpoint(
+    tenantId: string,
     adapterId: string,
-    dtos: CreateEndpointDto[],
-  ): Promise<EndpointRow[]> {
-    const rows: EndpointRow[] = [];
-    for (const dto of dtos) {
-      const epId = generateId();
-      const [row] = await this.sql<EndpointRow[]>`
-        INSERT INTO adapter_endpoints (id, adapter_id, label, method, path)
-        VALUES (${epId}, ${adapterId}, ${dto.label}, ${dto.method}, ${dto.path})
-        RETURNING *
-      `;
-      rows.push(row);
+    endpointId: string,
+    dto: UpdateEndpointDto,
+  ) {
+    await this.assertNotManaged(tenantId, adapterId, "update endpoint on");
+
+    const hasField = ENDPOINT_UPDATE_FIELD_KEYS.some(
+      (key) => (dto as Record<string, unknown>)[key] !== undefined,
+    );
+    if (!hasField) {
+      return this.getEndpointOrThrow(tenantId, adapterId, endpointId);
     }
-    return rows;
+
+    return this.runWithUniqueConflict(
+      `Endpoint '${endpointId}' already conflicts with an existing method/path`,
+      async () => {
+        await this.adaptersRepository.updateEndpoint(
+          tenantId,
+          adapterId,
+          endpointId,
+          dto,
+        );
+        this.logger.log(`Updated endpoint '${endpointId}' on adapter ${adapterId}`);
+        return this.getEndpointOrThrow(tenantId, adapterId, endpointId);
+      },
+    );
+  }
+
+  private async getEndpointOrThrow(
+    tenantId: string,
+    adapterId: string,
+    endpointId: string,
+  ): Promise<ReturnType<typeof mapEndpoint>> {
+    const endpoint = await this.adaptersRepository.getEndpointRow(
+      tenantId,
+      adapterId,
+      endpointId,
+    );
+    if (!endpoint) {
+      throw new NotFoundException(`Endpoint '${endpointId}' not found`);
+    }
+    return mapEndpoint(endpoint);
   }
 }

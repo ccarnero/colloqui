@@ -1,0 +1,294 @@
+{
+  "system_tools": [
+    {
+      "name": "communicate",
+      "description": "Sends messages, replies, notifications, or escalations to a target through the backend.",
+      "parameters": {
+        "required": ["action", "target_id"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "Action type",
+            "enum": ["send", "reply", "notify", "escalate"]
+          },
+          "target_id": {
+            "type": "string",
+            "description": "Recipient identifier (user ID, thread ID, etc.)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Message content to send",
+            "default": ""
+          },
+          "channel": {
+            "type": "string",
+            "description": "Communication channel",
+            "enum": ["whatsapp", "email", "sms", "push"],
+            "default": "whatsapp"
+          },
+          "priority": {
+            "type": "string",
+            "description": "Priority level",
+            "enum": ["low", "medium", "high", "urgent"],
+            "default": "medium"
+          },
+          "context": {
+            "type": "string",
+            "description": "Additional context about the communication",
+            "default": ""
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Custom metadata dictionary",
+            "default": null
+          }
+        }
+      },
+      "response": {
+        "success": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": true},
+            "action": {"type": "string"},
+            "target_id": {"type": "string"},
+            "message": {"type": "string"},
+            "channel": {"type": "string"},
+            "priority": {"type": "string"},
+            "context": {"type": "string"},
+            "timestamp": {"type": "string", "format": "ISO 8601"},
+            "message_id": {"type": "string"},
+            "delivery_status": {"type": "string"}
+          }
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": false},
+            "action": {"type": "string"},
+            "target_id": {"type": "string"},
+            "error": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "name": "resource",
+      "description": "Reads or updates external resources through the backend (CRUD operations).",
+      "parameters": {
+        "required": ["action", "resource_type"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "Action type",
+            "enum": ["read", "list", "create", "update", "delete"]
+          },
+          "resource_type": {
+            "type": "string",
+            "description": "Resource type (lowercase): user, ticket, order, agent, etc.",
+            "examples": ["user", "ticket", "order", "agent", "draft", "conversation"]
+          },
+          "resource_id": {
+            "type": "string",
+            "description": "Specific resource ID (required for read, update, delete)",
+            "default": ""
+          },
+          "filters": {
+            "type": "object",
+            "description": "Query filters for list action",
+            "examples": [
+              {"status": "open", "priority": "high"},
+              {"user_id": "user_123", "created_after": "2026-01-01"}
+            ],
+            "default": null
+          },
+          "patch": {
+            "type": "object",
+            "description": "Fields to create or update",
+            "default": null
+          }
+        }
+      },
+      "response": {
+        "read_success": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": true},
+            "action": {"type": "string", "value": "read"},
+            "resource_type": {"type": "string"},
+            "resource_id": {"type": "string"},
+            "id": {"type": "string"},
+            "fields": {"type": "object", "description": "Resource-specific fields"}
+          }
+        },
+        "list_success": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": true},
+            "action": {"type": "string", "value": "list"},
+            "resource_type": {"type": "string"},
+            "items": {"type": "array", "description": "List of resources"},
+            "total": {"type": "integer"}
+          }
+        },
+        "create_success": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": true},
+            "action": {"type": "string", "value": "create"},
+            "resource_type": {"type": "string"},
+            "id": {"type": "string"},
+            "fields": {"type": "object", "description": "Created resource with assigned fields"}
+          }
+        },
+        "update_success": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": true},
+            "action": {"type": "string", "value": "update"},
+            "resource_type": {"type": "string"},
+            "resource_id": {"type": "string"},
+            "fields": {"type": "object", "description": "Updated fields"}
+          }
+        },
+        "delete_success": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": true},
+            "action": {"type": "string", "value": "delete"},
+            "resource_type": {"type": "string"},
+            "resource_id": {"type": "string"}
+          }
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": false},
+            "action": {"type": "string"},
+            "resource_type": {"type": "string"},
+            "resource_id": {"type": "string"},
+            "items": {"type": "array", "value": []},
+            "error": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "name": "memory",
+      "description": "Stores or retrieves runtime-local memory organized by namespaces.",
+      "parameters": {
+        "required": ["action", "namespace"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "Action type",
+            "enum": ["put", "get", "search", "delete"]
+          },
+          "namespace": {
+            "type": "string",
+            "description": "Memory namespace (e.g., conversation_123, agent_state, session_12345)",
+            "examples": ["conversation_123", "agent_state", "session_abc", "context_user_456"]
+          },
+          "key": {
+            "type": "string",
+            "description": "Memory key (required for put, get, delete)",
+            "default": ""
+          },
+          "value": {
+            "type": "any",
+            "description": "Value to store (any JSON-serializable object)",
+            "default": null
+          },
+          "query": {
+            "type": "string",
+            "description": "Search query string (case-insensitive substring match)",
+            "default": ""
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results for search",
+            "default": 10,
+            "minimum": 1
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional metadata stored with the value",
+            "default": null
+          }
+        }
+      },
+      "response": {
+        "put_success": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": true},
+            "action": {"type": "string", "value": "put"},
+            "namespace": {"type": "string"},
+            "key": {"type": "string"},
+            "value": {"type": "any"},
+            "metadata": {"type": "object"}
+          }
+        },
+        "get_success": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": true},
+            "action": {"type": "string", "value": "get"},
+            "namespace": {"type": "string"},
+            "key": {"type": "string"},
+            "value": {"type": "any"},
+            "metadata": {"type": "object"}
+          }
+        },
+        "get_not_found": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": false},
+            "action": {"type": "string", "value": "get"},
+            "namespace": {"type": "string"},
+            "key": {"type": "string"},
+            "value": {"type": "null", "value": null}
+          }
+        },
+        "search_success": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": true},
+            "action": {"type": "string", "value": "search"},
+            "namespace": {"type": "string"},
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {"type": "string"},
+                  "value": {"type": "any"},
+                  "metadata": {"type": "object"}
+                }
+              }
+            }
+          }
+        },
+        "delete_success": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": true},
+            "action": {"type": "string", "value": "delete"},
+            "namespace": {"type": "string"},
+            "key": {"type": "string"}
+          }
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "success": {"type": "boolean", "value": false},
+            "action": {"type": "string"},
+            "namespace": {"type": "string"},
+            "key": {"type": "string"},
+            "items": {"type": "array", "value": []},
+            "error": {"type": "string"}
+          }
+        }
+      }
+    }
+  ]
+}

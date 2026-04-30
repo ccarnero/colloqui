@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
 } from "@nestjs/common";
+import { requireTenantHeader } from "../../common/require-tenant-header";
 import { TenantRolesService } from "./tenant-roles.service";
 import { CreateTenantRoleDto, UpdateTenantRoleDto } from "./tenant-role.dto";
 import { TENANT_HEADER } from "@yoizen/shared";
@@ -20,32 +21,49 @@ export class TenantRolesController {
 
   @Post()
   async create(@Body() dto: CreateTenantRoleDto) {
-    return this.tenantRolesService.create(
-      dto.tenant_id,
-      dto.name,
-      dto.description,
-      dto.permissions,
-    );
+    return this.tenantRolesService.create({
+      tenantId: dto.tenant_id,
+      name: dto.name,
+      description: dto.description,
+      permissions: dto.permissions,
+    });
   }
 
   @Get()
-  async list(@Headers(TENANT_HEADER) tenantId: string) {
-    return this.tenantRolesService.listByTenant(tenantId);
+  async list(@Headers(TENANT_HEADER) tenantId: string | undefined) {
+    return this.tenantRolesService.listByTenant(requireTenantHeader(tenantId));
   }
 
   @Get(":id")
-  async findOne(@Param("id") id: string) {
-    return this.tenantRolesService.getWithPermissions(id);
+  async findOne(
+    @Headers(TENANT_HEADER) tenantId: string | undefined,
+    @Param("id") id: string,
+  ) {
+    return this.tenantRolesService.getWithPermissions(
+      requireTenantHeader(tenantId),
+      id,
+    );
   }
 
   @Patch(":id")
-  async update(@Param("id") id: string, @Body() dto: UpdateTenantRoleDto) {
-    return this.tenantRolesService.update(id, dto);
+  async update(
+    @Headers(TENANT_HEADER) tenantId: string | undefined,
+    @Param("id") id: string,
+    @Body() dto: UpdateTenantRoleDto,
+  ) {
+    return this.tenantRolesService.update(
+      requireTenantHeader(tenantId),
+      id,
+      dto,
+    );
   }
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param("id") id: string) {
-    return this.tenantRolesService.delete(id);
+  async remove(
+    @Headers(TENANT_HEADER) tenantId: string | undefined,
+    @Param("id") id: string,
+  ) {
+    return this.tenantRolesService.delete(requireTenantHeader(tenantId), id);
   }
 }

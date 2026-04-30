@@ -1,0 +1,10 @@
+scenarios:
+  - name: "webhook-ingress"
+    flow:
+      - loop:
+          - function: "setWebhookRequest"
+          - post:
+              url: "{{ webhookPath }}"
+              beforeRequest: "setGatewayHeaders"
+              body: "{{ webhookPayloadJson }}"
+        count: "{{ $processEnvironment.ARTILLERY_WEBHOOKS_PER_VU }}"

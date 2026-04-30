@@ -1,4 +1,10 @@
-import { Component, inject, signal, OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  OnInit,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatInputModule } from "@angular/material/input";
@@ -13,6 +19,7 @@ import {
   MessageSquare,
   Zap,
 } from "lucide-angular";
+import { getHttpErrorMessage } from "../../core/utils/http-error-message";
 import {
   ChannelService,
   IAutoReplyRule,
@@ -21,6 +28,7 @@ import {
 
 @Component({
   selector: "app-auto-reply",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatFormFieldModule,
@@ -230,11 +238,6 @@ import {
       color: var(--text2);
       line-height: 1.4;
     }
-    .rule-meta {
-      font-size: 11px;
-      color: var(--text3);
-      margin-top: 4px;
-    }
   `,
 })
 export class AutoReplyComponent implements OnInit {
@@ -313,7 +316,7 @@ export class AutoReplyComponent implements OnInit {
         error: (err) => {
           this.creating.set(false);
           this.error.set(
-            err?.error?.message ?? err?.message ?? "Failed to create rule",
+            getHttpErrorMessage(err, "Failed to create rule"),
           );
         },
       });
@@ -335,7 +338,7 @@ export class AutoReplyComponent implements OnInit {
       error: (err) => {
         this.deletingId.set(null);
         this.error.set(
-          err?.error?.message ?? err?.message ?? "Failed to delete rule",
+          getHttpErrorMessage(err, "Failed to delete rule"),
         );
       },
     });

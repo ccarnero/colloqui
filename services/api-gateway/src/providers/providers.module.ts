@@ -1,10 +1,10 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module } from "@nestjs/common";
 import {
   natsProvider,
   jetStreamManagerProvider,
   jetStreamProvider,
-} from './nats.provider';
-import { redisProvider } from './redis.provider';
+} from "./nats.provider";
+import { redisProvider } from "./redis.provider";
 
 @Global()
 @Module({

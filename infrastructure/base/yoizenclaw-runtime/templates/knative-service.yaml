@@ -1,0 +1,112 @@
+{{- if empty .Values.tenantId -}}
+{{- fail "tenantId is required. Please provide --set tenantId=<tenant-id>" -}}
+{{- end -}}
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: {{ include "yoizenclaw-runtime.fullname" . }}
+  labels:
+    {{- include "yoizenclaw-runtime.labels" . | nindent 4 }}
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "yoizenclaw-runtime.selectorLabels" . | nindent 8 }}
+      annotations:
+        sidecar.istio.io/inject: "false"
+        autoscaling.knative.dev/minScale: "{{ .Values.knative.minScale }}"
+        autoscaling.knative.dev/maxScale: "{{ .Values.knative.maxScale }}"
+        autoscaling.knative.dev/target: "{{ .Values.knative.targetConcurrency }}"
+    spec:
+      containerConcurrency: {{ .Values.knative.containerConcurrency }}
+      timeoutSeconds: {{ .Values.knative.timeoutSeconds }}
+      containers:
+        - name: yoizenclaw-runtime
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http1
+              containerPort: 8000
+          securityContext:
+            runAsNonRoot: {{ .Values.securityContext.runAsNonRoot }}
+            runAsUser: {{ .Values.securityContext.runAsUser }}
+            readOnlyRootFilesystem: {{ .Values.securityContext.readOnlyRootFilesystem }}
+            allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}
+            capabilities:
+              drop:
+                {{- toYaml .Values.securityContext.capabilities.drop | nindent 18 }}
+          env:
+            - name: TENANT_ID
+              value: {{ .Values.tenantId | quote }}
+            - name: PLATFORM_ENVIRONMENT
+              value: {{ .Values.environment | quote }}
+            - name: NATS_URL
+              value: {{ .Values.nats.url | quote }}
+            - name: POSTGRES_HOST
+              value: {{ include "yoizenclaw-runtime.postgresHost" . | quote }}
+            - name: POSTGRES_PORT
+              value: {{ .Values.postgres.port | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgres.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgres.user | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "postgres.passwordSecretName is required" .Values.postgres.passwordSecretName }}
+                  key: POSTGRES_PASSWORD
+            - name: RUNTIME_HEARTBEAT_INTERVAL_SECONDS
+              value: {{ .Values.env.RUNTIME_HEARTBEAT_INTERVAL_SECONDS | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.env.LOG_LEVEL | quote }}
+            - name: OTEL_ENABLED
+              value: {{ .Values.env.OTEL_ENABLED | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.env.OTEL_SERVICE_NAME | quote }}
+            {{- if .Values.nats.credentialsSecretName }}
+            - name: NATS_CREDS_FILE
+              value: "/etc/nats/creds/nats.creds"
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /app/config
+            {{- if .Values.nats.credentialsSecretName }}
+            - name: nats-creds
+              mountPath: /etc/nats/creds
+              readOnly: true
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: runtime-config
+          configMap:
+            name: {{ include "yoizenclaw-runtime.fullname" . }}-config
+        {{- if .Values.nats.credentialsSecretName }}
+        - name: nats-creds
+          secret:
+            secretName: {{ .Values.nats.credentialsSecretName }}
+        {{- end }}

@@ -1,42 +1,34 @@
-import { Component, OnInit, computed, inject, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnInit,
+  computed,
+  inject,
+  signal,
+} from "@angular/core";
 import { DatePipe, TitleCasePipe } from "@angular/common";
-import { ActivatedRoute } from "@angular/router";
+import { ActivatedRoute, RouterLink } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
 import { MatChipsModule } from "@angular/material/chips";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
-import { HttpClient } from "@angular/common/http";
-import { environment } from "../../../environments/environment";
+import { ChannelAdminService } from "../../core/services/channel-admin.service";
 import { AuthService } from "../../core/services/auth.service";
 import {
   AccountDialogComponent,
-  type AccountDialogResult,
+  type IAccountDialogResult,
 } from "./account-dialog.component";
-
-interface ChannelAccount {
-  id: string;
-  channel: string;
-  provider: string;
-  name: string;
-  externalId: string;
-  phoneNumberId?: string;
-  wabaId?: string;
-  telegramBotToken?: string;
-  accessToken: string;
-  appId?: string;
-  appSecret?: string;
-  verifyToken?: string;
-  isActive: boolean;
-  createdAt: string;
-}
+import type { IChannelAccount } from "../../core/models/channel-account.model";
 
 @Component({
   selector: "app-channels",
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     DatePipe,
     TitleCasePipe,
+    RouterLink,
     MatButtonModule,
     MatIconModule,
     MatTableModule,
@@ -83,7 +75,12 @@ interface ChannelAccount {
         <ng-container matColumnDef="name">
           <th mat-header-cell *matHeaderCellDef>Name</th>
           <td mat-cell *matCellDef="let a">
-            <strong>{{ a.name }}</strong>
+            <a
+              class="account-name-link"
+              [routerLink]="['/channels', channelFilter(), 'accounts', a.id]"
+            >
+              {{ a.name }}
+            </a>
           </td>
         </ng-container>
 
@@ -172,10 +169,20 @@ interface ChannelAccount {
       background: rgba(239, 68, 68, 0.15);
       color: #ef4444;
     }
+
+    .account-name-link {
+      color: var(--text);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .account-name-link:hover {
+      color: var(--accent, var(--text));
+      text-decoration: underline;
+    }
   `,
 })
 export class ChannelsComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly channels = inject(ChannelAdminService);
   private readonly auth = inject(AuthService);
   private readonly dialog = inject(MatDialog);
   private readonly route = inject(ActivatedRoute);
@@ -189,7 +196,7 @@ export class ChannelsComponent implements OnInit {
   ] as const;
 
   readonly channelFilter = signal("whatsapp");
-  readonly accounts = signal<ChannelAccount[]>([]);
+  readonly accounts = signal<IChannelAccount[]>([]);
 
   readonly filteredAccounts = computed(() =>
     this.accounts().filter((a) => a.channel === this.channelFilter()),
@@ -215,34 +222,34 @@ export class ChannelsComponent implements OnInit {
       data: { defaultChannel: this.channelFilter() },
       width: "520px",
     });
-    ref.afterClosed().subscribe((result?: AccountDialogResult) => {
+    ref.afterClosed().subscribe((result?: IAccountDialogResult) => {
       if (result?.saved) this.loadAccounts();
     });
   }
 
-  openEdit(account: ChannelAccount): void {
+  openEdit(account: IChannelAccount): void {
     const ref = this.dialog.open(AccountDialogComponent, {
       data: { account },
       width: "520px",
     });
-    ref.afterClosed().subscribe((result?: AccountDialogResult) => {
+    ref.afterClosed().subscribe((result?: IAccountDialogResult) => {
       if (result?.saved) this.loadAccounts();
     });
   }
 
-  confirmDelete(account: ChannelAccount): void {
+  confirmDelete(account: IChannelAccount): void {
     const confirmed = confirm(
       `Delete account "${account.name}"?\n\nThis will also delete all auto-reply rules and messages for this account.`,
     );
     if (!confirmed) return;
 
-    this.http.delete(`${environment.apiUrl}/channels/accounts/${account.id}`).subscribe({
+    this.channels.deleteAccount(account.id).subscribe({
       next: () => this.loadAccounts(),
     });
   }
 
   private loadAccounts(): void {
-    this.http.get<ChannelAccount[]>(`${environment.apiUrl}/channels/accounts`).subscribe({
+    this.channels.listAccounts().subscribe({
       next: (data) => this.accounts.set(data),
     });
   }

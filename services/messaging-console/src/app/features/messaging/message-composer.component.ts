@@ -1,4 +1,10 @@
-import { Component, inject, signal, OnInit } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+  OnInit,
+} from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatInputModule } from "@angular/material/input";
@@ -13,6 +19,7 @@ import {
   CheckCircle,
   AlertCircle,
 } from "lucide-angular";
+import { getHttpErrorMessage } from "../../core/utils/http-error-message";
 import {
   ChannelService,
   IChannelAccount,
@@ -21,6 +28,7 @@ import {
 
 @Component({
   selector: "app-message-composer",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
     MatFormFieldModule,
@@ -214,16 +222,12 @@ export class MessageComposerComponent implements OnInit {
 
   readonly accounts = signal<IChannelAccount[]>([]);
   readonly sending = signal(false);
-  readonly result = signal<{ type: "ok" | "error"; text: string } | null>(
-    null,
-  );
+  readonly result = signal<{ type: "ok" | "error"; text: string } | null>(null);
 
   selectedAccountId = "";
 
   protected get isTelegram(): boolean {
-    const acct = this.accounts().find(
-      (a) => a.id === this.selectedAccountId,
-    );
+    const acct = this.accounts().find((a) => a.id === this.selectedAccountId);
     return acct?.channel === "telegram";
   }
 
@@ -292,21 +296,19 @@ export class MessageComposerComponent implements OnInit {
     this.sending.set(true);
     this.result.set(null);
 
-    this.channelService
-      .sendMessage(this.selectedAccountId, body)
-      .subscribe({
-        next: () => {
-          this.sending.set(false);
-          this.result.set({ type: "ok", text: successMsg });
-          this.textMessage = "";
-        },
-        error: (err) => {
-          this.sending.set(false);
-          this.result.set({
-            type: "error",
-            text: err?.error?.message ?? err?.message ?? "Send failed",
-          });
-        },
-      });
+    this.channelService.sendMessage(this.selectedAccountId, body).subscribe({
+      next: () => {
+        this.sending.set(false);
+        this.result.set({ type: "ok", text: successMsg });
+        this.textMessage = "";
+      },
+      error: (err) => {
+        this.sending.set(false);
+        this.result.set({
+          type: "error",
+          text: getHttpErrorMessage(err, "Send failed"),
+        });
+      },
+    });
   }
 }

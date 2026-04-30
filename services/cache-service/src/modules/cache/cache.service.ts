@@ -1,21 +1,28 @@
-import { Inject, Injectable } from '@nestjs/common';
-import type Redis from 'ioredis';
-import { REDIS_CLIENT } from '../../providers/redis.provider';
+import { Inject, Injectable } from "@nestjs/common";
+import type Redis from "ioredis";
+import { evictOldestIfCapacityBeforeSet } from "@yoizen/shared";
+import { cacheServiceConfig } from "../../config";
+import { REDIS_CLIENT } from "@yoizen/database";
 
-interface L1Entry {
+interface IL1Entry {
   value: unknown;
   expiry: number;
 }
 
 @Injectable()
 export class CacheService {
-  private readonly l1: Map<string, L1Entry> = new Map();
+  private readonly l1: Map<string, IL1Entry> = new Map();
   private readonly maxL1Size: number;
 
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {
-    this.maxL1Size = parseInt(process.env.CACHE_L1_MAX_SIZE ?? '1000', 10);
+    this.maxL1Size = cacheServiceConfig.cacheL1MaxSize;
   }
 
+  /**
+   * Reads a key from L1 (when fresh) then Redis; backfills L1 on Redis hit.
+   * @param key - Fully scoped cache key.
+   * @returns Parsed JSON value, raw string if not JSON, or `null` if missing.
+   */
   async get(key: string): Promise<unknown | null> {
     const entry = this.l1.get(key);
     if (entry) {
@@ -36,10 +43,16 @@ export class CacheService {
     return value;
   }
 
+  /**
+   * Writes through to Redis and updates L1.
+   * @param key - Fully scoped cache key.
+   * @param value - Value to JSON-serialize.
+   * @param ttl - Optional Redis TTL in seconds.
+   */
   async set(key: string, value: unknown, ttl?: number): Promise<void> {
     const serialized = JSON.stringify(value);
     if (ttl != null && ttl > 0) {
-      await this.redis.set(key, serialized, 'EX', ttl);
+      await this.redis.set(key, serialized, "EX", ttl);
       this.setL1(key, value, Date.now() + ttl * 1000);
     } else {
       await this.redis.set(key, serialized);
@@ -47,28 +60,43 @@ export class CacheService {
     }
   }
 
+  /**
+   * Deletes a key from Redis and L1.
+   * @param key - Fully scoped cache key.
+   */
   async del(key: string): Promise<void> {
     await this.redis.del(key);
     this.l1.delete(key);
   }
 
+  /**
+   * Lists keys matching a pattern via Redis SCAN.
+   * @param pattern - Glob-style pattern.
+   * @param count - Hints per SCAN iteration.
+   * @returns Matching key names.
+   */
   async scan(pattern: string, count: number): Promise<string[]> {
     const keys: string[] = [];
-    let cursor = '0';
+    let cursor = "0";
     do {
       const [nextCursor, resultKeys] = await this.redis.scan(
         cursor,
-        'MATCH',
+        "MATCH",
         pattern,
-        'COUNT',
+        "COUNT",
         count,
       );
       cursor = nextCursor;
       keys.push(...resultKeys);
-    } while (cursor !== '0');
+    } while (cursor !== "0");
     return keys;
   }
 
+  /**
+   * Fetches many keys in one pipeline round-trip.
+   * @param keys - Fully scoped cache keys.
+   * @returns Map of key to value (JSON-parsed where applicable).
+   */
   async batchGet(keys: string[]): Promise<Map<string, unknown>> {
     const result = new Map<string, unknown>();
     if (keys.length === 0) return result;
@@ -91,10 +119,7 @@ export class CacheService {
   }
 
   private setL1(key: string, value: unknown, expiry: number): void {
-    if (this.l1.size >= this.maxL1Size && !this.l1.has(key)) {
-      const oldest = this.l1.keys().next().value;
-      if (oldest !== undefined) this.l1.delete(oldest);
-    }
+    evictOldestIfCapacityBeforeSet(this.l1, this.maxL1Size, key);
     this.l1.set(key, { value, expiry });
   }
 }

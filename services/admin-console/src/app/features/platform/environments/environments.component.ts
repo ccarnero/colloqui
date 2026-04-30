@@ -1,10 +1,11 @@
-import { Component } from "@angular/core";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 
 @Component({
   selector: "app-environments",
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatButtonModule, MatIconModule, StatusBadgeComponent],
   template: `
     <div class="ws-header">
@@ -46,8 +47,29 @@ import { StatusBadgeComponent } from "../../../shared/components/status-badge/st
 })
 export class EnvironmentsComponent {
   readonly environments = [
-    { name: "Development", url: "dev.platform.yoizen.io", status: "active", services: 13, lastDeploy: "10 min ago", version: "v2.4.1-dev" },
-    { name: "Staging", url: "staging.platform.yoizen.io", status: "active", services: 13, lastDeploy: "2 hrs ago", version: "v2.4.0" },
-    { name: "Production", url: "platform.yoizen.io", status: "active", services: 13, lastDeploy: "1 day ago", version: "v2.3.8" },
+    {
+      name: "Development",
+      url: "dev.platform.yoizen.io",
+      status: "active",
+      services: 13,
+      lastDeploy: "10 min ago",
+      version: "v2.4.1-dev",
+    },
+    {
+      name: "Staging",
+      url: "staging.platform.yoizen.io",
+      status: "active",
+      services: 13,
+      lastDeploy: "2 hrs ago",
+      version: "v2.4.0",
+    },
+    {
+      name: "Production",
+      url: "platform.yoizen.io",
+      status: "active",
+      services: 13,
+      lastDeploy: "1 day ago",
+      version: "v2.3.8",
+    },
   ];
 }

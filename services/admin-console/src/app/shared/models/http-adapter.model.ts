@@ -1,6 +1,25 @@
 export type AuthType = "none" | "api-key" | "bearer" | "basic" | "oauth2";
 
-export interface HttpAdapterAuth {
+export const HTTP_ADAPTER_METHOD = {
+  GET: "GET",
+  HEAD: "HEAD",
+  POST: "POST",
+  PUT: "PUT",
+  PATCH: "PATCH",
+  DELETE: "DELETE",
+} as const;
+
+export type HttpMethod =
+  (typeof HTTP_ADAPTER_METHOD)[keyof typeof HTTP_ADAPTER_METHOD];
+
+export const HTTP_ADAPTER_CACHE_QUERY_PARAMS_MODE = {
+  ALL: "all",
+} as const;
+
+export type HttpAdapterCacheQueryParamsMode =
+  (typeof HTTP_ADAPTER_CACHE_QUERY_PARAMS_MODE)[keyof typeof HTTP_ADAPTER_CACHE_QUERY_PARAMS_MODE];
+
+export interface IHttpAdapterAuth {
   type: AuthType;
   apiKey?: string;
   apiKeyHeader?: string;
@@ -12,40 +31,52 @@ export interface HttpAdapterAuth {
   oauth2TokenUrl?: string;
 }
 
-export interface HttpAdapterHeader {
+export interface IHttpAdapterHeader {
   key: string;
   value: string;
 }
 
-export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+export interface IHttpAdapterCacheStrategy {
+  enabled: boolean;
+  ttlSeconds: number;
+  methods?: HttpMethod[];
+  keyHeaders?: string[];
+  keyQueryParams?: string[] | HttpAdapterCacheQueryParamsMode;
+  keyBody?: boolean;
+}
 
-export interface HttpAdapterEndpoint {
+export interface IHttpAdapterEndpoint {
+  id?: string;
   label: string;
   method: HttpMethod;
   path: string;
+  cache?: IHttpAdapterCacheStrategy;
 }
 
-export interface HttpAdapter {
+export interface IHttpAdapter {
   name: string;
   baseUrl: string;
-  auth: HttpAdapterAuth;
-  headers: HttpAdapterHeader[];
-  endpoints: HttpAdapterEndpoint[];
+  auth: IHttpAdapterAuth;
+  headers: IHttpAdapterHeader[];
+  defaultCache?: IHttpAdapterCacheStrategy;
+  endpoints: IHttpAdapterEndpoint[];
   timeoutMs: number;
   maxRetries: number;
   retryBackoffMs: number;
   healthCheckPath: string;
+  tags: string[];
+  isEncrypted: boolean;
 }
 
-export type HttpAdapterContext = "internal" | "external";
+export type IHttpAdapterContext = "internal" | "external";
 
-export interface HttpAdapterDialogData {
+export interface IHttpAdapterDialogData {
   mode: "create" | "edit";
-  context?: HttpAdapterContext;
-  adapter?: HttpAdapter;
+  context?: IHttpAdapterContext;
+  adapter?: IHttpAdapter;
 }
 
-export interface HttpAdapterDialogResult {
-  adapter: HttpAdapter;
-  context: HttpAdapterContext;
+export interface IHttpAdapterDialogResult {
+  adapter: IHttpAdapter;
+  context: IHttpAdapterContext;
 }

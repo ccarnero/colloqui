@@ -1,15 +1,28 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { WebhookService } from "../../src/modules/webhook/webhook.service";
 import {
-  JETSTREAM_CONSUMER,
+  JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
+  NATS_CONNECTION,
 } from "../../src/providers/nats.provider";
-import { REDIS_CLIENT } from "../../src/providers/redis.provider";
-import {
-  WEBHOOK_DLQ_SUBJECT,
-  WEBHOOK_MAX_RETRIES,
-} from "@yoizen/shared";
+
+async function* emptyStreamList(): AsyncGenerator<never> {
+  return;
+}
+const mockJsm = {
+  streams: {
+    info: mock(() => Promise.resolve({})),
+    add: mock(() => Promise.resolve({})),
+    list: mock(() => emptyStreamList()),
+  },
+  consumers: {
+    info: mock(() => Promise.reject(new Error("consumer not found"))),
+    add: mock(() => Promise.resolve({})),
+  },
+};
+import { REDIS_CLIENT } from "@yoizen/database";
+import { WEBHOOK_DLQ_SUBJECT, applyAdapterAuthHeadersSync } from "@yoizen/shared";
 import type { AdapterConfig, CompletionEvent } from "@yoizen/shared";
 
 const fakeAdapter: AdapterConfig = {
@@ -55,7 +68,9 @@ function buildMockRedis() {
   };
 }
 
-function makeCompletion(overrides: Partial<CompletionEvent> = {}): CompletionEvent {
+function makeCompletion(
+  overrides: Partial<CompletionEvent> = {},
+): CompletionEvent {
   return {
     eventId: "evt-1",
     type: "created",
@@ -65,7 +80,7 @@ function makeCompletion(overrides: Partial<CompletionEvent> = {}): CompletionEve
       processed: true,
       timestamp: Date.now(),
     },
-    callbackUrl: "https://callback.example.com/hook",
+    callback_url: "https://callback.example.com/hook",
     ...overrides,
   };
 }
@@ -74,21 +89,20 @@ describe("WebhookService", () => {
   let service: WebhookService;
   let mockPublisher: { publish: ReturnType<typeof mock> };
 
+  afterEach(() => {
+    mock.module("@yoizen/observability", () => ({
+      tracedFetch: tracedFetchMock,
+    }));
+  });
+
   beforeEach(async () => {
     tracedFetchMock.mockReset();
     tracedFetchMock.mockImplementation(() =>
       Promise.resolve(new Response("OK", { status: 200 })),
     );
 
-    const mockConsumer = {
-      consume: mock(() =>
-        Promise.resolve({
-          [Symbol.asyncIterator]: () => ({
-            next: () => Promise.resolve({ done: true, value: undefined }),
-          }),
-          stop: mock(),
-        }),
-      ),
+    const mockNc = {
+      subscribe: mock(() => ({ unsubscribe: mock(() => {}) })),
     };
 
     mockPublisher = {
@@ -98,7 +112,8 @@ describe("WebhookService", () => {
     const module = await Test.createTestingModule({
       providers: [
         WebhookService,
-        { provide: JETSTREAM_CONSUMER, useValue: mockConsumer },
+        { provide: NATS_CONNECTION, useValue: mockNc },
+        { provide: JETSTREAM_MANAGER, useValue: mockJsm },
         { provide: JETSTREAM_PUBLISHER, useValue: mockPublisher },
         { provide: REDIS_CLIENT, useValue: buildMockRedis() },
       ],
@@ -107,20 +122,26 @@ describe("WebhookService", () => {
     service = module.get(WebhookService);
   });
 
-  it("should use default retries when no adapterId", async () => {
+  it("skips dispatch when callback_url is missing (consumer path)", async () => {
+    const completion = makeCompletion({ callback_url: undefined });
+    await service.dispatchCompletionIfNeeded(completion, "t1");
+    expect(tracedFetchMock).not.toHaveBeenCalled();
+  });
+
+  it("should use default retries when no adapter_id", async () => {
     const completion = makeCompletion();
 
-    await (service as any).dispatchWithRetry(completion, "t1");
+    await service.dispatchCompletionIfNeeded(completion, "t1");
 
     expect(tracedFetchMock).toHaveBeenCalledTimes(1);
     const [, init] = tracedFetchMock.mock.calls[0];
     expect(init.headers["X-API-Key"]).toBeUndefined();
   });
 
-  it("should use adapter auth and headers when adapterId is present", async () => {
-    const completion = makeCompletion({ adapterId: "adp-1" });
+  it("should use adapter auth and headers when adapter_id is present", async () => {
+    const completion = makeCompletion({ adapter_id: "adp-1" });
 
-    await (service as any).dispatchWithRetry(completion, "t1");
+    await service.dispatchCompletionIfNeeded(completion, "t1");
 
     expect(tracedFetchMock).toHaveBeenCalledTimes(1);
     const [, init] = tracedFetchMock.mock.calls[0];
@@ -146,34 +167,44 @@ describe("WebhookService", () => {
       tracedFetch: failFetch,
     }));
 
-    const mockConsumer = {
-      consume: mock(() =>
-        Promise.resolve({
-          [Symbol.asyncIterator]: () => ({
-            next: () => Promise.resolve({ done: true, value: undefined }),
-          }),
-          stop: mock(),
-        }),
-      ),
+    const mockNc = {
+      subscribe: mock(() => ({ unsubscribe: mock(() => {}) })),
     };
 
     const module = await Test.createTestingModule({
       providers: [
         WebhookService,
-        { provide: JETSTREAM_CONSUMER, useValue: mockConsumer },
-        { provide: JETSTREAM_PUBLISHER, useValue: { publish: mock(() => Promise.resolve()) } },
+        { provide: NATS_CONNECTION, useValue: mockNc },
+        { provide: JETSTREAM_MANAGER, useValue: mockJsm },
+        {
+          provide: JETSTREAM_PUBLISHER,
+          useValue: { publish: mock(() => Promise.resolve()) },
+        },
         { provide: REDIS_CLIENT, useValue: failRedis },
       ],
     }).compile();
 
     const svc = module.get(WebhookService);
-    const completion = makeCompletion({ adapterId: "adp-1" });
+    const completion = makeCompletion({ adapter_id: "adp-1" });
 
-    await (svc as any).dispatchWithRetry(completion, "t1");
+    await svc.dispatchCompletionIfNeeded(completion, "t1");
+
+    expect(failFetch.mock.calls.length).toBeGreaterThanOrEqual(1);
+    const callbackCall = failFetch.mock.calls.find(
+      (c) => typeof c[0] === "string" && c[0].includes("callback.example.com"),
+    );
+    expect(callbackCall).toBeDefined();
+    const [, init] = callbackCall as [string, { headers: Record<string, string> }];
+    expect(init.headers["X-API-Key"]).toBeUndefined();
   });
 
   it("should inject correct auth headers for each type", async () => {
-    const types: Array<{ authType: string; authConfig: Record<string, unknown>; expectedKey: string; expectedValue: string }> = [
+    const types: Array<{
+      authType: string;
+      authConfig: Record<string, unknown>;
+      expectedKey: string;
+      expectedValue: string;
+    }> = [
       {
         authType: "api-key",
         authConfig: { apiKey: "k1", apiKeyHeader: "X-Key" },
@@ -197,7 +228,7 @@ describe("WebhookService", () => {
     for (const { authType, authConfig, expectedKey, expectedValue } of types) {
       const adapter = { ...fakeAdapter, authType, authConfig };
       const headers: Record<string, string> = {};
-      (service as any).injectAuthHeaders(adapter, headers);
+      applyAdapterAuthHeadersSync(adapter, headers);
       expect(headers[expectedKey]).toBe(expectedValue);
     }
   });
@@ -207,9 +238,11 @@ describe("WebhookService", () => {
       Promise.resolve(new Response("Error", { status: 502 })),
     );
 
-    const completion = makeCompletion();
+    // Use cached adapter (maxRetries: 2, short backoff) so the suite does not
+    // hit the default 1s/5s/30s delays or the 5s test timeout.
+    const completion = makeCompletion({ adapter_id: "adp-1" });
 
-    await (service as any).dispatchWithRetry(completion, "t1");
+    await service.dispatchCompletionIfNeeded(completion, "t1");
 
     expect(mockPublisher.publish).toHaveBeenCalledTimes(1);
     const [subject] = mockPublisher.publish.mock.calls[0];

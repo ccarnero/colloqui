@@ -1,14 +1,9 @@
 import { Controller, Get, Inject } from "@nestjs/common";
-import type { Sql } from "postgres";
+import type { Sql } from "@yoizen/database";
 import type { NatsConnection } from "nats";
+import { checkPostgres, checkNats } from "@yoizen/database";
 import { POSTGRES_SQL } from "../../providers/postgres.provider";
 import { NATS_CONNECTION } from "../../providers/nats.provider";
-
-interface HealthStatus {
-  status: string;
-  postgres: string;
-  nats: string;
-}
 
 @Controller()
 export class HealthController {
@@ -18,30 +13,20 @@ export class HealthController {
   ) {}
 
   @Get("health")
-  async check(): Promise<HealthStatus> {
+  async check(): Promise<{
+    status: string;
+    postgres: string;
+    nats: string;
+  }> {
     const [pgOk, natsOk] = await Promise.all([
-      this.checkPostgres(),
-      this.checkNats(),
+      checkPostgres(this.sql),
+      Promise.resolve(checkNats(this.nc)),
     ]);
 
-    const status = pgOk && natsOk ? "ok" : "degraded";
     return {
-      status,
+      status: pgOk && natsOk ? "ok" : "degraded",
       postgres: pgOk ? "connected" : "disconnected",
       nats: natsOk ? "connected" : "disconnected",
     };
-  }
-
-  private async checkPostgres(): Promise<boolean> {
-    try {
-      await this.sql`SELECT 1`;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private checkNats(): Promise<boolean> {
-    return Promise.resolve(!this.nc.isClosed());
   }
 }

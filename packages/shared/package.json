@@ -8,6 +8,22 @@
     "test": "bun test"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./constants": "./src/constants.ts",
+    "./channel-constants": "./src/channel.constants.ts",
+    "./permanent-error": "./src/permanent-error.ts",
+    "./circuit-breaker": "./src/circuit-breaker.ts"
+  },
+  "sideEffects": false,
+  "peerDependencies": {
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1"
+  },
+  "peerDependenciesMeta": {
+    "class-transformer": { "optional": false },
+    "class-validator": { "optional": false }
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
   }
 }
