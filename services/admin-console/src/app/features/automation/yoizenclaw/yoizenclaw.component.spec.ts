@@ -1,7 +1,8 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { provideMonacoEditor } from "ngx-monaco-editor-v2";
-import { vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { of } from "rxjs";
+import { Router } from "@angular/router";
 import { YoizenclawComponent } from "./yoizenclaw.component";
 import { YoizenclawAdminService } from "../../../core/services/yoizenclaw-admin.service";
 import { AdaptersService } from "../../../core/services/adapters.service";
@@ -29,6 +30,12 @@ describe("YoizenclawComponent", () => {
             listByTag: vi.fn().mockReturnValue(of([])),
           },
         },
+        {
+          provide: Router,
+          useValue: {
+            navigate: vi.fn(),
+          },
+        },
       ],
     }).compileComponents();
 
@@ -36,8 +43,9 @@ describe("YoizenclawComponent", () => {
     fixture.detectChanges();
   });
 
-  it("renders YoizenClaw banner", () => {
+  it("renders agents list header", () => {
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain("YoizenClaw MVP");
+    expect(el.textContent).toContain("Agents");
+    expect(el.textContent).toContain("New Agent");
   });
 });

@@ -2,11 +2,13 @@ import {
   ChangeDetectionStrategy,
   Component,
   inject,
+  input,
   signal,
   type OnInit,
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
+import { ActivatedRoute } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
@@ -46,7 +48,7 @@ interface IChatMessage {
     MatChipsModule,
   ],
   template: `
-    <div class="playground-layout">
+    <div class="playground-layout" [class.embedded]="embedded()">
       <!-- Sidebar Panel -->
       <div class="side-panel">
         <div class="panel-header">
@@ -63,7 +65,7 @@ interface IChatMessage {
             <mat-form-field appearance="outline" class="yz-select">
               <mat-select
                 [(ngModel)]="selectedAgentId"
-                [disabled]="loading()"
+                [disabled]="loading() || lockAgentSelection()"
                 (selectionChange)="onAgentChange($event)"
                 panelClass="dark-theme-panel"
               >
@@ -180,6 +182,11 @@ interface IChatMessage {
 })
 export class PlaygroundComponent implements OnInit {
   private readonly yoizenclawService = inject(YoizenclawAdminService);
+  private readonly route = inject(ActivatedRoute);
+
+  readonly presetAgentId = input<string | null>(null);
+  readonly lockAgentSelection = input(false);
+  readonly embedded = input(false);
 
   readonly agents = signal<IYoizenclawAgent[]>([]);
   readonly selectedAgentId = signal<string | null>(null);
@@ -202,6 +209,18 @@ export class PlaygroundComponent implements OnInit {
       );
       this.agents.set(response.agents);
 
+      const requestedAgentId = this.resolveRequestedAgentId();
+      if (requestedAgentId) {
+        const requestedAgent = response.agents.find(
+          (agent) => agent.id === requestedAgentId,
+        );
+        if (requestedAgent) {
+          this.selectedAgentId.set(requestedAgent.id);
+          this.selectedAgent.set(requestedAgent);
+          return;
+        }
+      }
+
       // Auto-select first published agent
       const publishedAgent = response.agents.find(
         (a: IYoizenclawAgent) => a.status === "published",
@@ -209,6 +228,13 @@ export class PlaygroundComponent implements OnInit {
       if (publishedAgent) {
         this.selectedAgentId.set(publishedAgent.id);
         this.selectedAgent.set(publishedAgent);
+        return;
+      }
+
+      const firstAgent = response.agents[0];
+      if (firstAgent) {
+        this.selectedAgentId.set(firstAgent.id);
+        this.selectedAgent.set(firstAgent);
       }
     } catch {
       this.messages.set([
@@ -224,6 +250,10 @@ export class PlaygroundComponent implements OnInit {
   }
 
   onAgentChange(event: { value: string }): void {
+    if (this.lockAgentSelection()) {
+      return;
+    }
+
     const agent = this.agents().find((a) => a.id === event.value);
     this.selectedAgent.set(agent || null);
     this.clearChat();
@@ -304,5 +334,19 @@ export class PlaygroundComponent implements OnInit {
         sender: m.role === "user" ? "customer" : "agent",
         content: m.content,
       }));
+  }
+
+  private resolveRequestedAgentId(): string | null {
+    const byInput = this.presetAgentId();
+    if (byInput && byInput.trim().length > 0) {
+      return byInput;
+    }
+
+    const byQueryParam = this.route.snapshot.queryParamMap.get("agentId");
+    if (byQueryParam && byQueryParam.trim().length > 0) {
+      return byQueryParam;
+    }
+
+    return null;
   }
 }

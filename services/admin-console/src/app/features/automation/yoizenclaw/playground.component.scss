@@ -53,6 +53,31 @@
   padding: 0 20px 20px;
 }
 
+.yz-text-input {
+  width: 100%;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, #333);
+  background: var(--bg3, #2a2a2a);
+  color: var(--text-primary, #fff);
+  font-size: 0.875rem;
+  padding: 0 12px;
+  outline: none;
+}
+
+.yz-text-input:focus {
+  border-color: var(--primary, #1a66ff);
+}
+
+.yz-text-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.yz-text-input::placeholder {
+  color: var(--text3, #777);
+}
+
 .input-label {
   display: block;
   font-size: 0.75rem;
@@ -319,3 +344,34 @@
 }
 .yz-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .yz-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
+
+.playground-layout.embedded {
+  grid-template-columns: 1fr;
+  gap: 0;
+  height: 100%;
+  padding: 0;
+}
+
+.playground-layout.embedded .side-panel {
+  display: none;
+}
+
+.playground-layout.embedded .chat-panel {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.playground-layout.embedded .panel-header {
+  padding: 12px;
+}
+
+.playground-layout.embedded .messages-area {
+  padding: 12px;
+  gap: 12px;
+}
+
+.playground-layout.embedded .chat-input-area {
+  padding: 10px;
+}
