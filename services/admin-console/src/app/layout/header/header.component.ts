@@ -1,10 +1,14 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   inject,
   OnInit,
   output,
 } from "@angular/core";
+import { Router, RouterLink, NavigationEnd } from "@angular/router";
+import { toSignal } from "@angular/core/rxjs-interop";
+import { filter, map } from "rxjs/operators";
 import { MatIconModule } from "@angular/material/icon";
 import { MatButtonModule } from "@angular/material/button";
 import { MatMenuModule } from "@angular/material/menu";
@@ -15,11 +19,14 @@ import { TenantService } from "../../core/services/tenant.service";
 import { ThemeService } from "../../core/services/theme.service";
 import { AuthService } from "../../core/services/auth.service";
 import { NotificationService } from "../../core/services/notification.service";
+import { NAV_SECTIONS } from "../nav/nav.config";
 
 @Component({
   selector: "app-header",
   changeDetection: ChangeDetectionStrategy.OnPush,
+  standalone: true,
   imports: [
+    RouterLink,
     MatIconModule,
     MatButtonModule,
     MatMenuModule,
@@ -29,37 +36,64 @@ import { NotificationService } from "../../core/services/notification.service";
   ],
   template: `
     <header class="topbar">
-      <div class="topbar-left flex items-center gap-4">
-        <!-- Mobile Menu Toggle -->
-        <button mat-icon-button class="mobile-menu-btn" (click)="toggleSidebar.emit()">
+      <!-- Left: mobile toggle + brand -->
+      <div class="topbar-left">
+        <button
+          mat-icon-button
+          class="mobile-menu-btn"
+          type="button"
+          (click)="toggleSidebar.emit()"
+          aria-label="Toggle menu"
+        >
           <mat-icon>menu</mat-icon>
         </button>
-
-        <!-- Tenant Badge (static, no dropdown) -->
-        <div class="tenant-badge">
-          <span class="tenant-dot"></span>
-          <span class="tenant-name text-primary font-medium">{{ tenantService.currentTenant().name }}</span>
-        </div>
+        <a class="brand" routerLink="/dashboard">
+          <span class="brand-mark">◆</span>
+          <span class="brand-name">Yoizen</span>
+        </a>
       </div>
 
+      <!-- Center: section tabs -->
+      <nav class="tab-nav" aria-label="Main navigation">
+        @for (section of NAV_SECTIONS; track section.key) {
+          <a
+            class="tab"
+            [routerLink]="section.pages[0].route"
+            [class.active]="activeKey() === section.key"
+          >{{ section.label }}</a>
+        }
+      </nav>
+
+      <!-- Right: tenant + actions + avatar -->
       <div class="topbar-right">
+        <div class="tenant-badge">
+          <span class="tenant-dot"></span>
+          <span class="tenant-name">{{ tenantService.currentTenant().name }}</span>
+        </div>
+
         <!-- Notifications -->
         <button
           mat-icon-button
+          type="button"
           class="topbar-btn"
           [matBadge]="notificationService.unreadCount()"
           [matBadgeHidden]="notificationService.unreadCount() === 0"
           matBadgeSize="small"
           matBadgeColor="warn"
           [matMenuTriggerFor]="notifMenu"
+          aria-label="Notifications"
         >
           <mat-icon>notifications_none</mat-icon>
         </button>
         <mat-menu #notifMenu="matMenu">
-          <div class="notif-header flex items-center justify-between gap-2 px-3">
+          <div class="notif-header">
             <span>Notifications</span>
             @if (notificationService.unreadCount() > 0) {
-              <button mat-button type="button" (click)="notificationService.markAllRead(); $event.stopPropagation()">
+              <button
+                mat-button
+                type="button"
+                (click)="notificationService.markAllRead(); $event.stopPropagation()"
+              >
                 Mark all read
               </button>
             }
@@ -75,34 +109,30 @@ import { NotificationService } from "../../core/services/notification.service";
           }
         </mat-menu>
 
-        <!-- Theme Toggle -->
-        <button mat-icon-button class="topbar-btn" (click)="themeService.toggle()">
-          <mat-icon>{{
-            themeService.isDark() ? "light_mode" : "dark_mode"
-          }}</mat-icon>
+        <!-- Theme toggle -->
+        <button
+          mat-icon-button
+          type="button"
+          class="topbar-btn"
+          (click)="themeService.toggle()"
+          [matTooltip]="themeService.isDark() ? 'Light mode' : 'Dark mode'"
+        >
+          <mat-icon>{{ themeService.isDark() ? "light_mode" : "dark_mode" }}</mat-icon>
         </button>
 
         <!-- Help -->
         <button
           mat-icon-button
-          class="topbar-btn"
           type="button"
-          (click)="onHelpClick()"
+          class="topbar-btn"
           matTooltip="Help"
+          (click)="onHelpClick()"
         >
           <mat-icon>help_outline</mat-icon>
         </button>
 
-        <!-- Toggle Right Panel -->
-        <button mat-icon-button class="topbar-btn right-panel-btn" (click)="toggleRightPanel.emit()" matTooltip="Toggle Config Panel">
-          <mat-icon>tune</mat-icon>
-        </button>
-
-        <!-- User Avatar -->
-        <button
-          class="avatar-btn"
-          [matMenuTriggerFor]="userMenu"
-        >
+        <!-- Avatar -->
+        <button class="avatar-btn" [matMenuTriggerFor]="userMenu" type="button">
           {{ authService.userProfile().initials }}
         </button>
         <mat-menu #userMenu="matMenu">
@@ -112,13 +142,9 @@ import { NotificationService } from "../../core/services/notification.service";
             <div class="user-menu-role">{{ authService.userProfile().role }}</div>
           </div>
           <mat-divider />
-          <button mat-menu-item disabled matTooltip="Coming soon">
+          <button mat-menu-item disabled>
             <mat-icon>person</mat-icon>
             <span>Profile</span>
-          </button>
-          <button mat-menu-item disabled matTooltip="Coming soon">
-            <mat-icon>settings</mat-icon>
-            <span>Settings</span>
           </button>
           <mat-divider />
           <button mat-menu-item (click)="authService.logout()">
@@ -133,27 +159,31 @@ import { NotificationService } from "../../core/services/notification.service";
     :host {
       display: block;
     }
-    
+
     .topbar {
-      height: 64px;
+      height: 56px;
       background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
       display: flex;
-      align-items: center;
-      padding: 0 24px;
-      justify-content: space-between;
+      align-items: stretch;
+      padding: 0 20px 0 16px;
+      gap: 0;
       position: relative;
-      z-index: 10;
+      z-index: 100;
     }
 
+    /* ── Left ── */
     .topbar-left {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 4px;
+      margin-right: 24px;
+      flex-shrink: 0;
     }
 
     .mobile-menu-btn {
       display: none;
-      color: var(--text-primary);
+      color: var(--text2);
     }
 
     @media (max-width: 900px) {
@@ -162,41 +192,97 @@ import { NotificationService } from "../../core/services/notification.service";
       }
     }
 
-    .topbar-sep {
-      width: 1px;
-      height: 24px;
-      background: var(--border);
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      padding: 0 8px;
+    }
+
+    .brand-mark {
+      font-size: 16px;
+      color: var(--primary, #1a66ff);
+      line-height: 1;
+    }
+
+    .brand-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.2px;
+    }
+
+    /* ── Center tabs ── */
+    .tab-nav {
+      display: flex;
+      align-items: stretch;
+      flex: 1;
+      gap: 0;
+    }
+
+    .tab {
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text2);
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.12s;
+      white-space: nowrap;
+    }
+
+    .tab:hover {
+      color: var(--text-primary);
+    }
+
+    .tab.active {
+      color: var(--primary, #1a66ff);
+      border-bottom-color: var(--primary, #1a66ff);
+      font-weight: 500;
+    }
+
+    @media (max-width: 900px) {
+      .tab-nav {
+        display: none;
+      }
+    }
+
+    /* ── Right ── */
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      margin-left: auto;
+      flex-shrink: 0;
     }
 
     .tenant-badge {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
       background: var(--bg3);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 5px 12px;
-      color: var(--text);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius, 6px);
+      padding: 4px 10px;
+      margin-right: 8px;
     }
 
     .tenant-dot {
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
-      background: var(--green);
+      background: var(--green, #10b981);
       flex-shrink: 0;
     }
 
     .tenant-name {
-      font-weight: 600;
-      font-size: 13px;
-    }
-
-    .topbar-right {
-      margin-left: auto;
-      display: flex;
-      align-items: center;
-      gap: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-primary);
     }
 
     .topbar-btn {
@@ -204,47 +290,49 @@ import { NotificationService } from "../../core/services/notification.service";
     }
 
     .avatar-btn {
-      width: 36px;
-      height: 36px;
-      margin-left: 8px;
+      width: 32px;
+      height: 32px;
+      margin-left: 6px;
       border-radius: 50%;
       background: linear-gradient(135deg, #4f46e5 0%, #d946ef 100%);
-      border: 2px solid rgba(255, 255, 255, 0.1);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      border: none;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
+      font-size: 12px;
       font-weight: 600;
-      font-size: 13px;
       color: #fff;
-      letter-spacing: 0.5px;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      letter-spacing: 0.3px;
+      transition: opacity 0.15s;
     }
 
     .avatar-btn:hover {
-      transform: scale(1.05);
-      border-color: rgba(255, 255, 255, 0.3);
-      box-shadow: 0 4px 12px rgba(217, 70, 239, 0.3);
-    }
-    
-    .right-panel-btn {
-      transition: color 0.2s;
-    }
-    .right-panel-btn:hover {
-      color: var(--text-primary);
-      background: rgba(255, 255, 255, 0.05);
+      opacity: 0.88;
     }
 
     .notif-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       padding: 8px 16px;
-      font-weight: 700;
       font-size: 13px;
-      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .activity-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 4px;
+      flex-shrink: 0;
     }
 
     .notif-content {
-      margin-left: 8px;
+      display: flex;
+      flex-direction: column;
     }
 
     .notif-text {
@@ -261,13 +349,15 @@ import { NotificationService } from "../../core/services/notification.service";
     }
 
     .user-menu-name {
-      font-weight: 600;
       font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
     }
 
     .user-menu-email {
       font-size: 12px;
       color: var(--text3);
+      margin-top: 2px;
     }
 
     .user-menu-role {
@@ -282,9 +372,31 @@ export class HeaderComponent implements OnInit {
   protected readonly themeService = inject(ThemeService);
   protected readonly authService = inject(AuthService);
   protected readonly notificationService = inject(NotificationService);
+  private readonly router = inject(Router);
 
+  /** Keep for backward compat with shell wiring. */
   readonly toggleSidebar = output<void>();
   readonly toggleRightPanel = output<void>();
+
+  /** Expose section list to template. */
+  protected readonly NAV_SECTIONS = NAV_SECTIONS;
+
+  private readonly url = toSignal(
+    this.router.events.pipe(
+      filter((e) => e instanceof NavigationEnd),
+      map((e) => (e as NavigationEnd).urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
+  );
+
+  readonly activeKey = computed(() => {
+    const url = this.url();
+    return (
+      NAV_SECTIONS.find((s) =>
+        s.matchPaths.some((p) => url === p || url.startsWith(p + "/")),
+      )?.key ?? "overview"
+    );
+  });
 
   ngOnInit(): void {
     if (this.notificationService.notifications().length === 0) {
@@ -296,13 +408,10 @@ export class HeaderComponent implements OnInit {
     }
   }
 
-  /**
-   * Placeholder until docs / support URLs are wired.
-   */
   protected onHelpClick(): void {
     this.notificationService.push({
       color: "#6366f1",
-      text: "Help: use the sidebar for navigation. Documentation links will be added here.",
+      text: "Help: use the top navigation to switch sections.",
       time: new Date().toLocaleString(),
     });
   }
