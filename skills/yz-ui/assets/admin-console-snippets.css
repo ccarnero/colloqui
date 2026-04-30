@@ -1,0 +1,254 @@
+/**
+ * Admin-console (Angular) CSS snippets.
+ *
+ * The admin-console doesn't use Tailwind. These are the patterns we
+ * actually shipped — copy + adapt inside a component's `styles:` block,
+ * always referencing CSS variables instead of hex literals.
+ */
+
+/* ============================================================
+   STATUS PILL  (inline, next to a title)
+   ============================================================ */
+.status-pill {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+}
+.sp-ok { background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green); }
+.sp-fail { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
+.sp-running { background: color-mix(in srgb, var(--primary, #1a66ff) 15%, transparent); color: var(--primary, #1a66ff); }
+.sp-warn { background: color-mix(in srgb, var(--yellow, #eab308) 15%, transparent); color: var(--yellow, #eab308); }
+.sp-other { background: var(--bg3); color: var(--text2); }
+
+.status-pill .dot,
+.row-status .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+
+/* ============================================================
+   TABLE / LIST ROW with leading status
+   ============================================================ */
+.panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius, 6px);
+  overflow: hidden;
+}
+.row {
+  display: grid;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  align-items: center;
+}
+.row:last-child { border-bottom: none; }
+.row.row-head {
+  background: var(--bg3);
+  color: var(--text2);
+  font-weight: 500;
+}
+.row:not(.row-head):hover { background: var(--bg3); }
+
+.row-status { display: inline-flex; align-items: center; gap: 5px; }
+.rs-ok { color: var(--green, #16a34a); }
+.rs-fail { color: var(--red, #ef4444); }
+.rs-running { color: var(--primary, #1a66ff); }
+.rs-warn { color: var(--yellow, #eab308); }
+.rs-other { color: var(--text2); }
+
+/* ============================================================
+   KPI GRID  (auto-fit, responsive)
+   ============================================================ */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+/* ============================================================
+   LANDING PANELS (the 50/50 split)
+   ============================================================ */
+.row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .row2 { grid-template-columns: 1fr; }
+}
+
+.panel-h {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0 0 10px;
+  color: var(--text-primary);
+}
+
+/* ============================================================
+   BUTTONS  (admin-console flat style)
+   ============================================================ */
+.btn {
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius, 6px);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.btn:hover { background: var(--bg3); }
+.btn-primary {
+  background: var(--primary, #1a66ff);
+  color: #fff;
+  border-color: var(--primary, #1a66ff);
+}
+.btn-primary:hover { opacity: 0.9; }
+.btn-danger {
+  background: var(--red, #ef4444);
+  color: #fff;
+  border-color: var(--red, #ef4444);
+}
+.btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+.btn-mini {
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius, 6px);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+/* ============================================================
+   EMPTY STATE  (placeholder pages)
+   ============================================================ */
+.empty-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius, 6px);
+  padding: 48px 24px;
+  text-align: center;
+  margin-top: 16px;
+}
+.empty-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--yellow, #eab308) 15%, transparent);
+  color: var(--yellow, #b45309);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 500;
+}
+.empty-h {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0 0 6px;
+  color: var(--text-primary);
+}
+.empty-sub {
+  font-size: 12px;
+  color: var(--text2);
+  max-width: 380px;
+  margin: 0 auto 16px;
+  line-height: 1.55;
+}
+
+/* ============================================================
+   MONO + CODE INLINE
+   ============================================================ */
+.mono { font-family: var(--font-mono, monospace); font-size: 11px; }
+
+.code {
+  background: var(--bg-background);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius, 6px);
+  padding: 8px 10px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  margin: 0;
+  overflow-x: auto;
+}
+.code.err { color: var(--red, #ef4444); }
+
+/* ============================================================
+   SUB-NAV INDICATOR (count badges)
+   ============================================================ */
+.nav-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.ind-count { color: var(--text3); background: transparent; }
+.ind-count-warn {
+  color: var(--yellow, #b45309);
+  background: color-mix(in srgb, var(--yellow, #eab308) 18%, transparent);
+}
+.ind-count-danger {
+  color: var(--red, #b91c1c);
+  background: color-mix(in srgb, var(--red, #ef4444) 18%, transparent);
+}
+.ind-dot {
+  min-width: 7px;
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  background: var(--red, #ef4444);
+}
+
+/* ============================================================
+   SETTINGS HUB CARD
+   ============================================================ */
+.hub-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .hub-grid { grid-template-columns: 1fr; }
+}
+.hub-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius, 6px);
+  padding: 14px 16px;
+}
+.hub-card.span { grid-column: 1 / -1; }
+.hub-stat .ok { color: var(--green, #16a34a); font-weight: 500; }
+.hub-stat .warn { color: var(--yellow, #b45309); font-weight: 500; }
+.hub-stat .danger { color: var(--red, #b91c1c); font-weight: 500; }
+.chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: var(--bg3);
+  color: var(--text2);
+  border-radius: var(--radius, 6px);
+  cursor: pointer;
+  text-decoration: none;
+}
+.chip:hover {
+  background: var(--accent-dim, rgba(26, 102, 255, 0.08));
+  color: var(--primary, #1a66ff);
+}

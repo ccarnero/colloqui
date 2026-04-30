@@ -95,7 +95,9 @@ GEMINI.md
 .opencode/**/cache/
 
 # Package manager locks (optional - uncomment if needed)
-# package-lock.json
+package-lock.json
+*/*/package-lock.json
+*/*/*/package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
 bun.lock
@@ -112,6 +114,10 @@ bun.lock
 # Local development
 *.local
 
+# scale-all-to-one.sh backups (live cluster state snapshots, never commit)
+scripts/.scale-backup/*.json
+
 GEMINI.md
 CURSOR.md
 CLAUDE.md
+.claude/

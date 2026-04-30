@@ -14,8 +14,7 @@ export type NavIndicatorKind =
 /**
  * Declares that a nav item should display a live indicator.
  * `source` is a free-form key resolved at render time by the
- * NavIndicatorRegistry. Phase 2 wires concrete signals; Phase 1 leaves
- * these inert (registry returns null and nothing renders).
+ * NavIndicatorRegistry.
  */
 export interface INavIndicator {
   kind: NavIndicatorKind;
@@ -40,6 +39,15 @@ export interface INavSection {
   pages: INavPage[];
 }
 
+/**
+ * Phase 4 reorganization:
+ *  - Overview, Channels, Connections, AI, Processes, Settings (6 sections)
+ *  - Auto-Reply removed from Channels
+ *  - Connections is a new section grouping connector instances by type
+ *    (Internal HTTP / External HTTP / MCP / Hosted services)
+ *  - Processes replaces Automate; Schedules replaces Scheduler
+ *  - Settings trimmed to backed pages (+ Billing kept as a planned area)
+ */
 export const NAV_SECTIONS: INavSection[] = [
   {
     key: "overview",
@@ -54,12 +62,34 @@ export const NAV_SECTIONS: INavSection[] = [
   {
     key: "channels",
     label: "Channels",
-    matchPaths: ["/channels", "/auto-reply"],
+    matchPaths: ["/channels"],
     landingPath: "/channels",
     pages: [
       { label: "WhatsApp", route: "/channels/whatsapp" },
       { label: "Telegram", route: "/channels/telegram" },
-      { label: "Auto-Reply", route: "/auto-reply" },
+    ],
+  },
+  {
+    key: "connections",
+    label: "Connections",
+    matchPaths: ["/connections", "/connectors", "/hosted-services"],
+    landingPath: "/connections",
+    pages: [
+      { label: "Overview", route: "/connections" },
+      {
+        label: "HTTP",
+        route: "/connections/http",
+        indicator: {
+          kind: "count-danger",
+          source: "connections.http.errored",
+        },
+      },
+      { label: "MCP", route: "/connections/mcp" },
+      {
+        label: "Hosted services",
+        route: "/connections/hosted-services",
+        indicator: { kind: "count", source: "connections.hosted.count" },
+      },
     ],
   },
   {
@@ -78,108 +108,32 @@ export const NAV_SECTIONS: INavSection[] = [
     ],
   },
   {
-    key: "automate",
-    label: "Automate",
-    matchPaths: [
-      "/automate",
-      "/workflows",
-      "/rules",
-      "/scheduler",
-      "/webhooks",
-      "/hosted-services",
-    ],
-    landingPath: "/automate",
+    key: "processes",
+    label: "Processes",
+    matchPaths: ["/processes", "/automate", "/workflows", "/schedules", "/scheduler"],
+    landingPath: "/processes",
     pages: [
       {
         label: "Workflows",
         route: "/workflows",
-        indicator: { kind: "count-danger", source: "automate.workflows.failing" },
+        indicator: {
+          kind: "count-danger",
+          source: "processes.workflows.failing",
+        },
       },
-      { label: "Rules", route: "/rules" },
-      { label: "Scheduler", route: "/scheduler" },
-      { label: "Webhooks", route: "/webhooks" },
-      { label: "Hosted Services", route: "/hosted-services" },
-    ],
-  },
-  {
-    key: "data",
-    label: "Data",
-    matchPaths: [
-      "/data",
-      "/connectors",
-      "/integrations",
-      "/data-sources",
-      "/schema-manager",
-      "/data-export",
-    ],
-    landingPath: "/data",
-    pages: [
-      {
-        label: "Connectors",
-        route: "/connectors",
-        indicator: { kind: "count-danger", source: "data.connectors.errored" },
-      },
-      { label: "Integrations", route: "/integrations" },
-      { label: "Data Sources", route: "/data-sources" },
-      { label: "Schema Manager", route: "/schema-manager" },
-      { label: "Data Export", route: "/data-export" },
+      { label: "Schedules", route: "/schedules" },
     ],
   },
   {
     key: "settings",
     label: "Settings",
-    matchPaths: [
-      "/settings",
-      "/users",
-      "/roles",
-      "/billing",
-      "/quotas",
-      "/customization",
-      "/ip-allowlist",
-      "/audit-log",
-      "/security-center",
-      "/compliance",
-      "/data-retention",
-      "/notification-rules",
-      "/email-templates",
-      "/feature-flags",
-      "/environments",
-      "/system-health",
-    ],
+    matchPaths: ["/settings", "/users", "/roles", "/api-keys", "/billing"],
     landingPath: "/settings",
     pages: [
-      // Identity
       { label: "Users", route: "/users" },
-      { label: "Roles & Permissions", route: "/roles" },
-      // Tenant
-      { label: "Billing", route: "/billing", dividerBefore: true },
-      {
-        label: "Quotas",
-        route: "/quotas",
-        indicator: { kind: "count-warn", source: "settings.quotas.nearLimit" },
-      },
-      { label: "Customization", route: "/customization" },
-      // Security
-      { label: "IP Allowlist", route: "/ip-allowlist", dividerBefore: true },
-      {
-        label: "Audit Log",
-        route: "/audit-log",
-        indicator: { kind: "count-danger", source: "settings.audit.alerts" },
-      },
-      { label: "Security Center", route: "/security-center" },
-      { label: "Compliance", route: "/compliance" },
-      { label: "Data Retention", route: "/data-retention" },
-      // Notifications
-      {
-        label: "Notification Rules",
-        route: "/notification-rules",
-        dividerBefore: true,
-      },
-      { label: "Email Templates", route: "/email-templates" },
-      // Platform
-      { label: "Feature Flags", route: "/feature-flags", dividerBefore: true },
-      { label: "Environments", route: "/environments" },
-      { label: "System Health", route: "/system-health" },
+      { label: "Roles", route: "/roles" },
+      { label: "API keys", route: "/api-keys" },
+      { label: "Billing", route: "/billing" },
     ],
   },
 ];

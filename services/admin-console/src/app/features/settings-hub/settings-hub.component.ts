@@ -139,9 +139,9 @@ export class SettingsHubComponent {
   protected readonly groups = computed<ISettingsGroup[]>(() => {
     const users = this.metrics.usersActive() ?? 0;
     const invites = this.metrics.invitationsPending() ?? 0;
-    const quotas = this.metrics.quotasNearLimit() ?? 0;
-    const audits = this.metrics.auditAlerts() ?? 0;
 
+    // PHASE 4: trimmed to backed pages only.
+    // Identity (Users / Roles / API keys) + Tenant (Billing).
     return [
       {
         key: "identity",
@@ -155,62 +155,15 @@ export class SettingsHubComponent {
           { label: "Users", route: "/users" },
           { label: "Roles & permissions", route: "/roles" },
           { label: "API keys", route: "/api-keys" },
-          { label: "Groups", route: "/groups" },
-          { label: "MFA", route: "/mfa" },
-          { label: "SSO", route: "/sso" },
         ],
       },
       {
         key: "tenant",
         title: "Tenant",
-        headline:
-          quotas > 0
-            ? `Pro plan · renews May 15 · ${quotas} quota near limit`
-            : "Pro plan · renews May 15",
-        tone: quotas > 0 ? "warn" : "neutral",
-        chips: [
-          { label: "Billing", route: "/billing" },
-          { label: "Quotas", route: "/quotas" },
-          { label: "Customization", route: "/customization" },
-        ],
-      },
-      {
-        key: "security",
-        title: "Security",
-        headline:
-          audits > 0
-            ? `${audits} audit alerts · 0 IP blocks today`
-            : "All clear · 0 IP blocks today",
-        tone: audits > 0 ? "danger" : "ok",
-        chips: [
-          { label: "IP allowlist", route: "/ip-allowlist" },
-          { label: "Audit log", route: "/audit-log" },
-          { label: "Security center", route: "/security-center" },
-          { label: "Compliance", route: "/compliance" },
-          { label: "Data retention", route: "/data-retention" },
-        ],
-      },
-      {
-        key: "notifications",
-        title: "Notifications",
-        headline: "12 active rules · 4 templates",
+        headline: "Pro plan · renews May 15",
         tone: "neutral",
-        chips: [
-          { label: "Notification rules", route: "/notification-rules" },
-          { label: "Email templates", route: "/email-templates" },
-        ],
-      },
-      {
-        key: "platform",
-        title: "Platform",
-        headline: "All systems operational",
-        tone: "ok",
         span: true,
-        chips: [
-          { label: "Feature flags", route: "/feature-flags" },
-          { label: "Environments", route: "/environments" },
-          { label: "System health", route: "/system-health" },
-        ],
+        chips: [{ label: "Billing", route: "/billing" }],
       },
     ];
   });

@@ -29,6 +29,12 @@ import {
   type IUpdateAdapterPayload,
 } from "../../../core/services/http-adapter.service";
 
+/**
+ * Phase 4: this component now lives at `/connections/external-http`.
+ * The file path under data-integrations/ is preserved only because the
+ * sandbox can't physically relocate; a follow-up local cleanup should
+ * move it to features/connections/external-http/.
+ */
 interface IConnectorRow {
   id: string;
   context: IHttpAdapterContext;

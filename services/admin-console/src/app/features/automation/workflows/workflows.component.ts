@@ -11,7 +11,6 @@ import { MatButtonModule } from "@angular/material/button";
 import { MatDialog } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatSnackBar } from "@angular/material/snack-bar";
-import { MatTooltipModule } from "@angular/material/tooltip";
 import { forkJoin, of } from "rxjs";
 import { catchError } from "rxjs/operators";
 import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
@@ -23,10 +22,6 @@ import {
   WorkflowApiService,
   type IWorkflowDefinitionDto,
 } from "./services/workflow-api.service";
-import {
-  WorkflowExecutionsDialogComponent,
-  type IWorkflowExecutionsDialogData,
-} from "./components/workflow-executions-dialog/workflow-executions-dialog.component";
 
 @Component({
   selector: "app-workflows",
@@ -35,7 +30,6 @@ import {
     DatePipe,
     MatButtonModule,
     MatIconModule,
-    MatTooltipModule,
     StatusBadgeComponent,
   ],
   template: `
@@ -81,15 +75,10 @@ import {
             <mat-icon>schedule</mat-icon>
             {{ wf.createdAt | date }}
           </span>
-          <button
-            type="button"
-            class="wf-meta-item wf-meta-item-button"
-            matTooltip="See executions"
-            (click)="onExecutionsClick($event, wf)"
-          >
+          <span class="wf-meta-item">
             <mat-icon>history</mat-icon>
             {{ executionCount(wf) }} executions
-          </button>
+          </span>
           <span class="wf-meta-spacer"></span>
           <button
             mat-icon-button
@@ -146,23 +135,6 @@ import {
       font-size: 16px;
       width: 16px;
       height: 16px;
-    }
-    .wf-meta-item-button {
-      background: transparent;
-      border: 1px solid transparent;
-      padding: 4px 8px;
-      border-radius: var(--radius1, 6px);
-      cursor: pointer;
-      color: var(--text3);
-      transition:
-        border-color 0.15s,
-        color 0.15s,
-        background 0.15s;
-    }
-    .wf-meta-item-button:hover {
-      color: var(--text1, var(--text3));
-      border-color: var(--border-subtle);
-      background: var(--bg-card-hover, rgba(255, 255, 255, 0.04));
     }
     .wf-meta-spacer {
       flex: 1;
@@ -276,25 +248,6 @@ export class WorkflowsComponent implements OnInit {
   /** O(1) lookup against the prefetched `executionCounts` map. */
   executionCount(wf: IWorkflowDefinitionDto): number {
     return this.executionCounts().get(wf.id) ?? 0;
-  }
-
-  /**
-   * Opens the executions modal for a workflow. Stops propagation so
-   * the parent card click (which opens the editor) does not fire.
-   */
-  onExecutionsClick(event: Event, wf: IWorkflowDefinitionDto): void {
-    event.stopPropagation();
-    const data: IWorkflowExecutionsDialogData = {
-      workflowId: wf.id,
-      workflowName: wf.name,
-    };
-    this.dialog.open(WorkflowExecutionsDialogComponent, {
-      data,
-      width: "920px",
-      maxWidth: "95vw",
-      autoFocus: false,
-      restoreFocus: true,
-    });
   }
 
   /**

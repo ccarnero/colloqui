@@ -360,7 +360,14 @@ export class WorkflowBuilderComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get("id");
+    // Phase 3 nested this component under /workflows/:id/builder, so
+    // the :id param now lives on the parent route. Read self first for
+    // back-compat (e.g. /workflows/:id/edit redirects), then fall back
+    // to the parent route.
+    const id =
+      this.route.snapshot.paramMap.get("id") ??
+      this.route.parent?.snapshot.paramMap.get("id") ??
+      null;
     if (id) {
       this.api.get(id).subscribe({
         next: (dto) => {
@@ -566,8 +573,11 @@ export class WorkflowBuilderComponent implements OnInit {
         this.saving.set(false);
         if (!id) {
           this.flow.update((f) => ({ ...f, key: saved.id }));
+          // After first save we route into the new detail mini-app's
+          // Builder sub-tab. The legacy `:id/edit` URL still redirects
+          // but going direct avoids a redirect flash.
           this.router.navigate(
-            ["/workflows", saved.id, "edit"],
+            ["/workflows", saved.id, "builder"],
             { replaceUrl: true },
           );
         }

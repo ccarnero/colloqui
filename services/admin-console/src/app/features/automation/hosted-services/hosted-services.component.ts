@@ -1,3 +1,9 @@
+/**
+ * Phase 4: this component now lives at `/connections/hosted-services`.
+ * The file path under automation/ is preserved only because the sandbox
+ * can't physically relocate; a follow-up local cleanup should move it
+ * to features/connections/hosted-services/.
+ */
 import {
   ChangeDetectionStrategy,
   Component,

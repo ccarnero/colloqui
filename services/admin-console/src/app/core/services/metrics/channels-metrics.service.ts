@@ -3,13 +3,13 @@ import { Injectable, signal, type Signal } from "@angular/core";
 /**
  * Channels section metrics.
  *
- * Phase 1 stub: signals return `null`. Phase 2 wires real fetches.
+ * PHASE 4: dropped auto-reply tracking when the page was removed.
+ * Demo seeds remain until backend aggregates land.
  */
 @Injectable({ providedIn: "root" })
 export class ChannelsMetricsService {
-  // PHASE 2 DEMO SEEDS — replace with real fetches when backend lands.
-  readonly connectedCount = signal<number | null>(3);
-  readonly totalCount = signal<number | null>(4);
+  readonly connectedCount = signal<number | null>(2);
+  readonly totalCount = signal<number | null>(2);
   readonly messagesIn24h = signal<number | null>(18_240);
   readonly messagesOut24h = signal<number | null>(15_982);
   readonly failedDeliveries24h = signal<number | null>(42);
