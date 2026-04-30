@@ -58,7 +58,7 @@ import { NAV_SECTIONS } from "../nav/nav.config";
         @for (section of NAV_SECTIONS; track section.key) {
           <a
             class="tab"
-            [routerLink]="section.pages[0].route"
+            [routerLink]="section.landingPath"
             [class.active]="activeKey() === section.key"
           >{{ section.label }}</a>
         }

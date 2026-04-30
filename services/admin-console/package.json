@@ -7,7 +7,13 @@
     "start:clusterwin": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-cluster.ps1",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "build:shared": "node ../../packages/angular-shared/scripts/build-lib.mjs",
+    "postinstall": "npm run build:shared",
+    "prebuild": "npm run build:shared",
+    "prewatch": "npm run build:shared",
+    "prestart": "npm run build:shared",
+    "pretest": "npm run build:shared"
   },
   "private": true,
   "packageManager": "npm@11.6.2",

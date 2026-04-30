@@ -16,6 +16,36 @@ export const routes: Routes = [
             (m) => m.DashboardComponent,
           ),
       },
+      // ── Section landings (Phase 2) ────────────────────────────────────
+      {
+        path: "channels",
+        pathMatch: "full",
+        loadComponent: () =>
+          import("./features/channels/channels-landing.component").then(
+            (m) => m.ChannelsLandingComponent,
+          ),
+      },
+      {
+        path: "automate",
+        loadComponent: () =>
+          import("./features/automation/automate-landing.component").then(
+            (m) => m.AutomateLandingComponent,
+          ),
+      },
+      {
+        path: "data",
+        loadComponent: () =>
+          import(
+            "./features/data-integrations/data-landing.component"
+          ).then((m) => m.DataLandingComponent),
+      },
+      {
+        path: "settings",
+        loadComponent: () =>
+          import("./features/settings-hub/settings-hub.component").then(
+            (m) => m.SettingsHubComponent,
+          ),
+      },
       {
         path: "analytics",
         loadComponent: () =>
@@ -124,12 +154,61 @@ export const routes: Routes = [
                 "./features/automation/workflows/builder/workflow-builder.component"
               ).then((m) => m.WorkflowBuilderComponent),
           },
+          // Backwards compat: old `/workflows/:id/edit` deep links still
+          // work — they jump straight into the Builder sub-tab.
           {
             path: ":id/edit",
+            redirectTo: ":id/builder",
+            pathMatch: "full",
+          },
+          // ── Workflow detail mini-app (Phase 3) ─────────────────────
+          {
+            path: ":id",
             loadComponent: () =>
               import(
-                "./features/automation/workflows/builder/workflow-builder.component"
-              ).then((m) => m.WorkflowBuilderComponent),
+                "./features/automation/workflows/detail/workflow-detail.component"
+              ).then((m) => m.WorkflowDetailComponent),
+            children: [
+              { path: "", redirectTo: "overview", pathMatch: "full" },
+              {
+                path: "overview",
+                loadComponent: () =>
+                  import(
+                    "./features/automation/workflows/detail/workflow-overview.component"
+                  ).then((m) => m.WorkflowOverviewComponent),
+              },
+              {
+                path: "builder",
+                loadComponent: () =>
+                  import(
+                    "./features/automation/workflows/builder/workflow-builder.component"
+                  ).then((m) => m.WorkflowBuilderComponent),
+                // Shell reads this on every NavigationEnd to collapse
+                // the sub-nav to icon-mode for a roomier canvas.
+                data: { subNavCollapsed: true },
+              },
+              {
+                path: "executions",
+                loadComponent: () =>
+                  import(
+                    "./features/automation/workflows/detail/workflow-executions.component"
+                  ).then((m) => m.WorkflowExecutionsComponent),
+              },
+              {
+                path: "runs/:runId",
+                loadComponent: () =>
+                  import(
+                    "./features/automation/workflows/detail/workflow-run-detail.component"
+                  ).then((m) => m.WorkflowRunDetailComponent),
+              },
+              {
+                path: "settings",
+                loadComponent: () =>
+                  import(
+                    "./features/automation/workflows/detail/workflow-settings.component"
+                  ).then((m) => m.WorkflowSettingsComponent),
+              },
+            ],
           },
         ],
       },
@@ -166,8 +245,11 @@ export const routes: Routes = [
         children: [
           {
             path: "",
-            redirectTo: "agents",
             pathMatch: "full",
+            loadComponent: () =>
+              import(
+                "./features/automation/yoizenclaw/yoizenclaw-landing.component"
+              ).then((m) => m.YoizenclawLandingComponent),
           },
           {
             path: "agents",

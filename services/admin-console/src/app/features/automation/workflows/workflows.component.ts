@@ -251,8 +251,14 @@ export class WorkflowsComponent implements OnInit {
     this.router.navigate(["/workflows", "new"]);
   }
 
+  /**
+   * Card click opens the workflow detail mini-app (Overview sub-tab).
+   * Users get to the Builder via the "Edit" action in the detail
+   * header, or via the Builder sub-tab. Old `/workflows/:id/edit`
+   * deep links still work — the route-level redirect handles them.
+   */
   openEditor(id: string): void {
-    this.router.navigate(["/workflows", id, "edit"]);
+    this.router.navigate(["/workflows", id]);
   }
 
   triggerLabel(wf: IWorkflowDefinitionDto): string {

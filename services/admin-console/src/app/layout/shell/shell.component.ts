@@ -1,15 +1,40 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   inject,
   type OnInit,
   signal,
 } from "@angular/core";
-import { Router, RouterOutlet, NavigationEnd } from "@angular/router";
+import {
+  ActivatedRoute,
+  Router,
+  RouterOutlet,
+  NavigationEnd,
+} from "@angular/router";
+import { toSignal } from "@angular/core/rxjs-interop";
 import { filter } from "rxjs/operators";
 import { HeaderComponent } from "../header/header.component";
 import { SubNavComponent } from "../sub-nav/sub-nav.component";
 import { TenantService } from "../../core/services/tenant.service";
+
+/**
+ * Walks the activated route tree looking for the deepest `data.subNavCollapsed`
+ * value. Pages that want a roomy canvas (Builder) set this on their route data:
+ *   { path: "...", data: { subNavCollapsed: true }, ... }
+ */
+function readCollapsedFlag(route: ActivatedRoute | null): boolean {
+  let r: ActivatedRoute | null = route;
+  let collapsed = false;
+  while (r) {
+    const flag = r.snapshot.data?.["subNavCollapsed"];
+    if (typeof flag === "boolean") {
+      collapsed = flag;
+    }
+    r = r.firstChild;
+  }
+  return collapsed;
+}
 
 @Component({
   selector: "app-shell",
@@ -33,6 +58,7 @@ import { TenantService } from "../../core/services/tenant.service";
 
         <app-sub-nav
           [mobileOpen]="mobileNavOpen()"
+          [collapsed]="subNavCollapsed()"
           (mobileClose)="mobileNavOpen.set(false)"
         />
 
@@ -90,8 +116,25 @@ import { TenantService } from "../../core/services/tenant.service";
 export class ShellComponent implements OnInit {
   private readonly tenantService = inject(TenantService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   readonly mobileNavOpen = signal(false);
+
+  /**
+   * Recomputes on every NavigationEnd by reading route data.subNavCollapsed
+   * down the active route tree. Builder routes set this to true for a roomy
+   * canvas; everything else defaults to false.
+   */
+  private readonly navEnd = toSignal(
+    this.router.events.pipe(filter((e) => e instanceof NavigationEnd)),
+    { initialValue: null },
+  );
+
+  readonly subNavCollapsed = computed(() => {
+    // Touch navEnd so this recomputes on every navigation.
+    this.navEnd();
+    return readCollapsedFlag(this.route);
+  });
 
   ngOnInit(): void {
     this.tenantService.loadTenantDetails();
