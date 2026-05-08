@@ -20,9 +20,9 @@ VALID_SERVICES=(
   api-gateway auth-service event-processor cache-service
   audit-service webhook-service metrics-service tenant-service
   scheduler-service registry-service adapter-service
-  channel-service workflow-service workflow-http-worker
+  channel-service workflow-service http-adapter
   proxy-service yoizenclaw-admin-service admin-console messaging-console
-  yoizenclaw-runtime usage-aggregator-service
+  yoizenclaw-runtime usage-aggregator-service yoizenclaw-runtime-gateway
 )
 
 VALID_ENVIRONMENTS=(dev qa staging production)
@@ -96,8 +96,8 @@ build_image() {
   fi
 
   if [[ "$svc" == "yoizenclaw-runtime" ]]; then
-    local yc_dockerfile="${SCRIPT_DIR}/applications/yoizenclaw-application/Dockerfile"
-    local yc_context="${SCRIPT_DIR}/applications"
+    local yc_dockerfile="${SCRIPT_DIR}/services/yoizenclaw-runtime/Dockerfile"
+    local yc_context="${SCRIPT_DIR}"
     if [[ ! -f "$yc_dockerfile" ]]; then
       err "Dockerfile not found: ${yc_dockerfile}"
       exit 1
@@ -161,7 +161,7 @@ get_deployment_names() {
     # workflow-service ships three pods: api KSVC, NATS worker Deployment,
     # and the Temporal worker Deployment (workflow-worker).
     workflow-service)         echo "workflow-service-worker workflow-worker" ;;
-    workflow-http-worker)     echo "workflow-http-worker" ;;
+    http-adapter)             echo "http-adapter" ;;
     *)                        echo "" ;;
   esac
 }

@@ -71,7 +71,7 @@ src/
 
 | Activity | Task Queue | Description |
 |----------|-----------|-------------|
-| `endpointCall` | `workflow-http` (remote) | HTTP call via `workflow-http-worker` |
+| `endpointCall` | `http-adapter` (remote) | HTTP call via `http-adapter` |
 | `jsFunction` | `workflow-orchestrator` (local) | Inline JS evaluation via `new Function()` |
 | `serviceBusCall` | `workflow-orchestrator` (local) | NATS publish with tenant header |
 | `branch` | — (workflow-level) | Parallel execution of multiple action branches |
@@ -194,6 +194,6 @@ Requires local Temporal server (`localhost:7233`) and NATS (`nats://localhost:42
 |---------|-------------|
 | **Temporal Server** | Workflow execution engine (gRPC) |
 | **NATS** | Service bus activity publishes to NATS subjects |
-| **workflow-http-worker** | Executes `endpointCall` activities on the `workflow-http` task queue |
+| **http-adapter** | Executes generic HTTP activities for `endpointCall` / `serviceCall` on the `http-adapter` task queue |
 | **api-gateway** | Upstream proxy (workflow endpoints proxied through the gateway) |
 | **`@yoizen/shared`** | Workflow types, task queue names, `TENANT_HEADER` |

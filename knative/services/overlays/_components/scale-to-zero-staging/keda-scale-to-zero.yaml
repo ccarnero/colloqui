@@ -22,7 +22,7 @@ spec:
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: workflow-http-worker-scaler
+  name: http-adapter-scaler
 spec:
   minReplicaCount: 0
   idleReplicaCount: 0

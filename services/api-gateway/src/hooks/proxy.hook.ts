@@ -33,6 +33,7 @@ export const PLATFORM_PREFIXES = [
   "/api/auth",
   "/api/dashboard",
   "/api/admin",
+  "/api/runtime",
   "/health",
 ];
 

@@ -28,8 +28,8 @@ describe("YoizenclawAdminService", () => {
     expect(typeof service.unpublishAgent).toBe("function");
     expect(typeof service.getAgent).toBe("function");
     expect(typeof service.updateAgent).toBe("function");
+    expect(typeof service.deleteAgent).toBe("function");
     expect(typeof service.listTemplates).toBe("function");
-    expect(typeof service.chatWithAgent).toBe("function");
     expect(typeof service.listMemoryProposals).toBe("function");
     expect(typeof service.approveMemoryProposal).toBe("function");
     expect(typeof service.rejectMemoryProposal).toBe("function");

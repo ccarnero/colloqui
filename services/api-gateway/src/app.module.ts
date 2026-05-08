@@ -17,6 +17,7 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { RateLimitModule } from "./modules/rate-limit/rate-limit.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { ProvidersModule } from "./providers/providers.module";
+import { RuntimeModule } from "./modules/runtime/runtime.module";
 import { TenantGuard } from "./guards/tenant.guard";
 import { AuthGuard } from "./guards/auth.guard";
 import { AuditInterceptor } from "./interceptors/audit.interceptor";
@@ -37,6 +38,7 @@ import { ServiceExceptionFilter } from "./filters/service-exception.filter";
     WorkflowsModule,
     ProxyModule,
     AdminModule,
+    RuntimeModule,
     DynamicRoutesModule,
     RateLimitModule,
     DashboardModule,

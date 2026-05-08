@@ -38,7 +38,8 @@ import type { IAdapterSummary } from "../../../core/services/adapters.service";
             <mat-label>Agent Name</mat-label>
             <input
               matInput
-              [(ngModel)]="agentName"
+              [ngModel]="agentName()"
+              (ngModelChange)="onAgentNameChange($event)"
               maxlength="255"
               placeholder="Sales Assistant Agent"
             />
@@ -48,7 +49,8 @@ import type { IAdapterSummary } from "../../../core/services/adapters.service";
             <mat-label>Description</mat-label>
             <input
               matInput
-              [(ngModel)]="description"
+              [ngModel]="description()"
+              (ngModelChange)="onDescriptionChange($event)"
               maxlength="255"
               placeholder="Short internal description for the team"
             />
@@ -57,8 +59,8 @@ import type { IAdapterSummary } from "../../../core/services/adapters.service";
           <mat-form-field appearance="outline">
             <mat-label>LLM Connector</mat-label>
             <mat-select
-              [(ngModel)]="connectorId"
-              (selectionChange)="onConnectorChange()"
+              [ngModel]="connectorId()"
+              (ngModelChange)="onConnectorIdChange($event)"
             >
               <mat-option [value]="null">No connector</mat-option>
               @for (c of llmConnectors(); track c.id) {
@@ -71,7 +73,10 @@ import type { IAdapterSummary } from "../../../core/services/adapters.service";
 
           <mat-form-field appearance="outline">
             <mat-label>LLM Provider</mat-label>
-            <mat-select [(ngModel)]="provider">
+            <mat-select
+              [ngModel]="provider()"
+              (ngModelChange)="onProviderChange($event)"
+            >
               @for (p of llmProviders; track p.value) {
                 <mat-option [value]="p.value">
                   {{ p.label }}
@@ -93,7 +98,12 @@ import type { IAdapterSummary } from "../../../core/services/adapters.service";
 
           <mat-form-field appearance="outline">
             <mat-label>LLM Model</mat-label>
-            <input matInput [(ngModel)]="model" placeholder="gpt-5.4-nano" />
+            <input
+              matInput
+              [ngModel]="model()"
+              (ngModelChange)="onModelChange($event)"
+              placeholder="gpt-5.4-nano"
+            />
           </mat-form-field>
         </div>
         <div class="helper-copy">
@@ -383,11 +393,24 @@ export class YoizenclawAgentConfigComponent {
     return this.llmConnectors().find((c) => c.id === id) ?? null;
   });
 
-  onConnectorChange(): void {
-    const connector = this.selectedConnector();
-    if (connector) {
-      this.provider.set(connector.name);
-    }
+  protected onAgentNameChange(value: string): void {
+    this.agentName.set(value);
+  }
+
+  protected onDescriptionChange(value: string): void {
+    this.description.set(value);
+  }
+
+  protected onConnectorIdChange(value: string | null): void {
+    this.connectorId.set(value);
+  }
+
+  protected onProviderChange(value: string): void {
+    this.provider.set(value);
+  }
+
+  protected onModelChange(value: string): void {
+    this.model.set(value);
   }
 
   addSubagent(): void {

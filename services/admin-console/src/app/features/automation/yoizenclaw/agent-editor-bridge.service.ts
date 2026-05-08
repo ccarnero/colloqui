@@ -1,5 +1,10 @@
 import { Injectable, signal } from "@angular/core";
 
+export interface IAgentBridgeSavedEvent {
+  id: string;
+  name: string;
+}
+
 /**
  * Bridge between the parent agent-detail wrapper and the inner editor.
  *
@@ -23,6 +28,8 @@ export class AgentEditorBridgeService {
   readonly loading = signal(false);
   readonly canSave = signal(false);
   readonly isDirty = signal(false);
+  readonly savedAgent = signal<IAgentBridgeSavedEvent | null>(null);
+  readonly deletedAgentId = signal<string | null>(null);
 
   // ---- Action handlers (registered by the inner editor) ----
 
@@ -50,7 +57,17 @@ export class AgentEditorBridgeService {
     this.loading.set(false);
     this.canSave.set(false);
     this.isDirty.set(false);
+    this.savedAgent.set(null);
+    this.deletedAgentId.set(null);
     console.debug("[agent-editor-bridge] handlers torn down");
+  }
+
+  notifySavedAgent(event: IAgentBridgeSavedEvent): void {
+    this.savedAgent.set(event);
+  }
+
+  notifyDeletedAgent(agentId: string): void {
+    this.deletedAgentId.set(agentId);
   }
 
   // ---- Action methods (triggered by the parent detail) ----

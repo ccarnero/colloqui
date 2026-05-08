@@ -16,3 +16,5 @@ components:
 
 patches:
   - path: env-patches.yaml
+  - path: keda-min-replicas.yaml
+  - path: knative-min-replicas.yaml

@@ -23,7 +23,7 @@ graph TB
                 REG[Registry Service]
                 WF_API[Workflow API]
                 WF_WORKER[Workflow Worker]
-                WF_HTTP[Workflow HTTP Worker]
+                WF_HTTP[HTTP Adapter]
             end
 
             subgraph supportSvc ["support-services-{env}"]
@@ -269,7 +269,7 @@ sequenceDiagram
     WW->>WW: runWorkflow: iterate actions
 
     alt endpointCall action
-        WW->>T: Schedule activity on workflow-http queue
+        WW->>T: Schedule activity on http-adapter queue
         T->>HW: Deliver activity task
         HW->>EXT: HTTP request via axios
         EXT-->>HW: Response
@@ -625,8 +625,10 @@ graph LR
 
 | Activity | Task Queue | Description |
 |----------|-----------|-------------|
-| `endpointCall` | `workflow-http` | HTTP request via workflow-http-worker |
+| `endpointCall` | `http-adapter` | HTTP request via http-adapter |
+| `serviceCall` | `http-adapter` | Internal/service-aware HTTP request via http-adapter |
 | `jsFunction` | `workflow-orchestrator` | Inline JS evaluation |
+| `agentCall` | `workflow-orchestrator` | YoizenClaw agent chat via workflow-service local activity |
 | `serviceBusCall` | `workflow-orchestrator` | NATS publish with tenant header |
 | `branch` | (workflow-level) | Parallel execution of sub-actions |
 
@@ -634,15 +636,15 @@ Actions support `{{path.to.value}}` template resolution against the execution co
 
 ---
 
-### Workflow HTTP Worker
+### HTTP Adapter
 
 | Aspect | Detail |
 |--------|--------|
-| **Role** | Standalone Temporal worker for HTTP activities |
+| **Role** | Standalone Temporal worker for generic HTTP execution activities |
 | **Port** | 3000 (health only) |
 | **Scale** | 1 -- 5 replicas |
 
-Executes `endpointCall` activities via `axios` with automatic `x-yoizen-tenant` header injection. Max 200 concurrent activity tasks.
+Executes `endpointCall` and `serviceCall` via `tracedFetch` with automatic `x-yoizen-tenant` header injection, adapter resolution, response caching, and internal service mirror lookup. Max 200 concurrent activity tasks.
 
 ---
 
@@ -675,7 +677,7 @@ graph TB
             REG[Registry Service]
             WF_API[Workflow API]
             WF_W[Workflow Worker]
-            WF_H[Workflow HTTP Worker]
+            WF_H[HTTP Adapter]
         end
 
         subgraph supportSvc ["support-services-{env}"]
@@ -712,7 +714,7 @@ graph TB
 | Registry Service | 1 | 5 | 50 |
 | Workflow API | 1 | 5 | 50 |
 | Workflow Worker | 1 | 3 | 50 |
-| Workflow HTTP Worker | 1 | 5 | 100 |
+| HTTP Adapter | 1 | 5 | 100 |
 
 ### Container Build
 
@@ -757,7 +759,7 @@ Provides type-safe constants and interfaces consumed by all services.
 | `RESULT_TTL` | `3600` (1 hour) | API Gateway, Event Processor |
 | `TENANT_HEADER` | `x-yoizen-tenant` | All services |
 | `WORKFLOW_ORCHESTRATOR_TASK_QUEUE` | `workflow-orchestrator` | Workflow Service |
-| `WORKFLOW_HTTP_TASK_QUEUE` | `workflow-http` | Workflow HTTP Worker |
+| `HTTP_ADAPTER_TASK_QUEUE` | `http-adapter` | HTTP Adapter |
 
 ### Core Interfaces
 
@@ -876,7 +878,7 @@ graph TD
 │  │  │  audit-service · cache-service · webhook-service           │  │  │
 │  │  │  metrics-service · tenant-service · scheduler-service      │  │  │
 │  │  │  registry-service · workflow-api · workflow-worker          │  │  │
-│  │  │  workflow-http-worker                                      │  │  │
+│  │  │  http-adapter                                              │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  │  ┌─ support-services-{env} (StatefulSets / Deployments) ─────┐  │  │

@@ -81,13 +81,14 @@ metadata:
 
 ### Temporal workers (pull-based, no inbound HTTP)
 
-`workflow-worker` and `workflow-http-worker` are plain
+`workflow-worker` and `http-adapter` are plain
 `apps/v1.Deployment` resources, NOT Knative Services. KPA's
 HTTP-driven scale-from-zero is irrelevant to a Temporal worker (gRPC
 long-poll, no incoming HTTP). KEDA's `temporal` scaler (added in
 KEDA 2.17) drives their replicas based on `workflow-orchestrator` /
-`workflow-http` task-queue depth — see
-`knative/services/base/scaledobjects/workflow-{worker,http-worker}.yaml`
+`http-adapter` task-queue depth — see
+`knative/services/base/scaledobjects/workflow-worker.yaml` and
+`knative/services/base/scaledobjects/http-adapter.yaml`
 for the trigger spec. Because the target is a plain Deployment,
 `/scale` is exposed natively and KEDA scales them directly (no HPA
 ownership transfer dance needed).

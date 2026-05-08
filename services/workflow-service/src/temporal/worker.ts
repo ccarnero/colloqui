@@ -1,9 +1,9 @@
 import "../instrumentation";
-import { WORKFLOW_ORCHESTRATOR_TASK_QUEUE } from "@yoizen/shared";
 import { PinoLoggerService } from "@yoizen/observability";
 import { runTemporalWorkerCli } from "./temporal-worker-bootstrap";
 import { workflowServiceConfig } from "../config";
 import * as activities from "./activities";
+import { WORKFLOW_ORCHESTRATOR_TASK_QUEUE } from "./workflow-queue";
 
 const logger = new PinoLoggerService("workflow-orchestrator-worker");
 

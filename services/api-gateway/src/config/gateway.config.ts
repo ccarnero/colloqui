@@ -66,6 +66,9 @@ export const gatewayConfig = {
     admin:
       process.env.ADMIN_SERVICE_URL ??
       platformServiceUrl("yoizenclaw-admin-service", env),
+    runtimeGateway:
+      process.env.YOIZENCLAW_RUNTIME_GATEWAY_URL ??
+      platformServiceUrl("yoizenclaw-runtime-gateway", env),
   },
 
   rateLimit: {

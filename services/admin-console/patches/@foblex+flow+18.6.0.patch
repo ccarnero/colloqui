@@ -1,0 +1,21 @@
+diff --git a/node_modules/@foblex/flow/fesm2022/foblex-flow.mjs b/node_modules/@foblex/flow/fesm2022/foblex-flow.mjs
+index 1a90030..0dac253 100644
+--- a/node_modules/@foblex/flow/fesm2022/foblex-flow.mjs
++++ b/node_modules/@foblex/flow/fesm2022/foblex-flow.mjs
+@@ -6354,14 +6354,14 @@ class DragAndDropBase {
+             this._dragStartPosition = touchEvent.getPosition();
+             this._ngZone?.runOutsideAngular(() => {
+                 this._listen('selectstart', this._onSelectStart, EventExtensions.activeListener());
+-                this._listen('touchmove', this._onTouchMove);
++                this._listen('touchmove', this._onTouchMove, EventExtensions.activeListener());
+                 this._listen('pointerup', this._onPointerUpEvent);
+                 this._listen('pointercancel', this._onPointerUpEvent, EventExtensions.activeCaptureListener());
+                 this._listen('contextmenu', this._preventDuringDrag, EventExtensions.activeCaptureListener());
+             });
+             this._touchListeners = () => {
+                 this._unlisten('selectstart', this._onSelectStart, EventExtensions.activeListener());
+-                this._unlisten('touchmove', this._onTouchMove);
++                this._unlisten('touchmove', this._onTouchMove, EventExtensions.activeListener());
+                 this._unlisten('pointerup', this._onPointerUpEvent);
+                 this._unlisten('pointercancel', this._onPointerUpEvent, EventExtensions.activeCaptureListener());
+                 this._unlisten('contextmenu', this._preventDuringDrag, EventExtensions.activeCaptureListener());

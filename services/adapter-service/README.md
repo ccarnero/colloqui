@@ -1,6 +1,6 @@
 # Adapter Service
 
-Multi-tenant HTTP adapter configuration service. Manages adapters (base URL, auth type, custom headers, timeouts, retries) and their endpoints per tenant. Stores configuration in PostgreSQL via `postgres.js` (raw SQL, no ORM). Consumed by `AdapterClient` in workflow-http-worker, event-processor, and webhook-service.
+Multi-tenant HTTP adapter configuration service. Manages adapters (base URL, auth type, custom headers, timeouts, retries) and their endpoints per tenant. Stores configuration in PostgreSQL via `postgres.js` (raw SQL, no ORM). Consumed by `AdapterClient` in http-adapter, event-processor, and webhook-service.
 
 ## Quick Start
 

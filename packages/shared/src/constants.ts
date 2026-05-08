@@ -60,7 +60,7 @@ export const PLATFORM_NON_CHANNEL_TOKEN = 'system';
 export const ADAPTER_MANAGED_BY_REGISTRY = 'registry-service';
 
 export const WORKFLOW_ORCHESTRATOR_TASK_QUEUE = 'workflow-orchestrator';
-export const WORKFLOW_HTTP_TASK_QUEUE = 'workflow-http';
+export const HTTP_ADAPTER_TASK_QUEUE = 'http-adapter';
 export const WORKFLOW_DEFAULT_TIMEOUT_MS = 60_000;
 
 export const GATEWAY_AUDIT_STREAM_NAME = 'GATEWAY_AUDIT';
@@ -98,6 +98,18 @@ export const YOIZENCLAW_AGENT_UNPUBLISHED =
   `${YOIZENCLAW_SUBJECT_PREFIX}.agent_unpublished.v1`;
 export const YOIZENCLAW_EVENT =
   `${YOIZENCLAW_SUBJECT_PREFIX}.event.v1`;
+
+export const YOIZENCLAW_RUNTIME_GATEWAY_PRODUCER = "yoizenclaw-runtime-gateway";
+export const YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX =
+  "evt.{tenant}.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal";
+export const YOIZENCLAW_EXECUTION_REQUESTED =
+  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_requested.v1`;
+export const YOIZENCLAW_EXECUTION_STARTED =
+  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_started.v1`;
+export const YOIZENCLAW_EXECUTION_COMPLETED =
+  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_completed.v1`;
+export const YOIZENCLAW_EXECUTION_FAILED =
+  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_failed.v1`;
 
 export function buildYoizenClawSubject(template: string, tenantId: string): string {
   return template.replaceAll("{tenant}", tenantId);

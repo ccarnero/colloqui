@@ -43,6 +43,8 @@ spec:
               value: "http://proxy-service.platform-services-staging.svc.cluster.local"
             - name: CHANNEL_SERVICE_URL
               value: "http://channel-service-api.platform-services-staging.svc.cluster.local"
+            - name: YOIZENCLAW_RUNTIME_GATEWAY_URL
+              value: "http://yoizenclaw-runtime-gateway.platform-services-staging.svc.cluster.local"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -692,3 +694,77 @@ spec:
               port: 3000
             initialDelaySeconds: 3
             periodSeconds: 5
+---
+# NOTE: workflow-worker / http-adapter are plain Deployments
+# (NOT Knative Services) — see knative/services/base/workflow-worker.yaml
+# for the rationale. The patches below target `apps/v1.Deployment`
+# accordingly; the env injection still happens here so the local overlay
+# remains the single place that wires service URLs / Temporal endpoints.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          env:
+            - name: ENTRYPOINT
+              value: "dist/temporal/worker.js"
+            - name: TEMPORAL_ADDRESS
+              value: "temporal.support-services-staging.svc.cluster.local:7233"
+            - name: NATS_URL
+              value: "nats://nats.support-services-staging.svc.cluster.local:4222"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-staging.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "workflow-worker"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: http-adapter
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: "temporal.support-services-staging.svc.cluster.local:7233"
+            - name: ADAPTER_SERVICE_URL
+              value: "http://adapter-service-api.platform-services-staging.svc.cluster.local"
+            - name: REDIS_HOST
+              value: "redis.support-services-staging.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-staging.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "http-adapter"
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: yoizenclaw-runtime-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/yoizenclaw-runtime-gateway:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-staging.svc.cluster.local:4222"
+            - name: REDIS_HOST
+              value: "redis.support-services-staging.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-staging.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "yoizenclaw-runtime-gateway"

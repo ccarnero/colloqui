@@ -265,7 +265,7 @@ Requires at least one per-tenant Postgres instance reachable at `postgres.<tenan
 
 | Service | Usage |
 |---------|-------|
-| **workflow-http-worker** | Resolves adapter config for `endpointCall` activities |
+| **http-adapter** | Resolves adapter config for `endpointCall` and `serviceCall` activities |
 | **event-processor** | Resolves adapter config for enrichment and forward pipeline stages |
 | **webhook-service** | Fetches adapter config for webhook delivery with custom auth/headers/retries |
 | **api-gateway** | Proxies adapter management endpoints |

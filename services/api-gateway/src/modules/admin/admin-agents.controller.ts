@@ -14,7 +14,6 @@ import {
 } from "@nestjs/common";
 import { AdminProxyService } from "./admin-proxy.service";
 import {
-  ChatRequestDto,
   CreateAgentDto,
   MemoryProposalParamDto,
   AdminAgentsListQueryDto,
@@ -133,22 +132,6 @@ export class AdminAgentsController {
       method: "POST",
       path: `/admin/agents/${id}/unpublish`,
       tenantId: req.tenantId,
-    });
-  }
-
-  @Post(":id/chat")
-  @HttpCode(HttpStatus.OK)
-  async chatWithAgent(
-    @Req() req: ITenantScopedRequest,
-    @Param("id", ParseUUIDPipe) id: string,
-    @Body() body: ChatRequestDto,
-  ): Promise<object> {
-    return this.proxy.proxy({
-      method: "POST",
-      path: `/admin/agents/${id}/chat`,
-      tenantId: req.tenantId,
-      body,
-      trustedUserId: req.user?.sub,
     });
   }
 

@@ -27,6 +27,7 @@ const SERVICE_URLS = new Map<string, string>([
   ["adapter-service", gatewayConfig.services.adapter],
   ["channel-service", gatewayConfig.services.channel],
   ["yoizenclaw-admin-service", gatewayConfig.services.admin],
+  ["yoizenclaw-runtime-gateway", gatewayConfig.services.runtimeGateway],
 ]);
 
 const SERVICE_TIMEOUT_MS = 3_000;

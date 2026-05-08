@@ -47,6 +47,8 @@ spec:
               value: "http://channel-service-api.platform-services-dev.svc.cluster.local"
             - name: ADMIN_SERVICE_URL
               value: "http://yoizenclaw-admin-service.platform-services-dev.svc.cluster.local"
+            - name: YOIZENCLAW_RUNTIME_GATEWAY_URL
+              value: "http://yoizenclaw-runtime-gateway.platform-services-dev.svc.cluster.local"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -126,6 +128,31 @@ spec:
               port: 3000
             initialDelaySeconds: 3
             periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: yoizenclaw-runtime-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/yoizenclaw-runtime-gateway:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: REDIS_HOST
+              value: "redis.support-services-dev.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "yoizenclaw-runtime-gateway"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -828,7 +855,7 @@ spec:
             - name: SERVICE_MODE
               value: "worker"
 ---
-# NOTE: workflow-worker / workflow-http-worker are plain Deployments
+# NOTE: workflow-worker / http-adapter are plain Deployments
 # (NOT Knative Services) — see knative/services/base/workflow-worker.yaml
 # for the rationale. The patches below target `apps/v1.Deployment`
 # accordingly; the env injection still happens here so the dev overlay
@@ -857,7 +884,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: workflow-http-worker
+  name: http-adapter
 spec:
   template:
     spec:
@@ -875,7 +902,7 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
-              value: "workflow-http-worker"
+              value: "http-adapter"
 ---
 apiVersion: serving.knative.dev/v1
 kind: Service

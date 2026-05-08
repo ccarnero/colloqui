@@ -3,15 +3,19 @@ import type {
   WorkflowDefinition,
   WorkflowExecutionContext,
   WorkflowAction,
-  AgentCallArgs,
-  EndpointCallArgs,
   EventCausalContext,
+  HttpEndpointRequest,
+  HttpExecutionResult,
+  HttpServiceRequest,
+  AgentChatRequest,
   JsFunctionArgs,
   ServiceBusCallArgs,
-  ServiceCallArgs,
   ChannelSendArgs,
-} from "@yoizen/shared";
-import { WORKFLOW_HTTP_TASK_QUEUE } from "./workflow-queue";
+} from "./workflow.types";
+import {
+  HTTP_ADAPTER_TASK_QUEUE,
+  WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
+} from "./workflow-queue";
 
 interface IOrchestratorActivities {
   executeJsFunction(
@@ -40,33 +44,21 @@ interface IExecutionPublisherActivities {
 
 interface IHttpActivities {
   executeEndpointCall(
-    args: EndpointCallArgs,
+    args: HttpEndpointRequest,
     tenantId: string,
-  ): Promise<{
-    status: number;
-    data: unknown;
-    headers: Record<string, string>;
-  }>;
+  ): Promise<HttpExecutionResult>;
   executeServiceCall(
-    args: ServiceCallArgs,
+    args: HttpServiceRequest,
     tenantId: string,
-  ): Promise<{
-    status: number;
-    data: unknown;
-    headers: Record<string, string>;
-  }>;
+  ): Promise<HttpExecutionResult>;
 }
 
 /** YoizenClaw chat can exceed default HTTP activity timeouts. */
 interface IAgentHttpActivities {
   executeAgentCall(
-    args: AgentCallArgs,
+    args: AgentChatRequest,
     tenantId: string,
-  ): Promise<{
-    status: number;
-    data: unknown;
-    headers: Record<string, string>;
-  }>;
+  ): Promise<HttpExecutionResult>;
 }
 
 const local = proxyActivities<IOrchestratorActivities>({
@@ -80,13 +72,13 @@ const publisher = proxyActivities<IExecutionPublisherActivities>({
 });
 
 const http = proxyActivities<IHttpActivities>({
-  taskQueue: WORKFLOW_HTTP_TASK_QUEUE,
+  taskQueue: HTTP_ADAPTER_TASK_QUEUE,
   startToCloseTimeout: "30s",
   retry: { maximumAttempts: 3 },
 });
 
 const httpAgent = proxyActivities<IAgentHttpActivities>({
-  taskQueue: WORKFLOW_HTTP_TASK_QUEUE,
+  taskQueue: WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
   startToCloseTimeout: "5m",
   retry: { maximumAttempts: 3 },
 });

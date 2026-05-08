@@ -10,7 +10,7 @@ const GW = getBaseUrl("api-gateway");
  * enrich/forward/webhook pipeline past the 120s pollEvent deadline, so
  * the `it` timeout must comfortably exceed it. Phase-1 scale-to-zero
  * adds a one-time ~25s cold-start for `workflow-worker` /
- * `workflow-http-worker` (consumers that don't appear in the gateway
+ * `http-adapter` (consumers that don't appear in the gateway
  * aggregator and so aren't pre-warmed by `warmup.ts`).
  */
 const SLOW_IT = { timeout: 180_000 };

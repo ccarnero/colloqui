@@ -1,6 +1,6 @@
 # YoizenClaw runtime (tenant namespace)
 
-Kustomize manifests for the Python **YoizenClaw runtime** ([`applications/yoizenclaw-application`](../../applications/yoizenclaw-application)) as a Knative `Service` in a **tenant** namespace (e.g. `acme-dev-ns`), using the same style as platform services (`namespace` in the overlay, YAML in `base/`).
+Kustomize manifests for the Python **YoizenClaw runtime** ([`services/yoizenclaw-runtime`](../../services/yoizenclaw-runtime)) as a Knative `Service` in a **tenant** namespace (e.g. `acme-dev-ns`), using the same style as platform services (`namespace` in the overlay, YAML in `base/`).
 
 This is **not** part of [`knative/services/base`](../services/base); it is deployed **only** into the tenant namespace where per-tenant PostgreSQL lives.
 
@@ -15,14 +15,14 @@ This is **not** part of [`knative/services/base`](../services/base); it is deplo
 
 ## Build the container image
 
-Build context **must** be the `applications/` directory so `shared/types/python` and `yoizenclaw-application` are both available:
+Build context must be the repository root so `services/yoizenclaw-runtime` and `packages/shared-python` are both available:
 
 ```bash
 # From repository root
 docker build \
   -t dev.local/yoizenclaw-runtime:local \
-  -f applications/yoizenclaw-application/Dockerfile \
-  applications/
+  -f services/yoizenclaw-runtime/Dockerfile \
+  .
 ```
 
 For Minikube, point Docker at the Minikube daemon and load the image if needed:
@@ -55,4 +55,4 @@ Copy `overlays/acme-dev/` to a new overlay (e.g. `overlays/globex-dev/`), set `n
 
 ## Troubleshooting
 
-If `docker build` fails during `pip install -e .` with **ResolutionImpossible**, the usual causes are: (1) OpenTelemetry packages not on one release line — see pinned OTEL versions in [`applications/yoizenclaw-application/pyproject.toml`](../../applications/yoizenclaw-application/pyproject.toml); (2) **`pydantic-ai`** meta-package pulling optional providers (e.g. Mistral) that pin incompatible `opentelemetry-semantic-conventions` — this repo uses **`pydantic-ai-slim`** with explicit extras instead.
+If `docker build` fails during `pip install -e .` with **ResolutionImpossible**, the usual causes are: (1) OpenTelemetry packages not on one release line — see pinned OTEL versions in [`services/yoizenclaw-runtime/pyproject.toml`](../../services/yoizenclaw-runtime/pyproject.toml); (2) **`pydantic-ai`** meta-package pulling optional providers (e.g. Mistral) that pin incompatible `opentelemetry-semantic-conventions` — this repo uses **`pydantic-ai-slim`** with explicit extras instead.

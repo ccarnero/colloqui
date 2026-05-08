@@ -20,6 +20,7 @@ import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
 import { MonacoEditorModule } from "ngx-monaco-editor-v2";
 import { AgentEditorBridgeService } from "./agent-editor-bridge.service";
 import { YoizenclawAdminService } from "../../../core/services/yoizenclaw-admin.service";
+import { YoizenclawRuntimeService } from "../../../core/services/yoizenclaw-runtime.service";
 import {
   AdaptersService,
   type IAdapterSummary,
@@ -33,10 +34,14 @@ import {
   getAgentLlmConfig,
 } from "../../../core/models/yoizenclaw.model";
 import { YoizenclawAgentConfigComponent } from "./agent-config.component";
-import { YoizenclawExistingAgentsPanelComponent } from "./existing-agents-panel.component";
+import {
+  type IAgentRuntimeHealth,
+  YoizenclawExistingAgentsPanelComponent,
+} from "./existing-agents-panel.component";
 import { YoizenclawAgentEditorNavComponent } from "./agent-editor-nav.component";
 import { YoizenclawAgentEditorSkillFormComponent } from "./agent-editor-skill-form.component";
 import { YoizenclawAgentEditorToolFormComponent } from "./agent-editor-tool-form.component";
+import { YoizenclawTopBarComponent } from "./yoizenclaw-top-bar.component";
 import {
   buildToolPayloadsFromDrafts,
   extractMentionsFromPrompt,
@@ -63,7 +68,7 @@ import {
   loadAgentDraft,
   saveAgentDraft,
 } from "./agent-draft.helpers";
-import type { Observable } from "rxjs";
+import { firstValueFrom, type Observable } from "rxjs";
 
 const AUTOSAVE_INTERVAL_MS = 800;
 
@@ -84,6 +89,7 @@ const AUTOSAVE_INTERVAL_MS = 800;
     YoizenclawAgentEditorNavComponent,
     YoizenclawAgentEditorSkillFormComponent,
     YoizenclawAgentEditorToolFormComponent,
+    YoizenclawTopBarComponent,
   ],
   styleUrl: "./yoizenclaw.component.scss",
   template: `
@@ -111,12 +117,29 @@ const AUTOSAVE_INTERVAL_MS = 800;
           [loading]="loading()"
           [editingAgentId]="editingAgentId()"
           [publishingId]="publishingId()"
+          [deletingId]="deletingId()"
+          [runtimeHealth]="runtimeHealth()"
           (edit)="loadAgentForEdit($event)"
           (publish)="publishAgent($event)"
           (unpublish)="unpublishAgent($event)"
+          (delete)="deleteAgent($event)"
+          (checkRuntime)="checkRuntimeSync($event)"
         />
       </div>
     } @else {
+      <app-yoizenclaw-top-bar
+        [editingAgentId]="editingAgentId()"
+        [saving]="saving()"
+        [loading]="loading()"
+        [canSave]="isValid()"
+        [errorMessage]="errorMessage()"
+        [successMessage]="successMessage()"
+        [isDirty]="isDirty()"
+        (save)="saveAgent()"
+        (reset)="resetToTemplate()"
+        (cancelEdit)="cancelEdit()"
+      />
+
       @if (draftRestored()) {
         <div class="alert alert-info draft-banner">
           <mat-icon>history</mat-icon>
@@ -331,6 +354,7 @@ const AUTOSAVE_INTERVAL_MS = 800;
 })
 export class YoizenclawComponent implements OnInit {
   private readonly yoizenclawAdminService = inject(YoizenclawAdminService);
+  private readonly yoizenclawRuntimeService = inject(YoizenclawRuntimeService);
   private readonly adaptersService = inject(AdaptersService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
@@ -346,6 +370,8 @@ export class YoizenclawComponent implements OnInit {
   readonly saving = signal(false);
   readonly viewMode = signal<"list" | "editor">("list");
   readonly publishingId = signal<string | null>(null);
+  readonly deletingId = signal<string | null>(null);
+  readonly runtimeHealth = signal<Record<string, IAgentRuntimeHealth>>({});
   readonly editingAgentId = signal<string | null>(null);
   readonly agents = signal<IYoizenclawAgent[]>([]);
   readonly llmConnectors = signal<IAdapterSummary[]>([]);
@@ -724,6 +750,7 @@ export class YoizenclawComponent implements OnInit {
     this.snackBar.open(message, undefined, { duration: 3000 });
     this.saving.set(false);
     this.applyAgentToForm(agent, false);
+    this.bridge?.notifySavedAgent({ id: agent.id, name: agent.name });
   }
 
   private notifyError(message: string): void {
@@ -783,6 +810,54 @@ export class YoizenclawComponent implements OnInit {
       return;
     }
     this.applyAgentToForm(agent);
+  }
+
+  deleteAgent(agentId: string): void {
+    const target = this.agents().find((agent) => agent.id === agentId);
+    const label = target?.name ?? agentId;
+    const confirmed = window.confirm(
+      `Delete agent "${label}"? This will remove it from active use.`,
+    );
+    if (!confirmed) return;
+
+    this.deletingId.set(agentId);
+    this.errorMessage.set("");
+    this.successMessage.set("");
+
+    this.yoizenclawAdminService.deleteAgent(agentId).subscribe({
+      next: () => {
+        this.agents.update((agents) => agents.filter((a) => a.id !== agentId));
+        this.runtimeHealth.update((health) => {
+          const { [agentId]: _, ...rest } = health;
+          return rest;
+        });
+        const message = `Agent "${label}" deleted successfully.`;
+        this.successMessage.set(message);
+        this.snackBar.open(message, undefined, { duration: 3000 });
+
+        if (this.editingAgentId() === agentId) {
+          this.editingAgentId.set(null);
+          this.resetToTemplate();
+          if (this.navigationMode() === "route") {
+            void this.router.navigate(["/yoizenclaw/agents"]);
+          } else {
+            this.viewMode.set("list");
+          }
+        }
+
+        this.bridge?.notifyDeletedAgent(agentId);
+        this.deletingId.set(null);
+      },
+      error: (error: { error?: { message?: string | string[] } }) => {
+        this.notifyError(
+          formatHttpErrorMessage(
+            error.error?.message,
+            "The agent could not be deleted.",
+          ),
+        );
+        this.deletingId.set(null);
+      },
+    });
   }
 
   private applyAgentToForm(agent: IYoizenclawAgent, scrollToTop = true): void {
@@ -970,6 +1045,13 @@ export class YoizenclawComponent implements OnInit {
       .subscribe({
         next: (response) => {
           this.agents.set(response.agents);
+          this.runtimeHealth.update((current) => {
+            const next: Record<string, IAgentRuntimeHealth> = {};
+            for (const agent of response.agents) {
+              next[agent.id] = current[agent.id] ?? { state: "unknown" };
+            }
+            return next;
+          });
 
           const forcedAgentId = this.forcedAgentId();
           if (forcedAgentId) {
@@ -1017,5 +1099,73 @@ export class YoizenclawComponent implements OnInit {
         this.loading.set(false);
       },
     });
+  }
+
+  async checkRuntimeSync(agentId: string): Promise<void> {
+    const agent = this.agents().find((candidate) => candidate.id === agentId);
+    if (!agent) return;
+
+    this.runtimeHealth.update((current) => ({
+      ...current,
+      [agentId]: { state: "checking", checkedAt: Date.now() },
+    }));
+
+    try {
+      const submitted = await firstValueFrom(
+        this.yoizenclawRuntimeService.createExecution({
+          agentId,
+          message: "Runtime sync check",
+          conversationId: `runtime-sync-check-${agentId}-${Date.now()}`,
+          channel: "admin-console-health-check",
+          customerName: "Health Check",
+          context: [],
+          userId: "runtime-health-check",
+        }),
+      );
+
+      const timeoutAt = Date.now() + 20_000;
+      while (Date.now() < timeoutAt) {
+        const result = await firstValueFrom(
+          this.yoizenclawRuntimeService.getExecution(submitted.executionId),
+        );
+
+        if (result.state === "completed") {
+          this.runtimeHealth.update((current) => ({
+            ...current,
+            [agentId]: { state: "synced", checkedAt: Date.now() },
+          }));
+          return;
+        }
+
+        if (result.state === "failed") {
+          const detail =
+            result.result?.errorMessage ||
+            result.result?.errorCode ||
+            "Runtime execution failed.";
+          this.runtimeHealth.update((current) => ({
+            ...current,
+            [agentId]: {
+              state: "unsynced",
+              detail,
+              checkedAt: Date.now(),
+            },
+          }));
+          return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      throw new Error("Runtime health check timed out.");
+    } catch (error) {
+      const detail =
+        error instanceof Error && error.message
+          ? error.message
+          : "Runtime health check failed.";
+      this.runtimeHealth.update((current) => ({
+        ...current,
+        [agentId]: { state: "unsynced", detail, checkedAt: Date.now() },
+      }));
+    }
   }
 }

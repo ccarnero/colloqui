@@ -41,7 +41,7 @@ spec:
   # in-flight message); auto-reply is batched rule evaluation so its
   # threshold is looser. webhook-ingress lag is rolled into channel-egress
   # because every ingress eventually generates an egress (event-processor
-  # → workflow-http-worker → channel-egress).
+  # → http-adapter → channel-egress).
   triggers:
     - type: prometheus
       name: channel-egress-lag

@@ -17,12 +17,12 @@
 - [x] 1.2.2 [GREEN] Add `YOIZENCLAW_*` constants to `packages/shared/src/constants.ts` with wdocs subjects `[S]`
 - [x] 1.2.3 [GREEN] Export constants from `packages/shared/src/index.ts` `[XS]`
 - [x] 1.2.4 [RED] Write failing test: `extractTenantId()` extracts from x-yoizen-tenant header `[XS]`
-- [x] 1.2.5 [GREEN] Create `shared/types/python/tenant.py` with extraction + validation `[S]`
+- [x] 1.2.5 [GREEN] Create `packages/shared-python/tenant.py` with extraction + validation `[S]`
 
 ### 1.3 CloudEvents Envelope Builder (wdocs/02)
 
 - [x] 1.3.1 [RED] Write failing test: `build_internal_agent_envelope()` produces valid CloudEvents structure `[S]`
-- [x] 1.3.2 [GREEN] Create `shared/types/python/envelope.py` with CloudEventEnvelope dataclass `[M]`
+- [x] 1.3.2 [GREEN] Create `packages/shared-python/envelope.py` with CloudEventEnvelope dataclass `[M]`
 - [x] 1.3.3 [RED] Write failing test: Envelope includes transport.protocol="internal", depth, agent_id `[S]`
 - [x] 1.3.4 [GREEN] Implement transport metadata population in envelope builder `[S]`
 - [x] 1.3.5 [RED] Write failing test: `validate_envelope()` rejects missing required fields `[S]`
@@ -31,7 +31,7 @@
 ### 1.4 Subject Helper (wdocs/01)
 
 - [x] 1.4.1 [RED] Write failing test: `build_subject("acme", "config_sync")` → `evt.acme.yoizenclaw.config_sync.v1` `[XS]`
-- [x] 1.4.2 [GREEN] Create `shared/types/python/subjects.py` with YOIZENCLAW_ACTIONS map + helpers `[S]`
+- [x] 1.4.2 [GREEN] Create `packages/shared-python/subjects.py` with YOIZENCLAW_ACTIONS map + helpers `[S]`
 - [x] 1.4.3 [RED] Write failing test: `extract_tenant_from_subject("evt.acme.yoizenclaw.online.v1")` → "acme" `[XS]`
 - [x] 1.4.4 [GREEN] Implement `extract_tenant_from_subject()` parsing `[S]`
 
@@ -197,7 +197,7 @@
 
 ## Phase 9: Documentation & Cleanup
 
-- [ ] 9.1 Update `applications/yoizenclaw-application/README.md` with multi-tenancy + wdocs `[S]`
+- [ ] 9.1 Update `services/yoizenclaw-runtime/README.md` with multi-tenancy + wdocs `[S]`
 - [ ] 9.2 Update `services/yoizenclaw-admin-service/AGENTS.md` `[S]`
 - [ ] 9.3 Document Helm chart in `infrastructure/base/yoizenclaw-runtime/README.md` `[S]`
 - [ ] 9.4 Add JSDoc to new public methods `[XS]`
@@ -211,9 +211,9 @@
 | `alembic/versions/001_add_tenant_id.py` | 1.1.2 | 1 |
 | `packages/shared/src/constants.ts` | 1.2.2, 1.2.3 | 1 |
 | `packages/shared/src/index.ts` | 1.2.3 | 1 |
-| `shared/types/python/tenant.py` | 1.2.5 | 1 |
-| `shared/types/python/envelope.py` | 1.3.2, 1.3.4, 1.3.6 | 1 |
-| `shared/types/python/subjects.py` | 1.4.2, 1.4.4 | 1 |
+| `packages/shared-python/tenant.py` | 1.2.5 | 1 |
+| `packages/shared-python/envelope.py` | 1.3.2, 1.3.4, 1.3.6 | 1 |
+| `packages/shared-python/subjects.py` | 1.4.2, 1.4.4 | 1 |
 | `memory_postgres.py` | 2.1.2-2.1.10 | 2 |
 | `src/shared/depth/tracker.py` | 2.2.2, 2.2.4 | 2 |
 | `src/shared/claim_check/resolver.py` | 2.3.2, 2.3.4, 2.3.6 | 2 |

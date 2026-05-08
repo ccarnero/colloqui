@@ -16,7 +16,7 @@ kind: Kustomization
 #
 #   1. Temporal task-queue workers (Phase 1):
 #        - workflow-worker        (orchestrator pull queue)
-#        - workflow-http-worker   (activity-only pull queue)
+#        - http-adapter           (activity-only pull queue)
 #      Trigger: `temporal` scaler reading task-queue depth.
 #
 #   2. NATS JetStream consumer workers (Phase 1.5 split):
@@ -38,7 +38,7 @@ kind: Kustomization
 
 resources:
   - workflow-worker.yaml
-  - workflow-http-worker.yaml
+  - http-adapter.yaml
   - adapter-service-worker.yaml
   - audit-service-worker.yaml
   - channel-service-worker.yaml

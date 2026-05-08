@@ -14,8 +14,6 @@ import {
 } from "@nestjs/common";
 import { AgentsService } from "./agents.service";
 import {
-  ChatRequestDto,
-  ChatResponseDto,
   CreateAgentDto,
   ListAgentsQueryDto,
   MemoryProposalActionResponseDto,
@@ -113,17 +111,6 @@ export class AgentsController {
     @Param("id") id: string,
   ): Promise<IAgent> {
     return this.service.unpublish(tenantId, id);
-  }
-
-  @Post(":id/chat")
-  @HttpCode(HttpStatus.OK)
-  async chat(
-    @TenantId() tenantId: string,
-    @Param("id") id: string,
-    @Body() dto: ChatRequestDto,
-    @Headers(YOIZEN_USER_ID_HEADER) userId?: string,
-  ): Promise<ChatResponseDto> {
-    return this.service.chat(tenantId, id, dto, userId);
   }
 
   @Post("memory-proposals/:id/approve")

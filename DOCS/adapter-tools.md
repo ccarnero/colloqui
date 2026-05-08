@@ -60,10 +60,10 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 
 | Component | File | Responsibility |
 |-----------|------|---------------|
-| `AdapterClient` | `applications/yoizenclaw-application/src/shared/adapter_client.py` | Resolve adapter configs with SWR caching |
-| `AdapterToolExecutor` | `applications/yoizenclaw-application/src/tools/adapter_executor.py` | Execute HTTP calls via adapter resolution |
-| `ToolExecutor` | `applications/yoizenclaw-application/src/application/agents/tool_executor.py` | Dispatch to adapter or HTTP path |
-| `AdapterReference` | `applications/yoizenclaw-application/src/shared/config/agent_config.py` | Pydantic model for adapter references |
+| `AdapterClient` | `services/yoizenclaw-runtime/src/shared/adapter_client.py` | Resolve adapter configs with SWR caching |
+| `AdapterToolExecutor` | `services/yoizenclaw-runtime/src/tools/adapter_executor.py` | Execute HTTP calls via adapter resolution |
+| `ToolExecutor` | `services/yoizenclaw-runtime/src/application/agents/tool_executor.py` | Dispatch to adapter or HTTP path |
+| `AdapterReference` | `services/yoizenclaw-runtime/src/shared/config/agent_config.py` | Pydantic model for adapter references |
 | `AdapterReferenceDto` | `services/yoizenclaw-admin-service/src/modules/agents/agents.dto.ts` | DTO validation in admin-service |
 | `AdaptersController` | `services/yoizenclaw-admin-service/src/modules/adapters/adapters.controller.ts` | `GET /admin/adapters` for UI |
 | `AdaptersService` | `services/admin-console/src/app/core/services/adapters.service.ts` | Angular service for adapter API |
@@ -305,9 +305,9 @@ Adapter tools are controlled by the `YOIZENCLAW_ADAPTER_TOOLS_ENABLED` environme
 
 | File | Language | Description |
 |------|----------|-------------|
-| `applications/yoizenclaw-application/src/shared/adapter_client.py` | Python | AdapterClient with SWR cache |
-| `applications/yoizenclaw-application/src/tools/adapter_executor.py` | Python | AdapterToolExecutor |
-| `applications/yoizenclaw-application/src/shared/config/agent_config.py` | Python | `AdapterReference` model |
+| `services/yoizenclaw-runtime/src/shared/adapter_client.py` | Python | AdapterClient with SWR cache |
+| `services/yoizenclaw-runtime/src/tools/adapter_executor.py` | Python | AdapterToolExecutor |
+| `services/yoizenclaw-runtime/src/shared/config/agent_config.py` | Python | `AdapterReference` model |
 | `services/yoizenclaw-admin-service/src/modules/agents/agents.dto.ts` | TypeScript | `AdapterReferenceDto` validation |
 | `services/yoizenclaw-admin-service/src/modules/adapters/` | TypeScript | Adapter lookup controller + service |
 | `services/admin-console/src/app/core/services/adapters.service.ts` | TypeScript | Angular adapter API service |

@@ -39,7 +39,8 @@ resources:
   - admin-console.yaml
   - messaging-console.yaml
   - yoizenclaw-admin-service.yaml
+  - yoizenclaw-runtime-gateway.yaml
   # ----- Plain Deployments + KEDA Temporal scalers (Phase 1) -----
   - workflow-worker.yaml
-  - workflow-http-worker.yaml
+  - http-adapter.yaml
   - scaledobjects

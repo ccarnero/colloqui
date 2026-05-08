@@ -191,17 +191,17 @@ Subjects alineados a `evt.{tenant}.{domain}.{channel}.{provider}.{action}.v1`:
 
 | Area | Impact | Description |
 |------|--------|-------------|
-| `applications/yoizenclaw-application/src/infrastructure/database/` | Modified | Agregar `tenant_id` a tablas, índices compuestos |
-| `applications/yoizenclaw-application/src/interfaces/nats_bridge.py` | Modified | Subjects wdocs `evt.{tenant}.yoizenclaw.>`, envelope, depth |
-| `applications/yoizenclaw-application/src/application/agents/` | Modified | Caché por tenant, depth tracking, agent_outbound |
-| `applications/yoizenclaw-application/src/shared/` | Extended | Envelope builder, claim check, tenant utils, metrics |
-| `applications/yoizenclaw-application/src/interfaces/http/` | Modified | Tenant header extraction, structured logging |
+| `services/yoizenclaw-runtime/src/infrastructure/database/` | Modified | Agregar `tenant_id` a tablas, índices compuestos |
+| `services/yoizenclaw-runtime/src/interfaces/nats_bridge.py` | Modified | Subjects wdocs `evt.{tenant}.yoizenclaw.>`, envelope, depth |
+| `services/yoizenclaw-runtime/src/application/agents/` | Modified | Caché por tenant, depth tracking, agent_outbound |
+| `services/yoizenclaw-runtime/src/shared/` | Extended | Envelope builder, claim check, tenant utils, metrics |
+| `services/yoizenclaw-runtime/src/interfaces/http/` | Modified | Tenant header extraction, structured logging |
 | `services/yoizenclaw-admin-service/` | Modified | Envelope publishing, NATS Account provisioning |
 | `services/tenant-service/` | Extended | NATS Account/Stream/Bucket/ACL provisioning |
 | `services/admin-console/src/` | Extended | UI gestión de agentes, runtime status |
 | `infrastructure/base/` | New | Helm chart YoizenClaw runtime |
 | `packages/shared/` | Extended | Constantes subjects YoizenClaw, envelope types |
-| `shared/types/python/` | New | Envelope builder, tenant utils |
+| `packages/shared-python/` | New | Envelope builder, tenant utils |
 
 ## Risks
 

@@ -29,6 +29,24 @@ mock.module("@yoizen/observability", () => ({
   activeOrRandomTraceId: () => "trace-test",
   injectTraceContext: () => undefined,
   startNatsProducerSpan: () => ({ span: { end() {} } }),
+  tracedFetch: mock(async () =>
+    new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+  ),
+  PinoLoggerService: class FakeLogger {
+    log() {}
+    warn() {}
+    error() {}
+  },
+  createCircuitBreakerMetrics: () => ({
+    recordDecision() {},
+    recordTransition() {},
+    recordL1Hit() {},
+    recordRedisError() {},
+    recordDecideDuration() {},
+  }),
 }));
 
 const { publishExecutionCompletedEvent, buildExecutionCompletedSubject } =

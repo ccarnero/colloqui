@@ -13,6 +13,12 @@ import {
   type IYoizenclawAgent,
 } from "../../../core/models/yoizenclaw.model";
 
+export interface IAgentRuntimeHealth {
+  state: "unknown" | "checking" | "synced" | "unsynced";
+  detail?: string;
+  checkedAt?: number;
+}
+
 @Component({
   selector: "app-yoizenclaw-existing-agents",
   standalone: true,
@@ -64,6 +70,9 @@ import {
                 <span>
                   {{ getSkillsCount(agent) }} skills
                 </span>
+                <span [class]="runtimeHealthClass(agent.id)">
+                  Runtime: {{ runtimeHealthLabel(agent.id) }}
+                </span>
                 <span>
                   {{ agent.created_at | date: "mediumDate" }}
                 </span>
@@ -104,6 +113,30 @@ import {
                   (click)="edit.emit(agent)"
                 >
                   Edit
+                </button>
+
+                <button
+                  mat-button
+                  class="action-btn runtime-btn"
+                  (click)="checkRuntime.emit(agent.id)"
+                  [disabled]="getRuntimeHealth(agent.id).state === 'checking'"
+                >
+                  @if (getRuntimeHealth(agent.id).state === "checking") {
+                    <mat-spinner diameter="14"></mat-spinner>
+                  }
+                  Check Runtime
+                </button>
+
+                <button
+                  mat-button
+                  class="action-btn delete-btn"
+                  (click)="delete.emit(agent.id)"
+                  [disabled]="deletingId() === agent.id"
+                >
+                  @if (deletingId() === agent.id) {
+                    <mat-spinner diameter="14"></mat-spinner>
+                  }
+                  Delete
                 </button>
               </div>
             </article>
@@ -183,6 +216,35 @@ import {
       font-size: 12px;
     }
 
+    .runtime-state {
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      color: var(--text3);
+      background: var(--bg3);
+    }
+
+    .runtime-state-synced {
+      color: var(--green, #22c55e);
+      border-color: rgba(34, 197, 94, 0.35);
+      background: rgba(34, 197, 94, 0.12);
+    }
+
+    .runtime-state-unsynced {
+      color: var(--red, #ef4444);
+      border-color: rgba(239, 68, 68, 0.35);
+      background: rgba(239, 68, 68, 0.12);
+    }
+
+    .runtime-state-checking {
+      color: var(--yellow, #fdbd27);
+      border-color: rgba(253, 189, 39, 0.35);
+      background: rgba(253, 189, 39, 0.12);
+    }
+
     .agent-description {
       margin: 10px 0 12px;
       line-height: 1.5;
@@ -250,6 +312,24 @@ import {
       color: var(--text);
     }
 
+    .delete-btn {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+    }
+
+    .delete-btn:hover:not(:disabled) {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    .runtime-btn {
+      background: rgba(26, 102, 255, 0.15);
+      color: var(--primary);
+    }
+
+    .runtime-btn:hover:not(:disabled) {
+      background: rgba(26, 102, 255, 0.25);
+    }
+
     .agent-actions mat-spinner {
       display: inline-block;
     }
@@ -306,10 +386,14 @@ export class YoizenclawExistingAgentsPanelComponent {
   readonly loading = input.required<boolean>();
   readonly editingAgentId = input.required<string | null>();
   readonly publishingId = input.required<string | null>();
+  readonly deletingId = input.required<string | null>();
+  readonly runtimeHealth = input.required<Record<string, IAgentRuntimeHealth>>();
 
   readonly edit = output<IYoizenclawAgent>();
   readonly publish = output<string>();
   readonly unpublish = output<string>();
+  readonly delete = output<string>();
+  readonly checkRuntime = output<string>();
 
   formatProvider(agent: IYoizenclawAgent): string {
     const provider = agent.model_config?.llm?.provider?.trim();
@@ -334,5 +418,27 @@ export class YoizenclawExistingAgentsPanelComponent {
       default:
         return "badge badge-draft";
     }
+  }
+
+  runtimeHealthLabel(agentId: string): string {
+    const state = this.getRuntimeHealth(agentId).state;
+    switch (state) {
+      case "synced":
+        return "Synced";
+      case "unsynced":
+        return "Issue";
+      case "checking":
+        return "Checking";
+      default:
+        return "Unknown";
+    }
+  }
+
+  runtimeHealthClass(agentId: string): string {
+    return `runtime-state runtime-state-${this.getRuntimeHealth(agentId).state}`;
+  }
+
+  protected getRuntimeHealth(agentId: string): IAgentRuntimeHealth {
+    return this.runtimeHealth()[agentId] ?? { state: "unknown" };
   }
 }

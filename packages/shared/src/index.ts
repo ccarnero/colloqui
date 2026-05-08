@@ -29,7 +29,7 @@ export {
   PLATFORM_NON_CHANNEL_TOKEN,
   ADAPTER_MANAGED_BY_REGISTRY,
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
-  WORKFLOW_HTTP_TASK_QUEUE,
+  HTTP_ADAPTER_TASK_QUEUE,
   WORKFLOW_DEFAULT_TIMEOUT_MS,
   GATEWAY_AUDIT_STREAM_NAME,
   GATEWAY_AUDIT_STREAM_SUBJECTS,
@@ -52,6 +52,12 @@ export {
   YOIZENCLAW_AGENT_OUTBOUND,
   YOIZENCLAW_EXECUTION_STATUS,
   YOIZENCLAW_EVENT,
+  YOIZENCLAW_RUNTIME_GATEWAY_PRODUCER,
+  YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX,
+  YOIZENCLAW_EXECUTION_REQUESTED,
+  YOIZENCLAW_EXECUTION_STARTED,
+  YOIZENCLAW_EXECUTION_COMPLETED,
+  YOIZENCLAW_EXECUTION_FAILED,
 } from './constants';
 
 export { buildYoizenClawSubject } from './constants';
@@ -120,6 +126,7 @@ export {
   buildSubject,
   parseSubject,
   deriveEnvelope,
+  buildEventEnvelope,
   DepthExceededError,
   MAX_DEPTH_BY_CATEGORY,
   DEFAULT_MAX_DEPTH,
@@ -129,6 +136,7 @@ export {
 export type {
   ProducerCategory,
   BuildSubjectParams,
+  BuildEventEnvelopeOptions,
   ParsedSubject,
   DeriveEnvelopeOverrides,
 } from './envelope.utils';
@@ -156,6 +164,32 @@ export type {
   ITenantRole,
   ITenantRolePermission,
 } from './auth.interfaces';
+
+export type {
+  HttpEndpointRequest,
+  HttpServiceRequest,
+  AgentChatRequest,
+  AgentChatContextEntry,
+  HttpExecutionResult,
+} from './http-execution.interfaces';
+
+export type {
+  YoizenClawExecutionType,
+  YoizenClawExecutionState,
+  YoizenClawExecutionContextEntry,
+  YoizenClawChatExecutionInput,
+  YoizenClawExecutionRequest,
+  YoizenClawExecutionSubmitted,
+  YoizenClawExecutionResultPayload,
+  YoizenClawExecutionStatus,
+} from './yoizenclaw-execution.interfaces';
+
+export { YoizenClawExecutionClient } from './yoizenclaw-execution-client';
+export type {
+  YoizenClawExecutionCache,
+  YoizenClawExecutionClientOptions,
+  SubmitExecutionOptions,
+} from './yoizenclaw-execution-client';
 
 export type {
   WorkflowExecutionContext,

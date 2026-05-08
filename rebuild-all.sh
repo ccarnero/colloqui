@@ -43,12 +43,13 @@ ORDERED_SERVICES=(
   # Business logic
   channel-service
   workflow-service
-  workflow-http-worker
+  http-adapter
   # API surface
   api-gateway
   proxy-service
   # AI
   yoizenclaw-admin-service
+  yoizenclaw-runtime-gateway
   # Frontends (built last — heaviest build)
   admin-console
   messaging-console

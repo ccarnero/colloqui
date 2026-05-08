@@ -2,7 +2,44 @@
 
 Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack) with Knative Serving, NATS JetStream, Redis, PostgreSQL, and Temporal. Supports multi-environment deployment (dev, qa, staging, production) with per-environment isolation, multi-tenant namespace management with dedicated PostgreSQL per tenant, JWT authentication, dynamic service routing, workflow orchestration, job scheduling, and canary deployments.
 
-## Architecture
+## Getting Started
+
+**New to the platform?** Follow this reading order:
+
+1. [Developer Onboarding Guide](./DEVELOPER-ONBOARDING.md) — Start here (30 min)
+2. [Service Architecture Diagrams](./SERVICE-ARCHITECTURE-DIAGRAM.md) — Visual overview with Mermaid diagrams (20 min)
+3. [HTTP Adapter vs Workflow Service](./HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) — Decision matrix and scenarios (30 min)
+4. [Common Patterns](./COMMON-PATTERNS.md) — Pseudocode recipes (20 min)
+5. Service READMEs:
+   - [HTTP Adapter](../services/http-adapter/README.md) — Generic HTTP execution
+   - [Workflow Service](../services/workflow-service/README.md) — Multi-step orchestration
+   - [@yoizen/shared Package](../packages/shared/README.md) — Types and constants
+
+## Core Documentation
+
+### Service Architecture & Integration
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| [Service Architecture Diagrams](./SERVICE-ARCHITECTURE-DIAGRAM.md) | Visual reference for service boundaries, data flow, scaling, and multi-tenancy patterns | All developers |
+| [HTTP Adapter vs Workflow Service](./HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) | Decision matrix and when to use each service with scenario walkthroughs | Feature implementers |
+| [Common Patterns](./COMMON-PATTERNS.md) | Practical pseudocode recipes for 10 common use cases | All developers |
+| [Developer Onboarding Guide](./DEVELOPER-ONBOARDING.md) | Setup, navigation, common tasks, debugging, testing | New team members |
+| [Deployment Architecture](./DEPLOYMENT-ARCHITECTURE.md) | Kustomize base/overlays, KEDA scaling, adding new services | DevOps/Platform engineers |
+
+### Service READMEs
+
+| Service | Purpose | Type |
+|---------|---------|------|
+| [HTTP Adapter](../services/http-adapter/README.md) | Standalone Temporal worker for high-concurrency HTTP execution with adapter-driven config | Core service |
+| [Workflow Service](../services/workflow-service/README.md) | REST API + Temporal orchestrator for multi-step workflows with state management | Core service |
+| [@yoizen/shared Package](../packages/shared/README.md) | Cross-service types, interfaces, constants, and `AdapterClient` | Shared library |
+
+## Architecture Overview
+
+### Focused Runtime Sequences
+
+- [`WORKFLOW-TELEGRAM-SEQUENCE.md`](./WORKFLOW-TELEGRAM-SEQUENCE.md) — concrete Telegram inbound workflow path for the `sales` example (`message_received` -> `agentCall` -> `channelSend`), including live cluster aliases from `kubectl`, YoizenClaw runtime bridging, and an adapter-heavy workflow diagram.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
@@ -19,7 +56,7 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 │  │  │  audit-service · cache-service · webhook-service           │  │  │
 │  │  │  metrics-service · tenant-service · scheduler-service      │  │  │
 │  │  │  registry-service · workflow-api · workflow-worker          │  │  │
-│  │  │  workflow-http-worker · adapter-service                    │  │  │
+│  │  │  http-adapter · adapter-service                            │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  │  ┌─ support-services-{env} (StatefulSets / Deployments) ─────┐  │  │
@@ -74,8 +111,8 @@ kubectl apply -k knative/services/overlays/local/dev
 | **Registry Service** | Knative Service | Knative-based service registry with route management, canary deployments, and traffic splitting |
 | **Workflow API** | Knative Service | REST API for Temporal workflow management (start, status, list) |
 | **Workflow Worker** | Knative Service | Temporal orchestrator worker executing JS functions and NATS service bus activities |
-| **Adapter Service** | Knative Service | Manages multi-tenant HTTP adapter configurations (base URL, auth, headers, timeouts, retries) and their endpoints. Consumed via `AdapterClient` by workflow-http-worker, event-processor, and webhook-service |
-| **Workflow HTTP Worker** | Knative Service | Temporal HTTP activity worker executing endpoint calls via `tracedFetch`; supports adapter-driven config resolution (auth, headers, retries, timeouts) |
+| **Adapter Service** | Knative Service | Manages multi-tenant HTTP adapter configurations (base URL, auth, headers, timeouts, retries) and their endpoints. Consumed via `AdapterClient` by http-adapter, event-processor, and webhook-service |
+| **HTTP Adapter** | Plain Deployment | Generic Temporal HTTP execution worker for `endpointCall` and `serviceCall`; uses `tracedFetch`, adapter resolution, response caching, and internal service mirror lookup |
 | **NATS JetStream** | StatefulSet | Persistent event streaming backbone with 7-day retention. Streams: EVENTS, RESULTS, DLQ |
 | **Redis** | Deployment | Pure cache (no persistence, LRU eviction) |
 | **PostgreSQL** | StatefulSet | Shared database for auth, registry, and adapter services |
@@ -118,7 +155,7 @@ Temporal-based workflow orchestration supports four action types:
 
 | Action | Execution | Description |
 |--------|-----------|-------------|
-| `endpointCall` | Remote (workflow-http-worker) | HTTP request via `tracedFetch`; supports adapter-driven config resolution via `adapterId`/`endpointId` |
+| `endpointCall` | Remote (http-adapter) | HTTP request via `tracedFetch`; supports adapter-driven config resolution via `adapterId`/`endpointId` |
 | `jsFunction` | Local (workflow-worker) | Inline JS evaluation |
 | `serviceBusCall` | Local (workflow-worker) | NATS publish with tenant header |
 | `branch` | Workflow-level | Parallel execution of sub-action branches |
@@ -321,7 +358,7 @@ Arch/
 │   ├── registry-service/             # NestJS + Fastify — Knative service registry + canary
 │   ├── adapter-service/              # NestJS + Fastify — Multi-tenant HTTP adapter config + endpoints
 │   ├── workflow-service/             # NestJS + Fastify + Temporal — Workflow API + worker
-│   └── workflow-http-worker/         # Standalone Temporal worker — HTTP activities (adapter-aware)
+│   └── http-adapter/                 # Standalone Temporal worker — generic HTTP execution (adapter-aware)
 └── tests/
     └── e2e/                          # Cross-service end-to-end tests
 ```
@@ -360,7 +397,7 @@ kubectl apply -k knative/services/overlays/local/dev
 
 ```bash
 eval $(minikube docker-env -p yoizen-arch)
-for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service adapter-service workflow-service workflow-http-worker proxy-service; do
+for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service adapter-service workflow-service http-adapter proxy-service; do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```
@@ -370,7 +407,7 @@ done
 OrbStack >= 1.6 shares the local Docker daemon with the cluster — just build normally:
 
 ```bash
-for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service adapter-service workflow-service workflow-http-worker proxy-service; do
+for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service adapter-service workflow-service http-adapter proxy-service; do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```

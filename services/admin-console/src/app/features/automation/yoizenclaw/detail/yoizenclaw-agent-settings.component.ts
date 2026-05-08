@@ -10,7 +10,9 @@ import {
   type IYoizenclawAgent,
 } from "../../../../core/models/yoizenclaw.model";
 import { YoizenclawAdminService } from "../../../../core/services/yoizenclaw-admin.service";
-import { ActivatedRoute } from "@angular/router";
+import { ActivatedRoute, Router } from "@angular/router";
+import { formatHttpErrorMessage } from "../yoizenclaw.helpers";
+import { AgentEditorBridgeService } from "../agent-editor-bridge.service";
 
 @Component({
   selector: "app-yoizenclaw-agent-settings",
@@ -88,13 +90,18 @@ import { ActivatedRoute } from "@angular/router";
           <div>
             <div class="section-card-title">Danger Zone</div>
             <div class="section-card-sub">
-              Destructive actions are intentionally disabled in this phase.
+              This action removes the agent from active use.
             </div>
           </div>
         </div>
         <div class="section-card-body">
-          <button class="btn btn-danger btn-sm" type="button" disabled>
-            Delete agent (coming soon)
+          <button
+            class="btn btn-danger btn-sm"
+            type="button"
+            [disabled]="processing()"
+            (click)="deleteAgent()"
+          >
+            Delete agent
           </button>
         </div>
       </section>
@@ -191,7 +198,9 @@ import { ActivatedRoute } from "@angular/router";
 })
 export class YoizenclawAgentSettingsComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly yoizenclawAdminService = inject(YoizenclawAdminService);
+  private readonly bridge = inject(AgentEditorBridgeService, { optional: true });
 
   private readonly agentId =
     this.route.parent?.snapshot.paramMap.get("id") ?? "";
@@ -261,6 +270,39 @@ export class YoizenclawAgentSettingsComponent implements OnInit {
       },
       error: () => {
         this.agent.set(null);
+      },
+    });
+  }
+
+  protected deleteAgent(): void {
+    if (!this.agentId) return;
+
+    const current = this.agent();
+    const label = current?.name ?? this.agentId;
+    const confirmed = window.confirm(
+      `Delete agent "${label}"? This will remove it from active use.`,
+    );
+    if (!confirmed) return;
+
+    this.processing.set(true);
+    this.errorMessage.set("");
+    this.successMessage.set("");
+
+    this.yoizenclawAdminService.deleteAgent(this.agentId).subscribe({
+      next: () => {
+        this.processing.set(false);
+        this.successMessage.set(`Agent "${label}" deleted.`);
+        this.bridge?.notifyDeletedAgent(this.agentId);
+        void this.router.navigate(["/yoizenclaw/agents"]);
+      },
+      error: (error: { error?: { message?: string | string[] } }) => {
+        this.processing.set(false);
+        this.errorMessage.set(
+          formatHttpErrorMessage(
+            error.error?.message,
+            "Failed to delete the agent.",
+          ),
+        );
       },
     });
   }

@@ -21,4 +21,9 @@ describe("YoizenclawAgentConfigComponent", () => {
   it("creates", () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
+
+  it("updates agent name through explicit ngModel change handler", () => {
+    fixture.componentInstance["onAgentNameChange"]("Revenue Agent");
+    expect(fixture.componentInstance.agentName()).toBe("Revenue Agent");
+  });
 });

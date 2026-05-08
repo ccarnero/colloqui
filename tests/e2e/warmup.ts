@@ -33,7 +33,7 @@
  *   the gateway also exercises the same proxy chain the suite uses,
  *   which means a green warmup is a strong signal the suite can run.
  *
- * NOTE: `workflow-worker` and `workflow-http-worker` are NOT in the
+ * NOTE: `workflow-worker` and `http-adapter` are NOT in the
  * gateway aggregator (they're consumers, not HTTP-callable APIs). The
  * first test that triggers a workflow execution will pay their
  * cold-start; per-test timeouts in `workflow.e2e.spec.ts` and

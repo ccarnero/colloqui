@@ -489,6 +489,21 @@ apply_namespaces() {
           yoizen.io/environment="$env"
       fi
     done
+
+    if [[ "$env" == "dev" ]]; then
+      local tenant_ns="acme-dev-ns"
+      if kubectl get namespace "$tenant_ns" &>/dev/null; then
+        log "Namespace '${tenant_ns}' already exists"
+      else
+        log "Creating namespace '${tenant_ns}'"
+        kubectl create namespace "$tenant_ns"
+        kubectl label namespace "$tenant_ns" \
+          app.kubernetes.io/part-of=yoizen-arch \
+          yoizen.io/tenant=acme \
+          yoizen.io/environment=dev \
+          yoizen.io/managed-by=bootstrap
+      fi
+    fi
   done
 }
 
@@ -579,6 +594,12 @@ apply_knative_config() {
   for env in "${ENVIRONMENTS[@]}"; do
     log "Applying Knative services for '${env}'"
     retry 5 3 kubectl apply -k "${script_dir}/knative/services/overlays/local/${env}"
+
+    if [[ "$env" == "dev" ]]; then
+      log "Applying tenant YoizenClaw runtime overlay for '${env}'"
+      retry 5 3 kubectl apply -k \
+        "${script_dir}/knative/tenant-yoizenclaw-runtime/overlays/acme-dev"
+    fi
   done
 }
 
@@ -606,8 +627,8 @@ build_images() {
   for svc in api-gateway auth-service event-processor cache-service \
              audit-service webhook-service metrics-service tenant-service \
              scheduler-service registry-service adapter-service \
-             channel-service workflow-service workflow-http-worker \
-             proxy-service yoizenclaw-admin-service admin-console \
+             channel-service workflow-service http-adapter \
+             proxy-service yoizenclaw-admin-service yoizenclaw-runtime-gateway admin-console \
              messaging-console usage-aggregator-service; do
     log "Building image: dev.local/${svc}:local"
     docker build \
@@ -615,6 +636,12 @@ build_images() {
       -f "${script_dir}/services/${svc}/Dockerfile" \
       "${script_dir}"
   done
+
+  log "Building image: dev.local/yoizenclaw-runtime:local"
+  docker build \
+    -t "dev.local/yoizenclaw-runtime:local" \
+    -f "${script_dir}/services/yoizenclaw-runtime/Dockerfile" \
+    "${script_dir}"
 }
 
 # ---------------------------------------------------------------------------

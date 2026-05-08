@@ -58,8 +58,8 @@ ALL_KNATIVE_SERVICES=(
 )
 
 # Plain `apps/v1.Deployment` workloads driven by KEDA. Two flavors:
-#   • Temporal-driven workers (workflow-{worker,http-worker}) — replicas
-#     follow `workflow-orchestrator` / `workflow-http` task-queue depth.
+#   • Temporal-driven workers (`workflow-worker`, `http-adapter`) — replicas
+#     follow `workflow-orchestrator` / `http-adapter` task-queue depth.
 #   • Phase 1.5 NATS workers (`*-worker`) — replicas follow JetStream
 #     consumer lag (jetstream_consumer_num_pending +
 #     jetstream_consumer_num_ack_pending). See
@@ -68,7 +68,7 @@ ALL_KNATIVE_SERVICES=(
 # fails when `spec.replicas > 0` AND `availableReplicas < 1`.
 ALL_PLAIN_DEPLOYMENTS=(
   workflow-worker
-  workflow-http-worker
+  http-adapter
   audit-service-worker
   channel-service-worker
   event-processor-worker

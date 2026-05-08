@@ -98,7 +98,7 @@ durables: `audit-events`, `channel-egress`, `auto-reply`,
       `jetstream_consumer_num_pending` + `_num_ack_pending` per
       durable. Activation threshold `0` so KEDA wakes on backlog ≥ 1.
 
-[^4]: `workflow-worker`, `workflow-http-worker`. Same Plain Deployment
+[^4]: `workflow-worker`, `http-adapter`. Same Plain Deployment
       shape as the Phase 1.5 workers but driven by the `temporal`
       scaler (queries `DescribeTaskQueue` for backlog count every 15s).
       Activation: `activationTargetQueueSize: "0"` (KEDA uses strictly

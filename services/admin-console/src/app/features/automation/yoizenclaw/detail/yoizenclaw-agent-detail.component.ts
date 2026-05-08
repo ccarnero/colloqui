@@ -345,6 +345,23 @@ export class YoizenclawAgentDetailComponent {
       this.loadAgent(agentId);
     });
 
+    effect(() => {
+      const saved = this.bridge.savedAgent();
+      if (!saved) return;
+      if (saved.id !== this.id()) return;
+
+      this.agent.update((current) =>
+        current ? { ...current, name: saved.name } : current,
+      );
+    });
+
+    effect(() => {
+      const deletedId = this.bridge.deletedAgentId();
+      if (!deletedId) return;
+      if (deletedId !== this.id()) return;
+      void this.router.navigate(["/yoizenclaw/agents"]);
+    });
+
     // Re-open the test drawer when the user navigates into /configure
     // from a sibling tab. Keeps the manual close behavior intact otherwise.
     this.router.events

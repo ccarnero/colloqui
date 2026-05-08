@@ -53,7 +53,7 @@ export function extractTenantId(headers: Record<string, string>): string | null;
 export function validateTenantId(tenantId: string): boolean;
 ```
 
-**Python** (new file: `shared/types/python/tenant.py`):
+**Python** (new file: `packages/shared-python/tenant.py`):
 ```python
 def extract_tenant_id(headers: dict) -> Optional[str]:
 def validate_tenant_id(tenant_id: str) -> bool:
