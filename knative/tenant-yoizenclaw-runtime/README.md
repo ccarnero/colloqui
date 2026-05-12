@@ -7,7 +7,7 @@ This is **not** part of [`knative/services/base`](../services/base); it is deplo
 ## Prerequisites
 
 - Kubernetes cluster with **Knative Serving** (see repo `bootstrap.sh`).
-- Namespace **`acme-dev-ns`** and tenant **PostgreSQL** reachable at Service hostname **`postgres`** in that namespace (same pattern as [`DOCS/ARCHITECTURE.md`](../../DOCS/ARCHITECTURE.md)).
+- Namespace **`acme-dev-ns`** and tenant **PostgreSQL** reachable at Service hostname **`postgres`** in that namespace (same pattern as [`DOCS/01-ARCHITECTURE.md`](../../DOCS/01-ARCHITECTURE.md)).
 - **NATS** in `support-services-dev` reachable at  
   `nats://nats.support-services-dev.svc.cluster.local:4222`.
 - A **Secret** in `acme-dev-ns` named **`postgres-credentials`** with key **`POSTGRES_PASSWORD`** (same shape as [`knative/services/base/postgres-credentials.yaml`](../services/base/postgres-credentials.yaml)). Adjust the manifest if your tenant uses another name or key.

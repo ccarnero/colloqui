@@ -5,12 +5,16 @@ Welcome to the Yoizen platform! This guide walks you through understanding and w
 ## Start Here: Reading Order
 
 1. **[This guide]** — You are here
-2. [Service Architecture Diagrams](./SERVICE-ARCHITECTURE-DIAGRAM.md) — Visual overview
-3. [HTTP Adapter vs Workflow Service](./HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) — Decision guide
-4. [Common Patterns](./COMMON-PATTERNS.md) — Practical recipes
-5. [HTTP Adapter README](../services/http-adapter/README.md) — Detailed service docs
-6. [Workflow Service README](../services/workflow-service/README.md) — Orchestration docs
-7. [@yoizen/shared Package](../packages/shared/README.md) — Type reference
+2. [Platform Architecture](./01-ARCHITECTURE.md) — High-level system map
+3. [NATS and JetStream](./03-NATS-JETSTREAM.md) — Messaging topology and envelope contract
+4. [Workflow Engine](./04-WORKFLOW-ENGINE.md) — Trigger bridge and action dispatch
+5. [Agent Execution Flow](./05-AGENT-EXECUTION-FLOW.md) — `agentCall` runtime lifecycle
+6. [UI Flows](./06-UI-FLOWS.md) — Console-to-backend flow mapping
+7. [HTTP Adapter vs Workflow Service](./07-HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) — Decision guide
+8. [Common Patterns](./09-COMMON-PATTERNS.md) — Practical recipes
+9. [HTTP Adapter README](../services/http-adapter/README.md) — Detailed service docs
+10. [Workflow Service README](../services/workflow-service/README.md) — Orchestration docs
+11. [@yoizen/shared Package](../packages/shared/README.md) — Type reference
 
 **Estimated time**: 2-3 hours for complete understanding
 
@@ -282,7 +286,7 @@ EOF
 
 ### Task 3: Add a New Action Type
 
-Workflow Service supports 8 action types. To add a 9th:
+Workflow Service supports 7 action types. To add an 8th:
 
 1. **Define interface** in `packages/shared/src/workflow.interfaces.ts`:
    ```typescript
@@ -300,7 +304,7 @@ Workflow Service supports 8 action types. To add a 9th:
    ```typescript
    type WorkflowAction = 
      | EndpointCallAction
-     | ... (7 existing types)
+      | ... (6 existing types)
      | MyActionAction  // New
    ```
 
@@ -575,10 +579,10 @@ Once comfortable, pick a task from the issues backlog and contribute!
 | Question | Resource |
 |----------|----------|
 | How do I use the workflow service? | [Workflow Service README](../services/workflow-service/README.md) |
-| What are the action types? | [Common Patterns](./COMMON-PATTERNS.md) |
-| How do I debug a failing workflow? | [Debugging Tips](./DEVELOPER-ONBOARDING.md#debugging-tips) |
+| What are the action types? | [Common Patterns](./09-COMMON-PATTERNS.md) |
+| How do I debug a failing workflow? | [Debugging Tips](./10-DEVELOPER-ONBOARDING.md#debugging-tips) |
 | What's the HTTP Adapter? | [HTTP Adapter README](../services/http-adapter/README.md) |
-| How do I add a new service? | [Deployment Architecture](./DEPLOYMENT-ARCHITECTURE.md#adding-a-new-service) |
+| How do I add a new service? | [Infrastructure and Deployment](./02-INFRASTRUCTURE.md#add-a-new-service-checklist) |
 | What types should I use? | [@yoizen/shared](../packages/shared/README.md) |
 
 ---

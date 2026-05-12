@@ -841,6 +841,7 @@ POST /workflows
 
 - [HTTP Adapter README](../services/http-adapter/README.md) — Direct API calls
 - [Workflow Service README](../services/workflow-service/README.md) — Orchestration
-- [HTTP Adapter vs Workflow Service](./HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) — Decision guide
+- [HTTP Adapter vs Workflow Service](./07-HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) — Decision guide
 - [@yoizen/shared](../packages/shared/README.md) — Type definitions
-- [Service Architecture Diagrams](./SERVICE-ARCHITECTURE-DIAGRAM.md) — Visual flows
+- [Platform Architecture](./01-ARCHITECTURE.md) — High-level service boundaries
+- [Workflow Engine](./04-WORKFLOW-ENGINE.md) — Action execution model

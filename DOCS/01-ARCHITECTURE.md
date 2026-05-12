@@ -1,222 +1,128 @@
-# Yoizen Arch — Architecture
+# Platform Architecture
 
-## High-Level Overview
+This document is the high-level map of the platform. It focuses on ownership boundaries and service placement, not detailed message-by-message flows.
+
+The platform runs as an event-driven, multi-tenant system on Kubernetes. It uses support infrastructure shared by each environment (`support-services-{env}`), platform application services (`platform-services-{env}`), and per-tenant runtime/data boundaries represented inside the platform tier.
+
+## Three-Layer Model
+
+- **Support services** host shared infrastructure for one environment: NATS JetStream, Redis, Temporal, and shared PostgreSQL.
+- **Platform services** implement APIs, workflow orchestration, integrations, tenant lifecycle, and UI backends.
+- **Per-tenant runtime/data boundary** isolates tenant-specific AI runtime execution and tenant databases while still participating in platform-level eventing.
+
+## High-Level Service Map
 
 ```mermaid
-graph TB
-    subgraph Internet
-        Client([Client / External System])
+flowchart LR
+    ext[External Clients and Channels]
+
+    subgraph support["support-services-{env}"]
+        nats[(NATS JetStream)]
+        redis[(Redis)]
+        temporal[(Temporal)]
+        pgs[(PostgreSQL Shared)]
     end
 
-    subgraph cluster ["Kubernetes Cluster — Minikube"]
-        subgraph perEnv ["Per Environment (dev, qa, staging, production)"]
-            subgraph platformSvc ["platform-services-{env}"]
-                GW[API Gateway]
-                AUTH[Auth Service]
-                EP[Event Processor]
-                AS[Audit Service]
-                WH[Webhook Service]
-                CS[Cache Service]
-                MS[Metrics Service]
-                TS[Tenant Service]
-                SCHED[Scheduler Service]
-                REG[Registry Service]
-                WF_API[Workflow API]
-                WF_WORKER[Workflow Worker]
-                WF_HTTP[HTTP Adapter]
-            end
+    subgraph platform["platform-services-{env}"]
+        subgraph ingress[Ingress]
+            gw[api-gateway]
+            channel[channel-service]
+        end
 
-            subgraph supportSvc ["support-services-{env}"]
-                NATS[(NATS JetStream)]
-                Redis[(Redis 7)]
-                PG[(PostgreSQL 17)]
-                TEMPORAL[(Temporal)]
-            end
+        subgraph core[Core Event Consumers]
+            ep[event-processor]
+            audit[audit-service]
+            metrics[metrics-service]
+            webhook[webhook-service]
+            usage[usage-aggregator-service]
+        end
 
-            subgraph tenantNs ["{tenant}-{env}-ns"]
-                TPG[(Tenant PostgreSQL)]
-                TSVC[Tenant Knative Services]
+        subgraph automation[Automation]
+            wapi[workflow-service-api]
+            wworker[workflow-service-worker]
+            hadapter[http-adapter]
+            sched[scheduler-service]
+        end
+
+        subgraph yz[YoizenClaw]
+            yzadmin[yoizenclaw-admin-service]
+            yzgateway[yoizenclaw-runtime-gateway]
+            subgraph tenantBoundary["per-tenant boundary"]
+                yzruntime[yoizenclaw-runtime]
+                pgt[(PostgreSQL Tenant)]
             end
+        end
+
+        subgraph ops[Platform Ops]
+            auth[auth-service]
+            tenant[tenant-service]
+            registry[registry-service]
+            adapter[adapter-service]
+            cache[cache-service]
+            proxy[proxy-service]
+        end
+
+        subgraph ui[UI]
+            admin[admin-console]
+            msg[messaging-console]
         end
     end
 
-    subgraph Knative
-        Kourier[Kourier Ingress]
-        Autoscaler[KPA Autoscaler]
-    end
+    ext --> ingress
+    ext --> ui
 
-    Client -->|HTTP| Kourier
-    Kourier -->|Route| GW
-    Kourier -->|Route| CS
+    ingress --> support
+    core --> support
+    automation --> support
+    yz --> support
+    ops --> support
 
-    GW -->|Publish events| NATS
-    GW -->|Read/Write results| Redis
-    GW -->|HTTP proxy| AUTH
-    GW -->|HTTP proxy| AS
-    GW -->|HTTP proxy| TS
-    GW -->|HTTP proxy| SCHED
-    GW -->|HTTP proxy| REG
-    GW -->|HTTP proxy| WF_API
-    GW -->|"Dynamic route proxy"| TSVC
-    AUTH -->|Persist| PG
-    AUTH -->|Cache public routes| Redis
-    TS -->|K8s API| K8sAPI[Kubernetes API Server]
-    TS -->|Provision| TPG
-
-    EP -->|Consume EVENTS| NATS
-    EP -->|Publish RESULTS| NATS
-    EP -->|Write results| Redis
-
-    AS -->|Consume EVENTS| NATS
-    AS -->|Persist| TPG
-
-    MS -->|Consume events.metrics| NATS
-    MS -->|Persist| TPG
-
-    WH -->|Consume RESULTS| NATS
-    WH -->|HTTP callback| Client
-
-    CS -->|L2 cache| Redis
-
-    SCHED -->|Persist| TPG
-    SCHED -->|K8s Jobs| K8sAPI
-    REG -->|Persist| PG
-    REG -->|Knative API| K8sAPI
-
-    WF_API -->|Start/Query| TEMPORAL
-    WF_WORKER -->|Execute workflows| TEMPORAL
-    WF_WORKER -->|NATS publish| NATS
-    WF_HTTP -->|Execute HTTP activities| TEMPORAL
-
-    Autoscaler -.->|Scale 0-N| GW
-    Autoscaler -.->|Scale 0-N| EP
-    Autoscaler -.->|Scale 0-N| AS
-    Autoscaler -.->|Scale 0-N| WH
-    Autoscaler -.->|Scale 0-N| CS
-    Autoscaler -.->|Scale 0-N| MS
-    Autoscaler -.->|Scale 0-N| TS
-    Autoscaler -.->|Scale 0-N| AUTH
-    Autoscaler -.->|Scale 0-N| SCHED
-    Autoscaler -.->|Scale 0-N| REG
-    Autoscaler -.->|Scale 0-N| WF_API
-    Autoscaler -.->|Scale 0-N| WF_WORKER
-    Autoscaler -.->|Scale 0-N| WF_HTTP
+    tenantBoundary --> nats
+    tenantBoundary --> pgt
 ```
 
----
+## Service Roles
 
-## NATS JetStream Streams & Consumers
+| Service | Layer | Role |
+|---|---|---|
+| `api-gateway` | Platform | External HTTP entry, auth enforcement, service proxying, webhook ingress entry |
+| `channel-service` | Platform | Channel ingress/egress orchestration (Telegram/WhatsApp), normalized message events |
+| `event-processor` | Platform | Main event pipeline and handler execution over tenant-scoped streams |
+| `audit-service` | Platform | Durable event audit persistence to tenant PostgreSQL |
+| `metrics-service` | Platform | Metrics extraction and persistence to tenant PostgreSQL |
+| `webhook-service` | Platform | Callback dispatch with retries and DLQ behavior |
+| `usage-aggregator-service` | Platform | Cross-stream usage aggregation for tenant analytics |
+| `workflow-service-api` | Platform | Workflow management API and Temporal client entry |
+| `workflow-service-worker` | Platform | Temporal worker and NATS trigger bridge |
+| `http-adapter` | Platform | High-concurrency activity worker for `endpointCall`, `serviceCall`, and `agentCall` |
+| `yoizenclaw-admin-service` | Platform | CRUD and publish lifecycle for agents, templates, credentials, files |
+| `yoizenclaw-runtime-gateway` | Platform | Async execution bridge between API/workflows and runtime via NATS |
+| `yoizenclaw-runtime` | Per-tenant boundary | Per-tenant AI runtime execution service |
+| `auth-service` | Platform | JWT issuance and dynamic public-route sync |
+| `tenant-service` | Platform | Tenant lifecycle and namespace/data provisioning |
+| `registry-service` | Platform | Dynamic service registry and route metadata |
+| `adapter-service` | Platform | Outbound HTTP adapter configuration store and lookup |
+| `cache-service` | Platform | L1/L2 cache abstraction backed by Redis |
+| `scheduler-service` | Platform | Scheduled job execution (cron/interval/one-time) |
+| `proxy-service` | Platform | HTTP proxy for external tenant-dependent backends |
+| `admin-console` | Platform | Operational UI for platform and YoizenClaw admin workflows |
+| `messaging-console` | Platform | Messaging operations UI and conversation workflows |
 
-```mermaid
-graph LR
-    subgraph eventsStream ["EVENTS Stream"]
-        direction TB
-        E_SUBJ["Subjects: events.>"]
-        C1["Consumer: event-processor"]
-        C2["Consumer: audit-writer"]
-        C3["Consumer: metrics-writer<br/>(filter: events.metrics)"]
-    end
+## Key Architecture Decisions
 
-    subgraph resultsStream ["RESULTS Stream"]
-        direction TB
-        R_SUBJ["Subjects: results.>"]
-        C4["Consumer: webhook-dispatcher"]
-    end
+- **Namespace layering is intentional**: support infra is environment-scoped, application services are platform-scoped, and tenant runtime/data are isolated behind tenant boundaries.
+- **JetStream is the default async backbone**: durable stream/consumer semantics are used for internal flows; core NATS is reserved for lightweight platform signals.
+- **Temporal isolates orchestration concerns**: workflow logic remains in workflow workers while HTTP/agent I/O scales separately through `http-adapter`.
+- **Per-tenant data ownership is explicit**: audit, metrics, scheduler data, and YoizenClaw runtime state are tenant-bound.
 
-    subgraph dlqStream ["DLQ Stream"]
-        direction TB
-        D_SUBJ["Subjects: dlq.>"]
-        DLQ_WH["dlq.webhook"]
-    end
+## Related Documents
 
-    GW[API Gateway] -->|"publish events.{type}"| E_SUBJ
-
-    C1 -->|consume| EP[Event Processor]
-    C2 -->|consume| AS[Audit Service]
-    C3 -->|consume| MS[Metrics Service]
-
-    EP -->|"publish results.{type}"| R_SUBJ
-    C4 -->|consume| WH[Webhook Service]
-
-    WH -->|failed delivery| DLQ_WH
-```
-
----
-
-## Event Processing Flow
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant GW as API Gateway
-    participant NATS as NATS JetStream
-    participant EP as Event Processor
-    participant Redis as Redis
-    participant AS as Audit Service
-    participant MS as Metrics Service
-    participant PG as Per-Tenant PostgreSQL
-    participant WH as Webhook Service
-    participant EXT as External URL
-
-    C->>GW: POST /events (Bearer token + tenant)
-    GW->>GW: AuthGuard + TenantGuard
-    GW->>GW: Validate payload
-    GW->>Redis: SET pending:{id}
-    GW->>NATS: Publish events.{type}
-    GW-->>C: 202 Accepted { id, status }
-
-    par Event Processor
-        NATS->>EP: Deliver event (event-processor consumer)
-        EP->>EP: Pipeline: Validate - Enrich - Transform
-        EP->>EP: Route to typed handler
-        EP->>Redis: SET result:{id} (TTL 3600s)
-        EP->>NATS: Publish results.{type} (CompletionEvent)
-    and Audit Service
-        NATS->>AS: Deliver event (audit-writer consumer)
-        AS->>PG: INSERT INTO events (per-tenant DB)
-    and Metrics Service
-        NATS->>MS: Deliver event (metrics-writer, filter: events.metrics)
-        MS->>PG: INSERT INTO metrics (per-tenant DB)
-    end
-
-    NATS->>WH: Deliver completion (webhook-dispatcher consumer)
-    WH->>EXT: POST callbackUrl (retry: 1s, 5s, 30s)
-    alt Delivery failed after 3 retries
-        WH->>NATS: Publish dlq.webhook
-    end
-
-    C->>GW: GET /results/{id}
-    GW->>Redis: GET result:{id}
-    GW-->>C: 200 { result }
-```
-
----
-
-## Authentication & Authorization Flow
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant GW as API Gateway
-    participant AUTH as Auth Service
-    participant PG as PostgreSQL
-    participant Redis as Redis
-
-    C->>GW: POST /auth/token (client credentials)
-    GW->>AUTH: HTTP proxy
-    AUTH->>PG: Verify client_id + secret
-    AUTH-->>GW: { access_token, scope }
-    GW-->>C: { access_token, scope }
-
-    C->>GW: POST /events (Bearer token)
-    GW->>GW: TenantGuard: resolve tenant
-    GW->>GW: AuthGuard: check @Public
-    GW->>Redis: GET public_routes:{env}
-    GW->>GW: AuthGuard: verify JWT (jose HS256)
-    GW->>GW: AuthGuard: validate tenant scope
-    GW->>GW: AuthGuard: check @Scopes
-    GW->>GW: Process request
-```
+- `DOCS/README.md` — entry point and reading order
+- `SERVICES.md` — complete service communication map
+- `DOCS/08-WORKFLOW-TELEGRAM-SEQUENCE.md` — concrete Telegram inbound execution path
+- `DOCS/03-NATS-JETSTREAM.md` — canonical streams, subjects, and envelope contract
+- `DOCS/04-WORKFLOW-ENGINE.md` — trigger consumer and action execution model
+- `DOCS/02-INFRASTRUCTURE.md` — support services and deployment models
 
 ---
 

@@ -6,11 +6,17 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 
 **New to the platform?** Follow this reading order:
 
-1. [Developer Onboarding Guide](./DEVELOPER-ONBOARDING.md) — Start here (30 min)
-2. [Service Architecture Diagrams](./SERVICE-ARCHITECTURE-DIAGRAM.md) — Visual overview with Mermaid diagrams (20 min)
-3. [HTTP Adapter vs Workflow Service](./HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) — Decision matrix and scenarios (30 min)
-4. [Common Patterns](./COMMON-PATTERNS.md) — Pseudocode recipes (20 min)
-5. Service READMEs:
+1. [01 Platform Architecture](./01-ARCHITECTURE.md) — High-level ownership and service boundaries (20 min)
+2. [02 Infrastructure and Deployment](./02-INFRASTRUCTURE.md) — Support services, overlays, and scaling (20 min)
+3. [03 NATS and JetStream](./03-NATS-JETSTREAM.md) — Canonical messaging topology (20 min)
+4. [04 Workflow Engine](./04-WORKFLOW-ENGINE.md) — Trigger bridge and action dispatch model (20 min)
+5. [05 Agent Execution Flow](./05-AGENT-EXECUTION-FLOW.md) — `agentCall` runtime lifecycle (15 min)
+6. [06 UI Flows](./06-UI-FLOWS.md) — Console-to-backend flow mapping (15 min)
+7. [07 HTTP Adapter vs Workflow Service](./07-HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) — Decision matrix and scenarios (30 min)
+8. [08 Workflow Telegram Sequence](./08-WORKFLOW-TELEGRAM-SEQUENCE.md) — Concrete end-to-end runtime flow (15 min)
+9. [09 Common Patterns](./09-COMMON-PATTERNS.md) — Pseudocode recipes (20 min)
+10. [10 Developer Onboarding Guide](./10-DEVELOPER-ONBOARDING.md) — Setup and day-to-day workflows (30 min)
+11. Service READMEs:
    - [HTTP Adapter](../services/http-adapter/README.md) — Generic HTTP execution
    - [Workflow Service](../services/workflow-service/README.md) — Multi-step orchestration
    - [@yoizen/shared Package](../packages/shared/README.md) — Types and constants
@@ -21,11 +27,20 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 
 | Document | Purpose | Audience |
 |----------|---------|----------|
-| [Service Architecture Diagrams](./SERVICE-ARCHITECTURE-DIAGRAM.md) | Visual reference for service boundaries, data flow, scaling, and multi-tenancy patterns | All developers |
-| [HTTP Adapter vs Workflow Service](./HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) | Decision matrix and when to use each service with scenario walkthroughs | Feature implementers |
-| [Common Patterns](./COMMON-PATTERNS.md) | Practical pseudocode recipes for 10 common use cases | All developers |
-| [Developer Onboarding Guide](./DEVELOPER-ONBOARDING.md) | Setup, navigation, common tasks, debugging, testing | New team members |
-| [Deployment Architecture](./DEPLOYMENT-ARCHITECTURE.md) | Kustomize base/overlays, KEDA scaling, adding new services | DevOps/Platform engineers |
+| [01 Platform Architecture](./01-ARCHITECTURE.md) | High-level service boundaries and ownership model | All developers |
+| [02 Infrastructure and Deployment](./02-INFRASTRUCTURE.md) | Support services, deployment models, overlays, and scaling | DevOps/Platform engineers |
+| [03 NATS and JetStream](./03-NATS-JETSTREAM.md) | Canonical messaging topology, subjects, and envelope contract | Backend/platform engineers |
+| [04 Workflow Engine](./04-WORKFLOW-ENGINE.md) | Trigger bridge, action dispatch, and task queue model | Automation developers |
+| [05 Agent Execution Flow](./05-AGENT-EXECUTION-FLOW.md) | `agentCall` lifecycle from workflow to runtime and back | Automation/AI developers |
+| [06 UI Flows](./06-UI-FLOWS.md) | Admin and messaging console flows mapped to backend services | Frontend/full-stack developers |
+| [07 HTTP Adapter vs Workflow Service](./07-HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) | Decision matrix and when to use each service with scenario walkthroughs | Feature implementers |
+| [08 Workflow Telegram Sequence](./08-WORKFLOW-TELEGRAM-SEQUENCE.md) | Concrete Telegram inbound flow with hosted + agent branches | All developers |
+| [09 Common Patterns](./09-COMMON-PATTERNS.md) | Practical pseudocode recipes for 10 common use cases | All developers |
+| [10 Developer Onboarding Guide](./10-DEVELOPER-ONBOARDING.md) | Setup, navigation, common tasks, debugging, testing | New team members |
+| [11 Service Architecture Diagrams](./11-SERVICE-ARCHITECTURE-DIAGRAM.md) | Visual reference for service boundaries, data flow, scaling, and multi-tenancy patterns | All developers |
+| [12 Adapter Tools](./12-adapter-tools.md) | Adapter tooling and helper references | Feature implementers |
+| [13 Review](./13-REVIEW.md) | Code review standards and checklist | All contributors |
+| [14 Deployment Architecture](./14-DEPLOYMENT-ARCHITECTURE.md) | Legacy deep-dive details for Kustomize and KEDA | DevOps/Platform engineers |
 
 ### Service READMEs
 
@@ -39,7 +54,7 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 
 ### Focused Runtime Sequences
 
-- [`WORKFLOW-TELEGRAM-SEQUENCE.md`](./WORKFLOW-TELEGRAM-SEQUENCE.md) — concrete Telegram inbound workflow path for the `sales` example (`message_received` -> `agentCall` -> `channelSend`), including live cluster aliases from `kubectl`, YoizenClaw runtime bridging, and an adapter-heavy workflow diagram.
+- [`08-WORKFLOW-TELEGRAM-SEQUENCE.md`](./08-WORKFLOW-TELEGRAM-SEQUENCE.md) — concrete Telegram inbound flow split into shared ingress plus two execution branches: simple hosted service call and YoizenClaw `agentCall`.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐

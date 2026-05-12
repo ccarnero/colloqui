@@ -625,6 +625,7 @@ START: Need to make an HTTP request?
 
 - [HTTP Adapter README](../services/http-adapter/README.md) — Detailed adapter service
 - [Workflow Service README](../services/workflow-service/README.md) — Orchestration details
-- [Service Architecture Diagrams](./SERVICE-ARCHITECTURE-DIAGRAM.md) — Visual overview
-- [Common Patterns](./COMMON-PATTERNS.md) — Pseudocode recipes
+- [Platform Architecture](./01-ARCHITECTURE.md) — Visual high-level overview
+- [Workflow Engine](./04-WORKFLOW-ENGINE.md) — Trigger and action execution internals
+- [Common Patterns](./09-COMMON-PATTERNS.md) — Pseudocode recipes
 - [@yoizen/shared Package](../packages/shared/README.md) — Type reference

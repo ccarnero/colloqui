@@ -692,4 +692,4 @@ The package has minimal external dependencies:
 - [AGENTS.md](AGENTS.md) — Detailed package inventory and usage by service
 - [HTTP Adapter README](../services/http-adapter/README.md) — HTTP execution engine
 - [Workflow Service README](../services/workflow-service/README.md) — Workflow orchestration
-- [Architecture Overview](../DOCS/ARCHITECTURE.md) — System-wide design
+- [Architecture Overview](../DOCS/01-ARCHITECTURE.md) — System-wide design
