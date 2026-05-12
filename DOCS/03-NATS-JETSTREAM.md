@@ -101,6 +101,43 @@ Allowed platform extensions:
 - `enrich_adapter`
 - `forward_adapter`
 
+## Provisioning and Lifecycle
+
+Tenant streams are provisioned lazily on first publish, not pre-created globally.
+
+### Ingress Stream Provisioning (`INGRESS-<tenant>`)
+
+- `ensureTenantIngressStream(jsm, tenantId)` is called by publishers before writing to tenant ingress.
+- Stream naming comes from `getTenantStreamName(tenantId)` -> `INGRESS-${tenantId.toUpperCase()}`.
+- Subject pattern comes from `getTenantSubjectPattern(tenantId)` -> `evt.${tenantId}.>`.
+- Provisioning is idempotent and guarded with in-memory per-pod cache plus in-flight promise coalescing.
+- Current defaults are `RetentionPolicy.Limits`, max age 7 days, max bytes 256 MB.
+
+Code references:
+
+- `packages/database/src/nats-provider.ts`
+- `packages/shared/src/tenant-stream.constants.ts`
+- `packages/shared/src/channel.constants.ts`
+
+### Durable Consumer Lifecycle (Per Tenant)
+
+- Consumers use `MultiTenantConsumerManager` with `streamPattern: /^INGRESS-/`.
+- The manager discovers existing tenant streams and ensures a durable consumer per tenant stream.
+- Consumers do not create ingress streams; they reconcile against discovered streams.
+- Typical durable names: `event-processor`, `workflow-triggers`, `audit-service`.
+
+### DLQ Lifecycle
+
+- When DLQ is enabled in manager config, tenant DLQ resources are provisioned alongside the durable.
+- Tenant DLQ stream pattern is `DLQ-<tenant>` with subjects `dlq.<tenant>.>`.
+- Some services also consume DLQ streams via a second manager instance (for example usage aggregation).
+
+### Tiered Limits Status
+
+- Tier-aware limits (free/pro/enterprise) exist in constants and helpers.
+- At this moment, runtime stream provisioning still applies shared defaults in code paths used by publishers.
+- Documented limits should be treated as current implementation behavior, not intended policy.
+
 ## Historical Note
 
 - Older docs referenced `EVENTS` and `RESULTS` as the main business streams.
