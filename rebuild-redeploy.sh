@@ -17,11 +17,11 @@ err()  { echo -e "${RED}[ERR]${NC}   $*" >&2; }
 step() { echo -e "${CYAN}[STEP]${NC}  $*"; }
 
 VALID_SERVICES=(
-  api-gateway auth-service event-processor cache-service
-  audit-service webhook-service metrics-service tenant-service
-  scheduler-service registry-service adapter-service
-  channel-service workflow-service http-adapter
-  proxy-service yoizenclaw-admin-service admin-console messaging-console
+  api-gateway auth-service cache-service
+  audit-service tenant-service
+  registry-service connector-admin
+  channel-service workflow-service connector-runtime
+  proxy-service yoizenclaw-admin-service admin-console
   yoizenclaw-runtime usage-aggregator-service yoizenclaw-runtime-gateway
 )
 
@@ -134,13 +134,10 @@ build_image() {
 get_ksvc_names() {
   local svc="$1"
   case "$svc" in
-    adapter-service)          echo "adapter-service-api" ;;
+    connector-admin)          echo "connector-admin-api" ;;
     audit-service)            echo "audit-service-api" ;;
     channel-service)          echo "channel-service-api" ;;
-    event-processor)          echo "event-processor-api" ;;
-    metrics-service)          echo "metrics-service-api" ;;
     usage-aggregator-service) echo "usage-aggregator-api" ;;
-    webhook-service)          echo "webhook-service-api" ;;
     workflow-service)         echo "workflow-service-api" ;;
     *)                        echo "$svc" ;;
   esac
@@ -151,17 +148,14 @@ get_ksvc_names() {
 get_deployment_names() {
   local svc="$1"
   case "$svc" in
-    adapter-service)          echo "adapter-service-worker" ;;
+    connector-admin)          echo "connector-admin-worker" ;;
     audit-service)            echo "audit-service-worker" ;;
     channel-service)          echo "channel-service-worker" ;;
-    event-processor)          echo "event-processor-worker" ;;
-    metrics-service)          echo "metrics-service-worker" ;;
     usage-aggregator-service) echo "usage-aggregator-worker" ;;
-    webhook-service)          echo "webhook-service-worker" ;;
     # workflow-service ships three pods: api KSVC, NATS worker Deployment,
     # and the Temporal worker Deployment (workflow-worker).
     workflow-service)         echo "workflow-service-worker workflow-worker" ;;
-    http-adapter)             echo "http-adapter" ;;
+    connector-runtime)        echo "connector-runtime" ;;
     *)                        echo "" ;;
   esac
 }

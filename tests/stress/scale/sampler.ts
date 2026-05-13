@@ -9,12 +9,10 @@ const DEFAULTS = {
   NAMESPACE: "platform-services-dev",
   RING_BUFFER_CAPACITY: 10_000,
   SERVICES: [
-    "event-processor",
-    "webhook-service",
     "channel-service",
     "api-gateway",
     "cache-service",
-    "metrics-service",
+    "registry-service",
     "audit-service",
   ],
 } as const;

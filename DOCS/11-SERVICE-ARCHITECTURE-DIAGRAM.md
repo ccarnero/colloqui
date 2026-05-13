@@ -1,6 +1,6 @@
 # Service Architecture Diagrams
 
-This document provides visual diagrams of the platform's service architecture, focusing on the refactored HTTP Adapter and Workflow Service boundary, multi-tenancy patterns, and data flow.
+This document provides visual diagrams of the platform's service architecture, focusing on the slim-stack `connector-runtime` and `workflow-service` boundary, multi-tenancy patterns, and data flow.
 
 ## 1. Service Boundary & Communication
 
@@ -16,11 +16,11 @@ graph TB
     end
     
     subgraph "HTTP Execution"
-        HAW["http-adapter<br/>(Temporal Worker)"]
+        HAW["connector-runtime<br/>(Temporal Worker)"]
     end
-    
+
     subgraph "Configuration"
-        ADA["adapter-service<br/>(NestJS REST)"]
+        ADA["connector-admin<br/>(NestJS REST)"]
     end
     
     subgraph "AI & Agents"
@@ -42,13 +42,13 @@ graph TB
     WFA -->|Pool by tenantId| PG
     
     TEMPORAL -->|Activity Tasks<br/>workflow-orchestrator Queue| WFW
-    TEMPORAL -->|Activity Tasks<br/>http-adapter Queue| HAW
+    TEMPORAL -->|Activity Tasks<br/>connector-runtime Queue| HAW
     
     WFW -->|endpointCall<br/>serviceCall| HAW
     WFW -->|agentCall| YCR
     WFW -->|serviceBusCall<br/>channelSend| NATS
     
-    HAW -->|Adapter Config<br/>Cache Misses| ADA
+    HAW -->|Connector Config<br/>Cache Misses| ADA
     HAW -->|Cache Storage| REDIS
     
     PG -->|Tenant Isolation| PG
@@ -66,8 +66,8 @@ graph TB
 
 **Key Points**:
 - **workflow-service** splits into API (REST) and Worker (Temporal orchestration)
-- **http-adapter** is a separate Temporal worker for HTTP execution
-- **adapter-service** provides config; http-adapter caches in Redis
+- **connector-runtime** is a separate Temporal worker for HTTP execution
+- **connector-admin** provides config; `connector-runtime` caches it in Redis via `AdapterClient` (SWR)
 - **Per-tenant Postgres** isolates workflow data by tenant
 - **NATS** handles event publishing from workflows
 
@@ -83,10 +83,10 @@ sequenceDiagram
     participant WF as workflow-service<br/>API
     participant TEMPORAL as Temporal<br/>Server
     participant WFW as workflow-service<br/>Worker
-    participant HAW as http-adapter<br/>Worker
+    participant HAW as connector-runtime<br/>Worker
     participant EXT as External<br/>Endpoint
     participant REDIS as Redis<br/>Cache
-    participant ADA as adapter-service
+    participant ADA as connector-admin
     
     Client->>WF: POST /workflows<br/>{actions: [...]}
     WF->>WF: Validate DTO<br/>Resolve tenantId
@@ -100,20 +100,20 @@ sequenceDiagram
     WFW->>WFW: runWorkflow() starts<br/>Iterate actions
     
     alt Action: endpointCall
-        WFW->>TEMPORAL: Dispatch activity task<br/>http-adapter queue
-        TEMPORAL->>TEMPORAL: Queue activity<br/>http-adapter queue
+        WFW->>TEMPORAL: Dispatch activity task<br/>connector-runtime queue
+        TEMPORAL->>TEMPORAL: Queue activity<br/>connector-runtime queue
         TEMPORAL->>HAW: Deliver activity task
-        
-        HAW->>REDIS: Check adapter config<br/>cache?
+
+        HAW->>REDIS: Check connector config<br/>cache?
         alt Cache hit
             REDIS-->>HAW: Config (fresh)
         else Cache miss
-            HAW->>ADA: GET /adapters/{id}
+            HAW->>ADA: GET /connectors/{id}
             ADA-->>HAW: {baseUrl, auth, ...}
             HAW->>REDIS: Store in cache<br/>TTL 300s
         end
-        
-        HAW->>EXT: tracedFetch<br/>with adapter config
+
+        HAW->>EXT: tracedFetch<br/>with connector config
         EXT-->>HAW: {status, body}
         HAW->>TEMPORAL: Return result
         TEMPORAL-->>WFW: Activity result
@@ -135,58 +135,58 @@ sequenceDiagram
 2. workflow-service API validates and starts Temporal workflow
 3. Temporal queues workflow task on orchestrator queue
 4. Worker picks up, iterates actions
-5. For HTTP actions: dispatch to http-adapter queue
-6. http-adapter resolves adapter config (cache hit/miss)
+5. For HTTP actions: dispatch to `connector-runtime` queue
+6. `connector-runtime` resolves connector config (cache hit/miss)
 7. Execute HTTP call, return result
 8. Next action can use previous result via templates
 9. Client queries for status/result
 
 ---
 
-## 3. Adapter Configuration Resolution Flow
+## 3. Connector Configuration Resolution Flow
 
-How http-adapter resolves adapter-driven requests:
+How `connector-runtime` resolves connector-driven requests via `AdapterClient`:
 
 ```mermaid
 graph TB
     REQ["HTTP Request<br/>adapterId: 'crm'<br/>endpointId: 'getCustomer'"]
     AC["AdapterClient<br/>.resolveRequest()"]
     REDIS["Redis Cache<br/>Key: adapter:tenant:crm"]
-    
+
     subgraph "Cache Miss Path"
-        ADA["adapter-service<br/>REST API"]
+        ADA["connector-admin<br/>REST API"]
         MERGE["Merge Config<br/>baseUrl +<br/>endpoint.path"]
         AUTH["Resolve Auth<br/>(OAuth2 tokens)"]
         HEADERS["Merge Headers<br/>(default +<br/>custom)"]
         FINAL["Return Resolved<br/>URL, Headers,<br/>Timeout, Retries"]
         STORE["Cache in Redis<br/>TTL: 300s<br/>Stale: 60s"]
     end
-    
+
     subgraph "Cache Hit Path"
         FRESH["Config Fresh?"]
         USE["Use Cached<br/>Config"]
         STALE["Serving Stale<br/>Refresh in BG"]
     end
-    
+
     REQ -->|AdapterClient| AC
     AC -->|Check cache| REDIS
-    
+
     REDIS -->|Hit| FRESH
     REDIS -->|Miss| ADA
-    
+
      FRESH -->|Yes| USE
      FRESH -->|No stale| STALE
-    
-    ADA -->|GET /adapters/crm| MERGE
+
+    ADA -->|GET /connectors/crm| MERGE
     MERGE -->|Combine| AUTH
     AUTH -->|Add token| HEADERS
     HEADERS -->|Add tenant| FINAL
     FINAL -->|Store| STORE
     STORE -->|Return| USE
     STALE -->|Background| ADA
-    
+
     USE -->|Resolved| EXEC["Execute HTTP Call<br/>tracedFetch"]
-    
+
     style AC fill:#fff3e0
     style REDIS fill:#e0f2f1
     style ADA fill:#f3e5f5
@@ -194,10 +194,10 @@ graph TB
 ```
 
 **Cache Strategy**:
-- **TTL**: 300 seconds (adapter configs valid for 5 minutes)
+- **TTL**: 300 seconds (connector configs valid for 5 minutes)
 - **Stale window**: 60 seconds (serve stale while refreshing)
 - **Background refresh**: On stale hit, refresh in background, serve cached value immediately
-- **Miss**: Fetch from adapter-service synchronously
+- **Miss**: Fetch from `connector-admin` synchronously
 
 ---
 
@@ -213,8 +213,8 @@ graph TB
     
     subgraph "Service Layer"
         WF["workflow-service<br/>Tenant ID: acme"]
-        HA["http-adapter<br/>Tenant ID: acme"]
-        ADA["adapter-service<br/>Tenant ID: acme"]
+        HA["connector-runtime<br/>Tenant ID: acme"]
+        ADA["connector-admin<br/>Tenant ID: acme"]
     end
     
     subgraph "Data Layer"
@@ -227,7 +227,7 @@ graph TB
     GATEWAY -->|Tenant: acme| WF
     WF -->|Tenant: acme| PG_ACME
     WF -->|Subject: events.acme.*| NATS_ACME
-    WF -->|Activity to http-adapter<br/>TenantId attribute| HA
+    WF -->|Activity to connector-runtime<br/>TenantId attribute| HA
     
     HA -->|Header: x-yoizen-tenant: acme| ADA
     ADA -->|Query acme adapters| PG_ACME
@@ -275,20 +275,20 @@ graph TB
         AG["agentCall<br/>Local Activity"]
     end
     
-    subgraph "http-adapter Queue"
+    subgraph "connector-runtime Queue"
         HTTP["HTTP Execution"]
         EP["endpointCall<br/>Remote Activity"]
         SC["serviceCall<br/>Remote Activity"]
     end
-    
+
     subgraph "Workers"
         WFW["workflow-service<br/>Worker Process<br/>Concurrency: 100 workflows<br/>50 activities"]
-        HAW["http-adapter<br/>Worker Process<br/>Concurrency: 200 activities"]
+        HAW["connector-runtime<br/>Worker Process<br/>Concurrency: 200 activities"]
     end
-    
+
     subgraph "Scaling"
         KEDA_WF["KEDA Scaler<br/>Monitor: orchestrator<br/>queue depth<br/>Min: 1, Max: 3<br/>Cooldown: 300s"]
-        KEDA_HA["KEDA Scaler<br/>Monitor: http-adapter<br/>queue depth<br/>Min: 1, Max: 20<br/>Cooldown: 300s"]
+        KEDA_HA["KEDA Scaler<br/>Monitor: connector-runtime<br/>queue depth<br/>Min: 1, Max: 20<br/>Cooldown: 300s"]
     end
     
     TEMPORAL -->|Dispatch| COORD
@@ -316,7 +316,7 @@ graph TB
 
 **Queue Design**:
 - **workflow-orchestrator**: Coordinates multi-step execution; local activities (JS, NATS) run inline
-- **http-adapter**: Specialized for HTTP; high concurrency (200) to handle network latency
+- **connector-runtime**: Specialized for HTTP; high concurrency (200) to handle network latency
 - **Separate scaling**: Each queue scales independently based on task depth
 - **Temporal dispatch**: Remote activities (endpointCall) dispatch back to Temporal for load balancing
 
@@ -332,7 +332,7 @@ graph TB
     
     WF -->|Action Type?| SWITCH{Switch}
     
-    SWITCH -->|endpointCall<br/>serviceCall| HAQ["Dispatch to<br/>http-adapter<br/>task queue"]
+    SWITCH -->|endpointCall<br/>serviceCall| HAQ["Dispatch to<br/>connector-runtime<br/>task queue"]
     SWITCH -->|jsFunction| JS["Local Activity<br/>executeJsFunction"]
     SWITCH -->|serviceBusCall| SB["Local Activity<br/>executeServiceBusCall<br/>→ NATS"]
     SWITCH -->|channelSend| CH["Local Activity<br/>executeChannelSend<br/>→ channel-service"]
@@ -340,7 +340,7 @@ graph TB
     SWITCH -->|branch| BR["Promise.all<br/>Parallel execution"]
     SWITCH -->|sleep| SLP["Temporal timer"]
     
-    HAQ -->|Pull activity| HAW["http-adapter<br/>Worker"]
+    HAQ -->|Pull activity| HAW["connector-runtime<br/>Worker"]
     HAW -->|tracedFetch| EXT["External<br/>Endpoint"]
     
     JS -->|Inline| EXEC["new Function()<br/>eval JS"]
@@ -417,9 +417,9 @@ graph TB
 
 ---
 
-## 8. Circuit Breaker & Retry Flow (http-adapter)
+## 8. Circuit Breaker & Retry Flow (connector-runtime)
 
-How http-adapter handles failures and protects against cascading failures:
+How `connector-runtime` handles failures and protects against cascading failures:
 
 ```mermaid
 stateDiagram-v2
@@ -451,18 +451,18 @@ stateDiagram-v2
 
 ## Summary
 
-The refactored architecture separates concerns into:
+The slim-stack architecture separates concerns into:
 
 1. **Workflow Orchestration** (`workflow-service`) — Coordinates multi-step execution
-2. **HTTP Execution** (`http-adapter`) — Specialized worker for HTTP calls with adapter resolution
-3. **Configuration** (`adapter-service`) — Manages adapter configs, cached by http-adapter
-4. **AI & Agents** (`yoizenclaw-runtime`) — Autonomous agent execution
+2. **HTTP Execution** (`connector-runtime`) — Specialized worker for HTTP calls with connector resolution
+3. **Configuration** (`connector-admin`) — Manages connector configs, cached by `connector-runtime` via `AdapterClient`
+4. **AI & Agents** (`yoizenclaw-runtime`) — Per-tenant autonomous agent execution
 5. **Multi-tenancy** — Per-tenant Postgres, NATS subject prefixes, header propagation
 6. **Temporal Task Queues** — Two independent queues for independent scaling
 
 This design enables:
-- **Independent scaling**: HTTP-heavy workloads scale http-adapter separately
+- **Independent scaling**: HTTP-heavy workloads scale `connector-runtime` separately
 - **Tenant isolation**: Per-tenant databases prevent cross-tenant data leakage
-- **High concurrency**: 200 parallel HTTP requests per http-adapter replica
+- **High concurrency**: 200 parallel HTTP requests per `connector-runtime` replica
 - **Resilience**: Circuit breaker + retries protect against cascading failures
 - **Observability**: Each action traces through Temporal with OpenTelemetry instrumentation

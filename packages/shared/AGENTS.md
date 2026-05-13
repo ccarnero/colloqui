@@ -76,15 +76,6 @@ src/
 |----------|-------|---------|
 | `TENANT_HEADER` | `x-yoizen-tenant` | All services |
 
-### Scheduler Constants (`constants.ts`)
-
-| Constant | Description | Used By |
-|----------|-------------|---------|
-| `SCHEDULER_DEFAULT_TIMEOUT_MS` | Default execution timeout | Scheduler Service |
-| `SCHEDULER_K8S_DEFAULT_TIMEOUT_S` | K8s Job timeout | Scheduler Service |
-| `SCHEDULER_TICK_INTERVAL_MS` | Engine tick interval | Scheduler Service |
-| `SCHEDULER_MAX_EXECUTION_LOG_ROWS` | Max query rows | Scheduler Service |
-
 ### Registry / Knative Constants (`constants.ts`)
 
 | Constant | Description | Used By |
@@ -99,7 +90,7 @@ src/
 | Constant | Value | Used By |
 |----------|-------|---------|
 | `WORKFLOW_ORCHESTRATOR_TASK_QUEUE` | `workflow-orchestrator` | Workflow Service |
-| `HTTP_ADAPTER_TASK_QUEUE` | `http-adapter` | HTTP Adapter |
+| `CONNECTOR_RUNTIME_TASK_QUEUE` | `connector-runtime` | connector-runtime |
 | `WORKFLOW_DEFAULT_TIMEOUT_MS` | Default workflow timeout | Workflow Service |
 
 ### Auth Constants (`auth.constants.ts`)
@@ -180,7 +171,7 @@ src/
 | registry-service | Knative constants, `TENANT_HEADER` |
 | tenant-service | `TENANT_HEADER` |
 | workflow-service | Workflow types, task queues, `TENANT_HEADER` |
-| http-adapter | `HTTP_ADAPTER_TASK_QUEUE`, `HttpEndpointRequest`, `HttpServiceRequest`, `TENANT_HEADER`, `AdapterClient`, `DEFAULT_ADAPTER_SERVICE_URL` |
+| connector-runtime | `CONNECTOR_RUNTIME_TASK_QUEUE`, `HttpEndpointRequest`, `HttpServiceRequest`, `TENANT_HEADER`, `AdapterClient`, `DEFAULT_ADAPTER_SERVICE_URL` |
 | adapter-service | `TENANT_HEADER`, `AdapterConfig` interface |
 
 **Not a consumer**: `cache-service` (standalone, no shared package dependency).

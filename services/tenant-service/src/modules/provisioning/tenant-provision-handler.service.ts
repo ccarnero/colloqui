@@ -72,8 +72,8 @@ export class TenantProvisionHandler {
       await this.repository.markProvisioningStarted(tenantId);
       await this.executor.run({ name, tier: row.tier, configuration });
       await this.repository.markProvisioningReady(tenantId);
-      // Best-effort fan-out so subscribers (e.g. scheduler-service) can
-      // run per-tenant DDL eagerly and avoid the lazy first-request
+      // Best-effort fan-out so per-tenant subscribers can run DDL
+      // eagerly and avoid the lazy first-request
       // penalty. Publish AFTER the DB UPDATE so subscribers only see
       // tenants whose `provisioning_status` is actually 'ready' if they
       // double-check via tenant-service. Failure is non-fatal — the

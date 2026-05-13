@@ -43,23 +43,19 @@ ALL_KNATIVE_SERVICES=(
   auth-service
   cache-service
   tenant-service
-  scheduler-service
   registry-service
   yoizenclaw-admin-service
   proxy-service
-  adapter-service
+  connector-admin
   channel-service-api
   audit-service-api
-  event-processor-api
-  metrics-service-api
   usage-aggregator-api
-  webhook-service-api
   workflow-service-api
 )
 
 # Plain `apps/v1.Deployment` workloads driven by KEDA. Two flavors:
-#   • Temporal-driven workers (`workflow-worker`, `http-adapter`) — replicas
-#     follow `workflow-orchestrator` / `http-adapter` task-queue depth.
+#   • Temporal-driven workers (`workflow-worker`, `connector-runtime`) — replicas
+#     follow `workflow-orchestrator` / `connector-runtime` task-queue depth.
 #   • Phase 1.5 NATS workers (`*-worker`) — replicas follow JetStream
 #     consumer lag (jetstream_consumer_num_pending +
 #     jetstream_consumer_num_ack_pending). See
@@ -68,13 +64,10 @@ ALL_KNATIVE_SERVICES=(
 # fails when `spec.replicas > 0` AND `availableReplicas < 1`.
 ALL_PLAIN_DEPLOYMENTS=(
   workflow-worker
-  http-adapter
+  connector-runtime
   audit-service-worker
   channel-service-worker
-  event-processor-worker
-  metrics-service-worker
   usage-aggregator-worker
-  webhook-service-worker
   workflow-service-worker
 )
 
@@ -145,9 +138,7 @@ run_tests() {
   # Phase 1.5: e2e suites talk to the `*-api` Knative Services for direct
   # health/CRUD probes. The `*-worker` Deployments are NOT exposed via
   # Kourier — they consume NATS subjects only.
-  export EVENT_PROCESSOR_URL="http://event-processor-api.${NAMESPACE}.${domain}:${KOURIER_PORT}"
   export CACHE_SERVICE_URL="http://cache-service.${NAMESPACE}.${domain}:${KOURIER_PORT}"
-  export METRICS_SERVICE_URL="http://metrics-service-api.${NAMESPACE}.${domain}:${KOURIER_PORT}"
   export KOURIER_HOST="localhost"
   export KOURIER_PORT="${KOURIER_PORT}"
 
@@ -157,9 +148,7 @@ run_tests() {
 
   log "Service URLs (routed through Kourier):"
   echo "  api-gateway         -> $API_GATEWAY_URL  (all service tests route through this)"
-  echo "  event-processor-api -> $EVENT_PROCESSOR_URL  (direct health check)"
   echo "  cache-service       -> $CACHE_SERVICE_URL  (direct CRUD + health)"
-  echo "  metrics-service-api -> $METRICS_SERVICE_URL  (direct — not proxied by gateway)"
   echo ""
 
   local test_filter="${1:-}"

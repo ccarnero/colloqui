@@ -16,8 +16,8 @@ Use this together with `DOCS/01-ARCHITECTURE.md` (service placement) and `DOCS/0
 flowchart TD
     subgraph ingress["INGRESS-<tenant> (JetStream stream)"]
         in_subj[Subjects: evt.<tenant>.>]
-        in_prod[Producers: api-gateway, channel-service, event-processor, registry-service, yoizenclaw-admin-service]
-        in_cons[Consumers: event-processor, audit-service, metrics-service, webhook-service, channel-service, adapter-service, usage-aggregator-service, yoizenclaw-runtime]
+        in_prod[Producers: api-gateway, channel-service, registry-service, yoizenclaw-admin-service, yoizenclaw-runtime-gateway]
+        in_cons[Consumers: audit-service, channel-service, connector-admin, usage-aggregator-service, workflow-service, yoizenclaw-runtime]
     end
 
     subgraph dlqt["DLQ-<tenant> (JetStream stream)"]
@@ -28,7 +28,7 @@ flowchart TD
 
     subgraph dlqg["DLQ (global JetStream stream)"]
         dlqg_subj[Subjects: dlq.webhook]
-        dlqg_prod[Producer: webhook-service]
+        dlqg_prod[Producer: legacy stream — currently no slim-stack producer]
         dlqg_cons[Consumer: ops/manual replay]
     end
 
@@ -47,7 +47,7 @@ flowchart TD
 |---|---|---|---|
 | `INGRESS-<tenant>` | JetStream stream | `evt.<tenant>.>` | Canonical tenant event bus |
 | `DLQ-<tenant>` | JetStream stream | `dlq.<tenant>.>` | Tenant-scoped dead letters and post-processing |
-| `DLQ` | JetStream stream | `dlq.webhook` | Global webhook delivery failures |
+| `DLQ` | JetStream stream | `dlq.webhook` | Legacy global DLQ — narrowed from `dlq.>` to free the `dlq.<tenant>.>` namespace for tenant-scoped DLQ streams. Currently no slim-stack producer; retained for ops replay tooling. |
 | `PAYLOAD-<tenant>` | JetStream Object Store | Object keys (`<event-id>-payload`) | Claim-check storage for large payloads |
 | `platform.tenant.deleted` | Core NATS subject | `platform.tenant.deleted` | Fire-and-forget tenant teardown signal |
 
@@ -72,7 +72,7 @@ evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>
 Examples:
 
 - `evt.acme.api-gateway.messaging.telegram.webhook.webhook_received.v1`
-- `evt.acme.event-processor.platform.events.gateway.completed.v1`
+- `evt.acme.registry-service.platform.events.system.service_registered.v1`
 - `evt.acme.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal.execution_requested.v1`
 
 ## Envelope Contract (Canonical)
@@ -124,7 +124,7 @@ Code references:
 - Consumers use `MultiTenantConsumerManager` with `streamPattern: /^INGRESS-/`.
 - The manager discovers existing tenant streams and ensures a durable consumer per tenant stream.
 - Consumers do not create ingress streams; they reconcile against discovered streams.
-- Typical durable names: `event-processor`, `workflow-triggers`, `audit-service`.
+- Typical durable names: `audit-service`, `channel-service`, `connector-admin`, `usage-aggregator-service`, `workflow-triggers`, `yoizenclaw-runtime`.
 
 ### DLQ Lifecycle
 

@@ -312,7 +312,7 @@ export class AdapterClient {
       name: serviceId,
       limit: "1",
     });
-    const url = `${this.baseUrl}/adapters?${qs.toString()}`;
+    const url = `${this.baseUrl}/connectors?${qs.toString()}`;
     const res = await this.fetchFn(url, {
       method: "GET",
       headers: {
@@ -352,7 +352,7 @@ export class AdapterClient {
     tenantId: string,
     adapterId: string,
   ): Promise<AdapterConfig> {
-    const url = `${this.baseUrl}/adapters/${encodeURIComponent(adapterId)}`;
+    const url = `${this.baseUrl}/connectors/${encodeURIComponent(adapterId)}`;
     const res = await this.fetchFn(url, {
       method: "GET",
       headers: {

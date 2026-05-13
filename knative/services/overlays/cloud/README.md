@@ -77,14 +77,13 @@ durables: `audit-events`, `channel-egress`, `auto-reply`,
 | `*-worker` (Phase 1.5 split) [^3]        | KEDA min=0, idle=0, cooldown=180s     | KEDA min=0, idle=0, cooldown=300s  | base unchanged |
 | KEDA-managed Temporal workers [^4]       | KEDA min=0, idle=0, cooldown=300s     | KEDA min=0, idle=0, cooldown=300s  | base unchanged |
 
-[^1]: `auth-service`, `cache-service`, `tenant-service`, `scheduler-service`,
+[^1]: `auth-service`, `cache-service`, `tenant-service`,
       `proxy-service`, `registry-service`, `adapter-service`,
-      `admin-console`, `messaging-console`, `yoizenclaw-admin-service`.
+      `admin-console`, `yoizenclaw-admin-service`.
       Cold-start ≈300ms (Bun) + KPA pre-warm.
 
-[^2]: `audit-service-api`, `channel-service-api`, `event-processor-api`,
-      `metrics-service-api`, `usage-aggregator-api`,
-      `webhook-service-api`, `workflow-service-api`. Pure HTTP — no
+[^2]: `audit-service-api`, `channel-service-api`,
+      `usage-aggregator-api`, `workflow-service-api`. Pure HTTP — no
       NATS consumers run in this pod (guarded by `isWorkerMode()`).
       Safe to scale to zero on KPA concurrency.
 
@@ -98,7 +97,7 @@ durables: `audit-events`, `channel-egress`, `auto-reply`,
       `jetstream_consumer_num_pending` + `_num_ack_pending` per
       durable. Activation threshold `0` so KEDA wakes on backlog ≥ 1.
 
-[^4]: `workflow-worker`, `http-adapter`. Same Plain Deployment
+[^4]: `workflow-worker`, `connector-runtime`. Same Plain Deployment
       shape as the Phase 1.5 workers but driven by the `temporal`
       scaler (queries `DescribeTaskQueue` for backlog count every 15s).
       Activation: `activationTargetQueueSize: "0"` (KEDA uses strictly

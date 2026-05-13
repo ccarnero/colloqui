@@ -58,16 +58,16 @@ sequenceDiagram
     autonumber
     participant TEMP as Temporal
     participant WFW as workflow-worker
-    participant HTP as http-adapter
+    participant CR as connector-runtime
     participant SVC as Hosted/Internal Service
     participant CH as channel-service
     participant TGA as Telegram Bot API
 
     TEMP->>WFW: run workflow actions
-    WFW->>HTP: execute endpointCall/serviceCall
-    HTP->>SVC: HTTP request
-    SVC-->>HTP: HTTP response
-    HTP-->>WFW: action result
+    WFW->>CR: execute endpointCall/serviceCall
+    CR->>SVC: HTTP request
+    SVC-->>CR: HTTP response
+    CR-->>WFW: action result
     WFW->>CH: publish telegram send event
     CH->>TGA: sendMessage(reply)
     TGA-->>CH: 200 OK
@@ -82,7 +82,6 @@ sequenceDiagram
     autonumber
     participant TEMP as Temporal
     participant WFW as workflow-worker
-    participant HTP as http-adapter
     participant YZG as yoizenclaw-runtime-gateway
     participant NATS as NATS INGRESS-tenant
     participant YZR as yoizenclaw-runtime
@@ -90,14 +89,12 @@ sequenceDiagram
     participant TGA as Telegram Bot API
 
     TEMP->>WFW: run workflow actions
-    WFW->>HTP: execute agentCall
-    HTP->>YZG: request execution
+    WFW->>YZG: execute agentCall (local activity)
     YZG->>NATS: publish execution_requested.v1
     NATS->>YZR: durable delivery
     YZR->>NATS: publish execution_started/execution_completed
     NATS->>YZG: lifecycle/result events
-    YZG-->>HTP: completed result
-    HTP-->>WFW: results.agent.data.reply
+    YZG-->>WFW: results.agent.data.reply
     WFW->>CH: publish telegram send event
     CH->>TGA: sendMessage(reply)
     TGA-->>CH: 200 OK
@@ -115,5 +112,4 @@ sequenceDiagram
 ## Notes
 
 - After the message is on NATS, this trigger-based path does not go through `workflow-service-api`; `workflow-service-worker` starts Temporal directly.
-- `event-processor` is not part of this Telegram workflow trigger path.
 - `agentCall` path uses `yoizenclaw-runtime-gateway` and `yoizenclaw-runtime` over JetStream events.

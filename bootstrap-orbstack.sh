@@ -306,7 +306,7 @@ apply_namespaces() {
           app.kubernetes.io/part-of=yoizen-arch \
           yoizen.io/tenant=acme \
           yoizen.io/environment=dev \
-          yoizen.io/managed-by=bootstrap
+          yoizen.io/managed-by=tenant-service
       fi
     fi
   done
@@ -422,12 +422,12 @@ build_images() {
 
   log "Building service images (Docker > OrbStack shared daemon)"
 
-  for svc in api-gateway auth-service event-processor cache-service \
-             audit-service webhook-service metrics-service tenant-service \
-             scheduler-service registry-service adapter-service \
-             channel-service workflow-service http-adapter \
+  for svc in api-gateway auth-service cache-service \
+             audit-service tenant-service \
+             registry-service connector-admin \
+             channel-service workflow-service connector-runtime \
              proxy-service yoizenclaw-admin-service yoizenclaw-runtime-gateway admin-console \
-             messaging-console usage-aggregator-service; do
+             usage-aggregator-service; do
     log "Building image: dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \

@@ -30,18 +30,14 @@ flowchart LR
         end
 
         subgraph core[Core Event Consumers]
-            ep[event-processor]
             audit[audit-service]
-            metrics[metrics-service]
-            webhook[webhook-service]
             usage[usage-aggregator-service]
         end
 
         subgraph automation[Automation]
             wapi[workflow-service-api]
             wworker[workflow-service-worker]
-            hadapter[http-adapter]
-            sched[scheduler-service]
+            connector[connector-runtime]
         end
 
         subgraph yz[YoizenClaw]
@@ -57,14 +53,13 @@ flowchart LR
             auth[auth-service]
             tenant[tenant-service]
             registry[registry-service]
-            adapter[adapter-service]
+            connectorAdmin[connector-admin]
             cache[cache-service]
             proxy[proxy-service]
         end
 
         subgraph ui[UI]
             admin[admin-console]
-            msg[messaging-console]
         end
     end
 
@@ -87,32 +82,27 @@ flowchart LR
 |---|---|---|
 | `api-gateway` | Platform | External HTTP entry, auth enforcement, service proxying, webhook ingress entry |
 | `channel-service` | Platform | Channel ingress/egress orchestration (Telegram/WhatsApp), normalized message events |
-| `event-processor` | Platform | Main event pipeline and handler execution over tenant-scoped streams |
 | `audit-service` | Platform | Durable event audit persistence to tenant PostgreSQL |
-| `metrics-service` | Platform | Metrics extraction and persistence to tenant PostgreSQL |
-| `webhook-service` | Platform | Callback dispatch with retries and DLQ behavior |
 | `usage-aggregator-service` | Platform | Cross-stream usage aggregation for tenant analytics |
 | `workflow-service-api` | Platform | Workflow management API and Temporal client entry |
 | `workflow-service-worker` | Platform | Temporal worker and NATS trigger bridge |
-| `http-adapter` | Platform | High-concurrency activity worker for `endpointCall`, `serviceCall`, and `agentCall` |
+| `connector-runtime` | Platform | High-concurrency activity worker for `endpointCall`, `serviceCall`, and `agentCall` |
 | `yoizenclaw-admin-service` | Platform | CRUD and publish lifecycle for agents, templates, credentials, files |
 | `yoizenclaw-runtime-gateway` | Platform | Async execution bridge between API/workflows and runtime via NATS |
 | `yoizenclaw-runtime` | Per-tenant boundary | Per-tenant AI runtime execution service |
 | `auth-service` | Platform | JWT issuance and dynamic public-route sync |
 | `tenant-service` | Platform | Tenant lifecycle and namespace/data provisioning |
 | `registry-service` | Platform | Dynamic service registry and route metadata |
-| `adapter-service` | Platform | Outbound HTTP adapter configuration store and lookup |
+| `connector-admin` | Platform | Outbound HTTP connector configuration store and lookup |
 | `cache-service` | Platform | L1/L2 cache abstraction backed by Redis |
-| `scheduler-service` | Platform | Scheduled job execution (cron/interval/one-time) |
 | `proxy-service` | Platform | HTTP proxy for external tenant-dependent backends |
 | `admin-console` | Platform | Operational UI for platform and YoizenClaw admin workflows |
-| `messaging-console` | Platform | Messaging operations UI and conversation workflows |
 
 ## Key Architecture Decisions
 
 - **Namespace layering is intentional**: support infra is environment-scoped, application services are platform-scoped, and tenant runtime/data are isolated behind tenant boundaries.
 - **JetStream is the default async backbone**: durable stream/consumer semantics are used for internal flows; core NATS is reserved for lightweight platform signals.
-- **Temporal isolates orchestration concerns**: workflow logic remains in workflow workers while HTTP/agent I/O scales separately through `http-adapter`.
+- **Temporal isolates orchestration concerns**: workflow logic remains in workflow workers while HTTP/agent I/O scales separately through `connector-runtime`.
 - **Per-tenant data ownership is explicit**: audit, metrics, scheduler data, and YoizenClaw runtime state are tenant-bound.
 
 ## Related Documents
@@ -175,7 +165,7 @@ sequenceDiagram
     WW->>WW: runWorkflow: iterate actions
 
     alt endpointCall action
-        WW->>T: Schedule activity on http-adapter queue
+        WW->>T: Schedule activity on connector-runtime queue
         T->>HW: Deliver activity task
         HW->>EXT: HTTP request via axios
         EXT-->>HW: Response
@@ -258,11 +248,10 @@ sequenceDiagram
 | `GET` | `/events/stream` | SSE real-time stream | Required |
 | `GET` | `/audit/events` | Query audit events | Required |
 | `POST/GET/DELETE` | `/tenants` | Tenant management | Platform (write) / Required (read) |
-| `POST/GET/PATCH/DELETE` | `/schedulers/schedules` | Schedule management | Required |
-| `GET` | `/schedulers/executions` | Execution history | Required |
 | `POST/GET/PATCH/DELETE` | `/registry/services` | Service registry | Required |
 | `POST/PATCH/GET` | `/registry/services/:id/canary` | Canary deployments | Required |
 | `POST/GET` | `/workflows` | Workflow management | Required |
+| `POST/GET/PATCH/DELETE` | `/api/connectors` | Connector configuration (proxied to `connector-admin`) | Required |
 | `GET` | `/health` | Aggregated health | Public |
 
 ```mermaid
@@ -273,9 +262,9 @@ graph LR
     GW -->|Proxy| AUTH[Auth Service]
     GW -->|Proxy| AS[Audit Service]
     GW -->|Proxy| TS[Tenant Service]
-    GW -->|Proxy| SCHED[Scheduler Service]
     GW -->|Proxy| REG[Registry Service]
     GW -->|Proxy| WF[Workflow API]
+    GW -->|Proxy| CA[Connector Admin]
     GW -->|Dynamic route| TSVC[Tenant Knative Services]
     GW -->|SSE subscribe| NATS
 ```
@@ -322,27 +311,6 @@ graph LR
 
 ---
 
-### Event Processor
-
-| Aspect | Detail |
-|--------|--------|
-| **Role** | Consume events, validate, enrich, transform, route to handlers |
-| **Port** | 3000 |
-| **Scale** | 1 -- 20 replicas (concurrency target: 50) |
-
-```mermaid
-graph LR
-    E[Raw Event] --> V[Validation<br/>ajv schema] --> EN[Enrichment<br/>metadata + timestamps] --> T[Transform<br/>normalize payload]
-    T --> HR{Handler Registry}
-    HR -->|created| H1[Created Handler]
-    HR -->|updated| H2[Updated Handler]
-    HR -->|deleted| H3[Deleted Handler]
-    HR -->|*| H5[Default Handler]
-    H1 & H2 & H3 & H5 --> R["Write Result - Redis<br/>Publish - RESULTS stream"]
-```
-
----
-
 ### Audit Service
 
 | Aspect | Detail |
@@ -363,49 +331,6 @@ CREATE TABLE events (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
-
----
-
-### Metrics Service
-
-| Aspect | Detail |
-|--------|--------|
-| **Role** | Consume `events.metrics` and store metrics in per-tenant PostgreSQL |
-| **Port** | 3000 |
-| **Scale** | 1 -- 5 replicas (concurrency target: 50) |
-
-**Database Schema (per-tenant):**
-
-```sql
-CREATE TABLE metrics (
-    id         TEXT PRIMARY KEY,
-    source     TEXT NOT NULL,
-    name       TEXT NOT NULL,
-    value      DOUBLE PRECISION NOT NULL,
-    tags       JSONB DEFAULT '{}',
-    metadata   JSONB DEFAULT '{}',
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
----
-
-### Webhook Service
-
-| Aspect | Detail |
-|--------|--------|
-| **Role** | Deliver processing results as HTTP callbacks to external URLs |
-| **Port** | 3000 |
-| **Scale** | 1 -- 5 replicas (concurrency target: 50) |
-
-**Retry Policy:**
-
-| Attempt | Delay |
-|---------|-------|
-| 1 | 1 second |
-| 2 | 5 seconds |
-| 3 | 30 seconds |
-| Failed | dlq.webhook |
 
 ---
 
@@ -456,40 +381,6 @@ graph LR
 
 ---
 
-### Scheduler Service
-
-| Aspect | Detail |
-|--------|--------|
-| **Role** | Multi-tenant job scheduling with cron, interval, and one-time support |
-| **Port** | 3000 |
-| **Scale** | 1 -- 5 replicas (concurrency target: 50) |
-
-**Schedule Types:**
-
-| Type | Expression | Example |
-|------|-----------|---------|
-| `cron` | Cron expression | `0 */5 * * *` |
-| `interval` | Milliseconds | `60000` |
-| `one-time` | ISO timestamp | `2025-01-01T00:00:00Z` |
-
-**Execution Modes:**
-
-| Mode | Description |
-|------|-------------|
-| `js-inline` | In-process JS evaluation |
-| `js-k8s` | K8s Job with Bun runtime |
-| `docker` | K8s Job with custom image |
-
-```mermaid
-graph LR
-    C([Client]) -->|HTTP| GW[API Gateway]
-    GW -->|Proxy| SCHED[Scheduler Service]
-    SCHED -->|Persist| TPG[(Per-Tenant PG)]
-    SCHED -->|K8s Jobs| K8s[Kubernetes API]
-```
-
----
-
 ### Registry Service
 
 | Aspect | Detail |
@@ -531,8 +422,8 @@ graph LR
 
 | Activity | Task Queue | Description |
 |----------|-----------|-------------|
-| `endpointCall` | `http-adapter` | HTTP request via http-adapter |
-| `serviceCall` | `http-adapter` | Internal/service-aware HTTP request via http-adapter |
+| `endpointCall` | `connector-runtime` | HTTP request via connector-runtime |
+| `serviceCall` | `connector-runtime` | Internal/service-aware HTTP request via connector-runtime |
 | `jsFunction` | `workflow-orchestrator` | Inline JS evaluation |
 | `agentCall` | `workflow-orchestrator` | YoizenClaw agent chat via workflow-service local activity |
 | `serviceBusCall` | `workflow-orchestrator` | NATS publish with tenant header |
@@ -542,15 +433,17 @@ Actions support `{{path.to.value}}` template resolution against the execution co
 
 ---
 
-### HTTP Adapter
+### Connector Runtime
 
 | Aspect | Detail |
 |--------|--------|
 | **Role** | Standalone Temporal worker for generic HTTP execution activities |
 | **Port** | 3000 (health only) |
-| **Scale** | 1 -- 5 replicas |
+| **Scale** | 1 -- 5 replicas (KEDA-driven on `connector-runtime` task queue) |
+| **Task Queue** | `CONNECTOR_RUNTIME_TASK_QUEUE` (`connector-runtime`) |
+| **Config Source** | `connector-admin` REST API via `AdapterClient` (Redis SWR cache) |
 
-Executes `endpointCall` and `serviceCall` via `tracedFetch` with automatic `x-yoizen-tenant` header injection, adapter resolution, response caching, and internal service mirror lookup. Max 200 concurrent activity tasks.
+Executes `endpointCall` and `serviceCall` via `tracedFetch` with automatic `x-yoizen-tenant` header injection, connector resolution, response caching, and internal service mirror lookup. Max 200 concurrent activity tasks.
 
 ---
 
@@ -573,17 +466,17 @@ graph TB
         subgraph platformSvc ["platform-services-{env}"]
             GW[API Gateway]
             AUTH[Auth Service]
-            EP[Event Processor]
             AS[Audit Service]
-            WH[Webhook Service]
             CS[Cache Service]
-            MS[Metrics Service]
+            CHS[Channel Service]
             TS[Tenant Service]
-            SCHED[Scheduler Service]
             REG[Registry Service]
             WF_API[Workflow API]
             WF_W[Workflow Worker]
-            WF_H[HTTP Adapter]
+            CR[Connector Runtime]
+            CA[Connector Admin]
+            YZA[YoizenClaw Admin]
+            YZG[YoizenClaw Runtime Gateway]
         end
 
         subgraph supportSvc ["support-services-{env}"]
@@ -610,17 +503,17 @@ graph TB
 |---------|-----------|-----------|-------------------|
 | API Gateway | 1 | 10 | 100 |
 | Auth Service | 1 | 3 | 50 |
-| Event Processor | 1 | 20 | 50 |
 | Audit Service | 1 | 5 | 50 |
-| Webhook Service | 1 | 5 | 50 |
 | Cache Service | **0** | 5 | 100 |
-| Metrics Service | 1 | 5 | 50 |
+| Channel Service | 1 | 5 | 50 |
 | Tenant Service | 1 | 3 | 50 |
-| Scheduler Service | 1 | 5 | 50 |
 | Registry Service | 1 | 5 | 50 |
 | Workflow API | 1 | 5 | 50 |
 | Workflow Worker | 1 | 3 | 50 |
-| HTTP Adapter | 1 | 5 | 100 |
+| Connector Admin (API + worker) | 1 | 5 | 50 |
+| Connector Runtime | 1 | 5 | 100 (KEDA on Temporal queue) |
+| YoizenClaw Admin Service | 1 | 5 | 50 |
+| YoizenClaw Runtime Gateway | 1 | 5 | 50 |
 
 ### Container Build
 
@@ -655,17 +548,20 @@ Provides type-safe constants and interfaces consumed by all services.
 
 | Constant | Value | Used By |
 |----------|-------|---------|
-| `STREAM_NAME` | `EVENTS` | All except Cache |
-| `RESULTS_STREAM_NAME` | `RESULTS` | Event Processor, Webhook |
-| `DLQ_STREAM_NAME` | `DLQ` | Webhook |
-| `CONSUMER_NAME` | `event-processor` | Event Processor |
-| `AUDIT_CONSUMER_NAME` | `audit-writer` | Audit Service |
-| `METRICS_CONSUMER_NAME` | `metrics-writer` | Metrics Service |
-| `WEBHOOK_CONSUMER_NAME` | `webhook-dispatcher` | Webhook Service |
-| `RESULT_TTL` | `3600` (1 hour) | API Gateway, Event Processor |
+| `RESULT_KEY_PREFIX` / `PENDING_KEY_PREFIX` | `result:` / `pending:` | Per-tenant runtime/Redis cache layer |
+| `RESULT_TTL` / `PENDING_TTL` | `3600` (1 hour) | Runtime/Redis cache layer |
+| `STREAM_MAX_AGE_NS` | 7 days (ns) | All NATS stream provisioning |
+| `MAX_DELIVER` | `5` | All durable consumers |
 | `TENANT_HEADER` | `x-yoizen-tenant` | All services |
+| `REGISTRY_KNATIVE_GROUP` / `REGISTRY_KNATIVE_VERSION` / `REGISTRY_KNATIVE_SERVICES_PLURAL` | `serving.knative.dev` / `v1` / `services` | Registry Service, Tenant Service (Knative API client) |
+| `REGISTRY_PRODUCER` / `PLATFORM_DOMAIN` | `registry-service` / `platform` | Registry Service (lifecycle event subjects) |
+| `ADAPTER_MANAGED_BY_REGISTRY` | `registry-service` | Connector Admin (internal-sync ownership marker) |
 | `WORKFLOW_ORCHESTRATOR_TASK_QUEUE` | `workflow-orchestrator` | Workflow Service |
-| `HTTP_ADAPTER_TASK_QUEUE` | `http-adapter` | HTTP Adapter |
+| `CONNECTOR_RUNTIME_TASK_QUEUE` | `connector-runtime` | Connector Runtime |
+| `WORKFLOW_DEFAULT_TIMEOUT_MS` | `60000` | Workflow Service |
+| `GATEWAY_AUDIT_*` | gateway audit stream/subject/consumer constants | API Gateway, Audit Service |
+| `YOIZENCLAW_*` (subject prefix + per-event helpers) | `evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal.*` | YoizenClaw Admin / Runtime / Runtime Gateway |
+| `YOIZENCLAW_RUNTIME_GATEWAY_*` (`evt.{tenant}.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal.*`) | execution lifecycle subjects | YoizenClaw Runtime Gateway / Workflow Service |
 
 ### Core Interfaces
 
@@ -698,17 +594,8 @@ graph TD
         DLQ["DLQ Stream<br/>dlq.>"]
     end
 
-    subgraph Processing
-        EP[Event Processor]
-    end
-
     subgraph Persistence
         AS[Audit Service] -->|INSERT| PG_E["Per-Tenant PostgreSQL<br/>events table"]
-        MS[Metrics Service] -->|INSERT| PG_M["Per-Tenant PostgreSQL<br/>metrics table"]
-    end
-
-    subgraph Delivery
-        WH[Webhook Service] -->|POST callback| EXT([External URL])
     end
 
     subgraph cacheLayer ["Cache Layer"]
@@ -719,22 +606,15 @@ graph TD
     subgraph Workflows
         WF_API[Workflow API] -->|gRPC| TEMPORAL[(Temporal)]
         WF_W[Workflow Worker] -->|Execute| TEMPORAL
-        WF_H[HTTP Worker] -->|Execute| TEMPORAL
+        CR[Connector Runtime] -->|Execute| TEMPORAL
+        CR -->|"GET /connectors/:id"| CA[Connector Admin]
         WF_W -->|NATS publish| EVENTS
     end
 
     GW -->|publish| EVENTS
     GW -->|"pending/result R/W"| Redis
 
-    EVENTS -->|event-processor| EP
     EVENTS -->|audit-writer| AS
-    EVENTS -->|"metrics-writer<br/>(events.metrics)"| MS
-
-    EP -->|write result| Redis
-    EP -->|publish| RESULTS
-
-    RESULTS -->|webhook-dispatcher| WH
-    WH -->|failed 3x| DLQ
 
     C -->|GET /results/:id| GW
     GW -->|read| Redis
@@ -750,14 +630,13 @@ graph TD
     C -->|POST /tenants| GW
     GW -->|HTTP proxy| TS[Tenant Service]
     TS -->|K8s API| K8sAPI[Kubernetes API]
+    TS -.->|"apply per-tenant<br/>Knative Service"| K8sAPI
 
     C -->|POST /workflows| GW
     GW -->|HTTP proxy| WF_API
 
-    C -->|POST /schedulers/schedules| GW
-    GW -->|HTTP proxy| SCHED[Scheduler Service]
-    SCHED -->|Persist| PG_S["Per-Tenant PostgreSQL<br/>schedules"]
-    SCHED -->|K8s Jobs| K8sAPI
+    C -->|POST /api/connectors| GW
+    GW -->|HTTP proxy| CA
 
     C -->|POST /registry/services| GW
     GW -->|HTTP proxy| REG[Registry Service]
@@ -780,11 +659,12 @@ graph TD
 │  ┌─── Per Environment (x4: dev, qa, staging, production) ──────────┐  │
 │  │                                                                 │  │
 │  │  ┌─ platform-services-{env} (Knative Services) ──────────────┐  │  │
-│  │  │  api-gateway · auth-service · event-processor              │  │  │
-│  │  │  audit-service · cache-service · webhook-service           │  │  │
-│  │  │  metrics-service · tenant-service · scheduler-service      │  │  │
-│  │  │  registry-service · workflow-api · workflow-worker          │  │  │
-│  │  │  http-adapter                                              │  │  │
+│  │  │  api-gateway · auth-service · audit-service                │  │  │
+│  │  │  cache-service · channel-service · tenant-service          │  │  │
+│  │  │  registry-service · workflow-service · workflow-worker     │  │  │
+│  │  │  connector-runtime · connector-admin                       │  │  │
+│  │  │  yoizenclaw-admin-service · yoizenclaw-runtime-gateway     │  │  │
+│  │  │  usage-aggregator-service · proxy-service · admin-console  │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  │  ┌─ support-services-{env} (StatefulSets / Deployments) ─────┐  │  │
@@ -792,7 +672,7 @@ graph TD
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  │  ┌─ {tenant}-{env}-ns (Per-Tenant) ──────────────────────────┐  │  │
-│  │  │  PostgreSQL StatefulSet · Tenant Knative Services           │  │  │
+│  │  │  PostgreSQL StatefulSet · yoizenclaw-runtime Knative Svc   │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
@@ -820,5 +700,5 @@ graph TD
 | **DNS** | sslip.io (wildcard) |
 | **Containers** | Docker multi-stage (oven/bun:1.3-alpine, debian for Temporal) |
 | **IaC** | Kustomize (base + overlays) |
-| **Validation** | class-validator (Gateway, Auth, Tenant, Scheduler, Registry), ajv (Event Processor) |
-| **K8s Client** | @kubernetes/client-node (Tenant, Scheduler, Registry services) |
+| **Validation** | class-validator (Gateway, Auth, Tenant, Registry, Connector Admin), ajv (workflow payload schemas) |
+| **K8s Client** | @kubernetes/client-node (Tenant, Registry services) |

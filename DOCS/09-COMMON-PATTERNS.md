@@ -1,8 +1,8 @@
 # Common Patterns & Recipes
 
-Practical pseudocode examples for common use cases with HTTP Adapter and Workflow Service.
+Practical pseudocode examples for common use cases with `connector-runtime` and `workflow-service`.
 
-## Pattern 1: Simple HTTP Call via HTTP Adapter
+## Pattern 1: Simple HTTP Call via Connector Runtime
 
 **Use case**: Single HTTP request, no orchestration needed.
 
@@ -48,7 +48,7 @@ console.log(result.body.email)  // "alice@example.com"
 **Use case**: Call external API using centralized adapter configuration.
 
 **Benefits**:
-- Configuration managed in adapter-service
+- Configuration managed in `connector-admin`
 - Cached in Redis
 - Reusable across multiple workflows
 - Auth handled transparently
@@ -550,7 +550,7 @@ POST /workflows
 }
 
 // Retry strategy:
-// - HTTP Adapter automatically retries on:
+// - Connector Runtime automatically retries on:
 //   - Network timeouts
 //   - 5xx status codes
 // - Does NOT retry:
@@ -839,9 +839,10 @@ POST /workflows
 
 ## Further Reading
 
-- [HTTP Adapter README](../services/http-adapter/README.md) — Direct API calls
+- [Connector Runtime README](../services/connector-runtime/README.md) — Direct API calls
+- [Connector Admin README](../services/connector-admin/README.md) — Connector configuration
 - [Workflow Service README](../services/workflow-service/README.md) — Orchestration
-- [HTTP Adapter vs Workflow Service](./07-HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) — Decision guide
+- [Connector Runtime vs Workflow Service](./07-CONNECTOR-RUNTIME-VS-WORKFLOW-SERVICE.md) — Decision guide
 - [@yoizen/shared](../packages/shared/README.md) — Type definitions
 - [Platform Architecture](./01-ARCHITECTURE.md) — High-level service boundaries
 - [Workflow Engine](./04-WORKFLOW-ENGINE.md) — Action execution model

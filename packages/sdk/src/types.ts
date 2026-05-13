@@ -2,10 +2,6 @@ export type {
   EventTransport,
   EventData,
   EventEnvelope,
-  EventResult,
-  ProcessedEvent,
-  CompletionEvent,
-  MetricsPayload,
   TokenResponse,
   WorkflowDefinition,
   WorkflowAction,
@@ -46,21 +42,6 @@ export interface RetryConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Events
-// ---------------------------------------------------------------------------
-
-export interface PublishEventParams {
-  type: string;
-  payload: Record<string, unknown>;
-  callbackUrl?: string;
-}
-
-export interface PublishEventResult {
-  id: string;
-  status: string;
-}
-
-// ---------------------------------------------------------------------------
 // Workflows
 // ---------------------------------------------------------------------------
 
@@ -80,88 +61,6 @@ export interface WorkflowStatusResult {
   workflowId: string;
   status: string;
   result?: unknown;
-}
-
-// ---------------------------------------------------------------------------
-// Schedules
-// ---------------------------------------------------------------------------
-
-export type ScheduleType = 'cron' | 'interval' | 'one-time';
-export type ExecMode = 'js-inline' | 'js-k8s' | 'docker';
-
-export interface ScheduleConfig {
-  script?: string;
-  image?: string;
-  env?: Record<string, string>;
-  timeout?: number;
-  resources?: { cpu?: string; memory?: string };
-  [key: string]: unknown;
-}
-
-export interface CreateScheduleParams {
-  name: string;
-  description?: string;
-  type: ScheduleType;
-  expression: string;
-  exec_mode: ExecMode;
-  config: ScheduleConfig;
-  enabled?: boolean;
-}
-
-export interface UpdateScheduleParams {
-  name?: string;
-  description?: string;
-  type?: ScheduleType;
-  expression?: string;
-  exec_mode?: ExecMode;
-  config?: ScheduleConfig;
-  enabled?: boolean;
-}
-
-export interface Schedule {
-  id: string;
-  name: string;
-  description: string;
-  type: ScheduleType;
-  expression: string;
-  exec_mode: ExecMode;
-  config: Record<string, unknown>;
-  enabled: boolean;
-  next_run_at: string | null;
-  last_run_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface TriggerScheduleResult {
-  triggered: boolean;
-  schedule_id: string;
-}
-
-export interface ExecutionLog {
-  id: string;
-  schedule_id: string;
-  status: string;
-  started_at: string;
-  completed_at: string | null;
-  duration_ms: number | null;
-  output: unknown;
-  error: string | null;
-  metadata: Record<string, unknown>;
-  created_at: string;
-}
-
-export interface ScheduleQuery {
-  enabled?: boolean;
-  type?: ScheduleType;
-  limit?: number;
-  offset?: number;
-}
-
-export interface ExecutionQuery {
-  status?: string;
-  limit?: number;
-  offset?: number;
 }
 
 // ---------------------------------------------------------------------------

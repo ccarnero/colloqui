@@ -17,6 +17,10 @@ export const AdapterCacheQueryParamsMode = {
 export type AdapterCacheQueryParamsModeValue =
   (typeof AdapterCacheQueryParamsMode)[keyof typeof AdapterCacheQueryParamsMode];
 
+/** In-cluster default for connector-admin Knative API (dev namespace). */
+export const DEFAULT_CONNECTOR_ADMIN_URL =
+  "http://connector-admin-api.platform-services-dev.svc.cluster.local";
+
 export interface IAdapterHeaderEntry {
   key: string;
   value: string;

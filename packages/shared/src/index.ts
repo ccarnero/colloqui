@@ -1,24 +1,11 @@
 export {
-  WEBHOOK_DLQ_SUBJECT,
-  WEBHOOK_MAX_RETRIES,
-  WEBHOOK_RETRY_DELAYS,
-  DLQ_STREAM_NAME,
-  DLQ_STREAM_SUBJECTS,
-  DLQ_STREAM_MAX_BYTES,
   RESULT_KEY_PREFIX,
   PENDING_KEY_PREFIX,
-  CALLBACK_KEY_PREFIX,
   RESULT_TTL,
   PENDING_TTL,
-  CALLBACK_TTL,
-  RESULT_CACHE_MAX,
   STREAM_MAX_AGE_NS,
   MAX_DELIVER,
   TENANT_HEADER,
-  SCHEDULER_DEFAULT_TIMEOUT_MS,
-  SCHEDULER_K8S_DEFAULT_TIMEOUT_S,
-  SCHEDULER_TICK_INTERVAL_MS,
-  SCHEDULER_MAX_EXECUTION_LOG_ROWS,
   REGISTRY_KNATIVE_GROUP,
   REGISTRY_KNATIVE_VERSION,
   REGISTRY_KNATIVE_SERVICES_PLURAL,
@@ -29,7 +16,7 @@ export {
   PLATFORM_NON_CHANNEL_TOKEN,
   ADAPTER_MANAGED_BY_REGISTRY,
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
-  HTTP_ADAPTER_TASK_QUEUE,
+  CONNECTOR_RUNTIME_TASK_QUEUE,
   WORKFLOW_DEFAULT_TIMEOUT_MS,
   GATEWAY_AUDIT_STREAM_NAME,
   GATEWAY_AUDIT_STREAM_SUBJECTS,
@@ -111,10 +98,6 @@ export type {
   EventTransport,
   EventData,
   EventEnvelope,
-  EventResult,
-  ProcessedEvent,
-  CompletionEvent,
-  MetricsPayload,
 } from './interfaces';
 
 export {
@@ -253,6 +236,7 @@ export {
   AdapterCacheMethod,
   AdapterCacheQueryParamsMode,
   AdapterStatus,
+  DEFAULT_CONNECTOR_ADMIN_URL,
 } from './adapter.interfaces';
 export type { AdapterStatusValue } from './adapter.interfaces';
 
@@ -405,8 +389,6 @@ export {
 } from "./tenant-namespace";
 
 export { platformServiceUrl } from "./platform-service-url";
-
-export { METRICS_SCHEMA_SQL } from "./metrics-schema";
 
 export { WORKFLOW_SCHEMA_SQL } from "./workflow-schema";
 

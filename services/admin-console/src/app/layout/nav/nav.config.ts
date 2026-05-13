@@ -45,7 +45,7 @@ export interface INavSection {
  *  - Auto-Reply removed from Channels
  *  - Connections is a new section grouping connector instances by type
  *    (Internal HTTP / External HTTP / MCP / Hosted services)
- *  - Processes replaces Automate; Schedules replaces Scheduler
+ *  - Processes replaces Automate
  *  - Settings trimmed to backed pages (+ Billing kept as a planned area)
  */
 export const NAV_SECTIONS: INavSection[] = [
@@ -110,7 +110,7 @@ export const NAV_SECTIONS: INavSection[] = [
   {
     key: "processes",
     label: "Processes",
-    matchPaths: ["/processes", "/automate", "/workflows", "/schedules", "/scheduler"],
+    matchPaths: ["/processes", "/automate", "/workflows"],
     landingPath: "/processes",
     pages: [
       {
@@ -121,7 +121,6 @@ export const NAV_SECTIONS: INavSection[] = [
           source: "processes.workflows.failing",
         },
       },
-      { label: "Schedules", route: "/schedules" },
     ],
   },
   {

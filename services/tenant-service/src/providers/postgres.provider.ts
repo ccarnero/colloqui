@@ -13,7 +13,6 @@ import {
   ADAPTER_SCHEMA_SQL,
   AUTO_REPLY_SCHEMA_SQL,
   CHANNEL_ACCOUNTS_SCHEMA_SQL,
-  METRICS_SCHEMA_SQL,
   TenantDatabaseTier,
   TENANT_AUTH_SCHEMA_SQL,
   WORKFLOW_SCHEMA_SQL,
@@ -77,8 +76,6 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_type ON events (type);
 CREATE INDEX IF NOT EXISTS idx_events_created_at ON events (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_type_created ON events (type, created_at DESC);
-
-${METRICS_SCHEMA_SQL}
 
 ${WORKFLOW_SCHEMA_SQL}
 

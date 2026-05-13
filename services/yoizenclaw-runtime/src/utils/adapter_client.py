@@ -261,8 +261,15 @@ class AdapterClient:
         return config
 
     async def _fetch_adapter(self, adapter_id: str) -> AdapterConfig:
-        """Perform the actual HTTP fetch to the adapter-service."""
-        url = f"{self._base_url}/adapters/{adapter_id}"
+        """Perform the actual HTTP fetch to the connector-admin service.
+
+        Uses the slim-stack route ``GET /connectors/:id`` exposed by
+        ``services/connector-admin``. The previous ``/adapters/:id`` path
+        was retired as part of the ``adapter-service -> connector-admin``
+        rename; older runtimes that still target ``/adapters/:id`` will
+        receive 404s from the live service.
+        """
+        url = f"{self._base_url}/connectors/{adapter_id}"
         headers = {"X-Yoizen-Tenant": self._tenant_id}
 
         logger.debug("Fetching adapter config: %s", adapter_id)
@@ -428,7 +435,7 @@ def _merge_adapter_headers(
 def ensure_adapter_client_in_container() -> AdapterClient | None:
     """Create ``AdapterClient`` and store it on ``AppContainer`` when configured.
 
-    Requires ``ADAPTER_SERVICE_URL`` and ``TENANT_ID`` (bootstrap env). Safe to
+    Requires ``CONNECTOR_ADMIN_URL`` (or legacy ``ADAPTER_SERVICE_URL``) and ``TENANT_ID``
     call repeatedly; returns the existing client after the first successful
     registration.
 
@@ -442,11 +449,11 @@ def ensure_adapter_client_in_container() -> AdapterClient | None:
     if container.adapter_client is not None:
         return container.adapter_client
 
-    url = (bootstrap_settings.ADAPTER_SERVICE_URL or "").strip()
+    url = (bootstrap_settings.CONNECTOR_ADMIN_URL or "").strip()
     tenant = (bootstrap_settings.TENANT_ID or "").strip()
     if not url:
         logger.warning(
-            "ADAPTER_SERVICE_URL is not set; connector-based LLM credentials "
+            "CONNECTOR_ADMIN_URL is not set; connector-based LLM credentials "
             "and adapter tools will not work.",
         )
         return None

@@ -13,7 +13,7 @@ import type {
   ChannelSendArgs,
 } from "./workflow.types";
 import {
-  HTTP_ADAPTER_TASK_QUEUE,
+  CONNECTOR_RUNTIME_TASK_QUEUE,
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
 } from "./workflow-queue";
 
@@ -72,7 +72,7 @@ const publisher = proxyActivities<IExecutionPublisherActivities>({
 });
 
 const http = proxyActivities<IHttpActivities>({
-  taskQueue: HTTP_ADAPTER_TASK_QUEUE,
+  taskQueue: CONNECTOR_RUNTIME_TASK_QUEUE,
   startToCloseTimeout: "30s",
   retry: { maximumAttempts: 3 },
 });

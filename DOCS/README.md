@@ -12,12 +12,13 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 4. [04 Workflow Engine](./04-WORKFLOW-ENGINE.md) — Trigger bridge and action dispatch model (20 min)
 5. [05 Agent Execution Flow](./05-AGENT-EXECUTION-FLOW.md) — `agentCall` runtime lifecycle (15 min)
 6. [06 UI Flows](./06-UI-FLOWS.md) — Console-to-backend flow mapping (15 min)
-7. [07 HTTP Adapter vs Workflow Service](./07-HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) — Decision matrix and scenarios (30 min)
+7. [07 Connector Runtime vs Workflow Service](./07-CONNECTOR-RUNTIME-VS-WORKFLOW-SERVICE.md) — Decision matrix and scenarios (30 min)
 8. [08 Workflow Telegram Sequence](./08-WORKFLOW-TELEGRAM-SEQUENCE.md) — Concrete end-to-end runtime flow (15 min)
 9. [09 Common Patterns](./09-COMMON-PATTERNS.md) — Pseudocode recipes (20 min)
 10. [10 Developer Onboarding Guide](./10-DEVELOPER-ONBOARDING.md) — Setup and day-to-day workflows (30 min)
 11. Service READMEs:
-   - [HTTP Adapter](../services/http-adapter/README.md) — Generic HTTP execution
+   - [Connector Runtime](../services/connector-runtime/README.md) — Generic HTTP execution
+   - [Connector Admin](../services/connector-admin/README.md) — Connector configuration API
    - [Workflow Service](../services/workflow-service/README.md) — Multi-step orchestration
    - [@yoizen/shared Package](../packages/shared/README.md) — Types and constants
 
@@ -33,12 +34,12 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 | [04 Workflow Engine](./04-WORKFLOW-ENGINE.md) | Trigger bridge, action dispatch, and task queue model | Automation developers |
 | [05 Agent Execution Flow](./05-AGENT-EXECUTION-FLOW.md) | `agentCall` lifecycle from workflow to runtime and back | Automation/AI developers |
 | [06 UI Flows](./06-UI-FLOWS.md) | Admin and messaging console flows mapped to backend services | Frontend/full-stack developers |
-| [07 HTTP Adapter vs Workflow Service](./07-HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) | Decision matrix and when to use each service with scenario walkthroughs | Feature implementers |
+| [07 Connector Runtime vs Workflow Service](./07-CONNECTOR-RUNTIME-VS-WORKFLOW-SERVICE.md) | Decision matrix and when to use each service with scenario walkthroughs | Feature implementers |
 | [08 Workflow Telegram Sequence](./08-WORKFLOW-TELEGRAM-SEQUENCE.md) | Concrete Telegram inbound flow with hosted + agent branches | All developers |
 | [09 Common Patterns](./09-COMMON-PATTERNS.md) | Practical pseudocode recipes for 10 common use cases | All developers |
 | [10 Developer Onboarding Guide](./10-DEVELOPER-ONBOARDING.md) | Setup, navigation, common tasks, debugging, testing | New team members |
 | [11 Service Architecture Diagrams](./11-SERVICE-ARCHITECTURE-DIAGRAM.md) | Visual reference for service boundaries, data flow, scaling, and multi-tenancy patterns | All developers |
-| [12 Adapter Tools](./12-adapter-tools.md) | Adapter tooling and helper references | Feature implementers |
+| [12 Adapter Tools](./12-adapter-tools.md) | Connector tooling and helper references | Feature implementers |
 | [13 Review](./13-REVIEW.md) | Code review standards and checklist | All contributors |
 | [14 Deployment Architecture](./14-DEPLOYMENT-ARCHITECTURE.md) | Legacy deep-dive details for Kustomize and KEDA | DevOps/Platform engineers |
 
@@ -46,7 +47,8 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 
 | Service | Purpose | Type |
 |---------|---------|------|
-| [HTTP Adapter](../services/http-adapter/README.md) | Standalone Temporal worker for high-concurrency HTTP execution with adapter-driven config | Core service |
+| [Connector Runtime](../services/connector-runtime/README.md) | Standalone Temporal worker for high-concurrency HTTP execution with connector-driven config | Core service |
+| [Connector Admin](../services/connector-admin/README.md) | Multi-tenant HTTP connector configuration API (base URL, auth, headers, timeouts, retries) | Core service |
 | [Workflow Service](../services/workflow-service/README.md) | REST API + Temporal orchestrator for multi-step workflows with state management | Core service |
 | [@yoizen/shared Package](../packages/shared/README.md) | Cross-service types, interfaces, constants, and `AdapterClient` | Shared library |
 
@@ -67,11 +69,12 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 │  ┌─── Per Environment (x4: dev, qa, staging, production) ──────────┐  │
 │  │                                                                 │  │
 │  │  ┌─ platform-services-{env} (Knative Services) ──────────────┐  │  │
-│  │  │  api-gateway · auth-service · event-processor              │  │  │
-│  │  │  audit-service · cache-service · webhook-service           │  │  │
-│  │  │  metrics-service · tenant-service · scheduler-service      │  │  │
-│  │  │  registry-service · workflow-api · workflow-worker          │  │  │
-│  │  │  http-adapter · adapter-service                            │  │  │
+│  │  │  api-gateway · auth-service · audit-service                │  │  │
+│  │  │  cache-service · channel-service · tenant-service          │  │  │
+│  │  │  registry-service · workflow-service · workflow-worker     │  │  │
+│  │  │  connector-runtime · connector-admin                       │  │  │
+│  │  │  yoizenclaw-admin-service · yoizenclaw-runtime-gateway     │  │  │
+│  │  │  usage-aggregator-service · proxy-service · admin-console  │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  │  ┌─ support-services-{env} (StatefulSets / Deployments) ─────┐  │  │
@@ -116,38 +119,39 @@ kubectl apply -k knative/services/overlays/local/dev
 |---|---|---|
 | **API Gateway** | Knative Service | HTTP entry point with JWT auth, input validation, SSE streaming, dynamic tenant routing, proxies to all downstream services |
 | **Auth Service** | Knative Service | JWT token generation (client credentials + user login), user/client management, dynamic public routes, Redis-synced route cache |
-| **Event Processor** | Knative Service | Subscribes to NATS JetStream, runs events through an enrichment pipeline (including adapter enrichment and forwarding stages), routes to a pluggable handler registry, writes results to Redis, publishes completion events |
 | **Audit Service** | Knative Service | Independent NATS consumer that persists every event to per-tenant PostgreSQL. Exposes paginated query API |
-| **Metrics Service** | Knative Service | Consumes `events.metrics` from NATS and stores metrics in per-tenant PostgreSQL |
-| **Webhook Service** | Knative Service | Consumes completion events from RESULTS stream. Delivers HTTP callbacks with exponential backoff retry. When `adapterId` is present, uses adapter config for auth, headers, retries, and timeouts. Failed deliveries go to DLQ |
 | **Cache Service** | Knative Service | CRUD API with L1 in-memory + L2 Redis cache-aside pattern |
-| **Tenant Service** | Knative Service | Environment-scoped tenant namespace management. Provisions dedicated PostgreSQL StatefulSet per tenant |
-| **Scheduler Service** | Knative Service | Multi-tenant job scheduling (cron, interval, one-time) with inline JS and Kubernetes Job executors |
+| **Channel Service** | Knative Service | Multi-tenant messaging channel configuration and inbound webhook ingress |
+| **Tenant Service** | Knative Service | Environment-scoped tenant namespace management. Provisions dedicated PostgreSQL StatefulSet and per-tenant `yoizenclaw-runtime` Knative Service |
 | **Registry Service** | Knative Service | Knative-based service registry with route management, canary deployments, and traffic splitting |
-| **Workflow API** | Knative Service | REST API for Temporal workflow management (start, status, list) |
+| **Workflow Service** | Knative Service | REST API + Temporal orchestrator for multi-step workflows (start, status, list) |
 | **Workflow Worker** | Knative Service | Temporal orchestrator worker executing JS functions and NATS service bus activities |
-| **Adapter Service** | Knative Service | Manages multi-tenant HTTP adapter configurations (base URL, auth, headers, timeouts, retries) and their endpoints. Consumed via `AdapterClient` by http-adapter, event-processor, and webhook-service |
-| **HTTP Adapter** | Plain Deployment | Generic Temporal HTTP execution worker for `endpointCall` and `serviceCall`; uses `tracedFetch`, adapter resolution, response caching, and internal service mirror lookup |
+| **Connector Admin** | Knative Service | Manages multi-tenant HTTP connector configurations (base URL, auth, headers, timeouts, retries) and their endpoints. Consumed via `AdapterClient` by `connector-runtime` |
+| **Connector Runtime** | Knative Service (KEDA-scaled) | Generic Temporal HTTP execution worker for `endpointCall` and `serviceCall`; uses `tracedFetch`, connector resolution, response caching, and internal service mirror lookup |
+| **YoizenClaw Admin Service** | Knative Service | Authoring API for AI agents/workflows (config-only persistence; runtime is per-tenant) |
+| **YoizenClaw Runtime Gateway** | Knative Service | Stateless inbound bridge that fans out execution requests to the per-tenant `yoizenclaw-runtime` Knative Service |
+| **YoizenClaw Runtime** | Knative Service (per-tenant) | Per-tenant agent execution runtime auto-provisioned by `tenant-service` into the tenant namespace |
+| **Usage Aggregator Service** | Knative Service | Aggregates per-tenant usage events into the usage Postgres |
+| **Proxy Service** | Knative Service | Egress proxy for tenant-bound HTTP traffic |
+| **Admin Console** | Knative Service | Angular admin UI |
 | **NATS JetStream** | StatefulSet | Persistent event streaming backbone with 7-day retention. Streams: EVENTS, RESULTS, DLQ |
 | **Redis** | Deployment | Pure cache (no persistence, LRU eviction) |
-| **PostgreSQL** | StatefulSet | Shared database for auth, registry, and adapter services |
+| **PostgreSQL** | StatefulSet | Shared database for auth, registry, and connector services |
 | **Temporal** | Deployment | Workflow execution engine with PostgreSQL backend and Web UI |
 
 ### Event Flow
 
-1. Client sends `POST /events` to API Gateway with JWT Bearer token
-2. Gateway authenticates the request, resolves tenant, validates the payload
-3. Gateway publishes to NATS stream `EVENTS` on subject `events.<type>` (callback URL embedded in envelope)
-4. If `callbackUrl` is provided, it is also stored in Redis under `callback:<eventId>`
-5. Gateway returns `202 Accepted` with event ID
-6. Event Processor consumes from durable consumer `event-processor`, runs the event through the enrichment pipeline, resolves a handler, processes the event, and writes the result to Redis
-    - If `enrichAdapter` is present, the `AdapterEnrichmentStage` fetches data from the adapter endpoint and merges it into `payload._enriched`
-    - If `forwardAdapter` is present, the `AdapterForwardStage` POSTs the payload to the adapter endpoint with exponential backoff retry
-7. Event Processor publishes a completion event to the `RESULTS` stream (includes `adapterId` if present on the original envelope)
-8. Audit Service independently consumes from `audit-writer` on EVENTS, persisting to per-tenant PostgreSQL
-9. Metrics Service independently consumes `events.metrics`, persisting to per-tenant PostgreSQL
-10. Webhook Service consumes from `webhook-dispatcher` on RESULTS. If a callback URL is present, it POSTs the result with exponential backoff retry. If `adapterId` is present, adapter config overrides default headers, auth, retry, and timeout settings
-11. Client polls `GET /results/:id` or receives the result via webhook or SSE
+The slim stack centres on Temporal-driven workflow execution and per-tenant
+agent runtimes. Event ingestion is now a thin path that hands off to those
+engines:
+
+1. Client sends `POST /events` to API Gateway with a JWT Bearer token
+2. Gateway authenticates the request, resolves tenant, and validates the payload
+3. Gateway publishes the envelope to NATS JetStream (`EVENTS` stream) and returns `202 Accepted` with the event ID
+4. Audit Service independently consumes EVENTS and persists every event to per-tenant PostgreSQL
+5. Trigger consumers (workflow-service, yoizenclaw-runtime) consume the events they care about and start Temporal workflows or agent executions
+6. Workflow activities run on `workflow-service-worker` (orchestration) and `connector-runtime` (HTTP execution against `connector-admin`-managed connectors)
+7. Completion events are published back to NATS (`RESULTS` stream) and clients can fetch the result via the gateway or receive it via SSE
 
 ### Authentication & Authorization
 
@@ -170,24 +174,13 @@ Temporal-based workflow orchestration supports four action types:
 
 | Action | Execution | Description |
 |--------|-----------|-------------|
-| `endpointCall` | Remote (http-adapter) | HTTP request via `tracedFetch`; supports adapter-driven config resolution via `adapterId`/`endpointId` |
+| `endpointCall` | Remote (`connector-runtime`) | HTTP request via `tracedFetch`; supports connector-driven config resolution via `adapterId`/`endpointId` |
+| `serviceCall` | Remote (`connector-runtime`) | Internal service call resolved against the registry mirror |
 | `jsFunction` | Local (workflow-worker) | Inline JS evaluation |
 | `serviceBusCall` | Local (workflow-worker) | NATS publish with tenant header |
 | `branch` | Workflow-level | Parallel execution of sub-action branches |
 
 Actions support `{{path.to.value}}` template resolution against the workflow execution context.
-
-### Job Scheduling
-
-The Scheduler Service provides multi-tenant job scheduling:
-
-| Type | Expression | Example |
-|------|-----------|---------|
-| `cron` | Cron expression | `0 */5 * * *` |
-| `interval` | Milliseconds | `60000` |
-| `one-time` | ISO timestamp | `2025-01-01T00:00:00Z` |
-
-Execution modes: `js-inline` (in-process), `js-k8s` (K8s Job with Bun), `docker` (K8s Job with custom image).
 
 ### Service Registry & Canary Deployments
 
@@ -203,38 +196,16 @@ The Registry Service manages tenant Knative services with full lifecycle support
 Each environment runs its own tenant-service scoped by `PLATFORM_ENVIRONMENT`. Creating a tenant provisions:
 
 1. Kubernetes namespace `<tenant>-<env>-ns` with discovery labels
-2. Dedicated PostgreSQL StatefulSet with pre-configured schema (events + metrics tables)
-3. Services connect to per-tenant PostgreSQL at `postgres.<tenant>-<env>-ns.svc.cluster.local`
-
-### Handler Registry
-
-The Event Processor uses a pluggable handler pattern. Each event type maps to a dedicated handler class discovered automatically at startup via NestJS `DiscoveryService`.
-
-| Handler | Event Type | Behavior |
-|---|---|---|
-| `CreatedHandler` | `created` | Marks event as processed |
-| `UpdatedHandler` | `updated` | Marks event as processed |
-| `DeletedHandler` | `deleted` | Marks event as processed |
-| `DefaultHandler` | *(fallback)* | Processes if payload has content |
-
-### Enrichment Pipeline
-
-Before reaching the handler, every event passes through a middleware-style enrichment pipeline:
-
-| Stage | Order | Behavior |
-|---|---|---|
-| `ValidationStage` | 10 | Validates payload against a registered JSON schema (ajv) |
-| `EnrichmentStage` | 20 | Attaches `metadata.receivedAt`, `metadata.correlationId`, `metadata.source` |
-| `AdapterEnrichmentStage` | 25 | Fetches data from adapter endpoint via `AdapterClient`, merges into `payload._enriched` (non-blocking on failure) |
-| `TransformStage` | 30 | Runs registered payload transformers in sequence |
-| `AdapterForwardStage` | 40 | POSTs payload to adapter endpoint with exponential backoff retry (non-blocking on failure) |
+2. Dedicated PostgreSQL StatefulSet with pre-configured tenant schema
+3. Per-tenant `yoizenclaw-runtime` Knative Service applied right after Postgres readiness
+4. Services connect to per-tenant PostgreSQL at `postgres.<tenant>-<env>-ns.svc.cluster.local`
 
 ### NATS JetStream Streams
 
 | Stream | Subjects | Purpose |
 |---|---|---|
 | `EVENTS` | `events.>` | Ingested events from the API Gateway |
-| `RESULTS` | `results.>` | Completion events from the Event Processor |
+| `RESULTS` | `results.>` | Completion events emitted by workflows and runtimes |
 | `DLQ` | `dlq.>` | Failed webhook deliveries |
 
 | Setting | Value |
@@ -253,7 +224,7 @@ The `packages/shared/` package (`@yoizen/shared`) contains all cross-service typ
 - **Workflow interfaces**: `WorkflowDefinition`, `WorkflowAction`, `WorkflowExecutionContext`
 - **Adapter interfaces**: `AdapterConfig`, `AdapterEndpointConfig`, `AdapterCache`, `ResolvedAdapterRequest`, `AdapterReference`
 - **Adapter client**: `AdapterClient` (stale-while-revalidate Redis cache, OAuth2 token management, request resolution)
-- **Constants**: stream/consumer names, Redis key prefixes, TTLs, webhook retry config, task queues, Knative API versions, `DEFAULT_ADAPTER_SERVICE_URL`
+- **Constants**: stream/consumer names, Redis key prefixes, TTLs, task queues (`CONNECTOR_RUNTIME_TASK_QUEUE`, `WORKFLOW_ORCHESTRATOR_TASK_QUEUE`), Knative API versions
 
 ## Prerequisites
 
@@ -360,22 +331,26 @@ Arch/
 │       ├── rbac/                     # ClusterRole + per-env ClusterRoleBindings
 │       └── overlays/
 │           └── local/                # Per-environment overlays with env patches
-├── services/                         # Application source code
-│   ├── api-gateway/                  # NestJS + Fastify — HTTP entry point, auth, dynamic routing
-│   ├── auth-service/                 # NestJS + Fastify — JWT auth, users, clients, public routes
-│   ├── event-processor/              # NestJS + Fastify — NATS consumer, pipeline, handler registry
-│   ├── audit-service/                # NestJS + Fastify — NATS consumer, per-tenant PostgreSQL
-│   ├── webhook-service/              # NestJS + Fastify — NATS consumer, HTTP callback delivery
-│   ├── cache-service/                # NestJS + Fastify — L1/L2 cache API
-│   ├── metrics-service/              # NestJS + Fastify — NATS consumer, per-tenant PostgreSQL
-│   ├── tenant-service/               # NestJS + Fastify — K8s namespace + PostgreSQL provisioning
-│   ├── scheduler-service/            # NestJS + Fastify — Job scheduling (cron/interval/one-time)
-│   ├── registry-service/             # NestJS + Fastify — Knative service registry + canary
-│   ├── adapter-service/              # NestJS + Fastify — Multi-tenant HTTP adapter config + endpoints
-│   ├── workflow-service/             # NestJS + Fastify + Temporal — Workflow API + worker
-│   └── http-adapter/                 # Standalone Temporal worker — generic HTTP execution (adapter-aware)
+├── services/                          # Application source code
+│   ├── api-gateway/                   # NestJS + Fastify — HTTP entry point, auth, dynamic routing
+│   ├── auth-service/                  # NestJS + Fastify — JWT auth, users, clients, public routes
+│   ├── audit-service/                 # NestJS + Fastify — NATS consumer, per-tenant PostgreSQL
+│   ├── cache-service/                 # NestJS + Fastify — L1/L2 cache API
+│   ├── channel-service/               # NestJS + Fastify — Messaging channel config + inbound webhooks
+│   ├── tenant-service/                # NestJS + Fastify — K8s namespace + PostgreSQL + yoizenclaw-runtime provisioning
+│   ├── registry-service/              # NestJS + Fastify — Knative service registry + canary
+│   ├── connector-admin/               # NestJS + Fastify — Multi-tenant HTTP connector config + endpoints
+│   ├── connector-runtime/             # Standalone Temporal worker — generic HTTP execution (connector-aware)
+│   ├── workflow-service/              # NestJS + Fastify + Temporal — Workflow API + worker
+│   ├── workflow-http-worker/          # Temporal worker — high-concurrency HTTP execution
+│   ├── usage-aggregator-service/      # NestJS + Fastify — Per-tenant usage aggregation
+│   ├── proxy-service/                 # NestJS + Fastify — Tenant egress proxy
+│   ├── admin-console/                 # Angular admin UI
+│   ├── yoizenclaw-admin-service/      # NestJS + Fastify — YoizenClaw authoring API
+│   ├── yoizenclaw-runtime-gateway/    # NestJS + Fastify — Stateless inbound bridge to per-tenant runtimes
+│   └── yoizenclaw-runtime/            # Python — Per-tenant agent execution runtime (provisioned per tenant)
 └── tests/
-    └── e2e/                          # Cross-service end-to-end tests
+    └── e2e/                           # Cross-service end-to-end tests
 ```
 
 ## Manual Operations
@@ -412,7 +387,7 @@ kubectl apply -k knative/services/overlays/local/dev
 
 ```bash
 eval $(minikube docker-env -p yoizen-arch)
-for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service adapter-service workflow-service http-adapter proxy-service; do
+for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service workflow-http-worker usage-aggregator-service proxy-service yoizenclaw-admin-service yoizenclaw-runtime-gateway; do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```
@@ -422,7 +397,7 @@ done
 OrbStack >= 1.6 shares the local Docker daemon with the cluster — just build normally:
 
 ```bash
-for svc in api-gateway auth-service event-processor cache-service audit-service webhook-service metrics-service tenant-service scheduler-service registry-service adapter-service workflow-service http-adapter proxy-service; do
+for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service workflow-http-worker usage-aggregator-service proxy-service yoizenclaw-admin-service yoizenclaw-runtime-gateway; do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```
@@ -584,7 +559,7 @@ API_GATEWAY_URL=http://localhost:3000 bun test
 - **Workflow**: Temporal + @temporalio/client + @temporalio/worker
 - **Auth**: JWT via `jose` (HS256), `Bun.password` argon2id hashing
 - **Validation**: class-validator + class-transformer, ajv (pipeline payload schemas)
-- **K8s Client**: @kubernetes/client-node (Tenant, Scheduler, Registry services)
+- **K8s Client**: @kubernetes/client-node (Tenant, Registry services)
 - **Orchestration**: Kubernetes (Minikube)
 - **Serverless**: Knative Serving + Kourier
 - **IaC**: Kustomize (base + per-environment overlays)

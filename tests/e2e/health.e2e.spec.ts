@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll } from 'bun:test';
 import { getRawBaseUrl, getBaseUrl, httpGet, poll } from './helpers';
 
 const GW = getRawBaseUrl('api-gateway');
-const EP = getBaseUrl('event-processor');
 const CS = getBaseUrl('cache-service');
 
 interface ServiceHealth {
@@ -20,10 +19,7 @@ interface GatewayHealthResponse {
 const DOWNSTREAM_SERVICES = [
   'auth-service',
   'cache-service',
-  'webhook-service',
   'audit-service',
-  'event-processor',
-  'metrics-service',
   'tenant-service',
   'registry-service',
   'workflow-service',
@@ -84,17 +80,6 @@ describe('E2E: health checks', () => {
       expect((svcHealth as ServiceHealth).status).toBe('ok');
     });
   }
-
-  it('event-processor /health should report ok (direct)', async () => {
-    if (!process.env.EVENT_PROCESSOR_URL) return;
-    const { status, body } = await httpGet<{ status: string; nats: boolean; redis: boolean }>(
-      `${EP}/health`,
-    );
-    expect(status).toBe(200);
-    expect(body.status).toBe('ok');
-    expect(body.nats).toBe(true);
-    expect(body.redis).toBe(true);
-  });
 
   it('cache-service /health should report ok (direct)', async () => {
     if (!process.env.CACHE_SERVICE_URL) return;

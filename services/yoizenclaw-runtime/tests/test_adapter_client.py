@@ -248,7 +248,7 @@ class TestGetAdapterCacheHit:
 
         call_args = mock_http.get.call_args
         url = call_args.args[0] if call_args.args else call_args.kwargs.get("url", "")
-        assert "https://adapter-service.internal/adapters/adapter-1" in url
+        assert "https://adapter-service.internal/connectors/adapter-1" in url
 
     @pytest.mark.asyncio
     async def test_parses_response_into_adapter_config(

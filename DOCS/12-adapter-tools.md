@@ -4,12 +4,12 @@ Adapter tools allow YoizenClaw agents to invoke external APIs through centrally 
 
 ## Overview
 
-Traditional agent tools require explicit `endpoint` URLs and authentication credentials per tool. **Adapter tools** replace this with a reference (`adapterRef`) to an adapter managed by the platform's adapter-service. This provides:
+Traditional agent tools require explicit `endpoint` URLs and authentication credentials per tool. **Adapter tools** replace this with a reference (`adapterRef`) to a connector managed by the platform's `connector-admin` service. This provides:
 
 - **Centralized configuration**: Auth credentials, base URLs, and retry policies managed in one place.
-- **Reusability**: Multiple agents can reference the same adapter/endpoint.
+- **Reusability**: Multiple agents can reference the same connector/endpoint.
 - **Security**: Credentials are never stored in agent configs — resolved at execution time.
-- **Resilience**: Stale-while-revalidate (SWR) caching with automatic fallback when adapter-service is unavailable.
+- **Resilience**: Stale-while-revalidate (SWR) caching with automatic fallback when `connector-admin` is unavailable.
 
 ## Architecture
 
@@ -40,8 +40,8 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 │     │                               AdapterClient                │
 │     │                              (SWR cache check)             │
 │     │                                      │                     │
-│     │                              GET /adapters/{id}            │
-│     │                              (adapter-service)             │
+│     │                              GET /connectors/{id}          │
+│     │                              (connector-admin)             │
 │     │                                      │                     │
 │     │                              Resolve URL + headers          │
 │     │                              + inject auth                 │
@@ -76,7 +76,8 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `YOIZENCLAW_ADAPTER_TOOLS_ENABLED` | `true` | Feature flag for adapter tools |
-| `ADAPTER_SERVICE_URL` | `http://adapter-service:3000` | adapter-service base URL |
+| `CONNECTOR_ADMIN_URL` | `http://connector-admin-api:3000` | Primary `connector-admin` base URL (consumed by `yoizenclaw-runtime` settings) |
+| `ADAPTER_SERVICE_URL` | `http://connector-admin-api:3000` | **Legacy alias** for `CONNECTOR_ADMIN_URL`; honoured for backwards compatibility only |
 | `YOIZENCLAW_TOOL_RESPONSE_MAX_BYTES` | `100000` | Response truncation limit (bytes) |
 | `ADAPTER_CACHE_TTL_SECONDS` | `60` | Cache soft TTL (fresh threshold) |
 | `ADAPTER_CACHE_HARD_TTL_SECONDS` | `300` | Cache hard TTL (stale fallback) |
@@ -203,7 +204,7 @@ curl -X POST http://localhost:3000/admin/agents/{agentId}/publish \
 
 ### Adapter Not Found
 
-When an adapter ID does not exist in the adapter-service:
+When a connector ID does not exist in `connector-admin`:
 
 ```json
 {
@@ -225,14 +226,14 @@ When an endpoint ID does not exist within the adapter:
 }
 ```
 
-### Adapter Service Unavailable
+### Connector Admin Unavailable
 
 The `AdapterClient` uses a stale-while-revalidate (SWR) cache:
 
 1. **Fresh cache (within 60s)**: Returns cached config immediately.
 2. **Stale cache (60s-300s)**: Returns cached config, triggers background refresh.
-3. **Expired cache (>300s)**: Must fetch fresh. If adapter-service is down, returns an error.
-4. **No cache**: Must fetch. If adapter-service is down, returns an error immediately.
+3. **Expired cache (>300s)**: Must fetch fresh. If `connector-admin` is down, returns an error.
+4. **No cache**: Must fetch. If `connector-admin` is down, returns an error immediately.
 
 ### Response Truncation
 
@@ -275,8 +276,8 @@ Adapter tools support five authentication types:
 Key security principles:
 
 - **Never logged**: Auth tokens are never included in log messages or error responses.
-- **Resolved at execution time**: Credentials are fetched from adapter-service for each tool execution, never stored in agent configuration.
-- **Tenant isolation**: Every adapter request includes the `X-Yoizen-Tenant` header. Adapter-service enforces tenant-scoped access.
+- **Resolved at execution time**: Credentials are fetched from `connector-admin` for each tool execution, never stored in agent configuration.
+- **Tenant isolation**: Every connector request includes the `X-Yoizen-Tenant` header. `connector-admin` enforces tenant-scoped access.
 - **Sanitized errors**: Error messages returned to the LLM do not contain auth headers or credential values.
 
 ### Tenant Context Propagation
@@ -284,7 +285,7 @@ Key security principles:
 ```
 Agent (tenant: acme) → AdapterToolExecutor
   → AdapterClient.get_adapter(adapter_id)
-    → GET /adapters/{id} (X-Yoizen-Tenant: acme)
+    → GET /connectors/{id} (X-Yoizen-Tenant: acme)
   → resolve_request() (includes auth headers)
   → HTTP request to external API
     (X-Yoizen-Tenant: acme + adapter auth headers)

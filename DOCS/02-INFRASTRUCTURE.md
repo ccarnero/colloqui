@@ -17,8 +17,8 @@ Support services are shared per environment (`support-services-{env}`) and back 
 
 Redis serves three distinct roles across the platform:
 
-1. **L2 cache for adapter-backed HTTP resolution**
-   - Used by `AdapterClient` patterns (`http-adapter`, `event-processor`, `webhook-service`) with stale-while-revalidate behavior.
+1. **L2 cache for connector-backed HTTP resolution**
+   - Used by `AdapterClient` (consumed by `connector-runtime`) with stale-while-revalidate behavior; cache is keyed per tenant + connector id.
 2. **Execution state store for YoizenClaw runtime gateway path**
    - Stores pending/running/completed/failed execution status so playground and runtime API reads can poll quickly.
 3. **Auth/gateway route synchronization cache**
@@ -29,7 +29,7 @@ Redis serves three distinct roles across the platform:
 | Model | Used by | Why |
 |---|---|---|
 | Knative Service | HTTP-facing APIs (`api-gateway`, `auth-service`, `registry-service`, etc.) | Request-driven autoscaling and revision support |
-| Plain Deployment + KEDA | Queue/worker workloads (`http-adapter`, workflow workers, consumer workers) | Pull-based scaling from backlog metrics |
+| Plain Deployment + KEDA | Queue/worker workloads (`connector-runtime`, workflow workers, consumer workers) | Pull-based scaling from backlog metrics |
 | Per-tenant Helm release | `yoizenclaw-runtime` | Tenant-level runtime/data isolation and independent lifecycle |
 
 ## Kustomize Structure
@@ -53,11 +53,11 @@ flowchart TD
     comp --> svcCloud
 ```
 
-## KEDA Scaling (http-adapter)
+## KEDA Scaling (connector-runtime)
 
-`http-adapter` is scaled by KEDA Temporal scaler using activity queue backlog:
+`connector-runtime` is scaled by the KEDA Temporal scaler using activity queue backlog:
 
-- Target queue: `http-adapter`
+- Target queue: `connector-runtime` (`CONNECTOR_RUNTIME_TASK_QUEUE`)
 - Queue type: `activity`
 - `minReplicaCount: 1`
 - `maxReplicaCount: 20`
@@ -77,6 +77,6 @@ This keeps activity execution latency stable during bursts while avoiding Knativ
 ## References
 
 - `DOCS/14-DEPLOYMENT-ARCHITECTURE.md`
-- `knative/services/base/scaledobjects/http-adapter.yaml`
+- `knative/services/base/scaledobjects/connector-runtime.yaml`
 - `infrastructure/base/`
 - `infrastructure/overlays/`

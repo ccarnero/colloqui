@@ -24,8 +24,8 @@ import { TenantConnectionManager } from "./tenant-connection-manager";
  * already runs DDL on the first synchronous request for a tenant. But
  * that lazy path makes the *first* HTTP request for a freshly-provisioned
  * tenant pay the DDL cost — visible as a 500 from `relation "..." does
- * not exist` in components like scheduler-service whose cron tick races
- * the e2e test's first POST. Subscribing to `platform.tenant.ready`
+ * not exist` in components whose first work item races the e2e test's
+ * first POST. Subscribing to `platform.tenant.ready`
  * lets the service warm the schema as soon as provisioning succeeds,
  * before any client request arrives.
  *

@@ -1,6 +1,6 @@
 # Developer Onboarding Guide
 
-Welcome to the Yoizen platform! This guide walks you through understanding and working with the refactored HTTP Adapter and Workflow Service architecture.
+Welcome to the Yoizen platform! This guide walks you through understanding and working with the slim-stack `connector-runtime` and `workflow-service` architecture.
 
 ## Start Here: Reading Order
 
@@ -10,11 +10,12 @@ Welcome to the Yoizen platform! This guide walks you through understanding and w
 4. [Workflow Engine](./04-WORKFLOW-ENGINE.md) — Trigger bridge and action dispatch
 5. [Agent Execution Flow](./05-AGENT-EXECUTION-FLOW.md) — `agentCall` runtime lifecycle
 6. [UI Flows](./06-UI-FLOWS.md) — Console-to-backend flow mapping
-7. [HTTP Adapter vs Workflow Service](./07-HTTP-ADAPTER-VS-WORKFLOW-SERVICE.md) — Decision guide
+7. [Connector Runtime vs Workflow Service](./07-CONNECTOR-RUNTIME-VS-WORKFLOW-SERVICE.md) — Decision guide
 8. [Common Patterns](./09-COMMON-PATTERNS.md) — Practical recipes
-9. [HTTP Adapter README](../services/http-adapter/README.md) — Detailed service docs
-10. [Workflow Service README](../services/workflow-service/README.md) — Orchestration docs
-11. [@yoizen/shared Package](../packages/shared/README.md) — Type reference
+9. [Connector Runtime README](../services/connector-runtime/README.md) — Detailed service docs
+10. [Connector Admin README](../services/connector-admin/README.md) — Connector configuration API
+11. [Workflow Service README](../services/workflow-service/README.md) — Orchestration docs
+12. [@yoizen/shared Package](../packages/shared/README.md) — Type reference
 
 **Estimated time**: 2-3 hours for complete understanding
 
@@ -24,11 +25,13 @@ Welcome to the Yoizen platform! This guide walks you through understanding and w
 
 The Yoizen platform executes automated workflows and HTTP integrations:
 
-**HTTP Adapter** — Standalone Temporal worker that executes HTTP requests at high concurrency (200 parallel). Used for single HTTP calls or as an activity within workflows.
+**Connector Runtime** — Standalone Temporal worker that executes HTTP requests at high concurrency (200 parallel). Used for single HTTP calls or as an activity within workflows.
+
+**Connector Admin** — REST API that owns multi-tenant connector configurations (base URL, auth, headers, timeouts, retries) consumed by `connector-runtime`.
 
 **Workflow Service** — REST API + Temporal orchestrator that chains HTTP calls, JavaScript, messaging, and AI agents into multi-step workflows with state management.
 
-Both services are multi-tenant and store data in per-tenant Postgres instances.
+All services are multi-tenant and store data in per-tenant Postgres instances.
 
 ---
 
@@ -94,20 +97,20 @@ Services register Temporal workers on specific task queues:
 WORKFLOW_ORCHESTRATOR_TASK_QUEUE = "workflow-orchestrator"
   ↓ workflow-service-worker listens here
   ↓ Executes: workflow orchestration, local activities
-  
-HTTP_ADAPTER_TASK_QUEUE = "http-adapter"
-  ↓ http-adapter worker listens here
+
+CONNECTOR_RUNTIME_TASK_QUEUE = "connector-runtime"
+  ↓ connector-runtime worker listens here
   ↓ Executes: HTTP endpoint calls, service calls
 ```
 
 Each queue scales independently based on task depth (via KEDA).
 
-### Adapter-Driven Configuration
+### Connector-Driven Configuration
 
-Adapters are reusable configurations for external APIs:
+Connectors are reusable configurations for external APIs (managed by `connector-admin`):
 
 ```
-Adapter: crm-adapter
+Connector: crm-connector
 ├── baseUrl: https://crm.example.com/api
 ├── auth: OAuth2 client credentials
 ├── headers: { "X-API-Key": "..." }
@@ -120,8 +123,8 @@ Adapter: crm-adapter
 ```
 
 **Benefits**:
-- Centralized configuration (adapter-service)
-- Cached in Redis for performance
+- Centralized configuration (`connector-admin`)
+- Cached in Redis for performance (`AdapterClient` SWR)
 - Reusable across workflows
 - Decouples caller from implementation details
 
@@ -149,10 +152,10 @@ services/{service}/
     └── unit/                    # Unit tests
 ```
 
-### Navigating HTTP Adapter
+### Navigating Connector Runtime
 
 ```
-services/http-adapter/
+services/connector-runtime/
 ├── README.md
 ├── src/
 │   ├── worker.ts               # Main entry: Temporal worker + health server
@@ -220,10 +223,10 @@ packages/shared/
 
 ## Common Development Tasks
 
-### Task 1: Run HTTP Adapter Locally
+### Task 1: Run Connector Runtime Locally
 
 ```bash
-cd services/http-adapter
+cd services/connector-runtime
 
 # Install dependencies
 bun install
@@ -239,7 +242,7 @@ tail -f logs/worker.log
 ```
 
 **What's running**:
-- Temporal worker on `http-adapter` task queue
+- Temporal worker on `connector-runtime` task queue
 - Health server on port 3000
 - Connected to local Temporal broker
 
@@ -330,15 +333,15 @@ Workflow Service supports 7 action types. To add an 8th:
 
 6. **Update README** with action documentation
 
-### Task 4: Add a New Adapter Integration
+### Task 4: Add a New Connector Integration
 
-Adapters are managed by `adapter-service`, but to use one in HTTP Adapter:
+Connectors are managed by `connector-admin` and consumed by `connector-runtime`:
 
-1. **Create adapter** in adapter-service:
+1. **Create connector** in `connector-admin` (proxied by the gateway as `/api/connectors`):
    ```bash
-   POST /adapters
+   POST /api/connectors
    {
-     "name": "my-api-adapter",
+     "name": "my-api-connector",
      "baseUrl": "https://api.example.com",
      "auth": { "type": "bearer", "token": "..." },
      "endpoints": [
@@ -348,13 +351,13 @@ Adapters are managed by `adapter-service`, but to use one in HTTP Adapter:
    }
    ```
 
-2. **Call from workflow** with adapter ID:
+2. **Call from workflow** with the connector ID:
    ```typescript
    {
      type: "endpointCall",
      name: "fetchData",
      args: {
-       adapterId: "my-api-adapter",
+       adapterId: "my-api-connector",
        endpointId: "getUser",
        params: { id: "123" }
      }
@@ -365,7 +368,7 @@ Adapters are managed by `adapter-service`, but to use one in HTTP Adapter:
    ```bash
    curl -X POST http://localhost:3000/workflows \
      -H "x-yoizen-tenant: local-test" \
-     -d '{ "actions": [{ "type": "endpointCall", "adapterId": "my-api-adapter", ... }] }'
+     -d '{ "actions": [{ "type": "endpointCall", "adapterId": "my-api-connector", ... }] }'
    ```
 
 ### Task 5: Query Workflows in Temporal Web UI
@@ -386,7 +389,7 @@ Adapters are managed by `adapter-service`, but to use one in HTTP Adapter:
 ### Enable Debug Logging
 
 ```bash
-# HTTP Adapter
+# Connector Runtime
 LOG_LEVEL=debug bun run start:dev
 
 # Workflow Service
@@ -404,7 +407,7 @@ Watch for:
 ### Check Service Health
 
 ```bash
-# HTTP Adapter
+# Connector Runtime
 curl http://localhost:3000
 
 # Workflow Service API
@@ -414,20 +417,20 @@ curl http://localhost:3000/health
 curl http://localhost:7233/health
 ```
 
-### Inspect Adapter Cache
+### Inspect Connector Cache
 
 ```bash
 # Connect to Redis
 redis-cli
 
-# List adapter cache keys
+# List connector cache keys
 KEYS "adapter:*"
 
-# Get specific adapter config
-GET "adapter:acme:crm-adapter"
+# Get specific connector config
+GET "adapter:acme:crm-connector"
 
 # Delete cache (force refresh)
-DEL "adapter:acme:crm-adapter"
+DEL "adapter:acme:crm-connector"
 ```
 
 ### Monitor Task Queue Depth
@@ -435,11 +438,11 @@ DEL "adapter:acme:crm-adapter"
 ```bash
 # In Temporal Web UI: Task Queues tab
 # Or via tctl CLI:
-tctl taskqueue describe -t http-adapter
+tctl taskqueue describe -t connector-runtime
 tctl taskqueue describe -t workflow-orchestrator
 ```
 
-### Test HTTP Adapter Activity Directly
+### Test Connector Runtime Activity Directly
 
 ```bash
 # Use Temporal CLI to dispatch activity
@@ -456,7 +459,7 @@ tctl workflow execute \
 ### Unit Tests
 
 ```bash
-cd services/http-adapter
+cd services/connector-runtime
 bun test test/unit    # Run all unit tests
 bun test              # Run with coverage
 ```
@@ -498,14 +501,14 @@ curl http://localhost:3000/workflows \
 
 | Operation | Expected Time |
 |-----------|----------------|
-| HTTP call via http-adapter | 50-150ms |
+| HTTP call via connector-runtime | 50-150ms |
 | Workflow with 1 action | 100-300ms |
 | Workflow with 3 actions | 300-600ms |
 | Parallel branch (2 branches) | 150-300ms (concurrent) |
 
 ### Scaling for Production
 
-**HTTP Adapter**:
+**Connector Runtime**:
 - Max 200 concurrent activities per replica
 - KEDA scales 1-20 replicas based on task queue depth
 - For 1000 req/sec: 5-10 replicas recommended
@@ -519,19 +522,19 @@ curl http://localhost:3000/workflows \
 
 ## Architecture Decision Records (ADRs)
 
-### Why HTTP Adapter is Separate
+### Why connector-runtime is separate
 
-**Decision**: Renamed `workflow-http-worker` to `http-adapter` and made it a generic HTTP execution service.
+**Decision**: Split connector configuration (`connector-admin`) from connector execution (`connector-runtime`).
 
 **Rationale**:
-- HTTP calls are high-concurrency, network-bound (200 parallel)
-- Workflow orchestration is low-concurrency, CPU-bound (100 workflows)
-- Separate task queues allow independent scaling
-- Generic HTTP service reusable outside workflows (event processors, webhooks)
+- Configuration ownership and execution have very different scaling profiles: `connector-admin` is a low-volume CRUD API, while `connector-runtime` is a network-bound, high-concurrency Temporal worker (200 parallel).
+- Separate task queues allow `connector-runtime` to scale independently via KEDA without affecting the admin API.
+- The runtime exposes generic HTTP execution activities (`endpointCall`, `serviceCall`) that are reusable by any Temporal client, not just the workflow service.
+- `connector-admin` owns multi-tenant config + credentials and the registry-driven internal-sync surface; keeping that out of the worker minimises blast radius for execution-side incidents.
 
-**Tradeoff**: Two-hop dispatch (workflow → http-adapter) adds latency vs. direct HTTP calls
+**Tradeoff**: Two-hop dispatch (workflow → `connector-runtime` → external HTTP) adds latency vs. inline HTTP calls.
 
-**Mitigation**: For latency-sensitive integrations, call http-adapter directly instead of via workflow
+**Mitigation**: For latency-sensitive integrations, call `connector-runtime` directly via Temporal client instead of going through `workflow-service`.
 
 ### Why Per-Tenant Postgres
 
@@ -581,7 +584,8 @@ Once comfortable, pick a task from the issues backlog and contribute!
 | How do I use the workflow service? | [Workflow Service README](../services/workflow-service/README.md) |
 | What are the action types? | [Common Patterns](./09-COMMON-PATTERNS.md) |
 | How do I debug a failing workflow? | [Debugging Tips](./10-DEVELOPER-ONBOARDING.md#debugging-tips) |
-| What's the HTTP Adapter? | [HTTP Adapter README](../services/http-adapter/README.md) |
+| What's the Connector Runtime? | [Connector Runtime README](../services/connector-runtime/README.md) |
+| Where do I configure connectors? | [Connector Admin README](../services/connector-admin/README.md) |
 | How do I add a new service? | [Infrastructure and Deployment](./02-INFRASTRUCTURE.md#add-a-new-service-checklist) |
 | What types should I use? | [@yoizen/shared](../packages/shared/README.md) |
 

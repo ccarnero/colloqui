@@ -47,7 +47,7 @@ describe("AdaptersService", () => {
       endpoints: [],
     };
     const promise = firstValueFrom(service.listAdapters());
-    const req = httpMock.expectOne(`${environment.apiUrl}/adapters`);
+    const req = httpMock.expectOne(`${environment.apiUrl}/connectors`);
     req.flush([dto]);
     const res = await promise;
     expect(res.adapters).toEqual([
@@ -69,7 +69,7 @@ describe("AdaptersService", () => {
       expect(detail.id).toBe("x");
       expect(detail.hasAuth).toBe(false);
     });
-    const req = httpMock.expectOne(`${environment.apiUrl}/adapters/id-1`);
+    const req = httpMock.expectOne(`${environment.apiUrl}/connectors/id-1`);
     expect(req.request.method).toBe("GET");
     req.flush({
       id: "x",

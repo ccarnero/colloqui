@@ -70,11 +70,16 @@ class BootstrapSettings(BaseSettings):
     TENANT_ID: str = ""
 
     YOIZENCLAW_ADAPTER_TOOLS_ENABLED: bool = True
-    ADAPTER_SERVICE_URL: str = ""
+    CONNECTOR_ADMIN_URL: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "CONNECTOR_ADMIN_URL",
+            "ADAPTER_SERVICE_URL",
+        ),
+    )
     ADAPTER_CACHE_TTL_SECONDS: int = 60
     ADAPTER_CACHE_HARD_TTL_SECONDS: int = 300
     YOIZENCLAW_TOOL_RESPONSE_MAX_BYTES: int = 100_000
-    YOIZENCLAW_ADAPTER_TOOLS_ENABLED: bool = True
 
     @property
     def postgres_connection_string(self) -> str:

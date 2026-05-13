@@ -277,7 +277,7 @@ class LLMClient:
                     adapter_client = ensure_adapter_client_in_container()
                     if adapter_client is None:
                         raise RuntimeError(
-                            "AdapterClient is not available: set ADAPTER_SERVICE_URL "
+                            "AdapterClient is not available: set CONNECTOR_ADMIN_URL "
                             "and TENANT_ID so the runtime can fetch adapter credentials "
                             f"(connector_id={self._connector_id!r}).",
                         )

@@ -56,33 +56,3 @@ export interface EventEnvelope {
   forward_adapter?: { adapterId: string; endpointId: string };
 }
 
-export interface EventResult {
-  processed: boolean;
-  data?: unknown;
-}
-
-export interface ProcessedEvent {
-  eventId: string;
-  type: string;
-  processed: boolean;
-  timestamp: number;
-  data?: unknown;
-  tenant?: string;
-  correlation_id?: string;
-}
-
-export interface CompletionEvent {
-  eventId: string;
-  type: string;
-  result: ProcessedEvent;
-  callback_url?: string;
-  adapter_id?: string;
-}
-
-export interface MetricsPayload {
-  source: string;
-  name: string;
-  value: number;
-  tags?: Record<string, string>;
-  timestamp?: number;
-}

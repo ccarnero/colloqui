@@ -58,8 +58,8 @@ spec:
                 secretKeyRef:
                   name: postgres-credentials
                   key: POSTGRES_PASSWORD
-            - name: ADAPTER_SERVICE_URL
-              value: "http://adapter-service-api.platform-services-dev.svc.cluster.local"
+            - name: CONNECTOR_ADMIN_URL
+              value: "http://connector-admin-api.platform-services-dev.svc.cluster.local"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME

@@ -24,15 +24,15 @@ This design enables:
 knative/services/
 ├── base/
 │   ├── kustomization.yaml              # Aggregates all base resources
-│   ├── http-adapter.yaml               # Plain Deployment (KEDA scaler)
+│   ├── connector-runtime.yaml          # Knative Service (KEDA-scaled)
 │   ├── workflow-service-api.yaml       # Knative Service
-│   ├── workflow-service-worker.yaml    # Plain Deployment (orchestrator)
+│   ├── workflow-service-worker.yaml    # Knative Service (orchestrator)
 │   ├── workflow-worker.yaml            # Legacy Temporal worker
-│   ├── adapter-service-api.yaml        # Knative Service
-│   ├── adapter-service-worker.yaml     # Plain Deployment
+│   ├── connector-admin-api.yaml        # Knative Service
+│   ├── connector-admin-worker.yaml     # Knative Service
 │   ├── [other services...]
 │   └── scaledobjects/
-│       ├── http-adapter.yaml           # KEDA ScaledObject
+│       ├── connector-runtime.yaml      # KEDA ScaledObject
 │       ├── workflow-service-worker.yaml
 │       ├── workflow-worker.yaml
 │       └── [other scalers...]
@@ -74,30 +74,30 @@ knative/services/
 | **Knative Service** | API servers (REST endpoints) | Automatic scale-to-zero, request-based autoscaling, revision management |
 | **Plain Deployment + KEDA** | Workers (background jobs, event processing) | Pull-based workload scaling (task queue depth, event stream lag) |
 
-### HTTP Adapter Deployment
+### Connector Runtime Deployment
 
-**File**: `base/http-adapter.yaml`
+**File**: `base/connector-runtime.yaml`
 
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: http-adapter
+  name: connector-runtime
   labels:
-    app: http-adapter
+    app: connector-runtime
 spec:
   replicas: 1  # Overridden by KEDA
   selector:
     matchLabels:
-      app: http-adapter
+      app: connector-runtime
   template:
     metadata:
       labels:
-        app: http-adapter
+        app: connector-runtime
     spec:
       containers:
-      - name: http-adapter
-        image: dev.local/http-adapter:latest  # Overridden by overlay
+      - name: connector-runtime
+        image: dev.local/connector-runtime:latest  # Overridden by overlay
         ports:
         - containerPort: 3000
         env:
@@ -105,10 +105,10 @@ spec:
           value: temporal:7233
         - name: TEMPORAL_NAMESPACE
           value: default
-        - name: HTTP_ADAPTER_TASK_QUEUE
-          value: http-adapter
-        - name: ADAPTER_SERVICE_URL
-          value: http://adapter-service:3000
+        - name: CONNECTOR_RUNTIME_TASK_QUEUE
+          value: connector-runtime
+        - name: CONNECTOR_ADMIN_URL
+          value: http://connector-admin-api:3000
         - name: REDIS_HOST
           value: redis
         livenessProbe:
@@ -207,16 +207,16 @@ spec:
 
 ### KEDA ScaledObject (Temporal Scaler)
 
-**File**: `base/scaledobjects/http-adapter.yaml`
+**File**: `base/scaledobjects/connector-runtime.yaml`
 
 ```yaml
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: http-adapter-scaler
+  name: connector-runtime-scaler
 spec:
   scaleTargetRef:
-    name: http-adapter
+    name: connector-runtime
   minReplicaCount: 1        # Min replicas (never scale below)
   maxReplicaCount: 20       # Max replicas (never scale above)
   cooldownPeriod: 300       # Wait 300s before scale-down
@@ -224,7 +224,7 @@ spec:
   - type: temporalio
     metadata:
       serverAddress: temporal:7233
-      taskQueue: http-adapter
+      taskQueue: connector-runtime
       threshold: "10"       # Scale up when queue > 10 tasks per replica
 ```
 
@@ -270,17 +270,17 @@ namespace: default
 This patches all service deployments with environment-specific values:
 
 ```yaml
-# http-adapter patches
+# connector-runtime patches
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: http-adapter
+  name: connector-runtime
 spec:
   template:
     spec:
       containers:
-      - name: http-adapter
-        image: dev.local/http-adapter:local  # Local image
+      - name: connector-runtime
+        image: dev.local/connector-runtime:local  # Local image
         env:
         - name: TEMPORAL_ADDRESS
           value: temporal.default.svc.cluster.local:7233
@@ -325,13 +325,13 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: http-adapter
+  name: connector-runtime
 spec:
   template:
     spec:
       containers:
-      - name: http-adapter
-        image: registry.example.com/http-adapter:v1.2.3  # Tagged image
+      - name: connector-runtime
+        image: registry.example.com/connector-runtime:v1.2.3  # Tagged image
         resources:
           requests:
             memory: "256Mi"
@@ -364,7 +364,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: http-adapter
+  name: connector-runtime
 spec:
   replicas: 3                 # Override KEDA min
   template:
@@ -379,11 +379,11 @@ spec:
                 - key: app
                   operator: In
                   values:
-                  - http-adapter
+                  - connector-runtime
               topologyKey: kubernetes.io/hostname
       containers:
-      - name: http-adapter
-        image: gcr.io/yoizen/http-adapter:v1.2.3@sha256:abc123...  # Pinned digest
+      - name: connector-runtime
+        image: gcr.io/yoizen/connector-runtime:v1.2.3@sha256:abc123...  # Pinned digest
         resources:
           requests:
             memory: "512Mi"
@@ -412,7 +412,7 @@ Applied to dev and qa environments:
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: http-adapter-scaler
+  name: connector-runtime-scaler
 spec:
   minReplicaCount: 0        # Allow scale-to-zero
   idlePeriod: 300           # 5 minutes idle before scale-down
@@ -446,7 +446,7 @@ More conservative than dev/qa:
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: http-adapter-scaler
+  name: connector-runtime-scaler
 spec:
   minReplicaCount: 1        # Min 1 replica (no scale-to-zero)
   cooldownPeriod: 300       # Longer cooldown to prevent flapping
@@ -463,7 +463,7 @@ spec:
 kubectl apply -k knative/services/overlays/local/dev/
 
 # Result:
-# - http-adapter Deployment (1 replica, KEDA scale-to-zero enabled)
+# - connector-runtime Deployment (1 replica, KEDA scale-to-zero enabled)
 # - workflow-service-api Knative Service (1 replica, scale-to-zero)
 # - workflow-service-worker Deployment (1 replica, KEDA)
 # - All using dev.local/* images
@@ -477,7 +477,7 @@ kubectl apply -k knative/services/overlays/local/dev/
 kubectl apply -k knative/services/overlays/local/staging/
 
 # Result:
-# - http-adapter Deployment (min 1, max 10 replicas)
+# - connector-runtime Deployment (min 1, max 10 replicas)
 # - workflow-service-api Knative Service (min 2, max 20)
 # - Higher resource limits
 # - Normal logging
@@ -491,7 +491,7 @@ kubectl apply -k knative/services/overlays/local/staging/
 kubectl apply -k knative/services/overlays/cloud/production/
 
 # Result:
-# - http-adapter Deployment (3+ replicas, pod anti-affinity)
+# - connector-runtime Deployment (3+ replicas, pod anti-affinity)
 # - workflow-service-api Knative Service (min 2, max 50)
 # - Pinned image digests (immutable)
 # - High resource limits
@@ -592,7 +592,7 @@ kubectl get scaledobjects
 kubectl logs -n keda deployment/keda-operator
 
 # Check Temporal connectivity
-kubectl exec -it deployment/http-adapter -- \
+kubectl exec -it deployment/connector-runtime -- \
   curl http://temporal:7233/health
 ```
 
@@ -600,7 +600,7 @@ kubectl exec -it deployment/http-adapter -- \
 
 ```bash
 # Check pod status
-kubectl get pods -l app=http-adapter
+kubectl get pods -l app=connector-runtime
 
 # Describe pod for events
 kubectl describe pod <pod-name>
@@ -616,7 +616,7 @@ kubectl get pod <pod-name> -o yaml | grep -A5 livenessProbe
 
 ```bash
 # Verify patch was applied
-kubectl get deployment http-adapter -o yaml | grep -A20 env:
+kubectl get deployment connector-runtime -o yaml | grep -A20 env:
 
 # Check overlay kustomization.yaml
 cat overlays/local/dev/kustomization.yaml
@@ -647,10 +647,10 @@ Use full image digest in production to ensure immutability:
 
 ```yaml
 # ❌ Development (tag OK)
-image: dev.local/http-adapter:latest
+image: dev.local/connector-runtime:latest
 
 # ✅ Production (digest required)
-image: gcr.io/yoizen/http-adapter:v1.2.3@sha256:abc123def456...
+image: gcr.io/yoizen/connector-runtime:v1.2.3@sha256:abc123def456...
 ```
 
 ### 3. Resource Requests/Limits
@@ -700,7 +700,7 @@ affinity:
           - key: app
             operator: In
             values:
-            - http-adapter
+            - connector-runtime
         topologyKey: kubernetes.io/hostname
 ```
 

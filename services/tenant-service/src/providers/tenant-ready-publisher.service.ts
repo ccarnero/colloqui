@@ -13,8 +13,8 @@ const sc = StringCodec();
 
 /**
  * Best-effort fan-out publisher for `platform.tenant.ready` over **Core
- * NATS** (NOT JetStream). Subscribers (e.g. scheduler-service) use the
- * event to **proactively** run per-tenant DDL / pre-warm pools the
+ * NATS** (NOT JetStream). Subscribers use the event to
+ * **proactively** run per-tenant DDL / pre-warm pools the
  * moment a tenant becomes usable, instead of paying the DDL cost on
  * the first synchronous request.
  *

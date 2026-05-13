@@ -19,7 +19,7 @@ flowchart LR
 
     temporal --> worker[workflow-service-worker]
     worker --> local[Local activities]
-    worker --> httpq[http-adapter queue]
+    worker --> httpq[connector-runtime queue]
 ```
 
 ## Trigger Consumer
@@ -37,8 +37,8 @@ Current supported actions in `runWorkflow`:
 
 | Action | Runs where | Behavior |
 |---|---|---|
-| `endpointCall` | `http-adapter` queue | Outbound HTTP call (adapter-aware when configured) |
-| `serviceCall` | `http-adapter` queue | Internal service HTTP call (mirror/fallback resolution) |
+| `endpointCall` | `connector-runtime` queue | Outbound HTTP call (connector-aware when configured) |
+| `serviceCall` | `connector-runtime` queue | Internal service HTTP call (mirror/fallback resolution) |
 | `agentCall` | orchestrator queue (5m timeout) | Agent execution activity returning AI reply payload |
 | `jsFunction` | local activity | Inline JavaScript execution |
 | `serviceBusCall` | local activity | Publishes message to NATS subject for tenant |
@@ -58,24 +58,24 @@ Notes:
 flowchart LR
     wfw[workflow-service-worker]
     wfw --> local[Local activities\njsFunction\nserviceBusCall\nchannelSend]
-    wfw --> httpa[http-adapter queue\nendpointCall\nserviceCall]
+    wfw --> httpa[connector-runtime queue\nendpointCall\nserviceCall]
     wfw --> localagent[Local agent activity\nagentCall]
     wfw --> branch[branch control\nparallel sub-actions]
 ```
 
 ## Task Queue Topology and Scaling
 
-- Orchestrator execution queue: `workflow-orchestrator`.
-- HTTP activity queue: `http-adapter`.
-- `http-adapter` scales with KEDA Temporal scaler (`min=1`, `max=20`, `targetQueueSize=10`) based on activity backlog.
+- Orchestrator execution queue: `workflow-orchestrator` (`WORKFLOW_ORCHESTRATOR_TASK_QUEUE`).
+- HTTP activity queue: `connector-runtime` (`CONNECTOR_RUNTIME_TASK_QUEUE`).
+- `connector-runtime` scales with the KEDA Temporal scaler (`min=1`, `max=20`, `targetQueueSize=10`) based on activity backlog.
 
 ```mermaid
 flowchart LR
     temporal[(Temporal)] --> orq[workflow-orchestrator]
-    temporal --> hq[http-adapter]
+    temporal --> hq[connector-runtime]
 
     orq --> wworker[workflow-service-worker]
-    hq --> hadapter[http-adapter deployment]
+    hq --> hadapter[connector-runtime deployment]
 
     keda[KEDA scaler] --> hadapter
 ```
@@ -84,5 +84,5 @@ flowchart LR
 
 - `services/workflow-service/src/temporal/workflows.ts`
 - `services/workflow-service/src/modules/triggers/trigger-consumer.service.ts`
-- `knative/services/base/scaledobjects/http-adapter.yaml`
+- `knative/services/base/scaledobjects/connector-runtime.yaml`
 - `DOCS/03-NATS-JETSTREAM.md`

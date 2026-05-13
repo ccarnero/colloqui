@@ -6,12 +6,12 @@ const GW = getBaseUrl("api-gateway");
 
 /**
  * Bun's default per-test timeout is 5s; polls and workflows need longer.
- * Single-node minikube under full-suite contention can stall the
- * enrich/forward/webhook pipeline past the 120s pollEvent deadline, so
- * the `it` timeout must comfortably exceed it. Phase-1 scale-to-zero
- * adds a one-time ~25s cold-start for `workflow-worker` /
- * `http-adapter` (consumers that don't appear in the gateway
- * aggregator and so aren't pre-warmed by `warmup.ts`).
+ * Single-node minikube under full-suite contention can stall workflows
+ * past the 120s pollWorkflow deadline, so the `it` timeout must
+ * comfortably exceed it. Phase-1 scale-to-zero adds a one-time ~25s
+ * cold-start for `workflow-worker` / `http-adapter` (consumers that don't
+ * appear in the gateway aggregator and so aren't pre-warmed by
+ * `warmup.ts`).
  */
 const SLOW_IT = { timeout: 180_000 };
 const VERY_SLOW_IT = { timeout: 240_000 };
@@ -25,18 +25,6 @@ interface AdapterResponse {
     method: string;
     path: string;
   }>;
-}
-
-interface EventAccepted {
-  id: string;
-  status: string;
-}
-
-interface ProcessedResult {
-  eventId: string;
-  type: string;
-  processed: boolean;
-  timestamp: number;
 }
 
 interface WorkflowDefinitionCreated {
@@ -89,7 +77,7 @@ async function createAdapter(
 ): Promise<AdapterResponse> {
   const h = await authHeaders();
   const { status, body } = await httpPost<AdapterResponse>(
-    `${GW}/adapters`,
+    `${GW}/api/connectors`,
     {
       name: `e2e-adapter-${Date.now()}`,
       context: "external",
@@ -117,7 +105,7 @@ async function addEndpoint(
 ): Promise<string> {
   const h = await authHeaders();
   const { status, body } = await httpPost<{ id: string }>(
-    `${GW}/adapters/${adapterId}/endpoints`,
+    `${GW}/api/connectors/${adapterId}/endpoints`,
     { label, method, path },
     { headers: h },
   );
@@ -127,24 +115,7 @@ async function addEndpoint(
 
 async function deleteAdapter(adapterId: string): Promise<void> {
   const h = await authHeaders();
-  await httpDelete(`${GW}/adapters/${adapterId}`, { headers: h });
-}
-
-async function pollEvent(eventId: string): Promise<ProcessedResult> {
-  const h = await authHeaders();
-  return poll<ProcessedResult>(
-    async () => {
-      const res = await httpGet<ProcessedResult>(
-        `${GW}/results/${eventId}`,
-        { headers: h },
-      );
-      if (res.status === 200) {
-        return res.body;
-      }
-      return null;
-    },
-    { timeoutMs: 120_000 },
-  );
+  await httpDelete(`${GW}/api/connectors/${adapterId}`, { headers: h });
 }
 
 /**
@@ -213,13 +184,13 @@ async function pollWorkflow(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  Core adapter integration (event-processor, workflows, webhooks)
+//  Core adapter integration via Temporal workflows (http-adapter)
 // ═══════════════════════════════════════════════════════════════════
 
 describe("E2E: adapter integration", () => {
   let adapterId: string;
-  let enrichEndpointId: string;
-  let forwardEndpointId: string;
+  let getEndpointId: string;
+  let postEndpointId: string;
 
   it(
     "should create an adapter via the api-gateway",
@@ -236,8 +207,8 @@ describe("E2E: adapter integration", () => {
       if (!adapterId) {
         return;
       }
-      enrichEndpointId = await addEndpoint(adapterId, "Echo GET", "GET", "/get");
-      forwardEndpointId = await addEndpoint(
+      getEndpointId = await addEndpoint(adapterId, "Echo GET", "GET", "/get");
+      postEndpointId = await addEndpoint(
         adapterId,
         "Echo POST",
         "POST",
@@ -247,91 +218,12 @@ describe("E2E: adapter integration", () => {
     SLOW_IT,
   );
 
-  // ── Event-Processor ───────────────────────────────────────────
-
-  it(
-    "should process an event with adapter enrichment",
-    async () => {
-      if (!adapterId || !enrichEndpointId) {
-        return;
-      }
-      const h = await authHeaders();
-
-      const { status, body } = await httpPost<EventAccepted>(
-        `${GW}/events`,
-        {
-          type: "adapter-enrich-e2e",
-          payload: { data: `enrich-test-${Date.now()}` },
-          enrichAdapter: { adapterId, endpointId: enrichEndpointId },
-        },
-        { headers: h },
-      );
-
-      expect(status).toBe(202);
-      const result = await pollEvent(body.id);
-      expect(result.eventId).toBe(body.id);
-      expect(result.processed).toBe(true);
-    },
-    SLOW_IT,
-  );
-
-  it(
-    "should process an event with adapter forwarding",
-    async () => {
-      if (!adapterId || !forwardEndpointId) {
-        return;
-      }
-      const h = await authHeaders();
-
-      const { status, body } = await httpPost<EventAccepted>(
-        `${GW}/events`,
-        {
-          type: "adapter-fwd-e2e",
-          payload: { data: `forward-test-${Date.now()}` },
-          forwardAdapter: { adapterId, endpointId: forwardEndpointId },
-        },
-        { headers: h },
-      );
-
-      expect(status).toBe(202);
-      const result = await pollEvent(body.id);
-      expect(result.processed).toBe(true);
-    },
-    SLOW_IT,
-  );
-
-  it(
-    "should process an event through both enrichment and forwarding",
-    async () => {
-      if (!adapterId || !enrichEndpointId || !forwardEndpointId) {
-        return;
-      }
-      const h = await authHeaders();
-
-      const { status, body } = await httpPost<EventAccepted>(
-        `${GW}/events`,
-        {
-          type: "adapter-combined-e2e",
-          payload: { data: `combined-test-${Date.now()}` },
-          enrichAdapter: { adapterId, endpointId: enrichEndpointId },
-          forwardAdapter: { adapterId, endpointId: forwardEndpointId },
-        },
-        { headers: h },
-      );
-
-      expect(status).toBe(202);
-      const result = await pollEvent(body.id);
-      expect(result.processed).toBe(true);
-    },
-    SLOW_IT,
-  );
-
   // ── Workflow-HTTP-Worker ──────────────────────────────────────
 
   it(
     "should complete a workflow with adapter-driven endpointCall",
     async () => {
-      if (!adapterId || !enrichEndpointId) {
+      if (!adapterId || !getEndpointId) {
         return;
       }
 
@@ -345,7 +237,7 @@ describe("E2E: adapter integration", () => {
               method: "GET",
               url: "",
               adapterId,
-              endpointId: enrichEndpointId,
+              endpointId: getEndpointId,
               params: { source: "e2e" },
             },
           },
@@ -363,7 +255,7 @@ describe("E2E: adapter integration", () => {
   it(
     "should complete a workflow with adapter endpointCall POST",
     async () => {
-      if (!adapterId || !forwardEndpointId) {
+      if (!adapterId || !postEndpointId) {
         return;
       }
 
@@ -377,7 +269,7 @@ describe("E2E: adapter integration", () => {
               method: "POST",
               url: "",
               adapterId,
-              endpointId: forwardEndpointId,
+              endpointId: postEndpointId,
               data: { from: "workflow", source: "e2e" },
             },
           },
@@ -388,67 +280,6 @@ describe("E2E: adapter integration", () => {
       const result = await pollWorkflow(definitionId, executionId);
       expect(result.executionId).toBe(executionId);
       expect(result.status).toBe("COMPLETED");
-    },
-    SLOW_IT,
-  );
-
-  // ── Webhook-Service ───────────────────────────────────────────
-
-  it(
-    "should deliver webhook using adapter config",
-    async () => {
-      if (!adapterId) {
-        return;
-      }
-      const h = await authHeaders();
-
-      const { status, body } = await httpPost<EventAccepted>(
-        `${GW}/events`,
-        {
-          type: "adapter-webhook-e2e",
-          // Payload MUST be unique across the whole e2e suite: the
-          // api-gateway derives `Nats-Msg-Id` from `sha256(payload)`
-          // (see wdocs/02 §7), so two publishes with identical payloads
-          // within the JetStream dedup window (default 2 min) are silently
-          // collapsed. `{ data: "webhook-test" }` is also used by
-          // webhook.e2e.spec.ts — we disambiguate here.
-          payload: { data: `adapter-webhook-test-${Date.now()}` },
-          callbackUrl: "https://httpbin.org/post",
-          adapterId,
-        },
-        { headers: h },
-      );
-
-      expect(status).toBe(202);
-      const result = await pollEvent(body.id);
-      expect(result.processed).toBe(true);
-    },
-    SLOW_IT,
-  );
-
-  it(
-    "should deliver webhook with adapter + enrichment combined",
-    async () => {
-      if (!adapterId || !enrichEndpointId) {
-        return;
-      }
-      const h = await authHeaders();
-
-      const { status, body } = await httpPost<EventAccepted>(
-        `${GW}/events`,
-        {
-          type: "adapter-full-pipeline-e2e",
-          payload: { data: `full-pipeline-${Date.now()}` },
-          callbackUrl: "https://httpbin.org/post",
-          adapterId,
-          enrichAdapter: { adapterId, endpointId: enrichEndpointId },
-        },
-        { headers: h },
-      );
-
-      expect(status).toBe(202);
-      const result = await pollEvent(body.id);
-      expect(result.processed).toBe(true);
     },
     SLOW_IT,
   );
@@ -526,57 +357,6 @@ describe("E2E: adapter custom headers", () => {
     SLOW_IT,
   );
 
-  it(
-    "should inject custom headers during event-processor enrichment",
-    async () => {
-      if (!adapterId || !getEndpointId) {
-        return;
-      }
-      const h = await authHeaders();
-
-      const { status, body } = await httpPost<EventAccepted>(
-        `${GW}/events`,
-        {
-          type: "adapter-header-enrich-e2e",
-          payload: { data: "header-enrich" },
-          enrichAdapter: { adapterId, endpointId: getEndpointId },
-        },
-        { headers: h },
-      );
-
-      expect(status).toBe(202);
-      const result = await pollEvent(body.id);
-      expect(result.processed).toBe(true);
-    },
-    SLOW_IT,
-  );
-
-  it(
-    "should inject custom headers in webhook delivery",
-    async () => {
-      if (!adapterId) {
-        return;
-      }
-      const h = await authHeaders();
-
-      const { status, body } = await httpPost<EventAccepted>(
-        `${GW}/events`,
-        {
-          type: "adapter-header-webhook-e2e",
-          payload: { data: "header-webhook" },
-          callbackUrl: "https://httpbin.org/post",
-          adapterId,
-        },
-        { headers: h },
-      );
-
-      expect(status).toBe(202);
-      const result = await pollEvent(body.id);
-      expect(result.processed).toBe(true);
-    },
-    SLOW_IT,
-  );
-
   afterAll(async () => {
     if (adapterId) {
       await deleteAdapter(adapterId);
@@ -591,7 +371,6 @@ describe("E2E: adapter custom headers", () => {
 describe("E2E: adapter retries", () => {
   let adapterId: string;
   let status503EndpointId: string;
-  let forwardEndpointId: string;
 
   it(
     "should create a retry-configured adapter",
@@ -605,12 +384,6 @@ describe("E2E: adapter retries", () => {
         adapterId,
         "Always 503",
         "GET",
-        "/status/503",
-      );
-      forwardEndpointId = await addEndpoint(
-        adapterId,
-        "Forward 503",
-        "POST",
         "/status/503",
       );
     },
@@ -646,31 +419,6 @@ describe("E2E: adapter retries", () => {
       const retryResult = wf.result?.results?.retryCall;
       expect(retryResult).toBeDefined();
       expect(retryResult!.status).toBe(503);
-    },
-    SLOW_IT,
-  );
-
-  it(
-    "should process event even when forward retries exhaust (non-blocking)",
-    async () => {
-      if (!adapterId || !forwardEndpointId) {
-        return;
-      }
-      const h = await authHeaders();
-
-      const { status, body } = await httpPost<EventAccepted>(
-        `${GW}/events`,
-        {
-          type: "adapter-retry-fwd-e2e",
-          payload: { data: "retry-forward" },
-          forwardAdapter: { adapterId, endpointId: forwardEndpointId },
-        },
-        { headers: h },
-      );
-
-      expect(status).toBe(202);
-      const result = await pollEvent(body.id);
-      expect(result.processed).toBe(true);
     },
     SLOW_IT,
   );
@@ -735,56 +483,6 @@ describe("E2E: adapter timeouts", () => {
       expect(wf.status).toBe("FAILED");
     },
     VERY_SLOW_IT,
-  );
-
-  it(
-    "should still process event when enrichment times out (non-blocking)",
-    async () => {
-      if (!adapterId || !delayEndpointId) {
-        return;
-      }
-      const h = await authHeaders();
-
-      const { status, body } = await httpPost<EventAccepted>(
-        `${GW}/events`,
-        {
-          type: "adapter-timeout-enrich-e2e",
-          payload: { data: "timeout-enrich" },
-          enrichAdapter: { adapterId, endpointId: delayEndpointId },
-        },
-        { headers: h },
-      );
-
-      expect(status).toBe(202);
-      const result = await pollEvent(body.id);
-      expect(result.processed).toBe(true);
-    },
-    SLOW_IT,
-  );
-
-  it(
-    "should still process event when forward times out (non-blocking)",
-    async () => {
-      if (!adapterId || !delayEndpointId) {
-        return;
-      }
-      const h = await authHeaders();
-
-      const { status, body } = await httpPost<EventAccepted>(
-        `${GW}/events`,
-        {
-          type: "adapter-timeout-fwd-e2e",
-          payload: { data: "timeout-forward" },
-          forwardAdapter: { adapterId, endpointId: delayEndpointId },
-        },
-        { headers: h },
-      );
-
-      expect(status).toBe(202);
-      const result = await pollEvent(body.id);
-      expect(result.processed).toBe(true);
-    },
-    SLOW_IT,
   );
 
   afterAll(async () => {

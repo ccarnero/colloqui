@@ -20,12 +20,10 @@ interface ILoggerLike {
 }
 
 export const PLATFORM_PREFIXES = [
-  "/api/events",
   "/api/audit",
   "/api/tenants",
-  "/api/schedulers",
   "/api/registry",
-  "/api/adapters",
+  "/api/connectors",
   "/api/channels",
   "/api/webhooks",
   "/api/workflows",

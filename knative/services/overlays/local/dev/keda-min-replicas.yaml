@@ -9,6 +9,8 @@
 # KEDA scales to `idleReplicaCount` when no triggers are active, so
 # leaving it at 0 would still drain the pods after the cooldown period.
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -17,6 +19,8 @@ spec:
   idleReplicaCount: 1
   minReplicaCount: 1
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -25,6 +29,8 @@ spec:
   idleReplicaCount: 1
   minReplicaCount: 1
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -33,14 +39,18 @@ spec:
   idleReplicaCount: 1
   minReplicaCount: 1
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: adapter-service-worker-scaler
+  name: connector-admin-worker-scaler
 spec:
   idleReplicaCount: 1
   minReplicaCount: 1
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -49,42 +59,22 @@ spec:
   idleReplicaCount: 1
   minReplicaCount: 1
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: event-processor-worker-scaler
+  name: connector-runtime-scaler
 spec:
   idleReplicaCount: 1
   minReplicaCount: 1
 ---
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: http-adapter-scaler
-spec:
-  idleReplicaCount: 1
-  minReplicaCount: 1
----
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: metrics-service-worker-scaler
-spec:
-  idleReplicaCount: 1
-  minReplicaCount: 1
----
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
   name: usage-aggregator-worker-scaler
-spec:
-  idleReplicaCount: 1
-  minReplicaCount: 1
----
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: webhook-service-worker-scaler
 spec:
   idleReplicaCount: 1
   minReplicaCount: 1

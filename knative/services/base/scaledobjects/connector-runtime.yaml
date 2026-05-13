@@ -1,0 +1,72 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: connector-runtime-scaler
+  labels:
+    app.kubernetes.io/name: connector-runtime
+    app.kubernetes.io/component: autoscaler
+spec:
+  # Plain Deployment (not Knative Service) — see
+  # knative/services/base/connector-runtime.yaml for why.
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: connector-runtime
+  pollingInterval: 15
+  # Same 5-min protection window as workflow-worker. The connector-runtime
+  # worker is the activity-only side of the pipeline (registers `activities`,
+  # no `workflowsPath`); a typical activity is an outbound HTTP call
+  # (3-30s depending on the target). Long cooldown matches typical retry
+  # storms — if a downstream API is slow, we keep the pod warm rather
+  # than churning replicas.
+  cooldownPeriod: 300
+  idleReplicaCount: 0
+  minReplicaCount: 1
+  # Mirrors the previous Knative `max-scale: 20`. Higher ceiling than
+  # the orchestrator worker because HTTP activities are fan-out / I/O
+  # bound and benefit from horizontal parallelism.
+  maxReplicaCount: 20
+  fallback:
+    failureThreshold: 3
+    replicas: 1
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+            - type: Pods
+              value: 4
+              periodSeconds: 15
+          selectPolicy: Max
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 60
+  triggers:
+    # connector-runtime queue: activity-only (no workflow tasks dispatched
+    # here — those land on `workflow-orchestrator`). queueTypes: activity
+    # is the focused metric; otherwise we'd inflate replicas every time
+    # a workflow task lands on the orchestrator queue.
+    - type: temporal
+      name: connector-runtime-backlog
+      metadata:
+        endpoint: temporal.support-services-dev.svc.cluster.local:7233
+        namespace: default
+        taskQueue: connector-runtime
+        queueTypes: activity
+        # `maxConcurrentActivityTaskExecutions: 200` per replica
+        # (services/connector-runtime/src/worker.ts) — 10 backlog per
+        # replica means we'll add a pod when ~5% of capacity is queued,
+        # which keeps p95 activity dispatch under ~1s under burst.
+        targetQueueSize: "10"
+        # KEDA activation uses STRICTLY GREATER-THAN semantics: trigger is
+        # "active" when `value > activationTargetQueueSize`. Setting "0"
+        # wakes the pod on the first queued activity (≥1 in backlog).
+        # See: https://keda.sh/docs/scalers/temporal/#parameter-list
+        activationTargetQueueSize: "0"

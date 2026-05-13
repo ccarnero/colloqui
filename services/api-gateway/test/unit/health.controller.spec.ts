@@ -61,11 +61,8 @@ describe("HealthController (api-gateway)", () => {
     expect(result.nats).toBe("connected");
     expect(result.redis).toBe("connected");
     expect(result.services["cache-service"]).toEqual({ status: "ok" });
-    expect(result.services["webhook-service"]).toEqual({ status: "ok" });
     expect(result.services["audit-service"]).toEqual({ status: "ok" });
-    expect(result.services["event-processor"]).toEqual({ status: "ok" });
-    expect(result.services["metrics-service"]).toEqual({ status: "ok" });
-    expect(result.services["scheduler-service"]).toEqual({ status: "ok" });
+    expect(result.services["registry-service"]).toEqual({ status: "ok" });
   });
 
   it("should return fast readiness payload", async () => {
@@ -110,13 +107,13 @@ describe("HealthController (api-gateway)", () => {
     const result = await controller.check();
     expect(result.status).toBe("degraded");
     expect(result.services["cache-service"]).toBe("unreachable");
-    expect(result.services["webhook-service"]).toEqual({ status: "ok" });
+    expect(result.services["audit-service"]).toEqual({ status: "ok" });
   });
 
   it("should mark a service as unreachable when it returns non-ok status", async () => {
     const fetchMock = mock((url: string | URL | Request) => {
       const u = typeof url === "string" ? url : url.toString();
-      if (u.includes("webhook-service")) {
+      if (u.includes("audit-service")) {
         return Promise.resolve(new Response("", { status: 503 }));
       }
       return Promise.resolve(new Response(serviceOkBody, { status: 200 }));
@@ -125,13 +122,13 @@ describe("HealthController (api-gateway)", () => {
     const controller = await createController(true, true, fetchMock);
     const result = await controller.check();
     expect(result.status).toBe("degraded");
-    expect(result.services["webhook-service"]).toBe("unreachable");
+    expect(result.services["audit-service"]).toBe("unreachable");
   });
 
   it("should propagate degraded status from a downstream service", async () => {
     const fetchMock = mock((url: string | URL | Request) => {
       const u = typeof url === "string" ? url : url.toString();
-      if (u.includes("event-processor")) {
+      if (u.includes("registry-service")) {
         return Promise.resolve(
           new Response(serviceDegradedBody, { status: 200 }),
         );
@@ -142,7 +139,7 @@ describe("HealthController (api-gateway)", () => {
     const controller = await createController(true, true, fetchMock);
     const result = await controller.check();
     expect(result.status).toBe("degraded");
-    expect(result.services["event-processor"]).toEqual({
+    expect(result.services["registry-service"]).toEqual({
       status: "degraded",
       redis: "disconnected",
     });

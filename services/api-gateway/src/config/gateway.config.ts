@@ -33,30 +33,18 @@ export const gatewayConfig = {
     tenant:
       process.env.TENANT_SERVICE_URL ??
       platformServiceUrl("tenant-service", env),
-    scheduler:
-      process.env.SCHEDULER_SERVICE_URL ??
-      platformServiceUrl("scheduler-service", env),
     registry:
       process.env.REGISTRY_SERVICE_URL ??
       platformServiceUrl("registry-service", env),
     workflow:
       process.env.WORKFLOW_SERVICE_URL ??
       platformServiceUrl("workflow-service-api", env),
-    adapter:
-      process.env.ADAPTER_SERVICE_URL ??
-      platformServiceUrl("adapter-service-api", env),
+    connectorAdmin:
+      process.env.CONNECTOR_ADMIN_URL ??
+      platformServiceUrl("connector-admin-api", env),
     cache:
       process.env.CACHE_SERVICE_URL ??
       platformServiceUrl("cache-service", env),
-    webhook:
-      process.env.WEBHOOK_SERVICE_URL ??
-      platformServiceUrl("webhook-service-api", env),
-    eventProcessor:
-      process.env.EVENT_PROCESSOR_URL ??
-      platformServiceUrl("event-processor-api", env),
-    metrics:
-      process.env.METRICS_SERVICE_URL ??
-      platformServiceUrl("metrics-service-api", env),
     proxy:
       process.env.PROXY_SERVICE_URL ??
       platformServiceUrl("proxy-service", env),

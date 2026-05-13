@@ -92,7 +92,7 @@ export interface IListAdaptersParams {
 @Injectable({ providedIn: "root" })
 export class HttpAdapterService {
   private readonly http = inject(HttpClient);
-  private readonly base = `${environment.apiUrl}/adapters`;
+  private readonly base = `${environment.apiUrl}/connectors`;
 
   list(params?: IListAdaptersParams): Observable<IAdapterDto[]> {
     let httpParams = new HttpParams();

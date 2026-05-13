@@ -397,7 +397,7 @@ describe("AdapterClient", () => {
       expect(result?.id).toBe("mirror-1");
       const [url] = fetchFn.mock.calls[0];
       const parsed = new URL(url as string);
-      expect(parsed.pathname).toBe("/adapters");
+      expect(parsed.pathname).toBe("/connectors");
       expect(parsed.searchParams.get("context")).toBe("internal");
       expect(parsed.searchParams.get("name")).toBe("my-service");
       expect(parsed.searchParams.get("limit")).toBe("1");

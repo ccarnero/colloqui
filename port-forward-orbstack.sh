@@ -11,7 +11,6 @@ KOURIER_SVC="svc/kourier"
 SERVICES=(
   "api-gateway:${API_GATEWAY_PORT:-8080}"
   "admin-console:${ADMIN_CONSOLE_PORT:-4200}"
-  "messaging-console:${MESSAGING_CONSOLE_PORT:-4300}"
 )
 
 # Support-namespace services forwarded directly (bypassing Kourier). Each entry
@@ -60,7 +59,6 @@ usage() {
     "Environment variables:" \
     "  API_GATEWAY_PORT          Local port for api-gateway       (default: 8080)" \
     "  ADMIN_CONSOLE_PORT        Local port for admin-console     (default: 4200)" \
-    "  MESSAGING_CONSOLE_PORT    Local port for messaging-console (default: 4300)" \
     "  TEMPORAL_UI_PORT          Local port for Temporal Web UI   (default: 8233)" \
     "" \
     "Examples:" \

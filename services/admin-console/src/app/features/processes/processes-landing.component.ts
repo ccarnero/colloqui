@@ -23,9 +23,9 @@ interface ITopWorkflow {
 /**
  * Processes section landing — replaces the Phase 2 Automate landing.
  *
- * Fleet view: how many workflows + schedules, current health, top
- * workflows by usage, recent executions across all of them. Drilling
- * into a workflow opens the Phase 3 detail mini-app.
+ * Fleet view: how many workflows, current health, top workflows by
+ * usage, recent executions across all of them. Drilling into a workflow
+ * opens the Phase 3 detail mini-app.
  */
 @Component({
   selector: "app-processes-landing",
@@ -39,13 +39,10 @@ interface ITopWorkflow {
   template: `
     <app-section-landing-shell
       title="Processes"
-      subtitle="Workflows y schedules"
+      subtitle="Workflows"
       [hasSecondary]="true"
     >
       <div slot="actions">
-        <button class="btn" type="button" (click)="goToSchedules()">
-          Schedules
-        </button>
         <button class="btn btn-primary" type="button" (click)="newWorkflow()">
           + New workflow
         </button>
@@ -61,11 +58,6 @@ interface ITopWorkflow {
           label="Executions today"
           [value]="execTotalLabel()"
           [sub]="execBreakdownSub()"
-        />
-        <app-kpi-card
-          label="Schedules active"
-          [value]="metrics.schedulesActive() ?? '—'"
-          [sub]="nextRunSub()"
         />
         <app-kpi-card label="Services" value="up" sub="all healthy" />
       </div>
@@ -178,11 +170,6 @@ export class ProcessesLandingComponent {
     return `${this.formatNum(s)} ok · ${f} failed`;
   });
 
-  protected readonly nextRunSub = computed(() => {
-    const t = this.metrics.schedulesNextRun();
-    return t ? `next run · ${t}` : "no upcoming runs";
-  });
-
   protected readonly topWorkflows = computed<ITopWorkflow[]>(() => [
     { id: "lead-qualification", name: "lead-qualification", runs7d: 1_247, successRate: 0.964 },
     { id: "support-routing", name: "support-routing", runs7d: 982, successRate: 0.991 },
@@ -210,9 +197,5 @@ export class ProcessesLandingComponent {
 
   protected newWorkflow(): void {
     void this.router.navigate(["/workflows", "new"]);
-  }
-
-  protected goToSchedules(): void {
-    void this.router.navigate(["/schedules"]);
   }
 }

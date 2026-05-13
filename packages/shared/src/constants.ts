@@ -1,38 +1,16 @@
-export const WEBHOOK_DLQ_SUBJECT = 'dlq.webhook';
-export const WEBHOOK_MAX_RETRIES = 3;
-export const WEBHOOK_RETRY_DELAYS = [1_000, 5_000, 30_000] as const;
-
-export const DLQ_STREAM_NAME = 'DLQ';
 /**
- * Subjects owned by the global `DLQ` stream.
- *
- * Scoped to the single subject produced by `webhook-service` when a
- * callback delivery exhausts its retries (`dlq.webhook`). The
- * `dlq.<tenant>.>` namespace is reserved for per-tenant DLQ streams
- * (`DLQ-<tenant>`) provisioned by `ensureTenantDlqStream`, so the two
- * designs coexist without JetStream subject overlap.
+ * YoizenClaw execution-client cache key prefixes (Redis).
+ * Pending/Result keys are scoped per tenant (`<tenantId>:<prefix><executionId>`).
  */
-export const DLQ_STREAM_SUBJECTS = ['dlq.webhook'] as const;
-export const DLQ_STREAM_MAX_BYTES = 64 * 1024 * 1024;
-
-export const RESULT_KEY_PREFIX = 'result:';
-export const PENDING_KEY_PREFIX = 'pending:';
-export const CALLBACK_KEY_PREFIX = 'callback:';
-
+export const RESULT_KEY_PREFIX = "result:";
+export const PENDING_KEY_PREFIX = "pending:";
 export const RESULT_TTL = 3600;
 export const PENDING_TTL = 3600;
-export const CALLBACK_TTL = 3600;
-export const RESULT_CACHE_MAX = 1024;
 
 export const STREAM_MAX_AGE_NS = 7 * 24 * 60 * 60 * 1_000_000_000;
 export const MAX_DELIVER = 5;
 
 export const TENANT_HEADER = 'x-yoizen-tenant';
-
-export const SCHEDULER_DEFAULT_TIMEOUT_MS = 30_000;
-export const SCHEDULER_K8S_DEFAULT_TIMEOUT_S = 300;
-export const SCHEDULER_TICK_INTERVAL_MS = 5_000;
-export const SCHEDULER_MAX_EXECUTION_LOG_ROWS = 500;
 
 export const REGISTRY_KNATIVE_GROUP = 'serving.knative.dev';
 export const REGISTRY_KNATIVE_VERSION = 'v1';
@@ -60,7 +38,7 @@ export const PLATFORM_NON_CHANNEL_TOKEN = 'system';
 export const ADAPTER_MANAGED_BY_REGISTRY = 'registry-service';
 
 export const WORKFLOW_ORCHESTRATOR_TASK_QUEUE = 'workflow-orchestrator';
-export const HTTP_ADAPTER_TASK_QUEUE = 'http-adapter';
+export const CONNECTOR_RUNTIME_TASK_QUEUE = 'connector-runtime';
 export const WORKFLOW_DEFAULT_TIMEOUT_MS = 60_000;
 
 export const GATEWAY_AUDIT_STREAM_NAME = 'GATEWAY_AUDIT';

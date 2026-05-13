@@ -261,16 +261,6 @@ export const routes: Routes = [
         ],
       },
 
-      // Schedules (Phase 4 — replaces /scheduler with a real backend wire)
-      {
-        path: "schedules",
-        loadComponent: () =>
-          import("./features/processes/schedules.component").then(
-            (m) => m.SchedulesComponent,
-          ),
-      },
-      { path: "scheduler", redirectTo: "schedules", pathMatch: "full" },
-
       // ── Settings ──────────────────────────────────────────────────────
       {
         path: "settings",

@@ -105,16 +105,16 @@ sequenceDiagram
 - Current playground uses polling (`GET /runtime/executions/:id` every ~1s, max wait ~5m).
 - Runtime gateway also exposes SSE stream endpoint (`/runtime/executions/stream`) for future UI use.
 
-## Channel Account Management (admin-console + messaging-console)
+## Channel Account Management (admin-console)
 
-Both consoles use the same account API surface exposed by gateway.
+The admin-console uses the account API surface exposed by gateway.
 
-### Shared Account CRUD Flow
+### Account CRUD Flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant UI as admin-console or messaging-console
+    participant UI as admin-console
     participant GW as api-gateway
     participant CH as channel-service
     participant DB as Tenant PostgreSQL
@@ -129,13 +129,11 @@ sequenceDiagram
 ### Notes
 
 - Telegram bot token and provider credentials are sent via account APIs; storage ownership is in `channel-service`.
-- `admin-console` and `messaging-console` are two UI surfaces over the same backend account resource.
 
 ## References
 
 - `services/admin-console/src/app/core/services/yoizenclaw-runtime.service.ts`
 - `services/admin-console/src/app/features/automation/yoizenclaw/playground.component.ts`
 - `services/admin-console/src/app/core/services/channel-admin.service.ts`
-- `services/messaging-console/src/app/core/services/channel.service.ts`
 - `services/api-gateway/src/modules/runtime/runtime.controller.ts`
 - `services/api-gateway/src/modules/channels/channels.controller.ts`

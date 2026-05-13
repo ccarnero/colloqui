@@ -31,19 +31,15 @@ ORDERED_SERVICES=(
   tenant-service
   cache-service
   # Data & integrations
-  adapter-service
+  connector-admin
   registry-service
-  scheduler-service
   # Event processing
-  event-processor
   audit-service
-  metrics-service
   usage-aggregator-service
-  webhook-service
   # Business logic
   channel-service
   workflow-service
-  http-adapter
+  connector-runtime
   # API surface
   api-gateway
   proxy-service
@@ -52,7 +48,6 @@ ORDERED_SERVICES=(
   yoizenclaw-runtime-gateway
   # Frontends (built last — heaviest build)
   admin-console
-  messaging-console
   # Tenant runtime (special build path)
   yoizenclaw-runtime
 )
