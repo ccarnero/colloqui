@@ -716,6 +716,15 @@ spec:
               value: "temporal.support-services-qa.svc.cluster.local:7233"
             - name: NATS_URL
               value: "nats://nats.support-services-qa.svc.cluster.local:4222"
+            # REDIS_HOST/REDIS_PORT are required by the executeAgentCall
+            # activity (DistributedCircuitBreaker + YoizenClawExecutionClient
+            # use Redis as a status cache). Without these, ioredis falls back
+            # to localhost:6379 inside the pod and every agent call fails
+            # with MaxRetriesPerRequestError.
+            - name: REDIS_HOST
+              value: "redis.support-services-qa.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-qa.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME

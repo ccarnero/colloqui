@@ -18,6 +18,17 @@ import { workflowServiceConfig } from "../../config";
 
 const AGENT_CALL_TIMEOUT_MS = 5 * 60 * 1000;
 
+/**
+ * Redis tunables. `maxRetriesPerRequest: 3` lets ioredis ride out a
+ * single failover blip (typical Sentinel/Cluster reconfig is < 1s)
+ * without immediately failing the activity attempt; Temporal-level
+ * activity retries handle anything longer. `connectTimeout` caps the
+ * initial TCP connect so a wedged node fails the activity in seconds
+ * rather than hanging until the activity's start-to-close timeout.
+ */
+const REDIS_MAX_RETRIES_PER_REQUEST = 3;
+const REDIS_CONNECT_TIMEOUT_MS = 5_000;
+
 let agentBreakerInstance: DistributedCircuitBreaker | null = null;
 let redisInstance: Redis | null = null;
 let ncInstance: NatsConnection | null = null;
@@ -26,13 +37,23 @@ let executionClient: YoizenClawExecutionClient | null = null;
 
 const logger = new PinoLoggerService("workflow-agent-call");
 
+if (!workflowServiceConfig.redisHostExplicit) {
+  logger.warn(
+    `REDIS_HOST is not set — defaulting to ${workflowServiceConfig.redisHost}:${workflowServiceConfig.redisPort}. ` +
+      "Outside local development this almost always means the workflow-worker " +
+      "deployment is missing REDIS_HOST/REDIS_PORT and every agentCall will " +
+      "fail with MaxRetriesPerRequestError.",
+  );
+}
+
 function getRedis(): Redis {
   if (redisInstance) return redisInstance;
   redisInstance = new Redis({
-    host: process.env.REDIS_HOST ?? "localhost",
-    port: Number.parseInt(process.env.REDIS_PORT ?? "6379", 10),
+    host: workflowServiceConfig.redisHost,
+    port: workflowServiceConfig.redisPort,
     lazyConnect: true,
-    maxRetriesPerRequest: 1,
+    maxRetriesPerRequest: REDIS_MAX_RETRIES_PER_REQUEST,
+    connectTimeout: REDIS_CONNECT_TIMEOUT_MS,
     enableReadyCheck: true,
   });
   return redisInstance;
@@ -101,6 +122,29 @@ function getAgentBreaker(): DistributedCircuitBreaker {
   return agentBreakerInstance;
 }
 
+/**
+ * Detects ioredis "I cannot reach the server" failures.
+ *
+ * `MaxRetriesPerRequestError` is the canonical wrapper after
+ * `maxRetriesPerRequest` is exhausted, but the underlying cause
+ * (ECONNREFUSED, ETIMEDOUT, getaddrinfo ENOTFOUND) sometimes surfaces
+ * directly when a command is issued before the first connection
+ * attempt completes. We match either shape so the operator always
+ * sees the structured `REDIS_UNAVAILABLE` failure below instead of an
+ * opaque ioredis stack trace.
+ */
+function isRedisUnavailableError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === "MaxRetriesPerRequestError") return true;
+  const msg = err.message ?? "";
+  return (
+    msg.includes("ECONNREFUSED") ||
+    msg.includes("ETIMEDOUT") ||
+    msg.includes("ENOTFOUND") ||
+    msg.includes("max retries per request")
+  );
+}
+
 export async function executeAgentCall(
   args: AgentChatRequest,
   tenantId: string,
@@ -123,6 +167,25 @@ export async function executeAgentCall(
     return result;
   } catch (err) {
     breaker.recordFailure(key);
+    if (isRedisUnavailableError(err)) {
+      // Non-retryable: Temporal already retried 3× before — a config
+      // error (missing REDIS_HOST/REDIS_PORT or wrong host) won't fix
+      // itself between attempts. Failing fast surfaces the real cause
+      // to the operator instead of burning the activity retry budget.
+      throw ApplicationFailure.nonRetryable(
+        `Redis at ${workflowServiceConfig.redisHost}:${workflowServiceConfig.redisPort}` +
+          " is unreachable from workflow-worker. Verify REDIS_HOST/REDIS_PORT" +
+          " env vars on the workflow-worker deployment and that the Redis" +
+          ` service is healthy. Original: ${(err as Error).message}`,
+        "REDIS_UNAVAILABLE",
+        {
+          host: workflowServiceConfig.redisHost,
+          port: workflowServiceConfig.redisPort,
+          original: (err as Error).message,
+          redisHostExplicit: workflowServiceConfig.redisHostExplicit,
+        },
+      );
+    }
     throw err;
   }
 }

@@ -136,6 +136,8 @@ NATS is not registered in `ProvidersModule`. The service-bus activity (`service-
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace |
 | `NATS_URL` | `nats://localhost:4222` | NATS server URL |
+| `REDIS_HOST` | `localhost` | Redis host. **Required on the worker process** — `executeAgentCall` uses Redis for the distributed circuit breaker and as the `YoizenClawExecutionClient` status cache. Missing on the deployment causes every agentCall to fail with `MaxRetriesPerRequestError` / `REDIS_UNAVAILABLE`. |
+| `REDIS_PORT` | `6379` | Redis port (worker only). |
 
 ### Knative
 
