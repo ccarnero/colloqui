@@ -424,12 +424,23 @@ def _build_test_bridge(tenant_id: str) -> Any:
     return bridge
 
 
+def _jetstream_mock(bridge: Any) -> AsyncMock:
+    """Return the AsyncMock used as the JetStream context inside `start()`.
+
+    `bridge._nats.jetstream()` returns a coroutine that resolves to an
+    AsyncMock; we expose it here so tests can assert against
+    `js.subscribe`, `js.stream_info`, and `js.add_stream` without
+    duplicating the AsyncMock plumbing on every call site.
+    """
+    return bridge._nats.jetstream.return_value
+
+
 class TestDynamicSubjectSubscription:
     """Task 2.4.11: Bridge subscribes to admin-service and runtime wildcards."""
 
     @pytest.mark.asyncio
     async def test_start_subscribes_to_admin_service_wildcard(self) -> None:
-        """start() subscribes to admin-service wildcard first."""
+        """start() subscribes to the admin-service wildcard via JetStream."""
         bridge = _build_test_bridge("acme")
 
         with patch(
@@ -438,14 +449,23 @@ class TestDynamicSubjectSubscription:
         ):
             await bridge.start()
 
-        admin_subscribe = bridge._nats.subscribe.call_args_list[0]
-        assert admin_subscribe[0][0] == (
+        js = _jetstream_mock(bridge)
+        admin_calls = [
+            call
+            for call in js.subscribe.call_args_list
+            if call.kwargs.get("subject", "").startswith(
+                "evt.acme.yoizenclaw-admin-service."
+            )
+        ]
+        assert len(admin_calls) == 1
+        assert admin_calls[0].kwargs["subject"] == (
             "evt.acme.yoizenclaw-admin-service.automation.yoizenclaw.internal.>"
         )
+        assert admin_calls[0].kwargs["stream"] == "INGRESS-ACME"
 
     @pytest.mark.asyncio
     async def test_start_subscribes_to_runtime_wildcard(self) -> None:
-        """start() subscribes to runtime wildcard second."""
+        """start() subscribes to the runtime wildcard via core NATS."""
         bridge = _build_test_bridge("acme")
 
         with patch(
@@ -454,8 +474,35 @@ class TestDynamicSubjectSubscription:
         ):
             await bridge.start()
 
-        runtime_subscribe = bridge._nats.subscribe.call_args_list[1]
-        assert runtime_subscribe[0][0] == "evt.acme.yoizenclaw.>"
+        core_subjects = [
+            call.args[0] for call in bridge._nats.subscribe.call_args_list
+        ]
+        assert "evt.acme.yoizenclaw.>" in core_subjects
+
+    @pytest.mark.asyncio
+    async def test_start_subscribes_to_gateway_wildcard(self) -> None:
+        """start() subscribes to the gateway wildcard via JetStream."""
+        bridge = _build_test_bridge("acme")
+
+        with patch(
+            "src.messaging.bridge._is_configured_check",
+            return_value=False,
+        ):
+            await bridge.start()
+
+        js = _jetstream_mock(bridge)
+        gateway_calls = [
+            call
+            for call in js.subscribe.call_args_list
+            if call.kwargs.get("subject", "").startswith(
+                "evt.acme.yoizenclaw-runtime-gateway."
+            )
+        ]
+        assert len(gateway_calls) == 1
+        assert gateway_calls[0].kwargs["stream"] == "INGRESS-ACME"
+        assert gateway_calls[0].kwargs["durable"] == (
+            "runtime-execution-events-acme"
+        )
 
     @pytest.mark.asyncio
     async def test_start_uses_tenant_id_from_env(self) -> None:
@@ -467,12 +514,22 @@ class TestDynamicSubjectSubscription:
         ):
             await bridge.start()
 
-        admin_subscribe = bridge._nats.subscribe.call_args_list[0]
-        assert admin_subscribe[0][0] == (
+        js = _jetstream_mock(bridge)
+        admin_subjects = [
+            call.kwargs.get("subject", "")
+            for call in js.subscribe.call_args_list
+            if call.kwargs.get("subject", "").startswith(
+                "evt.globalcorp.yoizenclaw-admin-service."
+            )
+        ]
+        assert admin_subjects == [
             "evt.globalcorp.yoizenclaw-admin-service.automation.yoizenclaw.internal.>"
-        )
-        runtime_subscribe = bridge._nats.subscribe.call_args_list[1]
-        assert runtime_subscribe[0][0] == "evt.globalcorp.yoizenclaw.>"
+        ]
+
+        core_subjects = [
+            call.args[0] for call in bridge._nats.subscribe.call_args_list
+        ]
+        assert "evt.globalcorp.yoizenclaw.>" in core_subjects
 
     @pytest.mark.asyncio
     async def test_start_publishes_online_to_tenant_subject(self) -> None:
@@ -487,6 +544,65 @@ class TestDynamicSubjectSubscription:
         online_publish = bridge._nats.publish.call_args_list[0]
         subject = online_publish[0][0]
         assert subject == "evt.acme.yoizenclaw.online.v1"
+
+
+class TestTenantIngressStreamFallback:
+    """Stream `INGRESS-<TENANT>` missing at boot does not crash startup.
+
+    Reproduces the production failure observed when a freshly provisioned
+    tenant's runtime pod boots before any upstream service has created
+    the per-tenant ingress stream. Both JetStream subscriptions must fall
+    back to core NATS instead of bubbling up `NotFoundError` and exiting
+    the FastAPI lifespan.
+    """
+
+    @pytest.mark.asyncio
+    async def test_start_falls_back_to_core_when_stream_missing(self) -> None:
+        from nats.js.errors import NotFoundError
+
+        bridge = _build_test_bridge("acme")
+        js = _jetstream_mock(bridge)
+        js.stream_info.side_effect = NotFoundError(code=404, description="stream not found")
+        js.add_stream.side_effect = Exception("stream not found")
+        js.subscribe.side_effect = Exception("nats: stream not found")
+
+        with patch(
+            "src.messaging.bridge._is_configured_check",
+            return_value=False,
+        ):
+            await bridge.start()
+
+        core_subjects = [
+            call.args[0] for call in bridge._nats.subscribe.call_args_list
+        ]
+        assert (
+            "evt.acme.yoizenclaw-admin-service.automation.yoizenclaw.internal.>"
+            in core_subjects
+        )
+        assert "evt.acme.yoizenclaw.>" in core_subjects
+        assert (
+            "evt.acme.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal.>"
+            in core_subjects
+        )
+
+    @pytest.mark.asyncio
+    async def test_start_attempts_to_create_stream_when_missing(self) -> None:
+        from nats.js.errors import NotFoundError
+
+        bridge = _build_test_bridge("acme")
+        js = _jetstream_mock(bridge)
+        js.stream_info.side_effect = NotFoundError(code=404, description="stream not found")
+
+        with patch(
+            "src.messaging.bridge._is_configured_check",
+            return_value=False,
+        ):
+            await bridge.start()
+
+        js.add_stream.assert_awaited_once()
+        config = js.add_stream.await_args.kwargs["config"]
+        assert config.name == "INGRESS-ACME"
+        assert config.subjects == ["evt.acme.>"]
 
 
 class TestRuntimeOnlineLogNoiseReduction:

@@ -20,6 +20,8 @@ from typing import Any
 from nats.errors import NotJSMessageError
 from nats.aio.client import Client as NATS
 from nats.aio.msg import Msg
+from nats.js.api import RetentionPolicy, StreamConfig
+from nats.js.errors import NotFoundError
 from opentelemetry import trace
 
 from src.services.domain.entities import (
@@ -203,6 +205,112 @@ class RuntimeNatsBridge:
             or "consumer is already bound to a subscription" in normalized
         )
 
+    async def _ensure_tenant_ingress_stream(
+        self,
+        js: Any,
+        stream_name: str,
+    ) -> bool:
+        """Best-effort idempotent ensure of the per-tenant ingress stream.
+
+        On a freshly provisioned tenant the `INGRESS-<TENANT>` stream is
+        created lazily by upstream services (`yoizenclaw-admin-service`,
+        `yoizenclaw-runtime-gateway`). When the runtime pod boots before
+        any of those have published, the stream simply does not exist and
+        every `js.subscribe(..., stream=...)` call raises `NotFoundError`.
+
+        We try to create the stream with the canonical platform defaults
+        (`evt.<tenant>.>`, Limits retention, 7d max age, 256MB max bytes).
+        Idempotent — a pre-existing stream surfaces as "stream name
+        already in use" which is swallowed. Any other broker error is
+        logged at WARNING and the caller falls back to core NATS.
+
+        Returns True when the stream is guaranteed to exist on the broker.
+        """
+        try:
+            await js.stream_info(stream_name)
+            return True
+        except NotFoundError:
+            pass
+        except Exception as info_error:
+            logger.warning(
+                "Could not query stream '%s' info (%s); attempting create",
+                stream_name,
+                str(info_error),
+            )
+
+        subject_pattern = f"evt.{self._tenant_id}.>"
+        config = StreamConfig(
+            name=stream_name,
+            subjects=[subject_pattern],
+            retention=RetentionPolicy.LIMITS,
+            max_age=7 * 24 * 60 * 60 * 1_000_000_000,
+            max_bytes=256 * 1024 * 1024,
+        )
+        try:
+            await js.add_stream(config=config)
+            logger.info(
+                "Created tenant ingress stream '%s' (subjects=%s)",
+                stream_name,
+                subject_pattern,
+            )
+            return True
+        except Exception as add_error:
+            normalized = str(add_error).lower()
+            if "already in use" in normalized:
+                return True
+            logger.warning(
+                "Failed to ensure tenant ingress stream '%s': %s",
+                stream_name,
+                str(add_error),
+            )
+            return False
+
+    async def _subscribe_via_jetstream_with_fallback(
+        self,
+        js: Any,
+        *,
+        subject: str,
+        stream_name: str,
+        durable: str,
+    ) -> None:
+        """Subscribe via JetStream; fall back to core NATS on missing stream.
+
+        Mirrors the existing behaviour applied to the admin-service
+        wildcard and extends it to every JetStream subscription created
+        by the bridge so a missing/late `INGRESS-<TENANT>` stream never
+        crashes the runtime lifespan.
+        """
+        try:
+            await js.subscribe(
+                subject=subject,
+                cb=self._dispatch_message,
+                durable=durable,
+                stream=stream_name,
+                manual_ack=True,
+            )
+            logger.info(
+                "Subscribed via JetStream on %s (stream=%s, durable=%s)",
+                subject,
+                stream_name,
+                durable,
+            )
+        except Exception as js_error:
+            if not self._should_fallback_to_core(js_error):
+                logger.error(
+                    "Failed to create JetStream consumer for %s: %s",
+                    subject,
+                    str(js_error),
+                )
+                raise
+            logger.warning(
+                "JetStream consumer unavailable for stream '%s' (%s). "
+                "Falling back to core NATS subscription on %s",
+                stream_name,
+                str(js_error),
+                subject,
+            )
+            await self._nats.subscribe(subject, cb=self._dispatch_message)
+
     async def start(self) -> None:
         """Connect and subscribe to tenant-scoped wildcard subject."""
 
@@ -220,60 +328,37 @@ class RuntimeNatsBridge:
 
             await self._nats.connect(servers=[self._nats_url], name=self._instance_id)
 
-            # Listen for admin-service events via JetStream (required for JetStream published events)
-            admin_wildcard = f"evt.{self._tenant_id}.yoizenclaw-admin-service.automation.yoizenclaw.internal.>"
+            admin_wildcard = (
+                f"evt.{self._tenant_id}.yoizenclaw-admin-service."
+                f"automation.yoizenclaw.internal.>"
+            )
+            gateway_wildcard = (
+                f"evt.{self._tenant_id}.yoizenclaw-runtime-gateway."
+                f"automation.yoizenclaw.internal.>"
+            )
             stream_name = f"INGRESS-{self._tenant_id.upper()}"
 
-            try:
-                js = self._nats.jetstream()
-                if inspect.isawaitable(js):
-                    js = await js
-                await js.subscribe(
-                    subject=admin_wildcard,
-                    cb=self._dispatch_message,
-                    durable=f"runtime-admin-events-{self._tenant_id}",
-                    stream=stream_name,
-                    manual_ack=True,
-                )
-                logger.info(
-                    "Subscribed to admin-service events via JetStream on %s "
-                    "(stream=%s)",
-                    admin_wildcard,
-                    stream_name,
-                )
-            except Exception as js_error:
-                if self._should_fallback_to_core(js_error):
-                    logger.warning(
-                        "JetStream consumer unavailable for stream '%s' (%s). "
-                        "Falling back to core NATS subscription on %s",
-                        stream_name,
-                        str(js_error),
-                        admin_wildcard,
-                    )
-                    await self._nats.subscribe(
-                        admin_wildcard,
-                        cb=self._dispatch_message,
-                    )
-                else:
-                    logger.error(
-                        "Failed to create JetStream consumer for admin events: %s",
-                        str(js_error),
-                    )
-                    raise
+            js = self._nats.jetstream()
+            if inspect.isawaitable(js):
+                js = await js
 
-            # Also listen for direct yoizenclaw events (core NATS for runtime_online)
+            await self._ensure_tenant_ingress_stream(js, stream_name)
+
+            await self._subscribe_via_jetstream_with_fallback(
+                js,
+                subject=admin_wildcard,
+                stream_name=stream_name,
+                durable=f"runtime-admin-events-{self._tenant_id}",
+            )
+
             runtime_wildcard = f"evt.{self._tenant_id}.yoizenclaw.>"
             await self._nats.subscribe(runtime_wildcard, cb=self._dispatch_message)
 
-            gateway_wildcard = (
-                f"evt.{self._tenant_id}.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal.>"
-            )
-            await js.subscribe(
+            await self._subscribe_via_jetstream_with_fallback(
+                js,
                 subject=gateway_wildcard,
-                cb=self._dispatch_message,
+                stream_name=stream_name,
                 durable=f"runtime-execution-events-{self._tenant_id}",
-                stream=stream_name,
-                manual_ack=True,
             )
 
             await self._publish_runtime_online()
