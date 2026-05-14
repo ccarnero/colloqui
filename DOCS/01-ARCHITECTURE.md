@@ -193,26 +193,42 @@ sequenceDiagram
 
 ## Tenant Provisioning Flow
 
+Tenant creation is asynchronous: the HTTP request returns `202 Accepted` with a `provisioningStatus`, and a JetStream consumer in `tenant-service` drives the actual provisioning through ordered phases. Each phase is wrapped in `runPhase(...)` so a hang in any one step shows up as a `phase=<name> status=started` line with no matching `status=ok` in the structured logs.
+
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant GW as API Gateway
     participant TS as Tenant Service
+    participant NATS as NATS JetStream
     participant K8s as Kubernetes API
 
     C->>GW: POST /tenants { name: "acme" }
     GW->>TS: HTTP proxy
-    TS->>K8s: Create namespace acme-dev-ns (with labels)
-    TS->>K8s: Create Secret (postgres-credentials)
-    TS->>K8s: Create ConfigMap (postgresql.conf + init.sql)
-    TS->>K8s: Create headless Service (postgres)
-    TS->>K8s: Create StatefulSet (postgres, 1 replica, 1Gi PVC)
-    TS->>TS: Poll StatefulSet readiness (2s interval, 120s timeout)
-    TS-->>GW: { name, namespaces, postgresHost }
-    GW-->>C: 201 { name, namespaces, postgresHost }
+    TS->>TS: Insert platform tenants row (status=pending)
+    TS->>NATS: Publish platform.tenant.provision.requested<br/>(stream PLATFORM_TENANTS, Nats-Msg-Id = tenant id)
+    TS-->>GW: 202 { id, name, provisioningStatus, statusUrl }
+    GW-->>C: 202 { id, name, provisioningStatus, statusUrl }
 
-    Note over TS,K8s: Other services connect to<br/>postgres.acme-dev-ns.svc.cluster.local
+    Note over TS,K8s: Background provisioning (durable consumer)
+    NATS-->>TS: Deliver provision message
+    TS->>K8s: phase=namespace.ensure (acme-dev-ns with labels)
+    par OLTP track
+        TS->>K8s: phase=postgres.provision (Secret + ConfigMap + Service + StatefulSet)
+        TS->>K8s: phase=postgres.waitForReady (2s interval, 120s timeout)
+    and Usage track
+        TS->>K8s: phase=postgres-usage.provision (Timescale StatefulSet)
+        TS->>K8s: phase=postgres-usage.waitForReady
+    end
+    TS->>NATS: phase=nats.ensure-ingress-stream<br/>ensureTenantIngressStream(jsm, "acme") -> INGRESS-ACME
+    TS->>K8s: phase=yoizenclaw-runtime.apply (Knative Service in acme-dev-ns)
+    TS->>TS: Mark platform tenants row status=ready
+    TS->>NATS: Publish platform.tenant.ready
+
+    Note over TS,K8s: Clients poll GET /tenants/<id-or-name> for status<br/>Other services then connect to postgres.acme-dev-ns.svc.cluster.local
 ```
+
+Why `nats.ensure-ingress-stream` sits between Postgres readiness and the runtime apply: the per-tenant `yoizenclaw-runtime` pod attaches durable JetStream consumers for `evt.<tenant>.yoizenclaw-admin-service.…>` and `evt.<tenant>.yoizenclaw-runtime-gateway.…>` as part of its FastAPI lifespan. If `INGRESS-<TENANT>` is missing it crashes with `NotFoundError: stream not found` (NATS `err_code=10059`). Pre-creating the stream here guarantees the runtime can subscribe on first boot; the runtime additionally retains its own idempotent ensure + core-NATS fallback as a safety net (see [03-NATS-JETSTREAM.md](03-NATS-JETSTREAM.md#ingress-stream-provisioning-ingress-tenant)).
 
 ---
 
@@ -356,11 +372,11 @@ graph LR
 
 | Aspect | Detail |
 |--------|--------|
-| **Role** | Provision tenant namespaces + dedicated PostgreSQL via Kubernetes API |
+| **Role** | Provision tenant namespaces, dedicated PostgreSQL (OLTP + usage), the `INGRESS-<tenant>` JetStream stream, and the per-tenant `yoizenclaw-runtime` Knative Service. Driven by a durable JetStream consumer on `PLATFORM_TENANTS` so provisioning is retried on transient failure and survives pod restarts. |
 | **Port** | 3000 |
 | **Scale** | 1 -- 3 replicas (concurrency target: 50) |
 
-Each tenant gets a dedicated namespace (`<tenant>-<env>-ns`) with a PostgreSQL StatefulSet provisioned automatically on creation.
+Each tenant gets a dedicated namespace (`<tenant>-<env>-ns`) containing a PostgreSQL StatefulSet (OLTP), a Timescale-based usage StatefulSet, and a per-tenant `yoizenclaw-runtime` Knative Service. The `INGRESS-<TENANT>` JetStream stream is provisioned in parallel on the shared NATS cluster before the runtime ksvc is applied — see [Tenant Provisioning Flow](#tenant-provisioning-flow) for ordering and [03-NATS-JETSTREAM.md](03-NATS-JETSTREAM.md#ingress-stream-provisioning-ingress-tenant) for the full three-layer ensure contract.
 
 **Namespace Labels:**
 
@@ -375,8 +391,10 @@ Each tenant gets a dedicated namespace (`<tenant>-<env>-ns`) with a PostgreSQL S
 graph LR
     C([Client]) -->|HTTP| GW["API Gateway"]
     GW -->|HTTP Proxy| TS["Tenant Service"]
-    TS -->|Create NS + PG| K8sAPI[Kubernetes API]
-    K8sAPI -->|creates| NS["acme-dev-ns<br/>(namespace + PostgreSQL)"]
+    TS -->|enqueue / consume| NATSQ[("NATS JetStream<br/>PLATFORM_TENANTS")]
+    TS -->|ensureTenantIngressStream| NATSI[("NATS JetStream<br/>INGRESS-&lt;tenant&gt;")]
+    TS -->|Create NS + PG + ksvc| K8sAPI[Kubernetes API]
+    K8sAPI -->|creates| NS["acme-dev-ns<br/>(namespace + PostgreSQL OLTP + Usage<br/>+ yoizenclaw-runtime ksvc)"]
 ```
 
 ---

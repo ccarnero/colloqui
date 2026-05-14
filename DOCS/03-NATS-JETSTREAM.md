@@ -103,19 +103,28 @@ Allowed platform extensions:
 
 ## Provisioning and Lifecycle
 
-Tenant streams are provisioned lazily on first publish, not pre-created globally.
+Tenant streams are pre-provisioned by `tenant-service` during tenant creation, with idempotent safety-net calls from publishers and the per-tenant runtime so cold-start, restore, and out-of-order boot scenarios remain self-healing.
 
 ### Ingress Stream Provisioning (`INGRESS-<tenant>`)
 
-- `ensureTenantIngressStream(jsm, tenantId)` is called by publishers before writing to tenant ingress.
+Provisioning happens at three layers, in priority order:
+
+1. **Primary (eager, during tenant creation)** — `tenant-service`'s `TenantProvisioningExecutor` invokes `ensureTenantIngressStream(jsm, tenantId)` as a dedicated `nats.ensure-ingress-stream` phase, executed **after** OLTP + usage Postgres readiness and **before** applying the per-tenant `yoizenclaw-runtime` Knative Service. This closes the race where the runtime pod would otherwise boot, attempt to attach durable JetStream consumers for `evt.<tenant>.yoizenclaw-admin-service.…>` and `evt.<tenant>.yoizenclaw-runtime-gateway.…>`, and crash its FastAPI lifespan with `NotFoundError: stream not found` (NATS `err_code=10059`).
+2. **Safety net (lazy, before first publish)** — Producers (`api-gateway`, `channel-service`, `registry-service`, `yoizenclaw-admin-service`, `yoizenclaw-runtime-gateway`) call `ensureTenantIngressStream(jsm, tenantId)` before publishing to `evt.<tenant>.>`. This guards against tenants that pre-date the primary path or whose stream was pruned externally.
+3. **Self-healing (lazy, at runtime startup)** — `yoizenclaw-runtime`'s `RuntimeNatsBridge._ensure_tenant_ingress_stream` performs the same idempotent ensure when the bridge connects. If the broker still rejects the JetStream subscribe (e.g. transient permissions error), each subscription falls back to a core NATS subscription on the same wildcard via `_subscribe_via_jetstream_with_fallback`, so the runtime stays online and converges to JetStream delivery once the stream becomes available.
+
+Common contract across all three layers:
+
 - Stream naming comes from `getTenantStreamName(tenantId)` -> `INGRESS-${tenantId.toUpperCase()}`.
 - Subject pattern comes from `getTenantSubjectPattern(tenantId)` -> `evt.${tenantId}.>`.
-- Provisioning is idempotent and guarded with in-memory per-pod cache plus in-flight promise coalescing.
+- Provisioning is idempotent: TS-side calls coalesce concurrent ensures via an in-flight promise map and seed an in-memory per-pod cache on success; the broker error `STREAM_NAME_IN_USE` (`err_code=10058`) is treated as success on every layer.
 - Current defaults are `RetentionPolicy.Limits`, max age 7 days, max bytes 256 MB.
 
 Code references:
 
-- `packages/database/src/nats-provider.ts`
+- `services/tenant-service/src/modules/provisioning/tenant-provisioning-executor.service.ts` (eager pre-provisioning phase)
+- `services/yoizenclaw-runtime/src/messaging/bridge.py` (`_ensure_tenant_ingress_stream`, `_subscribe_via_jetstream_with_fallback`)
+- `packages/database/src/nats-provider.ts` (`ensureTenantIngressStream` shared helper)
 - `packages/shared/src/tenant-stream.constants.ts`
 - `packages/shared/src/channel.constants.ts`
 
