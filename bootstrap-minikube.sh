@@ -594,12 +594,6 @@ apply_knative_config() {
   for env in "${ENVIRONMENTS[@]}"; do
     log "Applying Knative services for '${env}'"
     retry 5 3 kubectl apply -k "${script_dir}/knative/services/overlays/local/${env}"
-
-    if [[ "$env" == "dev" ]]; then
-      log "Applying tenant YoizenClaw runtime overlay for '${env}'"
-      retry 5 3 kubectl apply -k \
-        "${script_dir}/knative/tenant-yoizenclaw-runtime/overlays/acme-dev"
-    fi
   done
 }
 
