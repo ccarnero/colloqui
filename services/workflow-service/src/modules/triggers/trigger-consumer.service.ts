@@ -80,6 +80,23 @@ export class TriggerConsumerService
       metrics: createNatsConsumerMetrics(resolveServiceName("workflow-service")),
       // Each trigger boots a Temporal workflow over gRPC — I/O bound.
       runnerOptions: { concurrency: 16 },
+      // Tighter delivery semantics: starting a workflow is idempotent
+      // (`workflowId = <tenant>:<name>:<idempotencykey>:<defId>`), so
+      // 3 retries cover transient gRPC blips without amplifying the
+      // workflow population during a backend slowdown. Default of 5
+      // could 5× the workflow count under load.
+      // Note: NATS requires maxDeliver > backoff.length, so we pair
+      // maxDeliver=3 with a 2-entry tight backoff [5s, 15s].
+      maxDeliver: 3,
+      // 30s ackWait matches the worst-case Temporal `workflow.start`
+      // latency under stress (~5-10s p99 + headroom). Default 60s is
+      // unnecessarily long and slows redelivery when a pod restarts
+      // mid-handler.
+      ackWaitMs: 30_000,
+      // Tight backoff so the 3 attempts finish well within the
+      // 10-minute workflow timeout budget instead of the multi-minute
+      // default schedule.
+      backoffMs: [5_000, 15_000],
       ensureOnly,
     };
     this.manager = new MultiTenantConsumerManager(

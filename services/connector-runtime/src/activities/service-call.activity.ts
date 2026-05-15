@@ -1,13 +1,13 @@
 import { ApplicationFailure } from "@temporalio/activity";
 import { tracedFetch, PinoLoggerService } from "@yoizen/observability";
 import { TENANT_HEADER, computeBreakerKey } from "@yoizen/shared";
-import type { HttpServiceRequest, ResolvedAdapterRequest } from "@yoizen/shared";
-import { httpAdapterConfig } from "../config";
+import type { ResolvedAdapterRequest, ServiceCallArgs } from "@yoizen/shared";
+import { workflowHttpWorkerConfig } from "../config";
 import {
   getAdapterClient,
   getHttpResponseCache,
 } from "./_shared/adapter-client.provider";
-import { getHttpBreaker } from "./_shared/breaker";
+import { getHttpBreaker, HTTP_BREAKER_COOLDOWN_MS } from "./_shared/breaker";
 import {
   applyJsonBody,
   buildResult,
@@ -47,7 +47,7 @@ const logger = new PinoLoggerService("service-call.activity");
  *    and Knative DNS construction — preserves behaviour while adoption ramps up.
  */
 export async function executeServiceCall(
-  args: HttpServiceRequest,
+  args: ServiceCallArgs,
   tenantId: string,
 ): Promise<IServiceCallResult> {
   const breaker = getHttpBreaker();
@@ -60,11 +60,18 @@ export async function executeServiceCall(
 
   const decision = await breaker.canProceed(key);
   if (decision.action === "deny") {
-    throw ApplicationFailure.nonRetryable(
-      `Circuit breaker ${decision.status} for service call '${args.serviceId}' (${decision.reason})`,
-      "CIRCUIT_OPEN",
-      { key, status: decision.status, reason: decision.reason },
-    );
+    // Retryable on purpose: the breaker is a TRANSIENT signal
+    // ("downstream is sick, retry later"). `nextRetryDelay` tells
+    // Temporal to wait exactly the breaker cooldown before the
+    // next attempt — so we ride out scale-from-zero / cold-start
+    // cliffs without killing the workflow.
+    throw ApplicationFailure.create({
+      message: `Circuit breaker ${decision.status} for service call '${args.serviceId}' (${decision.reason})`,
+      type: "CIRCUIT_OPEN",
+      nonRetryable: false,
+      nextRetryDelay: HTTP_BREAKER_COOLDOWN_MS,
+      details: [{ key, status: decision.status, reason: decision.reason }],
+    });
   }
 
   try {
@@ -78,11 +85,21 @@ export async function executeServiceCall(
 }
 
 async function executeServiceCallInner(
-  args: HttpServiceRequest,
+  args: ServiceCallArgs,
   tenantId: string,
 ): Promise<IServiceCallResult> {
   const client = getAdapterClient();
-  const mirror = await client.findInternalByServiceId(tenantId, args.serviceId);
+  // The adapter mirror in `adapter-service` (table `http_adapters`,
+  // `context='internal'`) is keyed by `name = registered_services.name`
+  // (slug, e.g. "echo-service"), NOT by `registered_services.id` (UUID).
+  // `workflow-service` pre-resolves the slug at start time and pins it
+  // into `args.serviceSlug` so the lookup hits the mirror in O(1).
+  // When `serviceSlug` is absent (legacy definition or registry was
+  // unreachable at start time), we degrade to looking up by UUID — that
+  // miss is permanent but the `resolveAndCallViaRegistry` fallback below
+  // still works, so the activity stays correct.
+  const mirrorKey = args.serviceSlug ?? args.serviceId;
+  const mirror = await client.findInternalByServiceId(tenantId, mirrorKey);
 
   if (mirror) {
     try {
@@ -90,6 +107,7 @@ async function executeServiceCallInner(
         tenantId,
         args,
         mirror.id,
+        mirrorKey,
         args.endpointId,
       );
       const result = await performRequest(resolved, args, tenantId);
@@ -128,17 +146,22 @@ async function executeServiceCallInner(
 
 async function resolveViaMirror(
   tenantId: string,
-  args: HttpServiceRequest,
+  args: ServiceCallArgs,
   adapterId: string,
+  mirrorKey: string,
   endpointId: string | undefined,
 ): Promise<ResolvedAdapterRequest> {
   const client = getAdapterClient();
   if (endpointId) {
     return client.resolveRequest(tenantId, adapterId, endpointId);
   }
+  // Reuse the same `mirrorKey` (slug when available, UUID as last resort)
+  // that succeeded in `findInternalByServiceId` so the SWR cache lookup
+  // inside `resolveForInternalService` hits the same Redis entry rather
+  // than triggering a second adapter-service round trip.
   const resolved = await client.resolveForInternalService(
     tenantId,
-    args.serviceId,
+    mirrorKey,
     {
       path: args.path,
       method: args.method,
@@ -154,7 +177,7 @@ async function resolveViaMirror(
 
 async function performRequest(
   resolved: ResolvedAdapterRequest,
-  args: HttpServiceRequest,
+  args: ServiceCallArgs,
   tenantId: string,
 ): Promise<IServiceCallResult> {
   const headers: Record<string, string> = {
@@ -164,7 +187,7 @@ async function performRequest(
   };
   const body = applyJsonBody(args.data, headers);
   const decision = resolveHttpResponseCachePolicy({
-    enabled: httpAdapterConfig.httpResponseCacheEnabled,
+    enabled: workflowHttpWorkerConfig.httpResponseCacheEnabled,
     strategy: resolved.cache,
     tenantId,
     method: resolved.method,
@@ -189,7 +212,7 @@ async function performRequest(
 }
 
 async function resolveAndCallViaRegistry(
-  args: HttpServiceRequest,
+  args: ServiceCallArgs,
   tenantId: string,
 ): Promise<IServiceCallResult> {
   const baseUrl = await resolveServiceUrl(args.serviceId, tenantId);
@@ -226,7 +249,7 @@ async function resolveServiceUrl(
   serviceId: string,
   tenantId: string,
 ): Promise<string> {
-  const registryUrl = `${httpAdapterConfig.registryServiceUrl}/services/${serviceId}`;
+  const registryUrl = `${workflowHttpWorkerConfig.registryServiceUrl}/services/${serviceId}`;
 
   const res = await tracedFetch(registryUrl, {
     method: "GET",

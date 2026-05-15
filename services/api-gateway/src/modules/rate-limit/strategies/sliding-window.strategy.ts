@@ -7,9 +7,13 @@ import type { IRateLimitStrategy } from "./rate-limit.strategy";
 /**
  * Two-window interpolation for a sliding window counter.
  *
- * KEYS[1] = ratelimit:{env}:{tenant}:prev
- * KEYS[2] = ratelimit:{env}:{tenant}:curr
- * KEYS[3] = ratelimit:{env}:{tenant}:ts   (stores the current-window start timestamp in ms)
+ * KEYS[1] = {ratelimit:<env>:<tenant>}:prev
+ * KEYS[2] = {ratelimit:<env>:<tenant>}:curr
+ * KEYS[3] = {ratelimit:<env>:<tenant>}:ts   (stores the current-window start timestamp in ms)
+ *
+ * The leading `{...}` is a Redis Cluster hash-tag: all 3 keys hash to
+ * the SAME slot so this multi-key Lua call works on a sharded cluster.
+ * In standalone Redis the braces are literal and cost nothing.
  *
  * ARGV[1] = limit
  * ARGV[2] = windowMs
@@ -71,9 +75,11 @@ export class SlidingWindowStrategy implements IRateLimitStrategy {
     key: string,
     config: RateLimitTenantConfig,
   ): Promise<RateLimitResult> {
-    const prevKey = `${key}:prev`;
-    const currKey = `${key}:curr`;
-    const tsKey = `${key}:ts`;
+    // Cluster hash-tag wraps the shared prefix so prev/curr/ts always
+    // co-locate on one shard. See the LUA_SLIDING_WINDOW header.
+    const prevKey = `{${key}}:prev`;
+    const currKey = `{${key}}:curr`;
+    const tsKey = `{${key}}:ts`;
     const now = Date.now();
 
     const result = await this.evalScript(
@@ -121,13 +127,17 @@ export class SlidingWindowStrategy implements IRateLimitStrategy {
         windowMs,
         now,
       );
-    } catch {
-      this.scriptSha = (await this.redis.script(
-        "LOAD",
+    } catch (err) {
+      if (!isNoScriptError(err)) throw err;
+      // Redis Cluster: SCRIPT LOAD only seeds one node, but EVALSHA
+      // is routed by the slot owner — they may differ. Fall back to
+      // EVAL with the source: ioredis routes EVAL by KEYS to the
+      // slot owner (the 3 keys share a `{...}` hash-tag so they
+      // co-locate), that node compiles + caches the script, and the
+      // next EVALSHA hits. See packages/shared/src/circuit-breaker.ts
+      // `evalWithRetry` for the canonical pattern.
+      return this.redis.eval(
         LUA_SLIDING_WINDOW,
-      )) as string;
-      return this.redis.evalsha(
-        this.scriptSha,
         3,
         prevKey,
         currKey,
@@ -138,4 +148,11 @@ export class SlidingWindowStrategy implements IRateLimitStrategy {
       );
     }
   }
+}
+
+function isNoScriptError(err: unknown): boolean {
+  if (!err) return false;
+  const msg =
+    err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  return msg.includes("NOSCRIPT");
 }

@@ -41,3 +41,96 @@ describe("TokenBucketStrategy", () => {
     expect(evalshaMock).toHaveBeenCalled();
   });
 });
+
+/**
+ * Redis Cluster: SCRIPT LOAD only seeds one node, so EVALSHA can fail
+ * with NOSCRIPT on the slot owner. The fallback MUST call EVAL with
+ * the script source so the slot owner compiles + caches the script
+ * (a re-`SCRIPT LOAD` would just seed another random node).
+ */
+describe("TokenBucketStrategy NOSCRIPT fallback", () => {
+  it("falls back to EVAL with the script source on NOSCRIPT", async () => {
+    const evalshaMock = mock(() =>
+      Promise.reject(new Error("NOSCRIPT No matching script. Please use EVAL.")),
+    );
+    const evalMock = mock(() => Promise.resolve([1, 9, 5]));
+    const scriptMock = mock(() => Promise.resolve("sha-tb"));
+
+    const redis = {
+      script: scriptMock,
+      evalsha: evalshaMock,
+      eval: evalMock,
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        { provide: REDIS_CLIENT, useValue: redis },
+        {
+          provide: TokenBucketStrategy,
+          useFactory: (r: Redis) => new TokenBucketStrategy(r),
+          inject: [REDIS_CLIENT],
+        },
+      ],
+    }).compile();
+    const strategy = moduleRef.get(TokenBucketStrategy);
+
+    const result = await strategy.consume("ratelimit:dev:t1", {
+      algorithm: "token_bucket",
+      limit: 0,
+      windowMs: 0,
+      capacity: 10,
+      refillRate: 1,
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(scriptMock).toHaveBeenCalledTimes(1);
+    expect(evalshaMock).toHaveBeenCalledTimes(1);
+    expect(evalMock).toHaveBeenCalledTimes(1);
+
+    const evalArgs = evalMock.mock.calls.at(-1) as unknown[] | undefined;
+    expect(evalArgs).toBeDefined();
+    const [scriptSource, numKeys, redisKey] = evalArgs as [
+      string,
+      number,
+      string,
+    ];
+    expect(typeof scriptSource).toBe("string");
+    expect(scriptSource.length).toBeGreaterThan(0);
+    expect(numKeys).toBe(1);
+    expect(redisKey.startsWith("ratelimit:dev:t1")).toBe(true);
+  });
+
+  it("re-throws non-NOSCRIPT errors without calling eval", async () => {
+    const evalshaMock = mock(() =>
+      Promise.reject(new Error("MOVED 12182 10.0.0.5:6379")),
+    );
+    const evalMock = mock(() => Promise.resolve([1, 9, 5]));
+
+    const redis = {
+      script: mock(() => Promise.resolve("sha-tb")),
+      evalsha: evalshaMock,
+      eval: evalMock,
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        { provide: REDIS_CLIENT, useValue: redis },
+        {
+          provide: TokenBucketStrategy,
+          useFactory: (r: Redis) => new TokenBucketStrategy(r),
+          inject: [REDIS_CLIENT],
+        },
+      ],
+    }).compile();
+    const strategy = moduleRef.get(TokenBucketStrategy);
+
+    await expect(
+      strategy.consume("ratelimit:dev:t1", {
+        algorithm: "token_bucket",
+        limit: 0,
+        windowMs: 0,
+        capacity: 10,
+        refillRate: 1,
+      }),
+    ).rejects.toThrow("MOVED");
+    expect(evalMock).not.toHaveBeenCalled();
+  });
+});

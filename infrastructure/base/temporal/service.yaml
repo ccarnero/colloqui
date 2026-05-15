@@ -18,3 +18,10 @@ spec:
       port: 8233
       targetPort: web
       protocol: TCP
+    # Prometheus metrics endpoint. Scraped by the `temporal-server`
+    # job in the prometheus ConfigMap; the Service is in the same
+    # namespace as Prometheus so a static `temporal:9090` target works.
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP

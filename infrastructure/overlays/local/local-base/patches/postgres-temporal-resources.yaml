@@ -1,0 +1,80 @@
+# Local-dev override for the `postgres-temporal` CNPG cluster.
+# Drops to a single instance (no HA in dev), shrinks storage and
+# resources, and downsizes the memory-bound Postgres parameters
+# proportional to the new memory limit.
+#
+# Stress-test sizing: with Temporal Server at 16 history shards and
+# 2 replicas, plus workflow workers using direct connections, the
+# previous `max_connections: 150` saturated within ~30s of ramp.
+# Bumped to 300 (still half of the production base of 500). Memory
+# parameters scale up proportionally (2Gi limit).
+#
+# `huge_pages: off` because dev nodes (orbstack, kind, local-path)
+# typically don't have HugePages configured at the kernel level.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-temporal
+spec:
+  instances: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  storage:
+    size: 10Gi
+  walStorage:
+    size: 2Gi
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: preferred
+  postgresql:
+    parameters:
+      shared_buffers: "512MB"
+      effective_cache_size: "1536MB"
+      work_mem: "12MB"
+      maintenance_work_mem: "192MB"
+      huge_pages: "off"
+      max_connections: "300"
+      # CNPG validates max_wal_size < walStorage (2Gi here). 1.5GB
+      # leaves headroom for short bursts without rejecting the
+      # cluster manifest.
+      max_wal_size: "1500MB"
+      min_wal_size: "512MB"
+      wal_buffers: "32MB"
+      autovacuum_max_workers: "4"
+      autovacuum_naptime: "20s"
+---
+# Temporal Server Deployment patch for single-node minikube.
+#
+# Base requests 1 CPU per pod × 2 replicas = 2 CPU just for the auto-setup
+# image. `kubectl top` (steady-state under the 2026-05 stress run) shows
+# ~280-380m actual usage per pod, so the 1 CPU request was a 3× overshoot
+# blocking the workflow-* workers from fitting under the 12-CPU node cap.
+#
+# Followup (2026-05-12 orchestrator-throughput plan, Phase 1):
+# requests trimmed 1000m → 500m per pod (saves 1000m of node CPU budget
+# across the 2 replicas). Limits stay at 4 CPU per pod — burst capacity
+# under workflow start-storm is unchanged. If `kubectl top temporal-*`
+# shows avg > 600m during the next stress run, revert this patch and
+# rely on the workflow-worker / redis / adapter trims alone.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal
+spec:
+  template:
+    spec:
+      containers:
+        - name: temporal
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "4"
+              memory: 4Gi

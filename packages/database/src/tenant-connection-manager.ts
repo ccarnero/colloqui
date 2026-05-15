@@ -819,7 +819,7 @@ export class TenantConnectionManager implements OnModuleDestroy {
         this.initialized.delete(schemaKey);
       }
     }
-    // External callers (audit-service, metrics-service, …) record the
+    // External callers record the
     // bare `tenantId` slug via {@link markInitialized} — that key is NOT
     // covered by the prefix scan above. Without this explicit delete the
     // next request for a re-created tenant short-circuits the helper's

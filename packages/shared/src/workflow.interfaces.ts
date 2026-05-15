@@ -1,10 +1,4 @@
 import type { Channel, ChannelProvider } from "./channel.interfaces";
-import type {
-  AgentChatRequest,
-  HttpEndpointRequest,
-  HttpServiceRequest,
-  AgentChatContextEntry,
-} from "./http-execution.interfaces";
 
 // ── Causal chain propagation (D11 / D12) ───────────────────────────
 
@@ -45,7 +39,31 @@ export interface WorkflowExecutionContext {
 
 // ── Activity arguments ─────────────────────────────────────────────
 
-export type EndpointCallArgs = HttpEndpointRequest;
+/**
+ * Arguments for the `endpointCall` activity. Three valid shapes:
+ *
+ *  1. `adapterId` + `endpointId` → fully adapter-resolved (method,
+ *     path, headers, auth, timeouts all come from the adapter).
+ *     `url` is ignored in this mode.
+ *  2. `adapterId` (no `endpointId`) + `url` as a path (e.g. `/resource`)
+ *     → adapter's `baseUrl` is joined with `url`, `method` is honoured.
+ *     Adapter headers/auth/timeouts/retries still apply.
+ *  3. No `adapterId` → `url` MUST be absolute (`http(s)://…`). Fixed
+ *     30 s timeout, no retries.
+ *
+ * Shape (1) and (3) are the production-normalised forms; shape (2)
+ * exists to support UI flows that pre-select an adapter but let the
+ * user type an ad-hoc path without registering an endpoint upfront.
+ */
+export interface EndpointCallArgs {
+  method: string;
+  url: string;
+  adapterId?: string;
+  endpointId?: string;
+  params?: Record<string, unknown>;
+  data?: unknown;
+  headers?: Record<string, string>;
+}
 
 export interface JsFunctionArgs {
   code: string;
@@ -57,7 +75,35 @@ export interface ServiceBusCallArgs {
   headers?: Record<string, string>;
 }
 
-export type ServiceCallArgs = HttpServiceRequest;
+export interface ServiceCallArgs {
+  /** Stable id of the row in `registered_services` (UUID, never the slug). */
+  serviceId: string;
+  /**
+   * Resolved registry slug (`registered_services.name`, e.g. `echo-service`).
+   * Pre-populated by `workflow-service` at start time so the activity can
+   * hit the adapter mirror by `name=slug` in O(1) without a registry
+   * round-trip. The mirror table key is the slug — without it we always
+   * fall back to the registry path (1 extra HTTP hop per activity).
+   *
+   * Optional for backwards-compat: pre-Option-A workflow definitions
+   * persisted to the DB do not carry it. When absent, the activity uses
+   * `serviceId` for the mirror lookup, which deterministically misses
+   * and falls back through the registry — same behaviour as before.
+   */
+  serviceSlug?: string;
+  method: string;
+  path: string;
+  data?: unknown;
+  headers?: Record<string, string>;
+  /**
+   * Optional endpoint id from the internal-adapter mirror. When provided,
+   * the worker resolves the request through {@link AdapterClient} and
+   * uses the endpoint's pre-declared method/path (see wdocs D-service-adapter).
+   * When absent, the worker falls back to concatenating `args.path` onto
+   * the mirror's `baseUrl` (hybrid mode).
+   */
+  endpointId?: string;
+}
 
 export interface ChannelSendArgs {
   accountId: string;
@@ -73,9 +119,22 @@ export interface ChannelSendArgs {
   caption?: string;
 }
 
-export type AgentCallContextEntry = AgentChatContextEntry;
+/** Matches YoizenClaw admin chat request context entries. */
+export interface AgentCallContextEntry {
+  sender: "customer" | "agent";
+  content: string;
+}
 
-export type AgentCallArgs = AgentChatRequest;
+/** YoizenClaw agent chat (`POST /admin/agents/:id/chat`). */
+export interface AgentCallArgs {
+  agentId: string;
+  message: string;
+  conversationId?: string;
+  customerName?: string;
+  userId?: string;
+  channel?: string;
+  context?: AgentCallContextEntry[];
+}
 
 // ── Activity actions ───────────────────────────────────────────────
 

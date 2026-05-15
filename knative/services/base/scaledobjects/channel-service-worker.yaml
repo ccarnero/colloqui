@@ -14,7 +14,7 @@ spec:
   cooldownPeriod: 120
   idleReplicaCount: 0
   minReplicaCount: 1
-  maxReplicaCount: 20
+  maxReplicaCount: 12
   fallback:
     failureThreshold: 3
     replicas: 1
@@ -41,7 +41,7 @@ spec:
   # in-flight message); auto-reply is batched rule evaluation so its
   # threshold is looser. webhook-ingress lag is rolled into channel-egress
   # because every ingress eventually generates an egress (event-processor
-  # → http-adapter → channel-egress).
+  # → connector-runtime → channel-egress).
   triggers:
     - type: prometheus
       name: channel-egress-lag

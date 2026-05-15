@@ -5,6 +5,7 @@ resources:
   - timescaledb-image-catalog.yaml
   - postgres-shared-cluster.yaml
   - postgres-usage-shared-cluster.yaml
+  - postgres-temporal-cluster.yaml
   - poolers.yaml
   - configmap.yaml
   - secret.yaml

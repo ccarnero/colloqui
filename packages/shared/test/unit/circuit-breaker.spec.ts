@@ -509,6 +509,54 @@ describe("DistributedCircuitBreaker", () => {
     const d = await cb.canProceed(key);
     expect(d.action).toBe("allow");
   });
+
+  /**
+   * Redis Cluster routes multi-key Lua calls by hash slot. Both KEYS
+   * passed to LUA_DECIDE / LUA_RECORD_FAILURE / LUA_RECORD_SUCCESS
+   * must hash to the same slot, so we wrap the user key in `{...}`
+   * (cluster hash-tag syntax). Regression: every `evalsha` call MUST
+   * pass two keys that share the same hash-tag substring.
+   */
+  it("places state and probe keys in the same Redis Cluster hash slot", async () => {
+    const observedKeyPairs: Array<[string, string]> = [];
+    const origEvalsha = redisFake.redis.evalsha;
+    redisFake.redis.evalsha = async (
+      sha: string,
+      numKeys: number,
+      ...keysAndArgs: Array<string | number>
+    ): Promise<unknown> => {
+      if (numKeys === 2) {
+        observedKeyPairs.push([
+          String(keysAndArgs[0]),
+          String(keysAndArgs[1]),
+        ]);
+      }
+      return origEvalsha.call(
+        redisFake.redis,
+        sha,
+        numKeys,
+        ...keysAndArgs,
+      );
+    };
+
+    const tenantKeys = ["t1:svc-a", "tenant42:provider-x", "evil_key:foo"];
+    for (const k of tenantKeys) {
+      cb.recordFailure(k);
+      cb.recordSuccess(k);
+      await cb.canProceed(k);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    const HASH_TAG = /\{([^}]+)\}/;
+    expect(observedKeyPairs.length).toBeGreaterThan(0);
+    for (const [stateKey, probeKey] of observedKeyPairs) {
+      const m1 = stateKey.match(HASH_TAG);
+      const m2 = probeKey.match(HASH_TAG);
+      expect(m1).not.toBeNull();
+      expect(m2).not.toBeNull();
+      expect(m1?.[1]).toBe(m2?.[1]);
+    }
+  });
 });
 
 describe("computeBreakerKey", () => {

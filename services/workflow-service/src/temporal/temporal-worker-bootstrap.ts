@@ -1,6 +1,35 @@
-import { NativeConnection, Worker, type WorkerOptions } from "@temporalio/worker";
+import {
+  NativeConnection,
+  Runtime,
+  Worker,
+  type WorkerOptions,
+} from "@temporalio/worker";
 import { PinoLoggerService, shutdownTelemetry } from "@yoizen/observability";
 import { startTemporalWorkerHealthServer } from "./temporal-worker-health";
+
+/**
+ * Install Temporal Core SDK metrics exporter at module load when
+ * `PROMETHEUS_BIND_ADDRESS` is provided. The Temporal TS SDK exposes
+ * `temporal_*` metrics (workflow_task_schedule_to_start_latency,
+ * activity_task_schedule_to_start_latency, sticky_cache_hit/miss,
+ * worker_task_slots_available_total, etc.) which are essential to
+ * diagnose backpressure under load.
+ *
+ * Runtime.install MUST be called before any `NativeConnection.connect`
+ * or `Worker.create` and only once per process — running this at
+ * top-level module load (before `runTemporalWorkerCli` is invoked)
+ * satisfies both constraints. O(1).
+ */
+const prometheusBindAddress = process.env.PROMETHEUS_BIND_ADDRESS;
+if (prometheusBindAddress && prometheusBindAddress.length > 0) {
+  Runtime.install({
+    telemetryOptions: {
+      metrics: {
+        prometheus: { bindAddress: prometheusBindAddress },
+      },
+    },
+  });
+}
 
 /**
  * Options for {@link runTemporalWorkerMain}. Connection is created internally;

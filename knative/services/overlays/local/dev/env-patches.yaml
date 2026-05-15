@@ -18,6 +18,8 @@ spec:
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
             # ----- DNS for split services (Phase 1.5): use *-api ------
             - name: AUDIT_SERVICE_URL
               value: "http://audit-service-api.platform-services-dev.svc.cluster.local"
@@ -61,11 +63,11 @@ spec:
               type: RuntimeDefault
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 75m
+              memory: 192Mi
             limits:
-              cpu: 500m
-              memory: 256Mi
+              cpu: "1"
+              memory: 1Gi
           readinessProbe:
             httpGet:
               path: /readyz
@@ -94,6 +96,8 @@ spec:
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -188,6 +192,18 @@ spec:
               value: "audit-service-worker"
             - name: SERVICE_MODE
               value: "worker"
+          # Trimmed for single-node minikube (2026-05-12 orchestrator-
+          # throughput plan, Phase 1). Base requests 100m/128Mi; actual
+          # steady-state ~30m/pod with 3 replicas. Reclaiming 150m of
+          # node CPU budget (3 × 50m) for the workflow-* workers without
+          # touching limits — burst capacity (500m/256Mi) is identical.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
 ---
 
 apiVersion: serving.knative.dev/v1
@@ -208,6 +224,8 @@ spec:
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -369,6 +387,8 @@ spec:
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -578,11 +598,6 @@ spec:
               value: "temporal.support-services-dev.svc.cluster.local:7233"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
-            # REDIS_HOST/REDIS_PORT are required by the executeAgentCall
-            # activity (DistributedCircuitBreaker + YoizenClawExecutionClient
-            # use Redis as a status cache). Without these, ioredis falls back
-            # to localhost:6379 inside the pod and every agent call fails
-            # with MaxRetriesPerRequestError.
             - name: REDIS_HOST
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
@@ -591,6 +606,23 @@ spec:
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
               value: "workflow-worker"
+          # Trimmed for single-node minikube. Base requests 250m / 512Mi
+          # for stress-grade multi-node packing. On a 12-CPU local node
+          # the cluster sits at ~99% CPU-request saturation when KEDA
+          # tries to spawn the `maxReplicaCount: 20` ceiling, blocking
+          # all new pods with `Insufficient cpu`. `kubectl top` shows
+          # actual avg usage ~150m / 280Mi per replica even under the
+          # stress-test workload, so 100m / 256Mi requests preserve
+          # scheduler accuracy without changing burst capacity (limits
+          # stay at 2 CPU / 1Gi from the base). Same precedent as
+          # api-gateway above.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
 ---
 
 apiVersion: apps/v1
@@ -611,10 +643,28 @@ spec:
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
               value: "connector-runtime"
+          # Trimmed for single-node minikube — same rationale as
+          # workflow-worker above. The HTTP worker is I/O-bound
+          # (outbound `tracedFetch`) so actual per-pod CPU is much
+          # lower than the orchestrator: `kubectl top` shows ~70m /
+          # 110Mi per replica under stress. Base requests 250m / 256Mi
+          # so 75m / 128Mi here lets the scheduler pack the
+          # `maxReplicaCount: 50` ceiling without oversubscribing the
+          # 12-core node. Limits unchanged (2 CPU / 1Gi) so burst
+          # capacity is identical.
+          resources:
+            requests:
+              cpu: 75m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
 ---
 
 apiVersion: serving.knative.dev/v1
@@ -668,6 +718,41 @@ metadata:
   name: connector-admin-api
 spec:
   template:
+    metadata:
+      # Re-scale annotations after the 2026-05 stress sprint where
+      # adapter-service-api became the *actual* upstream ceiling for
+      # connector-runtime:
+      #
+      # - metric: concurrency -> rps. Same lesson as api-gateway: the
+      #   HTTP CRUD path is short (~30 ms p50 to the per-tenant DB),
+      #   so concurrency stays well below any reasonable scale-up
+      #   threshold even at multi-thousand RPS bursts. RPS scales out
+      #   linearly and predictably.
+      # - target: 50 -> 200 RPS per pod. With 2 CPU per pod (see
+      #   resources below) and ~5 ms/req CPU budget, 200 RPS leaves
+      #   ~50% headroom for tail latency.
+      # - min-scale: 0 -> 2. Cold start (image fetch + Nest bootstrap
+      #   + tenant pool warmup) is 8-15 s. During the 2026-05 run KPA
+      #   scaled to 0 between bursts and the next 50 RPS wave found
+      #   the service still cold-starting — every call timed out,
+      #   connector-runtime breaker tripped, cascade. Always-on 2
+      #   replicas absorbs the warmup without delay.
+      # - max-scale: 3 -> 10. The 17 k-workflow drain backlog of the
+      #   2026-05 stress test sustained ~1200 concurrent activities
+      #   against this service; capping at 3 pods left each pod doing
+      #   ~400 concurrent (8x the per-pod target). 10 pods x 200 RPS
+      #   target = 2000 RPS aggregate headroom, matches the stress
+      #   plan's spike phase ceiling.
+      # - scale-down-delay: 60 s. Avoids the readiness-flap thrash we
+      #   observed when KPA scaled down within seconds of a burst,
+      #   then immediately scaled back up only to be marked unhealthy
+      #   because the new pod hadn't warmed its tenant pools.
+      annotations:
+        autoscaling.knative.dev/metric: rps
+        autoscaling.knative.dev/target: "200"
+        autoscaling.knative.dev/min-scale: "2"
+        autoscaling.knative.dev/max-scale: "10"
+        autoscaling.knative.dev/scale-down-delay: "60s"
     spec:
       containers:
         - name: user-container
@@ -695,7 +780,7 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
-              value: "connector-admin-api"
+              value: "connector-admin"
             - name: SERVICE_MODE
               value: "api"
           securityContext:
@@ -705,19 +790,42 @@ spec:
               drop: ["ALL"]
             seccompProfile:
               type: RuntimeDefault
+          # Bumped after the 2026-05 stress test exposed
+          # adapter-service-api as the actual upstream ceiling. Old
+          # 500m / 256Mi cap saturated at ~50 RPS — single Bun event
+          # loop ran 100% on a 500 mCPU slice while resolving per-
+          # tenant Postgres queries, /readyz timed out on the 1 s
+          # default kubelet probe, pods were marked Unhealthy and
+          # cycled. 2 CPU / 1Gi gives the event loop room and lets the
+          # tenant connection pool grow without RSS pressure.
+          #
+          # Followup (2026-05-12 orchestrator-throughput plan, Phase 1):
+          # requests trimmed 500m → 300m because steady-state actual usage
+          # is ~120m/pod (`kubectl top`). At min-scale 2 this reclaims
+          # 400m of node budget for the workflow-* workers without
+          # touching the 2 CPU limit (burst capacity unchanged).
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
+              cpu: 300m
               memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          # Relaxed from kubelet defaults (timeout 1s / failures 3).
+          # /readyz hits the per-tenant `AdapterTenantConnectionManager`
+          # which under load can take >1 s to acquire a pool slot —
+          # the previous 1 s cutoff was flapping pods Unhealthy during
+          # stress even though they were perfectly able to serve real
+          # traffic. 5 s timeout x 5 failures = 25 s of true badness
+          # before kubelet removes a pod from the LB.
           readinessProbe:
             httpGet:
               path: /readyz
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 5
 ---
 
 apiVersion: apps/v1
@@ -772,6 +880,8 @@ spec:
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
             - name: POSTGRES_HOST
               value: "postgres.support-services-dev.svc.cluster.local"
             - name: POSTGRES_DB
@@ -829,6 +939,8 @@ spec:
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
             - name: POSTGRES_HOST
               value: "postgres.support-services-dev.svc.cluster.local"
             - name: POSTGRES_PORT
@@ -839,6 +951,18 @@ spec:
               value: "channel-service-worker"
             - name: SERVICE_MODE
               value: "worker"
+          # Trimmed for single-node minikube (2026-05-12 orchestrator-
+          # throughput plan, Phase 1). Base requests 100m/128Mi; actual
+          # steady-state ~40m/pod with 3 replicas. Reclaiming 150m of
+          # node CPU budget (3 × 50m) for the workflow-* workers without
+          # touching limits — burst capacity (500m/256Mi) is identical.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
 ---
 
 apiVersion: serving.knative.dev/v1

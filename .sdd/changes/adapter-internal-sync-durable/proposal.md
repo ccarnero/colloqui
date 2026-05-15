@@ -105,7 +105,7 @@ Concretely:
 - `@yoizen/database`: `MultiTenantConsumerManager`, `NatsDurableConsumer`, `NatsConsumerRunner`, `ensureTenantIngressStream` (promotion may be required if not yet exported).
 - `@yoizen/observability`: `bootstrapSplitService`, `worker-health-server`, `createNatsConsumerMetrics`, `resolveServiceName`.
 - KEDA installed in the cluster (already present per `infrastructure/base/keda/`).
-- Prometheus scraping JetStream `consumer_num_pending` / `consumer_num_ack_pending` metrics (already in place — used by `event-processor-worker`, `audit-service-worker`, `webhook-service-worker`).
+- Prometheus scraping JetStream `consumer_num_pending` / `consumer_num_ack_pending` metrics (already in place — used by `audit-service-worker`).
 - Existing per-tenant `INGRESS-<TENANT>` streams (already provisioned lazily by `api-gateway` / `channel-service` / `event-processor`).
 - Feature flag `REGISTRY_EMIT_ADAPTER_SYNC` (already exists in `registry-service`).
 - No external/third-party dependency upgrades required.

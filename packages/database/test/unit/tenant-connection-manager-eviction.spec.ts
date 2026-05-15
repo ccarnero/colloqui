@@ -138,7 +138,7 @@ describe("TenantConnectionManager.evictTenant", () => {
 
   /**
    * Regression for the second-run dedicated-tenant 500: external callers
-   * (audit-service, metrics-service) record initialization with the bare
+   * record initialization with the bare
    * tenant slug via {@link markInitialized}. If `evictTenant` only scrubbed
    * prefix-matching schemaKeys, the bare slug would survive the eviction
    * and short-circuit the next request's `ensureTenantSchemaOnce` guard,
