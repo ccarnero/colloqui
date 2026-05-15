@@ -231,7 +231,18 @@ function asString(value: unknown, fallback: string): string {
 }
 
 function asFiniteNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  // Workflow templates resolve to strings (`String(resolvePath(...))`),
+  // so a sent_at posted by the workflow's `endpointCall` step always
+  // arrives as a numeric string. Accept that shape too — the original
+  // local-sink/k6 path that sent JSON numbers still works above.
+  if (typeof value === "string" && value.length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function buildPrometheusExposition(registry: StageRegistry): string {

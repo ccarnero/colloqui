@@ -141,16 +141,41 @@ interface ITelegramUpdate {
   };
 }
 
-function buildTelegramUpdate(): ITelegramUpdate {
-  const now = new Date();
+/**
+ * The text field is the only Telegram payload slot that survives the
+ * channel-service envelope normalization (envelope.factory.ts) and
+ * surfaces in the workflow context as `ctx.request.text`. We piggy-
+ * back the stress correlation envelope on it using a pipe-delimited,
+ * O(1)-parseable prefix:
+ *
+ *     STRESS|<correlation_id>|<sent_at_ms>|<stage>
+ *
+ * The provisioned `Stress Workflow` parses this in a `jsFunction`
+ * step and POSTs `{ correlation_id, sent_at, stage }` to
+ * `STRESS_SINK_URL` via an `endpointCall` step. The sink ties this
+ * back to k6's `sent_at` timestamp to compute end-to-end latency.
+ */
+const STRESS_PREFIX = "STRESS|";
+
+interface IStressEnvelope {
+  readonly correlationId: string;
+  readonly sentAtMs: number;
+  readonly stage: string;
+}
+
+function buildStressText(envelope: IStressEnvelope): string {
+  return `${STRESS_PREFIX}${envelope.correlationId}|${envelope.sentAtMs}|${envelope.stage}`;
+}
+
+function buildTelegramUpdate(envelope: IStressEnvelope): ITelegramUpdate {
   return {
     update_id: randomId(),
     message: {
       message_id: randomId(),
-      date: Math.floor(now.getTime() / 1000),
+      date: Math.floor(envelope.sentAtMs / 1000),
       from: FROM_USER,
       chat: CHAT,
-      text: `hola desde curl  -- ${now.toISOString()}`,
+      text: buildStressText(envelope),
     },
   };
 }
@@ -158,12 +183,14 @@ function buildTelegramUpdate(): ITelegramUpdate {
 export default function webhookIngress(): void {
   const runtime = getRuntimeConfig();
   const stage = exec.scenario.name ?? "unknown";
-  const body = buildTelegramUpdate();
+  const correlationId = generateUuid();
+  const sentAtMs = Date.now();
+  const body = buildTelegramUpdate({ correlationId, sentAtMs, stage });
   const path = `/api/webhooks/telegram/${encodeURIComponent(runtime.tenant)}`;
   const url = resolveRequestUrl(path);
 
   const headers = buildGatewayHeaders({
-    "X-Correlation-Id": generateUuid(),
+    "X-Correlation-Id": correlationId,
     "X-Telegram-Bot-Api-Secret-Token": TELEGRAM_SECRET,
   });
 

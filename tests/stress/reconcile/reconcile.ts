@@ -257,8 +257,32 @@ function buildMarkdown(
   rows: ReadonlyArray<StageRow>
 ): string {
   const lines: string[] = [];
-  lines.push(`# Phase 1 reconciliation — \`${scenario}\``);
+  lines.push(`# Reconciliation — \`${scenario}\``);
   lines.push("");
+  if (rows.length === 0) {
+    lines.push(
+      "_No stages observed. The sink JSONL is empty AND the k6 NDJSON did not"
+    );
+    lines.push(
+      "report any `phase1_*_sent` counter. Pass both `--sink` and `--k6`, or"
+    );
+    lines.push(
+      "check that the scenario actually exercises a counter named like"
+    );
+    lines.push("`phase1_<scenario>_sent`._");
+    lines.push("");
+    return `${lines.join("\n")}\n`;
+  }
+  const sinkActive = rows.some((row) => row.delivered > 0);
+  if (!sinkActive) {
+    lines.push("> **Note:** the sink observed 0 deliveries during this run.");
+    lines.push(
+      "> The `Sent` column comes from k6 counters; latency / loss columns"
+    );
+    lines.push("> are derived from no e2e samples and must be read as `n/a`.");
+    lines.push("> See README → 'Reading the results' for the current e2e gap.");
+    lines.push("");
+  }
   lines.push(
     "| Stage | Sent | Delivered | Lost | Loss % | Duplicates | p50 ms | p95 ms | p99 ms | min ms | max ms |"
   );
@@ -275,13 +299,18 @@ function buildMarkdown(
   lines.push("");
   for (const row of rows) {
     const violations: string[] = [];
-    if (row.lossRate > 0) {
+    if (sinkActive && row.lossRate > 0) {
       violations.push("loss > 0");
     }
     if (row.duplicates > 0) {
       violations.push("duplicates > 0");
     }
-    const verdict = violations.length === 0 ? "OK" : violations.join(", ");
+    const verdict =
+      violations.length === 0
+        ? sinkActive
+          ? "OK"
+          : "n/a (no sink data)"
+        : violations.join(", ");
     lines.push(`- **${row.stage}**: ${verdict}`);
   }
   return `${lines.join("\n")}\n`;
