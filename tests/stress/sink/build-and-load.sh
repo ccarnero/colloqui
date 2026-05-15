@@ -17,8 +17,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PHASE1_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ROOT_DIR="$(cd "$PHASE1_DIR/../../.." && pwd)"
+STRESS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$STRESS_DIR/../.." && pwd)"
 
 IMAGE="${STRESS_SINK_IMAGE:-dev.local/stress-sink:dev}"
 MODE="${STRESS_SINK_PUSH_MODE:-}"
@@ -52,7 +52,7 @@ cd "$ROOT_DIR"
 
 echo "[sink] building $IMAGE (context=$ROOT_DIR)"
 docker build \
-  -f tests/stress/phase1/sink/Dockerfile \
+  -f tests/stress/sink/Dockerfile \
   -t "$IMAGE" \
   .
 

@@ -2,8 +2,8 @@ FROM oven/bun:1.1-alpine AS runtime
 
 WORKDIR /app
 
-COPY tests/stress/phase1/lib/ /app/lib/
-COPY tests/stress/phase1/sink/ /app/sink/
+COPY tests/stress/lib/ /app/lib/
+COPY tests/stress/sink/ /app/sink/
 
 ENV STRESS_SINK_PORT=8080
 ENV STRESS_SINK_OUTPUT=/var/log/stress/sink.jsonl

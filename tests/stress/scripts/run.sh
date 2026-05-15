@@ -25,7 +25,10 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
 SCENARIO=""
-WITH_SAMPLER="true"
+# Default off: the legacy ../scale/sampler.ts was removed in the
+# stress refactor. Pass --with-sampler true once a replacement lands
+# under tests/stress/scale/sampler.ts (or override SAMPLER_SCRIPT).
+WITH_SAMPLER="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -106,10 +109,14 @@ fi
 if [[ "$WITH_SAMPLER" == "true" ]]; then
   SAMPLER_NAMESPACE="${STRESS_NAMESPACE:-${SMOKE_TEST_NAMESPACE:-platform-services-dev}}"
   SAMPLER_INTERVAL="${STRESS_SAMPLER_INTERVAL_MS:-2000}"
+  SAMPLER_SCRIPT="${SAMPLER_SCRIPT:-../scale/sampler.ts}"
   if ! command -v bun >/dev/null 2>&1; then
-    echo "Sampler requested but bun is not installed; skipping." >&2
+    echo "[run] sampler requested but bun is not installed; skipping." >&2
+  elif [[ ! -f "$SAMPLER_SCRIPT" ]]; then
+    echo "[run] sampler requested but '$SAMPLER_SCRIPT' not found; skipping." >&2
+    echo "[run] (set SAMPLER_SCRIPT=<path> or pass --with-sampler false)" >&2
   else
-    bun run ../scale/sampler.ts \
+    bun run "$SAMPLER_SCRIPT" \
       --output "$SAMPLER_OUT" \
       --namespace "$SAMPLER_NAMESPACE" \
       --interval-ms "$SAMPLER_INTERVAL" >>"reports/${SCENARIO}-${TIMESTAMP}.sampler.log" 2>&1 &
@@ -156,5 +163,7 @@ fi
 echo "[run] done."
 echo "k6.ndjson=$K6_OUT_NDJSON"
 echo "k6.summary=$K6_OUT_SUMMARY"
-echo "sampler=$SAMPLER_OUT"
+if [[ -f "$SAMPLER_OUT" ]]; then
+  echo "sampler=$SAMPLER_OUT"
+fi
 echo "sink.jsonl=$SINK_JSONL"

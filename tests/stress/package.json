@@ -1,18 +1,17 @@
 {
-  "name": "stress-tests-phase1",
-  "version": "1.0.0",
+  "name": "stress-tests",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Phase 1 black-box end-to-end stress tests (k6 + Bun sink + reconciler).",
+  "description": "Black-box end-to-end stress tests (k6 + Bun sink + reconciler).",
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "lint": "npx @biomejs/biome check lib scenarios sink reconcile",
     "lint:fix": "npx @biomejs/biome check --write lib scenarios sink reconcile",
     "sink:dev": "bun run sink/server.ts",
+    "sink:build": "./sink/build-and-load.sh",
     "reconcile": "bun run reconcile/reconcile.ts",
-    "scenario:callback": "./scripts/run.sh --scenario events-callback",
-    "scenario:publish": "./scripts/run.sh --scenario events-publish",
-    "scenario:roundtrip": "./scripts/run.sh --scenario events-roundtrip",
+    "provision": "./scripts/provision.sh",
     "scenario:webhook": "./scripts/run.sh --scenario webhook-ingress"
   },
   "devDependencies": {
