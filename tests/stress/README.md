@@ -1,10 +1,16 @@
-# End-to-end stress tests (k6 + Bun sink + reconciler)
+# Stress tests (k6 + Bun sink + reconciler)
 
 Black-box load suite for the Yoizen platform. Load is injected at the
-`api-gateway` ingress (channel/webhook entry path) and observed at a
-`stress-sink` Knative service that captures every delivery. End-to-end
-latency is reconstructed from the `sent_at` timestamp embedded in every
-payload and the `delivered_at` recorded by the sink.
+`api-gateway` ingress (channel/webhook entry path). Two observation
+paths are recorded per run:
+
+1. **Gateway ack** — k6 records ingress latency + status per request.
+2. **e2e via stress-sink** — k6 embeds a correlation envelope
+   (`STRESS|<cid>|<sent_at>|<stage>`) in `message.text`; the
+   provisioned `Stress Workflow` parses it in a `jsFunction` step and
+   POSTs `{ correlation_id, sent_at, stage }` to the in-cluster
+   `stress-sink` Knative service via `endpointCall`. The reconciler
+   joins both sides to compute end-to-end latency per stage.
 
 > **Status:** post-refactor (`stress-refactor` branch). The previous
 > Artillery suite, the `phase1/` subfolder and the `scale/` sampler are
@@ -57,7 +63,9 @@ tests/stress/
 
 The `webhook-ingress` scenario assumes a tenant, a registry service, a
 Telegram channel account and a workflow already exist. The provisioner
-is idempotent (creates if missing, reuses if present):
+is idempotent — creates if missing, reuses if present, **and updates
+in place** when the existing workflow lacks the `notifyStressSink`
+step:
 
 ```bash
 ADMIN_EMAIL=admin@yoizen.test \
@@ -72,8 +80,24 @@ Resources it creates / reuses (defaults — overridable via env):
 | Tenant | `acme` | `TENANT_NAME` |
 | Registry service | `echo-service` (`ealen/echo-server:latest`, port 3000) | — |
 | Channel account | `tgbot` (Telegram) | — |
-| Workflow | `Stress Workflow` (parallel branch: `jsFunction` + `serviceCall`) | — |
+| Workflow | `Stress Workflow` (`branch` → `extractStressMeta` → `notifyStressSink`) | `STRESS_SINK_URL`, `WORKFLOW_FORCE_REPROVISION` |
 | Gateway URL | auto-discovered via Kourier LB or `minikube ip` | `API_GATEWAY_URL`, `MINIKUBE_PROFILE`, `INGRESS_NS`, `INGRESS_SVC` |
+
+The workflow definition wires the sink notification automatically:
+
+1. `Parallel Branch` — original parallel `jsFunction` + `serviceCall`
+   (kept as a representative load shape).
+2. `extractStressMeta` (`jsFunction`) — parses the
+   `STRESS|<cid>|<sent_at>|<stage>` prefix the k6 scenario embeds in
+   `message.text`. Returns safe defaults for non-stress messages.
+3. `notifyStressSink` (`endpointCall`) — POSTs
+   `{ correlation_id, sent_at, stage }` to `STRESS_SINK_URL` (default
+   in-cluster Knative DNS). Templates resolve from
+   `extractStressMeta`'s result.
+
+Set `WORKFLOW_FORCE_REPROVISION=true` to re-`PUT` the workflow even
+when the sink-notify step is already present (use after editing the
+parse code or the action shape).
 
 The script prints the four resolved IDs at the end:
 
@@ -85,6 +109,12 @@ WORKFLOW_ID=...
 ```
 
 ## Step 2 — Deploy the in-cluster sink
+
+The `Stress Workflow` provisioned in Step 1 expects the sink to be
+reachable at `STRESS_SINK_URL` (default
+`http://stress-sink.platform-services-dev.svc.cluster.local/sink`). If
+the sink is not deployed, the workflow's `endpointCall` step will
+retry+fail and the reconciler will only have ack data from k6.
 
 ```bash
 # Build the sink image and load it into Minikube (auto-detects the active
@@ -132,7 +162,8 @@ export STRESS_SINK_URL=http://host.docker.internal:8090/sink
 ./scripts/run.sh --scenario webhook-ingress
 ```
 
-In-cluster sink (recommended once the sink Knative service is Ready):
+In-cluster sink (the runner now pulls the JSONL automatically when
+`STRESS_SINK_URL` points at a `*.svc.cluster.local` host):
 
 ```bash
 cd tests/stress
@@ -142,14 +173,28 @@ export ADMIN_PASSWORD=...
 export STRESS_SINK_URL=http://stress-sink.platform-services-dev.svc.cluster.local/sink
 
 ./scripts/run.sh --scenario webhook-ingress
+```
 
-# After the run, pull the deliveries out of the pod for the reconciler.
-./sink/fetch-jsonl.sh --out reports/run-1.sink.jsonl
+After the k6 run completes, `run.sh` will:
+
+1. Call `./sink/fetch-jsonl.sh --out reports/<scenario>-<ts>.sink.jsonl`
+   to copy the JSONL out of the pod (skip with `STRESS_FETCH_SINK=false`).
+2. Invoke `reconcile/reconcile.ts` with **both** `--sink` and `--k6`,
+   so per-stage `Sent` counts come from k6 even if the sink is empty.
+3. Print a clear warning if the sink JSONL ended up with 0 lines.
+
+To re-run the reconciler manually against an existing run:
+
+```bash
 bun run reconcile/reconcile.ts \
   --scenario webhook-ingress \
-  --sink reports/run-1.sink.jsonl \
+  --sink reports/<scenario>-<ts>.sink.jsonl \
+  --k6   reports/<scenario>-<ts>.k6.json \
   --output reports
 ```
+
+> **Always pass `--k6`** — without it, an empty sink produces an empty
+> table and the `Sent` column is lost.
 
 ## Stages
 
@@ -209,10 +254,18 @@ POST /api/webhooks/telegram/<tenant>
 Provider-style entry path: ships a Telegram-shaped `Update` body that
 mirrors what the real bot platform pushes. The gateway hands the body
 off to JetStream after a constant-time guard on
-`X-Telegram-Bot-Api-Secret-Token`. Measures gateway ingest ack latency
-(`http_req_duration{phase:webhook-ingress}`) plus end-to-end latency
-once the workflow processed the message and posted to the sink via
-`callbackUrl`.
+`X-Telegram-Bot-Api-Secret-Token`. The body's `message.text` field
+carries the stress correlation envelope
+(`STRESS|<cid>|<sent_at>|<stage>`) so the workflow can echo it to the
+sink for end-to-end measurement — see
+[Reading the results](#reading-the-results).
+
+Metrics:
+
+- `phase1_webhook_sent{stage=...}` — counter, k6-side.
+- `phase1_webhook_ack_ms{stage=...}` — k6 trend, gateway ack only.
+- `http_req_duration{phase:webhook-ingress}` — same as above, k6
+  built-in.
 
 Thresholds:
 
@@ -230,21 +283,125 @@ export TELEGRAM_WEBHOOK_SECRET="<the-secret-from-the-channel-account>"
 After every run, `reports/` contains:
 
 - `<scenario>-<ts>.k6.json` — k6 streaming NDJSON (every metric sample).
-- `<scenario>-<ts>.k6.summary.json` — k6 aggregated summary.
-- `<scenario>-<ts>.sink.jsonl` — every delivery observed by the sink.
+- `<scenario>-<ts>.k6.summary.json` — k6 aggregated summary (the
+  authoritative source for ack latency / error rate today).
+- `<scenario>-<ts>.sink.jsonl` — every delivery observed by the sink
+  (auto-pulled from the in-cluster pod when `STRESS_SINK_URL` points at
+  `*.svc.cluster.local`).
 - `<scenario>-<ts>.sink.log` — local sink stdout (only when
   `STRESS_SINK_LOCAL=true`).
 - `<scenario>-<ts>.reconcile.md` — per-stage table:
   `Sent / Delivered / Lost / Loss % / Duplicates / p50 / p95 / p99 / min / max`.
+  When the sink has no rows the report still lists per-stage `Sent`
+  counts from k6 and prints an explicit "no sink data" notice.
 - `<scenario>-<ts>.reconcile.csv` — same table for spreadsheet ingestion.
+
+## Reading the results
+
+The suite produces two complementary views per run.
+
+### Gateway ack (always meaningful)
+
+The k6 summary file is the source of truth for ingestion behaviour:
+
+```bash
+jq '{
+  sent:   .metrics.phase1_webhook_sent.count,
+  errs:   .metrics["http_req_failed{phase:webhook-ingress}"].fails,
+  errPct: .metrics["http_req_failed{phase:webhook-ingress}"].value,
+  ack: {
+    p50: .metrics.phase1_webhook_ack_ms.med,
+    p95: .metrics.phase1_webhook_ack_ms["p(95)"],
+    p99: .metrics.phase1_webhook_ack_ms["p(99)"],
+    max: .metrics.phase1_webhook_ack_ms.max,
+  },
+  thresholds: .metrics["http_req_duration{phase:webhook-ingress}"].thresholds,
+}' reports/<scenario>-<ts>.k6.summary.json
+```
+
+Sample shape:
+
+```json
+{
+  "sent": 487,
+  "errs": 0,
+  "errPct": 0,
+  "ack": { "p50": 5.36, "p95": 12.14, "p99": 70.57, "max": 138.29 },
+  "thresholds": { "p(95)<150": false }
+}
+```
+
+### End-to-end (sink-derived)
+
+The k6 webhook scenario embeds a correlation envelope in
+`message.text`:
+
+```text
+STRESS|<correlation_id>|<sent_at_ms>|<stage>
+```
+
+`channel-service`'s envelope normalization preserves `text`
+verbatim (`packages/.../channel-service/.../envelope.factory.ts`), so
+the field shows up as `ctx.request.text` inside the workflow.
+
+The provisioned `Stress Workflow` (Step 1) handles the rest:
+
+1. `Parallel Branch` — original load shape (`jsFunction` +
+   `serviceCall`).
+2. `extractStressMeta` (`jsFunction`) — parses the prefix and returns
+   `{ correlation_id, sent_at, stage }`.
+3. `notifyStressSink` (`endpointCall`) — POSTs the parsed envelope to
+   `STRESS_SINK_URL` (`http://stress-sink.../sink` by default). The
+   sink records `{ correlation_id, sent_at, delivered_at,
+   latency_ms = delivered_at - sent_at }` and stores it as JSONL.
+
+The reconciler then joins:
+
+- **`Sent` per stage** ← `phase1_webhook_sent` counter from k6.
+- **`Delivered` per stage** ← unique `correlation_id`s in the sink.
+- **`Lost` per stage** ← `Sent - Delivered`.
+- **`p50 / p95 / p99 / min / max`** ← per-stage latency histogram from
+  the sink.
+
+### Troubleshooting an empty `*.sink.jsonl`
+
+If a fresh run produces `Delivered = 0` everywhere, check (in order):
+
+```bash
+# 1. The provisioner ran with the new shape:
+./tests/stress/scripts/provision.sh   # idempotent; safe to re-run
+#    Look for "Workflow 'Stress Workflow' updated" or
+#    "already up to date".
+
+# 2. The sink got POSTs from the workflow:
+kubectl -n platform-services-dev logs \
+  -l serving.knative.dev/service=stress-sink \
+  --tail=30 --container=stress-sink
+#    Lines starting with `{"correlation_id"` mean it's working.
+
+# 3. The workflow's endpointCall is not failing:
+kubectl -n platform-services-dev logs \
+  -l serving.knative.dev/service=connector-runtime \
+  --tail=200 | grep -E '(notifyStressSink|stress-sink)'
+
+# 4. STRESS_SINK_URL is reachable from connector-runtime:
+kubectl -n platform-services-dev exec deploy/connector-runtime -- \
+  curl -sf http://stress-sink.platform-services-dev.svc.cluster.local/healthz
+```
+
+If the workflow was created **before** this change, force a re-PUT:
+
+```bash
+WORKFLOW_FORCE_REPROVISION=true ./tests/stress/scripts/provision.sh
+```
 
 ## Stop rules
 
 The reconcile report flags any stage where:
 
 - error rate > 1% (from k6 thresholds; cross-check `http_req_failed`)
-- e2e p95 > the agreed SLA (configure your own; the k6 threshold is
-  informational)
+- ack p95 > the agreed SLA (k6 `http_req_duration` p95 < 150 ms today)
+- e2e p95 > the agreed SLA (configurable per environment)
 - message loss > 0
 - duplicates > 0
 - any pod restart (read Grafana / `kubectl get pods` — out of band)

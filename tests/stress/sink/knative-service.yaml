@@ -23,10 +23,14 @@ spec:
       timeoutSeconds: 30
       containers:
         - name: stress-sink
-          # Built locally and loaded with `minikube image load`. Override with
-          # STRESS_SINK_IMAGE in build-and-load.sh if you push to a registry.
+          # Built locally and loaded with `minikube image load` (or
+          # `minikube image load --profile=...`). Pull policy MUST be
+          # `Never` — `dev.local` is not a real registry, so any pull
+          # attempt fails DNS resolution. Override the image (and use
+          # `IfNotPresent`/`Always`) via STRESS_SINK_IMAGE in
+          # build-and-load.sh when pushing to a real registry.
           image: dev.local/stress-sink:dev
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never
           ports:
             - containerPort: 8080
               name: http1

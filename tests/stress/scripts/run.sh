@@ -146,18 +146,52 @@ if [[ -n "$SINK_PID" ]]; then
   SINK_PID=""
 fi
 
-if [[ -f "$SINK_JSONL" ]]; then
-  if ! command -v bun >/dev/null 2>&1; then
-    echo "[run] bun not installed — skipping reconcile." >&2
+# When the sink lives in-cluster (no local sink, sink URL points at a
+# Kubernetes service), pull the JSONL out of the pod automatically so
+# the reconciler has something to work against. Opt-out via
+# STRESS_FETCH_SINK=false; force on with STRESS_FETCH_SINK=true.
+SHOULD_FETCH_SINK="${STRESS_FETCH_SINK:-auto}"
+if [[ "$SHOULD_FETCH_SINK" == "auto" ]]; then
+  if [[ -z "$SINK_PID" && "${STRESS_SINK_URL:-}" == *".svc.cluster.local"* ]]; then
+    SHOULD_FETCH_SINK="true"
   else
-    bun run reconcile/reconcile.ts \
-      --scenario "$SCENARIO" \
-      --sink "$SINK_JSONL" \
-      --k6 "$K6_OUT_NDJSON" \
-      --output "reports"
+    SHOULD_FETCH_SINK="false"
   fi
+fi
+if [[ "$SHOULD_FETCH_SINK" == "true" && ! -f "$SINK_JSONL" ]]; then
+  if [[ -x "./sink/fetch-jsonl.sh" ]]; then
+    echo "[run] fetching sink JSONL from in-cluster pod -> $SINK_JSONL"
+    if ! ./sink/fetch-jsonl.sh --out "$SINK_JSONL"; then
+      echo "[run] fetch-jsonl.sh failed; reconcile will rely on k6 only." >&2
+      : > "$SINK_JSONL"
+    fi
+  else
+    echo "[run] sink/fetch-jsonl.sh not executable; skipping fetch." >&2
+  fi
+fi
+
+# Always create an empty sink file when missing, so the reconciler can
+# at least produce per-stage rows from k6 (sent counts, ack latency).
+if [[ ! -f "$SINK_JSONL" ]]; then
+  echo "[run] no sink JSONL on disk; running reconcile against k6 only." >&2
+  : > "$SINK_JSONL"
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "[run] bun not installed — skipping reconcile." >&2
 else
-  echo "[run] sink JSONL not found at $SINK_JSONL — reconcile skipped." >&2
+  bun run reconcile/reconcile.ts \
+    --scenario "$SCENARIO" \
+    --sink "$SINK_JSONL" \
+    --k6 "$K6_OUT_NDJSON" \
+    --output "reports"
+
+  SINK_LINES="$(wc -l <"$SINK_JSONL" | tr -d ' ')"
+  if [[ "${SINK_LINES:-0}" -eq 0 ]]; then
+    echo "[run] WARNING: sink JSONL is empty (0 deliveries observed)." >&2
+    echo "[run] The reconcile report shows sent counts from k6 but no" >&2
+    echo "[run] e2e latency. See README 'Reading the results'." >&2
+  fi
 fi
 
 echo "[run] done."

@@ -229,6 +229,87 @@ ships a helper:
 ./scripts/purge-circuit-breakers.sh
 ```
 
+## Troubleshooting
+
+### `reconcile.md` is empty / has no rows
+
+Most common cause: **the reconciler ran without `--k6`**. Re-run with
+both flags — the report is generated fresh per invocation:
+
+```bash
+bun run reconcile/reconcile.ts \
+  --scenario webhook-ingress \
+  --sink   reports/<scenario>-<ts>.sink.jsonl \
+  --k6     reports/<scenario>-<ts>.k6.json \
+  --output reports
+```
+
+`run.sh` always passes both flags automatically.
+
+### `*.sink.jsonl` is 0 bytes after a run
+
+The scenario embeds the correlation envelope in `message.text` and the
+provisioned `Stress Workflow` POSTs it to the sink. If no deliveries
+land, walk these in order:
+
+1. **Workflow shape.** Confirm the workflow has the new
+   `notifyStressSink` step (the provisioner auto-updates pre-existing
+   workflows that lack it):
+   ```bash
+   ./tests/stress/scripts/provision.sh
+   # If the script reports "already up to date" but you still see no
+   # deliveries, force the in-place update:
+   WORKFLOW_FORCE_REPROVISION=true ./tests/stress/scripts/provision.sh
+   ```
+2. **Sink ingress.** Check the sink pod actually got POSTs:
+   ```bash
+   kubectl -n platform-services-dev logs -l serving.knative.dev/service=stress-sink \
+     --tail=30 --container=stress-sink
+   ```
+   Lines starting with `{"correlation_id"` mean it's working. Only the
+   `[stress-sink] listening on ...` startup line means zero POSTs
+   reached it — keep walking the list below.
+3. **Workflow → sink call.** Inspect connector-runtime for the
+   `notifyStressSink` activity:
+   ```bash
+   kubectl -n platform-services-dev logs \
+     -l serving.knative.dev/service=connector-runtime \
+     --tail=200 | grep -E '(notifyStressSink|stress-sink)'
+   ```
+   Look for circuit-breaker `DENY`, fetch errors, or 4xx/5xx replies.
+4. **Sink reachability from connector-runtime.**
+   ```bash
+   kubectl -n platform-services-dev exec deploy/connector-runtime -- \
+     curl -sf http://stress-sink.platform-services-dev.svc.cluster.local/healthz
+   ```
+   Anything but `ok` means a Knative / Kourier / DNS issue.
+5. **`fetch-jsonl.sh` mode.** If sink logs show deliveries but the
+   pulled JSONL is empty, the Knative manifest may have
+   `STRESS_SINK_STDOUT=false` — either flip it back on, or pull from
+   the emptyDir directly:
+   ```bash
+   ./tests/stress/sink/fetch-jsonl.sh --mode cp \
+     --out tests/stress/reports/run-N.sink.jsonl
+   ```
+
+### Sink rejects the POSTs with `400 missing sent_at`
+
+You're on an old sink build. The current version coerces
+numeric-string `sent_at` (because workflow templates resolve to
+strings). Rebuild + reload:
+
+```bash
+./tests/stress/sink/build-and-load.sh
+kubectl -n platform-services-dev delete pod \
+  -l serving.knative.dev/service=stress-sink
+```
+
+### `[run] sink JSONL not found … reconcile skipped`
+
+You're on an old `run.sh`. The current version always materialises the
+file (empty if needed) and runs the reconciler with `--k6`. Pull the
+latest `tests/stress/scripts/run.sh`.
+
 ## Known caveats
 
 - The 32 KB payload pool stays just under NATS `max_payload: 1MB` —

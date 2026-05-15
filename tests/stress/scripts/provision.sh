@@ -52,6 +52,12 @@ readonly CHANNEL_APP_SECRET="anothersecret"
 readonly WORKFLOW_NAME="Stress Workflow"
 readonly WORKFLOW_APPLICATION="default"
 
+# stress-sink endpoint baked into the workflow's `endpointCall` step.
+# Default = in-cluster Knative DNS. Override via env when the sink is
+# exposed differently (e.g. through Kourier in CI).
+readonly STRESS_SINK_URL_DEFAULT="http://stress-sink.platform-services-dev.svc.cluster.local/sink"
+readonly STRESS_SINK_URL="${STRESS_SINK_URL:-$STRESS_SINK_URL_DEFAULT}"
+
 readonly RED=$'\033[0;31m'
 readonly GREEN=$'\033[0;32m'
 readonly YELLOW=$'\033[1;33m'
@@ -376,6 +382,14 @@ ensure_channel() {
 # Step 4 — workflow
 # ---------------------------------------------------------------------------
 
+# Inline JS that parses the `STRESS|<cid>|<sentAt>|<stage>` prefix that
+# the k6 webhook scenario embeds in `message.text`. Returns three
+# fields the next `endpointCall` step references via templates. Falls
+# back to safe defaults so non-stress traffic doesn't crash the
+# workflow (it just produces a sink delivery with empty correlation,
+# which the reconciler dedupes/ignores).
+readonly STRESS_PARSE_JS='async (ctx) => { const t = (ctx && ctx.request && ctx.request.text) || ""; if (!t.startsWith("STRESS|")) return { correlation_id: "", sent_at: "0", stage: "" }; const p = t.split("|"); return { correlation_id: p[1] || "", sent_at: p[2] || "0", stage: p[3] || "" }; }'
+
 build_workflow_payload() {
   jq -nc \
     --arg name "$WORKFLOW_NAME" \
@@ -383,6 +397,8 @@ build_workflow_payload() {
     --arg tenantId "$TENANT_NAME" \
     --arg serviceId "$SERVICE_ID" \
     --arg channelId "$CHANNEL_ID" \
+    --arg sinkUrl "$STRESS_SINK_URL" \
+    --arg parseJs "$STRESS_PARSE_JS" \
     '{
       name: $name,
       application: $application,
@@ -404,6 +420,24 @@ build_workflow_payload() {
               args: { path: "/echo-1", method: "GET", serviceId: $serviceId }
             }
           ]
+        },
+        {
+          name: "extractStressMeta",
+          activity: "jsFunction",
+          args: { code: $parseJs }
+        },
+        {
+          name: "notifyStressSink",
+          activity: "endpointCall",
+          args: {
+            method: "POST",
+            url: $sinkUrl,
+            data: {
+              correlation_id: "{{results.extractStressMeta.correlation_id}}",
+              sent_at: "{{results.extractStressMeta.sent_at}}",
+              stage: "{{results.extractStressMeta.stage}}"
+            }
+          }
         }
       ],
       trigger: {
@@ -417,6 +451,17 @@ build_workflow_payload() {
         }
       }
     }'
+}
+
+# True when the existing workflow JSON exposes the sink-notify step.
+# Lets us auto-detect old-shape workflows and re-PUT them in place.
+workflow_has_sink_notify() {
+  local existing_json="$1"
+  jq -e '
+    .actions
+    | map(select(.name == "notifyStressSink"))
+    | length > 0
+  ' >/dev/null 2>&1 <<<"$existing_json"
 }
 
 ensure_workflow() {
@@ -436,25 +481,43 @@ ensure_workflow() {
      | map(select(.name == $name)) | .[0] // empty' \
     <"$RESP_BODY" 2>/dev/null || true)"
 
-  if [[ -n "$existing_json" && "$existing_json" != "null" ]]; then
-    WORKFLOW_ID="$(printf '%s' "$existing_json" | jq -er '.id')"
-    log "Workflow '${WORKFLOW_NAME}' already exists (id=${WORKFLOW_ID}). Existing definition:"
-    printf '%s\n' "$existing_json" | jq .
-    return
-  fi
-
-  note "Workflow '${WORKFLOW_NAME}' not found; creating..."
   local body
   body="$(build_workflow_payload)"
 
-  code="$(request_json POST "/api/workflows" "$body")"
-  if [[ "$code" != "201" && "$code" != "200" ]]; then
-    dump_resp "$code"
-    err "Failed to create workflow '${WORKFLOW_NAME}'."
-    exit 1
+  if [[ -z "$existing_json" || "$existing_json" == "null" ]]; then
+    note "Workflow '${WORKFLOW_NAME}' not found; creating..."
+    code="$(request_json POST "/api/workflows" "$body")"
+    if [[ "$code" != "201" && "$code" != "200" ]]; then
+      dump_resp "$code"
+      err "Failed to create workflow '${WORKFLOW_NAME}'."
+      exit 1
+    fi
+    WORKFLOW_ID="$(extract_id)"
+    log "Workflow '${WORKFLOW_NAME}' created (id=${WORKFLOW_ID})."
+    return
   fi
-  WORKFLOW_ID="$(extract_id)"
-  log "Workflow '${WORKFLOW_NAME}' created (id=${WORKFLOW_ID})."
+
+  WORKFLOW_ID="$(printf '%s' "$existing_json" | jq -er '.id')"
+
+  local force_reprovision="${WORKFLOW_FORCE_REPROVISION:-false}"
+  if [[ "$force_reprovision" == "true" ]] \
+     || ! workflow_has_sink_notify "$existing_json"; then
+    if [[ "$force_reprovision" == "true" ]]; then
+      note "WORKFLOW_FORCE_REPROVISION=true; updating workflow in place."
+    else
+      note "Existing workflow lacks 'notifyStressSink'; updating in place."
+    fi
+    code="$(request_json PUT "/api/workflows/${WORKFLOW_ID}" "$body")"
+    if [[ "$code" != "200" && "$code" != "204" ]]; then
+      dump_resp "$code"
+      err "Failed to update workflow '${WORKFLOW_NAME}' (id=${WORKFLOW_ID})."
+      exit 1
+    fi
+    log "Workflow '${WORKFLOW_NAME}' updated (id=${WORKFLOW_ID})."
+    return
+  fi
+
+  log "Workflow '${WORKFLOW_NAME}' already up to date (id=${WORKFLOW_ID})."
 }
 
 # ---------------------------------------------------------------------------
