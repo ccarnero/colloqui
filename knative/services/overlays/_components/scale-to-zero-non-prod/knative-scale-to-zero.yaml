@@ -1,59 +1,4 @@
-# Strategic-merge patches shared by every non-prod overlay
-# (local/{dev,qa,staging} + cloud/{dev,qa,staging}).
-#
-# Forces `min-scale: 0` on every Knative Service that does NOT need
-# always-on capacity. `api-gateway` is intentionally excluded — it is
-# the entry point used by devs + automation; cold-starting it on
-# every poke kills DX.
-#
-# `initial-scale: 0` is intentionally NOT set: vanilla Knative gates
-# zero-initial-scale behind the cluster-wide flag
-# `allow-zero-initial-scale=true` (config-autoscaler ConfigMap),
-# which our minikube/orbstack/cloud clusters do not enable. New
-# revisions therefore boot at 1 replica and KPA drains them after
-# `scale-down-delay`. The savings of `initial-scale=0` are marginal
-# (one pod for ~30-60s per deploy) and not worth fighting the
-# admission webhook for.
-#
-# Phase 1.5 (split api ↔ worker):
-#   • Every `*-api` Knative Service now scales to zero — the worker
-#     pair handles NATS durable consumers / RPC subjects, so dropping
-#     HTTP replicas to zero no longer blocks message processing.
-#   • Every `*-worker` is a plain `apps/v1.Deployment` driven by KEDA
-#     (see `keda-scale-to-zero.yaml`); not patched here.
-#
-# Services NOT included here (kept at `min-scale: 1` from base):
-#   • `api-gateway` — DX entry point, cold-start hostile.
 ---
-
-
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: auth-service
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
-
-
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: cache-service
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
-
 
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -64,7 +9,7 @@ spec:
     metadata:
       annotations:
         autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
+        autoscaling.knative.dev/scale-down-delay: "120s"
         autoscaling.knative.dev/window: "60s"
 ---
 
@@ -78,67 +23,9 @@ spec:
     metadata:
       annotations:
         autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
+        autoscaling.knative.dev/scale-down-delay: "120s"
         autoscaling.knative.dev/window: "60s"
 ---
-
-
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: registry-service
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
-
-
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: admin-console
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
-
-
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: yoizenclaw-admin-service
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
-
-
-# ----- Phase 1.5: *-api KSVCs (HTTP-only, scale-to-zero safe) -----
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: connector-admin-api
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
-
 
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -153,39 +40,10 @@ spec:
         autoscaling.knative.dev/window: "60s"
 ---
 
-
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: channel-service-api
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
-
-
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
   name: usage-aggregator-api
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
-
-
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: workflow-service-api
 spec:
   template:
     metadata:

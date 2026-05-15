@@ -9,4 +9,5 @@ patches:
   - path: patches/nats-config.yaml
   - path: patches/redis-resources.yaml
   - path: patches/postgres-resources.yaml
+  - path: patches/postgres-temporal-resources.yaml
   - path: patches/observability-resources.yaml

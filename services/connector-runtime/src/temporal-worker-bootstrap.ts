@@ -1,6 +1,35 @@
-import { NativeConnection, Worker, type WorkerOptions } from "@temporalio/worker";
+import {
+  NativeConnection,
+  Runtime,
+  Worker,
+  type WorkerOptions,
+} from "@temporalio/worker";
 import { PinoLoggerService, shutdownTelemetry } from "@yoizen/observability";
 import { startTemporalWorkerHealthServer } from "./temporal-worker-health";
+
+/**
+ * Install Temporal Core SDK metrics exporter at module load when
+ * `PROMETHEUS_BIND_ADDRESS` is provided. The Temporal TS SDK exposes
+ * `temporal_*` metrics (workflow_task_schedule_to_start_latency,
+ * activity_task_schedule_to_start_latency, sticky_cache_hit/miss,
+ * worker_task_slots_available_total, etc.) which are essential to
+ * diagnose backpressure under load.
+ *
+ * Runtime.install MUST be called before any `NativeConnection.connect`
+ * or `Worker.create` and only once per process — running this at
+ * top-level module load (before `runTemporalWorkerCli` is invoked)
+ * satisfies both constraints. O(1).
+ */
+const prometheusBindAddress = process.env.PROMETHEUS_BIND_ADDRESS;
+if (prometheusBindAddress && prometheusBindAddress.length > 0) {
+  Runtime.install({
+    telemetryOptions: {
+      metrics: {
+        prometheus: { bindAddress: prometheusBindAddress },
+      },
+    },
+  });
+}
 
 /**
  * Options for {@link runTemporalWorkerMain}. Connection is created internally;
@@ -14,12 +43,6 @@ export interface IRunTemporalWorkerOptions {
   readonly startupMessage: string;
   readonly shutdownMessage: string;
   /**
-   * When set, a second worker polls this queue with the same activities and
-   * workflows (empty workflow list for activity worker). Use during Temporal
-   * task-queue renames to drain the legacy queue (e.g. `http-adapter`).
-   */
-  readonly legacyTaskQueue?: string;
-  /**
    * When true, SIGINT/SIGTERM call `process.exit(0)` after shutdown (HTTP worker style).
    * When false, handlers invoke shutdown without exiting (orchestrator style).
    */
@@ -27,8 +50,8 @@ export interface IRunTemporalWorkerOptions {
 }
 
 /**
- * Boots health server, connects to Temporal, runs worker(s), registers shutdown.
- * O(1) setup; blocks on `Promise.all` of `worker.run()`.
+ * Boots health server, connects to Temporal, runs worker, registers shutdown.
+ * O(1) setup; blocks on `worker.run()`.
  */
 export async function runTemporalWorkerMain(
   options: IRunTemporalWorkerOptions,
@@ -37,35 +60,17 @@ export async function runTemporalWorkerMain(
   const connection = await NativeConnection.connect({
     address: options.temporalAddress,
   });
-
-  const primary = await Worker.create({
+  const worker = await Worker.create({
     connection,
     ...options.workerOptions,
   });
-  const workers: Worker[] = [primary];
-
-  const legacy = options.legacyTaskQueue?.trim();
-  if (legacy && legacy.length > 0 && legacy !== options.workerOptions.taskQueue) {
-    const legacyWorker = await Worker.create({
-      connection,
-      ...options.workerOptions,
-      taskQueue: legacy,
-    });
-    workers.push(legacyWorker);
-    options.logger.log(
-      `Also polling legacy Temporal task queue "${legacy}" (drain bridge)`,
-    );
-  }
-
   health.setHealthy(true);
   options.logger.log(options.startupMessage);
 
   const shutdown = async (): Promise<void> => {
     health.setHealthy(false);
     options.logger.log(options.shutdownMessage);
-    for (const w of workers) {
-      w.shutdown();
-    }
+    worker.shutdown();
     await shutdownTelemetry();
   };
 
@@ -80,7 +85,7 @@ export async function runTemporalWorkerMain(
     process.on("SIGINT", shutdown);
   }
 
-  await Promise.all(workers.map((w) => w.run()));
+  await worker.run();
 }
 
 /**

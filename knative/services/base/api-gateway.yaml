@@ -10,8 +10,16 @@ spec:
     metadata:
       annotations:
         autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
-        autoscaling.knative.dev/metric: concurrency
-        autoscaling.knative.dev/target: "100"
+        # RPS, not concurrency. The gateway's hot paths (event publish,
+        # webhook ingest) are fast-ack (~8 ms p50) so concurrency stays
+        # tiny (Little's law: 1000 RPS x 8 ms = 8 concurrent) and would
+        # never cross the 70-of-target scale-up threshold under any
+        # realistic load — KPA kept us pinned at 1 replica during the
+        # 2026-05 stress run even at 1000 iter/s peak. RPS scales out
+        # linearly and predictably: 200 RPS -> 1, 1000 RPS -> 2,
+        # 2000 RPS spike -> 4, all the way to max-scale.
+        autoscaling.knative.dev/metric: rps
+        autoscaling.knative.dev/target: "500"
         autoscaling.knative.dev/min-scale: "1"
         autoscaling.knative.dev/max-scale: "10"
     spec:
@@ -29,13 +37,18 @@ spec:
               drop: ["ALL"]
             seccompProfile:
               type: RuntimeDefault
+          # Bumped after the 2026-05 stress test run hit OOMKilled (exit 137)
+          # at the 2000 RPS spike phase. NestJS gateway + tracedFetch +
+          # dynamic-route cache need ~600-700Mi at peak; 1Gi gives v8 GC
+          # headroom. CPU bumped to 1 core so a single replica can saturate
+          # one core before KPA scales out (target: 100, max-scale: 10).
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 75m
+              memory: 192Mi
             limits:
-              cpu: 500m
-              memory: 256Mi
+              cpu: "1"
+              memory: 1Gi
           readinessProbe:
             httpGet:
               path: /readyz

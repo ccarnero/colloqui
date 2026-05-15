@@ -6,6 +6,10 @@ metadata:
     app.kubernetes.io/name: redis
     app.kubernetes.io/component: cache
 spec:
+  # Bootstrap / seed Service. Clients connect here once and discover
+  # every cluster node via CLUSTER SLOTS; the response from this
+  # ClusterIP is intentionally unstable (any pod IP) — that's fine,
+  # ioredis Cluster only needs ONE reachable seed to bootstrap.
   type: ClusterIP
   selector:
     app.kubernetes.io/name: redis
@@ -13,4 +17,8 @@ spec:
     - name: redis
       port: 6379
       targetPort: redis
+      protocol: TCP
+    - name: cluster-bus
+      port: 16379
+      targetPort: cluster-bus
       protocol: TCP

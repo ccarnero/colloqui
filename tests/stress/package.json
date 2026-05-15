@@ -1,25 +1,25 @@
 {
-  "name": "stress-tests",
+  "name": "stress-tests-phase1",
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "description": "Phase 1 black-box end-to-end stress tests (k6 + Bun sink + reconciler).",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "stress:publish": "./scale/run-with-scaling.sh --scenario events-publish --with-sampler false",
-    "stress:roundtrip": "./scale/run-with-scaling.sh --scenario events-roundtrip --with-sampler false",
-    "stress:webhook": "./scale/run-with-scaling.sh --scenario webhook-ingress --with-sampler false",
-    "stress:all": "for scenario in events-publish events-roundtrip webhook-ingress; do ./scale/run-with-scaling.sh --scenario \"$scenario\" --with-sampler false; done",
-    "stress:publish:scale": "./scale/run-with-scaling.sh --scenario events-publish --with-sampler true",
-    "stress:roundtrip:scale": "./scale/run-with-scaling.sh --scenario events-roundtrip --with-sampler true",
-    "stress:webhook:scale": "./scale/run-with-scaling.sh --scenario webhook-ingress --with-sampler true",
-    "stress:report": "bun run scale/report.ts",
-    "stress:lint": "npx @biomejs/biome check src scale"
+    "build": "tsc -p tsconfig.json --noEmit",
+    "lint": "npx @biomejs/biome check lib scenarios sink reconcile",
+    "lint:fix": "npx @biomejs/biome check --write lib scenarios sink reconcile",
+    "sink:dev": "bun run sink/server.ts",
+    "reconcile": "bun run reconcile/reconcile.ts",
+    "scenario:callback": "./scripts/run.sh --scenario events-callback",
+    "scenario:publish": "./scripts/run.sh --scenario events-publish",
+    "scenario:roundtrip": "./scripts/run.sh --scenario events-roundtrip",
+    "scenario:webhook": "./scripts/run.sh --scenario webhook-ingress"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.2",
+    "@types/bun": "^1.1.13",
+    "@types/k6": "^1.3.1",
     "@types/node": "^22.10.1",
-    "artillery": "^2.0.27",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }

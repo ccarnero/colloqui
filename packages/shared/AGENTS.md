@@ -165,9 +165,6 @@ src/
 | auth-service | Auth constants/types, `TENANT_HEADER` |
 | event-processor | Stream/consumer names, key prefixes, event interfaces |
 | audit-service | Stream config, `EventEnvelope`, `TENANT_HEADER` |
-| webhook-service | Results/DLQ stream config, `CompletionEvent`, retry constants |
-| metrics-service | `MetricsPayload`, `EventEnvelope`, stream config |
-| scheduler-service | Scheduler constants, `TENANT_HEADER` |
 | registry-service | Knative constants, `TENANT_HEADER` |
 | tenant-service | `TENANT_HEADER` |
 | workflow-service | Workflow types, task queues, `TENANT_HEADER` |

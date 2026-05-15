@@ -22,10 +22,15 @@ export type {
 } from "./postgres-provider";
 export {
   REDIS_CLIENT,
+  createRedisClient,
   createRedisProvider,
   redisProvider,
 } from "./redis-provider";
-export type { RedisProviderOptions } from "./redis-provider";
+export type {
+  RedisClientOptions,
+  RedisLike,
+  RedisProviderOptions,
+} from "./redis-provider";
 export {
   NATS_CONNECTION,
   createNatsConnectionProvider,

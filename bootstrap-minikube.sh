@@ -13,10 +13,17 @@ KEDA_VERSION="2.18.3"
 KEDA_NAMESPACE="keda"
 CNPG_CHART_VERSION="0.27.1"
 CNPG_NAMESPACE="cnpg-system"
-DEFAULT_MINIKUBE_CPUS=6
-DEFAULT_MINIKUBE_MEMORY_MB=16384
+# CPUs go straight through to `minikube start --cpus`. Set to the host's
+# physical core count (override per-machine via env MINIKUBE_CPUS).
+DEFAULT_MINIKUBE_CPUS=12
+# Memory acts as an UPPER CAP: resolve_minikube_memory_mb() picks
+# min(host_total_mb - reserve, DEFAULT_MINIKUBE_MEMORY_MB). Setting the
+# cap higher than any reasonable dev host means the script always allocates
+# (host_total - MINIKUBE_MEMORY_RESERVE_MB) — i.e. "take everything except
+# the reserve". Override per-machine via env MINIKUBE_MEMORY_MB.
+DEFAULT_MINIKUBE_MEMORY_MB=65536
 MINIKUBE_MEMORY_RESERVE_MB=1024
-
+MINIKUBE_DISK_SIZE="80g"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -175,7 +182,7 @@ wait_for_webhook() {
 start_minikube() {
   local minikube_cpus="${MINIKUBE_CPUS:-$DEFAULT_MINIKUBE_CPUS}"
   local minikube_memory_mb="${MINIKUBE_MEMORY_MB:-$(resolve_minikube_memory_mb)}"
-
+  local minikube_disk_size="${MINIKUBE_DISK_SIZE:-80g}" 
   if minikube status -p "$PROFILE" &>/dev/null; then
     log "Minikube profile '$PROFILE' already running"
   else
@@ -185,8 +192,10 @@ start_minikube() {
       -p "$PROFILE" \
       --cpus="$minikube_cpus" \
       --memory="$minikube_memory_mb" \
+      --disk-size="$minikube_disk_size" \
       --driver=docker \
       --kubernetes-version=stable
+      
   fi
 
   log "Setting kubectl context to profile '$PROFILE'"
@@ -271,20 +280,16 @@ install_keda() {
   retry 3 3 helm repo update kedacore
 
   log "Installing KEDA ${KEDA_VERSION} into '${KEDA_NAMESPACE}' namespace"
+  # Helm runs without `--wait`: CRDs land synchronously while the operator
+  # pods come up in the background. wait_for_operators_ready() rolls up the
+  # readiness check in parallel with cnpg later in the pipeline.
   retry 3 5 helm upgrade --install keda kedacore/keda \
     --namespace "$KEDA_NAMESPACE" \
     --create-namespace \
     --version "$KEDA_VERSION" \
     --set prometheus.metricServer.enabled=true \
     --set prometheus.operator.enabled=true \
-    --wait \
     --timeout 180s
-
-  log "Waiting for KEDA deployments..."
-  kubectl wait deployment --all \
-    --namespace "$KEDA_NAMESPACE" \
-    --for=condition=Available \
-    --timeout=180s
 }
 
 install_cloudnative_pg() {
@@ -303,18 +308,47 @@ install_cloudnative_pg() {
   retry 3 3 helm repo update cnpg
 
   log "Installing CloudNativePG chart ${CNPG_CHART_VERSION} into '${CNPG_NAMESPACE}' namespace"
+  # See note in install_keda — CRDs apply synchronously, the operator pod
+  # readiness wait is folded into wait_for_operators_ready() so it runs in
+  # parallel with KEDA instead of stacking 180s + 180s.
   retry 3 5 helm upgrade --install cnpg cnpg/cloudnative-pg \
     --namespace "$CNPG_NAMESPACE" \
     --create-namespace \
     --version "$CNPG_CHART_VERSION" \
-    --wait \
     --timeout 180s
+}
 
-  log "Waiting for CloudNativePG deployments..."
+# Folds the readiness checks for KEDA + CNPG operators into a single
+# parallel wait. Both helm installs apply CRDs synchronously, so by the
+# time we reach apply_infrastructure() the cluster already accepts the
+# resources — we just need the operators reconciling them. Waiting in
+# parallel saves ~180s vs the previous serial 2 x `kubectl wait`.
+wait_for_operators_ready() {
+  log "Waiting for operators (KEDA + CNPG) in parallel..."
+  local pids=()
+
+  kubectl wait deployment --all \
+    --namespace "$KEDA_NAMESPACE" \
+    --for=condition=Available \
+    --timeout=180s &
+  pids+=($!)
+
   kubectl wait deployment --all \
     --namespace "$CNPG_NAMESPACE" \
     --for=condition=Available \
-    --timeout=180s
+    --timeout=180s &
+  pids+=($!)
+
+  local exit_code=0
+  for pid in "${pids[@]}"; do
+    if ! wait "$pid"; then
+      exit_code=1
+    fi
+  done
+  if (( exit_code != 0 )); then
+    err "One or more operator deployments did not become Available within 180s."
+    return 1
+  fi
 }
 
 get_kourier_external_ip() {
@@ -407,18 +441,38 @@ wait_for_ksvc_url_reconcile() {
   return 1
 }
 
+# Detects an active `minikube tunnel` background process for $PROFILE.
+# The LoadBalancer EXTERNAL-IP is only handed out by the tunnel; without
+# it, kourier stays <pending> indefinitely. Probing once is O(1) and
+# avoids the 90s burn the previous code spent waiting on a state that
+# would never converge.
+is_minikube_tunnel_running() {
+  pgrep -af 'minikube[^\n]*tunnel' 2>/dev/null \
+    | grep -qE "(-p[= ]|--profile[= ])${PROFILE}\b|tunnel\s*$" \
+    || return 1
+}
+
 configure_dns() {
-  log "Waiting for svc/kourier to obtain an EXTERNAL-IP (up to ${KOURIER_EXTERNAL_IP_WAIT_SECONDS}s)"
   local ingress_ip
-  if ingress_ip="$(wait_for_kourier_external_ip)" && [[ -n "$ingress_ip" ]]; then
-    log "Kourier EXTERNAL-IP acquired: ${ingress_ip}"
+  ingress_ip="$(get_kourier_external_ip)"
+
+  if [[ -n "$ingress_ip" && "$ingress_ip" != "<pending>" ]]; then
+    log "Kourier EXTERNAL-IP already present: ${ingress_ip}"
+  elif is_minikube_tunnel_running; then
+    log "minikube tunnel detected — waiting up to ${KOURIER_EXTERNAL_IP_WAIT_SECONDS}s for Kourier EXTERNAL-IP"
+    if ! ingress_ip="$(wait_for_kourier_external_ip)" || [[ -z "$ingress_ip" ]]; then
+      ingress_ip=""
+    fi
   else
+    log "minikube tunnel not running — skipping LB IP wait (saves up to ${KOURIER_EXTERNAL_IP_WAIT_SECONDS}s)"
+    ingress_ip=""
+  fi
+
+  if [[ -z "$ingress_ip" ]]; then
     ingress_ip="$(minikube ip -p "$PROFILE")"
-    warn "Kourier LoadBalancer IP did not become available in time."
     warn "Falling back to the Minikube node IP (${ingress_ip})."
-    warn "This is only useful if you later run 'minikube tunnel -p ${PROFILE}' AND re-run:"
+    warn "If you later run 'sudo minikube tunnel -p ${PROFILE}' in another terminal, re-sync via:"
     warn "    ./bootstrap-minikube.sh ${ENVIRONMENTS[0]:-dev} refresh-dns"
-    warn "so that config-domain and the Knative Routes get re-synced."
   fi
 
   patch_config_domain_to "$ingress_ip"
@@ -489,21 +543,6 @@ apply_namespaces() {
           yoizen.io/environment="$env"
       fi
     done
-
-    if [[ "$env" == "dev" ]]; then
-      local tenant_ns="acme-dev-ns"
-      if kubectl get namespace "$tenant_ns" &>/dev/null; then
-        log "Namespace '${tenant_ns}' already exists"
-      else
-        log "Creating namespace '${tenant_ns}'"
-        kubectl create namespace "$tenant_ns"
-        kubectl label namespace "$tenant_ns" \
-          app.kubernetes.io/part-of=yoizen-arch \
-          yoizen.io/tenant=acme \
-          yoizen.io/environment=dev \
-          yoizen.io/managed-by=tenant-service
-      fi
-    fi
   done
 }
 
@@ -522,62 +561,81 @@ apply_infrastructure() {
       --namespace "$ns" \
       --timeout=180s
 
-    log "Waiting for Redis in ${ns}..."
-    kubectl rollout status deployment/redis \
+    log "Waiting for Redis StatefulSet in ${ns}..."
+    kubectl rollout status statefulset/redis \
       --namespace "$ns" \
-      --timeout=120s
+      --timeout=180s
+
+    log "Waiting for Redis Cluster init Job in ${ns}..."
+    kubectl wait --for=condition=complete job/redis-cluster-init \
+      --namespace "$ns" \
+      --timeout=180s
 
     log "Waiting for PostgreSQL in ${ns}..."
     kubectl rollout status statefulset/postgres \
       --namespace "$ns" \
       --timeout=180s
 
-    log "Waiting for CloudNativePG shared Postgres in ${ns}..."
+    # Both CNPG Cluster CRs land via the single `kubectl apply -k` above.
+    # Their Ready conditions are independent (separate primaries + initdb
+    # jobs), so we wait in parallel — saves ~one Postgres bootstrap
+    # window vs the previous sequential 300s + 300s.
+    log "Waiting for CloudNativePG shared clusters in ${ns} (parallel)..."
+    local cnpg_pids=()
     kubectl wait cluster.postgresql.cnpg.io/postgres-shared \
       --namespace "$ns" \
       --for=condition=Ready \
-      --timeout=300s
-
-    log "Waiting for CloudNativePG shared usage Postgres in ${ns}..."
+      --timeout=300s &
+    cnpg_pids+=($!)
     kubectl wait cluster.postgresql.cnpg.io/postgres-usage-shared \
       --namespace "$ns" \
       --for=condition=Ready \
-      --timeout=300s
+      --timeout=300s &
+    cnpg_pids+=($!)
+
+    local cnpg_exit=0
+    for pid in "${cnpg_pids[@]}"; do
+      if ! wait "$pid"; then
+        cnpg_exit=1
+      fi
+    done
+    if (( cnpg_exit != 0 )); then
+      err "At least one CNPG Cluster did not reach Ready within 300s."
+      return 1
+    fi
 
     log "Waiting for Temporal in ${ns}..."
     kubectl rollout status deployment/temporal \
       --namespace "$ns" \
       --timeout=180s
 
-    log "Waiting for Temporal UI in ${ns}..."
-    kubectl rollout status deployment/temporal-ui \
-      --namespace "$ns" \
-      --timeout=120s
+    # Temporal UI + the observability stack (otel-collector, tempo,
+    # prometheus, loki, grafana) have no inter-dependency at the
+    # Deployment-Available level — `kubectl rollout status` only checks
+    # replica readiness, not functional liveness against Temporal. Fire
+    # all six in parallel so the wall-clock cost is the slowest single
+    # rollout instead of the sum.
+    log "Waiting for Temporal UI + observability stack in ${ns} (parallel)..."
+    local obs_pids=()
+    local obs_names=(temporal-ui otel-collector tempo prometheus loki grafana)
+    for dep in "${obs_names[@]}"; do
+      kubectl rollout status "deployment/$dep" \
+        --namespace "$ns" \
+        --timeout=120s &
+      obs_pids+=($!)
+    done
 
-    log "Waiting for OTel Collector in ${ns}..."
-    kubectl rollout status deployment/otel-collector \
-      --namespace "$ns" \
-      --timeout=120s
-
-    log "Waiting for Tempo in ${ns}..."
-    kubectl rollout status deployment/tempo \
-      --namespace "$ns" \
-      --timeout=120s
-
-    log "Waiting for Prometheus in ${ns}..."
-    kubectl rollout status deployment/prometheus \
-      --namespace "$ns" \
-      --timeout=120s
-
-    log "Waiting for Loki in ${ns}..."
-    kubectl rollout status deployment/loki \
-      --namespace "$ns" \
-      --timeout=120s
-
-    log "Waiting for Grafana in ${ns}..."
-    kubectl rollout status deployment/grafana \
-      --namespace "$ns" \
-      --timeout=120s
+    local obs_exit=0
+    for idx in "${!obs_pids[@]}"; do
+      if ! wait "${obs_pids[$idx]}"; then
+        warn "Rollout did not converge: deployment/${obs_names[$idx]}"
+        obs_exit=1
+      fi
+    done
+    if (( obs_exit != 0 )); then
+      err "One or more observability deployments failed to become Available within 120s."
+      return 1
+    fi
   done
 }
 
@@ -613,29 +671,109 @@ build_images() {
   # For Windows, we need to handle docker-env differently
   if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
     # Windows - export variables manually
-    eval $(minikube docker-env -p "$PROFILE" --shell=bash)
+    eval "$(minikube docker-env -p "$PROFILE" --shell=bash)"
   else
     eval "$(minikube docker-env -p "$PROFILE")"
   fi
 
-  for svc in api-gateway auth-service cache-service \
+  local services=(api-gateway auth-service cache-service \
              audit-service tenant-service \
              registry-service connector-admin \
              channel-service workflow-service connector-runtime \
              proxy-service yoizenclaw-admin-service yoizenclaw-runtime-gateway admin-console \
-             usage-aggregator-service; do
-    log "Building image: dev.local/${svc}:local"
+             usage-aggregator-service yoizenclaw-runtime)
+
+  # BUILD_PARALLELISM controls how many `docker build` invocations run
+  # concurrently. Default of 2 is the sweet spot on a 12-core dev box:
+  # docker daemon serializes overlay2 layer commits (one I/O hot spot),
+  # so going above ~3 yields diminishing returns and risks OOM during
+  # node_modules-heavy NestJS builds. Raise via env on beefier hosts.
+  local parallelism="${BUILD_PARALLELISM:-2}"
+  if ! [[ "$parallelism" =~ ^[0-9]+$ ]] || (( parallelism < 1 )); then
+    warn "Invalid BUILD_PARALLELISM='${parallelism}' — falling back to 2"
+    parallelism=2
+  fi
+
+  local total=${#services[@]}
+  log "Building ${total} images with parallelism=${parallelism}"
+
+  # Per-build logs get their own file so concurrent stdout/stderr from
+  # different `docker build` runs never interleave. On failure we tail
+  # the offending log so the user sees the error without `cd`-ing.
+  local log_dir
+  log_dir="$(mktemp -d -t bootstrap-builds-XXXXXX)"
+  log "Per-build logs in: ${log_dir}"
+
+  local pids=()
+  local names=()
+  local logs=()
+  local started=()
+  local failures=()
+  local completed=0
+
+  # Inline helper: waits on every pid currently pending, classifies
+  # success vs failure, and resets the slot arrays. We define it inside
+  # build_images so it shares the local arrays without polluting the
+  # global function namespace.
+  _flush_build_batch() {
+    local idx pid svc logf t0 elapsed
+    for idx in "${!pids[@]}"; do
+      pid="${pids[$idx]}"
+      svc="${names[$idx]}"
+      logf="${logs[$idx]}"
+      t0="${started[$idx]}"
+      if wait "$pid"; then
+        elapsed=$(( $(date +%s) - t0 ))
+        completed=$(( completed + 1 ))
+        log "[${completed}/${total}] OK  dev.local/${svc}:local (${elapsed}s)"
+      else
+        completed=$(( completed + 1 ))
+        warn "[${completed}/${total}] FAIL dev.local/${svc}:local — log: ${logf}"
+        failures+=("$svc")
+      fi
+    done
+    pids=()
+    names=()
+    logs=()
+    started=()
+  }
+
+  local i svc logf
+  for (( i = 0; i < total; i++ )); do
+    svc="${services[$i]}"
+    logf="${log_dir}/${svc}.log"
+
+    log "→ start build dev.local/${svc}:local"
     docker build \
       -t "dev.local/${svc}:local" \
       -f "${script_dir}/services/${svc}/Dockerfile" \
-      "${script_dir}"
+      "${script_dir}" >"$logf" 2>&1 &
+    pids+=($!)
+    names+=("$svc")
+    logs+=("$logf")
+    started+=("$(date +%s)")
+
+    if (( ${#pids[@]} >= parallelism )); then
+      _flush_build_batch
+    fi
   done
 
-  log "Building image: dev.local/yoizenclaw-runtime:local"
-  docker build \
-    -t "dev.local/yoizenclaw-runtime:local" \
-    -f "${script_dir}/services/yoizenclaw-runtime/Dockerfile" \
-    "${script_dir}"
+  _flush_build_batch
+  unset -f _flush_build_batch
+
+  if (( ${#failures[@]} > 0 )); then
+    err "${#failures[@]} build(s) failed: ${failures[*]}"
+    err "Last 20 lines of each failed log:"
+    local f
+    for svc in "${failures[@]}"; do
+      f="${log_dir}/${svc}.log"
+      err "----- ${svc} (${f}) -----"
+      tail -n 20 "$f" >&2 || true
+    done
+    return 1
+  fi
+
+  log "All ${total} images built successfully"
 }
 
 # ---------------------------------------------------------------------------
@@ -653,8 +791,8 @@ verify_cluster() {
 }
 
 verify_support_services() {
-  local core_deployments=(redis otel-collector tempo prometheus loki grafana)
-  local core_statefulsets=(nats postgres)
+  local core_deployments=(otel-collector tempo prometheus loki grafana)
+  local core_statefulsets=(nats postgres redis)
 
   if ! kubectl get crd scaledobjects.keda.sh &>/dev/null; then
     err "KEDA CRDs not found in cluster."
@@ -715,6 +853,11 @@ run_support_services() {
   install_kourier
   install_keda
   install_cloudnative_pg
+  # Both helm installs above run without `--wait`. Their CRDs are
+  # available synchronously; the operator pods reconcile in the
+  # background. We fold the readiness wait here, in parallel for
+  # both operators, before any infra manifest references their CRs.
+  wait_for_operators_ready
   configure_dns
   configure_local_registry
   apply_namespaces

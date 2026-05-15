@@ -95,8 +95,8 @@ Workflows support 8 action types, each with distinct execution semantics:
 
 | Action | Task Queue | Scope | Description |
 |--------|-----------|-------|-------------|
-| `endpointCall` | `http-adapter` (remote) | Single HTTP call | Call external endpoint with optional adapter config |
-| `serviceCall` | `http-adapter` (remote) | Single HTTP call | Call internal service (resolves via DNS) |
+| `endpointCall` | `connector-runtime` (remote) | Single HTTP call | Call external endpoint with optional adapter config |
+| `serviceCall` | `connector-runtime` (remote) | Single HTTP call | Call internal service (resolves via DNS) |
 | `agentCall` | `workflow-orchestrator` (local) | AI agent execution | Invoke YoizenClaw agent with execution context |
 | `jsFunction` | `workflow-orchestrator` (local) | Inline code | Execute arbitrary JavaScript code |
 | `serviceBusCall` | `workflow-orchestrator` (local) | NATS publish | Publish event to NATS subject |
@@ -126,7 +126,7 @@ Workflows support 8 action types, each with distinct execution semantics:
    • Iterate over actions sequentially
    • For each action:
      - Resolve {{templates}} against execution context
-     - Dispatch to appropriate task queue (http-adapter or local)
+     - Dispatch to appropriate task queue (connector-runtime or local)
      - Await result
      - Store in results map for downstream actions
    ↓
@@ -655,9 +655,9 @@ Usually available at `http://localhost:8080`:
 |---------|----------|---------|
 | **Temporal Server** | gRPC | Workflow execution engine |
 | **NATS** | TCP | Service bus activity publishes events |
-| **http-adapter** | Task queue | Executes endpointCall and serviceCall |
+| **connector-runtime** | Task queue | Executes endpointCall and serviceCall |
 | **Per-tenant Postgres** | TCP | Stores workflow definitions and executions |
-| **adapter-service** | HTTP | Resolves adapter configs for serviceCall (via http-adapter) |
+| **connector-api** | HTTP | Resolves adapter configs for serviceCall (via connector-runtime) |
 | **yoizenclaw-runtime** | HTTP | Executes agentCall activities |
 
 ## Integration Points
@@ -672,7 +672,7 @@ Usually available at `http://localhost:8080`:
 
 - **Temporal Server**: Workflow orchestration
 - **NATS**: Service bus activity publishes
-- **http-adapter**: Endpoint and service calls
+- **connector-runtime**: Endpoint and service calls
 - **Per-tenant Postgres**: Workflow storage
 - **yoizenclaw-runtime**: Agent execution
 
@@ -681,4 +681,4 @@ Usually available at `http://localhost:8080`:
 - [AGENTS.md](AGENTS.md) — Detailed architecture, worker configuration, database schema
 - [Temporal Workflow Documentation](https://temporal.io/docs/concepts/what-is-a-workflow-definition)
 - [Template Resolution Guide](../DOCS/09-COMMON-PATTERNS.md#template-resolution)
-- [HTTP Adapter Integration](../http-adapter/README.md)
+- [Connector Runtime Integration](../http-adapter/README.md)

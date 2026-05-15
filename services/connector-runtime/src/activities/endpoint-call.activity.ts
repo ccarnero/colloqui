@@ -1,13 +1,13 @@
 import { ApplicationFailure } from "@temporalio/activity";
 import { TENANT_HEADER, computeBreakerKey } from "@yoizen/shared";
-import type { HttpEndpointRequest } from "@yoizen/shared";
+import type { EndpointCallArgs } from "@yoizen/shared";
 import { tracedFetch } from "@yoizen/observability";
-import { httpAdapterConfig } from "../config";
+import { workflowHttpWorkerConfig } from "../config";
 import {
   getAdapterClient,
   getHttpResponseCache,
 } from "./_shared/adapter-client.provider";
-import { getHttpBreaker } from "./_shared/breaker";
+import { getHttpBreaker, HTTP_BREAKER_COOLDOWN_MS } from "./_shared/breaker";
 import {
   applyJsonBody,
   buildUrl,
@@ -39,10 +39,15 @@ const RAW_TIMEOUT_MS = 30_000;
  *     same semantics as pre-adapter refactor.
  *
  * A distributed circuit breaker gates every call at tenant+target
- * granularity. When OPEN we fast-fail with a non-retryable
- * `ApplicationFailure` so Temporal releases the activity slot in
- * milliseconds rather than burning the full `timeoutMs × maxAttempts`
- * budget (~90 s per call) against a known-dead upstream.
+ * granularity. When OPEN we fast-fail with a RETRYABLE
+ * `ApplicationFailure` carrying `nextRetryDelay = breaker.cooldownMs`
+ * so Temporal releases the activity slot in milliseconds AND
+ * reschedules the next attempt right after the cooldown window —
+ * letting the breaker cycle back to HALF_OPEN/CLOSED without
+ * burning the workflow's retry budget on default exponential
+ * backoff (which would just hit DENY again before the cooldown
+ * expires). The breaker stays a TRANSIENT signal, not a kill
+ * switch.
  *
  * Falsy checks use truthy-string (`!!`) so that UIs sending empty
  * strings for unfilled optional fields are treated the same as
@@ -53,7 +58,7 @@ const RAW_TIMEOUT_MS = 30_000;
  * @returns Normalized status, body, and string headers.
  */
 export async function executeEndpointCall(
-  args: HttpEndpointRequest,
+  args: EndpointCallArgs,
   tenantId: string,
 ): Promise<IEndpointCallResult> {
   const hasAdapter = !!args.adapterId;
@@ -70,11 +75,13 @@ export async function executeEndpointCall(
 
   const decision = await breaker.canProceed(key);
   if (decision.action === "deny") {
-    throw ApplicationFailure.nonRetryable(
-      `Circuit breaker ${decision.status} for endpoint call (${decision.reason})`,
-      "CIRCUIT_OPEN",
-      { key, status: decision.status, reason: decision.reason },
-    );
+    throw ApplicationFailure.create({
+      message: `Circuit breaker ${decision.status} for endpoint call (${decision.reason})`,
+      type: "CIRCUIT_OPEN",
+      nonRetryable: false,
+      nextRetryDelay: HTTP_BREAKER_COOLDOWN_MS,
+      details: [{ key, status: decision.status, reason: decision.reason }],
+    });
   }
 
   try {
@@ -95,7 +102,7 @@ export async function executeEndpointCall(
 }
 
 async function executeWithAdapterEndpoint(
-  args: HttpEndpointRequest,
+  args: EndpointCallArgs,
   tenantId: string,
 ): Promise<IEndpointCallResult> {
   const client = getAdapterClient();
@@ -114,7 +121,7 @@ async function executeWithAdapterEndpoint(
   const url = buildUrl(resolved.url, args.params);
   const body = applyJsonBody(args.data, mergedHeaders);
   const decision = resolveHttpResponseCachePolicy({
-    enabled: httpAdapterConfig.httpResponseCacheEnabled,
+    enabled: workflowHttpWorkerConfig.httpResponseCacheEnabled,
     strategy: resolved.cache,
     tenantId,
     method: resolved.method,
@@ -149,7 +156,7 @@ async function executeWithAdapterEndpoint(
  * falling through to an eventual 404.
  */
 async function executeWithAdapterBase(
-  args: HttpEndpointRequest,
+  args: EndpointCallArgs,
   tenantId: string,
 ): Promise<IEndpointCallResult> {
   if (!args.url || args.url.length === 0) {
@@ -175,7 +182,7 @@ async function executeWithAdapterBase(
   const url = buildUrl(resolved.url, args.params);
   const body = applyJsonBody(args.data, mergedHeaders);
   const decision = resolveHttpResponseCachePolicy({
-    enabled: httpAdapterConfig.httpResponseCacheEnabled,
+    enabled: workflowHttpWorkerConfig.httpResponseCacheEnabled,
     strategy: resolved.cache,
     tenantId,
     method: resolved.method,
@@ -200,7 +207,7 @@ async function executeWithAdapterBase(
 }
 
 async function executeRaw(
-  args: HttpEndpointRequest,
+  args: EndpointCallArgs,
   tenantId: string,
 ): Promise<IEndpointCallResult> {
   assertAbsoluteUrl(args.url);

@@ -394,13 +394,10 @@ redis-cli KEYS "*adapter*"
 ### Called By
 
 - **workflow-service**: `endpointCall` actions dispatch to connector-runtime task queue
-- **event-processor**: HTTP enrichment and webhook delivery use connector-runtime
-- **webhook-service**: Webhook delivery uses connector-runtime
-- External callers: Any Temporal-enabled client can dispatch to connector-runtime queue
 
 ### Calls To
 
-- **adapter-service**: REST API for adapter config resolution
+- **connector-admin**: REST API for connector config resolution
 - **Redis**: Stale-while-revalidate cache
 - **Target endpoints**: User-configured HTTP endpoints
 - **OpenTelemetry collector** (if configured): Traces and metrics

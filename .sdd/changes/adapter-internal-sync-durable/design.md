@@ -111,8 +111,7 @@ which `serving.knative.dev/v1.Service` does NOT expose
 (`infrastructure/base/keda/README.md:67-93`). Without KEDA, scale-to-zero
 plus consumer-driven activation is impossible — Knative KPA can only
 scale on HTTP concurrency / RPS. The split is the canonical solution
-already used by `audit-service`, `event-processor`, `channel-service`,
-`webhook-service`, `workflow-service`, `metrics-service`, and
+already used by `audit-service`, `channel-service`, `workflow-service`, `metrics-service`, and
 `usage-aggregator`. Reuses `bootstrapSplitService` from
 `@yoizen/observability` (`packages/observability/src/bootstrap-split-service.ts:39-70`).
 Implements `REQ-AST-001`/`-002`/`-006`, `NFR-AST-001`.

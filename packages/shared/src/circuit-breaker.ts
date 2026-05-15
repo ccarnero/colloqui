@@ -35,6 +35,22 @@
  */
 export interface ICircuitBreakerRedis {
   scriptLoad(script: string): Promise<string>;
+  /**
+   * Optional cluster-broadcast variant. When the underlying client is
+   * a Redis Cluster, `SCRIPT LOAD` only seeds the node it lands on,
+   * which causes EVALSHA on every other master to return NOSCRIPT and
+   * fall back to the slower `EVAL` path (the breaker re-loads on the
+   * fly, but every reload triggers a fresh stampede across shards as
+   * the cached SHA gets overwritten in the process Map).
+   *
+   * When implemented, the breaker uses this in place of `scriptLoad`
+   * so all masters end up with the same SHA at startup. The returned
+   * SHA must match what every master will compute from the source
+   * (Redis hashes the script body deterministically). Standalone
+   * clients should leave this undefined — the breaker falls back to
+   * single-node `scriptLoad`.
+   */
+  scriptLoadAll?(script: string): Promise<string>;
   evalsha(
     sha: string,
     numKeys: number,
@@ -428,10 +444,17 @@ export class DistributedCircuitBreaker {
       return;
     }
     this.loadingPromise = (async () => {
+      // Prefer broadcast when the adapter is cluster-aware — eliminates
+      // the NOSCRIPT cascade on shards that didn't see the single-node
+      // load. See `ICircuitBreakerRedis.scriptLoadAll` jsdoc.
+      const load = (script: string): Promise<string> =>
+        this.redis.scriptLoadAll
+          ? this.redis.scriptLoadAll(script)
+          : this.redis.scriptLoad(script);
       const [decide, rf, rs] = await Promise.all([
-        this.redis.scriptLoad(LUA_DECIDE),
-        this.redis.scriptLoad(LUA_RECORD_FAILURE),
-        this.redis.scriptLoad(LUA_RECORD_SUCCESS),
+        load(LUA_DECIDE),
+        load(LUA_RECORD_FAILURE),
+        load(LUA_RECORD_SUCCESS),
       ]);
       this.shas.set("decide", decide);
       this.shas.set("rf", rf);
@@ -562,12 +585,25 @@ export class DistributedCircuitBreaker {
     this.l1.clear();
   }
 
+  /**
+   * Redis Cluster compatibility: every Lua script in this breaker
+   * touches BOTH the state key and the probe key in the same call
+   * (KEYS[1] = state, KEYS[2] = probe). Cluster routes multi-key ops
+   * by hash slot, so both keys MUST share a slot.
+   *
+   * The `{<key>}` syntax is a "hash tag": cluster only hashes the
+   * substring inside the curly braces. By wrapping the user-supplied
+   * `key` (which already includes tenant + endpoint, see
+   * `computeBreakerKey`), state and probe always co-locate. In
+   * non-cluster Redis the braces are just literal characters and
+   * cost nothing.
+   */
   private stateKey(key: string): string {
-    return `${this.resolved.keyPrefix}:${key}`;
+    return `${this.resolved.keyPrefix}:{${key}}`;
   }
 
   private probeKey(key: string): string {
-    return `${this.resolved.keyPrefix}:probe:${key}`;
+    return `${this.resolved.keyPrefix}:probe:{${key}}`;
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -646,7 +682,13 @@ export class DistributedCircuitBreaker {
         // fall through to EVAL + reload
       }
     }
-    const loadedSha = await this.redis.scriptLoad(script);
+    // On NOSCRIPT we MUST broadcast (when available) — otherwise the
+    // recovery itself stampedes: a single-node SCRIPT LOAD only seeds
+    // one shard and the next EVALSHA against any other shard hits
+    // NOSCRIPT again, looping forever under high concurrency.
+    const loadedSha = await (this.redis.scriptLoadAll
+      ? this.redis.scriptLoadAll(script)
+      : this.redis.scriptLoad(script));
     this.shas.set(name, loadedSha);
     return this.withTimeout(this.redis.eval(script, numKeys, ...keysAndArgs));
   }

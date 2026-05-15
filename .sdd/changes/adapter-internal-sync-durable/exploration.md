@@ -115,8 +115,7 @@ the event never reaches the mirror. There is no KEDA scaler today —
    `jetstream_consumer_num_pending + num_ack_pending{consumer_name="<durable>"}`,
    NOT the native `nats-jetstream` scaler. Rationale (per the KEDA README):
    one durable per tenant stream → unbounded ScaledObject cardinality with
-   the native scaler. Examples: `event-processor-worker.yaml`,
-   `audit-service-worker.yaml`, `webhook-service-worker.yaml`. Any new
+   the native scaler. Examples: `audit-service-worker.yaml`. Any new
    ScaledObject SHOULD follow this aggregation pattern; activation from
    zero already works through Prometheus `activationThreshold: "0"`.
 

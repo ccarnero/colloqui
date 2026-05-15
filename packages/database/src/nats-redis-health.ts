@@ -9,7 +9,6 @@ export interface INatsRedisHealthInput {
 
 /**
  * Shared health aggregation for services that use NATS + Redis
- * (event-processor, webhook-service, etc.).
  */
 export async function getNatsRedisHealthStatus(
   input: INatsRedisHealthInput,
