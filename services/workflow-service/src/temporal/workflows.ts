@@ -105,7 +105,6 @@ const http = proxyActivities<IHttpActivities>({
 // reasoning as `http`, but `maximumInterval` matches the agent
 // breaker's longer cooldown.
 const httpAgent = proxyActivities<IAgentHttpActivities>({
-  taskQueue: CONNECTOR_RUNTIME_TASK_QUEUE,
   startToCloseTimeout: "5m",
   retry: {
     maximumAttempts: 5,

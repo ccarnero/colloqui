@@ -1,4 +1,3 @@
-import Redis from "ioredis";
 import { connect, type JetStreamClient, type NatsConnection } from "nats";
 import { ApplicationFailure } from "@temporalio/activity";
 import {
@@ -10,6 +9,7 @@ import {
   type IBreakerConfig,
   type ICircuitBreakerRedis,
 } from "@yoizen/shared";
+import { createRedisClient, type RedisLike } from "@yoizen/database";
 import {
   PinoLoggerService,
   createCircuitBreakerMetrics,
@@ -22,15 +22,18 @@ const AGENT_CALL_TIMEOUT_MS = 5 * 60 * 1000;
  * Redis tunables. `maxRetriesPerRequest: 3` lets ioredis ride out a
  * single failover blip (typical Sentinel/Cluster reconfig is < 1s)
  * without immediately failing the activity attempt; Temporal-level
- * activity retries handle anything longer. `connectTimeout` caps the
- * initial TCP connect so a wedged node fails the activity in seconds
- * rather than hanging until the activity's start-to-close timeout.
+ * activity retries handle anything longer.
+ *
+ * The client is built via `createRedisClient` so it honours
+ * `REDIS_CLUSTER_MODE` and returns a `Cluster` instance against the
+ * platform's sharded Redis (3 masters + 3 replicas). A standalone
+ * `Redis` here would surface `MOVED <slot> <ip>:<port>` ReplyErrors
+ * the first time a key hashes off-shard from the connected seed.
  */
 const REDIS_MAX_RETRIES_PER_REQUEST = 3;
-const REDIS_CONNECT_TIMEOUT_MS = 5_000;
 
 let agentBreakerInstance: DistributedCircuitBreaker | null = null;
-let redisInstance: Redis | null = null;
+let redisInstance: RedisLike | null = null;
 let ncInstance: NatsConnection | null = null;
 let jsInstance: JetStreamClient | null = null;
 let executionClient: YoizenClawExecutionClient | null = null;
@@ -46,15 +49,12 @@ if (!workflowServiceConfig.redisHostExplicit) {
   );
 }
 
-function getRedis(): Redis {
+function getRedis(): RedisLike {
   if (redisInstance) return redisInstance;
-  redisInstance = new Redis({
-    host: workflowServiceConfig.redisHost,
-    port: workflowServiceConfig.redisPort,
-    lazyConnect: true,
+  redisInstance = createRedisClient({
+    defaultHost: workflowServiceConfig.redisHost,
+    defaultPort: workflowServiceConfig.redisPort,
     maxRetriesPerRequest: REDIS_MAX_RETRIES_PER_REQUEST,
-    connectTimeout: REDIS_CONNECT_TIMEOUT_MS,
-    enableReadyCheck: true,
   });
   return redisInstance;
 }
@@ -86,7 +86,7 @@ async function getExecutionClient(): Promise<YoizenClawExecutionClient> {
   return executionClient;
 }
 
-function adaptIoredis(redis: Redis): ICircuitBreakerRedis {
+function adaptIoredis(redis: RedisLike): ICircuitBreakerRedis {
   return {
     scriptLoad: (source: string) =>
       redis.script("LOAD", source) as Promise<string>,
