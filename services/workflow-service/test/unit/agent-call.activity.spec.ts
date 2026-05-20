@@ -25,13 +25,9 @@ const mockRedisInstance = {
   status: "ready",
 };
 
-mock.module("ioredis", () => {
+mock.module("@yoizen/database", () => {
   return {
-    default: class Redis {
-      constructor() {
-        return mockRedisInstance;
-      }
-    },
+    createRedisClient: () => mockRedisInstance,
   };
 });
 

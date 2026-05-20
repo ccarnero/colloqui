@@ -602,6 +602,14 @@ spec:
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            # The platform Redis is deployed as a 3-master + 3-replica
+            # Cluster. Without REDIS_CLUSTER_MODE=true, ioredis opens a
+            # standalone connection to the seed node and every command
+            # whose key hashes off-shard returns a `MOVED <slot> <ip>`
+            # ReplyError. `executeAgentCall` (circuit breaker +
+            # YoizenClawExecutionClient cache) is the consumer here.
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
