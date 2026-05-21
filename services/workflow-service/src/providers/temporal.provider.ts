@@ -35,6 +35,16 @@ export const temporalClientProvider: FactoryProvider = {
       address: workflowServiceConfig.temporalAddress,
     });
     await ensureSearchAttributes(connection);
-    return new Client({ connection });
+    // Pass namespace explicitly. The Worker already does this via
+    // `worker.ts`, but the Client did not — workflows started here
+    // landed on Temporal's default namespace by accident. Defensive
+    // alignment: client and worker must agree or
+    // `workflow.start` succeeds against one namespace while
+    // `workflow.getHandle().describe()` queries a different one,
+    // producing phantom NotFound errors under HA.
+    return new Client({
+      connection,
+      namespace: workflowServiceConfig.temporalNamespace,
+    });
   },
 };

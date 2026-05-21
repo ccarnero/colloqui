@@ -1,0 +1,163 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-temporal
+  labels:
+    app.kubernetes.io/name: postgres-temporal
+    app.kubernetes.io/component: temporal-database
+spec:
+  # 2 instances: 1 primary + 1 standby with streaming replication.
+  # Overlays for dev (orbstack/local) reduce this to 1 to save resources.
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-standard-trixie
+
+  # Least privilege: Temporal never needs superuser after the initial
+  # `temporalio/auto-setup` bootstrap (the `temporal` role is granted
+  # `createdb` so it can create `temporal_visibility` itself).
+  enableSuperuserAccess: false
+
+  bootstrap:
+    initdb:
+      database: temporal
+      owner: temporal
+      # `postInitTemplateSQL` runs in `template1`. Both `temporal` (created
+      # by initdb) and `temporal_visibility` (created later by `auto-setup`
+      # via CREATE DATABASE) inherit from template1, so the extension is
+      # present in both DBs without extra work.
+      #
+      # `auto_explain` does NOT need CREATE EXTENSION — it's enabled
+      # purely via `shared_preload_libraries` + `auto_explain.*` GUCs.
+      postInitTemplateSQL:
+        - CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+  managed:
+    # Reconciles the `temporal` application role's password to the value
+    # in `postgres-temporal-credentials` (basic-auth Secret). Without
+    # this CNPG would generate a random password into a `<cluster>-app`
+    # Secret that the Temporal Server deployment cannot read.
+    #
+    # `createdb: true` is required only on first boot so `auto-setup`
+    # can `CREATE DATABASE temporal_visibility`. Can be revoked
+    # post-bootstrap as a hardening follow-up.
+    roles:
+      - name: temporal
+        ensure: present
+        login: true
+        superuser: false
+        createdb: true
+        passwordSecret:
+          name: postgres-temporal-credentials
+    services:
+      additional:
+        - selectorType: rw
+          serviceTemplate:
+            metadata:
+              name: postgres-temporal
+              labels:
+                app.kubernetes.io/name: postgres-temporal
+                app.kubernetes.io/component: temporal-database
+            spec:
+              type: ClusterIP
+
+  postgresql:
+    # `pg_stat_statements` collects per-query metrics; `auto_explain`
+    # logs EXPLAIN of slow queries automatically. Both must be in
+    # shared_preload_libraries to take effect.
+    shared_preload_libraries:
+      - pg_stat_statements
+      - auto_explain
+    # Stress-grade tuning for Temporal's persistence pattern:
+    # write-heavy (history_node, tasks), high concurrency, aggressive
+    # churn on tasks/timer/transfer tables. Memory params assume the
+    # base 4Gi memory limit declared below; overlays reduce them
+    # proportionally to their own limits.
+    parameters:
+      shared_buffers: "1GB"
+      effective_cache_size: "3GB"
+      work_mem: "16MB"
+      maintenance_work_mem: "256MB"
+      huge_pages: "try"
+
+      # Bumped from 300 → 500 to accommodate Temporal Server with
+      # 2 replicas × 16 history shards. Each shard maintains its own
+      # SQL pool plus matching/visibility/queue pools. With workers
+      # also using direct connections (not via the pooler) the
+      # 300 ceiling was within ~70% of saturation under stress.
+      max_connections: "500"
+
+      wal_level: "replica"
+      max_wal_size: "4GB"
+      min_wal_size: "1GB"
+      wal_buffers: "64MB"
+      wal_compression: "on"
+      checkpoint_timeout: "15min"
+      checkpoint_completion_target: "0.9"
+      # `remote_write`: primary persists locally + waits until standby
+      # has *received* WAL (not yet flushed). Best balance of
+      # throughput and durability for HA Temporal. Do NOT lower to
+      # `off`/`local` — Temporal relies on commit durability.
+      synchronous_commit: "remote_write"
+
+      bgwriter_delay: "100ms"
+      bgwriter_lru_maxpages: "1000"
+      bgwriter_lru_multiplier: "10.0"
+
+      # Aggressive autovacuum is critical: Temporal's tasks tables
+      # generate massive bloat under sustained load. Defaults will
+      # fall behind in minutes and queries on `tasks` will tank.
+      autovacuum_max_workers: "6"
+      autovacuum_naptime: "10s"
+      autovacuum_vacuum_cost_limit: "2000"
+      autovacuum_vacuum_scale_factor: "0.05"
+      autovacuum_analyze_scale_factor: "0.02"
+
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      default_statistics_target: "100"
+      # JIT off: Temporal queries are simple OLTP patterns; JIT compile
+      # overhead exceeds any execution benefit.
+      jit: "off"
+
+      # Guardrails against runaway sessions during stress.
+      lock_timeout: "5000"
+      idle_in_transaction_session_timeout: "60000"
+
+      log_min_duration_statement: "200"
+      log_lock_waits: "on"
+      log_autovacuum_min_duration: "1000"
+      log_checkpoints: "on"
+      log_connections: "on"
+      log_disconnections: "on"
+      log_temp_files: "0"
+      track_io_timing: "on"
+
+      "pg_stat_statements.track": "all"
+      "pg_stat_statements.max": "10000"
+
+      "auto_explain.log_min_duration": "1000"
+      "auto_explain.log_analyze": "true"
+      "auto_explain.log_buffers": "true"
+      "auto_explain.log_format": "json"
+
+  # Best-effort spread across nodes. `preferred` does not block schedule
+  # on single-node clusters (orbstack, kind) and behaves as required
+  # affinity on multi-node clusters with capacity.
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: preferred
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "3"
+      memory: 4Gi
+
+  # Separate WAL volume: prevents WAL bursts from competing with data
+  # for IOPS or filling the data PVC. Critical under stress.
+  storage:
+    size: 50Gi
+  walStorage:
+    size: 10Gi

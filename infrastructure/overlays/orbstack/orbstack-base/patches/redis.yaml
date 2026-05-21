@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: redis
 spec:
@@ -7,10 +7,13 @@ spec:
     spec:
       containers:
         - name: redis
+          # 6 pods × small footprint = 300m/384Mi req total. Orbstack
+          # tends to have less CPU headroom than minikube, hence the
+          # tighter cap.
           resources:
             requests:
               cpu: 50m
               memory: 64Mi
             limits:
-              cpu: 250m
-              memory: 128Mi
+              cpu: 200m
+              memory: 96Mi

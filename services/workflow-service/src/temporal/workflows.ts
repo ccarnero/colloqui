@@ -11,7 +11,7 @@ import type {
   ServiceCallArgs,
   ChannelSendArgs,
 } from "@yoizen/shared";
-import { WORKFLOW_HTTP_TASK_QUEUE } from "./workflow-queue";
+import { CONNECTOR_RUNTIME_TASK_QUEUE } from "./workflow-queue";
 
 interface IOrchestratorActivities {
   executeJsFunction(
@@ -79,16 +79,39 @@ const publisher = proxyActivities<IExecutionPublisherActivities>({
   retry: { maximumAttempts: 2 },
 });
 
+// HTTP activity retry policy: sized to ride out at least one full
+// circuit-breaker cooldown window without giving up. The
+// `workflow-http` activities throw `CIRCUIT_OPEN` as a RETRYABLE
+// failure with `nextRetryDelay = HTTP_BREAKER_COOLDOWN_MS (30s)`,
+// which Temporal honours over the policy's exponential backoff —
+// so a typical cold-start sequence is:
+//   attempt 1 (t=0)  -> DENY (CIRCUIT_OPEN), wait 30s
+//   attempt 2 (t=30s) -> HALF_OPEN probe, usually succeeds.
+// `maximumAttempts: 5` is the safety net for back-to-back trips
+// (e.g. a flapping downstream during a stress ramp), capped by
+// `maximumInterval: "30s"` so we never wait longer than one cooldown.
 const http = proxyActivities<IHttpActivities>({
-  taskQueue: WORKFLOW_HTTP_TASK_QUEUE,
+  taskQueue: CONNECTOR_RUNTIME_TASK_QUEUE,
   startToCloseTimeout: "30s",
-  retry: { maximumAttempts: 3 },
+  retry: {
+    maximumAttempts: 5,
+    initialInterval: "1s",
+    backoffCoefficient: 2,
+    maximumInterval: "30s",
+  },
 });
 
+// Agent activity uses the agent breaker (60s cooldown). Same
+// reasoning as `http`, but `maximumInterval` matches the agent
+// breaker's longer cooldown.
 const httpAgent = proxyActivities<IAgentHttpActivities>({
-  taskQueue: WORKFLOW_HTTP_TASK_QUEUE,
   startToCloseTimeout: "5m",
-  retry: { maximumAttempts: 3 },
+  retry: {
+    maximumAttempts: 5,
+    initialInterval: "1s",
+    backoffCoefficient: 2,
+    maximumInterval: "60s",
+  },
 });
 
 const TEMPLATE_RE = /\{\{(.+?)\}\}/g;

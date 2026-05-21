@@ -2,11 +2,13 @@ import {
   ChangeDetectionStrategy,
   Component,
   inject,
+  input,
   signal,
   type OnInit,
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
+import { ActivatedRoute } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
@@ -18,6 +20,10 @@ import { MatListModule } from "@angular/material/list";
 import { MatChipsModule } from "@angular/material/chips";
 import { firstValueFrom } from "rxjs";
 import { YoizenclawAdminService } from "../../../core/services/yoizenclaw-admin.service";
+import {
+  YoizenclawRuntimeService,
+  type IYoizenclawExecutionResult,
+} from "../../../core/services/yoizenclaw-runtime.service";
 import type { IYoizenclawAgent } from "../../../core/models/yoizenclaw.model";
 
 interface IChatMessage {
@@ -46,7 +52,7 @@ interface IChatMessage {
     MatChipsModule,
   ],
   template: `
-    <div class="playground-layout">
+    <div class="playground-layout" [class.embedded]="embedded()">
       <!-- Sidebar Panel -->
       <div class="side-panel">
         <div class="panel-header">
@@ -62,9 +68,9 @@ interface IChatMessage {
             <label class="input-label">Select Agent</label>
             <mat-form-field appearance="outline" class="yz-select">
               <mat-select
-                [(ngModel)]="selectedAgentId"
-                [disabled]="loading()"
-                (selectionChange)="onAgentChange($event)"
+                [ngModel]="selectedAgentId()"
+                (ngModelChange)="onSelectedAgentIdChange($event)"
+                [disabled]="loading() || lockAgentSelection()"
                 panelClass="dark-theme-panel"
               >
                 <mat-option *ngFor="let agent of agents()" [value]="agent.id">
@@ -180,6 +186,12 @@ interface IChatMessage {
 })
 export class PlaygroundComponent implements OnInit {
   private readonly yoizenclawService = inject(YoizenclawAdminService);
+  private readonly yoizenclawRuntimeService = inject(YoizenclawRuntimeService);
+  private readonly route = inject(ActivatedRoute);
+
+  readonly presetAgentId = input<string | null>(null);
+  readonly lockAgentSelection = input(false);
+  readonly embedded = input(false);
 
   readonly agents = signal<IYoizenclawAgent[]>([]);
   readonly selectedAgentId = signal<string | null>(null);
@@ -198,9 +210,21 @@ export class PlaygroundComponent implements OnInit {
     try {
       this.loading.set(true);
       const response = await firstValueFrom(
-        this.yoizenclawService.listAgents(),
+        this.yoizenclawService.listAgents({ status: "published" }),
       );
       this.agents.set(response.agents);
+
+      const requestedAgentId = this.resolveRequestedAgentId();
+      if (requestedAgentId) {
+        const requestedAgent = response.agents.find(
+          (agent) => agent.id === requestedAgentId,
+        );
+        if (requestedAgent) {
+          this.selectedAgentId.set(requestedAgent.id);
+          this.selectedAgent.set(requestedAgent);
+          return;
+        }
+      }
 
       // Auto-select first published agent
       const publishedAgent = response.agents.find(
@@ -209,6 +233,13 @@ export class PlaygroundComponent implements OnInit {
       if (publishedAgent) {
         this.selectedAgentId.set(publishedAgent.id);
         this.selectedAgent.set(publishedAgent);
+        return;
+      }
+
+      const firstAgent = response.agents[0];
+      if (firstAgent) {
+        this.selectedAgentId.set(firstAgent.id);
+        this.selectedAgent.set(firstAgent);
       }
     } catch {
       this.messages.set([
@@ -223,8 +254,13 @@ export class PlaygroundComponent implements OnInit {
     }
   }
 
-  onAgentChange(event: { value: string }): void {
-    const agent = this.agents().find((a) => a.id === event.value);
+  onSelectedAgentIdChange(value: string | null): void {
+    if (this.lockAgentSelection()) {
+      return;
+    }
+
+    this.selectedAgentId.set(value);
+    const agent = this.agents().find((a) => a.id === value);
     this.selectedAgent.set(agent || null);
     this.clearChat();
   }
@@ -249,9 +285,9 @@ export class PlaygroundComponent implements OnInit {
     this.sending.set(true);
 
     try {
-      // Call YoizenClaw via NATS through the service
-      const response = await firstValueFrom(
-        this.yoizenclawService.chatWithAgent(agent.id, {
+      const submitted = await firstValueFrom(
+        this.yoizenclawRuntimeService.createExecution({
+          agentId: agent.id,
           message,
           conversationId: this.getConversationId(),
           channel: "playground",
@@ -261,23 +297,58 @@ export class PlaygroundComponent implements OnInit {
         }),
       );
 
+      const response = await this.waitForExecution(submitted.executionId);
+
+      if (response.state === "failed") {
+        const detail =
+          response.result?.errorMessage?.trim() ||
+          response.result?.errorCode?.trim() ||
+          "Execution failed";
+        this.messages.update((msgs) => [
+          ...msgs,
+          {
+            role: "system",
+            content: `Error: ${detail}`,
+            timestamp: new Date(),
+          },
+        ]);
+        return;
+      }
+
+      const reply = response.result?.reply?.trim() ?? "";
+      if (!reply) {
+        this.messages.update((msgs) => [
+          ...msgs,
+          {
+            role: "system",
+            content: "Error: Agent returned an empty response.",
+            timestamp: new Date(),
+          },
+        ]);
+        return;
+      }
+
       // Add assistant response
       this.messages.update((msgs) => [
         ...msgs,
         {
           role: "assistant",
-          content: response.reply,
+          content: reply,
           timestamp: new Date(),
           agentId: agent.id,
           agentName: agent.name,
         },
       ]);
-    } catch {
+    } catch (error) {
+      const detail =
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to get response from agent.";
       this.messages.update((msgs) => [
         ...msgs,
         {
           role: "system",
-          content: "Error: Failed to get response from agent.",
+          content: `Error: ${detail}`,
           timestamp: new Date(),
         },
       ]);
@@ -294,6 +365,22 @@ export class PlaygroundComponent implements OnInit {
     return `playground-${this.selectedAgent()?.id}-${Date.now()}`;
   }
 
+  private async waitForExecution(
+    executionId: string,
+  ): Promise<IYoizenclawExecutionResult> {
+    const timeoutAt = Date.now() + 300_000;
+    while (Date.now() < timeoutAt) {
+      const result = await firstValueFrom(
+        this.yoizenclawRuntimeService.getExecution(executionId),
+      );
+      if (result.state === "completed" || result.state === "failed") {
+        return result;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error(`Execution '${executionId}' timed out`);
+  }
+
   private buildContext(): Array<{
     sender: "customer" | "agent";
     content: string;
@@ -304,5 +391,19 @@ export class PlaygroundComponent implements OnInit {
         sender: m.role === "user" ? "customer" : "agent",
         content: m.content,
       }));
+  }
+
+  private resolveRequestedAgentId(): string | null {
+    const byInput = this.presetAgentId();
+    if (byInput && byInput.trim().length > 0) {
+      return byInput;
+    }
+
+    const byQueryParam = this.route.snapshot.queryParamMap.get("agentId");
+    if (byQueryParam && byQueryParam.trim().length > 0) {
+      return byQueryParam;
+    }
+
+    return null;
   }
 }

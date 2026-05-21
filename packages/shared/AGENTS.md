@@ -76,15 +76,6 @@ src/
 |----------|-------|---------|
 | `TENANT_HEADER` | `x-yoizen-tenant` | All services |
 
-### Scheduler Constants (`constants.ts`)
-
-| Constant | Description | Used By |
-|----------|-------------|---------|
-| `SCHEDULER_DEFAULT_TIMEOUT_MS` | Default execution timeout | Scheduler Service |
-| `SCHEDULER_K8S_DEFAULT_TIMEOUT_S` | K8s Job timeout | Scheduler Service |
-| `SCHEDULER_TICK_INTERVAL_MS` | Engine tick interval | Scheduler Service |
-| `SCHEDULER_MAX_EXECUTION_LOG_ROWS` | Max query rows | Scheduler Service |
-
 ### Registry / Knative Constants (`constants.ts`)
 
 | Constant | Description | Used By |
@@ -99,7 +90,7 @@ src/
 | Constant | Value | Used By |
 |----------|-------|---------|
 | `WORKFLOW_ORCHESTRATOR_TASK_QUEUE` | `workflow-orchestrator` | Workflow Service |
-| `WORKFLOW_HTTP_TASK_QUEUE` | `workflow-http` | Workflow HTTP Worker |
+| `CONNECTOR_RUNTIME_TASK_QUEUE` | `connector-runtime` | connector-runtime |
 | `WORKFLOW_DEFAULT_TIMEOUT_MS` | Default workflow timeout | Workflow Service |
 
 ### Auth Constants (`auth.constants.ts`)
@@ -140,7 +131,7 @@ src/
 | `WorkflowDefinition` | Workflow name, tenant, application, request, actions | Workflow Service |
 | `WorkflowExecutionContext` | Runtime context: workflow info, request, results map | Workflow Service |
 | `WorkflowAction` | Union: EndpointCall \| JsFunction \| ServiceBusCall \| Branch | Workflow Service |
-| `EndpointCallArgs` | HTTP method, url, params, data, headers, adapterId?, endpointId? | Workflow HTTP Worker |
+| `EndpointCallArgs` | HTTP method, url, params, data, headers, adapterId?, endpointId? | HTTP Adapter / Workflow Service |
 | `JsFunctionArgs` | Inline JS code string | Workflow Service |
 | `ServiceBusCallArgs` | NATS subject, payload, headers | Workflow Service |
 
@@ -148,7 +139,7 @@ src/
 
 | Constant | Value | Used By |
 |----------|-------|---------|
-| `DEFAULT_ADAPTER_SERVICE_URL` | `http://adapter-service.platform-services-dev.svc.cluster.local` | Workflow HTTP Worker, Event Processor, Webhook Service |
+| `DEFAULT_ADAPTER_SERVICE_URL` | `http://adapter-service.platform-services-dev.svc.cluster.local` | HTTP Adapter, Event Processor, Webhook Service |
 
 ### Adapter Interfaces (`adapter.interfaces.ts`)
 
@@ -157,14 +148,14 @@ src/
 | `AdapterConfig` | Full adapter config: base URL, auth, headers, timeout, retries, endpoints | All adapter consumers |
 | `AdapterEndpointConfig` | Endpoint definition: id, label, method, path | All adapter consumers |
 | `AdapterCache` | Cache interface (get/set/del) compatible with `ioredis` | All adapter consumers |
-| `ResolvedAdapterRequest` | Resolved URL, headers, timeout, retries for a specific endpoint call | Workflow HTTP Worker, Event Processor |
+| `ResolvedAdapterRequest` | Resolved URL, headers, timeout, retries for a specific endpoint call | HTTP Adapter, Event Processor |
 | `AdapterReference` | `{ adapterId: string; endpointId: string }` reference tuple | Gateway, Event Processor |
 
 ### Adapter Client (`adapter-client.ts`)
 
 | Export | Description | Used By |
 |--------|-------------|---------|
-| `AdapterClient` | Runtime class: fetches adapter config from adapter-service REST API, caches in Redis with stale-while-revalidate (TTL 300s, stale 60s), manages OAuth2 client credentials tokens, resolves full request config (URL + auth headers + timeout + retries) | Workflow HTTP Worker, Event Processor, Webhook Service |
+| `AdapterClient` | Runtime class: fetches adapter config from adapter-service REST API, caches in Redis with stale-while-revalidate (TTL 300s, stale 60s), manages OAuth2 client credentials tokens, resolves full request config (URL + auth headers + timeout + retries) | HTTP Adapter, Event Processor, Webhook Service |
 
 ## Consumer Services
 
@@ -174,13 +165,10 @@ src/
 | auth-service | Auth constants/types, `TENANT_HEADER` |
 | event-processor | Stream/consumer names, key prefixes, event interfaces |
 | audit-service | Stream config, `EventEnvelope`, `TENANT_HEADER` |
-| webhook-service | Results/DLQ stream config, `CompletionEvent`, retry constants |
-| metrics-service | `MetricsPayload`, `EventEnvelope`, stream config |
-| scheduler-service | Scheduler constants, `TENANT_HEADER` |
 | registry-service | Knative constants, `TENANT_HEADER` |
 | tenant-service | `TENANT_HEADER` |
 | workflow-service | Workflow types, task queues, `TENANT_HEADER` |
-| workflow-http-worker | `WORKFLOW_HTTP_TASK_QUEUE`, `EndpointCallArgs`, `TENANT_HEADER`, `AdapterClient`, `DEFAULT_ADAPTER_SERVICE_URL` |
+| connector-runtime | `CONNECTOR_RUNTIME_TASK_QUEUE`, `HttpEndpointRequest`, `HttpServiceRequest`, `TENANT_HEADER`, `AdapterClient`, `DEFAULT_ADAPTER_SERVICE_URL` |
 | adapter-service | `TENANT_HEADER`, `AdapterConfig` interface |
 
 **Not a consumer**: `cache-service` (standalone, no shared package dependency).

@@ -1,5 +1,5 @@
 /**
- * Phase 6.4 — E2E: cold-start of `adapter-service-worker` ≤90s p95
+ * Phase 6.4 — E2E: cold-start of `connector-admin-worker` ≤90s p95
  * (REQ-ASA-003, NFR-ASA-001, NFR-ASIS-003, NFR-XC-002).
  *
  * Goal:
@@ -42,9 +42,9 @@
  *   `design.md` "Testing Strategy" for the explicit deferral note.
  *
  * Manual runbook (Phase 7.5):
- *   1. `kubectl scale deployment adapter-service-worker --replicas=0`
+ *   1. `kubectl scale deployment connector-admin-worker --replicas=0`
  *      (or just wait for KEDA to reap the pod after 120s idle).
- *   2. Confirm `kubectl get scaledobject adapter-service-worker-scaler`
+ *   2. Confirm `kubectl get scaledobject connector-admin-worker-scaler`
  *      shows `Active: false`.
  *   3. `t0 = $(date +%s)`; `POST /api/registry/services` with a fresh
  *      service payload and an authenticated tenant.
@@ -81,7 +81,7 @@ const REGISTRY_REQUEST_BUDGET_MS = 60_000;
 /**
  * Hardened opt-in: the KEDA assertions only fire when the operator
  * explicitly says the test environment provides:
- *   • KEDA `ScaledObject` for `adapter-service-worker-scaler`
+ *   • KEDA `ScaledObject` for `connector-admin-worker-scaler`
  *   • Prometheus reachable from the test pod
  *   • A per-tenant Postgres handle URL (or a service that exposes one)
  *
@@ -181,7 +181,7 @@ async function expectServiceVisible(id: string): Promise<void> {
 //  the gateway-only harness can prove without lying about KEDA.
 // ═══════════════════════════════════════════════════════════════════
 
-describe("E2E: adapter-service-worker cold-start (Phase 6.4)", () => {
+describe("E2E: connector-admin-worker cold-start (Phase 6.4)", () => {
   it(
     "POST /registry/services succeeds within budget — minimum gate behind the SLO drill (REQ-ASA-003)",
     async () => {
@@ -255,7 +255,7 @@ describe("E2E: adapter-service-worker cold-start (Phase 6.4)", () => {
 
         // 1. Pre-condition: ScaledObject inactive (worker at 0).
         const before = await helpers.kubectlGetScaledObject(
-          "adapter-service-worker-scaler",
+          "connector-admin-worker-scaler",
         );
         expect(before.active).toBe(false);
 
@@ -267,7 +267,7 @@ describe("E2E: adapter-service-worker cold-start (Phase 6.4)", () => {
         await poll(
           async () => {
             const so = await helpers.kubectlGetScaledObject!(
-              "adapter-service-worker-scaler",
+              "connector-admin-worker-scaler",
             );
             return so.active ? so : null;
           },

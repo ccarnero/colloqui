@@ -1,6 +1,8 @@
 import { Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 import type * as k8s from "@kubernetes/client-node";
+import type { JetStreamManager } from "nats";
+import { ensureTenantIngressStream } from "@yoizen/database";
 import {
   TenantDatabaseTier,
   invalidPlatformEnvironmentMessage,
@@ -9,8 +11,10 @@ import {
 } from "@yoizen/shared";
 import { K8S_CORE_API } from "../../providers/kubernetes.provider";
 import { isKubernetesConflictError } from "../../providers/kubernetes-errors";
+import { JETSTREAM_MANAGER } from "../../providers/nats.module";
 import { TenantPostgresProvisioner } from "../../providers/postgres.provider";
 import { TenantUsagePostgresProvisioner } from "../../providers/postgres-usage.provider";
+import { YoizenClawRuntimeProvisioner } from "../../providers/yoizenclaw-runtime.provider";
 import { tenantServiceConfig } from "../../config";
 import {
   type Environment,
@@ -47,8 +51,10 @@ export class TenantProvisioningExecutor {
 
   constructor(
     @Inject(K8S_CORE_API) private readonly k8sApi: k8s.CoreV1Api,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     private readonly pgProvisioner: TenantPostgresProvisioner,
     private readonly pgUsageProvisioner: TenantUsagePostgresProvisioner,
+    private readonly runtimeProvisioner: YoizenClawRuntimeProvisioner,
   ) {
     const env = tenantServiceConfig.platformEnvironment;
     if (!VALID_ENVIRONMENTS.includes(env as Environment)) {
@@ -61,16 +67,23 @@ export class TenantProvisioningExecutor {
 
   /**
    * Creates or reconciles the tenant namespace, then provisions OLTP + usage
-   * PostgreSQL according to `tier`:
+   * PostgreSQL according to `tier`, and finally applies the per-tenant
+   * `yoizenclaw-runtime` Knative Service into the namespace:
    *
    * - **Shared**: only creates a logical database + role on the shared
    *   CloudNativePG cluster (no per-tenant Postgres StatefulSet/PVC). The
    *   namespace itself is still created because it is the per-tenant
-   *   deployment scope for `registry-service` (Knative Services) and
-   *   `scheduler-service` (Job-mode executions). An empty namespace is
-   *   essentially free in K8s (one metadata object + default ServiceAccount).
+   *   deployment scope for `registry-service` (Knative Services). An empty
+   *   namespace is essentially free in K8s (one metadata object + default
+   *   ServiceAccount).
    * - **Dedicated**: provisions per-tenant Postgres + TimescaleDB StatefulSets
    *   inside the namespace and blocks until both report ready.
+   *
+   * After Postgres is ready we apply `yoizenclaw-runtime` via
+   * `YoizenClawRuntimeProvisioner.apply` (idempotent, conflict-replaces) so
+   * the runtime ksvc pod can resolve `postgres-credentials` from the same
+   * namespace. Set `YOIZENCLAW_RUNTIME_AUTO_APPLY=false` if a GitOps
+   * controller owns it instead.
    *
    * Idempotent: namespace create conflict (409) continues with `readNamespace`.
    *
@@ -119,6 +132,34 @@ export class TenantProvisioningExecutor {
         this.pgUsageProvisioner.waitForReady(nsName, tier),
       ),
     ]);
+
+    // The per-tenant ingress JetStream stream (`INGRESS-<TENANT>`) is the
+    // delivery substrate for every `evt.<tenant>.>` subject. It is created
+    // lazily by `yoizenclaw-admin-service` (first publish) and the
+    // `yoizenclaw-runtime-gateway` (first execution submission) — but the
+    // per-tenant `yoizenclaw-runtime` pod boots and tries to attach durable
+    // JetStream consumers as part of its FastAPI `lifespan`. If the stream
+    // does not exist yet the runtime pod crashes with `NotFoundError:
+    // stream not found` (NATS err_code 10059), CrashLoopBackOffs, and
+    // recovers only when an upstream service finally publishes.
+    //
+    // Pre-provisioning the stream here closes that race: by the time we
+    // apply the runtime ksvc the stream is guaranteed to exist on the
+    // broker. `ensureTenantIngressStream` is idempotent and treats
+    // `STREAM_NAME_IN_USE` (10058) as success, so JetStream redelivery of
+    // this provision message converges cleanly.
+    await this.runPhase(`nats.ensure-ingress-stream ${phaseTag}`, () =>
+      ensureTenantIngressStream(this.jsm, name),
+    );
+
+    // The runtime Knative Service depends on the per-namespace
+    // `postgres-credentials` Secret + `postgres` Service being in place; we
+    // therefore apply it strictly after Postgres readiness. The provisioner
+    // is idempotent (create → on 409 replace) so retries from JetStream
+    // redelivery converge cleanly.
+    await this.runPhase(`yoizenclaw-runtime.apply ${phaseTag}`, () =>
+      this.runtimeProvisioner.apply({ namespace: nsName, tenantId: name }),
+    );
 
     const totalElapsedMs = Math.round(performance.now() - totalStarted);
     this.logger.log(

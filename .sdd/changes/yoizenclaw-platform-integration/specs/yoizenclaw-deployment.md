@@ -59,7 +59,7 @@ The system MUST provide a Dockerfile and CI pipeline for building the YoizenClaw
 
 #### Scenario: Docker build
 
-- GIVEN the source code in `applications/yoizenclaw-application/`
+- GIVEN the source code in `services/yoizenclaw-runtime/`
 - WHEN `docker build -t yoizenclaw-runtime:v1.0.0 .` is executed
 - THEN the image MUST include all Python dependencies
 - AND the entrypoint MUST start the FastAPI server

@@ -14,8 +14,17 @@ import { MatIconModule } from "@angular/material/icon";
   imports: [MatButtonModule, MatIconModule],
   template: `
     <div class="ws-header">
-      <div>
+      <div class="title-block">
         <div class="ws-title">YoizenClaw Agents</div>
+        @if (isDirty()) {
+          <span
+            class="dirty-pill"
+            title="You have unsaved local changes"
+          >
+            <span class="dirty-dot" aria-hidden="true"></span>
+            Unsaved changes
+          </span>
+        }
       </div>
       <div class="ws-actions">
         <button
@@ -70,6 +79,35 @@ import { MatIconModule } from "@angular/material/icon";
       </div>
     }
   `,
+  styles: `
+    .title-block {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .dirty-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(253, 189, 39, 0.12);
+      color: #fdbd27;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border: 1px solid rgba(253, 189, 39, 0.3);
+    }
+
+    .dirty-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #fdbd27;
+    }
+  `,
 })
 export class YoizenclawTopBarComponent {
   readonly editingAgentId = input.required<string | null>();
@@ -78,6 +116,7 @@ export class YoizenclawTopBarComponent {
   readonly canSave = input.required<boolean>();
   readonly errorMessage = input.required<string>();
   readonly successMessage = input.required<string>();
+  readonly isDirty = input<boolean>(false);
 
   readonly cancelEdit = output<void>();
   readonly reset = output<void>();

@@ -44,12 +44,12 @@ describe("proxy.hook helpers", () => {
 
   it("PLATFORM_PREFIXES covers core API routes", () => {
     expect(PLATFORM_PREFIXES.includes("/health")).toBe(true);
-    expect(PLATFORM_PREFIXES.includes("/api/events")).toBe(true);
+    expect(PLATFORM_PREFIXES.includes("/api/connectors")).toBe(true);
   });
 
   it("isPlatformRoutePath returns true for gateway-owned prefixes", () => {
     expect(isPlatformRoutePath("/health")).toBe(true);
-    expect(isPlatformRoutePath("/api/events")).toBe(true);
+    expect(isPlatformRoutePath("/api/connectors")).toBe(true);
     expect(isPlatformRoutePath("/tenant-app/foo")).toBe(false);
   });
 

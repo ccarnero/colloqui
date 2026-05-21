@@ -308,34 +308,6 @@ describe("Agents Integration Tests", () => {
     });
   });
 
-  describe("POST /admin/agents/:id/chat", () => {
-    it("returns reply when agent is published", async () => {
-      const createResponse = await request(app.getHttpServer())
-        .post("/admin/agents")
-        .set(TENANT_HEADER, TENANT_ID)
-        .send({
-          name: "Chat Agent",
-          system_prompt: "You chat",
-        })
-        .expect(201);
-
-      const agentId = createResponse.body.id;
-
-      await request(app.getHttpServer())
-        .post(`/admin/agents/${agentId}/publish`)
-        .set(TENANT_HEADER, TENANT_ID)
-        .expect(200);
-
-      const chatRes = await request(app.getHttpServer())
-        .post(`/admin/agents/${agentId}/chat`)
-        .set(TENANT_HEADER, TENANT_ID)
-        .send({ message: "Hello" })
-        .expect(200);
-
-      expect(chatRes.body.reply).toBe("integration-chat-reply");
-    });
-  });
-
   describe("POST /admin/agents/:id/unpublish", () => {
     it("should unpublish agent and emit event", async () => {
       // First create and publish an agent

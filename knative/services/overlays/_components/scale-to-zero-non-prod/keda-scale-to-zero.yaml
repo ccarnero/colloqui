@@ -16,6 +16,8 @@
 # `cooldownPeriod` at 180-300s to protect in-flight work from
 # premature SIGTERM.
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -24,23 +26,29 @@ spec:
   minReplicaCount: 0
   idleReplicaCount: 0
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: workflow-http-worker-scaler
+  name: connector-runtime-scaler
 spec:
   minReplicaCount: 0
   idleReplicaCount: 0
 ---
+
+
 # ----- Phase 1.5: NATS JetStream-driven workers -----
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: adapter-service-worker-scaler
+  name: connector-admin-worker-scaler
 spec:
   minReplicaCount: 0
   idleReplicaCount: 0
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -49,6 +57,8 @@ spec:
   minReplicaCount: 0
   idleReplicaCount: 0
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -57,22 +67,8 @@ spec:
   minReplicaCount: 0
   idleReplicaCount: 0
 ---
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: event-processor-worker-scaler
-spec:
-  minReplicaCount: 0
-  idleReplicaCount: 0
----
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: metrics-service-worker-scaler
-spec:
-  minReplicaCount: 0
-  idleReplicaCount: 0
----
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -81,14 +77,8 @@ spec:
   minReplicaCount: 0
   idleReplicaCount: 0
 ---
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: webhook-service-worker-scaler
-spec:
-  minReplicaCount: 0
-  idleReplicaCount: 0
----
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:

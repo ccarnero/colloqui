@@ -8,8 +8,6 @@ import {
   type IYoizenclawAgentDraft,
   type IYoizenclawAgentListQuery,
   type IYoizenclawAgentListResponse,
-  type IYoizenclawChatRequest,
-  type IYoizenclawChatResponse,
   type IYoizenclawMemoryProposalActionResponse,
   type IYoizenclawMemoryProposalListResponse,
   type IYoizenclawTemplate,
@@ -120,6 +118,16 @@ export class YoizenclawAdminService {
   }
 
   /**
+   * Soft-deletes an agent.
+   *
+   * @param agentId - The agent to delete.
+   * @returns A completion stream (HTTP 204).
+   */
+  deleteAgent(agentId: string): Observable<void> {
+    return this.http.delete<void>(`${BASE_URL}/agents/${agentId}`);
+  }
+
+  /**
    * Retrieves available agent templates.
    *
    * @returns A stream with the list of templates.
@@ -127,23 +135,6 @@ export class YoizenclawAdminService {
   listTemplates(): Observable<{ templates: IYoizenclawTemplate[] }> {
     return this.http.get<{ templates: IYoizenclawTemplate[] }>(
       `${BASE_URL}/templates`,
-    );
-  }
-
-  /**
-   * Sends a chat message to an agent and returns the response.
-   *
-   * @param agentId - The agent to chat with.
-   * @param request - Chat request with message and context.
-   * @returns A stream with the agent's reply.
-   */
-  chatWithAgent(
-    agentId: string,
-    request: IYoizenclawChatRequest,
-  ): Observable<IYoizenclawChatResponse> {
-    return this.http.post<IYoizenclawChatResponse>(
-      `${BASE_URL}/agents/${agentId}/chat`,
-      request,
     );
   }
 

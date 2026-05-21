@@ -12,34 +12,26 @@ resources:
   # at startup. *-api pods host HTTP controllers (Knative Service,
   # KPA-managed); *-worker pods host JetStream durable consumers
   # (apps/v1.Deployment, KEDA-managed). See `scaledobjects/`.
-  - adapter-service-api.yaml
-  - adapter-service-worker.yaml
+  - connector-admin-api.yaml
+  - connector-admin-worker.yaml
   - audit-service-api.yaml
   - audit-service-worker.yaml
   - channel-service-api.yaml
   - channel-service-worker.yaml
-  - event-processor-api.yaml
-  - event-processor-worker.yaml
-  - metrics-service-api.yaml
-  - metrics-service-worker.yaml
   - usage-aggregator-api.yaml
   - usage-aggregator-worker.yaml
-  - webhook-service-api.yaml
-  - webhook-service-worker.yaml
   - workflow-service-api.yaml
   - workflow-service-worker.yaml
   # ----- Single-pod Knative-only services (HTTP-only or stateful) -----
   - cache-service.yaml
   - tenant-service.yaml
-  - scheduler-service.yaml
-  - scheduler-service-sa.yaml
   - proxy-service.yaml
   - registry-service.yaml
   - registry-service-sa.yaml
   - admin-console.yaml
-  - messaging-console.yaml
   - yoizenclaw-admin-service.yaml
+  - yoizenclaw-runtime-gateway.yaml
   # ----- Plain Deployments + KEDA Temporal scalers (Phase 1) -----
   - workflow-worker.yaml
-  - workflow-http-worker.yaml
+  - connector-runtime.yaml
   - scaledobjects

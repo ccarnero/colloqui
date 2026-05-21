@@ -1,12 +1,7 @@
-export const WEBHOOK_DLQ_SUBJECT = 'dlq.webhook';
-export const WEBHOOK_MAX_RETRIES = 3;
-export const WEBHOOK_RETRY_DELAYS = [1_000, 5_000, 30_000] as const;
-
 export const DLQ_STREAM_NAME = 'DLQ';
 /**
  * Subjects owned by the global `DLQ` stream.
  *
- * Scoped to the single subject produced by `webhook-service` when a
  * callback delivery exhausts its retries (`dlq.webhook`). The
  * `dlq.<tenant>.>` namespace is reserved for per-tenant DLQ streams
  * (`DLQ-<tenant>`) provisioned by `ensureTenantDlqStream`, so the two
@@ -60,8 +55,28 @@ export const PLATFORM_NON_CHANNEL_TOKEN = 'system';
 export const ADAPTER_MANAGED_BY_REGISTRY = 'registry-service';
 
 export const WORKFLOW_ORCHESTRATOR_TASK_QUEUE = 'workflow-orchestrator';
-export const WORKFLOW_HTTP_TASK_QUEUE = 'workflow-http';
-export const WORKFLOW_DEFAULT_TIMEOUT_MS = 60_000;
+export const CONNECTOR_RUNTIME_TASK_QUEUE = 'connector-runtime';
+/**
+ * Default `workflowExecutionTimeout` for `runWorkflow` starts. This is
+ * the wall-clock budget from `workflow.start` to terminal status —
+ * INCLUDING time spent in the schedule-to-start queue waiting for a
+ * worker to pick the workflow task up.
+ *
+ * Stress-test learning: a short ceiling (was 60s) means that under
+ * backlog the workflow times out before any worker even sees it,
+ * cascading the whole pipeline into `Timed Out` status.
+ *
+ * 10 minutes accommodates queue waits during bursts and the longest
+ * agent activity (`agentCall` start_to_close 5m) with retries.
+ */
+export const WORKFLOW_DEFAULT_TIMEOUT_MS = 600_000;
+/**
+ * Default `workflowTaskTimeout` — how long a single workflow task can
+ * take to be answered by a worker before Temporal retries it. Default
+ * (10s) is fine for most workflows; we set it explicitly to avoid
+ * surprises when the SDK changes defaults across versions.
+ */
+export const WORKFLOW_TASK_TIMEOUT_MS = 30_000;
 
 export const GATEWAY_AUDIT_STREAM_NAME = 'GATEWAY_AUDIT';
 export const GATEWAY_AUDIT_STREAM_SUBJECTS = ['audit.gateway.>'] as const;
@@ -98,6 +113,18 @@ export const YOIZENCLAW_AGENT_UNPUBLISHED =
   `${YOIZENCLAW_SUBJECT_PREFIX}.agent_unpublished.v1`;
 export const YOIZENCLAW_EVENT =
   `${YOIZENCLAW_SUBJECT_PREFIX}.event.v1`;
+export const YOIZENCLAW_RUNTIME_GATEWAY_PRODUCER = "yoizenclaw-runtime-gateway";
+export const YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX =
+  "evt.{tenant}.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal";
+export const YOIZENCLAW_EXECUTION_REQUESTED =
+  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_requested.v1`;
+export const YOIZENCLAW_EXECUTION_STARTED =
+  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_started.v1`;
+export const YOIZENCLAW_EXECUTION_COMPLETED =
+  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_completed.v1`;
+export const YOIZENCLAW_EXECUTION_FAILED =
+  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_failed.v1`;
+  
 
 export function buildYoizenClawSubject(template: string, tenantId: string): string {
   return template.replaceAll("{tenant}", tenantId);

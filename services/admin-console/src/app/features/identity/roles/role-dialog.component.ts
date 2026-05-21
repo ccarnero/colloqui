@@ -26,7 +26,6 @@ const RESOURCES = [
   { key: "roles", label: "Roles" },
   { key: "workflows", label: "Workflows" },
   { key: "adapters", label: "Adapters" },
-  { key: "schedulers", label: "Schedulers" },
   { key: "webhooks", label: "Webhooks" },
   { key: "audit", label: "Audit" },
   { key: "settings", label: "Settings" },

@@ -23,7 +23,7 @@ export class AdaptersService {
     tag?: string,
   ): Promise<{ adapters: AdapterSummaryDto[] }> {
     try {
-      const url = new URL(`${this.baseUrl}/adapters`);
+      const url = new URL(`${this.baseUrl}/connectors`);
       if (tag) {
         url.searchParams.set("tag", tag);
       }
@@ -71,7 +71,7 @@ export class AdaptersService {
     adapterId: string,
   ): Promise<AdapterDetailDto | null> {
     try {
-      const response = await tracedFetch(`${this.baseUrl}/adapters/${adapterId}`, {
+      const response = await tracedFetch(`${this.baseUrl}/connectors/${adapterId}`, {
         headers: { [TENANT_HEADER]: tenantId },
       });
 

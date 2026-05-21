@@ -31,7 +31,7 @@ export function createNatsConnectionProvider(
     useFactory: async (): Promise<NatsConnection> => {
       const url =
         process.env.NATS_URL ?? "nats://localhost:4222";
-      return connect({ servers: url, name });
+      return connect({ servers: url, name, waitOnFirstConnect: true });
     },
   };
 }

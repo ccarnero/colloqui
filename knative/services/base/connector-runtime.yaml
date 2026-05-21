@@ -1,0 +1,72 @@
+# Plain Kubernetes Deployment (NOT a Knative Service). Same rationale
+# as `workflow-worker.yaml`:
+#   • Temporal pull-based worker, no inbound HTTP traffic.
+#   • KEDA cannot scale a Knative Service (no /scale subresource).
+#   • Deployment exposes /scale natively → KEDA Temporal scaler works.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connector-runtime
+  labels:
+    app.kubernetes.io/name: connector-runtime
+    app.kubernetes.io/component: workflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: connector-runtime
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: connector-runtime
+        app.kubernetes.io/component: workflow
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: user-container
+          image: dev.local/connector-runtime:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            # Temporal Core SDK Prometheus metrics. The bootstrap reads
+            # `PROMETHEUS_BIND_ADDRESS` and calls `Runtime.install` once
+            # before the worker starts. Scraped via the
+            # `connector-runtime-sdk` Prometheus job.
+            - name: temporal-sdk
+              containerPort: 9464
+              protocol: TCP
+          env:
+            - name: PROMETHEUS_BIND_ADDRESS
+              value: "0.0.0.0:9464"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          # Stress-grade sizing. With 400 concurrent HTTP activities
+          # per pod, a single replica can saturate ~2 CPU cores during
+          # bursts of large fan-out. Bun handles I/O-bound concurrency
+          # very efficiently — bumped requests so HPA decisions
+          # don't oscillate when adapter Redis cache is warming.
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi

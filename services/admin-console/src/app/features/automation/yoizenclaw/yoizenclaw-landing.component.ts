@@ -219,6 +219,6 @@ export class YoizenclawLandingComponent {
   }
 
   protected newAgent(): void {
-    void this.router.navigate(["/yoizenclaw/agents"]);
+    void this.router.navigate(["/yoizenclaw/agents/new"]);
   }
 }

@@ -1,0 +1,73 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: stress-sink
+  namespace: platform-services-dev
+  labels:
+    app.kubernetes.io/component: stress-test
+    app.kubernetes.io/name: stress-sink
+spec:
+  template:
+    metadata:
+      annotations:
+        # Pin replicas: this is a passive observer, never the bottleneck.
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "5"
+        autoscaling.knative.dev/target: "200"
+        autoscaling.knative.dev/metric: "concurrency"
+        # Skip Knative tag-to-digest resolution for the local dev image.
+        # `dev.local` is also in Knative's default registries-skipping list.
+        serving.knative.dev/no-tag-resolution: "true"
+    spec:
+      containerConcurrency: 0
+      timeoutSeconds: 30
+      containers:
+        - name: stress-sink
+          # Built locally and loaded with `minikube image load` (or
+          # `minikube image load --profile=...`). Pull policy MUST be
+          # `Never` — `dev.local` is not a real registry, so any pull
+          # attempt fails DNS resolution. Override the image (and use
+          # `IfNotPresent`/`Always`) via STRESS_SINK_IMAGE in
+          # build-and-load.sh when pushing to a real registry.
+          image: dev.local/stress-sink:dev
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+              name: http1
+          env:
+            - name: STRESS_SINK_PORT
+              value: "8080"
+            - name: STRESS_SINK_OUTPUT
+              value: "/var/log/stress/sink.jsonl"
+            - name: STRESS_SINK_BUFFER_BYTES
+              value: "65536"
+            - name: STRESS_SINK_FLUSH_MS
+              value: "1000"
+            # Mirror every delivery to stdout so `kubectl logs` is a first-class
+            # readout mechanism alongside the JSONL file.
+            - name: STRESS_SINK_STDOUT
+              value: "true"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          volumeMounts:
+            - name: stress-output
+              mountPath: /var/log/stress
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+      volumes:
+        - name: stress-output
+          emptyDir:
+            sizeLimit: 5Gi

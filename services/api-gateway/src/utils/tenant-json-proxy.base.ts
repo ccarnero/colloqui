@@ -6,7 +6,7 @@ import {
 
 /**
  * Shared tenant-scoped JSON proxy for downstream services (registry, workflow,
- * channel, adapter, scheduler). Subclasses only supply base URL and labels.
+ * channel, adapter). Subclasses only supply base URL and labels.
  */
 export abstract class TenantJsonProxyBase {
   private readonly forward: ReturnType<typeof createTenantJsonProxyForwarder>;

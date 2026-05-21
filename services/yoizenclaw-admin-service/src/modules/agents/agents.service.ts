@@ -1,5 +1,4 @@
 import {
-  BadGatewayException,
   BadRequestException,
   Injectable,
   NotFoundException,
@@ -16,8 +15,6 @@ import {
 } from "./agents.repository";
 import { NatsPublisher } from "../../providers/nats.provider";
 import type {
-  ChatRequestDto,
-  ChatResponseDto,
   MemoryProposalActionResponseDto,
   MemoryProposalListResponseDto,
 } from "./agents.dto";
@@ -129,30 +126,6 @@ export class AgentsService {
     }
 
     return agent;
-  }
-
-  async chat(
-    tenantId: string,
-    agentId: string,
-    dto: ChatRequestDto,
-    userId?: string,
-  ): Promise<ChatResponseDto> {
-    const agent = await this.repository.findById(tenantId, agentId);
-    if (!agent) {
-      throw new NotFoundException(`Agent with ID '${agentId}' not found`);
-    }
-    if (agent.status !== "published") {
-      throw new NotFoundException(`Agent '${agentId}' is not published`);
-    }
-
-    const resolvedUserId = dto.userId || userId;
-
-    try {
-      return this.runtimeService.chat(tenantId, agentId, dto, resolvedUserId);
-    } catch (error) {
-      this.logger.error(`Chat request failed for agent ${agentId}`, error);
-      throw new BadGatewayException("Failed to get response from agent");
-    }
   }
 
   async listMemoryProposals(

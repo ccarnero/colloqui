@@ -63,9 +63,18 @@ spec:
             - name: http
               containerPort: 3000
               protocol: TCP
+            # Temporal Core SDK Prometheus metrics. The bootstrap reads
+            # `PROMETHEUS_BIND_ADDRESS` and calls `Runtime.install` once
+            # before the worker starts. Scraped via the
+            # `workflow-worker-sdk` Prometheus job.
+            - name: temporal-sdk
+              containerPort: 9464
+              protocol: TCP
           env:
             - name: ENTRYPOINT
               value: "dist/temporal/worker.js"
+            - name: PROMETHEUS_BIND_ADDRESS
+              value: "0.0.0.0:9464"
           readinessProbe:
             httpGet:
               path: /health
@@ -79,10 +88,15 @@ spec:
               drop: ["ALL"]
             seccompProfile:
               type: RuntimeDefault
+          # Stress-grade sizing. With 200 concurrent activities + 150
+          # concurrent workflow tasks (worker.ts) the orchestrator is
+          # CPU-bound on workflow replays. 1Gi memory accommodates the
+          # workflow cache for sticky executions; 1 CPU request lets
+          # multiple pods coexist on the same node without fighting.
           resources:
             requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: "1"
+              cpu: 250m
               memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi

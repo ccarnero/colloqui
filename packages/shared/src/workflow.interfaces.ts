@@ -76,7 +76,21 @@ export interface ServiceBusCallArgs {
 }
 
 export interface ServiceCallArgs {
+  /** Stable id of the row in `registered_services` (UUID, never the slug). */
   serviceId: string;
+  /**
+   * Resolved registry slug (`registered_services.name`, e.g. `echo-service`).
+   * Pre-populated by `workflow-service` at start time so the activity can
+   * hit the adapter mirror by `name=slug` in O(1) without a registry
+   * round-trip. The mirror table key is the slug — without it we always
+   * fall back to the registry path (1 extra HTTP hop per activity).
+   *
+   * Optional for backwards-compat: pre-Option-A workflow definitions
+   * persisted to the DB do not carry it. When absent, the activity uses
+   * `serviceId` for the mirror lookup, which deterministically misses
+   * and falls back through the registry — same behaviour as before.
+   */
+  serviceSlug?: string;
   method: string;
   path: string;
   data?: unknown;

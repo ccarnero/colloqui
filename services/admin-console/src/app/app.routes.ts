@@ -123,8 +123,48 @@ export const routes: Routes = [
             path: "agents",
             loadComponent: () =>
               import(
-                "./features/automation/yoizenclaw/yoizenclaw.component"
-              ).then((m) => m.YoizenclawComponent),
+                "./features/automation/yoizenclaw/yoizenclaw-agents-page.component"
+              ).then((m) => m.YoizenclawAgentsPageComponent),
+          },
+          {
+            path: "agents/new",
+            data: { subNavCollapsed: true },
+            loadComponent: () =>
+              import(
+                "./features/automation/yoizenclaw/detail/yoizenclaw-agent-editor-page.component"
+              ).then((m) => m.YoizenclawAgentEditorPageComponent),
+          },
+          {
+            path: "agents/:id",
+            loadComponent: () =>
+              import(
+                "./features/automation/yoizenclaw/detail/yoizenclaw-agent-detail.component"
+              ).then((m) => m.YoizenclawAgentDetailComponent),
+            children: [
+              { path: "", redirectTo: "overview", pathMatch: "full" },
+              {
+                path: "overview",
+                loadComponent: () =>
+                  import(
+                    "./features/automation/yoizenclaw/detail/yoizenclaw-agent-overview.component"
+                  ).then((m) => m.YoizenclawAgentOverviewComponent),
+              },
+              {
+                path: "configure",
+                data: { subNavCollapsed: true },
+                loadComponent: () =>
+                  import(
+                    "./features/automation/yoizenclaw/detail/yoizenclaw-agent-editor-page.component"
+                  ).then((m) => m.YoizenclawAgentEditorPageComponent),
+              },
+              {
+                path: "settings",
+                loadComponent: () =>
+                  import(
+                    "./features/automation/yoizenclaw/detail/yoizenclaw-agent-settings.component"
+                  ).then((m) => m.YoizenclawAgentSettingsComponent),
+              },
+            ],
           },
           {
             path: "playground",
@@ -220,16 +260,6 @@ export const routes: Routes = [
           },
         ],
       },
-
-      // Schedules (Phase 4 — replaces /scheduler with a real backend wire)
-      {
-        path: "schedules",
-        loadComponent: () =>
-          import("./features/processes/schedules.component").then(
-            (m) => m.SchedulesComponent,
-          ),
-      },
-      { path: "scheduler", redirectTo: "schedules", pathMatch: "full" },
 
       // ── Settings ──────────────────────────────────────────────────────
       {

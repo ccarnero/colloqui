@@ -1,10 +1,4 @@
 export {
-  WEBHOOK_DLQ_SUBJECT,
-  WEBHOOK_MAX_RETRIES,
-  WEBHOOK_RETRY_DELAYS,
-  DLQ_STREAM_NAME,
-  DLQ_STREAM_SUBJECTS,
-  DLQ_STREAM_MAX_BYTES,
   RESULT_KEY_PREFIX,
   PENDING_KEY_PREFIX,
   CALLBACK_KEY_PREFIX,
@@ -15,10 +9,6 @@ export {
   STREAM_MAX_AGE_NS,
   MAX_DELIVER,
   TENANT_HEADER,
-  SCHEDULER_DEFAULT_TIMEOUT_MS,
-  SCHEDULER_K8S_DEFAULT_TIMEOUT_S,
-  SCHEDULER_TICK_INTERVAL_MS,
-  SCHEDULER_MAX_EXECUTION_LOG_ROWS,
   REGISTRY_KNATIVE_GROUP,
   REGISTRY_KNATIVE_VERSION,
   REGISTRY_KNATIVE_SERVICES_PLURAL,
@@ -29,8 +19,9 @@ export {
   PLATFORM_NON_CHANNEL_TOKEN,
   ADAPTER_MANAGED_BY_REGISTRY,
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
-  WORKFLOW_HTTP_TASK_QUEUE,
+  CONNECTOR_RUNTIME_TASK_QUEUE,
   WORKFLOW_DEFAULT_TIMEOUT_MS,
+  WORKFLOW_TASK_TIMEOUT_MS,
   GATEWAY_AUDIT_STREAM_NAME,
   GATEWAY_AUDIT_STREAM_SUBJECTS,
   GATEWAY_AUDIT_SUBJECT,
@@ -52,6 +43,12 @@ export {
   YOIZENCLAW_AGENT_OUTBOUND,
   YOIZENCLAW_EXECUTION_STATUS,
   YOIZENCLAW_EVENT,
+  YOIZENCLAW_RUNTIME_GATEWAY_PRODUCER,
+  YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX,
+  YOIZENCLAW_EXECUTION_REQUESTED,
+  YOIZENCLAW_EXECUTION_STARTED,
+  YOIZENCLAW_EXECUTION_COMPLETED,
+  YOIZENCLAW_EXECUTION_FAILED,
 } from './constants';
 
 export { buildYoizenClawSubject } from './constants';
@@ -105,10 +102,6 @@ export type {
   EventTransport,
   EventData,
   EventEnvelope,
-  EventResult,
-  ProcessedEvent,
-  CompletionEvent,
-  MetricsPayload,
 } from './interfaces';
 
 export {
@@ -120,6 +113,7 @@ export {
   buildSubject,
   parseSubject,
   deriveEnvelope,
+  buildEventEnvelope,
   DepthExceededError,
   MAX_DEPTH_BY_CATEGORY,
   DEFAULT_MAX_DEPTH,
@@ -129,6 +123,7 @@ export {
 export type {
   ProducerCategory,
   BuildSubjectParams,
+  BuildEventEnvelopeOptions,
   ParsedSubject,
   DeriveEnvelopeOverrides,
 } from './envelope.utils';
@@ -156,6 +151,32 @@ export type {
   ITenantRole,
   ITenantRolePermission,
 } from './auth.interfaces';
+
+export type {
+  HttpEndpointRequest,
+  HttpServiceRequest,
+  AgentChatRequest,
+  AgentChatContextEntry,
+  HttpExecutionResult,
+} from './http-execution.interfaces';
+
+export type {
+  YoizenClawExecutionType,
+  YoizenClawExecutionState,
+  YoizenClawExecutionContextEntry,
+  YoizenClawChatExecutionInput,
+  YoizenClawExecutionRequest,
+  YoizenClawExecutionSubmitted,
+  YoizenClawExecutionResultPayload,
+  YoizenClawExecutionStatus,
+} from './yoizenclaw-execution.interfaces';
+
+export { YoizenClawExecutionClient } from './yoizenclaw-execution-client';
+export type {
+  YoizenClawExecutionCache,
+  YoizenClawExecutionClientOptions,
+  SubmitExecutionOptions,
+} from './yoizenclaw-execution-client';
 
 export type {
   WorkflowExecutionContext,
@@ -219,6 +240,7 @@ export {
   AdapterCacheMethod,
   AdapterCacheQueryParamsMode,
   AdapterStatus,
+  DEFAULT_CONNECTOR_ADMIN_URL,
 } from './adapter.interfaces';
 export type { AdapterStatusValue } from './adapter.interfaces';
 
@@ -371,8 +393,6 @@ export {
 } from "./tenant-namespace";
 
 export { platformServiceUrl } from "./platform-service-url";
-
-export { METRICS_SCHEMA_SQL } from "./metrics-schema";
 
 export { WORKFLOW_SCHEMA_SQL } from "./workflow-schema";
 

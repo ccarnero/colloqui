@@ -1,0 +1,54 @@
+# RBAC for Prometheus to use `kubernetes_sd_configs` (service discovery
+# by Kubernetes API). Without this, Prometheus pods cannot list pods /
+# services / endpoints to dynamically scrape targets — they're stuck
+# with `static_configs` only.
+#
+# Required for the `cnpg-postgres-temporal` scrape job: it discovers
+# CNPG instances by pod label `cnpg.io/cluster=postgres-temporal`,
+# which requires `pods` get/list/watch cluster-wide.
+#
+# `nodes` + `nodes/metrics` + `nodes/proxy` are included for future
+# node_exporter / kubelet scraping, even if not used today — common
+# pattern that avoids round-tripping when adding new targets.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-discovery
+  labels:
+    app: prometheus
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - services
+      - endpoints
+      - nodes
+      - nodes/metrics
+      - nodes/proxy
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-discovery
+  labels:
+    app: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-discovery
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    # `namespace` is intentionally omitted: kustomize overlays inject
+    # the right namespace via their `namespace:` directive. Hardcoding
+    # here would break per-overlay deployment.

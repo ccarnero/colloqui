@@ -43,8 +43,6 @@ Requires: NATS (`nats://localhost:4222`), Redis (`localhost:6379`), `JWT_SECRET`
 |--------|------|-------------|
 | `GET` | `/audit/events` | Query audit events |
 | `POST/GET/PATCH/DELETE` | `/tenants` | Tenant management |
-| `POST/GET/PATCH/DELETE` | `/schedulers/schedules` | Schedule management |
-| `GET` | `/schedulers/executions` | Execution history |
 | `POST/GET/PATCH/DELETE` | `/registry/services` | Service registry |
 | `POST/PATCH/GET` | `/registry/services/:id/canary` | Canary deployments |
 | `POST/GET` | `/workflows` | Workflow management |

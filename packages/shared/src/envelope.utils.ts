@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import type { EventEnvelope, EventTransport, JsonValue } from "./interfaces";
+import { createHash, randomUUID } from "node:crypto";
+import type { EventData, EventEnvelope, EventTransport, JsonValue } from "./interfaces";
 
 /**
  * Producer categories for anti-loop MAX_DEPTH enforcement (D12).
@@ -30,17 +30,24 @@ export const DEFAULT_MAX_DEPTH = 5;
  * Mirrors `serializeCanonicalPayload` in yoizenclaw-admin-service.
  */
 export function canonicalJson(value: unknown): string {
+  if (value === undefined) {
+    // Match JSON.stringify: undefined at the top level becomes "null".
+    return "null";
+  }
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
     return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
   }
-  const entries = Object.keys(value as Record<string, unknown>).sort();
+  const obj = value as Record<string, unknown>;
+  const entries = Object.keys(obj).sort();
   const pairs: string[] = [];
   for (const key of entries) {
+    // Skip undefined values — matches JSON.stringify which omits them.
+    if (obj[key] === undefined) continue;
     pairs.push(
-      `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
+      `${JSON.stringify(key)}:${canonicalJson(obj[key])}`,
     );
   }
   return `{${pairs.join(",")}}`;
@@ -232,6 +239,112 @@ export class DepthExceededError extends Error {
     this.name = "DepthExceededError";
     this.details = details;
   }
+}
+
+/** Options for building a fresh (non-derived) CloudEvents envelope. */
+export interface BuildEventEnvelopeOptions {
+  /** Unique event ID. Defaults to `randomUUID()`. */
+  id?: string;
+  /** Event type URI, e.g. `"io.yoizen.yoizenclaw.runtime.execution_requested.v1"`. */
+  type: string;
+  /** Producer source URI, e.g. `"yoizenclaw-runtime-gateway"`. */
+  source: string;
+  /** Resource identifier, e.g. `"execution/{executionId}"`. */
+  resource: string;
+  /** Tenant identifier. */
+  tenant: string;
+  /** Producer name (used in envelope `producer` field). */
+  producer: string;
+  /** Envelope `domain` field. */
+  domain: string;
+  /** Envelope `channel` field. */
+  channel: string;
+  /** Envelope `provider` field. */
+  provider: string;
+  /** Envelope `accountid` field. */
+  accountid: string;
+  /** The actual payload to embed in `data.payload`. */
+  payload: Record<string, unknown>;
+  /** ISO timestamp. Defaults to `new Date().toISOString()`. */
+  time?: string;
+  /** OTEL trace ID. Defaults to a random UUID. */
+  traceid?: string;
+  /** Causation ID from the triggering event. */
+  causationId?: string | null;
+  /** Correlation ID for tracing a logical flow. */
+  correlationId?: string;
+  /** Transport overrides. Defaults to `{ method: "agent", protocol: "internal", depth: 0 }`. */
+  transport?: Partial<EventTransport>;
+  /** Producer category for depth enforcement. Defaults to `"internal_service"`. */
+  category?: ProducerCategory;
+  /** Explicit depth. Defaults to `transport.depth ?? 0`. */
+  depth?: number;
+}
+
+/**
+ * Builds a fresh CloudEvents-compliant envelope from scratch.
+ *
+ * Unlike `deriveEnvelope` (which requires an incoming envelope to chain
+ * causation), this creates a root envelope suitable for new event origins
+ * such as the runtime-gateway publishing execution requests.
+ */
+export function buildEventEnvelope(
+  options: BuildEventEnvelopeOptions,
+): EventEnvelope {
+  const depth = options.depth ?? options.transport?.depth ?? 0;
+  const category = options.category ?? "internal_service";
+  const maxDepth = MAX_DEPTH_BY_CATEGORY[category] ?? DEFAULT_MAX_DEPTH;
+
+  if (depth > maxDepth) {
+    throw new DepthExceededError(
+      `Causal depth ${depth} exceeds MAX_DEPTH=${maxDepth} for category=${category} ` +
+        `(event_type=${options.type}, tenant=${options.tenant})`,
+      {
+        incomingId: options.causationId ?? "",
+        newDepth: depth,
+        maxDepth,
+        category,
+      },
+    );
+  }
+
+  const time = options.time ?? new Date().toISOString();
+  const serialized = canonicalJson(options.payload);
+
+  const data: EventData = {
+    received_at: time,
+    payload_inline: true,
+    payload_ref: null,
+    payload_bytes: Buffer.byteLength(serialized, "utf-8"),
+    payload_checksum: computePayloadChecksum(options.payload),
+    payload: options.payload,
+  };
+
+  return {
+    specversion: "1.0",
+    id: options.id ?? randomUUID(),
+    source: options.source,
+    type: options.type,
+    resource: options.resource,
+    time,
+    traceid: options.traceid ?? randomUUID(),
+    causation_id: options.causationId ?? null,
+    correlation_id: options.correlationId ?? randomUUID(),
+    tenant: options.tenant,
+    producer: options.producer,
+    domain: options.domain,
+    channel: options.channel,
+    provider: options.provider,
+    accountid: options.accountid,
+    idempotencykey: computeIdempotencyKey(options.payload),
+    transport: {
+      method: options.transport?.method ?? "agent",
+      protocol: options.transport?.protocol ?? "internal",
+      agent_id: options.transport?.agent_id ?? options.producer,
+      depth,
+    },
+    data,
+  };
 }
 
 /**

@@ -76,9 +76,9 @@ Agent Config                    YoizenClaw Runtime
 | Area | Impact | Description |
 |------|--------|-------------|
 | `packages/shared-python/` | New | Python `AdapterClient` package |
-| `applications/yoizenclaw-application/src/tools/` | New | `adapter_executor.py`, `adapter_client.py` |
-| `applications/yoizenclaw-application/src/application/agents/` | Modified | `tool_executor.py` dispatch logic |
-| `applications/yoizenclaw-application/src/shared/config/` | Modified | `agent_config.py` schema |
+| `services/yoizenclaw-runtime/src/tools/` | New | `adapter_executor.py`, `adapter_client.py` |
+| `services/yoizenclaw-runtime/src/application/agents/` | Modified | `tool_executor.py` dispatch logic |
+| `services/yoizenclaw-runtime/src/shared/config/` | Modified | `agent_config.py` schema |
 | `services/yoizenclaw-admin-service/src/modules/agents/` | Modified | DTO validation, schema |
 | `services/admin-console/src/app/features/automation/` | Modified | Tool configuration UI |
 | `services/api-gateway/src/modules/admin/` | Modified | Proxy routes for adapter lookup |

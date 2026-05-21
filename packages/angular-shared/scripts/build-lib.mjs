@@ -46,7 +46,6 @@ const sharedNodeModules = join(root, "node_modules");
  */
 const CONSUMER_CANDIDATES = [
   join(root, "../../services/admin-console/node_modules"),
-  join(root, "../../services/messaging-console/node_modules"),
 ];
 
 const hostNodeModules = CONSUMER_CANDIDATES.find((p) =>
@@ -56,8 +55,8 @@ const hostNodeModules = CONSUMER_CANDIDATES.find((p) =>
 if (!hostNodeModules) {
   fail(
     "no consumer with @angular installed was found.\n" +
-      "  Run `npm install` in services/admin-console (or " +
-      "services/messaging-console) first, then re-run this build.",
+      "  Run `npm install` in services/admin-console first, " +
+      "then re-run this build.",
   );
 }
 

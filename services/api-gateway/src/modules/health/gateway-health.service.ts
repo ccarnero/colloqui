@@ -15,18 +15,15 @@ import { REDIS_CLIENT } from "../../providers/redis.provider";
 const SERVICE_URLS = new Map<string, string>([
   ["auth-service", gatewayConfig.services.auth],
   ["cache-service", gatewayConfig.services.cache],
-  ["webhook-service", gatewayConfig.services.webhook],
   ["audit-service", gatewayConfig.services.audit],
-  ["event-processor", gatewayConfig.services.eventProcessor],
-  ["metrics-service", gatewayConfig.services.metrics],
   ["tenant-service", gatewayConfig.services.tenant],
-  ["scheduler-service", gatewayConfig.services.scheduler],
   ["registry-service", gatewayConfig.services.registry],
   ["workflow-service", gatewayConfig.services.workflow],
   ["proxy-service", gatewayConfig.services.proxy],
-  ["adapter-service", gatewayConfig.services.adapter],
+  ["connector-admin", gatewayConfig.services.connectorAdmin],
   ["channel-service", gatewayConfig.services.channel],
   ["yoizenclaw-admin-service", gatewayConfig.services.admin],
+  ["yoizenclaw-runtime-gateway", gatewayConfig.services.runtimeGateway],
 ]);
 
 const SERVICE_TIMEOUT_MS = 3_000;

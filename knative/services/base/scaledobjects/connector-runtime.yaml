@@ -1,0 +1,111 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: connector-runtime-scaler
+  labels:
+    app.kubernetes.io/name: connector-runtime
+    app.kubernetes.io/component: autoscaler
+spec:
+  # Plain Deployment (not Knative Service) — see
+  # knative/services/base/connector-runtime.yaml for why.
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: connector-runtime
+  pollingInterval: 15
+  # Same 5-min protection window as workflow-worker. The HTTP worker is
+  # the activity-only side of the pipeline (registers `activities`, no
+  # `workflowsPath`); a typical activity is an outbound HTTP call (3-30s
+  # depending on the target). Long cooldown matches typical retry
+  # storms — if a downstream API is slow, we keep the pod warm rather
+  # than churning replicas.
+  cooldownPeriod: 300
+  idleReplicaCount: 0
+  # Stress-grade floor: 3 hot replicas absorb the first burst without
+  # cold-start. Important because the HTTP worker also instantiates an
+  # `AdapterClient` with Redis SWR cache that warms over the first few
+  # requests.
+  minReplicaCount: 3
+  # Bumped from 20 → 50. HTTP activities are I/O-bound (outbound
+  # `tracedFetch`) so horizontal parallelism scales linearly. At 400
+  # concurrent activities per pod (worker.ts) and 50 replicas, the
+  # ceiling is 20k concurrent HTTP calls.
+  maxReplicaCount: 15
+  fallback:
+    failureThreshold: 3
+    replicas: 1
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          # Faster scale-out (2026-05-12 orchestrator-throughput plan,
+          # Phase 3). With the new slot-utilization triggers reacting
+          # to in-flight work, we want REPLICAS to follow within one
+          # polling window (15 s). At Percent: 200 + Pods: 6, the
+          # 5→15 trajectory now takes ceil(log2(3)) periodSeconds ≈
+          # 30 s (was 60 s with Percent: 100 + Pods: 4).
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Percent
+              value: 200
+              periodSeconds: 15
+            - type: Pods
+              value: 6
+              periodSeconds: 15
+          selectPolicy: Max
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 60
+  # Trigger redesign (2026-05-12 orchestrator-throughput plan, Phase 2).
+  # Same rationale as workflow-worker-scaler — see the comment block
+  # there for the "queue depth is blind to in-flight work" explanation.
+  #
+  # AverageValue semantics: the threshold below is the PER-POD target.
+  # We size against `maxConcurrentActivityTaskExecutions: 400` from
+  # worker.ts and aim for ~30 % utilization so KEDA scales out before
+  # the activity queue actually saturates (saturation = visible
+  # latency for the calling workflow because each HTTP activity blocks
+  # on an available slot).
+  #
+  # The Prometheus job filter `job="connector-runtime-sdk"` is
+  # CRITICAL — without it the temporal-server's system-worker also
+  # reports `temporal_worker_task_slots_used{task_queue="workflow-http"}`
+  # for its internal bookkeeping and would double-count.
+  triggers:
+    # Primary: activity-task slot utilization PER REPLICA.
+    # threshold=120 = 30 % of maxConcurrentActivityTaskExecutions(400).
+    # At 240 slots used per replica (60 %), HPA bumps replicas by 2 ×
+    # within one polling window.
+    # activationThreshold=10 ignores the ~2 long-poll reservations
+    # every replica holds at literal idle.
+    - type: prometheus
+      name: connector-runtime-load
+      metadata:
+        serverAddress: http://prometheus.support-services-dev.svc.cluster.local:9090
+        metricName: workflow_http_worker_load
+        threshold: "120"
+        activationThreshold: "10"
+        query: |
+          sum(temporal_worker_task_slots_used{job="connector-runtime-sdk",worker_type="ActivityWorker",task_queue="workflow-http"})
+
+    # Safety net: activity schedule-to-start p95 latency in ms.
+    # threshold=1000ms because activity start latency is more
+    # user-visible than workflow-task latency (each HTTP outbound waits
+    # for an available slot). At 3s p95, KEDA wants ceil(3000/1000)=3
+    # replicas — more aggressive than the workflow-worker side.
+    - type: prometheus
+      name: connector-runtime-schedule-to-start
+      metadata:
+        serverAddress: http://prometheus.support-services-dev.svc.cluster.local:9090
+        metricName: workflow_http_worker_schedule_to_start_p95_ms
+        threshold: "1000"
+        activationThreshold: "100"
+        query: |
+          1000 * histogram_quantile(0.95,
+            sum by (le) (
+              rate(temporal_activity_schedule_to_start_latency_bucket{job="connector-runtime-sdk",task_queue="workflow-http"}[1m])
+            )
+          )

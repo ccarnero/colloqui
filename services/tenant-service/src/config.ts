@@ -18,6 +18,9 @@ const DEFAULT_TENANT_POSTGRES_IMAGE = "pgvector/pgvector:pg17";
 const DEFAULT_TENANT_USAGE_POSTGRES_IMAGE = "timescale/timescaledb-ha:pg17";
 const DEFAULT_TENANT_USAGE_POSTGRES_STORAGE = "2Gi";
 
+/** Default container image for the per-tenant YoizenClaw runtime Knative Service. */
+const DEFAULT_YOIZENCLAW_RUNTIME_IMAGE = "dev.local/yoizenclaw-runtime:local";
+
 type TenantServiceConfig = {
   readonly port: number;
   readonly platformEnvironment: string;
@@ -38,7 +41,26 @@ type TenantServiceConfig = {
   readonly tenantUsagePostgresContainerImage: string;
   /** PVC storage size for the per-tenant TimescaleDB (usage) instance. */
   readonly tenantUsagePostgresStorage: string;
+  /**
+   * When `true` (default), `TenantProvisioningExecutor` applies the
+   * yoizenclaw-runtime Knative Service into the tenant namespace after
+   * Postgres readiness. Set `YOIZENCLAW_RUNTIME_AUTO_APPLY=false` to opt
+   * out (e.g. when an external GitOps controller owns it).
+   */
+  readonly yoizenclawRuntimeAutoApply: boolean;
+  /** Container image for per-tenant yoizenclaw-runtime Knative Service. */
+  readonly yoizenclawRuntimeImage: string;
+  /** NATS URL injected into the per-tenant yoizenclaw-runtime container. */
+  readonly yoizenclawRuntimeNatsUrl: string;
+  /** connector-admin REST URL injected into the per-tenant yoizenclaw-runtime container. */
+  readonly yoizenclawRuntimeConnectorAdminUrl: string;
+  /** OTEL OTLP/HTTP endpoint injected into the per-tenant yoizenclaw-runtime container. */
+  readonly yoizenclawRuntimeOtelEndpoint: string;
 };
+
+function platformEnvironment(): string {
+  return process.env.PLATFORM_ENVIRONMENT ?? "dev";
+}
 
 /** Lazy getters so tests can set `process.env` before first read. */
 export const tenantServiceConfig: TenantServiceConfig = {
@@ -46,7 +68,7 @@ export const tenantServiceConfig: TenantServiceConfig = {
     return Number.parseInt(process.env.PORT ?? "3000", 10);
   },
   get platformEnvironment() {
-    return process.env.PLATFORM_ENVIRONMENT ?? "dev";
+    return platformEnvironment();
   },
   get postgresHost() {
     return process.env.POSTGRES_HOST ?? DEFAULT_POSTGRES_HOST;
@@ -64,7 +86,7 @@ export const tenantServiceConfig: TenantServiceConfig = {
     return requirePostgresPassword();
   },
   get sharedPostgresHost() {
-    const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
+    const env = platformEnvironment();
     return (
       process.env.TENANT_POSTGRES_SHARED_HOST ??
       `postgres-shared.support-services-${env}.svc.cluster.local`
@@ -107,6 +129,37 @@ export const tenantServiceConfig: TenantServiceConfig = {
     return (
       process.env.TENANT_USAGE_POSTGRES_STORAGE ??
       DEFAULT_TENANT_USAGE_POSTGRES_STORAGE
+    );
+  },
+  get yoizenclawRuntimeAutoApply() {
+    const raw = process.env.YOIZENCLAW_RUNTIME_AUTO_APPLY;
+    if (raw === undefined) return true;
+    return raw.toLowerCase() !== "false" && raw !== "0";
+  },
+  get yoizenclawRuntimeImage() {
+    return (
+      process.env.YOIZENCLAW_RUNTIME_IMAGE ?? DEFAULT_YOIZENCLAW_RUNTIME_IMAGE
+    );
+  },
+  get yoizenclawRuntimeNatsUrl() {
+    const env = platformEnvironment();
+    return (
+      process.env.YOIZENCLAW_RUNTIME_NATS_URL ??
+      `nats://nats.support-services-${env}.svc.cluster.local:4222`
+    );
+  },
+  get yoizenclawRuntimeConnectorAdminUrl() {
+    const env = platformEnvironment();
+    return (
+      process.env.YOIZENCLAW_RUNTIME_CONNECTOR_ADMIN_URL ??
+      `http://connector-admin-api.platform-services-${env}.svc.cluster.local`
+    );
+  },
+  get yoizenclawRuntimeOtelEndpoint() {
+    const env = platformEnvironment();
+    return (
+      process.env.YOIZENCLAW_RUNTIME_OTEL_ENDPOINT ??
+      `http://otel-collector.support-services-${env}.svc.cluster.local:4318`
     );
   },
 };

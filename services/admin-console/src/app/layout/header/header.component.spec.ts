@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { signal } from "@angular/core";
+import { ActivatedRoute, convertToParamMap } from "@angular/router";
 import { vi } from "vitest";
 
 import { HeaderComponent } from "./header.component";
@@ -49,6 +50,15 @@ describe("HeaderComponent", () => {
             notifications: signal([]),
             markAllRead: vi.fn(),
             push: vi.fn(),
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              paramMap: convertToParamMap({}),
+              queryParamMap: convertToParamMap({}),
+            },
           },
         },
       ],

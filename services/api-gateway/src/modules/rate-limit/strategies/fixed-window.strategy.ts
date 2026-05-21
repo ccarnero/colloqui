@@ -70,12 +70,28 @@ export class FixedWindowStrategy implements IRateLimitStrategy {
         limit,
         windowSec,
       );
-    } catch {
-      this.scriptSha = (await this.redis.script(
-        "LOAD",
+    } catch (err) {
+      if (!isNoScriptError(err)) throw err;
+      // Redis Cluster: SCRIPT LOAD only seeds one node, but EVALSHA
+      // is routed by the slot owner — they may differ. Fall back to
+      // EVAL with the source: ioredis routes EVAL by KEYS to the
+      // slot owner, that node compiles + caches the script, and the
+      // next EVALSHA hits. See packages/shared/src/circuit-breaker.ts
+      // `evalWithRetry` for the canonical pattern.
+      return this.redis.eval(
         LUA_FIXED_WINDOW,
-      )) as string;
-      return this.redis.evalsha(this.scriptSha, 1, redisKey, limit, windowSec);
+        1,
+        redisKey,
+        limit,
+        windowSec,
+      );
     }
   }
+}
+
+function isNoScriptError(err: unknown): boolean {
+  if (!err) return false;
+  const msg =
+    err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  return msg.includes("NOSCRIPT");
 }

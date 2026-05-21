@@ -1,6 +1,7 @@
 import { DestroyRef, Injectable } from "@angular/core";
 import { HttpClient } from "@angular/common/http";
 import { Router } from "@angular/router";
+import type { ITokenResponse } from "@yoizen/angular-shared";
 import { BaseAuthService } from "@yoizen/angular-shared";
 import { environment } from "../../../environments/environment";
 
@@ -40,6 +41,17 @@ export class AuthService extends BaseAuthService {
 
   protected override onBeforeLogout(): void {
     this.clearRefreshTimer();
+  }
+
+  /**
+   * Returns an Observable so the caller can handle success/error in the UI.
+   */
+  loginWithResult(email: string, password: string, tenantId?: string) {
+    return this.postLogin(email, password, tenantId);
+  }
+
+  handleLoginSuccess(res: ITokenResponse): void {
+    this.completeLogin(res);
   }
 
   private scheduleRefresh(): void {

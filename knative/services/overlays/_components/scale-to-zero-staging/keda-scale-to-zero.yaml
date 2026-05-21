@@ -10,6 +10,8 @@
 # subresource — see `knative/services/base/scaledobjects/kustomization.yaml`
 # for the full rationale.
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -19,15 +21,19 @@ spec:
   idleReplicaCount: 0
   cooldownPeriod: 300
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: workflow-http-worker-scaler
+  name: connector-runtime-scaler
 spec:
   minReplicaCount: 0
   idleReplicaCount: 0
   cooldownPeriod: 300
 ---
+
+
 # ----- Phase 1.5: NATS JetStream-driven workers -----
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -38,6 +44,8 @@ spec:
   idleReplicaCount: 0
   cooldownPeriod: 300
 ---
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -47,24 +55,8 @@ spec:
   idleReplicaCount: 0
   cooldownPeriod: 300
 ---
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: event-processor-worker-scaler
-spec:
-  minReplicaCount: 0
-  idleReplicaCount: 0
-  cooldownPeriod: 300
----
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: metrics-service-worker-scaler
-spec:
-  minReplicaCount: 0
-  idleReplicaCount: 0
-  cooldownPeriod: 300
----
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -74,15 +66,8 @@ spec:
   idleReplicaCount: 0
   cooldownPeriod: 300
 ---
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: webhook-service-worker-scaler
-spec:
-  minReplicaCount: 0
-  idleReplicaCount: 0
-  cooldownPeriod: 300
----
+
+
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:

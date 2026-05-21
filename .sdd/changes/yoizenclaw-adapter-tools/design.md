@@ -10,7 +10,7 @@ The admin-service validates `adapterRef` references and the Angular UI adds adap
 
 ### Decision 1: Python AdapterClient Implementation
 
-**Choice**: Create new Python package `src/shared/adapter_client.py` in yoizenclaw-application
+**Choice**: Create new Python package `src/shared/adapter_client.py` in `services/yoizenclaw-runtime`
 **Alternatives considered**:
 - Call TypeScript AdapterClient via Node subprocess (rejected: adds process overhead, complex error handling)
 - Duplicate logic in NATS bridge (rejected: tight coupling, harder to test)
@@ -90,17 +90,17 @@ sequenceDiagram
 
 | File | Action | Description |
 |------|--------|-------------|
-| `applications/yoizenclaw-application/src/shared/adapter_client.py` | Create | Python AdapterClient with SWR cache |
-| `applications/yoizenclaw-application/src/tools/adapter_executor.py` | Create | AdapterToolExecutor class |
-| `applications/yoizenclaw-application/src/application/agents/tool_executor.py` | Modify | Add adapter dispatch branch in `_execute_configured_tool` |
-| `applications/yoizenclaw-application/src/shared/config/agent_config.py` | Modify | Add `AdapterReference` model, `adapterRef` field to `AgentToolPayload` |
-| `applications/yoizenclaw-application/src/shared/di/providers.py` | Modify | Register `AdapterClient` and `AdapterToolExecutor` in DI |
+| `services/yoizenclaw-runtime/src/shared/adapter_client.py` | Create | Python AdapterClient with SWR cache |
+| `services/yoizenclaw-runtime/src/tools/adapter_executor.py` | Create | AdapterToolExecutor class |
+| `services/yoizenclaw-runtime/src/application/agents/tool_executor.py` | Modify | Add adapter dispatch branch in `_execute_configured_tool` |
+| `services/yoizenclaw-runtime/src/shared/config/agent_config.py` | Modify | Add `AdapterReference` model, `adapterRef` field to `AgentToolPayload` |
+| `services/yoizenclaw-runtime/src/shared/di/providers.py` | Modify | Register `AdapterClient` and `AdapterToolExecutor` in DI |
 | `services/yoizenclaw-admin-service/src/modules/agents/agents.dto.ts` | Modify | Add `AdapterReferenceDto`, update tool validation |
 | `services/yoizenclaw-admin-service/src/modules/adapters/adapters.controller.ts` | Create | Adapter lookup endpoints for UI |
 | `services/admin-console/src/app/features/automation/yoizenclaw/components/tool-adapter-form.component.ts` | Create | Angular component for adapter tool config |
 | `services/admin-console/src/app/features/automation/yoizenclaw/yoizenclaw.component.ts` | Modify | Integrate ToolAdapterFormComponent |
-| `applications/yoizenclaw-application/tests/test_adapter_client.py` | Create | Unit tests for AdapterClient |
-| `applications/yoizenclaw-application/tests/test_adapter_executor.py` | Create | Unit tests for AdapterToolExecutor |
+| `services/yoizenclaw-runtime/tests/test_adapter_client.py` | Create | Unit tests for AdapterClient |
+| `services/yoizenclaw-runtime/tests/test_adapter_executor.py` | Create | Unit tests for AdapterToolExecutor |
 | `services/yoizenclaw-admin-service/test/agents/adapter-ref-validation.test.ts` | Create | Unit tests for adapterRef validation |
 
 ## Interfaces / Contracts

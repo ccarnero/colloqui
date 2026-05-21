@@ -11,12 +11,28 @@ data:
     port 6379
     protected-mode no
 
+    # Cluster mode: 3 masters + 3 replicas. nodes.conf is persisted to
+    # /data so node identity survives restarts. cluster-config-file is
+    # auto-managed by redis-server, NOT a user-editable file.
+    cluster-enabled yes
+    cluster-config-file /data/nodes.conf
+    cluster-node-timeout 5000
+    cluster-require-full-coverage no
+    cluster-allow-reads-when-down no
+    cluster-replica-validity-factor 10
+    dir /data
+
     # Pure cache mode: no persistence
     save ""
     appendonly no
 
     # Memory management
-    maxmemory 256mb
+    # Sits below the per-pod memory limit (512Mi after the 2026-05
+    # bump). ~128Mi headroom for Redis process overhead, client output
+    # buffers, replication backlog, and slab fragmentation so the
+    # kernel never OOM-kills the pod before `allkeys-lru` finishes
+    # evicting. Do NOT raise this to match the pod limit again.
+    maxmemory 384mb
     maxmemory-policy allkeys-lru
 
     # Performance

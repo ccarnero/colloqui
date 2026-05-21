@@ -1,0 +1,40 @@
+# OrbStack override for `postgres-temporal` CNPG cluster.
+# Same shrink as `local-base/patches/postgres-temporal-resources.yaml`
+# plus explicit `storageClass: local-path` (orbstack default storage
+# class). PVCs and WAL PVCs both use it.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-temporal
+spec:
+  instances: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  storage:
+    size: 10Gi
+    storageClass: local-path
+  walStorage:
+    size: 2Gi
+    storageClass: local-path
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: preferred
+  postgresql:
+    parameters:
+      shared_buffers: "256MB"
+      effective_cache_size: "768MB"
+      work_mem: "8MB"
+      maintenance_work_mem: "128MB"
+      huge_pages: "off"
+      max_connections: "150"
+      max_wal_size: "1GB"
+      min_wal_size: "256MB"
+      wal_buffers: "16MB"
+      autovacuum_max_workers: "3"
+      autovacuum_naptime: "30s"

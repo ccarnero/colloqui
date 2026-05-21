@@ -23,6 +23,8 @@
 # Services NOT included here (kept at `min-scale: 1` from base):
 #   • `api-gateway` — DX entry point, cold-start hostile.
 ---
+
+
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -35,6 +37,8 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "30s"
         autoscaling.knative.dev/window: "60s"
 ---
+
+
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -47,6 +51,8 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "30s"
         autoscaling.knative.dev/window: "60s"
 ---
+
+
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -59,18 +65,8 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "30s"
         autoscaling.knative.dev/window: "60s"
 ---
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: scheduler-service
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
+
+
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -83,6 +79,8 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "30s"
         autoscaling.knative.dev/window: "60s"
 ---
+
+
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -95,10 +93,12 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "30s"
         autoscaling.knative.dev/window: "60s"
 ---
+
+
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: adapter-service-api
+  name: connector-admin-api
 spec:
   template:
     metadata:
@@ -107,6 +107,8 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "30s"
         autoscaling.knative.dev/window: "60s"
 ---
+
+
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -119,18 +121,8 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "30s"
         autoscaling.knative.dev/window: "60s"
 ---
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: messaging-console
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
+
+
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -143,6 +135,8 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "30s"
         autoscaling.knative.dev/window: "60s"
 ---
+
+
 # ----- Phase 1.5: *-api KSVCs (HTTP-only, scale-to-zero safe) -----
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -156,6 +150,8 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "30s"
         autoscaling.knative.dev/window: "60s"
 ---
+
+
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -168,30 +164,8 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "30s"
         autoscaling.knative.dev/window: "60s"
 ---
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: event-processor-api
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: metrics-service-api
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
+
+
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -204,18 +178,8 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "30s"
         autoscaling.knative.dev/window: "60s"
 ---
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: webhook-service-api
-spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/min-scale: "0"
-        autoscaling.knative.dev/scale-down-delay: "30s"
-        autoscaling.knative.dev/window: "60s"
----
+
+
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:

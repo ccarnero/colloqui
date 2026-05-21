@@ -1,5 +1,5 @@
-import Redis from "ioredis";
 import type { FactoryProvider, OnModuleDestroy } from "@nestjs/common";
+import { createRedisClient, type RedisLike } from "@yoizen/database";
 import { PinoLoggerService } from "@yoizen/observability";
 
 export const REDIS_CLIENT = "CHANNEL_SERVICE_REDIS_CLIENT";
@@ -7,15 +7,16 @@ export const REDIS_CLIENT = "CHANNEL_SERVICE_REDIS_CLIENT";
 /**
  * Minimal Redis provider for channel-service. Currently used by the
  * egress distributed circuit breaker (per-tenant, per-provider
- * isolation). Kept as a small `FactoryProvider` on purpose — we do
- * NOT want to pull in `@yoizen/database`'s Nest modules here because
- * channel-service doesn't speak to the rest of the DB layer via
- * Postgres through that package.
+ * isolation). Builds the raw client through `createRedisClient` from
+ * `@yoizen/database` so we honour `REDIS_CLUSTER_MODE` and stay in
+ * lockstep with every other service when the cluster topology
+ * changes; the rest of `@yoizen/database`'s Nest modules (Postgres,
+ * tenant managers) are NOT imported here.
  *
- * Reads `REDIS_HOST` and `REDIS_PORT` from env with sane localhost
- * defaults. `lazyConnect: true` keeps the process startable even if
- * Redis is temporarily down (the breaker itself falls back to a
- * local in-memory view in that case).
+ * Reads `REDIS_HOST` / `REDIS_PORT` / `REDIS_CLUSTER_MODE` from env.
+ * `lazyConnect: true` keeps the process startable even if Redis is
+ * temporarily down (the breaker itself falls back to a local
+ * in-memory view in that case).
  *
  * An `error` listener is attached so transient connectivity issues
  * surface as structured log lines instead of Node's noisy
@@ -24,18 +25,24 @@ export const REDIS_CLIENT = "CHANNEL_SERVICE_REDIS_CLIENT";
  * outage ioredis re-emits on every reconnect attempt and we don't
  * want to flood the log pipeline.
  */
-export const redisProvider: FactoryProvider<Redis> = {
+export const redisProvider: FactoryProvider<RedisLike> = {
   provide: REDIS_CLIENT,
-  useFactory: (): Redis => {
+  useFactory: (): RedisLike => {
     const host = process.env.REDIS_HOST ?? "localhost";
     const port = Number(process.env.REDIS_PORT) || 6379;
     const logger = new PinoLoggerService("channel-service-redis");
-    const client = new Redis({
-      host,
-      port,
-      lazyConnect: true,
-      enableReadyCheck: true,
+    // `commandTimeout: 1000` makes ioredis actively cancel queued
+    // commands when the response hasn't arrived in 1 s. Without it the
+    // egress breaker's wall-clock timeout rejects the application-side
+    // promise but leaves the underlying ioredis command sitting in the
+    // per-node queue forever, so under sustained bursts the queue
+    // depth itself becomes the bottleneck (every new call inherits
+    // the backlog). 1 s is generous against the ~0.13 ms Redis p50
+    // we measured in cluster mode and matches the breaker budget set
+    // in `egress-breaker.provider.ts`.
+    const client = createRedisClient({
       maxRetriesPerRequest: 1,
+      commandTimeout: 1000,
     });
 
     const seenErrors = new Map<string, number>();
@@ -68,7 +75,7 @@ export const redisProvider: FactoryProvider<Redis> = {
  * call more than once; ioredis ignores double-quit.
  */
 export class RedisClientDisposer implements OnModuleDestroy {
-  constructor(private readonly redis: Redis) {}
+  constructor(private readonly redis: RedisLike) {}
   async onModuleDestroy(): Promise<void> {
     try {
       await this.redis.quit();

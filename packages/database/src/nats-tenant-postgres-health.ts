@@ -15,7 +15,6 @@ export interface INatsTenantPostgresHealthInput {
 
 /**
  * Shared health aggregation for services that use NATS + per-tenant PostgreSQL
- * (audit-service, metrics-service, etc.).
  */
 export async function getNatsTenantPostgresHealthStatus(
   input: INatsTenantPostgresHealthInput,

@@ -14,6 +14,7 @@ import { nanoid } from "nanoid";
 import {
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
   WORKFLOW_DEFAULT_TIMEOUT_MS,
+  WORKFLOW_TASK_TIMEOUT_MS,
 } from "@yoizen/shared";
 import type {
   EventCausalContext,
@@ -30,6 +31,11 @@ import type {
   IWorkflowExecutionRow,
 } from "./workflows.repository";
 import type { IListExecutionsQuery } from "./dto/list-executions-query.dto";
+import { RegisteredServicesResolver } from "./registered-services.resolver";
+import {
+  augmentActionsWithSlug,
+  collectServiceIds,
+} from "./service-id-walker";
 
 /** Execution row exposed over HTTP (camelCase). */
 export interface IWorkflowExecutionListItem {
@@ -139,6 +145,7 @@ export class WorkflowsService {
   constructor(
     @Inject(TEMPORAL_CLIENT) private readonly temporal: Client,
     private readonly repository: WorkflowsRepository,
+    private readonly servicesResolver: RegisteredServicesResolver,
   ) {}
 
   /**
@@ -259,12 +266,15 @@ export class WorkflowsService {
       : `${tenantId}:${definition.name}:${nanoid()}`;
     const executionId = nanoid();
 
+    const rawActions = definition.actions as WorkflowAction[];
+    const actions = await this.preResolveServiceSlugs(rawActions, tenantId);
+
     const workflowDef: WorkflowDefinition = {
       name: definition.name,
       tenant: tenantId,
       application: definition.application,
       request,
-      actions: definition.actions as WorkflowAction[],
+      actions,
       ...(options.causal && { causal: options.causal }),
     };
 
@@ -274,6 +284,7 @@ export class WorkflowsService {
         workflowId: temporalWorkflowId,
         args: [workflowDef, executionId],
         workflowExecutionTimeout: WORKFLOW_DEFAULT_TIMEOUT_MS,
+        workflowTaskTimeout: WORKFLOW_TASK_TIMEOUT_MS,
         ...(isIdempotent
           ? {
               workflowIdReusePolicy: WorkflowIdReusePolicy.REJECT_DUPLICATE,
@@ -455,6 +466,43 @@ export class WorkflowsService {
       failure,
       createdAt: execution.created_at,
     };
+  }
+
+  /**
+   * Walks every `serviceCall` action in the definition (including nested
+   * `branch` arms), resolves each unique `serviceId` (UUID) to the
+   * `registered_services.name` (slug) via {@link RegisteredServicesResolver},
+   * and returns a new actions array with `args.serviceSlug` populated.
+   *
+   * Rationale: the adapter mirror in `adapter-service` is keyed by slug,
+   * not by UUID. Without this pre-resolution, the activity's mirror
+   * lookup misses on every call (negative-cached for 10s) and falls
+   * back through `registry-service` — adding one HTTP hop and pinning
+   * the run's latency to `adapter-service-api`'s cold-start time.
+   *
+   * Failure handling: lookup errors fall through silently. The action
+   * goes to Temporal without `serviceSlug`; the activity reverts to
+   * the legacy registry path — same behaviour as before this fix.
+   *
+   * Performance:
+   *  - Two linear walks over the actions array (collect + augment),
+   *    each O(n) in total node count.
+   *  - One bulk parallel resolver call: O(k) network round-trips on
+   *    cold cache, O(0) on warm cache (Map lookup is O(1) per key).
+   *  - Single-flight inside the resolver dedupes concurrent callers
+   *    requesting the same id, preventing thundering herd at start-up.
+   */
+  private async preResolveServiceSlugs(
+    actions: WorkflowAction[],
+    tenantId: string,
+  ): Promise<WorkflowAction[]> {
+    const ids = collectServiceIds(actions);
+    if (ids.size === 0) return actions;
+
+    const slugMap = await this.servicesResolver.resolveSlugs(tenantId, ids);
+    if (slugMap.size === 0) return actions;
+
+    return augmentActionsWithSlug(actions, slugMap);
   }
 
   private extractFailureInfo(err: WorkflowFailedError): IWorkflowFailureInfo {

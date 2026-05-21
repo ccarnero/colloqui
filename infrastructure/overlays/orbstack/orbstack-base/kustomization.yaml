@@ -9,3 +9,4 @@ patches:
   - path: patches/nats-config.yaml
   - path: patches/redis.yaml
   - path: patches/postgres.yaml
+  - path: patches/postgres-temporal.yaml

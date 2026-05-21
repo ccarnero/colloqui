@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-The API Gateway is the HTTP entry point for the event-driven platform. It validates incoming event payloads, publishes them to NATS JetStream (`EVENTS` stream), tracks pending state in Redis, and returns results. It also exposes real-time SSE streaming, proxies requests to auth-service, audit-service, tenant-service, scheduler-service, registry-service, and workflow-service over HTTP, and performs health checks against all downstream services. A Fastify `onRequest` hook intercepts non-platform paths and proxies them to tenant-registered Knative services via a dynamic route cache that polls the registry-service every 15s. Global guards enforce JWT authentication (`AuthGuard`) and tenant resolution (`TenantGuard`) on every request.
+The API Gateway is the HTTP entry point for the platform. It proxies requests to auth-service, audit-service, tenant-service, registry-service, workflow-service, adapter-service, channel-service, yoizenclaw-admin-service, and proxy-service over HTTP, and performs health checks against all downstream services. A Fastify `onRequest` hook intercepts non-platform paths and proxies them to tenant-registered Knative services via a dynamic route cache that polls the registry-service every 15s. Global guards enforce JWT authentication (`AuthGuard`) and tenant resolution (`TenantGuard`) on every request.
 
 ## Tech Stack
 
@@ -34,11 +34,9 @@ src/
 │   ├── nats.provider.ts
 │   └── redis.provider.ts
 └── modules/
-    ├── events/                     # publish, results, SSE
     ├── auth/                       # auth-facade, jwt, public-routes-cache, auth-proxy
     ├── audit/                      # audit + channel-audit proxy controllers
     ├── tenants/
-    ├── schedulers/
     ├── registry/
     ├── workflows/
     ├── adapters/
@@ -81,10 +79,8 @@ AppModule
 ├── ProvidersModule (@Global) ─── NATS, Redis
 ├── ObservabilityModule
 ├── AuthModule
-├── EventsModule
 ├── AuditModule                    # audit + channel-audit HTTP proxies
 ├── TenantsModule
-├── SchedulersModule
 ├── RegistryModule
 ├── AdaptersModule
 ├── ChannelsModule
@@ -109,7 +105,7 @@ AppModule
 
 ### Dynamic Routing
 
-The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching platform prefixes (`/events`, `/audit`, `/tenants`, `/schedulers`, `/registry`, `/workflows`, `/health`, `/auth`):
+The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching platform prefixes (`/audit`, `/tenants`, `/registry`, `/workflows`, `/adapters`, `/channels`, `/health`, `/auth`):
 
 1. Resolve tenant from request
 2. Match path against `DynamicRouteCacheService` (longest prefix first)
@@ -122,7 +118,7 @@ The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching p
 1. **Publish**: `POST /events` -> validate DTO -> UUID -> JetStream publish + Redis pipeline -> 202 Accepted
 2. **Results**: `GET /results/:id` -> L1 `Map` lookup -> Redis fallback -> FIFO eviction at 1024
 3. **SSE**: `GET /events/stream?types=...` -> core NATS subscriptions -> RxJS Observable
-4. **Proxies**: auth, audit, tenant, scheduler, registry, workflow -> HTTP `fetch` to downstream service
+4. **Proxies**: auth, audit, tenant, registry, workflow, adapter, channel -> HTTP `fetch` to downstream service
 5. **Dynamic routes**: non-platform paths -> `DynamicRouteCacheService.match()` -> HTTP proxy to tenant Knative service
 6. **Health**: parallel checks on NATS, Redis, and all downstream `/health` endpoints (3s timeout)
 
@@ -136,7 +132,6 @@ The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching p
 | auth-service | HTTP | Proxy auth endpoints |
 | audit-service | HTTP | Proxy audit queries |
 | tenant-service | HTTP | Proxy tenant CRUD |
-| scheduler-service | HTTP | Proxy scheduler operations |
 | registry-service | HTTP | Proxy registry operations; poll `GET /routes` for dynamic routing |
 | workflow-api | HTTP | Proxy workflow operations |
 | adapter-service | HTTP | Proxy `/adapters` CRUD and endpoint management |
@@ -172,14 +167,10 @@ The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching p
 | `AUTH_SERVICE_URL` | `http://auth-service.platform-services.svc.cluster.local` | Auth service URL |
 | `AUDIT_SERVICE_URL` | `http://audit-service.platform-services-dev.svc.cluster.local` | Audit proxy + health |
 | `TENANT_SERVICE_URL` | `http://tenant-service.platform-services-dev.svc.cluster.local` | Tenant proxy + health |
-| `SCHEDULER_SERVICE_URL` | `http://scheduler-service.platform-services.svc.cluster.local` | Scheduler proxy |
 | `REGISTRY_SERVICE_URL` | `http://registry-service.platform-services.svc.cluster.local` | Registry proxy + route discovery |
 | `WORKFLOW_SERVICE_URL` | `http://workflow-api.platform-services.svc.cluster.local` | Workflow proxy |
 | `ADAPTER_SERVICE_URL` | `http://adapter-service.platform-services-dev.svc.cluster.local` | Adapter proxy |
 | `CACHE_SERVICE_URL` | `http://cache-service.platform-services-dev.svc.cluster.local` | Health check target |
-| `WEBHOOK_SERVICE_URL` | `http://webhook-service.platform-services-dev.svc.cluster.local` | Health check target |
-| `EVENT_PROCESSOR_URL` | `http://event-processor.platform-services-dev.svc.cluster.local` | Health check target |
-| `METRICS_SERVICE_URL` | `http://metrics-service.platform-services-dev.svc.cluster.local` | Health check target |
 
 ### Knative
 
@@ -238,12 +229,8 @@ Requires local NATS (`nats://localhost:4222`), Redis (`localhost:6379`), and `JW
 | **auth-service** | HTTP proxy target for `/auth/*` endpoints |
 | **audit-service** | HTTP proxy target for `/audit/events` queries |
 | **tenant-service** | HTTP proxy target for `/tenants` CRUD |
-| **scheduler-service** | HTTP proxy target for `/schedulers/*` endpoints |
 | **registry-service** | HTTP proxy target for `/registry/*` endpoints; polls `GET /routes` for dynamic routing |
 | **workflow-api** | HTTP proxy target for `/workflows` endpoints |
 | **adapter-service** | HTTP proxy target for `/adapters/*` endpoints |
-| **event-processor** | Downstream consumer (health check only) |
 | **cache-service** | No data dependency (health check only) |
-| **webhook-service** | No data dependency (health check only) |
-| **metrics-service** | No data dependency (health check only) |
-| **`@yoizen/shared`** | Stream names, subject prefixes, key prefixes, TTLs, cache limits, auth types |
+| **`@yoizen/shared`** | Subject prefixes, auth types |

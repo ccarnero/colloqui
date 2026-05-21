@@ -51,3 +51,45 @@ spec:
       max_client_conn: "1000"
       default_pool_size: "20"
       reserve_pool_size: "10"
+---
+# Auxiliary PgBouncer pooler for the dedicated `postgres-temporal`
+# CNPG cluster. Intended for ad-hoc clients (psql, migration tools,
+# scripts) that benefit from connection multiplexing.
+#
+# IMPORTANT: Temporal Server must NOT use this pooler. Temporal's
+# persistence layer requires stable session-scoped connections (it
+# manages its own pool, holds prepared statements and lock keepalives,
+# and maps shards to connections). It must connect directly to
+# `postgres-temporal-rw:5432`. The `temporal/deployment.yaml`
+# manifest already points to `POSTGRES_SEEDS=postgres-temporal-rw`
+# for this reason.
+#
+# Session pool mode (the safest with Postgres extensions / advisory
+# locks / set local) is mandatory here — transaction mode would break
+# psql `\watch`, prepared statements, and many maintenance tools.
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: postgres-temporal-pooler
+  labels:
+    app.kubernetes.io/name: postgres-temporal
+    app.kubernetes.io/component: pgbouncer
+spec:
+  cluster:
+    name: postgres-temporal
+  instances: 1
+  type: rw
+  serviceTemplate:
+    metadata:
+      name: postgres-temporal-pooler
+      labels:
+        app.kubernetes.io/name: postgres-temporal
+        app.kubernetes.io/component: pgbouncer
+    spec:
+      type: ClusterIP
+  pgbouncer:
+    poolMode: session
+    parameters:
+      max_client_conn: "1000"
+      default_pool_size: "20"
+      reserve_pool_size: "10"

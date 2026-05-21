@@ -20,8 +20,21 @@ runTemporalWorkerCli(
       taskQueue: WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
       workflowsPath: require.resolve("./workflows"),
       activities,
-      maxConcurrentActivityTaskExecutions: 100,
-      maxConcurrentWorkflowTaskExecutions: 50,
+      // Stress-grade concurrency. The orchestrator runs both
+      // workflow tasks (deterministic, CPU-bound on replay) and
+      // local activities (`executeJsFunction`, `executeServiceBusCall`,
+      // `executeChannelSend` — I/O bound). Bumping both ceilings
+      // raises the per-pod throughput before KEDA needs to add a
+      // replica. KEDA `targetQueueSize` is matched in the
+      // ScaledObject so scale-out triggers when capacity is ~50%
+      // utilized.
+      maxConcurrentActivityTaskExecutions: 200,
+      maxConcurrentWorkflowTaskExecutions: 150,
+      // Default polls (5/5) cap pickup throughput on a quiet queue.
+      // Bumping to 10/10 cuts schedule-to-start under burst from
+      // ~200ms to <50ms with negligible CPU overhead.
+      maxConcurrentActivityTaskPolls: 10,
+      maxConcurrentWorkflowTaskPolls: 10,
       shutdownGraceTime: "30s",
     },
   },

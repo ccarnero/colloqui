@@ -71,7 +71,7 @@ src/
 
 | Activity | Task Queue | Description |
 |----------|-----------|-------------|
-| `endpointCall` | `workflow-http` (remote) | HTTP call via `workflow-http-worker` |
+| `endpointCall` | `http-adapter` (remote) | HTTP call via `http-adapter` |
 | `jsFunction` | `workflow-orchestrator` (local) | Inline JS evaluation via `new Function()` |
 | `serviceBusCall` | `workflow-orchestrator` (local) | NATS publish with tenant header |
 | `branch` | — (workflow-level) | Parallel execution of multiple action branches |
@@ -136,6 +136,8 @@ NATS is not registered in `ProvidersModule`. The service-bus activity (`service-
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace |
 | `NATS_URL` | `nats://localhost:4222` | NATS server URL |
+| `REDIS_HOST` | `localhost` | Redis host. **Required on the worker process** — `executeAgentCall` uses Redis for the distributed circuit breaker and as the `YoizenClawExecutionClient` status cache. Missing on the deployment causes every agentCall to fail with `MaxRetriesPerRequestError` / `REDIS_UNAVAILABLE`. |
+| `REDIS_PORT` | `6379` | Redis port (worker only). |
 
 ### Knative
 
@@ -194,6 +196,6 @@ Requires local Temporal server (`localhost:7233`) and NATS (`nats://localhost:42
 |---------|-------------|
 | **Temporal Server** | Workflow execution engine (gRPC) |
 | **NATS** | Service bus activity publishes to NATS subjects |
-| **workflow-http-worker** | Executes `endpointCall` activities on the `workflow-http` task queue |
+| **http-adapter** | Executes generic HTTP activities for `endpointCall` / `serviceCall` on the `http-adapter` task queue |
 | **api-gateway** | Upstream proxy (workflow endpoints proxied through the gateway) |
 | **`@yoizen/shared`** | Workflow types, task queue names, `TENANT_HEADER` |

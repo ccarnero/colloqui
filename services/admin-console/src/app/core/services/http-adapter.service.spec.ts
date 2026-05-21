@@ -22,7 +22,7 @@ describe("HttpAdapterService", () => {
 
   it("lists adapters at base URL", () => {
     service.list().subscribe();
-    const req = httpMock.expectOne(`${environment.apiUrl}/adapters`);
+    const req = httpMock.expectOne(`${environment.apiUrl}/connectors`);
     expect(req.request.method).toBe("GET");
     req.flush([]);
     httpMock.verify();
@@ -31,7 +31,7 @@ describe("HttpAdapterService", () => {
   it("lists adapters with context query", () => {
     service.list({ context: "internal" }).subscribe();
     const req = httpMock.expectOne(
-      `${environment.apiUrl}/adapters?context=internal`,
+      `${environment.apiUrl}/connectors?context=internal`,
     );
     expect(req.request.method).toBe("GET");
     req.flush([]);
@@ -40,7 +40,7 @@ describe("HttpAdapterService", () => {
 
   it("gets adapter by id", () => {
     service.get("a1").subscribe();
-    const req = httpMock.expectOne(`${environment.apiUrl}/adapters/a1`);
+    const req = httpMock.expectOne(`${environment.apiUrl}/connectors/a1`);
     expect(req.request.method).toBe("GET");
     req.flush({} as never);
     httpMock.verify();

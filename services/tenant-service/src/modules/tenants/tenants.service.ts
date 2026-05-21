@@ -146,8 +146,8 @@ export class TenantsService {
 
   /**
    * Lists tenants. When `filter.status` is provided, the platform DB is
-   * queried with the filter pushed down so callers like scheduler-service
-   * can ask for `provisioning_status = 'ready'` and skip mid-provisioning
+   * queried with the filter pushed down so callers can ask for
+   * `provisioning_status = 'ready'` and skip mid-provisioning
    * or failed rows in O(1) per row at the source.
    */
   async listTenants(filter?: {

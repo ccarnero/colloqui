@@ -18,6 +18,8 @@ spec:
               value: "redis.support-services-staging.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
             # ----- DNS for split services (Phase 1.5): use *-api ------
             - name: AUDIT_SERVICE_URL
               value: "http://audit-service-api.platform-services-staging.svc.cluster.local"
@@ -27,14 +29,6 @@ spec:
               value: "http://auth-service.platform-services-staging.svc.cluster.local"
             - name: CACHE_SERVICE_URL
               value: "http://cache-service.platform-services-staging.svc.cluster.local"
-            - name: WEBHOOK_SERVICE_URL
-              value: "http://webhook-service-api.platform-services-staging.svc.cluster.local"
-            - name: EVENT_PROCESSOR_URL
-              value: "http://event-processor-api.platform-services-staging.svc.cluster.local"
-            - name: METRICS_SERVICE_URL
-              value: "http://metrics-service-api.platform-services-staging.svc.cluster.local"
-            - name: SCHEDULER_SERVICE_URL
-              value: "http://scheduler-service.platform-services-staging.svc.cluster.local"
             - name: REGISTRY_SERVICE_URL
               value: "http://registry-service.platform-services-staging.svc.cluster.local"
             - name: WORKFLOW_SERVICE_URL
@@ -74,77 +68,6 @@ spec:
               port: 3000
             initialDelaySeconds: 3
             periodSeconds: 5
----
-# ----- event-processor: split api ↔ worker (Phase 1.5) -----
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: event-processor-api
-spec:
-  template:
-    spec:
-      containers:
-        - name: user-container
-          image: dev.local/event-processor:local
-          ports:
-            - containerPort: 3000
-              protocol: TCP
-          env:
-            - name: NATS_URL
-              value: "nats://nats.support-services-staging.svc.cluster.local:4222"
-            - name: REDIS_HOST
-              value: "redis.support-services-staging.svc.cluster.local"
-            - name: REDIS_PORT
-              value: "6379"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.support-services-staging.svc.cluster.local:4318"
-            - name: OTEL_SERVICE_NAME
-              value: "event-processor-api"
-            - name: SERVICE_MODE
-              value: "api"
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            seccompProfile:
-              type: RuntimeDefault
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: "1"
-              memory: 512Mi
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 3000
-            initialDelaySeconds: 3
-            periodSeconds: 5
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: event-processor-worker
-spec:
-  template:
-    spec:
-      containers:
-        - name: user-container
-          env:
-            - name: NATS_URL
-              value: "nats://nats.support-services-staging.svc.cluster.local:4222"
-            - name: REDIS_HOST
-              value: "redis.support-services-staging.svc.cluster.local"
-            - name: REDIS_PORT
-              value: "6379"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.support-services-staging.svc.cluster.local:4318"
-            - name: OTEL_SERVICE_NAME
-              value: "event-processor-worker"
-            - name: SERVICE_MODE
-              value: "worker"
 ---
 # ----- audit-service: split api ↔ worker (Phase 1.5) -----
 apiVersion: serving.knative.dev/v1
@@ -244,6 +167,8 @@ spec:
               value: "redis.support-services-staging.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-staging.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -268,69 +193,6 @@ spec:
               port: 3000
             initialDelaySeconds: 3
             periodSeconds: 5
----
-# ----- webhook-service: split api ↔ worker (Phase 1.5) -----
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: webhook-service-api
-spec:
-  template:
-    spec:
-      containers:
-        - name: user-container
-          image: dev.local/webhook-service:local
-          ports:
-            - containerPort: 3000
-              protocol: TCP
-          env:
-            - name: NATS_URL
-              value: "nats://nats.support-services-staging.svc.cluster.local:4222"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.support-services-staging.svc.cluster.local:4318"
-            - name: OTEL_SERVICE_NAME
-              value: "webhook-service-api"
-            - name: SERVICE_MODE
-              value: "api"
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            seccompProfile:
-              type: RuntimeDefault
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 3000
-            initialDelaySeconds: 5
-            periodSeconds: 5
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: webhook-service-worker
-spec:
-  template:
-    spec:
-      containers:
-        - name: user-container
-          env:
-            - name: NATS_URL
-              value: "nats://nats.support-services-staging.svc.cluster.local:4222"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.support-services-staging.svc.cluster.local:4318"
-            - name: OTEL_SERVICE_NAME
-              value: "webhook-service-worker"
-            - name: SERVICE_MODE
-              value: "worker"
 ---
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -387,135 +249,6 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
 ---
-# ----- metrics-service: split api ↔ worker (Phase 1.5) -----
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: metrics-service-api
-spec:
-  template:
-    spec:
-      containers:
-        - name: user-container
-          image: dev.local/metrics-service:local
-          ports:
-            - containerPort: 3000
-              protocol: TCP
-          env:
-            - name: POSTGRES_USER
-              value: "yoizen"
-            - name: POSTGRES_PASSWORD
-              value: "yoizen-dev-password"
-            - name: NATS_URL
-              value: "nats://nats.support-services-staging.svc.cluster.local:4222"
-            - name: POSTGRES_PORT
-              value: "5432"
-            - name: PLATFORM_ENVIRONMENT
-              value: "staging"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.support-services-staging.svc.cluster.local:4318"
-            - name: OTEL_SERVICE_NAME
-              value: "metrics-service-api"
-            - name: SERVICE_MODE
-              value: "api"
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            seccompProfile:
-              type: RuntimeDefault
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 3000
-            initialDelaySeconds: 5
-            periodSeconds: 5
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: metrics-service-worker
-spec:
-  template:
-    spec:
-      containers:
-        - name: user-container
-          # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD come from the
-          # `postgres-credentials` Secret declared in base — see the comment
-          # on audit-service-worker above for the full kustomize rationale.
-          env:
-            - name: NATS_URL
-              value: "nats://nats.support-services-staging.svc.cluster.local:4222"
-            - name: POSTGRES_PORT
-              value: "5432"
-            - name: PLATFORM_ENVIRONMENT
-              value: "staging"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.support-services-staging.svc.cluster.local:4318"
-            - name: OTEL_SERVICE_NAME
-              value: "metrics-service-worker"
-            - name: SERVICE_MODE
-              value: "worker"
----
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: scheduler-service
-spec:
-  template:
-    spec:
-      containers:
-        - name: user-container
-          image: dev.local/scheduler-service:local
-          ports:
-            - containerPort: 3000
-              protocol: TCP
-          env:
-            - name: POSTGRES_USER
-              value: "yoizen"
-            - name: POSTGRES_PASSWORD
-              value: "yoizen-dev-password"
-            - name: POSTGRES_PORT
-              value: "5432"
-            - name: PLATFORM_ENVIRONMENT
-              value: "staging"
-            - name: TENANT_SERVICE_URL
-              value: "http://tenant-service.platform-services-staging.svc.cluster.local"
-            - name: NODE_EXTRA_CA_CERTS
-              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.support-services-staging.svc.cluster.local:4318"
-            - name: OTEL_SERVICE_NAME
-              value: "scheduler-service"
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            seccompProfile:
-              type: RuntimeDefault
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 3000
-            initialDelaySeconds: 5
-            periodSeconds: 5
----
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -568,6 +301,8 @@ spec:
               value: "redis.support-services-staging.svc.cluster.local"
             - name: REDIS_PORT
               value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
             - name: PLATFORM_ENVIRONMENT
               value: "staging"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

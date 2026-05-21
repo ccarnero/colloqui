@@ -975,3 +975,426 @@ data:
       "uid": "nats-dlq",
       "refresh": "30s"
     }
+  cnpg-postgres-temporal.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "title": "Instance Status",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "up{job=\"cnpg-postgres-temporal\"}",
+              "legendFormat": "{{instance}} ({{cnpg_role}})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "options": { "0": { "text": "DOWN", "color": "red" } }, "type": "value" },
+                { "options": { "1": { "text": "UP", "color": "green" } }, "type": "value" }
+              ],
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red" }, { "color": "green", "value": 1 }] }
+            }
+          },
+          "options": { "colorMode": "background", "graphMode": "none", "textMode": "auto" }
+        },
+        {
+          "title": "Replication Lag (seconds)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 9, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "cnpg_pg_replication_lag",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green" },
+                  { "color": "yellow", "value": 5 },
+                  { "color": "red", "value": 10 }
+                ]
+              },
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } }
+            }
+          }
+        },
+        {
+          "title": "Connections (vs max)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 9, "x": 15, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(cnpg_backends_total{job=\"cnpg-postgres-temporal\"})",
+              "legendFormat": "active"
+            },
+            {
+              "expr": "max(cnpg_pg_settings_setting{job=\"cnpg-postgres-temporal\", name=\"max_connections\"})",
+              "legendFormat": "max_connections"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "Transactions/s (commit + rollback) per DB",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(cnpg_pg_stat_database_xact_commit{datname=~\"temporal|temporal_visibility\"}[1m])",
+              "legendFormat": "commit {{datname}}"
+            },
+            {
+              "expr": "rate(cnpg_pg_stat_database_xact_rollback{datname=~\"temporal|temporal_visibility\"}[1m])",
+              "legendFormat": "rollback {{datname}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "Cache Hit Ratio per DB",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(cnpg_pg_stat_database_blks_hit{datname=~\"temporal|temporal_visibility\"}[5m]) / clamp_min(rate(cnpg_pg_stat_database_blks_hit{datname=~\"temporal|temporal_visibility\"}[5m]) + rate(cnpg_pg_stat_database_blks_read{datname=~\"temporal|temporal_visibility\"}[5m]), 1)",
+              "legendFormat": "{{datname}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red" },
+                  { "color": "yellow", "value": 0.95 },
+                  { "color": "green", "value": 0.99 }
+                ]
+              },
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "Dead Tuples (Temporal hot tables)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "cnpg_pg_stat_user_tables_n_dead_tup{relname=~\"history_node|tasks|executions|transfer_tasks|timer_tasks|visibility_tasks\"}",
+              "legendFormat": "{{relname}} ({{instance}})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green" },
+                  { "color": "yellow", "value": 50000 },
+                  { "color": "red", "value": 100000 }
+                ]
+              },
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } }
+            }
+          }
+        },
+        {
+          "title": "Checkpoint Sync Time (ms/s)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(cnpg_pg_stat_bgwriter_checkpoint_sync_time{job=\"cnpg-postgres-temporal\"}[5m])",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green" },
+                  { "color": "yellow", "value": 500 },
+                  { "color": "red", "value": 1000 }
+                ]
+              },
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "WAL Size (bytes)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "cnpg_pg_wal_size_bytes",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green" },
+                  { "color": "yellow", "value": 5368709120 },
+                  { "color": "red", "value": 10737418240 }
+                ]
+              },
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "Top Queries by Total Time (pg_stat_statements)",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "topk(10, cnpg_pg_stat_statements_total_exec_time)",
+              "legendFormat": "{{queryid}}",
+              "format": "table",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "ms" }
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["temporal", "postgres", "cnpg", "stress-test"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+      "timezone": "browser",
+      "title": "Temporal Postgres (CNPG)",
+      "uid": "cnpg-postgres-temporal",
+      "refresh": "10s"
+    }
+  temporal-server.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "title": "Server Up",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "up{job=\"temporal-server\"}", "legendFormat": "{{instance}}" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "options": { "0": { "text": "DOWN", "color": "red" } }, "type": "value" },
+                { "options": { "1": { "text": "UP", "color": "green" } }, "type": "value" }
+              ],
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red" }, { "color": "green", "value": 1 }] }
+            }
+          },
+          "options": { "colorMode": "background", "graphMode": "none", "textMode": "auto" }
+        },
+        {
+          "title": "Workflow Completion vs Timeout (rate/s)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 18, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum(rate(temporal_workflow_completed_total[1m]))", "legendFormat": "completed" },
+            { "expr": "sum(rate(temporal_workflow_failed_total[1m]))", "legendFormat": "failed" },
+            { "expr": "sum(rate(temporal_workflow_timeout_total[1m]))", "legendFormat": "timed_out" },
+            { "expr": "sum(rate(temporal_workflow_canceled_total[1m]))", "legendFormat": "canceled" }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } }
+          }
+        },
+        {
+          "title": "Request Latency p50/p95/p99 by service",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "histogram_quantile(0.5, sum(rate(temporal_request_latency_bucket[2m])) by (le, service_name))", "legendFormat": "p50 {{service_name}}" },
+            { "expr": "histogram_quantile(0.95, sum(rate(temporal_request_latency_bucket[2m])) by (le, service_name))", "legendFormat": "p95 {{service_name}}" },
+            { "expr": "histogram_quantile(0.99, sum(rate(temporal_request_latency_bucket[2m])) by (le, service_name))", "legendFormat": "p99 {{service_name}}" }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 10 } }
+          }
+        },
+        {
+          "title": "Persistence Latency p99 by operation",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "histogram_quantile(0.99, sum(rate(temporal_persistence_latency_bucket[2m])) by (le, operation))", "legendFormat": "p99 {{operation}}" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green" },
+                  { "color": "yellow", "value": 50 },
+                  { "color": "red", "value": 100 }
+                ]
+              },
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } }
+            }
+          }
+        },
+        {
+          "title": "Workflow Task schedule_to_start p95 (SDK)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "histogram_quantile(0.95, sum(rate(temporal_workflow_task_schedule_to_start_latency_bucket[2m])) by (le, task_queue))", "legendFormat": "p95 {{task_queue}}" },
+            { "expr": "histogram_quantile(0.99, sum(rate(temporal_workflow_task_schedule_to_start_latency_bucket[2m])) by (le, task_queue))", "legendFormat": "p99 {{task_queue}}" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green" },
+                  { "color": "yellow", "value": 1000 },
+                  { "color": "red", "value": 5000 }
+                ]
+              },
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } }
+            }
+          }
+        },
+        {
+          "title": "Activity Task schedule_to_start p95 (SDK)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "histogram_quantile(0.95, sum(rate(temporal_activity_schedule_to_start_latency_bucket[2m])) by (le, task_queue))", "legendFormat": "p95 {{task_queue}}" },
+            { "expr": "histogram_quantile(0.99, sum(rate(temporal_activity_schedule_to_start_latency_bucket[2m])) by (le, task_queue))", "legendFormat": "p99 {{task_queue}}" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green" },
+                  { "color": "yellow", "value": 1000 },
+                  { "color": "red", "value": 5000 }
+                ]
+              },
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } }
+            }
+          }
+        },
+        {
+          "title": "Worker Slots Available (by type)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum(temporal_worker_task_slots_available) by (worker_type, task_queue)", "legendFormat": "{{worker_type}} {{task_queue}}" }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }
+          }
+        },
+        {
+          "title": "Sticky Cache Hit Ratio",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum(rate(temporal_sticky_cache_hit[2m])) / clamp_min(sum(rate(temporal_sticky_cache_hit[2m])) + sum(rate(temporal_sticky_cache_miss[2m])), 1)", "legendFormat": "hit ratio" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red" },
+                  { "color": "yellow", "value": 0.7 },
+                  { "color": "green", "value": 0.9 }
+                ]
+              },
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "Service Errors by service (rate/s)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum(rate(temporal_service_errors[1m])) by (service_name, operation)", "legendFormat": "{{service_name}} {{operation}}" }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } }
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["temporal", "stress-test"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+      "timezone": "browser",
+      "title": "Temporal Server",
+      "uid": "temporal-server",
+      "refresh": "10s"
+    }

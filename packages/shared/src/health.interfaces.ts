@@ -70,7 +70,7 @@ export interface INatsPostgresHealthResponse {
   postgres: boolean;
 }
 
-/** NATS + Redis (event-processor, webhook-service). */
+/** NATS + Redis (channel-service worker, etc.). */
 export interface INatsRedisHealthResponse {
   status: "ok" | "degraded";
   nats: boolean;

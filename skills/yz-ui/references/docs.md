@@ -79,13 +79,6 @@ Path: `src/app/features/automation/workflows/`
 
 Builder sub-components: `builder/components/{workflow-node, workflow-palette, workflow-node-config, workflow-validation-dialog}/`.
 
-### Schedules
-
-| File | Purpose |
-|---|---|
-| `src/app/features/processes/schedules.component.ts` | List + filter + trigger + enable/disable |
-| `src/app/core/services/schedules.service.ts` | scheduler-service `/schedules` client |
-
 ### Metrics services
 
 Path: `src/app/core/services/metrics/`

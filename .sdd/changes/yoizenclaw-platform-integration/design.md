@@ -145,16 +145,16 @@ sequenceDiagram
 
 | File | Action | Description |
 |------|--------|-------------|
-| `applications/yoizenclaw-application/src/infrastructure/database/memory_postgres_schema.py` | Modify | Agregar `tenant_id` a tablas |
-| `applications/yoizenclaw-application/src/infrastructure/database/memory_postgres.py` | Modify | Queries con tenant_id |
-| `applications/yoizenclaw-application/src/interfaces/nats_bridge.py` | Modify | Subjects wdocs `evt.{tenant}.yoizenclaw.>`, depth tracking |
-| `applications/yoizenclaw-application/src/application/agents/agent_manager.py` | Modify | Caché por tenant, depth tracking |
-| `applications/yoizenclaw-application/src/shared/config/settings.py` | Modify | Agregar `TENANT_ID` env var |
-| `applications/yoizenclaw-application/src/shared/envelope/` | Create | CloudEvents envelope builder |
-| `applications/yoizenclaw-application/src/shared/claim_check/` | Create | Claim Check resolver + checker |
-| `applications/yoizenclaw-application/src/shared/depth/` | Create | Anti-loop depth tracker |
-| `applications/yoizenclaw-application/src/shared/metrics/` | Create | YoizenClaw metrics per wdocs/06 |
-| `applications/yoizenclaw-application/alembic/versions/001_add_tenant_id.py` | Create | Migración tenant_id |
+| `services/yoizenclaw-runtime/src/infrastructure/database/memory_postgres_schema.py` | Modify | Agregar `tenant_id` a tablas |
+| `services/yoizenclaw-runtime/src/infrastructure/database/memory_postgres.py` | Modify | Queries con tenant_id |
+| `services/yoizenclaw-runtime/src/interfaces/nats_bridge.py` | Modify | Subjects wdocs `evt.{tenant}.yoizenclaw.>`, depth tracking |
+| `services/yoizenclaw-runtime/src/application/agents/agent_manager.py` | Modify | Caché por tenant, depth tracking |
+| `services/yoizenclaw-runtime/src/shared/config/settings.py` | Modify | Agregar `TENANT_ID` env var |
+| `services/yoizenclaw-runtime/src/shared/envelope/` | Create | CloudEvents envelope builder |
+| `services/yoizenclaw-runtime/src/shared/claim_check/` | Create | Claim Check resolver + checker |
+| `services/yoizenclaw-runtime/src/shared/depth/` | Create | Anti-loop depth tracker |
+| `services/yoizenclaw-runtime/src/shared/metrics/` | Create | YoizenClaw metrics per wdocs/06 |
+| `services/yoizenclaw-runtime/alembic/versions/001_add_tenant_id.py` | Create | Migración tenant_id |
 | `services/yoizenclaw-admin-service/src/modules/agents/agents.service.ts` | Modify | Envelope publishing, depth |
 | `services/yoizenclaw-admin-service/src/modules/runtime/runtime.service.ts` | Modify | Health checks, NATS Account check |
 | `services/tenant-service/src/modules/tenants/tenants.service.ts` | Modify | NATS Account/Stream/Bucket/ACL provisioning |
@@ -162,15 +162,15 @@ sequenceDiagram
 | `infrastructure/base/yoizenclaw-runtime/` | Create | Helm chart completo |
 | `services/admin-console/src/app/agents/` | Create | Módulo Angular completo |
 | `packages/shared/src/constants.ts` | Modify | Constantes `YOIZENCLAW_*` |
-| `shared/types/python/envelope.py` | Create | Envelope builder Python |
-| `shared/types/python/tenant.py` | Create | Tenant extraction utils |
+| `packages/shared-python/envelope.py` | Create | Envelope builder Python |
+| `packages/shared-python/tenant.py` | Create | Tenant extraction utils |
 
 ## Interfaces / Contracts
 
 ### CloudEvents Envelope (wdocs/02 compliance)
 
 ```python
-# shared/types/python/envelope.py
+# packages/shared-python/envelope.py
 from dataclasses import dataclass, field
 from typing import Any, Optional
 import uuid
@@ -226,7 +226,7 @@ def build_internal_agent_envelope(
 ### NATS Subject Helper (wdocs/01 compliance)
 
 ```python
-# shared/types/python/subjects.py
+# packages/shared-python/subjects.py
 YOIZENCLAW_SUBJECT_PREFIX = "evt.{tenant}.yoizenclaw"
 YOIZENCLAW_ACTIONS = {
     "config_sync": "config_sync.v1",
@@ -253,7 +253,7 @@ def extract_tenant_from_subject(subject: str) -> str | None:
 ### Claim Check Resolver (wdocs/04 compliance)
 
 ```python
-# applications/yoizenclaw-application/src/shared/claim_check/resolver.py
+# services/yoizenclaw-runtime/src/shared/claim_check/resolver.py
 CLAIM_CHECK_THRESHOLD_BYTES = 262144  # 256 KB
 
 async def check_payload_size(payload_bytes: bytes) -> dict:
@@ -290,7 +290,7 @@ async def resolve_payload(
 ### Depth Tracker (wdocs/03 compliance)
 
 ```python
-# applications/yoizenclaw-application/src/shared/depth/tracker.py
+# services/yoizenclaw-runtime/src/shared/depth/tracker.py
 from typing import Any
 
 MAX_DEPTH_INTERNAL = 5
@@ -318,7 +318,7 @@ class DepthExceededError(Exception):
 ### Metrics (wdocs/06 compliance)
 
 ```python
-# applications/yoizenclaw-application/src/shared/metrics/yoizenclaw_metrics.py
+# services/yoizenclaw-runtime/src/shared/metrics/yoizenclaw_metrics.py
 from opentelemetry import metrics
 
 METER = metrics.get_meter("yoizenclaw")
