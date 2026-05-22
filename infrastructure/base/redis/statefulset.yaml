@@ -37,10 +37,70 @@ spec:
                   matchLabels:
                     app.kubernetes.io/name: redis
                 topologyKey: kubernetes.io/hostname
+      # One-time migration of PVCs created before the hostname-based
+      # discovery rollout. Legacy `nodes.conf` files were keyed by pod IP,
+      # which goes stale after a cluster restart (e.g. minikube stop/start)
+      # and prevents the cluster from reforming. This init removes those
+      # files so redis-server can re-bootstrap with hostname identities.
+      # Idempotent: once the cluster has reformed, every line in
+      # `nodes.conf` carries `hostname=...` and this becomes a no-op.
+      initContainers:
+        - name: migrate-legacy-nodes-conf
+          image: redis:7.4-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              FILE=/data/nodes.conf
+              if [ -f "${FILE}" ] && ! grep -q "hostname=" "${FILE}"; then
+                echo "[migrate] legacy IP-based nodes.conf detected, removing for hostname re-bootstrap"
+                rm -f "${FILE}" /data/dump.rdb
+              else
+                echo "[migrate] already hostname-based or absent, skipping"
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
       containers:
         - name: redis
-          image: redis:7-alpine
-          command: ["redis-server", "/etc/redis/redis.conf"]
+          # Pinned to 7.4 so `cluster-announce-hostname` and
+          # `cluster-preferred-endpoint-type hostname` (introduced in 7.2)
+          # are guaranteed to be available. The previous `7-alpine` floating
+          # tag happened to resolve to 7.4.9 today, but a re-pull could
+          # silently regress to 7.0.x and break the cluster heal flow.
+          image: redis:7.4-alpine
+          # The shell wrapper is required to expand `${POD_NAME}` and
+          # `${POD_NAMESPACE}` from the downward API into the per-pod
+          # `--cluster-announce-hostname` flag (redis.conf has no env-var
+          # interpolation). `exec` replaces the shell with redis-server so
+          # PID 1 forwards SIGTERM correctly during pod termination.
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command: ["sh", "-c"]
+          args:
+            - |
+              exec redis-server /etc/redis/redis.conf \
+                --cluster-announce-hostname "${POD_NAME}.redis-headless.${POD_NAMESPACE}.svc.cluster.local"
           ports:
             - name: redis
               containerPort: 6379

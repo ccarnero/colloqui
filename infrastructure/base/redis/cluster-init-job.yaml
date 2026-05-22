@@ -21,7 +21,10 @@ spec:
         fsGroup: 999
       containers:
         - name: cluster-init
-          image: redis:7-alpine
+          # Pinned to match the StatefulSet image: 7.4 guarantees the
+          # hostname-aware cluster commands behave consistently between
+          # the bootstrap Job and the long-running redis-server pods.
+          image: redis:7.4-alpine
           command: ["/bin/sh", "-c"]
           # Idempotent: ping-loop waits for all 6 nodes, then checks
           # cluster_state:ok before issuing CLUSTER CREATE. Re-running
