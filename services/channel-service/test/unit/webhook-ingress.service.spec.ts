@@ -308,4 +308,166 @@ describe("WebhookIngressService", () => {
       messages: [inbound],
     });
   });
+
+  it("rejects Telegram webhook when the signature header is missing", async () => {
+    mockProvider.provider = "telegram";
+    mockProvider.signatureHeader = "x-telegram-bot-api-secret-token";
+    mockProvider.parseWebhook.mockReturnValue([
+      createInboundMessage({ text: "hola" }),
+    ]);
+    mockAccounts.listActive.mockResolvedValue([
+      createAccount({
+        id: "a1",
+        channel: "telegram",
+        provider: "telegram",
+        appSecret: "secret-1",
+      }),
+      createAccount({
+        id: "a2",
+        channel: "telegram",
+        provider: "telegram",
+        appSecret: "secret-2",
+      }),
+    ]);
+
+    const out = await service.processEnvelope(
+      "telegram",
+      "t1",
+      Buffer.from("{}"),
+      {},
+      { message: { text: "hola" } },
+    );
+
+    expect(out.status).toBe("signature_mismatch");
+    await flushImmediate();
+    expect(mockIngress.processInbound).not.toHaveBeenCalled();
+  });
+
+  it("rejects Telegram webhook when the signature header is empty", async () => {
+    mockProvider.provider = "telegram";
+    mockProvider.signatureHeader = "x-telegram-bot-api-secret-token";
+    mockProvider.parseWebhook.mockReturnValue([
+      createInboundMessage({ text: "hola" }),
+    ]);
+    mockAccounts.listActive.mockResolvedValue([
+      createAccount({
+        id: "a1",
+        channel: "telegram",
+        provider: "telegram",
+        appSecret: "secret-1",
+      }),
+      createAccount({
+        id: "a2",
+        channel: "telegram",
+        provider: "telegram",
+        appSecret: "secret-2",
+      }),
+    ]);
+
+    const out = await service.processEnvelope(
+      "telegram",
+      "t1",
+      Buffer.from("{}"),
+      { "x-telegram-bot-api-secret-token": "" },
+      { message: { text: "hola" } },
+    );
+
+    expect(out.status).toBe("signature_mismatch");
+    await flushImmediate();
+    expect(mockIngress.processInbound).not.toHaveBeenCalled();
+  });
+
+  it("uses the first Telegram account when its secret token matches", async () => {
+    mockProvider.provider = "telegram";
+    mockProvider.signatureHeader = "x-telegram-bot-api-secret-token";
+    mockProvider.parseWebhook.mockReturnValue([
+      createInboundMessage({ text: "ola" }),
+    ]);
+    mockProvider.verifySignature.mockImplementation(
+      (_rawBody: Buffer, _signature: string, secret: string) =>
+        secret === "secret-1",
+    );
+    mockAccounts.listActive.mockResolvedValue([
+      createAccount({
+        id: "a1",
+        channel: "telegram",
+        provider: "telegram",
+        appSecret: "secret-1",
+      }),
+      createAccount({
+        id: "a2",
+        channel: "telegram",
+        provider: "telegram",
+        appSecret: "secret-2",
+      }),
+    ]);
+
+    const out = await service.processEnvelope(
+      "telegram",
+      "t1",
+      Buffer.from("{}"),
+      { "x-telegram-bot-api-secret-token": "secret-1" },
+      { message: { text: "ola" } },
+    );
+
+    expect(out.status).toBe("accepted");
+    await flushImmediate();
+    expect(mockIngress.processInbound).toHaveBeenCalledWith({
+      tenantId: "t1",
+      channel: "telegram",
+      provider: "telegram",
+      accountId: "a1",
+      messages: [createInboundMessage({ text: "ola" })],
+    });
+  });
+
+  it("keeps WhatsApp fallback to first account when signature is absent and multiple accounts exist", async () => {
+    const inbound = createInboundMessage({ text: "hello" });
+    mockProvider.parseWebhook.mockReturnValue([inbound]);
+    mockAccounts.listActive.mockResolvedValue([
+      createAccount({
+        id: "wa-1",
+        channel: "whatsapp",
+        provider: "meta",
+        phoneNumberId: "pn-1",
+      }),
+      createAccount({
+        id: "wa-2",
+        channel: "whatsapp",
+        provider: "meta",
+        phoneNumberId: "pn-2",
+      }),
+    ]);
+
+    const out = await service.processEnvelope(
+      "whatsapp",
+      "t1",
+      Buffer.from("{}"),
+      {},
+      {
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  metadata: { phone_number_id: "pn-1" },
+                  messages: [{ text: { body: "hello" } }],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    );
+
+    expect(out.status).toBe("accepted");
+    await flushImmediate();
+    expect(mockIngress.processInbound).toHaveBeenCalledWith({
+      tenantId: "t1",
+      channel: "whatsapp",
+      provider: "meta",
+      accountId: "wa-1",
+      messages: [inbound],
+    });
+  });
 });

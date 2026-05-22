@@ -19,6 +19,7 @@
     "test:adapter": "bun test --timeout 240000 adapter.e2e.spec.ts",
     "test:error-propagation": "bun test --timeout 120000 error-propagation.e2e.spec.ts",
     "test:channel": "bun test --timeout 120000 channel.e2e.spec.ts",
+    "test:telegram-multi-channel": "bun test --timeout 180000 telegram-multi-channel.e2e.spec.ts",
     "test:dedup": "bun test --timeout 120000 dedup.e2e.spec.ts"
   },
   "dependencies": {

@@ -77,7 +77,7 @@ async function createAdapter(
 ): Promise<AdapterResponse> {
   const h = await authHeaders();
   const { status, body } = await httpPost<AdapterResponse>(
-    `${GW}/api/connectors`,
+    `${GW}/connectors`,
     {
       name: `e2e-adapter-${Date.now()}`,
       context: "external",
@@ -105,7 +105,7 @@ async function addEndpoint(
 ): Promise<string> {
   const h = await authHeaders();
   const { status, body } = await httpPost<{ id: string }>(
-    `${GW}/api/connectors/${adapterId}/endpoints`,
+    `${GW}/connectors/${adapterId}/endpoints`,
     { label, method, path },
     { headers: h },
   );
@@ -115,7 +115,7 @@ async function addEndpoint(
 
 async function deleteAdapter(adapterId: string): Promise<void> {
   const h = await authHeaders();
-  await httpDelete(`${GW}/api/connectors/${adapterId}`, { headers: h });
+  await httpDelete(`${GW}/connectors/${adapterId}`, { headers: h });
 }
 
 /**
