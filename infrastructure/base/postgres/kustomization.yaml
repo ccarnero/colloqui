@@ -6,6 +6,7 @@ resources:
   - postgres-shared-cluster.yaml
   - postgres-usage-shared-cluster.yaml
   - postgres-temporal-cluster.yaml
+  - postgres-temporal-visibility-cluster.yaml
   - poolers.yaml
   - configmap.yaml
   - secret.yaml

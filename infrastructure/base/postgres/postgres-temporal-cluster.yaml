@@ -69,13 +69,20 @@ spec:
     # Stress-grade tuning for Temporal's persistence pattern:
     # write-heavy (history_node, tasks), high concurrency, aggressive
     # churn on tasks/timer/transfer tables. Memory params assume the
-    # base 4Gi memory limit declared below; overlays reduce them
+    # base 8Gi memory limit declared below; overlays reduce them
     # proportionally to their own limits.
+    #
+    # 2026-05-22 stress-test post-mortem (`post-mortem/POST-MORTEM.md`)
+    # showed `executions_visibility` autovacuum spilling 51 MB/s of
+    # cold reads vs 26 820 buffer hits — the working set did NOT fit
+    # in `shared_buffers: 1GB`. Bumped to 2GB to keep the hot index
+    # pages resident; `effective_cache_size` doubled to match the new
+    # `limits.memory: 8Gi`.
     parameters:
-      shared_buffers: "1GB"
-      effective_cache_size: "3GB"
-      work_mem: "16MB"
-      maintenance_work_mem: "256MB"
+      shared_buffers: "2GB"
+      effective_cache_size: "6GB"
+      work_mem: "32MB"
+      maintenance_work_mem: "512MB"
       huge_pages: "try"
 
       # Bumped from 300 → 500 to accommodate Temporal Server with
@@ -105,7 +112,10 @@ spec:
       # Aggressive autovacuum is critical: Temporal's tasks tables
       # generate massive bloat under sustained load. Defaults will
       # fall behind in minutes and queries on `tasks` will tank.
-      autovacuum_max_workers: "6"
+      # 2026-05-22 post-mortem bumped workers 6 → 8 because autovacuum
+      # on `executions_visibility` was starving the hot write path
+      # (see POST-MORTEM §3.1).
+      autovacuum_max_workers: "8"
       autovacuum_naptime: "10s"
       autovacuum_vacuum_cost_limit: "2000"
       autovacuum_vacuum_scale_factor: "0.05"
@@ -147,16 +157,23 @@ spec:
     topologyKey: kubernetes.io/hostname
     podAntiAffinityType: preferred
 
+  # 2026-05-22 post-mortem: bumped requests 1→2 CPU / 2Gi→4Gi and
+  # limits 3→6 CPU / 4Gi→8Gi to give the writer enough headroom for
+  # `shared_buffers: 2GB` + autovacuum + the queue-table churn that
+  # was running hot under stress.
   resources:
     requests:
-      cpu: "1"
-      memory: 2Gi
-    limits:
-      cpu: "3"
+      cpu: "2"
       memory: 4Gi
+    limits:
+      cpu: "6"
+      memory: 8Gi
 
   # Separate WAL volume: prevents WAL bursts from competing with data
   # for IOPS or filling the data PVC. Critical under stress.
+  # Overlays (prod, staging) MUST pin a NVMe-backed `storageClassName`
+  # on both volumes — leaving it unset here defers to the cluster's
+  # default class so dev overlays (local, orbstack) keep working.
   storage:
     size: 50Gi
   walStorage:

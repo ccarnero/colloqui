@@ -67,9 +67,10 @@ data:
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: instance
 
-      # Temporal TypeScript SDK metrics from the HTTP worker (activity-only
-      # worker on the `workflow-http` task queue). Same rationale as the
-      # orchestrator job above.
+      # Temporal TypeScript SDK metrics from connector-runtime (activity-only
+      # worker on the `connector-runtime` task queue, see
+      # `CONNECTOR_RUNTIME_TASK_QUEUE` in `packages/shared/src/constants.ts`).
+      # Same rationale as the orchestrator job above.
       - job_name: connector-runtime-sdk
         scrape_interval: 15s
         kubernetes_sd_configs:

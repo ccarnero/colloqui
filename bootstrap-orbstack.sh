@@ -367,22 +367,28 @@ apply_infrastructure() {
       --namespace "$ns" \
       --timeout=180s
 
-    # Both CNPG Cluster CRs land via the single `kubectl apply -k` above.
-    # Their Ready conditions are independent (separate primaries + initdb
-    # jobs), so we wait in parallel — saves ~one Postgres bootstrap
-    # window vs the previous sequential 300s + 300s.
-    log "Waiting for CloudNativePG shared clusters in ${ns} (parallel)..."
+    # All four CNPG Cluster CRs land via the single `kubectl apply -k`
+    # above. Their Ready conditions are independent (separate primaries
+    # + initdb jobs), so we wait in parallel — saves ~one Postgres
+    # bootstrap window vs sequential 300s × N.
+    #
+    # `postgres-temporal-visibility` was added in the 2026-05-22
+    # post-mortem remediation (DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md)
+    # to isolate visibility writes from the `executions` hot path.
+    log "Waiting for CloudNativePG clusters in ${ns} (parallel)..."
     local cnpg_pids=()
-    kubectl wait cluster.postgresql.cnpg.io/postgres-shared \
-      --namespace "$ns" \
-      --for=condition=Ready \
-      --timeout=300s &
-    cnpg_pids+=($!)
-    kubectl wait cluster.postgresql.cnpg.io/postgres-usage-shared \
-      --namespace "$ns" \
-      --for=condition=Ready \
-      --timeout=300s &
-    cnpg_pids+=($!)
+    for cnpg_cluster in \
+      postgres-shared \
+      postgres-usage-shared \
+      postgres-temporal \
+      postgres-temporal-visibility
+    do
+      kubectl wait cluster.postgresql.cnpg.io/"$cnpg_cluster" \
+        --namespace "$ns" \
+        --for=condition=Ready \
+        --timeout=300s &
+      cnpg_pids+=($!)
+    done
 
     local cnpg_exit=0
     for pid in "${cnpg_pids[@]}"; do
@@ -392,6 +398,23 @@ apply_infrastructure() {
     done
     if (( cnpg_exit != 0 )); then
       err "At least one CNPG Cluster did not reach Ready within 300s."
+      return 1
+    fi
+
+    # `temporalio/auto-setup` runs `setup-schema` for both default and
+    # visibility databases against the SAME host (POSTGRES_SEEDS),
+    # ignoring `VISIBILITY_POSTGRES_SEEDS` even when set. After the
+    # visibility split, the Temporal Server (which DOES honour
+    # `VISIBILITY_POSTGRES_SEEDS`) crashloops with
+    # `relation "schema_version" does not exist` on the new cluster.
+    # This helper detects the gap and runs `temporal-sql-tool` directly
+    # against `postgres-temporal-visibility-rw`. Idempotent: ~1s if the
+    # schema is already there. See:
+    #   - DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md
+    #   - post-mortem/POST-MORTEM.md §P0.2
+    log "Ensuring temporal_visibility schema is bootstrapped in ${ns}..."
+    if ! "${script_dir}/infrastructure/scripts/ensure-temporal-visibility-schema.sh" "$ns"; then
+      err "Failed to bootstrap temporal_visibility schema in ${ns}."
       return 1
     fi
 
@@ -608,7 +631,12 @@ verify_support_services() {
       fi
     done
 
-    for cnpg_cluster in postgres-shared postgres-usage-shared; do
+    for cnpg_cluster in \
+      postgres-shared \
+      postgres-usage-shared \
+      postgres-temporal \
+      postgres-temporal-visibility
+    do
       if ! kubectl get cluster.postgresql.cnpg.io "$cnpg_cluster" --namespace "$ns" &>/dev/null; then
         warn "CloudNativePG Cluster '${cnpg_cluster}' not found in ${ns}"
       fi

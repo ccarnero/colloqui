@@ -71,6 +71,11 @@ export interface IPublishExecutionCompletedArgs {
  * retries this activity after a partial success, JetStream's
  * `duplicate_window` on `INGRESS-<tenant>` collapses the duplicates.
  *
+ * Idempotency posture verified during the 2026-05-22 stress
+ * post-mortem (`post-mortem/POST-MORTEM.md` §P1.3 audit doc):
+ * NO CHANGE required — this activity is already safe under
+ * Temporal-retry / double-completion scenarios.
+ *
  * Accepts both a single-object form and the historical positional
  * signature `(executionId, status, tenantId?, workflowName?)` so
  * existing workflow code can migrate gradually.

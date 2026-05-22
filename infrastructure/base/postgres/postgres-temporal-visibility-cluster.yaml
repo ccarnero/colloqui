@@ -1,0 +1,147 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-temporal-visibility
+  labels:
+    app.kubernetes.io/name: postgres-temporal-visibility
+    app.kubernetes.io/component: temporal-visibility-database
+spec:
+  # Dedicated CNPG cluster for Temporal's `visibility` datasource.
+  # Split out of `postgres-temporal` after the 2026-05-22 stress run
+  # showed `executions_visibility` autovacuum + insert pressure was
+  # starving the hot `executions` write path on the shared cluster
+  # (see `post-mortem/POST-MORTEM.md` §P0.2). Right-sized smaller
+  # than the default cluster: visibility is mostly insert-heavy +
+  # range scans, no FOR UPDATE contention on shard queue tables.
+  #
+  # CUTOVER: this cluster MUST be empty before Temporal points at it.
+  # See `DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md` for the cold
+  # (drop+rebootstrap) and hot (pg_dump+restore) playbooks.
+  #
+  # Dev overlays (local/orbstack) drop this to a single instance.
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-standard-trixie
+
+  enableSuperuserAccess: false
+
+  bootstrap:
+    initdb:
+      # `auto-setup` invokes `temporal-sql-tool create-database` against
+      # `VISIBILITY_DBNAME`, but it skips when the database already
+      # exists. Creating it here at initdb time avoids needing
+      # `createdb` on the role (kept off for least-privilege).
+      database: temporal_visibility
+      owner: temporal
+      postInitTemplateSQL:
+        - CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+  managed:
+    roles:
+      - name: temporal
+        ensure: present
+        login: true
+        superuser: false
+        # `createdb: false` — unlike the default cluster, the visibility
+        # cluster never needs to CREATE DATABASE: there is exactly one
+        # DB on this cluster (`temporal_visibility`) and it is created
+        # by initdb above.
+        createdb: false
+        passwordSecret:
+          name: postgres-temporal-visibility-credentials
+    services:
+      additional:
+        - selectorType: rw
+          serviceTemplate:
+            metadata:
+              name: postgres-temporal-visibility
+              labels:
+                app.kubernetes.io/name: postgres-temporal-visibility
+                app.kubernetes.io/component: temporal-visibility-database
+            spec:
+              type: ClusterIP
+
+  postgresql:
+    shared_preload_libraries:
+      - pg_stat_statements
+      - auto_explain
+    parameters:
+      # Visibility working set is dominated by btree probes against
+      # ~50 indexes on `executions_visibility`. 1GB shared_buffers
+      # holds the hot index pages without overshooting the 4Gi
+      # base memory limit declared below.
+      shared_buffers: "1GB"
+      effective_cache_size: "3GB"
+      work_mem: "16MB"
+      maintenance_work_mem: "256MB"
+      huge_pages: "try"
+
+      # Visibility uses 1 SQL pool per Temporal replica plus the
+      # internal Temporal worker — 200 covers 2 replicas × 16 shards
+      # of visibility access with plenty of headroom.
+      max_connections: "200"
+
+      wal_level: "replica"
+      max_wal_size: "2GB"
+      min_wal_size: "512MB"
+      wal_buffers: "32MB"
+      wal_compression: "on"
+      checkpoint_timeout: "15min"
+      checkpoint_completion_target: "0.9"
+      synchronous_commit: "remote_write"
+
+      bgwriter_delay: "100ms"
+      bgwriter_lru_maxpages: "1000"
+      bgwriter_lru_multiplier: "10.0"
+
+      # Visibility table churn: heavy INSERT + UPDATE on
+      # `executions_visibility` as workflows progress through states.
+      # Mirror the default cluster's aggressive autovacuum so bloat
+      # doesn't tank range scans on `WorkflowList`.
+      autovacuum_max_workers: "6"
+      autovacuum_naptime: "10s"
+      autovacuum_vacuum_cost_limit: "2000"
+      autovacuum_vacuum_scale_factor: "0.05"
+      autovacuum_analyze_scale_factor: "0.02"
+
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      default_statistics_target: "100"
+      jit: "off"
+
+      lock_timeout: "5000"
+      idle_in_transaction_session_timeout: "60000"
+
+      log_min_duration_statement: "200"
+      log_lock_waits: "on"
+      log_autovacuum_min_duration: "1000"
+      log_checkpoints: "on"
+      log_connections: "on"
+      log_disconnections: "on"
+      log_temp_files: "0"
+      track_io_timing: "on"
+
+      "pg_stat_statements.track": "all"
+      "pg_stat_statements.max": "10000"
+
+      "auto_explain.log_min_duration": "1000"
+      "auto_explain.log_analyze": "true"
+      "auto_explain.log_buffers": "true"
+      "auto_explain.log_format": "json"
+
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: preferred
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+  storage:
+    size: 30Gi
+  walStorage:
+    size: 5Gi

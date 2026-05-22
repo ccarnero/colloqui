@@ -4,6 +4,19 @@ const gatewayPort = Number.parseInt(process.env.PORT ?? "3000", 10);
 const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
 
 /**
+ * Parses a positive integer env var with a deterministic fallback.
+ * Mirrors the inline pattern used throughout this file but centralises
+ * NaN / negative handling so the post-mortem-driven webhook knobs
+ * below cannot be misconfigured into a no-op.
+ */
+function positiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
  * Centralized gateway configuration derived from environment variables.
  * Eliminates scattered process.env reads across proxy services.
  */
@@ -69,5 +82,26 @@ export const gatewayConfig = {
     defaultWindowMs: Number(process.env.RATE_LIMIT_DEFAULT_WINDOW_MS ?? 60000),
     defaultCapacity: Number(process.env.RATE_LIMIT_DEFAULT_CAPACITY ?? 100),
     defaultRefillRate: Number(process.env.RATE_LIMIT_DEFAULT_REFILL_RATE ?? 10),
+  },
+
+  /**
+   * Webhook publish safety nets — introduced by the 2026-05-22 stress
+   * post-mortem (`post-mortem/POST-MORTEM.md` §P1.2). The default JS
+   * NATS client request timeout (~5s) was firing in clusters during
+   * JetStream stalls and surfacing as opaque 500s to providers
+   * (118 `NatsError: TIMEOUT` in 2 seconds at peak).
+   *
+   * `publishTimeoutMs` bounds the `js.publish` ack; on expiry the
+   * publisher throws a `ServiceUnavailableException` so the global
+   * exception filter returns HTTP 503 + `Retry-After`, prompting
+   * providers (WhatsApp / Telegram / Meta) to retry instead of dropping
+   * the webhook.
+   *
+   * `publishInflightCap` caps concurrent in-flight publishes per pod
+   * so a backend stall cannot let pending acks grow unbounded.
+   */
+  webhook: {
+    publishTimeoutMs: positiveIntEnv("WEBHOOK_PUBLISH_TIMEOUT_MS", 10_000),
+    publishInflightCap: positiveIntEnv("WEBHOOK_PUBLISH_INFLIGHT_CAP", 200),
   },
 } as const;

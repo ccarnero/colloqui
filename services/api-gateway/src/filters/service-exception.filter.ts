@@ -37,6 +37,19 @@ export class ServiceExceptionFilter implements ExceptionFilter {
         body = { statusCode: status, ...body };
       }
 
+      /**
+       * Honour a `retryAfterSeconds` hint embedded in the response
+       * body by callers like `WebhookPublishUnavailableError`
+       * (see `post-mortem/POST-MORTEM.md` §P1.2). Providers like
+       * WhatsApp / Telegram / Meta respect the standard `Retry-After`
+       * header and back off appropriately, which is what we want
+       * when JetStream publish acks stall.
+       */
+      const retryAfter = body.retryAfterSeconds;
+      if (typeof retryAfter === "number" && retryAfter > 0) {
+        reply.header("Retry-After", String(Math.ceil(retryAfter)));
+      }
+
       reply.status(status).send(body);
       return;
     }

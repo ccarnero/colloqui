@@ -73,6 +73,18 @@ export interface ServiceBusCallArgs {
   subject: string;
   payload?: unknown;
   headers?: Record<string, string>;
+  /**
+   * Explicit JetStream dedup key (`Nats-Msg-Id` + `msgID`). When
+   * absent, `executeServiceBusCall` derives a deterministic hash from
+   * `{ subject, payload, headers }` so Temporal activity retries
+   * collapse to a single stream entry inside `duplicate_window`
+   * (2026-05-22 post-mortem §P1.3, fix 1).
+   *
+   * Workflows that want to *force* a new delivery on each retry
+   * (rare — e.g. fire-and-forget telemetry pulses where dedup would
+   * lose datapoints) should pass a per-call unique value.
+   */
+  dedupKey?: string;
 }
 
 export interface ServiceCallArgs {

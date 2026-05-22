@@ -102,6 +102,25 @@ The same resolution applies to `serviceCall` `path` and to string values inside 
 3. **Query status**: `GET /workflows/:id` -> `temporal.workflow.getHandle(id).describe()` -> return status/result
 4. **List workflows**: `GET /workflows` -> Temporal `workflow.list()` with `TenantId` filter
 
+### Activity Idempotency Contract
+
+Temporal retries activities aggressively under network/backend stress. The 2026-05-22 stress run ([`post-mortem/POST-MORTEM.md`](../../post-mortem/POST-MORTEM.md)) observed 5 cases of `Activity not found on completion ... workflow execution already completed`, proving an activity CAN finish on the worker side after Temporal already started a retry. Every activity in this service MUST therefore be idempotent under retry/double-completion.
+
+| Activity | Idempotency strategy | Verified |
+|----------|---------------------|----------|
+| `executeChannelSend` ([`channel-send.activity.ts`](src/temporal/activities/channel-send.activity.ts)) | `Nats-Msg-Id = sha256({payload, correlation_id, causation_id})` -> JetStream `duplicate_window` collapses retries | Yes |
+| `publishExecutionCompletedEvent` ([`execution-completed-publisher.activity.ts`](src/temporal/activities/execution-completed-publisher.activity.ts)) | `Nats-Msg-Id = sha256(payload)` -> JetStream dedup | Yes |
+| `executeServiceBusCall` ([`service-bus.activity.ts`](src/temporal/activities/service-bus.activity.ts)) | `Nats-Msg-Id = args.dedupKey ?? sha256({subject, payload, headers})`; publishes via JetStream (falls back to core NATS only when the subject has no stream) | Yes (post-mortem §P1.3 fix 1) |
+| `executeAgentCall` ([`agent-call.activity.ts`](src/temporal/activities/agent-call.activity.ts)) | `executionId = ${runId}:${activityId}` derived from `@temporalio/activity` `Context.current()` so every retry of the same invocation collapses inside JetStream `duplicate_window` | Yes (post-mortem §P1.3 fix 2) |
+| `executeJsFunction` ([`js-function.activity.ts`](src/temporal/activities/js-function.activity.ts)) | The activity itself is pure (just `new Function(args.code)`). Any side effect the user JS performs (HTTP call, Redis write, billing op) MUST be keyed on a stable identifier from `context` (e.g. `context.request.messageId`). Author responsibility. | Contract documented; not enforced |
+
+When adding a new activity:
+
+1. Identify the side effect (network, database, NATS publish, file write).
+2. Pick a stable dedup key derivable from inputs that DOES NOT change across retries (e.g. `runId + activityId`, idempotency keys carried in the envelope, content hashes).
+3. Prefer server-side dedup (`Nats-Msg-Id`, conditional `INSERT ... ON CONFLICT`) over client-side bookkeeping.
+4. Add an entry to the table above so the next reviewer can audit it.
+
 ### Module Dependency Graph
 
 ```

@@ -97,10 +97,11 @@ spec:
             # IPv4 — causing all TCP health probes to fail permanently.
             - name: BIND_ON_IP
               value: "0.0.0.0"
-            # Credentials for the dedicated `postgres-temporal` CNPG cluster.
-            # The `temporal` role is created by CNPG via `managed.roles`
-            # with `createdb: true` so that auto-setup can create
-            # `temporal_visibility` on first boot.
+            # Credentials for the dedicated `postgres-temporal` CNPG cluster
+            # (default datasource — `executions`, `history_node`, `tasks`,
+            # `queue_messages`, etc.). The `temporal` role is created by
+            # CNPG via `managed.roles` with `createdb: true` so that
+            # auto-setup can run the schema migrations on first boot.
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
@@ -114,6 +115,29 @@ spec:
             # CNPG-generated rw service: always points to the current primary.
             - name: POSTGRES_SEEDS
               value: "postgres-temporal-rw"
+            # Visibility datasource: split out of the default cluster in
+            # the 2026-05-22 stress-test remediation (see
+            # `post-mortem/POST-MORTEM.md` §P0.2 and
+            # `DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md`).
+            # `temporalio/auto-setup` honours `VISIBILITY_POSTGRES_*` to
+            # route `temporal_visibility` to a different host/credentials.
+            # Cutover requires the visibility cluster to be empty — see
+            # the runbook for cold (drop+rebootstrap) and hot
+            # (pg_dump+restore) paths.
+            - name: VISIBILITY_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-temporal-visibility-credentials
+                  key: username
+            - name: VISIBILITY_POSTGRES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-temporal-visibility-credentials
+                  key: password
+            - name: VISIBILITY_POSTGRES_SEEDS
+              value: "postgres-temporal-visibility-rw"
+            - name: VISIBILITY_DB_PORT
+              value: "5432"
             # Explicit DB names: auto-setup defaults to `temporal` /
             # `temporal_visibility` but pinning them avoids drift if upstream
             # ever changes the defaults.

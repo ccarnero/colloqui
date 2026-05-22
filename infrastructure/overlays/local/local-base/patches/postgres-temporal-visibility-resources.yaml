@@ -1,0 +1,44 @@
+# Local-dev override for the `postgres-temporal-visibility` CNPG cluster
+# created in the 2026-05-22 stress-test remediation (see
+# `post-mortem/POST-MORTEM.md` §P0.2). Same pattern as
+# `postgres-temporal-resources.yaml`: drops to a single instance, no HA,
+# tight resources sized for laptop / minikube.
+#
+# Visibility workload is mostly insert-heavy + indexed range scans, so
+# `shared_buffers: 512MB` keeps the hot index pages resident without
+# competing with the default cluster's bigger memory footprint.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-temporal-visibility
+spec:
+  instances: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      cpu: "1"
+      memory: 1500Mi
+  storage:
+    size: 5Gi
+  walStorage:
+    size: 1Gi
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: preferred
+  postgresql:
+    parameters:
+      shared_buffers: "512MB"
+      effective_cache_size: "1GB"
+      work_mem: "12MB"
+      maintenance_work_mem: "128MB"
+      huge_pages: "off"
+      max_connections: "150"
+      # CNPG validates max_wal_size < walStorage (1Gi here).
+      max_wal_size: "768MB"
+      min_wal_size: "256MB"
+      wal_buffers: "16MB"
+      autovacuum_max_workers: "4"
+      autovacuum_naptime: "10s"

@@ -50,6 +50,11 @@ async function getConnection(): Promise<NatsConnection> {
  *    distinct scopes and therefore distinct keys, so both reach the
  *    channel-service consumer.
  *
+ * Idempotency posture verified during the 2026-05-22 stress
+ * post-mortem (`post-mortem/POST-MORTEM.md` §P1.3 audit doc):
+ * NO CHANGE required — this activity is already safe under
+ * Temporal-retry / double-completion scenarios.
+ *
  * `traceid` comes from the active OTEL span; when an
  * {@link EventCausalContext} is provided, `causation_id`,
  * `correlation_id` and `transport.depth` are inherited from the

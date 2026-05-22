@@ -14,6 +14,47 @@ const executeAndWaitMock = mock(() =>
   }),
 );
 
+/**
+ * Controls what `Context.current()` returns inside the activity body
+ * under test. `null` simulates "called outside an activity context"
+ * which is the default for unit tests (legacy random-UUID fallback);
+ * an object simulates a real Temporal activity invocation so we can
+ * assert the stable `runId:activityId` executionId is forwarded —
+ * post-mortem §P1.3 fix 2.
+ */
+let mockActivityContext:
+  | {
+      info: {
+        workflowExecution: { runId: string; workflowId: string };
+        activityId: string;
+      };
+    }
+  | null = null;
+
+mock.module("@temporalio/activity", () => ({
+  ApplicationFailure: {
+    nonRetryable: (message: string, type: string, details?: unknown) => {
+      const err = new Error(message) as Error & {
+        type?: string;
+        details?: unknown;
+        nonRetryable?: boolean;
+      };
+      err.type = type;
+      err.details = details;
+      err.nonRetryable = true;
+      return err;
+    },
+  },
+  Context: {
+    current: () => {
+      if (mockActivityContext === null) {
+        throw new Error("not inside an activity context");
+      }
+      return mockActivityContext;
+    },
+  },
+}));
+
 const mockRedisInstance = {
   script: mock(() => Promise.resolve("sha-fake")),
   evalsha: mock(() => Promise.resolve(["allow", "closed", ""])),
@@ -102,6 +143,7 @@ describe("executeAgentCall", () => {
       agentId: "agent-uuid-1",
       result: { reply: "hello", tool_calls: [] },
     });
+    mockActivityContext = null;
   });
 
   it("waits for a durable YoizenClaw execution result", async () => {
@@ -144,5 +186,72 @@ describe("executeAgentCall", () => {
       300000,
       { requestedBy: "user-42", correlationId: "conv-1" },
     );
+  });
+
+  /**
+   * Post-mortem (`post-mortem/POST-MORTEM.md` §P1.3 fix 2): when
+   * running inside an activity, the executionId MUST be derived from
+   * `Context.current()` so every Temporal retry of the same
+   * invocation collapses inside JetStream's `duplicate_window` and
+   * does NOT trigger a brand-new LLM call.
+   */
+  it("forwards a stable executionId derived from Temporal Context (runId:activityId)", async () => {
+    mockActivityContext = {
+      info: {
+        workflowExecution: {
+          runId: "run-abc-123",
+          workflowId: "wf-1",
+        },
+        activityId: "act-7",
+      },
+    };
+
+    await executeAgentCall(
+      { agentId: "agent-uuid-1", message: "Hi" },
+      "tenant-a",
+    );
+
+    expect(executeAndWaitMock).toHaveBeenCalledWith(
+      "tenant-a",
+      { agentId: "agent-uuid-1", message: "Hi" },
+      300000,
+      {
+        requestedBy: undefined,
+        correlationId: undefined,
+        executionId: "run-abc-123:act-7",
+      },
+    );
+  });
+
+  it("produces the same executionId across two attempts of the same activity invocation", async () => {
+    mockActivityContext = {
+      info: {
+        workflowExecution: { runId: "run-stable", workflowId: "wf-1" },
+        activityId: "act-1",
+      },
+    };
+
+    await executeAgentCall({ agentId: "a", message: "m" }, "t");
+    await executeAgentCall({ agentId: "a", message: "m" }, "t");
+
+    const first = executeAndWaitMock.mock.calls[0]?.[3] as {
+      executionId?: string;
+    };
+    const second = executeAndWaitMock.mock.calls[1]?.[3] as {
+      executionId?: string;
+    };
+    expect(first?.executionId).toBe("run-stable:act-1");
+    expect(second?.executionId).toBe("run-stable:act-1");
+  });
+
+  it("omits executionId when called outside an activity context (legacy fallback)", async () => {
+    mockActivityContext = null;
+
+    await executeAgentCall({ agentId: "a", message: "m" }, "t");
+
+    const opts = executeAndWaitMock.mock.calls[0]?.[3] as {
+      executionId?: string;
+    };
+    expect(opts.executionId).toBeUndefined();
   });
 });

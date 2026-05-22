@@ -1,5 +1,5 @@
 import { connect, type JetStreamClient, type NatsConnection } from "nats";
-import { ApplicationFailure } from "@temporalio/activity";
+import { ApplicationFailure, Context } from "@temporalio/activity";
 import {
   DistributedCircuitBreaker,
   YoizenClawExecutionClient,
@@ -190,14 +190,50 @@ export async function executeAgentCall(
   }
 }
 
+/**
+ * Derives a deterministic execution id from Temporal's activity
+ * context so every retry of the SAME activity invocation reuses the
+ * same id. Without this, `submitExecution` regenerates a UUID per
+ * retry and `Nats-Msg-Id = sha256(request)` produces a different
+ * hash each time — JetStream dedup never collapses the retries and
+ * every attempt triggers a brand-new LLM execution (cost + behaviour
+ * risk). See `post-mortem/POST-MORTEM.md` §P1.3 fix 2.
+ *
+ * Both `runId` and `activityId` are stable across attempts of a
+ * given activity invocation; `attempt` is intentionally excluded.
+ * Falls back to `undefined` (legacy random-UUID path) when called
+ * outside an activity context (e.g. unit tests not using `MockActivityEnvironment`).
+ */
+function deriveStableExecutionId(): string | undefined {
+  try {
+    const info = Context.current().info;
+    return `${info.workflowExecution.runId}:${info.activityId}`;
+  } catch {
+    return undefined;
+  }
+}
+
 async function executeAgentCallInner(
   args: AgentChatRequest,
   tenantId: string,
 ): Promise<HttpExecutionResult> {
   const client = await getExecutionClient();
+  const stableExecutionId = deriveStableExecutionId();
   const status = await client.executeAndWait(tenantId, args, AGENT_CALL_TIMEOUT_MS, {
     requestedBy: args.userId,
     correlationId: args.conversationId,
+    /**
+     * NOTE: `submitExecution` still computes `requestedAt = new
+     * Date().toISOString()` per call, so the `Nats-Msg-Id` hash drifts
+     * by milliseconds between attempts. JetStream's default
+     * `duplicate_window` (2 min) collapses retries that fire within
+     * that window — which is the case for every observed retry in
+     * the post-mortem (seconds apart). Pinning `requestedAt` cleanly
+     * requires extending `SubmitExecutionOptions`; tracked as a
+     * follow-up. The `executionId` alone collapses the LLM-trigger
+     * duplicate in the common case.
+     */
+    ...(stableExecutionId !== undefined && { executionId: stableExecutionId }),
   });
 
   if (status.state === "failed") {

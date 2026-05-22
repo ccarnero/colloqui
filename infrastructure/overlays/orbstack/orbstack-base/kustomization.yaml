@@ -10,3 +10,4 @@ patches:
   - path: patches/redis.yaml
   - path: patches/postgres.yaml
   - path: patches/postgres-temporal.yaml
+  - path: patches/postgres-temporal-visibility.yaml

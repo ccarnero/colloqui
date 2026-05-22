@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, mock } from "bun:test";
 import type { JetStreamClient, JetStreamManager } from "nats";
 import { TENANT_HEADER } from "@yoizen/shared";
 import { WebhookIngressPublisherService } from "../../src/modules/channels/webhook-ingress-publisher.service";
+import { WebhookPublishUnavailableError } from "../../src/modules/channels/webhook-publish-unavailable.error";
+import { gatewayConfig } from "../../src/config";
 
 describe("WebhookIngressPublisherService", () => {
   const publish = mock(() => Promise.resolve({ seq: 1 }));
@@ -78,5 +80,126 @@ describe("WebhookIngressPublisherService", () => {
     });
 
     expect(add).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * 2026-05-22 post-mortem regression suite
+   * (`post-mortem/POST-MORTEM.md` §P1.2). Before the fix, an
+   * indefinitely-pending `js.publish` surfaced as an opaque 500 to
+   * providers (118 `NatsError: TIMEOUT` in 2 seconds). Now it MUST
+   * surface as `WebhookPublishUnavailableError` (HTTP 503 via the
+   * global exception filter).
+   */
+  describe("publish timeout (post-mortem §P1.2)", () => {
+    const stalledPublish = mock(() => new Promise(() => {}));
+    const stalledJs = { publish: stalledPublish } as unknown as JetStreamClient;
+
+    beforeEach(() => {
+      stalledPublish.mockClear();
+    });
+
+    it("throws WebhookPublishUnavailableError when js.publish never resolves", async () => {
+      // Override the timeout to keep the test fast (50ms).
+      const originalTimeout = gatewayConfig.webhook.publishTimeoutMs;
+      (gatewayConfig.webhook as { publishTimeoutMs: number }).publishTimeoutMs = 50;
+      try {
+        const service = new WebhookIngressPublisherService(stalledJs, jsm);
+        const promise = service.publishWebhook({
+          tenantId: "tenant-stall",
+          channel: "whatsapp",
+          rawBody: Buffer.from("{}"),
+          parsedBody: {},
+          headers: {},
+        });
+
+        await expect(promise).rejects.toBeInstanceOf(
+          WebhookPublishUnavailableError,
+        );
+      } finally {
+        (gatewayConfig.webhook as { publishTimeoutMs: number }).publishTimeoutMs =
+          originalTimeout;
+      }
+    });
+
+    it("releases the in-flight slot after a timeout failure", async () => {
+      const originalTimeout = gatewayConfig.webhook.publishTimeoutMs;
+      (gatewayConfig.webhook as { publishTimeoutMs: number }).publishTimeoutMs = 25;
+      try {
+        const service = new WebhookIngressPublisherService(stalledJs, jsm);
+        await expect(
+          service.publishWebhook({
+            tenantId: "tenant-stall-2",
+            channel: "whatsapp",
+            rawBody: Buffer.from("{}"),
+            parsedBody: {},
+            headers: {},
+          }),
+        ).rejects.toBeInstanceOf(WebhookPublishUnavailableError);
+
+        // Second call must NOT trip the in-flight cap (slot released).
+        await expect(
+          service.publishWebhook({
+            tenantId: "tenant-stall-2",
+            channel: "whatsapp",
+            rawBody: Buffer.from("{}"),
+            parsedBody: {},
+            headers: {},
+          }),
+        ).rejects.toBeInstanceOf(WebhookPublishUnavailableError);
+      } finally {
+        (gatewayConfig.webhook as { publishTimeoutMs: number }).publishTimeoutMs =
+          originalTimeout;
+      }
+    });
+  });
+
+  describe("in-flight cap (post-mortem §P1.2)", () => {
+    /**
+     * A publish promise that never resolves so we can pile up inflight
+     * calls without races. The first N calls reserve the cap; the
+     * N+1-th must bounce immediately with `WebhookPublishUnavailableError`.
+     */
+    const blockedPublish = mock(() => new Promise(() => {}));
+    const blockedJs = { publish: blockedPublish } as unknown as JetStreamClient;
+
+    it("rejects with WebhookPublishUnavailableError once the per-pod cap is exhausted", async () => {
+      const original = gatewayConfig.webhook.publishInflightCap;
+      (gatewayConfig.webhook as { publishInflightCap: number }).publishInflightCap = 2;
+      try {
+        const service = new WebhookIngressPublisherService(blockedJs, jsm);
+
+        // Saturate the cap with two never-resolving publishes.
+        void service.publishWebhook({
+          tenantId: "tenant-cap",
+          channel: "whatsapp",
+          rawBody: Buffer.from("{}"),
+          parsedBody: {},
+          headers: {},
+        }).catch(() => undefined);
+        void service.publishWebhook({
+          tenantId: "tenant-cap",
+          channel: "whatsapp",
+          rawBody: Buffer.from("{}"),
+          parsedBody: {},
+          headers: {},
+        }).catch(() => undefined);
+
+        // Yield once so the in-flight counter is observably 2.
+        await new Promise((r) => setImmediate(r));
+
+        await expect(
+          service.publishWebhook({
+            tenantId: "tenant-cap",
+            channel: "whatsapp",
+            rawBody: Buffer.from("{}"),
+            parsedBody: {},
+            headers: {},
+          }),
+        ).rejects.toBeInstanceOf(WebhookPublishUnavailableError);
+      } finally {
+        (gatewayConfig.webhook as { publishInflightCap: number }).publishInflightCap =
+          original;
+      }
+    });
   });
 });

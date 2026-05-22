@@ -10,4 +10,5 @@ patches:
   - path: patches/redis-resources.yaml
   - path: patches/postgres-resources.yaml
   - path: patches/postgres-temporal-resources.yaml
+  - path: patches/postgres-temporal-visibility-resources.yaml
   - path: patches/observability-resources.yaml

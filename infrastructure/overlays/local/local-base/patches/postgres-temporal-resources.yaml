@@ -7,7 +7,25 @@
 # 2 replicas, plus workflow workers using direct connections, the
 # previous `max_connections: 150` saturated within ~30s of ramp.
 # Bumped to 300 (still half of the production base of 500). Memory
-# parameters scale up proportionally (2Gi limit).
+# parameters scale up proportionally (3Gi limit).
+#
+# 2026-05-22 stress-run post-mortem (`post-mortem/POST-MORTEM.md`):
+# this overlay produced 2 077 `queues_pkey` / `queue_messages_pkey`
+# duplicate-INSERT aborts and an autovacuum I/O storm because
+# `shared_buffers: 512MB` couldn't hold the `executions_visibility`
+# working set. Bumped within the dev budget: 2Gi → 3Gi memory limit,
+# 512MB → 1GB `shared_buffers`, autovacuum naptime 20s → 10s and
+# workers 4 → 6 to match the base cluster's vacuum cadence without
+# blowing the laptop CPU budget.
+#
+# 2026-05-22 stress re-run (post-fix, "light" load): even with the
+# visibility split + the bumps above, `postgres-temporal-1` saturated
+# at 1.34 / 2 CPU and Temporal `GetWorkflowExecution` started timing
+# out (`Failed to get buffered events`, `signal info`, `request cancel
+# info` — each call dispatches ~6 parallel SELECTs). Lifted cap
+# 2 → 4 CPU; node still has ~3 cores headroom (12-core minikube/orbstack
+# host). Requests stay at 500m so the kube-scheduler can still fit
+# the workflow-* worker family.
 #
 # `huge_pages: off` because dev nodes (orbstack, kind, local-path)
 # typically don't have HugePages configured at the kernel level.
@@ -20,10 +38,10 @@ spec:
   resources:
     requests:
       cpu: 500m
-      memory: 1Gi
+      memory: 1500Mi
     limits:
-      cpu: "2"
-      memory: 2Gi
+      cpu: "4"
+      memory: 3Gi
   storage:
     size: 10Gi
   walStorage:
@@ -34,10 +52,10 @@ spec:
     podAntiAffinityType: preferred
   postgresql:
     parameters:
-      shared_buffers: "512MB"
-      effective_cache_size: "1536MB"
-      work_mem: "12MB"
-      maintenance_work_mem: "192MB"
+      shared_buffers: "1GB"
+      effective_cache_size: "2GB"
+      work_mem: "24MB"
+      maintenance_work_mem: "320MB"
       huge_pages: "off"
       max_connections: "300"
       # CNPG validates max_wal_size < walStorage (2Gi here). 1.5GB
@@ -46,8 +64,22 @@ spec:
       max_wal_size: "1500MB"
       min_wal_size: "512MB"
       wal_buffers: "32MB"
-      autovacuum_max_workers: "4"
-      autovacuum_naptime: "20s"
+      autovacuum_max_workers: "6"
+      autovacuum_naptime: "10s"
+      # 2026-05-22 stress re-run: with `synchronous_commit: remote_write`
+      # inherited from base (designed for 2-instance HA), the single-
+      # instance dev cluster falls back to "wait for local fsync" on
+      # every commit. Under stress load `WalSync` + `WALWrite` became
+      # the dominant wait events and Temporal's `RecordActivityTask*`
+      # / `UpdateWorkflowExecution` started timing out — even though
+      # CPU was only at 38%. Disabling sync commit drops the commit
+      # latency from one fsync per write to one fsync per
+      # `wal_writer_delay` (200ms) and turns the bottleneck back into
+      # pure CPU/IO bandwidth. Tradeoff: the last few hundred ms of
+      # committed transactions can be lost on a power-loss / OOM-kill
+      # of the Postgres pod — fully acceptable in a dev cluster.
+      # DO NOT propagate this to base (production HA).
+      synchronous_commit: "off"
 ---
 # Temporal Server Deployment patch for single-node minikube.
 #

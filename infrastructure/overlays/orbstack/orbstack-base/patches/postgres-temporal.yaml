@@ -37,4 +37,7 @@ spec:
       min_wal_size: "256MB"
       wal_buffers: "16MB"
       autovacuum_max_workers: "3"
-      autovacuum_naptime: "30s"
+      # 2026-05-22 post-mortem: align naptime with base/local (10s) so
+      # the orbstack profile doesn't fall behind on `executions`
+      # autovacuum and start cascading `update-wf-execution` timeouts.
+      autovacuum_naptime: "10s"

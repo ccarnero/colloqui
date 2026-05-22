@@ -72,8 +72,16 @@ spec:
   #
   # The Prometheus job filter `job="connector-runtime-sdk"` is
   # CRITICAL — without it the temporal-server's system-worker also
-  # reports `temporal_worker_task_slots_used{task_queue="workflow-http"}`
+  # reports `temporal_worker_task_slots_used{task_queue="connector-runtime"}`
   # for its internal bookkeeping and would double-count.
+  #
+  # The `task_queue` label MUST match the queue name the worker
+  # registers with (`CONNECTOR_RUNTIME_TASK_QUEUE` =
+  # `"connector-runtime"` from `packages/shared/src/constants.ts`).
+  # A stale value here (e.g. the old `"workflow-http"` left over from
+  # the pre-rename worker) makes the query return an empty vector,
+  # KEDA reads it as 0, and the deployment never scales above
+  # `minReplicaCount`.
   triggers:
     # Primary: activity-task slot utilization PER REPLICA.
     # threshold=120 = 30 % of maxConcurrentActivityTaskExecutions(400).
@@ -85,11 +93,11 @@ spec:
       name: connector-runtime-load
       metadata:
         serverAddress: http://prometheus.support-services-dev.svc.cluster.local:9090
-        metricName: workflow_http_worker_load
+        metricName: connector_runtime_load
         threshold: "120"
         activationThreshold: "10"
         query: |
-          sum(temporal_worker_task_slots_used{job="connector-runtime-sdk",worker_type="ActivityWorker",task_queue="workflow-http"})
+          sum(temporal_worker_task_slots_used{job="connector-runtime-sdk",worker_type="ActivityWorker",task_queue="connector-runtime"})
 
     # Safety net: activity schedule-to-start p95 latency in ms.
     # threshold=1000ms because activity start latency is more
@@ -100,12 +108,12 @@ spec:
       name: connector-runtime-schedule-to-start
       metadata:
         serverAddress: http://prometheus.support-services-dev.svc.cluster.local:9090
-        metricName: workflow_http_worker_schedule_to_start_p95_ms
+        metricName: connector_runtime_schedule_to_start_p95_ms
         threshold: "1000"
         activationThreshold: "100"
         query: |
           1000 * histogram_quantile(0.95,
             sum by (le) (
-              rate(temporal_activity_schedule_to_start_latency_bucket{job="connector-runtime-sdk",task_queue="workflow-http"}[1m])
+              rate(temporal_activity_schedule_to_start_latency_bucket{job="connector-runtime-sdk",task_queue="connector-runtime"}[1m])
             )
           )
