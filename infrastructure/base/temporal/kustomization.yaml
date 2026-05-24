@@ -1,7 +1,40 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# HA topology: 4 role-specific Deployments (frontend, history,
+# matching, worker) sharing the same `app.kubernetes.io/name=temporal`
+# label for Prometheus discovery and distinguished by
+# `temporal.io/role`. Replaces the previous single `Deployment/temporal`
+# running `temporalio/auto-setup`. See:
+#   - DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md
+#   - post-mortem/POST-MORTEM.md §10.2 (ring imbalance hazard)
 resources:
-  - configmap.yaml
-  - deployment.yaml
-  - service.yaml
+  # Config + RBAC first so the Deployments find their dependencies on apply.
+  - configmap-docker.yaml
+  - configmap-dynamic-config.yaml
+  - rbac-schema-wait.yaml
+  - rbac-shard-rebalancer.yaml
+  # Schema bootstrap runs before any server pod can start (initContainer
+  # `wait-for-schema` blocks on this Job's `complete` condition).
+  - job-schema-setup.yaml
+  # Namespace bootstrap runs AFTER the frontend is SERVING (the Job
+  # polls cluster health itself). Restores parity with `auto-setup`'s
+  # `register_default_namespace` — required for workflow-worker /
+  # connector-runtime SDK clients that default to namespace 'default'.
+  - job-namespace-bootstrap.yaml
+  # Auto-remediation for history shard imbalance. CronJob every 2min
+  # polls the `TemporalHistoryShardImbalance` alert state; if firing,
+  # rolling-restarts `temporal-history` to force ring rebalance. See
+  # `DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md` §5.1.
+  - cronjob-shard-rebalancer.yaml
+  # Services. `service-frontend.yaml` keeps the legacy `temporal` Service
+  # name so clients (workflow-service, workflow-worker, connector-runtime,
+  # temporal-ui) need no env-var changes.
+  - service-frontend.yaml
+  - service-internode.yaml
+  - service-metrics.yaml
+  # Role Deployments.
+  - deployment-frontend.yaml
+  - deployment-history.yaml
+  - deployment-matching.yaml
+  - deployment-worker.yaml

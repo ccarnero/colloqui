@@ -1,0 +1,96 @@
+# Per-role Services exposing the Prometheus exporter on :9090. Not
+# required by the Temporal server itself — its discovery is done via
+# pod labels in `infrastructure/base/observability/prometheus/configmap.yaml`
+# `temporal-server` job. These Services exist purely so an operator
+# can curl a specific role's metrics endpoint without grepping for
+# pod IPs:
+#
+#   kubectl run -it --rm tmp --image=curlimages/curl:8.10.1 \
+#     --restart=Never -- curl temporal-history-metrics:9090/metrics
+#
+# Each is headless (`clusterIP: None`) so resolution returns every
+# pod's IP, not a load-balanced single endpoint — round-robin between
+# 2 history pods would lose half the metrics on a single scrape.
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-frontend-metrics
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: workflow-engine
+    temporal.io/role: frontend
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: temporal
+    temporal.io/role: frontend
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-history-metrics
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: workflow-engine
+    temporal.io/role: history
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: temporal
+    temporal.io/role: history
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-matching-metrics
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: workflow-engine
+    temporal.io/role: matching
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: temporal
+    temporal.io/role: matching
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-worker-metrics
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: workflow-engine
+    temporal.io/role: worker
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: temporal
+    temporal.io/role: worker
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP

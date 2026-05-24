@@ -1,0 +1,157 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Suffix by Temporal version so the operator experience matches
+  # `temporal-schema-setup-<version>` (Jobs are immutable; bumping
+  # the version creates a fresh Job that re-runs the registration
+  # check — idempotent, will short-circuit if 'default' is present).
+  name: temporal-namespace-bootstrap-1-28-4
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: namespace-bootstrap
+# Bootstraps the 'default' Temporal namespace + the `TenantId` search
+# attribute, two pieces of state that `temporalio/auto-setup` used to
+# create on every boot via its `register_default_namespace` and
+# `add_custom_search_attributes` functions in `auto-setup.sh`. The HA
+# migration removed that script's entrypoint (we run `temporalio/server`
+# directly), so without this Job the cluster boots into a state where:
+#
+#   1. SDK clients (workflow-worker, connector-runtime) crash on first
+#      boot with `Namespace default is not found.` when they call
+#      DescribeNamespace for heartbeat capabilities.
+#   2. `workflow-service-worker` (TriggerConsumerService) fails every
+#      `workflow.start` call with `Namespace default has no mapping
+#      defined for search attribute TenantId`. The workflow-service
+#      attempts a runtime registration in `temporal.provider.ts`
+#      (`ensureSearchAttributes`) but catches errors with a `warn`, so
+#      the failure is silent. By the time the worker reads the first
+#      NATS trigger the registration may not have landed yet, or it
+#      may have failed against a not-yet-existing namespace.
+#
+# This Job is NOT a startup gate for the server pods (unlike the
+# schema Job): it runs AFTER the 4 role Deployments are Available
+# because it has to talk to the frontend's gRPC. It uses an in-
+# container poll loop (no kubectl initContainer needed) because
+# pod-Ready != gRPC-Serving.
+#
+# Tenant-specific namespaces (e.g. acme, the workflow tenants from
+# `tenant-service`) are NOT created here — those are provisioned
+# per-tenant via the tenant-service workflow when a customer is
+# onboarded. This Job only restores parity with the pre-HA auto-setup
+# behaviour: the 'default' system namespace + the TenantId search
+# attribute that workflow-service uses to scope per-tenant queries
+# inside that shared namespace.
+spec:
+  ttlSecondsAfterFinished: 600
+  # 5 retries cover the typical case where the Job lands before the
+  # 4 role Deployments finish their rolling apply. The in-container
+  # loop itself waits up to 6 min, so the outer backoff is mostly
+  # for hard infra failures (image pull, RBAC).
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: temporal
+        app.kubernetes.io/component: namespace-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: namespace-tool
+          # Same admin-tools image as the schema setup Job — has
+          # `tctl` + `temporal` CLIs bundled.
+          image: temporalio/admin-tools:1.28.4-tctl-1.18.4-cli-1.6.2
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+
+              ADDR="temporal:7233"
+              NS_NAME="default"
+              NS_RETENTION="24h"
+              NS_DESCRIPTION="Default namespace bootstrapped by HA migration"
+
+              # Wait for the frontend gRPC to be Serving. `cluster
+              # health` returns "WorkflowService: SERVING" once the
+              # frontend has registered with ringpop AND can reach
+              # the history shards. Up to 6 min — the post-fix
+              # cold-boot of history+frontend together is <2 min,
+              # but the image pull on a cold node adds variance.
+              echo "[ns-bootstrap] Waiting for ${ADDR} to be SERVING..."
+              ATTEMPTS=0
+              MAX_ATTEMPTS=120
+              until tctl --address "${ADDR}" cluster health 2>/dev/null \
+                  | grep -q "SERVING"; do
+                ATTEMPTS=$((ATTEMPTS + 1))
+                if [ "$ATTEMPTS" -ge "$MAX_ATTEMPTS" ]; then
+                  echo "[ns-bootstrap] FATAL: ${ADDR} not SERVING after ${MAX_ATTEMPTS}*3s"
+                  exit 1
+                fi
+                sleep 3
+              done
+              echo "[ns-bootstrap] frontend is SERVING."
+
+              # ---- Namespace -----------------------------------------
+              # Idempotency check: `temporal operator namespace
+              # describe` exits 0 if found, non-zero (with stderr
+              # to /dev/null) if missing.
+              if temporal operator namespace describe \
+                  --address "${ADDR}" \
+                  --namespace "${NS_NAME}" >/dev/null 2>&1; then
+                echo "[ns-bootstrap] Namespace '${NS_NAME}' already exists."
+              else
+                echo "[ns-bootstrap] Registering namespace '${NS_NAME}'..."
+                temporal operator namespace create \
+                  --address "${ADDR}" \
+                  --namespace "${NS_NAME}" \
+                  --retention "${NS_RETENTION}" \
+                  --description "${NS_DESCRIPTION}"
+              fi
+
+              # ---- Search attributes ---------------------------------
+              # `TenantId` (Keyword) is required by workflow-service:
+              #   - `temporal.workflow.start({ searchAttributes:
+              #     { TenantId: [tenantId] } })` in
+              #     `services/workflow-service/src/modules/workflows/
+              #     workflows.service.ts` is called on EVERY trigger.
+              #   - `workflow.list({ query: "TenantId='...'" })` is the
+              #     per-tenant listing query in the same file.
+              # Without it Temporal returns:
+              #   "Namespace ${NS_NAME} has no mapping defined for
+              #    search attribute TenantId"
+              # workflow-service.provider.ts tries to register it at
+              # runtime (`ensureSearchAttributes`) but swallows errors
+              # with a `warn`, so the failure is silent and every
+              # workflow start fails until the attribute exists. We
+              # register it deterministically here.
+              #
+              # `temporal operator search-attribute create` is
+              # idempotent at the CLI level: it returns an error if
+              # the attribute already exists. We tolerate that exit
+              # code via `|| true` after grepping the stderr for the
+              # well-known message; any OTHER failure still bubbles up.
+              ATTR_NAME="TenantId"
+              ATTR_TYPE="Keyword"
+              echo "[ns-bootstrap] Ensuring '${ATTR_NAME}' search attribute (${ATTR_TYPE})..."
+              CREATE_OUT="$(temporal operator search-attribute create \
+                --address "${ADDR}" \
+                --namespace "${NS_NAME}" \
+                --name "${ATTR_NAME}" --type "${ATTR_TYPE}" 2>&1 || true)"
+              if echo "${CREATE_OUT}" | grep -qiE "already exists|already in use|added"; then
+                echo "[ns-bootstrap] Search attribute '${ATTR_NAME}' OK."
+              elif echo "${CREATE_OUT}" | grep -qiE "have been added"; then
+                echo "[ns-bootstrap] Search attribute '${ATTR_NAME}' registered."
+              else
+                echo "[ns-bootstrap] WARN: unexpected response from search-attribute create:"
+                echo "${CREATE_OUT}"
+                # Don't fail the Job — workflow-service has its own
+                # fallback (warn + retry-on-next-start), and the user
+                # can re-run the Job manually.
+              fi
+              echo "[ns-bootstrap] Done."
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

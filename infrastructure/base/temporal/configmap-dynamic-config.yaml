@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-dynamic-config
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: workflow-engine
+# Temporal dynamic config — re-read by the server every 60s (see
+# `dynamicConfigClient.pollInterval` in `configmap-docker.yaml`).
+# Mounted at `/etc/temporal/config/dynamicconfig/` on every role
+# Deployment; `DYNAMIC_CONFIG_FILE_PATH` env on each Deployment
+# selects the file.
+#
+# Pre-HA migration this file was named `development-sql.yaml` and
+# lived next to the auto-setup Deployment. Renamed to
+# `production-sql.yaml` as part of the split — keys unchanged.
+data:
+  production-sql.yaml: |
+    frontend.workerHeartbeatsEnabled:
+      - value: true
+    # Optional: make the listing endpoint richer too. Both keys have the same
+    # one-liner format — a list of { value, constraints? } entries.
+    frontend.listWorkersEnabled:
+      - value: true

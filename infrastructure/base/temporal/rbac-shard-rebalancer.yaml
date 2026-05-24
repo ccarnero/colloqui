@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: temporal-shard-rebalancer
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: shard-rebalancer
+# Minimal SA used by the `temporal-shard-rebalancer` CronJob — see
+# `cronjob-shard-rebalancer.yaml`. The CronJob polls Prometheus to
+# check the `TemporalHistoryShardImbalance` alert state and, if
+# firing, triggers `kubectl rollout restart deployment/temporal-history`.
+# That's the only mutation it can perform.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: temporal-shard-rebalancer
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: shard-rebalancer
+# Locked down to:
+# - get/list deployments (read state for the rollout)
+# - patch deployments (kubectl rollout restart works by patching
+#   spec.template.metadata.annotations with `kubectl.kubernetes.io/restartedAt`)
+# - get/list/watch pods (kubectl rollout status reads pod readiness)
+# Crucially: no `delete pods`, no `exec`, no secret access, nothing
+# else. If this CronJob's image were ever compromised, the blast
+# radius is "force-restart one Deployment in this namespace" — the
+# same thing any on-call SRE can already do manually.
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: temporal-shard-rebalancer
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: shard-rebalancer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: temporal-shard-rebalancer
+subjects:
+  - kind: ServiceAccount
+    name: temporal-shard-rebalancer

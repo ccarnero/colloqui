@@ -24,15 +24,19 @@ data:
           - targets:
               - nats:7777
 
-      # Temporal Server self-metrics. The `temporalio/auto-setup` image
-      # runs all 4 services (frontend, history, matching, internal-worker)
-      # in one process so a single endpoint exports every `temporal_*`
-      # metric — `service_name` label disambiguates them. Required env in
-      # the Temporal Deployment: `PROMETHEUS_ENDPOINT=0.0.0.0:9090`.
+      # Temporal Server self-metrics. Post-HA-migration (see
+      # DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md) the cluster runs the 4
+      # roles (frontend, history, matching, worker) as separate
+      # Deployments under the same `app.kubernetes.io/name=temporal`
+      # label, distinguished by `temporal.io/role`. The keep filter
+      # below still matches all 4 since the label is shared; we add a
+      # `temporal_role` target label so Grafana / PromQL can group by
+      # role. Required env on every Deployment:
+      # `PROMETHEUS_ENDPOINT=0.0.0.0:9090`.
       #
-      # Discovers pods by `app.kubernetes.io/name=temporal` so multi-replica
-      # deployments yield one target per pod (vs. Service round-robin which
-      # mixes metrics across pods).
+      # The metric `service_name` (set by Temporal itself) and the
+      # label `temporal_role` (set here) are 1:1 — keeping both
+      # makes it easy to migrate dashboards incrementally.
       - job_name: temporal-server
         scrape_interval: 15s
         kubernetes_sd_configs:
@@ -48,6 +52,8 @@ data:
             target_label: instance
           - source_labels: [__meta_kubernetes_namespace]
             target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_label_temporal_io_role]
+            target_label: temporal_role
 
       # Temporal TypeScript SDK metrics from the orchestrator worker
       # (`@temporalio/worker` Runtime). Exposed when the Deployment env

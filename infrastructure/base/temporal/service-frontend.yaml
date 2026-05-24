@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: workflow-engine
+# Frontend gRPC entrypoint for every Temporal client (workflow-service,
+# workflow-worker, connector-runtime, temporal-ui). The Service name
+# `temporal` is preserved from the pre-HA single-Deployment setup so
+# clients DO NOT need any code or env-var change after the migration.
+#
+# Selector changed: only pods carrying `temporal.io/role=frontend` are
+# routed here. The other roles (history/matching/worker) keep the
+# `app.kubernetes.io/name=temporal` label for Prometheus discovery
+# (see `infrastructure/base/observability/prometheus/configmap.yaml`
+# `temporal-server` job) but they are FILTERED OUT of this Service by
+# the role label, so frontend traffic never accidentally hits an
+# internode pod.
+#
+# `metrics` port is also exposed here to keep the existing single
+# scrape target reachable; per-role metrics fan-out lives in
+# `service-metrics.yaml`.
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: temporal
+    temporal.io/role: frontend
+  ports:
+    - name: grpc
+      port: 7233
+      targetPort: 7233
+      protocol: TCP
+    - name: http
+      port: 7243
+      targetPort: 7243
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP

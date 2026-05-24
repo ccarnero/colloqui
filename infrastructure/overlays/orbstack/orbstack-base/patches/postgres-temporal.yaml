@@ -41,3 +41,89 @@ spec:
       # the orbstack profile doesn't fall behind on `executions`
       # autovacuum and start cascading `update-wf-execution` timeouts.
       autovacuum_naptime: "10s"
+---
+# OrbStack overrides for the 4 Temporal role Deployments. User chose
+# 2 replicas per role for full HA parity (see plan §dev_profile),
+# EXCEPT history bumped to 3 replicas in base on 2026-05-24
+# (inherited here — see base `deployment-history.yaml` for rationale).
+#
+# Sizing is the smallest profile that still leaves headroom for a
+# stress run on a laptop. Trim aggressively — the dev orbstack node
+# typically has fewer cores than minikube + competes with other
+# Docker workloads on the host. Per-pod history budget cut since
+# the 3rd replica absorbs ~33% of the work.
+#
+# Total dev footprint (per env, all replicas):
+#   frontend: 2 × {req 100m/256Mi, lim 1/512Mi}
+#   history:  3 × {req 170m/350Mi, lim 1500m/1Gi}   ← bumped to 3
+#   matching: 2 × {req 100m/256Mi, lim 1/512Mi}
+#   worker:   2 × {req 50m/128Mi,  lim 500m/256Mi}
+#   Σ req ≈ 1010m CPU + 2.3Gi mem
+#   Σ lim ≈ 8.5 CPU + 6 Gi mem (vs old 9 CPU / 5.5 Gi — about even)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-frontend
+spec:
+  template:
+    spec:
+      containers:
+        - name: temporal
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-history
+spec:
+  template:
+    spec:
+      containers:
+        - name: temporal
+          resources:
+            requests:
+              cpu: 170m
+              memory: 350Mi
+            limits:
+              cpu: "1500m"
+              memory: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-matching
+spec:
+  template:
+    spec:
+      containers:
+        - name: temporal
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: temporal
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "500m"
+              memory: 256Mi

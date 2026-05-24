@@ -277,6 +277,7 @@ All counts in this document were derived from the attached logs with reproducibl
 | 5 | workflow-worker | Audit activities for idempotency under retry/double-completion | P1 | Done (Phase 1) |
 | 6 | All | Add OTel counters listed in §6.9 | P2 | Pending |
 | 7 | SRE | Capture `registry-service` + full-window `temporal.log` in next stress run | P2 | Pending |
+| 8 | Platform/SRE | Migrate Temporal compute layer from `temporalio/auto-setup` (4 services in 1 process) to HA topology (4 split Deployments, `temporalio/server`, schema bootstrap as Job) | **P0** | Done — see [`DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md`](../DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md). Resolves §10.1 (`VISIBILITY_POSTGRES_SEEDS` ignored, fix-in-bootstrap obsoleted) and §10.2 (ring imbalance only affects `temporal-history` ring now, separated from frontend/matching/worker) |
 
 ---
 

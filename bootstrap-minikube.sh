@@ -610,27 +610,77 @@ apply_infrastructure() {
       return 1
     fi
 
-    # `temporalio/auto-setup` runs `setup-schema` for both default and
-    # visibility databases against the SAME host (POSTGRES_SEEDS),
-    # ignoring `VISIBILITY_POSTGRES_SEEDS` even when set. After the
-    # visibility split, the Temporal Server (which DOES honour
-    # `VISIBILITY_POSTGRES_SEEDS`) crashloops with
-    # `relation "schema_version" does not exist` on the new cluster.
-    # This helper detects the gap and runs `temporal-sql-tool` directly
-    # against `postgres-temporal-visibility-rw`. Idempotent: ~1s if the
-    # schema is already there. See:
-    #   - DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md
-    #   - post-mortem/POST-MORTEM.md §P0.2
-    log "Ensuring temporal_visibility schema is bootstrapped in ${ns}..."
-    if ! "${script_dir}/infrastructure/scripts/ensure-temporal-visibility-schema.sh" "$ns"; then
-      err "Failed to bootstrap temporal_visibility schema in ${ns}."
+    # Post-HA-migration (DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md) the
+    # schema bootstrap moved out of the `auto-setup` boot loop into a
+    # dedicated Job named `temporal-schema-setup-<version>` defined by
+    # `infrastructure/base/temporal/job-schema-setup.yaml`. Every role
+    # Deployment (frontend, history, matching, worker) has an
+    # initContainer that `kubectl wait`s on the same Job, but we wait
+    # here too so a Job failure surfaces in the bootstrap log instead
+    # of as pod-init timeouts. The legacy
+    # `ensure-temporal-visibility-schema.sh` workaround for
+    # `auto-setup` ignoring `VISIBILITY_POSTGRES_SEEDS` (§10.1) is
+    # gone — the Job targets both clusters explicitly.
+    log "Waiting for temporal schema bootstrap Job in ${ns}..."
+    kubectl wait --namespace "$ns" \
+      --for=condition=complete \
+      job/temporal-schema-setup-1-28-4 \
+      --timeout=300s
+
+    # Roll all 4 role Deployments in parallel. The slowest one
+    # (history — needs to claim 16 shards over SQL) gates the wall-
+    # clock; rolling sequentially would stack 4×180s.
+    log "Waiting for Temporal role Deployments in ${ns} (parallel)..."
+    local temporal_pids=()
+    local temporal_roles=(frontend history matching worker)
+    for role in "${temporal_roles[@]}"; do
+      kubectl rollout status "deployment/temporal-${role}" \
+        --namespace "$ns" \
+        --timeout=300s &
+      temporal_pids+=($!)
+    done
+
+    local temporal_exit=0
+    for idx in "${!temporal_pids[@]}"; do
+      if ! wait "${temporal_pids[$idx]}"; then
+        warn "Rollout did not converge: deployment/temporal-${temporal_roles[$idx]}"
+        temporal_exit=1
+      fi
+    done
+    if (( temporal_exit != 0 )); then
+      err "One or more Temporal role Deployments did not become Available within 300s."
       return 1
     fi
 
-    log "Waiting for Temporal in ${ns}..."
-    kubectl rollout status deployment/temporal \
-      --namespace "$ns" \
-      --timeout=180s
+    # Restores the 'default' Temporal namespace that `auto-setup` used
+    # to register on every boot but `temporalio/server` does not. SDK
+    # clients (workflow-worker, connector-runtime) crash on first
+    # boot otherwise with `Namespace default is not found.`. The Job
+    # waits internally for the frontend to be SERVING; we add the
+    # outer kubectl wait so failures surface in the bootstrap log
+    # instead of as later SDK errors.
+    log "Waiting for temporal namespace bootstrap Job in ${ns}..."
+    kubectl wait --namespace "$ns" \
+      --for=condition=complete \
+      job/temporal-namespace-bootstrap-1-28-4 \
+      --timeout=420s
+
+    # Force a balanced history shard ring. Temporal's ringpop only
+    # rebalances shards on host LEAVE, not on host JOIN — so the
+    # first pod to register in `cluster_membership` claims all 16
+    # shards, and the second pod stays idle until something forces
+    # a churn event. A rolling-restart of history triggers exactly
+    # that: each pod leaves once, the survivor takes all shards, and
+    # on rejoin the new pod acquires its hash-assigned half via
+    # consistent hashing (now that the survivor is the sole writer
+    # under low post-restart load, the rejoining pod wins its CAS
+    # races). Without this step the 2026-05-23 stress run saw 16/0
+    # skew and 57k workflows TimedOut — see
+    # `DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md` §5.1.
+    log "Rebalancing temporal history shards in ${ns}..."
+    kubectl rollout restart deployment/temporal-history --namespace "$ns"
+    kubectl rollout status deployment/temporal-history \
+      --namespace "$ns" --timeout=300s
 
     # Temporal UI + the observability stack (otel-collector, tempo,
     # prometheus, loki, grafana) have no inter-dependency at the
@@ -859,13 +909,20 @@ verify_support_services() {
       fi
     done
 
-    if ! kubectl get deployment/temporal --namespace "$ns" &>/dev/null; then
-      warn "Deployment 'temporal' not found in ${ns}"
-    fi
-
-    if ! kubectl get deployment/temporal-ui --namespace "$ns" &>/dev/null; then
-      warn "Deployment 'temporal-ui' not found in ${ns}"
-    fi
+    # Post-HA-migration: 4 role Deployments replace the single
+    # `temporal` Deployment. Check all 4 + the UI.
+    local temporal_deploys=(
+      temporal-frontend
+      temporal-history
+      temporal-matching
+      temporal-worker
+      temporal-ui
+    )
+    for dep in "${temporal_deploys[@]}"; do
+      if ! kubectl get deployment/"$dep" --namespace "$ns" &>/dev/null; then
+        warn "Deployment '${dep}' not found in ${ns}"
+      fi
+    done
   done
 }
 

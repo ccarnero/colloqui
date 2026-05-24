@@ -1,0 +1,219 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-frontend
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: workflow-engine
+    temporal.io/role: frontend
+# Frontend role — stateless gRPC + HTTP entrypoint. Owns no shards;
+# routes RPCs to history/matching pods discovered via the ringpop
+# membership ring (backed by Postgres `cluster_membership` table).
+# Horizontally scalable; capacity is bounded by Postgres + the
+# downstream history pods, not by the frontend itself.
+#
+# Replicas: base manifest declares 2. Overlays (`local`, `orbstack`)
+# may scale up/down via patch — see
+# `infrastructure/overlays/*/patches/postgres-temporal-resources.yaml`.
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: temporal
+      temporal.io/role: frontend
+  strategy:
+    # maxUnavailable=0 keeps the frontend Service reachable through
+    # rollouts. Inherited pattern from the auto-setup Deployment.
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: temporal
+        app.kubernetes.io/component: workflow-engine
+        temporal.io/role: frontend
+    spec:
+      serviceAccountName: temporal-schema-wait
+      terminationGracePeriodSeconds: 30
+      affinity:
+        # Spread frontend pods across nodes when possible. `preferred`
+        # so single-node dev clusters (orbstack/kind) still schedule
+        # both replicas together.
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: temporal
+                    temporal.io/role: frontend
+                topologyKey: kubernetes.io/hostname
+      initContainers:
+        # Gate the main container behind the schema Job. Without this
+        # the server can boot, query `schema_version`, fail, and
+        # crashloop while the Job is still applying migrations. Same
+        # race the legacy `ensure-temporal-visibility-schema.sh` (now
+        # deleted) used to cover.
+        #
+        # `alpine/k8s` bundles kubectl + a real shell (busybox sh),
+        # which we need for the conditional-wait logic below. We
+        # previously tried `registry.k8s.io/kubectl:v1.31.3` (official
+        # distroless) but it lacks a shell — and `kubectl wait` did
+        # not get the `--ignore-not-found` flag until kubectl v1.32.
+        # `bitnami/kubectl` is not an option either: Bitnami moved
+        # versioned tags to a paid registry in 2025.
+        #
+        # Why this needs to be conditional: the schema Job has
+        # `ttlSecondsAfterFinished: 600`, so 10 min after a successful
+        # run K8s GCs it. The schema itself stays applied in Postgres
+        # forever. Without the GET probe first, the next pod restart
+        # blocks forever on `kubectl wait` for a Job that no longer
+        # exists. This was the RUNBOOK §5.2 hazard that bit us when
+        # we restarted history pods on 2026-05-23.
+        - name: wait-for-schema
+          image: alpine/k8s:1.31.13
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              if kubectl get job/temporal-schema-setup-1-28-4 -o name 2>/dev/null | grep -q .; then
+                echo "[wait-for-schema] Job present — waiting for condition=complete (timeout 600s)..."
+                kubectl wait --for=condition=complete --timeout=600s \
+                  job/temporal-schema-setup-1-28-4
+                echo "[wait-for-schema] OK: Job completed."
+              else
+                echo "[wait-for-schema] Job not present (ttl GC'd); schema must already be applied."
+              fi
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      containers:
+        - name: temporal
+          # `temporalio/server` runs ONLY the temporal-server binary
+          # (no auto-setup script). Pinned at the same minor as the
+          # admin-tools image in `job-schema-setup.yaml`. On bump,
+          # change BOTH tags in lock-step and update the Job name's
+          # version suffix.
+          image: temporalio/server:1.28.4
+          ports:
+            - name: grpc
+              containerPort: 7233
+              protocol: TCP
+            - name: http
+              containerPort: 7243
+              protocol: TCP
+            - name: membership
+              containerPort: 6933
+              protocol: TCP
+            # Prometheus exporter, scraped by the `temporal-server`
+            # job in `infrastructure/base/observability/prometheus/configmap.yaml`.
+            # Same port the auto-setup Deployment used.
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            # SERVICES tells `start-temporal.sh` which subcommands to
+            # pass to `temporal-server start --service=<x>`. One role
+            # per Deployment is the whole point of the split.
+            - name: SERVICES
+              value: "frontend"
+            # `BIND_ON_IP=0.0.0.0` makes the entrypoint resolve the
+            # pod IP via `getent hosts $(hostname)` and export it as
+            # `TEMPORAL_BROADCAST_ADDRESS` — that's the address peers
+            # use to reach this pod over ringpop.
+            - name: BIND_ON_IP
+              value: "0.0.0.0"
+            - name: PROMETHEUS_ENDPOINT
+              value: "0.0.0.0:9090"
+            # Where every other role finds the frontend. Matches the
+            # `temporal` Service name (`service-frontend.yaml`).
+            - name: PUBLIC_FRONTEND_ADDRESS
+              value: "temporal:7233"
+            - name: DB
+              value: "postgres12"
+            - name: DB_PORT
+              value: "5432"
+            - name: DBNAME
+              value: "temporal"
+            - name: VISIBILITY_DBNAME
+              value: "temporal_visibility"
+            - name: VISIBILITY_DB_PORT
+              value: "5432"
+            - name: POSTGRES_SEEDS
+              value: "postgres-temporal-rw"
+            - name: VISIBILITY_POSTGRES_SEEDS
+              value: "postgres-temporal-visibility-rw"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-temporal-credentials
+                  key: username
+            - name: POSTGRES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-temporal-credentials
+                  key: password
+            - name: VISIBILITY_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-temporal-visibility-credentials
+                  key: username
+            - name: VISIBILITY_POSTGRES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-temporal-visibility-credentials
+                  key: password
+            - name: DYNAMIC_CONFIG_FILE_PATH
+              value: "/etc/temporal/config/dynamicconfig/production-sql.yaml"
+          volumeMounts:
+            - name: config-template
+              mountPath: /etc/temporal/config/config_template.yaml
+              subPath: config_template.yaml
+              readOnly: true
+            - name: dynamic-config
+              mountPath: /etc/temporal/config/dynamicconfig
+              readOnly: true
+          # Stateless gRPC — modest CPU + memory. Override per overlay.
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          # gRPC port serves traffic only after ringpop join completes.
+          # 60 × 5s = 5 min covers a cold cluster + slow Postgres.
+          startupProbe:
+            tcpSocket:
+              port: grpc
+            failureThreshold: 60
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 0
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: config-template
+          configMap:
+            name: temporal-server-config
+            items:
+              - key: config_template.yaml
+                path: config_template.yaml
+        - name: dynamic-config
+          configMap:
+            name: temporal-dynamic-config

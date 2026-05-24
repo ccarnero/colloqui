@@ -150,14 +150,20 @@ attempts. Two options, depending on how aggressive you want the wipe.
 
 ### Option A — Full reset (drops cluster + reinit, ~90s)
 
-Tears down the CNPG cluster and PVCs, recreates them, lets Temporal's
-`auto-setup` re-run schema migrations on a virgin DB.
+Tears down the CNPG cluster and PVCs, recreates them, lets the
+`temporal-schema-setup-<version>` Job re-apply schema migrations on
+a virgin DB. Post-HA-migration there is no single `temporal` rollout
+— wait for the 4 role Deployments in parallel.
 
 ```bash
 kubectl -n <ns> cnpg destroy postgres-temporal --keep=0
 kubectl apply -k infrastructure/overlays/<env>
 kubectl -n <ns> wait --for=condition=Ready cluster/postgres-temporal --timeout=5m
-kubectl -n <ns> rollout status deploy/temporal --timeout=5m
+kubectl -n <ns> wait --for=condition=complete \
+  job/temporal-schema-setup-1-28-4 --timeout=5m
+for role in frontend history matching worker; do
+  kubectl -n <ns> rollout status deploy/temporal-${role} --timeout=5m &
+done; wait
 ```
 
 Use when you want zero residual state (schema drift, leftover task
@@ -166,7 +172,9 @@ queues, dangling history).
 ### Option B — TRUNCATE only (keeps schema, ~5s)
 
 Truncates all hot Temporal tables and restarts the Server to flush
-in-memory caches (history shards, matching task queues).
+in-memory caches (history shards, matching task queues). Post-HA
+migration the `temporal` Deployment was split into 4 role-specific
+ones; `rollout restart` has to iterate.
 
 ```bash
 kubectl -n <ns> exec postgres-temporal-1 -c postgres -- \
@@ -175,12 +183,16 @@ kubectl -n <ns> exec postgres-temporal-1 -c postgres -- \
             transfer_tasks, timer_tasks, visibility_tasks, replication_tasks,
             tasks RESTART IDENTITY CASCADE;"
 
-kubectl -n <ns> exec postgres-temporal-1 -c postgres -- \
+kubectl -n <ns> exec postgres-temporal-visibility-1 -c postgres -- \
   psql -U temporal -d temporal_visibility \
        -c "TRUNCATE executions_visibility RESTART IDENTITY;"
 
-kubectl -n <ns> rollout restart deploy/temporal
-kubectl -n <ns> rollout status   deploy/temporal --timeout=2m
+for role in frontend history matching worker; do
+  kubectl -n <ns> rollout restart deploy/temporal-${role}
+done
+for role in frontend history matching worker; do
+  kubectl -n <ns> rollout status deploy/temporal-${role} --timeout=2m &
+done; wait
 ```
 
 Use between back-to-back runs of the same scenario when you only need
