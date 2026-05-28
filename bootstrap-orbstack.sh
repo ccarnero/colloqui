@@ -11,6 +11,7 @@ KEDA_VERSION="2.18.3"
 KEDA_NAMESPACE="keda"
 CNPG_CHART_VERSION="0.27.1"
 CNPG_NAMESPACE="cnpg-system"
+METRICS_SERVER_VERSION="v0.7.2"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -131,6 +132,46 @@ check_orbstack_context() {
   fi
 
   log "Using kubectl context: orbstack"
+}
+
+install_metrics_server() {
+  if kubectl get apiservice v1beta1.metrics.k8s.io &>/dev/null; then
+    log "metrics-server API already installed — skipping"
+    return
+  fi
+
+  log "Installing metrics-server (${METRICS_SERVER_VERSION})"
+  retry 5 5 kubectl apply -f "https://github.com/kubernetes-sigs/metrics-server/releases/download/${METRICS_SERVER_VERSION}/components.yaml"
+
+  local metrics_server_args
+  metrics_server_args="$(kubectl get deployment metrics-server \
+    --namespace kube-system \
+    -o jsonpath='{.spec.template.spec.containers[0].args[*]}' \
+    2>/dev/null || true)"
+
+  if [[ "$metrics_server_args" != *"--kubelet-insecure-tls"* ]]; then
+    log "Patching metrics-server for local OrbStack kubelet TLS"
+    kubectl patch deployment metrics-server \
+      --namespace kube-system \
+      --type=json \
+      --patch='[
+        {
+          "op": "add",
+          "path": "/spec/template/spec/containers/0/args/-",
+          "value": "--kubelet-insecure-tls"
+        }
+      ]'
+  fi
+
+  log "Waiting for metrics-server"
+  kubectl wait deployment/metrics-server \
+    --namespace kube-system \
+    --for=condition=Available \
+    --timeout=180s
+
+  kubectl wait apiservice/v1beta1.metrics.k8s.io \
+    --for=condition=Available \
+    --timeout=180s
 }
 
 wait_for_webhook() {
@@ -717,6 +758,7 @@ run_support_services() {
   log "===== support-services (initial configuration + infrastructure) ====="
   echo ""
   check_orbstack_context
+  install_metrics_server
   install_knative_serving
   install_kourier
   install_keda

@@ -68,6 +68,9 @@ patches:
       - op: replace
         path: /spec/minReplicaCount
         value: 3
+      - op: replace
+        path: /spec/maxReplicaCount
+        value: 6
   - target:
       kind: ScaledObject
       name: workflow-service-worker-scaler

@@ -51,6 +51,7 @@ readonly CHANNEL_APP_SECRET="anothersecret"
 
 readonly WORKFLOW_NAME="Stress Workflow"
 readonly WORKFLOW_APPLICATION="default"
+readonly STRESS_WORKFLOW_VARIANT="${STRESS_WORKFLOW_VARIANT:-full}"
 
 # stress-sink endpoint baked into the workflow's `endpointCall` step.
 # Default = in-cluster Knative DNS. Override via env when the sink is
@@ -390,7 +391,7 @@ ensure_channel() {
 # which the reconciler dedupes/ignores).
 readonly STRESS_PARSE_JS='async (ctx) => { const t = (ctx && ctx.request && ctx.request.text) || ""; if (!t.startsWith("STRESS|")) return { correlation_id: "", sent_at: "0", stage: "" }; const p = t.split("|"); return { correlation_id: p[1] || "", sent_at: p[2] || "0", stage: p[3] || "" }; }'
 
-build_workflow_payload() {
+build_full_workflow_payload() {
   jq -nc \
     --arg name "$WORKFLOW_NAME" \
     --arg application "$WORKFLOW_APPLICATION" \
@@ -451,6 +452,60 @@ build_workflow_payload() {
         }
       }
     }'
+}
+
+build_minimal_workflow_payload() {
+  jq -nc \
+    --arg name "$WORKFLOW_NAME" \
+    --arg application "$WORKFLOW_APPLICATION" \
+    --arg channelId "$CHANNEL_ID" \
+    --arg sinkUrl "$STRESS_SINK_URL" \
+    --arg parseJs "$STRESS_PARSE_JS" \
+    '{
+      name: $name,
+      application: $application,
+      actions: [
+        {
+          name: "extractStressMeta",
+          activity: "jsFunction",
+          args: { code: $parseJs }
+        },
+        {
+          name: "notifyStressSink",
+          activity: "endpointCall",
+          args: {
+            method: "POST",
+            url: $sinkUrl,
+            data: {
+              correlation_id: "{{results.extractStressMeta.correlation_id}}",
+              sent_at: "{{results.extractStressMeta.sent_at}}",
+              stage: "{{results.extractStressMeta.stage}}"
+            }
+          }
+        }
+      ],
+      trigger: {
+        mode: "shared",
+        type: "message_received",
+        config: {
+          channels: [],
+          patterns: [],
+          providers: [],
+          accountIds: [$channelId]
+        }
+      }
+    }'
+}
+
+build_workflow_payload() {
+  case "$STRESS_WORKFLOW_VARIANT" in
+    full) build_full_workflow_payload ;;
+    minimal) build_minimal_workflow_payload ;;
+    *)
+      err "Unknown STRESS_WORKFLOW_VARIANT='${STRESS_WORKFLOW_VARIANT}' (expected full|minimal)."
+      exit 1
+      ;;
+  esac
 }
 
 # True when the existing workflow JSON exposes the sink-notify step.
@@ -525,6 +580,13 @@ ensure_workflow() {
 # ---------------------------------------------------------------------------
 
 main() {
+  if [[ "${STRESS_WORKFLOW_PRINT_PAYLOAD:-false}" == "true" ]]; then
+    SERVICE_ID="dry-run-service"
+    CHANNEL_ID="dry-run-channel"
+    build_workflow_payload
+    return
+  fi
+
   preflight
   resolve_gateway_url
 

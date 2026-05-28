@@ -159,8 +159,9 @@ spec:
             httpGet:
               path: /readyz
               port: 3000
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 6
 ---
 
 apiVersion: apps/v1
@@ -248,8 +249,9 @@ spec:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 3
+            initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 6
 ---
 
 apiVersion: serving.knative.dev/v1
@@ -715,8 +717,9 @@ spec:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 3
+            initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 6
 ---
 
 # ----- adapter-service: split api ↔ worker (Phase 1.5) -----
@@ -1078,8 +1081,9 @@ spec:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 6
 ---
 
 apiVersion: apps/v1

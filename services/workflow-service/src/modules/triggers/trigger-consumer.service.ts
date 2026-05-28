@@ -43,6 +43,17 @@ const DURABLE_NAME = "workflow-triggers";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
 /** `evt.*.channel-service.messaging.*.*.received.v1` — 8-token canonical. */
 const TRIGGER_SUBJECT = `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_PRODUCER}.${CHANNEL_DOMAIN}.*.*.received.v1`;
+const DEFAULT_TRIGGER_CONCURRENCY = 2;
+
+function resolveTriggerConcurrency(): number {
+  const parsed = Number.parseInt(
+    process.env.WORKFLOW_TRIGGER_CONCURRENCY ?? "",
+    10,
+  );
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_TRIGGER_CONCURRENCY;
+}
 
 /**
  * Consumes `channel.message.received` events from JetStream and starts
@@ -78,15 +89,11 @@ export class TriggerConsumerService
       description:
         "Workflow triggers — message_received → Temporal workflow start",
       metrics: createNatsConsumerMetrics(resolveServiceName("workflow-service")),
-      // 2026-05-22 post-mortem (`post-mortem/POST-MORTEM.md` §P1.1):
-      // dropped from 16 → 8 because concurrency=16 was over-amplifying
-      // the redelivery storm during Temporal/Postgres slowdowns
-      // (6 983 duplicate triggers vs 1 626 uniques, ~4.3× redelivery).
-      // Each trigger boots a Temporal workflow over gRPC — I/O bound —
-      // so 8 is still ample throughput once the persistence layer is
-      // healthy. Revert toward 16 only after the post-mortem regression
-      // gates pass under load.
-      runnerOptions: { concurrency: 8 },
+      // Each trigger starts a Temporal workflow over gRPC. Keep the
+      // default deliberately conservative so NATS redelivery cannot
+      // amplify an existing Temporal/Postgres backlog; raise via
+      // WORKFLOW_TRIGGER_CONCURRENCY only after stress gates pass.
+      runnerOptions: { concurrency: resolveTriggerConcurrency() },
       // Tighter delivery semantics: starting a workflow is idempotent
       // (`workflowId = <tenant>:<name>:<idempotencykey>:<defId>`), so
       // 3 retries cover transient gRPC blips without amplifying the

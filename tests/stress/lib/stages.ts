@@ -25,11 +25,9 @@ export interface StageDef {
     readonly stages: ReadonlyArray<{ duration: string; target: number }>;
     readonly startRate: number;
   }
-  
   interface EnvBag {
     readonly [key: string]: string | undefined;
   }
-  
   const DURATION_UNITS_MS: ReadonlyMap<string, number> = new Map([
     ["ms", 1],
     ["s", 1_000],
@@ -119,6 +117,8 @@ export interface StageDef {
     readonly peak: string;
     readonly spike: string;
   }
+
+  export type Phase1ScenarioOptions = Record<string, unknown>;
   
   export function buildPhase1Stages(): {
     readonly stages: ReadonlyMap<string, StageDef>;
@@ -224,12 +224,12 @@ export interface StageDef {
     });
   
     const stages = new Map<string, StageDef>([
-      [baseline.name, baseline],
-      [light.name, light],
+  //    [baseline.name, baseline],
+  //   [light.name, light],
       [medium.name, medium],
-      [heavy.name, heavy],
-      [peak.name, peak],
-      [spike.name, spike],
+  //   [heavy.name, heavy],
+  //   [peak.name, peak],
+  //   [spike.name, spike],
     ]);
   
     const baselineStartMs = 0;
@@ -253,4 +253,24 @@ export interface StageDef {
       totalDuration: formatDurationMs(totalMs),
     };
   }
-  
+
+  export function buildPhase1ScenarioOptions(): Phase1ScenarioOptions {
+    const phase1 = buildPhase1Stages();
+    const scenarios: Record<string, unknown> = {};
+    for (const [name, def] of phase1.stages) {
+      const startTime =
+        phase1.startTimes[name as keyof typeof phase1.startTimes] ?? "0s";
+      scenarios[name] = {
+        executor: "ramping-arrival-rate",
+        exec: "default",
+        startRate: def.startRate,
+        timeUnit: "1s",
+        preAllocatedVUs: def.preAllocatedVUs,
+        maxVUs: def.preAllocatedVUs * 2,
+        startTime,
+        stages: def.stages,
+        tags: { stage: name },
+      };
+    }
+    return scenarios;
+  }

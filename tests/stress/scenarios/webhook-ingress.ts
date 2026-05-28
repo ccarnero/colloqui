@@ -19,33 +19,11 @@ import {
   getRuntimeConfig,
   resolveRequestUrl,
 } from "../lib/env.ts";
-import { buildPhase1Stages } from "../lib/stages.ts";
-
-const phase1 = buildPhase1Stages();
-
-function buildScenarios(): Record<string, unknown> {
-  const scenarios: Record<string, unknown> = {};
-  for (const [name, def] of phase1.stages) {
-    const startTime =
-      phase1.startTimes[name as keyof typeof phase1.startTimes] ?? "0s";
-    scenarios[name] = {
-      executor: "ramping-arrival-rate",
-      exec: "default",
-      startRate: 1,
-      timeUnit: "1s",
-      preAllocatedVUs: def.preAllocatedVUs,
-      maxVUs: def.preAllocatedVUs * 2,
-      startTime,
-      stages: def.stages,
-      tags: { stage: name },
-    };
-  }
-  return scenarios;
-}
+import { buildPhase1ScenarioOptions } from "../lib/stages.ts";
 
 export const options = {
   discardResponseBodies: true,
-  scenarios: buildScenarios(),
+  scenarios: buildPhase1ScenarioOptions(),
   thresholds: {
     "http_req_failed{phase:webhook-ingress}": ["rate<0.01"],
     "http_req_duration{phase:webhook-ingress}": ["p(95)<150"],
