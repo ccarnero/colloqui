@@ -36,8 +36,11 @@ import {
   JETSTREAM_PUBLISHER,
 } from "../../providers/providers.module";
 import { WorkflowsService } from "../workflows/workflows.service";
-import { WorkflowsRepository } from "../workflows/workflows.repository";
-import type { IWorkflowDefinitionRow } from "../workflows/workflows.repository";
+import {
+  WORKFLOWS_REPOSITORY,
+  type IWorkflowDefinitionRow,
+  type IWorkflowsRepository,
+} from "../workflows/workflows.repository.interface";
 
 const DURABLE_NAME = "workflow-triggers";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
@@ -66,7 +69,8 @@ export class TriggerConsumerService
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
     private readonly workflowsService: WorkflowsService,
-    private readonly workflowsRepository: WorkflowsRepository,
+    @Inject(WORKFLOWS_REPOSITORY)
+    private readonly workflowsRepository: IWorkflowsRepository,
   ) {}
 
   async onModuleInit(): Promise<void> {

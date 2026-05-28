@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - postgres-credentials.yaml
+  - mongo-credentials.yaml
   - auth-secret.yaml
   - tenant-service-sa.yaml
   - api-gateway.yaml

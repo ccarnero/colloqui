@@ -6,15 +6,18 @@ connection to the platform is established.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
+from urllib.parse import quote_plus
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DbEngine = Literal["postgres", "mongo"]
 
 
 class BootstrapSettings(BaseSettings):
     """ONLY bootstrap configuration required to connect to backend.
-    
+
     Everything else (prompts, LLM settings, personality, intervals)
     comes from backend runtime sync after connection.
     """
@@ -44,9 +47,14 @@ class BootstrapSettings(BaseSettings):
         ),
     )
 
+    DB_ENGINE: DbEngine = Field(
+        default="postgres",
+        validation_alias=AliasChoices("DB_ENGINE", "STORAGE_ENGINE"),
+    )
+
     POSTGRES_HOST: str = Field(
         default="localhost",
-        validation_alias=AliasChoices("DB_HOST", "POSTGRES_HOST"),
+        validation_alias=AliasChoices("DB_HOST", "POSTGRES_HOST", "MONGO_HOST"),
     )
     POSTGRES_PORT: int = Field(
         default=5432,
@@ -65,6 +73,40 @@ class BootstrapSettings(BaseSettings):
         validation_alias=AliasChoices("DB_PASSWORD", "POSTGRES_PASSWORD"),
     )
     DATABASE_URL: str = ""
+
+    MONGO_URI: str = Field(
+        default="",
+        validation_alias=AliasChoices("MONGO_URI"),
+    )
+    MONGO_HOST: str = Field(
+        default="localhost",
+        validation_alias=AliasChoices("MONGO_HOST"),
+    )
+    MONGO_PORT: int = Field(
+        default=27017,
+        validation_alias=AliasChoices("MONGO_PORT"),
+    )
+    MONGO_DB: str = Field(
+        default="yoizen_claw",
+        validation_alias=AliasChoices("MONGO_DB"),
+    )
+    MONGO_USER: str = Field(
+        default="",
+        validation_alias=AliasChoices("MONGO_USER"),
+    )
+    MONGO_PASSWORD: str = Field(
+        default="",
+        validation_alias=AliasChoices("MONGO_PASSWORD"),
+    )
+    MONGO_AUTH_SOURCE: str = Field(
+        default="admin",
+        validation_alias=AliasChoices("MONGO_AUTH_SOURCE", "MONGO_AUTHSOURCE"),
+    )
+    MONGO_REPLICA_SET: str = Field(
+        default="rs0",
+        validation_alias=AliasChoices("MONGO_REPLICA_SET", "MONGO_REPLICA_SET_NAME"),
+    )
+
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
     RUNTIME_HEARTBEAT_INTERVAL_SECONDS: float = 15.0
     TENANT_ID: str = ""
@@ -81,11 +123,47 @@ class BootstrapSettings(BaseSettings):
     ADAPTER_CACHE_HARD_TTL_SECONDS: int = 300
     YOIZENCLAW_TOOL_RESPONSE_MAX_BYTES: int = 100_000
 
+    @field_validator("DB_ENGINE", mode="before")
+    @classmethod
+    def _normalize_db_engine(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"postgres", "postgresql", "pg"}:
+                return "postgres"
+            if normalized in {"mongo", "mongodb"}:
+                return "mongo"
+        return value
+
     @property
     def postgres_connection_string(self) -> str:
         return (
             f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
             f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+
+    def _mongo_query_params(self) -> str:
+        params = [f"authSource={self.MONGO_AUTH_SOURCE}"]
+        if self.MONGO_REPLICA_SET:
+            params.append(f"replicaSet={self.MONGO_REPLICA_SET}")
+        return "&".join(params)
+
+    @property
+    def mongo_uri(self) -> str:
+        if self.MONGO_URI:
+            return self.MONGO_URI
+
+        query = self._mongo_query_params()
+        if self.MONGO_USER:
+            user = quote_plus(self.MONGO_USER)
+            password = quote_plus(self.MONGO_PASSWORD)
+            return (
+                f"mongodb://{user}:{password}"
+                f"@{self.MONGO_HOST}:{self.MONGO_PORT}/{self.MONGO_DB}"
+                f"?{query}"
+            )
+
+        return (
+            f"mongodb://{self.MONGO_HOST}:{self.MONGO_PORT}/{self.MONGO_DB}?{query}"
         )
 
 

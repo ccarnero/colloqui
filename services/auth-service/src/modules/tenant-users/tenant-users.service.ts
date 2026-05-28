@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
   OnModuleInit,
@@ -9,7 +10,10 @@ import { PinoLoggerService } from "@yoizen/observability";
 import { authServiceConfig } from "../../config";
 import { hashSecret } from "../../utils/password";
 import { TenantRolesService } from "../tenant-roles/tenant-roles.service";
-import { TenantUsersRepository } from "./tenant-users.repository";
+import {
+  TENANT_USERS_REPOSITORY,
+  type ITenantUsersRepository,
+} from "./tenant-users.repository.interface";
 
 interface ITenantUserRow {
   id: string;
@@ -55,7 +59,8 @@ export class TenantUsersService implements OnModuleInit {
   private readonly logger = new PinoLoggerService(TenantUsersService.name);
 
   constructor(
-    private readonly tenantUsersRepository: TenantUsersRepository,
+    @Inject(TENANT_USERS_REPOSITORY)
+    private readonly tenantUsersRepository: ITenantUsersRepository,
     private readonly tenantRolesService: TenantRolesService,
   ) {}
 

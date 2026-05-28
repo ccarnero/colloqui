@@ -6,9 +6,9 @@
     "build": "tsc -p tsconfig.json",
     "start": "bun run dist/main.js",
     "start:dev": "bun run --watch src/main.ts",
-    "test": "POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-test} bun test",
-    "test:unit": "POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-test} bun test test/unit",
-    "test:integration": "POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-test} bun test test/integration"
+    "test": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} bun test",
+    "test:unit": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} bun test test/unit",
+    "test:integration": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} bun test test/integration"
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.2.0",
@@ -18,10 +18,10 @@
     "@yoizen/database": "file:../../packages/database",
     "@yoizen/observability": "file:../../packages/observability",
     "@yoizen/shared": "file:../../packages/shared",
+    "mongodb": "^6.12.0",
     "nats": "^2.28.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
-    "postgres": "^3.4.5",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },

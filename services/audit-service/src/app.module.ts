@@ -14,10 +14,7 @@ import {
   jetStreamPublisherProvider,
   gatewayAuditConsumerProvider,
 } from "./providers/nats.provider";
-import {
-  TenantConnectionManager,
-  TenantDeletionEvictionListener,
-} from "@yoizen/database";
+import { ProvidersModule } from "./providers/providers.module";
 
 /** Registers NATS and tenant DB access as global providers for audit feature modules. */
 @Global()
@@ -26,6 +23,7 @@ import {
     ObservabilityModule.forRoot({
       serviceName: resolveServiceName("audit-service"),
     }),
+    ProvidersModule,
     AuditModule,
     GatewayAuditModule,
     ChannelAuditModule,
@@ -36,15 +34,12 @@ import {
     jetStreamManagerProvider,
     jetStreamPublisherProvider,
     gatewayAuditConsumerProvider,
-    TenantConnectionManager,
-    TenantDeletionEvictionListener,
   ],
   exports: [
     NATS_CONNECTION,
     JETSTREAM_MANAGER,
     JETSTREAM_PUBLISHER,
     GATEWAY_AUDIT_CONSUMER,
-    TenantConnectionManager,
   ],
 })
 export class AppModule {}

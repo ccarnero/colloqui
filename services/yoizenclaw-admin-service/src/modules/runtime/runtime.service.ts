@@ -1,6 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type Redis from "ioredis";
-import { TenantConnectionManager } from "@yoizen/database";
+import type {
+  TenantConnectionManager,
+  TenantMongoConnectionManager,
+} from "@yoizen/database";
+import { yoizenclawAdminServiceConfig } from "../../config";
+import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import { REDIS_CLIENT } from "../../providers/redis.provider";
 import { PinoLoggerService } from "@yoizen/observability";
 
@@ -18,7 +23,7 @@ export class RuntimeService {
   private readonly logger = new PinoLoggerService(RuntimeService.name);
 
   constructor(
-    private readonly tenantManager: TenantConnectionManager,
+    private readonly tenantManager: YoizenclawTenantConnectionManager,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
@@ -30,8 +35,17 @@ export class RuntimeService {
 
     let databaseConnected = false;
     try {
-      const sql = await this.tenantManager.ensureSchema(tenantId);
-      await sql`SELECT 1`;
+      if (yoizenclawAdminServiceConfig.dbEngine === "mongo") {
+        const db = await (
+          this.tenantManager as unknown as TenantMongoConnectionManager
+        ).ensureSchema(tenantId);
+        await db.command({ ping: 1 });
+      } else {
+        const sql = await (
+          this.tenantManager as unknown as TenantConnectionManager
+        ).ensureSchema(tenantId);
+        await sql`SELECT 1`;
+      }
       databaseConnected = true;
     } catch (error) {
       this.logger.warn(

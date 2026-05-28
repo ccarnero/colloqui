@@ -9,8 +9,10 @@ import {
   JETSTREAM_PUBLISHER,
 } from "../../src/providers/providers.module";
 import { WorkflowsService } from "../../src/modules/workflows/workflows.service";
-import { WorkflowsRepository } from "../../src/modules/workflows/workflows.repository";
-import type { IWorkflowDefinitionRow } from "../../src/modules/workflows/workflows.repository";
+import {
+  WORKFLOWS_REPOSITORY,
+  type IWorkflowDefinitionRow,
+} from "../../src/modules/workflows/workflows.repository.interface";
 
 function makeDefinition(
   overrides: Partial<IWorkflowDefinitionRow> & {
@@ -97,7 +99,7 @@ describe("TriggerConsumerService", () => {
           useValue: { executeWorkflow },
         },
         {
-          provide: WorkflowsRepository,
+          provide: WORKFLOWS_REPOSITORY,
           useValue: { findDefinitionsByTriggerType: findByTriggerType },
         },
       ],

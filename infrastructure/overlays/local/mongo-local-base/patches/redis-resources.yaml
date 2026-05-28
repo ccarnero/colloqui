@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+spec:
+  template:
+    spec:
+      containers:
+        - name: redis
+          # 6 pods total in cluster mode (3 masters + 3 replicas).
+          # Per-pod budget: 150m/256Mi req, 1 core / 512Mi limit.
+          # Cluster total: 0.9 cores / 1.5Gi req, 6 cores / 3Gi limit.
+          # Bumped after the 2026-05 stress run hit `redis_timeout` on
+          # the workflow-http breaker once cumulative load passed ~30k
+          # workflows. Root cause: 3 masters x 0.5 core = 1.5 cores
+          # total for single-threaded Lua across all breakers + rate
+          # limiter + adapter SWR cache. Giving each master a full core
+          # (limits) restores p95 EVALSHA below 5 ms under sustained
+          # 20k Lua ops/sec.
+          #
+          # Followup (2026-05-12 orchestrator-throughput plan, Phase 1):
+          # requests trimmed 250m → 150m because `kubectl top` shows
+          # steady-state ~60m/pod even under stress. Trim reclaims
+          # 600m of node CPU budget (6 × 100m) for the workflow-*
+          # workers. Limits unchanged (1 core/pod) so under burst each
+          # master can still saturate a full core when Lua queue spikes.
+          resources:
+            requests:
+              cpu: 150m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

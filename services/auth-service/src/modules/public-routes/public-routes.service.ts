@@ -5,9 +5,10 @@ import { PUBLIC_ROUTES_CACHE_KEY_PREFIX } from "@yoizen/shared";
 import type { PublicRouteEntry } from "@yoizen/shared";
 import { PinoLoggerService } from "@yoizen/observability";
 import {
-  PublicRoutesRepository,
+  PUBLIC_ROUTES_REPOSITORY,
   type IPublicRouteRow,
-} from "./public-routes.repository";
+  type IPublicRoutesRepository,
+} from "./public-routes.repository.interface";
 import type { ICreatePublicRouteOptions } from "./public-routes.types";
 
 @Injectable()
@@ -15,7 +16,8 @@ export class PublicRoutesService {
   private readonly logger = new PinoLoggerService(PublicRoutesService.name);
 
   constructor(
-    private readonly publicRoutesRepository: PublicRoutesRepository,
+    @Inject(PUBLIC_ROUTES_REPOSITORY)
+    private readonly publicRoutesRepository: IPublicRoutesRepository,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 

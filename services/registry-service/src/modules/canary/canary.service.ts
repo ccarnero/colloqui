@@ -8,7 +8,10 @@ import {
 import { PinoLoggerService } from "@yoizen/observability";
 import type * as k8s from "@kubernetes/client-node";
 import { K8S_CUSTOM_OBJECTS_API } from "../../providers/kubernetes.provider";
-import { CanaryRepository } from "./canary.repository";
+import {
+  CANARY_REPOSITORY,
+  type ICanaryRepository,
+} from "./canary.repository.interface";
 import type { StartCanaryDto, UpdateCanaryDto } from "./canary.dto";
 import { generateId } from "@yoizen/shared";
 import { k8sApiErrorMessage } from "../../utils/k8s-error";
@@ -64,7 +67,8 @@ export class CanaryService {
   constructor(
     @Inject(K8S_CUSTOM_OBJECTS_API)
     private readonly customApi: k8s.CustomObjectsApi,
-    private readonly canaryRepository: CanaryRepository,
+    @Inject(CANARY_REPOSITORY)
+    private readonly canaryRepository: ICanaryRepository,
   ) {}
 
   async start(
@@ -242,7 +246,7 @@ export class CanaryService {
       throw new NotFoundException("No active canary deployment found");
     }
     return {
-      id: String(canary.id),
+      id: String(canary.id ?? canary._id ?? ""),
       stable_revision: String(canary.stable_revision),
       canary_revision: String(canary.canary_revision),
     };

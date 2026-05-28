@@ -4,6 +4,10 @@
 
 The Auth Service handles authentication and authorization for the platform. It issues JWT access and refresh tokens via client credentials (API clients) and user login flows, manages platform users and API clients with scoped permissions (`platform` or `tenant:<name>`), maintains a dynamic public routes registry synced to Redis, and seeds an admin user on first startup. Each instance is environment-scoped via `PLATFORM_ENVIRONMENT`.
 
+## Storage engines
+
+Supports **Postgres** (default) and **Mongo**, selected at bootstrap (`--storage-engine` / `DB_ENGINE`). Repository ports use `createRepositoryProvider`; `ProvidersModule` imports `AuthPostgresModule` or `AuthMongoModule`. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+
 ## Tech Stack
 
 | Category | Technology |
@@ -11,7 +15,7 @@ The Auth Service handles authentication and authorization for the platform. It i
 | Runtime | Bun 1.3 |
 | Framework | NestJS 11 + Fastify |
 | Language | TypeScript 5.7 (strict) |
-| Database | PostgreSQL 17 via `postgres` (postgres.js) |
+| Database | Postgres (`postgres.js`) or MongoDB 7 (`mongodb` driver), bootstrap-selected |
 | Cache | Redis via `ioredis` |
 | Auth | JWT via `jose` (HS256), password hashing via `Bun.password` (argon2id) |
 | Validation | `class-validator` + `class-transformer` |
@@ -24,8 +28,8 @@ src/
 ├── main.ts                                     # Bootstrap: Fastify adapter, ValidationPipe, port binding
 ├── app.module.ts                               # Root module imports
 ├── providers/
-│   ├── providers.module.ts                     # @Global() POSTGRES_SQL + REDIS_CLIENT (redis via @yoizen/database)
-│   └── postgres.provider.ts                    # POSTGRES_SQL token (postgres.js, max 20 connections)
+│   ├── providers.module.ts                     # @Global() MONGO_CLIENT + REDIS_CLIENT (redis via @yoizen/database)
+│   └── mongo.provider.ts                    # MONGO_CLIENT token (mongodb driver, max 20 connections)
 └── modules/
     ├── token/
     │   ├── token.module.ts
@@ -49,7 +53,7 @@ src/
     │   └── public-route.dto.ts                 # CreatePublicRouteDto (method, path_pattern, scope)
     └── health/
         ├── health.module.ts
-        └── health.controller.ts                # GET /health (Postgres + Redis)
+        └── health.controller.ts                # GET /health (Mongo + Redis)
 ```
 
 ## Key Files
@@ -57,7 +61,7 @@ src/
 | File | Purpose |
 |------|---------|
 | `src/app.module.ts` | Imports ProvidersModule, TokenModule, UsersModule, ClientsModule, PublicRoutesModule, HealthModule |
-| `src/providers/postgres.provider.ts` | Factory provider for `POSTGRES_SQL` (postgres.js, prepared statements) |
+| `src/providers/mongo.provider.ts` | Factory provider for `MONGO_CLIENT` (mongodb driver, prepared statements) |
 | `providers.module.ts` | Registers `redisProvider` from `@yoizen/database` for `REDIS_CLIENT` |
 | `src/modules/token/token.service.ts` | JWT generation (HS256 via `jose`), client credentials grant, user login, token refresh |
 | `src/modules/users/users.service.ts` | User CRUD with argon2id password hashing, admin seeding from `ADMIN_EMAIL`/`ADMIN_PASSWORD` env vars |
@@ -70,7 +74,7 @@ src/
 
 ```
 AppModule
-├── ProvidersModule (@Global) ─── POSTGRES_SQL, REDIS_CLIENT
+├── ProvidersModule (@Global) ─── MONGO_CLIENT, REDIS_CLIENT
 ├── TokenModule ─── TokenController, TokenService
 ├── UsersModule ─── UsersController, UsersService
 ├── ClientsModule ─── ClientsController, ClientsService
@@ -83,7 +87,7 @@ AppModule
 1. **Client credentials**: `POST /auth/token` -> validate client_id + client_secret against DB -> issue access token (no refresh)
 2. **User login**: `POST /auth/login` -> verify email + password -> issue access + refresh tokens
 3. **Token refresh**: `POST /auth/refresh` -> verify refresh token -> re-issue access + refresh tokens
-4. **Public routes**: CRUD operations persist to PostgreSQL, then sync all routes to Redis key `public_routes:{env}`
+4. **Public routes**: CRUD operations persist to MongoDB, then sync all routes to Redis key `public_routes:{env}`
 5. **Admin seeding**: On startup, `UsersService.onModuleInit()` checks for admin user; creates one from env vars if none exists
 
 ### Token Scopes
@@ -104,14 +108,14 @@ AppModule
 
 | Target | Protocol | Purpose |
 |--------|----------|---------|
-| PostgreSQL | TCP | Persist users, clients, public routes |
+| MongoDB | TCP | Persist users, clients, public routes |
 | Redis | TCP | Sync public routes to `public_routes:{env}` cache key |
 
 ### DI Tokens
 
 | Token | Type | Source |
 |-------|------|--------|
-| `POSTGRES_SQL` | `Sql` (postgres.js) | `postgres.provider.ts` |
+| `MONGO_CLIENT` | `MongoClient` (mongodb driver) | `mongo.provider.ts` |
 | `REDIS_CLIENT` | `Redis` (ioredis) | `providers.module.ts` → `redisProvider` (`@yoizen/database`) |
 
 ### Database Schema
@@ -127,11 +131,11 @@ public_routes   (id, method, path_pattern, scope, environment, created_at)
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP server port |
-| `POSTGRES_HOST` | `localhost` | PostgreSQL host |
-| `POSTGRES_PORT` | `5432` | PostgreSQL port |
-| `POSTGRES_DB` | `yoizen` | PostgreSQL database |
-| `POSTGRES_USER` | `yoizen` | PostgreSQL username |
-| `POSTGRES_PASSWORD` | `yoizen-dev-password` | PostgreSQL password |
+| `MONGO_HOST` | `localhost` | MongoDB host |
+| `MONGO_PORT` | `27017` | MongoDB port |
+| `MONGO_DB` | `yoizen` | MongoDB database |
+| `MONGO_USER` | `yoizen` | MongoDB username |
+| `MONGO_PASSWORD` | `yoizen-dev-password` | MongoDB password |
 | `REDIS_HOST` | `localhost` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
 | `JWT_SECRET` | *(required)* | HS256 signing key |
@@ -157,7 +161,7 @@ There is no `test/integration/` directory in this service; use `bun test test/un
 ## Code Style and Conventions
 
 - **Module layout**: feature modules under `src/modules/`, shared providers under `src/providers/`
-- **DI tokens**: string-based constants (`POSTGRES_SQL`, `REDIS_CLIENT`) exported alongside factory providers
+- **DI tokens**: string-based constants (`MONGO_CLIENT`, `REDIS_CLIENT`) exported alongside factory providers
 - **Global providers**: `ProvidersModule` is `@Global()` so all modules can inject Postgres/Redis without importing
 - **Password hashing**: `Bun.password.hash()` with argon2id (memoryCost 19456, timeCost 2)
 - **JWT**: HS256 via `jose` library, `ACCESS_TOKEN_TTL` and `REFRESH_TOKEN_TTL` from `@yoizen/shared`
@@ -181,13 +185,13 @@ bun install
 bun run start:dev
 ```
 
-Requires local PostgreSQL and Redis.
+Requires local MongoDB and Redis.
 
 ## Dependencies on Other Services
 
 | Service | Relationship |
 |---------|-------------|
-| **PostgreSQL** | Persists users, clients, public routes |
+| **MongoDB** | Persists users, clients, public routes |
 | **Redis** | Caches public routes for consumption by API Gateway |
 | **api-gateway** | Upstream proxy (all auth endpoints proxied through the gateway) |
 | **`@yoizen/shared`** | Auth types, TTLs, `TENANT_HEADER`, `PUBLIC_ROUTES_CACHE_KEY_PREFIX` |

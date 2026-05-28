@@ -25,9 +25,10 @@ import {
   JETSTREAM_PUBLISHER,
 } from "../../providers/providers.module";
 import {
-  ExecutionsProjectionRepository,
+  EXECUTIONS_PROJECTION_REPOSITORY,
   type IExecutionStatusRow,
-} from "./executions.repository";
+  type IExecutionsProjectionRepository,
+} from "./executions.repository.interface";
 
 const DURABLE_NAME = "workflow-projector";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
@@ -104,7 +105,8 @@ export class ExecutionProjectorService
   constructor(
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
-    private readonly repo: ExecutionsProjectionRepository,
+    @Inject(EXECUTIONS_PROJECTION_REPOSITORY)
+    private readonly repo: IExecutionsProjectionRepository,
   ) {}
 
   async onModuleInit(): Promise<void> {

@@ -1,41 +1,36 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { ClientsRepository } from "../../src/modules/clients/clients.repository";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
-import type { Sql } from "../../src/providers/postgres.provider";
+import { createMockMongoClient } from "@yoizen/testing";
+import { ClientsMongoRepository } from "../../src/modules/clients/clients.mongo.repository";
+import { MONGO_CLIENT } from "../../src/providers/mongo.provider";
 
-describe("ClientsRepository", () => {
+describe("ClientsMongoRepository", () => {
   it("insertClient uses options object", async () => {
-    let captured = "";
-    const mockSql = Object.assign(
-      (strings: TemplateStringsArray, ...values: unknown[]) => {
-        captured = strings.reduce(
-          (acc, s, i) => acc + s + String(values[i] ?? ""),
-          "",
-        );
-        return Promise.resolve([
-          {
-            id: "i1",
-            client_id: "c1",
-            name: "n",
-            scope: "platform",
-            is_active: true,
-            created_at: new Date(),
-            updated_at: new Date(),
+    let capturedDoc: unknown;
+    const client = createMockMongoClient(
+      new Map([
+        [
+          "api_clients",
+          (operation, args) => {
+            if (operation === "insertOne") {
+              capturedDoc = args[0];
+              return { acknowledged: true };
+            }
+            return null;
           },
-        ]);
-      },
-      {},
-    ) as unknown as Sql;
+        ],
+      ]),
+      mock,
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        ClientsRepository,
-        { provide: POSTGRES_SQL, useValue: mockSql },
+        ClientsMongoRepository,
+        { provide: MONGO_CLIENT, useValue: client },
       ],
     }).compile();
 
-    const repo = moduleRef.get(ClientsRepository);
+    const repo = moduleRef.get(ClientsMongoRepository);
     await repo.insertClient({
       id: "i1",
       clientId: "client_x",
@@ -44,7 +39,11 @@ describe("ClientsRepository", () => {
       scope: "platform",
     });
 
-    expect(captured).toContain("INSERT INTO api_clients");
-    expect(captured).toContain("client_x");
+    expect(capturedDoc).toMatchObject({
+      _id: "i1",
+      client_id: "client_x",
+      name: "n",
+      scope: "platform",
+    });
   });
 });

@@ -132,9 +132,7 @@ async def _handle_enhanced_agent_sync(agent_config: dict[str, Any]) -> None:
         from src.utils.utils.runtime_config import RuntimeConfigRepository
         from src.utils.config.settings import bootstrap_settings
 
-        repo = RuntimeConfigRepository(
-            bootstrap_settings.DATABASE_URL, bootstrap_settings.TENANT_ID
-        )
+        repo = RuntimeConfigRepository()
 
         saved_config = await repo.save_agent_config(validated_config)
 

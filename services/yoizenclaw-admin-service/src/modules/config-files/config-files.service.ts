@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
-  ConfigFilesRepository,
+  CONFIG_FILES_REPOSITORY,
   type IConfigFile,
+  type IConfigFilesRepository,
   type ICreateConfigFileData,
   type IFindAllConfigFilesOptions,
-} from "./config-files.repository";
+} from "./config-files.repository.interface";
 import { NatsPublisher } from "../../providers/nats.provider";
 import { PinoLoggerService } from "@yoizen/observability";
 
@@ -13,7 +14,8 @@ export class ConfigFilesService {
   private readonly logger = new PinoLoggerService(ConfigFilesService.name);
 
   constructor(
-    private readonly repository: ConfigFilesRepository,
+    @Inject(CONFIG_FILES_REPOSITORY)
+    private readonly repository: IConfigFilesRepository,
     private readonly natsPublisher: NatsPublisher,
   ) {}
 

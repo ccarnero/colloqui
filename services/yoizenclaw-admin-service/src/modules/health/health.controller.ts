@@ -1,19 +1,27 @@
-import { Controller, Get, HttpException, HttpStatus } from "@nestjs/common";
-import { TenantConnectionManager } from "@yoizen/database";
+import { Controller, Get, HttpException, HttpStatus, Inject } from "@nestjs/common";
+import type {
+  TenantConnectionManager,
+  TenantMongoConnectionManager,
+} from "@yoizen/database";
 import { PinoLoggerService } from "@yoizen/observability";
 import type { IYoizenClawHealthResponse } from "@yoizen/shared";
+import { yoizenclawAdminServiceConfig } from "../../config";
+import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
 
 /**
  * Service health checks.
  * Base path: `/health`.
- *
- * Liveness: TenantConnectionManager is constructible; pool count is diagnostic only.
  */
 @Controller()
 export class HealthController {
   private readonly logger = new PinoLoggerService(HealthController.name);
 
-  constructor(private readonly tenantManager: TenantConnectionManager) {}
+  constructor(
+    @Inject(YoizenclawTenantConnectionManager)
+    private readonly tenantManager:
+      | TenantConnectionManager
+      | TenantMongoConnectionManager,
+  ) {}
 
   /**
    * Health check endpoint (`GET /health`).
@@ -23,7 +31,9 @@ export class HealthController {
   async check(): Promise<IYoizenClawHealthResponse> {
     const timestamp = new Date().toISOString();
     const poolCount = this.tenantManager.getKnownTenantIds().length;
-    this.logger.debug(`Health check: ${String(poolCount)} active connection pools`);
+    this.logger.debug(
+      `Health check (${yoizenclawAdminServiceConfig.dbEngine}): ${String(poolCount)} active connection pools`,
+    );
 
     const dbOk = await this.tenantManager.probeFirstPool();
 

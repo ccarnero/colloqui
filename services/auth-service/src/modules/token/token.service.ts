@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   InternalServerErrorException,
   OnModuleInit,
@@ -8,7 +9,10 @@ import { SignJWT, jwtVerify } from "jose";
 import type { TokenResponse, TokenScope, UserRole } from "@yoizen/shared";
 import { ACCESS_TOKEN_TTL, REFRESH_TOKEN_TTL } from "@yoizen/shared";
 import { authServiceConfig } from "../../config";
-import { TokenRepository } from "./token.repository";
+import {
+  TOKEN_REPOSITORY,
+  type ITokenRepository,
+} from "./token.repository.interface";
 
 const REFRESH_TOKEN_SCOPE = "refresh";
 
@@ -34,7 +38,10 @@ export class TokenService implements OnModuleInit {
   private readonly environment: string;
   private secret!: Uint8Array;
 
-  constructor(private readonly tokenRepository: TokenRepository) {
+  constructor(
+    @Inject(TOKEN_REPOSITORY)
+    private readonly tokenRepository: ITokenRepository,
+  ) {
     this.environment = authServiceConfig.platformEnvironment;
   }
 

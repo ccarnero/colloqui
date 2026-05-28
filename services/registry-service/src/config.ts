@@ -1,8 +1,15 @@
-const DEFAULT_POSTGRES_HOST = "postgres.support-services-dev.svc.cluster.local";
+import { resolveStorageEngine, type StorageEngine } from "@yoizen/database";
+
+const DEFAULT_MONGO_HOST = "mongo.support-services-dev.svc.cluster.local";
+const DEFAULT_POSTGRES_HOST =
+  "postgres.support-services-dev.svc.cluster.local";
 
 type RegistryServiceConfig = {
   readonly port: number;
+  readonly dbEngine: StorageEngine;
+  readonly defaultMongoHost: string;
   readonly defaultPostgresHost: string;
+  readonly mongoDatabase: string;
   readonly platformEnvironment: string;
   /**
    * Feature flag: when `true`, registry-service publishes
@@ -21,9 +28,27 @@ function parseBoolEnv(raw: string | undefined, fallback: boolean): boolean {
   return fallback;
 }
 
+/** Lazy getters so tests can set `process.env` before first consumer reads config. */
 export const registryServiceConfig: RegistryServiceConfig = {
-  port: Number.parseInt(process.env.PORT ?? "3000", 10),
-  defaultPostgresHost: process.env.POSTGRES_HOST ?? DEFAULT_POSTGRES_HOST,
-  platformEnvironment: process.env.PLATFORM_ENVIRONMENT ?? "dev",
-  emitAdapterSync: parseBoolEnv(process.env.REGISTRY_EMIT_ADAPTER_SYNC, false),
+  get port() {
+    return Number.parseInt(process.env.PORT ?? "3000", 10);
+  },
+  get dbEngine() {
+    return resolveStorageEngine();
+  },
+  get defaultMongoHost() {
+    return process.env.MONGO_HOST ?? DEFAULT_MONGO_HOST;
+  },
+  get defaultPostgresHost() {
+    return process.env.POSTGRES_HOST ?? DEFAULT_POSTGRES_HOST;
+  },
+  get mongoDatabase() {
+    return process.env.MONGO_DB ?? "yoizen";
+  },
+  get platformEnvironment() {
+    return process.env.PLATFORM_ENVIRONMENT ?? "dev";
+  },
+  get emitAdapterSync() {
+    return parseBoolEnv(process.env.REGISTRY_EMIT_ADAPTER_SYNC, false);
+  },
 };

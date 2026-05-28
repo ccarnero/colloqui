@@ -2,17 +2,24 @@ import { describe, it, expect, beforeEach, vi } from "bun:test";
 import { NotFoundException } from "@nestjs/common";
 import { AgentsService } from "../../src/modules/agents/agents.service";
 import { AgentsRuntimeService } from "../../src/modules/agents/agents-runtime.service";
-import {
-  AgentsRepository,
-  type IAgent,
-  type ICreateAgentData,
-} from "../../src/modules/agents/agents.repository";
+import type { IAgent, ICreateAgentData } from "../../src/modules/agents/agents.repository.interface";
 import { NatsPublisher } from "../../src/providers/nats.provider";
 import { AdaptersService } from "../../src/modules/adapters/adapters.service";
 
+type MockFn = ReturnType<typeof vi.fn>;
+const mocked = <T extends MockFn>(fn: T): T => fn;
+
 describe("AgentsService", () => {
   let service: AgentsService;
-  let mockRepository: AgentsRepository;
+  let mockRepository: {
+    findAll: MockFn;
+    findById: MockFn;
+    create: MockFn;
+    update: MockFn;
+    delete: MockFn;
+    publish: MockFn;
+    unpublish: MockFn;
+  };
   let mockNatsPublisher: NatsPublisher;
   let mockRuntimeService: AgentsRuntimeService;
   let mockAdaptersService: AdaptersService;
@@ -27,7 +34,7 @@ describe("AgentsService", () => {
       delete: vi.fn(),
       publish: vi.fn(),
       unpublish: vi.fn(),
-    } as unknown as AgentsRepository;
+    } as typeof mockRepository;
 
     mockNatsPublisher = {
       publishAgentPublished: vi.fn(),
@@ -72,7 +79,7 @@ describe("AgentsService", () => {
         },
       ] as IAgent[];
 
-      vi.mocked(mockRepository.findAll).mockResolvedValue({
+      mocked(mockRepository.findAll).mockResolvedValue({
         agents: mockAgents,
         total: 1,
       });
@@ -91,7 +98,7 @@ describe("AgentsService", () => {
     });
 
     it("should pass filter options to repository", async () => {
-      vi.mocked(mockRepository.findAll).mockResolvedValue({
+      mocked(mockRepository.findAll).mockResolvedValue({
         agents: [],
         total: 0,
       });
@@ -125,7 +132,7 @@ describe("AgentsService", () => {
         updated_at: new Date(),
       };
 
-      vi.mocked(mockRepository.findById).mockResolvedValue(mockAgent);
+      mocked(mockRepository.findById).mockResolvedValue(mockAgent);
 
       const result = await service.findById(TENANT_ID, "agent-1");
 
@@ -133,7 +140,7 @@ describe("AgentsService", () => {
     });
 
     it("should throw NotFoundException when agent not found", async () => {
-      vi.mocked(mockRepository.findById).mockResolvedValue(null);
+      mocked(mockRepository.findById).mockResolvedValue(null);
 
       expect(service.findById(TENANT_ID, "non-existent")).rejects.toThrow(
         NotFoundException,
@@ -162,7 +169,7 @@ describe("AgentsService", () => {
         updated_at: new Date(),
       };
 
-      vi.mocked(mockRepository.create).mockResolvedValue(createdAgent);
+      mocked(mockRepository.create).mockResolvedValue(createdAgent);
 
       const result = await service.create(TENANT_ID, createData);
 
@@ -193,7 +200,7 @@ describe("AgentsService", () => {
         updated_at: new Date(),
       };
 
-      vi.mocked(mockRepository.update).mockResolvedValue(updatedAgent);
+      mocked(mockRepository.update).mockResolvedValue(updatedAgent);
 
       const result = await service.update(TENANT_ID, "agent-1", updateData);
 
@@ -206,7 +213,7 @@ describe("AgentsService", () => {
     });
 
     it("should throw NotFoundException when agent not found", async () => {
-      vi.mocked(mockRepository.update).mockResolvedValue(null);
+      mocked(mockRepository.update).mockResolvedValue(null);
 
       expect(
         service.update(TENANT_ID, "non-existent", { name: "New Name" }),
@@ -216,7 +223,7 @@ describe("AgentsService", () => {
 
   describe("delete", () => {
     it("should delete agent", async () => {
-      vi.mocked(mockRepository.delete).mockResolvedValue(true);
+      mocked(mockRepository.delete).mockResolvedValue(true);
 
       await service.delete(TENANT_ID, "agent-1");
 
@@ -227,7 +234,7 @@ describe("AgentsService", () => {
     });
 
     it("should throw NotFoundException when agent not found", async () => {
-      vi.mocked(mockRepository.delete).mockResolvedValue(false);
+      mocked(mockRepository.delete).mockResolvedValue(false);
 
       expect(service.delete(TENANT_ID, "non-existent")).rejects.toThrow(
         NotFoundException,
@@ -252,8 +259,8 @@ describe("AgentsService", () => {
         updated_at: new Date(),
       };
 
-      vi.mocked(mockRepository.publish).mockResolvedValue(publishedAgent);
-      vi.mocked(mockNatsPublisher.publishAgentPublished).mockResolvedValue(
+      mocked(mockRepository.publish).mockResolvedValue(publishedAgent);
+      mocked(mockNatsPublisher.publishAgentPublished).mockResolvedValue(
         null,
       );
 
@@ -273,7 +280,7 @@ describe("AgentsService", () => {
     });
 
     it("should throw NotFoundException when agent not found", async () => {
-      vi.mocked(mockRepository.publish).mockResolvedValue(null);
+      mocked(mockRepository.publish).mockResolvedValue(null);
 
       expect(service.publish(TENANT_ID, "non-existent")).rejects.toThrow(
         NotFoundException,
@@ -296,8 +303,8 @@ describe("AgentsService", () => {
         updated_at: new Date(),
       };
 
-      vi.mocked(mockRepository.publish).mockResolvedValue(publishedAgent);
-      vi.mocked(mockNatsPublisher.publishAgentPublished).mockRejectedValue(
+      mocked(mockRepository.publish).mockResolvedValue(publishedAgent);
+      mocked(mockNatsPublisher.publishAgentPublished).mockRejectedValue(
         new Error("NATS error"),
       );
 
@@ -324,8 +331,8 @@ describe("AgentsService", () => {
         updated_at: new Date(),
       };
 
-      vi.mocked(mockRepository.unpublish).mockResolvedValue(unpublishedAgent);
-      vi.mocked(mockNatsPublisher.publishAgentUnpublished).mockResolvedValue(
+      mocked(mockRepository.unpublish).mockResolvedValue(unpublishedAgent);
+      mocked(mockNatsPublisher.publishAgentUnpublished).mockResolvedValue(
         null,
       );
 
@@ -346,7 +353,7 @@ describe("AgentsService", () => {
     });
 
     it("should throw NotFoundException when agent not found", async () => {
-      vi.mocked(mockRepository.unpublish).mockResolvedValue(null);
+      mocked(mockRepository.unpublish).mockResolvedValue(null);
 
       expect(service.unpublish(TENANT_ID, "non-existent")).rejects.toThrow(
         NotFoundException,
@@ -369,8 +376,8 @@ describe("AgentsService", () => {
         updated_at: new Date(),
       };
 
-      vi.mocked(mockRepository.unpublish).mockResolvedValue(unpublishedAgent);
-      vi.mocked(mockNatsPublisher.publishAgentUnpublished).mockRejectedValue(
+      mocked(mockRepository.unpublish).mockResolvedValue(unpublishedAgent);
+      mocked(mockNatsPublisher.publishAgentUnpublished).mockRejectedValue(
         new Error("NATS error"),
       );
 
@@ -380,57 +387,9 @@ describe("AgentsService", () => {
     });
   });
 
-  describe("chat", () => {
-    it("should call runtime service for published agent", async () => {
-      const publishedAgent: IAgent = {
-        id: "a1",
-        name: "A",
-        description: null,
-        system_prompt: "P",
-        model_config: {},
-        tools: [],
-        channels: [],
-        status: "published",
-        is_active: true,
-        published_at: new Date(),
-        created_at: new Date(),
-        updated_at: new Date(),
-      };
-      vi.mocked(mockRepository.findById).mockResolvedValue(publishedAgent);
-      vi.mocked(mockRuntimeService.chat).mockResolvedValue({
-        reply: "Hello",
-      });
-
-      const r = await service.chat(TENANT_ID, "a1", { message: "hi" });
-      expect(r.reply).toBe("Hello");
-    });
-
-    it("should throw NotFoundException when agent is not published", async () => {
-      const draftAgent: IAgent = {
-        id: "a1",
-        name: "A",
-        description: null,
-        system_prompt: "P",
-        model_config: {},
-        tools: [],
-        channels: [],
-        status: "draft",
-        is_active: true,
-        published_at: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-      };
-      vi.mocked(mockRepository.findById).mockResolvedValue(draftAgent);
-
-      await expect(
-        service.chat(TENANT_ID, "a1", { message: "hi" }),
-      ).rejects.toThrow(NotFoundException);
-    });
-  });
-
   describe("memory proposals", () => {
     it("should delegate listMemoryProposals to runtime service", async () => {
-      vi.mocked(mockRuntimeService.listMemoryProposals).mockResolvedValue({
+      mocked(mockRuntimeService.listMemoryProposals).mockResolvedValue({
         proposals: [],
       });
 
@@ -443,7 +402,7 @@ describe("AgentsService", () => {
     });
 
     it("should delegate approveMemoryProposal to runtime service", async () => {
-      vi.mocked(mockRuntimeService.reviewMemoryProposal).mockResolvedValue({
+      mocked(mockRuntimeService.reviewMemoryProposal).mockResolvedValue({
         success: true,
       });
 

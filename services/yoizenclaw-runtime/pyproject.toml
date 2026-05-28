@@ -15,9 +15,11 @@ dependencies = [
     "nats-py>=2.7.2",
     "asyncpg>=0.29",
     "pgvector>=0.2.4",
-    "apscheduler>=3.10.0",
     "alembic>=1.13",
     "sqlalchemy[asyncio]>=2.0",
+    "motor>=3.6",
+    "pymongo>=4.10",
+    "apscheduler>=3.10.0",
     # One instrumentation line; semantic-conventions 0.61b0 -> opentelemetry-api==1.40.x.
     # Exporters stay on 1.40.x so logfire (pydantic-ai) stays satisfied (proto-http <1.41).
     "opentelemetry-api~=1.40.0",
@@ -26,6 +28,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi==0.61b0",
     "opentelemetry-instrumentation-httpx==0.61b0",
     "opentelemetry-instrumentation-asyncpg==0.61b0",
+    "opentelemetry-instrumentation-pymongo==0.61b0",
     "opentelemetry-exporter-otlp-proto-grpc~=1.40.0",
     "opentelemetry-exporter-otlp~=1.40.0",
     "prometheus_client>=0.17",
@@ -52,8 +55,8 @@ testpaths = ["tests", "e2e"]
 python_files = ["test_*.py", "tests_e2e_*.py"]
 python_functions = ["test_*"]
 addopts = ["-v", "-p", "no:logfire"]
-markers = [
-    "e2e: end-to-end tests requiring live infrastructure (NATS, PostgreSQL, YoizenClaw)",
+    markers = [
+    "e2e: end-to-end tests requiring live infrastructure (NATS, PostgreSQL/MongoDB, YoizenClaw)",
     "slow: tests that take significant time to run",
     "security: security-focused E2E tests",
 ]

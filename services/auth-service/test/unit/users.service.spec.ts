@@ -1,10 +1,8 @@
 import { describe, it, expect, afterEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { ConflictException } from "@nestjs/common";
-import { UsersRepository } from "../../src/modules/users/users.repository";
+import { USERS_REPOSITORY } from "../../src/modules/users/users.repository.interface";
 import { UsersService } from "../../src/modules/users/users.service";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
-import type { Sql } from "../../src/providers/postgres.provider";
 
 describe("UsersService", () => {
   let service: UsersService;
@@ -15,56 +13,46 @@ describe("UsersService", () => {
   });
 
   it("onModuleInit skips admin seed when ADMIN_EMAIL is unset", async () => {
-    const mockSql = Object.assign(
-      () => Promise.resolve([]),
-      {},
-    ) as unknown as Sql;
+    const mockRepo = {
+      findByEmail: mock(() => Promise.resolve([])),
+      findAdmin: mock(() => Promise.resolve([])),
+      listActive: mock(() => Promise.resolve([])),
+      insertUser: mock(() => Promise.resolve([])),
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        UsersRepository,
+        { provide: USERS_REPOSITORY, useValue: mockRepo },
         UsersService,
-        { provide: POSTGRES_SQL, useValue: mockSql },
       ],
     }).compile();
 
     service = moduleRef.get(UsersService);
     await expect(service.onModuleInit()).resolves.toBeUndefined();
+    expect(mockRepo.findAdmin).not.toHaveBeenCalled();
   });
 
   it("onModuleInit skips create when an admin already exists", async () => {
-    let insertCalls = 0;
-    const mockSql = Object.assign(
-      (strings: TemplateStringsArray, ...values: unknown[]) => {
-        const q = strings.reduce(
-          (acc, s, i) => acc + s + String(values[i] ?? ""),
-          "",
-        );
-        if (q.includes("WHERE role = ") && q.includes("admin")) {
-          return Promise.resolve([{ id: "admin-1" }]);
-        }
-        if (q.includes("INSERT INTO platform_users")) {
-          insertCalls += 1;
-        }
-        return Promise.resolve([]);
-      },
-      {},
-    ) as unknown as Sql;
+    const mockRepo = {
+      findByEmail: mock(() => Promise.resolve([])),
+      findAdmin: mock(() => Promise.resolve([{ id: "admin-1" }])),
+      listActive: mock(() => Promise.resolve([])),
+      insertUser: mock(() => Promise.resolve([])),
+    };
 
     process.env.ADMIN_EMAIL = "admin@example.com";
     process.env.ADMIN_PASSWORD = "secret";
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        UsersRepository,
+        { provide: USERS_REPOSITORY, useValue: mockRepo },
         UsersService,
-        { provide: POSTGRES_SQL, useValue: mockSql },
       ],
     }).compile();
 
     service = moduleRef.get(UsersService);
     await service.onModuleInit();
-    expect(insertCalls).toBe(0);
+    expect(mockRepo.insertUser).not.toHaveBeenCalled();
   });
 
   it("list delegates to repository.listActive", async () => {
@@ -76,7 +64,6 @@ describe("UsersService", () => {
           {
             id: "u1",
             email: "a@b.com",
-            password_hash: "h",
             role: "platform",
             created_at: new Date(),
             updated_at: new Date(),
@@ -87,7 +74,7 @@ describe("UsersService", () => {
     };
     const moduleRef = await Test.createTestingModule({
       providers: [
-        { provide: UsersRepository, useValue: mockRepo },
+        { provide: USERS_REPOSITORY, useValue: mockRepo },
         UsersService,
       ],
     }).compile();
@@ -106,7 +93,7 @@ describe("UsersService", () => {
     };
     const moduleRef = await Test.createTestingModule({
       providers: [
-        { provide: UsersRepository, useValue: mockRepo },
+        { provide: USERS_REPOSITORY, useValue: mockRepo },
         UsersService,
       ],
     }).compile();
@@ -120,7 +107,6 @@ describe("UsersService", () => {
     const row = {
       id: "new-id",
       email: "new@b.com",
-      password_hash: "hash",
       role: "editor",
       created_at: new Date(),
       updated_at: new Date(),
@@ -133,7 +119,7 @@ describe("UsersService", () => {
     };
     const moduleRef = await Test.createTestingModule({
       providers: [
-        { provide: UsersRepository, useValue: mockRepo },
+        { provide: USERS_REPOSITORY, useValue: mockRepo },
         UsersService,
       ],
     }).compile();

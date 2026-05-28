@@ -17,7 +17,7 @@ if config.config_file_name is not None:
 
 def _resolve_database_url() -> str:
     """Resolve DATABASE_URL from BootstrapSettings (env vars / .env)."""
-    from src.shared.config.settings import BootstrapSettings
+    from src.utils.config.settings import BootstrapSettings
 
     settings = BootstrapSettings()
     if settings.DATABASE_URL:
@@ -77,7 +77,17 @@ async def run_async_migrations() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode (connected to the database)."""
-    asyncio.run(run_async_migrations())
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(run_async_migrations())
+        return
+
+    # CLI / thread pool: no loop. Lifespan callers should use asyncio.to_thread.
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(lambda: asyncio.run(run_async_migrations())).result()
 
 
 if context.is_offline_mode():

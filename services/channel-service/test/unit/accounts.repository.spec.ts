@@ -1,13 +1,14 @@
 import { describe, it, expect, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { createQueuedSql } from "@yoizen/testing";
-import type { Sql } from "postgres";
-import { AccountsRepository } from "../../src/modules/accounts/accounts.repository";
+import type { Db } from "mongodb";
+import { AccountsMongoRepository } from "../../src/modules/accounts/accounts.mongo.repository";
 import { ChannelTenantConnectionManager } from "../../src/providers/channel-tenant-connection-manager";
+import { makeFakeTenantMongoConnections, makeMockDb } from "../make-mongo-mock";
 
-function accountRow(overrides: Record<string, unknown> = {}) {
+function accountDoc(overrides: Record<string, unknown> = {}) {
+  const now = new Date("2020-01-01T00:00:00.000Z");
   return {
-    id: "acc-1",
+    _id: "acc-1",
     channel: "whatsapp",
     provider: "meta",
     name: "Primary",
@@ -21,32 +22,31 @@ function accountRow(overrides: Record<string, unknown> = {}) {
     app_secret: null,
     verify_token: null,
     is_active: true,
-    created_at: "2020-01-01T00:00:00.000Z",
-    updated_at: "2020-01-01T00:00:00.000Z",
+    created_at: now,
+    updated_at: now,
     ...overrides,
   };
 }
 
-function wrapTcm(sql: Sql) {
-  return {
-    ensureSchema: mock(() => Promise.resolve(sql)),
-  };
-}
-
-describe("AccountsRepository", () => {
+describe("AccountsMongoRepository", () => {
   it("insertAccount returns inserted row", async () => {
-    const sql = createQueuedSql([[accountRow()]], mock);
+    const insertOne = mock(async () => ({ acknowledged: true }));
+    const db = makeMockDb({
+      channel_accounts: { insertOne },
+    });
+    const tcm = makeFakeTenantMongoConnections(db);
+
     const moduleRef = await Test.createTestingModule({
       providers: [
-        AccountsRepository,
+        AccountsMongoRepository,
         {
           provide: ChannelTenantConnectionManager,
-          useValue: wrapTcm(sql),
+          useValue: tcm,
         },
       ],
     }).compile();
 
-    const repo = moduleRef.get(AccountsRepository);
+    const repo = moduleRef.get(AccountsMongoRepository);
     const rows = await repo.insertAccount({
       id: "acc-1",
       tenantId: "tenant-a",
@@ -69,53 +69,60 @@ describe("AccountsRepository", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe("acc-1");
-    expect(sql).toHaveBeenCalled();
+    expect(insertOne).toHaveBeenCalled();
   });
 
   it("listByTenant filters by channel when provided", async () => {
-    const sql = createQueuedSql([[accountRow()]], mock);
+    const toArray = mock(async () => [accountDoc()]);
+    const sort = mock(() => ({ toArray }));
+    const find = mock(() => ({ sort }));
+    const db = makeMockDb({
+      channel_accounts: { find },
+    });
+    const tcm = makeFakeTenantMongoConnections(db);
+
     const moduleRef = await Test.createTestingModule({
       providers: [
-        AccountsRepository,
+        AccountsMongoRepository,
         {
           provide: ChannelTenantConnectionManager,
-          useValue: wrapTcm(sql),
+          useValue: tcm,
         },
       ],
     }).compile();
 
-    const repo = moduleRef.get(AccountsRepository);
+    const repo = moduleRef.get(AccountsMongoRepository);
     const rows = await repo.listByTenant("tenant-a", "whatsapp");
     expect(rows).toHaveLength(1);
-    expect(sql).toHaveBeenCalled();
+    expect(find).toHaveBeenCalledWith({ channel: "whatsapp" });
   });
 
-  it("updateAccount delegates to sql.unsafe when patch non-empty", async () => {
-    const unsafe = mock(() =>
-      Promise.resolve([accountRow({ name: "Renamed" })]),
+  it("updateAccount applies patch via findOneAndUpdate", async () => {
+    const findOneAndUpdate = mock(async () =>
+      accountDoc({ name: "Renamed" }),
     );
-    const fn = mock(() => Promise.resolve([]));
-    const sql = Object.assign(fn, {
-      json: (v: unknown) => v,
-      unsafe: unsafe,
-    }) as unknown as Sql;
+    const db = makeMockDb({
+      channel_accounts: { findOneAndUpdate },
+    });
+    const tcm = makeFakeTenantMongoConnections(db);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        AccountsRepository,
+        AccountsMongoRepository,
         {
           provide: ChannelTenantConnectionManager,
-          useValue: wrapTcm(sql),
+          useValue: tcm,
         },
       ],
     }).compile();
 
-    const repo = moduleRef.get(AccountsRepository);
+    const repo = moduleRef.get(AccountsMongoRepository);
     const rows = await repo.updateAccount("tenant-a", "acc-1", {
       name: "Renamed",
     });
 
     expect(rows).toHaveLength(1);
-    expect(unsafe).toHaveBeenCalled();
+    expect(rows[0].name).toBe("Renamed");
+    expect(findOneAndUpdate).toHaveBeenCalled();
   });
 });

@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "bun:test";
 import { Test, TestingModule } from "@nestjs/testing";
 import { AgentsService } from "../../src/modules/agents/agents.service";
-import {
-  AgentsRepository,
-  type IAgent,
-  type ICreateAgentData,
-} from "../../src/modules/agents/agents.repository";
+import type {
+  IAgent,
+  ICreateAgentData,
+} from "../../src/modules/agents/agents.repository.interface";
+import { AGENTS_REPOSITORY } from "../../src/modules/agents/agents.repository.interface";
 import { LAZY_NATS, NatsPublisher } from "../../src/providers/nats.provider";
 import { AdaptersService } from "../../src/modules/adapters/adapters.service";
+import { AgentsRuntimeService } from "../../src/modules/agents/agents-runtime.service";
 
 const TENANT_ID = "tenant-test";
 
@@ -62,6 +63,7 @@ describe("Adapter Tools", () => {
   let mockRepository: Record<string, MockFn>;
   let mockNatsPublisher: Record<string, MockFn>;
   let mockAdaptersService: Record<string, MockFn>;
+  let mockRuntimeService: Record<string, MockFn>;
 
   beforeEach(async () => {
     mockRepository = {
@@ -86,11 +88,18 @@ describe("Adapter Tools", () => {
       endpointExists: vi.fn(),
     };
 
+    mockRuntimeService = {
+      chat: vi.fn(),
+      listMemoryProposals: vi.fn(),
+      reviewMemoryProposal: vi.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AgentsService,
-        { provide: AgentsRepository, useValue: mockRepository },
+        { provide: AGENTS_REPOSITORY, useValue: mockRepository },
         { provide: NatsPublisher, useValue: mockNatsPublisher },
+        { provide: AgentsRuntimeService, useValue: mockRuntimeService },
         {
           provide: LAZY_NATS,
           useValue: { getConnection: vi.fn().mockResolvedValue({}) },

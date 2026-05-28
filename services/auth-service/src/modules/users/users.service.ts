@@ -1,18 +1,26 @@
 import {
   ConflictException,
+  Inject,
   Injectable,
   OnModuleInit,
 } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 import { authServiceConfig } from "../../config";
 import { hashSecret } from "../../utils/password";
-import { UsersRepository, type IUserRow } from "./users.repository";
+import {
+  USERS_REPOSITORY,
+  type IUserRow,
+  type IUsersRepository,
+} from "./users.repository.interface";
 
 @Injectable()
 export class UsersService implements OnModuleInit {
   private readonly logger = new PinoLoggerService(UsersService.name);
 
-  constructor(private readonly usersRepository: UsersRepository) {}
+  constructor(
+    @Inject(USERS_REPOSITORY)
+    private readonly usersRepository: IUsersRepository,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     await this.seedAdmin();

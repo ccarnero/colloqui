@@ -108,9 +108,18 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("Starting up YoizenClaw services...")
 
-        memory = create_memory()
+        db_engine = bootstrap_settings.DB_ENGINE
+        if db_engine == "postgres":
+            from src.infra.database.bootstrap import run_alembic_upgrade
+
+            # Alembic env.py uses asyncio.run(); must not run on Uvicorn's loop.
+            await asyncio.to_thread(run_alembic_upgrade)
+
+        from src.infra.database import create_memory_store
+
+        memory = create_memory_store(db_engine)
         if memory is None:
-            raise RuntimeError("PostgreSQL memory backend is not available")
+            raise RuntimeError(f"{db_engine} memory backend is not available")
         await memory.initialize()
 
         from src.app.agents.agent_manager import get_agent_manager
@@ -129,10 +138,10 @@ async def lifespan(app: FastAPI):
         logger.info("Conversation memory store initialized")
 
         from src.services.scheduler import create_job_scheduler
-        from src.services.scheduler_leader import SchedulerLeaderLock
+        from src.services.scheduler_leader import create_leader_election
 
         await create_job_scheduler(memory)
-        scheduler_lock = SchedulerLeaderLock(memory.pool)
+        scheduler_lock = create_leader_election(memory, db_engine)
         scheduler_task = asyncio.create_task(
             _run_scheduler_leader_loop(scheduler_lock),
         )
@@ -193,12 +202,20 @@ if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
     meter_provider = otel_metrics.get_meter_provider()
     FastAPIInstrumentor().instrument_app(app, meter_provider=meter_provider)
 
-    try:
-        from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
+    if bootstrap_settings.DB_ENGINE == "postgres":
+        try:
+            from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
 
-        AsyncPGInstrumentor().instrument()
-    except ImportError:
-        pass
+            AsyncPGInstrumentor().instrument()
+        except ImportError:
+            pass
+    else:
+        try:
+            from opentelemetry.instrumentation.pymongo import PymongoInstrumentor
+
+            PymongoInstrumentor().instrument()
+        except ImportError:
+            pass
 else:
     logger.info(
         "OTEL_EXPORTER_OTLP_ENDPOINT not set, skipping telemetry initialization"
@@ -288,9 +305,7 @@ async def list_agents():
         from src.utils.utils.runtime_config import RuntimeConfigRepository
         from src.utils.config.settings import bootstrap_settings
 
-        repo = RuntimeConfigRepository(
-            bootstrap_settings.DATABASE_URL, bootstrap_settings.TENANT_ID
-        )
+        repo = RuntimeConfigRepository()
 
         agents = await repo.load_all_agent_configs()
 
@@ -306,9 +321,7 @@ async def get_agent_config(agent_id: str):
         from src.utils.utils.runtime_config import RuntimeConfigRepository
         from src.utils.config.settings import bootstrap_settings
 
-        repo = RuntimeConfigRepository(
-            bootstrap_settings.DATABASE_URL, bootstrap_settings.TENANT_ID
-        )
+        repo = RuntimeConfigRepository()
 
         config = await repo.load_agent_config(agent_id or None)
 
@@ -333,9 +346,7 @@ async def update_agent_config(agent_id: str, config: Dict[str, Any]):
 
             validated = AgentSyncRequest(**config)
 
-        repo = RuntimeConfigRepository(
-            bootstrap_settings.DATABASE_URL, bootstrap_settings.TENANT_ID
-        )
+        repo = RuntimeConfigRepository()
 
         saved_config = await repo.save_agent_config(validated, agent_id or None)
 
@@ -360,9 +371,7 @@ async def delete_agent_config(agent_id: str):
         from src.utils.utils.runtime_config import RuntimeConfigRepository
         from src.utils.config.settings import bootstrap_settings
 
-        repo = RuntimeConfigRepository(
-            bootstrap_settings.DATABASE_URL, bootstrap_settings.TENANT_ID
-        )
+        repo = RuntimeConfigRepository()
 
         await repo.remove_agent_config(agent_id or None)
 

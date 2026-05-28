@@ -1,26 +1,42 @@
-import { Controller, Get, Inject } from "@nestjs/common";
+import { Controller, Get, Inject, Optional } from "@nestjs/common";
 import type Redis from "ioredis";
-import { checkPostgres, checkRedis } from "@yoizen/database";
+import {
+  checkMongo,
+  checkPostgres,
+  checkRedis,
+  REDIS_CLIENT,
+  type MongoClient,
+  type Sql,
+} from "@yoizen/database";
 import type { IAuthServiceHealthResponse } from "@yoizen/shared";
-import { POSTGRES_SQL, type Sql } from "../../providers/postgres.provider";
-import { REDIS_CLIENT } from "@yoizen/database";
+import { authServiceConfig } from "../../config";
+import { MONGO_CLIENT } from "../../providers/mongo.provider";
+import { POSTGRES_SQL } from "../../providers/postgres.module";
 
 @Controller()
 export class HealthController {
   constructor(
-    @Inject(POSTGRES_SQL) private readonly sql: Sql,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @Optional() @Inject(MONGO_CLIENT) private readonly mongo?: MongoClient,
+    @Optional() @Inject(POSTGRES_SQL) private readonly sql?: Sql,
   ) {}
 
   @Get("health")
   async check(): Promise<IAuthServiceHealthResponse> {
-    const [pgOk, redisOk] = await Promise.all([
-      checkPostgres(this.sql),
-      checkRedis(this.redis),
-    ]);
+    const redisOk = await checkRedis(this.redis);
 
+    if (authServiceConfig.dbEngine === "mongo") {
+      const mongoOk = this.mongo ? await checkMongo(this.mongo) : false;
+      const status = mongoOk && redisOk ? "ok" : "degraded";
+      return {
+        status,
+        mongo: mongoOk ? "connected" : "disconnected",
+        redis: redisOk ? "connected" : "disconnected",
+      };
+    }
+
+    const pgOk = this.sql ? await checkPostgres(this.sql) : false;
     const status = pgOk && redisOk ? "ok" : "degraded";
-
     return {
       status,
       postgres: pgOk ? "connected" : "disconnected",

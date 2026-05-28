@@ -58,7 +58,7 @@ spec:
               cpu: 500m
               memory: 256Mi
           # The /health endpoint probes Temporal (gRPC getSystemInfo) + NATS
-          # + per-tenant Postgres. The Temporal call alone can spike past the
+          # + per-tenant MongoDB. The Temporal call alone can spike past the
           # 1s default probe timeout under load or cold-start, marking the pod
           # NotReady and triggering SKS/Deployment reconcile loops with 409
           # conflicts that block scale-to-zero. Generous timeout + failure

@@ -3,9 +3,16 @@ import { Test } from "@nestjs/testing";
 import { NotFoundException } from "@nestjs/common";
 import type { WorkflowAction } from "@yoizen/shared";
 import { WorkflowsService } from "../../src/modules/workflows/workflows.service";
-import { WorkflowsRepository } from "../../src/modules/workflows/workflows.repository";
+import {
+  EXECUTIONS_REPOSITORY,
+} from "../../src/modules/workflows/executions.repository.interface";
+import {
+  WORKFLOWS_REPOSITORY,
+  type IWorkflowDefinitionRow,
+} from "../../src/modules/workflows/workflows.repository.interface";
+
+import { RegisteredServicesResolver } from "../../src/modules/workflows/registered-services.resolver";
 import { TEMPORAL_CLIENT } from "../../src/providers/temporal.provider";
-import type { IWorkflowDefinitionRow } from "../../src/modules/workflows/workflows.repository";
 
 describe("WorkflowsService", () => {
   const actions: WorkflowAction[] = [
@@ -27,12 +34,14 @@ describe("WorkflowsService", () => {
   let mockTemporal: {
     workflow: { start: ReturnType<typeof mock> };
   };
-  let mockRepo: {
+  let mockDefinitions: {
     createDefinition: ReturnType<typeof mock>;
     findDefinitionById: ReturnType<typeof mock>;
     findDefinitionsByTenant: ReturnType<typeof mock>;
-    createExecution: ReturnType<typeof mock>;
     softDeleteDefinition: ReturnType<typeof mock>;
+  };
+  let mockExecutions: {
+    createExecution: ReturnType<typeof mock>;
     findExecutionsByDefinition: ReturnType<typeof mock>;
     countExecutionsByDefinition: ReturnType<typeof mock>;
     countExecutionsGroupedByDefinition: ReturnType<typeof mock>;
@@ -54,7 +63,7 @@ describe("WorkflowsService", () => {
       },
     };
 
-    mockRepo = {
+    mockDefinitions = {
       createDefinition: mock((params: {
         id: string;
         tenantId: string;
@@ -72,6 +81,9 @@ describe("WorkflowsService", () => {
       ),
       findDefinitionById: mock(() => Promise.resolve(baseRow)),
       findDefinitionsByTenant: mock(() => Promise.resolve([baseRow])),
+      softDeleteDefinition: mock(() => Promise.resolve(true)),
+    };
+    mockExecutions = {
       createExecution: mock(
         (params: {
           id: string;
@@ -92,7 +104,6 @@ describe("WorkflowsService", () => {
             updated_at: new Date(),
           }),
       ),
-      softDeleteDefinition: mock(() => Promise.resolve(true)),
       findExecutionsByDefinition: mock(() =>
         Promise.resolve([
           {
@@ -130,7 +141,12 @@ describe("WorkflowsService", () => {
       providers: [
         WorkflowsService,
         { provide: TEMPORAL_CLIENT, useValue: mockTemporal },
-        { provide: WorkflowsRepository, useValue: mockRepo },
+        { provide: WORKFLOWS_REPOSITORY, useValue: mockDefinitions },
+        { provide: EXECUTIONS_REPOSITORY, useValue: mockExecutions },
+        {
+          provide: RegisteredServicesResolver,
+          useValue: { resolveSlugs: mock(() => Promise.resolve(new Map())) },
+        },
       ],
     }).compile();
 
@@ -146,7 +162,7 @@ describe("WorkflowsService", () => {
     });
     expect(result.name).toBe("My workflow");
     expect(result.application).toBe("orders");
-    expect(mockRepo.createDefinition).toHaveBeenCalled();
+    expect(mockDefinitions.createDefinition).toHaveBeenCalled();
   });
 
   it("listWorkflows returns mapped definitions", async () => {
@@ -156,7 +172,7 @@ describe("WorkflowsService", () => {
   });
 
   it("getWorkflow throws when missing", async () => {
-    mockRepo.findDefinitionById.mockResolvedValueOnce(undefined);
+    mockDefinitions.findDefinitionById.mockResolvedValueOnce(undefined);
     await expect(service.getWorkflow("missing", "t1")).rejects.toBeInstanceOf(
       NotFoundException,
     );
@@ -168,7 +184,7 @@ describe("WorkflowsService", () => {
   });
 
   it("executeWorkflow starts Temporal and records execution", async () => {
-    mockRepo.findDefinitionById.mockResolvedValueOnce({
+    mockDefinitions.findDefinitionById.mockResolvedValueOnce({
       ...baseRow,
       actions,
     });
@@ -179,7 +195,7 @@ describe("WorkflowsService", () => {
 
     expect(result.runId).toBe("run-xyz");
     expect(mockTemporal.workflow.start).toHaveBeenCalled();
-    expect(mockRepo.createExecution).toHaveBeenCalled();
+    expect(mockExecutions.createExecution).toHaveBeenCalled();
 
     const startCall = mockTemporal.workflow.start.mock.calls[0];
     const startArgs = startCall[1].args as unknown[];
@@ -188,7 +204,7 @@ describe("WorkflowsService", () => {
   });
 
   it("executeWorkflow forwards causal context into the WorkflowDefinition", async () => {
-    mockRepo.findDefinitionById.mockResolvedValueOnce({
+    mockDefinitions.findDefinitionById.mockResolvedValueOnce({
       ...baseRow,
       actions,
     });
@@ -213,7 +229,7 @@ describe("WorkflowsService", () => {
   });
 
   it("executeWorkflow omits causal when option is not provided", async () => {
-    mockRepo.findDefinitionById.mockResolvedValueOnce({
+    mockDefinitions.findDefinitionById.mockResolvedValueOnce({
       ...baseRow,
       actions,
     });
@@ -228,11 +244,14 @@ describe("WorkflowsService", () => {
 
   it("deleteWorkflow soft-deletes via repository", async () => {
     await service.deleteWorkflow("def-1", "t1");
-    expect(mockRepo.softDeleteDefinition).toHaveBeenCalledWith("def-1", "t1");
+    expect(mockDefinitions.softDeleteDefinition).toHaveBeenCalledWith(
+      "def-1",
+      "t1",
+    );
   });
 
   it("deleteWorkflow throws when nothing deleted", async () => {
-    mockRepo.softDeleteDefinition.mockResolvedValueOnce(false);
+    mockDefinitions.softDeleteDefinition.mockResolvedValueOnce(false);
     await expect(service.deleteWorkflow("x", "t1")).rejects.toBeInstanceOf(
       NotFoundException,
     );
@@ -259,7 +278,7 @@ describe("WorkflowsService", () => {
       pageSize: 10,
       sort: "asc",
     });
-    const call = mockRepo.findExecutionsByDefinition.mock.calls[0];
+    const call = mockExecutions.findExecutionsByDefinition.mock.calls[0];
     expect(call[0]).toEqual({
       definitionId: "def-1",
       tenantId: "t1",
@@ -270,7 +289,7 @@ describe("WorkflowsService", () => {
   });
 
   it("listExecutions throws when definition missing", async () => {
-    mockRepo.findDefinitionById.mockResolvedValueOnce(undefined);
+    mockDefinitions.findDefinitionById.mockResolvedValueOnce(undefined);
     await expect(
       service.listExecutions("missing", "t1", {
         page: 1,
@@ -281,7 +300,7 @@ describe("WorkflowsService", () => {
   });
 
   it("getExecutionCountsByTenant folds rows into a record", async () => {
-    mockRepo.countExecutionsGroupedByDefinition.mockResolvedValueOnce([
+    mockExecutions.countExecutionsGroupedByDefinition.mockResolvedValueOnce([
       { definition_id: "def-1", count: 3 },
       { definition_id: "def-2", count: 7 },
     ]);
@@ -290,7 +309,7 @@ describe("WorkflowsService", () => {
   });
 
   it("getExecutionCountsByTenant returns empty object when no executions", async () => {
-    mockRepo.countExecutionsGroupedByDefinition.mockResolvedValueOnce([]);
+    mockExecutions.countExecutionsGroupedByDefinition.mockResolvedValueOnce([]);
     const counts = await service.getExecutionCountsByTenant("t1");
     expect(counts).toEqual({});
   });
@@ -303,7 +322,7 @@ describe("WorkflowsService", () => {
   });
 
   it("getExecutionStatus throws when execution missing", async () => {
-    mockRepo.findExecutionById.mockResolvedValueOnce(undefined);
+    mockExecutions.findExecutionById.mockResolvedValueOnce(undefined);
     await expect(
       service.getExecutionStatus("def-1", "missing", "t1"),
     ).rejects.toBeInstanceOf(NotFoundException);

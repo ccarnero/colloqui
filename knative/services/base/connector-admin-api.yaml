@@ -53,21 +53,21 @@ spec:
               value: "api"
             - name: OTEL_SERVICE_NAME
               value: "connector-admin-api"
-            - name: POSTGRES_DB
+            - name: MONGO_DB
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_DB
-            - name: POSTGRES_USER
+                  name: mongo-credentials
+                  key: MONGO_DB
+            - name: MONGO_USER
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
+                  name: mongo-credentials
+                  key: MONGO_USER
+            - name: MONGO_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_PASSWORD
+                  name: mongo-credentials
+                  key: MONGO_PASSWORD
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

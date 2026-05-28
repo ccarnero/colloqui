@@ -2,7 +2,11 @@
 
 ## Project Overview
 
-The Audit Service consumes domain events from the NATS JetStream `EVENTS` stream via durable consumer `audit-writer`, persists every event to per-tenant PostgreSQL databases, and exposes a paginated query API. It uses the `TenantConnectionManager` pattern to dynamically create connection pools to each tenant's dedicated PostgreSQL instance, with lazy schema initialization on first message per tenant.
+The Audit Service consumes domain events from the NATS JetStream `EVENTS` stream via durable consumer `audit-writer`, persists every event to per-tenant MongoDB databases, and exposes a paginated query API. It uses the `TenantConnectionManager` pattern to dynamically create connection pools to each tenant's dedicated MongoDB instance, with lazy schema initialization on first message per tenant.
+
+## Storage engines
+
+Supports **Postgres** (default) and **Mongo** per-tenant via `AuditTenantConnectionManager` (postgres/mongo variants) and repository adapters. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
 
 ## Tech Stack
 
@@ -12,7 +16,7 @@ The Audit Service consumes domain events from the NATS JetStream `EVENTS` stream
 | Framework | NestJS 11 + Fastify |
 | Language | TypeScript 5.7 (strict) |
 | Messaging | NATS JetStream (`nats` package) |
-| Database | Per-tenant PostgreSQL via `postgres` (postgres.js) |
+| Database | Per-tenant MongoDB via official `mongodb` driver |
 | Shared | `@yoizen/shared` (workspace: `packages/shared/`) |
 
 ## Repository Structure
@@ -52,7 +56,7 @@ test/
 |------|---------|
 | `src/app.module.ts` | `@Global()` module exporting all NATS tokens and `TenantConnectionManager` |
 | `src/providers/nats.provider.ts` | Creates EVENTS stream, durable consumer `audit-writer` (explicit ack, all subjects, max_deliver 5) |
-| `TenantConnectionManager` | From `@yoizen/database`; lazy pool per tenant to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
+| `TenantConnectionManager` | From `@yoizen/database`; lazy pool per tenant to `mongo.{tenantId}-{env}-ns.svc.cluster.local` |
 | `src/modules/audit/audit.service.ts` | Consumer loop: decode envelope -> extract tenantId -> ensure schema -> INSERT events -> ack/nak |
 | `src/modules/audit/audit.controller.ts` | Paginated query endpoints with type/date filters |
 
@@ -75,7 +79,7 @@ NATS (events.>) -> consumer.consume(batch=100, expires=30s)
 ```
 AppModule (@Global)
 ├── NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM_CLIENT
-├── TenantConnectionManager (Map<string, Sql>)
+├── TenantConnectionManager (Map<string, MongoClient>)
 ├── AuditModule
 │   ├── AuditController (GET /audit/events, GET /audit/events/:id)
 │   └── AuditService (consumer loop + query logic)
@@ -101,7 +105,7 @@ CREATE TABLE events (
 | Target | Protocol | Direction | Purpose |
 |--------|----------|-----------|---------|
 | NATS JetStream (EVENTS) | NATS | Inbound | Consume all events via durable consumer `audit-writer` |
-| Per-tenant PostgreSQL | TCP | Outbound | Persist events to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
+| Per-tenant MongoDB | TCP | Outbound | Persist events to `mongo.{tenantId}-{env}-ns.svc.cluster.local` |
 
 ### DI Tokens
 
@@ -117,9 +121,9 @@ CREATE TABLE events (
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP server port (health + query endpoints) |
 | `NATS_URL` | `nats://localhost:4222` | NATS server URL |
-| `POSTGRES_PORT` | `5432` | PostgreSQL port (per-tenant) |
-| `POSTGRES_USER` | `yoizen` | PostgreSQL username |
-| `POSTGRES_PASSWORD` | `yoizen-dev-password` | PostgreSQL password |
+| `MONGO_PORT` | `27017` | MongoDB port (per-tenant) |
+| `MONGO_USER` | `yoizen` | MongoDB username |
+| `MONGO_PASSWORD` | `yoizen-dev-password` | MongoDB password |
 | `PLATFORM_ENVIRONMENT` | `dev` | Environment name for tenant namespace resolution |
 
 ### Stream Configuration (from `@yoizen/shared`)
@@ -147,7 +151,7 @@ Consumer: `audit-writer` -- explicit ack, deliver all, max deliver 5.
 ## Code Style and Conventions
 
 - **Global providers**: `AppModule` is `@Global()`, exporting all NATS tokens and `TenantConnectionManager`
-- **Per-tenant pools**: `Map<string, Sql>` keyed by tenant ID, lazy creation on first message
+- **Per-tenant pools**: `Map<string, MongoClient>` keyed by tenant ID, lazy creation on first message
 - **Schema lazy init**: `ensureTable()` runs once per tenant (tracked via `Set<string>`)
 - **Batched consumer**: `consume({ max_messages: 100, expires: 30_000 })` for efficient pull
 - **Idempotent writes**: `ON CONFLICT (id) DO NOTHING` prevents duplicate inserts
@@ -163,14 +167,14 @@ bun install
 bun run start:dev
 ```
 
-Requires local NATS (`nats://localhost:4222`) and a PostgreSQL instance per tenant.
+Requires local NATS (`nats://localhost:4222`) and a MongoDB instance per tenant.
 
 ## Dependencies on Other Services
 
 | Service | Relationship |
 |---------|-------------|
 | **NATS JetStream** | Consumes from EVENTS stream via `audit-writer` consumer |
-| **Per-tenant PostgreSQL** | Writes events to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
+| **Per-tenant MongoDB** | Writes events to `mongo.{tenantId}-{env}-ns.svc.cluster.local` |
 | **api-gateway** | Upstream producer (publishes events) + proxies audit query endpoints |
-| **tenant-service** | Provisions the per-tenant PostgreSQL instances |
+| **tenant-service** | Provisions the per-tenant MongoDB instances |
 | **`@yoizen/shared`** | Stream/consumer names, `EventEnvelope`, `TENANT_HEADER` |

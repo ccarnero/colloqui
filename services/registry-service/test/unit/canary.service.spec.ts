@@ -5,11 +5,12 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { createQueuedSql } from "@yoizen/testing";
-import { CanaryRepository } from "../../src/modules/canary/canary.repository";
+import { MONGO_CLIENT } from "../../src/providers/mongo.provider";
+import { CanaryMongoRepository } from "../../src/modules/canary/canary.mongo.repository";
+import { CANARY_REPOSITORY } from "../../src/modules/canary/canary.repository.interface";
 import { CanaryService } from "../../src/modules/canary/canary.service";
 import { K8S_CUSTOM_OBJECTS_API } from "../../src/providers/kubernetes.provider";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
+import { makeRegistryMongoClient } from "../mongo-mock";
 
 function baseServiceRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -61,7 +62,7 @@ describe("CanaryService", () => {
   beforeEach(async () => {
     process.env.PLATFORM_ENVIRONMENT = "dev";
     sqlQueue = [];
-    const sql = createQueuedSql(sqlQueue, mock);
+    const mongo = makeRegistryMongoClient(sqlQueue);
     customApi = {
       getNamespacedCustomObject: mock(() =>
         Promise.resolve({
@@ -77,10 +78,14 @@ describe("CanaryService", () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        CanaryRepository,
+        CanaryMongoRepository,
+        {
+          provide: CANARY_REPOSITORY,
+          useExisting: CanaryMongoRepository,
+        },
         CanaryService,
         { provide: K8S_CUSTOM_OBJECTS_API, useValue: customApi },
-        { provide: POSTGRES_SQL, useValue: sql },
+        { provide: MONGO_CLIENT, useValue: mongo },
       ],
     }).compile();
 
@@ -322,6 +327,51 @@ describe("CanaryService", () => {
       });
       expect(result.canaryPercent).toBe(40);
       expect(customApi.replaceNamespacedCustomObject).toHaveBeenCalled();
+    });
+
+    it("resolves Mongo _id when updating canary percent", async () => {
+      sqlQueue.push(
+        [baseServiceRow()],
+        [
+          {
+            _id: "canary-mongo-1",
+            service_id: "svc-1",
+            stable_revision: "rev-s",
+            canary_revision: "rev-c",
+            canary_percent: 10,
+            status: "progressing",
+            created_at: "2020-01-01T00:00:00.000Z",
+            updated_at: "2020-01-01T00:00:00.000Z",
+          },
+        ],
+        [
+          {
+            _id: "canary-mongo-1",
+            service_id: "svc-1",
+            stable_revision: "rev-s",
+            canary_revision: "rev-c",
+            canary_percent: 50,
+            status: "progressing",
+            created_at: "2020-01-01T00:00:00.000Z",
+            updated_at: "2020-01-02T00:00:00.000Z",
+          },
+        ],
+      );
+
+      customApi.getNamespacedCustomObject.mockResolvedValue({
+        spec: {
+          template: {
+            metadata: { annotations: {} },
+            spec: { containers: [{ image: "x" }] },
+          },
+        },
+      });
+
+      const result = await service.updatePercent("tenant-a", "svc-1", {
+        percent: 50,
+      });
+      expect(result.id).toBe("canary-mongo-1");
+      expect(result.canaryPercent).toBe(50);
     });
   });
 

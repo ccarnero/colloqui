@@ -1,14 +1,6 @@
 import { Global, Module } from "@nestjs/common";
 import { ObservabilityModule } from "@yoizen/observability";
-import { TenantConnectionManager } from "@yoizen/database";
-import {
-  LAZY_NATS,
-  NatsPublisher,
-  lazyNatsProvider,
-} from "./providers/nats.provider";
-import { TenantDeletionEvictionListener } from "./providers/tenant-deletion-eviction-listener";
-import { REDIS_CLIENT, redisProvider } from "./providers/redis.provider";
-import { initYoizenClawTenantSchema } from "./providers/yoizenclaw-schema-initializer";
+import { ProvidersModule } from "./providers/providers.module";
 import { AgentsModule } from "./modules/agents/agents.module";
 import { JobsModule } from "./modules/jobs/jobs.module";
 import { ConfigFilesModule } from "./modules/config-files/config-files.module";
@@ -18,17 +10,12 @@ import { TemplatesModule } from "./modules/templates/templates.module";
 import { AdaptersModule } from "./modules/adapters/adapters.module";
 import { MemoriesModule } from "./modules/memories/memories.module";
 
-function createYoizenClawTenantConnectionManager(): TenantConnectionManager {
-  const tcm = new TenantConnectionManager();
-  tcm.setSchemaInitializer(initYoizenClawTenantSchema);
-  return tcm;
-}
-
-/** Registers lazy NATS and tenant DB manager as global providers for admin modules. */
+/** Root module: global providers and feature modules. */
 @Global()
 @Module({
   imports: [
     ObservabilityModule.forRoot({ serviceName: "yoizenclaw-admin-service" }),
+    ProvidersModule,
     AgentsModule,
     JobsModule,
     ConfigFilesModule,
@@ -38,16 +25,5 @@ function createYoizenClawTenantConnectionManager(): TenantConnectionManager {
     AdaptersModule,
     MemoriesModule,
   ],
-  providers: [
-    lazyNatsProvider,
-    redisProvider,
-    {
-      provide: TenantConnectionManager,
-      useFactory: createYoizenClawTenantConnectionManager,
-    },
-    NatsPublisher,
-    TenantDeletionEvictionListener,
-  ],
-  exports: [LAZY_NATS, REDIS_CLIENT, TenantConnectionManager, NatsPublisher],
 })
 export class AppModule {}

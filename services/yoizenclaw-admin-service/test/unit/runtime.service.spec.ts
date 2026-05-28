@@ -1,53 +1,38 @@
-import { describe, it, expect, beforeAll, beforeEach, vi } from "bun:test";
-import { Test, TestingModule } from "@nestjs/testing";
+import "../setup-env";
+import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { Test } from "@nestjs/testing";
+import { RuntimeService } from "../../src/modules/runtime/runtime.service";
+import { YoizenclawTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
 import { REDIS_CLIENT } from "../../src/providers/redis.provider";
 
 describe("RuntimeService", () => {
-  let RuntimeService: typeof import("../../src/modules/runtime/runtime.service").RuntimeService;
-  let TenantConnectionManager: typeof import("@yoizen/database").TenantConnectionManager;
-  let service: InstanceType<
-    typeof import("../../src/modules/runtime/runtime.service").RuntimeService
-  >;
-  let sqlFn: ReturnType<typeof vi.fn>;
-  let redisGet: ReturnType<typeof vi.fn>;
-  let redisSet: ReturnType<typeof vi.fn>;
-
-  beforeAll(async () => {
-    process.env.POSTGRES_PASSWORD ??= "test-unit-secret";
-    const rs = await import("../../src/modules/runtime/runtime.service");
-    const tm = await import("@yoizen/database");
-    RuntimeService = rs.RuntimeService;
-    TenantConnectionManager = tm.TenantConnectionManager;
-  });
+  let service: RuntimeService;
+  let pingFn: ReturnType<typeof mock>;
+  let redisGet: ReturnType<typeof mock>;
+  let redisSet: ReturnType<typeof mock>;
 
   beforeEach(async () => {
-    sqlFn = vi.fn(
-      (_strings: TemplateStringsArray, ..._values: unknown[]) =>
-        Promise.resolve([]),
-    );
+    pingFn = mock(async () => ({ ok: 1 }));
+    const db = { command: pingFn };
     const mockManager = {
-      ensureSchema: vi.fn().mockResolvedValue(sqlFn),
-    } as unknown as InstanceType<typeof TenantConnectionManager>;
-
-    redisGet = vi.fn().mockResolvedValue(null);
-    redisSet = vi.fn().mockResolvedValue("OK");
-    const mockRedis = {
-      get: redisGet,
-      set: redisSet,
+      ensureSchema: mock(async () => db),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    redisGet = mock(async () => null);
+    redisSet = mock(async () => "OK");
+
+    const module = await Test.createTestingModule({
       providers: [
         RuntimeService,
-        { provide: TenantConnectionManager, useValue: mockManager },
-        { provide: REDIS_CLIENT, useValue: mockRedis },
+        { provide: YoizenclawTenantConnectionManager, useValue: mockManager },
+        { provide: REDIS_CLIENT, useValue: { get: redisGet, set: redisSet } },
       ],
     }).compile();
 
     service = module.get(RuntimeService);
   });
 
-  it("returns configured when SELECT 1 succeeds and records last_sync in Redis", async () => {
+  it("returns configured when ping succeeds and records last_sync in Redis", async () => {
     const result = await service.getStatus("tenant-a");
     expect(result.configured).toBe(true);
     expect(result.connected_runtimes).toContain("runtime-tenant-a-primary");
@@ -56,7 +41,7 @@ describe("RuntimeService", () => {
   });
 
   it("returns not configured when DB check throws", async () => {
-    sqlFn.mockImplementationOnce(() =>
+    pingFn.mockImplementationOnce(() =>
       Promise.reject(new Error("connection refused")),
     );
     const result = await service.getStatus("tenant-b");

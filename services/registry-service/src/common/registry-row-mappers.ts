@@ -51,7 +51,7 @@ export function mapRegisteredServiceRow(
 ): IRegisteredService {
   const envVars = row.env_vars;
   return {
-    id: String(row.id ?? ""),
+    id: String(row.id ?? row._id ?? ""),
     tenantId: String(row.tenant_id ?? ""),
     name: String(row.name ?? ""),
     image: String(row.image ?? ""),
@@ -85,7 +85,7 @@ export function mapServiceRouteRow(row: Record<string, unknown>): IServiceRoute 
     ? rawMethods.map((m) => String(m))
     : [];
   return {
-    id: String(row.id ?? ""),
+    id: String(row.id ?? row._id ?? ""),
     serviceId: String(row.service_id ?? ""),
     pathPrefix: String(row.path_prefix ?? ""),
     methods,
@@ -99,7 +99,7 @@ export function mapCanaryDeploymentRow(
   row: Record<string, unknown>,
 ): ICanaryStatus {
   return {
-    id: String(row.id ?? ""),
+    id: String(row.id ?? row._id ?? ""),
     serviceId: String(row.service_id ?? ""),
     stableRevision: String(row.stable_revision ?? ""),
     canaryRevision: String(row.canary_revision ?? ""),

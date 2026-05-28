@@ -8,6 +8,7 @@ export type {
   SharedTenantDatabaseModeValue,
 } from "./tenant-connection-manager";
 export { TenantDeletionEvictionListener } from "./tenant-deletion-eviction-listener";
+export { TenantMongoDeletionEvictionListener } from "./tenant-mongo-deletion-eviction-listener";
 export { TenantReadySchemaListener } from "./tenant-ready-schema-listener";
 export { requireEnv } from "./require-env";
 export {
@@ -51,6 +52,7 @@ export type {
 } from "./nats-provider";
 export {
   checkPostgres,
+  checkMongo,
   checkNats,
   checkRedis,
   checkK8s,
@@ -99,3 +101,43 @@ export {
   isPostgresUniqueViolation,
   isFatalPoolError,
 } from "./postgres-errors";
+export {
+  TenantMongoConnectionManager,
+} from "./tenant-mongo-connection-manager";
+export type {
+  ITenantMongoConnectionManagerOptions,
+} from "./tenant-mongo-connection-manager";
+export {
+  MONGO_CLIENT,
+  MongoModule,
+  createMongoProvider,
+  buildMongoUri,
+  PLATFORM_MONGO_POOL_OPTIONS,
+} from "./mongo-provider";
+export type {
+  MongoPoolOptions,
+  MongoModuleOptions,
+} from "./mongo-provider";
+export { applyMongoSchema } from "./mongo-schema-applier";
+export {
+  isMongoDuplicateKeyError,
+  isFatalMongoError,
+} from "./mongo-errors";
+export {
+  getNatsTenantMongoHealthStatus,
+  type INatsTenantMongoHealthInput,
+  type ITenantMongoConnectivity,
+} from "./nats-tenant-mongo-health";
+export { NatsTenantMongoHealthController } from "./mongo-tenant-health.controller";
+export type { MongoClient, Db, ClientSession } from "mongodb";
+export type { IStringIdDoc } from "./mongo-types";
+export { resolveStorageEngine } from "./engine";
+export type { StorageEngine } from "./engine";
+export { selectEngineModule } from "./engine-module.factory";
+export { createRepositoryProvider } from "./repository.provider";
+export {
+  TENANT_DB_CONNECTION_MANAGER,
+} from "./tenant-connection-manager.token";
+export type {
+  ITenantDbConnectionManager,
+} from "./tenant-connection-manager.token";

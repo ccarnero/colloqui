@@ -4,6 +4,10 @@
 
 The YoizenClaw Admin Service manages the administrative configuration for conversational agents, credentials, scheduled jobs, and config files in a multi-tenant architecture. It serves as the configuration backend for the YoizenClaw runtime, publishing events via NATS JetStream when configuration changes occur.
 
+## Storage engines
+
+Supports **Postgres** (default) and **Mongo** for agents, jobs, job-executions, and config-files repositories. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+
 ## Tech Stack
 
 | Category | Technology |
@@ -11,7 +15,7 @@ The YoizenClaw Admin Service manages the administrative configuration for conver
 | Runtime | Bun 1.3 |
 | Framework | NestJS 11 + Fastify |
 | Language | TypeScript 5.7 (strict) |
-| Database | Per-tenant PostgreSQL via `postgres` (postgres.js) |
+| Database | Per-tenant MongoDB via official `mongodb` driver |
 | Messaging | NATS JetStream (publisher only) |
 | Validation | `class-validator` + `class-transformer` |
 | Shared | `@yoizen/shared` (workspace: `packages/shared/`) |
@@ -26,14 +30,14 @@ src/
 ├── guards/
 │   └── tenant.guard.ts                         # Re-exports TenantGuard from @yoizen/database
 ├── providers/
-│   ├── tenant-connection-manager.ts            # Per-tenant PostgreSQL pools (Map<string, Sql>)
+│   ├── tenant-connection-manager.ts            # Per-tenant MongoDB pools (Map<string, MongoClient>)
 │   └── nats.provider.ts                        # NATS_CONNECTION, JETSTREAM_MANAGER, NatsPublisher
 └── modules/
     ├── agents/
     │   ├── agents.module.ts
     │   ├── agents.controller.ts                # CRUD + publish/unpublish endpoints
     │   ├── agents.service.ts                   # Business logic, NATS event publishing
-    │   ├── agents.repository.ts                # SQL queries postgres.js
+    │   ├── agents.repository.ts                # SQL queries mongodb driver
     │   └── agents.dto.ts                       # CreateAgentDto, UpdateAgentDto (class-validator)
     ├── credentials/
     │   ├── credentials.module.ts
@@ -74,14 +78,14 @@ test/
 | File | Purpose |
 |------|---------|
 | `src/app.module.ts` | @Global() module exporting all providers (TenantConnectionManager, NatsPublisher) |
-| `src/providers/tenant-connection-manager.ts` | Lazy pool creation per tenant; connects to `postgres.{tenantId}-{env}-ns.svc.cluster.local` |
+| `src/providers/tenant-connection-manager.ts` | Lazy pool creation per tenant; connects to `mongo.{tenantId}-{env}-ns.svc.cluster.local` |
 | `src/providers/nats.provider.ts` | NATS connection, JetStream manager, NatsPublisher with event methods |
 | `src/modules/agents/agents.service.ts` | Agent CRUD + publish/unpublish logic with NATS events |
 | `src/modules/credentials/credentials.service.ts` | Credential CRUD with placeholder encryption |
 | `src/modules/jobs/jobs.service.ts` | Job CRUD + scheduling + manual trigger |
 | `src/modules/config-files/config-files.service.ts` | Config file management + deploy sync |
 | `src/modules/runtime/runtime.service.ts` | Runtime status and metrics |
-| `src/modules/health/health.controller.ts` | Health checks for PostgreSQL connectivity |
+| `src/modules/health/health.controller.ts` | Health checks for MongoDB connectivity |
 
 ## API Endpoints
 
@@ -351,7 +355,7 @@ interface EventEnvelope {
 
 ```
 AppModule (@Global)
-├── TenantConnectionManager (Map<string, Sql>)
+├── TenantConnectionManager (Map<string, MongoClient>)
 ├── NatsPublisher (publishes to EVENTS stream)
 ├── AgentsModule
 │   ├── AgentsController (HTTP endpoints)
@@ -366,8 +370,8 @@ AppModule (@Global)
 
 ### Data Flow
 
-1. **Create Agent**: `POST /admin/agents` → AgentsController → AgentsService → AgentsRepository → PostgreSQL → NatsPublisher emits `agent.published` (when published)
-2. **Multi-tenancy**: Each request includes `x-yoizen-tenant` header → TenantConnectionManager routes to tenant's PostgreSQL instance
+1. **Create Agent**: `POST /admin/agents` → AgentsController → AgentsService → AgentsRepository → MongoDB → NatsPublisher emits `agent.published` (when published)
+2. **Multi-tenancy**: Each request includes `x-yoizen-tenant` header → TenantConnectionManager routes to tenant's MongoDB instance
 3. **Events**: Configuration changes trigger NATS events for runtime sync (agent.published, credential.rotated, runtime.config.sync, job.trigger)
 4. **Lazy Connection**: First request to a tenant creates connection pool; subsequent requests reuse pool
 5. **Schema Initialization**: `ensureSchema()` creates tables on first tenant access
@@ -375,8 +379,8 @@ AppModule (@Global)
 ### Multi-Tenancy
 
 - **Tenant Header**: `x-yoizen-tenant` (from `@yoizen/shared`)
-- **Connection Pool**: `Map<string, Sql>` keyed by tenant ID
-- **PostgreSQL Host**: `postgres.{tenantId}-{env}-ns.svc.cluster.local`
+- **Connection Pool**: `Map<string, MongoClient>` keyed by tenant ID
+- **MongoDB Host**: `mongo.{tenantId}-{env}-ns.svc.cluster.local`
 - **Database**: `yoizen` per tenant
 - **Schema**: Auto-created on first access via `ensureSchema()`
 
@@ -384,7 +388,7 @@ AppModule (@Global)
 
 | Target | Protocol | Direction | Purpose |
 |--------|----------|-----------|---------|
-| Per-tenant PostgreSQL | TCP | Outbound | Persist agents, credentials, channels, jobs, config files |
+| Per-tenant MongoDB | TCP | Outbound | Persist agents, credentials, channels, jobs, config files |
 | NATS JetStream (INGRESS per tenant) | NATS | Outbound | Publish configuration change events |
 
 ### DI Tokens
@@ -404,9 +408,9 @@ AppModule (@Global)
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP server port |
-| `POSTGRES_PORT` | `5432` | PostgreSQL port (per-tenant) |
-| `POSTGRES_USER` | `yoizen` | PostgreSQL username |
-| `POSTGRES_PASSWORD` | `yoizen-dev-password` | PostgreSQL password |
+| `MONGO_PORT` | `27017` | MongoDB port (per-tenant) |
+| `MONGO_USER` | `yoizen` | MongoDB username |
+| `MONGO_PASSWORD` | `yoizen-dev-password` | MongoDB password |
 | `PLATFORM_ENVIRONMENT` | `dev` | Environment name (dev, qa, staging, production) |
 | `NATS_URL` | `nats://localhost:4222` | NATS server URL |
 | `WEBHOOK_BASE_URL` | `https://api.yoizen.io` | Base URL for webhook generation |
@@ -428,10 +432,10 @@ AppModule (@Global)
 ## Code Style and Conventions
 
 - **Global providers**: `AppModule` is `@Global()`, exporting `TenantConnectionManager` and `NatsPublisher`
-- **Per-tenant pools**: `Map<string, Sql>` keyed by tenant ID, lazy creation on first request
+- **Per-tenant pools**: `Map<string, MongoClient>` keyed by tenant ID, lazy creation on first request
 - **Schema lazy init**: `ensureSchema()` runs once per tenant, creates tables and indexes
 - **DTOs in same folder**: `agents.dto.ts` next to `agents.controller.ts` (no subfolders)
-- **SQL crudo**: postgres.js with tagged templates (no ORM)
+- **MongoDB queries**: mongodb driver with tagged templates (no ORM)
 - **Validation**: global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, `transform`
 - **NATS only publisher**: No consumers in this service (only publishes to tenant-scoped `evt.*` subjects)
 - **Security**: Never return credential `value` field in API responses (⚠️ TEMPORAL: stored in plaintext)
@@ -453,16 +457,16 @@ bun install
 bun run start:dev
 ```
 
-Requires local NATS and PostgreSQL per tenant.
+Requires local NATS and MongoDB per tenant.
 
 ## Dependencies on Other Services
 
 | Service | Relationship |
 |---------|-------------|
 | **NATS JetStream** | Publishes configuration change events to tenant-scoped ingress streams |
-| **Per-tenant PostgreSQL** | Persists agents, credentials, jobs, and config files |
+| **Per-tenant MongoDB** | Persists agents, credentials, jobs, and config files |
 | **api-gateway** | Upstream proxy (all admin endpoints proxied through gateway) |
-| **tenant-service** | Provisions the per-tenant PostgreSQL instances |
+| **tenant-service** | Provisions the per-tenant MongoDB instances |
 | **YoizenClaw runtime** | Consumes NATS events for configuration sync |
 | **`@yoizen/shared`** | Stream config, `EventEnvelope`, `TENANT_HEADER` |
 | **`@yoizen/observability`** | Pino logging, OpenTelemetry tracing |
@@ -474,7 +478,7 @@ Requires local NATS and PostgreSQL per tenant.
 - Never expose credential `value` in API responses
 - All API requests require tenant header for multi-tenancy isolation
 - Input validation via `class-validator` on all DTOs
-- SQL injection prevention via postgres.js prepared statements
+- SQL injection prevention via mongodb driver prepared statements
 
 ## Seed Data
 

@@ -10,10 +10,15 @@ import {
   type TenantDatabaseTierValue,
 } from "@yoizen/shared";
 import { K8S_CORE_API } from "../../providers/kubernetes.provider";
-import { isKubernetesConflictError } from "../../providers/kubernetes-errors";
+import {
+  isKubernetesConflictError,
+  isKubernetesNotFoundError,
+} from "../../providers/kubernetes-errors";
 import { JETSTREAM_MANAGER } from "../../providers/nats.module";
-import { TenantPostgresProvisioner } from "../../providers/postgres.provider";
-import { TenantUsagePostgresProvisioner } from "../../providers/postgres-usage.provider";
+import {
+  TENANT_PROVISIONER,
+  type ITenantProvisioner,
+} from "../../providers/tenant-provisioner.interface";
 import { YoizenClawRuntimeProvisioner } from "../../providers/yoizenclaw-runtime.provider";
 import { tenantServiceConfig } from "../../config";
 import {
@@ -28,6 +33,16 @@ const LABEL_MANAGED_BY = "yoizen.io/managed-by";
 const LABEL_PART_OF = "app.kubernetes.io/part-of";
 const MANAGED_BY_VALUE = "tenant-service";
 const PART_OF_VALUE = "yoizen-arch";
+
+const NAMESPACE_TERMINATING_PHASE = "Terminating";
+
+function namespaceTerminationTimeoutMs(): number {
+  return Number(process.env.TENANT_NAMESPACE_TERMINATION_TIMEOUT_MS) || 60_000;
+}
+
+function namespaceTerminationPollMs(): number {
+  return Number(process.env.TENANT_NAMESPACE_TERMINATION_POLL_MS) || 1_000;
+}
 
 interface ITenantProvisioningRunParams {
   readonly name: string;
@@ -52,8 +67,7 @@ export class TenantProvisioningExecutor {
   constructor(
     @Inject(K8S_CORE_API) private readonly k8sApi: k8s.CoreV1Api,
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
-    private readonly pgProvisioner: TenantPostgresProvisioner,
-    private readonly pgUsageProvisioner: TenantUsagePostgresProvisioner,
+    @Inject(TENANT_PROVISIONER) private readonly provisioner: ITenantProvisioner,
     private readonly runtimeProvisioner: YoizenClawRuntimeProvisioner,
   ) {
     const env = tenantServiceConfig.platformEnvironment;
@@ -66,32 +80,8 @@ export class TenantProvisioningExecutor {
   }
 
   /**
-   * Creates or reconciles the tenant namespace, then provisions OLTP + usage
-   * PostgreSQL according to `tier`, and finally applies the per-tenant
-   * `yoizenclaw-runtime` Knative Service into the namespace:
-   *
-   * - **Shared**: only creates a logical database + role on the shared
-   *   CloudNativePG cluster (no per-tenant Postgres StatefulSet/PVC). The
-   *   namespace itself is still created because it is the per-tenant
-   *   deployment scope for `registry-service` (Knative Services). An empty
-   *   namespace is essentially free in K8s (one metadata object + default
-   *   ServiceAccount).
-   * - **Dedicated**: provisions per-tenant Postgres + TimescaleDB StatefulSets
-   *   inside the namespace and blocks until both report ready.
-   *
-   * After Postgres is ready we apply `yoizenclaw-runtime` via
-   * `YoizenClawRuntimeProvisioner.apply` (idempotent, conflict-replaces) so
-   * the runtime ksvc pod can resolve `postgres-credentials` from the same
-   * namespace. Set `YOIZENCLAW_RUNTIME_AUTO_APPLY=false` if a GitOps
-   * controller owns it instead.
-   *
-   * Idempotent: namespace create conflict (409) continues with `readNamespace`.
-   *
-   * Each phase is wrapped in `runPhase` which logs entry/exit + duration so
-   * a hang in any one step (most often `pgProvisioner.provision` for shared
-   * waiting on the CNPG superuser secret, or `*.waitForReady` for dedicated
-   * waiting on a StatefulSet) shows up as a "phase started but never ended"
-   * gap in the structured logs instead of a silent JetStream redelivery loop.
+   * Creates or reconciles the tenant namespace, provisions tenant storage
+   * (shared logical DB or dedicated StatefulSet), then applies yoizenclaw-runtime.
    */
   async run(params: ITenantProvisioningRunParams): Promise<{
     nsName: string;
@@ -107,56 +97,21 @@ export class TenantProvisioningExecutor {
       this.ensureNamespace(name, nsName),
     );
 
-    // OLTP + usage tracks run in parallel (different K8s resources, different
-    // pools); each track is wrapped individually so a hang in one branch is
-    // attributable on its own — Promise.all would otherwise mask which leg
-    // is stuck. `runPhase` itself rethrows, so the outer Promise.all still
-    // surfaces the first failure with the full error chain preserved.
-    await Promise.all([
-      this.runPhase(`postgres.provision ${phaseTag}`, () =>
-        this.pgProvisioner.provision({
-          namespace: nsName,
-          tenantId: name,
-          tier,
-        }),
-      ),
-      this.runPhase(`postgres-usage.provision ${phaseTag}`, () =>
-        this.pgUsageProvisioner.provisionUsage(nsName, tier),
-      ),
-    ]);
-    await Promise.all([
-      this.runPhase(`postgres.waitForReady ${phaseTag}`, () =>
-        this.pgProvisioner.waitForReady(nsName, tier),
-      ),
-      this.runPhase(`postgres-usage.waitForReady ${phaseTag}`, () =>
-        this.pgUsageProvisioner.waitForReady(nsName, tier),
-      ),
-    ]);
+    await this.runPhase(`database.provision ${phaseTag}`, () =>
+      this.provisioner.provision({
+        namespace: nsName,
+        tenantId: name,
+        tier,
+      }),
+    );
+    await this.runPhase(`database.waitForReady ${phaseTag}`, () =>
+      this.provisioner.waitForReady(nsName, tier),
+    );
 
-    // The per-tenant ingress JetStream stream (`INGRESS-<TENANT>`) is the
-    // delivery substrate for every `evt.<tenant>.>` subject. It is created
-    // lazily by `yoizenclaw-admin-service` (first publish) and the
-    // `yoizenclaw-runtime-gateway` (first execution submission) — but the
-    // per-tenant `yoizenclaw-runtime` pod boots and tries to attach durable
-    // JetStream consumers as part of its FastAPI `lifespan`. If the stream
-    // does not exist yet the runtime pod crashes with `NotFoundError:
-    // stream not found` (NATS err_code 10059), CrashLoopBackOffs, and
-    // recovers only when an upstream service finally publishes.
-    //
-    // Pre-provisioning the stream here closes that race: by the time we
-    // apply the runtime ksvc the stream is guaranteed to exist on the
-    // broker. `ensureTenantIngressStream` is idempotent and treats
-    // `STREAM_NAME_IN_USE` (10058) as success, so JetStream redelivery of
-    // this provision message converges cleanly.
     await this.runPhase(`nats.ensure-ingress-stream ${phaseTag}`, () =>
       ensureTenantIngressStream(this.jsm, name),
     );
 
-    // The runtime Knative Service depends on the per-namespace
-    // `postgres-credentials` Secret + `postgres` Service being in place; we
-    // therefore apply it strictly after Postgres readiness. The provisioner
-    // is idempotent (create → on 409 replace) so retries from JetStream
-    // redelivery converge cleanly.
     await this.runPhase(`yoizenclaw-runtime.apply ${phaseTag}`, () =>
       this.runtimeProvisioner.apply({ namespace: nsName, tenantId: name }),
     );
@@ -169,11 +124,6 @@ export class TenantProvisioningExecutor {
     return { nsName, namespacePhase: phase };
   }
 
-  /**
-   * Creates the tenant namespace; returns its observed phase. On 409 Conflict
-   * (already exists) re-reads the namespace so a retried provision still
-   * returns a coherent phase value.
-   */
   private async ensureNamespace(name: string, nsName: string): Promise<string> {
     const body: k8s.V1Namespace = {
       metadata: {
@@ -192,24 +142,65 @@ export class TenantProvisioningExecutor {
       const ns = unwrapNamespace(created);
       return ns.status?.phase ?? "Active";
     } catch (err: unknown) {
-      if (isKubernetesConflictError(err)) {
-        this.logger.log(
-          `Namespace ${nsName} already exists, continuing provisioning`,
-        );
-        const read = await this.k8sApi.readNamespace({ name: nsName });
-        const ns = unwrapNamespace(read);
-        return ns.status?.phase ?? "Active";
-      }
-      throw err;
+      if (!isKubernetesConflictError(err)) throw err;
+      return this.handleExistingNamespace(name, nsName, body);
     }
   }
 
   /**
-   * Runs `fn` and logs `phase started` / `phase ok in Nms` markers around it.
-   * Errors are rethrown after `phase failed in Nms` is emitted so the caller
-   * (handler → JetStream) decides retry vs term — we only contribute an
-   * audit trail with a stable `phase=...` tag for log greps / Loki alerts.
+   * Reconciles an existing namespace. If it's stuck in `Terminating` (e.g.
+   * leftover from a previous delete), we wait until it's fully gone, then
+   * recreate it. Otherwise the upcoming secret/StatefulSet writes would 403
+   * with `NamespaceTerminating`.
    */
+  private async handleExistingNamespace(
+    name: string,
+    nsName: string,
+    body: k8s.V1Namespace,
+  ): Promise<string> {
+    const read = await this.k8sApi.readNamespace({ name: nsName });
+    const ns = unwrapNamespace(read);
+    const phase = ns.status?.phase ?? "Active";
+
+    if (phase !== NAMESPACE_TERMINATING_PHASE) {
+      this.logger.log(
+        `Namespace ${nsName} already exists (phase=${phase}), continuing provisioning`,
+      );
+      return phase;
+    }
+
+    this.logger.log(
+      `Namespace ${nsName} is Terminating; waiting for full deletion before recreating`,
+    );
+    await this.waitForNamespaceDeleted(nsName);
+
+    const recreated = await this.k8sApi.createNamespace({ body });
+    const created = unwrapNamespace(recreated);
+    this.logger.log(`Namespace ${nsName} recreated after termination`);
+    return created.status?.phase ?? "Active";
+  }
+
+  private async waitForNamespaceDeleted(nsName: string): Promise<void> {
+    const timeoutMs = namespaceTerminationTimeoutMs();
+    const pollMs = namespaceTerminationPollMs();
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        await this.k8sApi.readNamespace({ name: nsName });
+      } catch (err: unknown) {
+        if (isKubernetesNotFoundError(err)) return;
+        throw err;
+      }
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, pollMs);
+        if (typeof timer.unref === "function") timer.unref();
+      });
+    }
+    throw new InternalServerErrorException(
+      `Namespace ${nsName} did not finish terminating within ${timeoutMs}ms`,
+    );
+  }
+
   private async runPhase<T>(
     phaseLabel: string,
     fn: () => Promise<T>,

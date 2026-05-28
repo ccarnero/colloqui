@@ -6,36 +6,48 @@ import {
   NotFoundException,
   BadRequestException,
 } from "@nestjs/common";
-import { TenantRolesRepository } from "../../src/modules/tenant-roles/tenant-roles.repository";
+import { TENANT_ROLES_REPOSITORY } from "../../src/modules/tenant-roles/tenant-roles.repository.interface";
 import { TenantRolesService } from "../../src/modules/tenant-roles/tenant-roles.service";
-import { AuthTenantConnectionManager } from "../../src/providers/auth-tenant-connection-manager";
-
-function createMockSql() {
-  const fn = mock((..._args: unknown[]) => Promise.resolve([]));
-  (fn as Record<string, unknown>).begin = mock(
-    async (cb: (tx: unknown) => Promise<void>) => {
-      const tx = mock((..._args: unknown[]) => Promise.resolve([]));
-      await cb(tx);
-    },
-  );
-  return fn as unknown as ReturnType<typeof import("postgres")>;
-}
 
 describe("TenantRolesService", () => {
   let service: TenantRolesService;
-  let sql: ReturnType<typeof createMockSql>;
+  let repository: {
+    findSystemRoleId: ReturnType<typeof mock>;
+    insertSystemRoleOnConflict: ReturnType<typeof mock>;
+    findRoleByTenantAndName: ReturnType<typeof mock>;
+    createRoleWithPermissions: ReturnType<typeof mock>;
+    listSummariesByTenant: ReturnType<typeof mock>;
+    findActiveRoleBase: ReturnType<typeof mock>;
+    listPermissionsForRole: ReturnType<typeof mock>;
+    findRoleForUpdate: ReturnType<typeof mock>;
+    findDuplicateName: ReturnType<typeof mock>;
+    updateRoleTransaction: ReturnType<typeof mock>;
+    findForDelete: ReturnType<typeof mock>;
+    hasActiveUsersForRole: ReturnType<typeof mock>;
+    softDeleteRole: ReturnType<typeof mock>;
+  };
 
   beforeEach(async () => {
-    sql = createMockSql();
-    const authTcm = {
-      ensureSchema: mock(() => Promise.resolve(sql)),
+    repository = {
+      findSystemRoleId: mock(() => Promise.resolve([])),
+      insertSystemRoleOnConflict: mock(() => Promise.resolve()),
+      findRoleByTenantAndName: mock(() => Promise.resolve([])),
+      createRoleWithPermissions: mock(() => Promise.resolve()),
+      listSummariesByTenant: mock(() => Promise.resolve([])),
+      findActiveRoleBase: mock(() => Promise.resolve([])),
+      listPermissionsForRole: mock(() => Promise.resolve([])),
+      findRoleForUpdate: mock(() => Promise.resolve([])),
+      findDuplicateName: mock(() => Promise.resolve([])),
+      updateRoleTransaction: mock(() => Promise.resolve()),
+      findForDelete: mock(() => Promise.resolve([])),
+      hasActiveUsersForRole: mock(() => Promise.resolve(false)),
+      softDeleteRole: mock(() => Promise.resolve()),
     };
 
     const module = await Test.createTestingModule({
       providers: [
-        TenantRolesRepository,
         TenantRolesService,
-        { provide: AuthTenantConnectionManager, useValue: authTcm },
+        { provide: TENANT_ROLES_REPOSITORY, useValue: repository },
       ],
     }).compile();
 
@@ -44,19 +56,17 @@ describe("TenantRolesService", () => {
 
   describe("seedSystemRole", () => {
     it("should return existing system role ID if present", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
-        { id: "role-1" },
-      ]);
+      repository.findSystemRoleId.mockResolvedValueOnce([{ id: "role-1" }]);
       const id = await service.seedSystemRole("t1");
       expect(id).toBe("role-1");
     });
 
     it("should create and return new system role ID if absent", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+      repository.findSystemRoleId.mockResolvedValueOnce([]);
       const id = await service.seedSystemRole("t1");
       expect(typeof id).toBe("string");
       expect(id.length).toBeGreaterThan(0);
+      expect(repository.insertSystemRoleOnConflict).toHaveBeenCalled();
     });
   });
 
@@ -73,7 +83,7 @@ describe("TenantRolesService", () => {
     });
 
     it("should throw ConflictException if role name already exists", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      repository.findRoleByTenantAndName.mockResolvedValueOnce([
         { id: "existing" },
       ]);
       await expect(
@@ -101,7 +111,7 @@ describe("TenantRolesService", () => {
           user_count: 2,
         },
       ];
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce(rows);
+      repository.listSummariesByTenant.mockResolvedValueOnce(rows);
       const result = await service.listByTenant("t1");
       expect(result).toHaveLength(1);
       expect(result[0].user_count).toBe(2);
@@ -111,7 +121,7 @@ describe("TenantRolesService", () => {
 
   describe("getWithPermissions", () => {
     it("should throw NotFoundException if role not found", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+      repository.findActiveRoleBase.mockResolvedValueOnce([]);
       await expect(
         service.getWithPermissions("t1", "nonexistent"),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -127,8 +137,8 @@ describe("TenantRolesService", () => {
         created_at: new Date(),
         updated_at: new Date(),
       };
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([role]);
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      repository.findActiveRoleBase.mockResolvedValueOnce([role]);
+      repository.listPermissionsForRole.mockResolvedValueOnce([
         { resource: "agents", action: "read" },
       ]);
       const result = await service.getWithPermissions("t1", "r1");
@@ -140,14 +150,14 @@ describe("TenantRolesService", () => {
 
   describe("delete", () => {
     it("should throw NotFoundException if role not found", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+      repository.findForDelete.mockResolvedValueOnce([]);
       await expect(service.delete("t1", "nonexistent")).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it("should throw ForbiddenException for system role", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      repository.findForDelete.mockResolvedValueOnce([
         { id: "r1", is_system: true },
       ]);
       await expect(service.delete("t1", "r1")).rejects.toBeInstanceOf(
@@ -156,37 +166,35 @@ describe("TenantRolesService", () => {
     });
 
     it("should throw BadRequestException if role has active users", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      repository.findForDelete.mockResolvedValueOnce([
         { id: "r1", is_system: false },
       ]);
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
-        { id: "u1" },
-      ]);
+      repository.hasActiveUsersForRole.mockResolvedValueOnce(true);
       await expect(service.delete("t1", "r1")).rejects.toBeInstanceOf(
         BadRequestException,
       );
     });
 
     it("should soft-delete a role with no users", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      repository.findForDelete.mockResolvedValueOnce([
         { id: "r1", is_system: false },
       ]);
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+      repository.hasActiveUsersForRole.mockResolvedValueOnce(false);
       await expect(service.delete("t1", "r1")).resolves.toBeUndefined();
+      expect(repository.softDeleteRole).toHaveBeenCalledWith("t1", "r1");
     });
   });
 
   describe("update", () => {
     it("throws NotFoundException when role missing", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+      repository.findRoleForUpdate.mockResolvedValueOnce([]);
       await expect(
         service.update("t1", "missing", { name: "x" }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("throws ForbiddenException when renaming system role", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      repository.findRoleForUpdate.mockResolvedValueOnce([
         {
           id: "r1",
           name: "tenant_admin",
@@ -199,16 +207,14 @@ describe("TenantRolesService", () => {
     });
 
     it("throws ConflictException for duplicate name", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      repository.findRoleForUpdate.mockResolvedValueOnce([
         {
           id: "r1",
           name: "editor",
           is_system: false,
         },
       ]);
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
-        { id: "other" },
-      ]);
+      repository.findDuplicateName.mockResolvedValueOnce([{ id: "other" }]);
       await expect(
         service.update("t1", "r1", { name: "taken" }),
       ).rejects.toBeInstanceOf(ConflictException);

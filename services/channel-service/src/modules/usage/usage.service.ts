@@ -1,5 +1,8 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
-import { UsageRepository } from "./usage.repository";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import {
+  USAGE_REPOSITORY,
+  type IUsageRepository,
+} from "./usage.repository.interface";
 import type {
   IUsageBucketRow,
   IUsageTotalsRow,
@@ -18,7 +21,10 @@ const MAX_RANGE_MS = 90 * 24 * 60 * 60 * 1_000;
 
 @Injectable()
 export class UsageService {
-  constructor(private readonly repository: UsageRepository) {}
+  constructor(
+    @Inject(USAGE_REPOSITORY)
+    private readonly repository: IUsageRepository,
+  ) {}
 
   async getUsage(
     tenantId: string,

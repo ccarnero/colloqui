@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import type { EventEnvelope } from "@yoizen/shared";
-import { AuditRepository } from "../../src/modules/audit/audit.repository";
+import { AuditMongoRepository } from "../../src/modules/audit/audit.mongo.repository";
+import {
+  AUDIT_REPOSITORY,
+} from "../../src/modules/audit/audit.repository.interface";
 import {
   AuditService,
   type IAuditEvent,
@@ -11,7 +14,12 @@ import {
   JETSTREAM_PUBLISHER,
   NATS_CONNECTION,
 } from "../../src/providers/nats.provider";
-import { TenantConnectionManager, type Sql } from "@yoizen/database";
+import { AuditTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
+import {
+  makeFakeTenantMongoConnections,
+  makeMongoCollectionMock,
+  makeMockDb,
+} from "../make-mongo-mock";
 
 const mockNatsConnection = {
   subscribe: mock(() => ({
@@ -33,17 +41,14 @@ const mockJsm = {
     add: mock(() => Promise.resolve({})),
   },
 };
-const mockJs = { consumers: { get: mock(() => Promise.reject(new Error("skip"))) } };
+const mockJs = {
+  consumers: { get: mock(() => Promise.reject(new Error("skip"))) },
+};
 
 describe("AuditService", () => {
   let service: AuditService;
-  let mockSql: Sql;
-  let mockTenantMgr: {
-    ensureSchema: ReturnType<typeof mock>;
-    getConnection: ReturnType<typeof mock>;
-    isInitialized: ReturnType<typeof mock>;
-    markInitialized: ReturnType<typeof mock>;
-  };
+  let insertMany: ReturnType<typeof mock>;
+  let mockTenantMgr: ReturnType<typeof makeFakeTenantMongoConnections>;
 
   beforeEach(async () => {
     const sample: IAuditEvent = {
@@ -55,45 +60,74 @@ describe("AuditService", () => {
       created_at: new Date().toISOString(),
     };
 
-    mockSql = Object.assign(
-      (_strings: TemplateStringsArray, ..._values: unknown[]) => {
-        return Promise.resolve([sample]);
-      },
-      {},
-    ) as Sql;
+    insertMany = mock(async () => ({ insertedCount: 1 }));
+    const collection = makeMongoCollectionMock({
+      insertMany,
+      find: mock(() => ({
+        sort: mock(() => ({
+          skip: mock(() => ({
+            limit: mock(() => ({
+              toArray: mock(async () => [
+                {
+                  _id: sample.id,
+                  type: sample.type,
+                  payload: sample.payload,
+                  metadata: sample.metadata,
+                  subject: sample.subject,
+                  created_at: new Date(sample.created_at),
+                },
+              ]),
+            })),
+          })),
+        })),
+      })),
+      findOne: mock(async (filter: { _id?: string }) =>
+        filter._id === "missing"
+          ? null
+          : {
+              _id: sample.id,
+              type: sample.type,
+              payload: sample.payload,
+              metadata: sample.metadata,
+              subject: sample.subject,
+              created_at: new Date(sample.created_at),
+            },
+      ),
+    });
 
-    // ensureSchema mirrors getConnection — repositories now warm the tier
-    // cache through ensureTenantSchemaOnce/ensureTenantNamespaceOnce before
-    // any sync getConnection is reached.
-    mockTenantMgr = {
-      ensureSchema: mock(async () => mockSql),
-      getConnection: mock(() => mockSql),
-      isInitialized: mock(() => true),
-      markInitialized: mock(() => {}),
-    };
+    mockTenantMgr = makeFakeTenantMongoConnections(
+      makeMockDb({ events: collection as unknown as Record<string, unknown> }),
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        AuditRepository,
+        AuditMongoRepository,
+        {
+          provide: AUDIT_REPOSITORY,
+          useExisting: AuditMongoRepository,
+        },
         AuditService,
         { provide: NATS_CONNECTION, useValue: mockNatsConnection },
         { provide: JETSTREAM_MANAGER, useValue: mockJsm },
         { provide: JETSTREAM_PUBLISHER, useValue: mockJs },
-        { provide: TenantConnectionManager, useValue: mockTenantMgr },
+        {
+          provide: AuditTenantConnectionManager,
+          useValue: mockTenantMgr,
+        },
       ],
     }).compile();
 
     service = moduleRef.get(AuditService);
   });
 
-  it("queryEvents returns rows from SQL", async () => {
+  it("queryEvents returns rows from Mongo", async () => {
     const rows = await service.queryEvents(
       { limit: 10, offset: 0 },
       "tenant-a",
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.id).toBe("evt-1");
-    expect(mockTenantMgr.getConnection).toHaveBeenCalledWith("tenant-a");
+    expect(mockTenantMgr.ensureSchemaCalls.get("tenant-a")).toBe(1);
   });
 
   it("getEventById returns a row when present", async () => {
@@ -103,33 +137,11 @@ describe("AuditService", () => {
   });
 
   it("getEventById returns null when no row", async () => {
-    const emptySql = Object.assign(() => Promise.resolve([]), {}) as Sql;
-    mockTenantMgr.getConnection.mockReturnValue(emptySql);
-
     const row = await service.getEventById("missing", "tenant-a");
     expect(row).toBeNull();
   });
 
   it("persistAuditEnvelope inserts when tenant present", async () => {
-    let insertCount = 0;
-    const trackingSql = Object.assign(
-      (_strings: TemplateStringsArray, ..._values: unknown[]) => {
-        const head = _strings[0] ?? "";
-        if (head.includes("INSERT INTO events")) {
-          insertCount += 1;
-        }
-        if (head.includes("CREATE TABLE")) {
-          return Promise.resolve([]);
-        }
-        return Promise.resolve([]);
-      },
-      {},
-    ) as Sql;
-
-    mockTenantMgr.isInitialized.mockReturnValue(false);
-    mockTenantMgr.ensureSchema.mockResolvedValue(trackingSql);
-    mockTenantMgr.getConnection.mockReturnValue(trackingSql);
-
     const persist = service as unknown as {
       persistAuditEnvelope: (
         envelope: EventEnvelope,
@@ -170,7 +182,6 @@ describe("AuditService", () => {
       "events.test.subject",
     );
 
-    expect(insertCount).toBe(1);
-    expect(mockTenantMgr.markInitialized).toHaveBeenCalled();
+    expect(insertMany).toHaveBeenCalledTimes(1);
   });
 });

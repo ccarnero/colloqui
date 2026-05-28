@@ -1,6 +1,7 @@
 import { Global, Inject, Injectable, Module } from "@nestjs/common";
 import type * as k8s from "@kubernetes/client-node";
 import { PinoLoggerService } from "@yoizen/observability";
+import type { StorageEngine } from "@yoizen/database";
 import {
   REGISTRY_KNATIVE_GROUP,
   REGISTRY_KNATIVE_SERVICES_PLURAL,
@@ -13,6 +14,7 @@ import { K8S_CUSTOM_OBJECTS_API } from "./kubernetes.provider";
 const KSVC_NAME = "yoizenclaw-runtime";
 const CONTAINER_PORT = 8080;
 const POSTGRES_CREDENTIALS_SECRET = "postgres-credentials";
+const MONGO_CREDENTIALS_SECRET = "mongo-credentials";
 
 const LABELS: Readonly<Record<string, string>> = {
   "app.kubernetes.io/name": KSVC_NAME,
@@ -26,6 +28,14 @@ const KNATIVE_SERVICE_REF = {
   version: REGISTRY_KNATIVE_VERSION,
   plural: REGISTRY_KNATIVE_SERVICES_PLURAL,
 } as const;
+
+type K8sEnvVar = {
+  name: string;
+  value?: string;
+  valueFrom?: {
+    secretKeyRef: { name: string; key: string };
+  };
+};
 
 /**
  * Pure-input parameters for `buildYoizenClawRuntimeServiceBody`.
@@ -41,6 +51,7 @@ export interface IYoizenClawRuntimeBuildParams {
   readonly natsUrl: string;
   readonly connectorAdminUrl: string;
   readonly otelEndpoint: string;
+  readonly dbEngine: StorageEngine;
 }
 
 export interface IYoizenClawRuntimeApplyParams {
@@ -48,22 +59,88 @@ export interface IYoizenClawRuntimeApplyParams {
   readonly tenantId: string;
 }
 
+function buildDatabaseEnv(dbEngine: StorageEngine): K8sEnvVar[] {
+  if (dbEngine === "mongo") {
+    return [
+      { name: "DB_ENGINE", value: "mongo" },
+      { name: "MONGO_HOST", value: "mongo" },
+      { name: "MONGO_PORT", value: "27017" },
+      {
+        name: "MONGO_DB",
+        valueFrom: {
+          secretKeyRef: { name: MONGO_CREDENTIALS_SECRET, key: "MONGO_DB" },
+        },
+      },
+      {
+        name: "MONGO_USER",
+        valueFrom: {
+          secretKeyRef: { name: MONGO_CREDENTIALS_SECRET, key: "MONGO_USER" },
+        },
+      },
+      {
+        name: "MONGO_PASSWORD",
+        valueFrom: {
+          secretKeyRef: {
+            name: MONGO_CREDENTIALS_SECRET,
+            key: "MONGO_PASSWORD",
+          },
+        },
+      },
+      { name: "MONGO_AUTH_SOURCE", value: "admin" },
+      { name: "MONGO_REPLICA_SET", value: "rs0" },
+    ];
+  }
+
+  return [
+    { name: "DB_ENGINE", value: "postgres" },
+    { name: "POSTGRES_HOST", value: "postgres" },
+    { name: "POSTGRES_PORT", value: "5432" },
+    {
+      name: "POSTGRES_DB",
+      valueFrom: {
+        secretKeyRef: { name: POSTGRES_CREDENTIALS_SECRET, key: "POSTGRES_DB" },
+      },
+    },
+    {
+      name: "POSTGRES_USER",
+      valueFrom: {
+        secretKeyRef: {
+          name: POSTGRES_CREDENTIALS_SECRET,
+          key: "POSTGRES_USER",
+        },
+      },
+    },
+    {
+      name: "POSTGRES_PASSWORD",
+      valueFrom: {
+        secretKeyRef: {
+          name: POSTGRES_CREDENTIALS_SECRET,
+          key: "POSTGRES_PASSWORD",
+        },
+      },
+    },
+  ];
+}
+
 /**
  * Builds the Knative Service body that materializes yoizenclaw-runtime in a
- * tenant namespace. Mirrors `knative/tenant-yoizenclaw-runtime/base/yoizenclaw-runtime.yaml`
- * 1:1 — keep them in sync. Resolves Postgres credentials at pod runtime via
- * the per-namespace `postgres-credentials` Secret written by
- * `TenantPostgresProvisioner`, so this body is identical for shared and
- * dedicated tiers.
- *
- * Returns a plain object (`Record<string, unknown>`) to match the shape that
- * `CustomObjectsApi.createNamespacedCustomObject` expects.
+ * tenant namespace. Mirrors `knative/tenant-yoizenclaw-runtime/` overlays —
+ * keep them in sync. DB credentials resolve at pod runtime from the
+ * per-namespace Secret written by the active tenant provisioner
+ * (`postgres-credentials` or `mongo-credentials`).
  */
 export function buildYoizenClawRuntimeServiceBody(
   params: IYoizenClawRuntimeBuildParams,
 ): Record<string, unknown> {
-  const { namespace, tenantId, image, natsUrl, connectorAdminUrl, otelEndpoint } =
-    params;
+  const {
+    namespace,
+    tenantId,
+    image,
+    natsUrl,
+    connectorAdminUrl,
+    otelEndpoint,
+    dbEngine,
+  } = params;
 
   return {
     apiVersion: `${REGISTRY_KNATIVE_GROUP}/${REGISTRY_KNATIVE_VERSION}`,
@@ -96,35 +173,7 @@ export function buildYoizenClawRuntimeServiceBody(
               env: [
                 { name: "TENANT_ID", value: tenantId },
                 { name: "NATS_URL", value: natsUrl },
-                { name: "POSTGRES_HOST", value: "postgres" },
-                { name: "POSTGRES_PORT", value: "5432" },
-                {
-                  name: "POSTGRES_DB",
-                  valueFrom: {
-                    secretKeyRef: {
-                      name: POSTGRES_CREDENTIALS_SECRET,
-                      key: "POSTGRES_DB",
-                    },
-                  },
-                },
-                {
-                  name: "POSTGRES_USER",
-                  valueFrom: {
-                    secretKeyRef: {
-                      name: POSTGRES_CREDENTIALS_SECRET,
-                      key: "POSTGRES_USER",
-                    },
-                  },
-                },
-                {
-                  name: "POSTGRES_PASSWORD",
-                  valueFrom: {
-                    secretKeyRef: {
-                      name: POSTGRES_CREDENTIALS_SECRET,
-                      key: "POSTGRES_PASSWORD",
-                    },
-                  },
-                },
+                ...buildDatabaseEnv(dbEngine),
                 { name: "CONNECTOR_ADMIN_URL", value: connectorAdminUrl },
                 { name: "OTEL_EXPORTER_OTLP_ENDPOINT", value: otelEndpoint },
                 { name: "OTEL_SERVICE_NAME", value: KSVC_NAME },
@@ -201,6 +250,7 @@ export class YoizenClawRuntimeProvisioner {
       natsUrl: tenantServiceConfig.yoizenclawRuntimeNatsUrl,
       connectorAdminUrl: tenantServiceConfig.yoizenclawRuntimeConnectorAdminUrl,
       otelEndpoint: tenantServiceConfig.yoizenclawRuntimeOtelEndpoint,
+      dbEngine: tenantServiceConfig.dbEngine,
     });
 
     try {

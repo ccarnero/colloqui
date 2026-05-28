@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { NotFoundException } from "@nestjs/common";
-import { createMockPostgresSql } from "@yoizen/testing";
-import { PublicRoutesRepository } from "../../src/modules/public-routes/public-routes.repository";
+import { createMockMongoClient } from "@yoizen/testing";
+import { PublicRoutesMongoRepository } from "../../src/modules/public-routes/public-routes.mongo.repository";
+import { PUBLIC_ROUTES_REPOSITORY } from "../../src/modules/public-routes/public-routes.repository.interface";
 import { PublicRoutesService } from "../../src/modules/public-routes/public-routes.service";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
+import { MONGO_CLIENT } from "../../src/providers/mongo.provider";
 import { REDIS_CLIENT } from "@yoizen/database";
 
 function createMockRedis() {
@@ -17,20 +18,46 @@ function createMockRedis() {
 
 describe("PublicRoutesService", () => {
   let service: PublicRoutesService;
-  let sql: ReturnType<typeof createMockPostgresSql>;
+  let findQueue: unknown[];
+  let deleteQueue: unknown[];
   let redis: ReturnType<typeof createMockRedis>;
 
   beforeEach(async () => {
     process.env.PLATFORM_ENVIRONMENT = "test";
-
-    sql = createMockPostgresSql(mock);
+    findQueue = [];
+    deleteQueue = [];
     redis = createMockRedis();
+
+    const mongoClient = createMockMongoClient(
+      new Map([
+        [
+          "public_routes",
+          (operation) => {
+            if (operation === "insertOne") {
+              return { acknowledged: true };
+            }
+            if (operation === "find") {
+              return findQueue.shift() ?? [];
+            }
+            if (operation === "deleteOne") {
+              return { deletedCount: deleteQueue.shift() === undefined ? 0 : 1 };
+            }
+            return [];
+          },
+        ],
+      ]),
+      mock,
+    );
 
     const module = await Test.createTestingModule({
       providers: [
-        PublicRoutesRepository,
+        PublicRoutesMongoRepository,
+        {
+          provide: PUBLIC_ROUTES_REPOSITORY,
+          useExisting: PublicRoutesMongoRepository,
+        },
         PublicRoutesService,
-        { provide: POSTGRES_SQL, useValue: sql },
+        { provide: MONGO_CLIENT, useValue: mongoClient },
         { provide: REDIS_CLIENT, useValue: redis },
       ],
     }).compile();
@@ -40,16 +67,13 @@ describe("PublicRoutesService", () => {
 
   describe("create", () => {
     it("should create a public route and sync to Redis", async () => {
-      const row = {
-        id: "pr-1",
-        method: "GET",
-        path_pattern: "/api/public",
-        scope: "platform",
-        environment: "test",
-        created_at: new Date(),
-      };
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([row]);
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([row]);
+      findQueue.push([
+        {
+          method: "GET",
+          path_pattern: "/api/public",
+          scope: "platform",
+        },
+      ]);
 
       const result = await service.create({
         method: "GET",
@@ -62,16 +86,7 @@ describe("PublicRoutesService", () => {
     });
 
     it("should sync tenant-scoped Redis key when tenantId is provided", async () => {
-      const row = {
-        id: "pr-2",
-        method: "GET",
-        path_pattern: "/events",
-        scope: "tenant:demo",
-        environment: "test",
-        created_at: new Date(),
-      };
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([row]);
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      findQueue.push([
         { method: "GET", path_pattern: "/health", scope: "platform" },
         { method: "GET", path_pattern: "/events", scope: "tenant:demo" },
       ]);
@@ -87,33 +102,31 @@ describe("PublicRoutesService", () => {
 
   describe("list", () => {
     it("should return all routes when no tenantId", async () => {
-      const rows = [
+      findQueue.push([
         {
-          id: "pr-1",
+          _id: "pr-1",
           method: "GET",
           path_pattern: "/a",
           scope: "platform",
           environment: "test",
           created_at: new Date(),
         },
-      ];
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce(rows);
+      ]);
       const result = await service.list();
       expect(result).toHaveLength(1);
     });
 
     it("should filter by tenant scope when tenantId provided", async () => {
-      const rows = [
+      findQueue.push([
         {
-          id: "pr-1",
+          _id: "pr-1",
           method: "POST",
           path_pattern: "/b",
           scope: "tenant:demo",
           environment: "test",
           created_at: new Date(),
         },
-      ];
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce(rows);
+      ]);
       const result = await service.list("demo");
       expect(result).toHaveLength(1);
     });
@@ -121,20 +134,17 @@ describe("PublicRoutesService", () => {
 
   describe("remove", () => {
     it("should throw NotFoundException if route not found", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+      deleteQueue.push(undefined);
       await expect(service.remove("nonexistent")).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it("should remove route and sync to Redis", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
-        { id: "pr-1" },
-      ]);
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+      deleteQueue.push(1);
+      findQueue.push([]);
       await service.remove("pr-1");
       expect(redis.set).toHaveBeenCalled();
     });
   });
-
 });

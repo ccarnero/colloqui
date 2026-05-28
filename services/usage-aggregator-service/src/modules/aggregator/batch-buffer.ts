@@ -1,3 +1,4 @@
+import type { Db } from "mongodb";
 import type { Sql } from "@yoizen/database";
 import { insertBatch } from "./batch-inserter";
 import type { IChannelEventRow } from "./envelope-parser";
@@ -16,7 +17,7 @@ export interface IBatchBufferHooks {
 }
 
 export interface IBatchBufferOptions {
-  readonly sql: Sql;
+  readonly connection: Db | Sql;
   readonly tenantId?: string;
   /** Rows flushed together. @default 500 */
   readonly batchSize?: number;
@@ -30,20 +31,7 @@ interface IEnqueuedWaiter {
   readonly reject: (err: Error) => void;
 }
 
-/**
- * Coalesces per-tenant channel events into batched TimescaleDB
- * inserts, then resolves each caller's enqueue promise once the
- * batch commits so the NATS runner can ack **only** after durable
- * persistence — guaranteeing at-least-once + dedup-on-write.
- *
- * Complexity:
- *   - `enqueue`: O(1) amortized (push + timer arm).
- *   - `flush`:   O(n) on the flushed batch; single Postgres RPC.
- *
- * The buffer is intentionally *not* thread-safe across event-loop
- * ticks — Node is single-threaded and every operation either runs
- * synchronously or awaits inside this class's own methods.
- */
+/** Coalesces per-tenant channel events into batched usage inserts. */
 export class BatchBuffer {
   private rows: IChannelEventRow[] = [];
   private waiters: IEnqueuedWaiter[] = [];
@@ -57,11 +45,7 @@ export class BatchBuffer {
     this.batchFlushMs = options.batchFlushMs ?? 1_000;
   }
 
-  /**
-   * Queues a row and returns a promise that resolves when its batch
-   * successfully commits — or rejects if the commit fails. Rejection
-   * propagates back to the NATS runner which `nak`s for redelivery.
-   */
+  /** Queues a row; resolves when its batch commits successfully. */
   enqueue(row: IChannelEventRow): Promise<void> {
     if (this.stopped) {
       return Promise.reject(new Error("BatchBuffer stopped"));
@@ -81,11 +65,7 @@ export class BatchBuffer {
     });
   }
 
-  /**
-   * Drains all buffered rows. Callers should `await stop()` on
-   * shutdown so in-flight NATS messages are either acked or naked
-   * deterministically.
-   */
+  /** Drains all buffered rows on shutdown. */
   async stop(): Promise<void> {
     this.stopped = true;
     if (this.flushTimer) {
@@ -111,7 +91,7 @@ export class BatchBuffer {
 
     const started = performance.now();
     try {
-      await insertBatch(this.options.sql, rows, this.options.tenantId);
+      await insertBatch(this.options.connection, rows, this.options.tenantId);
       const elapsed = performance.now() - started;
       this.options.hooks?.onFlushSuccess(rows, elapsed);
       for (let i = 0; i < waiters.length; i++) waiters[i]!.resolve();

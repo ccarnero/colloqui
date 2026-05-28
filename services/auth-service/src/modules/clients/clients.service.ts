@@ -1,14 +1,21 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { hashSecret } from "../../utils/password";
 import { PinoLoggerService } from "@yoizen/observability";
-import { ClientsRepository, type IClientRow } from "./clients.repository";
+import {
+  CLIENTS_REPOSITORY,
+  type IClientRow,
+  type IClientsRepository,
+} from "./clients.repository.interface";
 import type { ICreatedClient } from "./clients.types";
 
 @Injectable()
 export class ClientsService {
   private readonly logger = new PinoLoggerService(ClientsService.name);
 
-  constructor(private readonly clientsRepository: ClientsRepository) {}
+  constructor(
+    @Inject(CLIENTS_REPOSITORY)
+    private readonly clientsRepository: IClientsRepository,
+  ) {}
 
   async create(name: string, scope: string): Promise<ICreatedClient> {
     const id = crypto.randomUUID();

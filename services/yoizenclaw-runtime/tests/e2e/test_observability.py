@@ -60,7 +60,7 @@ class TestEndToEndTracing:
                 logic_span.set_attribute("operation", "process_data")
 
             with tracer.start_as_current_span("db.query") as db_span:
-                db_span.set_attribute("db.system", "postgresql")
+                db_span.set_attribute("db.system", "mongodb")
                 db_span.set_attribute("db.statement", "SELECT * FROM users")
 
         # Verify trace structure

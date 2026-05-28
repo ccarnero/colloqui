@@ -35,7 +35,11 @@ eval "$(minikube docker-env -p yoizen-arch)"
 ## Deploy
 
 ```bash
+# Postgres (default bootstrap):
 kubectl apply -k knative/tenant-yoizenclaw-runtime/overlays/acme-dev
+
+# Mongo (`--storage-engine=mongo`):
+kubectl apply -k knative/tenant-yoizenclaw-runtime/overlays/acme-dev-mongo
 ```
 
 Or use [`rebuild-redeploy.sh`](../../rebuild-redeploy.sh) (see script help for `yoizenclaw-runtime`).

@@ -1,15 +1,16 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { createQueuedSql } from "@yoizen/testing";
-import type { Sql } from "postgres";
 import { AccountsService } from "../../src/modules/accounts/accounts.service";
-import { AccountsRepository } from "../../src/modules/accounts/accounts.repository";
-import { TelegramProvider } from "../../src/providers/telegram/telegram.provider";
+import { ACCOUNTS_REPOSITORY } from "../../src/modules/accounts/accounts.repository.interface";
+import { AccountsMongoRepository } from "../../src/modules/accounts/accounts.mongo.repository";
 import { ChannelTenantConnectionManager } from "../../src/providers/channel-tenant-connection-manager";
+import { TelegramProvider } from "../../src/providers/telegram/telegram.provider";
+import { makeFakeTenantMongoConnections, makeMockDb } from "../make-mongo-mock";
 
-function accountRow(overrides: Record<string, unknown> = {}) {
+function accountDoc(overrides: Record<string, unknown> = {}) {
+  const now = new Date("2020-01-01T00:00:00.000Z");
   return {
-    id: "acc-1",
+    _id: "acc-1",
     channel: "whatsapp",
     provider: "meta",
     name: "Primary",
@@ -23,8 +24,8 @@ function accountRow(overrides: Record<string, unknown> = {}) {
     app_secret: null,
     verify_token: null,
     is_active: true,
-    created_at: "2020-01-01T00:00:00.000Z",
-    updated_at: "2020-01-01T00:00:00.000Z",
+    created_at: now,
+    updated_at: now,
     ...overrides,
   };
 }
@@ -32,14 +33,13 @@ function accountRow(overrides: Record<string, unknown> = {}) {
 describe("AccountsService", () => {
   let registerWebhook: ReturnType<typeof mock>;
 
-  async function compile(sql: Sql) {
-    const tcm = {
-      ensureSchema: mock(() => Promise.resolve(sql)),
-    };
+  async function compile(db: ReturnType<typeof makeMockDb>) {
+    const tcm = makeFakeTenantMongoConnections(db);
     const module = await Test.createTestingModule({
       providers: [
         AccountsService,
-        AccountsRepository,
+        AccountsMongoRepository,
+        { provide: ACCOUNTS_REPOSITORY, useExisting: AccountsMongoRepository },
         { provide: ChannelTenantConnectionManager, useValue: tcm },
         {
           provide: TelegramProvider,
@@ -56,8 +56,9 @@ describe("AccountsService", () => {
 
   describe("create", () => {
     it("inserts WhatsApp account without Telegram webhook", async () => {
-      const sql = createQueuedSql([[accountRow()]], mock);
-      const service = await compile(sql);
+      const insertOne = mock(async () => ({ acknowledged: true }));
+      const db = makeMockDb({ channel_accounts: { insertOne } });
+      const service = await compile(db);
       const acc = await service.create("tenant-a", {
         channel: "whatsapp",
         provider: "meta",
@@ -71,20 +72,9 @@ describe("AccountsService", () => {
     });
 
     it("registers Telegram webhook for active telegram account", async () => {
-      const sql = createQueuedSql(
-        [
-          [
-            accountRow({
-              channel: "telegram",
-              provider: "telegram",
-              telegram_bot_token: "bot-token",
-              access_token: "bot-token",
-            }),
-          ],
-        ],
-        mock,
-      );
-      const service = await compile(sql);
+      const insertOne = mock(async () => ({ acknowledged: true }));
+      const db = makeMockDb({ channel_accounts: { insertOne } });
+      const service = await compile(db);
       await service.create("tenant-a", {
         channel: "telegram",
         provider: "telegram",
@@ -100,11 +90,14 @@ describe("AccountsService", () => {
 
   describe("list", () => {
     it("returns accounts for tenant", async () => {
-      const sql = createQueuedSql(
-        [[accountRow(), accountRow({ id: "acc-2" })]],
-        mock,
-      );
-      const service = await compile(sql);
+      const toArray = mock(async () => [
+        accountDoc(),
+        accountDoc({ _id: "acc-2" }),
+      ]);
+      const sort = mock(() => ({ toArray }));
+      const find = mock(() => ({ sort }));
+      const db = makeMockDb({ channel_accounts: { find } });
+      const service = await compile(db);
       const list = await service.list("tenant-a");
       expect(list).toHaveLength(2);
     });
@@ -112,50 +105,42 @@ describe("AccountsService", () => {
 
   describe("findById", () => {
     it("returns null when missing", async () => {
-      const sql = createQueuedSql([[]], mock);
-      const service = await compile(sql);
+      const findOne = mock(async () => null);
+      const db = makeMockDb({ channel_accounts: { findOne } });
+      const service = await compile(db);
       const acc = await service.findById("tenant-a", "missing");
       expect(acc).toBeNull();
     });
 
     it("returns account when found", async () => {
-      const sql = createQueuedSql([[accountRow()]], mock);
-      const service = await compile(sql);
+      const findOne = mock(async () => accountDoc());
+      const db = makeMockDb({ channel_accounts: { findOne } });
+      const service = await compile(db);
       const acc = await service.findById("tenant-a", "acc-1");
       expect(acc?.id).toBe("acc-1");
     });
   });
 
   describe("update", () => {
-    it("applies unsafe update and returns row", async () => {
-      const updated = accountRow({ name: "Renamed" });
-      const unsafe = mock(() => Promise.resolve([updated]));
-      const sql = Object.assign(
-        mock(() => Promise.resolve([])),
-        {
-          json: (v: unknown) => v,
-          unsafe,
-        },
-      ) as unknown as Sql;
-      const service = await compile(sql);
+    it("applies patch and returns row", async () => {
+      const findOneAndUpdate = mock(async () =>
+        accountDoc({ name: "Renamed" }),
+      );
+      const db = makeMockDb({ channel_accounts: { findOneAndUpdate } });
+      const service = await compile(db);
       const acc = await service.update("tenant-a", "acc-1", {
         name: "Renamed",
       });
       expect(acc?.name).toBe("Renamed");
-      expect(unsafe).toHaveBeenCalled();
+      expect(findOneAndUpdate).toHaveBeenCalled();
     });
   });
 
   describe("remove", () => {
     it("returns true when row deleted", async () => {
-      const sql = Object.assign(
-        mock(() => Promise.resolve({ count: 1 })),
-        {
-          json: (v: unknown) => v,
-          unsafe: mock(() => Promise.resolve([])),
-        },
-      ) as unknown as Sql;
-      const service = await compile(sql);
+      const deleteOne = mock(async () => ({ deletedCount: 1 }));
+      const db = makeMockDb({ channel_accounts: { deleteOne } });
+      const service = await compile(db);
       const ok = await service.remove("tenant-a", "acc-1");
       expect(ok).toBe(true);
     });

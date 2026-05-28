@@ -98,11 +98,4 @@ describe("AgentsController", () => {
     expect(agentsService.publish).toHaveBeenCalledWith("t1", "id1");
     expect(agentsService.unpublish).toHaveBeenCalledWith("t1", "id1");
   });
-
-  it("chat delegates", async () => {
-    const dto = { message: "hi" };
-    const r = await controller.chat("t1", "a1", dto as never);
-    expect(agentsService.chat).toHaveBeenCalledWith("t1", "a1", dto);
-    expect(r.reply).toBe("ok");
-  });
 });

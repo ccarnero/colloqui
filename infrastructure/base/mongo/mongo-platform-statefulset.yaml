@@ -1,0 +1,252 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-platform-init
+  labels:
+    app.kubernetes.io/name: mongo-platform
+    app.kubernetes.io/component: database
+data:
+  init-replica-set.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    REPLICA_SET="${REPLICA_SET_NAME:?REPLICA_SET_NAME required}"
+    HEADLESS="${HEADLESS_SERVICE:?HEADLESS_SERVICE required}"
+    STATEFULSET="${STATEFULSET_NAME:?STATEFULSET_NAME required}"
+    REPLICAS="${REPLICAS:?REPLICAS required}"
+    ROOT_USER="${MONGO_ROOT_USER:?MONGO_ROOT_USER required}"
+    ROOT_PASS="${MONGO_ROOT_PASSWORD:?MONGO_ROOT_PASSWORD required}"
+    APP_USER="${MONGO_USER:?MONGO_USER required}"
+    APP_PASS="${MONGO_PASSWORD:?MONGO_PASSWORD required}"
+    APP_DB="${MONGO_DB:?MONGO_DB required}"
+
+    wait_for_mongo() {
+      until mongosh --quiet "mongodb://127.0.0.1:27017" \
+        --eval "db.adminCommand({ ping: 1 })" &>/dev/null; do
+        sleep 2
+      done
+    }
+
+    ordinal="${HOSTNAME##*-}"
+    if [[ "${ordinal}" != "0" ]]; then
+      exit 0
+    fi
+
+    wait_for_mongo
+
+    # Build replica-set member list using fully-qualified DNS names so the
+    # replica set can be discovered from pods in OTHER namespaces (e.g.
+    # platform-services-*). Without FQDNs, the MongoDB driver gets back
+    # short hostnames from `ismaster` and fails ENOTFOUND when resolving
+    # them cross-namespace.
+    NAMESPACE="$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
+    members=""
+    for i in $(seq 0 $((REPLICAS - 1))); do
+      host="${STATEFULSET}-${i}.${HEADLESS}.${NAMESPACE}.svc.cluster.local:27017"
+      if [[ -n "${members}" ]]; then
+        members+=","
+      fi
+      members+="{ _id: ${i}, host: \"${host}\" }"
+    done
+
+    mongosh --quiet "mongodb://127.0.0.1:27017" --eval "
+      try {
+        rs.status();
+      } catch (err) {
+        rs.initiate({
+          _id: \"${REPLICA_SET}\",
+          members: [${members}]
+        });
+      }
+    " || true
+
+    for _ in $(seq 1 60); do
+      if mongosh --quiet "mongodb://127.0.0.1:27017" \
+        --eval "rs.isMaster().ismaster" 2>/dev/null | grep -q "true"; then
+        break
+      fi
+      sleep 2
+    done
+
+    mongosh --quiet "mongodb://127.0.0.1:27017/admin" --eval "
+      if (!db.getUser(\"${ROOT_USER}\")) {
+        db.createUser({
+          user: \"${ROOT_USER}\",
+          pwd: \"${ROOT_PASS}\",
+          roles: [{ role: \"root\", db: \"admin\" }]
+        });
+      }
+      if (!db.getUser(\"${APP_USER}\")) {
+        db.createUser({
+          user: \"${APP_USER}\",
+          pwd: \"${APP_PASS}\",
+          roles: [
+            { role: \"readWrite\", db: \"${APP_DB}\" },
+            { role: \"dbAdmin\", db: \"${APP_DB}\" }
+          ]
+        });
+      }
+    "
+
+    echo "[mongo-platform-init] replica set ${REPLICA_SET} ready"
+    exec sleep infinity
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-platform
+  labels:
+    app.kubernetes.io/name: mongo-platform
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mongo-platform
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: mongo
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-platform-headless
+  labels:
+    app.kubernetes.io/name: mongo-platform
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: mongo-platform
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: mongo
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-platform
+  labels:
+    app.kubernetes.io/name: mongo-platform
+    app.kubernetes.io/component: database
+spec:
+  serviceName: mongo-platform-headless
+  replicas: 3
+  # Parallel so all members start together; replica-set init waits for
+  # every pod DNS name to resolve before rs.initiate() on ordinal 0.
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mongo-platform
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mongo-platform
+        app.kubernetes.io/component: database
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        fsGroup: 999
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: mongo-platform
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: mongo
+          image: mongo:7.0
+          ports:
+            - name: mongo
+              containerPort: 27017
+              protocol: TCP
+          command: ["mongod"]
+          args:
+            - "--replSet=rs0"
+            - "--bind_ip_all"
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - "db.adminCommand({ ping: 1 })"
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - "db.adminCommand({ ping: 1 })"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          startupProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - "db.adminCommand({ ping: 1 })"
+            failureThreshold: 30
+            periodSeconds: 2
+            timeoutSeconds: 5
+        - name: replica-set-init
+          image: mongo:7.0
+          command: ["/bin/bash", "/scripts/init-replica-set.sh"]
+          envFrom:
+            - secretRef:
+                name: mongo-credentials
+          env:
+            - name: REPLICA_SET_NAME
+              value: rs0
+            - name: HEADLESS_SERVICE
+              value: mongo-platform-headless
+            - name: STATEFULSET_NAME
+              value: mongo-platform
+            - name: REPLICAS
+              value: "3"
+          volumeMounts:
+            - name: init-scripts
+              mountPath: /scripts
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: mongo-platform-init
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

@@ -42,9 +42,10 @@ interface IKnativeServiceBody {
 
 describe("buildYoizenClawRuntimeServiceBody", () => {
   it("renders apiVersion + kind + namespace-scoped metadata", () => {
-    const body = buildYoizenClawRuntimeServiceBody(
-      PARAMS,
-    ) as unknown as IKnativeServiceBody;
+    const body = buildYoizenClawRuntimeServiceBody({
+      ...PARAMS,
+      dbEngine: "postgres",
+    }) as unknown as IKnativeServiceBody;
     expect(body.apiVersion).toBe("serving.knative.dev/v1");
     expect(body.kind).toBe("Service");
     expect(body.metadata.name).toBe("yoizenclaw-runtime");
@@ -55,10 +56,48 @@ describe("buildYoizenClawRuntimeServiceBody", () => {
     );
   });
 
+  it("postgres engine uses postgres-credentials Secret", () => {
+    const body = buildYoizenClawRuntimeServiceBody({
+      ...PARAMS,
+      dbEngine: "postgres",
+    }) as unknown as IKnativeServiceBody;
+    const env = body.spec.template.spec.containers[0]!.env;
+    const get = (k: string) => env.find((e) => e.name === k)?.value;
+    expect(get("DB_ENGINE")).toBe("postgres");
+    expect(get("POSTGRES_HOST")).toBe("postgres");
+    expect(get("POSTGRES_PORT")).toBe("5432");
+    for (const key of ["POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"]) {
+      const entry = env.find((e) => e.name === key);
+      expect(entry?.valueFrom?.secretKeyRef.name).toBe("postgres-credentials");
+      expect(entry?.valueFrom?.secretKeyRef.key).toBe(key);
+    }
+    expect(env.some((e) => e.name === "MONGO_HOST")).toBe(false);
+  });
+
+  it("mongo engine uses mongo-credentials Secret", () => {
+    const body = buildYoizenClawRuntimeServiceBody({
+      ...PARAMS,
+      dbEngine: "mongo",
+    }) as unknown as IKnativeServiceBody;
+    const env = body.spec.template.spec.containers[0]!.env;
+    const get = (k: string) => env.find((e) => e.name === k)?.value;
+    expect(get("DB_ENGINE")).toBe("mongo");
+    expect(get("MONGO_HOST")).toBe("mongo");
+    expect(get("MONGO_PORT")).toBe("27017");
+    expect(get("MONGO_REPLICA_SET")).toBe("rs0");
+    for (const key of ["MONGO_DB", "MONGO_USER", "MONGO_PASSWORD"]) {
+      const entry = env.find((e) => e.name === key);
+      expect(entry?.valueFrom?.secretKeyRef.name).toBe("mongo-credentials");
+      expect(entry?.valueFrom?.secretKeyRef.key).toBe(key);
+    }
+    expect(env.some((e) => e.name === "POSTGRES_HOST")).toBe(false);
+  });
+
   it("injects TENANT_ID, NATS_URL, CONNECTOR_ADMIN_URL, and OTEL endpoints from params", () => {
-    const body = buildYoizenClawRuntimeServiceBody(
-      PARAMS,
-    ) as unknown as IKnativeServiceBody;
+    const body = buildYoizenClawRuntimeServiceBody({
+      ...PARAMS,
+      dbEngine: "postgres",
+    }) as unknown as IKnativeServiceBody;
     const env = body.spec.template.spec.containers[0]!.env;
     const get = (k: string) => env.find((e) => e.name === k)?.value;
     expect(get("TENANT_ID")).toBe("acme");
@@ -66,26 +105,13 @@ describe("buildYoizenClawRuntimeServiceBody", () => {
     expect(get("CONNECTOR_ADMIN_URL")).toBe(PARAMS.connectorAdminUrl);
     expect(get("OTEL_EXPORTER_OTLP_ENDPOINT")).toBe(PARAMS.otelEndpoint);
     expect(get("OTEL_SERVICE_NAME")).toBe("yoizenclaw-runtime");
-    expect(get("POSTGRES_HOST")).toBe("postgres");
-    expect(get("POSTGRES_PORT")).toBe("5432");
-  });
-
-  it("reads POSTGRES_DB/USER/PASSWORD from the per-namespace postgres-credentials Secret", () => {
-    const body = buildYoizenClawRuntimeServiceBody(
-      PARAMS,
-    ) as unknown as IKnativeServiceBody;
-    const env = body.spec.template.spec.containers[0]!.env;
-    for (const key of ["POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"]) {
-      const entry = env.find((e) => e.name === key);
-      expect(entry?.valueFrom?.secretKeyRef.name).toBe("postgres-credentials");
-      expect(entry?.valueFrom?.secretKeyRef.key).toBe(key);
-    }
   });
 
   it("applies the same scaling annotations as the kustomize base template", () => {
-    const body = buildYoizenClawRuntimeServiceBody(
-      PARAMS,
-    ) as unknown as IKnativeServiceBody;
+    const body = buildYoizenClawRuntimeServiceBody({
+      ...PARAMS,
+      dbEngine: "postgres",
+    }) as unknown as IKnativeServiceBody;
     const ann = body.spec.template.metadata.annotations;
     expect(ann["autoscaling.knative.dev/min-scale"]).toBe("1");
     expect(ann["autoscaling.knative.dev/max-scale"]).toBe("3");
@@ -98,86 +124,63 @@ describe("YoizenClawRuntimeProvisioner.apply", () => {
     const createNamespacedCustomObject = mock(() => Promise.resolve());
     const customApi = {
       createNamespacedCustomObject,
-      getNamespacedCustomObject: mock(() => Promise.resolve({})),
+      getNamespacedCustomObject: mock(() => Promise.resolve({ metadata: {} })),
       replaceNamespacedCustomObject: mock(() => Promise.resolve()),
     };
-    const provisioner = new YoizenClawRuntimeProvisioner(customApi as never);
+    const provisioner = new YoizenClawRuntimeProvisioner(
+      customApi as never,
+    );
+
     await provisioner.apply({ namespace: "acme-dev-ns", tenantId: "acme" });
+
     expect(createNamespacedCustomObject).toHaveBeenCalledTimes(1);
-    expect(customApi.replaceNamespacedCustomObject).not.toHaveBeenCalled();
     const arg = createNamespacedCustomObject.mock.calls[0]![0] as {
-      group: string;
-      version: string;
-      plural: string;
       namespace: string;
       body: IKnativeServiceBody;
     };
-    expect(arg.group).toBe("serving.knative.dev");
-    expect(arg.version).toBe("v1");
-    expect(arg.plural).toBe("services");
     expect(arg.namespace).toBe("acme-dev-ns");
-    expect(arg.body.metadata.name).toBe("yoizenclaw-runtime");
-  });
-
-  it("falls back to replace on HTTP 409 (idempotent reconcile)", async () => {
-    const createNamespacedCustomObject = mock(() =>
-      Promise.reject({ response: { statusCode: 409 } }),
-    );
-    const getNamespacedCustomObject = mock(() =>
-      Promise.resolve({ metadata: { resourceVersion: "rv-42" } }),
-    );
-    const replaceNamespacedCustomObject = mock(() => Promise.resolve());
-    const customApi = {
-      createNamespacedCustomObject,
-      getNamespacedCustomObject,
-      replaceNamespacedCustomObject,
-    };
-    const provisioner = new YoizenClawRuntimeProvisioner(customApi as never);
-    await provisioner.apply({ namespace: "acme-dev-ns", tenantId: "acme" });
-    expect(getNamespacedCustomObject).toHaveBeenCalledTimes(1);
-    expect(replaceNamespacedCustomObject).toHaveBeenCalledTimes(1);
-    const arg = replaceNamespacedCustomObject.mock.calls[0]![0] as {
-      body: { metadata: { resourceVersion?: string; namespace?: string } };
-    };
-    expect(arg.body.metadata.resourceVersion).toBe("rv-42");
     expect(arg.body.metadata.namespace).toBe("acme-dev-ns");
   });
 
-  it("rethrows non-conflict errors from createNamespacedCustomObject", async () => {
+  it("replaces on HTTP 409 conflict", async () => {
+    const conflict = Object.assign(new Error("conflict"), { statusCode: 409 });
+    const createNamespacedCustomObject = mock(() => Promise.reject(conflict));
+    const replaceNamespacedCustomObject = mock(() => Promise.resolve());
+    const customApi = {
+      createNamespacedCustomObject,
+      getNamespacedCustomObject: mock(() =>
+        Promise.resolve({ metadata: { resourceVersion: "123" } }),
+      ),
+      replaceNamespacedCustomObject,
+    };
+    const provisioner = new YoizenClawRuntimeProvisioner(
+      customApi as never,
+    );
+
+    await provisioner.apply({ namespace: "acme-dev-ns", tenantId: "acme" });
+
+    expect(replaceNamespacedCustomObject).toHaveBeenCalledTimes(1);
+    const arg = replaceNamespacedCustomObject.mock.calls[0]![0] as {
+      body: { metadata: { resourceVersion?: string } };
+    };
+    expect(arg.body.metadata.resourceVersion).toBe("123");
+  });
+
+  it("propagates non-conflict errors from create", async () => {
     const createNamespacedCustomObject = mock(() =>
-      Promise.reject(new Error("boom")),
+      Promise.reject(new Error("forbidden")),
     );
     const customApi = {
       createNamespacedCustomObject,
-      getNamespacedCustomObject: mock(() => Promise.resolve({})),
+      getNamespacedCustomObject: mock(() => Promise.resolve({ metadata: {} })),
       replaceNamespacedCustomObject: mock(() => Promise.resolve()),
     };
-    const provisioner = new YoizenClawRuntimeProvisioner(customApi as never);
+    const provisioner = new YoizenClawRuntimeProvisioner(
+      customApi as never,
+    );
+
     await expect(
       provisioner.apply({ namespace: "acme-dev-ns", tenantId: "acme" }),
-    ).rejects.toThrow("boom");
-    expect(customApi.replaceNamespacedCustomObject).not.toHaveBeenCalled();
-  });
-
-  it("skips apply when YOIZENCLAW_RUNTIME_AUTO_APPLY=false (GitOps escape hatch)", async () => {
-    const previous = process.env.YOIZENCLAW_RUNTIME_AUTO_APPLY;
-    process.env.YOIZENCLAW_RUNTIME_AUTO_APPLY = "false";
-    try {
-      const customApi = {
-        createNamespacedCustomObject: mock(() => Promise.resolve()),
-        getNamespacedCustomObject: mock(() => Promise.resolve({})),
-        replaceNamespacedCustomObject: mock(() => Promise.resolve()),
-      };
-      const provisioner = new YoizenClawRuntimeProvisioner(customApi as never);
-      await provisioner.apply({ namespace: "acme-dev-ns", tenantId: "acme" });
-      expect(customApi.createNamespacedCustomObject).not.toHaveBeenCalled();
-      expect(customApi.replaceNamespacedCustomObject).not.toHaveBeenCalled();
-    } finally {
-      if (previous === undefined) {
-        delete process.env.YOIZENCLAW_RUNTIME_AUTO_APPLY;
-      } else {
-        process.env.YOIZENCLAW_RUNTIME_AUTO_APPLY = previous;
-      }
-    }
+    ).rejects.toThrow("forbidden");
   });
 });

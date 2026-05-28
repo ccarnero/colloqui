@@ -1,0 +1,174 @@
+# Local-dev override for the `postgres-temporal` CNPG cluster.
+# Drops to a single instance (no HA in dev), shrinks storage and
+# resources, and downsizes the memory-bound Postgres parameters
+# proportional to the new memory limit.
+#
+# Stress-test sizing: with Temporal Server at 16 history shards and
+# 2 replicas, plus workflow workers using direct connections, the
+# previous `max_connections: 150` saturated within ~30s of ramp.
+# Bumped to 300 (still half of the production base of 500). Memory
+# parameters scale up proportionally (3Gi limit).
+#
+# 2026-05-22 stress-run post-mortem (`post-mortem/POST-MORTEM.md`):
+# this overlay produced 2 077 `queues_pkey` / `queue_messages_pkey`
+# duplicate-INSERT aborts and an autovacuum I/O storm because
+# `shared_buffers: 512MB` couldn't hold the `executions_visibility`
+# working set. Bumped within the dev budget: 2Gi → 3Gi memory limit,
+# 512MB → 1GB `shared_buffers`, autovacuum naptime 20s → 10s and
+# workers 4 → 6 to match the base cluster's vacuum cadence without
+# blowing the laptop CPU budget.
+#
+# 2026-05-22 stress re-run (post-fix, "light" load): even with the
+# visibility split + the bumps above, `postgres-temporal-1` saturated
+# at 1.34 / 2 CPU and Temporal `GetWorkflowExecution` started timing
+# out (`Failed to get buffered events`, `signal info`, `request cancel
+# info` — each call dispatches ~6 parallel SELECTs). Lifted cap
+# 2 → 4 CPU; node still has ~3 cores headroom (12-core minikube/orbstack
+# host). Requests stay at 500m so the kube-scheduler can still fit
+# the workflow-* worker family.
+#
+# `huge_pages: off` because dev nodes (orbstack, kind, local-path)
+# typically don't have HugePages configured at the kernel level.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-temporal
+spec:
+  instances: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1500Mi
+    limits:
+      cpu: "4"
+      memory: 3Gi
+  storage:
+    size: 10Gi
+  walStorage:
+    size: 2Gi
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: preferred
+  postgresql:
+    parameters:
+      shared_buffers: "1GB"
+      effective_cache_size: "2GB"
+      work_mem: "24MB"
+      maintenance_work_mem: "320MB"
+      huge_pages: "off"
+      max_connections: "300"
+      # CNPG validates max_wal_size < walStorage (2Gi here). 1.5GB
+      # leaves headroom for short bursts without rejecting the
+      # cluster manifest.
+      max_wal_size: "1500MB"
+      min_wal_size: "512MB"
+      wal_buffers: "32MB"
+      autovacuum_max_workers: "6"
+      autovacuum_naptime: "10s"
+      # 2026-05-22 stress re-run: with `synchronous_commit: remote_write`
+      # inherited from base (designed for 2-instance HA), the single-
+      # instance dev cluster falls back to "wait for local fsync" on
+      # every commit. Under stress load `WalSync` + `WALWrite` became
+      # the dominant wait events and Temporal's `RecordActivityTask*`
+      # / `UpdateWorkflowExecution` started timing out — even though
+      # CPU was only at 38%. Disabling sync commit drops the commit
+      # latency from one fsync per write to one fsync per
+      # `wal_writer_delay` (200ms) and turns the bottleneck back into
+      # pure CPU/IO bandwidth. Tradeoff: the last few hundred ms of
+      # committed transactions can be lost on a power-loss / OOM-kill
+      # of the Postgres pod — fully acceptable in a dev cluster.
+      # DO NOT propagate this to base (production HA).
+      synchronous_commit: "off"
+---
+# Local-dev override for the 4 Temporal role Deployments
+# (`temporal-frontend`, `temporal-history`, `temporal-matching`,
+# `temporal-worker`). User explicitly chose 2 replicas per role even
+# in dev for full HA topology parity (see plan §dev_profile), EXCEPT
+# for history which was bumped to 3 replicas in base on 2026-05-24
+# (inherited here — see
+# `infrastructure/base/temporal/deployment-history.yaml` for the
+# rationale: with 3 pods + 16 shards, max ringpop skew is 6/5/5 =
+# 37.5% which is structurally below the `TemporalHistoryShardImbalance`
+# 75% threshold, eliminating the restart-storm hazard observed
+# 2026-05-24 stress §3).
+#
+# Per-role request sizing kept proportional to the base manifest but
+# trimmed to fit a 12-core minikube node alongside the rest of the
+# workflow-* worker family. History per-pod sizing dropped (3 pods
+# share the load) — aggregate budget slightly reduced overall.
+#
+# Total dev footprint (per env, all replicas):
+#   frontend: 2 × {req 250m/512Mi, lim 1500m/1Gi}
+#   history:  3 × {req 350m/768Mi, lim 2/2Gi}      ← bumped to 3
+#   matching: 2 × {req 250m/512Mi, lim 1500m/1Gi}
+#   worker:   2 × {req 150m/256Mi, lim 750m/512Mi}
+#   Σ req ≈ 2350m CPU + 4.7Gi mem
+#   Σ lim ≈ 13    CPU + 11 Gi mem (slight saving vs old 2-pod 13.5 CPU)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-frontend
+spec:
+  template:
+    spec:
+      containers:
+        - name: temporal
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1500m"
+              memory: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-history
+spec:
+  template:
+    spec:
+      containers:
+        - name: temporal
+          resources:
+            requests:
+              cpu: 350m
+              memory: 768Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-matching
+spec:
+  template:
+    spec:
+      containers:
+        - name: temporal
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1500m"
+              memory: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: temporal
+          resources:
+            requests:
+              cpu: 150m
+              memory: 256Mi
+            limits:
+              cpu: "750m"
+              memory: 512Mi
