@@ -54,6 +54,10 @@ spec:
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
               value: "api-gateway"
+            - name: WEBHOOK_PUBLISH_TIMEOUT_MS
+              value: "3000"
+            - name: GATEWAY_AUDIT_SKIP_WEBHOOKS
+              value: "true"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -63,7 +67,7 @@ spec:
               type: RuntimeDefault
           resources:
             requests:
-              cpu: 75m
+              cpu: 250m
               memory: 192Mi
             limits:
               cpu: "1"
@@ -74,6 +78,12 @@ spec:
               port: 3000
             initialDelaySeconds: 3
             periodSeconds: 5
+    metadata:
+      annotations:
+        autoscaling.knative.dev/metric: rps
+        autoscaling.knative.dev/target: "150"
+        autoscaling.knative.dev/min-scale: "2"
+        autoscaling.knative.dev/max-scale: "5"
 ---
 
 apiVersion: serving.knative.dev/v1

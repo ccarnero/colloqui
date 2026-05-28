@@ -82,40 +82,9 @@ export class TriggerConsumerService
       description:
         "Workflow triggers — message_received → Temporal workflow start",
       metrics: createNatsConsumerMetrics(resolveServiceName("workflow-service")),
-      // 2026-05-22 post-mortem (`post-mortem/POST-MORTEM.md` §P1.1):
-      // dropped from 16 → 8 because concurrency=16 was over-amplifying
-      // the redelivery storm during Temporal/Postgres slowdowns
-      // (6 983 duplicate triggers vs 1 626 uniques, ~4.3× redelivery).
-      // Each trigger boots a Temporal workflow over gRPC — I/O bound —
-      // so 8 is still ample throughput once the persistence layer is
-      // healthy. Revert toward 16 only after the post-mortem regression
-      // gates pass under load.
-      runnerOptions: { concurrency: 8 },
-      // Tighter delivery semantics: starting a workflow is idempotent
-      // (`workflowId = <tenant>:<name>:<idempotencykey>:<defId>`), so
-      // 3 retries cover transient gRPC blips without amplifying the
-      // workflow population during a backend slowdown. Default of 5
-      // could 5× the workflow count under load.
-      // Note: NATS requires maxDeliver > backoff.length, so we pair
-      // maxDeliver=3 with a 2-entry backoff [10s, 30s].
+      runnerOptions: { concurrency: 64 },
       maxDeliver: 3,
-      // 2026-05-22 post-mortem (§P1.1): raised 30s → 60s to match the
-      // observed worst-case `StartWorkflowExecution` p99 (~10s) PLUS
-      // headroom for an in-flight retry. The previous 30s fired before
-      // the first attempt returned during the cascade, triggering
-      // immediate redelivery and amplifying load on Temporal.
       ackWaitMs: 60_000,
-      // 2026-05-22 post-mortem follow-up: NATS server REWRITES
-      // `ack_wait` to `backoff[0]` when a backoff array is present
-      // (see `packages/database/src/nats-durable-consumer.ts` lines
-      // 31-42 and the `DEFAULT_BACKOFF_MS` table). With our previous
-      // `[10_000, 30_000]` the consumer effectively had a 10s ack-wait
-      // and was redelivering long before `client.workflow.start` could
-      // return under load (dup/trig observed at 5.6x in a re-run).
-      // `backoff[0]` MUST equal `ackWaitMs`. With `maxDeliver: 3` and
-      // the last entry reused once exhausted, total time-to-DLQ =
-      // 60s + 120s + 120s = 5 min — well within the workflow timeout
-      // budget and aligned with the platform defaults.
       backoffMs: [60_000, 120_000],
       ensureOnly,
     };

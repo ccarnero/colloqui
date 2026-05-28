@@ -18,6 +18,7 @@ import { JETSTREAM } from "./providers/nats.provider";
 import type { GatewayAuditEvent } from "@yoizen/shared";
 import {
   PinoLoggerService,
+  createPinoLogger,
   registerHttpMetricsHooks,
   shutdownTelemetry,
   getActiveTraceId,
@@ -31,7 +32,13 @@ import { publishGatewayAuditEvent } from "./utils/gateway-audit-publish.util";
 
 const REQUEST_ID_HEADER = "x-request-id";
 const TRACER_NAME = "api-gateway";
+const HEALTH_PATHS = new Set(["/health", "/readyz"]);
+const accessLogLogger = createPinoLogger("access-log");
 const gatewayAuditPublishLogger = new PinoLoggerService("api-gateway");
+
+function isHealthPath(path: string): boolean {
+  return HEALTH_PATHS.has(path.split("?")[0]);
+}
 
 function configureGlobalMiddleware(app: NestFastifyApplication): void {
   app.useGlobalPipes(
@@ -72,6 +79,44 @@ function configureGlobalMiddleware(app: NestFastifyApplication): void {
     async (req: FastifyRequest, reply: FastifyReply) => {
       (req as IYoizenRequest).__startTime = performance.now();
       reply.header(REQUEST_ID_HEADER, req.id);
+
+      if (isHealthPath(req.url)) return;
+
+      accessLogLogger.info({
+        msg: "request started",
+        requestId: req.id,
+        method: req.method,
+        path: req.url.split("?")[0],
+      });
+    },
+  );
+
+  fastify.addHook(
+    "onResponse",
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      if (isHealthPath(req.url)) return;
+
+      const yReq = req as IYoizenRequest;
+      const startTime = yReq.__startTime;
+      if (startTime === undefined) return;
+
+      const durationMs =
+        Math.round((performance.now() - startTime) * 100) / 100;
+      const path = req.url.split("?")[0];
+      const tenantId =
+        yReq.__tenantId ?? (yReq as unknown as Record<string, unknown>).tenantId as
+          | string
+          | undefined;
+
+      accessLogLogger.info({
+        msg: "request completed",
+        requestId: req.id,
+        method: req.method,
+        path,
+        status: reply.statusCode,
+        durationMs,
+        ...(tenantId ? { tenantId } : {}),
+      });
     },
   );
 }

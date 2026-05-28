@@ -49,7 +49,12 @@ const logger = new PinoLoggerService("service-call.activity");
 export async function executeServiceCall(
   args: ServiceCallArgs,
   tenantId: string,
+  executionId?: string,
 ): Promise<IServiceCallResult> {
+  if (executionId) {
+    logger.log(`serviceCall executionId=${executionId} tenant=${tenantId}`);
+  }
+
   const breaker = getHttpBreaker();
   const key = computeBreakerKey({
     tenantId,

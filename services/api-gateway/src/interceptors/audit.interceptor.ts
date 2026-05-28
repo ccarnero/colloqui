@@ -14,9 +14,11 @@ import { JETSTREAM } from "../providers/nats.provider";
 import { REQUEST_USER_KEY } from "../guards/auth.guard";
 import { REQUEST_TENANT_KEY } from "../guards/tenant.guard";
 import { getActiveTraceId, PinoLoggerService } from "@yoizen/observability";
+import { gatewayConfig } from "../config/gateway.config";
 import { publishGatewayAuditEvent } from "../utils/gateway-audit-publish.util";
 
 const SKIP_AUDIT_PATHS = new Set(["/health", "/healthz"]);
+const WEBHOOK_AUDIT_PREFIX = "/api/webhooks/";
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -30,7 +32,18 @@ export class AuditInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest<IYoizenRequest>();
     const path = request.url.split("?")[0];
 
+    if (!gatewayConfig.audit.enabled) {
+      return next.handle();
+    }
+
     if (SKIP_AUDIT_PATHS.has(path)) {
+      return next.handle();
+    }
+
+    if (
+      gatewayConfig.audit.skipWebhookPaths &&
+      path.startsWith(WEBHOOK_AUDIT_PREFIX)
+    ) {
       return next.handle();
     }
 

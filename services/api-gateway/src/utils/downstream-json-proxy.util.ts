@@ -13,6 +13,7 @@ export interface IDownstreamJsonProxyParams {
   readonly serviceLabel: string;
   readonly logger: PinoLoggerService;
   readonly signal?: AbortSignal;
+  readonly requestId?: string;
 }
 
 /**
@@ -21,7 +22,7 @@ export interface IDownstreamJsonProxyParams {
  */
 export type IJsonProxyRequest = Pick<
   IDownstreamJsonProxyParams,
-  "method" | "path" | "tenantId" | "query" | "body" | "signal"
+  "method" | "path" | "tenantId" | "query" | "body" | "signal" | "requestId"
 >;
 
 /**
@@ -45,6 +46,7 @@ export function createTenantJsonProxyForwarder(
       query: req.query,
       body: req.body,
       signal: req.signal,
+      requestId: req.requestId,
     });
 }
 
@@ -64,6 +66,9 @@ export async function downstreamJsonProxy(
   const headers: Record<string, string> = {
     [TENANT_HEADER]: params.tenantId,
   };
+  if (params.requestId) {
+    headers["x-request-id"] = params.requestId;
+  }
 
   const init: RequestInit = {
     method: params.method,

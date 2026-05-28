@@ -123,7 +123,7 @@ export function buildPhase1Stages(): {
   const mediumDuration = envString(env, "STRESS_MEDIUM_DURATION", "15m");
   const mediumMs = parseDurationMs(mediumDuration);
   const mediumRate = envNumber(env, "STRESS_MEDIUM_RATE", 200);
-  const mediumVUs = envNumber(env, "STRESS_MEDIUM_VUS", 100);
+  const mediumVUs = envNumber(env, "STRESS_MEDIUM_VUS", 500);
 
   const duration = formatDurationMs(mediumMs);
   const medium: StageDef = Object.freeze({

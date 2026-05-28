@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { AnyBulkWriteOperation } from "mongodb";
-import type { TenantMongoConnectionManager } from "@yoizen/database";
+import type { AnyBulkWriteOperation, Collection } from "mongodb";
+import { isFatalMongoError, type TenantMongoConnectionManager } from "@yoizen/database";
 import { WorkflowTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import type {
   IExecutionStatusRow,
@@ -30,6 +30,14 @@ export class ExecutionsProjectionMongoRepository
 
     const db = await this.connections.ensureSchema(tenantId);
     const col = db.collection<IWorkflowExecutionDoc>("workflow_executions");
+    const ops = this.buildBulkOps(rows);
+
+    return this.bulkWriteWithReconnect(tenantId, col, ops);
+  }
+
+  private buildBulkOps(
+    rows: IExecutionStatusRow[],
+  ): AnyBulkWriteOperation<IWorkflowExecutionDoc>[] {
     const now = new Date();
     const ops: AnyBulkWriteOperation<IWorkflowExecutionDoc>[] = new Array(
       rows.length,
@@ -43,8 +51,31 @@ export class ExecutionsProjectionMongoRepository
         },
       };
     }
+    return ops;
+  }
 
-    const result = await col.bulkWrite(ops, { ordered: false });
-    return result.modifiedCount;
+  /**
+   * Retries once after evicting a stale Mongo client (e.g. after
+   * `Topology is closed` when mongo-platform restarted mid-run).
+   */
+  private async bulkWriteWithReconnect(
+    tenantId: string,
+    col: Collection<IWorkflowExecutionDoc>,
+    ops: AnyBulkWriteOperation<IWorkflowExecutionDoc>[],
+  ): Promise<number> {
+    try {
+      const result = await col.bulkWrite(ops, { ordered: false });
+      return result.modifiedCount;
+    } catch (err: unknown) {
+      if (!isFatalMongoError(err)) {
+        throw err;
+      }
+      await this.connections.evictTenant(tenantId);
+      const db = await this.connections.ensureSchema(tenantId);
+      const retryCol =
+        db.collection<IWorkflowExecutionDoc>("workflow_executions");
+      const result = await retryCol.bulkWrite(ops, { ordered: false });
+      return result.modifiedCount;
+    }
   }
 }

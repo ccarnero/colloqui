@@ -148,7 +148,12 @@ function isRedisUnavailableError(err: unknown): boolean {
 export async function executeAgentCall(
   args: AgentChatRequest,
   tenantId: string,
+  executionId?: string,
 ): Promise<HttpExecutionResult> {
+  if (executionId) {
+    logger.log(`agentCall executionId=${executionId} tenant=${tenantId}`);
+  }
+
   const breaker = getAgentBreaker();
   const key = computeBreakerKey({ tenantId, agentId: args.agentId });
 

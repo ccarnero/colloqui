@@ -77,3 +77,47 @@ patches:
       - op: replace
         path: /spec/minReplicaCount
         value: 2
+      - op: replace
+        path: /spec/maxReplicaCount
+        value: 8
+  - target:
+      kind: ScaledObject
+      name: channel-service-worker-scaler
+    patch: |-
+      - op: remove
+        path: /spec/idleReplicaCount
+      - op: replace
+        path: /spec/minReplicaCount
+        value: 2
+      - op: replace
+        path: /spec/maxReplicaCount
+        value: 8
+  # Stress profile: api-gateway scales on RPS (not concurrency) so 200 RPS
+  # does not sit on a single pod. Conservative max-scale=5 fits 12-CPU minikube.
+  - target:
+      kind: Service
+      name: api-gateway
+    patch: |-
+      - op: replace
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1target
+        value: "150"
+      - op: replace
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
+        value: "2"
+      - op: replace
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
+        value: "5"
+  # workflow-worker: conservative ceiling for 12-CPU minikube; scale earlier.
+  - target:
+      kind: ScaledObject
+      name: workflow-worker-scaler
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicaCount
+        value: 14
+      - op: replace
+        path: /spec/triggers/0/metadata/threshold
+        value: "35"
+      - op: replace
+        path: /spec/triggers/1/metadata/threshold
+        value: "45"

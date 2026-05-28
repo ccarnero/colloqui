@@ -18,6 +18,7 @@
     "@nestjs/platform-fastify": "^11.0.0",
     "@temporalio/activity": "^1.11.0",
     "@temporalio/client": "^1.11.0",
+    "@temporalio/interceptors-opentelemetry": "1.11.0",
     "@temporalio/worker": "^1.11.0",
     "@temporalio/workflow": "^1.11.0",
     "@yoizen/database": "file:../../packages/database",
@@ -26,9 +27,9 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "ioredis": "^5.4.1",
-    "nats": "^2.29.3",
     "mongodb": "^6.12.0",
     "nanoid": "^5.0.0",
+    "nats": "^2.29.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },

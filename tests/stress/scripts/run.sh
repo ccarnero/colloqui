@@ -2,7 +2,7 @@
 # Phase 1 runner — orchestrates k6 + Knative sampler + reconciler.
 #
 # Usage:
-#   ./scripts/run.sh --scenario events-callback [--with-sampler false]
+#   ./scripts/run.sh --scenario webhook-ingress [--use-kourier auto]
 #
 # Inputs (env):
 #   STRESS_SINK_OUTPUT       Path to the sink JSONL (read by reconcile.ts).
@@ -25,6 +25,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
 SCENARIO=""
+USE_KOURIER="auto"
 # Default off: the legacy ../scale/sampler.ts was removed in the
 # stress refactor. Pass --with-sampler true once a replacement lands
 # under tests/stress/scale/sampler.ts (or override SAMPLER_SCRIPT).
@@ -40,6 +41,10 @@ while [[ $# -gt 0 ]]; do
       WITH_SAMPLER="${2:-true}"
       shift 2
       ;;
+    --use-kourier)
+      USE_KOURIER="${2:-true}"
+      shift 2
+      ;;
     *)
       echo "Unknown argument: $1" >&2
       exit 1
@@ -48,7 +53,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$SCENARIO" ]]; then
-  echo "Usage: $0 --scenario <webhook-ingress> [--with-sampler true|false]" >&2
+  echo "Usage: $0 --scenario <webhook-ingress> [--with-sampler true|false] [--use-kourier auto|true|false]" >&2
   exit 1
 fi
 
@@ -123,6 +128,30 @@ if [[ "$WITH_SAMPLER" == "true" ]]; then
     SAMPLER_PID="$!"
     echo "[run] sampler pid=$SAMPLER_PID -> $SAMPLER_OUT"
   fi
+fi
+
+should_resolve_kourier() {
+  case "$USE_KOURIER" in
+    true|1|yes) return 0 ;;
+    false|0|no) return 1 ;;
+    auto)
+      [[ -z "${STRESS_TARGET:-}" ]]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+if should_resolve_kourier; then
+  # shellcheck source=resolve-stress-target.sh
+  source "$SCRIPT_DIR/resolve-stress-target.sh"
+  resolve_stress_target || {
+    echo "[run] Kourier discovery failed; use STRESS_TARGET=http://... or --use-kourier false with port-forward." >&2
+    exit 1
+  }
+elif [[ -n "${STRESS_TARGET:-}" ]]; then
+  echo "[run] STRESS_TARGET=${STRESS_TARGET} (explicit)"
+else
+  echo "[run] Using default k6 target (localhost:8080); prefer --use-kourier auto for stress runs." >&2
 fi
 
 echo "[run] scenario=$SCENARIO ndjson=$K6_OUT_NDJSON summary=$K6_OUT_SUMMARY"

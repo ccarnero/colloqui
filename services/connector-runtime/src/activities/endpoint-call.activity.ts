@@ -1,7 +1,7 @@
 import { ApplicationFailure } from "@temporalio/activity";
 import { TENANT_HEADER, computeBreakerKey } from "@yoizen/shared";
 import type { EndpointCallArgs } from "@yoizen/shared";
-import { tracedFetch } from "@yoizen/observability";
+import { tracedFetch, PinoLoggerService } from "@yoizen/observability";
 import { workflowHttpWorkerConfig } from "../config";
 import {
   getAdapterClient,
@@ -24,6 +24,7 @@ import { HttpResponseCacheReason } from "./_shared/metrics";
 type IEndpointCallResult = IHttpCallResult;
 
 const RAW_TIMEOUT_MS = 30_000;
+const logger = new PinoLoggerService("endpoint-call.activity");
 
 /**
  * Temporal activity: performs an HTTP call, optionally resolved via
@@ -60,7 +61,12 @@ const RAW_TIMEOUT_MS = 30_000;
 export async function executeEndpointCall(
   args: EndpointCallArgs,
   tenantId: string,
+  executionId?: string,
 ): Promise<IEndpointCallResult> {
+  if (executionId) {
+    logger.log(`endpointCall executionId=${executionId} tenant=${tenantId}`);
+  }
+
   const hasAdapter = !!args.adapterId;
   const hasEndpoint = !!args.endpointId;
 

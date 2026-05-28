@@ -4,13 +4,19 @@ import {
   type JetStreamClient,
   type NatsConnection,
 } from "nats";
-import type { ServiceBusCallArgs } from "@yoizen/shared";
-import { TENANT_HEADER, computeIdempotencyKey } from "@yoizen/shared";
+import type { EventCausalContext, ServiceBusCallArgs } from "@yoizen/shared";
+import {
+  TENANT_HEADER,
+  computeIdempotencyKey,
+  generateId,
+} from "@yoizen/shared";
+import { injectTraceContext, PinoLoggerService } from "@yoizen/observability";
 import { workflowServiceConfig } from "../../config";
 
 let nc: NatsConnection | null = null;
 let js: JetStreamClient | null = null;
 const encoder = new TextEncoder();
+const logger = new PinoLoggerService("service-bus.activity");
 
 async function getConnection(): Promise<NatsConnection> {
   if (nc && !nc.isClosed()) return nc;
@@ -65,11 +71,23 @@ function deriveDedupKey(args: ServiceBusCallArgs): string {
 export async function executeServiceBusCall(
   args: ServiceBusCallArgs,
   tenantId: string,
+  causal?: EventCausalContext,
+  executionId?: string,
 ): Promise<{ published: true; subject: string }> {
+  if (executionId) {
+    logger.log(`serviceBusCall executionId=${executionId} tenant=${tenantId}`);
+  }
+
   const conn = await getConnection();
 
   const hdrs = natsHeaders();
   hdrs.set(TENANT_HEADER, tenantId);
+
+  const correlationId = causal?.correlation_id ?? generateId();
+  const causationId = causal?.causation_id ?? null;
+  hdrs.set("X-Correlation-Id", correlationId);
+  if (causationId) hdrs.set("X-Causation-Id", causationId);
+
   if (args.headers) {
     const entries = Object.entries(args.headers);
     for (let i = 0; i < entries.length; i++) {
@@ -79,6 +97,8 @@ export async function executeServiceBusCall(
 
   const dedupKey = deriveDedupKey(args);
   hdrs.set("Nats-Msg-Id", dedupKey);
+
+  injectTraceContext(hdrs);
 
   const payload = args.payload
     ? encoder.encode(JSON.stringify(args.payload))

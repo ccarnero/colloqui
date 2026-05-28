@@ -124,6 +124,11 @@ export interface IExecuteWorkflowOptions {
    * (wdocs-02 §6).
    */
   readonly causal?: EventCausalContext;
+  /**
+   * The original HTTP `x-request-id` from the api-gateway. Used only
+   * for log correlation — not stored in DB or propagated to activities.
+   */
+  readonly requestId?: string | null;
 }
 
 export interface IWorkflowFailureInfo {
@@ -315,7 +320,8 @@ export class WorkflowsService {
 
       this.logger.log(
         `Started execution ${row.id} for definition ${definitionId} ` +
-          `(temporal=${temporalWorkflowId}, runId=${handle.firstExecutionRunId})`,
+          `(temporal=${temporalWorkflowId}, runId=${handle.firstExecutionRunId})` +
+          (options.requestId ? `, requestId=${options.requestId}` : ""),
       );
 
       return {

@@ -16,10 +16,11 @@ spec:
   resources:
     requests:
       cpu: 250m
-      memory: 768Mi
+      # CNPG: memory request must be >= shared_buffers (768MB).
+      memory: 1Gi
     limits:
-      cpu: "1"
-      memory: 1500Mi
+      cpu: "2"
+      memory: 2Gi
   storage:
     size: 5Gi
   walStorage:
@@ -30,8 +31,8 @@ spec:
     podAntiAffinityType: preferred
   postgresql:
     parameters:
-      shared_buffers: "512MB"
-      effective_cache_size: "1GB"
+      shared_buffers: "768MB"
+      effective_cache_size: "1536MB"
       work_mem: "12MB"
       maintenance_work_mem: "128MB"
       huge_pages: "off"

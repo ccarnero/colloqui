@@ -44,8 +44,12 @@ cluster. Paired reading: [`README.md`](./README.md).
      `E2E_CLIENT_ID` + `E2E_CLIENT_SECRET`.
    - Optional: `TELEGRAM_WEBHOOK_SECRET` if the tenant pinned a custom
      bot secret on the channel account.
-5. **Local setup (when not using the in-cluster sink)**
-   - `./port-forward.sh` from the repo root.
+5. **Ingress for k6 (stress runs)**
+   - Prefer `./scripts/run.sh` with default `--use-kourier auto` (hits
+     `api-gateway` via Kourier, load-balanced across KPA replicas).
+   - Avoid `./port-forward.sh` for stress — it forwards to one pod.
+6. **Local setup (when not using the in-cluster sink)**
+   - `./port-forward.sh` from the repo root (debugging only).
    - `export STRESS_SINK_LOCAL=true`
    - `export STRESS_SINK_URL=http://host.docker.internal:8090/sink`
      (so the in-cluster api-gateway can reach the local sink — only
@@ -65,18 +69,20 @@ cd tests/stress
 > `--with-sampler true` (and `SAMPLER_SCRIPT=<path>` if it lives
 > outside `tests/stress/scale/sampler.ts`).
 
-The default ramp is **67 minutes** total (10 + 15 + 15 + 15 + 10 + 2 m).
-30-second smoke run before the real test:
+The default profile is one **medium** stage: **15 m @ 200 RPS** (see
+`lib/stages.ts`). 30-second smoke before the real test:
 
 ```bash
-STRESS_BASELINE_DURATION=5s \
-STRESS_LIGHT_DURATION=5s \
-STRESS_MEDIUM_DURATION=5s \
-STRESS_HEAVY_DURATION=5s \
-STRESS_PEAK_DURATION=5s \
-STRESS_SPIKE_RAMP=2s \
-STRESS_SPIKE_HOLD=3s \
-./scripts/run.sh --scenario webhook-ingress
+STRESS_MEDIUM_DURATION=30s STRESS_MEDIUM_RATE=10 \
+  ./scripts/run.sh --scenario webhook-ingress
+```
+
+Production stress target (15 m @ 200 RPS):
+
+```bash
+STRESS_MEDIUM_RATE=200 STRESS_MEDIUM_DURATION=15m \
+  TELEGRAM_WEBHOOK_SECRET=anothersecret \
+  ./scripts/run.sh --scenario webhook-ingress
 ```
 
 ## Stop early
@@ -203,6 +209,15 @@ rollout restart) for the dev environment:
 
 ```bash
 ./scripts/purge-temporal.sh
+./scripts/purge-circuit-breakers.sh
+```
+
+If Mongo `workflow_executions` still shows stale `RUNNING` rows after a
+run (Temporal already completed them):
+
+```bash
+./scripts/reconcile-temporal-mongo-executions.sh          # dry-run
+./scripts/reconcile-temporal-mongo-executions.sh --apply  # fix rows
 ```
 
 ### Snapshot baseline metrics before each run

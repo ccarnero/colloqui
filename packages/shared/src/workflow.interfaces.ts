@@ -35,6 +35,12 @@ export interface WorkflowExecutionContext {
    * `channelSend`). `undefined` means "this run is a causal root".
    */
   causal?: EventCausalContext;
+  /**
+   * Stable execution id from `workflow_executions.id`. Set by
+   * `runWorkflow` so activities can correlate their logs/Traces
+   * back to the API caller without relying solely on OTEL traceId.
+   */
+  executionId?: string;
 }
 
 // ── Activity arguments ─────────────────────────────────────────────

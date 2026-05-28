@@ -1,4 +1,5 @@
 import { Connection, Client } from "@temporalio/client";
+import { OpenTelemetryWorkflowClientInterceptor } from "@temporalio/interceptors-opentelemetry";
 import type { FactoryProvider } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 import { workflowServiceConfig } from "../config";
@@ -45,6 +46,9 @@ export const temporalClientProvider: FactoryProvider = {
     return new Client({
       connection,
       namespace: workflowServiceConfig.temporalNamespace,
+      interceptors: {
+        workflow: [new OpenTelemetryWorkflowClientInterceptor()],
+      },
     });
   },
 };

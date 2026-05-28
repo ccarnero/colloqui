@@ -1,6 +1,7 @@
 import "../instrumentation";
 import { WORKFLOW_ORCHESTRATOR_TASK_QUEUE } from "@yoizen/shared";
 import { PinoLoggerService } from "@yoizen/observability";
+import { OpenTelemetryActivityInboundInterceptor } from "@temporalio/interceptors-opentelemetry";
 import { runTemporalWorkerCli } from "./temporal-worker-bootstrap";
 import { workflowServiceConfig } from "../config";
 import * as activities from "./activities";
@@ -20,6 +21,14 @@ runTemporalWorkerCli(
       taskQueue: WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
       workflowsPath: require.resolve("./workflows"),
       activities,
+      interceptors: {
+        activity: [
+          (ctx) => ({
+            inbound: new OpenTelemetryActivityInboundInterceptor(ctx),
+          }),
+        ],
+        workflowModules: [require.resolve("./workflow-interceptors")],
+      },
       // Stress-grade concurrency. The orchestrator runs both
       // workflow tasks (deterministic, CPU-bound on replay) and
       // local activities (`executeJsFunction`, `executeServiceBusCall`,

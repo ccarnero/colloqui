@@ -24,8 +24,8 @@
 # out (`Failed to get buffered events`, `signal info`, `request cancel
 # info` — each call dispatches ~6 parallel SELECTs). Lifted cap
 # 2 → 4 CPU; node still has ~3 cores headroom (12-core minikube/orbstack
-# host). Requests stay at 500m so the kube-scheduler can still fit
-# the workflow-* worker family.
+# host). CPU request stays at 500m; memory request must be >=
+# `shared_buffers` (CNPG admission rule) — 2Gi request for 1536MB buffers.
 #
 # `huge_pages: off` because dev nodes (orbstack, kind, local-path)
 # typically don't have HugePages configured at the kernel level.
@@ -38,10 +38,10 @@ spec:
   resources:
     requests:
       cpu: 500m
-      memory: 1500Mi
+      memory: 2Gi
     limits:
-      cpu: "4"
-      memory: 3Gi
+      cpu: "5"
+      memory: 5Gi
   storage:
     size: 10Gi
   walStorage:
@@ -52,10 +52,10 @@ spec:
     podAntiAffinityType: preferred
   postgresql:
     parameters:
-      shared_buffers: "1GB"
-      effective_cache_size: "2GB"
+      shared_buffers: "1536MB"
+      effective_cache_size: "3GB"
       work_mem: "24MB"
-      maintenance_work_mem: "320MB"
+      maintenance_work_mem: "384MB"
       huge_pages: "off"
       max_connections: "300"
       # CNPG validates max_wal_size < walStorage (2Gi here). 1.5GB
@@ -136,8 +136,13 @@ spec:
               cpu: 350m
               memory: 768Mi
             limits:
-              cpu: "2"
-              memory: 2Gi
+              cpu: "3"
+              memory: 3Gi
+          env:
+            - name: SQL_MAX_CONNS
+              value: "32"
+            - name: SQL_VIS_MAX_CONNS
+              value: "16"
 ---
 apiVersion: apps/v1
 kind: Deployment
