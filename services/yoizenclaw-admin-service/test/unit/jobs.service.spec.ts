@@ -3,22 +3,38 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { mockFn } from "../mock-utils";
 import { NotFoundException, BadRequestException } from "@nestjs/common";
 import { JobsService } from "../../src/modules/jobs/jobs.service";
+import type {
+  IJob,
+  ICreateJobData,
+} from "../../src/modules/jobs/jobs.repository.interface";
 import {
-  JobsRepository,
-  type IJob,
-  type ICreateJobData,
-} from "../../src/modules/jobs/jobs.repository";
+  JOBS_REPOSITORY,
+} from "../../src/modules/jobs/jobs.repository.interface";
+import type {
+  IJobExecution,
+  ICreateExecutionData,
+} from "../../src/modules/jobs/job-executions.repository.interface";
 import {
-  JobExecutionsRepository,
-  type IJobExecution,
-  type ICreateExecutionData,
-} from "../../src/modules/jobs/job-executions.repository";
+  JOB_EXECUTIONS_REPOSITORY,
+} from "../../src/modules/jobs/job-executions.repository.interface";
 import { NatsPublisher } from "../../src/providers/nats.provider";
 
 describe("JobsService", () => {
   let service: JobsService;
-  let mockJobsRepository: JobsRepository;
-  let mockExecutionsRepository: JobExecutionsRepository;
+  let mockJobsRepository: {
+    findAll: ReturnType<typeof vi.fn>;
+    findById: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+    enable: ReturnType<typeof vi.fn>;
+    disable: ReturnType<typeof vi.fn>;
+    updateLastRun: ReturnType<typeof vi.fn>;
+  };
+  let mockExecutionsRepository: {
+    findAll: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+  };
   let mockNatsPublisher: NatsPublisher;
   const TENANT_ID = "tenant-123";
 
@@ -32,13 +48,13 @@ describe("JobsService", () => {
       enable: vi.fn(),
       disable: vi.fn(),
       updateLastRun: vi.fn(),
-    } as unknown as JobsRepository;
+    } as typeof mockJobsRepository;
 
     mockExecutionsRepository = {
       findAll: vi.fn(),
       findById: vi.fn(),
       create: vi.fn(),
-    } as unknown as JobExecutionsRepository;
+    } as typeof mockExecutionsRepository;
 
     mockNatsPublisher = {
       publishJobTrigger: vi.fn(),
@@ -48,11 +64,11 @@ describe("JobsService", () => {
       providers: [
         JobsService,
         {
-          provide: JobsRepository,
+          provide: JOBS_REPOSITORY,
           useValue: mockJobsRepository,
         },
         {
-          provide: JobExecutionsRepository,
+          provide: JOB_EXECUTIONS_REPOSITORY,
           useValue: mockExecutionsRepository,
         },
         {

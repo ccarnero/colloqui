@@ -21,6 +21,7 @@
     "class-validator": "^0.14.1",
     "ioredis": "^5.4.1",
     "jose": "^6.0.11",
+    "mongodb": "^6.12.0",
     "postgres": "^3.4.5",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"

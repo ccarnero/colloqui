@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 import {
   isTenantProvisionRequestedMessageV1,
@@ -7,7 +7,10 @@ import {
   TENANT_PROVISION_MAX_DELIVER,
 } from "@yoizen/shared";
 import type { JsMsg } from "nats";
-import { TenantsRepository } from "../tenants/tenants.repository";
+import {
+  TENANTS_REPOSITORY,
+  type ITenantsRepository,
+} from "../tenants/tenants.repository.interface";
 import { TenantReadyPublisher } from "../../providers/tenant-ready-publisher.service";
 import { TenantProvisioningExecutor } from "./tenant-provisioning-executor.service";
 
@@ -16,7 +19,7 @@ export class TenantProvisionHandler {
   private readonly logger = new PinoLoggerService(TenantProvisionHandler.name);
 
   constructor(
-    private readonly repository: TenantsRepository,
+    @Inject(TENANTS_REPOSITORY) private readonly repository: ITenantsRepository,
     private readonly executor: TenantProvisioningExecutor,
     private readonly readyPublisher: TenantReadyPublisher,
   ) {}

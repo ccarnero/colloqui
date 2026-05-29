@@ -9,12 +9,18 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["create", "get", "list", "delete"]
+  # `update`/`patch` are required by `MongoProvisioner.replaceConfigMap`,
+  # `replaceStatefulSet`, and the secret reconcile path so redeploys of
+  # tenant-service converge existing per-tenant resources on the new
+  # template (see services/tenant-service/src/providers/mongo.provider.ts).
+  # Without these verbs the second-run flow 403s on
+  # `configmaps "mongo-config" is forbidden`.
   - apiGroups: [""]
     resources: ["services", "configmaps", "secrets", "persistentvolumeclaims"]
-    verbs: ["create", "get", "list", "delete"]
+    verbs: ["create", "get", "list", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
-    verbs: ["create", "get", "list", "delete", "watch"]
+    verbs: ["create", "get", "list", "update", "patch", "delete", "watch"]
   # Required by `YoizenClawRuntimeProvisioner` so tenant-service can apply the
   # per-tenant `yoizenclaw-runtime` Knative Service into the tenant namespace
   # right after Postgres is ready (see services/tenant-service/src/providers/

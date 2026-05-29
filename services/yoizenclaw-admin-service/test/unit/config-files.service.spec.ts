@@ -2,16 +2,23 @@ import { describe, it, expect, beforeEach, vi } from "bun:test";
 import { Test, TestingModule } from "@nestjs/testing";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigFilesService } from "../../src/modules/config-files/config-files.service";
-import {
-  ConfigFilesRepository,
-  type IConfigFile,
-  type ICreateConfigFileData,
-} from "../../src/modules/config-files/config-files.repository";
+import type {
+  IConfigFile,
+  ICreateConfigFileData,
+} from "../../src/modules/config-files/config-files.repository.interface";
+import { CONFIG_FILES_REPOSITORY } from "../../src/modules/config-files/config-files.repository.interface";
 import { NatsPublisher } from "../../src/providers/nats.provider";
 
 describe("ConfigFilesService", () => {
   let service: ConfigFilesService;
-  let mockRepository: ConfigFilesRepository;
+  let mockRepository: {
+    findAll: ReturnType<typeof vi.fn>;
+    findByPath: ReturnType<typeof vi.fn>;
+    findAllActive: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+    delete?: ReturnType<typeof vi.fn>;
+  };
   let mockNatsPublisher: NatsPublisher;
   const TENANT_ID = "tenant-123";
 
@@ -23,7 +30,7 @@ describe("ConfigFilesService", () => {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
-    } as unknown as ConfigFilesRepository;
+    } as typeof mockRepository;
 
     mockNatsPublisher = {
       publishRuntimeConfigSync: vi.fn(),
@@ -33,7 +40,7 @@ describe("ConfigFilesService", () => {
       providers: [
         ConfigFilesService,
         {
-          provide: ConfigFilesRepository,
+          provide: CONFIG_FILES_REPOSITORY,
           useValue: mockRepository,
         },
         {

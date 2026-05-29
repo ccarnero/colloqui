@@ -1,5 +1,7 @@
+process.env.DB_ENGINE = "mongo";
+
 import { describe, it, expect, mock } from "bun:test";
-import type { Sql } from "@yoizen/database";
+import type { Db } from "mongodb";
 import { BatchBuffer } from "../../src/modules/aggregator/batch-buffer";
 import type { IChannelEventRow } from "../../src/modules/aggregator/envelope-parser";
 
@@ -15,29 +17,29 @@ function makeRow(key: string): IChannelEventRow {
   };
 }
 
-function makeSqlMock(behavior: "ok" | "error"): {
-  sql: Sql;
+function makeDbMock(behavior: "ok" | "error"): {
+  db: Db;
   calls: { value: number };
 } {
   const calls = { value: 0 };
-  const fn = mock(() => {
+  const insertMany = mock(() => {
     calls.value += 1;
     return behavior === "ok"
-      ? Promise.resolve({ count: 1 })
+      ? Promise.resolve({ insertedCount: 1 })
       : Promise.reject(new Error("boom"));
   });
-  const sql = Object.assign(fn, {
-    array: (arr: unknown[]) => arr,
-  }) as unknown as Sql;
-  return { sql, calls };
+  const db = {
+    collection: mock(() => ({ insertMany })),
+  } as unknown as Db;
+  return { db, calls };
 }
 
 describe("BatchBuffer", () => {
   it("flushes synchronously when batchSize is reached", async () => {
-    const { sql, calls } = makeSqlMock("ok");
+    const { db, calls } = makeDbMock("ok");
     const onSuccess = mock();
     const buf = new BatchBuffer({
-      sql,
+      connection: db,
       batchSize: 2,
       batchFlushMs: 10_000,
       hooks: {
@@ -55,10 +57,10 @@ describe("BatchBuffer", () => {
   });
 
   it("rejects all waiters when a flush fails", async () => {
-    const { sql, calls } = makeSqlMock("error");
+    const { db, calls } = makeDbMock("error");
     const onFailure = mock();
     const buf = new BatchBuffer({
-      sql,
+      connection: db,
       batchSize: 2,
       batchFlushMs: 10_000,
       hooks: {
@@ -78,9 +80,9 @@ describe("BatchBuffer", () => {
   });
 
   it("flushes remaining rows when stopped", async () => {
-    const { sql, calls } = makeSqlMock("ok");
+    const { db, calls } = makeDbMock("ok");
     const buf = new BatchBuffer({
-      sql,
+      connection: db,
       batchSize: 100,
       batchFlushMs: 10_000,
     });
@@ -91,9 +93,9 @@ describe("BatchBuffer", () => {
   });
 
   it("rejects enqueue after stop()", async () => {
-    const { sql } = makeSqlMock("ok");
+    const { db } = makeDbMock("ok");
     const buf = new BatchBuffer({
-      sql,
+      connection: db,
       batchSize: 100,
       batchFlushMs: 10_000,
     });

@@ -4,7 +4,7 @@ import { ProvisioningStatus } from "@yoizen/shared";
 import { PermanentError } from "@yoizen/shared";
 import { TenantProvisionHandler } from "../../src/modules/provisioning/tenant-provision-handler.service";
 import { TenantProvisioningExecutor } from "../../src/modules/provisioning/tenant-provisioning-executor.service";
-import { TenantsRepository } from "../../src/modules/tenants/tenants.repository";
+import type { ITenantsRepository } from "../../src/modules/tenants/tenants.repository.interface";
 import { TenantReadyPublisher } from "../../src/providers/tenant-ready-publisher.service";
 
 function makeMsg(
@@ -49,7 +49,7 @@ describe("TenantProvisionHandler", () => {
     const executor = { run: mock(() => Promise.resolve({ nsName: "n", namespacePhase: "Active" })) };
     const readyPublisher = noopReadyPublisher();
     const handler = new TenantProvisionHandler(
-      repository as unknown as TenantsRepository,
+      repository as unknown as ITenantsRepository,
       executor as unknown as TenantProvisioningExecutor,
       readyPublisher as unknown as TenantReadyPublisher,
     );
@@ -81,7 +81,7 @@ describe("TenantProvisionHandler", () => {
     };
     const readyPublisher = noopReadyPublisher();
     const handler = new TenantProvisionHandler(
-      repository as unknown as TenantsRepository,
+      repository as unknown as ITenantsRepository,
       executor as unknown as TenantProvisioningExecutor,
       readyPublisher as unknown as TenantReadyPublisher,
     );
@@ -118,7 +118,7 @@ describe("TenantProvisionHandler", () => {
     };
     const readyPublisher = noopReadyPublisher();
     const handler = new TenantProvisionHandler(
-      repository as unknown as TenantsRepository,
+      repository as unknown as ITenantsRepository,
       executor as unknown as TenantProvisioningExecutor,
       readyPublisher as unknown as TenantReadyPublisher,
     );
@@ -150,7 +150,7 @@ describe("TenantProvisionHandler", () => {
     };
     const readyPublisher = noopReadyPublisher();
     const handler = new TenantProvisionHandler(
-      repository as unknown as TenantsRepository,
+      repository as unknown as ITenantsRepository,
       executor as unknown as TenantProvisioningExecutor,
       readyPublisher as unknown as TenantReadyPublisher,
     );
@@ -168,7 +168,7 @@ describe("TenantProvisionHandler", () => {
     const executor = { run: mock(() => Promise.resolve()) };
     const readyPublisher = noopReadyPublisher();
     const handler = new TenantProvisionHandler(
-      repository as unknown as TenantsRepository,
+      repository as unknown as ITenantsRepository,
       executor as unknown as TenantProvisioningExecutor,
       readyPublisher as unknown as TenantReadyPublisher,
     );

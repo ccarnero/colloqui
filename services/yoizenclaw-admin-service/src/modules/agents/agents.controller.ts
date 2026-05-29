@@ -21,7 +21,7 @@ import {
   MemoryProposalParamDto,
   UpdateAgentDto,
 } from "./agents.dto";
-import type { IAgent } from "./agents.repository";
+import type { IAgent } from "./agents.repository.interface";
 import { TenantGuard } from "../../guards/tenant.guard";
 import { TenantId } from "../../providers/tenant.decorator";
 

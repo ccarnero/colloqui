@@ -1,0 +1,1324 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: api-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/api-gateway:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: REDIS_HOST
+              value: "redis.support-services-dev.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
+            # ----- DNS for split services (Phase 1.5): use *-api ------
+            - name: AUDIT_SERVICE_URL
+              value: "http://audit-service-api.platform-services-dev.svc.cluster.local"
+            - name: TENANT_SERVICE_URL
+              value: "http://tenant-service.platform-services-dev.svc.cluster.local"
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service.platform-services-dev.svc.cluster.local"
+            - name: CACHE_SERVICE_URL
+              value: "http://cache-service.platform-services-dev.svc.cluster.local"
+            - name: REGISTRY_SERVICE_URL
+              value: "http://registry-service.platform-services-dev.svc.cluster.local"
+            - name: WORKFLOW_SERVICE_URL
+              value: "http://workflow-service-api.platform-services-dev.svc.cluster.local"
+            - name: PROXY_SERVICE_URL
+              value: "http://proxy-service.platform-services-dev.svc.cluster.local"
+            - name: CONNECTOR_ADMIN_URL
+              value: "http://connector-admin-api.platform-services-dev.svc.cluster.local"
+            - name: CHANNEL_SERVICE_URL
+              value: "http://channel-service-api.platform-services-dev.svc.cluster.local"
+            - name: ADMIN_SERVICE_URL
+              value: "http://yoizenclaw-admin-service.platform-services-dev.svc.cluster.local"
+            - name: YOIZENCLAW_RUNTIME_GATEWAY_URL
+              value: "http://yoizenclaw-runtime-gateway.platform-services-dev.svc.cluster.local"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secret
+                  key: JWT_SECRET
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "api-gateway"
+            - name: WEBHOOK_PUBLISH_TIMEOUT_MS
+              value: "3000"
+            - name: GATEWAY_AUDIT_SKIP_WEBHOOKS
+              value: "true"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 250m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+    metadata:
+      annotations:
+        autoscaling.knative.dev/metric: rps
+        autoscaling.knative.dev/target: "150"
+        autoscaling.knative.dev/min-scale: "2"
+        autoscaling.knative.dev/max-scale: "5"
+---
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: yoizenclaw-runtime-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/yoizenclaw-runtime-gateway:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: REDIS_HOST
+              value: "redis.support-services-dev.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "yoizenclaw-runtime-gateway"
+---
+
+# ----- audit-service: split api ↔ worker (Phase 1.5) -----
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: audit-service-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/audit-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_TIER_OVERRIDES
+              value: '{}'
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "audit-service-api"
+            - name: SERVICE_MODE
+              value: "api"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-service-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          # MONGO_DB / MONGO_USER / MONGO_PASSWORD come from the
+          # `mongo-credentials` Secret declared in base. We deliberately
+          # do NOT redeclare them here: kustomize strategic-merge on a core
+          # Deployment merges env entries field-by-field by `name`, leaving
+          # both `value` AND `valueFrom` set, which kube-apiserver rejects.
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: TENANT_MONGO_TIER_OVERRIDES
+              value: '{}'
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "audit-service-worker"
+            - name: SERVICE_MODE
+              value: "worker"
+          # Trimmed for single-node minikube (2026-05-12 orchestrator-
+          # throughput plan, Phase 1). Base requests 100m/128Mi; actual
+          # steady-state ~30m/pod with 3 replicas. Reclaiming 150m of
+          # node CPU budget (3 × 50m) for the workflow-* workers without
+          # touching limits — burst capacity (500m/256Mi) is identical.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: cache-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/cache-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: REDIS_HOST
+              value: "redis.support-services-dev.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "cache-service"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: tenant-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/tenant-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: MONGO_PORT
+              value: "27017"
+            # tenant-service provisions per-tenant logical DBs + roles on the
+            # shared cluster via `db.admin.command({createUser})`, so it needs
+            # root credentials on the same cluster used for platform data. In
+            # dev/local we collapse "platform" and "shared-tier" onto the
+            # single `mongo-platform` StatefulSet.
+            - name: MONGO_ROOT_USER
+              value: "admin"
+            - name: MONGO_ROOT_PASSWORD
+              value: "admin-dev-password"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: TENANT_MONGO_IMAGE
+              value: "mongo:7.0"
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "tenant-service"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: auth-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/auth-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            # Used only for `platform.tenant.deleted` fan-out so the
+            # per-tenant Mongo pool cache evicts a destroyed tenant
+            # without waiting for the verifyConnectivity self-heal.
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secret
+                  key: JWT_SECRET
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secret
+                  key: ADMIN_EMAIL
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secret
+                  key: ADMIN_PASSWORD
+            - name: TENANT_ADMIN_TENANT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secret
+                  key: TENANT_ADMIN_TENANT_ID
+            - name: TENANT_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secret
+                  key: TENANT_ADMIN_EMAIL
+            - name: TENANT_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secret
+                  key: TENANT_ADMIN_PASSWORD
+            - name: TENANT_ADMIN_DISPLAY_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secret
+                  key: TENANT_ADMIN_DISPLAY_NAME
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: REDIS_HOST
+              value: "redis.support-services-dev.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "auth-service"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: registry-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/registry-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: REGISTRY_EMIT_ADAPTER_SYNC
+              value: "true"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: TENANT_SERVICE_URL
+              value: "http://tenant-service.platform-services-dev.svc.cluster.local"
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "registry-service"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+
+# ----- workflow-service: split api ↔ worker (Phase 1.5) -----
+# Note: previous K8s name was `workflow-api`; now `workflow-service-api`.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: workflow-service-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/workflow-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: ENTRYPOINT
+              value: "dist/main.js"
+            - name: TEMPORAL_ADDRESS
+              value: "temporal.support-services-dev.svc.cluster.local:7233"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_TIER_OVERRIDES
+              value: '{}'
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "workflow-service-api"
+            - name: SERVICE_MODE
+              value: "api"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          # /health probes Temporal (gRPC getSystemInfo) + NATS + per-tenant
+          # Postgres. Generous timeout/threshold prevent flickering NotReady
+          # under load — flickering triggers SKS/Deployment 409 conflicts and
+          # blocks scale-to-zero.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-service-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: ENTRYPOINT
+              value: "dist/main.js"
+            - name: TEMPORAL_ADDRESS
+              value: "temporal.support-services-dev.svc.cluster.local:7233"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: TENANT_MONGO_TIER_OVERRIDES
+              value: '{}'
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "workflow-service-worker"
+            - name: SERVICE_MODE
+              value: "worker"
+---
+
+# NOTE: workflow-worker / connector-runtime are plain Deployments
+# (NOT Knative Services) — see knative/services/base/workflow-worker.yaml
+# for the rationale. The patches below target `apps/v1.Deployment`
+# accordingly; the env injection still happens here so the dev overlay
+# remains the single place that wires service URLs / Temporal endpoints.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          env:
+            - name: ENTRYPOINT
+              value: "dist/temporal/worker.js"
+            - name: TEMPORAL_ADDRESS
+              value: "temporal.support-services-dev.svc.cluster.local:7233"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: REDIS_HOST
+              value: "redis.support-services-dev.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            # The platform Redis is deployed as a 3-master + 3-replica
+            # Cluster. Without REDIS_CLUSTER_MODE=true, ioredis opens a
+            # standalone connection to the seed node and every command
+            # whose key hashes off-shard returns a `MOVED <slot> <ip>`
+            # ReplyError. `executeAgentCall` (circuit breaker +
+            # YoizenClawExecutionClient cache) is the consumer here.
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "workflow-worker"
+          # Trimmed for single-node minikube. Base requests 250m / 512Mi
+          # for stress-grade multi-node packing. On a 12-CPU local node
+          # the cluster sits at ~99% CPU-request saturation when KEDA
+          # tries to spawn the `maxReplicaCount: 20` ceiling, blocking
+          # all new pods with `Insufficient cpu`. `kubectl top` shows
+          # actual avg usage ~150m / 280Mi per replica even under the
+          # stress-test workload, so 100m / 256Mi requests preserve
+          # scheduler accuracy without changing burst capacity (limits
+          # stay at 2 CPU / 1Gi from the base). Same precedent as
+          # api-gateway above.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connector-runtime
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: "temporal.support-services-dev.svc.cluster.local:7233"
+            - name: CONNECTOR_ADMIN_URL
+              value: "http://connector-admin-api.platform-services-dev.svc.cluster.local"
+            - name: REDIS_HOST
+              value: "redis.support-services-dev.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "connector-runtime"
+          # Trimmed for single-node minikube — same rationale as
+          # workflow-worker above. The HTTP worker is I/O-bound
+          # (outbound `tracedFetch`) so actual per-pod CPU is much
+          # lower than the orchestrator: `kubectl top` shows ~70m /
+          # 110Mi per replica under stress. Base requests 250m / 256Mi
+          # so 75m / 128Mi here lets the scheduler pack the
+          # `maxReplicaCount: 50` ceiling without oversubscribing the
+          # 12-core node. Limits unchanged (2 CPU / 1Gi) so burst
+          # capacity is identical.
+          resources:
+            requests:
+              cpu: 75m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+---
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: proxy-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/proxy-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: TENANT_SERVICE_URL
+              value: "http://tenant-service.platform-services-dev.svc.cluster.local"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "proxy-service"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+
+# ----- adapter-service: split api ↔ worker (Phase 1.5) -----
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: connector-admin-api
+spec:
+  template:
+    metadata:
+      # Re-scale annotations after the 2026-05 stress sprint where
+      # adapter-service-api became the *actual* upstream ceiling for
+      # connector-runtime:
+      #
+      # - metric: concurrency -> rps. Same lesson as api-gateway: the
+      #   HTTP CRUD path is short (~30 ms p50 to the per-tenant DB),
+      #   so concurrency stays well below any reasonable scale-up
+      #   threshold even at multi-thousand RPS bursts. RPS scales out
+      #   linearly and predictably.
+      # - target: 50 -> 200 RPS per pod. With 2 CPU per pod (see
+      #   resources below) and ~5 ms/req CPU budget, 200 RPS leaves
+      #   ~50% headroom for tail latency.
+      # - min-scale: 0 -> 2. Cold start (image fetch + Nest bootstrap
+      #   + tenant pool warmup) is 8-15 s. During the 2026-05 run KPA
+      #   scaled to 0 between bursts and the next 50 RPS wave found
+      #   the service still cold-starting — every call timed out,
+      #   connector-runtime breaker tripped, cascade. Always-on 2
+      #   replicas absorbs the warmup without delay.
+      # - max-scale: 3 -> 10. The 17 k-workflow drain backlog of the
+      #   2026-05 stress test sustained ~1200 concurrent activities
+      #   against this service; capping at 3 pods left each pod doing
+      #   ~400 concurrent (8x the per-pod target). 10 pods x 200 RPS
+      #   target = 2000 RPS aggregate headroom, matches the stress
+      #   plan's spike phase ceiling.
+      # - scale-down-delay: 60 s. Avoids the readiness-flap thrash we
+      #   observed when KPA scaled down within seconds of a burst,
+      #   then immediately scaled back up only to be marked unhealthy
+      #   because the new pod hadn't warmed its tenant pools.
+      annotations:
+        autoscaling.knative.dev/metric: rps
+        autoscaling.knative.dev/target: "200"
+        autoscaling.knative.dev/min-scale: "2"
+        autoscaling.knative.dev/max-scale: "10"
+        autoscaling.knative.dev/scale-down-delay: "60s"
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/connector-admin:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: TENANT_MONGO_TIER_OVERRIDES
+              value: '{}'
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "connector-admin"
+            - name: SERVICE_MODE
+              value: "api"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          # Bumped after the 2026-05 stress test exposed
+          # adapter-service-api as the actual upstream ceiling. Old
+          # 500m / 256Mi cap saturated at ~50 RPS — single Bun event
+          # loop ran 100% on a 500 mCPU slice while resolving per-
+          # tenant Postgres queries, /readyz timed out on the 1 s
+          # default kubelet probe, pods were marked Unhealthy and
+          # cycled. 2 CPU / 1Gi gives the event loop room and lets the
+          # tenant connection pool grow without RSS pressure.
+          #
+          # Followup (2026-05-12 orchestrator-throughput plan, Phase 1):
+          # requests trimmed 500m → 300m because steady-state actual usage
+          # is ~120m/pod (`kubectl top`). At min-scale 2 this reclaims
+          # 400m of node budget for the workflow-* workers without
+          # touching the 2 CPU limit (burst capacity unchanged).
+          resources:
+            requests:
+              cpu: 300m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          # Relaxed from kubelet defaults (timeout 1s / failures 3).
+          # /readyz hits the per-tenant `AdapterTenantConnectionManager`
+          # which under load can take >1 s to acquire a pool slot —
+          # the previous 1 s cutoff was flapping pods Unhealthy during
+          # stress even though they were perfectly able to serve real
+          # traffic. 5 s timeout x 5 failures = 25 s of true badness
+          # before kubelet removes a pod from the LB.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 5
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connector-admin-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          # MONGO_DB / MONGO_USER / MONGO_PASSWORD come from the
+          # `mongo-credentials` Secret declared in base — see the comment
+          # on audit-service-worker above for the full kustomize rationale.
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: TENANT_MONGO_TIER_OVERRIDES
+              value: '{}'
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "connector-admin-worker"
+            - name: SERVICE_MODE
+              value: "worker"
+---
+
+# ----- channel-service: split api ↔ worker (Phase 1.5) -----
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: channel-service-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/channel-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: REDIS_HOST
+              value: "redis.support-services-dev.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_USAGE_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USAGE_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_USAGE_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_DB
+              value: "yoizen_usage"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "channel-service-api"
+            - name: SERVICE_MODE
+              value: "api"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: channel-service-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          # MONGO_DB / MONGO_USER / MONGO_PASSWORD come from the
+          # `mongo-credentials` Secret declared in base — see the comment
+          # on audit-service-worker above for the full kustomize rationale.
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: REDIS_HOST
+              value: "redis.support-services-dev.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_CLUSTER_MODE
+              value: "true"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_USAGE_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USAGE_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_USAGE_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_DB
+              value: "yoizen_usage"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "channel-service-worker"
+            - name: SERVICE_MODE
+              value: "worker"
+          # Trimmed for single-node minikube (2026-05-12 orchestrator-
+          # throughput plan, Phase 1). Base requests 100m/128Mi; actual
+          # steady-state ~40m/pod with 3 replicas. Reclaiming 150m of
+          # node CPU budget (3 × 50m) for the workflow-* workers without
+          # touching limits — burst capacity (500m/256Mi) is identical.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: yoizenclaw-admin-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/yoizenclaw-admin-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "yoizenclaw-admin-service"
+            - name: CONNECTOR_ADMIN_URL
+              value: "http://connector-admin-api.platform-services-dev.svc.cluster.local"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+
+# ----- usage-aggregator: split api ↔ worker (Phase 1.5) -----
+# Note: previous K8s name was `usage-aggregator-service`; the `-service`
+# suffix was dropped to align with the rest of the split pairs.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: usage-aggregator-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/usage-aggregator-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: TENANT_SERVICE_URL
+              value: "http://tenant-service.platform-services-dev.svc.cluster.local"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_USAGE_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USAGE_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_USAGE_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_DB
+              value: "yoizen_usage"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "usage-aggregator-api"
+            - name: SERVICE_MODE
+              value: "api"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: usage-aggregator-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: TENANT_SERVICE_URL
+              value: "http://tenant-service.platform-services-dev.svc.cluster.local"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_USAGE_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USAGE_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_USAGE_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_DB
+              value: "yoizen_usage"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "usage-aggregator-worker"
+            - name: SERVICE_MODE
+              value: "worker"

@@ -14,6 +14,8 @@ import { PermanentError } from "@yoizen/shared";
 import {
   MultiTenantConsumerManager,
   SharedTenantDatabaseMode,
+  TenantConnectionManager,
+  TenantMongoConnectionManager,
   type INatsConsumerLogger,
   NATS_CONNECTION,
 } from "@yoizen/database";
@@ -56,7 +58,7 @@ const SKIP_REASONS = new Set<string>([
  * dynamically (via `MultiTenantConsumerManager`'s reconciliation
  * loop), consumes messages off each durable, parses them into
  * `IChannelEventRow`s, and flushes batches to the tenant's own
- * `postgres-usage` instance.
+ * `mongo-usage` instance.
  *
  * Per-tenant batchers are keyed in a `Map` so enqueue → buffer is
  * O(1). Tenant discovery happens implicitly via stream discovery —
@@ -75,7 +77,10 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
     @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(JETSTREAM) private readonly js: JetStreamClient,
-    private readonly usageConnections: UsageTenantConnectionManager,
+    @Inject(UsageTenantConnectionManager)
+    private readonly usageConnections:
+      | TenantConnectionManager
+      | TenantMongoConnectionManager,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -194,7 +199,7 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
     if (cached) return cached;
 
     const target = await this.usageConnections.resolveDatabaseTarget(tenantId);
-    const sql = await this.usageConnections.ensureSchema(tenantId);
+    const connection = await this.usageConnections.ensureSchema(tenantId);
     const sharedTenantId =
       target.sharedDatabaseMode === SharedTenantDatabaseMode.SingleDatabase
         ? tenantId
@@ -206,7 +211,7 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
         this.recordFlushFailure(tenantId, rows, durationMs, err),
     };
     const buf = new BatchBuffer({
-      sql,
+      connection,
       ...(sharedTenantId !== undefined && { tenantId: sharedTenantId }),
       batchSize: usageAggregatorServiceConfig.batchSize,
       batchFlushMs: usageAggregatorServiceConfig.batchFlushMs,

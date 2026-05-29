@@ -1,7 +1,6 @@
 import { Module } from "@nestjs/common";
 import { KubernetesModule } from "../../providers/kubernetes.provider";
-import { PostgresModule } from "../../providers/postgres.provider";
-import { UsagePostgresModule } from "../../providers/postgres-usage.provider";
+import { TenantDatabaseModule } from "../../providers/tenant-database.module";
 import { TenantNatsModule } from "../../providers/nats.module";
 import { YoizenClawRuntimeModule } from "../../providers/yoizenclaw-runtime.provider";
 import { TenantsModule } from "../tenants/tenants.module";
@@ -13,8 +12,7 @@ import { TenantProvisioningExecutor } from "./tenant-provisioning-executor.servi
   imports: [
     TenantNatsModule,
     KubernetesModule,
-    PostgresModule,
-    UsagePostgresModule,
+    TenantDatabaseModule,
     YoizenClawRuntimeModule,
     TenantsModule,
   ],

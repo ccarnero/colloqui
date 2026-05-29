@@ -411,6 +411,42 @@ export {
 } from "./channel-usage-schema";
 
 export type {
+  IMongoIndexSpec,
+  IMongoCollectionSchema,
+} from "./mongo-schema.types";
+
+export { WORKFLOW_MONGO_SCHEMA } from "./workflow-mongo-schema";
+
+export { TENANT_AUTH_MONGO_SCHEMA } from "./tenant-auth-mongo-schema";
+
+export { CHANNEL_MONGO_SCHEMA } from "./channel-mongo-schema";
+
+export { ADAPTER_MONGO_SCHEMA } from "./adapter-mongo-schema";
+
+export {
+  CHANNEL_USAGE_MONGO_SCHEMA,
+  SHARED_CHANNEL_USAGE_MONGO_SCHEMA,
+} from "./channel-usage-mongo-schema";
+
+export {
+  PLATFORM_MONGO_SCHEMA,
+  PLATFORM_TENANT_DEFAULT_TIER,
+} from "./platform-mongo-schema";
+
+export { REGISTRY_MONGO_SCHEMA } from "./registry-mongo-schema";
+
+export { YOIZENCLAW_ADMIN_MONGO_SCHEMA } from "./yoizenclaw-admin-mongo-schema";
+
+export {
+  AUDIT_MONGO_SCHEMA,
+  EVENTS_AUDIT_MONGO_SCHEMA,
+  GATEWAY_AUDIT_MONGO_SCHEMA,
+  CHANNEL_AUDIT_EVENTS_MONGO_SCHEMA,
+  GATEWAY_AUDIT_MONGO_NAMESPACE,
+  CHANNEL_AUDIT_MONGO_NAMESPACE,
+} from "./audit-mongo-schema";
+
+export type {
   IHealthConnectionState,
   IHealthAggregateStatus,
   IAuthServiceHealthResponse,

@@ -10,14 +10,8 @@ import logging
 from typing import Optional, TYPE_CHECKING
 
 from src.domain.entities.memory import MemoryBackend
+from src.infra.database.memory_store import IMemoryStore, IVectorIndex
 from src.utils.config.settings import bootstrap_settings
-from src.infra.database.memory_postgres_schema import (
-    LEGACY_RUNTIME_JOBS_RENAME_SQL,
-    SCHEMA_SQL,
-    SCHEMA_COMPAT_ALTER_SQL,
-    RUNTIME_STATE_SCHEMA_SQL,
-    RUNTIME_STATE_ALTER_SQL,
-)
 from src.infra.database.memory_postgres_jobs import (
     save_job as pg_save_job,
     get_job as pg_get_job,
@@ -41,7 +35,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Memory(MemoryBackend):
+class MemoryPostgresStore(MemoryBackend, IMemoryStore, IVectorIndex):
     """PostgreSQL-based memory for job and pipeline execution persistence."""
 
     def __init__(self, connection_string: Optional[str] = None) -> None:
@@ -62,7 +56,10 @@ class Memory(MemoryBackend):
         self._pool: Optional[asyncpg.Pool] = None
 
     async def initialize(self) -> None:
-        """Initialize the database schema if not already done."""
+        """Initialize the PostgreSQL connection pool.
+
+        Schema migrations are applied via Alembic at application startup.
+        """
         if self._initialized:
             return
 
@@ -89,50 +86,7 @@ class Memory(MemoryBackend):
             ssl="prefer",
         )
 
-        async with self._pool.acquire() as conn:
-            await conn.execute(SCHEMA_SQL["enable_pgvector"])
-            await conn.execute(LEGACY_RUNTIME_JOBS_RENAME_SQL)
-            await self._create_tables(conn)
-
         self._initialized = True
-
-    async def _create_tables(self, conn: asyncpg.Connection) -> None:
-        """Create all required database tables."""
-        await conn.execute(SCHEMA_SQL["create_runtime_jobs_table"])
-        await conn.execute(SCHEMA_SQL["create_runtime_job_executions_table"])
-
-        for sql in SCHEMA_COMPAT_ALTER_SQL:
-            await conn.execute(sql)
-
-        await conn.execute(SCHEMA_SQL["idx_runtime_jobs_enabled"])
-        await conn.execute(SCHEMA_SQL["idx_runtime_jobs_tenant_id_id"])
-        await conn.execute(SCHEMA_SQL["idx_runtime_job_executions_job_id"])
-        await conn.execute(SCHEMA_SQL["idx_runtime_job_executions_tenant_id_job_id"])
-        await conn.execute(SCHEMA_SQL["idx_runtime_job_executions_status"])
-        await self._initialize_runtime_state_schema(conn)
-        await conn.execute(SCHEMA_SQL["create_embeddings_table"])
-        await conn.execute(SCHEMA_SQL["idx_embeddings_vector"])
-        await conn.execute(SCHEMA_SQL["idx_embeddings_tenant_id_id"])
-
-    async def _initialize_runtime_state_schema(self, conn: asyncpg.Connection) -> None:
-        """Initialize PostgreSQL tables for mutable runtime state."""
-        # 1) Create tables first
-        for sql in RUNTIME_STATE_SCHEMA_SQL:
-            statement = sql.strip().upper()
-            if statement.startswith("CREATE TABLE"):
-                await conn.execute(sql)
-
-        # 2) Apply compatibility alters
-        for sql in RUNTIME_STATE_ALTER_SQL:
-            await conn.execute(sql)
-
-        # 3) Create indexes once required columns exist
-        for sql in RUNTIME_STATE_SCHEMA_SQL:
-            statement = sql.strip().upper()
-            if statement.startswith("CREATE INDEX") or statement.startswith(
-                "CREATE UNIQUE INDEX"
-            ):
-                await conn.execute(sql)
 
     @property
     def tenant_id(self) -> str:
@@ -257,3 +211,7 @@ class Memory(MemoryBackend):
             raise RuntimeError("PostgreSQL pool is not initialized")
 
         return self._pool
+
+
+# Backward-compatible alias for tests and legacy imports.
+Memory = MemoryPostgresStore

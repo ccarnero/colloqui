@@ -1,48 +1,70 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import type { EventEnvelope } from "@yoizen/shared";
-import { AuditRepository } from "../../src/modules/audit/audit.repository";
-import { TenantConnectionManager, type Sql } from "@yoizen/database";
+import { AuditMongoRepository } from "../../src/modules/audit/audit.mongo.repository";
+import {
+  AUDIT_REPOSITORY,
+  type IAuditRepository,
+} from "../../src/modules/audit/audit.repository.interface";
+import { AuditTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
+import {
+  makeFakeTenantMongoConnections,
+  makeMongoCollectionMock,
+  makeMockDb,
+} from "../make-mongo-mock";
 
-describe("AuditRepository", () => {
-  let repo: AuditRepository;
-  let mockSql: Sql;
-  let mockTenantMgr: {
-    getConnection: ReturnType<typeof mock>;
-    isInitialized: ReturnType<typeof mock>;
-    markInitialized: ReturnType<typeof mock>;
-  };
+describe("AuditMongoRepository", () => {
+  let repo: IAuditRepository;
+  let insertMany: ReturnType<typeof mock>;
+  let findChain: ReturnType<typeof mock>;
+  let mockTenantMgr: ReturnType<typeof makeFakeTenantMongoConnections>;
 
   const sampleEvent = {
-    id: "evt-1",
+    _id: "evt-1",
     type: "user.created",
     payload: { a: 1 },
     metadata: { tenant: "t1" },
     subject: "events.user",
-    created_at: new Date().toISOString(),
+    created_at: new Date(),
   };
 
   beforeEach(async () => {
-    mockSql = Object.assign(
-      (_strings: TemplateStringsArray, ..._values: unknown[]) =>
-        Promise.resolve([sampleEvent]),
-      {},
-    ) as Sql;
+    insertMany = mock(async () => ({ insertedCount: 1 }));
+    findChain = mock(() => ({
+      sort: mock(() => ({
+        skip: mock(() => ({
+          limit: mock(() => ({
+            toArray: mock(async () => [sampleEvent]),
+          })),
+        })),
+      })),
+    }));
 
-    mockTenantMgr = {
-      getConnection: mock(() => mockSql),
-      isInitialized: mock(() => true),
-      markInitialized: mock(() => {}),
-    };
+    const collection = makeMongoCollectionMock({
+      insertMany,
+      find: findChain,
+      findOne: mock(async () => sampleEvent),
+    });
+
+    mockTenantMgr = makeFakeTenantMongoConnections(
+      makeMockDb({ events: collection as unknown as Record<string, unknown> }),
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        AuditRepository,
-        { provide: TenantConnectionManager, useValue: mockTenantMgr },
+        AuditMongoRepository,
+        {
+          provide: AuditTenantConnectionManager,
+          useValue: mockTenantMgr,
+        },
+        {
+          provide: AUDIT_REPOSITORY,
+          useExisting: AuditMongoRepository,
+        },
       ],
     }).compile();
 
-    repo = moduleRef.get(AuditRepository);
+    repo = moduleRef.get(AUDIT_REPOSITORY);
   });
 
   it("queryEvents returns rows and passes tenant connection", async () => {
@@ -52,51 +74,81 @@ describe("AuditRepository", () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.id).toBe("evt-1");
-    expect(mockTenantMgr.getConnection).toHaveBeenCalledWith("tenant-a");
+    expect(mockTenantMgr.ensureSchemaCalls.get("tenant-a")).toBe(1);
   });
 
   it("queryEvents applies type filter when provided", async () => {
-    let sawType = false;
-    const sql = Object.assign(
-      (strings: TemplateStringsArray, ...values: unknown[]) => {
-        const head = strings.join("");
-        if (values.some((v) => v === "login")) sawType = true;
-        if (head.includes("AND type =")) {
-          /* filter branch */
-        }
-        return Promise.resolve([sampleEvent]);
-      },
-      {},
-    ) as Sql;
-    mockTenantMgr.getConnection.mockReturnValue(sql);
+    const find = mock((filter: { type?: string }) => {
+      expect(filter.type).toBe("login");
+      return {
+        sort: mock(() => ({
+          skip: mock(() => ({
+            limit: mock(() => ({
+              toArray: mock(async () => [sampleEvent]),
+            })),
+          })),
+        })),
+      };
+    });
 
-    await repo.queryEvents(
-      { type: "login", limit: 5, offset: 0 },
-      "t1",
+    const collection = makeMongoCollectionMock({
+      insertMany,
+      find,
+      findOne: mock(async () => null),
+    });
+    mockTenantMgr = makeFakeTenantMongoConnections(
+      makeMockDb({ events: collection as unknown as Record<string, unknown> }),
     );
-    expect(sawType).toBe(true);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        AuditMongoRepository,
+        {
+          provide: AuditTenantConnectionManager,
+          useValue: mockTenantMgr,
+        },
+        {
+          provide: AUDIT_REPOSITORY,
+          useExisting: AuditMongoRepository,
+        },
+      ],
+    }).compile();
+    repo = moduleRef.get(AUDIT_REPOSITORY);
+
+    await repo.queryEvents({ type: "login", limit: 5, offset: 0 }, "t1");
+    expect(find).toHaveBeenCalled();
   });
 
   it("getEventById returns null when empty", async () => {
-    const emptySql = Object.assign(() => Promise.resolve([]), {}) as Sql;
-    mockTenantMgr.getConnection.mockReturnValue(emptySql);
+    const collection = makeMongoCollectionMock({
+      insertMany,
+      find: findChain,
+      findOne: mock(async () => null),
+    });
+    mockTenantMgr = makeFakeTenantMongoConnections(
+      makeMockDb({ events: collection as unknown as Record<string, unknown> }),
+    );
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        AuditMongoRepository,
+        {
+          provide: AuditTenantConnectionManager,
+          useValue: mockTenantMgr,
+        },
+        {
+          provide: AUDIT_REPOSITORY,
+          useExisting: AuditMongoRepository,
+        },
+      ],
+    }).compile();
+    repo = moduleRef.get(AUDIT_REPOSITORY);
 
     const row = await repo.getEventById("missing", "tenant-a");
     expect(row).toBeNull();
   });
 
-  it("insertAuditEvent runs INSERT with envelope fields", async () => {
-    let insertCalls = 0;
-    const trackingSql = Object.assign(
-      (strings: TemplateStringsArray, ...values: unknown[]) => {
-        const head = strings[0] ?? "";
-        if (head.includes("INSERT INTO events")) insertCalls += 1;
-        return Promise.resolve([]);
-      },
-      {},
-    ) as Sql;
-    mockTenantMgr.getConnection.mockReturnValue(trackingSql);
-
+  it("insertAuditEvent runs insertMany with envelope fields", async () => {
     const envelope: EventEnvelope = {
       specversion: "1.0",
       id: "e1",
@@ -112,6 +164,34 @@ describe("AuditRepository", () => {
     };
 
     await repo.insertAuditEvent("tenant-a", envelope, "subj");
-    expect(insertCalls).toBe(1);
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    const docs = insertMany.mock.calls[0]?.[0] as unknown[];
+    expect(Array.isArray(docs)).toBe(true);
+    expect((docs[0] as { _id: string })._id).toBe("e1");
+  });
+
+  it("insertAuditEvent ignores duplicate key errors", async () => {
+    insertMany.mockImplementation(async () => {
+      const error = { code: 11000 };
+      throw error;
+    });
+
+    const envelope: EventEnvelope = {
+      specversion: "1.0",
+      id: "e-dup",
+      source: "src",
+      type: "t",
+      resource: "r",
+      time: new Date().toISOString(),
+      traceid: "tr",
+      causation_id: null,
+      correlation_id: "c",
+      tenant: "tenant-a",
+      data: { payload: {} },
+    };
+
+    await expect(
+      repo.insertAuditEvent("tenant-a", envelope, "subj"),
+    ).resolves.toBeUndefined();
   });
 });

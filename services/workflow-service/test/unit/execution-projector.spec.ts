@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import type { JsMsg } from "nats";
 import { ExecutionProjectorService } from "../../src/modules/executions-projector/execution-projector.service";
-import type { ExecutionsProjectionRepository } from "../../src/modules/executions-projector/executions.repository";
+import type { IExecutionsProjectionRepository } from "../../src/modules/executions-projector/executions.repository.interface";
 
 /**
  * Builds a minimal fake JsMsg carrying a canonical
@@ -34,7 +34,7 @@ interface IProjectorInternals {
 
 describe("ExecutionProjectorService", () => {
   let applyStatusBatch: ReturnType<typeof mock>;
-  let repo: ExecutionsProjectionRepository;
+  let repo: IExecutionsProjectionRepository;
   let svc: ExecutionProjectorService;
 
   beforeEach(() => {
@@ -44,7 +44,7 @@ describe("ExecutionProjectorService", () => {
     );
     repo = {
       applyStatusBatch,
-    } as unknown as ExecutionsProjectionRepository;
+    } as unknown as IExecutionsProjectionRepository;
     svc = new ExecutionProjectorService({} as never, {} as never, repo);
   });
 

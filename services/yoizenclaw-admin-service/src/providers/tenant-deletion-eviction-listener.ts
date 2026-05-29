@@ -5,7 +5,11 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
-import { TenantConnectionManager } from "@yoizen/database";
+import type {
+  TenantConnectionManager,
+  TenantMongoConnectionManager,
+} from "@yoizen/database";
+import { YoizenclawTenantConnectionManager } from "./tenant-connection-manager";
 import {
   TENANT_DELETED_SUBJECT,
   isTenantDeletedMessageV1,
@@ -29,7 +33,7 @@ const RECONNECT_BACKOFF_MS = [
 /**
  * Admin-service specific eviction listener that subscribes to
  * `platform.tenant.deleted` over Core NATS and evicts the matching
- * per-tenant Postgres pool from {@link TenantConnectionManager}.
+ * per-tenant pool from {@link YoizenclawTenantConnectionManager}.
  *
  * Why a service-local copy instead of `@yoizen/database`'s
  * {@link import('@yoizen/database').TenantDeletionEvictionListener}:
@@ -57,7 +61,10 @@ export class TenantDeletionEvictionListener
 
   constructor(
     @Inject(LAZY_NATS) private readonly lazyNats: ILazyNatsHandle,
-    private readonly tenantConnections: TenantConnectionManager,
+    @Inject(YoizenclawTenantConnectionManager)
+    private readonly tenantConnections:
+      | TenantConnectionManager
+      | TenantMongoConnectionManager,
   ) {}
 
   onModuleInit(): void {

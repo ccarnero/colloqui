@@ -21,11 +21,14 @@ interface IOrchestratorActivities {
   executeServiceBusCall(
     args: ServiceBusCallArgs,
     tenantId: string,
+    causal?: EventCausalContext,
+    executionId?: string,
   ): Promise<{ published: true; subject: string }>;
   executeChannelSend(
     args: ChannelSendArgs,
     tenantId: string,
     causal?: EventCausalContext,
+    executionId?: string,
   ): Promise<{ published: true; subject: string }>;
 }
 
@@ -42,6 +45,7 @@ interface IHttpActivities {
   executeEndpointCall(
     args: EndpointCallArgs,
     tenantId: string,
+    executionId?: string,
   ): Promise<{
     status: number;
     data: unknown;
@@ -50,6 +54,7 @@ interface IHttpActivities {
   executeServiceCall(
     args: ServiceCallArgs,
     tenantId: string,
+    executionId?: string,
   ): Promise<{
     status: number;
     data: unknown;
@@ -62,6 +67,7 @@ interface IAgentHttpActivities {
   executeAgentCall(
     args: AgentCallArgs,
     tenantId: string,
+    executionId?: string,
   ): Promise<{
     status: number;
     data: unknown;
@@ -166,6 +172,7 @@ async function executeAction(
       return http.executeEndpointCall(
         resolveTemplates(action.args, context),
         tenant,
+        context.executionId,
       );
 
     case "jsFunction":
@@ -178,6 +185,8 @@ async function executeAction(
       return local.executeServiceBusCall(
         resolveTemplates(action.args, context),
         tenant,
+        context.causal,
+        context.executionId,
       );
 
     case "channelSend":
@@ -185,18 +194,21 @@ async function executeAction(
         resolveTemplates(action.args, context),
         tenant,
         context.causal,
+        context.executionId,
       );
 
     case "serviceCall":
       return http.executeServiceCall(
         resolveTemplates(action.args, context),
         tenant,
+        context.executionId,
       );
 
     case "agentCall":
       return httpAgent.executeAgentCall(
         resolveTemplates(action.args, context),
         tenant,
+        context.executionId,
       );
 
     case "branch": {
@@ -251,6 +263,7 @@ export async function runWorkflow(
     },
     request: workflow.request,
     results: {},
+    ...(executionId && { executionId }),
     ...(workflow.causal && { causal: workflow.causal }),
   };
 

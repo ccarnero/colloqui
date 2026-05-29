@@ -117,4 +117,38 @@ describe("AuditInterceptor", () => {
       | undefined;
     expect(thirdArg?.headers?.get(TENANT_HEADER)).toBe("t1");
   });
+
+  it("skips audit for webhook paths when GATEWAY_AUDIT_SKIP_WEBHOOKS=true", async () => {
+    const prev = process.env.GATEWAY_AUDIT_SKIP_WEBHOOKS;
+    process.env.GATEWAY_AUDIT_SKIP_WEBHOOKS = "true";
+    try {
+      const interceptor = createInterceptor();
+      const req = {
+        method: "POST",
+        url: "/api/webhooks/telegram/acme",
+        headers: {},
+        id: "req-wh",
+        ip: "127.0.0.1",
+      } as IYoizenRequest;
+      const reply = baseReply();
+      const next: CallHandler = {
+        handle: () => of({ ok: true }),
+      };
+
+      await new Promise<void>((resolve, reject) => {
+        interceptor.intercept(createExecution(req, reply), next).subscribe({
+          complete: resolve,
+          error: reject,
+        });
+      });
+
+      expect(publishMock).not.toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) {
+        delete process.env.GATEWAY_AUDIT_SKIP_WEBHOOKS;
+      } else {
+        process.env.GATEWAY_AUDIT_SKIP_WEBHOOKS = prev;
+      }
+    }
+  });
 });

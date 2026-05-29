@@ -1,21 +1,24 @@
 import {
+  Inject,
   Injectable,
   NotFoundException,
   BadRequestException,
 } from "@nestjs/common";
 import {
-  JobsRepository,
+  JOBS_REPOSITORY,
   type IJob,
   type ICreateJobData,
   type IUpdateJobData,
   type IFindAllJobsOptions,
-} from "./jobs.repository";
+  type IJobsRepository,
+} from "./jobs.repository.interface";
 import {
-  JobExecutionsRepository,
+  JOB_EXECUTIONS_REPOSITORY,
   type IJobExecution,
   type ICreateExecutionData,
   type IFindAllExecutionsOptions,
-} from "./job-executions.repository";
+  type IJobExecutionsRepository,
+} from "./job-executions.repository.interface";
 import { NatsPublisher } from "../../providers/nats.provider";
 import { PinoLoggerService } from "@yoizen/observability";
 
@@ -24,8 +27,10 @@ export class JobsService {
   private readonly logger = new PinoLoggerService(JobsService.name);
 
   constructor(
-    private readonly jobsRepository: JobsRepository,
-    private readonly executionsRepository: JobExecutionsRepository,
+    @Inject(JOBS_REPOSITORY)
+    private readonly jobsRepository: IJobsRepository,
+    @Inject(JOB_EXECUTIONS_REPOSITORY)
+    private readonly executionsRepository: IJobExecutionsRepository,
     private readonly natsPublisher: NatsPublisher,
   ) {}
 

@@ -34,7 +34,10 @@ import {
   type IServiceConfigUpsertedPayload,
 } from "@yoizen/shared";
 import { JETSTREAM, JETSTREAM_MANAGER } from "../../providers/nats.provider";
-import { AdaptersRepository } from "../adapters/adapters.repository";
+import {
+  ADAPTERS_REPOSITORY,
+  type IAdaptersRepository,
+} from "../adapters/adapters.repository.interface";
 import {
   adapterInternalMirrorEventsTotal,
   adapterInternalMirrorSyncDurationMs,
@@ -140,7 +143,8 @@ export class InternalSyncService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(JETSTREAM) private readonly js: JetStreamClient,
-    private readonly adaptersRepository: AdaptersRepository,
+    @Inject(ADAPTERS_REPOSITORY)
+    private readonly adaptersRepository: IAdaptersRepository,
   ) {}
 
   async onModuleInit(): Promise<void> {

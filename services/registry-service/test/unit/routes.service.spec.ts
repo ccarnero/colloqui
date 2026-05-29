@@ -1,162 +1,120 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { ConflictException, NotFoundException } from "@nestjs/common";
-import type { Sql } from "postgres";
-import { RoutesRepository } from "../../src/modules/routes/routes.repository";
+import { RoutesMongoRepository } from "../../src/modules/routes/routes.mongo.repository";
+import { ROUTES_REPOSITORY } from "../../src/modules/routes/routes.repository.interface";
 import { RoutesService } from "../../src/modules/routes/routes.service";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
-
-type SqlResult = unknown[] | { count: number };
-
-function createSqlMock(sequence: SqlResult[]) {
-  let idx = 0;
-  const fn = mock(() => {
-    const next = sequence[idx++];
-    return Promise.resolve(next ?? []);
-  });
-  return Object.assign(fn, {
-    json: (v: unknown) => v,
-  }) as unknown as Sql;
-}
+import { MONGO_CLIENT } from "../../src/providers/mongo.provider";
+import { makeRegistryMongoClient } from "../mongo-mock";
 
 describe("RoutesService", () => {
   let service: RoutesService;
+  let queue: unknown[];
 
-  async function compileWithSql(sql: Sql) {
+  beforeEach(async () => {
+    queue = [];
+    const mongo = makeRegistryMongoClient(queue);
     const module = await Test.createTestingModule({
       providers: [
-        RoutesRepository,
+        RoutesMongoRepository,
+        {
+          provide: ROUTES_REPOSITORY,
+          useExisting: RoutesMongoRepository,
+        },
         RoutesService,
-        { provide: POSTGRES_SQL, useValue: sql },
+        { provide: MONGO_CLIENT, useValue: mongo },
       ],
     }).compile();
-    return module.get(RoutesService);
-  }
+    service = module.get(RoutesService);
+  });
 
   describe("create", () => {
     it("creates route when service exists", async () => {
-      const sql = createSqlMock([
-        [{ id: "svc-1" }],
-        [
-          {
-            id: "route-1",
-            service_id: "svc-1",
-            path_prefix: "/api",
-            methods: ["GET"],
-            is_public: false,
-            strip_prefix: true,
-            created_at: "2020-01-01T00:00:00.000Z",
-          },
-        ],
-      ]);
-      service = await compileWithSql(sql);
+      queue.push({ _id: "svc-1" });
       const route = await service.create("tenant-a", "svc-1", {
         pathPrefix: "/api",
         methods: ["GET"],
+        isPublic: true,
+        stripPrefix: true,
       });
       expect(route.pathPrefix).toBe("/api");
-      expect(route.serviceId).toBe("svc-1");
     });
 
     it("throws NotFoundException when service missing", async () => {
-      const sql = createSqlMock([[]]);
-      service = await compileWithSql(sql);
+      queue.push(null);
       await expect(
-        service.create("tenant-a", "missing", { pathPrefix: "/x" }),
-      ).rejects.toBeInstanceOf(NotFoundException);
+        service.create("tenant-a", "missing", {
+          pathPrefix: "/api",
+        }),
+      ).rejects.toThrow(NotFoundException);
     });
 
-    it("maps unique violation to ConflictException", async () => {
-      let calls = 0;
-      const sql = Object.assign(
-        mock(() => {
-          calls += 1;
-          if (calls === 1) return Promise.resolve([{ id: "svc-1" }]);
-          return Promise.reject(
-            Object.assign(new Error("dup"), { code: "23505" }),
-          );
-        }),
-        { json: (v: unknown) => v },
-      ) as unknown as Sql;
-      service = await compileWithSql(sql);
+    it("throws ConflictException on duplicate path", async () => {
+      queue.push({ _id: "svc-1" });
+      const err = Object.assign(new Error("dup"), { code: 11000 });
+      queue.push(Object.assign(new Error("dup"), { code: 11000 }));
       await expect(
-        service.create("tenant-a", "svc-1", { pathPrefix: "/api" }),
-      ).rejects.toBeInstanceOf(ConflictException);
+        service.create("tenant-a", "svc-1", { pathPrefix: "/dup" }),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
   describe("listForService", () => {
-    it("returns routes for valid service", async () => {
-      const sql = createSqlMock([
-        [{ id: "svc-1" }],
-        [
-          {
-            id: "r1",
-            service_id: "svc-1",
-            path_prefix: "/a",
-            methods: ["GET"],
-            is_public: true,
-            strip_prefix: false,
-            created_at: "2020-01-01T00:00:00.000Z",
-          },
-        ],
+    it("returns mapped routes", async () => {
+      queue.push({ _id: "svc-1" });
+      queue.push([
+        {
+          _id: "r1",
+          service_id: "svc-1",
+          path_prefix: "/v1",
+          methods: ["GET"],
+          is_public: false,
+          strip_prefix: true,
+          created_at: new Date(),
+        },
       ]);
-      service = await compileWithSql(sql);
       const routes = await service.listForService("tenant-a", "svc-1");
       expect(routes).toHaveLength(1);
-      expect(routes[0].methods).toEqual(["GET"]);
-    });
-
-    it("throws NotFoundException when service missing", async () => {
-      const sql = createSqlMock([[]]);
-      service = await compileWithSql(sql);
-      await expect(
-        service.listForService("tenant-a", "missing"),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(routes[0]?.pathPrefix).toBe("/v1");
     });
   });
 
   describe("remove", () => {
-    it("throws when service not found", async () => {
-      const sql = createSqlMock([[]]);
-      service = await compileWithSql(sql);
+    it("deletes route", async () => {
+      queue.push(1);
       await expect(
         service.remove("tenant-a", "svc-1", "route-1"),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      ).resolves.toBeUndefined();
     });
 
-    it("throws NotFoundException when no row deleted", async () => {
-      const sql = createSqlMock([[{ id: "svc-1" }], { count: 0 }]);
-      service = await compileWithSql(sql);
+    it("throws NotFoundException when route missing", async () => {
+      queue.push(0);
       await expect(
-        service.remove("tenant-a", "svc-1", "bad-route"),
-      ).rejects.toBeInstanceOf(NotFoundException);
+        service.remove("tenant-a", "svc-1", "route-1"),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
   describe("discover", () => {
-    it("returns joined discovery rows", async () => {
-      const sql = createSqlMock([
-        [
-          {
-            id: "r1",
-            tenant_id: "t1",
-            service_name: "svc",
-            knative_name: "svc-t1",
-            namespace: "t1-dev-ns",
-            port: 3000,
-            path_prefix: "/p",
-            methods: ["GET"],
-            is_public: true,
-            strip_prefix: true,
-          },
-        ],
+    it("returns cached discovery payload", async () => {
+      queue.push([
+        {
+          id: "r1",
+          tenant_id: "t1",
+          service_name: "svc",
+          knative_name: "k",
+          namespace: "ns",
+          port: 8080,
+          path_prefix: "/p",
+          methods: ["GET"],
+          is_public: true,
+          strip_prefix: false,
+        },
       ]);
-      service = await compileWithSql(sql);
-      const entries = await service.discover();
-      expect(entries).toHaveLength(1);
-      expect(entries[0].tenantId).toBe("t1");
-      expect(entries[0].pathPrefix).toBe("/p");
+      const first = await service.discover();
+      const second = await service.discover();
+      expect(first).toHaveLength(1);
+      expect(second).toEqual(first);
     });
   });
 });

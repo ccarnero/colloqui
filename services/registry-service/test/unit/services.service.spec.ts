@@ -5,13 +5,13 @@ import {
   NotFoundException,
   InternalServerErrorException,
 } from "@nestjs/common";
-import { createQueuedSql } from "@yoizen/testing";
-import type { Sql } from "postgres";
-import { ServicesRepository } from "../../src/modules/services/services.repository";
+import { MONGO_CLIENT } from "../../src/providers/mongo.provider";
+import { makeRegistryMongoClient } from "../mongo-mock";
+import { ServicesMongoRepository } from "../../src/modules/services/services.mongo.repository";
+import { SERVICES_REPOSITORY } from "../../src/modules/services/services.repository.interface";
 import { ServicesService } from "../../src/modules/services/services.service";
 import { ServiceEventsPublisher } from "../../src/modules/services/service-events.publisher";
 import { K8S_CUSTOM_OBJECTS_API } from "../../src/providers/kubernetes.provider";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
 
 function baseRegisteredRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -41,7 +41,7 @@ describe("ServicesService", () => {
     deleteNamespacedCustomObject: ReturnType<typeof mock>;
     listNamespacedCustomObject: ReturnType<typeof mock>;
   };
-  let sqlQueue: unknown[][];
+  let sqlQueue: unknown[];
   let service: ServicesService;
   let eventsPublisher: {
     publishUpserted: ReturnType<typeof mock>;
@@ -51,7 +51,7 @@ describe("ServicesService", () => {
   beforeEach(async () => {
     process.env.PLATFORM_ENVIRONMENT = "dev";
     sqlQueue = [];
-    const sql = createQueuedSql(sqlQueue, mock);
+    const mongo = makeRegistryMongoClient(sqlQueue);
     customApi = {
       createNamespacedCustomObject: mock(() => Promise.resolve({})),
       getNamespacedCustomObject: mock(() =>
@@ -71,10 +71,14 @@ describe("ServicesService", () => {
 
     const module = await Test.createTestingModule({
       providers: [
-        ServicesRepository,
+        ServicesMongoRepository,
+        {
+          provide: SERVICES_REPOSITORY,
+          useExisting: ServicesMongoRepository,
+        },
         ServicesService,
         { provide: K8S_CUSTOM_OBJECTS_API, useValue: customApi },
-        { provide: POSTGRES_SQL, useValue: sql },
+        { provide: MONGO_CLIENT, useValue: mongo },
         { provide: ServiceEventsPublisher, useValue: eventsPublisher },
       ],
     }).compile();
@@ -209,8 +213,8 @@ describe("ServicesService", () => {
 
   describe("adapter-sync events", () => {
     it("publishes upserted event after register", async () => {
-      sqlQueue.push([], [baseRegisteredRow()]);
-      await service.register("tenant-a", {
+      sqlQueue.push(null);
+      const row = await service.register("tenant-a", {
         name: "my-service",
         image: "registry.io/img:v1",
       });
@@ -218,7 +222,7 @@ describe("ServicesService", () => {
       const [payload] = eventsPublisher.publishUpserted.mock.calls[0];
       expect(payload).toEqual(
         expect.objectContaining({
-          serviceId: "svc-1",
+          serviceId: row.id,
           tenantId: "tenant-a",
           name: "my-service",
           knativeName: "my-service-tenant-a",

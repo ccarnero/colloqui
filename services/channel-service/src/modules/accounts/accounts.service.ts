@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -12,10 +13,11 @@ import {
 } from "../../providers/meta/meta-token";
 import { TelegramProvider } from "../../providers/telegram/telegram.provider";
 import {
-  AccountsRepository,
+  ACCOUNTS_REPOSITORY,
   type IAccountRow,
   type IAccountUpdatePatch,
-} from "./accounts.repository";
+  type IAccountsRepository,
+} from "./accounts.repository.interface";
 
 function mapRow(row: IAccountRow, tenantId: string): ChannelAccount {
   return {
@@ -44,7 +46,8 @@ export class AccountsService {
   private readonly logger = new PinoLoggerService(AccountsService.name);
 
   constructor(
-    private readonly accountsRepository: AccountsRepository,
+    @Inject(ACCOUNTS_REPOSITORY)
+    private readonly accountsRepository: IAccountsRepository,
     private readonly telegramProvider: TelegramProvider,
   ) {}
 

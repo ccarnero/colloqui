@@ -1,4 +1,4 @@
-import type { ITenantRoleRow } from "./tenant-roles.repository";
+import type { ITenantRoleRow } from "./tenant-roles.repository.interface";
 
 export type ITenantRoleWithPermissions = ITenantRoleRow & {
   tenant_id: string;

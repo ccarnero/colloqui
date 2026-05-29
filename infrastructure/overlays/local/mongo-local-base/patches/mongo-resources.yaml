@@ -1,0 +1,115 @@
+# Dev/local: single-node replica sets to fit minikube resource budget.
+# Base defines 3 replicas per StatefulSet; this patch scales both Mongo
+# clusters to 1 member and trims PVC size.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-platform
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: replica-set-init
+          env:
+            - name: REPLICAS
+              value: "1"
+        - name: mongo
+          # WiredTiger defaults to a 256MB cache; add ~150-250MB of
+          # connection buffers, oplog tailing, index builds and the cgroup
+          # easily blows past a 512Mi cap once stress hits — confirmed by
+          # OOMKilled restarts during the webhook-ingress stress scenario.
+          # 1Gi gives ~750MB headroom above WT cache without changing CPU
+          # bounds. Requests stay modest so the node still packs other
+          # workloads (single-node minikube budget).
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - "db.adminCommand({ ping: 1 })"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - "db.adminCommand({ ping: 1 })"
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-usage
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: replica-set-init
+          env:
+            - name: REPLICAS
+              value: "1"
+        - name: mongo
+          # See mongo-platform comment above — same OOMKill risk under
+          # channel-service + usage-aggregator burst writes.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - "db.adminCommand({ ping: 1 })"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - "db.adminCommand({ ping: 1 })"
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

@@ -1,10 +1,13 @@
+import { resolveStorageEngine, type StorageEngine } from "@yoizen/database";
+
 type UsageAggregatorServiceConfig = {
   readonly port: number;
+  readonly dbEngine: StorageEngine;
   /** Base URL of tenant-service (used to discover live tenants). */
   readonly tenantServiceUrl: string;
   /** Polling interval for tenant-list refresh, in ms. */
   readonly tenantDiscoveryIntervalMs: number;
-  /** Batch size before flushing to TimescaleDB. */
+  /** Batch size before flushing to the usage store. */
   readonly batchSize: number;
   /** Hard ceiling on how long a batch can wait before being flushed, in ms. */
   readonly batchFlushMs: number;
@@ -18,6 +21,9 @@ type UsageAggregatorServiceConfig = {
 export const usageAggregatorServiceConfig: UsageAggregatorServiceConfig = {
   get port() {
     return Number.parseInt(process.env.PORT ?? "3000", 10);
+  },
+  get dbEngine() {
+    return resolveStorageEngine();
   },
   get tenantServiceUrl() {
     return (

@@ -4,7 +4,11 @@
 
 The Adapter Service manages multi-tenant HTTP adapter configurations and their endpoints. An adapter encapsulates connection details for an external (or internal) HTTP service: base URL, authentication (none, API key, bearer, basic, OAuth2 client credentials), custom headers, timeout, retry policy, and health check path. Each adapter can have multiple endpoints (label + method + path). Other services consume adapter configs at runtime through the shared `AdapterClient` class, which fetches from this service's REST API and caches in Redis with stale-while-revalidate semantics.
 
-Adapter state lives **inside each tenant's own Postgres instance** (provisioned by `tenant-service`), so the database itself is the tenant boundary — there is no `tenant_id` column, no cross-tenant fan-in, and no shared platform Postgres. An internal-sync consumer ingests registry-service NATS events and materializes internal-adapter mirrors in the target tenant's DB.
+Adapter state lives **inside each tenant's own MongoDB instance** (provisioned by `tenant-service`), so the database itself is the tenant boundary — there is no `tenant_id` column, no cross-tenant fan-in, and no shared platform MongoDB. An internal-sync consumer ingests registry-service NATS events and materializes internal-adapter mirrors in the target tenant's DB.
+
+## Storage engines
+
+Supports **Postgres** (default) and **Mongo** per-tenant via `IAdaptersRepository` + engine-specific tenant connection managers. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
 
 ## Tech Stack
 
@@ -13,7 +17,7 @@ Adapter state lives **inside each tenant's own Postgres instance** (provisioned 
 | Runtime | Bun 1.3 |
 | Framework | NestJS 11 + Fastify |
 | Language | TypeScript 5.7 (strict) |
-| Database | PostgreSQL 17 via `postgres` (postgres.js) — one instance per tenant |
+| Database | MongoDB 7 via official `mongodb` driver — one instance per tenant |
 | Messaging | NATS (`nats` package, used by internal-sync consumer) |
 | Validation | `class-validator` + `class-transformer` |
 | Observability | `@yoizen/observability` (Pino, OpenTelemetry, HTTP metrics) |
@@ -28,7 +32,7 @@ src/
 ├── app.module.ts                    # Root module: ObservabilityModule, ProvidersModule, AdaptersModule, InternalSyncModule, HealthModule
 ├── providers/
 │   ├── providers.module.ts          # @Global() exporting AdapterTenantConnectionManager + NATS providers
-│   ├── tenant-connection-manager.ts # Per-tenant Postgres pool manager (subclass of @yoizen/database TenantConnectionManager)
+│   ├── tenant-connection-manager.ts # Per-tenant MongoDB pool manager (subclass of @yoizen/database TenantConnectionManager)
 │   └── nats.provider.ts             # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM factories
 ├── modules/
 │   ├── adapters/
@@ -83,7 +87,7 @@ Client (via API Gateway proxy)
   -> AdaptersController: validate DTO, extract tenantId
   -> AdaptersService: managed-by guard, endpoint aggregation
   -> AdaptersRepository.sqlFor(tenantId) -> AdapterTenantConnectionManager.ensureSchema(tenantId)
-  -> PostgreSQL (per-tenant pool at postgres.<tenantId>-<env>-ns.svc.cluster.local)
+  -> MongoDB (per-tenant pool at mongo.<tenantId>-<env>-ns.svc.cluster.local)
   -> JSON response (AdapterConfig + nested endpoints; tenantId populated from the request)
 ```
 
@@ -94,7 +98,7 @@ registry-service.service.upserted.v1 / service.deleted.v1 (cross-tenant stream)
   -> JetStream durable consumer (queue: adapter-service)
   -> InternalSyncService: extract envelope.data.tenantId
   -> AdaptersRepository.upsertMirror / deleteMirrorByServiceName
-  -> per-tenant PostgreSQL (context=internal, managed_by=registry-service)
+  -> per-tenant MongoDB (context=internal, managed_by=registry-service)
 ```
 
 ### HTTP Endpoints
@@ -109,7 +113,7 @@ registry-service.service.upserted.v1 / service.deleted.v1 (cross-tenant stream)
 | `POST` | `/adapters/:id/endpoints` | `addEndpoint` | Add endpoint to adapter |
 | `PATCH` | `/adapters/:id/endpoints/:epId` | `updateEndpoint` | Partial endpoint update |
 | `DELETE` | `/adapters/:id/endpoints/:epId` | `removeEndpoint` | Remove endpoint |
-| `GET` | `/health` | `check` | `{ status, nats, postgres }` |
+| `GET` | `/health` | `check` | `{ status, nats, mongo }` |
 
 ### DI Tokens
 
@@ -180,7 +184,7 @@ Auth resolution is performed by `AdapterClient` in consuming services, not by th
 
 | Target | Protocol | Direction | Purpose |
 |--------|----------|-----------|---------|
-| PostgreSQL (per-tenant) | TCP | Outbound | CRUD operations on `http_adapters` and `adapter_endpoints` in each tenant's DB |
+| MongoDB (per-tenant) | TCP | Outbound | CRUD operations on `http_adapters` and `adapter_endpoints` in each tenant's DB |
 | NATS JetStream | NATS | Inbound (consumer) | `service.upserted.v1` / `service.deleted.v1` from registry-service |
 
 ## Configuration
@@ -188,11 +192,11 @@ Auth resolution is performed by `AdapterClient` in consuming services, not by th
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP server port |
-| `PLATFORM_ENVIRONMENT` | *(required)* | Environment suffix used by `TenantConnectionManager` to build the per-tenant host `postgres.<tenantId>-<env>-ns.svc.cluster.local` |
-| `POSTGRES_PORT` | `5432` | PostgreSQL port (all tenant instances share this port) |
-| `POSTGRES_DB` | `yoizen` | Database name inside each tenant's instance |
-| `POSTGRES_USER` | `yoizen` | Database user |
-| `POSTGRES_PASSWORD` | *(required)* | Database password (same for every tenant instance in dev; per-tenant secrets in prod) |
+| `PLATFORM_ENVIRONMENT` | *(required)* | Environment suffix used by `TenantConnectionManager` to build the per-tenant host `mongo.<tenantId>-<env>-ns.svc.cluster.local` |
+| `MONGO_PORT` | `27017` | MongoDB port (all tenant instances share this port) |
+| `MONGO_DB` | `yoizen` | Database name inside each tenant's instance |
+| `MONGO_USER` | `yoizen` | Database user |
+| `MONGO_PASSWORD` | *(required)* | Database password (same for every tenant instance in dev; per-tenant secrets in prod) |
 | `NATS_URL` | `nats://nats.messaging-dev.svc.cluster.local:4222` | NATS server for internal-sync |
 
 ### Knative
@@ -208,18 +212,18 @@ Auth resolution is performed by `AdapterClient` in consuming services, not by th
 | `bun test` | All tests |
 | `bun test test/unit` | Unit tests |
 
-Unit tests use `makeFakeTenantConnections(sql)` from `test/make-sql-mock.ts` to stub `AdapterTenantConnectionManager`; it keeps a `Map<string, Sql>` of per-tenant handles and tracks `ensureSchema` call counts. E2E coverage for the adapter HTTP surface lives in `tests/e2e/adapter.e2e.spec.ts`.
+Unit tests use `makeFakeTenantConnections(sql)` from `test/make-sql-mock.ts` to stub `AdapterTenantConnectionManager`; it keeps a `Map<string, MongoClient>` of per-tenant handles and tracks `ensureSchema` call counts. E2E coverage for the adapter HTTP surface lives in `tests/e2e/adapter.e2e.spec.ts`.
 
 ## Code Style and Conventions
 
 - **Global providers**: `ProvidersModule` is `@Global()`, exporting `AdapterTenantConnectionManager` + NATS tokens
-- **Per-tenant pools**: `AdaptersRepository.sqlFor(tenantId)` awaits `ensureSchema(tenantId)` on every method; no raw `Sql` is cached at the repository level
+- **Per-tenant pools**: `AdaptersRepository.sqlFor(tenantId)` awaits `ensureSchema(tenantId)` on every method; no raw `MongoClient` is cached at the repository level
 - **Schema auto-migration**: baked into `tenant-service` `init.sql`; lazily re-run via `ensureSchema` (`IF NOT EXISTS`, idempotent)
-- **Raw SQL**: no ORM; uses postgres.js tagged template literals with composable `sql` fragments for filters
+- **MongoDB queries**: no ORM; uses mongodb driver tagged template literals with composable `sql` fragments for filters
 - **JSONB fields**: `auth_config`, `headers`, `default_cache_strategy`, and endpoint `cache_strategy` are stored as JSONB, parsed with `parseJsonb` helper
 - **UUID generation**: `@yoizen/shared` `generateId()` for adapter and endpoint IDs
 - **Map-based aggregation**: list endpoint joins are grouped with `Map<string, IEndpointRow[]>` for O(n) endpoint grouping
-- **Unique violation handling**: catches PostgreSQL error code `23505` and throws `ConflictException`
+- **Unique violation handling**: catches MongoDB error code `23505` and throws `ConflictException`
 - **Tenant boundary**: the DB instance is the tenant boundary — no `tenant_id` column, no `WHERE tenant_id = ...` filter. `tenantId` is used only to resolve the pool and to populate the HTTP response
 - **Validation**: global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, `transform`
 - **Context constraint**: `context` must be `internal` or `external` (enforced at both DTO and DB level)
@@ -246,13 +250,13 @@ bun install
 bun run start:dev
 ```
 
-Requires at least one per-tenant Postgres instance reachable at `postgres.<tenantId>-<PLATFORM_ENVIRONMENT>-ns.svc.cluster.local:5432` (use `kubectl port-forward` or override `PLATFORM_ENVIRONMENT` for local dev clusters). Tables are auto-created via `ensureSchema` on the first request per tenant.
+Requires at least one per-tenant Postgres instance reachable at `mongo.<tenantId>-<PLATFORM_ENVIRONMENT>-ns.svc.cluster.local:27017` (use `kubectl port-forward` or override `PLATFORM_ENVIRONMENT` for local dev clusters). Tables are auto-created via `ensureSchema` on the first request per tenant.
 
 ## Dependencies on Other Services
 
 | Service | Relationship |
 |---------|-------------|
-| **PostgreSQL (per-tenant)** | Data store for adapter and endpoint configurations; one instance per tenant provisioned by `tenant-service` |
+| **MongoDB (per-tenant)** | Data store for adapter and endpoint configurations; one instance per tenant provisioned by `tenant-service` |
 | **tenant-service** | Provisions per-tenant Postgres and bakes `ADAPTER_SCHEMA_SQL` into each tenant's `init.sql` |
 | **registry-service** | Publishes `service.upserted.v1` / `service.deleted.v1` NATS events consumed by internal-sync |
 | **NATS JetStream** | Event bus for internal-sync (per-tenant `INGRESS-<TENANT>` streams) |
@@ -318,7 +322,7 @@ The `MultiTenantConsumerManager` is constructed with `ensureOnly: !isWorkerMode(
 | `/healthz` | 200 while process is up. No dependency probe. | Same — 200 while up. |
 | `/readyz` | 200 when the per-tenant DB connection manager is healthy. **Independent of NATS** — a dead broker does NOT block HTTP CRUD. | 200 only when **all three gates** are green: `JetStreamManager` connected, ≥1 active tenant pool reports DB green, ≥1 `MultiTenantConsumerManager` runner reports `isHealthy()`. Otherwise 503 with `{ status, mode, failed: ["nats" \| "db" \| "durables"] }`. |
 | Both modes on SIGTERM | `/readyz` flips to 503 with `failed: ["shutting_down"]` so kube stops sending traffic; in-flight messages drain through the runner before exit. |
-| Legacy `/health` | Aggregated `{ status, nats, postgres }` kept for backwards-compat with manifests that still probe the old path. Will be retired once all probes are migrated. |
+| Legacy `/health` | Aggregated `{ status, nats, mongo }` kept for backwards-compat with manifests that still probe the old path. Will be retired once all probes are migrated. |
 
 ### Rollback
 

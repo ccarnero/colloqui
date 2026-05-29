@@ -36,8 +36,11 @@ import {
   JETSTREAM_PUBLISHER,
 } from "../../providers/providers.module";
 import { WorkflowsService } from "../workflows/workflows.service";
-import { WorkflowsRepository } from "../workflows/workflows.repository";
-import type { IWorkflowDefinitionRow } from "../workflows/workflows.repository";
+import {
+  WORKFLOWS_REPOSITORY,
+  type IWorkflowDefinitionRow,
+  type IWorkflowsRepository,
+} from "../workflows/workflows.repository.interface";
 
 const DURABLE_NAME = "workflow-triggers";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
@@ -77,7 +80,8 @@ export class TriggerConsumerService
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
     private readonly workflowsService: WorkflowsService,
-    private readonly workflowsRepository: WorkflowsRepository,
+    @Inject(WORKFLOWS_REPOSITORY)
+    private readonly workflowsRepository: IWorkflowsRepository,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -89,36 +93,9 @@ export class TriggerConsumerService
       description:
         "Workflow triggers — message_received → Temporal workflow start",
       metrics: createNatsConsumerMetrics(resolveServiceName("workflow-service")),
-      // Each trigger starts a Temporal workflow over gRPC. Keep the
-      // default deliberately conservative so NATS redelivery cannot
-      // amplify an existing Temporal/Postgres backlog; raise via
-      // WORKFLOW_TRIGGER_CONCURRENCY only after stress gates pass.
       runnerOptions: { concurrency: resolveTriggerConcurrency() },
-      // Tighter delivery semantics: starting a workflow is idempotent
-      // (`workflowId = <tenant>:<name>:<idempotencykey>:<defId>`), so
-      // 3 retries cover transient gRPC blips without amplifying the
-      // workflow population during a backend slowdown. Default of 5
-      // could 5× the workflow count under load.
-      // Note: NATS requires maxDeliver > backoff.length, so we pair
-      // maxDeliver=3 with a 2-entry backoff [10s, 30s].
       maxDeliver: 3,
-      // 2026-05-22 post-mortem (§P1.1): raised 30s → 60s to match the
-      // observed worst-case `StartWorkflowExecution` p99 (~10s) PLUS
-      // headroom for an in-flight retry. The previous 30s fired before
-      // the first attempt returned during the cascade, triggering
-      // immediate redelivery and amplifying load on Temporal.
       ackWaitMs: 60_000,
-      // 2026-05-22 post-mortem follow-up: NATS server REWRITES
-      // `ack_wait` to `backoff[0]` when a backoff array is present
-      // (see `packages/database/src/nats-durable-consumer.ts` lines
-      // 31-42 and the `DEFAULT_BACKOFF_MS` table). With our previous
-      // `[10_000, 30_000]` the consumer effectively had a 10s ack-wait
-      // and was redelivering long before `client.workflow.start` could
-      // return under load (dup/trig observed at 5.6x in a re-run).
-      // `backoff[0]` MUST equal `ackWaitMs`. With `maxDeliver: 3` and
-      // the last entry reused once exhausted, total time-to-DLQ =
-      // 60s + 120s + 120s = 5 min — well within the workflow timeout
-      // budget and aligned with the platform defaults.
       backoffMs: [60_000, 120_000],
       ensureOnly,
     };

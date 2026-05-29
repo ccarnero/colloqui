@@ -30,7 +30,10 @@ import {
   JETSTREAM,
   JETSTREAM_MANAGER,
 } from "../../src/providers/nats.provider";
-import { AdaptersRepository } from "../../src/modules/adapters/adapters.repository";
+import {
+  ADAPTERS_REPOSITORY,
+  type IAdaptersRepository,
+} from "../../src/modules/adapters/adapters.repository.interface";
 import { adapterInternalSyncCrossTenantAttemptTotal } from "../../src/modules/internal-sync/internal-sync.metrics";
 
 /**
@@ -82,7 +85,7 @@ interface IUpsertCall {
 }
 
 function makeRepo(): {
-  readonly repo: AdaptersRepository;
+  readonly repo: IAdaptersRepository;
   readonly upsertMirror: ReturnType<typeof mock>;
   readonly deleteMirrorByServiceName: ReturnType<typeof mock>;
   readonly upsertCalls: IUpsertCall[];
@@ -134,7 +137,7 @@ function makeRepo(): {
   const repo = {
     upsertMirror,
     deleteMirrorByServiceName,
-  } as unknown as AdaptersRepository;
+  } as unknown as IAdaptersRepository;
 
   return {
     repo,
@@ -169,7 +172,7 @@ async function buildService(
       InternalSyncService,
       { provide: JETSTREAM_MANAGER, useValue: {} as JetStreamManager },
       { provide: JETSTREAM, useValue: {} as JetStreamClient },
-      { provide: AdaptersRepository, useValue: repo.repo },
+      { provide: ADAPTERS_REPOSITORY, useValue: repo.repo },
     ],
   }).compile();
 

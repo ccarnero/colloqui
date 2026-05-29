@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Hybrid Mongo + Temporal Postgres: mongo overlay strips OLTP postgres.
+# Patches under patches/ are copies of ../local-base/patches (minus
+# postgres-resources.yaml); keep them in sync when local-base changes.
+resources:
+  - ../../mongo
+
+patches:
+  - path: patches/nats-resources.yaml
+  - path: patches/nats-config.yaml
+  - path: patches/redis-resources.yaml
+  - path: patches/mongo-resources.yaml
+  - path: patches/postgres-temporal-resources.yaml
+  - path: patches/postgres-temporal-visibility-resources.yaml
+  - path: patches/observability-resources.yaml

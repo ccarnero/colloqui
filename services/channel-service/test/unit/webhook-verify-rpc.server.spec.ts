@@ -4,6 +4,7 @@ import {
   WEBHOOK_VERIFY_RPC_SUBJECT,
   type ChannelAccount,
 } from "@yoizen/shared";
+import { __resetServiceModeCacheForTests } from "@yoizen/observability";
 import { WebhookVerifyRpcServer } from "../../src/modules/webhooks/webhook-verify-rpc.server";
 import type { AccountsService } from "../../src/modules/accounts/accounts.service";
 
@@ -22,6 +23,8 @@ describe("WebhookVerifyRpcServer", () => {
   } as unknown as NatsConnection;
 
   beforeEach(() => {
+    process.env.SERVICE_MODE = "worker";
+    __resetServiceModeCacheForTests();
     findByVerifyToken.mockClear();
     subscribe.mockClear();
     unsubscribe.mockClear();

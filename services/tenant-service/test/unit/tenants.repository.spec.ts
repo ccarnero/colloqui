@@ -1,11 +1,11 @@
 import "../setup-env";
 import { describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { createQueuedSql } from "@yoizen/testing";
-import type { Sql } from "postgres";
+import { createMockMongoClient } from "@yoizen/testing";
 import { ProvisioningStatus, TenantDatabaseTier } from "@yoizen/shared";
-import { TenantsRepository } from "../../src/modules/tenants/tenants.repository";
-import { PLATFORM_POSTGRES_SQL } from "../../src/providers/platform-postgres.provider";
+import { TenantsMongoRepository } from "../../src/modules/tenants/tenants.mongo.repository";
+import { TENANTS_REPOSITORY } from "../../src/modules/tenants/tenants.repository.interface";
+import { MONGO_CLIENT } from "../../src/providers/platform-mongo.provider";
 
 const rowTemplate = {
   configuration: {} as Record<string, unknown>,
@@ -16,33 +16,39 @@ const rowTemplate = {
   provisioning_completed_at: null as Date | null,
 };
 
-describe("TenantsRepository", () => {
-  it("creates and loads tenants via SQL adapter", async () => {
-    const sql = Object.assign(
-      mock(() =>
-        Promise.resolve([
-          {
-            id: "id-1",
-            name: "tenant-a",
-            ...rowTemplate,
-            created_at: new Date(),
-            updated_at: new Date(),
-          },
-        ]),
-      ),
-      {
-        json: (value: unknown) => value,
-      },
-    ) as unknown as Sql;
+describe("TenantsMongoRepository", () => {
+  it("creates and loads tenants via Mongo adapter", async () => {
+    const collections = new Map([
+      [
+        "tenants",
+        (operation: string, args: readonly unknown[]) => {
+          if (operation === "insertOne") {
+            return { acknowledged: true };
+          }
+          if (operation === "findOne") {
+            return {
+              _id: "id-1",
+              name: "tenant-a",
+              ...rowTemplate,
+              created_at: new Date(),
+              updated_at: new Date(),
+            };
+          }
+          return null;
+        },
+      ],
+    ]);
+    const client = createMockMongoClient(collections, mock);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        TenantsRepository,
-        { provide: PLATFORM_POSTGRES_SQL, useValue: sql },
+        TenantsMongoRepository,
+        { provide: TENANTS_REPOSITORY, useExisting: TenantsMongoRepository },
+        { provide: MONGO_CLIENT, useValue: client },
       ],
     }).compile();
 
-    const repository = moduleRef.get(TenantsRepository);
+    const repository = moduleRef.get(TenantsMongoRepository);
     const created = await repository.create(
       "id-1",
       "tenant-a",
@@ -57,22 +63,33 @@ describe("TenantsRepository", () => {
 
   it("findAll returns all tenant rows", async () => {
     const row = {
-      id: "i1",
+      _id: "i1",
       name: "n1",
       ...rowTemplate,
       configuration: {},
       created_at: new Date(),
       updated_at: new Date(),
     };
-    const sqlQueue: unknown[][] = [[row]];
-    const sql = createQueuedSql(sqlQueue, mock);
+    const collections = new Map([
+      [
+        "tenants",
+        (operation: string) => {
+          if (operation === "find") {
+            return [row];
+          }
+          return null;
+        },
+      ],
+    ]);
+    const client = createMockMongoClient(collections, mock);
     const moduleRef = await Test.createTestingModule({
       providers: [
-        TenantsRepository,
-        { provide: PLATFORM_POSTGRES_SQL, useValue: sql },
+        TenantsMongoRepository,
+        { provide: TENANTS_REPOSITORY, useExisting: TenantsMongoRepository },
+        { provide: MONGO_CLIENT, useValue: client },
       ],
     }).compile();
-    const repository = moduleRef.get(TenantsRepository);
+    const repository = moduleRef.get(TenantsMongoRepository);
     const all = await repository.findAll();
     expect(all).toHaveLength(1);
     expect(all[0]?.name).toBe("n1");
@@ -80,38 +97,53 @@ describe("TenantsRepository", () => {
 
   it("updateConfiguration returns updated row", async () => {
     const row = {
-      id: "i1",
+      _id: "i1",
       name: "n1",
       ...rowTemplate,
       configuration: { k: "v" },
       created_at: new Date(),
       updated_at: new Date(),
     };
-    const sqlQueue: unknown[][] = [[row]];
-    const sql = createQueuedSql(sqlQueue, mock);
+    const client = {
+      db: () => ({
+        collection: () => ({
+          findOneAndUpdate: mock(() => Promise.resolve(row)),
+        }),
+      }),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
-        TenantsRepository,
-        { provide: PLATFORM_POSTGRES_SQL, useValue: sql },
+        TenantsMongoRepository,
+        { provide: TENANTS_REPOSITORY, useExisting: TenantsMongoRepository },
+        { provide: MONGO_CLIENT, useValue: client },
       ],
     }).compile();
-    const repository = moduleRef.get(TenantsRepository);
+    const repository = moduleRef.get(TenantsMongoRepository);
     const updated = await repository.updateConfiguration("n1", { k: "v" });
     expect(updated?.configuration).toEqual({ k: "v" });
   });
 
   it("deleteByName returns boolean from delete count", async () => {
-    const sql = Object.assign(
-      mock(() => Promise.resolve({ count: 1 })),
-      { json: (value: unknown) => value },
-    ) as unknown as Sql;
+    const collections = new Map([
+      [
+        "tenants",
+        (operation: string) => {
+          if (operation === "deleteOne") {
+            return { deletedCount: 1 };
+          }
+          return null;
+        },
+      ],
+    ]);
+    const client = createMockMongoClient(collections, mock);
     const moduleRef = await Test.createTestingModule({
       providers: [
-        TenantsRepository,
-        { provide: PLATFORM_POSTGRES_SQL, useValue: sql },
+        TenantsMongoRepository,
+        { provide: TENANTS_REPOSITORY, useExisting: TenantsMongoRepository },
+        { provide: MONGO_CLIENT, useValue: client },
       ],
     }).compile();
-    const repository = moduleRef.get(TenantsRepository);
+    const repository = moduleRef.get(TenantsMongoRepository);
     const ok = await repository.deleteByName("gone");
     expect(ok).toBe(true);
   });

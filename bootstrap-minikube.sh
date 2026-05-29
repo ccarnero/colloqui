@@ -4,9 +4,9 @@ set -euo pipefail
 PROFILE="yoizen-arch"
 ALL_ENVIRONMENTS=(dev qa staging production)
 ALL_GROUPS=(support-services platform-services refresh-dns)
-KOURIER_EXTERNAL_IP_WAIT_SECONDS="${KOURIER_EXTERNAL_IP_WAIT_SECONDS:-90}"
 ENVIRONMENTS=()
 SERVICE_GROUP=""
+STORAGE_ENGINE="${STORAGE_ENGINE:-postgres}"
 KNATIVE_VERSION="v1.17.0"
 KOURIER_VERSION="v1.17.0"
 KEDA_VERSION="2.18.3"
@@ -77,12 +77,14 @@ Groups: ${ALL_GROUPS[*]}
   (defaults to both if omitted)
 
 Options:
-  -h, --help    Show this help message
+  -h, --help                      Show this help message
+  --storage-engine=ENGINE         OLTP storage: postgres (default) or mongo
+  --storage-engine ENGINE         Same as --storage-engine=ENGINE
 
 Environment variables:
+  STORAGE_ENGINE                    Same as --storage-engine (postgres|mongo)
   MINIKUBE_CPUS                         Override the Minikube CPU count
   MINIKUBE_MEMORY_MB                    Override the Minikube memory limit in MB
-  KOURIER_EXTERNAL_IP_WAIT_SECONDS      Seconds to wait for Kourier LB IP (default: 90)
 
 Examples:
   $0 support-services           # Infra only for all environments
@@ -90,21 +92,56 @@ Examples:
   $0 support-services dev       # Same as above (order does not matter)
   $0 platform-services dev qa   # Build + deploy for dev and qa
   $0 dev                        # Full bootstrap (both groups)
+  $0 --storage-engine=mongo dev support-services
+                                # Mongo OLTP + usage; Temporal stays on Postgres
   $0 dev refresh-dns            # Re-sync config-domain with Kourier EXTERNAL-IP
                                 # (use after starting/stopping minikube tunnel)
 EOF
 }
 
+normalize_storage_engine() {
+  case "$1" in
+    postgres|mongo) printf '%s' "$1" ;;
+    *)
+      err "Invalid storage engine: $1 (expected postgres or mongo)"
+      exit 1
+      ;;
+  esac
+}
+
 parse_args() {
   ENVIRONMENTS=()
   SERVICE_GROUP=""
+  STORAGE_ENGINE="${STORAGE_ENGINE:-postgres}"
   local positional=()
 
-  for arg in "$@"; do
+  while (( $# > 0 )); do
+    local arg=$1
+    shift
     case "$arg" in
-      -h|--help) usage; exit 0 ;;
-      -*)        err "Unknown option: $arg"; usage; exit 1 ;;
-      *)         positional+=("$arg") ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      --storage-engine=*)
+        STORAGE_ENGINE="$(normalize_storage_engine "${arg#*=}")"
+        ;;
+      --storage-engine)
+        if (( $# == 0 )); then
+          err "--storage-engine requires a value (postgres or mongo)"
+          exit 1
+        fi
+        STORAGE_ENGINE="$(normalize_storage_engine "$1")"
+        shift
+        ;;
+      -*)
+        err "Unknown option: $arg"
+        usage
+        exit 1
+        ;;
+      *)
+        positional+=("$arg")
+        ;;
     esac
   done
 
@@ -137,9 +174,60 @@ parse_args() {
       exit 1
     fi
   done
+  unset arg
 
   if (( ${#ENVIRONMENTS[@]} == 0 )); then
     ENVIRONMENTS=("${ALL_ENVIRONMENTS[@]}")
+  fi
+}
+
+is_mongo_storage_engine() {
+  [[ "${STORAGE_ENGINE}" == "mongo" ]]
+}
+
+print_storage_engine_banner() {
+  if ! is_mongo_storage_engine; then
+    return 0
+  fi
+  echo ""
+  log "============================================================"
+  log " Storage engine: mongo (hybrid with Temporal Postgres)"
+  log "============================================================"
+  echo ""
+}
+
+local_infra_overlay_path() {
+  local script_dir=$1 env=$2
+  if is_mongo_storage_engine; then
+    printf '%s/infrastructure/overlays/local/mongo-%s' "$script_dir" "$env"
+  else
+    printf '%s/infrastructure/overlays/local/%s' "$script_dir" "$env"
+  fi
+}
+
+local_knative_overlay_path() {
+  local script_dir=$1 env=$2
+  local suffix
+  if is_mongo_storage_engine; then
+    suffix="mongo-${env}"
+  else
+    suffix="postgres-${env}"
+  fi
+  if [[ -d "${script_dir}/knative/services/overlays/local/${suffix}" ]]; then
+    printf '%s/knative/services/overlays/local/%s' "$script_dir" "$suffix"
+  else
+    printf '%s/knative/services/overlays/local/%s' "$script_dir" "$env"
+  fi
+}
+
+storage_engine_for_namespace() {
+  local ns=$1
+  if kubectl get statefulset/mongo-platform --namespace "$ns" &>/dev/null; then
+    echo mongo
+  elif kubectl get statefulset/postgres --namespace "$ns" &>/dev/null; then
+    echo postgres
+  else
+    echo "$STORAGE_ENGINE"
   fi
 }
 
@@ -167,16 +255,6 @@ retry() {
     sleep "$delay"
     (( attempt++ ))
   done
-}
-
-wait_for_webhook() {
-  log "Waiting for Knative webhook to be ready..."
-  kubectl wait pod \
-    --namespace knative-serving \
-    -l app=webhook \
-    --for=condition=Ready \
-    --timeout=120s
-  sleep 5
 }
 
 start_minikube() {
@@ -233,12 +311,6 @@ install_knative_serving() {
     log "Installing Knative Serving HPA autoscaler (${KNATIVE_VERSION})"
     retry 10 5 kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-hpa.yaml"
   fi
-
-  log "Waiting for Knative Serving deployments..."
-  kubectl wait deployment --all \
-    --namespace knative-serving \
-    --for=condition=Available \
-    --timeout=300s
 }
 
 install_kourier() {
@@ -250,19 +322,11 @@ install_kourier() {
   log "Installing Kourier networking layer (${KOURIER_VERSION})"
   kubectl apply -f "https://github.com/knative/net-kourier/releases/download/knative-${KOURIER_VERSION}/kourier.yaml"
 
-  wait_for_webhook
-
   log "Configuring Knative to use Kourier"
   retry 10 5 kubectl patch configmap/config-network \
     --namespace knative-serving \
     --type merge \
     --patch '{"data":{"ingress-class":"kourier.ingress.networking.knative.dev"}}'
-
-  log "Waiting for Kourier..."
-  kubectl wait deployment --all \
-    --namespace kourier-system \
-    --for=condition=Available \
-    --timeout=180s
 }
 
 install_keda() {
@@ -280,9 +344,6 @@ install_keda() {
   retry 3 3 helm repo update kedacore
 
   log "Installing KEDA ${KEDA_VERSION} into '${KEDA_NAMESPACE}' namespace"
-  # Helm runs without `--wait`: CRDs land synchronously while the operator
-  # pods come up in the background. wait_for_operators_ready() rolls up the
-  # readiness check in parallel with cnpg later in the pipeline.
   retry 3 5 helm upgrade --install keda kedacore/keda \
     --namespace "$KEDA_NAMESPACE" \
     --create-namespace \
@@ -298,8 +359,10 @@ install_cloudnative_pg() {
   # applying infrastructure so kubectl can recognize Cluster and Pooler CRDs.
   if kubectl get crd clusters.postgresql.cnpg.io &>/dev/null \
     && kubectl get crd poolers.postgresql.cnpg.io &>/dev/null \
-    && kubectl get deployment/cnpg-controller-manager --namespace "$CNPG_NAMESPACE" &>/dev/null; then
-    log "CloudNativePG CRDs + operator already installed — skipping"
+    && { kubectl get deployment/cnpg-cloudnative-pg --namespace "$CNPG_NAMESPACE" &>/dev/null \
+      || kubectl get deployment/cnpg-controller-manager --namespace "$CNPG_NAMESPACE" &>/dev/null; }; then
+    log "CloudNativePG CRDs + operator already installed — waiting for webhook"
+    wait_for_cnpg_webhook
     return
   fi
 
@@ -308,77 +371,48 @@ install_cloudnative_pg() {
   retry 3 3 helm repo update cnpg
 
   log "Installing CloudNativePG chart ${CNPG_CHART_VERSION} into '${CNPG_NAMESPACE}' namespace"
-  # See note in install_keda — CRDs apply synchronously, the operator pod
-  # readiness wait is folded into wait_for_operators_ready() so it runs in
-  # parallel with KEDA instead of stacking 180s + 180s.
   retry 3 5 helm upgrade --install cnpg cnpg/cloudnative-pg \
     --namespace "$CNPG_NAMESPACE" \
     --create-namespace \
     --version "$CNPG_CHART_VERSION" \
     --timeout 180s
+
+  wait_for_cnpg_webhook
 }
 
-# Folds the readiness checks for KEDA + CNPG operators into a single
-# parallel wait. Both helm installs apply CRDs synchronously, so by the
-# time we reach apply_infrastructure() the cluster already accepts the
-# resources — we just need the operators reconciling them. Waiting in
-# parallel saves ~180s vs the previous serial 2 x `kubectl wait`.
-wait_for_operators_ready() {
-  log "Waiting for operators (KEDA + CNPG) in parallel..."
-  local pids=()
-
-  kubectl wait deployment --all \
-    --namespace "$KEDA_NAMESPACE" \
-    --for=condition=Available \
-    --timeout=180s &
-  pids+=($!)
-
-  kubectl wait deployment --all \
-    --namespace "$CNPG_NAMESPACE" \
-    --for=condition=Available \
-    --timeout=180s &
-  pids+=($!)
-
-  local exit_code=0
-  for pid in "${pids[@]}"; do
-    if ! wait "$pid"; then
-      exit_code=1
+wait_for_cnpg_webhook() {
+  # Cluster/Pooler manifests call admission webhooks on cnpg-webhook-service.
+  # Applying infrastructure before the webhook listens causes:
+  #   dial tcp <cluster-ip>:443: connect: connection refused
+  log "Waiting for CloudNativePG admission webhook (cnpg-webhook-service)..."
+  local deploy
+  for deploy in cnpg-cloudnative-pg cnpg-controller-manager cnpg-webhook; do
+    if kubectl get deployment/"$deploy" --namespace "$CNPG_NAMESPACE" &>/dev/null; then
+      retry 30 5 kubectl rollout status "deployment/${deploy}" \
+        --namespace "$CNPG_NAMESPACE" \
+        --timeout=120s
+      break
     fi
   done
-  if (( exit_code != 0 )); then
-    err "One or more operator deployments did not become Available within 180s."
-    return 1
-  fi
+  retry 30 5 bash -c '
+    kubectl get endpoints cnpg-webhook-service -n "'"$CNPG_NAMESPACE"'" \
+      -o jsonpath="{.subsets[0].addresses[0].ip}" 2>/dev/null | grep -q .
+  '
+  log "CloudNativePG webhook is ready"
+}
+
+wait_for_keda_ready() {
+  log "Waiting for KEDA operator..."
+  retry 30 5 kubectl wait deployment --all \
+    --namespace "$KEDA_NAMESPACE" \
+    --for=condition=Available \
+    --timeout=120s
 }
 
 get_kourier_external_ip() {
   kubectl get svc kourier \
     --namespace kourier-system \
     -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true
-}
-
-# Waits up to KOURIER_EXTERNAL_IP_WAIT_SECONDS for svc/kourier to be assigned
-# an EXTERNAL-IP by the LoadBalancer controller (usually `minikube tunnel` on
-# Docker-driver). Prints the IP on stdout if obtained. Exits with non-zero
-# status and prints "" otherwise — callers decide whether to bail out or
-# fall back.
-wait_for_kourier_external_ip() {
-  local deadline elapsed kourier_ip
-  deadline=$KOURIER_EXTERNAL_IP_WAIT_SECONDS
-  elapsed=0
-
-  while (( elapsed < deadline )); do
-    kourier_ip="$(get_kourier_external_ip)"
-    if [[ -n "$kourier_ip" && "$kourier_ip" != "<pending>" ]]; then
-      printf '%s\n' "$kourier_ip"
-      return 0
-    fi
-    sleep 2
-    (( elapsed += 2 ))
-  done
-
-  printf '%s\n' ""
-  return 1
 }
 
 # Returns the current sslip.io domain configured in Knative's config-domain
@@ -411,66 +445,15 @@ patch_config_domain_to() {
     --patch "$patch"
 }
 
-# Waits until at least one Knative Service in the given namespace advertises
-# `status.url` under the expected sslip.io domain. This protects the summary
-# output from printing stale URLs right after reconfiguring config-domain.
-wait_for_ksvc_url_reconcile() {
-  local namespace=$1 expected_domain=$2 timeout_s=${3:-60}
-  local elapsed=0
-
-  local ksvc
-  ksvc="$(kubectl get ksvc -n "$namespace" \
-    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
-  if [[ -z "$ksvc" ]]; then
-    return 0
-  fi
-
-  while (( elapsed < timeout_s )); do
-    local url
-    url="$(kubectl get ksvc "$ksvc" -n "$namespace" \
-      -o jsonpath='{.status.url}' 2>/dev/null || true)"
-    if [[ "$url" == *"${expected_domain}"* ]]; then
-      return 0
-    fi
-    sleep 2
-    (( elapsed += 2 ))
-  done
-
-  warn "Timed out waiting for ksvc URLs in ${namespace} to use ${expected_domain}."
-  warn "Current: $(kubectl get ksvc "$ksvc" -n "$namespace" -o jsonpath='{.status.url}' 2>/dev/null || true)"
-  return 1
-}
-
-# Detects an active `minikube tunnel` background process for $PROFILE.
-# The LoadBalancer EXTERNAL-IP is only handed out by the tunnel; without
-# it, kourier stays <pending> indefinitely. Probing once is O(1) and
-# avoids the 90s burn the previous code spent waiting on a state that
-# would never converge.
-is_minikube_tunnel_running() {
-  pgrep -af 'minikube[^\n]*tunnel' 2>/dev/null \
-    | grep -qE "(-p[= ]|--profile[= ])${PROFILE}\b|tunnel\s*$" \
-    || return 1
-}
-
 configure_dns() {
   local ingress_ip
   ingress_ip="$(get_kourier_external_ip)"
 
   if [[ -n "$ingress_ip" && "$ingress_ip" != "<pending>" ]]; then
-    log "Kourier EXTERNAL-IP already present: ${ingress_ip}"
-  elif is_minikube_tunnel_running; then
-    log "minikube tunnel detected — waiting up to ${KOURIER_EXTERNAL_IP_WAIT_SECONDS}s for Kourier EXTERNAL-IP"
-    if ! ingress_ip="$(wait_for_kourier_external_ip)" || [[ -z "$ingress_ip" ]]; then
-      ingress_ip=""
-    fi
+    log "Kourier EXTERNAL-IP: ${ingress_ip}"
   else
-    log "minikube tunnel not running — skipping LB IP wait (saves up to ${KOURIER_EXTERNAL_IP_WAIT_SECONDS}s)"
-    ingress_ip=""
-  fi
-
-  if [[ -z "$ingress_ip" ]]; then
     ingress_ip="$(minikube ip -p "$PROFILE")"
-    warn "Falling back to the Minikube node IP (${ingress_ip})."
+    warn "Kourier EXTERNAL-IP not assigned — falling back to Minikube node IP (${ingress_ip})."
     warn "If you later run 'sudo minikube tunnel -p ${PROFILE}' in another terminal, re-sync via:"
     warn "    ./bootstrap-minikube.sh ${ENVIRONMENTS[0]:-dev} refresh-dns"
   fi
@@ -479,8 +462,8 @@ configure_dns() {
 }
 
 # Standalone runner: re-patches config-domain using the current Kourier
-# EXTERNAL-IP and waits for Knative Routes to reconcile. Safe to call any
-# time `minikube tunnel` comes up/down or Kourier gets a new LB IP.
+# EXTERNAL-IP. Safe to call any time `minikube tunnel` comes up/down or
+# Kourier gets a new LB IP.
 run_refresh_dns() {
   log "===== refresh-dns (re-sync Knative config-domain with Kourier LB) ====="
   echo ""
@@ -492,8 +475,9 @@ run_refresh_dns() {
   fi
 
   local ingress_ip
-  if ! ingress_ip="$(wait_for_kourier_external_ip)" || [[ -z "$ingress_ip" ]]; then
-    err "Kourier EXTERNAL-IP is still <pending> after ${KOURIER_EXTERNAL_IP_WAIT_SECONDS}s."
+  ingress_ip="$(get_kourier_external_ip)"
+  if [[ -z "$ingress_ip" || "$ingress_ip" == "<pending>" ]]; then
+    err "Kourier EXTERNAL-IP is <pending>."
     err "Start 'sudo minikube tunnel -p ${PROFILE}' in another terminal and retry."
     exit 1
   fi
@@ -510,15 +494,6 @@ run_refresh_dns() {
   fi
 
   patch_config_domain_to "$ingress_ip"
-
-  for env in "${ENVIRONMENTS[@]}"; do
-    local ns="platform-services-${env}"
-    if ! kubectl get namespace "$ns" &>/dev/null; then
-      continue
-    fi
-    log "Waiting for ksvc URLs in ${ns} to reconcile..."
-    wait_for_ksvc_url_reconcile "$ns" "${ingress_ip}.sslip.io" 60 || true
-  done
 }
 
 configure_local_registry() {
@@ -552,118 +527,11 @@ apply_infrastructure() {
 
   for env in "${ENVIRONMENTS[@]}"; do
     local ns="support-services-${env}"
+    local overlay_path
+    overlay_path="$(local_infra_overlay_path "$script_dir" "$env")"
 
-    log "Applying infrastructure for '${env}'"
-    kubectl apply -k "${script_dir}/infrastructure/overlays/local/${env}"
-
-    log "Waiting for NATS in ${ns}..."
-    kubectl rollout status statefulset/nats \
-      --namespace "$ns" \
-      --timeout=180s
-
-    log "Waiting for Redis StatefulSet in ${ns}..."
-    kubectl rollout status statefulset/redis \
-      --namespace "$ns" \
-      --timeout=180s
-
-    log "Waiting for Redis Cluster init Job in ${ns}..."
-    kubectl wait --for=condition=complete job/redis-cluster-init \
-      --namespace "$ns" \
-      --timeout=180s
-
-    log "Waiting for PostgreSQL in ${ns}..."
-    kubectl rollout status statefulset/postgres \
-      --namespace "$ns" \
-      --timeout=180s
-
-    # All four CNPG Cluster CRs land via the single `kubectl apply -k`
-    # above. Their Ready conditions are independent (separate primaries
-    # + initdb jobs), so we wait in parallel — saves ~one Postgres
-    # bootstrap window vs sequential 300s × N.
-    #
-    # `postgres-temporal-visibility` was added in the 2026-05-22
-    # post-mortem remediation (DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md)
-    # to isolate visibility writes from the `executions` hot path.
-    log "Waiting for CloudNativePG clusters in ${ns} (parallel)..."
-    local cnpg_pids=()
-    for cnpg_cluster in \
-      postgres-shared \
-      postgres-usage-shared \
-      postgres-temporal \
-      postgres-temporal-visibility
-    do
-      kubectl wait cluster.postgresql.cnpg.io/"$cnpg_cluster" \
-        --namespace "$ns" \
-        --for=condition=Ready \
-        --timeout=300s &
-      cnpg_pids+=($!)
-    done
-
-    local cnpg_exit=0
-    for pid in "${cnpg_pids[@]}"; do
-      if ! wait "$pid"; then
-        cnpg_exit=1
-      fi
-    done
-    if (( cnpg_exit != 0 )); then
-      err "At least one CNPG Cluster did not reach Ready within 300s."
-      return 1
-    fi
-
-    # Post-HA-migration (DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md) the
-    # schema bootstrap moved out of the `auto-setup` boot loop into a
-    # dedicated Job named `temporal-schema-setup-<version>` defined by
-    # `infrastructure/base/temporal/job-schema-setup.yaml`. Every role
-    # Deployment (frontend, history, matching, worker) has an
-    # initContainer that `kubectl wait`s on the same Job, but we wait
-    # here too so a Job failure surfaces in the bootstrap log instead
-    # of as pod-init timeouts. The legacy
-    # `ensure-temporal-visibility-schema.sh` workaround for
-    # `auto-setup` ignoring `VISIBILITY_POSTGRES_SEEDS` (§10.1) is
-    # gone — the Job targets both clusters explicitly.
-    log "Waiting for temporal schema bootstrap Job in ${ns}..."
-    kubectl wait --namespace "$ns" \
-      --for=condition=complete \
-      job/temporal-schema-setup-1-28-4 \
-      --timeout=300s
-
-    # Roll all 4 role Deployments in parallel. The slowest one
-    # (history — needs to claim 16 shards over SQL) gates the wall-
-    # clock; rolling sequentially would stack 4×180s.
-    log "Waiting for Temporal role Deployments in ${ns} (parallel)..."
-    local temporal_pids=()
-    local temporal_roles=(frontend history matching worker)
-    for role in "${temporal_roles[@]}"; do
-      kubectl rollout status "deployment/temporal-${role}" \
-        --namespace "$ns" \
-        --timeout=300s &
-      temporal_pids+=($!)
-    done
-
-    local temporal_exit=0
-    for idx in "${!temporal_pids[@]}"; do
-      if ! wait "${temporal_pids[$idx]}"; then
-        warn "Rollout did not converge: deployment/temporal-${temporal_roles[$idx]}"
-        temporal_exit=1
-      fi
-    done
-    if (( temporal_exit != 0 )); then
-      err "One or more Temporal role Deployments did not become Available within 300s."
-      return 1
-    fi
-
-    # Restores the 'default' Temporal namespace that `auto-setup` used
-    # to register on every boot but `temporalio/server` does not. SDK
-    # clients (workflow-worker, connector-runtime) crash on first
-    # boot otherwise with `Namespace default is not found.`. The Job
-    # waits internally for the frontend to be SERVING; we add the
-    # outer kubectl wait so failures surface in the bootstrap log
-    # instead of as later SDK errors.
-    log "Waiting for temporal namespace bootstrap Job in ${ns}..."
-    kubectl wait --namespace "$ns" \
-      --for=condition=complete \
-      job/temporal-namespace-bootstrap-1-28-4 \
-      --timeout=420s
+    log "Applying infrastructure for '${env}' (${STORAGE_ENGINE})"
+    kubectl apply -k "$overlay_path"
 
     # Force a balanced history shard ring. Temporal's ringpop only
     # rebalances shards on host LEAVE, not on host JOIN — so the
@@ -677,37 +545,9 @@ apply_infrastructure() {
     # races). Without this step the 2026-05-23 stress run saw 16/0
     # skew and 57k workflows TimedOut — see
     # `DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md` §5.1.
-    log "Rebalancing temporal history shards in ${ns}..."
-    kubectl rollout restart deployment/temporal-history --namespace "$ns"
-    kubectl rollout status deployment/temporal-history \
-      --namespace "$ns" --timeout=300s
-
-    # Temporal UI + the observability stack (otel-collector, tempo,
-    # prometheus, loki, grafana) have no inter-dependency at the
-    # Deployment-Available level — `kubectl rollout status` only checks
-    # replica readiness, not functional liveness against Temporal. Fire
-    # all six in parallel so the wall-clock cost is the slowest single
-    # rollout instead of the sum.
-    log "Waiting for Temporal UI + observability stack in ${ns} (parallel)..."
-    local obs_pids=()
-    local obs_names=(temporal-ui otel-collector tempo prometheus loki grafana)
-    for dep in "${obs_names[@]}"; do
-      kubectl rollout status "deployment/$dep" \
-        --namespace "$ns" \
-        --timeout=120s &
-      obs_pids+=($!)
-    done
-
-    local obs_exit=0
-    for idx in "${!obs_pids[@]}"; do
-      if ! wait "${obs_pids[$idx]}"; then
-        warn "Rollout did not converge: deployment/${obs_names[$idx]}"
-        obs_exit=1
-      fi
-    done
-    if (( obs_exit != 0 )); then
-      err "One or more observability deployments failed to become Available within 120s."
-      return 1
+    if kubectl get deployment/temporal-history --namespace "$ns" &>/dev/null; then
+      log "Rebalancing temporal history shards in ${ns}..."
+      kubectl rollout restart deployment/temporal-history --namespace "$ns"
     fi
   done
 }
@@ -723,8 +563,10 @@ apply_knative_config() {
   retry 5 3 kubectl apply -k "${script_dir}/knative/services/rbac"
 
   for env in "${ENVIRONMENTS[@]}"; do
-    log "Applying Knative services for '${env}'"
-    retry 5 3 kubectl apply -k "${script_dir}/knative/services/overlays/local/${env}"
+    local knative_overlay
+    knative_overlay="$(local_knative_overlay_path "$script_dir" "$env")"
+    log "Applying Knative services for '${env}' (${STORAGE_ENGINE}) → ${knative_overlay##*/}"
+    retry 5 3 kubectl apply -k "$knative_overlay"
   done
 }
 
@@ -865,7 +707,6 @@ verify_cluster() {
 
 verify_support_services() {
   local core_deployments=(otel-collector tempo prometheus loki grafana)
-  local core_statefulsets=(nats postgres redis)
 
   if ! kubectl get crd scaledobjects.keda.sh &>/dev/null; then
     err "KEDA CRDs not found in cluster."
@@ -882,9 +723,24 @@ verify_support_services() {
 
   for env in "${ENVIRONMENTS[@]}"; do
     local ns="support-services-${env}"
+    local engine core_statefulsets cnpg_clusters cnpg_cluster
     if ! kubectl get namespace "$ns" &>/dev/null; then
       warn "Namespace '${ns}' does not exist — support-services may not be deployed"
       continue
+    fi
+
+    engine="$(storage_engine_for_namespace "$ns")"
+    if [[ "$engine" == "mongo" ]]; then
+      core_statefulsets=(nats mongo-platform mongo-usage redis)
+      cnpg_clusters=(postgres-temporal postgres-temporal-visibility)
+    else
+      core_statefulsets=(nats postgres redis)
+      cnpg_clusters=(
+        postgres-shared
+        postgres-usage-shared
+        postgres-temporal
+        postgres-temporal-visibility
+      )
     fi
 
     for dep in "${core_deployments[@]}"; do
@@ -898,12 +754,7 @@ verify_support_services() {
       fi
     done
 
-    for cnpg_cluster in \
-      postgres-shared \
-      postgres-usage-shared \
-      postgres-temporal \
-      postgres-temporal-visibility
-    do
+    for cnpg_cluster in "${cnpg_clusters[@]}"; do
       if ! kubectl get cluster.postgresql.cnpg.io "$cnpg_cluster" --namespace "$ns" &>/dev/null; then
         warn "CloudNativePG Cluster '${cnpg_cluster}' not found in ${ns}"
       fi
@@ -932,17 +783,13 @@ verify_support_services() {
 
 run_support_services() {
   log "===== support-services (initial configuration + infrastructure) ====="
-  echo ""
+  print_storage_engine_banner
   start_minikube
   install_knative_serving
   install_kourier
   install_keda
   install_cloudnative_pg
-  # Both helm installs above run without `--wait`. Their CRDs are
-  # available synchronously; the operator pods reconcile in the
-  # background. We fold the readiness wait here, in parallel for
-  # both operators, before any infra manifest references their CRs.
-  wait_for_operators_ready
+  wait_for_keda_ready
   configure_dns
   configure_local_registry
   apply_namespaces
@@ -986,6 +833,10 @@ print_summary() {
   echo "  DNS domain (cfg):  ${current_domain:-${ingress_ip}.sslip.io}"
   echo "  Environments:      ${ENVIRONMENTS[*]}"
   echo "  Group:             ${group_label}"
+  echo "  Storage engine:    ${STORAGE_ENGINE}"
+  if is_mongo_storage_engine; then
+    echo "                     (hybrid with Temporal Postgres)"
+  fi
   echo ""
 
   if [[ -n "$kourier_ip" && -n "$current_domain" && "$current_domain" != "${kourier_ip}.sslip.io" ]]; then
@@ -1021,7 +872,11 @@ print_summary() {
     echo "  API Gateway (dev): http://api-gateway.platform-services-dev.${ingress_ip}.sslip.io"
     echo ""
     echo "  Port-forwarding (run in a separate terminal):"
-    echo "    ./port-forward.sh ${ENVIRONMENTS[0]}"
+    if is_mongo_storage_engine; then
+      echo "    STORAGE_ENGINE=mongo ./port-forward.sh ${ENVIRONMENTS[0]}"
+    else
+      echo "    ./port-forward.sh ${ENVIRONMENTS[0]}"
+    fi
     echo ""
   fi
 }
@@ -1036,6 +891,8 @@ main() {
   log "Event-Driven Architecture Bootstrap"
   log "Environments: ${ENVIRONMENTS[*]}"
   log "Group:        ${SERVICE_GROUP:-all}"
+  log "Storage:      ${STORAGE_ENGINE}"
+  print_storage_engine_banner
   echo ""
 
   check_deps

@@ -14,7 +14,7 @@ spec:
   cooldownPeriod: 180
   idleReplicaCount: 0
   minReplicaCount: 1
-  maxReplicaCount: 8
+  maxReplicaCount: 14
   fallback:
     failureThreshold: 3
     replicas: 1

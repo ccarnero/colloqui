@@ -2,6 +2,7 @@ import "./instrumentation";
 import dns from "dns";
 import { CONNECTOR_RUNTIME_TASK_QUEUE } from "@yoizen/shared";
 import { PinoLoggerService } from "@yoizen/observability";
+import { OpenTelemetryActivityInboundInterceptor } from "@temporalio/interceptors-opentelemetry";
 import { runTemporalWorkerCli } from "./temporal-worker-bootstrap";
 import * as activities from "./activities";
 import { workflowHttpWorkerConfig } from "./config";
@@ -22,6 +23,11 @@ runTemporalWorkerCli(
       namespace: workflowHttpWorkerConfig.temporalNamespace,
       taskQueue: CONNECTOR_RUNTIME_TASK_QUEUE,
       activities,
+      interceptors: {
+        activityInbound: [
+          (ctx) => new OpenTelemetryActivityInboundInterceptor(ctx),
+        ],
+      },
       // Stress-grade concurrency. HTTP activities are pure I/O
       // (outbound `tracedFetch`) so a single pod can comfortably
       // sustain hundreds of in-flight requests. 400 doubles the

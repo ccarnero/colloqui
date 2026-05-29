@@ -1,75 +1,98 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { GatewayAuditService } from "../../src/modules/gateway-audit/gateway-audit.service";
+import { GatewayAuditMongoRepository } from "../../src/modules/gateway-audit/gateway-audit.mongo.repository";
+import {
+  GATEWAY_AUDIT_REPOSITORY,
+} from "../../src/modules/gateway-audit/gateway-audit.repository.interface";
 import { GATEWAY_AUDIT_CONSUMER } from "../../src/providers/nats.provider";
-import { TenantConnectionManager, type Sql } from "@yoizen/database";
+import { AuditTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
 import { makeMockJetStreamConsumer } from "../make-mock-consumer";
+import {
+  makeFakeTenantMongoConnections,
+  makeMongoCollectionMock,
+  makeMockDb,
+} from "../make-mongo-mock";
 
 describe("GatewayAuditService", () => {
   let service: GatewayAuditService;
-  let mockTenantMgr: {
-    ensureSchema: ReturnType<typeof mock>;
-    getConnection: ReturnType<typeof mock>;
-    isNamespaceInitialized: ReturnType<typeof mock>;
-    markNamespaceInitialized: ReturnType<typeof mock>;
-  };
+  let mockTenantMgr: ReturnType<typeof makeFakeTenantMongoConnections>;
 
   const sampleRow = {
-    requestId: "r1",
-    traceId: "tr1",
-    tenantId: "t1",
+    _id: "r1",
+    trace_id: "tr1",
+    tenant_id: "t1",
     method: "GET",
     path: "/api",
-    statusCode: 200,
-    durationMs: 5,
-    clientIp: "127.0.0.1",
-    userAgent: "test",
-    jwtSubject: null,
-    routeType: "api",
-    upstreamUrl: null,
-    upstreamStatus: null,
-    upstreamDuration: null,
-    rateLimitApplied: false,
-    rateLimitRemaining: null,
+    status_code: 200,
+    duration_ms: 5,
+    client_ip: "127.0.0.1",
+    user_agent: "test",
+    jwt_subject: null,
+    route_type: "api",
+    upstream_url: null,
+    upstream_status: null,
+    upstream_duration: null,
+    rate_limit_applied: false,
+    rate_limit_remaining: null,
     error: null,
-    created_at: "2026-01-01T00:00:00.000Z",
+    created_at: new Date("2026-01-01T00:00:00.000Z"),
   };
 
   beforeEach(async () => {
-    const mockSql = Object.assign(
-      (_strings: TemplateStringsArray, ..._values: unknown[]) =>
-        Promise.resolve([sampleRow]),
-      { unsafe: (s: string) => s },
-    ) as Sql;
+    const collection = makeMongoCollectionMock({
+      insertMany: mock(async () => ({ insertedCount: 1 })),
+      find: mock(() => ({
+        sort: mock(() => ({
+          skip: mock(() => ({
+            limit: mock(() => ({
+              toArray: mock(async () => [sampleRow]),
+            })),
+          })),
+        })),
+      })),
+      findOne: mock(async () => sampleRow),
+      aggregate: mock(() => ({
+        toArray: mock(async () => []),
+      })),
+    });
 
-    // ensureTenantNamespaceOnce now resolves the tenant tier asynchronously
-    // through ensureSchema BEFORE running DDL — mirror that contract here.
-    mockTenantMgr = {
-      ensureSchema: mock(async () => mockSql),
-      getConnection: mock(() => mockSql),
-      isNamespaceInitialized: mock(() => false),
-      markNamespaceInitialized: mock(() => {}),
-    };
+    mockTenantMgr = makeFakeTenantMongoConnections(
+      makeMockDb({
+        gateway_audit_events: collection as unknown as Record<string, unknown>,
+      }),
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
+        GatewayAuditMongoRepository,
+        {
+          provide: GATEWAY_AUDIT_REPOSITORY,
+          useExisting: GatewayAuditMongoRepository,
+        },
         GatewayAuditService,
-        { provide: GATEWAY_AUDIT_CONSUMER, useValue: makeMockJetStreamConsumer() },
-        { provide: TenantConnectionManager, useValue: mockTenantMgr },
+        {
+          provide: GATEWAY_AUDIT_CONSUMER,
+          useValue: makeMockJetStreamConsumer(),
+        },
+        {
+          provide: AuditTenantConnectionManager,
+          useValue: mockTenantMgr,
+        },
       ],
     }).compile();
 
     service = moduleRef.get(GatewayAuditService);
   });
 
-  it("queryEvents returns rows from tenant SQL", async () => {
+  it("queryEvents returns rows from tenant Mongo", async () => {
     const rows = await service.queryEvents(
       { limit: 10, offset: 0 },
       "tenant-a",
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.requestId).toBe("r1");
-    expect(mockTenantMgr.getConnection).toHaveBeenCalledWith("tenant-a");
+    expect(mockTenantMgr.ensureSchemaCalls.get("tenant-a")).toBe(1);
   });
 
   it("getEventByRequestId returns first row", async () => {
@@ -78,65 +101,77 @@ describe("GatewayAuditService", () => {
   });
 
   it("getDashboardStats aggregates KPIs, daily breakdown, and recent activity", async () => {
-    const makeSql = (): Sql =>
-      Object.assign(
-        (strings: TemplateStringsArray) => {
-          const h = strings[0] ?? "";
-          if (h.includes("CREATE TABLE") || h.includes("CREATE INDEX")) {
-            return Promise.resolve([]);
-          }
-          if (h.includes("AS requests_today")) {
-            return Promise.resolve([
-              {
-                requests_today: "10",
-                requests_yesterday: "8",
-                error_count_today: "1",
-                error_count_yesterday: "2",
-                avg_response_ms: "100",
-                avg_response_ms_yesterday: "90",
-                p95_response_ms: "200",
-                active_sessions: "3",
-              },
-            ]);
-          }
-          if (h.includes("AS day") && h.includes("GROUP BY")) {
-            return Promise.resolve([
-              {
-                day: "2026-01-01",
-                requests: "4",
-                avg_latency_ms: "50",
-              },
-            ]);
-          }
-          if (h.includes("LIMIT 20")) {
-            return Promise.resolve([
+    const aggregateToArray = mock(async () => [
+      {
+        requests_today: 10,
+        requests_yesterday: 8,
+        error_count_today: 1,
+        error_count_yesterday: 2,
+        avg_response_ms: 100,
+        avg_response_ms_yesterday: 90,
+        p95_response_ms: 200,
+        active_sessions: 3,
+      },
+    ]);
+    const dailyToArray = mock(async () => [
+      {
+        day: "2026-01-01",
+        requests: 4,
+        avg_latency_ms: 50,
+      },
+    ]);
+    const recentFind = mock(() => ({
+      sort: mock(() => ({
+        limit: mock(() => ({
+          project: mock(() => ({
+            toArray: mock(async () => [
               {
                 method: "GET",
                 path: "/api",
                 status_code: 200,
-                created_at: "2026-01-01T00:00:00.000Z",
+                created_at: new Date("2026-01-01T00:00:00.000Z"),
               },
-            ]);
-          }
-          return Promise.resolve([]);
-        },
-        { unsafe: (s: string) => s },
-      ) as Sql;
+            ]),
+          })),
+        })),
+      })),
+    }));
+
+    let aggregateCalls = 0;
+    const collection = makeMongoCollectionMock({
+      insertMany: mock(async () => ({ insertedCount: 1 })),
+      find: recentFind,
+      findOne: mock(async () => sampleRow),
+      aggregate: mock(() => {
+        aggregateCalls += 1;
+        return {
+          toArray:
+            aggregateCalls === 1 ? aggregateToArray : dailyToArray,
+        };
+      }),
+    });
+
+    mockTenantMgr = makeFakeTenantMongoConnections(
+      makeMockDb({
+        gateway_audit_events: collection as unknown as Record<string, unknown>,
+      }),
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        GatewayAuditService,
-        { provide: GATEWAY_AUDIT_CONSUMER, useValue: makeMockJetStreamConsumer() },
+        GatewayAuditMongoRepository,
         {
-          provide: TenantConnectionManager,
-          useValue: {
-            ensureSchema: mock(async () => makeSql()),
-            getConnection: mock(() => makeSql()),
-            isInitialized: mock(() => false),
-            markInitialized: mock(() => {}),
-            isNamespaceInitialized: mock(() => false),
-            markNamespaceInitialized: mock(() => {}),
-          },
+          provide: GATEWAY_AUDIT_REPOSITORY,
+          useExisting: GatewayAuditMongoRepository,
+        },
+        GatewayAuditService,
+        {
+          provide: GATEWAY_AUDIT_CONSUMER,
+          useValue: makeMockJetStreamConsumer(),
+        },
+        {
+          provide: AuditTenantConnectionManager,
+          useValue: mockTenantMgr,
         },
       ],
     }).compile();

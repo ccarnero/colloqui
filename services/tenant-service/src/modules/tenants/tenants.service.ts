@@ -20,10 +20,16 @@ import {
 } from "@yoizen/shared";
 import { tenantServiceConfig } from "../../config";
 import { K8S_CORE_API } from "../../providers/kubernetes.provider";
-import { TenantPostgresProvisioner } from "../../providers/postgres.provider";
 import { TenantProvisionPublisher } from "../../providers/tenant-provision-publisher.service";
 import { TenantDeletionPublisher } from "../../providers/tenant-deletion-publisher.service";
-import { TenantsRepository } from "./tenants.repository";
+import {
+  TENANT_PROVISIONER,
+  type ITenantProvisioner,
+} from "../../providers/tenant-provisioner.interface";
+import {
+  TENANTS_REPOSITORY,
+  type ITenantsRepository,
+} from "./tenants.repository.interface";
 import {
   type Environment,
   type ITenantRow,
@@ -48,7 +54,8 @@ export interface ITenantDetail {
   tier: TenantDatabaseTierValue;
   configuration: TenantConfiguration;
   namespaces: INamespaceStatus[];
-  postgresHost: string;
+  mongoHost?: string;
+  postgresHost?: string;
   provisioningStatus: ProvisioningStatusValue;
   provisioningError: string | null;
   provisioningStartedAt: Date | null;
@@ -75,21 +82,25 @@ export interface ICreateTenantAccepted {
   statusUrl: string;
 }
 
-/**
- * Returns the Postgres host that owns the tenant's logical database:
- *  - shared:    `postgres-shared.support-services-<env>.svc.cluster.local`
- *               (resolved through `tenantServiceConfig.sharedPostgresHost`).
- *  - dedicated: `postgres.<tenant>-<env>-ns.svc.cluster.local`.
- */
-function postgresHost(
+function databaseHost(
   tenant: string,
   env: Environment,
   tier: TenantDatabaseTierValue,
-): string {
-  if (tier === TenantDatabaseTier.Shared) {
-    return tenantServiceConfig.sharedPostgresHost;
+): { mongoHost?: string; postgresHost?: string } {
+  if (tenantServiceConfig.dbEngine === "mongo") {
+    return {
+      mongoHost:
+        tier === TenantDatabaseTier.Shared
+          ? tenantServiceConfig.sharedMongoHost
+          : `mongo.${tenantKubernetesNamespaceName(tenant, env)}.svc.cluster.local`,
+    };
   }
-  return `postgres.${tenantKubernetesNamespaceName(tenant, env)}.svc.cluster.local`;
+  return {
+    postgresHost:
+      tier === TenantDatabaseTier.Shared
+        ? tenantServiceConfig.sharedPostgresHost
+        : `postgres.${tenantKubernetesNamespaceName(tenant, env)}.svc.cluster.local`,
+  };
 }
 
 @Injectable()
@@ -99,10 +110,10 @@ export class TenantsService {
 
   constructor(
     @Inject(K8S_CORE_API) private readonly k8sApi: k8s.CoreV1Api,
-    private readonly repository: TenantsRepository,
+    @Inject(TENANTS_REPOSITORY) private readonly repository: ITenantsRepository,
     private readonly provisionPublisher: TenantProvisionPublisher,
     private readonly deletionPublisher: TenantDeletionPublisher,
-    private readonly pgProvisioner: TenantPostgresProvisioner,
+    @Inject(TENANT_PROVISIONER) private readonly provisioner: ITenantProvisioner,
   ) {
     const env = tenantServiceConfig.platformEnvironment;
     if (!VALID_ENVIRONMENTS.includes(env as Environment)) {
@@ -264,7 +275,7 @@ export class TenantsService {
 
     const sharedDeprovision: Promise<unknown> | null =
       row.tier === TenantDatabaseTier.Shared
-        ? this.pgProvisioner.deprovisionShared(row.name)
+        ? this.provisioner.deprovisionShared(row.name)
         : null;
 
     const items = await this.findNamespacesByTenant(name);
@@ -318,7 +329,7 @@ export class TenantsService {
       tier: row.tier,
       configuration: row.configuration,
       namespaces: this.mapNamespacesToStatuses(items),
-      postgresHost: postgresHost(row.name, this.environment, row.tier),
+      ...databaseHost(row.name, this.environment, row.tier),
       provisioningStatus: row.provisioning_status,
       provisioningError: row.provisioning_error,
       provisioningStartedAt: row.provisioning_started_at,

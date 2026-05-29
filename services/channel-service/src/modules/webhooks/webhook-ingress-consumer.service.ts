@@ -29,7 +29,14 @@ import { WebhookIngressService } from "./webhook-ingress.service";
 const DURABLE_NAME = "channel-webhook-ingress";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
 /** Webhook ingress is mostly I/O bound (DB lookup + routing + ingress publish). */
-const HANDLER_CONCURRENCY = 16;
+function resolveWebhookIngressConcurrency(): number {
+  const raw = process.env.WEBHOOK_INGRESS_HANDLER_CONCURRENCY;
+  if (raw === undefined || raw === "") return 32;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 32;
+}
+
+const HANDLER_CONCURRENCY = resolveWebhookIngressConcurrency();
 
 @Injectable()
 export class WebhookIngressConsumerService

@@ -10,8 +10,9 @@
  * Public surface:
  *   • startNatsTestcontainer(): starts `nats:2.10` with JetStream enabled
  *     and returns the dynamic `nats://host:port` URL plus a stop hook.
- *   • startPostgresTestcontainer(): starts `postgres:16-alpine` with the
- *     `http_adapters` schema applied — enough columns for `upsertMirror`
+ *   • startMongoTestcontainer(): starts `mongo:7` with the
+ *     `http_adapters` / `adapter_endpoints` collections applied via
+ *     {@link applyMongoSchema} — enough for `upsertMirror`
  *     / `deleteMirrorByServiceName` (zero-loss chaos drill in 6.2).
  *   • createTenantStream(): JetStream `streams.add` for `INGRESS-<tenant>`
  *     with the canonical `evt.<tenant>.>` subject filter.
@@ -25,7 +26,9 @@
  */
 
 import { randomBytes } from "node:crypto";
-import postgres from "postgres";
+import { MongoClient, type Db } from "mongodb";
+import { applyMongoSchema } from "@yoizen/database";
+import { ADAPTER_MONGO_SCHEMA } from "@yoizen/shared";
 /**
  * Direct path import of an existing test-only cache reset helper that
  * is intentionally NOT re-exported from `@yoizen/database`'s public
@@ -127,87 +130,31 @@ export async function startNatsTestcontainer(): Promise<NatsTestcontainer> {
   };
 }
 
-export interface PostgresTestcontainer {
+export interface MongoTestcontainer {
+  readonly uri: string;
   readonly host: string;
   readonly port: number;
-  readonly database: string;
-  readonly username: string;
-  readonly password: string;
   readonly container: StartedTestContainer;
   readonly stop: () => Promise<void>;
 }
 
 /**
- * Schema for the `http_adapters` mirror table consumed by `upsertMirror`
- * / `deleteMirrorByServiceName`. Inlined here (not imported from a
- * migration) because the per-tenant Postgres schema in production is
- * managed by `@yoizen/database` migrations + per-tenant pools, and we
- * want this harness to be standalone — pulling the migration runner here
- * would couple every adapter integration test to the tenant migration
- * pipeline, which is overkill for the mirror columns we actually need.
- *
- * Only columns referenced by `adapters.repository.ts:upsertMirror`
- * (lines 251-305) and `deleteMirrorByServiceName` (311-323) are
- * materialised — anything beyond would create unused state and inflate
- * the per-test container size.
+ * Boots `mongo:7` on a dynamic host port and waits for the canonical
+ * "Waiting for connections" readiness log line.
  */
-const HTTP_ADAPTERS_SCHEMA_SQL = `
-  CREATE TABLE IF NOT EXISTS http_adapters (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    context TEXT NOT NULL DEFAULT 'internal',
-    base_url TEXT NOT NULL,
-    auth_type TEXT NOT NULL DEFAULT 'none',
-    auth_config JSONB NOT NULL DEFAULT '{}'::jsonb,
-    headers JSONB NOT NULL DEFAULT '[]'::jsonb,
-    default_cache_strategy JSONB,
-    timeout_ms INTEGER NOT NULL DEFAULT 30000,
-    max_retries INTEGER NOT NULL DEFAULT 0,
-    retry_backoff_ms INTEGER NOT NULL DEFAULT 0,
-    health_check_path TEXT NOT NULL DEFAULT '/health',
-    is_encrypted BOOLEAN NOT NULL DEFAULT false,
-    tags JSONB NOT NULL DEFAULT '[]'::jsonb,
-    status TEXT NOT NULL DEFAULT 'active',
-    managed_by TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  );
-  CREATE INDEX IF NOT EXISTS idx_http_adapters_managed_by ON http_adapters(managed_by);
-`;
-
-/**
- * Boots `postgres:16-alpine` with the `http_adapters` mirror schema
- * applied. The `tenant` boundary in production is the **database**
- * itself (per-tenant pool), so each integration spec that needs more
- * than one tenant should call {@link createTenantDatabase} per tenant.
- */
-export async function startPostgresTestcontainer(): Promise<PostgresTestcontainer> {
-  const username = "yoizen";
-  const password = "yoizen-test-password";
-  const database = "yoizen";
-
-  const container = await new GenericContainer("postgres:16-alpine")
-    .withEnvironment({
-      POSTGRES_USER: username,
-      POSTGRES_PASSWORD: password,
-      POSTGRES_DB: database,
-    })
-    .withExposedPorts(5432)
-    .withWaitStrategy(
-      Wait.forLogMessage(
-        /database system is ready to accept connections/,
-        2,
-      ),
-    )
+export async function startMongoTestcontainer(): Promise<MongoTestcontainer> {
+  const container = await new GenericContainer("mongo:7")
+    .withExposedPorts(27017)
+    .withWaitStrategy(Wait.forLogMessage(/Waiting for connections/))
     .withStartupTimeout(60_000)
     .start();
 
+  const host = container.getHost();
+  const port = container.getMappedPort(27017);
   return {
-    host: container.getHost(),
-    port: container.getMappedPort(5432),
-    database,
-    username,
-    password,
+    uri: `mongodb://${host}:${port}`,
+    host,
+    port,
     container,
     stop: async () => {
       await container.stop({ timeout: 5 });
@@ -215,55 +162,26 @@ export async function startPostgresTestcontainer(): Promise<PostgresTestcontaine
   };
 }
 
-/**
- * Provisions a fresh tenant database (`tenant_<id>`) on the running
- * Postgres container and runs the mirror schema in it. Uses an O(1)
- * SQL connection (`maxConnections=1`) for the bootstrap step then
- * returns a fresh pool sized to the test workload.
- */
-export async function createTenantDatabase(
-  pg: PostgresTestcontainer,
-  tenantId: string,
-): Promise<{ readonly databaseName: string; readonly sql: postgres.Sql }> {
-  const databaseName = `tenant_${tenantId.replace(/[^a-z0-9_]/gi, "_").toLowerCase()}`;
-  const admin = postgres({
-    host: pg.host,
-    port: pg.port,
-    database: pg.database,
-    username: pg.username,
-    password: pg.password,
-    max: 1,
-    idle_timeout: 5,
-    connect_timeout: 10,
-  });
-  try {
-    /**
-     * `CREATE DATABASE` cannot run in a transaction — `postgres.js`
-     * still wraps tagged-template queries by default. We use `unsafe`
-     * with explicit string interpolation (validated above by the
-     * regex-strip) to bypass that.
-     */
-    const safe = databaseName.replace(/[^a-z0-9_]/g, "");
-    await admin.unsafe(`CREATE DATABASE ${safe}`).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes("already exists")) throw err;
-    });
-  } finally {
-    await admin.end({ timeout: 1 });
-  }
+export interface TenantMongoDatabase {
+  readonly databaseName: string;
+  readonly db: Db;
+  readonly client: MongoClient;
+}
 
-  const sql = postgres({
-    host: pg.host,
-    port: pg.port,
-    database: databaseName,
-    username: pg.username,
-    password: pg.password,
-    max: 5,
-    idle_timeout: 5,
-    connect_timeout: 10,
-  });
-  await sql.unsafe(HTTP_ADAPTERS_SCHEMA_SQL);
-  return { databaseName, sql };
+/**
+ * Provisions a fresh tenant database on the running Mongo container and
+ * applies {@link ADAPTER_MONGO_SCHEMA}.
+ */
+export async function createTenantMongoDatabase(
+  mongo: MongoTestcontainer,
+  tenantId: string,
+): Promise<TenantMongoDatabase> {
+  const client = new MongoClient(mongo.uri, { maxPoolSize: 5 });
+  await client.connect();
+  const databaseName = `tenant_${tenantId.replace(/[^a-z0-9_]/gi, "_").toLowerCase()}`;
+  const db = client.db(databaseName);
+  await applyMongoSchema(db, ADAPTER_MONGO_SCHEMA);
+  return { databaseName, db, client };
 }
 
 export interface NatsClients {

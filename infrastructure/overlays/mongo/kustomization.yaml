@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Optional overlay for the hybrid Postgres + Mongo dev strategy.
+#
+# Use when `--storage-engine=mongo` is selected: platform OLTP and usage
+# data live in MongoDB while Temporal Server keeps its dedicated Postgres
+# CNPG clusters (`postgres-temporal`, `postgres-temporal-visibility`).
+#
+# Non-temporal Postgres removed by `patches/exclude-oltp-postgres.yaml`:
+#   - legacy StatefulSet `postgres` + Services + ConfigMap
+#   - CNPG `postgres-shared`, `postgres-usage-shared`
+#   - poolers + TimescaleDB ImageCatalog
+#
+# Apply as the infrastructure root instead of `infrastructure/base`, then
+# layer environment overlays (e.g. `overlays/mongo-dev` for support-services-dev).
+
+resources:
+  - ../../base
+
+patches:
+  - path: patches/exclude-oltp-postgres.yaml
+  - path: patches/mongo-dev-resources.yaml

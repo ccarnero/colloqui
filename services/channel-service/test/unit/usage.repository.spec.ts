@@ -1,35 +1,36 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import { SharedTenantDatabaseMode } from "@yoizen/database";
-import { UsageRepository } from "../../src/modules/usage/usage.repository";
+import type { Db } from "mongodb";
+import { UsageMongoRepository } from "../../src/modules/usage/usage.mongo.repository";
 import type { UsageTenantConnectionManager } from "../../src/modules/usage/tenant-connection-manager";
 
-interface IUnsafeCall {
-  readonly query: string;
-  readonly params: readonly unknown[];
+interface IAggregateCall {
+  readonly pipeline: readonly unknown[];
 }
 
-function makeSql(rows: unknown[]) {
-  const calls: IUnsafeCall[] = [];
-  const unsafe = mock((query: string, params: readonly unknown[]) => {
-    calls.push({ query, params });
-    return Promise.resolve(rows);
+function makeDb(rows: unknown[]): {
+  db: Db;
+  calls: IAggregateCall[];
+} {
+  const calls: IAggregateCall[] = [];
+  const aggregate = mock((pipeline: readonly unknown[]) => {
+    calls.push({ pipeline });
+    return { toArray: mock(async () => rows) };
   });
-  return {
-    sql: { unsafe } as unknown as Awaited<
-      ReturnType<UsageTenantConnectionManager["ensureSchema"]>
-    >,
-    calls,
-  };
+  const db = {
+    collection: mock(() => ({ aggregate })),
+  } as unknown as Db;
+  return { db, calls };
 }
 
-function makeConnections(sql: unknown): UsageTenantConnectionManager {
+function makeConnections(db: Db): UsageTenantConnectionManager {
   return {
-    ensureSchema: mock(() => Promise.resolve(sql)),
+    ensureSchema: mock(() => Promise.resolve(db)),
     resolveDatabaseTarget: mock(() =>
       Promise.resolve({
         tier: "dedicated",
-        host: "postgres.tenant-1-dev-ns.svc.cluster.local",
-        port: 5432,
+        host: "mongo-usage.tenant-1-dev-ns.svc.cluster.local",
+        port: 27017,
         database: "yoizen",
         sharedDatabaseMode: null,
       }),
@@ -37,14 +38,14 @@ function makeConnections(sql: unknown): UsageTenantConnectionManager {
   } as unknown as UsageTenantConnectionManager;
 }
 
-function makeSharedConnections(sql: unknown): UsageTenantConnectionManager {
+function makeSharedConnections(db: Db): UsageTenantConnectionManager {
   return {
-    ensureSchema: mock(() => Promise.resolve(sql)),
+    ensureSchema: mock(() => Promise.resolve(db)),
     resolveDatabaseTarget: mock(() =>
       Promise.resolve({
         tier: "shared",
-        host: "postgres-usage-shared.support-services-dev.svc.cluster.local",
-        port: 5432,
+        host: "mongo-usage-shared.support-services-dev.svc.cluster.local",
+        port: 27017,
         database: "yoizen_usage",
         sharedDatabaseMode: SharedTenantDatabaseMode.SingleDatabase,
       }),
@@ -52,25 +53,27 @@ function makeSharedConnections(sql: unknown): UsageTenantConnectionManager {
   } as unknown as UsageTenantConnectionManager;
 }
 
-describe("UsageRepository", () => {
-  let repo: UsageRepository;
+describe("UsageMongoRepository", () => {
+  let repo: UsageMongoRepository;
 
   beforeEach(() => {
-    const { sql } = makeSql([]);
-    repo = new UsageRepository(makeConnections(sql));
+    const { db } = makeDb([]);
+    repo = new UsageMongoRepository(makeConnections(db));
   });
 
-  it("queries the hourly view with a raw tail and normalises rows", async () => {
-    const { sql, calls } = makeSql([
+  it("aggregates hourly buckets with $dateTrunc and normalises rows", async () => {
+    const { db, calls } = makeDb([
       {
-        bucket: "2026-04-23T09:00:00.000Z",
-        account_id: "acct-1",
-        channel: "whatsapp",
-        direction: "ingress",
-        events: "42",
+        _id: {
+          bucket: new Date("2026-04-23T09:00:00.000Z"),
+          account_id: "acct-1",
+          channel: "whatsapp",
+          direction: "ingress",
+        },
+        events: 42,
       },
     ]);
-    repo = new UsageRepository(makeConnections(sql));
+    repo = new UsageMongoRepository(makeConnections(db));
 
     const rows = await repo.getBuckets({
       tenantId: "tenant-1",
@@ -80,10 +83,9 @@ describe("UsageRepository", () => {
     });
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.query).toContain("FROM channel_events_hourly");
-    expect(calls[0]!.query).toContain("FROM channel_events");
-    expect(calls[0]!.query).toContain("UNION ALL");
-    expect(calls[0]!.query).toContain("time_bucket($6::interval, ts)");
+    const pipeline = calls[0]!.pipeline;
+    expect(JSON.stringify(pipeline)).toContain("$dateTrunc");
+    expect(JSON.stringify(pipeline)).toContain('"unit":"hour"');
     expect(rows).toEqual([
       {
         bucket: "2026-04-23T09:00:00.000Z",
@@ -95,35 +97,34 @@ describe("UsageRepository", () => {
     ]);
   });
 
-  it("queries the daily view when bucket=day", async () => {
-    const { sql, calls } = makeSql([]);
-    repo = new UsageRepository(makeConnections(sql));
+  it("uses day unit when bucket=day", async () => {
+    const { db, calls } = makeDb([]);
+    repo = new UsageMongoRepository(makeConnections(db));
     await repo.getBuckets({
       tenantId: "tenant-1",
       from: new Date("2026-04-01T00:00:00Z"),
       to: new Date("2026-04-23T00:00:00Z"),
       bucket: "day",
     });
-    expect(calls[0]!.query).toContain("FROM channel_events_daily");
-    expect(calls[0]!.params[5]).toBe("1 day");
+    expect(JSON.stringify(calls[0]!.pipeline)).toContain('"unit":"day"');
   });
 
-  it("filters shared TimescaleDB queries by tenant_id", async () => {
-    const { sql, calls } = makeSql([]);
-    repo = new UsageRepository(makeSharedConnections(sql));
+  it("filters shared Mongo queries by meta.tenant_id", async () => {
+    const { db, calls } = makeDb([]);
+    repo = new UsageMongoRepository(makeSharedConnections(db));
     await repo.getBuckets({
       tenantId: "tenant-1",
       from: new Date("2026-04-20T00:00:00Z"),
       to: new Date("2026-04-23T00:00:00Z"),
       bucket: "hour",
     });
-    expect(calls[0]!.query).toContain("WHERE tenant_id = $1");
-    expect(calls[0]!.params[0]).toBe("tenant-1");
+    const matchStage = calls[0]!.pipeline[0] as { $match: Record<string, unknown> };
+    expect(matchStage.$match["meta.tenant_id"]).toBe("tenant-1");
   });
 
-  it("binds accountId/channel/direction filters as parameters", async () => {
-    const { sql, calls } = makeSql([]);
-    repo = new UsageRepository(makeConnections(sql));
+  it("binds accountId/channel/direction filters in $match", async () => {
+    const { db, calls } = makeDb([]);
+    repo = new UsageMongoRepository(makeConnections(db));
     await repo.getBuckets({
       tenantId: "tenant-1",
       from: new Date("2026-04-20T00:00:00Z"),
@@ -133,39 +134,34 @@ describe("UsageRepository", () => {
       channel: "whatsapp",
       direction: "egress",
     });
-    expect(calls[0]!.params).toEqual([
-      new Date("2026-04-20T00:00:00Z"),
-      new Date("2026-04-23T00:00:00Z"),
-      "acct-1",
-      "whatsapp",
-      "egress",
-      "1 hour",
-    ]);
+    const matchStage = calls[0]!.pipeline[0] as { $match: Record<string, unknown> };
+    expect(matchStage.$match["meta.account_id"]).toBe("acct-1");
+    expect(matchStage.$match["meta.channel_id"]).toBe("whatsapp");
+    expect(matchStage.$match.direction).toBe("egress");
   });
 
-  it("aggregates totals per direction from channel_events with first/last ts", async () => {
-    const { sql, calls } = makeSql([
+  it("aggregates totals per direction with first/last ts", async () => {
+    const { db, calls } = makeDb([
       {
-        direction: "ingress",
-        events: "100",
+        _id: "ingress",
+        events: 100,
         first_ts: new Date("2026-04-20T10:00:00Z"),
         last_ts: new Date("2026-04-22T15:30:00Z"),
       },
       {
-        direction: "egress",
-        events: "50",
+        _id: "egress",
+        events: 50,
         first_ts: new Date("2026-04-21T08:00:00Z"),
         last_ts: new Date("2026-04-21T18:00:00Z"),
       },
     ]);
-    repo = new UsageRepository(makeConnections(sql));
+    repo = new UsageMongoRepository(makeConnections(db));
     const rows = await repo.getTotals({
       tenantId: "tenant-1",
       from: new Date("2026-04-20T00:00:00Z"),
       to: new Date("2026-04-23T00:00:00Z"),
     });
-    expect(calls[0]!.query).toContain("FROM channel_events");
-    expect(calls[0]!.query).toContain("MIN(ts)");
+    expect(JSON.stringify(calls[0]!.pipeline)).toContain("$min");
     expect(rows).toEqual([
       {
         direction: "ingress",

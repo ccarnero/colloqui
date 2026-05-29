@@ -41,6 +41,38 @@ def test_bootstrap_settings_accept_legacy_aliases(
     )
 
 
+def test_bootstrap_settings_db_engine_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("STORAGE_ENGINE", "mongodb")
+    settings = RootBootstrapSettings()
+    assert settings.DB_ENGINE == "mongo"
+
+    monkeypatch.setenv("DB_ENGINE", "postgresql")
+    settings = RootBootstrapSettings()
+    assert settings.DB_ENGINE == "postgres"
+
+
+def test_mongo_uri_includes_replica_set_query_param(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.utils.config.settings import BootstrapSettings
+
+    monkeypatch.setenv("MONGO_URI", "")
+    monkeypatch.setenv("MONGO_HOST", "mongo")
+    monkeypatch.setenv("MONGO_PORT", "27017")
+    monkeypatch.setenv("MONGO_USER", "yoizen")
+    monkeypatch.setenv("MONGO_PASSWORD", "secret")
+    monkeypatch.setenv("MONGO_DB", "yoizen")
+    monkeypatch.setenv("MONGO_AUTH_SOURCE", "admin")
+    monkeypatch.setenv("MONGO_REPLICA_SET", "rs0")
+
+    uri = BootstrapSettings().mongo_uri
+
+    assert "authSource=admin" in uri
+    assert "replicaSet=rs0" in uri
+
+
 def _assert_bootstrap_settings_accepts_aliases(
     monkeypatch: pytest.MonkeyPatch,
     settings_class: type[BaseSettings],
@@ -59,8 +91,6 @@ def _assert_bootstrap_settings_accepts_aliases(
 
     assert settings.backend_http_url == "http://backend.local:3000"
     assert settings.backend_http_api_key == "backend-key"
-    assert settings.yoizen_api_url == "http://backend.local:3000"
-    assert settings.yoizen_api_key == "backend-key"
     assert settings.POSTGRES_HOST == "postgres"
     assert settings.POSTGRES_PORT == 6543
     assert settings.POSTGRES_DB == "yoizen_runtime"

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -13,9 +14,10 @@ import type {
   ITenantRoleWithPermissions,
 } from "./tenant-role.types";
 import {
-  TenantRolesRepository,
+  TENANT_ROLES_REPOSITORY,
   type ITenantRoleRow,
-} from "./tenant-roles.repository";
+  type ITenantRolesRepository,
+} from "./tenant-roles.repository.interface";
 
 interface ICreateTenantRoleOptions {
   tenantId: string;
@@ -24,7 +26,7 @@ interface ICreateTenantRoleOptions {
   permissions: PermissionDto[];
 }
 
-/** Row shape from {@link TenantRolesRepository.findRoleForUpdate}. */
+/** Row shape from {@link ITenantRolesRepository.findRoleForUpdate}. */
 interface IRoleForUpdateRow {
   id: string;
   is_system: boolean;
@@ -35,7 +37,10 @@ interface IRoleForUpdateRow {
 export class TenantRolesService {
   private readonly logger = new PinoLoggerService(TenantRolesService.name);
 
-  constructor(private readonly tenantRolesRepository: TenantRolesRepository) {}
+  constructor(
+    @Inject(TENANT_ROLES_REPOSITORY)
+    private readonly tenantRolesRepository: ITenantRolesRepository,
+  ) {}
 
   /**
    * Idempotently seeds the tenant_admin system role for a tenant.

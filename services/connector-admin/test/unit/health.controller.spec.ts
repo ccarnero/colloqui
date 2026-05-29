@@ -377,6 +377,21 @@ describe("HealthController — SIGTERM drain (REQ-AST-003)", () => {
 });
 
 describe("HealthController — legacy /health endpoint (backwards-compat)", () => {
+  let originalDbEngine: string | undefined;
+
+  beforeEach(() => {
+    originalDbEngine = process.env.DB_ENGINE;
+    process.env.DB_ENGINE = "mongo";
+  });
+
+  afterEach(() => {
+    if (originalDbEngine === undefined) {
+      delete process.env.DB_ENGINE;
+    } else {
+      process.env.DB_ENGINE = originalDbEngine;
+    }
+  });
+
   afterAll(() => {
     delete process.env.SERVICE_MODE;
     __resetServiceModeCacheForTests();
@@ -393,7 +408,7 @@ describe("HealthController — legacy /health endpoint (backwards-compat)", () =
     const result = await controller.check();
     expect(result.status).toBe("ok");
     expect(result.nats).toBe(true);
-    expect(result.postgres).toBe(true);
+    expect(result.mongo).toBe(true);
   });
 
   it("returns degraded when NATS connection is closed", async () => {
@@ -408,7 +423,7 @@ describe("HealthController — legacy /health endpoint (backwards-compat)", () =
     expect(result.nats).toBe(false);
   });
 
-  it("returns degraded when per-tenant Postgres is unreachable", async () => {
+  it("returns degraded when per-tenant Mongo is unreachable", async () => {
     const { controller } = await buildHarness({
       mode: "api",
       natsClosed: false,
@@ -417,6 +432,6 @@ describe("HealthController — legacy /health endpoint (backwards-compat)", () =
 
     const result = await controller.check();
     expect(result.status).toBe("degraded");
-    expect(result.postgres).toBe(false);
+    expect(result.mongo).toBe(false);
   });
 });

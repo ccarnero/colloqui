@@ -1,28 +1,37 @@
 import { InternalServerErrorException } from "@nestjs/common";
+import { resolveStorageEngine, type StorageEngine } from "@yoizen/database";
 
 const DEFAULT_POSTGRES_HOST = "postgres.support-services-dev.svc.cluster.local";
+const DEFAULT_MONGO_HOST = "mongo-platform.support-services-dev.svc.cluster.local";
+const DEFAULT_TENANT_POSTGRES_IMAGE = "pgvector/pgvector:pg17";
+const DEFAULT_TENANT_USAGE_POSTGRES_IMAGE = "timescale/timescaledb-ha:pg17";
+const DEFAULT_TENANT_USAGE_POSTGRES_STORAGE = "2Gi";
+const DEFAULT_TENANT_MONGO_IMAGE = "mongo:7.0";
+const DEFAULT_YOIZENCLAW_RUNTIME_IMAGE = "dev.local/yoizenclaw-runtime:local";
 
 function requirePostgresPassword(): string {
-  const pw = process.env.POSTGRES_PASSWORD;
+  const pw = process.env.POSTGRES_PASSWORD ?? process.env.MONGO_PASSWORD;
   if (!pw) {
     throw new InternalServerErrorException(
-      "POSTGRES_PASSWORD environment variable is required",
+      "POSTGRES_PASSWORD or MONGO_PASSWORD environment variable is required",
     );
   }
   return pw;
 }
 
-/** Default matches platform `infrastructure/base/postgres` (pgvector-enabled). */
-const DEFAULT_TENANT_POSTGRES_IMAGE = "pgvector/pgvector:pg17";
-/** Dedicated per-tenant TimescaleDB instance for usage metrics. */
-const DEFAULT_TENANT_USAGE_POSTGRES_IMAGE = "timescale/timescaledb-ha:pg17";
-const DEFAULT_TENANT_USAGE_POSTGRES_STORAGE = "2Gi";
-
-/** Default container image for the per-tenant YoizenClaw runtime Knative Service. */
-const DEFAULT_YOIZENCLAW_RUNTIME_IMAGE = "dev.local/yoizenclaw-runtime:local";
+function requireMongoPassword(): string {
+  const pw = process.env.MONGO_PASSWORD ?? process.env.POSTGRES_PASSWORD;
+  if (!pw) {
+    throw new InternalServerErrorException(
+      "MONGO_PASSWORD or POSTGRES_PASSWORD environment variable is required",
+    );
+  }
+  return pw;
+}
 
 type TenantServiceConfig = {
   readonly port: number;
+  readonly dbEngine: StorageEngine;
   readonly platformEnvironment: string;
   readonly postgresHost: string;
   readonly postgresPort: number;
@@ -35,26 +44,27 @@ type TenantServiceConfig = {
   readonly sharedPostgresAdminUser: string;
   readonly sharedPostgresAdminPassword: string;
   readonly sharedPostgresTenantPassword: string;
-  /** Container image for per-tenant PostgreSQL StatefulSet (main + init-permissions). */
   readonly tenantPostgresContainerImage: string;
-  /** Container image for per-tenant dedicated TimescaleDB (usage metrics) StatefulSet. */
   readonly tenantUsagePostgresContainerImage: string;
-  /** PVC storage size for the per-tenant TimescaleDB (usage) instance. */
   readonly tenantUsagePostgresStorage: string;
-  /**
-   * When `true` (default), `TenantProvisioningExecutor` applies the
-   * yoizenclaw-runtime Knative Service into the tenant namespace after
-   * Postgres readiness. Set `YOIZENCLAW_RUNTIME_AUTO_APPLY=false` to opt
-   * out (e.g. when an external GitOps controller owns it).
-   */
+  readonly mongoHost: string;
+  readonly mongoPort: number;
+  readonly mongoDb: string;
+  readonly mongoUsageDb: string;
+  readonly mongoUser: string;
+  readonly mongoPassword: string;
+  readonly mongoRootUser: string;
+  readonly mongoRootPassword: string;
+  readonly sharedMongoHost: string;
+  readonly sharedMongoPort: number;
+  readonly sharedMongoAdminUser: string;
+  readonly sharedMongoAdminPassword: string;
+  readonly sharedMongoTenantPassword: string;
+  readonly tenantMongoContainerImage: string;
   readonly yoizenclawRuntimeAutoApply: boolean;
-  /** Container image for per-tenant yoizenclaw-runtime Knative Service. */
   readonly yoizenclawRuntimeImage: string;
-  /** NATS URL injected into the per-tenant yoizenclaw-runtime container. */
   readonly yoizenclawRuntimeNatsUrl: string;
-  /** connector-admin REST URL injected into the per-tenant yoizenclaw-runtime container. */
   readonly yoizenclawRuntimeConnectorAdminUrl: string;
-  /** OTEL OTLP/HTTP endpoint injected into the per-tenant yoizenclaw-runtime container. */
   readonly yoizenclawRuntimeOtelEndpoint: string;
 };
 
@@ -67,6 +77,9 @@ export const tenantServiceConfig: TenantServiceConfig = {
   get port() {
     return Number.parseInt(process.env.PORT ?? "3000", 10);
   },
+  get dbEngine() {
+    return resolveStorageEngine();
+  },
   get platformEnvironment() {
     return platformEnvironment();
   },
@@ -77,10 +90,10 @@ export const tenantServiceConfig: TenantServiceConfig = {
     return Number.parseInt(process.env.POSTGRES_PORT ?? "5432", 10);
   },
   get postgresDb() {
-    return process.env.POSTGRES_DB ?? "yoizen";
+    return process.env.POSTGRES_DB ?? process.env.MONGO_DB ?? "yoizen";
   },
   get postgresUser() {
-    return process.env.POSTGRES_USER ?? "yoizen";
+    return process.env.POSTGRES_USER ?? process.env.MONGO_USER ?? "yoizen";
   },
   get postgresPassword() {
     return requirePostgresPassword();
@@ -130,6 +143,60 @@ export const tenantServiceConfig: TenantServiceConfig = {
       process.env.TENANT_USAGE_POSTGRES_STORAGE ??
       DEFAULT_TENANT_USAGE_POSTGRES_STORAGE
     );
+  },
+  get mongoHost() {
+    return process.env.MONGO_HOST ?? DEFAULT_MONGO_HOST;
+  },
+  get mongoPort() {
+    return Number.parseInt(process.env.MONGO_PORT ?? "27017", 10);
+  },
+  get mongoDb() {
+    return process.env.MONGO_DB ?? "yoizen";
+  },
+  get mongoUsageDb() {
+    return process.env.MONGO_USAGE_DB ?? "yoizen_usage";
+  },
+  get mongoUser() {
+    return process.env.MONGO_USER ?? "yoizen";
+  },
+  get mongoPassword() {
+    return requireMongoPassword();
+  },
+  get mongoRootUser() {
+    return process.env.MONGO_ROOT_USER ?? "root";
+  },
+  get mongoRootPassword() {
+    return process.env.MONGO_ROOT_PASSWORD ?? requireMongoPassword();
+  },
+  get sharedMongoHost() {
+    const env = platformEnvironment();
+    return (
+      process.env.TENANT_MONGO_SHARED_HOST ??
+      `mongo-shared.support-services-${env}.svc.cluster.local`
+    );
+  },
+  get sharedMongoPort() {
+    return Number.parseInt(process.env.TENANT_MONGO_SHARED_PORT ?? "27017", 10);
+  },
+  get sharedMongoAdminUser() {
+    return (
+      process.env.TENANT_MONGO_SHARED_ADMIN_USER ??
+      process.env.MONGO_ROOT_USER ??
+      "root"
+    );
+  },
+  get sharedMongoAdminPassword() {
+    return (
+      process.env.TENANT_MONGO_SHARED_ADMIN_PASSWORD ??
+      process.env.MONGO_ROOT_PASSWORD ??
+      requireMongoPassword()
+    );
+  },
+  get sharedMongoTenantPassword() {
+    return process.env.TENANT_MONGO_SHARED_PASSWORD ?? requireMongoPassword();
+  },
+  get tenantMongoContainerImage() {
+    return process.env.TENANT_MONGO_IMAGE ?? DEFAULT_TENANT_MONGO_IMAGE;
   },
   get yoizenclawRuntimeAutoApply() {
     const raw = process.env.YOIZENCLAW_RUNTIME_AUTO_APPLY;

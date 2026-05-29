@@ -21,6 +21,6 @@ describe("AdaptersController", () => {
 
   it("findAll delegates to AdaptersService.findAll", async () => {
     await controller.findAll("tenant-1");
-    expect(findAll).toHaveBeenCalledWith("tenant-1");
+    expect(findAll).toHaveBeenCalledWith("tenant-1", undefined);
   });
 });

@@ -2,7 +2,11 @@
 
 ## Project Overview
 
-The Registry Service manages a Knative-based service registry where tenants can register, deploy, and manage their own services. It handles full lifecycle management including Knative service creation/updates via the Kubernetes CustomObjects API, route management for dynamic proxy routing, canary deployments with progressive traffic splitting, and revision listing. State is stored in a shared PostgreSQL database.
+The Registry Service manages a Knative-based service registry where tenants can register, deploy, and manage their own services. It handles full lifecycle management including Knative service creation/updates via the Kubernetes CustomObjects API, route management for dynamic proxy routing, canary deployments with progressive traffic splitting, and revision listing. State is stored in a shared platform database (Postgres or Mongo per bootstrap).
+
+## Storage engines
+
+Supports **Postgres** (default) and **Mongo** via repository interfaces + `createRepositoryProvider`. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
 
 ## Tech Stack
 
@@ -11,7 +15,7 @@ The Registry Service manages a Knative-based service registry where tenants can 
 | Runtime | Bun 1.3 |
 | Framework | NestJS 11 + Fastify |
 | Language | TypeScript 5.7 (strict) |
-| Database | PostgreSQL 17 via `postgres` (postgres.js) |
+| Database | MongoDB 7 via official `mongodb` driver |
 | K8s Client | `@kubernetes/client-node` (CoreV1Api, CustomObjectsApi) |
 | Validation | `class-validator` + `class-transformer` |
 | Shared | `@yoizen/shared` (workspace: `packages/shared/`) |
@@ -24,7 +28,7 @@ src/
 ├── app.module.ts                               # Root module imports
 ├── providers/
 │   ├── kubernetes.provider.ts                  # @Global() K8S_CORE_API, K8S_CUSTOM_OBJECTS_API tokens
-│   └── postgres.provider.ts                    # @Global() POSTGRES_SQL token, schema auto-migration
+│   └── mongo.provider.ts                    # @Global() MONGO_CLIENT token, schema auto-migration
 └── modules/
     ├── services/
     │   ├── services.module.ts
@@ -50,7 +54,7 @@ src/
 
 | File | Purpose |
 |------|---------|
-| `src/providers/postgres.provider.ts` | Creates tables (`registered_services`, `service_routes`, `canary_deployments`) on startup, `@Global()` |
+| `src/providers/mongo.provider.ts` | Creates tables (`registered_services`, `service_routes`, `canary_deployments`) on startup, `@Global()` |
 | `src/providers/kubernetes.provider.ts` | Factory providers for `K8S_CORE_API` and `K8S_CUSTOM_OBJECTS_API` |
 | `src/modules/services/services.service.ts` | Full Knative lifecycle: create ksvc, update image/scaling, delete, list revisions |
 | `src/modules/canary/canary.service.ts` | Canary deployments: start (update image, wait for revision, split traffic), update %, promote, rollback |
@@ -63,7 +67,7 @@ src/
 ```
 AppModule
 ├── KubernetesModule (@Global) ─── K8S_CORE_API, K8S_CUSTOM_OBJECTS_API
-├── PostgresModule (@Global) ─── POSTGRES_SQL + SchemaInitializer
+├── MongoModule (@Global) ─── MONGO_CLIENT + SchemaInitializer
 ├── ServicesModule ─── ServicesController, ServicesService
 ├── CanaryModule ─── CanaryController, CanaryService
 ├── RoutesModule ─── RoutesController, RoutesService
@@ -105,7 +109,7 @@ canary_deployments (
 |--------|----------|---------|
 | Kubernetes CustomObjects API | HTTPS | Create/update/delete Knative services, read revisions, apply traffic splits |
 | Kubernetes Core API | HTTPS | List namespaces (health check) |
-| PostgreSQL | TCP | Persist service registrations, routes, canary state |
+| MongoDB | TCP | Persist service registrations, routes, canary state |
 | NATS JetStream | NATS | Outbound publish of `service.{upserted,deleted}.v1` envelopes consumed by `adapter-service` internal-sync (best-effort, post-commit) |
 
 ### DI Tokens
@@ -114,18 +118,18 @@ canary_deployments (
 |-------|------|--------|
 | `K8S_CORE_API` | `CoreV1Api` | `kubernetes.provider.ts` |
 | `K8S_CUSTOM_OBJECTS_API` | `CustomObjectsApi` | `kubernetes.provider.ts` |
-| `POSTGRES_SQL` | `Sql` (postgres.js) | `postgres.provider.ts` |
+| `MONGO_CLIENT` | `MongoClient` (mongodb driver) | `mongo.provider.ts` |
 
 ## Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP server port |
-| `POSTGRES_HOST` | `postgres.support-services-dev.svc.cluster.local` | PostgreSQL host |
-| `POSTGRES_PORT` | `5432` | PostgreSQL port |
-| `POSTGRES_DB` | `yoizen` | PostgreSQL database |
-| `POSTGRES_USER` | `yoizen` | PostgreSQL username |
-| `POSTGRES_PASSWORD` | `yoizen-dev-password` | PostgreSQL password |
+| `MONGO_HOST` | `mongo-platform.support-services-dev.svc.cluster.local` | MongoDB host |
+| `MONGO_PORT` | `27017` | MongoDB port |
+| `MONGO_DB` | `yoizen` | MongoDB database |
+| `MONGO_USER` | `yoizen` | MongoDB username |
+| `MONGO_PASSWORD` | `yoizen-dev-password` | MongoDB password |
 | `PLATFORM_ENVIRONMENT` | `dev` | Environment name for namespace resolution |
 
 ### Knative
@@ -141,7 +145,7 @@ canary_deployments (
 |---------|-------|
 | `bun test` | All tests |
 | `bun test test/unit` | Unit tests |
-| `bun test test/integration` | Integration tests (requires K8s + PostgreSQL) |
+| `bun test test/integration` | Integration tests (requires K8s + MongoDB) |
 
 ## Code Style and Conventions
 
@@ -174,14 +178,14 @@ bun install
 bun run start:dev
 ```
 
-Requires local PostgreSQL and Kubernetes cluster access.
+Requires local MongoDB and Kubernetes cluster access.
 
 ## Dependencies on Other Services
 
 | Service | Relationship |
 |---------|-------------|
 | **Kubernetes API** | Creates/manages Knative services, reads revisions, applies traffic splits |
-| **PostgreSQL** | Persists service registrations, routes, canary deployment state |
+| **MongoDB** | Persists service registrations, routes, canary deployment state |
 | **NATS JetStream** | Publish-only — emits `service.{upserted,deleted}.v1` envelopes after every register/update/remove on the per-tenant `INGRESS-<TENANT>` stream |
 | **api-gateway** | Polls `GET /routes` every 15s for dynamic tenant routing |
 | **tenant-service** | Provisions tenant namespaces where registered services are deployed |

@@ -6,16 +6,37 @@ import type {
 } from "nats";
 import { temporalClientProvider, TEMPORAL_CLIENT } from "./temporal.provider";
 import { WorkflowTenantConnectionManager } from "./tenant-connection-manager";
+import { WorkflowTenantConnectionManagerMongo } from "./tenant-connection-manager.mongo";
+import { WorkflowTenantConnectionManagerPostgres } from "./tenant-connection-manager.postgres";
 import {
   createNatsConnectionProvider,
   NATS_CONNECTION,
+  TENANT_DB_CONNECTION_MANAGER,
   TenantConnectionManager,
   TenantDeletionEvictionListener,
+  TenantMongoConnectionManager,
+  TenantMongoDeletionEvictionListener,
 } from "@yoizen/database";
 import { resolveServiceName } from "@yoizen/observability";
+import { workflowServiceConfig } from "../config";
 
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
+
+const engine = workflowServiceConfig.dbEngine;
+
+const tenantManagerClass =
+  engine === "postgres"
+    ? WorkflowTenantConnectionManagerPostgres
+    : WorkflowTenantConnectionManagerMongo;
+
+const tenantBaseManagerToken =
+  engine === "postgres" ? TenantConnectionManager : TenantMongoConnectionManager;
+
+const tenantEvictionListener =
+  engine === "postgres"
+    ? TenantDeletionEvictionListener
+    : TenantMongoDeletionEvictionListener;
 
 const natsProvider = createNatsConnectionProvider(
   resolveServiceName("workflow-service"),
@@ -42,16 +63,19 @@ const jetStreamPublisherProvider: FactoryProvider<JetStreamClient> = {
     natsProvider,
     jetStreamManagerProvider,
     jetStreamPublisherProvider,
-    WorkflowTenantConnectionManager,
-    // Alias the base-class token to the same instance so
-    // `TenantDeletionEvictionListener` (which depends on the base token
-    // from @yoizen/database) operates on the very pool cache the rest
-    // of the service is using.
     {
-      provide: TenantConnectionManager,
+      provide: WorkflowTenantConnectionManager,
+      useClass: tenantManagerClass,
+    },
+    {
+      provide: TENANT_DB_CONNECTION_MANAGER,
       useExisting: WorkflowTenantConnectionManager,
     },
-    TenantDeletionEvictionListener,
+    {
+      provide: tenantBaseManagerToken,
+      useExisting: WorkflowTenantConnectionManager,
+    },
+    tenantEvictionListener,
   ],
   exports: [
     TEMPORAL_CLIENT,
@@ -59,6 +83,7 @@ const jetStreamPublisherProvider: FactoryProvider<JetStreamClient> = {
     JETSTREAM_MANAGER,
     JETSTREAM_PUBLISHER,
     WorkflowTenantConnectionManager,
+    TENANT_DB_CONNECTION_MANAGER,
   ],
 })
 export class ProvidersModule {}

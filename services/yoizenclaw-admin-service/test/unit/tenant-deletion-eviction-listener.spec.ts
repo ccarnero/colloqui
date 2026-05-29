@@ -1,6 +1,6 @@
 import "../setup-env";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import type { TenantConnectionManager } from "@yoizen/database";
+import type { YoizenclawTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
 import { TenantDeletionEvictionListener } from "../../src/providers/tenant-deletion-eviction-listener";
 
 interface IFakeLazyNats {
@@ -25,7 +25,9 @@ function buildHarness(): {
       Promise.reject(new Error("not used in unit tests")),
     ),
   };
-  const fakeManager = { evictTenant: evict } as unknown as TenantConnectionManager;
+  const fakeManager = {
+    evictTenant: evict,
+  } as unknown as YoizenclawTenantConnectionManager;
   const listener = new HarnessListener(fakeLazy as never, fakeManager);
   return { listener, evict };
 }

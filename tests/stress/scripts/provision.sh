@@ -272,7 +272,54 @@ ensure_tenant() {
     exit 1
   fi
 
+  wait_tenant_ready "$TENANT_NAME"
+
   TENANT_HEADER_VALUE="$prev_tenant"
+}
+
+# POST /api/tenants is 202 Accepted — provisioning is async (k8s namespace,
+# per-tenant Mongo DB + user, ExternalName service, runtime overlay). All
+# subsequent tenant-scoped calls (registry, channels, workflow) depend on
+# that namespace existing, so we poll the status URL until the tenant flips
+# to `ready`. Bail on `failed` and dump the provisioning_error so the user
+# sees why instead of cascading into misleading 500s downstream.
+wait_tenant_ready() {
+  local tenant="$1"
+  local max_attempts="${TENANT_READY_MAX_ATTEMPTS:-60}"   # ~120 s @ 2 s
+  local sleep_secs="${TENANT_READY_SLEEP_SECS:-2}"
+
+  note "Waiting for tenant '${tenant}' provisioning to complete..."
+  local attempt=0
+  while (( attempt < max_attempts )); do
+    local code
+    code="$(request_json GET "/api/tenants/${tenant}")"
+    if [[ "$code" == "200" ]]; then
+      local status
+      status="$(jq -r '.provisioningStatus // .provisioning_status // empty' <"$RESP_BODY" 2>/dev/null || true)"
+      case "$status" in
+        ready)
+          log "Tenant '${tenant}' is ready."
+          return 0
+          ;;
+        failed)
+          local error_msg
+          error_msg="$(jq -r '.provisioningError // .provisioning_error // "unknown"' <"$RESP_BODY")"
+          err "Tenant '${tenant}' provisioning failed: ${error_msg}"
+          exit 1
+          ;;
+        pending|provisioning|"")
+          ;;
+        *)
+          warn "Tenant '${tenant}' provisioning status='${status}' (unexpected, continuing to poll)"
+          ;;
+      esac
+    fi
+    sleep "$sleep_secs"
+    attempt=$((attempt + 1))
+  done
+
+  err "Timed out waiting for tenant '${tenant}' to become ready after $((max_attempts * sleep_secs))s."
+  exit 1
 }
 
 # ---------------------------------------------------------------------------

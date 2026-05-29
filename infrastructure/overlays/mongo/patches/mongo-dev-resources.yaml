@@ -1,0 +1,62 @@
+# Dev/local: single-node replica sets to fit minikube resource budget.
+# Base defines 3 replicas per StatefulSet; this patch scales both Mongo
+# clusters to 1 member and trims PVC size.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-platform
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: replica-set-init
+          env:
+            - name: REPLICAS
+              value: "1"
+        - name: mongo
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-usage
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: replica-set-init
+          env:
+            - name: REPLICAS
+              value: "1"
+        - name: mongo
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

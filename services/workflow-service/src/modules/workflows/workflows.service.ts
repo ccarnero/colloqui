@@ -24,12 +24,17 @@ import type {
   WorkflowExecutionContext,
 } from "@yoizen/shared";
 import { TEMPORAL_CLIENT } from "../../providers/temporal.provider";
-import { WorkflowsRepository } from "./workflows.repository";
+import {
+  EXECUTIONS_REPOSITORY,
+  type IExecutionsRepository,
+  type IWorkflowExecutionRow,
+} from "./executions.repository.interface";
+import {
+  WORKFLOWS_REPOSITORY,
+  type IWorkflowDefinitionRow,
+  type IWorkflowsRepository,
+} from "./workflows.repository.interface";
 import { PinoLoggerService } from "@yoizen/observability";
-import type {
-  IWorkflowDefinitionRow,
-  IWorkflowExecutionRow,
-} from "./workflows.repository";
 import type { IListExecutionsQuery } from "./dto/list-executions-query.dto";
 import { RegisteredServicesResolver } from "./registered-services.resolver";
 import {
@@ -119,6 +124,11 @@ export interface IExecuteWorkflowOptions {
    * (wdocs-02 §6).
    */
   readonly causal?: EventCausalContext;
+  /**
+   * The original HTTP `x-request-id` from the api-gateway. Used only
+   * for log correlation — not stored in DB or propagated to activities.
+   */
+  readonly requestId?: string | null;
 }
 
 export interface IWorkflowFailureInfo {
@@ -144,7 +154,10 @@ export class WorkflowsService {
 
   constructor(
     @Inject(TEMPORAL_CLIENT) private readonly temporal: Client,
-    private readonly repository: WorkflowsRepository,
+    @Inject(WORKFLOWS_REPOSITORY)
+    private readonly definitions: IWorkflowsRepository,
+    @Inject(EXECUTIONS_REPOSITORY)
+    private readonly executions: IExecutionsRepository,
     private readonly servicesResolver: RegisteredServicesResolver,
   ) {}
 
@@ -159,7 +172,7 @@ export class WorkflowsService {
   ): Promise<ICreateWorkflowResult> {
     const { tenantId, name, application, actions, trigger } = params;
     const id = nanoid();
-    const row = await this.repository.createDefinition({
+    const row = await this.definitions.createDefinition({
       id,
       tenantId,
       name,
@@ -184,7 +197,7 @@ export class WorkflowsService {
   async updateWorkflow(
     params: IUpdateWorkflowParams,
   ): Promise<ICreateWorkflowResult> {
-    const row = await this.repository.updateDefinition(params);
+    const row = await this.definitions.updateDefinition(params);
     if (!row) {
       throw new NotFoundException("Workflow definition not found");
     }
@@ -206,7 +219,7 @@ export class WorkflowsService {
     id: string,
     tenantId: string,
   ): Promise<ICreateWorkflowResult> {
-    const row = await this.repository.findDefinitionById(id, tenantId);
+    const row = await this.definitions.findDefinitionById(id, tenantId);
     if (!row) {
       throw new NotFoundException("Workflow definition not found");
     }
@@ -219,7 +232,7 @@ export class WorkflowsService {
    * @param tenantId - Tenant scope.
    */
   async listWorkflows(tenantId: string): Promise<ICreateWorkflowResult[]> {
-    const rows = await this.repository.findDefinitionsByTenant(tenantId);
+    const rows = await this.definitions.findDefinitionsByTenant(tenantId);
     return rows.map((r) => this.toCreateResult(r, tenantId));
   }
 
@@ -230,7 +243,7 @@ export class WorkflowsService {
    * @param tenantId - Tenant scope.
    */
   async deleteWorkflow(id: string, tenantId: string): Promise<void> {
-    const deleted = await this.repository.softDeleteDefinition(id, tenantId);
+    const deleted = await this.definitions.softDeleteDefinition(id, tenantId);
     if (!deleted) {
       throw new NotFoundException("Workflow definition not found");
     }
@@ -252,7 +265,7 @@ export class WorkflowsService {
     request: Record<string, unknown>,
     options: IExecuteWorkflowOptions = {},
   ): Promise<IExecuteWorkflowResult> {
-    const definition = await this.repository.findDefinitionById(
+    const definition = await this.definitions.findDefinitionById(
       definitionId,
       tenantId,
     );
@@ -296,7 +309,7 @@ export class WorkflowsService {
         },
       });
 
-      const row = await this.repository.createExecution({
+      const row = await this.executions.createExecution({
         id: executionId,
         definitionId,
         tenantId,
@@ -307,7 +320,8 @@ export class WorkflowsService {
 
       this.logger.log(
         `Started execution ${row.id} for definition ${definitionId} ` +
-          `(temporal=${temporalWorkflowId}, runId=${handle.firstExecutionRunId})`,
+          `(temporal=${temporalWorkflowId}, runId=${handle.firstExecutionRunId})` +
+          (options.requestId ? `, requestId=${options.requestId}` : ""),
       );
 
       return {
@@ -348,7 +362,7 @@ export class WorkflowsService {
     tenantId: string,
     query: IListExecutionsQuery,
   ): Promise<IWorkflowExecutionsPage> {
-    const definition = await this.repository.findDefinitionById(
+    const definition = await this.definitions.findDefinitionById(
       definitionId,
       tenantId,
     );
@@ -362,14 +376,14 @@ export class WorkflowsService {
     // Issue both queries in parallel against the same per-tenant pool
     // to keep total latency at max(rows, total) instead of rows + total.
     const [rows, total] = await Promise.all([
-      this.repository.findExecutionsByDefinition({
+      this.executions.findExecutionsByDefinition({
         definitionId,
         tenantId,
         limit: pageSize,
         offset,
         sort,
       }),
-      this.repository.countExecutionsByDefinition(definitionId, tenantId),
+      this.executions.countExecutionsByDefinition(definitionId, tenantId),
     ]);
 
     return {
@@ -389,7 +403,7 @@ export class WorkflowsService {
   async getExecutionCountsByTenant(
     tenantId: string,
   ): Promise<Record<string, number>> {
-    const rows = await this.repository.countExecutionsGroupedByDefinition(
+    const rows = await this.executions.countExecutionsGroupedByDefinition(
       tenantId,
     );
     const counts: Record<string, number> = {};
@@ -412,7 +426,7 @@ export class WorkflowsService {
     executionId: string,
     tenantId: string,
   ): Promise<IExecutionStatusResult> {
-    const execution = await this.repository.findExecutionById(
+    const execution = await this.executions.findExecutionById(
       executionId,
       tenantId,
     );
@@ -430,7 +444,7 @@ export class WorkflowsService {
     const currentStatus = describe.status.name;
 
     if (currentStatus !== execution.status) {
-      await this.repository.updateExecutionStatus(
+      await this.executions.updateExecutionStatus(
         executionId,
         tenantId,
         currentStatus,

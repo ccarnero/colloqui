@@ -1,0 +1,41 @@
+# OrbStack override for the `postgres-temporal-visibility` CNPG cluster
+# created in the 2026-05-22 stress-test remediation (see
+# `post-mortem/POST-MORTEM.md` §P0.2). Mirrors `postgres-temporal.yaml`:
+# tiny footprint, single instance, `storageClass: local-path`
+# (orbstack default).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-temporal-visibility
+spec:
+  instances: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      cpu: "500m"
+      memory: 768Mi
+  storage:
+    size: 3Gi
+    storageClass: local-path
+  walStorage:
+    size: 1Gi
+    storageClass: local-path
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: preferred
+  postgresql:
+    parameters:
+      shared_buffers: "192MB"
+      effective_cache_size: "512MB"
+      work_mem: "8MB"
+      maintenance_work_mem: "96MB"
+      huge_pages: "off"
+      max_connections: "100"
+      max_wal_size: "768MB"
+      min_wal_size: "256MB"
+      wal_buffers: "16MB"
+      autovacuum_max_workers: "3"
+      autovacuum_naptime: "10s"

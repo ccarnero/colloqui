@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  Inject,
 } from "@nestjs/common";
 
 import { PinoLoggerService } from "@yoizen/observability";
@@ -13,11 +14,12 @@ import type {
 } from "./adapters.dto";
 import { ADAPTER_UPDATE_FIELD_KEYS } from "./adapter-update-fields";
 import {
-  AdaptersRepository,
+  ADAPTERS_REPOSITORY,
   mapAdapter,
   mapEndpoint,
+  type IAdaptersRepository,
   type IEndpointRow,
-} from "./adapters.repository";
+} from "./adapters.repository.interface";
 
 const ENDPOINT_UPDATE_FIELD_KEYS = [
   "label",
@@ -30,7 +32,10 @@ const ENDPOINT_UPDATE_FIELD_KEYS = [
 export class AdaptersService {
   private readonly logger = new PinoLoggerService(AdaptersService.name);
 
-  constructor(private readonly adaptersRepository: AdaptersRepository) {}
+  constructor(
+    @Inject(ADAPTERS_REPOSITORY)
+    private readonly adaptersRepository: IAdaptersRepository,
+  ) {}
 
   /**
    * Maps Postgres unique violations (23505) to {@link ConflictException}.

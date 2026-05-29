@@ -4,6 +4,10 @@ kind: Kustomization
 resources:
   - nats
   - redis
+  - mongo
+  # Both mongo and postgres are declared in base; environment overlays pick one:
+  #   `overlays/postgres/` (default) — deletes Mongo, keeps OLTP + Temporal Postgres
+  #   `overlays/mongo/` — deletes non-temporal Postgres, keeps Mongo + Temporal
   - postgres
   - temporal
   - temporal-ui

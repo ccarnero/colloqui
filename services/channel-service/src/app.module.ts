@@ -3,8 +3,12 @@ import { ObservabilityModule, resolveServiceName } from "@yoizen/observability";
 import {
   TenantConnectionManager,
   TenantDeletionEvictionListener,
+  TenantMongoConnectionManager,
+  TenantMongoDeletionEvictionListener,
 } from "@yoizen/database";
 import type { NatsConnection } from "nats";
+import { channelServiceConfig } from "./config";
+import { MongoModule } from "./providers/mongo.provider";
 import { PostgresModule } from "./providers/postgres.provider";
 import { ChannelTenantDbModule } from "./providers/channel-tenant-db.module";
 import { ChannelTenantConnectionManager } from "./providers/channel-tenant-connection-manager";
@@ -26,56 +30,69 @@ import { HealthModule } from "./modules/health/health.module";
 import { UsageModule } from "./modules/usage/usage.module";
 import { StreamsModule } from "./modules/streams/streams.module";
 
+const engine = channelServiceConfig.dbEngine;
+
 /**
- * Channel-service caches TWO independent per-tenant Postgres pool sets:
- *   1. `ChannelTenantConnectionManager` — the channels DB
- *      (`postgres-channels` per namespace).
- *   2. `UsageTenantConnectionManager` (in `UsageModule`) — TimescaleDB
- *      writer (`postgres-usage`).
+ * Channel-service caches TWO independent per-tenant connection sets:
+ *   1. `ChannelTenantConnectionManager` — channel OLTP data.
+ *   2. `UsageTenantConnectionManager` — usage time-series reads.
  *
- * Both pool caches go stale the moment a tenant is destroyed, so each
- * needs its own subscription to `platform.tenant.deleted`. We can't
- * map the base `TenantConnectionManager` token to a single concrete
- * provider here (Nest only allows one binding), so we instantiate two
- * `TenantDeletionEvictionListener` instances via factory providers —
- * each holds a reference to one manager and runs its own NATS
- * subscription. Two subscribers over Core NATS = both receive every
- * delivery; nothing is duplicated downstream because eviction is
- * idempotent on a fresh cache.
+ * Both caches go stale when a tenant is destroyed, so each needs its
+ * own deletion eviction listener subscription.
  */
 const CHANNEL_TENANT_DELETION_LISTENER = "CHANNEL_TENANT_DELETION_LISTENER";
 const USAGE_TENANT_DELETION_LISTENER = "USAGE_TENANT_DELETION_LISTENER";
 
-const channelTenantDeletionListenerProvider: FactoryProvider<TenantDeletionEvictionListener> =
-  {
-    provide: CHANNEL_TENANT_DELETION_LISTENER,
-    inject: [NATS_CONNECTION, ChannelTenantConnectionManager],
-    useFactory: (
-      nc: NatsConnection,
-      tcm: TenantConnectionManager,
-    ): TenantDeletionEvictionListener =>
-      new TenantDeletionEvictionListener(nc, tcm),
-  };
+const channelTenantDeletionListenerProvider: FactoryProvider =
+  engine === "postgres"
+    ? {
+        provide: CHANNEL_TENANT_DELETION_LISTENER,
+        inject: [NATS_CONNECTION, ChannelTenantConnectionManager],
+        useFactory: (
+          nc: NatsConnection,
+          tcm: TenantConnectionManager,
+        ): TenantDeletionEvictionListener =>
+          new TenantDeletionEvictionListener(nc, tcm),
+      }
+    : {
+        provide: CHANNEL_TENANT_DELETION_LISTENER,
+        inject: [NATS_CONNECTION, ChannelTenantConnectionManager],
+        useFactory: (
+          nc: NatsConnection,
+          tcm: TenantMongoConnectionManager,
+        ): TenantMongoDeletionEvictionListener =>
+          new TenantMongoDeletionEvictionListener(nc, tcm),
+      };
 
-const usageTenantDeletionListenerProvider: FactoryProvider<TenantDeletionEvictionListener> =
-  {
-    provide: USAGE_TENANT_DELETION_LISTENER,
-    inject: [NATS_CONNECTION, UsageTenantConnectionManager],
-    useFactory: (
-      nc: NatsConnection,
-      tcm: TenantConnectionManager,
-    ): TenantDeletionEvictionListener =>
-      new TenantDeletionEvictionListener(nc, tcm),
-  };
+const usageTenantDeletionListenerProvider: FactoryProvider =
+  engine === "postgres"
+    ? {
+        provide: USAGE_TENANT_DELETION_LISTENER,
+        inject: [NATS_CONNECTION, UsageTenantConnectionManager],
+        useFactory: (
+          nc: NatsConnection,
+          tcm: TenantConnectionManager,
+        ): TenantDeletionEvictionListener =>
+          new TenantDeletionEvictionListener(nc, tcm),
+      }
+    : {
+        provide: USAGE_TENANT_DELETION_LISTENER,
+        inject: [NATS_CONNECTION, UsageTenantConnectionManager],
+        useFactory: (
+          nc: NatsConnection,
+          tcm: TenantMongoConnectionManager,
+        ): TenantMongoDeletionEvictionListener =>
+          new TenantMongoDeletionEvictionListener(nc, tcm),
+      };
 
-/** Registers Postgres, NATS, and JetStream as global providers for channel modules. */
+/** Registers storage, NATS, and JetStream as global providers for channel modules. */
 @Global()
 @Module({
   imports: [
     ObservabilityModule.forRoot({
       serviceName: resolveServiceName("channel-service"),
     }),
-    PostgresModule,
+    ...(engine === "postgres" ? [PostgresModule] : [MongoModule]),
     ChannelTenantDbModule,
     WebhooksModule,
     IngressModule,

@@ -1,0 +1,36 @@
+- op: replace
+  path: /spec/template/spec/containers/0/env
+  value:
+    - name: TENANT_ID
+      value: "acme"
+    - name: NATS_URL
+      value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+    - name: DB_ENGINE
+      value: "mongo"
+    - name: MONGO_HOST
+      value: "mongo"
+    - name: MONGO_PORT
+      value: "27017"
+    - name: MONGO_DB
+      valueFrom:
+        secretKeyRef:
+          name: mongo-credentials
+          key: MONGO_DB
+    - name: MONGO_USER
+      valueFrom:
+        secretKeyRef:
+          name: mongo-credentials
+          key: MONGO_USER
+    - name: MONGO_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: mongo-credentials
+          key: MONGO_PASSWORD
+    - name: MONGO_AUTH_SOURCE
+      value: "admin"
+    - name: CONNECTOR_ADMIN_URL
+      value: "http://connector-admin-api.platform-services-dev.svc.cluster.local"
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+    - name: OTEL_SERVICE_NAME
+      value: "yoizenclaw-runtime"

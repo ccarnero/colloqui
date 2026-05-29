@@ -1,38 +1,24 @@
 /**
- * One-shot cleanup: removes `channel_events` rows where `account_id`
- * holds a tenant-id placeholder (the legacy value emitted by
- * `api-gateway` before `accountid` was removed from
- * `WebhookIngressEnvelope`). Also refreshes the continuous
- * aggregates (`channel_events_hourly` / `channel_events_daily`) over
- * the affected time window so dashboards reflect reality.
+ * One-shot cleanup: removes `channel_events` rows where `meta.account_id`
+ * holds a tenant-id placeholder (legacy value from api-gateway before
+ * `accountid` was required on channel envelopes).
  *
  * Run via:
  *   PURGE_TENANT_IDS=acme,other-tenant \
- *   POSTGRES_PASSWORD=... \
+ *   MONGO_PASSWORD=... \
  *   PLATFORM_ENVIRONMENT=dev \
  *   bun run src/scripts/purge-placeholder-account-ids.ts
- *
- * Env:
- *   PURGE_TENANT_IDS     Comma-separated tenant ids to clean (required).
- *   PURGE_DRY_RUN        Set to "1" / "true" to count-only, skip DELETE.
- *   POSTGRES_PASSWORD    Credentials for `postgres-usage` (inherited).
- *   POSTGRES_USER        Optional (defaults to `yoizen`).
- *   POSTGRES_PORT        Optional (defaults to `5432`).
- *   PLATFORM_ENVIRONMENT Used to resolve `postgres-usage.<tenant>-<env>-ns`.
- *
- * Idempotent: re-running after the deletes is a no-op. Safe to run
- * while the aggregator is live — row-level deletes are fast and the
- * CAGG refresh is online.
- *
- * Complexity: O(R) per tenant where R is the number of bad rows
- * (bounded by the 60-day retention × webhook QPS). The CAGG refresh
- * is O(C) where C is the number of chunks intersecting the deleted
- * range; in practice a handful of hourly buckets.
  */
 import "reflect-metadata";
-import { UsageTenantConnectionManager } from "../providers/tenant-connection-manager";
+import {
+  SharedTenantDatabaseMode,
+  TenantConnectionManager,
+  TenantMongoConnectionManager,
+} from "@yoizen/database";
+import { usageAggregatorServiceConfig } from "../config";
+import { UsageTenantConnectionManagerMongo } from "../providers/tenant-connection-manager.mongo";
+import { UsageTenantConnectionManagerPostgres } from "../providers/tenant-connection-manager.postgres";
 
-/** Isolated summary per tenant — `Map`-friendly shape. */
 interface IPurgeSummary {
   readonly tenantId: string;
   readonly matched: number;
@@ -42,13 +28,14 @@ interface IPurgeSummary {
   readonly dryRun: boolean;
 }
 
+interface IProbeRow {
+  readonly matched: number;
+  readonly min_ts: Date | null;
+  readonly max_ts: Date | null;
+}
+
 function parseTenantIds(raw: string | undefined): readonly string[] {
   if (!raw) return [];
-  /**
-   * `Set` to dedupe on the fly in O(n); we don't need ordering, and
-   * duplicate tenant ids would double the work without changing the
-   * result.
-   */
   const unique = new Set<string>();
   for (const token of raw.split(",")) {
     const trimmed = token.trim();
@@ -63,29 +50,54 @@ function parseBoolean(raw: string | undefined): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
 
+function createConnections():
+  | TenantMongoConnectionManager
+  | TenantConnectionManager {
+  return usageAggregatorServiceConfig.dbEngine === "postgres"
+    ? new UsageTenantConnectionManagerPostgres()
+    : new UsageTenantConnectionManagerMongo();
+}
+
 async function purgeTenant(
-  connections: UsageTenantConnectionManager,
+  connections: TenantMongoConnectionManager | TenantConnectionManager,
   tenantId: string,
   dryRun: boolean,
 ): Promise<IPurgeSummary> {
-  const sql = await connections.ensureSchema(tenantId);
+  if (usageAggregatorServiceConfig.dbEngine !== "mongo") {
+    throw new Error(
+      "purge-placeholder-account-ids currently supports mongo usage storage only",
+    );
+  }
 
-  /**
-   * Two-step: first inspect (count + time bounds) so we can refresh
-   * CAGGs only over the affected range, then delete. Keeping them
-   * separate also lets us surface a diff even in `--dry-run` mode.
-   */
-  const [probe] = await sql<
-    { matched: string; min_ts: Date | null; max_ts: Date | null }[]
-  >`
-    SELECT count(*)::text AS matched,
-           min(ts)        AS min_ts,
-           max(ts)        AS max_ts
-      FROM channel_events
-     WHERE account_id = ${tenantId}
-  `;
+  const mongoConnections = connections as TenantMongoConnectionManager;
+  const db = await mongoConnections.ensureSchema(tenantId);
+  const target = await mongoConnections.resolveDatabaseTarget(tenantId);
+  const isShared =
+    target.sharedDatabaseMode === SharedTenantDatabaseMode.SingleDatabase;
+  const match: Record<string, unknown> = {
+    "meta.account_id": tenantId,
+  };
+  if (isShared) {
+    match["meta.tenant_id"] = tenantId;
+  }
 
-  const matched = Number(probe?.matched ?? 0);
+  const probeRows = await db
+    .collection("channel_events")
+    .aggregate<IProbeRow>([
+      { $match: match },
+      {
+        $group: {
+          _id: null,
+          matched: { $sum: 1 },
+          min_ts: { $min: "$ts" },
+          max_ts: { $max: "$ts" },
+        },
+      },
+    ])
+    .toArray();
+
+  const probe = probeRows[0];
+  const matched = probe?.matched ?? 0;
   const minTs = probe?.min_ts ?? null;
   const maxTs = probe?.max_ts ?? null;
 
@@ -93,45 +105,12 @@ async function purgeTenant(
     return { tenantId, matched, deleted: 0, minTs, maxTs, dryRun };
   }
 
-  const deleted = await sql`
-    DELETE FROM channel_events
-     WHERE account_id = ${tenantId}
-  `;
-
-  /**
-   * Refresh only the touched buckets. TimescaleDB requires a closed
-   * `[start, end)` window; we pad by one bucket on each side to
-   * absorb boundary timestamps and truncate against `now()` because
-   * CAGG policies forbid refreshing into the `end_offset` window
-   * (15 minutes here matches the looser of the two policies).
-   */
-  if (minTs && maxTs) {
-    const refreshStart = new Date(minTs.getTime() - 60 * 60 * 1000);
-    const refreshEnd = new Date(
-      Math.min(maxTs.getTime() + 60 * 60 * 1000, Date.now() - 15 * 60 * 1000),
-    );
-    if (refreshEnd.getTime() > refreshStart.getTime()) {
-      await sql`
-        CALL refresh_continuous_aggregate(
-          'channel_events_hourly',
-          ${refreshStart}::timestamptz,
-          ${refreshEnd}::timestamptz
-        )
-      `;
-      await sql`
-        CALL refresh_continuous_aggregate(
-          'channel_events_daily',
-          ${refreshStart}::timestamptz,
-          ${refreshEnd}::timestamptz
-        )
-      `;
-    }
-  }
+  const deleted = await db.collection("channel_events").deleteMany(match);
 
   return {
     tenantId,
     matched,
-    deleted: deleted.count ?? matched,
+    deleted: deleted.deletedCount,
     minTs,
     maxTs,
     dryRun,
@@ -148,13 +127,11 @@ async function main(): Promise<void> {
   }
 
   const dryRun = parseBoolean(process.env.PURGE_DRY_RUN);
-  const connections = new UsageTenantConnectionManager();
+  const connections = createConnections();
 
   try {
     for (const tenantId of tenantIds) {
-      console.log(
-        `[purge] tenant=${tenantId} starting… dryRun=${dryRun}`,
-      );
+      console.log(`[purge] tenant=${tenantId} starting… dryRun=${dryRun}`);
       const summary = await purgeTenant(connections, tenantId, dryRun);
       console.log(`[purge] ${JSON.stringify(summary)}`);
     }

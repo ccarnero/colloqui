@@ -2,33 +2,33 @@ import "../setup-env";
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { UnauthorizedException } from "@nestjs/common";
-import { createMockPostgresSql } from "@yoizen/testing";
-import { TokenRepository } from "../../src/modules/token/token.repository";
+import { TOKEN_REPOSITORY } from "../../src/modules/token/token.repository.interface";
 import { TokenService } from "../../src/modules/token/token.service";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
-import { AuthTenantConnectionManager } from "../../src/providers/auth-tenant-connection-manager";
 
 const JWT_SECRET = "test-secret-at-least-32-characters-long";
 
 describe("TokenService", () => {
   let service: TokenService;
-  let sql: ReturnType<typeof createMockPostgresSql>;
+  let tokenRepository: {
+    findClientByClientId: ReturnType<typeof mock>;
+    findPlatformUserByEmail: ReturnType<typeof mock>;
+    findTenantUserByEmailAnyTenant: ReturnType<typeof mock>;
+  };
 
   beforeEach(async () => {
     process.env.JWT_SECRET = JWT_SECRET;
     process.env.PLATFORM_ENVIRONMENT = "test";
 
-    sql = createMockPostgresSql(mock);
-    const authTcm = {
-      ensureSchema: mock(() => Promise.resolve(sql)),
+    tokenRepository = {
+      findClientByClientId: mock(() => Promise.resolve([])),
+      findPlatformUserByEmail: mock(() => Promise.resolve([])),
+      findTenantUserByEmailAnyTenant: mock(() => Promise.resolve([])),
     };
 
     const module = await Test.createTestingModule({
       providers: [
-        TokenRepository,
         TokenService,
-        { provide: POSTGRES_SQL, useValue: sql },
-        { provide: AuthTenantConnectionManager, useValue: authTcm },
+        { provide: TOKEN_REPOSITORY, useValue: tokenRepository },
       ],
     }).compile();
 
@@ -38,14 +38,14 @@ describe("TokenService", () => {
 
   describe("clientCredentials", () => {
     it("should throw UnauthorizedException for unknown client", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+      tokenRepository.findClientByClientId.mockResolvedValueOnce([]);
       await expect(
         service.clientCredentials("bad-id", "bad-secret"),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
     it("should throw UnauthorizedException for deactivated client", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      tokenRepository.findClientByClientId.mockResolvedValueOnce([
         {
           id: "c1",
           client_secret_hash: "hash",
@@ -64,7 +64,7 @@ describe("TokenService", () => {
         memoryCost: 4096,
         timeCost: 1,
       });
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      tokenRepository.findClientByClientId.mockResolvedValueOnce([
         {
           id: "c1",
           client_secret_hash: hash,
@@ -83,7 +83,7 @@ describe("TokenService", () => {
         memoryCost: 4096,
         timeCost: 1,
       });
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      tokenRepository.findClientByClientId.mockResolvedValueOnce([
         {
           id: "c1",
           client_secret_hash: hash,
@@ -101,8 +101,8 @@ describe("TokenService", () => {
 
   describe("login", () => {
     it("should throw for unknown email", async () => {
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([]);
+      tokenRepository.findPlatformUserByEmail.mockResolvedValueOnce([]);
+      tokenRepository.findTenantUserByEmailAnyTenant.mockResolvedValueOnce([]);
       await expect(
         service.login("unknown@test.com", "password"),
       ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -114,7 +114,7 @@ describe("TokenService", () => {
         memoryCost: 4096,
         timeCost: 1,
       });
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      tokenRepository.findPlatformUserByEmail.mockResolvedValueOnce([
         {
           id: "u1",
           email: "admin@test.com",
@@ -136,7 +136,7 @@ describe("TokenService", () => {
         memoryCost: 4096,
         timeCost: 1,
       });
-      (sql as unknown as ReturnType<typeof mock>).mockResolvedValueOnce([
+      tokenRepository.findPlatformUserByEmail.mockResolvedValueOnce([
         {
           id: "u1",
           email: "admin@test.com",
@@ -159,5 +159,4 @@ describe("TokenService", () => {
       );
     });
   });
-
 });

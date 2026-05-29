@@ -38,6 +38,13 @@
  * first test that triggers a workflow execution will pay their
  * cold-start; per-test timeouts in `workflow.e2e.spec.ts` and
  * `adapter.e2e.spec.ts` are sized to absorb that.
+ *
+ * Storage engine
+ * ──────────────
+ * Dev clusters booted with `--storage-engine=mongo` provision a per-tenant
+ * `mongo` StatefulSet (not `postgres` / `postgres-usage`). Downstream
+ * `/health` payloads expose `mongo: connected` instead of `postgres: true`.
+ * Set `E2E_STORAGE_ENGINE=postgres` only when running against a legacy overlay.
  */
 
 export {};
@@ -52,6 +59,19 @@ const MINIKUBE_DOMAIN = process.env.MINIKUBE_DOMAIN ?? "192.168.49.2.sslip.io";
 const WARMUP_BUDGET_MS = Number(process.env.E2E_WARMUP_TIMEOUT_MS ?? 180_000);
 const WARMUP_PROBE_TIMEOUT_MS = 30_000;
 const WARMUP_DISABLED = process.env.E2E_WARMUP_DISABLE === "1";
+function resolveWarmupStorageEngine(): "postgres" | "mongo" {
+  const explicit = process.env.E2E_STORAGE_ENGINE?.toLowerCase();
+  if (explicit === "postgres" || explicit === "mongo") {
+    return explicit;
+  }
+  const bootstrap = process.env.STORAGE_ENGINE?.toLowerCase();
+  if (bootstrap === "postgres" || bootstrap === "mongo") {
+    return bootstrap;
+  }
+  return "postgres";
+}
+
+const E2E_STORAGE_ENGINE = resolveWarmupStorageEngine();
 
 interface GatewayHealthBody {
   status: string;
@@ -135,7 +155,8 @@ async function runWarmup(): Promise<void> {
 
   console.log(
     `[warmup] driving scale-from-zero via ${url} ` +
-      `(budget=${WARMUP_BUDGET_MS}ms, kourier=${KOURIER_HOST}:${KOURIER_PORT})`,
+      `(budget=${WARMUP_BUDGET_MS}ms, kourier=${KOURIER_HOST}:${KOURIER_PORT}, ` +
+      `storage=${E2E_STORAGE_ENGINE})`,
   );
 
   let attempt = 0;
