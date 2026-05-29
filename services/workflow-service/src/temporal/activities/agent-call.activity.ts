@@ -212,6 +212,9 @@ export async function executeAgentCall(
 function deriveStableExecutionId(): string | undefined {
   try {
     const info = Context.current().info;
+    if (!info.workflowExecution) {
+      return undefined;
+    }
     const runId = info.workflowExecution?.runId;
     if (!runId) return undefined;
     return `${runId}:${info.activityId}`;
