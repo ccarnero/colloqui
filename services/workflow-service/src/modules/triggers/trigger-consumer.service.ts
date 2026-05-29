@@ -46,6 +46,17 @@ const DURABLE_NAME = "workflow-triggers";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
 /** `evt.*.channel-service.messaging.*.*.received.v1` — 8-token canonical. */
 const TRIGGER_SUBJECT = `${CHANNEL_SUBJECT_PREFIX}.*.${CHANNEL_PRODUCER}.${CHANNEL_DOMAIN}.*.*.received.v1`;
+const DEFAULT_TRIGGER_CONCURRENCY = 2;
+
+function resolveTriggerConcurrency(): number {
+  const parsed = Number.parseInt(
+    process.env.WORKFLOW_TRIGGER_CONCURRENCY ?? "",
+    10,
+  );
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_TRIGGER_CONCURRENCY;
+}
 
 /**
  * Consumes `channel.message.received` events from JetStream and starts
@@ -82,7 +93,7 @@ export class TriggerConsumerService
       description:
         "Workflow triggers — message_received → Temporal workflow start",
       metrics: createNatsConsumerMetrics(resolveServiceName("workflow-service")),
-      runnerOptions: { concurrency: 64 },
+      runnerOptions: { concurrency: resolveTriggerConcurrency() },
       maxDeliver: 3,
       ackWaitMs: 60_000,
       backoffMs: [60_000, 120_000],
