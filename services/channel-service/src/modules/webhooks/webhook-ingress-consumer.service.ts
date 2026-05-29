@@ -5,12 +5,15 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import type { JetStreamClient, JetStreamManager, JsMsg } from "nats";
+import { headers as natsHeaders } from "nats";
 import {
   PinoLoggerService,
   createNatsConsumerMetrics,
   isWorkerMode,
   resolveServiceName,
+  startNatsConsumerSpan,
 } from "@yoizen/observability";
+import { context as otelContext } from "@opentelemetry/api";
 import {
   MultiTenantConsumerManager,
   type IMultiTenantConsumerConfig,
@@ -87,7 +90,29 @@ export class WebhookIngressConsumerService
     }
   }
 
+  /**
+   * Continues the OTel trace published by api-gateway across the
+   * JetStream hop: extracts `traceparent` from the message headers and
+   * opens a CONSUMER span so the webhook → ingress → workflow chain
+   * shows up as a single end-to-end trace. Without this the consumer
+   * work lands in a disconnected trace — mirrors the egress path in
+   * `send-command-consumer.service.ts`.
+   */
   private async handleJsMessage(msg: JsMsg): Promise<void> {
+    const incomingHeaders = msg.headers ?? natsHeaders();
+    const { span, context: spanCtx } = startNatsConsumerSpan(
+      resolveServiceName("channel-service"),
+      msg.subject,
+      incomingHeaders,
+    );
+    try {
+      await otelContext.with(spanCtx, () => this.processMessage(msg));
+    } finally {
+      span.end();
+    }
+  }
+
+  private async processMessage(msg: JsMsg): Promise<void> {
     const subject = parseWebhookIngressSubject(msg.subject);
     if (!subject) {
       this.logger.warn(`Ignoring non-webhook subject: ${msg.subject}`);

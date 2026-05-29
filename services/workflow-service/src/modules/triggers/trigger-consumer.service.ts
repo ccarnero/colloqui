@@ -8,7 +8,9 @@ import type {
   JetStreamClient,
   JetStreamManager,
   JsMsg,
+  MsgHdrs,
 } from "nats";
+import { headers as natsHeaders } from "nats";
 import {
   MultiTenantConsumerManager,
   type IMultiTenantConsumerConfig,
@@ -18,7 +20,9 @@ import {
   createNatsConsumerMetrics,
   isWorkerMode,
   resolveServiceName,
+  startNatsConsumerSpan,
 } from "@yoizen/observability";
+import { context as otelContext } from "@opentelemetry/api";
 import {
   CHANNEL_SUBJECT_PREFIX,
   CHANNEL_PRODUCER,
@@ -121,8 +125,28 @@ export class TriggerConsumerService
     }
   }
 
+  /**
+   * Continues the OTel trace published on the ingress event across the
+   * JetStream hop: extracts `traceparent` from the message headers and
+   * opens a CONSUMER span so the Temporal `workflow.start()` (and thus
+   * the downstream `workflow-worker` + `connector-runtime` activity
+   * spans, linked by Temporal's OTel interceptors) hang off the same
+   * end-to-end trace instead of starting a disconnected root.
+   */
   private async handleJsMessage(msg: JsMsg): Promise<void> {
-    await this.handleMessage({ subject: msg.subject, data: msg.data });
+    const incomingHeaders: MsgHdrs = msg.headers ?? natsHeaders();
+    const { span, context: spanCtx } = startNatsConsumerSpan(
+      resolveServiceName("workflow-service"),
+      msg.subject,
+      incomingHeaders,
+    );
+    try {
+      await otelContext.with(spanCtx, () =>
+        this.handleMessage({ subject: msg.subject, data: msg.data }),
+      );
+    } finally {
+      span.end();
+    }
   }
 
   private async handleMessage(

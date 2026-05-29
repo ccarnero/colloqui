@@ -234,7 +234,7 @@ export interface StageDef {
   
     const baselineStartMs = 0;
     const lightStartMs = baselineStartMs + baseline.durationMs;
-    const mediumStartMs = lightStartMs + light.durationMs;
+    const mediumStartMs = 0;
     const heavyStartMs = mediumStartMs + medium.durationMs;
     const peakStartMs = heavyStartMs + heavy.durationMs;
     const spikeStartMs = peakStartMs + peak.durationMs;
