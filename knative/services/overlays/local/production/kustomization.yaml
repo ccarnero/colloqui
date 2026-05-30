@@ -5,6 +5,9 @@ namespace: platform-services-production
 
 resources:
   - ../../../base
+  # postgres-credentials Secret lives in the postgres overlays (not in
+  # base) so it only exists when the cluster runs storage-engine=postgres.
+  - postgres-credentials.yaml
 
 patches:
   - path: env-patches.yaml

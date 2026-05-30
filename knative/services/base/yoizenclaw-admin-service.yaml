@@ -26,21 +26,8 @@ spec:
           env:
             - name: NATS_URL
               value: "nats://nats:4222"
-            - name: MONGO_DB
-              valueFrom:
-                secretKeyRef:
-                  name: mongo-credentials
-                  key: MONGO_DB
-            - name: MONGO_USER
-              valueFrom:
-                secretKeyRef:
-                  name: mongo-credentials
-                  key: MONGO_USER
-            - name: MONGO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: mongo-credentials
-                  key: MONGO_PASSWORD
+            # MONGO_* credentials are injected by the active mongo overlay
+            # (local/mongo-dev); the base stays free of mongo credentials.
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:

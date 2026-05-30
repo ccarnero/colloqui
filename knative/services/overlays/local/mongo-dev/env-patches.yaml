@@ -192,16 +192,17 @@ spec:
     spec:
       containers:
         - name: user-container
-          # MONGO_DB / MONGO_USER / MONGO_PASSWORD come from the
-          # `mongo-credentials` Secret declared in base. We deliberately
-          # do NOT redeclare them here: kustomize strategic-merge on a core
-          # Deployment merges env entries field-by-field by `name`, leaving
-          # both `value` AND `valueFrom` set, which kube-apiserver rejects.
           env:
             - name: STORAGE_ENGINE
               value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
             - name: MONGO_HOST
               value: "mongo-platform.support-services-dev.svc.cluster.local"
             - name: MONGO_PORT
@@ -937,14 +938,17 @@ spec:
     spec:
       containers:
         - name: user-container
-          # MONGO_DB / MONGO_USER / MONGO_PASSWORD come from the
-          # `mongo-credentials` Secret declared in base — see the comment
-          # on audit-service-worker above for the full kustomize rationale.
           env:
             - name: STORAGE_ENGINE
               value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
             - name: MONGO_HOST
               value: "mongo-platform.support-services-dev.svc.cluster.local"
             - name: MONGO_PORT
@@ -1061,9 +1065,6 @@ spec:
     spec:
       containers:
         - name: user-container
-          # MONGO_DB / MONGO_USER / MONGO_PASSWORD come from the
-          # `mongo-credentials` Secret declared in base — see the comment
-          # on audit-service-worker above for the full kustomize rationale.
           env:
             - name: STORAGE_ENGINE
               value: "mongo"
@@ -1075,6 +1076,12 @@ spec:
               value: "6379"
             - name: REDIS_CLUSTER_MODE
               value: "true"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
             - name: MONGO_HOST
               value: "mongo-platform.support-services-dev.svc.cluster.local"
             - name: MONGO_USAGE_HOST

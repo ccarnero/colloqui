@@ -10,6 +10,10 @@ namespace: platform-services-dev
 
 resources:
   - ../../../base
+  # mongo-credentials Secret lives here (not in base) so it only exists
+  # when the cluster is bootstrapped with storage-engine = mongo. The
+  # postgres overlays never pull it in.
+  - mongo-credentials.yaml
 
 components:
   - ../../_components/scale-to-zero-non-prod

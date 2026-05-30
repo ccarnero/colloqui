@@ -176,6 +176,14 @@ spec:
           value: postgres
         - name: NATS_URL
           value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_DB
+          value: yoizen
         - name: POSTGRES_PORT
           value: '5432'
         - name: PLATFORM_ENVIRONMENT

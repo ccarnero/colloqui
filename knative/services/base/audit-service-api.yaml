@@ -49,21 +49,9 @@ spec:
               value: "api"
             - name: OTEL_SERVICE_NAME
               value: "audit-service-api"
-            - name: MONGO_DB
-              valueFrom:
-                secretKeyRef:
-                  name: mongo-credentials
-                  key: MONGO_DB
-            - name: MONGO_USER
-              valueFrom:
-                secretKeyRef:
-                  name: mongo-credentials
-                  key: MONGO_USER
-            - name: MONGO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: mongo-credentials
-                  key: MONGO_PASSWORD
+            # Storage-engine credentials (MONGO_* or POSTGRES_*) are injected
+            # by the active overlay (local/mongo-dev or local/postgres-dev),
+            # never here — the base stays engine-agnostic.
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

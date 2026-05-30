@@ -9,6 +9,9 @@ namespace: platform-services-staging
 
 resources:
   - ../../../base
+  # postgres-credentials Secret lives in the postgres overlays (not in
+  # base) so it only exists when the cluster runs storage-engine=postgres.
+  - postgres-credentials.yaml
 
 components:
   - ../../_components/scale-to-zero-staging
