@@ -16,6 +16,11 @@ type CapturedConfig = {
 };
 
 const capturedConfigs: CapturedConfig[] = [];
+const ORIGINAL_TRIGGER_CONCURRENCY = process.env.WORKFLOW_TRIGGER_CONCURRENCY;
+
+mock.module("nats", () => ({
+  headers: () => new Map<string, string>(),
+}));
 
 class FakeMultiTenantConsumerManager {
   constructor(
@@ -76,6 +81,11 @@ const { TriggerConsumerService } = await import(
 describe("TriggerConsumerService — post-mortem config knobs (POST-MORTEM §P1.1)", () => {
   beforeEach(() => {
     capturedConfigs.length = 0;
+    if (ORIGINAL_TRIGGER_CONCURRENCY === undefined) {
+      delete process.env.WORKFLOW_TRIGGER_CONCURRENCY;
+    } else {
+      process.env.WORKFLOW_TRIGGER_CONCURRENCY = ORIGINAL_TRIGGER_CONCURRENCY;
+    }
   });
 
   async function bootService(): Promise<void> {
@@ -88,10 +98,16 @@ describe("TriggerConsumerService — post-mortem config knobs (POST-MORTEM §P1.
     await service.onModuleInit();
   }
 
-  it("uses runnerOptions.concurrency: 8 (was 16 before post-mortem)", async () => {
+  it("defaults runnerOptions.concurrency to 2 to protect Temporal during backlog drain", async () => {
     await bootService();
     expect(capturedConfigs).toHaveLength(1);
-    expect(capturedConfigs[0]?.runnerOptions?.concurrency).toBe(8);
+    expect(capturedConfigs[0]?.runnerOptions?.concurrency).toBe(2);
+  });
+
+  it("allows WORKFLOW_TRIGGER_CONCURRENCY to tune trigger pressure without rebuilding", async () => {
+    process.env.WORKFLOW_TRIGGER_CONCURRENCY = "4";
+    await bootService();
+    expect(capturedConfigs[0]?.runnerOptions?.concurrency).toBe(4);
   });
 
   it("uses ackWaitMs: 60_000 (was 30_000 before post-mortem)", async () => {

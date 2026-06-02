@@ -19,8 +19,8 @@ import {
   ListJobsQueryDto,
   ListJobExecutionsQueryDto,
 } from "./jobs.dto";
-import type { IJob } from "./jobs.repository";
-import type { IJobExecution } from "./job-executions.repository";
+import type { IJob } from "./jobs.repository.interface";
+import type { IJobExecution } from "./job-executions.repository.interface";
 import { TenantGuard } from "../../guards/tenant.guard";
 import { TenantId } from "../../providers/tenant.decorator";
 

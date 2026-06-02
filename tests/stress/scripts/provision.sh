@@ -51,6 +51,7 @@ readonly CHANNEL_APP_SECRET="anothersecret"
 
 readonly WORKFLOW_NAME="Stress Workflow"
 readonly WORKFLOW_APPLICATION="default"
+readonly STRESS_WORKFLOW_VARIANT="${STRESS_WORKFLOW_VARIANT:-full}"
 
 # stress-sink endpoint baked into the workflow's `endpointCall` step.
 # Default = in-cluster Knative DNS. Override via env when the sink is
@@ -271,7 +272,54 @@ ensure_tenant() {
     exit 1
   fi
 
+  wait_tenant_ready "$TENANT_NAME"
+
   TENANT_HEADER_VALUE="$prev_tenant"
+}
+
+# POST /api/tenants is 202 Accepted — provisioning is async (k8s namespace,
+# per-tenant Mongo DB + user, ExternalName service, runtime overlay). All
+# subsequent tenant-scoped calls (registry, channels, workflow) depend on
+# that namespace existing, so we poll the status URL until the tenant flips
+# to `ready`. Bail on `failed` and dump the provisioning_error so the user
+# sees why instead of cascading into misleading 500s downstream.
+wait_tenant_ready() {
+  local tenant="$1"
+  local max_attempts="${TENANT_READY_MAX_ATTEMPTS:-60}"   # ~120 s @ 2 s
+  local sleep_secs="${TENANT_READY_SLEEP_SECS:-2}"
+
+  note "Waiting for tenant '${tenant}' provisioning to complete..."
+  local attempt=0
+  while (( attempt < max_attempts )); do
+    local code
+    code="$(request_json GET "/api/tenants/${tenant}")"
+    if [[ "$code" == "200" ]]; then
+      local status
+      status="$(jq -r '.provisioningStatus // .provisioning_status // empty' <"$RESP_BODY" 2>/dev/null || true)"
+      case "$status" in
+        ready)
+          log "Tenant '${tenant}' is ready."
+          return 0
+          ;;
+        failed)
+          local error_msg
+          error_msg="$(jq -r '.provisioningError // .provisioning_error // "unknown"' <"$RESP_BODY")"
+          err "Tenant '${tenant}' provisioning failed: ${error_msg}"
+          exit 1
+          ;;
+        pending|provisioning|"")
+          ;;
+        *)
+          warn "Tenant '${tenant}' provisioning status='${status}' (unexpected, continuing to poll)"
+          ;;
+      esac
+    fi
+    sleep "$sleep_secs"
+    attempt=$((attempt + 1))
+  done
+
+  err "Timed out waiting for tenant '${tenant}' to become ready after $((max_attempts * sleep_secs))s."
+  exit 1
 }
 
 # ---------------------------------------------------------------------------
@@ -390,7 +438,7 @@ ensure_channel() {
 # which the reconciler dedupes/ignores).
 readonly STRESS_PARSE_JS='async (ctx) => { const t = (ctx && ctx.request && ctx.request.text) || ""; if (!t.startsWith("STRESS|")) return { correlation_id: "", sent_at: "0", stage: "" }; const p = t.split("|"); return { correlation_id: p[1] || "", sent_at: p[2] || "0", stage: p[3] || "" }; }'
 
-build_workflow_payload() {
+build_full_workflow_payload() {
   jq -nc \
     --arg name "$WORKFLOW_NAME" \
     --arg application "$WORKFLOW_APPLICATION" \
@@ -451,6 +499,60 @@ build_workflow_payload() {
         }
       }
     }'
+}
+
+build_minimal_workflow_payload() {
+  jq -nc \
+    --arg name "$WORKFLOW_NAME" \
+    --arg application "$WORKFLOW_APPLICATION" \
+    --arg channelId "$CHANNEL_ID" \
+    --arg sinkUrl "$STRESS_SINK_URL" \
+    --arg parseJs "$STRESS_PARSE_JS" \
+    '{
+      name: $name,
+      application: $application,
+      actions: [
+        {
+          name: "extractStressMeta",
+          activity: "jsFunction",
+          args: { code: $parseJs }
+        },
+        {
+          name: "notifyStressSink",
+          activity: "endpointCall",
+          args: {
+            method: "POST",
+            url: $sinkUrl,
+            data: {
+              correlation_id: "{{results.extractStressMeta.correlation_id}}",
+              sent_at: "{{results.extractStressMeta.sent_at}}",
+              stage: "{{results.extractStressMeta.stage}}"
+            }
+          }
+        }
+      ],
+      trigger: {
+        mode: "shared",
+        type: "message_received",
+        config: {
+          channels: [],
+          patterns: [],
+          providers: [],
+          accountIds: [$channelId]
+        }
+      }
+    }'
+}
+
+build_workflow_payload() {
+  case "$STRESS_WORKFLOW_VARIANT" in
+    full) build_full_workflow_payload ;;
+    minimal) build_minimal_workflow_payload ;;
+    *)
+      err "Unknown STRESS_WORKFLOW_VARIANT='${STRESS_WORKFLOW_VARIANT}' (expected full|minimal)."
+      exit 1
+      ;;
+  esac
 }
 
 # True when the existing workflow JSON exposes the sink-notify step.
@@ -525,6 +627,13 @@ ensure_workflow() {
 # ---------------------------------------------------------------------------
 
 main() {
+  if [[ "${STRESS_WORKFLOW_PRINT_PAYLOAD:-false}" == "true" ]]; then
+    SERVICE_ID="dry-run-service"
+    CHANNEL_ID="dry-run-channel"
+    build_workflow_payload
+    return
+  fi
+
   preflight
   resolve_gateway_url
 

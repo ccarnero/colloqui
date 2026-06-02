@@ -20,11 +20,13 @@ import {
   activeOrRandomTraceId,
   injectTraceContext,
   startNatsProducerSpan,
+  PinoLoggerService,
 } from "@yoizen/observability";
 import { workflowServiceConfig } from "../../config";
 
 let nc: NatsConnection | null = null;
 const encoder = new TextEncoder();
+const logger = new PinoLoggerService("channel-send.activity");
 
 async function getConnection(): Promise<NatsConnection> {
   if (nc && !nc.isClosed()) return nc;
@@ -72,7 +74,12 @@ export async function executeChannelSend(
   args: ChannelSendArgs,
   tenantId: string,
   causal?: EventCausalContext,
+  executionId?: string,
 ): Promise<{ published: true; subject: string }> {
+  if (executionId) {
+    logger.log(`channelSend executionId=${executionId} tenant=${tenantId}`);
+  }
+
   const conn = await getConnection();
 
   const channel = args.channel as Channel;

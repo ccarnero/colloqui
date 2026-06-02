@@ -1,31 +1,36 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { UsersRepository } from "../../src/modules/users/users.repository";
-import { POSTGRES_SQL } from "../../src/providers/postgres.provider";
-import type { Sql } from "../../src/providers/postgres.provider";
+import { createMockMongoClient } from "@yoizen/testing";
+import { UsersMongoRepository } from "../../src/modules/users/users.mongo.repository";
+import { MONGO_CLIENT } from "../../src/providers/mongo.provider";
 
-describe("UsersRepository", () => {
-  it("insertUser forwards parameters to SQL", async () => {
-    let captured = "";
-    const mockSql = Object.assign(
-      (strings: TemplateStringsArray, ...values: unknown[]) => {
-        captured = strings.reduce(
-          (acc, s, i) => acc + s + String(values[i] ?? ""),
-          "",
-        );
-        return Promise.resolve([{ id: "u1" }]);
-      },
-      {},
-    ) as unknown as Sql;
+describe("UsersMongoRepository", () => {
+  it("insertUser forwards parameters to Mongo", async () => {
+    let capturedDoc: unknown;
+    const client = createMockMongoClient(
+      new Map([
+        [
+          "platform_users",
+          (operation, args) => {
+            if (operation === "insertOne") {
+              capturedDoc = args[0];
+              return { acknowledged: true };
+            }
+            return null;
+          },
+        ],
+      ]),
+      mock,
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        UsersRepository,
-        { provide: POSTGRES_SQL, useValue: mockSql },
+        UsersMongoRepository,
+        { provide: MONGO_CLIENT, useValue: client },
       ],
     }).compile();
 
-    const repo = moduleRef.get(UsersRepository);
+    const repo = moduleRef.get(UsersMongoRepository);
     await repo.insertUser({
       id: "id1",
       email: "a@b.com",
@@ -33,8 +38,11 @@ describe("UsersRepository", () => {
       role: "admin",
     });
 
-    expect(captured).toContain("INSERT INTO platform_users");
-    expect(captured).toContain("id1");
-    expect(captured).toContain("a@b.com");
+    expect(capturedDoc).toMatchObject({
+      _id: "id1",
+      email: "a@b.com",
+      password_hash: "hash",
+      role: "admin",
+    });
   });
 });

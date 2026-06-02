@@ -109,6 +109,7 @@ export class WorkflowsController {
       path: `/workflows/${encodeURIComponent(id)}/execute`,
       tenantId: req.tenantId,
       body: body as unknown as Record<string, unknown>,
+      requestId: req.id,
     });
   }
 

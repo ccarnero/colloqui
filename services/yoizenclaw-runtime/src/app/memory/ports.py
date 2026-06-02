@@ -25,16 +25,26 @@ class IMemoryFactory(Protocol):
 
 
 @runtime_checkable
-class IMemoryPoolProvider(Protocol):
-    """Minimal interface for objects exposing an asyncpg pool.
+class IMemoryDatabaseProvider(Protocol):
+    """Minimal interface for objects exposing a MongoDB database handle."""
 
-    Used by repositories that need direct pool access but should
-    not depend on the concrete Memory implementation.
-    """
+    @property
+    def db(self) -> object:
+        """Return the initialized MongoDB database."""
+        ...
+
+    async def initialize(self) -> None:
+        """Ensure the backend is initialized."""
+        ...
+
+
+@runtime_checkable
+class IMemoryPoolProvider(Protocol):
+    """Minimal interface for objects exposing a PostgreSQL pool handle."""
 
     @property
     def pool(self) -> object:
-        """Return the initialized connection pool."""
+        """Return the initialized PostgreSQL pool."""
         ...
 
     async def initialize(self) -> None:

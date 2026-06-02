@@ -1,29 +1,28 @@
 import { describe, it, expect, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { createQueuedSql } from "@yoizen/testing";
-import { AutoReplyRepository } from "../../src/modules/auto-reply/auto-reply.repository";
+import { AutoReplyMongoRepository } from "../../src/modules/auto-reply/auto-reply.mongo.repository";
 import { ChannelTenantConnectionManager } from "../../src/providers/channel-tenant-connection-manager";
+import { makeFakeTenantMongoConnections, makeMockDb } from "../make-mongo-mock";
 
-function wrapTcm(sql: ReturnType<typeof createQueuedSql>) {
-  return {
-    ensureSchema: mock(() => Promise.resolve(sql)),
-  };
-}
-
-describe("AutoReplyRepository", () => {
+describe("AutoReplyMongoRepository", () => {
   it("insertRule inserts with options fields", async () => {
-    const sql = createQueuedSql([[]], mock);
+    const insertOne = mock(async () => ({ acknowledged: true }));
+    const db = makeMockDb({
+      auto_reply_rules: { insertOne },
+    });
+    const tcm = makeFakeTenantMongoConnections(db);
+
     const moduleRef = await Test.createTestingModule({
       providers: [
-        AutoReplyRepository,
+        AutoReplyMongoRepository,
         {
           provide: ChannelTenantConnectionManager,
-          useValue: wrapTcm(sql),
+          useValue: tcm,
         },
       ],
     }).compile();
 
-    const repo = moduleRef.get(AutoReplyRepository);
+    const repo = moduleRef.get(AutoReplyMongoRepository);
     await repo.insertRule({
       id: "rule-1",
       tenantId: "tenant-a",
@@ -33,23 +32,29 @@ describe("AutoReplyRepository", () => {
       replyText: "hello",
     });
 
-    expect(sql).toHaveBeenCalled();
+    expect(insertOne).toHaveBeenCalled();
   });
 
   it("listActiveRulesForTenant selects active rules for tenant", async () => {
-    const sql = createQueuedSql([[]], mock);
+    const toArray = mock(async () => []);
+    const find = mock(() => ({ toArray }));
+    const db = makeMockDb({
+      auto_reply_rules: { find },
+    });
+    const tcm = makeFakeTenantMongoConnections(db);
+
     const moduleRef = await Test.createTestingModule({
       providers: [
-        AutoReplyRepository,
+        AutoReplyMongoRepository,
         {
           provide: ChannelTenantConnectionManager,
-          useValue: wrapTcm(sql),
+          useValue: tcm,
         },
       ],
     }).compile();
 
-    const repo = moduleRef.get(AutoReplyRepository);
+    const repo = moduleRef.get(AutoReplyMongoRepository);
     await repo.listActiveRulesForTenant("tenant-a");
-    expect(sql).toHaveBeenCalled();
+    expect(find).toHaveBeenCalledWith({ is_active: true });
   });
 });

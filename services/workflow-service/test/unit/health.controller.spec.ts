@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import type { Client } from "@temporalio/client";
 import type { NatsConnection } from "nats";
 import { NATS_CONNECTION } from "@yoizen/database";
 import { HealthController } from "../../src/modules/health/health.controller";
+import { TEMPORAL_CLIENT } from "../../src/providers/temporal.provider";
 import { WorkflowTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
 
 describe("HealthController", () => {
@@ -13,8 +14,12 @@ describe("HealthController", () => {
   };
   let mockNats: { isClosed: () => boolean };
   let verifyConnectivity: ReturnType<typeof mock>;
+  let previousDbEngine: string | undefined;
 
   beforeEach(async () => {
+    previousDbEngine = process.env.DB_ENGINE;
+    process.env.DB_ENGINE = "mongo";
+
     mockTemporal = {
       workflowService: {
         getSystemInfo: mock(() => Promise.resolve({})),
@@ -27,7 +32,7 @@ describe("HealthController", () => {
       controllers: [HealthController],
       providers: [
         {
-          provide: "TEMPORAL_CLIENT",
+          provide: TEMPORAL_CLIENT,
           useValue: mockTemporal as unknown as Client,
         },
         {
@@ -46,12 +51,20 @@ describe("HealthController", () => {
     controller = moduleRef.get(HealthController);
   });
 
-  it("returns ok when Temporal, NATS, and Postgres are healthy", async () => {
+  afterEach(() => {
+    if (previousDbEngine === undefined) {
+      delete process.env.DB_ENGINE;
+    } else {
+      process.env.DB_ENGINE = previousDbEngine;
+    }
+  });
+
+  it("returns ok when Temporal, NATS, and Mongo are healthy", async () => {
     const result = await controller.check();
     expect(result.status).toBe("ok");
     expect(result.temporal).toBe(true);
     expect(result.nats).toBe(true);
-    expect(result.postgres).toBe(true);
+    expect(result.mongo).toBe(true);
   });
 
   it("returns degraded when Temporal fails", async () => {
@@ -63,10 +76,10 @@ describe("HealthController", () => {
     expect(result.temporal).toBe(false);
   });
 
-  it("returns degraded when any tenant Postgres pool is unreachable", async () => {
+  it("returns degraded when any tenant Mongo pool is unreachable", async () => {
     verifyConnectivity.mockResolvedValueOnce(false);
     const result = await controller.check();
     expect(result.status).toBe("degraded");
-    expect(result.postgres).toBe(false);
+    expect(result.mongo).toBe(false);
   });
 });

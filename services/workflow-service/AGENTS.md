@@ -4,6 +4,10 @@
 
 The Workflow Service provides a REST API for starting and querying Temporal workflows, plus a standalone Temporal worker that executes orchestrator-level activities. Workflows are defined as ordered sequences of actions (endpoint calls, inline JS functions, NATS service bus calls, parallel branches) with `{{path.to.value}}` template resolution against the execution context. The service runs as two processes: the NestJS API server and the Temporal worker.
 
+## Storage engines
+
+Workflow **definitions/executions** support **Postgres** (default) and **Mongo** (repository adapters). **Temporal** remains on dedicated Postgres regardless of OLTP engine. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+
 ## Tech Stack
 
 | Category | Technology |
@@ -25,7 +29,7 @@ src/
 ├── providers/
 │   ├── providers.module.ts                     # @Global() exporting TEMPORAL_CLIENT, NATS_CONNECTION, WorkflowTenantConnectionManager
 │   ├── temporal.provider.ts                    # TEMPORAL_CLIENT token, TenantId search attribute registration
-│   └── tenant-connection-manager.ts            # Per-tenant Postgres pool manager (subclass of @yoizen/database TenantConnectionManager)
+│   └── tenant-connection-manager.ts            # Per-tenant MongoDB pool manager (subclass of @yoizen/database TenantConnectionManager)
 ├── modules/
 │   ├── workflows/
 │   │   ├── workflows.module.ts
@@ -85,9 +89,9 @@ Actions support `{{path.to.value}}` templates resolved against the `WorkflowExec
 
 The same resolution applies to `serviceCall` `path` and to string values inside `serviceCall` `args.data` (JSON body) before the HTTP worker runs.
 
-### Per-tenant Postgres storage
+### Per-tenant MongoDB storage
 
-`workflow_definitions` and `workflow_executions` are stored in **each tenant's own Postgres instance** (one per Kubernetes namespace: `postgres.{tenant}-{env}-ns.svc.cluster.local`), not in the platform Postgres. The DB itself is the tenant boundary, so neither table carries a `tenant_id` column.
+`workflow_definitions` and `workflow_executions` are stored in **each tenant's own MongoDB instance** (one per Kubernetes namespace: `mongo.{tenant}-{env}-ns.svc.cluster.local`), not in the platform MongoDB. The DB itself is the tenant boundary, so neither table carries a `tenant_id` column.
 
 - The canonical DDL lives in `@yoizen/shared` as `WORKFLOW_SCHEMA_SQL` (single source of truth).
 - `tenant-service` bakes `WORKFLOW_SCHEMA_SQL` into each tenant's `init.sql` ConfigMap at provisioning time.
@@ -144,7 +148,7 @@ NATS is not registered in `ProvidersModule`. The service-bus activity (`service-
 | Token | Type | Source |
 |-------|------|--------|
 | `TEMPORAL_CLIENT` | `Client` (@temporalio/client) | `temporal.provider.ts` |
-| `WorkflowTenantConnectionManager` | per-tenant `Sql` pool manager | `tenant-connection-manager.ts` |
+| `WorkflowTenantConnectionManager` | per-tenant `MongoClient` pool manager | `tenant-connection-manager.ts` |
 | `NATS_CONNECTION` | `NatsConnection` | `@yoizen/database` (via `providers.module.ts`) |
 
 ## Configuration

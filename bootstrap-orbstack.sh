@@ -5,12 +5,14 @@ ALL_ENVIRONMENTS=(dev qa staging production)
 ALL_GROUPS=(support-services platform-services)
 ENVIRONMENTS=()
 SERVICE_GROUP=""
+STORAGE_ENGINE="${STORAGE_ENGINE:-postgres}"
 KNATIVE_VERSION="v1.17.0"
 KOURIER_VERSION="v1.17.0"
 KEDA_VERSION="2.18.3"
 KEDA_NAMESPACE="keda"
 CNPG_CHART_VERSION="0.27.1"
 CNPG_NAMESPACE="cnpg-system"
+METRICS_SERVER_VERSION="v0.7.2"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -32,9 +34,16 @@ Groups: ${ALL_GROUPS[*]}
   (defaults to both if omitted)
 
 Options:
-  -h, --help    Show this help message
+  -h, --help                      Show this help message
+  --storage-engine=ENGINE         OLTP storage: postgres (default) or mongo
+  --storage-engine ENGINE         Same as --storage-engine=ENGINE
+
+Environment variables:
+  STORAGE_ENGINE                    Same as --storage-engine (postgres|mongo)
 
 Examples:
+  $0 --storage-engine=mongo dev support-services
+                                # Mongo OLTP + usage; Temporal stays on Postgres
   $0 support-services           # Infra only for all environments
   $0 dev support-services       # Infra only for dev
   $0 support-services dev       # Same as above (order does not matter)
@@ -43,16 +52,49 @@ Examples:
 EOF
 }
 
+normalize_storage_engine() {
+  case "$1" in
+    postgres|mongo) printf '%s' "$1" ;;
+    *)
+      err "Invalid storage engine: $1 (expected postgres or mongo)"
+      exit 1
+      ;;
+  esac
+}
+
 parse_args() {
   ENVIRONMENTS=()
   SERVICE_GROUP=""
+  STORAGE_ENGINE="${STORAGE_ENGINE:-postgres}"
   local positional=()
 
-  for arg in "$@"; do
+  while (( $# > 0 )); do
+    local arg=$1
+    shift
     case "$arg" in
-      -h|--help) usage; exit 0 ;;
-      -*)        err "Unknown option: $arg"; usage; exit 1 ;;
-      *)         positional+=("$arg") ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      --storage-engine=*)
+        STORAGE_ENGINE="$(normalize_storage_engine "${arg#*=}")"
+        ;;
+      --storage-engine)
+        if (( $# == 0 )); then
+          err "--storage-engine requires a value (postgres or mongo)"
+          exit 1
+        fi
+        STORAGE_ENGINE="$(normalize_storage_engine "$1")"
+        shift
+        ;;
+      -*)
+        err "Unknown option: $arg"
+        usage
+        exit 1
+        ;;
+      *)
+        positional+=("$arg")
+        ;;
     esac
   done
 
@@ -85,9 +127,60 @@ parse_args() {
       exit 1
     fi
   done
+  unset arg
 
   if (( ${#ENVIRONMENTS[@]} == 0 )); then
     ENVIRONMENTS=("${ALL_ENVIRONMENTS[@]}")
+  fi
+}
+
+is_mongo_storage_engine() {
+  [[ "${STORAGE_ENGINE}" == "mongo" ]]
+}
+
+print_storage_engine_banner() {
+  if ! is_mongo_storage_engine; then
+    return 0
+  fi
+  echo ""
+  log "============================================================"
+  log " Storage engine: mongo (hybrid with Temporal Postgres)"
+  log "============================================================"
+  echo ""
+}
+
+orbstack_infra_overlay_path() {
+  local script_dir=$1 env=$2
+  if is_mongo_storage_engine; then
+    printf '%s/infrastructure/overlays/orbstack/mongo-%s' "$script_dir" "$env"
+  else
+    printf '%s/infrastructure/overlays/orbstack/%s' "$script_dir" "$env"
+  fi
+}
+
+local_knative_overlay_path() {
+  local script_dir=$1 env=$2
+  local suffix
+  if is_mongo_storage_engine; then
+    suffix="mongo-${env}"
+  else
+    suffix="postgres-${env}"
+  fi
+  if [[ -d "${script_dir}/knative/services/overlays/local/${suffix}" ]]; then
+    printf '%s/knative/services/overlays/local/%s' "$script_dir" "$suffix"
+  else
+    printf '%s/knative/services/overlays/local/%s' "$script_dir" "$env"
+  fi
+}
+
+storage_engine_for_namespace() {
+  local ns=$1
+  if kubectl get statefulset/mongo-platform --namespace "$ns" &>/dev/null; then
+    echo mongo
+  elif kubectl get statefulset/postgres --namespace "$ns" &>/dev/null; then
+    echo postgres
+  else
+    echo "$STORAGE_ENGINE"
   fi
 }
 
@@ -131,6 +224,46 @@ check_orbstack_context() {
   fi
 
   log "Using kubectl context: orbstack"
+}
+
+install_metrics_server() {
+  if kubectl get apiservice v1beta1.metrics.k8s.io &>/dev/null; then
+    log "metrics-server API already installed — skipping"
+    return
+  fi
+
+  log "Installing metrics-server (${METRICS_SERVER_VERSION})"
+  retry 5 5 kubectl apply -f "https://github.com/kubernetes-sigs/metrics-server/releases/download/${METRICS_SERVER_VERSION}/components.yaml"
+
+  local metrics_server_args
+  metrics_server_args="$(kubectl get deployment metrics-server \
+    --namespace kube-system \
+    -o jsonpath='{.spec.template.spec.containers[0].args[*]}' \
+    2>/dev/null || true)"
+
+  if [[ "$metrics_server_args" != *"--kubelet-insecure-tls"* ]]; then
+    log "Patching metrics-server for local OrbStack kubelet TLS"
+    kubectl patch deployment metrics-server \
+      --namespace kube-system \
+      --type=json \
+      --patch='[
+        {
+          "op": "add",
+          "path": "/spec/template/spec/containers/0/args/-",
+          "value": "--kubelet-insecure-tls"
+        }
+      ]'
+  fi
+
+  log "Waiting for metrics-server"
+  kubectl wait deployment/metrics-server \
+    --namespace kube-system \
+    --for=condition=Available \
+    --timeout=180s
+
+  kubectl wait apiservice/v1beta1.metrics.k8s.io \
+    --for=condition=Available \
+    --timeout=180s
 }
 
 wait_for_webhook() {
@@ -343,9 +476,11 @@ apply_infrastructure() {
 
   for env in "${ENVIRONMENTS[@]}"; do
     local ns="support-services-${env}"
+    local overlay_path
+    overlay_path="$(orbstack_infra_overlay_path "$script_dir" "$env")"
 
-    log "Applying infrastructure for '${env}' (OrbStack overlay)"
-    kubectl apply -k "${script_dir}/infrastructure/overlays/orbstack/${env}"
+    log "Applying infrastructure for '${env}' (OrbStack, ${STORAGE_ENGINE})"
+    kubectl apply -k "$overlay_path"
 
     log "Waiting for NATS in ${ns}..."
     kubectl rollout status statefulset/nats \
@@ -362,27 +497,41 @@ apply_infrastructure() {
       --namespace "$ns" \
       --timeout=180s
 
-    log "Waiting for PostgreSQL in ${ns}..."
-    kubectl rollout status statefulset/postgres \
-      --namespace "$ns" \
-      --timeout=180s
+    if is_mongo_storage_engine; then
+      log "Waiting for MongoDB platform StatefulSet in ${ns}..."
+      kubectl rollout status statefulset/mongo-platform \
+        --namespace "$ns" \
+        --timeout=300s
 
-    # All four CNPG Cluster CRs land via the single `kubectl apply -k`
-    # above. Their Ready conditions are independent (separate primaries
-    # + initdb jobs), so we wait in parallel — saves ~one Postgres
-    # bootstrap window vs sequential 300s × N.
-    #
-    # `postgres-temporal-visibility` was added in the 2026-05-22
-    # post-mortem remediation (DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md)
-    # to isolate visibility writes from the `executions` hot path.
+      log "Waiting for MongoDB usage StatefulSet in ${ns}..."
+      kubectl rollout status statefulset/mongo-usage \
+        --namespace "$ns" \
+        --timeout=300s
+    else
+      log "Waiting for PostgreSQL in ${ns}..."
+      kubectl rollout status statefulset/postgres \
+        --namespace "$ns" \
+        --timeout=180s
+    fi
+
+    local cnpg_clusters=()
+    if is_mongo_storage_engine; then
+      cnpg_clusters=(
+        postgres-temporal
+        postgres-temporal-visibility
+      )
+    else
+      cnpg_clusters=(
+        postgres-shared
+        postgres-usage-shared
+        postgres-temporal
+        postgres-temporal-visibility
+      )
+    fi
+
     log "Waiting for CloudNativePG clusters in ${ns} (parallel)..."
     local cnpg_pids=()
-    for cnpg_cluster in \
-      postgres-shared \
-      postgres-usage-shared \
-      postgres-temporal \
-      postgres-temporal-visibility
-    do
+    for cnpg_cluster in "${cnpg_clusters[@]}"; do
       kubectl wait cluster.postgresql.cnpg.io/"$cnpg_cluster" \
         --namespace "$ns" \
         --for=condition=Ready \
@@ -514,8 +663,10 @@ apply_knative_config() {
   retry 5 3 kubectl apply -k "${script_dir}/knative/services/rbac"
 
   for env in "${ENVIRONMENTS[@]}"; do
-    log "Applying Knative services for '${env}'"
-    retry 5 3 kubectl apply -k "${script_dir}/knative/services/overlays/local/${env}"
+    local knative_overlay
+    knative_overlay="$(local_knative_overlay_path "$script_dir" "$env")"
+    log "Applying Knative services for '${env}' (${STORAGE_ENGINE}) → ${knative_overlay##*/}"
+    retry 5 3 kubectl apply -k "$knative_overlay"
   done
 }
 
@@ -648,7 +799,6 @@ verify_cluster() {
 
 verify_support_services() {
   local core_deployments=(otel-collector tempo prometheus loki grafana)
-  local core_statefulsets=(nats postgres redis)
 
   if ! kubectl get crd scaledobjects.keda.sh &>/dev/null; then
     err "KEDA CRDs not found in cluster."
@@ -665,9 +815,24 @@ verify_support_services() {
 
   for env in "${ENVIRONMENTS[@]}"; do
     local ns="support-services-${env}"
+    local engine core_statefulsets cnpg_clusters cnpg_cluster
     if ! kubectl get namespace "$ns" &>/dev/null; then
       warn "Namespace '${ns}' does not exist — support-services may not be deployed"
       continue
+    fi
+
+    engine="$(storage_engine_for_namespace "$ns")"
+    if [[ "$engine" == "mongo" ]]; then
+      core_statefulsets=(nats mongo-platform mongo-usage redis)
+      cnpg_clusters=(postgres-temporal postgres-temporal-visibility)
+    else
+      core_statefulsets=(nats postgres redis)
+      cnpg_clusters=(
+        postgres-shared
+        postgres-usage-shared
+        postgres-temporal
+        postgres-temporal-visibility
+      )
     fi
 
     for dep in "${core_deployments[@]}"; do
@@ -681,12 +846,7 @@ verify_support_services() {
       fi
     done
 
-    for cnpg_cluster in \
-      postgres-shared \
-      postgres-usage-shared \
-      postgres-temporal \
-      postgres-temporal-visibility
-    do
+    for cnpg_cluster in "${cnpg_clusters[@]}"; do
       if ! kubectl get cluster.postgresql.cnpg.io "$cnpg_cluster" --namespace "$ns" &>/dev/null; then
         warn "CloudNativePG Cluster '${cnpg_cluster}' not found in ${ns}"
       fi
@@ -715,8 +875,9 @@ verify_support_services() {
 
 run_support_services() {
   log "===== support-services (initial configuration + infrastructure) ====="
-  echo ""
+  print_storage_engine_banner
   check_orbstack_context
+  install_metrics_server
   install_knative_serving
   install_kourier
   install_keda
@@ -758,6 +919,10 @@ print_summary() {
   echo "  DNS domain:    127.0.0.1.sslip.io"
   echo "  Environments:  ${ENVIRONMENTS[*]}"
   echo "  Group:         ${group_label}"
+  echo "  Storage engine: ${STORAGE_ENGINE}"
+  if is_mongo_storage_engine; then
+    echo "                  (hybrid with Temporal Postgres)"
+  fi
   echo ""
 
   if [[ "$SERVICE_GROUP" != "platform-services" ]]; then
@@ -786,7 +951,11 @@ print_summary() {
     echo "  API Gateway (dev): http://api-gateway.platform-services-dev.127.0.0.1.sslip.io"
     echo ""
     echo "  Port-forwarding (run in a separate terminal):"
-    echo "    ./port-forward.sh ${ENVIRONMENTS[0]}"
+    if is_mongo_storage_engine; then
+      echo "    STORAGE_ENGINE=mongo ./port-forward.sh ${ENVIRONMENTS[0]}"
+    else
+      echo "    ./port-forward.sh ${ENVIRONMENTS[0]}"
+    fi
     echo ""
   fi
 }
@@ -801,6 +970,8 @@ main() {
   log "Event-Driven Architecture Bootstrap — OrbStack"
   log "Environments: ${ENVIRONMENTS[*]}"
   log "Group:        ${SERVICE_GROUP:-all}"
+  log "Storage:      ${STORAGE_ENGINE}"
+  print_storage_engine_banner
   echo ""
 
   check_deps

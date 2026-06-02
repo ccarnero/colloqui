@@ -16,6 +16,15 @@ function positiveIntEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseBoolEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const lowered = raw.trim().toLowerCase();
+  if (lowered === "true" || lowered === "1" || lowered === "yes") return true;
+  if (lowered === "false" || lowered === "0" || lowered === "no") return false;
+  return fallback;
+}
+
 /**
  * Centralized gateway configuration derived from environment variables.
  * Eliminates scattered process.env reads across proxy services.
@@ -103,5 +112,16 @@ export const gatewayConfig = {
   webhook: {
     publishTimeoutMs: positiveIntEnv("WEBHOOK_PUBLISH_TIMEOUT_MS", 10_000),
     publishInflightCap: positiveIntEnv("WEBHOOK_PUBLISH_INFLIGHT_CAP", 200),
+  },
+
+  /** JetStream gateway audit events (global interceptor). */
+  audit: {
+    get enabled(): boolean {
+      return parseBoolEnv("GATEWAY_AUDIT_ENABLED", true);
+    },
+    /** Skips audit publish on webhook ingress (reduces NATS load during stress). */
+    get skipWebhookPaths(): boolean {
+      return parseBoolEnv("GATEWAY_AUDIT_SKIP_WEBHOOKS", false);
+    },
   },
 } as const;

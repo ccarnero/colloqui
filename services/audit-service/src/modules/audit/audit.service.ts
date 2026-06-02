@@ -4,11 +4,6 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import type {
-  JetStreamClient,
-  JetStreamManager,
-  JsMsg,
-} from "nats";
 import { context as otelContext } from "@opentelemetry/api";
 import {
   PinoLoggerService,
@@ -26,9 +21,18 @@ import {
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
 } from "../../providers/nats.provider";
+import type {
+  JetStreamClient,
+  JetStreamManager,
+  JsMsg,
+} from "nats";
 import type { EventEnvelope } from "@yoizen/shared";
 import type { IAuditQueryParams } from "../../common/audit-query-params";
-import { AuditRepository, type IAuditEvent } from "./audit.repository";
+import {
+  AUDIT_REPOSITORY,
+  type IAuditEvent,
+  type IAuditRepository,
+} from "./audit.repository.interface";
 
 export type { IAuditEvent };
 
@@ -42,7 +46,7 @@ export type { IAuditEvent };
 const CANONICAL_AUDIT_PATTERN = "evt.*.*.platform.>";
 const DURABLE_NAME = "audit-events";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
-/** Audit writes are I/O-bound Postgres inserts — parallel is safe + faster. */
+/** Audit writes are I/O-bound Mongo inserts — parallel is safe + faster. */
 const HANDLER_CONCURRENCY = 16;
 
 @Injectable()
@@ -53,7 +57,8 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
-    private readonly auditRepository: AuditRepository,
+    @Inject(AUDIT_REPOSITORY)
+    private readonly auditRepository: IAuditRepository,
   ) {}
 
   async onModuleInit(): Promise<void> {

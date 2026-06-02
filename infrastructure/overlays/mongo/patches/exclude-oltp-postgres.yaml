@@ -1,0 +1,56 @@
+# Strip non-temporal Postgres when `--storage-engine=mongo` is active.
+# Temporal CNPG clusters (`postgres-temporal*`) and their credentials in
+# `postgres/secret.yaml` are kept — Temporal Server still uses Postgres.
+$patch: delete
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+---
+$patch: delete
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+---
+$patch: delete
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+---
+$patch: delete
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+---
+$patch: delete
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-shared
+---
+$patch: delete
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-usage-shared
+---
+$patch: delete
+apiVersion: postgresql.cnpg.io/v1
+kind: ImageCatalog
+metadata:
+  name: timescaledb-ha
+---
+$patch: delete
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: postgres-shared-pooler
+---
+$patch: delete
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: postgres-usage-shared-pooler

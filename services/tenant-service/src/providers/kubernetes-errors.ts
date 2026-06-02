@@ -54,3 +54,35 @@ export function isKubernetesConflictError(error: unknown): boolean {
     apiError.message.includes("AlreadyExists")
   );
 }
+
+/**
+ * Detects 404/NotFound API failures across the Kubernetes client shapes.
+ * Used by the namespace recreation flow to know when a terminating namespace
+ * has finished tearing down.
+ */
+export function isKubernetesNotFoundError(error: unknown): boolean {
+  const apiError = asApiErrorShape(error);
+  if (
+    isCode(apiError.code, 404) ||
+    isCode(apiError.statusCode, 404) ||
+    isCode(apiError.response?.statusCode, 404) ||
+    isCode(apiError.body?.code, 404) ||
+    isCode(apiError.response?.body?.code, 404)
+  ) {
+    return true;
+  }
+
+  if (
+    apiError.body?.reason === "NotFound" ||
+    apiError.response?.body?.reason === "NotFound"
+  ) {
+    return true;
+  }
+
+  if (typeof apiError.message !== "string") return false;
+  return (
+    apiError.message.includes("HTTP-Code: 404") ||
+    apiError.message.includes('"code":404') ||
+    apiError.message.includes("NotFound")
+  );
+}

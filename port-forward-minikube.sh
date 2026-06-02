@@ -2,6 +2,7 @@
 set -euo pipefail
 
 MINIKUBE_PROFILE="yoizen-arch"
+STORAGE_ENGINE="${STORAGE_ENGINE:-postgres}"
 ENVIRONMENT="${1:-dev}"
 NAMESPACE="platform-services-${ENVIRONMENT}"
 SUPPORT_NAMESPACE="support-services-${ENVIRONMENT}"
@@ -64,6 +65,9 @@ usage() {
     "  API_GATEWAY_PORT          Local port for api-gateway       (default: 8080)" \
     "  ADMIN_CONSOLE_PORT        Local port for admin-console     (default: 4200)" \
     "  NATS_PORT                 Local port for NATS client       (default: 4222)" \
+    "  STORAGE_ENGINE            postgres (default) or mongo" \
+    "  MONGO_PLATFORM_PORT       Local port for mongo-platform    (default: 27017)" \
+    "  MONGO_USAGE_PORT          Local port for mongo-usage       (default: 27018)" \
     "" \
     "Examples:" \
     "  $0              # Forward services in platform-services-dev + NATS" \
@@ -177,6 +181,16 @@ main() {
         "${SUPPORT_LOCAL_PORTS[$svc]}" \
         "${SUPPORT_CONTAINER_PORTS[$svc]}" || true
     done
+    if [[ "$STORAGE_ENGINE" == "mongo" ]]; then
+      start_support_forward \
+        mongo-platform \
+        "${MONGO_PLATFORM_PORT:-27017}" \
+        27017 || true
+      start_support_forward \
+        mongo-usage \
+        "${MONGO_USAGE_PORT:-27018}" \
+        27017 || true
+    fi
   else
     warn "Namespace '${SUPPORT_NAMESPACE}' not found — skipping support-services forwards (NATS, etc.)"
   fi
@@ -199,6 +213,10 @@ main() {
     local lp="${SUPPORT_LOCAL_PORTS[$svc]}"
     echo "  ${svc}:         localhost:${lp}  (${SUPPORT_NAMESPACE})"
   done
+  if [[ "$STORAGE_ENGINE" == "mongo" ]]; then
+    echo "  mongo-platform: localhost:${MONGO_PLATFORM_PORT:-27017}  (${SUPPORT_NAMESPACE})"
+    echo "  mongo-usage:    localhost:${MONGO_USAGE_PORT:-27018}  (${SUPPORT_NAMESPACE})"
+  fi
   echo ""
   log "Press Ctrl+C to stop all port-forwards."
   echo ""

@@ -3,6 +3,7 @@ import {
   Injectable,
   OnModuleInit,
   OnModuleDestroy,
+  Optional,
 } from "@nestjs/common";
 import type {
   JetStreamClient,
@@ -30,14 +31,20 @@ import {
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
 } from "../../providers/nats.provider";
-import { POSTGRES_SQL } from "../../providers/postgres.provider";
+import type { MongoClient, Sql } from "@yoizen/database";
 import {
   MultiTenantConsumerManager,
   type IMultiTenantConsumerConfig,
 } from "@yoizen/database";
-import type { Sql } from "@yoizen/database";
+import { channelServiceConfig } from "../../config";
+import { MONGO_CLIENT } from "../../providers/mongo.provider";
+import { POSTGRES_SQL } from "../../providers/postgres.provider";
+import { platformDb } from "../../providers/platform-db";
 import { EgressService } from "../egress/egress.service";
-import { AutoReplyRepository } from "./auto-reply.repository";
+import {
+  AUTO_REPLY_REPOSITORY,
+  type IAutoReplyRepository,
+} from "./auto-reply.repository.interface";
 import { matchAutoReplyPattern } from "./auto-reply.pattern";
 
 const DURABLE_NAME = "auto-reply";
@@ -63,9 +70,11 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(JETSTREAM_PUBLISHER) private readonly js: JetStreamClient,
-    @Inject(POSTGRES_SQL) private readonly platformSql: Sql,
-    private readonly autoReplyRepository: AutoReplyRepository,
+    @Inject(AUTO_REPLY_REPOSITORY)
+    private readonly autoReplyRepository: IAutoReplyRepository,
     private readonly egress: EgressService,
+    @Optional() @Inject(MONGO_CLIENT) private readonly platformMongo?: MongoClient,
+    @Optional() @Inject(POSTGRES_SQL) private readonly platformSql?: Sql,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -203,13 +212,7 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async refreshRulesCache(): Promise<void> {
-    // `name` is the K8s-namespace slug (e.g. "acme") used by
-    // `TenantConnectionManager` to build `postgres.<slug>-<env>-ns...`.
-    // It's also the value carried in `envelope.tenant`, so the cache
-    // keys built below match what `handleMessage` looks up at runtime.
-    const tenantRows = await this.platformSql<{ name: string }[]>`
-      SELECT name FROM tenants ORDER BY name
-    `;
+    const tenantRows = await this.listTenantNames();
 
     this.rulesCache.clear();
 
@@ -308,5 +311,20 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
     }
 
     return result.count > 0;
+  }
+
+  private async listTenantNames(): Promise<Array<{ name: string }>> {
+    if (channelServiceConfig.dbEngine === "mongo") {
+      if (!this.platformMongo) return [];
+      return platformDb(this.platformMongo)
+        .collection<{ name: string }>("tenants")
+        .find({}, { projection: { name: 1, _id: 0 } })
+        .sort({ name: 1 })
+        .toArray();
+    }
+    if (!this.platformSql) return [];
+    return this.platformSql<Array<{ name: string }>>`
+      SELECT name FROM tenants ORDER BY name
+    `;
   }
 }

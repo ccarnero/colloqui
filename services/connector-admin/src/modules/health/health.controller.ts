@@ -1,10 +1,14 @@
-import { Controller, Get, HttpCode, Inject, Res } from "@nestjs/common";
+import { Inject, Controller, Get, HttpCode, Res } from "@nestjs/common";
 import type { FastifyReply } from "fastify";
 import type { NatsConnection } from "nats";
 import {
   NATS_CONNECTION,
+  getNatsTenantMongoHealthStatus,
   getNatsTenantPostgresHealthStatus,
+  type TenantConnectionManager,
+  type TenantMongoConnectionManager,
 } from "@yoizen/database";
+import { connectorAdminConfig } from "../../config";
 import { AdapterTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import {
   HealthService,
@@ -12,29 +16,14 @@ import {
   type ServiceModeName,
 } from "./health.service";
 
-/**
- * Mode-aware health endpoints for `adapter-service`.
- *
- *   `GET /healthz` (REQ-AST-003 liveness): always 200 while the
- *     process is up. NEVER probes dependencies — kubelet must NOT
- *     restart the pod for transient broker/DB outages.
- *
- *   `GET /readyz` (REQ-AST-003/004/005 readiness): mode-aware gates,
- *     and 503 once SIGTERM is received so kubelet drains traffic.
- *
- *   `GET /health` (legacy, unchanged): aggregate NATS+per-tenant
- *     Postgres status, kept here for backwards-compat with the
- *     pre-Phase-5 manifest still probing `/health`. Phase 5 retires
- *     this path in favour of `/healthz` / `/readyz`.
- *
- * The controller is a thin adapter on top of {@link HealthService} so
- * the gating logic stays unit-testable without a Fastify reply.
- */
 @Controller()
 export class HealthController {
   constructor(
     @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
-    private readonly tenantConnections: AdapterTenantConnectionManager,
+    @Inject(AdapterTenantConnectionManager)
+    private readonly tenantConnections:
+      | TenantConnectionManager
+      | TenantMongoConnectionManager,
     private readonly health: HealthService,
   ) {}
 
@@ -63,19 +52,20 @@ export class HealthController {
     };
   }
 
-  /**
-   * Legacy aggregate health endpoint. Kept for the pre-Phase-5
-   * Knative manifest still probing `/health`. Returns the same
-   * shape every other NATS+per-tenant-Postgres service exposes via
-   * `getNatsTenantPostgresHealthStatus`. Phase 5 will switch the
-   * probes to `/healthz` / `/readyz` and this can be deleted.
-   */
   @Get("health")
   async check(): Promise<{
     status: "ok" | "degraded";
     nats: boolean;
-    postgres: boolean;
+    mongo?: boolean;
+    postgres?: boolean;
   }> {
+    if (connectorAdminConfig.dbEngine === "mongo") {
+      return getNatsTenantMongoHealthStatus({
+        nc: this.nc,
+        tenantConnections: this.tenantConnections,
+      });
+    }
+
     return getNatsTenantPostgresHealthStatus({
       nc: this.nc,
       tenantConnections: this.tenantConnections,

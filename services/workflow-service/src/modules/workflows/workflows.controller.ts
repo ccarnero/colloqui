@@ -6,12 +6,14 @@ import {
   Delete,
   Param,
   Body,
+  Req,
   HttpCode,
   HttpStatus,
   UseGuards,
   Query,
 } from "@nestjs/common";
 import { TenantGuard, TenantId } from "@yoizen/database";
+import type { FastifyRequest } from "fastify";
 import { CreateWorkflowDto } from "./dto/create-workflow.dto";
 import { UpdateWorkflowDto } from "./dto/update-workflow.dto";
 import { ExecuteWorkflowDto } from "./dto/execute-workflow.dto";
@@ -86,8 +88,10 @@ export class WorkflowsController {
     @TenantId() tenantId: string,
     @Param("id") id: string,
     @Body() dto: ExecuteWorkflowDto,
+    @Req() req: FastifyRequest,
   ) {
-    return this.workflowsService.executeWorkflow(id, tenantId, dto.request);
+    const requestId = (req.headers["x-request-id"] as string | undefined) ?? null;
+    return this.workflowsService.executeWorkflow(id, tenantId, dto.request, { requestId });
   }
 
   @Get(":id/executions")

@@ -26,11 +26,12 @@ const E2E_TENANT_TIER: TenantTier = readTier();
 
 /**
  * Per-tier provisioning budgets (ms).
- *  • `shared` — tenant-service only runs INIT_SQL against the shared
- *    CNPG cluster + creates a per-tenant role/database. ~5-15s.
- *  • `dedicated` — provisions a fresh CNPG `Cluster` (3 instances) +
- *    `Pooler` + bootstrap. End-to-end takes ~120-180s on minikube,
- *    longer on cold image-pull. 300s leaves comfortable margin.
+ *  • `shared` — tenant-service runs INIT script against the shared Mongo
+ *    cluster (or legacy CNPG cluster) + creates a per-tenant role/database.
+ *    ~5-15s on Mongo, similar on shared CNPG.
+ *  • `dedicated` — provisions a fresh per-tenant `mongo` StatefulSet (Mongo)
+ *    or CNPG `Cluster` + Pooler (legacy Postgres). End-to-end takes
+ *    ~120-180s on minikube, longer on cold image-pull. 300s leaves margin.
  */
 const PROVISION_TIMEOUT_MS_BY_TIER: Record<TenantTier, number> = {
   shared: 180_000,
@@ -163,12 +164,16 @@ async function deleteFailedTenant(token: string): Promise<void> {
 }
 
 /**
- * Provisions the E2E tenant if it doesn't exist and waits until BOTH its
- * per-tenant `postgres` and `postgres-usage` StatefulSets are Ready.
+ * Provisions the E2E tenant if it doesn't exist and waits until its
+ * per-tenant database backend is ready.
  *
- * `tenant-service` flips `provisioningStatus` to `'ready'` only after
- * `TenantProvisioningExecutor.run()` awaits `waitForReady` for both DBs,
- * so polling that single field covers both backends in O(1) per poll.
+ * With `--storage-engine=mongo`, `tenant-service` provisions a single
+ * `mongo` StatefulSet per dedicated tenant (platform + usage DBs) and
+ * flips `provisioningStatus` to `'ready'` only after `waitForReady`.
+ * Legacy Postgres waited for both `postgres` and `postgres-usage`.
+ *
+ * Polling `provisioningStatus === 'ready'` covers either engine in O(1)
+ * per poll.
  *
  * Uses GET-then-POST as an idempotent check before creation. If the
  * existing tenant has a different tier than the requested one, it is

@@ -3,5 +3,9 @@ kind: Kustomization
 
 namespace: support-services-dev
 
+# Default: full Postgres OLTP stack via local-base.
+# Mongo hybrid (platform/usage in Mongo, Temporal on Postgres):
+#   ./bootstrap-minikube.sh --storage-engine=mongo dev support-services
+# applies ../mongo-dev instead of this overlay.
 resources:
   - ../local-base

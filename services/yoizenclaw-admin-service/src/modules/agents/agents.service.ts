@@ -1,18 +1,19 @@
 import {
+  Inject,
   BadRequestException,
   Injectable,
   NotFoundException,
   Optional,
-  Inject,
 } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 import {
-  AgentsRepository,
+  AGENTS_REPOSITORY,
   type IAgent,
+  type IAgentsRepository,
   type ICreateAgentData,
-  type IFindAllOptions,
+  type IFindAllAgentsOptions,
   type IUpdateAgentData,
-} from "./agents.repository";
+} from "./agents.repository.interface";
 import { NatsPublisher } from "../../providers/nats.provider";
 import type {
   MemoryProposalActionResponseDto,
@@ -27,7 +28,8 @@ export class AgentsService {
   private readonly logger = new PinoLoggerService(AgentsService.name);
 
   constructor(
-    private readonly repository: AgentsRepository,
+    @Inject(AGENTS_REPOSITORY)
+    private readonly repository: IAgentsRepository,
     private readonly natsPublisher: NatsPublisher,
     private readonly runtimeService: AgentsRuntimeService,
     @Optional() private readonly adaptersService?: AdaptersService,
@@ -35,7 +37,7 @@ export class AgentsService {
 
   async findAll(
     tenantId: string,
-    options: IFindAllOptions = {},
+    options: IFindAllAgentsOptions = {},
   ): Promise<{ agents: IAgent[]; total: number }> {
     return this.repository.findAll(tenantId, options);
   }

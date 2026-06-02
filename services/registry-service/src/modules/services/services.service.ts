@@ -5,6 +5,8 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
+import type { IServicesRepository } from "./services.repository.interface";
+import { SERVICES_REPOSITORY } from "./services.repository.interface";
 import { PinoLoggerService } from "@yoizen/observability";
 import type * as k8s from "@kubernetes/client-node";
 import { K8S_CUSTOM_OBJECTS_API } from "../../providers/kubernetes.provider";
@@ -25,7 +27,6 @@ import {
   VALID_ENVIRONMENTS,
 } from "./services.dto";
 import { registryServiceConfig } from "../../config";
-import { ServicesRepository } from "./services.repository";
 import { k8sApiErrorMessage, isK8sNotFound } from "../../utils/k8s-error";
 import {
   buildKnativeServiceBody,
@@ -83,7 +84,8 @@ export class ServicesService {
   constructor(
     @Inject(K8S_CUSTOM_OBJECTS_API)
     private readonly customApi: k8s.CustomObjectsApi,
-    private readonly servicesRepository: ServicesRepository,
+    @Inject(SERVICES_REPOSITORY)
+    private readonly servicesRepository: IServicesRepository,
     private readonly eventsPublisher: ServiceEventsPublisher,
   ) {
     const env = registryServiceConfig.platformEnvironment;

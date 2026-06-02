@@ -119,21 +119,31 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
-            - name: POSTGRES_USER
+            - name: STORAGE_ENGINE
+              value: "mongo"
+            - name: MONGO_USER
               value: "yoizen"
-            - name: POSTGRES_PASSWORD
+            - name: MONGO_PASSWORD
               value: "yoizen-dev-password"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_PORT
+              value: "27017"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
-            - name: POSTGRES_HOST
-              value: "postgres.support-services-dev.svc.cluster.local"
-            - name: POSTGRES_DB
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_DB
               value: "yoizen"
-            - name: TENANT_POSTGRES_TIER_OVERRIDES
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_TIER_OVERRIDES
               value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
@@ -159,8 +169,9 @@ spec:
             httpGet:
               path: /readyz
               port: 3000
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 6
 ---
 
 apiVersion: apps/v1
@@ -172,19 +183,31 @@ spec:
     spec:
       containers:
         - name: user-container
-          # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD come from the
-          # `postgres-credentials` Secret declared in base. We deliberately
+          # MONGO_DB / MONGO_USER / MONGO_PASSWORD come from the
+          # `mongo-credentials` Secret declared in base. We deliberately
           # do NOT redeclare them here: kustomize strategic-merge on a core
           # Deployment merges env entries field-by-field by `name`, leaving
           # both `value` AND `valueFrom` set, which kube-apiserver rejects.
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
-            - name: TENANT_POSTGRES_TIER_OVERRIDES
+            - name: TENANT_MONGO_TIER_OVERRIDES
               value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
@@ -248,8 +271,9 @@ spec:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 3
+            initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 6
 ---
 
 apiVersion: serving.knative.dev/v1
@@ -266,22 +290,41 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
-            - name: POSTGRES_HOST
-              value: "postgres.support-services-dev.svc.cluster.local"
-            - name: POSTGRES_USER
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USER
               value: "yoizen"
-            - name: POSTGRES_PASSWORD
+            - name: MONGO_PASSWORD
               value: "yoizen-dev-password"
-            - name: POSTGRES_DB
+            - name: MONGO_DB
               value: "yoizen"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_PORT
+              value: "27017"
+            # tenant-service provisions per-tenant logical DBs + roles on the
+            # shared cluster via `db.admin.command({createUser})`, so it needs
+            # root credentials on the same cluster used for platform data. In
+            # dev/local we collapse "platform" and "shared-tier" onto the
+            # single `mongo-platform` StatefulSet.
+            - name: MONGO_ROOT_USER
+              value: "admin"
+            - name: MONGO_ROOT_PASSWORD
+              value: "admin-dev-password"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
-            - name: TENANT_POSTGRES_IMAGE
-              value: "pgvector/pgvector:pg17"
+            - name: TENANT_MONGO_IMAGE
+              value: "mongo:7.0"
             - name: NODE_EXTRA_CA_CERTS
               value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -325,25 +368,18 @@ spec:
               protocol: TCP
           env:
             # Used only for `platform.tenant.deleted` fan-out so the
-            # per-tenant Postgres pool cache evicts a destroyed tenant
+            # per-tenant Mongo pool cache evicts a destroyed tenant
             # without waiting for the verifyConnectivity self-heal.
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
-            - name: POSTGRES_DB
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_DB
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_PASSWORD
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: MONGO_USER
+              value: "yoizen"
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -379,10 +415,18 @@ spec:
                 secretKeyRef:
                   name: auth-secret
                   key: TENANT_ADMIN_DISPLAY_NAME
-            - name: POSTGRES_HOST
-              value: "postgres.support-services-dev.svc.cluster.local"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
             - name: REDIS_HOST
               value: "redis.support-services-dev.svc.cluster.local"
             - name: REDIS_PORT
@@ -431,20 +475,22 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
             - name: REGISTRY_EMIT_ADAPTER_SYNC
               value: "true"
-            - name: POSTGRES_HOST
-              value: "postgres.support-services-dev.svc.cluster.local"
-            - name: POSTGRES_USER
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USER
               value: "yoizen"
-            - name: POSTGRES_PASSWORD
+            - name: MONGO_PASSWORD
               value: "yoizen-dev-password"
-            - name: POSTGRES_DB
+            - name: MONGO_DB
               value: "yoizen"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_PORT
+              value: "27017"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
             - name: TENANT_SERVICE_URL
@@ -493,23 +539,35 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: ENTRYPOINT
               value: "dist/main.js"
             - name: TEMPORAL_ADDRESS
               value: "temporal.support-services-dev.svc.cluster.local:7233"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
-            - name: POSTGRES_USER
+            - name: MONGO_USER
               value: "yoizen"
-            - name: POSTGRES_PASSWORD
+            - name: MONGO_PASSWORD
               value: "yoizen-dev-password"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
-            - name: POSTGRES_HOST
-              value: "postgres.support-services-dev.svc.cluster.local"
-            - name: POSTGRES_DB
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_DB
               value: "yoizen"
-            - name: TENANT_POSTGRES_TIER_OVERRIDES
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_TIER_OVERRIDES
               value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
@@ -555,19 +613,35 @@ spec:
       containers:
         - name: user-container
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: ENTRYPOINT
               value: "dist/main.js"
             - name: TEMPORAL_ADDRESS
               value: "temporal.support-services-dev.svc.cluster.local:7233"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
-            - name: POSTGRES_USER
+            - name: MONGO_USER
               value: "yoizen"
-            - name: POSTGRES_PASSWORD
+            - name: MONGO_PASSWORD
+              value: "yoizen-dev-password"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
               value: "yoizen-dev-password"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
-            - name: TENANT_POSTGRES_TIER_OVERRIDES
+            - name: TENANT_MONGO_TIER_OVERRIDES
               value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
@@ -715,8 +789,9 @@ spec:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 3
+            initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 6
 ---
 
 # ----- adapter-service: split api ↔ worker (Phase 1.5) -----
@@ -769,21 +844,31 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
-            - name: POSTGRES_HOST
-              value: "postgres.support-services-dev.svc.cluster.local"
-            - name: POSTGRES_USER
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USER
               value: "yoizen"
-            - name: POSTGRES_PASSWORD
+            - name: MONGO_PASSWORD
               value: "yoizen-dev-password"
-            - name: POSTGRES_DB
+            - name: MONGO_DB
               value: "yoizen"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
-            - name: TENANT_POSTGRES_TIER_OVERRIDES
+            - name: TENANT_MONGO_TIER_OVERRIDES
               value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
@@ -845,19 +930,29 @@ spec:
     spec:
       containers:
         - name: user-container
-          # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD come from the
-          # `postgres-credentials` Secret declared in base — see the comment
+          # MONGO_DB / MONGO_USER / MONGO_PASSWORD come from the
+          # `mongo-credentials` Secret declared in base — see the comment
           # on audit-service-worker above for the full kustomize rationale.
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
-            - name: POSTGRES_HOST
-              value: "postgres.support-services-dev.svc.cluster.local"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
-            - name: TENANT_POSTGRES_TIER_OVERRIDES
+            - name: TENANT_MONGO_TIER_OVERRIDES
               value: '{}'
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
@@ -882,6 +977,8 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
             - name: REDIS_HOST
@@ -890,16 +987,36 @@ spec:
               value: "6379"
             - name: REDIS_CLUSTER_MODE
               value: "true"
-            - name: POSTGRES_HOST
-              value: "postgres.support-services-dev.svc.cluster.local"
-            - name: POSTGRES_DB
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: MONGO_DB
               value: "yoizen"
-            - name: POSTGRES_USER
+            - name: MONGO_USER
               value: "yoizen"
-            - name: POSTGRES_PASSWORD
+            - name: MONGO_PASSWORD
               value: "yoizen-dev-password"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_USAGE_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USAGE_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_USAGE_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_DB
+              value: "yoizen_usage"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -937,10 +1054,12 @@ spec:
     spec:
       containers:
         - name: user-container
-          # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD come from the
-          # `postgres-credentials` Secret declared in base — see the comment
+          # MONGO_DB / MONGO_USER / MONGO_PASSWORD come from the
+          # `mongo-credentials` Secret declared in base — see the comment
           # on audit-service-worker above for the full kustomize rationale.
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
             - name: REDIS_HOST
@@ -949,10 +1068,30 @@ spec:
               value: "6379"
             - name: REDIS_CLUSTER_MODE
               value: "true"
-            - name: POSTGRES_HOST
-              value: "postgres.support-services-dev.svc.cluster.local"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_USAGE_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USAGE_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_USAGE_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_DB
+              value: "yoizen_usage"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -987,14 +1126,28 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
-            - name: POSTGRES_USER
+            - name: MONGO_USER
               value: "yoizen"
-            - name: POSTGRES_PASSWORD
+            - name: MONGO_PASSWORD
               value: "yoizen-dev-password"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -1042,16 +1195,42 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
             - name: TENANT_SERVICE_URL
               value: "http://tenant-service.platform-services-dev.svc.cluster.local"
-            - name: POSTGRES_USER
+            - name: MONGO_USER
               value: "yoizen"
-            - name: POSTGRES_PASSWORD
+            - name: MONGO_PASSWORD
               value: "yoizen-dev-password"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_USAGE_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USAGE_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_USAGE_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_DB
+              value: "yoizen_usage"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -1078,8 +1257,9 @@ spec:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 6
 ---
 
 apiVersion: apps/v1
@@ -1092,16 +1272,42 @@ spec:
       containers:
         - name: user-container
           env:
+            - name: STORAGE_ENGINE
+              value: "mongo"
             - name: NATS_URL
               value: "nats://nats.support-services-dev.svc.cluster.local:4222"
             - name: TENANT_SERVICE_URL
               value: "http://tenant-service.platform-services-dev.svc.cluster.local"
-            - name: POSTGRES_USER
+            - name: MONGO_USER
               value: "yoizen"
-            - name: POSTGRES_PASSWORD
+            - name: MONGO_PASSWORD
               value: "yoizen-dev-password"
-            - name: POSTGRES_PORT
-              value: "5432"
+            - name: MONGO_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: MONGO_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: MONGO_PORT
+              value: "27017"
+            - name: MONGO_DB
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_HOST
+              value: "mongo-platform.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_HOST
+              value: "mongo-usage.support-services-dev.svc.cluster.local"
+            - name: TENANT_MONGO_SHARED_USAGE_PORT
+              value: "27017"
+            - name: TENANT_MONGO_SHARED_USAGE_USER
+              value: "yoizen"
+            - name: TENANT_MONGO_SHARED_USAGE_PASSWORD
+              value: "yoizen-dev-password"
+            - name: TENANT_MONGO_SHARED_USAGE_DB
+              value: "yoizen_usage"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

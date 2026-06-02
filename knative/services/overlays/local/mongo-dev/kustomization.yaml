@@ -1,0 +1,127 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Local dev overlay (minikube / orbstack). Same scale-to-zero policy
+# as cloud/dev so devs see the production-like cold-start behavior
+# locally before changes ship. `api-gateway` stays warm so the inner
+# loop (save → reload) is not blocked by KPA pre-warm.
+
+namespace: platform-services-dev
+
+resources:
+  - ../../../base
+  # mongo-credentials Secret lives here (not in base) so it only exists
+  # when the cluster is bootstrapped with storage-engine = mongo. The
+  # postgres overlays never pull it in.
+  - mongo-credentials.yaml
+
+components:
+  - ../../_components/scale-to-zero-non-prod
+
+patches:
+  - path: env-patches.yaml
+
+  # Stress-profile floor for workflow workers — overrides the
+  # scale-to-zero component above for the three Temporal-driven
+  # workers only. NATS-driven `*-worker` deployments keep their
+  # scale-to-zero behavior (the component already set them to 0).
+  #
+  # The patches below use JSON 6902 (RFC 6902) ops instead of
+  # strategic-merge so they can REMOVE `idleReplicaCount`. Removing
+  # the field — rather than setting `idleReplicaCount < min` — is the
+  # only way to avoid an HPA-vs-KEDA flap loop. With both fields set,
+  # KEDA scales the deployment to `idleReplicaCount` whenever ALL
+  # triggers report inactive, but HPA's `minReplicas` mirrors
+  # `minReplicaCount` and immediately bumps the deployment back up,
+  # creating a 15 s churn cycle (see KEDAScaleTargetDeactivated +
+  # SuccessfulRescale events). Without `idleReplicaCount`, KEDA uses
+  # `minReplicaCount` as the absolute floor regardless of trigger
+  # state — exactly the "always warm" behavior we want for the
+  # stress profile.
+  #
+  # Cold-start cost for each Temporal-driven worker is dominated by:
+  #   - Bun process spawn + module load: ~2-3 s
+  #   - `NativeConnection.connect` + `Worker.create`: ~2-4 s
+  #   - Readiness probe initialDelay + 1 period: ~5-10 s
+  #   - Total: ~10-15 s
+  # At spike phases of the stress test the load goes from steady to
+  # 4-5× in < 30 s; cold-starting from 0 during that window costs
+  # 2-3 stage timeouts (workflow-task schedule_to_start blows past
+  # the 2 s p95 target). The warm floor pre-empts that.
+  #
+  # Warm floor per worker:
+  #   connector-runtime     5 pods × ~75m  = 375m
+  #   workflow-worker          3 pods × ~100m = 300m
+  #   workflow-service-worker  2 pods × ~100m = 200m
+  #   Total floor              ~875m (~7 % of 12-CPU minikube)
+  - target:
+      kind: ScaledObject
+      name: connector-runtime-scaler
+    patch: |-
+      - op: remove
+        path: /spec/idleReplicaCount
+      - op: replace
+        path: /spec/minReplicaCount
+        value: 5
+  - target:
+      kind: ScaledObject
+      name: workflow-worker-scaler
+    patch: |-
+      - op: remove
+        path: /spec/idleReplicaCount
+      - op: replace
+        path: /spec/minReplicaCount
+        value: 3
+  - target:
+      kind: ScaledObject
+      name: workflow-service-worker-scaler
+    patch: |-
+      - op: remove
+        path: /spec/idleReplicaCount
+      - op: replace
+        path: /spec/minReplicaCount
+        value: 2
+      - op: replace
+        path: /spec/maxReplicaCount
+        value: 8
+  - target:
+      kind: ScaledObject
+      name: channel-service-worker-scaler
+    patch: |-
+      - op: remove
+        path: /spec/idleReplicaCount
+      - op: replace
+        path: /spec/minReplicaCount
+        value: 2
+      - op: replace
+        path: /spec/maxReplicaCount
+        value: 8
+  # Stress profile: api-gateway scales on RPS (not concurrency) so 200 RPS
+  # does not sit on a single pod. Conservative max-scale=5 fits 12-CPU minikube.
+  - target:
+      kind: Service
+      name: api-gateway
+    patch: |-
+      - op: replace
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1target
+        value: "150"
+      - op: replace
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1min-scale
+        value: "2"
+      - op: replace
+        path: /spec/template/metadata/annotations/autoscaling.knative.dev~1max-scale
+        value: "5"
+  # workflow-worker: conservative ceiling for 12-CPU minikube; scale earlier.
+  - target:
+      kind: ScaledObject
+      name: workflow-worker-scaler
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicaCount
+        value: 14
+      - op: replace
+        path: /spec/triggers/0/metadata/threshold
+        value: "35"
+      - op: replace
+        path: /spec/triggers/1/metadata/threshold
+        value: "45"

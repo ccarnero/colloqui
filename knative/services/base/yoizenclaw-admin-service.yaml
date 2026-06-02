@@ -26,13 +26,25 @@ spec:
           env:
             - name: NATS_URL
               value: "nats://nats:4222"
+            # MONGO_* credentials are injected by the active mongo overlay
+            # (local/mongo-dev); the base stays free of mongo credentials.
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
             - name: POSTGRES_USER
-              value: "yoizen"
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: postgres-credentials
-                  key: password
+                  key: POSTGRES_PASSWORD
+            - name: MONGO_PORT
+              value: "27017"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
           securityContext:

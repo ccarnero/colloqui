@@ -221,10 +221,20 @@ rollout_deployments() {
 }
 
 # Knative Service in tenant namespace (kustomize), not platform-services-*
+yoizenclaw_runtime_overlay_path() {
+  local engine="${STORAGE_ENGINE:-postgres}"
+  if [[ "$engine" == "mongo" ]]; then
+    printf '%s/knative/tenant-yoizenclaw-runtime/overlays/acme-dev-mongo' "$SCRIPT_DIR"
+  else
+    printf '%s/knative/tenant-yoizenclaw-runtime/overlays/acme-dev' "$SCRIPT_DIR"
+  fi
+}
+
 rollout_yoizenclaw_runtime() {
   local env="$1"
   local ns="acme-dev-ns"
-  local overlay="${SCRIPT_DIR}/knative/tenant-yoizenclaw-runtime/overlays/acme-dev"
+  local overlay
+  overlay="$(yoizenclaw_runtime_overlay_path)"
   local timestamp
   timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 

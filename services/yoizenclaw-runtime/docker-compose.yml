@@ -1,16 +1,17 @@
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: yoizen-postgres
+  mongo:
+    image: mongo:7.0
+    container_name: yoizen-mongo
     environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: yoizenclaw
+      MONGO_INITDB_ROOT_USERNAME: yoizen
+      MONGO_INITDB_ROOT_PASSWORD: yoizen
+      MONGO_INITDB_DATABASE: yoizenclaw
     ports:
-      - "5432:5432"
+      - "27017:27017"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -30,7 +31,7 @@ services:
     container_name: yoizenclaw-app
     working_dir: /app
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/yoizenclaw
+      MONGO_URI: mongodb://yoizen:yoizen@mongo:27017/yoizenclaw?authSource=admin
       NATS_URL: nats://nats:4222
       TENANT_ID: test-tenant
       OPENAI_API_KEY: lm-studio
@@ -42,7 +43,7 @@ services:
     ports:
       - "8080:8000"
     depends_on:
-      postgres:
+      mongo:
         condition: service_healthy
       nats:
         condition: service_started
@@ -52,5 +53,5 @@ services:
     command: sh -c "pip install -e /packages/shared-python --break-system-packages 2>/dev/null || true && pip install -e /app --break-system-packages 2>/dev/null || true && sleep 10 && uvicorn src.api.routes:app --host 0.0.0.0 --port 8000 --log-level info"
 
 volumes:
-  postgres_data:
+  mongo_data:
   nats_data:

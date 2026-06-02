@@ -12,7 +12,7 @@ Architecture:
 - triggers.py             — JobTriggerManager (cron/interval/event trigger handling)
 - executor.py             — JobExecutor (action dispatch: LLM, webhook, code)
 - execution.py            — JobExecutionEngine (retry logic, NATS status reporting)
-- scheduler_leader.py     — PostgreSQL advisory lock for leader election
+- scheduler_leader.py     — Leader election factory (postgres advisory / mongo TTL)
 """
 
 from src.services.domain.entities import (

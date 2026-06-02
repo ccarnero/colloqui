@@ -1,9 +1,8 @@
 import type { ChannelEnvelope } from "@yoizen/shared";
 
 /**
- * Normalized row persisted to TimescaleDB `channel_events`. Pure
- * value type; no behavior. Column order mirrors the PostgreSQL
- * `UNNEST` call in {@link BatchInserter} for cache-friendly arrays.
+ * Normalized row parsed from a channel envelope. The Mongo time-series
+ * document is built in {@link insertBatch} with a `meta` subdocument.
  */
 export interface IChannelEventRow {
   readonly ts: Date;

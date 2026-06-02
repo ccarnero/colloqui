@@ -1,28 +1,33 @@
 import { describe, it, expect, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { TenantUsersRepository } from "../../src/modules/tenant-users/tenant-users.repository";
+import { createMockTenantDb } from "@yoizen/testing";
+import { TenantUsersMongoRepository } from "../../src/modules/tenant-users/tenant-users.mongo.repository";
 import { AuthTenantConnectionManager } from "../../src/providers/auth-tenant-connection-manager";
-import type { Sql } from "../../src/providers/postgres.provider";
 
-describe("TenantUsersRepository", () => {
+describe("TenantUsersMongoRepository", () => {
   it("insertUser uses options object", async () => {
-    let captured = "";
-    const mockSql = Object.assign(
-      (strings: TemplateStringsArray, ...values: unknown[]) => {
-        captured = strings.reduce(
-          (acc, s, i) => acc + s + String(values[i] ?? ""),
-          "",
-        );
-        return Promise.resolve([]);
-      },
-      {},
-    ) as unknown as Sql;
+    let capturedDoc: unknown;
+    const tenantDb = createMockTenantDb(
+      new Map([
+        [
+          "tenant_users",
+          (operation, args) => {
+            if (operation === "insertOne") {
+              capturedDoc = args[0];
+              return { acknowledged: true };
+            }
+            return null;
+          },
+        ],
+      ]),
+      mock,
+    );
 
-    const ensureSchema = mock(() => Promise.resolve(mockSql));
+    const ensureSchema = mock(() => Promise.resolve(tenantDb));
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        TenantUsersRepository,
+        TenantUsersMongoRepository,
         {
           provide: AuthTenantConnectionManager,
           useValue: { ensureSchema },
@@ -30,7 +35,7 @@ describe("TenantUsersRepository", () => {
       ],
     }).compile();
 
-    const repo = moduleRef.get(TenantUsersRepository);
+    const repo = moduleRef.get(TenantUsersMongoRepository);
     await repo.insertUser({
       id: "u1",
       tenantId: "t1",
@@ -41,7 +46,11 @@ describe("TenantUsersRepository", () => {
     });
 
     expect(ensureSchema).toHaveBeenCalledWith("t1");
-    expect(captured).toContain("INSERT INTO tenant_users");
-    expect(captured).toContain("e@x.com");
+    expect(capturedDoc).toMatchObject({
+      _id: "u1",
+      email: "e@x.com",
+      role_id: "r1",
+      display_name: "Name",
+    });
   });
 });

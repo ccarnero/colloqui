@@ -14,3 +14,4 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: redis
+      app.kubernetes.io/component: cache

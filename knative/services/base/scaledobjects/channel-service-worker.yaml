@@ -13,8 +13,8 @@ spec:
   pollingInterval: 15
   cooldownPeriod: 120
   idleReplicaCount: 0
-  minReplicaCount: 1
-  maxReplicaCount: 12
+  minReplicaCount: 2
+  maxReplicaCount: 5
   fallback:
     failureThreshold: 3
     replicas: 1

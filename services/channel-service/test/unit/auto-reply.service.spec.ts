@@ -1,12 +1,27 @@
+process.env.DB_ENGINE = "mongo";
+
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import type { JetStreamClient, JetStreamManager } from "nats";
-import { createMockPostgresSql } from "@yoizen/testing";
 import { AutoReplyService } from "../../src/modules/auto-reply/auto-reply.service";
 import type { EgressService } from "../../src/modules/egress/egress.service";
-import type { AutoReplyRepository } from "../../src/modules/auto-reply/auto-reply.repository";
+import type { IAutoReplyRepository } from "../../src/modules/auto-reply/auto-reply.repository.interface";
 
 const jsm = {} as unknown as JetStreamManager;
 const js = {} as unknown as JetStreamClient;
+
+function makePlatformMongo(tenants: Array<{ name: string }>) {
+  return {
+    db: mock(() => ({
+      collection: mock(() => ({
+        find: mock(() => ({
+          sort: mock(() => ({
+            toArray: mock(async () => tenants),
+          })),
+        })),
+      })),
+    })),
+  };
+}
 
 describe("AutoReplyService.handleMessage", () => {
   let service: AutoReplyService;
@@ -29,15 +44,17 @@ describe("AutoReplyService.handleMessage", () => {
     insertRule: mock(() => Promise.resolve()),
     listRulesForTenant: mock(() => Promise.resolve([])),
     deleteRule: mock(() => Promise.resolve({ count: 0 })),
-  } as unknown as AutoReplyRepository;
-
-  let platformSql: ReturnType<typeof createMockPostgresSql>;
+  } as unknown as IAutoReplyRepository;
 
   beforeEach(() => {
     send.mockClear();
-    platformSql = createMockPostgresSql(mock);
-    platformSql.mockResolvedValueOnce([{ name: "t1" }]);
-    service = new AutoReplyService(jsm, js, platformSql, repo, egress);
+    service = new AutoReplyService(
+      jsm,
+      js,
+      repo,
+      egress,
+      makePlatformMongo([{ name: "t1" }]),
+    );
   });
 
   it("sends reply when text matches trigger pattern", async () => {
@@ -81,8 +98,13 @@ describe("AutoReplyService.handleMessage", () => {
   });
 
   it("does not send when no rule matches", async () => {
-    platformSql.mockReset();
-    platformSql.mockResolvedValueOnce([{ name: "t1" }]);
+    service = new AutoReplyService(
+      jsm,
+      js,
+      repo,
+      egress,
+      makePlatformMongo([{ name: "t1" }]),
+    );
     await (
       service as unknown as {
         refreshRulesCache: () => Promise<void>;

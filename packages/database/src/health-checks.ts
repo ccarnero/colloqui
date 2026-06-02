@@ -1,5 +1,6 @@
 import type { Sql } from "./types";
 import type { NatsConnection } from "nats";
+import type { MongoClient } from "mongodb";
 import type * as k8s from "@kubernetes/client-node";
 
 /**
@@ -16,6 +17,18 @@ export interface RedisPinger {
 export async function checkPostgres(sql: Sql): Promise<boolean> {
   try {
     await sql`SELECT 1`;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks MongoDB connectivity via `{ ping: 1 }` on the admin database.
+ */
+export async function checkMongo(client: MongoClient): Promise<boolean> {
+  try {
+    await client.db("admin").command({ ping: 1 });
     return true;
   } catch {
     return false;

@@ -43,21 +43,9 @@ spec:
               value: "api"
             - name: OTEL_SERVICE_NAME
               value: "channel-service-api"
-            - name: POSTGRES_DB
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_DB
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_PASSWORD
+            # Storage-engine credentials (MONGO_* or POSTGRES_*) are injected
+            # by the active overlay (local/mongo-dev or local/postgres-dev),
+            # never here — the base stays engine-agnostic.
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

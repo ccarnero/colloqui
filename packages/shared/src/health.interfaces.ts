@@ -8,10 +8,11 @@ export type HealthStatusLevel = "ok" | "degraded" | "error";
 
 export type IHealthAggregateStatus = "ok" | "degraded";
 
-/** Auth service: Postgres + Redis. */
+/** Auth service: active storage engine + Redis. */
 export interface IAuthServiceHealthResponse {
   status: IHealthAggregateStatus;
-  postgres: IHealthConnectionState;
+  mongo?: IHealthConnectionState;
+  postgres?: IHealthConnectionState;
   redis: IHealthConnectionState;
 }
 
@@ -49,11 +50,11 @@ export type IApiGatewayHealthResponse = IGatewayCoreHealthResponse;
  */
 export type ITenantProvisionerState = "running" | "degraded" | "stopped";
 
-/** K8s + platform DB + provisioning consumer (tenant-service). */
+/** K8s + platform MongoDB + provisioning consumer (tenant-service). */
 export interface ITenantHealthResponse {
   status: HealthStatusLevel;
   kubernetes: IHealthConnectionState;
-  postgres: IHealthConnectionState;
+  mongo: IHealthConnectionState;
   /**
    * Provisioning consumer (`PLATFORM_TENANTS / tenant-provisioner`).
    * Optional for backward compatibility with older tenant-service

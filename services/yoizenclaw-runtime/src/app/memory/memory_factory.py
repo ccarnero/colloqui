@@ -1,15 +1,10 @@
-"""Database factory for the PostgreSQL runtime backend."""
+"""Database factory for the runtime memory backend."""
 
 from src.domain.entities.memory import MemoryBackend
+from src.infra.database import create_memory_store
 
 
 def create_memory() -> MemoryBackend:
-    """Create the PostgreSQL memory backend used by the runtime.
+    """Create the memory backend for the configured storage engine."""
 
-    The concrete implementation is resolved lazily to keep the
-    application layer free of infrastructure imports at module level.
-    """
-
-    from src.infra.database.memory_postgres import Memory as PostgresMemory
-
-    return PostgresMemory()
+    return create_memory_store()

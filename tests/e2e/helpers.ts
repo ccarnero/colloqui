@@ -2,6 +2,61 @@ export type ServiceName =
   | 'api-gateway'
   | 'cache-service';
 
+export type StorageEngine = 'mongo' | 'postgres';
+
+function resolveE2eStorageEngine(): StorageEngine {
+  const explicit = process.env.E2E_STORAGE_ENGINE?.toLowerCase();
+  if (explicit === 'postgres' || explicit === 'mongo') {
+    return explicit;
+  }
+  const bootstrap = process.env.STORAGE_ENGINE?.toLowerCase();
+  if (bootstrap === 'postgres' || bootstrap === 'mongo') {
+    return bootstrap;
+  }
+  return 'postgres';
+}
+
+/**
+ * Active platform OLTP engine for E2E runs. Defaults to `postgres`
+ * (matches `resolveStorageEngine()`). Set `E2E_STORAGE_ENGINE=mongo` or
+ * bootstrap with `--storage-engine=mongo` for the Mongo overlay.
+ */
+export const E2E_STORAGE_ENGINE: StorageEngine = resolveE2eStorageEngine();
+
+/** Returns true when tenant provisioning and health checks target MongoDB. */
+export function isMongoStorageEngine(): boolean {
+  return E2E_STORAGE_ENGINE === 'mongo';
+}
+
+/**
+ * Per-tenant database StatefulSet name written by `tenant-service`.
+ * Mongo dev uses a single `mongo` StatefulSet (platform + usage DBs);
+ * legacy Postgres used separate `postgres` + `postgres-usage` sets.
+ */
+export function tenantDatabaseStatefulSetNames(): readonly string[] {
+  return isMongoStorageEngine() ? ['mongo'] : ['postgres', 'postgres-usage'];
+}
+
+/**
+ * JSON field returned by migrated services' `/health` for platform/tenant DB
+ * connectivity (`mongo: connected` or legacy `postgres: true`).
+ */
+export function platformDbHealthField(): 'mongo' | 'postgres' {
+  return isMongoStorageEngine() ? 'mongo' : 'postgres';
+}
+
+/**
+ * Parses a downstream `/health` body for DB connectivity under either engine.
+ */
+export function isPlatformDbHealthy(body: Record<string, unknown>): boolean {
+  const field = platformDbHealthField();
+  const value = body[field];
+  if (typeof value === 'boolean') return value;
+  if (value === 'connected') return true;
+  if (value === 'disconnected') return false;
+  return false;
+}
+
 const NAMESPACE = process.env.SMOKE_TEST_NAMESPACE ?? 'platform-services-dev';
 const KOURIER_HOST = process.env.KOURIER_HOST ?? 'localhost';
 const KOURIER_PORT = process.env.KOURIER_PORT ?? '8080';

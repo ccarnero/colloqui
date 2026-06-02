@@ -4,7 +4,6 @@ import {
   JETSTREAM,
   JETSTREAM_MANAGER,
 } from "../../src/providers/nats.provider";
-import { registryServiceConfig } from "../../src/config";
 import {
   ServiceEventsEnsureStreamResult,
   ServiceEventsMetrics,
@@ -112,22 +111,23 @@ function makeUpsertedPayload(overrides: IUpsertedPayloadOverrides = {}) {
 }
 
 describe("ServiceEventsPublisher", () => {
-  let originalFlag: boolean;
+  let originalEnv: string | undefined;
 
   beforeEach(() => {
-    originalFlag = registryServiceConfig.emitAdapterSync;
-    (registryServiceConfig as { emitAdapterSync: boolean }).emitAdapterSync =
-      true;
+    originalEnv = process.env.REGISTRY_EMIT_ADAPTER_SYNC;
+    process.env.REGISTRY_EMIT_ADAPTER_SYNC = "true";
   });
 
   afterEach(() => {
-    (registryServiceConfig as { emitAdapterSync: boolean }).emitAdapterSync =
-      originalFlag;
+    if (originalEnv === undefined) {
+      delete process.env.REGISTRY_EMIT_ADAPTER_SYNC;
+    } else {
+      process.env.REGISTRY_EMIT_ADAPTER_SYNC = originalEnv;
+    }
   });
 
   it("flag OFF: short-circuits with zero broker calls and zero attempts (REQ-RSE-004)", async () => {
-    (registryServiceConfig as { emitAdapterSync: boolean }).emitAdapterSync =
-      false;
+    process.env.REGISTRY_EMIT_ADAPTER_SYNC = "false";
     const { publisher, js, jsm, metrics } = await buildPublisher();
 
     await publisher.publishUpserted(

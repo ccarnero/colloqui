@@ -1,13 +1,20 @@
 import {
+  Inject,
   Injectable,
   NotFoundException,
   ConflictException,
 } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
-import { RoutesRepository } from "./routes.repository";
+import {
+  isMongoDuplicateKeyError,
+  isPostgresUniqueViolation,
+} from "@yoizen/database";
 import type { CreateRouteDto } from "./routes.dto";
 import { generateId } from "@yoizen/shared";
-import { isPostgresUniqueViolation } from "@yoizen/database";
+import {
+  ROUTES_REPOSITORY,
+  type IRoutesRepository,
+} from "./routes.repository.interface";
 import {
   type IServiceRoute,
   mapServiceRouteRow,
@@ -36,7 +43,10 @@ export class RoutesService {
   >();
   private static readonly CACHE_TTL_MS = 10_000;
 
-  constructor(private readonly routesRepository: RoutesRepository) {}
+  constructor(
+    @Inject(ROUTES_REPOSITORY)
+    private readonly routesRepository: IRoutesRepository,
+  ) {}
 
   async create(
     tenantId: string,
@@ -77,7 +87,7 @@ export class RoutesService {
       );
       return mapServiceRouteRow(row);
     } catch (e: unknown) {
-      if (isPostgresUniqueViolation(e)) {
+      if (isMongoDuplicateKeyError(e) || isPostgresUniqueViolation(e)) {
         throw new ConflictException(
           `Route '${dto.pathPrefix}' already exists for this service`,
         );

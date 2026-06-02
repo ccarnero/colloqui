@@ -43,6 +43,9 @@ tests/stress/
 │   └── reconcile.ts           per-stage Markdown + CSV report
 ├── scripts/
 │   ├── provision.sh           idempotent tenant/service/channel/workflow setup
+│   ├── provision-code-only.sh same fixtures, code-only workflow variant
+│   ├── resolve-stress-target.sh  Kourier / sslip.io URL for k6
+│   ├── reconcile-temporal-mongo-executions.sh  fix stale RUNNING rows
 │   └── run.sh                 k6 + reconcile orchestrator
 ├── reports/                   k6 NDJSON, sink JSONL and reconcile output
 └── runbook.md                 operational runbook (start / stop / who owns it)
@@ -50,8 +53,9 @@ tests/stress/
 
 ## Prerequisites
 
-- A reachable `api-gateway` (typically via `./port-forward.sh` from the
-  repo root, or hit the Knative DNS directly).
+- A reachable `api-gateway`. For stress runs, prefer Kourier ingress
+  (default in `run.sh` via `--use-kourier auto`) instead of
+  `./port-forward.sh`, which pins traffic to a single pod.
 - `k6` ≥ v0.52 (native TypeScript support) — install from
   [grafana/k6 releases](https://github.com/grafana/k6/releases).
 - `bun` ≥ 1.1 for the sink and reconciler.
@@ -198,39 +202,36 @@ bun run reconcile/reconcile.ts \
 
 ## Stages
 
-Five steady-state stages plus a recovery spike. Defaults match the
-original Phase 1 plan; every duration / rate / VU count is
-env-overridable without editing source.
+Single **medium** stage (`tests/stress/lib/stages.ts`): constant arrival rate
+for the full duration (no multi-stage ramp in code today). Defaults:
 
 | Stage | Duration | Rate (msg/s) | k6 VUs (preallocated) |
 |-------|----------|--------------|------------------------|
-| baseline | 10 m | 10 | 5 |
-| light | 15 m | 50 | 25 |
-| medium | 15 m | 200 | 100 |
-| heavy | 15 m | 500 | 250 |
-| peak | 10 m | 1000 | 500 |
-| spike | 30 s ramp + 1 m 30 s hold | 2000 → 200 | 1000 |
+| medium | 15 m | 200 | 500 |
 
-Smoke profile (≈2 min total) — useful to validate the pipeline end-to-end:
+Smoke profile — validate the pipeline in under a minute:
 
 ```bash
-export STRESS_BASELINE_DURATION=20s
-export STRESS_LIGHT_DURATION=30s
-export STRESS_MEDIUM_DURATION=30s
-export STRESS_HEAVY_DURATION=30s
-export STRESS_PEAK_DURATION=20s
-export STRESS_SPIKE_RAMP=5s
-export STRESS_SPIKE_HOLD=15s
-./scripts/run.sh --scenario webhook-ingress
+STRESS_MEDIUM_DURATION=30s STRESS_MEDIUM_RATE=10 \
+  ./scripts/run.sh --scenario webhook-ingress
+```
+
+Full 15 m @ 200 RPS (Kourier ingress, auto-discovered):
+
+```bash
+STRESS_MEDIUM_RATE=200 STRESS_MEDIUM_DURATION=15m \
+  TELEGRAM_WEBHOOK_SECRET=anothersecret \
+  ./scripts/run.sh --scenario webhook-ingress
 ```
 
 ### Environment overrides
 
 | Env var | Purpose |
 |---------|---------|
-| `STRESS_TARGET` | Explicit base URL (overrides Knative DNS + Kourier). |
-| `API_GATEWAY_URL` | Knative DNS for the gateway (used to set `Host` header). |
-| `KOURIER_HOST` / `KOURIER_PORT` | Port-forward target (defaults: `localhost:8080`). |
+| `STRESS_TARGET` | Explicit base URL (overrides auto Kourier discovery). |
+| `API_GATEWAY_URL` | Knative DNS for the gateway (set by `resolve-stress-target.sh`). |
+| `--use-kourier` | `run.sh` flag: `auto` (default), `true`, or `false`. |
+| `KOURIER_HOST` / `KOURIER_PORT` | Legacy port-forward target when `--use-kourier false`. |
 | `STRESS_NAMESPACE` / `SMOKE_TEST_NAMESPACE` | k8s namespace (default `platform-services-dev`). |
 | `MINIKUBE_DOMAIN` | DNS suffix when no explicit target is set. |
 | `E2E_TENANT` | Tenant slug for `x-yoizen-tenant` header (default `acme`). |

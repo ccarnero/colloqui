@@ -1,10 +1,11 @@
+process.env.DB_ENGINE = "mongo";
+
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { NotFoundException } from "@nestjs/common";
-import { createMockPostgresSql } from "@yoizen/testing";
 import { IngressService } from "../../src/modules/ingress/ingress.service";
 import { EgressService } from "../../src/modules/egress/egress.service";
 import { AutoReplyService } from "../../src/modules/auto-reply/auto-reply.service";
-import type { AutoReplyRepository } from "../../src/modules/auto-reply/auto-reply.repository";
+import type { IAutoReplyRepository } from "../../src/modules/auto-reply/auto-reply.repository.interface";
 
 describe("Channel message flow services", () => {
   describe("IngressService", () => {
@@ -86,18 +87,27 @@ describe("Channel message flow services", () => {
         insertRule: mock(() => Promise.resolve()),
         listRulesForTenant: mock(() => Promise.resolve([])),
         deleteRule: mock(() => Promise.resolve({ count: 0 })),
-      } as unknown as AutoReplyRepository;
+      } as unknown as IAutoReplyRepository;
 
       const jsm = {} as unknown as import("nats").JetStreamManager;
       const js = {} as unknown as import("nats").JetStreamClient;
-      const platformSql = createMockPostgresSql(mock);
-      platformSql.mockResolvedValueOnce([]);
+      const platformMongo = {
+        db: mock(() => ({
+          collection: mock(() => ({
+            find: mock(() => ({
+              sort: mock(() => ({
+                toArray: mock(async () => []),
+              })),
+            })),
+          })),
+        })),
+      };
       const service = new AutoReplyService(
         jsm,
         js,
-        platformSql,
         repo,
         egress,
+        platformMongo,
       );
 
       const rule = await service.createRule({

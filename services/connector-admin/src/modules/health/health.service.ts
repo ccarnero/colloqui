@@ -1,6 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { NatsConnection } from "nats";
-import { NATS_CONNECTION } from "@yoizen/database";
+import {
+  NATS_CONNECTION,
+  type TenantConnectionManager,
+  type TenantMongoConnectionManager,
+} from "@yoizen/database";
 import { isWorkerMode } from "@yoizen/observability";
 import { AdapterTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import { InternalSyncService } from "../internal-sync/internal-sync.service";
@@ -98,7 +102,10 @@ export function __resetShutdownFlagForTests(): void {
 export class HealthService {
   constructor(
     @Inject(NATS_CONNECTION) private readonly nc: NatsConnection,
-    private readonly tenantConnections: AdapterTenantConnectionManager,
+    @Inject(AdapterTenantConnectionManager)
+    private readonly tenantConnections:
+      | TenantConnectionManager
+      | TenantMongoConnectionManager,
     private readonly internalSync: InternalSyncService,
   ) {
     ensureSigtermFlagHandler();

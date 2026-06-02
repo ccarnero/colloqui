@@ -1,55 +1,36 @@
-"""PostgreSQL advisory-lock leader election for the runtime scheduler."""
+"""Leader election factory for the runtime scheduler."""
 
 from __future__ import annotations
 
-import logging
-from typing import Any
+from typing import Literal
 
-logger = logging.getLogger(__name__)
+from src.infra.database.memory_store import ILeaderElection, IMemoryStore
+from src.services.mongo_ttl_leader import MongoTtlLeader
+from src.services.postgres_advisory_leader import PostgresAdvisoryLeader
+from src.utils.config.settings import bootstrap_settings
 
-SCHEDULER_LOCK_KEY = 4_242_001
+DbEngine = Literal["postgres", "mongo"]
+
+# Backward-compatible aliases for existing imports.
+SchedulerLeaderLock = PostgresAdvisoryLeader
 
 
-class SchedulerLeaderLock:
-    """Holds a PostgreSQL advisory lock for the scheduler lifecycle."""
+def create_leader_election(
+    memory: IMemoryStore,
+    engine: DbEngine | None = None,
+) -> ILeaderElection:
+    """Create a leader-election adapter for the active storage engine."""
 
-    def __init__(self, pool: Any, lock_key: int = SCHEDULER_LOCK_KEY) -> None:
-        self._connection = None
-        self._lock_key = lock_key
-        self._pool = pool
+    resolved_engine = engine or bootstrap_settings.DB_ENGINE
+    if resolved_engine == "mongo":
+        mongo_store = memory
+        if not hasattr(mongo_store, "db"):
+            raise TypeError("Mongo leader election requires a store with a db property")
+        return MongoTtlLeader(mongo_store.db)
 
-    async def acquire(self) -> bool:
-        """Try to acquire the scheduler leader lock."""
-
-        if self._connection is not None:
-            return True
-
-        connection = await self._pool.acquire()
-        acquired = await connection.fetchval(
-            "SELECT pg_try_advisory_lock($1)",
-            self._lock_key,
+    postgres_store = memory
+    if not hasattr(postgres_store, "pool"):
+        raise TypeError(
+            "Postgres leader election requires a store with a pool property",
         )
-        if acquired:
-            self._connection = connection
-            logger.info("Scheduler leader lock acquired")
-            return True
-
-        await self._pool.release(connection)
-        logger.info("Scheduler leader lock not acquired; running as follower")
-        return False
-
-    async def release(self) -> None:
-        """Release the scheduler leader lock if held."""
-
-        if self._connection is None:
-            return
-
-        try:
-            await self._connection.execute(
-                "SELECT pg_advisory_unlock($1)",
-                self._lock_key,
-            )
-            logger.info("Scheduler leader lock released")
-        finally:
-            await self._pool.release(self._connection)
-            self._connection = None
+    return PostgresAdvisoryLeader(postgres_store.pool)

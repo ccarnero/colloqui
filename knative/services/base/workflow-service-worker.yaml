@@ -47,6 +47,8 @@ spec:
               value: "worker"
             - name: OTEL_SERVICE_NAME
               value: "workflow-service-worker"
+            - name: WORKFLOW_TRIGGER_CONCURRENCY
+              value: "2"
           readinessProbe:
             httpGet:
               path: /health

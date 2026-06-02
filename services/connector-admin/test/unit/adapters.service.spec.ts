@@ -1,32 +1,39 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { ConflictException, NotFoundException } from "@nestjs/common";
-import { AdaptersRepository } from "../../src/modules/adapters/adapters.repository";
+import type { Db } from "mongodb";
+import { AdaptersMongoRepository } from "../../src/modules/adapters/adapters.mongo.repository";
 import { AdaptersService } from "../../src/modules/adapters/adapters.service";
+import { ADAPTERS_REPOSITORY } from "../../src/modules/adapters/adapters.repository.interface";
 import { AdapterTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
-import { makeSqlTestDouble, makeFakeTenantConnections } from "../make-sql-mock";
+import {
+  makeFakeTenantMongoConnections,
+  makeFindChain,
+  makeMockDb,
+} from "../make-mongo-mock";
 import type {
   CreateAdapterDto,
   CreateEndpointDto,
 } from "../../src/modules/adapters/adapters.dto";
-import type { Sql } from "postgres";
 
-async function createAdaptersServiceWithSql(
-  sql: Sql,
-): Promise<AdaptersService> {
-  const connections = makeFakeTenantConnections(sql);
+async function createAdaptersService(db: Db): Promise<AdaptersService> {
+  const connections = makeFakeTenantMongoConnections(db);
   const moduleRef = await Test.createTestingModule({
     providers: [
-      AdaptersRepository,
+      AdaptersMongoRepository,
       AdaptersService,
+      {
+        provide: ADAPTERS_REPOSITORY,
+        useExisting: AdaptersMongoRepository,
+      },
       { provide: AdapterTenantConnectionManager, useValue: connections },
     ],
   }).compile();
   return moduleRef.get(AdaptersService);
 }
 
-const adapterRow = {
-  id: "a1",
+const adapterDoc = {
+  _id: "a1",
   name: "Adapter One",
   context: "internal",
   base_url: "https://api.example.com",
@@ -42,18 +49,18 @@ const adapterRow = {
   tags: [] as string[],
   status: "enabled" as const,
   managed_by: null,
-  created_at: "2024-01-01T00:00:00.000Z",
-  updated_at: "2024-01-01T00:00:00.000Z",
+  created_at: new Date("2024-01-01T00:00:00.000Z"),
+  updated_at: new Date("2024-01-01T00:00:00.000Z"),
 };
 
-const endpointRow = {
-  id: "e1",
+const endpointDoc = {
+  _id: "e1",
   adapter_id: "a1",
   label: "default",
   method: "GET",
   path: "/v1",
   cache_strategy: null,
-  created_at: "2024-01-01T00:00:00.000Z",
+  created_at: new Date("2024-01-01T00:00:00.000Z"),
 };
 
 describe("AdaptersService", () => {
@@ -64,37 +71,29 @@ describe("AdaptersService", () => {
   };
 
   describe("create", () => {
-    let service: AdaptersService;
-
-    beforeEach(async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        const head = strings[0] ?? "";
-        if (head.includes("INSERT INTO http_adapters")) {
-          return Promise.resolve([adapterRow]);
-        }
-        return Promise.resolve([]);
-      });
-
-      service = await createAdaptersServiceWithSql(sql);
-    });
-
     it("inserts an adapter and maps the result", async () => {
+      const db = makeMockDb({
+        http_adapters: { insertOne: mock(async () => ({ acknowledged: true })) },
+        adapter_endpoints: {},
+      });
+      const service = await createAdaptersService(db);
       const result = await service.create("t1", baseDto);
-      expect(result.id).toBe("a1");
       expect(result.name).toBe("Adapter One");
       expect(result.tenantId).toBe("t1");
       expect(result.endpoints).toEqual([]);
     });
 
-    it("maps 23505 to ConflictException", async () => {
-      const sql = makeSqlTestDouble(() =>
-        Promise.reject(
-          Object.assign(new Error("duplicate"), { code: "23505" }),
-        ),
-      );
-      const svc = await createAdaptersServiceWithSql(sql);
-
-      await expect(svc.create("t1", baseDto)).rejects.toBeInstanceOf(
+    it("maps duplicate key to ConflictException", async () => {
+      const db = makeMockDb({
+        http_adapters: {
+          insertOne: mock(async () => {
+            throw Object.assign(new Error("duplicate"), { code: 11000 });
+          }),
+        },
+        adapter_endpoints: {},
+      });
+      const service = await createAdaptersService(db);
+      await expect(service.create("t1", baseDto)).rejects.toBeInstanceOf(
         ConflictException,
       );
     });
@@ -102,33 +101,21 @@ describe("AdaptersService", () => {
 
   describe("list", () => {
     it("returns empty array when no adapters", async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("FROM http_adapters")) {
-          return Promise.resolve([]);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: { find: makeFindChain([]) },
+        adapter_endpoints: { find: makeFindChain([]) },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       const rows = await service.list("t1", undefined, 50, 0);
       expect(rows).toEqual([]);
     });
 
     it("returns adapters with endpoints", async () => {
-      let step = 0;
-      const sql = makeSqlTestDouble((strings) => {
-        const head = strings[0] ?? "";
-        if (head.includes("FROM http_adapters") && step === 0) {
-          step += 1;
-          return Promise.resolve([adapterRow]);
-        }
-        if (head.includes("FROM adapter_endpoints")) {
-          return Promise.resolve([endpointRow]);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: { find: makeFindChain([adapterDoc]) },
+        adapter_endpoints: { find: makeFindChain([endpointDoc]) },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       const rows = await service.list("t1", undefined, 50, 0);
       expect(rows).toHaveLength(1);
       expect(rows[0]?.tenantId).toBe("t1");
@@ -139,34 +126,22 @@ describe("AdaptersService", () => {
 
   describe("get", () => {
     it("throws NotFoundException when adapter missing", async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("FROM http_adapters")) {
-          return Promise.resolve([]);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: { findOne: mock(async () => null) },
+        adapter_endpoints: { find: makeFindChain([]) },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await expect(service.get("t1", "missing")).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it("returns adapter with endpoints", async () => {
-      let step = 0;
-      const sql = makeSqlTestDouble((strings) => {
-        const head = strings[0] ?? "";
-        if (head.includes("FROM http_adapters") && step === 0) {
-          step += 1;
-          return Promise.resolve([adapterRow]);
-        }
-        if (head.includes("FROM adapter_endpoints")) {
-          return Promise.resolve([endpointRow]);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: { findOne: mock(async () => adapterDoc) },
+        adapter_endpoints: { find: makeFindChain([endpointDoc]) },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       const row = await service.get("t1", "a1");
       expect(row.id).toBe("a1");
       expect(row.tenantId).toBe("t1");
@@ -176,32 +151,28 @@ describe("AdaptersService", () => {
 
   describe("update", () => {
     it("throws when adapter does not exist", async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("FROM http_adapters")) {
-          return Promise.resolve([]);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: { findOne: mock(async () => null) },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await expect(
         service.update("t1", "a1", { name: "x" }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("applies partial update and returns fresh row", async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        const head = strings[0] ?? "";
-        if (head.includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([{ ...adapterRow, name: "Renamed" }]);
-        }
-        if (head.includes("FROM adapter_endpoints")) {
-          return Promise.resolve([]);
-        }
-        return Promise.resolve([]);
+      const findOne = mock(async () => ({
+        ...adapterDoc,
+        name: "Renamed",
+      }));
+      const db = makeMockDb({
+        http_adapters: {
+          findOne,
+          updateOne: mock(async () => ({ modifiedCount: 1 })),
+        },
+        adapter_endpoints: { find: makeFindChain([]) },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       const row = await service.update("t1", "a1", { name: "Renamed" });
       expect(row.name).toBe("Renamed");
     });
@@ -209,49 +180,42 @@ describe("AdaptersService", () => {
 
   describe("remove", () => {
     it("throws when nothing deleted", async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        const head = strings[0] ?? "";
-        if (head.includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([adapterRow]);
-        }
-        if (head.includes("DELETE FROM http_adapters")) {
-          return Promise.resolve({ count: 0 } as never);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: {
+          findOne: mock(async () => adapterDoc),
+          deleteOne: mock(async () => ({ deletedCount: 0 })),
+          deleteMany: mock(async () => ({ deletedCount: 0 })),
+        },
+        adapter_endpoints: { deleteMany: mock(async () => ({ deletedCount: 0 })) },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await expect(service.remove("t1", "a1")).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it("deletes when row exists", async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        const head = strings[0] ?? "";
-        if (head.includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([adapterRow]);
-        }
-        if (head.includes("DELETE FROM http_adapters")) {
-          return Promise.resolve({ count: 1 } as never);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: {
+          findOne: mock(async () => adapterDoc),
+          deleteOne: mock(async () => ({ deletedCount: 1 })),
+        },
+        adapter_endpoints: { deleteMany: mock(async () => ({ deletedCount: 1 })) },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await service.remove("t1", "a1");
     });
 
     it("throws ConflictException when adapter is managed by registry", async () => {
-      const managedRow = { ...adapterRow, managed_by: "registry-service" };
-      const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([managedRow]);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: {
+          findOne: mock(async () => ({
+            ...adapterDoc,
+            managed_by: "registry-service",
+          })),
+        },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await expect(service.remove("t1", "a1")).rejects.toBeInstanceOf(
         ConflictException,
       );
@@ -266,30 +230,14 @@ describe("AdaptersService", () => {
     };
 
     it("adds an endpoint and returns mapped result", async () => {
-      const newEpRow = {
-        id: "e2",
-        adapter_id: "a1",
-        label: "Get Users",
-        method: "GET",
-        path: "/users",
-        cache_strategy: null,
-        created_at: "2024-01-01T00:00:00.000Z",
-      };
-
-      const sql = makeSqlTestDouble((strings) => {
-        const head = strings[0] ?? "";
-        if (head.includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([adapterRow]);
-        }
-        if (head.includes("INSERT INTO adapter_endpoints")) {
-          return Promise.resolve([newEpRow]);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: { findOne: mock(async () => adapterDoc) },
+        adapter_endpoints: {
+          insertOne: mock(async () => ({ acknowledged: true })),
+        },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       const result = await service.addEndpoint("t1", "a1", epDto);
-      expect(result.id).toBe("e2");
       expect(result.adapterId).toBe("a1");
       expect(result.method).toBe("GET");
       expect(result.path).toBe("/users");
@@ -297,49 +245,40 @@ describe("AdaptersService", () => {
     });
 
     it("throws NotFoundException when adapter does not exist", async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([]);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: { findOne: mock(async () => null) },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await expect(
         service.addEndpoint("t1", "missing", epDto),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("throws ConflictException when adapter is managed by registry", async () => {
-      const managedRow = { ...adapterRow, managed_by: "registry-service" };
-      const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([managedRow]);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: {
+          findOne: mock(async () => ({
+            ...adapterDoc,
+            managed_by: "registry-service",
+          })),
+        },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await expect(
         service.addEndpoint("t1", "a1", epDto),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
-    it("throws ConflictException on duplicate endpoint (23505)", async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        const head = strings[0] ?? "";
-        if (head.includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([adapterRow]);
-        }
-        if (head.includes("INSERT INTO adapter_endpoints")) {
-          return Promise.reject(
-            Object.assign(new Error("duplicate"), { code: "23505" }),
-          );
-        }
-        return Promise.resolve([]);
+    it("throws ConflictException on duplicate endpoint (11000)", async () => {
+      const db = makeMockDb({
+        http_adapters: { findOne: mock(async () => adapterDoc) },
+        adapter_endpoints: {
+          insertOne: mock(async () => {
+            throw Object.assign(new Error("duplicate"), { code: 11000 });
+          }),
+        },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await expect(
         service.addEndpoint("t1", "a1", epDto),
       ).rejects.toBeInstanceOf(ConflictException);
@@ -348,63 +287,49 @@ describe("AdaptersService", () => {
 
   describe("removeEndpoint", () => {
     it("removes an existing endpoint", async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        const head = strings[0] ?? "";
-        if (head.includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([adapterRow]);
-        }
-        if (head.includes("DELETE FROM adapter_endpoints")) {
-          return Promise.resolve({ count: 1 } as never);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: { findOne: mock(async () => adapterDoc) },
+        adapter_endpoints: {
+          deleteOne: mock(async () => ({ deletedCount: 1 })),
+        },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await service.removeEndpoint("t1", "a1", "e1");
     });
 
     it("throws NotFoundException when adapter does not exist", async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([]);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: { findOne: mock(async () => null) },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await expect(
         service.removeEndpoint("t1", "missing", "e1"),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("throws NotFoundException when endpoint does not exist", async () => {
-      const sql = makeSqlTestDouble((strings) => {
-        const head = strings[0] ?? "";
-        if (head.includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([adapterRow]);
-        }
-        if (head.includes("DELETE FROM adapter_endpoints")) {
-          return Promise.resolve({ count: 0 } as never);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: { findOne: mock(async () => adapterDoc) },
+        adapter_endpoints: {
+          deleteOne: mock(async () => ({ deletedCount: 0 })),
+        },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await expect(
         service.removeEndpoint("t1", "a1", "missing"),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("throws ConflictException when adapter is managed", async () => {
-      const managedRow = { ...adapterRow, managed_by: "registry-service" };
-      const sql = makeSqlTestDouble((strings) => {
-        if ((strings[0] ?? "").includes("SELECT * FROM http_adapters")) {
-          return Promise.resolve([managedRow]);
-        }
-        return Promise.resolve([]);
+      const db = makeMockDb({
+        http_adapters: {
+          findOne: mock(async () => ({
+            ...adapterDoc,
+            managed_by: "registry-service",
+          })),
+        },
       });
-      const service = await createAdaptersServiceWithSql(sql);
-
+      const service = await createAdaptersService(db);
       await expect(
         service.removeEndpoint("t1", "a1", "e1"),
       ).rejects.toBeInstanceOf(ConflictException);

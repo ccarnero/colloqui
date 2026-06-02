@@ -1,5 +1,9 @@
+import { resolveStorageEngine, type StorageEngine } from "@yoizen/database";
+
 type AuthServiceConfig = {
   readonly port: number;
+  readonly dbEngine: StorageEngine;
+  readonly mongoDatabase: string;
   readonly platformEnvironment: string;
   readonly jwtSecret: string | undefined;
   readonly adminEmail: string | undefined;
@@ -14,6 +18,12 @@ type AuthServiceConfig = {
 export const authServiceConfig: AuthServiceConfig = {
   get port() {
     return Number.parseInt(process.env.PORT ?? "3000", 10);
+  },
+  get dbEngine() {
+    return resolveStorageEngine();
+  },
+  get mongoDatabase() {
+    return process.env.MONGO_DB ?? "yoizen";
   },
   get platformEnvironment() {
     return process.env.PLATFORM_ENVIRONMENT ?? "dev";

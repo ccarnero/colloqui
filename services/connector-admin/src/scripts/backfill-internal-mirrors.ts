@@ -18,13 +18,17 @@
  * routes queries to the right pool transparently.
  */
 import "reflect-metadata";
+import { resolveStorageEngine } from "@yoizen/database";
 import {
   ADAPTER_MANAGED_BY_REGISTRY,
   AdapterStatus,
   TENANT_HEADER,
 } from "@yoizen/shared";
-import { AdaptersRepository } from "../modules/adapters/adapters.repository";
-import { AdapterTenantConnectionManager } from "../providers/tenant-connection-manager";
+import { AdaptersMongoRepository } from "../modules/adapters/adapters.mongo.repository";
+import { AdaptersPostgresRepository } from "../modules/adapters/adapters.postgres.repository";
+import type { IAdaptersRepository } from "../modules/adapters/adapters.repository.interface";
+import { AdapterTenantConnectionManagerMongo } from "../providers/tenant-connection-manager.mongo";
+import { AdapterTenantConnectionManagerPostgres } from "../providers/tenant-connection-manager.postgres";
 
 interface IRegisteredServiceResponse {
   id: string;
@@ -72,7 +76,7 @@ async function fetchRegisteredServices(
 }
 
 async function backfillTenant(
-  repo: AdaptersRepository,
+  repo: IAdaptersRepository,
   tenantId: string,
 ): Promise<IBackfillSummary> {
   const services = await fetchRegisteredServices(tenantId);
@@ -126,8 +130,25 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const connections = new AdapterTenantConnectionManager();
-  const repo = new AdaptersRepository(connections);
+  const engine = resolveStorageEngine();
+
+  if (engine === "postgres") {
+    const connections = new AdapterTenantConnectionManagerPostgres();
+    const repo = new AdaptersPostgresRepository(connections);
+    try {
+      for (const tenantId of tenantIds) {
+        console.log(`[backfill] tenant=${tenantId} starting…`);
+        const summary = await backfillTenant(repo, tenantId);
+        console.log(`[backfill] ${JSON.stringify(summary)}`);
+      }
+    } finally {
+      await connections.onModuleDestroy();
+    }
+    return;
+  }
+
+  const connections = new AdapterTenantConnectionManagerMongo();
+  const repo = new AdaptersMongoRepository(connections);
 
   try {
     for (const tenantId of tenantIds) {

@@ -1,0 +1,55 @@
+# Strip MongoDB when `--storage-engine=postgres` (default).
+# Platform OLTP uses legacy `postgres` + CNPG `postgres-shared` / `postgres-usage-shared`.
+$patch: delete
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-platform
+---
+$patch: delete
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo-usage
+---
+$patch: delete
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-platform
+---
+$patch: delete
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-platform-headless
+---
+$patch: delete
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-usage
+---
+$patch: delete
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-usage-headless
+---
+$patch: delete
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-platform-init
+---
+$patch: delete
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-usage-init
+---
+$patch: delete
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongo-credentials

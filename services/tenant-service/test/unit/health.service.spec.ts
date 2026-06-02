@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { createMockPostgresSql } from "@yoizen/testing";
+import { createMockMongoClient } from "@yoizen/testing";
 import type { ITenantProvisionerState } from "@yoizen/shared";
 import { HealthService } from "../../src/modules/health/health.service";
 import { K8S_CORE_API } from "../../src/providers/kubernetes.provider";
-import { PLATFORM_POSTGRES_SQL } from "../../src/providers/platform-postgres.provider";
+import { MONGO_CLIENT } from "../../src/providers/platform-mongo.provider";
 import { TenantProvisionConsumerService } from "../../src/modules/provisioning/tenant-provision-consumer.service";
 
 interface IFakeProvisioner {
@@ -16,9 +16,6 @@ function buildFakeConsumer(initial: ITenantProvisionerState): {
   service: TenantProvisionConsumerService;
 } {
   const ref: IFakeProvisioner = { state: initial };
-  // The HealthService only consumes `getProvisionerState()`; injecting
-  // a structural fake is faster (and avoids spinning a real NATS
-  // connection) than wiring the full consumer module.
   const service = {
     getProvisionerState: () => ref.state,
     getRunnerState: () => null,
@@ -28,12 +25,16 @@ function buildFakeConsumer(initial: ITenantProvisionerState): {
 
 describe("HealthService", () => {
   let service: HealthService;
-  let sql: ReturnType<typeof createMockPostgresSql>;
+  let mongoClient: ReturnType<typeof createMockMongoClient>;
   let k8sApi: { listNamespace: ReturnType<typeof mock> };
   let provisioner: IFakeProvisioner;
 
   beforeEach(async () => {
-    sql = createMockPostgresSql(mock, [{ "?column?": 1 }]);
+    mongoClient = {
+      db: () => ({
+        command: () => Promise.resolve({ ok: 1 }),
+      }),
+    } as unknown as ReturnType<typeof createMockMongoClient>;
     k8sApi = {
       listNamespace: mock(() => Promise.resolve({ items: [] })),
     };
@@ -44,7 +45,7 @@ describe("HealthService", () => {
       providers: [
         HealthService,
         { provide: K8S_CORE_API, useValue: k8sApi },
-        { provide: PLATFORM_POSTGRES_SQL, useValue: sql },
+        { provide: MONGO_CLIENT, useValue: mongoClient },
         { provide: TenantProvisionConsumerService, useValue: fake.service },
       ],
     }).compile();
@@ -52,21 +53,35 @@ describe("HealthService", () => {
     service = moduleRef.get(HealthService);
   });
 
-  it("returns ok when kubernetes, postgres and provisioner are healthy", async () => {
+  it("returns ok when kubernetes, mongo and provisioner are healthy", async () => {
     const result = await service.getStatus();
     expect(result.status).toBe("ok");
     expect(result.kubernetes).toBe("connected");
-    expect(result.postgres).toBe("connected");
+    expect(result.mongo).toBe("connected");
     expect(result.provisioner).toBe("running");
   });
 
-  it("returns degraded when postgres fails but provisioner is running", async () => {
-    (sql as unknown as ReturnType<typeof mock>).mockRejectedValueOnce(
-      new Error("connection refused"),
-    );
-    const result = await service.getStatus();
+  it("returns degraded when mongo fails but provisioner is running", async () => {
+    const brokenClient = {
+      db: () => ({
+        command: () => Promise.reject(new Error("connection refused")),
+      }),
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        HealthService,
+        { provide: K8S_CORE_API, useValue: k8sApi },
+        { provide: MONGO_CLIENT, useValue: brokenClient },
+        {
+          provide: TenantProvisionConsumerService,
+          useValue: buildFakeConsumer("running").service,
+        },
+      ],
+    }).compile();
+    const brokenService = moduleRef.get(HealthService);
+    const result = await brokenService.getStatus();
     expect(result.status).toBe("degraded");
-    expect(result.postgres).toBe("disconnected");
+    expect(result.mongo).toBe("disconnected");
     expect(result.provisioner).toBe("running");
   });
 
@@ -85,7 +100,7 @@ describe("HealthService", () => {
     expect(result.provisioner).toBe("degraded");
   });
 
-  it("returns error when the provisioner supervisor is stopped (forces Knative restart)", async () => {
+  it("returns error when the provisioner supervisor is stopped", async () => {
     provisioner.state = "stopped";
     const result = await service.getStatus();
     expect(result.status).toBe("error");
@@ -97,6 +112,6 @@ describe("HealthService", () => {
     const result = await service.getStatus();
     expect(result.status).toBe("error");
     expect(result.kubernetes).toBe("connected");
-    expect(result.postgres).toBe("connected");
+    expect(result.mongo).toBe("connected");
   });
 });

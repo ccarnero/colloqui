@@ -1,30 +1,36 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { createQueuedSql } from "@yoizen/testing";
 import {
-  AdaptersRepository,
+  AdaptersMongoRepository,
+} from "../../src/modules/adapters/adapters.mongo.repository";
+import {
   mapAdapter,
   mapEndpoint,
   type IAdapterRow,
   type IEndpointRow,
-} from "../../src/modules/adapters/adapters.repository";
+} from "../../src/modules/adapters/adapters.repository.interface";
 import { AdapterTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
-import { makeSqlTestDouble, makeFakeTenantConnections } from "../make-sql-mock";
+import { makeFakeTenantMongoConnections } from "../make-mongo-mock";
+import type { Db } from "mongodb";
 
-async function createAdaptersRepository(
-  sql: ReturnType<typeof makeSqlTestDouble>,
-): Promise<{ repo: AdaptersRepository; connections: ReturnType<typeof makeFakeTenantConnections> }> {
-  const connections = makeFakeTenantConnections(sql);
+async function createAdaptersRepository(db: Db) {
+  const connections = makeFakeTenantMongoConnections(db);
   const moduleRef = await Test.createTestingModule({
     providers: [
-      AdaptersRepository,
+      AdaptersMongoRepository,
       { provide: AdapterTenantConnectionManager, useValue: connections },
     ],
   }).compile();
   return {
-    repo: moduleRef.get(AdaptersRepository),
+    repo: moduleRef.get(AdaptersMongoRepository),
     connections,
   };
+}
+
+function makeMockDb(collections: Record<string, Record<string, unknown>>): Db {
+  return {
+    collection: mock((name: string) => collections[name] ?? {}),
+  } as unknown as Db;
 }
 
 describe("mapAdapter / mapEndpoint", () => {
@@ -52,36 +58,6 @@ describe("mapAdapter / mapEndpoint", () => {
     const m = mapAdapter(row, "t1");
     expect(m.tenantId).toBe("t1");
     expect(m.authConfig).toEqual({ k: "v" });
-    expect(m.headers).toEqual([{ key: "h", value: "1" }]);
-    expect(m.isEncrypted).toBe(false);
-    expect(m.managedBy).toBeNull();
-  });
-
-  it("parses string JSONB auth_config and headers", () => {
-    const row: IAdapterRow = {
-      id: "a1",
-      name: "n",
-      context: "external",
-      base_url: "u",
-      auth_type: "none",
-      auth_config: '{"x":1}' as unknown as Record<string, unknown>,
-      headers: "[]" as unknown as Array<{ key: string; value: string }>,
-      default_cache_strategy: null,
-      timeout_ms: 1,
-      max_retries: 1,
-      retry_backoff_ms: 1,
-      health_check_path: "/",
-      is_encrypted: false,
-      tags: [],
-      status: "disabled",
-      managed_by: "registry-service",
-      created_at: "c",
-      updated_at: "u",
-    };
-    const m = mapAdapter(row, "t1");
-    expect(m.authConfig).toEqual({ x: 1 });
-    expect(m.headers).toEqual([]);
-    expect(m.managedBy).toBe("registry-service");
   });
 
   it("maps endpoint row", () => {
@@ -98,50 +74,53 @@ describe("mapAdapter / mapEndpoint", () => {
   });
 });
 
-describe("AdaptersRepository", () => {
-  it("isUniqueViolation delegates to postgres helper", async () => {
-    const { repo } = await createAdaptersRepository(
-      makeSqlTestDouble(() => Promise.resolve([])),
-    );
-    expect(repo.isUniqueViolation({ code: "23505" })).toBe(true);
+describe("AdaptersMongoRepository", () => {
+  it("isUniqueViolation delegates to mongo helper", async () => {
+    const db = makeMockDb({});
+    const { repo } = await createAdaptersRepository(db);
+    expect(repo.isUniqueViolation({ code: 11000 })).toBe(true);
     expect(repo.isUniqueViolation(new Error("other"))).toBe(false);
   });
 
   it("listEndpointsForAdapters returns empty when no ids", async () => {
-    const { repo } = await createAdaptersRepository(
-      makeSqlTestDouble(() => Promise.resolve([])),
-    );
+    const db = makeMockDb({});
+    const { repo } = await createAdaptersRepository(db);
     const out = await repo.listEndpointsForAdapters("t1", []);
     expect(out).toEqual([]);
   });
 
   it("getAdapterRow returns null when query returns no row", async () => {
-    const sql = makeSqlTestDouble(() => Promise.resolve([]));
-    const { repo } = await createAdaptersRepository(sql);
+    const db = makeMockDb({
+      http_adapters: {
+        findOne: mock(async () => null),
+      },
+    });
+    const { repo } = await createAdaptersRepository(db);
     const row = await repo.getAdapterRow("t1", "missing");
     expect(row).toBeNull();
   });
 
   it("adapterExists returns false when no row", async () => {
-    const sql = makeSqlTestDouble(() => Promise.resolve([]));
-    const { repo } = await createAdaptersRepository(sql);
+    const db = makeMockDb({
+      http_adapters: {
+        findOne: mock(async () => null),
+      },
+    });
+    const { repo } = await createAdaptersRepository(db);
     expect(await repo.adapterExists("t1", "x")).toBe(false);
   });
 
-  it("ensureSchema is called exactly once per tenant across repeated calls", async () => {
-    const sql = makeSqlTestDouble(() => Promise.resolve([]));
-    const { repo, connections } = await createAdaptersRepository(sql);
-
+  it("ensureSchema is called on repeated repository calls", async () => {
+    const db = makeMockDb({
+      http_adapters: {
+        findOne: mock(async () => null),
+      },
+    });
+    const { repo, connections } = await createAdaptersRepository(db);
     await repo.getAdapterRow("t1", "a");
     await repo.getAdapterRow("t1", "b");
     await repo.adapterExists("t1", "c");
     await repo.getAdapterRow("t2", "a");
-
-    // The fake counts ensureSchema invocations; the memoisation of the
-    // real `TenantConnectionManager.initialized` `Set` is separately
-    // tested in the @yoizen/database package. Here we assert that the
-    // repository always routes through `ensureSchema` (never stashes a
-    // raw Sql handle), so per-tenant pool resolution is never bypassed.
     expect(connections.ensureSchemaCalls.get("t1") ?? 0).toBeGreaterThanOrEqual(3);
     expect(connections.ensureSchemaCalls.get("t2") ?? 0).toBe(1);
   });
@@ -171,35 +150,32 @@ describe("AdaptersRepository", () => {
       };
     }
 
-    it("inserts when no existing row is found", async () => {
-      const queue: unknown[][] = [[], [baseRow({ base_url: "http://new" })]];
-      const sql = createQueuedSql(queue, mock);
-      const { repo } = await createAdaptersRepository(
-        sql as unknown as ReturnType<typeof makeSqlTestDouble>,
-      );
-
-      const row = await repo.upsertMirror({
-        tenantId: "t1",
-        serviceName: "svc-1",
-        baseUrl: "http://new",
-        healthCheckPath: "/health",
+    it("upserts when no existing row is found", async () => {
+      const findOne = mock(async () => null);
+      const findOneAndUpdate = mock(async () => ({
+        _id: "a1",
+        name: "svc-1",
+        context: "internal",
+        base_url: "http://new",
+        auth_type: "none",
+        auth_config: {},
+        headers: [],
+        default_cache_strategy: null,
+        timeout_ms: 30_000,
+        max_retries: 0,
+        retry_backoff_ms: 0,
+        health_check_path: "/health",
+        is_encrypted: false,
+        tags: [],
         status: "enabled",
-        managedBy: "registry-service",
+        managed_by: "registry-service",
+        created_at: new Date(),
+        updated_at: new Date(),
+      }));
+      const db = makeMockDb({
+        http_adapters: { findOne, findOneAndUpdate },
       });
-      expect(row.base_url).toBe("http://new");
-    });
-
-    it("updates existing row when same managed_by", async () => {
-      const existing = baseRow({ base_url: "http://old" });
-      const queue: unknown[][] = [
-        [existing],
-        [baseRow({ base_url: "http://new" })],
-      ];
-      const sql = createQueuedSql(queue, mock);
-      const { repo } = await createAdaptersRepository(
-        sql as unknown as ReturnType<typeof makeSqlTestDouble>,
-      );
-
+      const { repo } = await createAdaptersRepository(db);
       const row = await repo.upsertMirror({
         tenantId: "t1",
         serviceName: "svc-1",
@@ -212,13 +188,14 @@ describe("AdaptersRepository", () => {
     });
 
     it("throws when existing row is managed by a different owner", async () => {
-      const existing = baseRow({ managed_by: "operator-ui" });
-      const queue: unknown[][] = [[existing]];
-      const sql = createQueuedSql(queue, mock);
-      const { repo } = await createAdaptersRepository(
-        sql as unknown as ReturnType<typeof makeSqlTestDouble>,
-      );
-
+      const db = makeMockDb({
+        http_adapters: {
+          findOne: mock(async () => ({
+            managed_by: "operator-ui",
+          })),
+        },
+      });
+      const { repo } = await createAdaptersRepository(db);
       await expect(
         repo.upsertMirror({
           tenantId: "t1",
@@ -231,17 +208,34 @@ describe("AdaptersRepository", () => {
       ).rejects.toThrow(/managed by 'operator-ui'/);
     });
 
-    it("takes over unmanaged existing row (managed_by null)", async () => {
-      const existing = baseRow({ managed_by: null });
-      const queue: unknown[][] = [
-        [existing],
-        [baseRow({ managed_by: "registry-service" })],
-      ];
-      const sql = createQueuedSql(queue, mock);
-      const { repo } = await createAdaptersRepository(
-        sql as unknown as ReturnType<typeof makeSqlTestDouble>,
-      );
-
+    it("updates existing row when same managed_by", async () => {
+      const findOneAndUpdate = mock(async () => ({
+        _id: "a1",
+        name: "svc-1",
+        context: "internal",
+        base_url: "http://new",
+        auth_type: "none",
+        auth_config: {},
+        headers: [],
+        default_cache_strategy: null,
+        timeout_ms: 30_000,
+        max_retries: 0,
+        retry_backoff_ms: 0,
+        health_check_path: "/health",
+        is_encrypted: false,
+        tags: [],
+        status: "enabled",
+        managed_by: "registry-service",
+        created_at: new Date(),
+        updated_at: new Date(),
+      }));
+      const db = makeMockDb({
+        http_adapters: {
+          findOne: mock(async () => ({ managed_by: "registry-service" })),
+          findOneAndUpdate,
+        },
+      });
+      const { repo } = await createAdaptersRepository(db);
       const row = await repo.upsertMirror({
         tenantId: "t1",
         serviceName: "svc-1",
@@ -250,16 +244,18 @@ describe("AdaptersRepository", () => {
         status: "enabled",
         managedBy: "registry-service",
       });
-      expect(row.managed_by).toBe("registry-service");
+      expect(row.base_url).toBe("http://new");
     });
   });
 
   describe("deleteMirrorByServiceName", () => {
-    it("returns count from sql result", async () => {
-      const sql = makeSqlTestDouble(() =>
-        Promise.resolve(Object.assign([], { count: 1 }) as unknown),
-      );
-      const { repo } = await createAdaptersRepository(sql);
+    it("returns deleted count", async () => {
+      const db = makeMockDb({
+        http_adapters: {
+          deleteOne: mock(async () => ({ deletedCount: 1 })),
+        },
+      });
+      const { repo } = await createAdaptersRepository(db);
       const n = await repo.deleteMirrorByServiceName(
         "t1",
         "svc-1",

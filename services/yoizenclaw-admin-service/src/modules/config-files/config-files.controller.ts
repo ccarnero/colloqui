@@ -16,7 +16,7 @@ import {
   GetConfigFileByPathQueryDto,
   DeployConfigFilesDto,
 } from "./config-files.dto";
-import type { IConfigFile } from "./config-files.repository";
+import type { IConfigFile } from "./config-files.repository.interface";
 import { TenantGuard } from "../../guards/tenant.guard";
 import { TenantId } from "../../providers/tenant.decorator";
 

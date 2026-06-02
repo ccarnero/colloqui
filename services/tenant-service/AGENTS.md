@@ -2,7 +2,11 @@
 
 ## Project Overview
 
-The Tenant Service provisions and manages tenant namespaces via the Kubernetes API. Each instance is environment-scoped via `PLATFORM_ENVIRONMENT`, so creating a tenant through the dev gateway creates only `<tenant>-dev-ns`. On tenant creation, a dedicated PostgreSQL StatefulSet is provisioned inside the tenant namespace with pre-configured schema (events + metrics tables), providing full data isolation per tenant.
+The Tenant Service provisions and manages tenant namespaces via the Kubernetes API. Each instance is environment-scoped via `PLATFORM_ENVIRONMENT`, so creating a tenant through the dev gateway creates only `<tenant>-dev-ns`. On tenant creation, `tenant-service` provisions per-tenant database infrastructure: **Postgres** (`postgres` + `postgres-usage` StatefulSets) or **Mongo** (single `mongo` StatefulSet), selected at bootstrap via `ITenantProvisioner`.
+
+## Storage engines
+
+Catalog + provisioning are engine-aware (`ITenantsRepository`, `TENANT_PROVISIONER`). See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
 
 ## Tech Stack
 
@@ -23,12 +27,12 @@ src/
 ├── app.module.ts                               # Root module imports
 ├── providers/
 │   ├── kubernetes.provider.ts                  # @Global() K8S_CORE_API, K8S_APPS_API tokens
-│   └── postgres.provider.ts                    # TenantPostgresProvisioner (K8s-based PG provisioning)
+│   └── mongo.provider.ts                    # TenantMongoProvisioner (K8s-based PG provisioning)
 └── modules/
     ├── tenants/
     │   ├── tenants.module.ts
     │   ├── tenants.controller.ts               # POST/GET/PATCH/DELETE /tenants, GET /tenants/:name
-    │   ├── tenants.service.ts                  # Namespace CRUD, PostgreSQL provisioning orchestration
+    │   ├── tenants.service.ts                  # Namespace CRUD, MongoDB provisioning orchestration
     │   └── tenant.dto.ts                       # CreateTenantDto, UpdateTenantDto (name validation)
     └── health/
         ├── health.module.ts
@@ -39,9 +43,9 @@ src/
 
 | File | Purpose |
 |------|---------|
-| `src/providers/postgres.provider.ts` | `TenantPostgresProvisioner` — creates K8s Secret, ConfigMap (postgresql.conf + init.sql), headless Service, and StatefulSet for per-tenant PostgreSQL |
+| `src/providers/mongo.provider.ts` | `TenantMongoProvisioner` — creates K8s Secret, ConfigMap (mongod.conf + initialization JS), headless Service, and StatefulSet for per-tenant MongoDB |
 | `src/providers/kubernetes.provider.ts` | Factory providers for `K8S_CORE_API` and `K8S_APPS_API` |
-| `src/modules/tenants/tenants.service.ts` | Namespace CRUD with K8s labels, orchestrates PostgreSQL provisioning and readiness wait |
+| `src/modules/tenants/tenants.service.ts` | Namespace CRUD with K8s labels, orchestrates MongoDB provisioning and readiness wait |
 | `src/modules/tenants/tenant.dto.ts` | `CreateTenantDto` / `UpdateTenantDto`; tenant name validation: lowercase alphanumeric with hyphens, max 32 chars |
 
 ## Architecture Highlights
@@ -51,25 +55,25 @@ src/
 ```
 AppModule
 ├── KubernetesModule (@Global) ─── K8S_CORE_API, K8S_APPS_API
-├── PostgresModule (@Global) ─── TenantPostgresProvisioner
+├── MongoModule (@Global) ─── TenantMongoProvisioner
 ├── TenantsModule ─── TenantsController, TenantsService
 └── HealthModule ─── HealthController
 ```
 
 ### Data Flow
 
-1. **Create tenant**: `POST /tenants { name }` -> validate name -> check for existing namespace -> create K8s namespace with labels -> provision PostgreSQL (OLTP + usage) -> wait for ready -> apply `yoizenclaw-runtime` Knative Service in tenant namespace -> return tenant detail with postgres host
+1. **Create tenant**: `POST /tenants { name }` -> validate name -> check for existing namespace -> create K8s namespace with labels -> provision MongoDB (OLTP + usage) -> wait for ready -> apply `yoizenclaw-runtime` Knative Service in tenant namespace -> return tenant detail with mongo host
 2. **List tenants**: query namespaces by label `yoizen.io/managed-by=tenant-service` + current environment
-3. **Get tenant**: lookup namespace by tenant name + environment labels -> return namespace status + postgres host
-4. **Delete tenant**: delete namespace (cascades all resources, including PostgreSQL StatefulSet AND the per-tenant `yoizenclaw-runtime` Knative Service)
+3. **Get tenant**: lookup namespace by tenant name + environment labels -> return namespace status + mongo host
+4. **Delete tenant**: delete namespace (cascades all resources, including MongoDB StatefulSet AND the per-tenant `yoizenclaw-runtime` Knative Service)
 
 ### Tenant Namespace Structure
 
 Each tenant namespace (`<tenant>-<env>-ns`) contains:
-- K8s Secret: `postgres-credentials` (DB, user, password)
-- ConfigMap: `postgres-config` (postgresql.conf + init.sql for schema)
-- Headless Service: `postgres` (ClusterIP: None, port 5432)
-- StatefulSet: `postgres` (1 replica, 1Gi PVC; image from `TENANT_POSTGRES_IMAGE`, default `pgvector/pgvector:pg17`)
+- K8s Secret: `mongo-credentials` (DB, user, password)
+- ConfigMap: `mongo-config` (mongod.conf + initialization JS for schema)
+- Headless Service: `mongo` (ClusterIP: None, port 27017)
+- StatefulSet: `mongo` (1 replica, 1Gi PVC; image from `TENANT_MONGO_IMAGE`, default `mongo:7.0`)
 
 ### Namespace Labels
 
@@ -125,8 +129,8 @@ Each tenant namespace (`<tenant>-<env>-ns`) contains:
 ## Code Style and Conventions
 
 - **Environment scoping**: all namespace operations filter by `PLATFORM_ENVIRONMENT` label
-- **PostgreSQL provisioning**: full StatefulSet lifecycle (Secret, ConfigMap, Service, StatefulSet) with readiness polling (2s interval, 120s timeout)
-- **Cascade delete**: deleting a namespace removes all resources including the PostgreSQL StatefulSet and PVC
+- **MongoDB provisioning**: full StatefulSet lifecycle (Secret, ConfigMap, Service, StatefulSet) with readiness polling (2s interval, 120s timeout)
+- **Cascade delete**: deleting a namespace removes all resources including the MongoDB StatefulSet and PVC
 - **Tenant name validation**: lowercase alphanumeric with optional hyphens, cannot start/end with hyphen, max 32 chars
 - **Label-based discovery**: uses Kubernetes label selectors for all namespace queries
 
@@ -145,7 +149,7 @@ Requires Kubernetes cluster access (in-cluster or kubeconfig).
 
 | Service | Relationship |
 |---------|-------------|
-| **Kubernetes API** | Provisions namespaces and PostgreSQL StatefulSets |
+| **Kubernetes API** | Provisions namespaces and MongoDB StatefulSets |
 | **api-gateway** | Upstream proxy (tenant endpoints proxied through the gateway) |
-| **audit-service** | Downstream consumer of the per-tenant PostgreSQL instances provisioned here |
+| **audit-service** | Downstream consumer of the per-tenant MongoDB instances provisioned here |
 | **`@yoizen/shared`** | `TENANT_HEADER` |

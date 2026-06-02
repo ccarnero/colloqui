@@ -1,0 +1,1037 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: api-gateway
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/api-gateway:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: REDIS_HOST
+          value: redis.support-services-dev.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_CLUSTER_MODE
+          value: 'true'
+        - name: AUDIT_SERVICE_URL
+          value: http://audit-service-api.platform-services-dev.svc.cluster.local
+        - name: TENANT_SERVICE_URL
+          value: http://tenant-service.platform-services-dev.svc.cluster.local
+        - name: AUTH_SERVICE_URL
+          value: http://auth-service.platform-services-dev.svc.cluster.local
+        - name: CACHE_SERVICE_URL
+          value: http://cache-service.platform-services-dev.svc.cluster.local
+        - name: REGISTRY_SERVICE_URL
+          value: http://registry-service.platform-services-dev.svc.cluster.local
+        - name: WORKFLOW_SERVICE_URL
+          value: http://workflow-service-api.platform-services-dev.svc.cluster.local
+        - name: PROXY_SERVICE_URL
+          value: http://proxy-service.platform-services-dev.svc.cluster.local
+        - name: CONNECTOR_ADMIN_URL
+          value: http://connector-admin-api.platform-services-dev.svc.cluster.local
+        - name: CHANNEL_SERVICE_URL
+          value: http://channel-service-api.platform-services-dev.svc.cluster.local
+        - name: ADMIN_SERVICE_URL
+          value: http://yoizenclaw-admin-service.platform-services-dev.svc.cluster.local
+        - name: YOIZENCLAW_RUNTIME_GATEWAY_URL
+          value: http://yoizenclaw-runtime-gateway.platform-services-dev.svc.cluster.local
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: JWT_SECRET
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: api-gateway
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 75m
+            memory: 192Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 3000
+          initialDelaySeconds: 3
+          periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: yoizenclaw-runtime-gateway
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/yoizenclaw-runtime-gateway:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: REDIS_HOST
+          value: redis.support-services-dev.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_CLUSTER_MODE
+          value: 'true'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: yoizenclaw-runtime-gateway
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: audit-service-api
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/audit-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: TENANT_POSTGRES_TIER_OVERRIDES
+          value: '{}'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: audit-service-api
+        - name: SERVICE_MODE
+          value: api
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-service-worker
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: TENANT_POSTGRES_TIER_OVERRIDES
+          value: '{}'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: audit-service-worker
+        - name: SERVICE_MODE
+          value: worker
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: cache-service
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/cache-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: REDIS_HOST
+          value: redis.support-services-dev.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_CLUSTER_MODE
+          value: 'true'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: cache-service
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 3
+          periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: tenant-service
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/tenant-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: TENANT_POSTGRES_IMAGE
+          value: pgvector/pgvector:pg17
+        - name: NODE_EXTRA_CA_CERTS
+          value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: tenant-service
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 3
+          periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: auth-service
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/auth-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: POSTGRES_PASSWORD
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: JWT_SECRET
+        - name: ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: ADMIN_EMAIL
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: ADMIN_PASSWORD
+        - name: TENANT_ADMIN_TENANT_ID
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: TENANT_ADMIN_TENANT_ID
+        - name: TENANT_ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: TENANT_ADMIN_EMAIL
+        - name: TENANT_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: TENANT_ADMIN_PASSWORD
+        - name: TENANT_ADMIN_DISPLAY_NAME
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: TENANT_ADMIN_DISPLAY_NAME
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: REDIS_HOST
+          value: redis.support-services-dev.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_CLUSTER_MODE
+          value: 'true'
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: auth-service
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: registry-service
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/registry-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: REGISTRY_EMIT_ADAPTER_SYNC
+          value: 'true'
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: TENANT_SERVICE_URL
+          value: http://tenant-service.platform-services-dev.svc.cluster.local
+        - name: NODE_EXTRA_CA_CERTS
+          value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: registry-service
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: workflow-service-api
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/workflow-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: ENTRYPOINT
+          value: dist/main.js
+        - name: TEMPORAL_ADDRESS
+          value: temporal.support-services-dev.svc.cluster.local:7233
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: TENANT_POSTGRES_TIER_OVERRIDES
+          value: '{}'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: workflow-service-api
+        - name: SERVICE_MODE
+          value: api
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-service-worker
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: ENTRYPOINT
+          value: dist/main.js
+        - name: TEMPORAL_ADDRESS
+          value: temporal.support-services-dev.svc.cluster.local:7233
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: TENANT_POSTGRES_TIER_OVERRIDES
+          value: '{}'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: workflow-service-worker
+        - name: SERVICE_MODE
+          value: worker
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-worker
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        env:
+        - name: ENTRYPOINT
+          value: dist/temporal/worker.js
+        - name: TEMPORAL_ADDRESS
+          value: temporal.support-services-dev.svc.cluster.local:7233
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: REDIS_HOST
+          value: redis.support-services-dev.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_CLUSTER_MODE
+          value: 'true'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: workflow-worker
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '2'
+            memory: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connector-runtime
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        env:
+        - name: TEMPORAL_ADDRESS
+          value: temporal.support-services-dev.svc.cluster.local:7233
+        - name: CONNECTOR_ADMIN_URL
+          value: http://connector-admin-api.platform-services-dev.svc.cluster.local
+        - name: REDIS_HOST
+          value: redis.support-services-dev.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_CLUSTER_MODE
+          value: 'true'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: connector-runtime
+        resources:
+          requests:
+            cpu: 75m
+            memory: 128Mi
+          limits:
+            cpu: '2'
+            memory: 1Gi
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: proxy-service
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/proxy-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: TENANT_SERVICE_URL
+          value: http://tenant-service.platform-services-dev.svc.cluster.local
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: proxy-service
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 3
+          periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: connector-admin-api
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/metric: rps
+        autoscaling.knative.dev/target: '200'
+        autoscaling.knative.dev/min-scale: '2'
+        autoscaling.knative.dev/max-scale: '10'
+        autoscaling.knative.dev/scale-down-delay: 60s
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/connector-admin:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: TENANT_POSTGRES_TIER_OVERRIDES
+          value: '{}'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: connector-admin
+        - name: SERVICE_MODE
+          value: api
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 300m
+            memory: 256Mi
+          limits:
+            cpu: '2'
+            memory: 1Gi
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connector-admin-worker
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: TENANT_POSTGRES_TIER_OVERRIDES
+          value: '{}'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: connector-admin-worker
+        - name: SERVICE_MODE
+          value: worker
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: channel-service-api
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/channel-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: REDIS_HOST
+          value: redis.support-services-dev.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_CLUSTER_MODE
+          value: 'true'
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: channel-service-api
+        - name: SERVICE_MODE
+          value: api
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: channel-service-worker
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: REDIS_HOST
+          value: redis.support-services-dev.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_CLUSTER_MODE
+          value: 'true'
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: channel-service-worker
+        - name: SERVICE_MODE
+          value: worker
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: yoizenclaw-admin-service
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/yoizenclaw-admin-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: yoizenclaw-admin-service
+        - name: CONNECTOR_ADMIN_URL
+          value: http://connector-admin-api.platform-services-dev.svc.cluster.local
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: usage-aggregator-api
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/usage-aggregator-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: TENANT_SERVICE_URL
+          value: http://tenant-service.platform-services-dev.svc.cluster.local
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: usage-aggregator-api
+        - name: SERVICE_MODE
+          value: api
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 192Mi
+          limits:
+            cpu: '1'
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: usage-aggregator-worker
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: TENANT_SERVICE_URL
+          value: http://tenant-service.platform-services-dev.svc.cluster.local
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: usage-aggregator-worker
+        - name: SERVICE_MODE
+          value: worker
