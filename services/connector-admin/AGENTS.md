@@ -62,7 +62,7 @@ tsconfig.json
 | `src/providers/tenant-connection-manager.ts` | `AdapterTenantConnectionManager` subclass of `@yoizen/database` `TenantConnectionManager`. Registers `ADAPTER_SCHEMA_SQL` via `setSchema()` so `ensureSchema(tenantId)` runs DDL once per tenant (O(1) amortised). |
 | `src/providers/providers.module.ts` | Global module exporting the tenant connection manager and NATS providers so every feature module (adapters, internal-sync, health) resolves them without duplication. |
 | `src/modules/adapters/adapters.repository.ts` | Per-method `sqlFor(tenantId)` resolution; every query runs against the caller's tenant DB. No `tenant_id` column in queries or row types. `mapAdapter(row, tenantId)` populates the HTTP response's `tenantId` from the request context, not a DB column. |
-| `src/modules/adapters/adapters.service.ts` | CRUD + managed-by guard. Rejects mutations on adapters managed by `registry-service`; the registry internal-sync lifecycle is authoritative. |
+| `src/modules/adapters/adapters.service.ts` | CRUD + field-level managed-by guard. On managed adapters (`managed_by != null`) it rejects edits to **registry-owned fields only** (`name`, `baseUrl`, `healthCheckPath`, `status`) with a structured 409 (`reason: "MANAGED_ADAPTER"`, `lockedFields`, `editableFields`); auth/headers/timeouts/retries/tags/cache and all endpoint mutations are allowed (sync never touches them). Deleting a managed adapter is still blocked (the sync would recreate it). |
 | `src/modules/adapters/adapters.controller.ts` | Thin controller delegating to `AdaptersService`. Reads `x-yoizen-tenant` header via `@TenantId()` for tenant scoping. |
 | `src/modules/internal-sync/internal-sync.service.ts` | Durable JetStream consumer that materializes `service.upserted/service.deleted` events into `context=internal` adapters in the tenant's own DB. Short-circuits envelopes missing `payload.tenantId`. |
 
@@ -108,7 +108,7 @@ registry-service.service.upserted.v1 / service.deleted.v1 (cross-tenant stream)
 | `POST` | `/adapters` | `create` | Insert adapter (+ optional inline endpoints) |
 | `GET` | `/adapters` | `list` | List adapters for tenant, optional `?context=`, `?tag=`, `?name=` filters |
 | `GET` | `/adapters/:id` | `get` | Fetch adapter with endpoints |
-| `PATCH` | `/adapters/:id` | `update` | Dynamic partial update (rejects managed adapters) |
+| `PATCH` | `/adapters/:id` | `update` | Dynamic partial update (managed adapters: rejects registry-owned fields only) |
 | `DELETE` | `/adapters/:id` | `remove` | Delete adapter (FK cascade deletes endpoints) |
 | `POST` | `/adapters/:id/endpoints` | `addEndpoint` | Add endpoint to adapter |
 | `PATCH` | `/adapters/:id/endpoints/:epId` | `updateEndpoint` | Partial endpoint update |

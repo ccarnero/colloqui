@@ -65,8 +65,16 @@ export const NAV_SECTIONS: INavSection[] = [
     matchPaths: ["/channels"],
     landingPath: "/channels",
     pages: [
-      { label: "WhatsApp", route: "/channels/whatsapp" },
-      { label: "Telegram", route: "/channels/telegram" },
+      {
+        label: "WhatsApp",
+        route: "/channels/whatsapp",
+        indicator: { kind: "count", source: "channels.whatsapp.total" },
+      },
+      {
+        label: "Telegram",
+        route: "/channels/telegram",
+        indicator: { kind: "count", source: "channels.telegram.total" },
+      },
     ],
   },
   {
@@ -79,16 +87,13 @@ export const NAV_SECTIONS: INavSection[] = [
       {
         label: "HTTP",
         route: "/connections/http",
-        indicator: {
-          kind: "count-danger",
-          source: "connections.http.errored",
-        },
+        indicator: { kind: "count", source: "connections.http.total" },
       },
       { label: "MCP", route: "/connections/mcp" },
       {
         label: "Hosted services",
         route: "/connections/hosted-services",
-        indicator: { kind: "count", source: "connections.hosted.count" },
+        indicator: { kind: "count", source: "connections.hosted.total" },
       },
     ],
   },
@@ -98,12 +103,16 @@ export const NAV_SECTIONS: INavSection[] = [
     matchPaths: ["/yoizenclaw"],
     landingPath: "/yoizenclaw",
     pages: [
-      { label: "Agents", route: "/yoizenclaw/agents" },
+      {
+        label: "Agents",
+        route: "/yoizenclaw/agents",
+        indicator: { kind: "count", source: "ai.agents.total" },
+      },
       { label: "Playground", route: "/yoizenclaw/playground" },
       {
         label: "Memories",
         route: "/yoizenclaw/memories",
-        indicator: { kind: "count-danger", source: "ai.memories.pending" },
+        indicator: { kind: "count", source: "ai.memories.total" },
       },
     ],
   },
@@ -116,10 +125,7 @@ export const NAV_SECTIONS: INavSection[] = [
       {
         label: "Workflows",
         route: "/workflows",
-        indicator: {
-          kind: "count-danger",
-          source: "processes.workflows.failing",
-        },
+        indicator: { kind: "count", source: "processes.workflows.total" },
       },
     ],
   },
@@ -129,8 +135,16 @@ export const NAV_SECTIONS: INavSection[] = [
     matchPaths: ["/settings", "/users", "/roles", "/api-keys", "/billing"],
     landingPath: "/settings",
     pages: [
-      { label: "Users", route: "/users" },
-      { label: "Roles", route: "/roles" },
+      {
+        label: "Users",
+        route: "/users",
+        indicator: { kind: "count", source: "settings.users.total" },
+      },
+      {
+        label: "Roles",
+        route: "/roles",
+        indicator: { kind: "count", source: "settings.roles.total" },
+      },
       { label: "API keys", route: "/api-keys" },
       { label: "Billing", route: "/billing" },
     ],

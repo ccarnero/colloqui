@@ -2,6 +2,8 @@ import { HttpClient } from "@angular/common/http";
 import { Injectable, inject } from "@angular/core";
 import { environment } from "../../../environments/environment";
 import { Observable } from "rxjs";
+import { tap } from "rxjs/operators";
+import { ResourceMutationsService } from "./metrics/resource-mutations.service";
 import {
   buildYoizenclawCreateAgentPayload,
   type IYoizenclawAgent,
@@ -48,6 +50,7 @@ function buildQueryParams(
 @Injectable({ providedIn: "root" })
 export class YoizenclawAdminService {
   private readonly http = inject(HttpClient);
+  private readonly mutations = inject(ResourceMutationsService);
 
   /**
    * Retrieves the current agent catalog for the active tenant.
@@ -75,7 +78,9 @@ export class YoizenclawAdminService {
    */
   createAgent(draft: IYoizenclawAgentDraft): Observable<IYoizenclawAgent> {
     const payload = buildYoizenclawCreateAgentPayload(draft);
-    return this.http.post<IYoizenclawAgent>(`${BASE_URL}/agents`, payload);
+    return this.http
+      .post<IYoizenclawAgent>(`${BASE_URL}/agents`, payload)
+      .pipe(tap(() => this.mutations.notify("ai")));
   }
 
   publishAgent(agentId: string): Observable<IYoizenclawAgent> {
@@ -124,7 +129,9 @@ export class YoizenclawAdminService {
    * @returns A completion stream (HTTP 204).
    */
   deleteAgent(agentId: string): Observable<void> {
-    return this.http.delete<void>(`${BASE_URL}/agents/${agentId}`);
+    return this.http
+      .delete<void>(`${BASE_URL}/agents/${agentId}`)
+      .pipe(tap(() => this.mutations.notify("ai")));
   }
 
   /**
@@ -158,10 +165,12 @@ export class YoizenclawAdminService {
   approveMemoryProposal(
     proposalId: string,
   ): Observable<IYoizenclawMemoryProposalActionResponse> {
-    return this.http.post<IYoizenclawMemoryProposalActionResponse>(
-      `${BASE_URL}/memories/proposals/${proposalId}/approve`,
-      {},
-    );
+    return this.http
+      .post<IYoizenclawMemoryProposalActionResponse>(
+        `${BASE_URL}/memories/proposals/${proposalId}/approve`,
+        {},
+      )
+      .pipe(tap(() => this.mutations.notify("ai")));
   }
 
   /**
@@ -173,9 +182,11 @@ export class YoizenclawAdminService {
   rejectMemoryProposal(
     proposalId: string,
   ): Observable<IYoizenclawMemoryProposalActionResponse> {
-    return this.http.post<IYoizenclawMemoryProposalActionResponse>(
-      `${BASE_URL}/memories/proposals/${proposalId}/reject`,
-      {},
-    );
+    return this.http
+      .post<IYoizenclawMemoryProposalActionResponse>(
+        `${BASE_URL}/memories/proposals/${proposalId}/reject`,
+        {},
+      )
+      .pipe(tap(() => this.mutations.notify("ai")));
   }
 }

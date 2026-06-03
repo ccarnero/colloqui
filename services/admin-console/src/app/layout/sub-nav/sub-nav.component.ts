@@ -182,7 +182,7 @@ interface ISubNavPageVm {
 
     .ind-count-danger {
       color: var(--red, #b91c1c);
-      background: color-mix(in srgb, var(--red, #ef4444) 18%, transparent);
+      background: color-mix(in srgb, var(--red,rgb(20, 19, 19)) 18%, transparent);
     }
 
     .ind-dot {

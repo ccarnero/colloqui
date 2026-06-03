@@ -17,6 +17,7 @@ import { filter } from "rxjs/operators";
 import { HeaderComponent } from "../header/header.component";
 import { SubNavComponent } from "../sub-nav/sub-nav.component";
 import { TenantService } from "../../core/services/tenant.service";
+import { NavIndicatorRegistry } from "../../core/services/metrics/nav-indicator-registry.service";
 
 /**
  * Walks the activated route tree looking for the deepest `data.subNavCollapsed`
@@ -117,6 +118,7 @@ export class ShellComponent implements OnInit {
   private readonly tenantService = inject(TenantService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly navIndicators = inject(NavIndicatorRegistry);
 
   readonly mobileNavOpen = signal(false);
 
@@ -138,6 +140,7 @@ export class ShellComponent implements OnInit {
 
   ngOnInit(): void {
     this.tenantService.loadTenantDetails();
+    this.navIndicators.loadAll();
     this.router.events
       .pipe(filter((e) => e instanceof NavigationEnd))
       .subscribe(() => this.mobileNavOpen.set(false));

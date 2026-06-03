@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from "@angular/common/http";
 import {
   ChangeDetectionStrategy,
   Component,
@@ -41,6 +42,19 @@ interface IConnectorRow {
   tags: string[];
   adapter: IHttpAdapter;
   status: string;
+  managedBy: string | null;
+}
+
+/**
+ * Structured 409 body emitted by connector-admin for managed adapters.
+ * The backend `message` is already user-facing, so we surface it verbatim.
+ */
+interface IManagedConflictBody {
+  reason?: string;
+  message?: string;
+  managedBy?: string;
+  lockedFields?: string[];
+  editableFields?: string[];
 }
 
 function toCacheStrategy(
@@ -87,8 +101,10 @@ function toRow(dto: IAdapterDto): IConnectorRow {
       healthCheckPath: dto.healthCheckPath,
       tags: dto.tags ?? [],
       isEncrypted: dto.isEncrypted ?? false,
+      managedBy: dto.managedBy ?? null,
     },
     status: dto.status,
+    managedBy: dto.managedBy ?? null,
   };
 }
 
@@ -119,9 +135,7 @@ function toCreatePayload(
 }
 
 function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
-  return {
-    name: adapter.name,
-    baseUrl: adapter.baseUrl,
+  const editable: IUpdateAdapterPayload = {
     authType: adapter.auth.type,
     authConfig: adapter.auth as unknown as Record<string, unknown>,
     headers: adapter.headers,
@@ -129,8 +143,21 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
     timeoutMs: adapter.timeoutMs,
     maxRetries: adapter.maxRetries,
     retryBackoffMs: adapter.retryBackoffMs,
-    healthCheckPath: adapter.healthCheckPath,
     tags: adapter.tags,
+  };
+
+  // Managed adapters: never send registry-owned fields (name, baseUrl,
+  // healthCheckPath). The backend rejects them with a 409, and the sync
+  // is authoritative for those anyway.
+  if (adapter.managedBy) {
+    return editable;
+  }
+
+  return {
+    ...editable,
+    name: adapter.name,
+    baseUrl: adapter.baseUrl,
+    healthCheckPath: adapter.healthCheckPath,
   };
 }
 
@@ -165,6 +192,29 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
       </div>
     </div>
 
+    @if (actionError(); as err) {
+      <div class="conn-alert" role="alert">
+        <mat-icon class="conn-alert-icon">lock</mat-icon>
+        <div class="conn-alert-body">
+          <div class="conn-alert-title">{{ err.title }}</div>
+          <div class="conn-alert-msg">{{ err.message }}</div>
+          @if (err.editableFields?.length) {
+            <div class="conn-alert-fields">
+              Editable here: {{ err.editableFields!.join(", ") }}
+            </div>
+          }
+        </div>
+        <button
+          type="button"
+          mat-icon-button
+          aria-label="Dismiss"
+          (click)="dismissError()"
+        >
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+    }
+
     <div class="filter-bar">
       <mat-chip-listbox
         [value]="activeTag()"
@@ -191,6 +241,19 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
               <div class="name-cell">
                 <mat-icon class="name-icon">http</mat-icon>
                 <span>{{ r.adapter.name }}</span>
+                @if (r.managedBy) {
+                  <span
+                    class="badge badge-synced"
+                    [title]="
+                      'Synced from ' +
+                      r.managedBy +
+                      ' — name, base URL, status and health check are managed automatically'
+                    "
+                  >
+                    <mat-icon class="synced-icon">sync</mat-icon>
+                    Synced
+                  </span>
+                }
               </div>
             </td>
           </ng-container>
@@ -261,10 +324,18 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
               <button
                 type="button"
                 mat-icon-button
-                aria-label="Delete"
+                [attr.aria-label]="r.managedBy ? 'Delete (managed)' : 'Delete'"
+                [class.is-managed]="r.managedBy"
+                [title]="
+                  r.managedBy
+                    ? 'Synced connector — managed by ' +
+                      r.managedBy +
+                      '. Cannot be deleted here.'
+                    : 'Delete connector'
+                "
                 (click)="remove(i)"
               >
-                <mat-icon>delete</mat-icon>
+                <mat-icon>{{ r.managedBy ? "lock" : "delete" }}</mat-icon>
               </button>
             </td>
           </ng-container>
@@ -308,6 +379,59 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
       height: 18px;
       color: var(--text3);
     }
+    .conn-alert {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 0 0 12px;
+      padding: 12px 14px;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      border-left: 3px solid #ef4444;
+      border-radius: var(--radius, 6px);
+      background: rgba(239, 68, 68, 0.08);
+    }
+    .conn-alert-icon {
+      color: #ef4444;
+      font-size: 20px;
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .conn-alert-body {
+      flex: 1;
+      min-width: 0;
+    }
+    .conn-alert-title {
+      font-weight: 600;
+      color: var(--text, #e5e7eb);
+      margin-bottom: 2px;
+    }
+    .conn-alert-msg {
+      font-size: 12px;
+      color: var(--text2, #cbd5e1);
+      line-height: 1.5;
+    }
+    .conn-alert-fields {
+      font-size: 11px;
+      color: var(--text3, #94a3b8);
+      margin-top: 6px;
+    }
+    .badge-synced {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: rgba(14, 165, 233, 0.15);
+      color: #0ea5e9;
+    }
+    .synced-icon {
+      font-size: 13px;
+      width: 13px;
+      height: 13px;
+    }
+    .is-managed {
+      color: var(--text3);
+    }
   `,
 })
 export class ConnectorsComponent implements OnInit {
@@ -328,6 +452,11 @@ export class ConnectorsComponent implements OnInit {
   readonly connectors = signal<IConnectorRow[]>([]);
   readonly loading = signal(true);
   readonly activeTag = signal<string>("");
+  readonly actionError = signal<{
+    title: string;
+    message: string;
+    editableFields?: string[];
+  } | null>(null);
 
   readonly availableTags = computed(() => {
     const all = this.connectors().flatMap((r) => r.tags);
@@ -360,10 +489,15 @@ export class ConnectorsComponent implements OnInit {
       .afterClosed()
       .subscribe((result?: IHttpAdapterDialogResult) => {
         if (!result) return;
+        this.dismissError();
         this.adapterService
           .create(toCreatePayload(result.adapter, result.context))
-          .subscribe((dto) => {
-            this.connectors.update((rows) => [...rows, toRow(dto)]);
+          .subscribe({
+            next: (dto) => {
+              this.connectors.update((rows) => [...rows, toRow(dto)]);
+            },
+            error: (err: unknown) =>
+              this.reportError(err, "Couldn't create connector"),
           });
       });
   }
@@ -385,10 +519,16 @@ export class ConnectorsComponent implements OnInit {
       .afterClosed()
       .subscribe((result?: IHttpAdapterDialogResult) => {
         if (!result) return;
+        this.dismissError();
+        // Preserve the managed flag so the payload omits locked fields.
+        const nextAdapter: IHttpAdapter = {
+          ...result.adapter,
+          managedBy: row.managedBy,
+        };
         const endpointOperations = this.buildEndpointOperations(
           row.id,
           row.adapter,
-          result.adapter,
+          nextAdapter,
         );
         const endpointSync$ =
           endpointOperations.length === 0
@@ -399,24 +539,82 @@ export class ConnectorsComponent implements OnInit {
               );
 
         this.adapterService
-          .update(row.id, toUpdatePayload(result.adapter))
+          .update(row.id, toUpdatePayload(nextAdapter))
           .pipe(
             switchMap(() => endpointSync$),
             switchMap(() => this.adapterService.get(row.id)),
           )
-          .subscribe((dto) => {
-            this.connectors.update((rows) =>
-              rows.map((r) => (r.id === row.id ? toRow(dto) : r)),
-            );
+          .subscribe({
+            next: (dto) => {
+              this.connectors.update((rows) =>
+                rows.map((r) => (r.id === row.id ? toRow(dto) : r)),
+              );
+            },
+            error: (err: unknown) =>
+              this.reportError(err, "Couldn't save changes"),
           });
       });
   }
 
   remove(index: number): void {
     const row = this.filteredConnectors()[index];
-    this.adapterService.remove(row.id).subscribe(() => {
-      this.connectors.update((rows) => rows.filter((r) => r.id !== row.id));
+    if (!row) return;
+
+    // Managed connectors can't be deleted — explain why up front instead
+    // of round-tripping to a guaranteed 409.
+    if (row.managedBy) {
+      this.actionError.set({
+        title: "This connector can't be deleted here",
+        message:
+          `“${row.adapter.name}” is synced from ${row.managedBy} and would be ` +
+          `recreated automatically on the next sync. To remove it, delete the ` +
+          `source service from the registry instead.`,
+      });
+      return;
+    }
+
+    this.dismissError();
+    this.adapterService.remove(row.id).subscribe({
+      next: () => {
+        this.connectors.update((rows) => rows.filter((r) => r.id !== row.id));
+      },
+      error: (err: unknown) =>
+        this.reportError(err, "Couldn't delete connector"),
     });
+  }
+
+  dismissError(): void {
+    this.actionError.set(null);
+  }
+
+  /**
+   * Surfaces a backend error as a clear, dismissible banner. For the
+   * structured managed-adapter 409 the backend message is already
+   * user-facing, so we show it verbatim alongside the editable-field hint.
+   */
+  private reportError(err: unknown, fallbackTitle: string): void {
+    const body =
+      err instanceof HttpErrorResponse
+        ? (err.error as IManagedConflictBody | string | undefined)
+        : undefined;
+
+    if (body && typeof body === "object" && body.reason === "MANAGED_ADAPTER") {
+      this.actionError.set({
+        title: "This connector is synced and partly read-only",
+        message: body.message ?? fallbackTitle,
+        editableFields: body.editableFields,
+      });
+      return;
+    }
+
+    const message =
+      body && typeof body === "object" && typeof body.message === "string"
+        ? body.message
+        : typeof body === "string" && body.length > 0
+          ? body
+          : "Please try again, or contact support if the problem persists.";
+
+    this.actionError.set({ title: fallbackTitle, message });
   }
 
   private loadConnectors(): void {

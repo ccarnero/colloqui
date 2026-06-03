@@ -1,7 +1,9 @@
 import { inject, Injectable } from "@angular/core";
 import { HttpClient, HttpParams } from "@angular/common/http";
 import type { Observable } from "rxjs";
+import { tap } from "rxjs/operators";
 import { environment } from "../../../../../environments/environment";
+import { ResourceMutationsService } from "../../../../core/services/metrics/resource-mutations.service";
 
 export interface IWorkflowDefinitionDto {
   id: string;
@@ -88,6 +90,7 @@ interface IUpdateWorkflowPayload {
 @Injectable({ providedIn: "root" })
 export class WorkflowApiService {
   private readonly http = inject(HttpClient);
+  private readonly mutations = inject(ResourceMutationsService);
   private readonly base = `${environment.apiUrl}/workflows`;
 
   list(): Observable<IWorkflowDefinitionDto[]> {
@@ -103,10 +106,9 @@ export class WorkflowApiService {
   create(
     payload: ICreateWorkflowPayload,
   ): Observable<IWorkflowDefinitionDto> {
-    return this.http.post<IWorkflowDefinitionDto>(
-      this.base,
-      payload,
-    );
+    return this.http
+      .post<IWorkflowDefinitionDto>(this.base, payload)
+      .pipe(tap(() => this.mutations.notify("processes")));
   }
 
   update(
@@ -120,7 +122,9 @@ export class WorkflowApiService {
   }
 
   delete(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.base}/${id}`);
+    return this.http
+      .delete<void>(`${this.base}/${id}`)
+      .pipe(tap(() => this.mutations.notify("processes")));
   }
 
   execute(

@@ -66,6 +66,12 @@ export interface IHttpAdapter {
   healthCheckPath: string;
   tags: string[];
   isEncrypted: boolean;
+  /**
+   * When set, the connector is synced from this owner (e.g.
+   * `registry-service`). Registry-owned fields (name, baseUrl,
+   * healthCheckPath, status) are read-only in the editor.
+   */
+  managedBy?: string | null;
 }
 
 export type IHttpAdapterContext = "internal" | "external";

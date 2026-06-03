@@ -39,6 +39,39 @@
   gap: 12px;
 }
 
+.managed-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(14, 165, 233, 0.4);
+  border-left: 3px solid #0ea5e9;
+  border-radius: var(--radius);
+  background: rgba(14, 165, 233, 0.08);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text2);
+
+  code {
+    font-family: var(--font-mono, monospace);
+    color: #0ea5e9;
+  }
+
+  strong {
+    color: var(--text);
+  }
+}
+
+.managed-banner-icon {
+  color: #0ea5e9;
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
 .section-card-title {
   font-size: 12px;
 }

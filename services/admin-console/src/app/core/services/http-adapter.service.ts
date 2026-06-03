@@ -1,9 +1,11 @@
 import { Injectable, inject } from "@angular/core";
 import { HttpClient, HttpParams } from "@angular/common/http";
 import type { Observable } from "rxjs";
+import { tap } from "rxjs/operators";
 import { environment } from "../../../environments/environment";
 import type { AdapterStatus } from "../models/adapter-status";
 import type { IHttpAdapterCacheStrategy } from "../../shared/models/http-adapter.model";
+import { ResourceMutationsService } from "./metrics/resource-mutations.service";
 
 export interface IAdapterCacheStrategyDto {
   enabled: boolean;
@@ -43,6 +45,11 @@ export interface IAdapterDto {
   status: AdapterStatus;
   tags: string[];
   isEncrypted: boolean;
+  /**
+   * Non-null when the adapter is mirrored from an external sync (e.g.
+   * `registry-service`). Registry-owned fields are read-only for these.
+   */
+  managedBy?: string | null;
   createdAt: string;
   updatedAt: string;
   endpoints: IAdapterEndpointDto[];
@@ -92,6 +99,7 @@ export interface IListAdaptersParams {
 @Injectable({ providedIn: "root" })
 export class HttpAdapterService {
   private readonly http = inject(HttpClient);
+  private readonly mutations = inject(ResourceMutationsService);
   private readonly base = `${environment.apiUrl}/connectors`;
 
   list(params?: IListAdaptersParams): Observable<IAdapterDto[]> {
@@ -110,7 +118,9 @@ export class HttpAdapterService {
   }
 
   create(payload: ICreateAdapterPayload): Observable<IAdapterDto> {
-    return this.http.post<IAdapterDto>(this.base, payload);
+    return this.http
+      .post<IAdapterDto>(this.base, payload)
+      .pipe(tap(() => this.mutations.notify("connections")));
   }
 
   update(id: string, payload: IUpdateAdapterPayload): Observable<IAdapterDto> {
@@ -118,7 +128,9 @@ export class HttpAdapterService {
   }
 
   remove(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.base}/${id}`);
+    return this.http
+      .delete<void>(`${this.base}/${id}`)
+      .pipe(tap(() => this.mutations.notify("connections")));
   }
 
   addEndpoint(

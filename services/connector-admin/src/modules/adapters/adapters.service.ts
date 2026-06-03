@@ -28,6 +28,45 @@ const ENDPOINT_UPDATE_FIELD_KEYS = [
   "cache",
 ] as const;
 
+/**
+ * DTO keys whose values are owned by the external sync lifecycle (e.g.
+ * `registry-service` internal mirrors). Editing any of these on a
+ * managed adapter is rejected because the next `upsertMirror` event
+ * would silently overwrite the change. Every other field (auth,
+ * headers, timeouts, retries, tags, cache) is safe to edit — the sync
+ * never touches it — so operators may override those freely.
+ *
+ * Backed by a `Set` for O(1) membership checks on the update hot path.
+ */
+const REGISTRY_OWNED_FIELD_KEYS: ReadonlySet<string> = new Set([
+  "name",
+  "baseUrl",
+  "healthCheckPath",
+  "status",
+]);
+
+/**
+ * Editable adapter fields on a managed adapter — the complement of
+ * {@link REGISTRY_OWNED_FIELD_KEYS}. Surfaced verbatim in the 409 body
+ * so the UI can tell the user exactly what they *can* change.
+ */
+const MANAGED_EDITABLE_FIELD_KEYS: readonly string[] =
+  ADAPTER_UPDATE_FIELD_KEYS.filter(
+    (key) => !REGISTRY_OWNED_FIELD_KEYS.has(key),
+  );
+
+/** Structured 409 body for managed-adapter conflicts (UI-consumable). */
+interface IManagedAdapterConflict {
+  readonly statusCode: 409;
+  readonly error: "Conflict";
+  readonly reason: "MANAGED_ADAPTER";
+  readonly message: string;
+  readonly adapterId: string;
+  readonly managedBy: string;
+  readonly lockedFields: readonly string[];
+  readonly editableFields: readonly string[];
+}
+
 @Injectable()
 export class AdaptersService {
   private readonly logger = new PinoLoggerService(AdaptersService.name);
@@ -149,35 +188,69 @@ export class AdaptersService {
   }
 
   /**
-   * Rejects mutations on adapters managed by an automated sync (e.g.
-   * `registry-service` internal mirrors). The externally managed lifecycle
-   * is authoritative; manual edits would be overwritten on next sync.
+   * Loads an adapter row or throws {@link NotFoundException}. Centralises
+   * the existence check so every mutation shares one read.
    */
-  private async assertNotManaged(
-    tenantId: string,
-    id: string,
-    operation: string,
-  ): Promise<void> {
+  private async getRowOrThrow(tenantId: string, id: string) {
     const row = await this.adaptersRepository.getAdapterRow(tenantId, id);
     if (!row) {
       throw new NotFoundException(`Adapter '${id}' not found`);
     }
-    if (row.managed_by) {
-      throw new ConflictException(
-        `Cannot ${operation} adapter '${id}' managed by '${row.managed_by}'`,
-      );
+    return row;
+  }
+
+  /**
+   * Field-level guard for managed adapters. Unmanaged adapters pass
+   * through untouched. For managed adapters, only the registry-owned
+   * fields ({@link REGISTRY_OWNED_FIELD_KEYS}) are locked; the conflict
+   * names exactly which fields were rejected and which remain editable
+   * so the UI can render a precise, actionable message.
+   */
+  private assertManagedFieldsEditable(
+    id: string,
+    managedBy: string | null,
+    dto: UpdateAdapterDto,
+  ): void {
+    if (!managedBy) {
+      return;
     }
+    const lockedFields: string[] = [];
+    for (const key of REGISTRY_OWNED_FIELD_KEYS) {
+      if ((dto as Record<string, unknown>)[key] !== undefined) {
+        lockedFields.push(key);
+      }
+    }
+    if (lockedFields.length === 0) {
+      return;
+    }
+    const body: IManagedAdapterConflict = {
+      statusCode: 409,
+      error: "Conflict",
+      reason: "MANAGED_ADAPTER",
+      message:
+        `Adapter '${id}' is synced from '${managedBy}'. ` +
+        `These fields are controlled by the sync and can't be edited here: ` +
+        `${lockedFields.join(", ")}. ` +
+        `You can still edit: ${MANAGED_EDITABLE_FIELD_KEYS.join(", ")}.`,
+      adapterId: id,
+      managedBy,
+      lockedFields,
+      editableFields: MANAGED_EDITABLE_FIELD_KEYS,
+    };
+    throw new ConflictException(body);
   }
 
   /**
    * Applies a partial update; no-op fields yield a fresh read via {@link get}.
+   * Managed adapters accept edits to non-registry-owned fields only.
    *
    * @param tenantId - Tenant scope.
    * @param id - Adapter id.
    * @param dto - Partial update DTO.
    */
   async update(tenantId: string, id: string, dto: UpdateAdapterDto) {
-    await this.assertNotManaged(tenantId, id, "update");
+    const row = await this.getRowOrThrow(tenantId, id);
+    this.assertManagedFieldsEditable(id, row.managed_by, dto);
 
     const hasField = ADAPTER_UPDATE_FIELD_KEYS.some(
       (k) => (dto as Record<string, unknown>)[k] !== undefined,
@@ -193,13 +266,31 @@ export class AdaptersService {
   }
 
   /**
-   * Deletes an adapter (cascades endpoints).
+   * Deletes an adapter (cascades endpoints). Managed adapters cannot be
+   * deleted manually — the sync would recreate them on the next event —
+   * so a structured 409 is returned instead.
    *
    * @param tenantId - Tenant scope.
    * @param id - Adapter id.
    */
   async remove(tenantId: string, id: string): Promise<void> {
-    await this.assertNotManaged(tenantId, id, "delete");
+    const row = await this.getRowOrThrow(tenantId, id);
+    if (row.managed_by) {
+      const body: IManagedAdapterConflict = {
+        statusCode: 409,
+        error: "Conflict",
+        reason: "MANAGED_ADAPTER",
+        message:
+          `Adapter '${id}' is synced from '${row.managed_by}' and can't be ` +
+          `deleted here — it would be recreated automatically on the next ` +
+          `sync. Remove the source service from the registry instead.`,
+        adapterId: id,
+        managedBy: row.managed_by,
+        lockedFields: ["*"],
+        editableFields: MANAGED_EDITABLE_FIELD_KEYS,
+      };
+      throw new ConflictException(body);
+    }
     const count = await this.adaptersRepository.deleteAdapter(tenantId, id);
     if (count === 0) {
       throw new NotFoundException(`Adapter '${id}' not found`);
@@ -219,7 +310,7 @@ export class AdaptersService {
     adapterId: string,
     dto: CreateEndpointDto,
   ) {
-    await this.assertNotManaged(tenantId, adapterId, "add endpoint to");
+    await this.getRowOrThrow(tenantId, adapterId);
 
     return this.runWithUniqueConflict(
       `Endpoint '${dto.method} ${dto.path}' already exists on this adapter`,
@@ -249,7 +340,7 @@ export class AdaptersService {
     adapterId: string,
     endpointId: string,
   ): Promise<void> {
-    await this.assertNotManaged(tenantId, adapterId, "remove endpoint from");
+    await this.getRowOrThrow(tenantId, adapterId);
 
     const count = await this.adaptersRepository.deleteEndpoint(
       tenantId,
@@ -279,7 +370,7 @@ export class AdaptersService {
     endpointId: string,
     dto: UpdateEndpointDto,
   ) {
-    await this.assertNotManaged(tenantId, adapterId, "update endpoint on");
+    await this.getRowOrThrow(tenantId, adapterId);
 
     const hasField = ENDPOINT_UPDATE_FIELD_KEYS.some(
       (key) => (dto as Record<string, unknown>)[key] !== undefined,

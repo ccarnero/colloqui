@@ -176,6 +176,72 @@ describe("AdaptersService", () => {
       const row = await service.update("t1", "a1", { name: "Renamed" });
       expect(row.name).toBe("Renamed");
     });
+
+    it("rejects registry-owned field edits on a managed adapter", async () => {
+      const db = makeMockDb({
+        http_adapters: {
+          findOne: mock(async () => ({
+            ...adapterDoc,
+            managed_by: "registry-service",
+          })),
+          updateOne: mock(async () => ({ modifiedCount: 1 })),
+        },
+      });
+      const service = await createAdaptersService(db);
+      await expect(
+        service.update("t1", "a1", { baseUrl: "https://evil.example.com" }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("exposes lockedFields/editableFields in the managed conflict body", async () => {
+      const db = makeMockDb({
+        http_adapters: {
+          findOne: mock(async () => ({
+            ...adapterDoc,
+            managed_by: "registry-service",
+          })),
+        },
+      });
+      const service = await createAdaptersService(db);
+      try {
+        await service.update("t1", "a1", {
+          baseUrl: "https://evil.example.com",
+          status: "disabled",
+        });
+        throw new Error("expected ConflictException");
+      } catch (err) {
+        expect(err).toBeInstanceOf(ConflictException);
+        const body = (err as ConflictException).getResponse() as {
+          reason: string;
+          managedBy: string;
+          lockedFields: string[];
+          editableFields: string[];
+        };
+        expect(body.reason).toBe("MANAGED_ADAPTER");
+        expect(body.managedBy).toBe("registry-service");
+        expect(body.lockedFields).toContain("baseUrl");
+        expect(body.lockedFields).toContain("status");
+        expect(body.editableFields).toContain("headers");
+        expect(body.editableFields).not.toContain("baseUrl");
+      }
+    });
+
+    it("allows non-registry-owned field edits on a managed adapter", async () => {
+      const db = makeMockDb({
+        http_adapters: {
+          findOne: mock(async () => ({
+            ...adapterDoc,
+            managed_by: "registry-service",
+            timeout_ms: 9000,
+          })),
+          updateOne: mock(async () => ({ modifiedCount: 1 })),
+        },
+        adapter_endpoints: { find: makeFindChain([]) },
+      });
+      const service = await createAdaptersService(db);
+      const row = await service.update("t1", "a1", { timeoutMs: 9000 });
+      expect(row.timeoutMs).toBe(9000);
+    });
   });
 
   describe("remove", () => {
@@ -254,7 +320,7 @@ describe("AdaptersService", () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it("throws ConflictException when adapter is managed by registry", async () => {
+    it("allows adding an endpoint to a managed adapter", async () => {
       const db = makeMockDb({
         http_adapters: {
           findOne: mock(async () => ({
@@ -262,11 +328,14 @@ describe("AdaptersService", () => {
             managed_by: "registry-service",
           })),
         },
+        adapter_endpoints: {
+          insertOne: mock(async () => ({ acknowledged: true })),
+        },
       });
       const service = await createAdaptersService(db);
-      await expect(
-        service.addEndpoint("t1", "a1", epDto),
-      ).rejects.toBeInstanceOf(ConflictException);
+      const result = await service.addEndpoint("t1", "a1", epDto);
+      expect(result.adapterId).toBe("a1");
+      expect(result.path).toBe("/users");
     });
 
     it("throws ConflictException on duplicate endpoint (11000)", async () => {
@@ -320,7 +389,7 @@ describe("AdaptersService", () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it("throws ConflictException when adapter is managed", async () => {
+    it("allows removing an endpoint from a managed adapter", async () => {
       const db = makeMockDb({
         http_adapters: {
           findOne: mock(async () => ({
@@ -328,11 +397,12 @@ describe("AdaptersService", () => {
             managed_by: "registry-service",
           })),
         },
+        adapter_endpoints: {
+          deleteOne: mock(async () => ({ deletedCount: 1 })),
+        },
       });
       const service = await createAdaptersService(db);
-      await expect(
-        service.removeEndpoint("t1", "a1", "e1"),
-      ).rejects.toBeInstanceOf(ConflictException);
+      await service.removeEndpoint("t1", "a1", "e1");
     });
   });
 });

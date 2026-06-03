@@ -75,6 +75,20 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
     </div>
 
     <mat-dialog-content>
+      @if (isManaged) {
+        <div class="managed-banner" role="note">
+          <mat-icon class="managed-banner-icon">sync</mat-icon>
+          <div>
+            <strong>Synced connector.</strong>
+            This connector is mirrored from <code>{{ managedBy }}</code>.
+            <strong>Name</strong>, <strong>Base URL</strong> and
+            <strong>Health Check</strong> are managed automatically and are
+            read-only here. You can still edit auth, headers, caching,
+            reliability, tags and endpoints.
+          </div>
+        </div>
+      }
+
       <form [formGroup]="form" class="adapter-form">
         <div class="section-card">
           <div class="section-card-header">
@@ -298,6 +312,10 @@ export class HttpAdapterDialogComponent {
 
   readonly tags = signal<string[]>(this.data.adapter?.tags ?? []);
 
+  /** Owner of a synced connector, or null for operator-owned ones. */
+  readonly managedBy = this.data.adapter?.managedBy ?? null;
+  readonly isManaged = this.managedBy !== null;
+
   private readonly authTypeSignal = signal<AuthType>(
     this.data.adapter?.auth.type ?? "none",
   );
@@ -467,6 +485,15 @@ export class HttpAdapterDialogComponent {
         this.authTypeSignal.set(type);
       }
     });
+
+    // Registry-owned fields are read-only for synced connectors. Disabled
+    // controls are excluded from validation but still returned by
+    // getRawValue(), and the caller omits them from the update payload.
+    if (this.data.adapter?.managedBy) {
+      form.get("name")?.disable();
+      form.get("baseUrl")?.disable();
+      form.get("healthCheckPath")?.disable();
+    }
 
     return form;
   }

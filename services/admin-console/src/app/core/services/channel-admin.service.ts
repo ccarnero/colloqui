@@ -1,7 +1,9 @@
 import { Injectable, inject } from "@angular/core";
 import { HttpClient, HttpParams } from "@angular/common/http";
 import type { Observable } from "rxjs";
+import { tap } from "rxjs/operators";
 import { environment } from "../../../environments/environment";
+import { ResourceMutationsService } from "./metrics/resource-mutations.service";
 import type {
   IChannelAccount,
   IChannelAccountOption,
@@ -30,17 +32,22 @@ export interface IAutoReplyRuleDto {
 @Injectable({ providedIn: "root" })
 export class ChannelAdminService {
   private readonly http = inject(HttpClient);
+  private readonly mutations = inject(ResourceMutationsService);
 
   listAccounts(): Observable<IChannelAccount[]> {
     return this.http.get<IChannelAccount[]>(`${BASE}/accounts`);
   }
 
   deleteAccount(id: string): Observable<void> {
-    return this.http.delete<void>(`${BASE}/accounts/${id}`);
+    return this.http
+      .delete<void>(`${BASE}/accounts/${id}`)
+      .pipe(tap(() => this.mutations.notify("channels")));
   }
 
   createAccount(body: Record<string, unknown>): Observable<unknown> {
-    return this.http.post(`${BASE}/accounts`, body);
+    return this.http
+      .post(`${BASE}/accounts`, body)
+      .pipe(tap(() => this.mutations.notify("channels")));
   }
 
   patchAccount(
