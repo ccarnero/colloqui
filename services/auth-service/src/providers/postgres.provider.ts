@@ -6,7 +6,6 @@ import {
 import type postgres from "postgres";
 
 export { POSTGRES_SQL } from "@yoizen/database";
-export type { Sql } from "@yoizen/database";
 
 /**
  * postgres.js `TransactionSql` loses its call signature due to `Omit`.

@@ -17,7 +17,7 @@ export interface IRuntimeProxyOptions {
 @Injectable()
 export class RuntimeProxyService {
   private readonly logger = new PinoLoggerService(RuntimeProxyService.name);
-  private readonly baseUrl = gatewayConfig.services.runtimeGateway;
+  private readonly baseUrl = gatewayConfig.services.aiAgentGateway;
 
   async proxy(options: IRuntimeProxyOptions): Promise<object> {
     const url = `${this.baseUrl}${options.path}`;

@@ -73,7 +73,7 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 │  │  │  cache-service · channel-service · tenant-service          │  │  │
 │  │  │  registry-service · workflow-service · workflow-worker     │  │  │
 │  │  │  connector-runtime · connector-admin                       │  │  │
-│  │  │  yoizenclaw-admin-service · yoizenclaw-runtime-gateway     │  │  │
+│  │  │  agent-admin-service · ai-agent-gateway     │  │  │
 │  │  │  usage-aggregator-service · proxy-service · admin-console  │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
@@ -122,15 +122,15 @@ kubectl apply -k knative/services/overlays/local/dev
 | **Audit Service** | Knative Service | Independent NATS consumer that persists every event to per-tenant PostgreSQL. Exposes paginated query API |
 | **Cache Service** | Knative Service | CRUD API with L1 in-memory + L2 Redis cache-aside pattern |
 | **Channel Service** | Knative Service | Multi-tenant messaging channel configuration and inbound webhook ingress |
-| **Tenant Service** | Knative Service | Environment-scoped tenant namespace management. Provisions dedicated PostgreSQL StatefulSet and per-tenant `yoizenclaw-runtime` Knative Service |
+| **Tenant Service** | Knative Service | Environment-scoped tenant namespace management. Provisions dedicated PostgreSQL StatefulSet and per-tenant `agent-ai-service` Knative Service |
 | **Registry Service** | Knative Service | Knative-based service registry with route management, canary deployments, and traffic splitting |
 | **Workflow Service** | Knative Service | REST API + Temporal orchestrator for multi-step workflows (start, status, list) |
 | **Workflow Worker** | Knative Service | Temporal orchestrator worker executing JS functions and NATS service bus activities |
 | **Connector Admin** | Knative Service | Manages multi-tenant HTTP connector configurations (base URL, auth, headers, timeouts, retries) and their endpoints. Consumed via `AdapterClient` by `connector-runtime` |
 | **Connector Runtime** | Knative Service (KEDA-scaled) | Generic Temporal HTTP execution worker for `endpointCall` and `serviceCall`; uses `tracedFetch`, connector resolution, response caching, and internal service mirror lookup |
-| **YoizenClaw Admin Service** | Knative Service | Authoring API for AI agents/workflows (config-only persistence; runtime is per-tenant) |
-| **YoizenClaw Runtime Gateway** | Knative Service | Stateless inbound bridge that fans out execution requests to the per-tenant `yoizenclaw-runtime` Knative Service |
-| **YoizenClaw Runtime** | Knative Service (per-tenant) | Per-tenant agent execution runtime auto-provisioned by `tenant-service` into the tenant namespace |
+| **Agent Admin Service** | Knative Service | Authoring API for AI agents/workflows (config-only persistence; runtime is per-tenant) |
+| **AI Agent Gateway** | Knative Service | Stateless inbound bridge that fans out execution requests to the per-tenant `agent-ai-service` Knative Service |
+| **Agent AI Service** | Knative Service (per-tenant) | Per-tenant agent execution runtime auto-provisioned by `tenant-service` into the tenant namespace |
 | **Usage Aggregator Service** | Knative Service | Aggregates per-tenant usage events into the usage Postgres |
 | **Proxy Service** | Knative Service | Egress proxy for tenant-bound HTTP traffic |
 | **Admin Console** | Knative Service | Angular admin UI |
@@ -149,7 +149,7 @@ engines:
 2. Gateway authenticates the request, resolves tenant, and validates the payload
 3. Gateway publishes the envelope to NATS JetStream (`EVENTS` stream) and returns `202 Accepted` with the event ID
 4. Audit Service independently consumes EVENTS and persists every event to per-tenant PostgreSQL
-5. Trigger consumers (workflow-service, yoizenclaw-runtime) consume the events they care about and start Temporal workflows or agent executions
+5. Trigger consumers (workflow-service, agent-ai-service) consume the events they care about and start Temporal workflows or agent executions
 6. Workflow activities run on `workflow-service-worker` (orchestration) and `connector-runtime` (HTTP execution against `connector-admin`-managed connectors)
 7. Completion events are published back to NATS (`RESULTS` stream) and clients can fetch the result via the gateway or receive it via SSE
 
@@ -197,7 +197,7 @@ Each environment runs its own tenant-service scoped by `PLATFORM_ENVIRONMENT`. C
 
 1. Kubernetes namespace `<tenant>-<env>-ns` with discovery labels
 2. Dedicated PostgreSQL StatefulSet with pre-configured tenant schema
-3. Per-tenant `yoizenclaw-runtime` Knative Service applied right after Postgres readiness
+3. Per-tenant `agent-ai-service` Knative Service applied right after Postgres readiness
 4. Services connect to per-tenant PostgreSQL at `postgres.<tenant>-<env>-ns.svc.cluster.local`
 
 ### NATS JetStream Streams
@@ -337,7 +337,7 @@ Arch/
 │   ├── audit-service/                 # NestJS + Fastify — NATS consumer, per-tenant PostgreSQL
 │   ├── cache-service/                 # NestJS + Fastify — L1/L2 cache API
 │   ├── channel-service/               # NestJS + Fastify — Messaging channel config + inbound webhooks
-│   ├── tenant-service/                # NestJS + Fastify — K8s namespace + PostgreSQL + yoizenclaw-runtime provisioning
+│   ├── tenant-service/                # NestJS + Fastify — K8s namespace + PostgreSQL + agent-ai-service provisioning
 │   ├── registry-service/              # NestJS + Fastify — Knative service registry + canary
 │   ├── connector-admin/               # NestJS + Fastify — Multi-tenant HTTP connector config + endpoints
 │   ├── connector-runtime/             # Standalone Temporal worker — generic HTTP execution (connector-aware)
@@ -346,9 +346,9 @@ Arch/
 │   ├── usage-aggregator-service/      # NestJS + Fastify — Per-tenant usage aggregation
 │   ├── proxy-service/                 # NestJS + Fastify — Tenant egress proxy
 │   ├── admin-console/                 # Angular admin UI
-│   ├── yoizenclaw-admin-service/      # NestJS + Fastify — YoizenClaw authoring API
-│   ├── yoizenclaw-runtime-gateway/    # NestJS + Fastify — Stateless inbound bridge to per-tenant runtimes
-│   └── yoizenclaw-runtime/            # Python — Per-tenant agent execution runtime (provisioned per tenant)
+│   ├── agent-admin-service/      # NestJS + Fastify — YoizenClaw authoring API
+│   ├── ai-agent-gateway/    # NestJS + Fastify — Stateless inbound bridge to per-tenant runtimes
+│   └── agent-ai-service/            # TypeScript — Per-tenant agent execution runtime (provisioned per tenant)
 └── tests/
     └── e2e/                           # Cross-service end-to-end tests
 ```
@@ -387,7 +387,7 @@ kubectl apply -k knative/services/overlays/local/dev
 
 ```bash
 eval $(minikube docker-env -p yoizen-arch)
-for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service workflow-http-worker usage-aggregator-service proxy-service yoizenclaw-admin-service yoizenclaw-runtime-gateway; do
+for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service workflow-http-worker usage-aggregator-service proxy-service agent-admin-service ai-agent-gateway; do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```
@@ -397,7 +397,7 @@ done
 OrbStack >= 1.6 shares the local Docker daemon with the cluster — just build normally:
 
 ```bash
-for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service workflow-http-worker usage-aggregator-service proxy-service yoizenclaw-admin-service yoizenclaw-runtime-gateway; do
+for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service workflow-http-worker usage-aggregator-service proxy-service agent-admin-service ai-agent-gateway; do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```

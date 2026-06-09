@@ -1,29 +1,24 @@
 import { ChangeDetectionStrategy, Component, inject } from "@angular/core";
 import { MatTableModule } from "@angular/material/table";
 import { TenantService } from "../../../core/services/tenant.service";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import { SparklineComponent } from "../../../shared/components/sparkline/sparkline.component";
 import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 
 @Component({
   selector: "app-analytics",
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatTableModule, SparklineComponent, StatusBadgeComponent],
+  imports: [MatTableModule, PageHeaderComponent, SparklineComponent, StatusBadgeComponent],
   template: `
-    <div class="ws-header">
-      <div>
-        <div class="ws-title">Analytics</div>
-        <div class="ws-subtitle">
-          Real-time usage metrics for {{ tenant.currentTenant().name }}
-        </div>
-      </div>
-      <div class="ws-actions">
+    <app-page-header title="Analytics" subtitle="Track usage and performance metrics">
+      <ng-container slot="actions">
         <select class="btn btn-secondary btn-sm" aria-label="Date range">
           <option>Last 7 days</option>
           <option>Last 30 days</option>
           <option>Last 90 days</option>
         </select>
-      </div>
-    </div>
+      </ng-container>
+    </app-page-header>
 
     <div class="cards-grid">
       <div class="card">
@@ -111,6 +106,11 @@ import { StatusBadgeComponent } from "../../../shared/components/status-badge/st
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 16px;
+    }
+    @media (max-width: 768px) {
+      .two-col {
+        grid-template-columns: 1fr;
+      }
     }
     .full-width {
       width: 100%;

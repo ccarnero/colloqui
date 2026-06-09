@@ -5,7 +5,6 @@ import {
 } from "@yoizen/database";
 import { CHANNEL_MONGO_SCHEMA } from "@yoizen/shared";
 
-export type { Db } from "mongodb";
 
 /**
  * Per-tenant MongoDB for `channel_accounts` and `auto_reply_rules`.

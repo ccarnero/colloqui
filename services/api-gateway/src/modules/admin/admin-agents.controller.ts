@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Param,
   Body,
@@ -15,9 +16,11 @@ import {
 import { AdminProxyService } from "./admin-proxy.service";
 import {
   CreateAgentDto,
-  MemoryProposalParamDto,
   AdminAgentsListQueryDto,
   UpdateAgentDto,
+  UpdateEnabledToolsDto,
+  UpdateEnabledMcpServersDto,
+  UpdateToolDescriptionOverridesDto,
 } from "./admin.dto";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
 import { toOptionalStringQueryParam } from "../../utils/pagination-query.util";
@@ -44,15 +47,15 @@ export class AdminAgentsController {
     });
   }
 
-  @Get("memory-proposals")
-  async listMemoryProposals(
+  @Get(":id/versions")
+  async listVersions(
     @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
   ): Promise<object> {
     return this.proxy.proxy({
       method: "GET",
-      path: "/admin/agents/memory-proposals",
+      path: `/admin/agents/${id}/versions`,
       tenantId: req.tenantId,
-      trustedUserId: req.user?.sub,
     });
   }
 
@@ -96,6 +99,20 @@ export class AdminAgentsController {
     });
   }
 
+  @Delete(":id/versions/:versionId")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteVersion(
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("versionId", ParseUUIDPipe) versionId: string,
+  ): Promise<void> {
+    await this.proxy.proxy({
+      method: "DELETE",
+      path: `/admin/agents/${id}/versions/${versionId}`,
+      tenantId: req.tenantId,
+    });
+  }
+
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteAgent(
@@ -119,6 +136,7 @@ export class AdminAgentsController {
       method: "POST",
       path: `/admin/agents/${id}/publish`,
       tenantId: req.tenantId,
+      trustedUserId: req.user?.sub,
     });
   }
 
@@ -132,34 +150,66 @@ export class AdminAgentsController {
       method: "POST",
       path: `/admin/agents/${id}/unpublish`,
       tenantId: req.tenantId,
-    });
-  }
-
-  @Post("memory-proposals/:id/approve")
-  @HttpCode(HttpStatus.OK)
-  async approveMemoryProposal(
-    @Req() req: ITenantScopedRequest,
-    @Param() params: MemoryProposalParamDto,
-  ): Promise<object> {
-    return this.proxy.proxy({
-      method: "POST",
-      path: `/admin/agents/memory-proposals/${params.id}/approve`,
-      tenantId: req.tenantId,
       trustedUserId: req.user?.sub,
     });
   }
 
-  @Post("memory-proposals/:id/reject")
+  @Post(":id/versions/:versionId/rollback")
   @HttpCode(HttpStatus.OK)
-  async rejectMemoryProposal(
+  async rollbackToVersion(
     @Req() req: ITenantScopedRequest,
-    @Param() params: MemoryProposalParamDto,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("versionId", ParseUUIDPipe) versionId: string,
   ): Promise<object> {
     return this.proxy.proxy({
       method: "POST",
-      path: `/admin/agents/memory-proposals/${params.id}/reject`,
+      path: `/admin/agents/${id}/versions/${versionId}/rollback`,
       tenantId: req.tenantId,
-      trustedUserId: req.user?.sub,
+    });
+  }
+
+  @Patch(":id/tools")
+  @HttpCode(HttpStatus.OK)
+  async updateEnabledTools(
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body: UpdateEnabledToolsDto,
+  ): Promise<object> {
+    return this.proxy.proxy({
+      method: "PATCH",
+      path: `/admin/agents/${id}/tools`,
+      tenantId: req.tenantId,
+      body,
+    });
+  }
+
+  @Patch(":id/mcp-servers")
+  @HttpCode(HttpStatus.OK)
+  async updateEnabledMcpServers(
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body: UpdateEnabledMcpServersDto,
+  ): Promise<object> {
+    return this.proxy.proxy({
+      method: "PATCH",
+      path: `/admin/agents/${id}/mcp-servers`,
+      tenantId: req.tenantId,
+      body,
+    });
+  }
+
+  @Patch(":id/tool-descriptions")
+  @HttpCode(HttpStatus.OK)
+  async updateToolDescriptionOverrides(
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body: UpdateToolDescriptionOverridesDto,
+  ): Promise<object> {
+    return this.proxy.proxy({
+      method: "PATCH",
+      path: `/admin/agents/${id}/tool-descriptions`,
+      tenantId: req.tenantId,
+      body,
     });
   }
 }

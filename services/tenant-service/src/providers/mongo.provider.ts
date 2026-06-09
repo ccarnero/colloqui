@@ -398,7 +398,7 @@ export class TenantMongoProvisioner implements OnModuleDestroy {
 
   /**
    * Verifies dedicated tenant Mongo accepts authenticated writes on the primary.
-   * Gates yoizenclaw-runtime until the replica-set-init sidecar finishes.
+   * Gates provisioning until the replica-set-init sidecar finishes.
    */
   private async probeDedicatedMongoReady(namespace: string): Promise<boolean> {
     const uri = this.buildDedicatedMongoUri(namespace);

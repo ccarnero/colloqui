@@ -95,7 +95,7 @@ html.light-theme {
   --radius: 6px;   // SM
   --radius2: 8px;  // MD
   --radius3: 12px; // LG
-  --font: "Barlow", "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+  --font: "Inter", "Barlow", "Plus Jakarta Sans", system-ui, sans-serif;
 
   // Dark surfaces from boilerplate
   --bg: var(--bg-background);
@@ -223,6 +223,18 @@ body.light-theme {
 .badge-gray {
   background: var(--bg4);
   color: var(--text3);
+}
+.badge-orange {
+  background: rgba(249, 115, 22, 0.15);
+  color: #f97316;
+}
+.badge-violet {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+}
+.badge-slate {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
 }
 
 // Card styles
@@ -603,7 +615,7 @@ body.light-theme {
 // Responsive
 @media (max-width: 900px) {
   .right-panel {
-    display: none !important;
+    display: none;
   }
 }
 
@@ -674,4 +686,11 @@ body.light-theme {
 /* Yoizen UI Utilities */
 .bg-brand-gradient { background: var(--brand-gradient); }
 .text-brand-accent { color: var(--accent); }
+.badge-synced {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(14, 165, 233, 0.15);
+  color: #0ea5e9;
+}
 

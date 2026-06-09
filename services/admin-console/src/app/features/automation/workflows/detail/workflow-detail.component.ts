@@ -6,6 +6,11 @@ import {
   signal,
   type OnInit,
 } from "@angular/core";
+import { FormControl, ReactiveFormsModule } from "@angular/forms";
+import { MatButtonModule } from "@angular/material/button";
+import { MatDialog, MatDialogModule } from "@angular/material/dialog";
+import { MatFormFieldModule } from "@angular/material/form-field";
+import { MatInputModule } from "@angular/material/input";
 import {
   ActivatedRoute,
   Router,
@@ -36,7 +41,16 @@ import {
   selector: "app-workflow-detail",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, BreadcrumbsComponent, SubTabsComponent],
+  imports: [
+    RouterOutlet,
+    BreadcrumbsComponent,
+    SubTabsComponent,
+    MatDialogModule,
+    MatFormFieldModule,
+    MatInputModule,
+    ReactiveFormsModule,
+    MatButtonModule,
+  ],
   template: `
     <div class="detail">
       <app-breadcrumbs [crumbs]="crumbs()" />
@@ -144,6 +158,7 @@ export class WorkflowDetailComponent implements OnInit {
   private readonly api = inject(WorkflowApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly dialog = inject(MatDialog);
 
   /** Reactive id from the route param (`:id`). */
   private readonly params = toSignal(this.route.params, {
@@ -191,14 +206,22 @@ export class WorkflowDetailComponent implements OnInit {
   protected runNow(): void {
     const id = this.id();
     if (!id) return;
-    this.api.execute(id).subscribe({
-      next: () => {
-        // After kicking off, route into Executions so the user sees it.
-        void this.router.navigate(["/workflows", id, "executions"]);
-      },
-      error: () => {
-        /* swallow — could surface a snack later */
-      },
+
+    const dialogRef = this.dialog.open(RunWorkflowDialogComponent, {
+      width: "400px",
+    });
+
+    dialogRef.afterClosed().subscribe((timeoutSec: number | undefined) => {
+      if (timeoutSec === undefined) return; // Cancel
+      this.api.execute(id, { agentTimeoutSec: timeoutSec }).subscribe({
+        next: () => {
+          // After kicking off, route into Executions so the user sees it.
+          void this.router.navigate(["/workflows", id, "executions"]);
+        },
+        error: () => {
+          /* swallow — could surface a snack later */
+        },
+      });
     });
   }
 
@@ -210,4 +233,35 @@ export class WorkflowDetailComponent implements OnInit {
     const id = this.id();
     if (id) void this.router.navigate(["/workflows", id, "builder"]);
   }
+}
+
+@Component({
+  selector: "app-run-workflow-dialog",
+  standalone: true,
+  template: `
+    <h2 mat-dialog-title>Run Workflow</h2>
+    <mat-dialog-content>
+      <mat-form-field appearance="outline" style="width: 100%;">
+        <mat-label>Agent Timeout (seconds)</mat-label>
+        <input matInput type="number" [formControl]="timeoutControl" min="60" max="3600" />
+        <mat-hint>Default: 900 (15 minutes). Max: 3600 (1 hour).</mat-hint>
+      </mat-form-field>
+    </mat-dialog-content>
+    <mat-dialog-actions align="end">
+      <button mat-button mat-dialog-close>Cancel</button>
+      <button mat-raised-button color="primary" [mat-dialog-close]="timeoutControl.value">
+        Execute
+      </button>
+    </mat-dialog-actions>
+  `,
+  imports: [
+    MatDialogModule,
+    MatFormFieldModule,
+    MatInputModule,
+    ReactiveFormsModule,
+    MatButtonModule,
+  ],
+})
+export class RunWorkflowDialogComponent {
+  readonly timeoutControl = new FormControl(900, { nonNullable: true });
 }

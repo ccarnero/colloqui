@@ -42,7 +42,7 @@ Each migrated NestJS service uses:
 3. **Mongo adapter** — `mongodb` driver (current implementation)
 4. **`createRepositoryProvider`** — binds the interface to the adapter for `config.dbEngine`
 
-Python `yoizenclaw-runtime` uses `IMemoryStore` / `IVectorIndex` / `ILeaderElection` with the same `DB_ENGINE` switch.
+`agent-ai-service` uses `IMemoryStore` / `IVectorIndex` / `ILeaderElection` with the same `DB_ENGINE` switch.
 
 ## Feature matrix (dev/local)
 

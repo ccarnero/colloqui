@@ -82,9 +82,9 @@ sequenceDiagram
     autonumber
     participant TEMP as Temporal
     participant WFW as workflow-worker
-    participant YZG as yoizenclaw-runtime-gateway
+    participant YZG as ai-agent-gateway
     participant NATS as NATS INGRESS-tenant
-    participant YZR as yoizenclaw-runtime
+    participant YZR as agent-ai-service
     participant CH as channel-service
     participant TGA as Telegram Bot API
 
@@ -107,9 +107,9 @@ sequenceDiagram
 | Webhook ingress published by gateway | `evt.<tenant>.api-gateway.messaging.telegram.webhook.webhook_received.v1` | `INGRESS-<tenant>` |
 | Normalized inbound message published by channel-service | `evt.<tenant>.channel-service.messaging.telegram.telegram.received.v1` | `INGRESS-<tenant>` |
 | Outbound send command published by workflow | `evt.<tenant>.channel-service.messaging.telegram.telegram.send.v1` | `INGRESS-<tenant>` |
-| Agent execution request published by runtime-gateway | `evt.<tenant>.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal.execution_requested.v1` | `INGRESS-<tenant>` |
+| Agent execution request published by runtime-gateway | `evt.<tenant>.ai-agent-gateway.automation.platform.internal.execution_requested.v1` | `INGRESS-<tenant>` |
 
 ## Notes
 
 - After the message is on NATS, this trigger-based path does not go through `workflow-service-api`; `workflow-service-worker` starts Temporal directly.
-- `agentCall` path uses `yoizenclaw-runtime-gateway` and `yoizenclaw-runtime` over JetStream events.
+- `agentCall` path uses `ai-agent-gateway` and `agent-ai-service` over JetStream events.

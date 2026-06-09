@@ -40,9 +40,9 @@ spec:
             - name: CHANNEL_SERVICE_URL
               value: "http://channel-service-api.platform-services-dev.svc.cluster.local"
             - name: ADMIN_SERVICE_URL
-              value: "http://yoizenclaw-admin-service.platform-services-dev.svc.cluster.local"
-            - name: YOIZENCLAW_RUNTIME_GATEWAY_URL
-              value: "http://yoizenclaw-runtime-gateway.platform-services-dev.svc.cluster.local"
+              value: "http://agent-admin-service.platform-services-dev.svc.cluster.local"
+            - name: AI_AGENT_GATEWAY_URL
+              value: "http://ai-agent-gateway.platform-services-dev.svc.cluster.local"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -67,8 +67,8 @@ spec:
               memory: 192Mi
             limits:
               cpu: "1"
-              memory: 1Gi
-          readinessProbe:
+              memory: 2Gi
+          readinessProbe:S
             httpGet:
               path: /readyz
               port: 3000
@@ -79,13 +79,13 @@ spec:
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: yoizenclaw-runtime-gateway
+  name: ai-agent-gateway
 spec:
   template:
     spec:
       containers:
         - name: user-container
-          image: dev.local/yoizenclaw-runtime-gateway:local
+          image: dev.local/ai-agent-gateway:local
           ports:
             - containerPort: 3000
               protocol: TCP
@@ -101,7 +101,9 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
-              value: "yoizenclaw-runtime-gateway"
+              value: "ai-agent-gateway"
+            - name: AGENT_AI_SERVICE_URL
+              value: "http://agent-ai-service.platform-services-dev.svc.cluster.local"
 ---
 
 # ----- audit-service: split api ↔ worker (Phase 1.5) -----
@@ -704,7 +706,7 @@ spec:
               memory: 256Mi
             limits:
               cpu: "2"
-              memory: 1Gi
+              memory: 2Gi
 ---
 
 apiVersion: apps/v1
@@ -746,7 +748,7 @@ spec:
               memory: 128Mi
             limits:
               cpu: "2"
-              memory: 1Gi
+              memory: 2Gi
 ---
 
 apiVersion: serving.knative.dev/v1
@@ -903,7 +905,7 @@ spec:
               memory: 256Mi
             limits:
               cpu: "2"
-              memory: 1Gi
+              memory: 2Gi
           # Relaxed from kubelet defaults (timeout 1s / failures 3).
           # /readyz hits the per-tenant `AdapterTenantConnectionManager`
           # which under load can take >1 s to acquire a pool slot —
@@ -1115,13 +1117,13 @@ spec:
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: yoizenclaw-admin-service
+  name: agent-admin-service
 spec:
   template:
     spec:
       containers:
         - name: user-container
-          image: dev.local/yoizenclaw-admin-service:local
+          image: dev.local/agent-admin-service:local
           ports:
             - containerPort: 3000
               protocol: TCP
@@ -1153,7 +1155,7 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
-              value: "yoizenclaw-admin-service"
+              value: "agent-admin-service"
             - name: CONNECTOR_ADMIN_URL
               value: "http://connector-admin-api.platform-services-dev.svc.cluster.local"
           securityContext:
@@ -1252,7 +1254,7 @@ spec:
               memory: 192Mi
             limits:
               cpu: "1"
-              memory: 512Mi
+              memory: 2Gi
           readinessProbe:
             httpGet:
               path: /health

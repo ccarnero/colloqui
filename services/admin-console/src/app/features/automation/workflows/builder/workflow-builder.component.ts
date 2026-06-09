@@ -32,14 +32,20 @@ import { serializeFlow } from "../domain/flow-serializer";
 import { validateWorkflow } from "../domain/validation/workflow.validator";
 import type { ValidationError } from "../domain/validation/validation.types";
 import { WorkflowApiService } from "../services/workflow-api.service";
+import type {
+  IVariableGroup,
+  IVariableEntry,
+} from "./components/template-autocomplete/template-autocomplete.component";
 
 import { WorkflowNodeComponent } from "./components/workflow-node/workflow-node.component";
 import { WorkflowPaletteComponent } from "./components/workflow-palette/workflow-palette.component";
 import { WorkflowNodeConfigComponent } from "./components/workflow-node-config/workflow-node-config.component";
+import { WorkflowTestPanelComponent } from "./components/workflow-test-panel/workflow-test-panel.component";
 import {
   WorkflowValidationDialogComponent,
   type IWorkflowValidationDialogData,
 } from "./components/workflow-validation-dialog/workflow-validation-dialog.component";
+import { VariablesReferenceComponent } from "./components/variables-reference/variables-reference.component";
 
 const CONNECTOR_OUTPUT_SUFFIX = "-out";
 const CONNECTOR_INPUT_SUFFIX = "-in";
@@ -73,7 +79,8 @@ function pruneConflictingConnections(
   nodes: Record<string, IWorkflowNode>,
 ): Record<string, IWorkflowConnection> {
   const sourceAllowsMany =
-    nodes[winner.source]?.type === EWorkflowNodeType.BRANCH;
+    nodes[winner.source]?.type === EWorkflowNodeType.BRANCH ||
+    nodes[winner.source]?.type === EWorkflowNodeType.CONDITIONAL;
 
   const next: Record<string, IWorkflowConnection> = {};
   for (const [k, c] of Object.entries(all)) {
@@ -104,6 +111,8 @@ function pruneConflictingConnections(
     WorkflowNodeComponent,
     WorkflowPaletteComponent,
     WorkflowNodeConfigComponent,
+    WorkflowTestPanelComponent,
+    VariablesReferenceComponent,
   ],
   template: `
     <div class="builder-shell">
@@ -132,6 +141,15 @@ function pruneConflictingConnections(
         <button
           mat-flat-button
           type="button"
+          (click)="toggleTestPanel()"
+          [class.active]="testPanelOpen()"
+        >
+          <mat-icon>play_arrow</mat-icon>
+          Run Test
+        </button>
+        <button
+          mat-flat-button
+          type="button"
           (click)="saveWorkflow()"
           [disabled]="saving()"
         >
@@ -146,6 +164,8 @@ function pruneConflictingConnections(
 
         <!-- Canvas -->
         <div class="builder-canvas-wrap">
+          <app-variables-reference [groups]="variableGroups()" />
+
           <f-flow
             fDraggable
             (fLoaded)="onCanvasLoaded()"
@@ -188,10 +208,21 @@ function pruneConflictingConnections(
           <app-workflow-node-config
             [node]="selectedNode()"
             [triggerAccountIds]="triggerAccountIds()"
+            [workflowNodes]="nodes()"
+            [variableGroups]="variableGroups()"
             (close)="deselectNode()"
             (remove)="removeNode($event)"
             (configChange)="onNodeConfigChange($event)"
             (nameChange)="onNodeNameChange($event)"
+          />
+        }
+
+        <!-- Test Panel (when no node selected and test panel is open) -->
+        @if (!selectedNode() && testPanelOpen()) {
+          <app-workflow-test-panel
+            [workflowId]="flow().key"
+            [workflowActions]="serializedActions()"
+            (close)="testPanelOpen.set(false)"
           />
         }
       </div>
@@ -298,6 +329,10 @@ function pruneConflictingConnections(
       .f-connection-drag-handle {
       fill: var(--accent, #6366f1);
     }
+    button.active {
+      background: var(--accent);
+      color: white;
+    }
   `,
 })
 export class WorkflowBuilderComponent implements OnInit {
@@ -317,6 +352,7 @@ export class WorkflowBuilderComponent implements OnInit {
   });
 
   readonly selectedNodeKey = signal<string | null>(null);
+  readonly testPanelOpen = signal(false);
   readonly saving = signal(false);
   readonly validationErrors = signal<ValidationError[]>([]);
   readonly errorNodeKeys = computed(
@@ -339,6 +375,92 @@ export class WorkflowBuilderComponent implements OnInit {
   readonly selectedNode = computed<IWorkflowNode | null>(() => {
     const key = this.selectedNodeKey();
     return key ? (this.flow().nodes[key] ?? null) : null;
+  });
+
+  /** Serialized actions used by the test panel to extract request variables. */
+  readonly serializedActions = computed(() => serializeFlow(this.flow()).actions);
+
+  /**
+   * Variable groups derived from the current workflow nodes, consumed by
+   * the Variables Reference panel and forwarded to the node config panel
+   * for the conditional-branch variable dropdown.
+   */
+  readonly variableGroups = computed<IVariableGroup[]>(() => {
+    const nodes = this.nodes();
+    const groups: IVariableGroup[] = [];
+
+    // Request variables — extracted from existing template usage
+    const requestVars: IVariableEntry[] = [];
+    const requestSeen = new Set<string>();
+    for (const node of nodes) {
+      const json = JSON.stringify(node.configuration);
+      const regex = /\{\{request\.([^}]+)\}\}/g;
+      let match;
+      while ((match = regex.exec(json)) !== null) {
+        if (!requestSeen.has(match[1])) {
+          requestSeen.add(match[1]);
+          requestVars.push({
+            path: `request.${match[1]}`,
+            label: match[1],
+            description: `Input variable: ${match[1]}`,
+            example: `{{request.${match[1]}}}`,
+          });
+        }
+      }
+    }
+    // Always include common request vars even if not yet used
+    for (const fallback of [
+      { path: "request.from", label: "from", description: "Sender identifier (phone/JID)" },
+      { path: "request.text", label: "text", description: "Inbound message text" },
+      { path: "request.conversationId", label: "conversationId", description: "Current conversation ID" },
+      { path: "request.channel", label: "channel", description: "Channel type (whatsapp, telegram…)" },
+    ]) {
+      if (!requestSeen.has(fallback.label)) {
+        requestVars.push({
+          ...fallback,
+          example: `{{${fallback.path}}}`,
+        });
+      }
+    }
+    groups.push({
+      namespace: "Request",
+      icon: "\uD83D\uDCE5",
+      variables: requestVars,
+    });
+
+    // Results from previous steps
+    const resultVars: IVariableEntry[] = [];
+    for (const node of nodes) {
+      if (!node.name) continue;
+      resultVars.push({
+        path: `results["${node.name}"].data`,
+        label: `${node.name} data`,
+        description: `Full output from ${node.name}`,
+        example: `{{results["${node.name}"].data}}`,
+      });
+      resultVars.push({
+        path: `results["${node.name}"].data.reply`,
+        label: `${node.name} reply`,
+        description: `Reply text from ${node.name}`,
+        example: `{{results["${node.name}"].data.reply}}`,
+      });
+    }
+    if (resultVars.length > 0) {
+      groups.push({ namespace: "Results", icon: "\uD83D\uDCCA", variables: resultVars });
+    }
+
+    // Built-in variables
+    groups.push({
+      namespace: "Built-in",
+      icon: "\u2699\uFE0F",
+      variables: [
+        { path: "workflow.tenant", label: "tenant", description: "Current tenant ID", example: "{{workflow.tenant}}" },
+        { path: "workflow.name", label: "name", description: "Workflow name", example: "{{workflow.name}}" },
+        { path: "variables.previous", label: "previous", description: "Previous step result", example: "{{variables.previous}}" },
+      ],
+    });
+
+    return groups;
   });
 
   /**
@@ -487,6 +609,10 @@ export class WorkflowBuilderComponent implements OnInit {
 
   deselectNode(): void {
     this.selectedNodeKey.set(null);
+  }
+
+  protected toggleTestPanel(): void {
+    this.testPanelOpen.update((open) => !open);
   }
 
   removeNode(key: string): void {
@@ -713,6 +839,72 @@ export class WorkflowBuilderComponent implements OnInit {
             link(node.key, keys[0]);
           }
         } else if (
+          activity === "conditional"
+        ) {
+          const condBranches =
+            (a["branches"] as Array<{
+              label: string;
+              condition: Record<string, unknown>;
+              actions: unknown[];
+            }>) ?? [];
+          const defaultActions = a["default"] as
+            | unknown[]
+            | undefined;
+
+          node.configuration["branches"] =
+            condBranches.map((b) => ({
+              label: b.label,
+              condition: b.condition,
+            }));
+
+          const totalPaths = condBranches.length +
+            (Array.isArray(defaultActions) &&
+            defaultActions.length > 0
+              ? 1
+              : 0);
+          const mid = (totalPaths - 1) / 2;
+
+          for (let bi = 0; bi < condBranches.length; bi++) {
+            const pathY =
+              Y_BASE + (bi - mid) * Y_BRANCH_GAP;
+            const keys = this.deserializeChain(
+              condBranches[bi].actions ?? [],
+              nodes,
+              link,
+              X_START + col * X_GAP,
+              pathY,
+              X_GAP,
+              Y_BRANCH_GAP,
+            );
+            if (keys.length === 0) continue;
+            link(node.key, keys[0]);
+          }
+
+          if (
+            Array.isArray(defaultActions) &&
+            defaultActions.length > 0
+          ) {
+            const defaultY =
+              Y_BASE +
+              (condBranches.length - mid) *
+                Y_BRANCH_GAP;
+            const keys = this.deserializeChain(
+              defaultActions,
+              nodes,
+              link,
+              X_START + col * X_GAP,
+              defaultY,
+              X_GAP,
+              Y_BRANCH_GAP,
+            );
+            if (keys.length > 0) {
+              link(node.key, keys[0]);
+              node.configuration["default"] = {
+                targetKey: keys[0],
+              };
+            }
+          }
+        } else if (
           a["args"] &&
           typeof a["args"] === "object"
         ) {
@@ -817,6 +1009,69 @@ export class WorkflowBuilderComponent implements OnInit {
           if (childKeys.length === 0) continue;
           link(node.key, childKeys[0]);
         }
+      } else if (activity === "conditional") {
+        const condBranches =
+          (a["branches"] as Array<{
+            label: string;
+            condition: Record<string, unknown>;
+            actions: unknown[];
+          }>) ?? [];
+        const defaultActions = a["default"] as
+          | unknown[]
+          | undefined;
+
+        node.configuration["branches"] =
+          condBranches.map((b) => ({
+            label: b.label,
+            condition: b.condition,
+          }));
+
+        const totalPaths = condBranches.length +
+          (Array.isArray(defaultActions) &&
+          defaultActions.length > 0
+            ? 1
+            : 0);
+        const mid = (totalPaths - 1) / 2;
+        const childOffset = offset + 1;
+
+        for (let bi = 0; bi < condBranches.length; bi++) {
+          const pathY = y + (bi - mid) * yBranchGap;
+          const childKeys = this.deserializeChain(
+            condBranches[bi].actions ?? [],
+            nodes,
+            link,
+            startX + childOffset * xGap,
+            pathY,
+            xGap,
+            yBranchGap,
+          );
+          if (childKeys.length === 0) continue;
+          link(node.key, childKeys[0]);
+        }
+
+        if (
+          Array.isArray(defaultActions) &&
+          defaultActions.length > 0
+        ) {
+          const defaultY =
+            y +
+            (condBranches.length - mid) * yBranchGap;
+          const childKeys = this.deserializeChain(
+            defaultActions,
+            nodes,
+            link,
+            startX + childOffset * xGap,
+            defaultY,
+            xGap,
+            yBranchGap,
+          );
+          if (childKeys.length > 0) {
+            link(node.key, childKeys[0]);
+            node.configuration["default"] = {
+              targetKey: childKeys[0],
+            };
+          }
+        }
       } else if (a["args"] && typeof a["args"] === "object") {
         node.configuration = {
           ...node.configuration,
@@ -856,6 +1111,7 @@ export class WorkflowBuilderComponent implements OnInit {
       agentCall: EWorkflowNodeType.AGENT_CALL,
       channelSend: EWorkflowNodeType.CHANNEL,
       branch: EWorkflowNodeType.BRANCH,
+      conditional: EWorkflowNodeType.CONDITIONAL,
     };
     return map[activity] ?? null;
   }

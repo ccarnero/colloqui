@@ -8,6 +8,7 @@ import {
   type IExecutionsRepository,
 } from "./executions.repository.interface";
 import { RegisteredServicesResolver } from "./registered-services.resolver";
+import { SystemVariablesProvider } from "./system-variables.provider";
 import { WorkflowsController } from "./workflows.controller";
 import { WorkflowsMongoRepository } from "./workflows.mongo.repository";
 import { WorkflowsPostgresRepository } from "./workflows.postgres.repository";
@@ -34,6 +35,7 @@ import { WorkflowsService } from "./workflows.service";
     }),
     WorkflowsService,
     RegisteredServicesResolver,
+    SystemVariablesProvider,
   ],
   exports: [
     WorkflowsService,

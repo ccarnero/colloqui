@@ -129,4 +129,107 @@ describe("IsWorkflowActionArrayConstraint", () => {
     const errors = await validate(dto);
     expect(errors.length).toBeGreaterThan(0);
   });
+
+  it("accepts conditional action with valid branches", async () => {
+    const dto = plainToInstance(CreateWorkflowDto, {
+      name: "w",
+      application: "app",
+      actions: [
+        {
+          activity: "conditional",
+          name: "route",
+          branches: [
+            {
+              label: "approved",
+              condition: {
+                variable: "results.check.status",
+                comparator: "eq",
+                value: "aprobado",
+              },
+              actions: [
+                {
+                  activity: "jsFunction",
+                  name: "step",
+                  args: { code: "return 1" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+  });
+
+  it("accepts conditional action with default", async () => {
+    const dto = plainToInstance(CreateWorkflowDto, {
+      name: "w",
+      application: "app",
+      actions: [
+        {
+          activity: "conditional",
+          name: "route",
+          branches: [
+            {
+              label: "ok",
+              condition: {
+                variable: "results.prev.status",
+                comparator: "eq",
+                value: "ok",
+              },
+              actions: [],
+            },
+          ],
+          default: [
+            {
+              activity: "jsFunction",
+              name: "fallback",
+              args: { code: "return 0" },
+            },
+          ],
+        },
+      ],
+    });
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+  });
+
+  it("rejects conditional action with empty branches", async () => {
+    const dto = plainToInstance(CreateWorkflowDto, {
+      name: "w",
+      application: "app",
+      actions: [
+        {
+          activity: "conditional",
+          name: "route",
+          branches: [],
+        },
+      ],
+    });
+    const errors = await validate(dto);
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("rejects conditional action with missing condition fields", async () => {
+    const dto = plainToInstance(CreateWorkflowDto, {
+      name: "w",
+      application: "app",
+      actions: [
+        {
+          activity: "conditional",
+          name: "route",
+          branches: [
+            {
+              label: "bad",
+              condition: { variable: "", comparator: "eq", value: "" },
+              actions: [],
+            },
+          ],
+        },
+      ],
+    });
+    const errors = await validate(dto);
+    expect(errors.length).toBeGreaterThan(0);
+  });
 });

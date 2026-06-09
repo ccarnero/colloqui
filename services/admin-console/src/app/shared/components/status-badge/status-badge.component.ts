@@ -11,7 +11,11 @@ export type StatusBadgeColor =
   | "gray"
   | "green"
   | "yellow"
-  | "red";
+  | "red"
+  | "cyan"
+  | "orange"
+  | "violet"
+  | "slate";
 
 @Component({
   selector: "app-status-badge",
@@ -61,6 +65,22 @@ export type StatusBadgeColor =
     .badge-red {
       background: color-mix(in srgb, var(--red, #ef4444) 18%, transparent);
       color: var(--red, #ef4444);
+    }
+    .badge-cyan {
+      background: color-mix(in srgb, var(--cyan, #06b6d4) 18%, transparent);
+      color: var(--cyan, #06b6d4);
+    }
+    .badge-orange {
+      background: color-mix(in srgb, #f97316 18%, transparent);
+      color: #f97316;
+    }
+    .badge-violet {
+      background: color-mix(in srgb, #8b5cf6 18%, transparent);
+      color: #8b5cf6;
+    }
+    .badge-slate {
+      background: color-mix(in srgb, #94a3b8 18%, transparent);
+      color: #94a3b8;
     }
   `,
 })

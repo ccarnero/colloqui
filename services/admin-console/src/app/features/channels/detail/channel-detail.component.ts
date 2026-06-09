@@ -13,6 +13,7 @@ import { MatButtonModule } from "@angular/material/button";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import { Subject, forkJoin, takeUntil } from "rxjs";
 import { ChannelAdminService } from "../../../core/services/channel-admin.service";
 import { AuthService } from "../../../core/services/auth.service";
@@ -80,26 +81,25 @@ const CUSTOM_RANGE_FORMATTER = new Intl.DateTimeFormat(undefined, {
     MatDialogModule,
     MatIconModule,
     MatProgressSpinnerModule,
+    PageHeaderComponent,
     RangeSelectorComponent,
     UsageChartComponent,
     KpiCardsComponent,
     ScopedStreamCardsComponent,
   ],
   template: `
-    <div class="ws-header">
-      <div>
-        <div class="ws-breadcrumb">
-          <a [routerLink]="['/channels', channel()]" class="breadcrumb-link">
-            <mat-icon>arrow_back</mat-icon>
-            {{ channel() | titlecase }} accounts
-          </a>
-        </div>
-        <div class="ws-title">Account {{ accountId() }}</div>
-        <div class="ws-subtitle">
-          Usage metrics and JetStream activity for this account.
-        </div>
-      </div>
-      <div class="ws-actions">
+    <div class="ws-breadcrumb">
+      <a [routerLink]="['/channels', channel()]" class="breadcrumb-link">
+        <mat-icon>arrow_back</mat-icon>
+        {{ channel() | titlecase }} accounts
+      </a>
+    </div>
+
+    <app-page-header
+      title="Account {{ accountId() }}"
+      subtitle="Usage metrics and JetStream activity for this account."
+    >
+      <ng-container slot="actions">
         <app-range-selector
           [value]="rangeSelection()"
           (valueChange)="onRangeChange($event)"
@@ -108,8 +108,8 @@ const CUSTOM_RANGE_FORMATTER = new Intl.DateTimeFormat(undefined, {
           <mat-icon>refresh</mat-icon>
           Refresh
         </button>
-      </div>
-    </div>
+      </ng-container>
+    </app-page-header>
 
     @if (errorMessage()) {
       <div class="error-banner">{{ errorMessage() }}</div>
@@ -163,11 +163,6 @@ const CUSTOM_RANGE_FORMATTER = new Intl.DateTimeFormat(undefined, {
     }
     .breadcrumb-link:hover {
       color: var(--text);
-    }
-    .ws-actions {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
     }
     .error-banner {
       background: rgba(239, 68, 68, 0.1);

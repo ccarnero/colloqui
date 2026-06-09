@@ -47,7 +47,7 @@ Path: `src/app/shared/components/`
 | Overview | `DashboardComponent` | `src/app/features/overview/dashboard/dashboard.component.ts` |
 | Channels | `ChannelsLandingComponent` | `src/app/features/channels/channels-landing.component.ts` |
 | Connections | `ConnectionsLandingComponent` | `src/app/features/connections/connections-landing.component.ts` |
-| AI / yoizenclaw | `YoizenclawLandingComponent` | `src/app/features/automation/yoizenclaw/yoizenclaw-landing.component.ts` |
+| AI / platform | `PlatformLandingComponent` | `src/app/features/automation/ai/platform-landing.component.ts` |
 | Processes | `ProcessesLandingComponent` | `src/app/features/processes/processes-landing.component.ts` |
 | Settings hub | `SettingsHubComponent` | `src/app/features/settings-hub/settings-hub.component.ts` |
 

@@ -100,32 +100,39 @@ export const NAV_SECTIONS: INavSection[] = [
   {
     key: "ai",
     label: "AI",
-    matchPaths: ["/yoizenclaw"],
-    landingPath: "/yoizenclaw",
+    matchPaths: ["/ai"],
+    landingPath: "/ai",
     pages: [
       {
         label: "Agents",
-        route: "/yoizenclaw/agents",
+        route: "/ai/agents",
         indicator: { kind: "count", source: "ai.agents.total" },
       },
-      { label: "Playground", route: "/yoizenclaw/playground" },
+      { label: "Playground", route: "/ai/playground" },
       {
         label: "Memories",
-        route: "/yoizenclaw/memories",
+        route: "/ai/memories",
         indicator: { kind: "count", source: "ai.memories.total" },
       },
+      { label: "Skills", route: "/ai/skills" },
+      { label: "Knowledge Bases", route: "/ai/knowledge-bases" },
+      { label: "System Variables", route: "/ai/system-variables" },
     ],
   },
   {
     key: "processes",
     label: "Processes",
-    matchPaths: ["/processes", "/automate", "/workflows"],
+    matchPaths: ["/processes", "/automate", "/workflows", "/schedules"],
     landingPath: "/processes",
     pages: [
       {
         label: "Workflows",
         route: "/workflows",
         indicator: { kind: "count", source: "processes.workflows.total" },
+      },
+      {
+        label: "Schedules",
+        route: "/schedules",
       },
     ],
   },

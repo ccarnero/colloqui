@@ -1,5 +1,5 @@
 import { Injectable, inject, signal, type Signal } from "@angular/core";
-import { YoizenclawAdminService } from "../yoizenclaw-admin.service";
+import { AgentAdminService } from "../agent-admin.service";
 
 /**
  * AI section metrics.
@@ -14,7 +14,7 @@ import { YoizenclawAdminService } from "../yoizenclaw-admin.service";
  */
 @Injectable({ providedIn: "root" })
 export class AiMetricsService {
-  private readonly admin = inject(YoizenclawAdminService);
+  private readonly admin = inject(AgentAdminService);
   private countsLoaded = false;
 
   /** Total agents created for the tenant. */
@@ -43,8 +43,8 @@ export class AiMetricsService {
       next: (res) => this.agentsTotal.set(res.total),
       error: () => this.agentsTotal.set(null),
     });
-    this.admin.listMemoryProposals().subscribe({
-      next: (res) => this.memoriesTotal.set(res.proposals.length),
+    this.admin.listMemories({ status: "PROPOSED" }).subscribe({
+      next: (res) => this.memoriesTotal.set(res.total),
       error: () => this.memoriesTotal.set(null),
     });
   }

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: one-search-mcp
+  namespace: platform-services-dev
+  labels:
+    app: one-search-mcp
+spec:
+  selector:
+    app: one-search-mcp
+  ports:
+  - port: 3200
+    targetPort: 3200
+    name: sse
+  type: ClusterIP

@@ -61,8 +61,8 @@ export class TenantsController {
    * unknown value yields `400 Bad Request` rather than silently returning
    * the unfiltered set.
    *
-   * Default behavior (no query param) is unchanged: every row is returned,
-   * preserving compatibility with admin tooling like `yoizenclaw-admin`.
+     * Default behavior (no query param) is unchanged: every row is returned,
+     * preserving compatibility with admin tooling like `agent-admin-service`.
    */
   @Get()
   async list(

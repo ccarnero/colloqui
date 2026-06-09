@@ -1,4 +1,5 @@
 import type { Channel, ChannelProvider } from "./channel.interfaces";
+import type { VariableResolutionContext } from "./variable.interfaces";
 
 // ── Causal chain propagation (D11 / D12) ───────────────────────────
 
@@ -29,6 +30,14 @@ export interface WorkflowExecutionContext {
   workflow: { name: string; tenant: string; application: string };
   request: Record<string, unknown>;
   results: Record<string, unknown>;
+  /**
+   * Scoped variable resolution context. Populated at workflow start:
+   * `system` from the tenant's system_variables table, `workflow`
+   * from the definition's `variables` field, `request` from the
+   * trigger payload. `previous` and `node` are updated after each
+   * action completes.
+   */
+  variables: VariableResolutionContext;
   /**
    * Present only when the workflow was started from an event on the
    * bus. Consumed by activities that publish derived envelopes (e.g.
@@ -137,13 +146,13 @@ export interface ChannelSendArgs {
   caption?: string;
 }
 
-/** Matches YoizenClaw admin chat request context entries. */
+/** Matches AgentAi admin chat request context entries. */
 export interface AgentCallContextEntry {
   sender: "customer" | "agent";
   content: string;
 }
 
-/** YoizenClaw agent chat (`POST /admin/agents/:id/chat`). */
+/** AgentAi agent chat (`POST /admin/agents/:id/chat`). */
 export interface AgentCallArgs {
   agentId: string;
   message: string;
@@ -152,6 +161,7 @@ export interface AgentCallArgs {
   userId?: string;
   channel?: string;
   context?: AgentCallContextEntry[];
+  variables?: VariableResolutionContext;
 }
 
 // ── Activity actions ───────────────────────────────────────────────
@@ -198,6 +208,47 @@ export interface BranchAction {
   [branchName: string]: WorkflowAction[] | string;
 }
 
+/** Comparison operators for conditional branching. */
+export type ConditionComparator =
+  | "eq"
+  | "neq"
+  | "gt"
+  | "lt"
+  | "gte"
+  | "lte"
+  | "contains"
+  | "exists"
+  | "notExists";
+
+/** A single condition rule for a branch. */
+export interface IConditionRule {
+  /** Dot-path into context, e.g. "variables.previous.status" or "results.myAgent.reply" */
+  variable: string;
+  /** Comparison operator */
+  comparator: ConditionComparator;
+  /** Right-hand value. Also resolved as template (supports {{variables.X}} syntax). */
+  value: string;
+}
+
+/** One branch of a conditional node. */
+export interface IConditionalBranch {
+  /** Human-readable label, e.g. "Aprobado", "Rejected" */
+  label: string;
+  /** The condition that must be true for this branch to execute */
+  condition: IConditionRule;
+  /** Actions to execute when this branch matches */
+  actions: WorkflowAction[];
+}
+
+/** Conditional exclusive gateway — evaluates conditions top-to-bottom, executes first match. */
+export interface ConditionalAction {
+  activity: "conditional";
+  name: string;
+  branches: IConditionalBranch[];
+  /** Fallback branch executed when no condition matches */
+  default?: WorkflowAction[];
+}
+
 export type WorkflowAction =
   | EndpointCallAction
   | JsFunctionAction
@@ -205,7 +256,8 @@ export type WorkflowAction =
   | ServiceCallAction
   | ChannelSendAction
   | AgentCallAction
-  | BranchAction;
+  | BranchAction
+  | ConditionalAction;
 
 // ── Triggers ───────────────────────────────────────────────────────
 
@@ -234,6 +286,11 @@ export interface WorkflowDefinition {
   application: string;
   request: Record<string, unknown>;
   actions: WorkflowAction[];
+  /**
+   * Optional workflow-level variable declarations / static values.
+   * Available at runtime as `{{variables.workflow.X}}`.
+   */
+  variables?: Record<string, unknown>;
   trigger?: WorkflowTrigger;
   /**
    * Optional causal chain inherited from the triggering envelope.
@@ -241,4 +298,9 @@ export interface WorkflowDefinition {
    * {@link WorkflowExecutionContext.causal} by `runWorkflow`.
    */
   causal?: EventCausalContext;
+  /**
+   * Optional agent call timeout in milliseconds. When set, overrides
+   * the default `AGENT_CALL_TIMEOUT_MS` for this execution.
+   */
+  agentTimeoutMs?: number;
 }

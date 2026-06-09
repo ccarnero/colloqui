@@ -7,7 +7,6 @@ const DEFAULT_TENANT_POSTGRES_IMAGE = "pgvector/pgvector:pg17";
 const DEFAULT_TENANT_USAGE_POSTGRES_IMAGE = "timescale/timescaledb-ha:pg17";
 const DEFAULT_TENANT_USAGE_POSTGRES_STORAGE = "2Gi";
 const DEFAULT_TENANT_MONGO_IMAGE = "mongo:7.0";
-const DEFAULT_YOIZENCLAW_RUNTIME_IMAGE = "dev.local/yoizenclaw-runtime:local";
 
 function requirePostgresPassword(): string {
   const pw = process.env.POSTGRES_PASSWORD ?? process.env.MONGO_PASSWORD;
@@ -61,11 +60,7 @@ type TenantServiceConfig = {
   readonly sharedMongoAdminPassword: string;
   readonly sharedMongoTenantPassword: string;
   readonly tenantMongoContainerImage: string;
-  readonly yoizenclawRuntimeAutoApply: boolean;
-  readonly yoizenclawRuntimeImage: string;
-  readonly yoizenclawRuntimeNatsUrl: string;
-  readonly yoizenclawRuntimeConnectorAdminUrl: string;
-  readonly yoizenclawRuntimeOtelEndpoint: string;
+
 };
 
 function platformEnvironment(): string {
@@ -197,36 +192,5 @@ export const tenantServiceConfig: TenantServiceConfig = {
   },
   get tenantMongoContainerImage() {
     return process.env.TENANT_MONGO_IMAGE ?? DEFAULT_TENANT_MONGO_IMAGE;
-  },
-  get yoizenclawRuntimeAutoApply() {
-    const raw = process.env.YOIZENCLAW_RUNTIME_AUTO_APPLY;
-    if (raw === undefined) return true;
-    return raw.toLowerCase() !== "false" && raw !== "0";
-  },
-  get yoizenclawRuntimeImage() {
-    return (
-      process.env.YOIZENCLAW_RUNTIME_IMAGE ?? DEFAULT_YOIZENCLAW_RUNTIME_IMAGE
-    );
-  },
-  get yoizenclawRuntimeNatsUrl() {
-    const env = platformEnvironment();
-    return (
-      process.env.YOIZENCLAW_RUNTIME_NATS_URL ??
-      `nats://nats.support-services-${env}.svc.cluster.local:4222`
-    );
-  },
-  get yoizenclawRuntimeConnectorAdminUrl() {
-    const env = platformEnvironment();
-    return (
-      process.env.YOIZENCLAW_RUNTIME_CONNECTOR_ADMIN_URL ??
-      `http://connector-admin-api.platform-services-${env}.svc.cluster.local`
-    );
-  },
-  get yoizenclawRuntimeOtelEndpoint() {
-    const env = platformEnvironment();
-    return (
-      process.env.YOIZENCLAW_RUNTIME_OTEL_ENDPOINT ??
-      `http://otel-collector.support-services-${env}.svc.cluster.local:4318`
-    );
   },
 };

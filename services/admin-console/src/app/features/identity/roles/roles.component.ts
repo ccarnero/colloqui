@@ -11,6 +11,7 @@ import { MatTableModule } from "@angular/material/table";
 import { RoleService } from "../../../core/services/role.service";
 import { AuthService } from "../../../core/services/auth.service";
 import { TenantService } from "../../../core/services/tenant.service";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import {
   StatusBadgeComponent,
   type StatusBadgeColor,
@@ -31,16 +32,14 @@ import type { ITenantRole } from "../../../core/models/user.model";
     MatIconModule,
     MatDialogModule,
     StatusBadgeComponent,
+    PageHeaderComponent,
   ],
   template: `
-    <div class="ws-header">
-      <div>
-        <div class="ws-title">Roles &amp; Permissions</div>
-        <div class="ws-subtitle">
-          Define access for {{ tenant.currentTenant().name }}
-        </div>
-      </div>
-      <div class="ws-actions">
+    <app-page-header
+      title="Roles &amp; Permissions"
+      subtitle="Define access for {{ tenant.currentTenant().name }}"
+    >
+      <ng-container slot="actions">
         <button
           class="btn btn-primary btn-sm"
           type="button"
@@ -48,8 +47,8 @@ import type { ITenantRole } from "../../../core/models/user.model";
         >
           + Create Role
         </button>
-      </div>
-    </div>
+      </ng-container>
+    </app-page-header>
 
     <div class="section-card">
       <table mat-table [dataSource]="roleService.roles()" class="full-width">

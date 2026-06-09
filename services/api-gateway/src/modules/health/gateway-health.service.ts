@@ -22,8 +22,8 @@ const SERVICE_URLS = new Map<string, string>([
   ["proxy-service", gatewayConfig.services.proxy],
   ["connector-admin", gatewayConfig.services.connectorAdmin],
   ["channel-service", gatewayConfig.services.channel],
-  ["yoizenclaw-admin-service", gatewayConfig.services.admin],
-  ["yoizenclaw-runtime-gateway", gatewayConfig.services.runtimeGateway],
+  ["agent-admin-service", gatewayConfig.services.admin],
+  ["ai-agent-gateway", gatewayConfig.services.aiAgentGateway],
 ]);
 
 const SERVICE_TIMEOUT_MS = 3_000;

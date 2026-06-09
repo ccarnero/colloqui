@@ -10,7 +10,12 @@ import type {
   ServiceBusCallArgs,
   ServiceCallArgs,
   ChannelSendArgs,
+  ConditionComparator,
 } from "@yoizen/shared";
+import type {
+  ConditionalAction,
+  IConditionalBranch,
+} from "./workflow.types";
 import { CONNECTOR_RUNTIME_TASK_QUEUE } from "./workflow-queue";
 
 interface IOrchestratorActivities {
@@ -68,6 +73,7 @@ interface IAgentHttpActivities {
     args: AgentCallArgs,
     tenantId: string,
     executionId?: string,
+    agentTimeoutMs?: number,
   ): Promise<{
     status: number;
     data: unknown;
@@ -111,9 +117,10 @@ const http = proxyActivities<IHttpActivities>({
 // reasoning as `http`, but `maximumInterval` matches the agent
 // breaker's longer cooldown.
 const httpAgent = proxyActivities<IAgentHttpActivities>({
-  startToCloseTimeout: "5m",
+  startToCloseTimeout: "15m",
+  heartbeatTimeout: "30s",
   retry: {
-    maximumAttempts: 5,
+    maximumAttempts: 3,
     initialInterval: "1s",
     backoffCoefficient: 2,
     maximumInterval: "60s",
@@ -130,6 +137,21 @@ function resolvePath(context: WorkflowExecutionContext, path: string): unknown {
     current = (current as Record<string, unknown>)[segments[i]];
   }
   return current ?? "";
+}
+
+/**
+ * Like resolvePath but returns the raw value (undefined/null when absent)
+ * instead of coercing to "". Used by conditional evaluation where
+ * exists/notExists need to distinguish between missing and present values.
+ */
+function resolvePathRaw(context: WorkflowExecutionContext, path: string): unknown {
+  const segments = path.trim().split(".");
+  let current: unknown = context;
+  for (let i = 0; i < segments.length; i++) {
+    if (current == null || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[segments[i]];
+  }
+  return current;
 }
 
 function resolveTemplates<T>(value: T, context: WorkflowExecutionContext): T {
@@ -154,16 +176,72 @@ function resolveTemplates<T>(value: T, context: WorkflowExecutionContext): T {
 
 async function executeActions(
   actions: WorkflowAction[],
-  context: WorkflowExecutionContext,
+  context: ExtendedContext,
 ): Promise<void> {
   for (let i = 0; i < actions.length; i++) {
-    context.results[actions[i].name] = await executeAction(actions[i], context);
+    const result = await executeAction(actions[i], context);
+    context.results[actions[i].name] = result;
+    context.variables.previous = (result ?? {}) as Record<string, unknown>;
+    context.variables.node[actions[i].name] = (result ?? {}) as Record<string, unknown>;
   }
 }
 
+function evaluateCondition(
+  left: unknown,
+  comparator: ConditionComparator,
+  right: unknown,
+): boolean {
+  if (comparator === "exists") return left !== undefined && left !== null;
+  if (comparator === "notExists") return left === undefined || left === null;
+
+  if (
+    comparator === "gt" ||
+    comparator === "lt" ||
+    comparator === "gte" ||
+    comparator === "lte"
+  ) {
+    const leftNum = Number(left);
+    const rightNum = Number(right);
+    if (isNaN(leftNum) || isNaN(rightNum)) return false;
+    switch (comparator) {
+      case "gt":
+        return leftNum > rightNum;
+      case "lt":
+        return leftNum < rightNum;
+      case "gte":
+        return leftNum >= rightNum;
+      case "lte":
+        return leftNum <= rightNum;
+    }
+  }
+
+  const leftStr = String(left ?? "");
+  const rightStr = String(right ?? "");
+
+  switch (comparator) {
+    case "eq":
+      return leftStr === rightStr;
+    case "neq":
+      return leftStr !== rightStr;
+    case "contains":
+      return leftStr.includes(rightStr);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Extended context that includes agentTimeoutMs on the workflow
+ * property. Used internally so agentCall can read the per-execution
+ * timeout without widening the shared WorkflowExecutionContext.
+ */
+type ExtendedContext = WorkflowExecutionContext & {
+  workflow: { name: string; tenant: string; application: string; agentTimeoutMs?: number };
+};
+
 async function executeAction(
   action: WorkflowAction,
-  context: WorkflowExecutionContext,
+  context: ExtendedContext,
 ): Promise<unknown> {
   const tenant = context.workflow.tenant;
 
@@ -204,12 +282,15 @@ async function executeAction(
         context.executionId,
       );
 
-    case "agentCall":
+    case "agentCall": {
+      const resolvedArgs = resolveTemplates(action.args, context);
       return httpAgent.executeAgentCall(
-        resolveTemplates(action.args, context),
+        { ...resolvedArgs, variables: context.variables },
         tenant,
         context.executionId,
+        context.workflow.agentTimeoutMs,
       );
+    }
 
     case "branch": {
       const branchEntries: Array<[string, WorkflowAction[]]> = [];
@@ -229,17 +310,52 @@ async function executeAction(
             workflow: context.workflow,
             request: context.request,
             results: { ...context.results },
+            variables: {
+              system: context.variables.system,
+              workflow: context.variables.workflow,
+              previous: context.variables.previous,
+              node: { ...context.variables.node },
+              request: context.variables.request,
+            },
             ...(context.causal && { causal: context.causal }),
+            ...(context.executionId && { executionId: context.executionId }),
           };
           await executeActions(branchActions, branchCtx);
-          return branchCtx.results;
+          return {
+            results: branchCtx.results,
+            nodeVars: branchCtx.variables.node,
+            previousVar: branchCtx.variables.previous,
+          };
         }),
       );
 
       for (let i = 0; i < branchResults.length; i++) {
-        Object.assign(context.results, branchResults[i]);
+        Object.assign(context.results, branchResults[i]!.results);
+        Object.assign(context.variables.node, branchResults[i]!.nodeVars);
       }
       return branchEntries.map(([name]) => name);
+    }
+
+    case "conditional": {
+      const condAction = action as ConditionalAction;
+
+      for (let i = 0; i < condAction.branches.length; i++) {
+        const branch: IConditionalBranch = condAction.branches[i];
+        const leftValue = resolvePathRaw(context, branch.condition.variable);
+        const rightValue = resolveTemplates(branch.condition.value, context);
+
+        if (evaluateCondition(leftValue, branch.condition.comparator, rightValue)) {
+          await executeActions(branch.actions, context);
+          return { matchedBranch: branch.label };
+        }
+      }
+
+      if (condAction.default && condAction.default.length > 0) {
+        await executeActions(condAction.default, context);
+        return { matchedBranch: "default" };
+      }
+
+      return { matchedBranch: null };
     }
 
     default: {
@@ -254,15 +370,24 @@ async function executeAction(
 export async function runWorkflow(
   workflow: WorkflowDefinition,
   executionId?: string,
+  systemVariables?: Record<string, unknown>,
 ): Promise<WorkflowExecutionContext> {
-  const context: WorkflowExecutionContext = {
+  const context: WorkflowExecutionContext & { workflow: { name: string; tenant: string; application: string; agentTimeoutMs?: number } } = {
     workflow: {
       name: workflow.name,
       tenant: workflow.tenant,
       application: workflow.application,
+      ...(workflow.agentTimeoutMs !== undefined && { agentTimeoutMs: workflow.agentTimeoutMs }),
     },
     request: workflow.request,
     results: {},
+    variables: {
+      system: systemVariables ?? {},
+      workflow: workflow.variables ?? {},
+      previous: {} as Record<string, unknown>,
+      node: {} as Record<string, Record<string, unknown>>,
+      request: workflow.request ?? {},
+    },
     ...(executionId && { executionId }),
     ...(workflow.causal && { causal: workflow.causal }),
   };

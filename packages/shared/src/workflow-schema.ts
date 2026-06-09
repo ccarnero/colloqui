@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS workflow_definitions (
   application VARCHAR(64)  NOT NULL,
   actions     JSONB        NOT NULL,
   trigger     JSONB        DEFAULT NULL,
+  variables   JSONB        DEFAULT NULL,
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   deleted_at  TIMESTAMPTZ
@@ -25,6 +26,9 @@ CREATE TABLE IF NOT EXISTS workflow_definitions (
 CREATE INDEX IF NOT EXISTS idx_workflow_definitions_trigger_type
   ON workflow_definitions (((trigger->>'type')))
   WHERE deleted_at IS NULL AND trigger IS NOT NULL;
+
+-- Migration: add variables column to existing tenants.
+ALTER TABLE workflow_definitions ADD COLUMN IF NOT EXISTS variables JSONB DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS workflow_executions (
   id                    TEXT        PRIMARY KEY,

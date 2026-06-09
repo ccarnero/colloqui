@@ -63,7 +63,8 @@ interface ISubNavPageVm {
               <span
                 class="nav-indicator"
                 [class]="'ind-' + vm.indicator.kind"
-                [attr.aria-label]="indicatorAriaLabel(vm)"
+                [attr.aria-label]="collapsed() ? null : indicatorAriaLabel(vm)"
+                [attr.aria-hidden]="collapsed()"
               >
                 @if (vm.indicator.kind !== 'dot') {
                   {{ vm.indicatorValue() }}
@@ -95,10 +96,10 @@ interface ISubNavPageVm {
     }
 
     .sub-nav.collapsed {
-      width: 48px;
-      min-width: 48px;
-      padding: 12px 4px;
-      align-items: center;
+      width: 56px;
+      min-width: 56px;
+      padding: 12px 0;
+      align-items: stretch;
     }
 
     .nav-item {
@@ -119,15 +120,69 @@ interface ISubNavPageVm {
     }
 
     .sub-nav.collapsed .nav-item {
-      width: 36px;
-      height: 32px;
+      width: 100%;
+      height: 40px;
       padding: 0;
       justify-content: center;
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius, 6px);
-      margin: 2px 0;
-      background: var(--bg-background);
+      border: none;
+      border-radius: 0;
+      margin: 0;
+      background: transparent;
       color: var(--text2);
+      position: relative;
+      border-left: 2px solid transparent;
+    }
+
+    .sub-nav.collapsed .nav-item:hover {
+      background: var(--accent-dim, rgba(26, 102, 255, 0.06));
+      color: var(--text-primary);
+    }
+
+    .sub-nav.collapsed .nav-item.active {
+      border-left-color: var(--primary, #1a66ff);
+      background: var(--accent-dim, rgba(26, 102, 255, 0.08));
+      color: var(--primary, #1a66ff);
+    }
+
+    .sub-nav.collapsed .nav-indicator {
+      position: absolute;
+      top: 3px;
+      right: 4px;
+      min-width: 14px;
+      height: 14px;
+      padding: 0 4px;
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 14px;
+      border-radius: 999px;
+      background: var(--primary, #1a66ff);
+      color: white;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .sub-nav.collapsed .ind-count {
+      background: var(--primary, #1a66ff);
+      color: white;
+    }
+
+    .sub-nav.collapsed .ind-count-warn {
+      background: var(--yellow, #eab308);
+      color: #1a1a1a;
+    }
+
+    .sub-nav.collapsed .ind-count-danger {
+      background: var(--red, #ef4444);
+      color: white;
+    }
+
+    .sub-nav.collapsed .ind-dot {
+      position: absolute;
+      top: 5px;
+      right: 8px;
+      width: 6px;
+      height: 6px;
+      background: var(--red, #ef4444);
+      border-radius: 50%;
     }
 
     .nav-item:hover {
@@ -142,19 +197,15 @@ interface ISubNavPageVm {
       font-weight: 500;
     }
 
-    .sub-nav.collapsed .nav-item.active {
-      border-color: var(--primary, #1a66ff);
-      background: var(--accent-dim, rgba(26, 102, 255, 0.06));
-    }
-
     .nav-label {
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .sub-nav.collapsed .nav-label {
-      font-size: 11px;
-      font-weight: 500;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
     }
 
     .nav-indicator {

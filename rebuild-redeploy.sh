@@ -21,8 +21,9 @@ VALID_SERVICES=(
   audit-service tenant-service
   registry-service connector-admin
   channel-service workflow-service connector-runtime
-  proxy-service yoizenclaw-admin-service admin-console
-  yoizenclaw-runtime usage-aggregator-service yoizenclaw-runtime-gateway
+  proxy-service agent-admin-service admin-console
+  usage-aggregator-service ai-agent-gateway
+  agent-memory-service agent-ai-service agent-scheduler-service
 )
 
 VALID_ENVIRONMENTS=(dev qa staging production)
@@ -34,8 +35,8 @@ Usage: $0 <service-name> [environment] [options]
 Rebuilds a Docker image and triggers a Knative rollout for a single service.
 
 Arguments:
-  service-name    Service name: directory under services/, or yoizenclaw-runtime (Python app)
-  environment     Target environment (default: dev; yoizenclaw-runtime uses acme-dev overlay)
+  service-name    Service name: directory under services/
+  environment     Target environment (default: dev)
 
 Options:
   --no-cache      Build Docker image without cache
@@ -52,8 +53,7 @@ Valid environments:
 Examples:
   $0 tenant-service
   $0 tenant-service qa
-  $0 yoizenclaw-admin-service dev --no-cache
-  $0 yoizenclaw-runtime dev
+  $0 agent-admin-service dev --no-cache
   $0 tenant-service dev --deploy-only
 EOF
 }
@@ -82,7 +82,7 @@ setup_docker_env() {
 
   if [[ "$cluster_type" == "minikube" ]]; then
     log "Pointing Docker to Minikube daemon (profile: ${MINIKUBE_PROFILE})"
-    eval "$(minikube docker-env -p "$MINIKUBE_PROFILE")"
+    eval "$(minikube docker-env -p "$MINIKUBE_PROFILE" --shell bash)"
   fi
 }
 
@@ -93,22 +93,6 @@ build_image() {
 
   if [[ "$no_cache" == "true" ]]; then
     cache_flag="--no-cache"
-  fi
-
-  if [[ "$svc" == "yoizenclaw-runtime" ]]; then
-    local yc_dockerfile="${SCRIPT_DIR}/services/yoizenclaw-runtime/Dockerfile"
-    local yc_context="${SCRIPT_DIR}"
-    if [[ ! -f "$yc_dockerfile" ]]; then
-      err "Dockerfile not found: ${yc_dockerfile}"
-      exit 1
-    fi
-    step "Building image: dev.local/${svc}:${IMAGE_TAG}"
-    docker build \
-      ${cache_flag} \
-      -t "dev.local/${svc}:${IMAGE_TAG}" \
-      -f "$yc_dockerfile" \
-      "$yc_context"
-    return
   fi
 
   local dockerfile="${SCRIPT_DIR}/services/${svc}/Dockerfile"
@@ -220,53 +204,6 @@ rollout_deployments() {
   done
 }
 
-# Knative Service in tenant namespace (kustomize), not platform-services-*
-yoizenclaw_runtime_overlay_path() {
-  local engine="${STORAGE_ENGINE:-postgres}"
-  if [[ "$engine" == "mongo" ]]; then
-    printf '%s/knative/tenant-yoizenclaw-runtime/overlays/acme-dev-mongo' "$SCRIPT_DIR"
-  else
-    printf '%s/knative/tenant-yoizenclaw-runtime/overlays/acme-dev' "$SCRIPT_DIR"
-  fi
-}
-
-rollout_yoizenclaw_runtime() {
-  local env="$1"
-  local ns="acme-dev-ns"
-  local overlay
-  overlay="$(yoizenclaw_runtime_overlay_path)"
-  local timestamp
-  timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-  if [[ "$env" != "dev" ]]; then
-    warn "yoizenclaw-runtime overlay is only defined for dev (namespace ${ns}) — continuing anyway"
-  fi
-
-  if [[ ! -d "$overlay" ]]; then
-    err "Kustomize overlay not found: ${overlay}"
-    exit 1
-  fi
-
-  step "Applying kustomize: ${overlay}"
-  kubectl apply -k "$overlay"
-
-  if kubectl get ksvc yoizenclaw-runtime -n "$ns" &>/dev/null; then
-    step "Patching ksvc/yoizenclaw-runtime in ${ns} to trigger new revision"
-    kubectl patch ksvc yoizenclaw-runtime -n "$ns" --type merge \
-      -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"client.knative.dev/updateTimestamp\":\"${timestamp}\"}}}}}"
-  else
-    warn "ksvc/yoizenclaw-runtime not found in ${ns} after apply — check kubectl output"
-  fi
-
-  step "Waiting for ksvc/yoizenclaw-runtime to become Ready..."
-  if kubectl wait ksvc yoizenclaw-runtime -n "$ns" \
-      --for=condition=Ready --timeout=120s 2>/dev/null; then
-    log "ksvc/yoizenclaw-runtime is Ready"
-  else
-    warn "Timed out waiting for ksvc/yoizenclaw-runtime — check pods in ${ns}"
-  fi
-}
-
 main() {
   local service_name=""
   local environment="dev"
@@ -343,12 +280,8 @@ main() {
   fi
 
   if [[ "$build_only" != "true" ]]; then
-    if [[ "$service_name" == "yoizenclaw-runtime" ]]; then
-      rollout_yoizenclaw_runtime "$environment"
-    else
-      rollout_ksvc "$service_name" "$environment"
-      rollout_deployments "$service_name" "$environment"
-    fi
+    rollout_ksvc "$service_name" "$environment"
+    rollout_deployments "$service_name" "$environment"
     echo ""
   fi
 
@@ -363,27 +296,16 @@ main() {
   echo ""
   echo "  Service:     ${service_name}"
   echo "  Environment: ${environment}"
-  if [[ "$service_name" == "yoizenclaw-runtime" ]]; then
-    echo "  Namespace:   acme-dev-ns"
-  else
-    echo "  Namespace:   platform-services-${environment}"
-  fi
+  echo "  Namespace:   platform-services-${environment}"
   echo ""
   echo "  Check status:"
-  if [[ "$service_name" == "yoizenclaw-runtime" ]]; then
-    for ksvc in $ksvc_names; do
-      echo "    kubectl get ksvc ${ksvc} -n acme-dev-ns"
-    done
-    echo "    kubectl get pods -n acme-dev-ns -l serving.knative.dev/service=yoizenclaw-runtime"
-  else
-    for ksvc in $ksvc_names; do
-      echo "    kubectl get ksvc ${ksvc} -n platform-services-${environment}"
-    done
-    for deploy in $deploy_names; do
-      echo "    kubectl get deployment ${deploy} -n platform-services-${environment}"
-    done
-    echo "    kubectl get pods -n platform-services-${environment} -l app.kubernetes.io/name=${service_name}"
-  fi
+  for ksvc in $ksvc_names; do
+    echo "    kubectl get ksvc ${ksvc} -n platform-services-${environment}"
+  done
+  for deploy in $deploy_names; do
+    echo "    kubectl get deployment ${deploy} -n platform-services-${environment}"
+  done
+  echo "    kubectl get pods -n platform-services-${environment} -l app.kubernetes.io/name=${service_name}"
   echo ""
 }
 

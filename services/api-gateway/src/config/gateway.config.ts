@@ -75,10 +75,13 @@ export const gatewayConfig = {
       platformServiceUrl("channel-service-api", env),
     admin:
       process.env.ADMIN_SERVICE_URL ??
-      platformServiceUrl("yoizenclaw-admin-service", env),
-    runtimeGateway:
-      process.env.YOIZENCLAW_RUNTIME_GATEWAY_URL ??
-      platformServiceUrl("yoizenclaw-runtime-gateway", env),
+      platformServiceUrl("agent-admin-service", env),
+    aiAgentGateway:
+      process.env.AI_AGENT_GATEWAY_URL ??
+      platformServiceUrl("ai-agent-gateway", env),
+    agentMemory:
+      process.env.AGENT_MEMORY_SERVICE_URL ??
+      platformServiceUrl("agent-memory-service", env),
   },
 
   rateLimit: {

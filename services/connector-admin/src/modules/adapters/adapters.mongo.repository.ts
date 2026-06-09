@@ -282,6 +282,14 @@ export class AdaptersMongoRepository implements IAdaptersRepository {
     return doc ? docToAdapterRow(doc) : null;
   }
 
+  async adapterExists(tenantId: string, id: string): Promise<boolean> {
+    const db = await this.dbFor(tenantId);
+    const count = await db
+      .collection<IStringIdDoc>("http_adapters")
+      .countDocuments({ _id: id }, { limit: 1 });
+    return count > 0;
+  }
+
   async listEndpointsForAdapter(
     tenantId: string,
     adapterId: string,
@@ -293,14 +301,6 @@ export class AdaptersMongoRepository implements IAdaptersRepository {
       .sort({ created_at: 1 })
       .toArray();
     return docs.map((doc) => docToEndpointRow(doc));
-  }
-
-  async adapterExists(tenantId: string, id: string): Promise<boolean> {
-    const db = await this.dbFor(tenantId);
-    const doc = await db
-      .collection<IStringIdDoc>("http_adapters")
-      .findOne({ _id: id }, { projection: { _id: 1 } });
-    return Boolean(doc);
   }
 
   async updateAdapter(

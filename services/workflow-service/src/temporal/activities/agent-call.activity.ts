@@ -16,7 +16,10 @@ import {
 } from "@yoizen/observability";
 import { workflowServiceConfig } from "../../config";
 
-const AGENT_CALL_TIMEOUT_MS = 5 * 60 * 1000;
+const AGENT_CALL_TIMEOUT_MS = Number.parseInt(
+  process.env.AGENT_CALL_TIMEOUT_MS ?? String(15 * 60 * 1000),
+  10,
+);
 
 /**
  * Redis tunables. `maxRetriesPerRequest: 3` lets ioredis ride out a
@@ -149,6 +152,7 @@ export async function executeAgentCall(
   args: AgentChatRequest,
   tenantId: string,
   executionId?: string,
+  agentTimeoutMs?: number,
 ): Promise<HttpExecutionResult> {
   if (executionId) {
     logger.log(`agentCall executionId=${executionId} tenant=${tenantId}`);
@@ -167,7 +171,7 @@ export async function executeAgentCall(
   }
 
   try {
-    const result = await executeAgentCallInner(args, tenantId);
+    const result = await executeAgentCallInner(args, tenantId, agentTimeoutMs);
     breaker.recordSuccess(key);
     return result;
   } catch (err) {
@@ -226,40 +230,58 @@ function deriveStableExecutionId(): string | undefined {
 async function executeAgentCallInner(
   args: AgentChatRequest,
   tenantId: string,
+  agentTimeoutMs?: number,
 ): Promise<HttpExecutionResult> {
   const client = await getExecutionClient();
   const stableExecutionId = deriveStableExecutionId();
-  const status = await client.executeAndWait(tenantId, args, AGENT_CALL_TIMEOUT_MS, {
-    requestedBy: args.userId,
-    correlationId: args.conversationId,
-    /**
-     * NOTE: `submitExecution` still computes `requestedAt = new
-     * Date().toISOString()` per call, so the `Nats-Msg-Id` hash drifts
-     * by milliseconds between attempts. JetStream's default
-     * `duplicate_window` (2 min) collapses retries that fire within
-     * that window — which is the case for every observed retry in
-     * the post-mortem (seconds apart). Pinning `requestedAt` cleanly
-     * requires extending `SubmitExecutionOptions`; tracked as a
-     * follow-up. The `executionId` alone collapses the LLM-trigger
-     * duplicate in the common case.
-     */
-    ...(stableExecutionId !== undefined && { executionId: stableExecutionId }),
-  });
+  const timeout = agentTimeoutMs ?? AGENT_CALL_TIMEOUT_MS;
 
-  if (status.state === "failed") {
-    throw new Error(
-      status.result?.errorMessage ?? `YoizenClaw execution '${status.executionId}' failed`,
-    );
+  // Heartbeat cada 15s para que Temporal sepa que la actividad sigue viva
+  // durante ejecuciones LLM largas (>5 min).
+  const heartbeatMs = 15_000;
+  const heartbeatTimer = setInterval(() => {
+    try {
+      Context.current().heartbeat();
+    } catch {
+      // Actividad fuera de contexto Temporal (tests)
+    }
+  }, heartbeatMs);
+
+  try {
+    const status = await client.executeAndWait(tenantId, args, timeout, {
+      requestedBy: args.userId,
+      correlationId: args.conversationId,
+      /**
+       * NOTE: `submitExecution` still computes `requestedAt = new
+       * Date().toISOString()` per call, so the `Nats-Msg-Id` hash drifts
+       * by milliseconds between attempts. JetStream's default
+       * `duplicate_window` (2 min) collapses retries that fire within
+       * that window — which is the case for every observed retry in
+       * the post-mortem (seconds apart). Pinning `requestedAt` cleanly
+       * requires extending `SubmitExecutionOptions`; tracked as a
+       * follow-up. The `executionId` alone collapses the LLM-trigger
+       * duplicate in the common case.
+       */
+      ...(stableExecutionId !== undefined && { executionId: stableExecutionId }),
+    });
+
+    if (status.state === "failed") {
+      throw new Error(
+        status.result?.errorMessage ?? `YoizenClaw execution '${status.executionId}' failed`,
+      );
+    }
+
+    return {
+      status: 200,
+      data: {
+        reply: (status as unknown as Record<string, unknown>).response as string ?? status.result?.reply ?? "",
+        tool_calls: (status as unknown as Record<string, unknown>).toolCalls as unknown[] ?? status.result?.tool_calls ?? [],
+      },
+      headers: {
+        "x-yoizen-execution-id": status.executionId,
+      },
+    };
+  } finally {
+    clearInterval(heartbeatTimer);
   }
-
-  return {
-    status: 200,
-    data: {
-      reply: status.result?.reply ?? "",
-      tool_calls: status.result?.tool_calls ?? [],
-    },
-    headers: {
-      "x-yoizen-execution-id": status.executionId,
-    },
-  };
 }

@@ -18,6 +18,8 @@ import { MatIconModule } from "@angular/material/icon";
 import {
   EWorkflowNodeType,
   type IWorkflowNode,
+  type IConditionalBranchConfig,
+  type ConditionComparator,
 } from "../../../domain/workflow-node.types";
 import { ChannelAdminService } from "../../../../../../core/services/channel-admin.service";
 import type { IChannelAccount } from "../../../../../../core/models/channel-account.model";
@@ -27,8 +29,13 @@ import {
   type IAdapterEndpointDto,
 } from "../../../../../../core/services/http-adapter.service";
 import { RegistryService } from "../../../../../../core/services/registry.service";
-import { YoizenclawAdminService } from "../../../../../../core/services/yoizenclaw-admin.service";
-import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.model";
+import { AgentAdminService } from "../../../../../../core/services/agent-admin.service";
+import type { IAgent } from "../../../../../../core/models/agent.model";
+import { TemplateAutocompleteComponent } from "../template-autocomplete/template-autocomplete.component";
+import type {
+  IVariableGroup,
+  IVariableEntry,
+} from "../template-autocomplete/template-autocomplete.component";
 
 @Component({
   selector: "app-workflow-node-config",
@@ -40,6 +47,7 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
     MatSelectModule,
     MatButtonModule,
     MatIconModule,
+    TemplateAutocompleteComponent,
   ],
   template: `
     @if (node(); as n) {
@@ -211,25 +219,22 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                   n.configuration['recipientMode'] ===
                   'custom'
                 ) {
-                  <mat-form-field
-                    appearance="outline"
-                    class="config-field"
-                  >
-                    <mat-label>Phone number</mat-label>
-                    <input
-                      matInput
-                      [ngModel]="n.configuration['to']"
-                      (ngModelChange)="
-                        updateConfig('to', $event)
-                      "
+                  <div class="config-field">
+                    <label class="config-label">Phone number</label>
+                    <app-template-autocomplete
+                      [value]="asString(n.configuration['to'])"
+                      (valueChange)="updateConfig('to', $event)"
+                      [rows]="1"
+                      [workflowNodes]="workflowNodes()"
+                      [currentNodeKey]="n.key"
                       placeholder="e.g. +1234567890"
-                    />
-                    <mat-hint>
+                    ></app-template-autocomplete>
+                    <span class="config-hint">
                       Supports
                       {{ '{{' }}path{{ '}}' }}
                       expressions
-                    </mat-hint>
-                  </mat-form-field>
+                    </span>
+                  </div>
                 }
 
                 <mat-form-field
@@ -261,20 +266,17 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                 @if (
                   n.configuration['messageType'] === 'text'
                 ) {
-                  <mat-form-field
-                    appearance="outline"
-                    class="config-field"
-                  >
-                    <mat-label>Text</mat-label>
-                    <textarea
-                      matInput
-                      rows="3"
-                      [ngModel]="n.configuration['text']"
-                      (ngModelChange)="
-                        updateConfig('text', $event)
-                      "
-                    ></textarea>
-                  </mat-form-field>
+                  <div class="config-field">
+                    <label class="config-label">Text</label>
+                    <app-template-autocomplete
+                      [value]="asString(n.configuration['text'])"
+                      (valueChange)="updateConfig('text', $event)"
+                      [rows]="3"
+                      [workflowNodes]="workflowNodes()"
+                      [currentNodeKey]="n.key"
+                      placeholder="Type {{ '{{' }} for variables"
+                    ></app-template-autocomplete>
+                  </div>
                 }
 
                 @if (
@@ -421,14 +423,17 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                     <mat-option value="DELETE">DELETE</mat-option>
                   </mat-select>
                 </mat-form-field>
-                <mat-form-field appearance="outline" class="config-field">
-                  <mat-label>URL *</mat-label>
-                  <input
-                    matInput
-                    [ngModel]="n.configuration['url']"
-                    (ngModelChange)="updateConfig('url', $event)"
-                  />
-                </mat-form-field>
+                <div class="config-field">
+                  <label class="config-label">URL *</label>
+                  <app-template-autocomplete
+                    [value]="asString(n.configuration['url'])"
+                    (valueChange)="updateConfig('url', $event)"
+                    [rows]="1"
+                    [workflowNodes]="workflowNodes()"
+                    [currentNodeKey]="n.key"
+                    placeholder="https://api.example.com/resource"
+                  ></app-template-autocomplete>
+                </div>
               }
             }
 
@@ -462,15 +467,17 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                   <mat-option value="DELETE">DELETE</mat-option>
                 </mat-select>
               </mat-form-field>
-              <mat-form-field appearance="outline" class="config-field">
-                <mat-label>Path</mat-label>
-                <input
-                  matInput
-                  [ngModel]="n.configuration['path']"
-                  (ngModelChange)="updateConfig('path', $event)"
+              <div class="config-field">
+                <label class="config-label">Path</label>
+                <app-template-autocomplete
+                  [value]="asString(n.configuration['path'])"
+                  (valueChange)="updateConfig('path', $event)"
+                  [rows]="1"
+                  [workflowNodes]="workflowNodes()"
+                  [currentNodeKey]="n.key"
                   placeholder="/resource/{{ '{{' }}results.StepName.data.id{{ '}}' }}"
-                />
-              </mat-form-field>
+                ></app-template-autocomplete>
+              </div>
               @if (serviceCallMethodHasBody(n.configuration["method"])) {
                 <mat-form-field appearance="outline" class="config-field">
                   <mat-label>JSON object or array; put templates in string values (same
@@ -503,13 +510,13 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
 
             @case (types.AGENT_CALL) {
               <mat-form-field appearance="outline" class="config-field">
-                <mat-label>YoizenClaw agent</mat-label>
+                <mat-label>AI agent</mat-label>
                 <mat-select
                   [ngModel]="n.configuration['agentId']"
                   (ngModelChange)="updateConfig('agentId', $event)"
                 >
                   <mat-option [value]="''">Select an agent</mat-option>
-                  @for (ag of yoizenclawAgents(); track ag.id) {
+                  @for (ag of aiAgents(); track ag.id) {
                     <mat-option [value]="ag.id">
                       {{ ag.name }}
                     </mat-option>
@@ -518,16 +525,18 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                 <mat-hint>Published agents only</mat-hint>
               </mat-form-field>
 
-              <mat-form-field appearance="outline" class="config-field">
-                <mat-label>Message</mat-label>
-                <textarea
-                  matInput
-                  rows="4"
-                  [ngModel]="n.configuration['message']"
-                  (ngModelChange)="updateConfig('message', $event)"
-                  placeholder="User prompt; use prior step output, e.g. {{ '{{' }}results.StepName.data.reply{{ '}}' }}"
-                ></textarea>
-              </mat-form-field>
+              <div class="config-field">
+                <label class="config-label">Message</label>
+                <app-template-autocomplete
+                  [value]="asString(n.configuration['message'])"
+                  (valueChange)="updateConfig('message', $event)"
+                  [rows]="4"
+                  [workflowNodes]="workflowNodes()"
+                  [currentNodeKey]="n.key"
+                  placeholder="User prompt; type {{ '{{' }} for variables"
+                ></app-template-autocomplete>
+                <span class="config-hint">Use {{ '{{' }}request.X{{ '}}' }} for input variables, {{ '{{' }}results['Step'].data.reply{{ '}}' }} for previous step output</span>
+              </div>
 
               <mat-form-field appearance="outline" class="config-field">
                 <mat-label>Conversation ID (optional)</mat-label>
@@ -545,6 +554,99 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
                 Connect multiple outputs from this node to create
                 parallel execution branches.
               </p>
+            }
+
+            @case (types.CONDITIONAL) {
+              <div class="conditional-branches">
+                @for (branch of getConditionalBranches(n); track $index) {
+                  <div class="conditional-branch">
+                    <div class="branch-header">
+                      <span class="branch-label">Branch {{ $index + 1 }}</span>
+                      <button
+                        mat-icon-button
+                        type="button"
+                        class="branch-remove-btn"
+                        (click)="removeConditionalBranch($index)"
+                      >
+                        <mat-icon>close</mat-icon>
+                      </button>
+                    </div>
+                    <mat-form-field appearance="outline" class="config-field">
+                      <mat-label>Label</mat-label>
+                      <input
+                        matInput
+                        [ngModel]="branch.label"
+                        (ngModelChange)="updateConditionalBranchLabel($index, $event)"
+                        placeholder="e.g. Approved"
+                      />
+                    </mat-form-field>
+                    <mat-form-field appearance="outline" class="config-field">
+                      <mat-label>Variable</mat-label>
+                      <mat-select
+                        [ngModel]="branch.condition.variable"
+                        (ngModelChange)="updateConditionalBranchCondition($index, 'variable', $event)"
+                      >
+                        <mat-option value="">-- Select variable --</mat-option>
+                        @for (group of variableGroups(); track group.namespace) {
+                          <mat-optgroup [label]="group.namespace">
+                            @for (v of group.variables; track v.path) {
+                              <mat-option [value]="v.path">{{ v.path }}</mat-option>
+                            }
+                          </mat-optgroup>
+                        }
+                      </mat-select>
+                      <mat-hint>Choose a variable to evaluate</mat-hint>
+                    </mat-form-field>
+                    <mat-form-field appearance="outline" class="config-field">
+                      <mat-label>Comparator</mat-label>
+                      <mat-select
+                        [ngModel]="branch.condition.comparator"
+                        (ngModelChange)="updateConditionalBranchCondition($index, 'comparator', $event)"
+                      >
+                        @for (opt of comparatorOptions; track opt.value) {
+                          <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                    <mat-form-field appearance="outline" class="config-field">
+                      <mat-label>Value</mat-label>
+                      <input
+                        matInput
+                        [ngModel]="branch.condition.value"
+                        (ngModelChange)="updateConditionalBranchCondition($index, 'value', $event)"
+                        placeholder="e.g. approved"
+                      />
+                      <mat-hint>Compare against this value. Use {{ '{{' }}X{{ '}}' }} for dynamic values.</mat-hint>
+                    </mat-form-field>
+                  </div>
+                }
+
+                <button
+                  mat-stroked-button
+                  type="button"
+                  (click)="addConditionalBranch()"
+                >
+                  <mat-icon>add</mat-icon>
+                  Add branch
+                </button>
+
+                <div class="default-section">
+                  <button
+                    mat-stroked-button
+                    type="button"
+                    (click)="toggleDefaultBranch(n)"
+                  >
+                    <mat-icon>{{ hasDefaultBranch(n) ? 'check_box' : 'check_box_outline_blank' }}</mat-icon>
+                    Default fallback
+                  </button>
+                  @if (hasDefaultBranch(n)) {
+                    <p class="config-hint" style="margin-top: 6px;">
+                      Connect another output from this node for the
+                      fallback path when no condition matches.
+                    </p>
+                  }
+                </div>
+              </div>
             }
           }
         </div>
@@ -605,6 +707,14 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
       color: var(--text3);
       margin: 0;
     }
+    .config-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text2, #666);
+      margin-bottom: 4px;
+      transform: none;
+    }
     .config-footer {
       padding: 12px 16px;
       border-top: 1px solid var(--border);
@@ -613,12 +723,49 @@ import type { IYoizenclawAgent } from "../../../../../../core/models/yoizenclaw.
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 12px;
     }
+    .conditional-branches {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .conditional-branch {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius, 6px);
+      background: var(--bg);
+    }
+    .branch-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .branch-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text2);
+    }
+    .branch-remove-btn {
+      width: 28px !important;
+      height: 28px !important;
+      line-height: 28px !important;
+    }
+    .branch-remove-btn mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+    }
+    .default-section {
+      margin-top: 4px;
+    }
   `,
 })
 export class WorkflowNodeConfigComponent implements OnInit {
   private readonly channelAdmin = inject(ChannelAdminService);
   private readonly adapterService = inject(HttpAdapterService);
-  private readonly yoizenclawAdmin = inject(YoizenclawAdminService);
+  private readonly agentAdmin = inject(AgentAdminService);
   readonly registryService = inject(RegistryService);
 
   readonly node = input<IWorkflowNode | null>(null);
@@ -627,6 +774,16 @@ export class WorkflowNodeConfigComponent implements OnInit {
    * outbound channelSend dropdowns are filtered to those accounts.
    */
   readonly triggerAccountIds = input<string[]>([]);
+  /**
+   * All workflow nodes (as a flat array) — used by template-autocomplete
+   * to offer step results as variable suggestions.
+   */
+  readonly workflowNodes = input<IWorkflowNode[]>([]);
+  /**
+   * Variable groups computed by the builder, used for the conditional
+   * branch variable dropdown.
+   */
+  readonly variableGroups = input<IVariableGroup[]>([]);
   readonly close = output<void>();
   readonly remove = output<string>();
   readonly configChange = output<{
@@ -639,7 +796,7 @@ export class WorkflowNodeConfigComponent implements OnInit {
   readonly types = EWorkflowNodeType;
   readonly channelAccounts = signal<IChannelAccount[]>([]);
   readonly adapters = signal<IAdapterDto[]>([]);
-  readonly yoizenclawAgents = signal<IYoizenclawAgent[]>([]);
+  readonly aiAgents = signal<IAgent[]>([]);
 
   /**
    * Channel accounts allowed in the outbound `channelSend` dropdown.
@@ -686,9 +843,9 @@ export class WorkflowNodeConfigComponent implements OnInit {
       next: (list) => this.adapters.set(list),
     });
     this.registryService.loadServices();
-    this.yoizenclawAdmin.listAgents({ status: "published", limit: 100 }).subscribe({
-      next: (res) => this.yoizenclawAgents.set(res.agents),
-      error: () => this.yoizenclawAgents.set([]),
+    this.agentAdmin.listAgents({ status: "published", limit: 100 }).subscribe({
+      next: (res) => this.aiAgents.set(res.agents),
+      error: () => this.aiAgents.set([]),
     });
   }
 
@@ -756,6 +913,10 @@ export class WorkflowNodeConfigComponent implements OnInit {
     }
   }
 
+  asString(value: unknown): string {
+    return typeof value === "string" ? value : "";
+  }
+
   joinPatterns(raw: unknown): string {
     if (!Array.isArray(raw)) return "";
     return (raw as string[]).join(", ");
@@ -802,6 +963,100 @@ export class WorkflowNodeConfigComponent implements OnInit {
    */
   serviceCallMethodHasBody(method: unknown): boolean {
     return method === "POST" || method === "PUT" || method === "PATCH";
+  }
+
+  // ── Conditional branch helpers ────────────────────────────────────
+
+  readonly comparatorOptions: Array<{
+    value: ConditionComparator;
+    label: string;
+  }> = [
+    { value: "eq", label: "Equals" },
+    { value: "neq", label: "Not equals" },
+    { value: "gt", label: "Greater than" },
+    { value: "lt", label: "Less than" },
+    { value: "gte", label: "Greater or equal" },
+    { value: "lte", label: "Less or equal" },
+    { value: "contains", label: "Contains" },
+    { value: "exists", label: "Exists" },
+    { value: "notExists", label: "Not exists" },
+  ];
+
+  getConditionalBranches(
+    node: IWorkflowNode,
+  ): IConditionalBranchConfig[] {
+    const branches = node.configuration["branches"];
+    return Array.isArray(branches)
+      ? (branches as IConditionalBranchConfig[])
+      : [];
+  }
+
+  addConditionalBranch(): void {
+    const n = this.node();
+    if (!n) return;
+    const branches = [
+      ...this.getConditionalBranches(n),
+    ];
+    branches.push({
+      label: `Branch ${branches.length + 1}`,
+      condition: {
+        variable: "",
+        comparator: "eq",
+        value: "",
+      },
+    });
+    this.updateConfig("branches", branches);
+  }
+
+  removeConditionalBranch(index: number): void {
+    const n = this.node();
+    if (!n) return;
+    const branches = [...this.getConditionalBranches(n)];
+    branches.splice(index, 1);
+    this.updateConfig("branches", branches);
+  }
+
+  updateConditionalBranchLabel(
+    index: number,
+    label: string,
+  ): void {
+    const n = this.node();
+    if (!n) return;
+    const branches = [...this.getConditionalBranches(n)];
+    if (!branches[index]) return;
+    branches[index] = { ...branches[index], label };
+    this.updateConfig("branches", branches);
+  }
+
+  updateConditionalBranchCondition(
+    index: number,
+    field: string,
+    value: string,
+  ): void {
+    const n = this.node();
+    if (!n) return;
+    const branches = [...this.getConditionalBranches(n)];
+    if (!branches[index]) return;
+    branches[index] = {
+      ...branches[index],
+      condition: {
+        ...branches[index].condition,
+        [field]: value,
+      },
+    };
+    this.updateConfig("branches", branches);
+  }
+
+  hasDefaultBranch(node: IWorkflowNode): boolean {
+    return !!node.configuration["default"];
+  }
+
+  toggleDefaultBranch(node: IWorkflowNode): void {
+    if (this.hasDefaultBranch(node)) {
+      this.updateConfig("default", undefined);
+    } else {
+      this.updateConfig("default", { targetKey: "" });
+    }
   }
 
   private formatServiceCallData(data: unknown): string {

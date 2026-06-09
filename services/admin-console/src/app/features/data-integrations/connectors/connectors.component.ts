@@ -8,6 +8,7 @@ import {
   type OnInit,
 } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import { MatChipsModule } from "@angular/material/chips";
 import { MatDialog } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
@@ -172,16 +173,11 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
     MatIconModule,
     MatProgressSpinnerModule,
     StatusBadgeComponent,
+    PageHeaderComponent,
   ],
   template: `
-    <div class="ws-header">
-      <div>
-        <div class="ws-title">Connectors</div>
-        <div class="ws-subtitle">
-          HTTP adapters for your services
-        </div>
-      </div>
-      <div class="ws-actions">
+    <app-page-header title="Connectors" subtitle="HTTP adapters for your services">
+      <ng-container slot="actions">
         <button
           type="button"
           class="btn btn-primary btn-sm"
@@ -189,8 +185,8 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
         >
           + Add Connector
         </button>
-      </div>
-    </div>
+      </ng-container>
+    </app-page-header>
 
     @if (actionError(); as err) {
       <div class="conn-alert" role="alert">
@@ -346,22 +342,6 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
     }
   `,
   styles: `
-    .badge-cyan {
-      background: rgba(6, 182, 212, 0.15);
-      color: #06b6d4;
-    }
-    .badge-orange {
-      background: rgba(249, 115, 22, 0.15);
-      color: #f97316;
-    }
-    .badge-violet {
-      background: rgba(139, 92, 246, 0.15);
-      color: #8b5cf6;
-    }
-    .badge-slate {
-      background: rgba(148, 163, 184, 0.15);
-      color: #94a3b8;
-    }
     .filter-bar {
       padding: 0 0 12px;
     }
@@ -416,13 +396,6 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
       font-size: 11px;
       color: var(--text3, #94a3b8);
       margin-top: 6px;
-    }
-    .badge-synced {
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
-      background: rgba(14, 165, 233, 0.15);
-      color: #0ea5e9;
     }
     .synced-icon {
       font-size: 13px;

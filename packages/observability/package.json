@@ -16,8 +16,8 @@
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/context-async-hooks": "^2.6.0",
     "@opentelemetry/core": "^2.6.0",
-    "@opentelemetry/exporter-metrics-otlp-http": "^0.213.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.213.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.218.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.218.0",
     "@opentelemetry/resources": "^2.6.0",
     "@opentelemetry/sdk-metrics": "^2.6.0",
     "@opentelemetry/sdk-trace-base": "^2.6.0",
@@ -26,8 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "fastify": "^5.8.2",
-    "nats": "^2.29.3",
+
     "typescript": "^5.9.3"
   }
 }

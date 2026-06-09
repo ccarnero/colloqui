@@ -72,7 +72,7 @@ Todo mensaje publicado al bus **debe** serializarse como el siguiente envelope. 
 | `causation_id` | string \| null | ID del evento que causó este. `null` solo si es raíz. |
 | `correlation_id` | string | ID de negocio que agrupa toda la cadena (D11). |
 | `tenant` | string | Tenant ID (snake_case en el envelope). |
-| `producer` | string | Servicio que publica. Ej: `channel-service`, `api-gateway`, `yoizenclaw-admin-service`. |
+| `producer` | string | Servicio que publica. Ej: `channel-service`, `api-gateway`, `agent-admin-service`. |
 | `domain` | string | Dominio de negocio. Ej: `messaging`, `automation`, `platform`. |
 | `channel` | string | Canal. Ej: `whatsapp`, `telegram`, `events`. |
 | `provider` | string | Proveedor. Ej: `meta`, `telegram`, `internal`, `gateway`. |
@@ -106,7 +106,7 @@ evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>
 |-------|-----------|----------|
 | `evt` | Prefijo fijo. | `evt` |
 | `tenant` | Tenant ID (mismo valor que `envelope.tenant`). | `acme`, `globex` |
-| `producer` | Servicio que publica. | `channel-service`, `api-gateway`, `yoizenclaw-admin-service` |
+| `producer` | Servicio que publica. | `channel-service`, `api-gateway`, `agent-admin-service` |
 | `domain` | Dominio de negocio (mismo valor que `envelope.domain`). | `messaging`, `automation`, `platform` |
 | `channel` | Canal (mismo que `envelope.channel`). | `whatsapp`, `telegram`, `events` |
 | `provider` | Proveedor (mismo que `envelope.provider`). | `meta`, `telegram`, `internal`, `gateway` |
@@ -323,27 +323,27 @@ Subject: `evt.acme.api-gateway.platform.events.gateway.command.v1`.
 }
 ```
 
-### 9.4 Agente interno (yoizenclaw)
+### 9.4 Agente interno (agent-admin-service)
 
 ```json
 {
-  "type": "io.yoizen.yoizenclaw.admin.agent.published.v1",
-  "source": "//yoizenclaw-admin-service/admin/agents/publish",
+  "type": "io.yoizen.agent-admin-service.admin.agent.published.v1",
+  "source": "//agent-admin-service/admin/agents/publish",
   "tenant": "acme",
-  "producer": "yoizenclaw-admin-service",
+  "producer": "agent-admin-service",
   "domain": "automation",
-  "channel": "yoizenclaw",
+  "channel": "platform",
   "provider": "internal",
   "transport": {
     "method": "agent",
     "protocol": "internal",
-    "agent_id": "yoizenclaw-admin-service",
+    "agent_id": "agent-admin-service",
     "depth": 0
   }
 }
 ```
 
-Subject: `evt.acme.yoizenclaw-admin-service.automation.yoizenclaw.internal.agent_published.v1`.
+Subject: `evt.acme.agent-admin-service.automation.platform.internal.agent_published.v1`.
 
 ---
 
@@ -388,7 +388,7 @@ La coexistencia de ambas nomenclaturas hace que, según qué servicio publique, 
 
 ### 11.2 Decisión
 
-La **única taxonomía canónica** para eventos de dominio (ingress, messaging, workflow, yoizenclaw) es:
+La **única taxonomía canónica** para eventos de dominio (ingress, messaging, workflow, platform) es:
 
 | Elemento | Valor canónico |
 |----------|----------------|

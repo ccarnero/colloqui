@@ -19,7 +19,7 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 ┌──────────────────────────────────────────────────────────────────┐
 │ Configuration Phase                                              │
 │                                                                  │
-│  Admin Console ──POST /admin/agents──▶ yoizenclaw-admin-service │
+│  Admin Console ──POST /admin/agents──▶ agent-admin-service │
 │     {tools: [{adapterRef: {adapterId, endpointId}}]}             │
 │                                          │                       │
 │                                   Validate adapterRef            │
@@ -60,14 +60,14 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 
 | Component | File | Responsibility |
 |-----------|------|---------------|
-| `AdapterClient` | `services/yoizenclaw-runtime/src/shared/adapter_client.py` | Resolve adapter configs with SWR caching |
-| `AdapterToolExecutor` | `services/yoizenclaw-runtime/src/tools/adapter_executor.py` | Execute HTTP calls via adapter resolution |
-| `ToolExecutor` | `services/yoizenclaw-runtime/src/application/agents/tool_executor.py` | Dispatch to adapter or HTTP path |
-| `AdapterReference` | `services/yoizenclaw-runtime/src/shared/config/agent_config.py` | Pydantic model for adapter references |
-| `AdapterReferenceDto` | `services/yoizenclaw-admin-service/src/modules/agents/agents.dto.ts` | DTO validation in admin-service |
-| `AdaptersController` | `services/yoizenclaw-admin-service/src/modules/adapters/adapters.controller.ts` | `GET /admin/adapters` for UI |
+| `AdapterClient` | `services/agent-ai-service/src/shared/adapter_client.py` | Resolve adapter configs with SWR caching |
+| `AdapterToolExecutor` | `services/agent-ai-service/src/tools/adapter_executor.py` | Execute HTTP calls via adapter resolution |
+| `ToolExecutor` | `services/agent-ai-service/src/application/agents/tool_executor.py` | Dispatch to adapter or HTTP path |
+| `AdapterReference` | `services/agent-ai-service/src/shared/config/agent_config.py` | Pydantic model for adapter references |
+| `AdapterReferenceDto` | `services/agent-admin-service/src/modules/agents/agents.dto.ts` | DTO validation in admin-service |
+| `AdaptersController` | `services/agent-admin-service/src/modules/adapters/adapters.controller.ts` | `GET /admin/adapters` for UI |
 | `AdaptersService` | `services/admin-console/src/app/core/services/adapters.service.ts` | Angular service for adapter API |
-| `ToolAdapterFormComponent` | `services/admin-console/src/app/features/automation/yoizenclaw/tool-adapter-form.component.ts` | UI for adapter selection |
+| `ToolAdapterFormComponent` | `services/admin-console/src/app/features/automation/ai/tool-adapter-form.component.ts` | UI for adapter selection |
 
 ## Configuration
 
@@ -75,10 +75,10 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `YOIZENCLAW_ADAPTER_TOOLS_ENABLED` | `true` | Feature flag for adapter tools |
-| `CONNECTOR_ADMIN_URL` | `http://connector-admin-api:3000` | Primary `connector-admin` base URL (consumed by `yoizenclaw-runtime` settings) |
+| `ADAPTER_TOOLS_ENABLED` | `true` | Feature flag for adapter tools |
+| `CONNECTOR_ADMIN_URL` | `http://connector-admin-api:3000` | Primary `connector-admin` base URL (consumed by `agent-ai-service` settings) |
 | `ADAPTER_SERVICE_URL` | `http://connector-admin-api:3000` | **Legacy alias** for `CONNECTOR_ADMIN_URL`; honoured for backwards compatibility only |
-| `YOIZENCLAW_TOOL_RESPONSE_MAX_BYTES` | `100000` | Response truncation limit (bytes) |
+| `TOOL_RESPONSE_MAX_BYTES` | `100000` | Response truncation limit (bytes) |
 | `ADAPTER_CACHE_TTL_SECONDS` | `60` | Cache soft TTL (fresh threshold) |
 | `ADAPTER_CACHE_HARD_TTL_SECONDS` | `300` | Cache hard TTL (stale fallback) |
 
@@ -293,23 +293,23 @@ Agent (tenant: acme) → AdapterToolExecutor
 
 ## Feature Flag
 
-Adapter tools are controlled by the `YOIZENCLAW_ADAPTER_TOOLS_ENABLED` environment variable.
+Adapter tools are controlled by the `ADAPTER_TOOLS_ENABLED` environment variable.
 
 | Value | Behaviour |
 |-------|-----------|
 | `true` (default) | Adapter tools are enabled. `adapterRef` tools are resolved and executed. |
 | `false` | Adapter tools are disabled. Tool calls with `adapterRef` return an error. |
 
-> **Note**: The feature flag is temporary and should be removed after production validation. See Task 6.2 in the yoizenclaw-adapter-tools change.
+> **Note**: The feature flag is temporary and should be removed after production validation. See Task 6.2 in the adapter-tools change.
 
 ## File Reference
 
 | File | Language | Description |
 |------|----------|-------------|
-| `services/yoizenclaw-runtime/src/shared/adapter_client.py` | Python | AdapterClient with SWR cache |
-| `services/yoizenclaw-runtime/src/tools/adapter_executor.py` | Python | AdapterToolExecutor |
-| `services/yoizenclaw-runtime/src/shared/config/agent_config.py` | Python | `AdapterReference` model |
-| `services/yoizenclaw-admin-service/src/modules/agents/agents.dto.ts` | TypeScript | `AdapterReferenceDto` validation |
-| `services/yoizenclaw-admin-service/src/modules/adapters/` | TypeScript | Adapter lookup controller + service |
+| `services/agent-ai-service/src/shared/adapter_client.py` | Python | AdapterClient with SWR cache |
+| `services/agent-ai-service/src/tools/adapter_executor.py` | Python | AdapterToolExecutor |
+| `services/agent-ai-service/src/shared/config/agent_config.py` | Python | `AdapterReference` model |
+| `services/agent-admin-service/src/modules/agents/agents.dto.ts` | TypeScript | `AdapterReferenceDto` validation |
+| `services/agent-admin-service/src/modules/adapters/` | TypeScript | Adapter lookup controller + service |
 | `services/admin-console/src/app/core/services/adapters.service.ts` | TypeScript | Angular adapter API service |
-| `services/admin-console/src/app/features/automation/yoizenclaw/tool-adapter-form.component.ts` | TypeScript | Adapter selection UI component |
+| `services/admin-console/src/app/features/automation/ai/tool-adapter-form.component.ts` | TypeScript | Adapter selection UI component |

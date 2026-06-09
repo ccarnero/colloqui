@@ -12,11 +12,11 @@ function configureMonacoGlobal(): void {
 
     if (w.monaco) {
       // Register a custom language that extends markdown with @skill: and @tool: tokens
-      w.monaco.languages.register({ id: "yoizenclaw-prompt" });
+      w.monaco.languages.register({ id: "ai-prompt" });
 
       // Define Monarch tokenizer with @skill: and @tool: as custom tokens
       // Use string patterns with proper escaping for the regex
-      w.monaco.languages.setMonarchTokensProvider("yoizenclaw-prompt", {
+      w.monaco.languages.setMonarchTokensProvider("ai-prompt", {
         tokenizer: {
           root: [
             // @skill: mentions - will be colored with custom theme rules
@@ -33,7 +33,7 @@ function configureMonacoGlobal(): void {
       });
 
       // Configure language configuration (brackets, auto-indent, etc.)
-      w.monaco.languages.setLanguageConfiguration("yoizenclaw-prompt", {
+      w.monaco.languages.setLanguageConfiguration("ai-prompt", {
         brackets: [
           ["{", "}"],
           ["[", "]"],

@@ -44,7 +44,7 @@ ALL_KNATIVE_SERVICES=(
   cache-service
   tenant-service
   registry-service
-  yoizenclaw-admin-service
+  agent-admin-service
   proxy-service
   connector-admin
   channel-service-api

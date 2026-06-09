@@ -63,9 +63,11 @@ const ALL_SECTIONS: INavSection[] = [
         label: "AI Agents",
         icon: "psychology",
         items: [
-          { label: "Agents", icon: "support_agent", route: "/yoizenclaw/agents" },
-          { label: "Playground", icon: "science", route: "/yoizenclaw/playground" },
-          { label: "Memories", icon: "memory", route: "/yoizenclaw/memories" },
+          { label: "Agents", icon: "support_agent", route: "/ai/agents" },
+          { label: "Playground", icon: "science", route: "/ai/playground" },
+          { label: "Memories", icon: "memory", route: "/ai/memories" },
+          { label: "System Variables", icon: "tune", route: "/ai/system-variables" },
+          { label: "Knowledge Bases", icon: "library_books", route: "/ai/knowledge-bases" },
         ],
       },
     ],
@@ -96,7 +98,7 @@ const ALL_SECTIONS: INavSection[] = [
   imports: [RouterLink, RouterLinkActive, MatIconModule],
   template: `
     <aside class="sidebar-container bg-sidebar">
-      <!-- YoizenClaw module logo (yz-ui) -->
+      <!-- AI module logo (yz-ui) -->
       <div class="brand-logo border-subtle">
         <div class="logo-icon flex-center">
           <svg class="w-8 h-8 logo-svg" id="Capa_1" data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 714.26">

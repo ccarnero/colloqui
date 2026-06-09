@@ -107,6 +107,9 @@ export function validateAction(
     case "branch":
       errors.push(...validateBranch(a, childCtx, depth));
       break;
+    case "conditional":
+      errors.push(...validateConditional(a, childCtx, depth));
+      break;
     default:
       errors.push({
         nodeKey: ctx.nodeKey,
@@ -492,6 +495,144 @@ function validateBranch(
       code: "BRANCH_EMPTY",
       message: "Branch must have at least one path with one or more actions.",
     });
+  }
+
+  return errors;
+}
+
+const CONDITIONAL_COMPARATORS = new Set([
+  "eq",
+  "neq",
+  "gt",
+  "lt",
+  "gte",
+  "lte",
+  "contains",
+  "exists",
+  "notExists",
+]);
+
+/**
+ * Conditional action: at least one branch with a valid condition.
+ * Each branch's actions array is recursively validated with depth +1.
+ * The optional `default` array is also validated if present.
+ */
+function validateConditional(
+  action: ActionLike,
+  ctx: ValidationContext,
+  depth: number,
+): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const branches = action["branches"];
+
+  if (!Array.isArray(branches) || branches.length === 0) {
+    errors.push({
+      nodeKey: ctx.nodeKey,
+      nodeName: ctx.nodeName,
+      code: "CONDITIONAL_NO_BRANCHES",
+      message: "Conditional must have at least one branch.",
+    });
+    return errors;
+  }
+
+  for (let i = 0; i < branches.length; i++) {
+    const branch = branches[i];
+    if (typeof branch !== "object" || branch === null) {
+      errors.push({
+        nodeKey: ctx.nodeKey,
+        nodeName: ctx.nodeName,
+        field: `branches[${i}]`,
+        code: "INVALID_VALUE",
+        message: `Branch ${i} must be an object.`,
+      });
+      continue;
+    }
+    const b = branch as Record<string, unknown>;
+
+    if (!NON_EMPTY_STRING(b["label"])) {
+      errors.push({
+        nodeKey: ctx.nodeKey,
+        nodeName: ctx.nodeName,
+        field: `branches[${i}].label`,
+        code: "REQUIRED",
+        message: `Branch ${i} label is required.`,
+      });
+    }
+
+    const cond = b["condition"];
+    if (typeof cond !== "object" || cond === null) {
+      errors.push({
+        nodeKey: ctx.nodeKey,
+        nodeName: ctx.nodeName,
+        field: `branches[${i}].condition`,
+        code: "REQUIRED",
+        message: `Branch ${i} must have a condition.`,
+      });
+    } else {
+      const c = cond as Record<string, unknown>;
+      if (!NON_EMPTY_STRING(c["variable"])) {
+        errors.push({
+          nodeKey: ctx.nodeKey,
+          nodeName: ctx.nodeName,
+          field: `branches[${i}].condition.variable`,
+          code: "REQUIRED",
+          message: `Branch ${i} variable is required.`,
+        });
+      }
+      if (
+        typeof c["comparator"] !== "string" ||
+        !CONDITIONAL_COMPARATORS.has(c["comparator"])
+      ) {
+        errors.push({
+          nodeKey: ctx.nodeKey,
+          nodeName: ctx.nodeName,
+          field: `branches[${i}].condition.comparator`,
+          code: "CONDITIONAL_INVALID_COMPARATOR",
+          message: `Branch ${i} has an invalid comparator.`,
+        });
+      }
+      if (typeof c["value"] !== "string") {
+        errors.push({
+          nodeKey: ctx.nodeKey,
+          nodeName: ctx.nodeName,
+          field: `branches[${i}].condition.value`,
+          code: "REQUIRED",
+          message: `Branch ${i} value is required.`,
+        });
+      }
+    }
+
+    const branchActions = b["actions"];
+    if (Array.isArray(branchActions) && branchActions.length > 0) {
+      for (let j = 0; j < branchActions.length; j++) {
+        errors.push(
+          ...validateAction(branchActions[j], ctx, depth + 1).map(
+            (err) => ({
+              ...err,
+              field: err.field
+                ? `branches[${i}].actions[${j}].${err.field}`
+                : `branches[${i}].actions[${j}]`,
+            }),
+          ),
+        );
+      }
+    }
+  }
+
+  const defaultActions = action["default"];
+  if (Array.isArray(defaultActions) && defaultActions.length > 0) {
+    for (let j = 0; j < defaultActions.length; j++) {
+      errors.push(
+        ...validateAction(defaultActions[j], ctx, depth + 1).map(
+          (err) => ({
+            ...err,
+            field: err.field
+              ? `default[${j}].${err.field}`
+              : `default[${j}]`,
+          }),
+        ),
+      );
+    }
   }
 
   return errors;

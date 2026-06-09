@@ -41,3 +41,4 @@ resources:
   - channel-service-worker.yaml
   - usage-aggregator-worker.yaml
   - workflow-service-worker.yaml
+  - agent-admin-service-worker.yaml

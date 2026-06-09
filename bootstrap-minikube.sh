@@ -588,15 +588,16 @@ build_images() {
     # Windows - export variables manually
     eval "$(minikube docker-env -p "$PROFILE" --shell=bash)"
   else
-    eval "$(minikube docker-env -p "$PROFILE")"
+    eval "$(minikube docker-env -p "$PROFILE" --shell=bash)"
   fi
 
   local services=(api-gateway auth-service cache-service \
              audit-service tenant-service \
              registry-service connector-admin \
              channel-service workflow-service connector-runtime \
-             proxy-service yoizenclaw-admin-service yoizenclaw-runtime-gateway admin-console \
-             usage-aggregator-service yoizenclaw-runtime)
+             proxy-service agent-admin-service ai-agent-gateway admin-console \
+             usage-aggregator-service \
+             agent-memory-service agent-ai-service agent-scheduler-service)
 
   # BUILD_PARALLELISM controls how many `docker build` invocations run
   # concurrently. Default of 2 is the sweet spot on a 12-core dev box:

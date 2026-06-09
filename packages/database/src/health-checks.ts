@@ -48,10 +48,25 @@ export function checkNats(nc: NatsConnection): boolean {
 
 /**
  * Checks Redis connectivity via `PING`.
+ *
+ * A wall-clock timeout prevents indefinite hangs when ioredis Cluster
+ * is stuck waiting for slot discovery (e.g. `cluster_state:fail` with
+ * zero assigned slots — `CLUSTER SLOTS` returns empty and ioredis
+ * queues the command forever).  3 s is generous against the ~0.5 ms
+ * in-cluster RTT while still letting the readiness probe recover
+ * within a single period.
  */
-export async function checkRedis(redis: RedisPinger): Promise<boolean> {
+export async function checkRedis(
+  redis: RedisPinger,
+  timeoutMs = 3_000,
+): Promise<boolean> {
   try {
-    await redis.ping();
+    await Promise.race([
+      redis.ping(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("redis health timeout")), timeoutMs),
+      ),
+    ]);
     return true;
   } catch {
     return false;

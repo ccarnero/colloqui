@@ -15,6 +15,7 @@ interface IWorkflowDefinitionDoc {
   application: string;
   actions: unknown[];
   trigger: unknown;
+  variables: unknown;
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;
@@ -36,6 +37,7 @@ function docToDefinitionRow(
     application: String(doc.application ?? ""),
     actions: doc.actions ?? [],
     trigger: doc.trigger ?? null,
+    variables: doc.variables ?? null,
     created_at: toDate(doc.created_at),
     updated_at: toDate(doc.updated_at),
     deleted_at:
@@ -60,7 +62,7 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
   async createDefinition(
     params: ICreateDefinitionParams,
   ): Promise<IWorkflowDefinitionRow> {
-    const { id, tenantId, name, application, actions, trigger } = params;
+    const { id, tenantId, name, application, actions, trigger, variables } = params;
     const now = new Date();
     const doc: IWorkflowDefinitionDoc = {
       _id: id,
@@ -68,6 +70,7 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
       application,
       actions,
       trigger: trigger ?? null,
+      variables: variables ?? null,
       created_at: now,
       updated_at: now,
       deleted_at: null,
@@ -80,7 +83,7 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
   async updateDefinition(
     params: IUpdateDefinitionParams,
   ): Promise<IWorkflowDefinitionRow | undefined> {
-    const { id, tenantId, name, application, actions, trigger } = params;
+    const { id, tenantId, name, application, actions, trigger, variables } = params;
     const now = new Date();
     const col = await this.definitions(tenantId);
     const result = await col.findOneAndUpdate(
@@ -91,6 +94,7 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
           application,
           actions,
           trigger: trigger ?? null,
+          variables: variables ?? null,
           updated_at: now,
         },
       },

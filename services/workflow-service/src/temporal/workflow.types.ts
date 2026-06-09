@@ -1,143 +1,55 @@
-export interface EventCausalContext {
-  readonly causation_id: string;
-  readonly correlation_id: string;
-  readonly depth: number;
+/**
+ * Local re-exports and type aliases for the Temporal worker.
+ *
+ * Types from `@yoizen/shared` are re-exported so callers only need
+ * one import path (`./workflow.types`). Only aliases that differ in
+ * naming (e.g. `AgentChatRequest`) are defined here.
+ */
+
+// ── Re-exports from shared ──────────────────────────────────────────
+
+export type {
+  WorkflowAction,
+  WorkflowDefinition,
+  ConditionComparator,
+  IConditionRule,
+  IConditionalBranch,
+  ConditionalAction,
+  VariableResolutionContext,
+  EventCausalContext,
+  EndpointCallArgs,
+  JsFunctionArgs,
+  ServiceBusCallArgs,
+  ServiceCallArgs,
+  ChannelSendArgs,
+  AgentCallArgs,
+} from "@yoizen/shared";
+
+import type {
+  AgentCallArgs as SharedAgentCallArgs,
+  WorkflowExecutionContext as SharedWorkflowExecutionContext,
+} from "@yoizen/shared";
+
+// ── Local aliases / extensions ──────────────────────────────────────
+
+/**
+ * Local WorkflowExecutionContext extends the shared one with `executionId`
+ * which is set by `runWorkflow` at runtime.
+ */
+export interface WorkflowExecutionContext
+  extends SharedWorkflowExecutionContext {
+  executionId?: string;
 }
 
-export interface WorkflowExecutionContext {
-  workflow: { name: string; tenant: string; application: string };
-  request: Record<string, unknown>;
-  results: Record<string, unknown>;
-  causal?: EventCausalContext;
-}
-
-export interface HttpEndpointRequest {
-  method: string;
-  url: string;
-  adapterId?: string;
-  endpointId?: string;
-  params?: Record<string, unknown>;
-  data?: unknown;
-  headers?: Record<string, string>;
-}
-
-export interface HttpServiceRequest {
-  serviceId: string;
-  method: string;
-  path: string;
-  data?: unknown;
-  headers?: Record<string, string>;
-  endpointId?: string;
-}
-
-export interface AgentChatContextEntry {
-  sender: "customer" | "agent";
-  content: string;
-}
-
-export interface AgentChatRequest {
-  agentId: string;
-  message: string;
-  conversationId?: string;
-  customerName?: string;
-  userId?: string;
-  channel?: string;
-  context?: AgentChatContextEntry[];
-}
+/**
+ * Agent execution request shape used by the worker activity.
+ * Alias of `AgentCallArgs` renamed for clarity in the worker context
+ * (the agent call activity calls the HTTP endpoint "chat").
+ */
+export type AgentChatRequest = SharedAgentCallArgs;
 
 export interface HttpExecutionResult {
   status: number;
   data: unknown;
   headers: Record<string, string>;
-}
-
-export interface JsFunctionArgs {
-  code: string;
-}
-
-export interface ServiceBusCallArgs {
-  subject: string;
-  payload?: unknown;
-  headers?: Record<string, string>;
-}
-
-export type Channel = "whatsapp" | "instagram" | "telegram";
-export type ChannelProvider = "meta" | "telegram";
-
-export interface ChannelSendArgs {
-  accountId: string;
-  channel: Channel;
-  provider: ChannelProvider;
-  to: string;
-  type: "text" | "template" | "image" | "document";
-  text?: string;
-  templateName?: string;
-  templateLanguage?: string;
-  templateComponents?: Record<string, unknown>[];
-  mediaUrl?: string;
-  caption?: string;
-}
-
-export type EndpointCallArgs = HttpEndpointRequest;
-export type ServiceCallArgs = HttpServiceRequest;
-export type AgentCallArgs = AgentChatRequest;
-
-export interface EndpointCallAction {
-  activity: "endpointCall";
-  name: string;
-  args: EndpointCallArgs;
-}
-
-export interface JsFunctionAction {
-  activity: "jsFunction";
-  name: string;
-  args: JsFunctionArgs;
-}
-
-export interface ServiceBusCallAction {
-  activity: "serviceBusCall";
-  name: string;
-  args: ServiceBusCallArgs;
-}
-
-export interface ServiceCallAction {
-  activity: "serviceCall";
-  name: string;
-  args: ServiceCallArgs;
-}
-
-export interface ChannelSendAction {
-  activity: "channelSend";
-  name: string;
-  args: ChannelSendArgs;
-}
-
-export interface AgentCallAction {
-  activity: "agentCall";
-  name: string;
-  args: AgentCallArgs;
-}
-
-export interface BranchAction {
-  activity: "branch";
-  name: string;
-  [branchName: string]: WorkflowAction[] | string;
-}
-
-export type WorkflowAction =
-  | EndpointCallAction
-  | JsFunctionAction
-  | ServiceBusCallAction
-  | ServiceCallAction
-  | ChannelSendAction
-  | AgentCallAction
-  | BranchAction;
-
-export interface WorkflowDefinition {
-  name: string;
-  tenant: string;
-  application: string;
-  request: Record<string, unknown>;
-  actions: WorkflowAction[];
-  causal?: EventCausalContext;
 }

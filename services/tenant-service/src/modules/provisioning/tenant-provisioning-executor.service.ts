@@ -19,7 +19,6 @@ import {
   TENANT_PROVISIONER,
   type ITenantProvisioner,
 } from "../../providers/tenant-provisioner.interface";
-import { YoizenClawRuntimeProvisioner } from "../../providers/yoizenclaw-runtime.provider";
 import { tenantServiceConfig } from "../../config";
 import {
   type Environment,
@@ -68,7 +67,6 @@ export class TenantProvisioningExecutor {
     @Inject(K8S_CORE_API) private readonly k8sApi: k8s.CoreV1Api,
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
     @Inject(TENANT_PROVISIONER) private readonly provisioner: ITenantProvisioner,
-    private readonly runtimeProvisioner: YoizenClawRuntimeProvisioner,
   ) {
     const env = tenantServiceConfig.platformEnvironment;
     if (!VALID_ENVIRONMENTS.includes(env as Environment)) {
@@ -81,7 +79,7 @@ export class TenantProvisioningExecutor {
 
   /**
    * Creates or reconciles the tenant namespace, provisions tenant storage
-   * (shared logical DB or dedicated StatefulSet), then applies yoizenclaw-runtime.
+   * (shared logical DB or dedicated StatefulSet), then ensures NATS streams.
    */
   async run(params: ITenantProvisioningRunParams): Promise<{
     nsName: string;
@@ -110,10 +108,6 @@ export class TenantProvisioningExecutor {
 
     await this.runPhase(`nats.ensure-ingress-stream ${phaseTag}`, () =>
       ensureTenantIngressStream(this.jsm, name),
-    );
-
-    await this.runPhase(`yoizenclaw-runtime.apply ${phaseTag}`, () =>
-      this.runtimeProvisioner.apply({ namespace: nsName, tenantId: name }),
     );
 
     const totalElapsedMs = Math.round(performance.now() - totalStarted);

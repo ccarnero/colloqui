@@ -16,7 +16,6 @@ import { TenantGuard, TenantId } from "@yoizen/database";
 import type { FastifyRequest } from "fastify";
 import { CreateWorkflowDto } from "./dto/create-workflow.dto";
 import { UpdateWorkflowDto } from "./dto/update-workflow.dto";
-import { ExecuteWorkflowDto } from "./dto/execute-workflow.dto";
 import { parseListExecutionsQuery } from "./dto/list-executions-query.dto";
 import { WorkflowsService } from "./workflows.service";
 
@@ -37,6 +36,7 @@ export class WorkflowsController {
       application: dto.application,
       actions: dto.actions,
       trigger: dto.trigger,
+      variables: dto.variables,
     });
   }
 
@@ -53,6 +53,7 @@ export class WorkflowsController {
       application: dto.application,
       actions: dto.actions,
       trigger: dto.trigger,
+      variables: dto.variables,
     });
   }
 
@@ -87,11 +88,19 @@ export class WorkflowsController {
   async executeWorkflow(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-    @Body() dto: ExecuteWorkflowDto,
+    @Body() rawBody: Record<string, unknown>,
     @Req() req: FastifyRequest,
   ) {
     const requestId = (req.headers["x-request-id"] as string | undefined) ?? null;
-    return this.workflowsService.executeWorkflow(id, tenantId, dto.request, { requestId });
+    const request = (rawBody.request ?? {}) as Record<string, unknown>;
+    const agentTimeoutSec =
+      typeof rawBody.agentTimeoutSec === "number"
+        ? rawBody.agentTimeoutSec
+        : undefined;
+    return this.workflowsService.executeWorkflow(id, tenantId, request, {
+      requestId,
+      agentTimeoutMs: agentTimeoutSec ? agentTimeoutSec * 1000 : undefined,
+    });
   }
 
   @Get(":id/executions")

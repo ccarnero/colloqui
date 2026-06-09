@@ -8,7 +8,6 @@ import {
 
 export enum UserRole {
   ADMIN = "admin",
-  OPERATOR = "operator",
 }
 
 export class CreateUserDto {

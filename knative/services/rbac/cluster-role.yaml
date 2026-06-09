@@ -21,14 +21,6 @@ rules:
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
     verbs: ["create", "get", "list", "update", "patch", "delete", "watch"]
-  # Required by `YoizenClawRuntimeProvisioner` so tenant-service can apply the
-  # per-tenant `yoizenclaw-runtime` Knative Service into the tenant namespace
-  # right after Postgres is ready (see services/tenant-service/src/providers/
-  # yoizenclaw-runtime.provider.ts). Patch is for `replaceNamespacedCustomObject`
-  # idempotency on the conflict path.
-  - apiGroups: ["serving.knative.dev"]
-    resources: ["services"]
-    verbs: ["create", "get", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

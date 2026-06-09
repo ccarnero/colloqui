@@ -8,7 +8,6 @@ import {
   CHANNEL_ACCOUNTS_SCHEMA_SQL,
 } from "@yoizen/shared";
 
-export type { Sql } from "@yoizen/database";
 
 /**
  * Per-tenant OLTP pool for `channel_accounts` and `auto_reply_rules`.

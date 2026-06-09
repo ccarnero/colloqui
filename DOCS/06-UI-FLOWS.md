@@ -10,8 +10,8 @@ All UI traffic goes through `api-gateway`.
 
 | UI area | Frontend location | Gateway path | Backend owner |
 |---|---|---|---|
-| Agent management | `admin-console` YoizenClaw screens | `/admin/*` via gateway | `yoizenclaw-admin-service` |
-| Runtime test chat (playground) | `features/automation/yoizenclaw/playground.component.ts` | `/runtime/executions` | `yoizenclaw-runtime-gateway` |
+| Agent management | `admin-console` YoizenClaw screens | `/admin/*` via gateway | `agent-admin-service` |
+| Runtime test chat (playground) | `features/automation/ai/playground.component.ts` | `/runtime/executions` | `ai-agent-gateway` |
 
 ### Create / Edit Agent
 
@@ -20,7 +20,7 @@ sequenceDiagram
     autonumber
     participant UI as admin-console
     participant GW as api-gateway
-    participant YZA as yoizenclaw-admin-service
+    participant YZA as agent-admin-service
     participant DB as Tenant PostgreSQL
 
     UI->>GW: create/update agent request
@@ -37,9 +37,9 @@ sequenceDiagram
     autonumber
     participant UI as admin-console
     participant GW as api-gateway
-    participant YZA as yoizenclaw-admin-service
+    participant YZA as agent-admin-service
     participant NATS as NATS INGRESS-tenant
-    participant YZR as yoizenclaw-runtime
+    participant YZR as agent-ai-service
 
     UI->>GW: publish agent
     GW->>YZA: proxy publish request
@@ -57,10 +57,10 @@ sequenceDiagram
     autonumber
     participant UI as admin-console
     participant GW as api-gateway
-    participant YZA as yoizenclaw-admin-service
+    participant YZA as agent-admin-service
     participant DB as Tenant PostgreSQL
     participant NATS as NATS INGRESS-tenant
-    participant YZR as yoizenclaw-runtime
+    participant YZR as agent-ai-service
 
     UI->>GW: delete agent
     GW->>YZA: proxy delete request
@@ -81,10 +81,10 @@ sequenceDiagram
     autonumber
     participant UI as admin-console playground
     participant GW as api-gateway
-    participant YZG as yoizenclaw-runtime-gateway
+    participant YZG as ai-agent-gateway
     participant Redis as Redis
     participant NATS as NATS INGRESS-tenant
-    participant YZR as yoizenclaw-runtime
+    participant YZR as agent-ai-service
 
     UI->>GW: POST /runtime/executions
     GW->>YZG: proxy POST /runtime/executions
@@ -132,8 +132,8 @@ sequenceDiagram
 
 ## References
 
-- `services/admin-console/src/app/core/services/yoizenclaw-runtime.service.ts`
-- `services/admin-console/src/app/features/automation/yoizenclaw/playground.component.ts`
+- `services/admin-console/src/app/core/services/ai-runtime.service.ts`
+- `services/admin-console/src/app/features/automation/ai/playground.component.ts`
 - `services/admin-console/src/app/core/services/channel-admin.service.ts`
 - `services/api-gateway/src/modules/runtime/runtime.controller.ts`
 - `services/api-gateway/src/modules/channels/channels.controller.ts`

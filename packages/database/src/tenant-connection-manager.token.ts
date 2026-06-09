@@ -1,5 +1,3 @@
-import type { InjectionToken } from "@nestjs/common";
-
 /** DI token for the active per-tenant connection manager (Postgres or Mongo). */
 export const TENANT_DB_CONNECTION_MANAGER = Symbol(
   "TENANT_DB_CONNECTION_MANAGER",
@@ -16,4 +14,4 @@ export interface ITenantDbConnectionManager {
   verifyConnectivity(tenantId: string): Promise<boolean>;
 }
 
-export type { InjectionToken };
+

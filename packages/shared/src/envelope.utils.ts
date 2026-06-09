@@ -27,7 +27,7 @@ export const DEFAULT_MAX_DEPTH = 5;
 /**
  * Recursive canonical JSON: sorts object keys alphabetically at every
  * depth so structurally equal payloads produce identical strings.
- * Mirrors `serializeCanonicalPayload` in yoizenclaw-admin-service.
+ * Mirrors `serializeCanonicalPayload` in agent-admin-service.
  */
 export function canonicalJson(value: unknown): string {
   if (value === undefined) {
@@ -245,9 +245,9 @@ export class DepthExceededError extends Error {
 export interface BuildEventEnvelopeOptions {
   /** Unique event ID. Defaults to `randomUUID()`. */
   id?: string;
-  /** Event type URI, e.g. `"io.yoizen.yoizenclaw.runtime.execution_requested.v1"`. */
+  /** Event type URI, e.g. `"io.yoizen.platform.runtime.execution_requested.v1"`. */
   type: string;
-  /** Producer source URI, e.g. `"yoizenclaw-runtime-gateway"`. */
+  /** Producer source URI, e.g. `"ai-agent-gateway"`. */
   source: string;
   /** Resource identifier, e.g. `"execution/{executionId}"`. */
   resource: string;

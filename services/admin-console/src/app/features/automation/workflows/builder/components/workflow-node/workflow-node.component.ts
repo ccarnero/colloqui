@@ -16,12 +16,13 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatIconModule, FFlowModule],
   template: `
-    <div
-      class="wf-builder-node"
-      [class.is-channel]="node().type === channelType"
-      [class.is-branch]="node().type === branchType"
-      [class.has-error]="hasError()"
-    >
+      <div
+        class="wf-builder-node"
+        [class.is-channel]="node().type === channelType"
+        [class.is-branch]="node().type === branchType"
+        [class.is-conditional]="node().type === conditionalType"
+        [class.has-error]="hasError()"
+      >
       <div
         class="wf-node-input"
         fNodeInput
@@ -44,7 +45,7 @@ import {
         fNodeOutput
         [fOutputId]="node().key + '-out'"
         fOutputConnectableSide="right"
-        [fOutputMultiple]="node().type === branchType"
+        [fOutputMultiple]="node().type === branchType || node().type === conditionalType"
       ></div>
     </div>
   `,
@@ -71,6 +72,9 @@ import {
     }
     .wf-builder-node.is-branch {
       border-color: var(--purple);
+    }
+    .wf-builder-node.is-conditional {
+      border-color: var(--orange, #f59e0b);
     }
     .wf-builder-node.has-error {
       border-color: var(--red, #dc2626);
@@ -150,6 +154,7 @@ export class WorkflowNodeComponent {
 
   readonly channelType = EWorkflowNodeType.CHANNEL;
   readonly branchType = EWorkflowNodeType.BRANCH;
+  readonly conditionalType = EWorkflowNodeType.CONDITIONAL;
 
   typeLabel(): string {
     const labels: Record<string, string> = {
@@ -160,6 +165,7 @@ export class WorkflowNodeComponent {
       serviceBusCall: "Publish Event",
       agentCall: "Agent",
       branch: "Parallel Branch",
+      conditional: "Conditional",
     };
     return labels[this.node().type] ?? this.node().type;
   }

@@ -39,9 +39,9 @@ spec:
         - name: CHANNEL_SERVICE_URL
           value: http://channel-service-api.platform-services-dev.svc.cluster.local
         - name: ADMIN_SERVICE_URL
-          value: http://yoizenclaw-admin-service.platform-services-dev.svc.cluster.local
-        - name: YOIZENCLAW_RUNTIME_GATEWAY_URL
-          value: http://yoizenclaw-runtime-gateway.platform-services-dev.svc.cluster.local
+          value: http://agent-admin-service.platform-services-dev.svc.cluster.local
+        - name: AI_AGENT_GATEWAY_URL
+          value: http://ai-agent-gateway.platform-services-dev.svc.cluster.local
         - name: JWT_SECRET
           valueFrom:
             secretKeyRef:
@@ -67,7 +67,7 @@ spec:
             memory: 192Mi
           limits:
             cpu: '1'
-            memory: 1Gi
+            memory: 2Gi
         readinessProbe:
           httpGet:
             path: /readyz
@@ -78,13 +78,13 @@ spec:
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: yoizenclaw-runtime-gateway
+  name: ai-agent-gateway
 spec:
   template:
     spec:
       containers:
       - name: user-container
-        image: dev.local/yoizenclaw-runtime-gateway:local
+        image: dev.local/ai-agent-gateway:local
         ports:
         - containerPort: 3000
           protocol: TCP
@@ -100,7 +100,9 @@ spec:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://otel-collector.support-services-dev.svc.cluster.local:4318
         - name: OTEL_SERVICE_NAME
-          value: yoizenclaw-runtime-gateway
+          value: ai-agent-gateway
+        - name: AGENT_AI_SERVICE_URL
+          value: http://agent-ai-service.platform-services-dev.svc.cluster.local
 ---
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -537,7 +539,125 @@ spec:
           httpGet:
             path: /health
             port: 3000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: agent-ai-service
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/agent-ai-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: REDIS_HOST
+          value: redis.support-services-dev.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_CLUSTER_MODE
+          value: 'true'
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: MEMORY_SERVICE_URL
+          value: http://agent-memory-service.platform-services-dev.svc.cluster.local
+        - name: CONNECTOR_ADMIN_URL
+          value: http://connector-admin-api.platform-services-dev.svc.cluster.local
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: agent-ai-service
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: agent-scheduler-service
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/agent-scheduler-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: agent-scheduler-service
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
@@ -607,7 +727,7 @@ spec:
             memory: 256Mi
           limits:
             cpu: '2'
-            memory: 1Gi
+            memory: 2Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -639,7 +759,7 @@ spec:
             memory: 128Mi
           limits:
             cpu: '2'
-            memory: 1Gi
+            memory: 2Gi
 ---
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -744,7 +864,7 @@ spec:
             memory: 256Mi
           limits:
             cpu: '2'
-            memory: 1Gi
+            memory: 2Gi
         readinessProbe:
           httpGet:
             path: /readyz
@@ -898,13 +1018,13 @@ spec:
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: yoizenclaw-admin-service
+  name: agent-admin-service
 spec:
   template:
     spec:
       containers:
       - name: user-container
-        image: dev.local/yoizenclaw-admin-service:local
+        image: dev.local/agent-admin-service:local
         ports:
         - containerPort: 3000
           protocol: TCP
@@ -924,7 +1044,7 @@ spec:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://otel-collector.support-services-dev.svc.cluster.local:4318
         - name: OTEL_SERVICE_NAME
-          value: yoizenclaw-admin-service
+          value: agent-admin-service
         - name: CONNECTOR_ADMIN_URL
           value: http://connector-admin-api.platform-services-dev.svc.cluster.local
         securityContext:
@@ -997,7 +1117,7 @@ spec:
             memory: 192Mi
           limits:
             cpu: '1'
-            memory: 512Mi
+            memory: 2Gi
         readinessProbe:
           httpGet:
             path: /health
@@ -1035,3 +1155,97 @@ spec:
           value: usage-aggregator-worker
         - name: SERVICE_MODE
           value: worker
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-admin-service-worker
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        env:
+        - name: STORAGE_ENGINE
+          value: postgres
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: agent-admin-service-worker
+        - name: SERVICE_MODE
+          value: worker
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 2Gi
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: agent-memory-service
+spec:
+  template:
+    spec:
+      containers:
+      - name: user-container
+        image: dev.local/agent-memory-service:local
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        env:
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
+        - name: POSTGRES_HOST
+          value: postgres.support-services-dev.svc.cluster.local
+        - name: POSTGRES_PORT
+          value: '5432'
+        - name: POSTGRES_USER
+          value: yoizen
+        - name: POSTGRES_PASSWORD
+          value: yoizen-dev-password
+        - name: POSTGRES_DB
+          value: yoizen
+        - name: PLATFORM_ENVIRONMENT
+          value: dev
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_SERVICE_NAME
+          value: agent-memory-service
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10

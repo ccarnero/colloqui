@@ -79,6 +79,14 @@ export const DEFAULT_NODE_MAP: Record<EWorkflowNodeType, INodeDefault> = {
     group: "Flow Control",
     configuration: { branches: ["pathA", "pathB"] },
   },
+  [EWorkflowNodeType.CONDITIONAL]: {
+    name: "Conditional",
+    icon: "alt_route",
+    group: "Flow Control",
+    configuration: {
+      branches: [],
+    },
+  },
 };
 
 let nextId = 1;

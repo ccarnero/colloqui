@@ -18,6 +18,7 @@ import {
   ConfirmDialogComponent,
   type IConfirmDialogData,
 } from "../../../shared/components/confirm-dialog/confirm-dialog.component";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import {
   WorkflowApiService,
   type IWorkflowDefinitionDto,
@@ -30,15 +31,15 @@ import {
     DatePipe,
     MatButtonModule,
     MatIconModule,
+    PageHeaderComponent,
     StatusBadgeComponent,
   ],
   template: `
-    <div class="ws-header">
-      <div>
-        <div class="ws-title">Workflows</div>
-        <div class="ws-subtitle">Automate business processes</div>
-      </div>
-      <div class="ws-actions">
+    <app-page-header
+      title="Workflows"
+      subtitle="Automate business processes"
+    >
+      <ng-container slot="actions">
         <button
           class="btn btn-primary btn-sm"
           type="button"
@@ -46,8 +47,8 @@ import {
         >
           + New Workflow
         </button>
-      </div>
-    </div>
+      </ng-container>
+    </app-page-header>
 
     @if (loading()) {
       <div class="wf-loading">Loading workflows...</div>

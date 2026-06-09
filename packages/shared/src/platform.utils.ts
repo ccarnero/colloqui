@@ -1,5 +1,5 @@
 import {
-  PLATFORM_DOMAIN,
+  REGISTRY_DOMAIN,
   PLATFORM_NON_CHANNEL_TOKEN,
   REGISTRY_PRODUCER,
 } from "./constants";
@@ -22,7 +22,7 @@ export function buildRegistryPlatformSubject(
   kind: string,
   version = "v1",
 ): string {
-  return `evt.${tenant}.${REGISTRY_PRODUCER}.${PLATFORM_DOMAIN}.${resource}.${PLATFORM_NON_CHANNEL_TOKEN}.${kind}.${version}`;
+  return `evt.${tenant}.${REGISTRY_PRODUCER}.${REGISTRY_DOMAIN}.${resource}.${PLATFORM_NON_CHANNEL_TOKEN}.${kind}.${version}`;
 }
 
 /**
@@ -31,7 +31,7 @@ export function buildRegistryPlatformSubject(
  * the `service` resource stream.
  */
 export function buildRegistryPlatformWildcard(resource: string): string {
-  return `evt.*.${REGISTRY_PRODUCER}.${PLATFORM_DOMAIN}.${resource}.${PLATFORM_NON_CHANNEL_TOKEN}.*.v1`;
+  return `evt.*.${REGISTRY_PRODUCER}.${REGISTRY_DOMAIN}.${resource}.${PLATFORM_NON_CHANNEL_TOKEN}.*.v1`;
 }
 
 /** Resource and event kind constants for the service lifecycle pipeline. */

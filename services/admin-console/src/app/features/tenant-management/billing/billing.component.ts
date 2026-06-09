@@ -1,21 +1,18 @@
 import { ChangeDetectionStrategy, Component, inject } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
 import { MatTableModule } from "@angular/material/table";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import { TenantService } from "../../../core/services/tenant.service";
 
 @Component({
   selector: "app-billing",
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatTableModule, MatButtonModule],
+  imports: [MatTableModule, MatButtonModule, PageHeaderComponent],
   template: `
-    <div class="ws-header">
-      <div>
-        <div class="ws-title">Billing & Plans</div>
-        <div class="ws-subtitle">
-          Manage subscription for {{ tenant.currentTenant().name }}
-        </div>
-      </div>
-    </div>
+    <app-page-header
+      title="Billing & Plans"
+      subtitle="Manage subscription for {{ tenant.currentTenant().name }}"
+    />
 
     <div class="plans-row">
       @for (plan of plans; track plan.name) {

@@ -80,7 +80,7 @@ spec:
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: yoizenclaw-admin-service
+  name: agent-admin-service
 spec:
   template:
     metadata:

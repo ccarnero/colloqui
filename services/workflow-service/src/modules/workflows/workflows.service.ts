@@ -41,6 +41,7 @@ import {
   augmentActionsWithSlug,
   collectServiceIds,
 } from "./service-id-walker";
+import { SystemVariablesProvider } from "./system-variables.provider";
 
 /** Execution row exposed over HTTP (camelCase). */
 export interface IWorkflowExecutionListItem {
@@ -70,6 +71,7 @@ export interface ICreateWorkflowResult {
   tenantId: string;
   actions: unknown;
   trigger: unknown;
+  variables: unknown;
   createdAt: Date;
 }
 
@@ -79,6 +81,7 @@ interface ICreateWorkflowParams {
   readonly application: string;
   readonly actions: WorkflowAction[];
   readonly trigger?: WorkflowTrigger;
+  readonly variables?: Record<string, unknown>;
 }
 
 interface IUpdateWorkflowParams {
@@ -88,6 +91,7 @@ interface IUpdateWorkflowParams {
   readonly application: string;
   readonly actions: WorkflowAction[];
   readonly trigger?: WorkflowTrigger;
+  readonly variables?: Record<string, unknown>;
 }
 
 export interface IExecuteWorkflowResult {
@@ -129,6 +133,11 @@ export interface IExecuteWorkflowOptions {
    * for log correlation — not stored in DB or propagated to activities.
    */
   readonly requestId?: string | null;
+  /**
+   * Optional agent call timeout in milliseconds. When set, overrides
+   * the default `AGENT_CALL_TIMEOUT_MS` env var for this execution.
+   */
+  readonly agentTimeoutMs?: number;
 }
 
 export interface IWorkflowFailureInfo {
@@ -159,6 +168,7 @@ export class WorkflowsService {
     @Inject(EXECUTIONS_REPOSITORY)
     private readonly executions: IExecutionsRepository,
     private readonly servicesResolver: RegisteredServicesResolver,
+    private readonly systemVarsProvider: SystemVariablesProvider,
   ) {}
 
   /**
@@ -170,7 +180,7 @@ export class WorkflowsService {
   async createWorkflow(
     params: ICreateWorkflowParams,
   ): Promise<ICreateWorkflowResult> {
-    const { tenantId, name, application, actions, trigger } = params;
+    const { tenantId, name, application, actions, trigger, variables } = params;
     const id = nanoid();
     const row = await this.definitions.createDefinition({
       id,
@@ -179,6 +189,7 @@ export class WorkflowsService {
       application,
       actions,
       trigger,
+      variables,
     });
 
     this.logger.log(
@@ -288,14 +299,27 @@ export class WorkflowsService {
       application: definition.application,
       request,
       actions,
+      ...(definition.variables ? { variables: definition.variables as Record<string, unknown> } : {}),
       ...(options.causal && { causal: options.causal }),
+      ...(options.agentTimeoutMs !== undefined && { agentTimeoutMs: options.agentTimeoutMs }),
     };
+
+    // Load system variables for the tenant (cached, 5-min TTL).
+    // Errors are non-fatal: the workflow runs with empty system vars.
+    let systemVars: Record<string, unknown> = {};
+    try {
+      systemVars = await this.systemVarsProvider.loadForTenant(tenantId);
+    } catch {
+      this.logger.log(
+        `Failed to load system variables for tenant ${tenantId}, continuing with empty system vars`,
+      );
+    }
 
     try {
       const handle = await this.temporal.workflow.start("runWorkflow", {
         taskQueue: WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
         workflowId: temporalWorkflowId,
-        args: [workflowDef, executionId],
+        args: [workflowDef, executionId, systemVars],
         workflowExecutionTimeout: WORKFLOW_DEFAULT_TIMEOUT_MS,
         workflowTaskTimeout: WORKFLOW_TASK_TIMEOUT_MS,
         ...(isIdempotent
@@ -573,6 +597,7 @@ export class WorkflowsService {
       tenantId,
       actions: row.actions,
       trigger: row.trigger,
+      variables: row.variables,
       createdAt: row.created_at,
     };
   }

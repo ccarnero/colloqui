@@ -18,7 +18,7 @@ type WorkflowHttpWorkerConfig = {
   readonly httpResponseCacheEnabled: boolean;
   readonly adapterServiceUrl: string;
   readonly registryServiceUrl: string;
-  readonly yoizenclawAdminServiceUrl: string;
+  readonly agentAdminServiceUrl: string;
 };
 
 export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
@@ -36,7 +36,7 @@ export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
   registryServiceUrl:
     process.env.REGISTRY_SERVICE_URL ??
     platformServiceUrl("registry-service", env),
-  yoizenclawAdminServiceUrl:
-    process.env.YOIZENCLAW_ADMIN_SERVICE_URL ??
-    platformServiceUrl("yoizenclaw-admin-service", env),
+  agentAdminServiceUrl:
+    process.env.AGENT_ADMIN_SERVICE_URL ??
+    platformServiceUrl("agent-admin-service", env),
 };

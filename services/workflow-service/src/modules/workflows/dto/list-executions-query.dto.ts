@@ -1,3 +1,5 @@
+import type { ExecutionsSortDirection } from "../executions.repository.interface";
+
 /**
  * Pagination + sort query for `GET /workflows/:id/executions`.
  *
@@ -8,8 +10,6 @@
  * Fast path is O(1): a few string→int parses, a clamp, and a strict
  * `"asc"|"desc"` whitelist match.
  */
-
-export type ExecutionsSortDirection = "asc" | "desc";
 
 export interface IListExecutionsQuery {
   readonly page: number;

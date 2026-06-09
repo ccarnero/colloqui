@@ -16,8 +16,8 @@ Use this together with `DOCS/01-ARCHITECTURE.md` (service placement) and `DOCS/0
 flowchart TD
     subgraph ingress["INGRESS-<tenant> (JetStream stream)"]
         in_subj[Subjects: evt.<tenant>.>]
-        in_prod[Producers: api-gateway, channel-service, registry-service, yoizenclaw-admin-service, yoizenclaw-runtime-gateway]
-        in_cons[Consumers: audit-service, channel-service, connector-admin, usage-aggregator-service, workflow-service, yoizenclaw-runtime]
+        in_prod[Producers: api-gateway, channel-service, registry-service, agent-admin-service, ai-agent-gateway]
+        in_cons[Consumers: audit-service, channel-service, connector-admin, usage-aggregator-service, workflow-service, agent-ai-service]
     end
 
     subgraph dlqt["DLQ-<tenant> (JetStream stream)"]
@@ -64,7 +64,7 @@ evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>
 | `tenant` | Tenant identifier | `acme` |
 | `producer` | Service that publishes | `api-gateway` |
 | `domain` | Business domain | `messaging`, `automation`, `platform` |
-| `channel` | Logical channel | `telegram`, `events`, `yoizenclaw` |
+| `channel` | Logical channel | `telegram`, `events`, `platform` |
 | `provider` | External/internal provider | `telegram`, `internal`, `gateway` |
 | `kind` | Event operation kind | `webhook_received`, `completed`, `execution_requested` |
 | `version` | Subject schema version | `v1` |
@@ -73,7 +73,7 @@ Examples:
 
 - `evt.acme.api-gateway.messaging.telegram.webhook.webhook_received.v1`
 - `evt.acme.registry-service.platform.events.system.service_registered.v1`
-- `evt.acme.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal.execution_requested.v1`
+- `evt.acme.ai-agent-gateway.automation.platform.internal.execution_requested.v1`
 
 ## Envelope Contract (Canonical)
 
@@ -109,9 +109,9 @@ Tenant streams are pre-provisioned by `tenant-service` during tenant creation, w
 
 Provisioning happens at three layers, in priority order:
 
-1. **Primary (eager, during tenant creation)** — `tenant-service`'s `TenantProvisioningExecutor` invokes `ensureTenantIngressStream(jsm, tenantId)` as a dedicated `nats.ensure-ingress-stream` phase, executed **after** OLTP + usage Postgres readiness and **before** applying the per-tenant `yoizenclaw-runtime` Knative Service. This closes the race where the runtime pod would otherwise boot, attempt to attach durable JetStream consumers for `evt.<tenant>.yoizenclaw-admin-service.…>` and `evt.<tenant>.yoizenclaw-runtime-gateway.…>`, and crash its FastAPI lifespan with `NotFoundError: stream not found` (NATS `err_code=10059`).
-2. **Safety net (lazy, before first publish)** — Producers (`api-gateway`, `channel-service`, `registry-service`, `yoizenclaw-admin-service`, `yoizenclaw-runtime-gateway`) call `ensureTenantIngressStream(jsm, tenantId)` before publishing to `evt.<tenant>.>`. This guards against tenants that pre-date the primary path or whose stream was pruned externally.
-3. **Self-healing (lazy, at runtime startup)** — `yoizenclaw-runtime`'s `RuntimeNatsBridge._ensure_tenant_ingress_stream` performs the same idempotent ensure when the bridge connects. If the broker still rejects the JetStream subscribe (e.g. transient permissions error), each subscription falls back to a core NATS subscription on the same wildcard via `_subscribe_via_jetstream_with_fallback`, so the runtime stays online and converges to JetStream delivery once the stream becomes available.
+1. **Primary (eager, during tenant creation)** — `tenant-service`'s `TenantProvisioningExecutor` invokes `ensureTenantIngressStream(jsm, tenantId)` as a dedicated `nats.ensure-ingress-stream` phase, executed **after** OLTP + usage Postgres readiness and **before** applying the per-tenant `agent-ai-service` Knative Service. This closes the race where the runtime pod would otherwise boot, attempt to attach durable JetStream consumers for `evt.<tenant>.agent-admin-service.…>` and `evt.<tenant>.ai-agent-gateway.…>`, and crash its FastAPI lifespan with `NotFoundError: stream not found` (NATS `err_code=10059`).
+2. **Safety net (lazy, before first publish)** — Producers (`api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway`) call `ensureTenantIngressStream(jsm, tenantId)` before publishing to `evt.<tenant>.>`. This guards against tenants that pre-date the primary path or whose stream was pruned externally.
+3. **Self-healing (lazy, at runtime startup)** — `agent-ai-service`'s `RuntimeNatsBridge._ensure_tenant_ingress_stream` performs the same idempotent ensure when the bridge connects. If the broker still rejects the JetStream subscribe (e.g. transient permissions error), each subscription falls back to a core NATS subscription on the same wildcard via `_subscribe_via_jetstream_with_fallback`, so the runtime stays online and converges to JetStream delivery once the stream becomes available.
 
 Common contract across all three layers:
 
@@ -123,7 +123,7 @@ Common contract across all three layers:
 Code references:
 
 - `services/tenant-service/src/modules/provisioning/tenant-provisioning-executor.service.ts` (eager pre-provisioning phase)
-- `services/yoizenclaw-runtime/src/messaging/bridge.py` (`_ensure_tenant_ingress_stream`, `_subscribe_via_jetstream_with_fallback`)
+- `services/agent-ai-service/src/messaging/bridge.py` (`_ensure_tenant_ingress_stream`, `_subscribe_via_jetstream_with_fallback`)
 - `packages/database/src/nats-provider.ts` (`ensureTenantIngressStream` shared helper)
 - `packages/shared/src/tenant-stream.constants.ts`
 - `packages/shared/src/channel.constants.ts`
@@ -133,7 +133,7 @@ Code references:
 - Consumers use `MultiTenantConsumerManager` with `streamPattern: /^INGRESS-/`.
 - The manager discovers existing tenant streams and ensures a durable consumer per tenant stream.
 - Consumers do not create ingress streams; they reconcile against discovered streams.
-- Typical durable names: `audit-service`, `channel-service`, `connector-admin`, `usage-aggregator-service`, `workflow-triggers`, `yoizenclaw-runtime`.
+- Typical durable names: `audit-service`, `channel-service`, `connector-admin`, `usage-aggregator-service`, `workflow-triggers`, `agent-ai-service`.
 
 ### DLQ Lifecycle
 

@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: one-search-mcp
+  namespace: platform-services-dev
+  labels:
+    app: one-search-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: one-search-mcp
+  template:
+    metadata:
+      labels:
+        app: one-search-mcp
+    spec:
+      containers:
+      - name: one-search-mcp
+        image: one-search-mcp:latest
+        imagePullPolicy: Never  # built locally, not in registry
+        ports:
+        - containerPort: 3200
+          name: sse
+        env:
+        - name: SEARCH_PROVIDER
+          value: "duckduckgo"
+        - name: TRANSPORT
+          value: "sse"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "3200"
+        - name: NODE_ENV
+          value: "production"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3200
+          initialDelaySeconds: 20
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3200
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"

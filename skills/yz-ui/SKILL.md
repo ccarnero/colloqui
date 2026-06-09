@@ -199,7 +199,7 @@ Declare on a nav page:
 ```ts
 {
   label: "Memories",
-  route: "/yoizenclaw/memories",
+  route: "/platform/memories",
   indicator: { kind: "count-danger", source: "ai.memories.pending" },
 }
 ```

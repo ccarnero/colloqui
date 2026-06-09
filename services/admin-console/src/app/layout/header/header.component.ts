@@ -289,6 +289,16 @@ import { NAV_SECTIONS } from "../nav/nav.config";
       color: var(--text2);
     }
 
+    .topbar-btn:hover {
+      background: var(--accent-dim, rgba(26, 102, 255, 0.08));
+      color: var(--primary, #1a66ff);
+    }
+
+    .topbar-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--primary, #1a66ff);
+    }
+
     .avatar-btn {
       width: 32px;
       height: 32px;

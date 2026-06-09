@@ -1,0 +1,51 @@
+# KEDA ScaledObject for agent-admin-service-worker.
+#
+# Scales based on JetStream consumer lag for the ingestion worker queue.
+# The consumer name pattern is `ingestion-workers-<env>` (one per environment).
+# The Prometheus query sums pending + ack-pending across all tenants.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: agent-admin-service-worker-scaler
+  labels:
+    app.kubernetes.io/name: agent-admin-service-worker
+    app.kubernetes.io/component: autoscaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: agent-admin-service-worker
+  pollingInterval: 30
+  cooldownPeriod: 120
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  fallback:
+    failureThreshold: 3
+    replicas: 1
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 15
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 30
+        scaleDown:
+          stabilizationWindowSeconds: 180
+          policies:
+            - type: Percent
+              value: 50
+              periodSeconds: 60
+  triggers:
+    - type: prometheus
+      name: ingestion-worker-lag
+      metadata:
+        serverAddress: http://prometheus.support-services-dev.svc.cluster.local:9090
+        metricName: ingestion_worker_backlog
+        threshold: "100"
+        activationThreshold: "0"
+        query: |
+          sum(jetstream_consumer_num_pending{consumer_name=~"ingestion-worker.*"})
+          +
+          sum(jetstream_consumer_num_ack_pending{consumer_name=~"ingestion-worker.*"})

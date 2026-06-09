@@ -8,6 +8,7 @@ const gateway = {
   changeOrigin: true,
   headers: {
     Host: `api-gateway.${KNATIVE_NS}.${MINIKUBE_IP}.sslip.io`,
+    "x-yoizen-tenant": "acme",
   },
 };
 

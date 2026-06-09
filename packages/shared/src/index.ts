@@ -1,3 +1,5 @@
+import "reflect-metadata";
+
 export {
   RESULT_KEY_PREFIX,
   PENDING_KEY_PREFIX,
@@ -15,7 +17,7 @@ export {
   REGISTRY_KNATIVE_REVISIONS_PLURAL,
   REGISTRY_DEFAULT_SERVICE_PORT,
   REGISTRY_PRODUCER,
-  PLATFORM_DOMAIN,
+  REGISTRY_DOMAIN,
   PLATFORM_NON_CHANNEL_TOKEN,
   ADAPTER_MANAGED_BY_REGISTRY,
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
@@ -27,31 +29,35 @@ export {
   GATEWAY_AUDIT_SUBJECT,
   GATEWAY_AUDIT_CONSUMER_NAME,
   GATEWAY_AUDIT_STREAM_MAX_BYTES,
-  YOIZENCLAW_PRODUCER,
-  YOIZENCLAW_DOMAIN,
-  YOIZENCLAW_CHANNEL,
-  YOIZENCLAW_PROVIDER,
-  YOIZENCLAW_ACCOUNT_ID,
-  YOIZENCLAW_SUBJECT_PREFIX,
-  YOIZENCLAW_AGENT_PUBLISHED,
-  YOIZENCLAW_AGENT_UNPUBLISHED,
-  YOIZENCLAW_CONFIG_SYNC,
-  YOIZENCLAW_JOBS_SYNC,
-  YOIZENCLAW_JOB_TRIGGER,
-  YOIZENCLAW_CHAT_RESPOND,
-  YOIZENCLAW_ONLINE,
-  YOIZENCLAW_AGENT_OUTBOUND,
-  YOIZENCLAW_EXECUTION_STATUS,
-  YOIZENCLAW_EVENT,
-  YOIZENCLAW_RUNTIME_GATEWAY_PRODUCER,
-  YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX,
-  YOIZENCLAW_EXECUTION_REQUESTED,
-  YOIZENCLAW_EXECUTION_STARTED,
-  YOIZENCLAW_EXECUTION_COMPLETED,
-  YOIZENCLAW_EXECUTION_FAILED,
+  PLATFORM_PRODUCER,
+  PLATFORM_DOMAIN,
+  PLATFORM_CHANNEL,
+  PLATFORM_PROVIDER,
+  PLATFORM_ACCOUNT_ID,
+  PLATFORM_SUBJECT_PREFIX,
+  PLATFORM_AGENT_PUBLISHED,
+  PLATFORM_AGENT_UNPUBLISHED,
+  PLATFORM_CONFIG_SYNC,
+  PLATFORM_JOBS_SYNC,
+  PLATFORM_JOB_TRIGGER,
+  PLATFORM_CHAT_RESPOND,
+  PLATFORM_ONLINE,
+  PLATFORM_AGENT_OUTBOUND,
+  PLATFORM_EXECUTION_STATUS,
+  PLATFORM_EVENT,
+  PLATFORM_DOCUMENT_INGESTION,
+  PLATFORM_SKB_FILE_INGESTION,
+  AI_AGENT_GATEWAY_PRODUCER,
+  AI_AGENT_GATEWAY_SUBJECT_PREFIX,
+  PLATFORM_EXECUTION_REQUESTED,
+  PLATFORM_EXECUTION_STARTED,
+  PLATFORM_EXECUTION_COMPLETED,
+  PLATFORM_EXECUTION_FAILED,
+  SCHEDULER_SUBJECT_PREFIX,
+  PLATFORM_SCHEDULER_HEARTBEAT,
 } from './constants';
 
-export { buildYoizenClawSubject } from './constants';
+export { buildPlatformSubject } from './constants';
 
 export {
   extractTenantId,
@@ -169,14 +175,14 @@ export type {
   YoizenClawExecutionSubmitted,
   YoizenClawExecutionResultPayload,
   YoizenClawExecutionStatus,
-} from './yoizenclaw-execution.interfaces';
+} from './execution.interfaces';
 
-export { YoizenClawExecutionClient } from './yoizenclaw-execution-client';
+export { YoizenClawExecutionClient } from './execution-client';
 export type {
   YoizenClawExecutionCache,
   YoizenClawExecutionClientOptions,
   SubmitExecutionOptions,
-} from './yoizenclaw-execution-client';
+} from './execution-client';
 
 export type {
   WorkflowExecutionContext,
@@ -195,6 +201,10 @@ export type {
   ChannelSendAction,
   AgentCallAction,
   BranchAction,
+  ConditionComparator,
+  IConditionRule,
+  IConditionalBranch,
+  ConditionalAction,
   WorkflowAction,
   WorkflowDefinition,
   TriggerMode,
@@ -435,7 +445,7 @@ export {
 
 export { REGISTRY_MONGO_SCHEMA } from "./registry-mongo-schema";
 
-export { YOIZENCLAW_ADMIN_MONGO_SCHEMA } from "./yoizenclaw-admin-mongo-schema";
+export { PLATFORM_ADMIN_MONGO_SCHEMA } from "./admin-mongo-schema";
 
 export {
   AUDIT_MONGO_SCHEMA,
@@ -445,6 +455,16 @@ export {
   GATEWAY_AUDIT_MONGO_NAMESPACE,
   CHANNEL_AUDIT_MONGO_NAMESPACE,
 } from "./audit-mongo-schema";
+
+export type {
+  IKnowledgeBase,
+  IDocument,
+  IDocumentChunk,
+  IKbListResponse,
+  IDocumentListResponse,
+  DocumentContentType,
+  DocumentStatus,
+} from './knowledge-base.interfaces';
 
 export type {
   IHealthConnectionState,
@@ -459,5 +479,23 @@ export type {
   ITenantProvisionerState,
   INatsPostgresHealthResponse,
   INatsRedisHealthResponse,
-  IYoizenClawHealthResponse,
+  IPlatformHealthResponse,
 } from './health.interfaces';
+
+export type {
+  VariableType,
+  VariableDeclaration,
+  IDataConnection,
+  VariableResolutionContext,
+} from './variable.interfaces';
+
+export type {
+  ChunkingStrategy,
+  IChunkerConfig,
+  IChunker,
+} from './chunker.interfaces';
+
+export type {
+  EmbeddingClientConfig,
+  IEmbeddingClient,
+} from './embedding-client.interfaces';

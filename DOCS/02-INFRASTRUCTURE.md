@@ -30,7 +30,7 @@ Redis serves three distinct roles across the platform:
 |---|---|---|
 | Knative Service | HTTP-facing APIs (`api-gateway`, `auth-service`, `registry-service`, etc.) | Request-driven autoscaling and revision support |
 | Plain Deployment + KEDA | Queue/worker workloads (`connector-runtime`, workflow workers, consumer workers) | Pull-based scaling from backlog metrics |
-| Per-tenant Helm release | `yoizenclaw-runtime` | Tenant-level runtime/data isolation and independent lifecycle |
+| Per-tenant Helm release | `agent-ai-service` | Tenant-level runtime/data isolation and independent lifecycle |
 
 ## Kustomize Structure
 

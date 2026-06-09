@@ -41,10 +41,10 @@ flowchart LR
         end
 
         subgraph yz[YoizenClaw]
-            yzadmin[yoizenclaw-admin-service]
-            yzgateway[yoizenclaw-runtime-gateway]
+            yzadmin[agent-admin-service]
+            yzgateway[ai-agent-gateway]
             subgraph tenantBoundary["per-tenant boundary"]
-                yzruntime[yoizenclaw-runtime]
+                yzruntime[agent-ai-service]
                 pgt[(PostgreSQL Tenant)]
             end
         end
@@ -87,9 +87,9 @@ flowchart LR
 | `workflow-service-api` | Platform | Workflow management API and Temporal client entry |
 | `workflow-service-worker` | Platform | Temporal worker and NATS trigger bridge |
 | `connector-runtime` | Platform | High-concurrency activity worker for `endpointCall`, `serviceCall`, and `agentCall` |
-| `yoizenclaw-admin-service` | Platform | CRUD and publish lifecycle for agents, templates, credentials, files |
-| `yoizenclaw-runtime-gateway` | Platform | Async execution bridge between API/workflows and runtime via NATS |
-| `yoizenclaw-runtime` | Per-tenant boundary | Per-tenant AI runtime execution service |
+| `agent-admin-service` | Platform | CRUD and publish lifecycle for agents, templates, credentials, files |
+| `ai-agent-gateway` | Platform | Async execution bridge between API/workflows and runtime via NATS |
+| `agent-ai-service` | Per-tenant boundary | Per-tenant AI runtime execution service |
 | `auth-service` | Platform | JWT issuance and dynamic public-route sync |
 | `tenant-service` | Platform | Tenant lifecycle and namespace/data provisioning |
 | `registry-service` | Platform | Dynamic service registry and route metadata |
@@ -221,14 +221,14 @@ sequenceDiagram
         TS->>K8s: phase=postgres-usage.waitForReady
     end
     TS->>NATS: phase=nats.ensure-ingress-stream<br/>ensureTenantIngressStream(jsm, "acme") -> INGRESS-ACME
-    TS->>K8s: phase=yoizenclaw-runtime.apply (Knative Service in acme-dev-ns)
+    TS->>K8s: phase=agent-ai-service.apply (Knative Service in acme-dev-ns)
     TS->>TS: Mark platform tenants row status=ready
     TS->>NATS: Publish platform.tenant.ready
 
     Note over TS,K8s: Clients poll GET /tenants/<id-or-name> for status<br/>Other services then connect to postgres.acme-dev-ns.svc.cluster.local
 ```
 
-Why `nats.ensure-ingress-stream` sits between Postgres readiness and the runtime apply: the per-tenant `yoizenclaw-runtime` pod attaches durable JetStream consumers for `evt.<tenant>.yoizenclaw-admin-service.…>` and `evt.<tenant>.yoizenclaw-runtime-gateway.…>` as part of its FastAPI lifespan. If `INGRESS-<TENANT>` is missing it crashes with `NotFoundError: stream not found` (NATS `err_code=10059`). Pre-creating the stream here guarantees the runtime can subscribe on first boot; the runtime additionally retains its own idempotent ensure + core-NATS fallback as a safety net (see [03-NATS-JETSTREAM.md](03-NATS-JETSTREAM.md#ingress-stream-provisioning-ingress-tenant)).
+Why `nats.ensure-ingress-stream` sits between Postgres readiness and the runtime apply: the per-tenant `agent-ai-service` pod attaches durable JetStream consumers for `evt.<tenant>.agent-admin-service.…>` and `evt.<tenant>.ai-agent-gateway.…>` as part of its FastAPI lifespan. If `INGRESS-<TENANT>` is missing it crashes with `NotFoundError: stream not found` (NATS `err_code=10059`). Pre-creating the stream here guarantees the runtime can subscribe on first boot; the runtime additionally retains its own idempotent ensure + core-NATS fallback as a safety net (see [03-NATS-JETSTREAM.md](03-NATS-JETSTREAM.md#ingress-stream-provisioning-ingress-tenant)).
 
 ---
 
@@ -372,11 +372,11 @@ graph LR
 
 | Aspect | Detail |
 |--------|--------|
-| **Role** | Provision tenant namespaces, dedicated PostgreSQL (OLTP + usage), the `INGRESS-<tenant>` JetStream stream, and the per-tenant `yoizenclaw-runtime` Knative Service. Driven by a durable JetStream consumer on `PLATFORM_TENANTS` so provisioning is retried on transient failure and survives pod restarts. |
+| **Role** | Provision tenant namespaces, dedicated PostgreSQL (OLTP + usage), the `INGRESS-<tenant>` JetStream stream, and the per-tenant `agent-ai-service` Knative Service. Driven by a durable JetStream consumer on `PLATFORM_TENANTS` so provisioning is retried on transient failure and survives pod restarts. |
 | **Port** | 3000 |
 | **Scale** | 1 -- 3 replicas (concurrency target: 50) |
 
-Each tenant gets a dedicated namespace (`<tenant>-<env>-ns`) containing a PostgreSQL StatefulSet (OLTP), a Timescale-based usage StatefulSet, and a per-tenant `yoizenclaw-runtime` Knative Service. The `INGRESS-<TENANT>` JetStream stream is provisioned in parallel on the shared NATS cluster before the runtime ksvc is applied — see [Tenant Provisioning Flow](#tenant-provisioning-flow) for ordering and [03-NATS-JETSTREAM.md](03-NATS-JETSTREAM.md#ingress-stream-provisioning-ingress-tenant) for the full three-layer ensure contract.
+Each tenant gets a dedicated namespace (`<tenant>-<env>-ns`) containing a PostgreSQL StatefulSet (OLTP), a Timescale-based usage StatefulSet, and a per-tenant `agent-ai-service` Knative Service. The `INGRESS-<TENANT>` JetStream stream is provisioned in parallel on the shared NATS cluster before the runtime ksvc is applied — see [Tenant Provisioning Flow](#tenant-provisioning-flow) for ordering and [03-NATS-JETSTREAM.md](03-NATS-JETSTREAM.md#ingress-stream-provisioning-ingress-tenant) for the full three-layer ensure contract.
 
 **Namespace Labels:**
 
@@ -394,7 +394,7 @@ graph LR
     TS -->|enqueue / consume| NATSQ[("NATS JetStream<br/>PLATFORM_TENANTS")]
     TS -->|ensureTenantIngressStream| NATSI[("NATS JetStream<br/>INGRESS-&lt;tenant&gt;")]
     TS -->|Create NS + PG + ksvc| K8sAPI[Kubernetes API]
-    K8sAPI -->|creates| NS["acme-dev-ns<br/>(namespace + PostgreSQL OLTP + Usage<br/>+ yoizenclaw-runtime ksvc)"]
+    K8sAPI -->|creates| NS["acme-dev-ns<br/>(namespace + PostgreSQL OLTP + Usage<br/>+ agent-ai-service ksvc)"]
 ```
 
 ---
@@ -578,8 +578,8 @@ Provides type-safe constants and interfaces consumed by all services.
 | `CONNECTOR_RUNTIME_TASK_QUEUE` | `connector-runtime` | Connector Runtime |
 | `WORKFLOW_DEFAULT_TIMEOUT_MS` | `60000` | Workflow Service |
 | `GATEWAY_AUDIT_*` | gateway audit stream/subject/consumer constants | API Gateway, Audit Service |
-| `YOIZENCLAW_*` (subject prefix + per-event helpers) | `evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal.*` | YoizenClaw Admin / Runtime / Runtime Gateway |
-| `YOIZENCLAW_RUNTIME_GATEWAY_*` (`evt.{tenant}.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal.*`) | execution lifecycle subjects | YoizenClaw Runtime Gateway / Workflow Service |
+| `PLATFORM_*` (subject prefix + per-event helpers) | `evt.{tenant}.agent-admin-service.automation.platform.internal.*` | Agent Admin Service / Runtime / Runtime Gateway |
+| `AI_AGENT_GATEWAY_*` (`evt.{tenant}.ai-agent-gateway.automation.platform.internal.*`) | execution lifecycle subjects | AI Agent Gateway / Workflow Service |
 
 ### Core Interfaces
 
@@ -681,7 +681,7 @@ graph TD
 │  │  │  cache-service · channel-service · tenant-service          │  │  │
 │  │  │  registry-service · workflow-service · workflow-worker     │  │  │
 │  │  │  connector-runtime · connector-admin                       │  │  │
-│  │  │  yoizenclaw-admin-service · yoizenclaw-runtime-gateway     │  │  │
+│  │  │  agent-admin-service · ai-agent-gateway     │  │  │
 │  │  │  usage-aggregator-service · proxy-service · admin-console  │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
@@ -690,7 +690,7 @@ graph TD
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  │  ┌─ {tenant}-{env}-ns (Per-Tenant) ──────────────────────────┐  │  │
-│  │  │  PostgreSQL StatefulSet · yoizenclaw-runtime Knative Svc   │  │  │
+│  │  │  PostgreSQL StatefulSet · agent-ai-service Knative Svc   │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  └─────────────────────────────────────────────────────────────────┘  │

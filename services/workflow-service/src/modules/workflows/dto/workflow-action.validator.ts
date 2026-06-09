@@ -29,7 +29,7 @@ export class IsWorkflowActionArrayConstraint
   defaultMessage(): string {
     return (
       "actions must be a non-empty array of WorkflowAction objects " +
-      "(activity: endpointCall | jsFunction | serviceBusCall | serviceCall | channelSend | agentCall | branch)"
+      "(activity: endpointCall | jsFunction | serviceBusCall | serviceCall | channelSend | agentCall | branch | conditional)"
     );
   }
 
@@ -67,6 +67,9 @@ export class IsWorkflowActionArrayConstraint
     }
     if (activity === "branch") {
       return this.isBranch(o, depth);
+    }
+    if (activity === "conditional") {
+      return this.isConditional(o, depth);
     }
     return false;
   }
@@ -187,5 +190,57 @@ export class IsWorkflowActionArrayConstraint
       branchCount++;
     }
     return branchCount > 0;
+  }
+
+  private isConditional(o: Record<string, unknown>, depth: number): boolean {
+    const branches = o.branches;
+    if (!Array.isArray(branches) || branches.length === 0) {
+      return false;
+    }
+    for (let i = 0; i < branches.length; i++) {
+      const branch = branches[i];
+      if (typeof branch !== "object" || branch === null) {
+        return false;
+      }
+      const b = branch as Record<string, unknown>;
+      if (typeof b.label !== "string" || b.label.length === 0) {
+        return false;
+      }
+      const cond = b.condition;
+      if (typeof cond !== "object" || cond === null) {
+        return false;
+      }
+      const c = cond as Record<string, unknown>;
+      if (typeof c.variable !== "string" || c.variable.length === 0) {
+        return false;
+      }
+      if (typeof c.comparator !== "string" || c.comparator.length === 0) {
+        return false;
+      }
+      if (typeof c.value !== "string") {
+        return false;
+      }
+      const actions = b.actions;
+      if (!Array.isArray(actions)) {
+        return false;
+      }
+      for (let j = 0; j < actions.length; j++) {
+        if (!this.isAction(actions[j], depth + 1)) {
+          return false;
+        }
+      }
+    }
+    const def = o.default;
+    if (def !== undefined) {
+      if (!Array.isArray(def)) {
+        return false;
+      }
+      for (let j = 0; j < def.length; j++) {
+        if (!this.isAction(def[j], depth + 1)) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 }

@@ -8,7 +8,6 @@ import {
   SHARED_CHANNEL_USAGE_SCHEMA_SQL,
 } from "@yoizen/shared";
 
-export type { Sql } from "@yoizen/database";
 
 /** Tenant-aware connection manager for the usage TimescaleDB tier. */
 @Injectable()

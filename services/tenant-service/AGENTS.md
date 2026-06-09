@@ -62,10 +62,10 @@ AppModule
 
 ### Data Flow
 
-1. **Create tenant**: `POST /tenants { name }` -> validate name -> check for existing namespace -> create K8s namespace with labels -> provision MongoDB (OLTP + usage) -> wait for ready -> apply `yoizenclaw-runtime` Knative Service in tenant namespace -> return tenant detail with mongo host
+1. **Create tenant**: `POST /tenants { name }` -> validate name -> check for existing namespace -> create K8s namespace with labels -> provision MongoDB (OLTP + usage) -> wait for ready -> ensure NATS ingress stream -> return tenant detail with mongo host
 2. **List tenants**: query namespaces by label `yoizen.io/managed-by=tenant-service` + current environment
 3. **Get tenant**: lookup namespace by tenant name + environment labels -> return namespace status + mongo host
-4. **Delete tenant**: delete namespace (cascades all resources, including MongoDB StatefulSet AND the per-tenant `yoizenclaw-runtime` Knative Service)
+4. **Delete tenant**: delete namespace (cascades all resources, including MongoDB StatefulSet)
 
 ### Tenant Namespace Structure
 
@@ -97,7 +97,6 @@ Each tenant namespace (`<tenant>-<env>-ns`) contains:
 |-------|------|--------|
 | `K8S_CORE_API` | `CoreV1Api` | `kubernetes.provider.ts` |
 | `K8S_APPS_API` | `AppsV1Api` | `kubernetes.provider.ts` |
-| `K8S_CUSTOM_OBJECTS_API` | `CustomObjectsApi` | `kubernetes.provider.ts` (used by `YoizenClawRuntimeProvisioner` for Knative Services) |
 
 ## Configuration
 
@@ -105,18 +104,13 @@ Each tenant namespace (`<tenant>-<env>-ns`) contains:
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP server port |
 | `PLATFORM_ENVIRONMENT` | `dev` | Environment name (scopes namespace operations) |
-| `YOIZENCLAW_RUNTIME_AUTO_APPLY` | `true` | When `false`, skip applying the per-tenant `yoizenclaw-runtime` Knative Service (lets a GitOps controller own it) |
-| `YOIZENCLAW_RUNTIME_IMAGE` | `dev.local/yoizenclaw-runtime:local` | Image used by the per-tenant `yoizenclaw-runtime` Knative Service |
-| `YOIZENCLAW_RUNTIME_NATS_URL` | `nats://nats.support-services-<env>.svc.cluster.local:4222` | NATS URL injected into the per-tenant `yoizenclaw-runtime` container |
-| `YOIZENCLAW_RUNTIME_CONNECTOR_ADMIN_URL` | `http://connector-admin-api.platform-services-<env>.svc.cluster.local` | connector-admin URL injected into the per-tenant `yoizenclaw-runtime` container |
-| `YOIZENCLAW_RUNTIME_OTEL_ENDPOINT` | `http://otel-collector.support-services-<env>.svc.cluster.local:4318` | OTLP/HTTP endpoint injected into the per-tenant `yoizenclaw-runtime` container |
 
 ### Knative
 
 - Image: `dev.local/tenant-service:local`
 - Autoscaling: min 1, max 3, target concurrency 50
 - Readiness probe: `GET /health` on port 3000
-- RBAC: `tenant-namespace-manager` ClusterRole for namespaces, services, configmaps, secrets, PVCs, statefulsets, **and `serving.knative.dev/services`** (create/get/replace/delete)
+- RBAC: `tenant-namespace-manager` ClusterRole for namespaces, services, configmaps, secrets, PVCs, statefulsets
 
 ## Testing
 

@@ -22,16 +22,17 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
   async createDefinition(
     params: ICreateDefinitionParams,
   ): Promise<IWorkflowDefinitionRow> {
-    const { id, tenantId, name, application, actions, trigger } = params;
+    const { id, tenantId, name, application, actions, trigger, variables } = params;
     const sql = await this.sqlFor(tenantId);
     const triggerJson = trigger ? sql.json(trigger as never) : null;
+    const variablesJson = variables ? sql.json(variables as never) : null;
     const [row] = await sql<IWorkflowDefinitionRow[]>`
       INSERT INTO workflow_definitions
-        (id, name, application, actions, trigger)
+        (id, name, application, actions, trigger, variables)
       VALUES
         (${id}, ${name}, ${application},
-         ${sql.json(actions as never)}, ${triggerJson})
-      RETURNING id, name, application, actions, trigger,
+         ${sql.json(actions as never)}, ${triggerJson}, ${variablesJson})
+      RETURNING id, name, application, actions, trigger, variables,
                 created_at, updated_at, deleted_at
     `;
     return row!;
@@ -40,19 +41,21 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
   async updateDefinition(
     params: IUpdateDefinitionParams,
   ): Promise<IWorkflowDefinitionRow | undefined> {
-    const { id, tenantId, name, application, actions, trigger } = params;
+    const { id, tenantId, name, application, actions, trigger, variables } = params;
     const sql = await this.sqlFor(tenantId);
     const triggerJson = trigger ? sql.json(trigger as never) : null;
+    const variablesJson = variables ? sql.json(variables as never) : null;
     const [row] = await sql<IWorkflowDefinitionRow[]>`
       UPDATE workflow_definitions
       SET name = ${name},
           application = ${application},
           actions = ${sql.json(actions as never)},
           trigger = ${triggerJson},
+          variables = ${variablesJson},
           updated_at = NOW()
       WHERE id = ${id}
         AND deleted_at IS NULL
-      RETURNING id, name, application, actions, trigger,
+      RETURNING id, name, application, actions, trigger, variables,
                 created_at, updated_at, deleted_at
     `;
     return row;
@@ -64,7 +67,7 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
   ): Promise<IWorkflowDefinitionRow | undefined> {
     const sql = await this.sqlFor(tenantId);
     const [row] = await sql<IWorkflowDefinitionRow[]>`
-      SELECT id, name, application, actions, trigger,
+      SELECT id, name, application, actions, trigger, variables,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
       WHERE id = ${id}
@@ -78,7 +81,7 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
   ): Promise<IWorkflowDefinitionRow[]> {
     const sql = await this.sqlFor(tenantId);
     return sql<IWorkflowDefinitionRow[]>`
-      SELECT id, name, application, actions, trigger,
+      SELECT id, name, application, actions, trigger, variables,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
       WHERE deleted_at IS NULL
@@ -92,7 +95,7 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
   ): Promise<IWorkflowDefinitionRow[]> {
     const sql = await this.sqlFor(tenantId);
     return sql<IWorkflowDefinitionRow[]>`
-      SELECT id, name, application, actions, trigger,
+      SELECT id, name, application, actions, trigger, variables,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
       WHERE deleted_at IS NULL

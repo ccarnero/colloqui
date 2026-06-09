@@ -28,8 +28,13 @@ resources:
   - registry-service.yaml
   - registry-service-sa.yaml
   - admin-console.yaml
-  - yoizenclaw-admin-service.yaml
-  - yoizenclaw-runtime-gateway.yaml
+  - agent-admin-service.yaml
+  - agent-admin-service-worker.yaml
+  - ai-agent-gateway.yaml
+  # ----- Agent services (AI + scheduling) -----
+  - agent-memory-service.yaml
+  - agent-ai-service.yaml
+  - agent-scheduler-service.yaml
   # ----- Plain Deployments + KEDA Temporal scalers (Phase 1) -----
   - workflow-worker.yaml
   - connector-runtime.yaml

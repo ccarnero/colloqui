@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: searxng-mcp
+  namespace: platform-services-dev
+  labels:
+    app: searxng-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: searxng-mcp
+  template:
+    metadata:
+      labels:
+        app: searxng-mcp
+    spec:
+      containers:
+      - name: searxng-mcp
+        image: mcp/searxng-mcp:latest
+        imagePullPolicy: Never  # built locally, not in registry
+        ports:
+        - containerPort: 32769
+          name: sse
+        env:
+        - name: SEARXNG_BASE_URL
+          value: "http://searxng.platform-services-dev.svc.cluster.local:8080"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "32769"
+        - name: TRANSPORT
+          value: "sse"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 32769
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 32769
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"

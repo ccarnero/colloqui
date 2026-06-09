@@ -10,25 +10,25 @@ import { MatButtonModule } from "@angular/material/button";
 import { TenantService } from "../../../core/services/tenant.service";
 import { DashboardService } from "../../../core/services/dashboard.service";
 import { SparklineComponent } from "../../../shared/components/sparkline/sparkline.component";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
+import { KpiCardComponent } from "../../../shared/components/kpi-card/kpi-card.component";
+import { formatCompact } from "../../../shared/utils/format-compact";
 
 @Component({
   selector: "app-dashboard",
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatButtonModule, SparklineComponent],
+  imports: [MatButtonModule, SparklineComponent, PageHeaderComponent, KpiCardComponent],
   template: `
-    <div class="ws-header">
-      <div>
-        <div class="ws-title">Dashboard</div>
-        <div class="ws-subtitle">
-          {{ tenant.currentTenant().name }}
-        </div>
-      </div>
-      <div class="ws-actions">
+    <app-page-header
+      title="Dashboard"
+      [subtitle]="tenant.currentTenant().name"
+    >
+      <ng-container slot="actions">
         <button class="btn btn-secondary btn-sm" type="button">
           Export Report
         </button>
-      </div>
-    </div>
+      </ng-container>
+    </app-page-header>
 
     @if (dashboard.loading() && !dashboard.stats()) {
       <div class="cards-grid">
@@ -42,29 +42,28 @@ import { SparklineComponent } from "../../../shared/components/sparkline/sparkli
       </div>
     } @else {
       <div class="cards-grid">
-        <div class="card">
-          <div class="card-label">API Calls Today</div>
-          <div class="card-value">{{ formattedRequests() }}</div>
-          <div class="card-delta" [class]="requestsDeltaCss()">
-            {{ requestsDeltaText() }}
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-label">Active Sessions</div>
-          <div class="card-value">{{ stats()?.activeSessions ?? 0 }}</div>
-          <div class="card-delta">last 15 min</div>
-        </div>
-        <div class="card">
-          <div class="card-label">Avg Response</div>
-          <div class="card-value">{{ stats()?.avgResponseMs ?? 0 }}ms</div>
-        </div>
-        <div class="card">
-          <div class="card-label">Error Rate</div>
-          <div class="card-value">{{ stats()?.errorRate ?? 0 }}%</div>
-          <div class="card-delta" [class]="errorDeltaCss()">
-            {{ errorDeltaText() }}
-          </div>
-        </div>
+        <app-kpi-card
+          label="API Calls Today"
+          [value]="formattedRequests()"
+          [sub]="requestsDeltaText()"
+          [trend]="requestsTrend()"
+        />
+        <app-kpi-card
+          label="Active Sessions"
+          [value]="stats()?.activeSessions ?? 0"
+          sub="last 15 min"
+        />
+        <app-kpi-card
+          label="Avg Response"
+          [value]="(stats()?.avgResponseMs ?? 0) + 'ms'"
+        />
+        <app-kpi-card
+          label="Error Rate"
+          [value]="(stats()?.errorRate ?? 0) + '%'"
+          [sub]="errorDeltaText()"
+          [trend]="errorTrend()"
+          [trendIsGood]="false"
+        />
       </div>
 
       <div class="charts-grid">
@@ -111,6 +110,9 @@ import { SparklineComponent } from "../../../shared/components/sparkline/sparkli
       gap: 16px;
       margin-bottom: 16px;
     }
+    @media (max-width: 768px) {
+      .charts-grid { grid-template-columns: 1fr; }
+    }
     .chart-labels {
       display: flex;
       justify-content: space-between;
@@ -146,21 +148,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
   protected readonly stats = this.dashboard.stats;
 
   protected readonly formattedRequests = computed(() => {
-    const val = this.stats()?.requestsToday ?? 0;
-    if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
-    if (val >= 1_000) return `${(val / 1_000).toFixed(1)}K`;
-    return String(val);
+    return formatCompact(this.stats()?.requestsToday ?? 0);
   });
 
-  protected readonly requestsDeltaCss = computed(() => {
+  protected readonly requestsTrend = computed(() => {
     const d = this.stats()?.requestsTodayDelta ?? 0;
-    return d >= 0 ? "delta-up" : "delta-down";
+    return d > 0 ? "up" : d < 0 ? "down" : "flat";
+  });
+
+  protected readonly errorTrend = computed(() => {
+    const d = this.stats()?.errorRateDelta ?? 0;
+    return d > 0 ? "up" : d < 0 ? "down" : "flat";
   });
 
   protected readonly requestsDeltaText = computed(() => {
     const d = this.stats()?.requestsTodayDelta ?? 0;
-    const arrow = d >= 0 ? "\u2191" : "\u2193";
-    return `${arrow} ${Math.abs(d).toFixed(1)}%`;
+    return `${Math.abs(d).toFixed(1)}%`;
   });
 
   protected readonly avgDeltaCss = computed(() => {
@@ -174,15 +177,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return `\u2193 ${d}ms slower`;
   });
 
-  protected readonly errorDeltaCss = computed(() => {
-    const d = this.stats()?.errorRateDelta ?? 0;
-    return d <= 0 ? "delta-up" : "delta-down";
-  });
-
   protected readonly errorDeltaText = computed(() => {
     const d = this.stats()?.errorRateDelta ?? 0;
-    const arrow = d <= 0 ? "\u2193" : "\u2191";
-    return `${arrow} ${Math.abs(d).toFixed(2)}%`;
+    return `${Math.abs(d).toFixed(2)}%`;
   });
 
   protected readonly apiUsageData = computed(

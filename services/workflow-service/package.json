@@ -15,19 +15,21 @@
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
+    "@opentelemetry/api": "^1.9.0",
     "@nestjs/platform-fastify": "^11.0.0",
     "@temporalio/activity": "^1.11.0",
+    "@temporalio/common": "^1.11.0",
     "@temporalio/client": "^1.11.0",
-    "@temporalio/interceptors-opentelemetry": "1.11.0",
+    "@temporalio/interceptors-opentelemetry": "^1.17.2",
     "@temporalio/worker": "^1.11.0",
     "@temporalio/workflow": "^1.11.0",
     "@yoizen/database": "file:../../packages/database",
     "@yoizen/observability": "file:../../packages/observability",
     "@yoizen/shared": "file:../../packages/shared",
     "class-transformer": "^0.5.1",
-    "class-validator": "^0.14.1",
-    "ioredis": "^5.4.1",
-    "mongodb": "^6.12.0",
+    "class-validator": "^0.15.1",
+
+    "mongodb": "^7.2.0",
     "nanoid": "^5.0.0",
     "nats": "^2.29.3",
     "reflect-metadata": "^0.2.2",
@@ -35,7 +37,7 @@
   },
   "devDependencies": {
     "@nestjs/testing": "^11.0.0",
-    "@temporalio/testing": "^1.11.0",
+
     "@types/node": "^22.10.1",
     "typescript": "^5.7.2"
   }

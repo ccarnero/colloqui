@@ -24,7 +24,7 @@ graph TB
     end
     
     subgraph "AI & Agents"
-        YCR["yoizenclaw-runtime<br/>(Agent Execution)"]
+        YCR["agent-ai-service<br/>(Agent Execution)"]
     end
     
     subgraph "Messaging & Events"
@@ -336,7 +336,7 @@ graph TB
     SWITCH -->|jsFunction| JS["Local Activity<br/>executeJsFunction"]
     SWITCH -->|serviceBusCall| SB["Local Activity<br/>executeServiceBusCall<br/>→ NATS"]
     SWITCH -->|channelSend| CH["Local Activity<br/>executeChannelSend<br/>→ channel-service"]
-    SWITCH -->|agentCall| AG["Remote Activity<br/>→ yoizenclaw-runtime"]
+    SWITCH -->|agentCall| AG["Remote Activity<br/>→ agent-ai-service"]
     SWITCH -->|branch| BR["Promise.all<br/>Parallel execution"]
     SWITCH -->|sleep| SLP["Temporal timer"]
     
@@ -456,7 +456,7 @@ The slim-stack architecture separates concerns into:
 1. **Workflow Orchestration** (`workflow-service`) — Coordinates multi-step execution
 2. **HTTP Execution** (`connector-runtime`) — Specialized worker for HTTP calls with connector resolution
 3. **Configuration** (`connector-admin`) — Manages connector configs, cached by `connector-runtime` via `AdapterClient`
-4. **AI & Agents** (`yoizenclaw-runtime`) — Per-tenant autonomous agent execution
+4. **AI & Agents** (`agent-ai-service`) — Per-tenant autonomous agent execution
 5. **Multi-tenancy** — Per-tenant Postgres, NATS subject prefixes, header propagation
 6. **Temporal Task Queues** — Two independent queues for independent scaling
 

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-The API Gateway is the HTTP entry point for the platform. It proxies requests to auth-service, audit-service, tenant-service, registry-service, workflow-service, adapter-service, channel-service, yoizenclaw-admin-service, and proxy-service over HTTP, and performs health checks against all downstream services. A Fastify `onRequest` hook intercepts non-platform paths and proxies them to tenant-registered Knative services via a dynamic route cache that polls the registry-service every 15s. Global guards enforce JWT authentication (`AuthGuard`) and tenant resolution (`TenantGuard`) on every request.
+The API Gateway is the HTTP entry point for the platform. It proxies requests to auth-service, audit-service, tenant-service, registry-service, workflow-service, adapter-service, channel-service, agent-admin-service, and proxy-service over HTTP, and performs health checks against all downstream services. A Fastify `onRequest` hook intercepts non-platform paths and proxies them to tenant-registered Knative services via a dynamic route cache that polls the registry-service every 15s. Global guards enforce JWT authentication (`AuthGuard`) and tenant resolution (`TenantGuard`) on every request.
 
 ## Tech Stack
 
@@ -42,7 +42,7 @@ src/
     ├── adapters/
     ├── channels/                   # channel + stream proxies
     ├── proxy/                      # generic proxy passthrough
-    ├── admin/                      # yoizenclaw-admin proxy (agents, jobs, credentials, config)
+    ├── admin/                      # agent-admin-service proxy (agents, jobs, credentials, config)
     ├── dashboard/                  # dashboard stats aggregation
     ├── rate-limit/                 # tenant rate limits
     ├── dynamic-routes/             # @Global() DynamicRouteCacheService
@@ -86,7 +86,7 @@ AppModule
 ├── ChannelsModule
 ├── WorkflowsModule
 ├── ProxyModule                    # pass-through to proxy-service
-├── AdminModule                    # yoizenclaw-admin-service JSON proxy
+├── AdminModule                    # agent-admin-service JSON proxy
 ├── DynamicRoutesModule (@Global)
 ├── RateLimitModule
 ├── DashboardModule

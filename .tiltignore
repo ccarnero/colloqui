@@ -1,0 +1,57 @@
+# =============================================================================
+# .tiltignore — files/dirs Tilt should NOT watch for changes
+# =============================================================================
+
+# Version control
+.git/
+
+# Build artifacts
+node_modules/
+dist/
+
+# Logs
+*.log
+
+# Documentation (changes here don't affect builds)
+docs/
+DOCS/
+
+# Post-mortem reports
+post-mortem/
+
+# IDE / editor config
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# AI / coding assistant config
+.claude/
+.opencode/
+.codex/
+.gemini/
+.windsurf/
+.atl/
+
+# SDD artifacts
+.sdd/
+
+# Skills
+skills/
+
+# Test artifacts
+tests/
+
+# Scripts (not part of service builds)
+scripts/
+
+# Applications (separate from platform services)
+applications/
+
+# Infrastructure overlays (managed by bootstrap script, not Tilt)
+infrastructure/
+
+# Generated / temporary
+*.tmp
+*.bak
+wdocs/

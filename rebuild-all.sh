@@ -44,12 +44,11 @@ ORDERED_SERVICES=(
   api-gateway
   proxy-service
   # AI
-  yoizenclaw-admin-service
-  yoizenclaw-runtime-gateway
+  agent-memory-service
+  agent-admin-service
+  ai-agent-gateway
   # Frontends (built last — heaviest build)
   admin-console
-  # Tenant runtime (special build path)
-  yoizenclaw-runtime
 )
 
 usage() {

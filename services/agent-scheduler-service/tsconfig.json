@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "declaration": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "target": "ES2022",
+    "outDir": "./dist",
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "sourceMap": true,
+    "incremental": true,
+    "paths": {
+      "@yoizen/shared": ["../../packages/shared/src/index.ts"],
+      "@yoizen/observability": ["../../packages/observability/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test/**/*"]
+}

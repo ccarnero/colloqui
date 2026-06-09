@@ -8,8 +8,13 @@ import {
 } from "@angular/core";
 import { ActivatedRoute, Router } from "@angular/router";
 import { toSignal } from "@angular/core/rxjs-interop";
+import { FormsModule } from "@angular/forms";
 import { MatDialog } from "@angular/material/dialog";
 import { MatSnackBar } from "@angular/material/snack-bar";
+import { MatFormFieldModule } from "@angular/material/form-field";
+import { MatInputModule } from "@angular/material/input";
+import { MatButtonModule } from "@angular/material/button";
+import { MatIconModule } from "@angular/material/icon";
 import {
   ConfirmDialogComponent,
   type IConfirmDialogData,
@@ -18,6 +23,11 @@ import {
   WorkflowApiService,
   type IWorkflowDefinitionDto,
 } from "../services/workflow-api.service";
+
+interface IVariableEntry {
+  key: string;
+  value: string;
+}
 
 /**
  * Workflow Settings sub-tab.
@@ -32,7 +42,13 @@ import {
   selector: "app-workflow-settings",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [],
+  imports: [
+    FormsModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatButtonModule,
+    MatIconModule,
+  ],
   template: `
     <section class="ws">
       @if (loading()) {
@@ -61,6 +77,69 @@ import {
             <li>{{ actionCount(wf) }} actions configured</li>
             <li>{{ wf.trigger ? 'Trigger configured' : 'No trigger configured' }}</li>
           </ul>
+        </div>
+
+        <div class="card">
+          <h2 class="card-h">Workflow Variables</h2>
+          <p class="muted">
+            Define workflow-level variables available at runtime as
+            <code class="inline-code">{{ '{{' }}variables.workflow.X{{ '}}' }}</code>.
+          </p>
+
+          <div class="var-grid">
+            @for (entry of variableEntries(); track $index) {
+              <div class="var-row">
+                <mat-form-field appearance="outline" class="var-field">
+                  <mat-label>Key</mat-label>
+                  <input
+                    matInput
+                    [ngModel]="entry.key"
+                    (ngModelChange)="onVarKeyChange($index, $event)"
+                  />
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="var-field">
+                  <mat-label>Value</mat-label>
+                  <input
+                    matInput
+                    [ngModel]="entry.value"
+                    (ngModelChange)="onVarValueChange($index, $event)"
+                  />
+                </mat-form-field>
+                <button
+                  mat-icon-button
+                  type="button"
+                  class="var-remove-btn"
+                  (click)="removeVariable($index)"
+                >
+                  <mat-icon>close</mat-icon>
+                </button>
+              </div>
+            }
+          </div>
+
+          @if (variableEntries().length === 0) {
+            <p class="empty-vars">No variables defined.</p>
+          }
+
+          <div class="var-actions">
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="addVariable()"
+            >
+              <mat-icon>add</mat-icon>
+              Add variable
+            </button>
+            <button
+              mat-flat-button
+              type="button"
+              [disabled]="savingVars()"
+              (click)="saveVariables()"
+            >
+              <mat-icon>save</mat-icon>
+              Save variables
+            </button>
+          </div>
         </div>
 
         <div class="card danger-card">
@@ -136,6 +215,40 @@ import {
     }
     .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
     .empty { font-size: 12px; color: var(--text3); padding: 12px; text-align: center; }
+    .inline-code {
+      font-family: var(--font-mono, monospace);
+      font-size: 11px;
+      background: var(--bg2);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .var-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .var-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .var-field {
+      flex: 1;
+      font-size: 12px;
+    }
+    .var-remove-btn {
+      flex-shrink: 0;
+    }
+    .empty-vars {
+      font-size: 12px;
+      color: var(--text3);
+      margin: 0 0 8px;
+    }
+    .var-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
   `,
 })
 export class WorkflowSettingsComponent implements OnInit {
@@ -154,6 +267,10 @@ export class WorkflowSettingsComponent implements OnInit {
   readonly workflow = signal<IWorkflowDefinitionDto | null>(null);
   readonly loading = signal(true);
   readonly deleting = signal(false);
+  readonly savingVars = signal(false);
+
+  /** Editable variable entries derived from the workflow definition. */
+  readonly variableEntries = signal<IVariableEntry[]>([]);
 
   ngOnInit(): void {
     const id = this.id();
@@ -164,6 +281,7 @@ export class WorkflowSettingsComponent implements OnInit {
     this.api.get(id).subscribe({
       next: (wf) => {
         this.workflow.set(wf);
+        this.syncVariableEntries(wf.variables);
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
@@ -177,6 +295,115 @@ export class WorkflowSettingsComponent implements OnInit {
   protected goBuilder(): void {
     void this.router.navigate(["/workflows", this.id(), "builder"]);
   }
+
+  // ── Variables editor ──────────────────────────────────────────────
+
+  private syncVariableEntries(
+    variables?: Record<string, unknown>,
+  ): void {
+    if (!variables || typeof variables !== "object") {
+      this.variableEntries.set([]);
+      return;
+    }
+    const entries: IVariableEntry[] = Object.entries(variables).map(
+      ([key, value]) => ({
+        key,
+        value:
+          typeof value === "string"
+            ? value
+            : JSON.stringify(value),
+      }),
+    );
+    this.variableEntries.set(entries);
+  }
+
+  addVariable(): void {
+    this.variableEntries.update((entries) => [
+      ...entries,
+      { key: "", value: "" },
+    ]);
+  }
+
+  removeVariable(index: number): void {
+    this.variableEntries.update((entries) => {
+      const next = [...entries];
+      next.splice(index, 1);
+      return next;
+    });
+  }
+
+  onVarKeyChange(index: number, key: string): void {
+    this.variableEntries.update((entries) => {
+      const next = [...entries];
+      next[index] = { ...next[index], key };
+      return next;
+    });
+  }
+
+  onVarValueChange(index: number, value: string): void {
+    this.variableEntries.update((entries) => {
+      const next = [...entries];
+      next[index] = { ...next[index], value };
+      return next;
+    });
+  }
+
+  saveVariables(): void {
+    const wf = this.workflow();
+    if (!wf) return;
+
+    const entries = this.variableEntries();
+    const variables: Record<string, unknown> = {};
+    for (const entry of entries) {
+      if (!entry.key.trim()) continue;
+      // Attempt to parse JSON values; fall back to raw string.
+      let parsed: unknown = entry.value;
+      if (
+        entry.value.startsWith("{") ||
+        entry.value.startsWith("[") ||
+        entry.value === "true" ||
+        entry.value === "false" ||
+        entry.value === "null"
+      ) {
+        try {
+          parsed = JSON.parse(entry.value);
+        } catch {
+          parsed = entry.value;
+        }
+      }
+      variables[entry.key.trim()] = parsed;
+    }
+
+    this.savingVars.set(true);
+    this.api
+      .update(wf.id, {
+        name: wf.name,
+        application: wf.application,
+        actions: wf.actions,
+        trigger: wf.trigger ?? undefined,
+        variables,
+      })
+      .subscribe({
+        next: (saved) => {
+          this.savingVars.set(false);
+          this.workflow.set(saved);
+          this.syncVariableEntries(saved.variables);
+          this.snackBar.open("Variables saved", "OK", {
+            duration: 3000,
+          });
+        },
+        error: () => {
+          this.savingVars.set(false);
+          this.snackBar.open(
+            "Failed to save variables",
+            "OK",
+            { duration: 5000 },
+          );
+        },
+      });
+  }
+
+  // ── Delete ────────────────────────────────────────────────────────
 
   protected confirmDelete(wf: IWorkflowDefinitionDto): void {
     const data: IConfirmDialogData = {

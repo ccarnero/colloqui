@@ -1,0 +1,29 @@
+import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { provideMonacoEditor } from "ngx-monaco-editor-v2";
+import { AiAgentConfigComponent } from "./agent-config.component";
+
+describe("AiAgentConfigComponent", () => {
+  let fixture: ComponentFixture<AiAgentConfigComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [AiAgentConfigComponent],
+      providers: [provideMonacoEditor({ defaultOptions: {} })],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AiAgentConfigComponent);
+    fixture.componentRef.setInput("section", "general");
+    fixture.componentRef.setInput("llmConnectors", []);
+    fixture.componentRef.setInput("editorOptions", {});
+    fixture.detectChanges();
+  });
+
+  it("creates", () => {
+    expect(fixture.componentInstance).toBeTruthy();
+  });
+
+  it("updates agent name through explicit ngModel change handler", () => {
+    fixture.componentInstance["onAgentNameChange"]("Revenue Agent");
+    expect(fixture.componentInstance.agentName()).toBe("Revenue Agent");
+  });
+});

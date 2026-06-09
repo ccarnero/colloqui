@@ -658,7 +658,7 @@ Usually available at `http://localhost:8080`:
 | **connector-runtime** | Task queue | Executes endpointCall and serviceCall |
 | **Per-tenant Postgres** | TCP | Stores workflow definitions and executions |
 | **connector-api** | HTTP | Resolves adapter configs for serviceCall (via connector-runtime) |
-| **yoizenclaw-runtime** | HTTP | Executes agentCall activities |
+| **agent-ai-service** | HTTP | Executes agentCall activities |
 
 ## Integration Points
 
@@ -674,7 +674,7 @@ Usually available at `http://localhost:8080`:
 - **NATS**: Service bus activity publishes
 - **connector-runtime**: Endpoint and service calls
 - **Per-tenant Postgres**: Workflow storage
-- **yoizenclaw-runtime**: Agent execution
+- **agent-ai-service**: Agent execution
 
 ## Further Reading
 

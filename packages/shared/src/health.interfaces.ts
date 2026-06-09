@@ -78,8 +78,8 @@ export interface INatsRedisHealthResponse {
   redis: boolean;
 }
 
-/** YoizenClaw admin DB check. */
-export interface IYoizenClawHealthResponse {
+/** Platform admin DB check. */
+export interface IPlatformHealthResponse {
   status: "ok" | "error";
   timestamp: string;
   checks: { database: "up" | "down" };

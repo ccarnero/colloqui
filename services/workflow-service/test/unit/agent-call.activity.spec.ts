@@ -159,7 +159,7 @@ describe("executeAgentCall", () => {
     expect(executeAndWaitMock).toHaveBeenCalledWith(
       "tenant-a",
       { agentId: "agent-uuid-1", message: "Hi" },
-      300000,
+      900000,
       { requestedBy: undefined, correlationId: undefined },
     );
   });
@@ -183,7 +183,7 @@ describe("executeAgentCall", () => {
         conversationId: "conv-1",
         userId: "user-42",
       },
-      300000,
+      900000,
       { requestedBy: "user-42", correlationId: "conv-1" },
     );
   });
@@ -214,7 +214,7 @@ describe("executeAgentCall", () => {
     expect(executeAndWaitMock).toHaveBeenCalledWith(
       "tenant-a",
       { agentId: "agent-uuid-1", message: "Hi" },
-      300000,
+      900000,
       {
         requestedBy: undefined,
         correlationId: undefined,

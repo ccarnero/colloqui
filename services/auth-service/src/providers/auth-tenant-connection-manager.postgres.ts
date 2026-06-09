@@ -5,7 +5,6 @@ import {
 } from "@yoizen/database";
 import { TENANT_AUTH_SCHEMA_SQL } from "@yoizen/shared";
 
-export type { Sql } from "@yoizen/database";
 
 /**
  * Per-tenant Postgres for `tenant_roles`, `tenant_role_permissions`, `tenant_users`.

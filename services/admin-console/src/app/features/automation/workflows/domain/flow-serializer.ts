@@ -3,6 +3,7 @@ import {
   type IWorkflowFlow,
   type IWorkflowNode,
   type IWorkflowConnection,
+  type IConditionalBranchConfig,
 } from "./workflow-node.types";
 
 interface WorkflowAction {
@@ -143,7 +144,7 @@ function walkActions(
     const targets = outgoing.get(current);
     if (!targets || targets.length === 0) break;
 
-    if (node.type === EWorkflowNodeType.BRANCH) {
+    if (node.type === EWorkflowNodeType.BRANCH || node.type === EWorkflowNodeType.CONDITIONAL) {
       break;
     }
 
@@ -278,6 +279,55 @@ function nodeToAction(
       }
 
       return branchAction;
+    }
+
+    case EWorkflowNodeType.CONDITIONAL: {
+      const targets = outgoing.get(node.key) ?? [];
+      const branchConfigs =
+        (node.configuration["branches"] as IConditionalBranchConfig[]) ?? [];
+      const defaultConfig = node.configuration["default"] as
+        | { targetKey?: string }
+        | undefined;
+
+      const branches: Array<{
+        label: string;
+        condition: IConditionalBranchConfig["condition"];
+        actions: WorkflowAction[];
+      }> = [];
+
+      for (let i = 0; i < branchConfigs.length; i++) {
+        const branchCfg = branchConfigs[i];
+        const targetKey = targets[i];
+        const actions = targetKey
+          ? walkActions(targetKey, nodes, outgoing, visited)
+          : [];
+        branches.push({
+          label: branchCfg.label,
+          condition: branchCfg.condition,
+          actions,
+        });
+      }
+
+      // Default branch uses the target key from configuration (falls back
+      // to the target after all configured branches).
+      let defaultActions: WorkflowAction[] | undefined;
+      if (defaultConfig?.targetKey) {
+        defaultActions = walkActions(
+          defaultConfig.targetKey,
+          nodes,
+          outgoing,
+          visited,
+        );
+      }
+
+      return {
+        activity: "conditional",
+        name: node.name,
+        branches,
+        ...(defaultActions && defaultActions.length > 0
+          ? { default: defaultActions }
+          : {}),
+      };
     }
 
     default:

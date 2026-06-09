@@ -1,7 +1,7 @@
 """CloudEvents envelope builder for internal agent messaging.
 
 Compliant with wdocs/02-diseño-de-mensajes.md CloudEvents spec.
-YoizenClaw operates as an internal agent (transport.protocol="internal").
+Agent Admin Service operates as an internal agent (transport.protocol="internal").
 """
 
 from __future__ import annotations
@@ -50,11 +50,11 @@ class CloudEventEnvelope:
     causation_id: Optional[str] = None
     correlation_id: str = ""
     tenant: str = ""
-    producer: str = "yoizenclaw"
+    producer: str = "agent-admin-service"
     domain: str = "messaging"
     channel: str = ""
     provider: str = "internal"
-    accountid: str = "yoizenclaw-runtime"
+    accountid: str = "platform-admin"
     idempotencykey: str = ""
     transport: dict[str, Any] = field(default_factory=dict)
     data: dict[str, Any] = field(default_factory=dict)
@@ -97,8 +97,8 @@ def build_internal_agent_envelope(
     """Build a CloudEvents envelope for internal agent messages."""
     return CloudEventEnvelope(
         id=str(uuid.uuid4()),
-        source=f"/services/yoizenclaw/agents/{agent_id}",
-        type=f"io.yoizen.yoizenclaw.agent.{action}.v1",
+        source=f"/services/agent-admin-service/agents/{agent_id}",
+        type=f"io.yoizen.agent-admin-service.agent.{action}.v1",
         resource=f"tenant/{tenant}/agents/{agent_id}",
         tenant=tenant,
         traceid=str(uuid.uuid4()),

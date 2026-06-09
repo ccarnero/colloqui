@@ -43,7 +43,7 @@ export const REGISTRY_DEFAULT_SERVICE_PORT = 3000;
  * other services (adapter-service) materialize as internal adapters.
  */
 export const REGISTRY_PRODUCER = 'registry-service';
-export const PLATFORM_DOMAIN = 'platform';
+export const REGISTRY_DOMAIN = 'platform';
 /**
  * Placeholder token for the 5th/6th positions (channel/provider) when
  * the event is domain-agnostic (not tied to a messaging channel).
@@ -84,48 +84,54 @@ export const GATEWAY_AUDIT_SUBJECT = 'audit.gateway.request';
 export const GATEWAY_AUDIT_CONSUMER_NAME = 'gateway-audit-writer';
 export const GATEWAY_AUDIT_STREAM_MAX_BYTES = 128 * 1024 * 1024;
 
-export const YOIZENCLAW_PRODUCER = "yoizenclaw-admin-service";
-export const YOIZENCLAW_DOMAIN = "automation";
-export const YOIZENCLAW_CHANNEL = "yoizenclaw";
-export const YOIZENCLAW_PROVIDER = "internal";
-export const YOIZENCLAW_ACCOUNT_ID = "yoizenclaw-admin";
+export const PLATFORM_PRODUCER = "agent-admin-service";
+export const PLATFORM_DOMAIN = "automation";
+export const PLATFORM_CHANNEL = "platform";
+export const PLATFORM_PROVIDER = "internal";
+export const PLATFORM_ACCOUNT_ID = "platform-admin";
 
-export const YOIZENCLAW_SUBJECT_PREFIX =
-  "evt.{tenant}.yoizenclaw-admin-service.automation.yoizenclaw.internal";
+export const PLATFORM_SUBJECT_PREFIX =
+  "evt.{tenant}.agent-admin-service.automation.platform.internal";
 
-export const YOIZENCLAW_CONFIG_SYNC =
-  `${YOIZENCLAW_SUBJECT_PREFIX}.config_sync.v1`;
-export const YOIZENCLAW_JOBS_SYNC =
-  `${YOIZENCLAW_SUBJECT_PREFIX}.jobs_sync.v1`;
-export const YOIZENCLAW_JOB_TRIGGER =
-  `${YOIZENCLAW_SUBJECT_PREFIX}.job_trigger.v1`;
-export const YOIZENCLAW_CHAT_RESPOND =
-  `${YOIZENCLAW_SUBJECT_PREFIX}.chat_respond.v1`;
-export const YOIZENCLAW_ONLINE =
-  `${YOIZENCLAW_SUBJECT_PREFIX}.online.v1`;
-export const YOIZENCLAW_AGENT_OUTBOUND =
-  `${YOIZENCLAW_SUBJECT_PREFIX}.agent_outbound.v1`;
-export const YOIZENCLAW_EXECUTION_STATUS =
-  `${YOIZENCLAW_SUBJECT_PREFIX}.execution_status.v1`;
-export const YOIZENCLAW_AGENT_PUBLISHED =
-  `${YOIZENCLAW_SUBJECT_PREFIX}.agent_published.v1`;
-export const YOIZENCLAW_AGENT_UNPUBLISHED =
-  `${YOIZENCLAW_SUBJECT_PREFIX}.agent_unpublished.v1`;
-export const YOIZENCLAW_EVENT =
-  `${YOIZENCLAW_SUBJECT_PREFIX}.event.v1`;
-export const YOIZENCLAW_RUNTIME_GATEWAY_PRODUCER = "yoizenclaw-runtime-gateway";
-export const YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX =
-  "evt.{tenant}.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal";
-export const YOIZENCLAW_EXECUTION_REQUESTED =
-  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_requested.v1`;
-export const YOIZENCLAW_EXECUTION_STARTED =
-  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_started.v1`;
-export const YOIZENCLAW_EXECUTION_COMPLETED =
-  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_completed.v1`;
-export const YOIZENCLAW_EXECUTION_FAILED =
-  `${YOIZENCLAW_RUNTIME_GATEWAY_SUBJECT_PREFIX}.execution_failed.v1`;
-  
+export const PLATFORM_CONFIG_SYNC =
+  `${PLATFORM_SUBJECT_PREFIX}.config_sync.v1`;
+export const PLATFORM_JOBS_SYNC =
+  `${PLATFORM_SUBJECT_PREFIX}.jobs_sync.v1`;
+export const PLATFORM_JOB_TRIGGER =
+  `${PLATFORM_SUBJECT_PREFIX}.job_trigger.v1`;
+export const PLATFORM_CHAT_RESPOND =
+  `${PLATFORM_SUBJECT_PREFIX}.chat_respond.v1`;
+export const PLATFORM_ONLINE =
+  `${PLATFORM_SUBJECT_PREFIX}.online.v1`;
+export const PLATFORM_AGENT_OUTBOUND =
+  `${PLATFORM_SUBJECT_PREFIX}.agent_outbound.v1`;
+export const PLATFORM_EXECUTION_STATUS =
+  `${PLATFORM_SUBJECT_PREFIX}.execution_status.v1`;
+export const PLATFORM_AGENT_PUBLISHED =
+  `${PLATFORM_SUBJECT_PREFIX}.agent_published.v1`;
+export const PLATFORM_AGENT_UNPUBLISHED =
+  `${PLATFORM_SUBJECT_PREFIX}.agent_unpublished.v1`;
+export const PLATFORM_EVENT =
+  `${PLATFORM_SUBJECT_PREFIX}.event.v1`;
+export const PLATFORM_DOCUMENT_INGESTION =
+  `${PLATFORM_SUBJECT_PREFIX}.document_ingestion.v1`;
+export const PLATFORM_SKB_FILE_INGESTION =
+  `${PLATFORM_SUBJECT_PREFIX}.skb_file_ingestion.v1`;
+export const AI_AGENT_GATEWAY_PRODUCER = "ai-agent-gateway";
+export const AI_AGENT_GATEWAY_SUBJECT_PREFIX =
+  "evt.{tenant}.ai-agent-gateway.automation.platform.internal";
+export const PLATFORM_EXECUTION_REQUESTED =
+  `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_requested.v1`;
+export const PLATFORM_EXECUTION_STARTED =
+  `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_started.v1`;
+export const PLATFORM_EXECUTION_COMPLETED =
+  `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_completed.v1`;
+export const PLATFORM_EXECUTION_FAILED =
+  `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_failed.v1`;
 
-export function buildYoizenClawSubject(template: string, tenantId: string): string {
+export const SCHEDULER_SUBJECT_PREFIX = "evt.{tenant}.agent-scheduler-service.automation.platform.internal";
+export const PLATFORM_SCHEDULER_HEARTBEAT = `${SCHEDULER_SUBJECT_PREFIX}.heartbeat.v1`;
+
+export function buildPlatformSubject(template: string, tenantId: string): string {
   return template.replaceAll("{tenant}", tenantId);
 }

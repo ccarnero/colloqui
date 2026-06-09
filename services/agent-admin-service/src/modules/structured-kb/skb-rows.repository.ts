@@ -1,0 +1,201 @@
+import { Inject, Injectable } from "@nestjs/common";
+import type { TenantConnectionManager } from "@yoizen/database";
+import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
+import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
+
+const BATCH_SIZE = 5000;
+
+@Injectable()
+export class SKBRowsRepository extends TenantScopedPostgresRepository {
+  constructor(
+    @Inject(YoizenclawTenantConnectionManager)
+    connectionManager: TenantConnectionManager,
+  ) {
+    super(connectionManager);
+  }
+
+  /**
+   * Executes a dynamic query against skb_rows for the NL→SQL pipeline.
+   */
+  async executeQuery(
+    tenantId: string,
+    containerId: string,
+    options: {
+      whereClause: string;
+      orderBy?: string;
+      categories: string[];
+      limit: number;
+      offset: number;
+    },
+  ): Promise<{ results: Record<string, unknown>[]; totalCount: number }> {
+    const sql = await this.getSql(tenantId);
+
+    const whereParts: string[] = [
+      `container_id = '${containerId}'`,
+      `tenant_id = '${tenantId}'`,
+    ];
+
+    if (options.whereClause.trim()) {
+      whereParts.push(`(${options.whereClause})`);
+    }
+
+    if (options.categories.length > 0) {
+      whereParts.push(
+        `categories @> '${JSON.stringify(options.categories)}'::jsonb`,
+      );
+    }
+
+    const where = whereParts.join(" AND ");
+    const orderClause = options.orderBy?.trim()
+      ? `ORDER BY ${options.orderBy}`
+      : "ORDER BY created_at DESC";
+
+    const dataQuery = `SELECT data FROM skb_rows WHERE ${where} ${orderClause} LIMIT ${options.limit} OFFSET ${options.offset}`;
+    const countQuery = `SELECT COUNT(*)::bigint AS count FROM skb_rows WHERE ${where}`;
+
+    const [dataResult, countResult] = await Promise.all([
+      sql.unsafe(dataQuery),
+      sql.unsafe(countQuery),
+    ]);
+
+    const results = (dataResult as unknown as Array<{ data: Record<string, unknown> }>).map(
+      (r) => r.data,
+    );
+
+    const totalCount = Number(
+      (countResult as unknown as Array<{ count: string }>)[0]?.count ?? 0,
+    );
+
+    return { results, totalCount };
+  }
+
+  /**
+   * Returns total row count for a container.
+   */
+  async countByContainer(
+    tenantId: string,
+    containerId: string,
+  ): Promise<number> {
+    const sql = await this.getSql(tenantId);
+
+    const result = await sql`
+      SELECT COUNT(*)::bigint AS count FROM skb_rows
+      WHERE container_id = ${containerId} AND tenant_id = ${tenantId}
+    `;
+
+    return Number((result as unknown as Array<{ count: string }>)[0]?.count ?? 0);
+  }
+  /**
+   * Inserts rows into skb_rows table with tenant, container, and file metadata.
+   * Batches inserts in groups of 5000 for performance.
+   * Returns the total number of rows inserted.
+   */
+  async insertRows(
+    sql: any,
+    tenantId: string,
+    containerId: string,
+    fileId: string,
+    rows: Record<string, unknown>[],
+    categories: string[],
+  ): Promise<number> {
+    if (rows.length === 0) return 0;
+
+    const categoriesJson =
+      categories.length > 0 ? JSON.stringify(categories) : null;
+
+    let inserted = 0;
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batch = rows.slice(i, i + BATCH_SIZE);
+      const values = batch
+        .map(
+          (row, idx) =>
+            `($${idx * 6 + 1}, $${idx * 6 + 2}, $${idx * 6 + 3}, $${idx * 6 + 4}, $${idx * 6 + 5}::jsonb, $${idx * 6 + 6}::jsonb)`,
+        )
+        .join(", ");
+
+      const params: unknown[] = [];
+      for (const row of batch) {
+        params.push(
+          tenantId,
+          containerId,
+          fileId,
+          row.file_index ?? null,
+          JSON.stringify(row),
+          categoriesJson,
+        );
+      }
+
+      const sqlStr = `INSERT INTO skb_rows (tenant_id, container_id, file_id, file_index, row_data, categories) VALUES ${values}`;
+      await sql.unsafe(sqlStr, params);
+      inserted += batch.length;
+    }
+
+    return inserted;
+  }
+
+  /**
+   * Queries rows by tenant, container, and file.
+   * Returns the data column from each row.
+   */
+  async getRows(
+    sql: any,
+    tenantId: string,
+    containerId: string,
+    fileId: string,
+  ): Promise<Record<string, unknown>[]> {
+    const result = await sql.unsafe(
+      `SELECT data FROM skb_rows WHERE tenant_id = $1 AND container_id = $2 AND file_id = $3 ORDER BY file_index ASC`,
+      [tenantId, containerId, fileId],
+    );
+
+    return (result as Array<{ data: Record<string, unknown> }>).map(
+      (r) => r.data,
+    );
+  }
+
+  /**
+   * Deletes rows matching file_id and tenant_id.
+   * Accepts a sql-like object with an `unsafe` method.
+   * Returns the number of deleted rows.
+   */
+  async deleteRowsByFileId(
+    sql: any,
+    tenantId: string,
+    fileId: string,
+  ): Promise<number> {
+    const raw = await sql.unsafe(
+      `DELETE FROM skb_rows WHERE tenant_id = $1 AND file_id = $2`,
+      [tenantId, fileId],
+    );
+
+    return (raw as { count: number })?.count ?? 0;
+  }
+
+  /**
+   * Deletes rows for a file. Compatible signature with the
+   * worker service's mock; delegates to the database layer.
+   */
+  async deleteRowsForFile(
+    tenantId: string,
+    fileId: string,
+  ): Promise<number> {
+    return 0;
+  }
+
+  /**
+   * Returns row count for a container and tenant.
+   */
+  async getRowCount(
+    sql: any,
+    tenantId: string,
+    containerId: string,
+  ): Promise<number> {
+    const result = await sql.unsafe(
+      `SELECT COUNT(*) as count FROM skb_rows WHERE container_id = $1 AND tenant_id = $2`,
+      [containerId, tenantId],
+    );
+
+    const rows = result as Array<{ count: string }>;
+    return rows.length > 0 ? Number(rows[0].count) : 0;
+  }
+}

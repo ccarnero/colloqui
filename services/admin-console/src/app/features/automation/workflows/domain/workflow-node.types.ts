@@ -6,11 +6,33 @@ export enum EWorkflowNodeType {
   SERVICE_BUS_CALL = "serviceBusCall",
   AGENT_CALL = "agentCall",
   BRANCH = "branch",
+  CONDITIONAL = "conditional",
 }
 
 export enum EWorkflowConnectionType {
   DEFAULT = "default",
-  BRANCH = "branch",
+}
+
+export type ConditionComparator =
+  | "eq"
+  | "neq"
+  | "gt"
+  | "lt"
+  | "gte"
+  | "lte"
+  | "contains"
+  | "exists"
+  | "notExists";
+
+export interface IConditionRule {
+  variable: string;
+  comparator: ConditionComparator;
+  value: string;
+}
+
+export interface IConditionalBranchConfig {
+  label: string;
+  condition: IConditionRule;
 }
 
 export interface IWorkflowNode {

@@ -1,0 +1,64 @@
+# agent-admin-service worker pod (NATS JetStream consumer for document ingestion).
+#
+# Plain `apps/v1.Deployment` (NOT a Knative Service) because:
+#   1. The worker doesn't receive inbound HTTP — KPA / activator have
+#      no signal to wake it from zero.
+#   2. KEDA cannot scale a Knative Service (no `/scale` subresource on
+#      `serving.knative.dev/v1.Service`); plain Deployment exposes
+#      `/scale` natively so the KEDA HPA shim can drive replicas based
+#      on JetStream consumer lag.
+#
+# Runs `SERVICE_MODE=worker` so the same Docker image as
+# agent-admin-service skips Fastify bootstrap (no public HTTP listener)
+# and only starts the `IngestionWorkerService` (OnModuleInit) which
+# subscribes to ingestion events on the INGESTION-<ENV> stream.
+#
+# `replicas: 1` is the base default; the matching ScaledObject in
+# `scaledobjects/agent-admin-service-worker.yaml` is the actual authority
+# on replica count at runtime, and non-prod overlays drop both
+# `minReplicaCount` and `idleReplicaCount` to 0 for full scale-to-zero.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-admin-service-worker
+  labels:
+    app.kubernetes.io/name: agent-admin-service-worker
+    app.kubernetes.io/component: document-ingestion
+    app.kubernetes.io/part-of: yoizen-arch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-admin-service-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agent-admin-service-worker
+        app.kubernetes.io/component: document-ingestion
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: user-container
+          image: dev.local/agent-admin-service:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: SERVICE_MODE
+              value: "worker"
+            - name: OTEL_SERVICE_NAME
+              value: "agent-admin-service-worker"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 2Gi

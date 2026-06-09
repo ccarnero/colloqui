@@ -4,7 +4,6 @@ import {
   TenantConnectionManager,
 } from "@yoizen/database";
 
-export type { Sql } from "@yoizen/database";
 
 /** Per-tenant Postgres for audit events, gateway audit, and channel audit. */
 @Injectable()

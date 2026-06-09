@@ -30,6 +30,7 @@ export interface AgentChatRequest {
   userId?: string;
   channel?: string;
   context?: AgentChatContextEntry[];
+  variables?: import("./variable.interfaces").VariableResolutionContext;
 }
 
 export interface HttpExecutionResult {

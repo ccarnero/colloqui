@@ -271,7 +271,7 @@ Requires at least one per-tenant Postgres instance reachable at `mongo.<tenantId
 |---------|-------|
 | **connector-runtime** | Resolves adapter config for `endpointCall` and `serviceCall` activities |
 | **api-gateway** | Proxies adapter management endpoints |
-| **yoizenclaw-admin-service** | Admin console adapter management |
+| **agent-admin-service** | Admin console adapter management |
 
 ## Migration Notes
 

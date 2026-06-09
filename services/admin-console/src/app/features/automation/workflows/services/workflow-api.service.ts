@@ -12,6 +12,7 @@ export interface IWorkflowDefinitionDto {
   tenantId: string;
   actions: unknown[];
   trigger: unknown | null;
+  variables?: Record<string, unknown>;
   createdAt: string;
 }
 
@@ -78,6 +79,7 @@ interface ICreateWorkflowPayload {
   application: string;
   actions: unknown[];
   trigger?: unknown;
+  variables?: Record<string, unknown>;
 }
 
 interface IUpdateWorkflowPayload {
@@ -85,6 +87,7 @@ interface IUpdateWorkflowPayload {
   application: string;
   actions: unknown[];
   trigger?: unknown;
+  variables?: Record<string, unknown>;
 }
 
 @Injectable({ providedIn: "root" })
@@ -129,11 +132,17 @@ export class WorkflowApiService {
 
   execute(
     id: string,
-    request: Record<string, unknown> = {},
+    options?: {
+      agentTimeoutSec?: number;
+      request?: Record<string, string>;
+    },
   ): Observable<IWorkflowExecutionDto> {
     return this.http.post<IWorkflowExecutionDto>(
       `${this.base}/${id}/execute`,
-      { request },
+      {
+        request: options?.request ?? {},
+        ...(options?.agentTimeoutSec !== undefined && { agentTimeoutSec: options.agentTimeoutSec }),
+      },
     );
   }
 

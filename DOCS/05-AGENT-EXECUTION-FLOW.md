@@ -10,9 +10,9 @@ The path is asynchronous over JetStream and uses Redis as execution state storag
 |---|---|
 | `workflow-service` (`executeAgentCall`) | Submits and waits for agent execution as a Temporal activity |
 | `YoizenClawExecutionClient` (`@yoizen/shared`) | Publishes `execution_requested.v1`, subscribes to lifecycle events, persists status in Redis |
-| `yoizenclaw-runtime-gateway` | API-facing execution submit/get/stream service and durable status projector |
+| `ai-agent-gateway` | API-facing execution submit/get/stream service and durable status projector |
 | `NATS JetStream` (`INGRESS-<tenant>`) | Durable transport for request and lifecycle events |
-| `yoizenclaw-runtime` | Consumes execution request, runs agent, publishes started/completed/failed events |
+| `agent-ai-service` | Consumes execution request, runs agent, publishes started/completed/failed events |
 | `Redis` | Stores pending and result status records keyed by tenant + execution ID |
 
 ## End-to-End Sequence
@@ -23,8 +23,8 @@ sequenceDiagram
     participant WFW as workflow-service (agent activity)
     participant YEC as YoizenClawExecutionClient
     participant NATS as NATS INGRESS-tenant
-    participant YZR as yoizenclaw-runtime
-    participant YZG as yoizenclaw-runtime-gateway projector
+    participant YZR as agent-ai-service
+    participant YZG as ai-agent-gateway projector
     participant Redis as Redis
 
     WFW->>YEC: executeAndWait(tenantId, input, timeout=5m)
@@ -47,14 +47,14 @@ sequenceDiagram
 
 | Event | Subject Template | State |
 |---|---|---|
-| requested | `evt.{tenant}.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal.execution_requested.v1` | `pending` |
-| started | `evt.{tenant}.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal.execution_started.v1` | `running` |
-| completed | `evt.{tenant}.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal.execution_completed.v1` | `completed` |
-| failed | `evt.{tenant}.yoizenclaw-runtime-gateway.automation.yoizenclaw.internal.execution_failed.v1` | `failed` |
+| requested | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_requested.v1` | `pending` |
+| started | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_started.v1` | `running` |
+| completed | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_completed.v1` | `completed` |
+| failed | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_failed.v1` | `failed` |
 
 ## Runtime Behavior
 
-- `yoizenclaw-runtime` consumes `execution_requested` and calls `generate_chat_reply(...)`.
+- `agent-ai-service` consumes `execution_requested` and calls `generate_chat_reply(...)`.
 - On start, it emits `execution_started`.
 - On success, it emits `execution_completed` with `result.reply` and optional `result.tool_calls`.
 - On exception, it emits `execution_failed` with `result.errorCode` and `result.errorMessage`.
@@ -69,7 +69,7 @@ sequenceDiagram
 ## References
 
 - `services/workflow-service/src/temporal/activities/agent-call.activity.ts`
-- `packages/shared/src/yoizenclaw-execution-client.ts`
-- `services/yoizenclaw-runtime-gateway/src/modules/executions/executions.service.ts`
-- `services/yoizenclaw-runtime/src/messaging/handlers/executions.py`
-- `services/yoizenclaw-runtime/src/api/handlers/health.py`
+- `packages/shared/src/execution-client.ts`
+- `services/ai-agent-gateway/src/modules/executions/executions.service.ts`
+- `services/agent-ai-service/src/` (execution handler)
+- `services/agent-ai-service/src/` (health handler)

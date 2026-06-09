@@ -96,6 +96,9 @@ GEMINI.md
 .gga/
 .gga
 
+# ATL
+.atl/
+
 # OpenCode
 .opencode/plugins/**/node_modules/
 .opencode/plugins/**/dist/

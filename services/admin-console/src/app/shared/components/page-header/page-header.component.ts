@@ -44,15 +44,16 @@ import {
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 16px;
+      gap: 12px;
+      margin-bottom: 20px;
     }
     .page-header-text {
       min-width: 0;
     }
     .page-title {
       font-size: 20px;
-      font-weight: 500;
+      font-weight: 700;
+      letter-spacing: -0.3px;
       margin: 0;
       color: var(--text-primary);
       display: flex;
@@ -62,8 +63,8 @@ import {
     }
     .page-subtitle {
       font-size: 13px;
-      color: var(--text2);
-      margin: 4px 0 0;
+      color: var(--text3);
+      margin-top: 2px;
     }
     .page-actions {
       display: flex;

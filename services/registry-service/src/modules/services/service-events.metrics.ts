@@ -32,9 +32,6 @@ export const ServiceEventsEnsureStreamResult = {
   MISS: "miss",
 } as const;
 
-export type ServiceEventsEnsureStreamResultValue =
-  (typeof ServiceEventsEnsureStreamResult)[keyof typeof ServiceEventsEnsureStreamResult];
-
 const meter = getMeter("registry-service");
 
 /**

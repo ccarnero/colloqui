@@ -1,0 +1,69 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: agent-admin-service
+  labels:
+    app.kubernetes.io/name: agent-admin-service
+    app.kubernetes.io/component: admin-configuration
+    app.kubernetes.io/part-of: yoizen-arch
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
+        autoscaling.knative.dev/metric: concurrency
+        autoscaling.knative.dev/target: "50"
+        autoscaling.knative.dev/min-scale: "1"
+        autoscaling.knative.dev/max-scale: "3"
+    spec:
+      containerConcurrency: 0
+      containers:
+        - name: user-container
+          image: dev.local/agent-admin-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NATS_URL
+              value: "nats://nats:4222"
+            # MONGO_* credentials are injected by the active mongo overlay
+            # (local/mongo-dev); the base stays free of mongo credentials.
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: MONGO_PORT
+              value: "27017"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10

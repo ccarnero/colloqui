@@ -30,6 +30,9 @@ export class UpdateWorkflowDto {
   actions!: WorkflowAction[];
 
   @IsOptional()
+  variables?: Record<string, unknown>;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => WorkflowTriggerDto)
   trigger?: WorkflowTriggerDto;

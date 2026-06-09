@@ -23,6 +23,15 @@ import { workflowServiceConfig } from "../config";
 export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM_PUBLISHER = "JETSTREAM_PUBLISHER";
 
+/**
+ * DI token for the Postgres connection manager used exclusively by
+ * {@link SystemVariablesProvider} to query the `system_variables`
+ * table in each tenant's Postgres DB. Always backed by
+ * `WorkflowTenantConnectionManagerPostgres`, regardless of the
+ * workflow data storage engine.
+ */
+export const SYSTEM_VARIABLES_PG = Symbol("SYSTEM_VARIABLES_PG");
+
 const engine = workflowServiceConfig.dbEngine;
 
 const tenantManagerClass =
@@ -76,6 +85,16 @@ const jetStreamPublisherProvider: FactoryProvider<JetStreamClient> = {
       useExisting: WorkflowTenantConnectionManager,
     },
     tenantEvictionListener,
+    // Postgres connection for system variables — always available,
+    // regardless of the workflow data storage engine. When the engine
+    // is "postgres", reuse the existing connection manager (same pool).
+    // When "mongo", create a dedicated Postgres pool.
+    {
+      provide: SYSTEM_VARIABLES_PG,
+      ...(engine === "postgres"
+        ? { useExisting: WorkflowTenantConnectionManager }
+        : { useClass: WorkflowTenantConnectionManagerPostgres }),
+    },
   ],
   exports: [
     TEMPORAL_CLIENT,
@@ -84,6 +103,7 @@ const jetStreamPublisherProvider: FactoryProvider<JetStreamClient> = {
     JETSTREAM_PUBLISHER,
     WorkflowTenantConnectionManager,
     TENANT_DB_CONNECTION_MANAGER,
+    SYSTEM_VARIABLES_PG,
   ],
 })
 export class ProvidersModule {}

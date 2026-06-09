@@ -18,6 +18,8 @@ import {
   EWorkflowNodeType,
   type IWorkflowFlow,
   type IWorkflowNode,
+  type IConditionalBranchConfig,
+  type ConditionComparator,
 } from "../workflow-node.types";
 import { validateAction } from "./action-validators";
 import { validateGraph } from "./graph.validator";
@@ -316,6 +318,10 @@ function validateNode(
     return [];
   }
 
+  if (node.type === EWorkflowNodeType.CONDITIONAL) {
+    return validateConditionalNode(node, outgoingCounts);
+  }
+
   const action = buildActionForNode(node);
   if (!action) {
     return [
@@ -327,6 +333,127 @@ function validateNode(
     ];
   }
   return validateAction(action, ctx);
+}
+
+const VALID_COMPARATORS: Set<string> = new Set<ConditionComparator>([
+  "eq",
+  "neq",
+  "gt",
+  "lt",
+  "gte",
+  "lte",
+  "contains",
+  "exists",
+  "notExists",
+]);
+
+const VALID_VARIABLE_PREFIXES = [
+  "variables.",
+  "results.",
+  "request.",
+  "workflow.",
+];
+
+function validateConditionalNode(
+  node: IWorkflowNode,
+  outgoingCounts: Map<string, number>,
+): ValidationError[] {
+  const ctx = { nodeKey: node.key, nodeName: node.name };
+  const errors: ValidationError[] = [];
+  const cfg = node.configuration;
+  const branches = cfg["branches"];
+
+  if ((outgoingCounts.get(node.key) ?? 0) === 0) {
+    return [
+      {
+        ...ctx,
+        code: "CONDITIONAL_NO_BRANCHES",
+        message:
+          "Conditional must have at least one outgoing connection.",
+      },
+    ];
+  }
+
+  if (!Array.isArray(branches) || branches.length === 0) {
+    return [
+      {
+        ...ctx,
+        code: "CONDITIONAL_NO_BRANCHES",
+        message:
+          "Conditional must have at least one branch with a valid condition.",
+      },
+    ];
+  }
+
+  for (let i = 0; i < branches.length; i++) {
+    const branch = branches[i] as IConditionalBranchConfig | undefined;
+    if (!branch || typeof branch !== "object") {
+      errors.push({
+        ...ctx,
+        field: `configuration.branches[${i}]`,
+        code: "INVALID_VALUE",
+        message: `Branch ${i} must be an object with label and condition.`,
+      });
+      continue;
+    }
+
+    if (!branch.label || typeof branch.label !== "string") {
+      errors.push({
+        ...ctx,
+        field: `configuration.branches[${i}].label`,
+        code: "REQUIRED",
+        message: `Branch ${i} label is required.`,
+      });
+    }
+
+    const cond = branch.condition;
+    if (!cond || typeof cond !== "object") {
+      errors.push({
+        ...ctx,
+        field: `configuration.branches[${i}].condition`,
+        code: "REQUIRED",
+        message: `Branch ${i} must have a condition.`,
+      });
+      continue;
+    }
+
+    if (
+      !cond.variable ||
+      typeof cond.variable !== "string" ||
+      !VALID_VARIABLE_PREFIXES.some((p) => cond.variable.startsWith(p))
+    ) {
+      errors.push({
+        ...ctx,
+        field: `configuration.branches[${i}].condition.variable`,
+        code: "CONDITIONAL_INVALID_VARIABLE",
+        message: `Branch ${i} variable must start with one of: ${VALID_VARIABLE_PREFIXES.join(", ")}.`,
+      });
+    }
+
+    if (
+      !cond.comparator ||
+      typeof cond.comparator !== "string" ||
+      !VALID_COMPARATORS.has(cond.comparator)
+    ) {
+      errors.push({
+        ...ctx,
+        field: `configuration.branches[${i}].condition.comparator`,
+        code: "CONDITIONAL_INVALID_COMPARATOR",
+        message: `Branch ${i} has an invalid comparator.`,
+      });
+    }
+
+    if (typeof cond.value !== "string") {
+      errors.push({
+        ...ctx,
+        field: `configuration.branches[${i}].condition.value`,
+        code: "REQUIRED",
+        message: `Branch ${i} value is required.`,
+      });
+    }
+  }
+
+  return errors;
 }
 
 /**

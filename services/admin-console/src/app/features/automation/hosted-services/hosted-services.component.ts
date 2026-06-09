@@ -17,6 +17,7 @@ import { MatTableModule } from "@angular/material/table";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { RegistryService } from "../../../core/services/registry.service";
 import { TenantService } from "../../../core/services/tenant.service";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import {
   StatusBadgeComponent,
   type StatusBadgeColor,
@@ -42,17 +43,14 @@ import {
     MatDialogModule,
     MatTooltipModule,
     StatusBadgeComponent,
+    PageHeaderComponent,
   ],
   template: `
-    <div class="ws-header">
-      <div>
-        <div class="ws-title">Hosted Services</div>
-        <div class="ws-subtitle">
-          Manage registered services for
-          {{ tenant.currentTenant().name }}
-        </div>
-      </div>
-      <div class="ws-actions">
+    <app-page-header
+      title="Hosted Services"
+      [subtitle]="'Manage registered services for ' + tenant.currentTenant().name"
+    >
+      <ng-container slot="actions">
         <button
           class="btn btn-primary btn-sm"
           type="button"
@@ -60,8 +58,8 @@ import {
         >
           + Register Service
         </button>
-      </div>
-    </div>
+      </ng-container>
+    </app-page-header>
 
     <div class="section-card">
       <table

@@ -287,7 +287,7 @@ Workflow: classifyAndRoute Incident
 
 **Usage Pattern**:
 - **In workflow**: Use `agentCall` action type
-- **Standalone**: Direct call to yoizenclaw-runtime
+- **Standalone**: Direct call to agent-ai-service
 - **Pseudocode**:
 
 ```

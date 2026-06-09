@@ -4,7 +4,7 @@ import { authGuard } from "./core/guards/auth.guard";
 /**
  * Phase 4 routes — see nav.config.ts for the section model.
  *
- *  - Section landings: /channels, /connections, /yoizenclaw (AI),
+ *  - Section landings: /channels, /connections, /ai (AI),
  *    /processes, /settings + the existing /dashboard for Overview.
  *  - Connections sub-pages live under /connections/*.
  *  - Workflow detail mini-app stays at /workflows/:id (Phase 3).
@@ -90,8 +90,8 @@ export const routes: Routes = [
             path: "mcp",
             loadComponent: () =>
               import(
-                "./features/connections/mcp-placeholder.component"
-              ).then((m) => m.McpPlaceholderComponent),
+                "./features/connections/mcp-servers-page.component"
+              ).then((m) => m.McpServersPageComponent),
           },
           {
             path: "hosted-services",
@@ -107,62 +107,62 @@ export const routes: Routes = [
       { path: "hosted-services", redirectTo: "connections/hosted-services", pathMatch: "full" },
       { path: "data", redirectTo: "connections", pathMatch: "full" },
 
-      // ── AI / yoizenclaw ───────────────────────────────────────────────
+      // ── AI ─────────────────────────────────────────────────────
       {
-        path: "yoizenclaw",
+        path: "ai",
         children: [
           {
             path: "",
             pathMatch: "full",
             loadComponent: () =>
               import(
-                "./features/automation/yoizenclaw/yoizenclaw-landing.component"
-              ).then((m) => m.YoizenclawLandingComponent),
+                "./features/automation/ai/ai-landing.component"
+              ).then((m) => m.AiLandingComponent),
           },
           {
             path: "agents",
             loadComponent: () =>
               import(
-                "./features/automation/yoizenclaw/yoizenclaw-agents-page.component"
-              ).then((m) => m.YoizenclawAgentsPageComponent),
+                "./features/automation/ai/ai-agents-page.component"
+              ).then((m) => m.AiAgentsPageComponent),
           },
           {
             path: "agents/new",
             data: { subNavCollapsed: true },
             loadComponent: () =>
               import(
-                "./features/automation/yoizenclaw/detail/yoizenclaw-agent-editor-page.component"
-              ).then((m) => m.YoizenclawAgentEditorPageComponent),
+                "./features/automation/ai/detail/ai-agent-editor-page.component"
+              ).then((m) => m.AiAgentEditorPageComponent),
           },
           {
             path: "agents/:id",
             loadComponent: () =>
               import(
-                "./features/automation/yoizenclaw/detail/yoizenclaw-agent-detail.component"
-              ).then((m) => m.YoizenclawAgentDetailComponent),
+                "./features/automation/ai/detail/ai-agent-detail.component"
+              ).then((m) => m.AiAgentDetailComponent),
             children: [
               { path: "", redirectTo: "overview", pathMatch: "full" },
               {
                 path: "overview",
                 loadComponent: () =>
                   import(
-                    "./features/automation/yoizenclaw/detail/yoizenclaw-agent-overview.component"
-                  ).then((m) => m.YoizenclawAgentOverviewComponent),
+                    "./features/automation/ai/detail/ai-agent-overview.component"
+                  ).then((m) => m.AiAgentOverviewComponent),
               },
               {
                 path: "configure",
                 data: { subNavCollapsed: true },
                 loadComponent: () =>
                   import(
-                    "./features/automation/yoizenclaw/detail/yoizenclaw-agent-editor-page.component"
-                  ).then((m) => m.YoizenclawAgentEditorPageComponent),
+                    "./features/automation/ai/detail/ai-agent-editor-page.component"
+                  ).then((m) => m.AiAgentEditorPageComponent),
               },
               {
                 path: "settings",
                 loadComponent: () =>
                   import(
-                    "./features/automation/yoizenclaw/detail/yoizenclaw-agent-settings.component"
-                  ).then((m) => m.YoizenclawAgentSettingsComponent),
+                    "./features/automation/ai/detail/ai-agent-settings.component"
+                  ).then((m) => m.AiAgentSettingsComponent),
               },
             ],
           },
@@ -170,15 +170,57 @@ export const routes: Routes = [
             path: "playground",
             loadComponent: () =>
               import(
-                "./features/automation/yoizenclaw/playground.component"
+                "./features/automation/ai/playground.component"
               ).then((m) => m.PlaygroundComponent),
           },
           {
             path: "memories",
             loadComponent: () =>
               import(
-                "./features/automation/yoizenclaw/memories.component"
-              ).then((m) => m.YoizenclawMemoriesComponent),
+                "./features/automation/ai/memories.component"
+              ).then((m) => m.AgentMemoriesComponent),
+          },
+          {
+            path: "skills",
+            loadComponent: () =>
+              import(
+                "./features/automation/ai/skills/skills-page.component"
+              ).then((m) => m.SkillsPageComponent),
+          },
+          {
+            path: "system-variables",
+            loadComponent: () =>
+              import(
+                "./features/automation/ai/system-variables/system-variables-page.component"
+              ).then((m) => m.SystemVariablesPageComponent),
+          },
+          {
+            path: "knowledge-bases",
+            loadComponent: () =>
+              import(
+                "./features/automation/ai/knowledge-bases/knowledge-bases-page.component"
+              ).then((m) => m.KnowledgeBasesPageComponent),
+          },
+          {
+            path: "knowledge-bases/:id",
+            loadComponent: () =>
+              import(
+                "./features/automation/ai/knowledge-bases/knowledge-base-detail.component"
+              ).then((m) => m.KnowledgeBaseDetailComponent),
+          },
+          {
+            path: "structured-kb",
+            loadComponent: () =>
+              import(
+                "./features/automation/ai/structured-kb/skb-list-page.component"
+              ).then((m) => m.SkbListPageComponent),
+          },
+          {
+            path: "structured-kb/:id",
+            loadComponent: () =>
+              import(
+                "./features/automation/ai/structured-kb/skb-detail.component"
+              ).then((m) => m.SkbDetailComponent),
           },
         ],
       },
@@ -255,6 +297,44 @@ export const routes: Routes = [
                   import(
                     "./features/automation/workflows/detail/workflow-settings.component"
                   ).then((m) => m.WorkflowSettingsComponent),
+              },
+            ],
+          },
+        ],
+      },
+
+      // ── Schedules ────────────────────────────────────────────────────
+      {
+        path: "schedules",
+        children: [
+          {
+            path: "",
+            loadComponent: () =>
+              import(
+                "./features/automation/schedules/schedules.component"
+              ).then((m) => m.SchedulesComponent),
+          },
+          {
+            path: ":id",
+            loadComponent: () =>
+              import(
+                "./features/automation/schedules/detail/schedule-detail.component"
+              ).then((m) => m.ScheduleDetailComponent),
+            children: [
+              { path: "", redirectTo: "overview", pathMatch: "full" },
+              {
+                path: "overview",
+                loadComponent: () =>
+                  import(
+                    "./features/automation/schedules/detail/schedule-overview.component"
+                  ).then((m) => m.ScheduleOverviewComponent),
+              },
+              {
+                path: "executions",
+                loadComponent: () =>
+                  import(
+                    "./features/automation/schedules/detail/schedule-executions.component"
+                  ).then((m) => m.ScheduleExecutionsComponent),
               },
             ],
           },

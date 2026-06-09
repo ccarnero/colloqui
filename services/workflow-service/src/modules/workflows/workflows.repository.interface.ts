@@ -6,6 +6,7 @@ export interface IWorkflowDefinitionRow {
   application: string;
   actions: unknown;
   trigger: unknown;
+  variables: unknown;
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;
@@ -18,6 +19,7 @@ export interface ICreateDefinitionParams {
   readonly application: string;
   readonly actions: unknown[];
   readonly trigger?: unknown;
+  readonly variables?: unknown;
 }
 
 export interface IUpdateDefinitionParams {
@@ -27,6 +29,7 @@ export interface IUpdateDefinitionParams {
   readonly application: string;
   readonly actions: unknown[];
   readonly trigger?: unknown;
+  readonly variables?: unknown;
 }
 
 export interface IWorkflowsRepository {

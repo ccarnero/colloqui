@@ -3,6 +3,7 @@ import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
 import { TenantService } from "../../../core/services/tenant.service";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 
 @Component({
@@ -13,21 +14,19 @@ import { StatusBadgeComponent } from "../../../shared/components/status-badge/st
     MatButtonModule,
     MatIconModule,
     StatusBadgeComponent,
+    PageHeaderComponent,
   ],
   template: `
-    <div class="ws-header">
-      <div>
-        <div class="ws-title">API Keys</div>
-        <div class="ws-subtitle">
-          Programmatic access for {{ tenant.currentTenant().name }}
-        </div>
-      </div>
-      <div class="ws-actions">
+    <app-page-header
+      title="API Keys"
+      subtitle="Programmatic access for {{ tenant.currentTenant().name }}"
+    >
+      <ng-container slot="actions">
         <button class="btn btn-primary btn-sm" type="button">
           + Create API Key
         </button>
-      </div>
-    </div>
+      </ng-container>
+    </app-page-header>
 
     <div class="section-card">
       <table mat-table [dataSource]="keys" class="full-width">

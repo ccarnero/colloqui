@@ -9,7 +9,6 @@ import {
   SHARED_CHANNEL_USAGE_MONGO_SCHEMA,
 } from "@yoizen/shared";
 
-export type { Db } from "mongodb";
 
 /**
  * Read-path connection manager for the **usage** MongoDB tier.
