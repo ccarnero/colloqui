@@ -22,7 +22,6 @@ RUN rm -rf ../../packages/observability/node_modules/@nestjs \
     ../../packages/observability/node_modules/@nestjs
 
 COPY services/agent-memory-service/src ./src
-COPY services/agent-memory-service/data ./data
 COPY services/agent-memory-service/tsconfig.json \
   services/agent-memory-service/tsconfig.build.json ./
 RUN bun run build && cp -r src/schema dist/schema
@@ -39,7 +38,6 @@ COPY --from=builder /app/packages/database /app/packages/database
 COPY --from=builder /app/services/agent-memory-service/node_modules \
   ./node_modules
 COPY --from=builder /app/services/agent-memory-service/dist ./dist
-COPY --from=builder /app/services/agent-memory-service/data ./data
 COPY --from=builder /app/services/agent-memory-service/package.json ./
 COPY --from=builder /app/services/agent-memory-service/tsconfig.json ./
 
