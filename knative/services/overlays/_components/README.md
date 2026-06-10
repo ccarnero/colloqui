@@ -1,7 +1,7 @@
 # Shared kustomize components
 
-Reusable patch bundles, composed via `components: [...]` from every
-overlay that needs them.
+Reusable patch bundles, composed via `components: [...]` from overlays
+that need them.
 
 ## Why components and not plain `patches:`?
 
@@ -11,18 +11,22 @@ solve this cleanly: each component is its own kustomization root, so
 the patches it ships are local to it, and overlays compose them via
 `components:` without violating the load restrictor.
 
-## Available components
+## Developer mode
 
-| Component | Used by | Effect |
-|---|---|---|
-| `scale-to-zero-non-prod/` | `local/{dev,qa}` + `cloud/{dev,qa}` | Knative `min-scale: 0` on every service except `api-gateway`; KEDA `minReplicaCount: 0` with base cooldown (120-180s). |
-| `scale-to-zero-staging/` | `local/staging` + `cloud/staging` | Same Knative annotations; KEDA `minReplicaCount: 0` with `cooldownPeriod: 300s` to dampen canary thrash. |
+The developer config (single-node, `dev` overlay only) does NOT use any
+scale-to-zero components. Every Knative Service and every worker
+Deployment runs at `min-scale=max-scale=1` — no scale-to-zero, no KEDA.
+
+The `scale-to-zero-non-prod/` and `scale-to-zero-staging/` directories
+remain on disk for historical reference but are not referenced by any
+active overlay. They were previously used by the now-deleted
+`qa`, `staging`, and `cloud/` overlays.
 
 ## Convention
 
 `api-gateway` is **never** patched — it stays warm in every
-environment because cold-starting the entry point kills DX (devs
-hitting save → reload) and breaks smoke tests in CI / canary.
+configuration because cold-starting the entry point kills DX and breaks
+smoke tests.
 
 ## Adding a new component
 

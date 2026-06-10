@@ -55,14 +55,21 @@ cd platform-cluster
 # Install dependencies
 bun install
 
-# Start local Temporal server (via docker-compose or OrbStack)
-./bootstrap-orbstack.sh dev
+# Bring up the full dev cluster (OrbStack — recommended on macOS)
+./bootstrap-orbstack-osx.sh
 
-# Verify services are accessible
-curl http://localhost:8080    # Temporal Web UI
-curl http://localhost:4222    # NATS
-curl http://localhost:6379    # Redis
+# Or on Minikube (run `sudo minikube tunnel -p yoizen-arch` in a separate terminal)
+./bootstrap-minikube.sh
+
+# Bootstrap writes /etc/hosts — verify services are accessible
+curl http://api-gateway.platform-services-dev.dev.local/health
 ```
+
+Access:
+- API Gateway: `http://api-gateway.platform-services-dev.dev.local`
+- Admin Console: `http://admin-console.platform-services-dev.dev.local`
+- Temporal UI: `kubectl port-forward -n support-services-dev svc/temporal-ui 8233:80`
+- Grafana: `kubectl port-forward -n support-services-dev svc/grafana 3001:3000`
 
 ---
 
@@ -103,7 +110,7 @@ CONNECTOR_RUNTIME_TASK_QUEUE = "connector-runtime"
   ↓ Executes: HTTP endpoint calls, service calls
 ```
 
-Each queue scales independently based on task depth (via KEDA).
+Each queue scales independently. In developer mode all workers run at a fixed replica count of 1.
 
 ### Connector-Driven Configuration
 

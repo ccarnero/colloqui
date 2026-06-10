@@ -2,12 +2,15 @@
 # Tiltfile — platform-cluster dev environment
 # =============================================================================
 #
-# Replaces: ./bootstrap-minikube.sh dev platform-services + ./port-forward.sh dev
+# Optional convenience layer: replaces the manual
+#   ./bootstrap-minikube.sh dev platform-services + ./port-forward.sh dev
+# workflow during active development. The bootstrap scripts are the primary
+# and authoritative way to stand up the cluster.
 #
 # Prerequisites (run once before `tilt up`):
 #   1. Minikube profile "yoizen-arch" running
-#   2. ./bootstrap-minikube.sh dev support-services
-#      (installs Knative, Kourier, KEDA, CNPG, infrastructure)
+#   2. ./bootstrap-minikube.sh support-services
+#      (installs Knative, Kourier, CNPG, infrastructure)
 #
 # Usage:
 #   tilt up                        # start dev loop (default: postgres, dev)
@@ -59,17 +62,14 @@ k8s_yaml(kustomize('knative/services/rbac'))
 
 # ---------------------------------------------------------------------------
 # Register custom resource types so Tilt recognizes them as workloads.
-# Without this, Tilt ignores Knative Services and KEDA ScaledObjects.
+# Without this, Tilt ignores Knative Services.
 # ---------------------------------------------------------------------------
 k8s_kind('Service',
          api_version='serving.knative.dev/v1',
          image_json_path='{.spec.template.spec.containers[*].image}')
-k8s_kind('ScaledObject',
-         api_version='keda.sh/v1alpha1')
 
 # ---------------------------------------------------------------------------
 # Select kustomize overlay based on storage engine.
-# Matches local_knative_overlay_path() from bootstrap-minikube.sh:
 #   mongo    -> knative/services/overlays/local/mongo-{env}
 #   postgres -> knative/services/overlays/local/postgres-{env}
 # ---------------------------------------------------------------------------
@@ -206,7 +206,6 @@ k8s_resource('agent-scheduler-service', labels=['ai'])
 k8s_resource('ai-agent-gateway', labels=['ai'])
 k8s_resource('agent-admin-service', labels=['ai'])
 k8s_resource('agent-admin-service-worker', labels=['ai'])
-k8s_resource('agent-admin-service-worker-scaler', labels=['ai'])
 
 # -----------------------------------------------------------------------
 # Admin UI (Angular frontend)
@@ -250,35 +249,27 @@ local_resource(
 #
 # Each split service shares one Docker image and branches on SERVICE_MODE:
 #   {svc}-api    — Knative Service (KPA-managed, HTTP endpoints)
-#   {svc}-worker — plain Deployment (KEDA-scaled, NATS consumers)
-#   {svc}-worker-scaler — ScaledObject (KEDA autoscaling config)
+#   {svc}-worker — plain Deployment (min-scale=max-scale=1, NATS consumers)
 #
-# NOTE: Workers and scalers are auto-discovered as separate Tilt resources.
-# We keep them as independent resources with matching labels rather than
-# trying to group them via objects= (Tilt cannot re-assign objects that
-# have already been auto-assembled).
+# Developer mode: KEDA ScaledObjects no longer exist — all worker
+# Deployments run at a fixed replica count of 1 (min-scale=max-scale=1).
+# The `k8s_kind('ScaledObject', ...)` registration and all
+# `*-worker-scaler` / `*-scaler` k8s_resource lines have been removed.
 # ---------------------------------------------------------------------------
 
 # Channel — connector-admin, channel-service, connector-runtime
 k8s_resource('connector-admin-api', new_name='connector-admin', labels=['channel'])
 k8s_resource('connector-admin-worker', labels=['channel'])
-k8s_resource('connector-admin-worker-scaler', labels=['channel'])
 k8s_resource('channel-service-api', new_name='channel-service', labels=['channel'])
 k8s_resource('channel-service-worker', labels=['channel'])
-k8s_resource('channel-service-worker-scaler', labels=['channel'])
 k8s_resource('connector-runtime', labels=['channel'])
-k8s_resource('connector-runtime-scaler', labels=['channel'])
 
 # Workflow — workflow-service, audit-service, usage-aggregator, workflow-worker
 k8s_resource('workflow-service-api', new_name='workflow-service', labels=['workflow'])
 k8s_resource('workflow-service-worker', labels=['workflow'])
-k8s_resource('workflow-service-worker-scaler', labels=['workflow'])
 k8s_resource('audit-service-api', new_name='audit-service', labels=['workflow'])
 k8s_resource('audit-service-worker', labels=['workflow'])
-k8s_resource('audit-service-worker-scaler', labels=['workflow'])
 k8s_resource('usage-aggregator-api', new_name='usage-aggregator', labels=['workflow'])
 k8s_resource('usage-aggregator-worker', labels=['workflow'])
-k8s_resource('usage-aggregator-worker-scaler', labels=['workflow'])
 k8s_resource('workflow-worker', labels=['workflow'])
-k8s_resource('workflow-worker-scaler', labels=['workflow'])
 

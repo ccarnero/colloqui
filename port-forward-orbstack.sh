@@ -23,7 +23,7 @@ SUPPORT_FORWARDS=(
 FORWARD_PIDS=()
 FORWARD_LOGS=()
 IS_ORBSTACK="false"
-SSLIP_DOMAIN=""
+DEV_DOMAIN="${DEV_DOMAIN:-${MINIKUBE_DOMAIN:-dev.local}}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -97,13 +97,11 @@ print_forward_error() {
 detect_context() {
   if kubectl config current-context 2>/dev/null | grep -q "^orbstack$"; then
     IS_ORBSTACK="true"
-    SSLIP_DOMAIN="127.0.0.1.sslip.io"
     log "Detected OrbStack cluster context"
     return
   fi
 
   if command -v minikube &>/dev/null && minikube status -p "$MINIKUBE_PROFILE" &>/dev/null; then
-    SSLIP_DOMAIN="$(minikube ip -p "$MINIKUBE_PROFILE").sslip.io"
     log "Detected Minikube profile '${MINIKUBE_PROFILE}'"
     kubectl config use-context "$MINIKUBE_PROFILE" &>/dev/null
     return
@@ -237,7 +235,7 @@ main() {
   for entry in "${SERVICES[@]}"; do
     svc="${entry%%:*}"
     local_port="${entry##*:}"
-    local host_hdr="${svc}.${NAMESPACE}.${SSLIP_DOMAIN}"
+    local host_hdr="${svc}.${NAMESPACE}.${DEV_DOMAIN}"
     echo "  ${svc}:"
     echo "    localhost : http://localhost:${local_port}"
     echo "    Host hdr  : ${host_hdr}"
@@ -264,11 +262,11 @@ main() {
   echo "  Direct ingress (no port-forward):"
   for entry in "${SERVICES[@]}"; do
     svc="${entry%%:*}"
-    echo "    http://${svc}.${NAMESPACE}.${SSLIP_DOMAIN}"
+    echo "    http://${svc}.${NAMESPACE}.${DEV_DOMAIN}"
   done
   echo ""
   echo "  curl example:"
-  echo "    curl -H 'Host: api-gateway.${NAMESPACE}.${SSLIP_DOMAIN}' http://localhost:8080/health"
+  echo "    curl -H 'Host: api-gateway.${NAMESPACE}.${DEV_DOMAIN}' http://localhost:8080/health"
   echo ""
   log "Press Ctrl+C to stop all port-forwards."
   echo ""

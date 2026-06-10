@@ -23,33 +23,9 @@ err()  { echo -e "${RED}[ERR]${NC}   $*" >&2; }
 step() { echo -e "${CYAN}[STEP]${NC}  $*"; }
 bold() { echo -e "${BOLD}$*${NC}"; }
 
-# ── All application services (infrastructure excluded) ────────────────────────
-# Order matters for rollout: foundations first, then dependents.
-ORDERED_SERVICES=(
-  # Core platform
-  auth-service
-  tenant-service
-  cache-service
-  # Data & integrations
-  connector-admin
-  registry-service
-  # Event processing
-  audit-service
-  usage-aggregator-service
-  # Business logic
-  channel-service
-  workflow-service
-  connector-runtime
-  # API surface
-  api-gateway
-  proxy-service
-  # AI
-  agent-memory-service
-  agent-admin-service
-  ai-agent-gateway
-  # Frontends (built last — heaviest build)
-  admin-console
-)
+# ── Service lists sourced from single source of truth ────────────────────────
+source "${SCRIPT_DIR}/services.conf"
+ORDERED_SERVICES=($YZ_SERVICES)
 
 usage() {
   cat <<EOF

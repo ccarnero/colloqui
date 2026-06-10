@@ -1,17 +1,26 @@
 # Infrastructure and Deployment
 
-This document explains how infrastructure services support the platform and how workloads are deployed and scaled across environments.
+> **Developer mode:** This document describes the current single-node developer
+> configuration. Multi-environment (qa/staging/production), cloud overlays, KEDA
+> autoscaling, Temporal 4-role HA, and Redis cluster mode were removed from the
+> active configuration. See the notes below for what changed and what was cut.
+
+This document explains how infrastructure services support the platform and how workloads are deployed and scaled.
 
 ## Support Services
 
-Support services are shared per environment (`support-services-{env}`) and back all platform workloads.
+Support services are shared in `support-services-dev` and back all platform workloads.
 
 | Service | Primary role | Platform usage |
 |---|---|---|
 | NATS JetStream | Durable event backbone | Internal async messaging on `INGRESS-<tenant>` and DLQ streams |
 | Redis | Shared low-latency state/cache | L2 cache, execution status store, public-routes sync cache |
-| PostgreSQL | Persistent relational storage | Shared platform DB + tenant-isolated DBs |
+| PostgreSQL | Persistent relational storage | Shared platform DB + tenant-isolated DBs (via CloudNativePG) |
 | Temporal | Durable orchestration engine | Workflow execution and activity queue dispatch |
+
+### Redis
+
+Developer mode runs a **standalone** Redis StatefulSet (`REDIS_CLUSTER_MODE=false`). The previous Redis Cluster (3-node) was collapsed to a single node for simplicity.
 
 ### Redis Roles (explicit)
 
@@ -24,59 +33,52 @@ Redis serves three distinct roles across the platform:
 3. **Auth/gateway route synchronization cache**
    - Stores dynamic public route data consumed by gateway auth checks.
 
+### Temporal
+
+Developer mode runs a **single `temporalio/auto-setup` Deployment** named `temporal` (labels: `app.kubernetes.io/name=temporal`, `temporal.io/role=frontend`). The previous 4-role HA setup (separate `temporal-frontend`, `temporal-history`, `temporal-matching`, `temporal-worker` Deployments) was collapsed to this single pod. The `temporal` Service still serves `:7233`.
+
 ## Deployment Models
 
 | Model | Used by | Why |
 |---|---|---|
 | Knative Service | HTTP-facing APIs (`api-gateway`, `auth-service`, `registry-service`, etc.) | Request-driven autoscaling and revision support |
-| Plain Deployment + KEDA | Queue/worker workloads (`connector-runtime`, workflow workers, consumer workers) | Pull-based scaling from backlog metrics |
+| Plain Deployment (fixed replicas) | Queue/worker workloads (`connector-runtime`, workflow workers, consumer workers) | All workers run at min-scale=max-scale=1 in developer mode |
 | Per-tenant Helm release | `agent-ai-service` | Tenant-level runtime/data isolation and independent lifecycle |
+
+> **KEDA removed:** KEDA ScaledObjects were deleted from the base manifests.
+> All worker Deployments use fixed `replicas: 1`. Scale-to-zero components
+> (`_components/scale-to-zero-*/`) are not used by the active `dev` overlay.
 
 ## Kustomize Structure
 
 The platform uses Kustomize for manifests and environment overlays.
 
 - Infra base: `infrastructure/base/`
-- Infra overlays: `infrastructure/overlays/local/`, `infrastructure/overlays/orbstack/`
+- Infra overlays: `infrastructure/overlays/local/dev`, `infrastructure/overlays/orbstack/dev`
 - Service base: `knative/services/base/`
-- Service overlays: `knative/services/overlays/local/`, `knative/services/overlays/cloud/`
+- Service overlays: `knative/services/overlays/local/dev` (postgres or mongo variant)
 
 ```mermaid
 flowchart TD
-    infraBase[infrastructure/base] --> infraLocal[infrastructure/overlays/local/<env>]
-    infraBase --> infraOrb[infrastructure/overlays/orbstack/<env>]
+    infraBase[infrastructure/base] --> infraLocal[infrastructure/overlays/local/dev]
+    infraBase --> infraOrb[infrastructure/overlays/orbstack/dev]
 
-    svcBase[knative/services/base] --> svcLocal[knative/services/overlays/local/<env>]
-    svcBase --> svcCloud[knative/services/overlays/cloud/<env>]
-
-    comp[knative/services/overlays/_components] --> svcLocal
-    comp --> svcCloud
+    svcBase[knative/services/base] --> svcLocal[knative/services/overlays/local/dev]
 ```
 
-## KEDA Scaling (connector-runtime)
-
-`connector-runtime` is scaled by the KEDA Temporal scaler using activity queue backlog:
-
-- Target queue: `connector-runtime` (`CONNECTOR_RUNTIME_TASK_QUEUE`)
-- Queue type: `activity`
-- `minReplicaCount: 1`
-- `maxReplicaCount: 20`
-- `targetQueueSize: 10`
-- `activationTargetQueueSize: 0`
-
-This keeps activity execution latency stable during bursts while avoiding Knative-style request autoscaling for pull-based workers.
+> Note: `knative/services/overlays/cloud/` and multi-env overlays (qa/staging/production)
+> were deleted. The `_components/` directory retains the scale-to-zero component files
+> for reference but they are not included by any active overlay.
 
 ## Add a New Service (Checklist)
 
 - Add base manifest in `knative/services/base/` (Knative Service or Deployment).
-- Add image/env patches in target overlay (`knative/services/overlays/.../<env>`).
-- Add KEDA ScaledObject if workload is queue/stream consumer.
+- Add image/env patches in `knative/services/overlays/local/dev/`.
 - Add health/proxy wiring in gateway if externally accessible through platform API.
-- Update docs (`DOCS/01-ARCHITECTURE.md`, `SERVICES.md`) with role and dependencies.
+- Update docs (`DOCS/01-ARCHITECTURE.md`) with role and dependencies.
 
 ## References
 
-- `DOCS/14-DEPLOYMENT-ARCHITECTURE.md`
-- `knative/services/base/scaledobjects/connector-runtime.yaml`
+- `DOCS/14-DEPLOYMENT-ARCHITECTURE.md` — deep Kustomize structure reference (partially stale; see note at top)
 - `infrastructure/base/`
 - `infrastructure/overlays/`

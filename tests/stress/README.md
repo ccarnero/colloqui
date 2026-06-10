@@ -44,7 +44,7 @@ tests/stress/
 ├── scripts/
 │   ├── provision.sh           idempotent tenant/service/channel/workflow setup
 │   ├── provision-code-only.sh same fixtures, code-only workflow variant
-│   ├── resolve-stress-target.sh  Kourier / sslip.io URL for k6
+│   ├── resolve-stress-target.sh  Kourier / dev.local URL for k6
 │   ├── reconcile-temporal-mongo-executions.sh  fix stale RUNNING rows
 │   └── run.sh                 k6 + reconcile orchestrator
 ├── reports/                   k6 NDJSON, sink JSONL and reconcile output
@@ -85,7 +85,7 @@ Resources it creates / reuses (defaults — overridable via env):
 | Registry service | `echo-service` (`ealen/echo-server:latest`, port 3000) | — |
 | Channel account | `tgbot` (Telegram) | — |
 | Workflow | `Stress Workflow` (`branch` → `extractStressMeta` → `notifyStressSink`) | `STRESS_SINK_URL`, `WORKFLOW_FORCE_REPROVISION` |
-| Gateway URL | auto-discovered via Kourier LB or `minikube ip` | `API_GATEWAY_URL`, `MINIKUBE_PROFILE`, `INGRESS_NS`, `INGRESS_SVC` |
+| Gateway URL | `http://api-gateway.platform-services-dev.dev.local` (stable hostname; bootstrap writes `/etc/hosts`) — override via `API_GATEWAY_URL` or `DEV_DOMAIN` | `API_GATEWAY_URL`, `DEV_DOMAIN`, `MINIKUBE_PROFILE`, `INGRESS_NS`, `INGRESS_SVC` |
 
 The workflow definition wires the sink notification automatically:
 
@@ -233,7 +233,7 @@ STRESS_MEDIUM_RATE=200 STRESS_MEDIUM_DURATION=15m \
 | `--use-kourier` | `run.sh` flag: `auto` (default), `true`, or `false`. |
 | `KOURIER_HOST` / `KOURIER_PORT` | Legacy port-forward target when `--use-kourier false`. |
 | `STRESS_NAMESPACE` / `SMOKE_TEST_NAMESPACE` | k8s namespace (default `platform-services-dev`). |
-| `MINIKUBE_DOMAIN` | DNS suffix when no explicit target is set. |
+| `DEV_DOMAIN` | DNS suffix (default `dev.local`). `MINIKUBE_DOMAIN` is accepted as a legacy fallback. |
 | `E2E_TENANT` | Tenant slug for `x-yoizen-tenant` header (default `acme`). |
 | `STRESS_SINK_URL` | Sink endpoint the scenario / api-gateway should hit. |
 | `STRESS_SINK_LOCAL=true` | Spawn the Bun sink locally during the run. |

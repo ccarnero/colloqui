@@ -5,6 +5,3 @@ resources:
   - configmap.yaml
   - statefulset.yaml
   - service.yaml
-  - headless-service.yaml
-  - cluster-init-job.yaml
-  - pdb.yaml

@@ -671,10 +671,10 @@ graph TD
 │  Minikube Cluster (6 CPU, 16GB RAM, Docker driver)                    │
 │                                                                       │
 │  ┌─── knative-serving ─────────────────────────────────────────────┐  │
-│  │  Kourier Ingress  ·  KPA Autoscaler  ·  sslip.io DNS           │  │
+│  │  Kourier Ingress  ·  dev.local DNS  ·  pinned 1 replica        │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │                                                                       │
-│  ┌─── Per Environment (x4: dev, qa, staging, production) ──────────┐  │
+│  ┌─── Developer mode (single env: dev) ────────────────────────────┐  │
 │  │                                                                 │  │
 │  │  ┌─ platform-services-{env} (Knative Services) ──────────────┐  │  │
 │  │  │  api-gateway · auth-service · audit-service                │  │  │
@@ -715,7 +715,7 @@ graph TD
 | **Orchestration** | Kubernetes (Minikube) |
 | **Serverless** | Knative Serving 1.17 |
 | **Ingress** | Kourier 1.17 |
-| **DNS** | sslip.io (wildcard) |
+| **DNS** | dev.local (static, resolved via a managed /etc/hosts block) |
 | **Containers** | Docker multi-stage (oven/bun:1.3-alpine, debian for Temporal) |
 | **IaC** | Kustomize (base + overlays) |
 | **Validation** | class-validator (Gateway, Auth, Tenant, Registry, Connector Admin), ajv (workflow payload schemas) |

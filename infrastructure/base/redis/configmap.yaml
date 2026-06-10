@@ -11,25 +11,9 @@ data:
     port 6379
     protected-mode no
 
-    # Cluster mode: 3 masters + 3 replicas. nodes.conf is persisted to
-    # /data so node identity survives restarts. cluster-config-file is
-    # auto-managed by redis-server, NOT a user-editable file.
-    cluster-enabled yes
-    cluster-config-file /data/nodes.conf
-    cluster-node-timeout 5000
-    cluster-require-full-coverage no
-    cluster-allow-reads-when-down no
-    cluster-replica-validity-factor 10
-
-    # Discovery via stable DNS hostnames. Without this, redis writes pod
-    # IPs into /data/nodes.conf and into CLUSTER SLOTS responses; after a
-    # cluster restart pod IPs rotate and the cluster cannot reform
-    # (cluster_state:fail with most slots in pfail). With hostname mode,
-    # nodes.conf records `hostname=<pod>.redis-headless.<ns>.svc.cluster.local`
-    # and clients/peers re-resolve via kube-dns on every reconnect.
-    # Per-pod `cluster-announce-hostname` is injected as a CLI override in
-    # the StatefulSet (varies per pod via the downward API).
-    cluster-preferred-endpoint-type hostname
+    # Standalone mode for single-node dev. Cluster mode dropped:
+    # no cluster-enabled, no nodes.conf, no cluster-bus port.
+    cluster-enabled no
 
     dir /data
 
@@ -37,12 +21,8 @@ data:
     save ""
     appendonly no
 
-    # Memory management
-    # Sits below the per-pod memory limit (512Mi after the 2026-05
-    # bump). ~128Mi headroom for Redis process overhead, client output
-    # buffers, replication backlog, and slab fragmentation so the
-    # kernel never OOM-kills the pod before `allkeys-lru` finishes
-    # evicting. Do NOT raise this to match the pod limit again.
+    # Memory management.
+    # Headroom for process overhead, client buffers, slab fragmentation.
     maxmemory 384mb
     maxmemory-policy allkeys-lru
 

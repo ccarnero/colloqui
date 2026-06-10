@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ALL_ENVIRONMENTS=(dev qa staging production)
 ALL_GROUPS=(support-services platform-services)
-ENVIRONMENTS=()
+ENVIRONMENTS=(dev)
 SERVICE_GROUP=""
 STORAGE_ENGINE="${STORAGE_ENGINE:-postgres}"
 KNATIVE_VERSION="v1.17.0"
 KOURIER_VERSION="v1.17.0"
-KEDA_VERSION="2.18.3"
-KEDA_NAMESPACE="keda"
 CNPG_CHART_VERSION="0.27.1"
 CNPG_NAMESPACE="cnpg-system"
 METRICS_SERVER_VERSION="v0.7.2"
@@ -25,13 +22,10 @@ err()  { echo -e "${RED}[ERR]${NC}   $*" >&2; }
 
 usage() {
   cat <<EOF
-Usage: $0 [OPTIONS] [ENV|GROUP]...
-
-Environments: ${ALL_ENVIRONMENTS[*]}
-  (defaults to all if omitted)
+Usage: $0 [OPTIONS] [GROUP]
 
 Groups: ${ALL_GROUPS[*]}
-  (defaults to both if omitted)
+  (defaults to both if omitted — always targets the dev environment)
 
 Options:
   -h, --help                      Show this help message
@@ -42,13 +36,11 @@ Environment variables:
   STORAGE_ENGINE                    Same as --storage-engine (postgres|mongo)
 
 Examples:
-  $0 --storage-engine=mongo dev support-services
+  $0                            # Full dev bring-up (support + platform)
+  $0 support-services           # Infra only (dev)
+  $0 platform-services          # Build + deploy only (dev)
+  $0 --storage-engine=mongo support-services
                                 # Mongo OLTP + usage; Temporal stays on Postgres
-  $0 support-services           # Infra only for all environments
-  $0 dev support-services       # Infra only for dev
-  $0 support-services dev       # Same as above (order does not matter)
-  $0 platform-services dev qa   # Build + deploy for dev and qa
-  $0 dev                        # Full bootstrap (both groups)
 EOF
 }
 
@@ -63,7 +55,6 @@ normalize_storage_engine() {
 }
 
 parse_args() {
-  ENVIRONMENTS=()
   SERVICE_GROUP=""
   STORAGE_ENGINE="${STORAGE_ENGINE:-postgres}"
   local positional=()
@@ -114,24 +105,11 @@ parse_args() {
       continue
     fi
 
-    local valid_env=0
-    for e in "${ALL_ENVIRONMENTS[@]}"; do
-      [[ "$arg" == "$e" ]] && valid_env=1 && break
-    done
-    if (( valid_env )); then
-      ENVIRONMENTS+=("$arg")
-    else
-      err "Invalid environment or group: $arg"
-      echo "Valid environments: ${ALL_ENVIRONMENTS[*]}"
-      echo "Valid groups: ${ALL_GROUPS[*]}"
-      exit 1
-    fi
+    err "Unknown argument: $arg"
+    echo "Valid groups: ${ALL_GROUPS[*]}"
+    exit 1
   done
   unset arg
-
-  if (( ${#ENVIRONMENTS[@]} == 0 )); then
-    ENVIRONMENTS=("${ALL_ENVIRONMENTS[@]}")
-  fi
 }
 
 is_mongo_storage_engine() {
@@ -298,9 +276,7 @@ install_knative_serving() {
     # serving-hpa ships the `autoscaler-hpa` controller that reconciles
     # PodAutoscaler objects created by Knative Services annotated with
     # `autoscaling.knative.dev/class: hpa.autoscaling.knative.dev` into
-    # native HPAs. Without it those Revisions stay stuck in Deploying,
-    # which in turn prevents KEDA from transferring HPA ownership via
-    # `scaledobject.keda.sh/transfer-hpa-ownership`.
+    # native HPAs. Without it those Revisions stay stuck in Deploying.
     log "Installing Knative Serving HPA autoscaler (${KNATIVE_VERSION})"
     retry 10 5 kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-hpa.yaml"
   fi
@@ -336,33 +312,6 @@ install_kourier() {
     --timeout=180s
 }
 
-install_keda() {
-  # KEDA is a cluster-wide dependency (CRDs + operator) shared by every
-  # environment. We install it once via the official Helm chart; running
-  # this after an existing install is a no-op thanks to the CRD guard.
-  # Chart docs: infrastructure/base/keda/README.md
-  if kubectl get crd scaledobjects.keda.sh &>/dev/null; then
-    log "KEDA CRDs already installed — skipping"
-    return
-  fi
-
-  log "Adding kedacore Helm repo"
-  helm repo add kedacore https://kedacore.github.io/charts &>/dev/null || true
-  retry 3 3 helm repo update kedacore
-
-  log "Installing KEDA ${KEDA_VERSION} into '${KEDA_NAMESPACE}' namespace"
-  # Helm runs without `--wait`: CRDs land synchronously while the operator
-  # pods come up in the background. wait_for_operators_ready() rolls up the
-  # readiness check in parallel with cnpg later in the pipeline.
-  retry 3 5 helm upgrade --install keda kedacore/keda \
-    --namespace "$KEDA_NAMESPACE" \
-    --create-namespace \
-    --version "$KEDA_VERSION" \
-    --set prometheus.metricServer.enabled=true \
-    --set prometheus.operator.enabled=true \
-    --timeout 180s
-}
-
 install_cloudnative_pg() {
   # CloudNativePG owns postgresql.cnpg.io resources used by the shared
   # Postgres clusters in infrastructure/base/postgres. Install it before
@@ -379,9 +328,8 @@ install_cloudnative_pg() {
   retry 3 3 helm repo update cnpg
 
   log "Installing CloudNativePG chart ${CNPG_CHART_VERSION} into '${CNPG_NAMESPACE}' namespace"
-  # See note in install_keda — CRDs apply synchronously, the operator pod
-  # readiness wait is folded into wait_for_operators_ready() so it runs in
-  # parallel with KEDA instead of stacking 180s + 180s.
+  # CRDs apply synchronously; operator pod readiness is handled by
+  # wait_for_operators_ready() after this install returns.
   retry 3 5 helm upgrade --install cnpg cnpg/cloudnative-pg \
     --namespace "$CNPG_NAMESPACE" \
     --create-namespace \
@@ -389,45 +337,59 @@ install_cloudnative_pg() {
     --timeout 180s
 }
 
-# Folds the readiness checks for KEDA + CNPG operators into a single
-# parallel wait. Both helm installs apply CRDs synchronously, so by the
-# time we reach apply_infrastructure() the cluster already accepts the
-# resources — we just need the operators reconciling them. Waiting in
-# parallel saves ~180s vs the previous serial 2 x `kubectl wait`.
 wait_for_operators_ready() {
-  log "Waiting for operators (KEDA + CNPG) in parallel..."
-  local pids=()
-
-  kubectl wait deployment --all \
-    --namespace "$KEDA_NAMESPACE" \
-    --for=condition=Available \
-    --timeout=180s &
-  pids+=($!)
-
+  log "Waiting for CloudNativePG operator..."
   kubectl wait deployment --all \
     --namespace "$CNPG_NAMESPACE" \
     --for=condition=Available \
-    --timeout=180s &
-  pids+=($!)
-
-  local exit_code=0
-  for pid in "${pids[@]}"; do
-    if ! wait "$pid"; then
-      exit_code=1
-    fi
-  done
-  if (( exit_code != 0 )); then
-    err "One or more operator deployments did not become Available within 180s."
-    return 1
-  fi
+    --timeout=180s
 }
 
 configure_dns() {
-  log "Configuring DNS with sslip.io (127.0.0.1)"
+  log "Configuring Knative config-domain -> dev.local (static)"
+  local old_domain
+  old_domain="$(kubectl get configmap config-domain -n knative-serving \
+    -o go-template='{{range $k,$v := .data}}{{if ne $k "_example"}}{{$k}}{{"\n"}}{{end}}{{end}}' \
+    2>/dev/null | grep -v '^dev\.local$' | head -n1 || true)"
+
+  local patch='{"data":{"dev.local":""}}'
+  if [[ -n "$old_domain" ]]; then
+    patch="{\"data\":{\"dev.local\":\"\",\"${old_domain}\":null}}"
+    log "Removing legacy domain key: ${old_domain}"
+  fi
   retry 5 3 kubectl patch configmap/config-domain \
     --namespace knative-serving \
     --type merge \
-    --patch '{"data":{"127.0.0.1.sslip.io":""}}'
+    --patch "$patch"
+}
+
+ensure_dev_hosts() {
+  local hosts_file="/etc/hosts"
+  local begin_marker="# yoizen-dev BEGIN"
+  local end_marker="# yoizen-dev END"
+
+  local block
+  block="$(printf '%s\n127.0.0.1 api-gateway.platform-services-dev.dev.local\n127.0.0.1 admin-console.platform-services-dev.dev.local\n%s' \
+    "$begin_marker" "$end_marker")"
+
+  log "Updating /etc/hosts managed block (yoizen-dev)..."
+
+  local tmp
+  tmp="$(mktemp)"
+  if ! sudo bash -c "
+    awk '/# yoizen-dev BEGIN/{found=1} !found{print} /# yoizen-dev END/{found=0}' \"$hosts_file\" > \"$tmp\" \
+    && printf '%s\n' '$block' >> \"$tmp\" \
+    && cp \"$tmp\" \"$hosts_file\"
+    rm -f \"$tmp\"
+  " 2>/dev/null; then
+    warn "/etc/hosts update failed (sudo unavailable?). Add these lines manually:"
+    warn "  ${begin_marker}"
+    warn "  127.0.0.1 api-gateway.platform-services-dev.dev.local"
+    warn "  127.0.0.1 admin-console.platform-services-dev.dev.local"
+    warn "  ${end_marker}"
+  else
+    log "/etc/hosts block updated."
+  fi
 }
 
 configure_local_registry() {
@@ -492,11 +454,6 @@ apply_infrastructure() {
       --namespace "$ns" \
       --timeout=180s
 
-    log "Waiting for Redis Cluster init Job in ${ns}..."
-    kubectl wait --for=condition=complete job/redis-cluster-init \
-      --namespace "$ns" \
-      --timeout=180s
-
     if is_mongo_storage_engine; then
       log "Waiting for MongoDB platform StatefulSet in ${ns}..."
       kubectl rollout status statefulset/mongo-platform \
@@ -550,77 +507,27 @@ apply_infrastructure() {
       return 1
     fi
 
-    # Post-HA-migration (DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md) the
-    # schema bootstrap moved out of the `auto-setup` boot loop into a
-    # dedicated Job named `temporal-schema-setup-<version>` defined by
-    # `infrastructure/base/temporal/job-schema-setup.yaml`. Every role
-    # Deployment (frontend, history, matching, worker) has an
-    # initContainer that `kubectl wait`s on the same Job, but we wait
-    # here too so a Job failure surfaces in the bootstrap log instead
-    # of as pod-init timeouts. The legacy
-    # `ensure-temporal-visibility-schema.sh` workaround for
-    # `auto-setup` ignoring `VISIBILITY_POSTGRES_SEEDS` (§10.1) is
-    # gone — the Job targets both clusters explicitly.
-    log "Waiting for temporal schema bootstrap Job in ${ns}..."
-    kubectl wait --namespace "$ns" \
-      --for=condition=complete \
-      job/temporal-schema-setup-1-28-4 \
+    # Developer mode runs a single `temporalio/auto-setup` pod, which
+    # runs schema setup AND default-namespace registration itself on
+    # boot. So there is no separate schema Job, no multi-role rollout,
+    # and no history-shard rebalance (one pod owns all 16 shards). Just
+    # wait for the single `temporal` Deployment to become Available.
+    log "Waiting for Temporal (auto-setup) Deployment in ${ns}..."
+    kubectl rollout status deployment/temporal \
+      --namespace "$ns" \
       --timeout=300s
 
-    # Roll all 4 role Deployments in parallel. The slowest one
-    # (history — needs to claim 16 shards over SQL) gates the wall-
-    # clock; rolling sequentially would stack 4×180s.
-    log "Waiting for Temporal role Deployments in ${ns} (parallel)..."
-    local temporal_pids=()
-    local temporal_roles=(frontend history matching worker)
-    for role in "${temporal_roles[@]}"; do
-      kubectl rollout status "deployment/temporal-${role}" \
-        --namespace "$ns" \
-        --timeout=300s &
-      temporal_pids+=($!)
-    done
-
-    local temporal_exit=0
-    for idx in "${!temporal_pids[@]}"; do
-      if ! wait "${temporal_pids[$idx]}"; then
-        warn "Rollout did not converge: deployment/temporal-${temporal_roles[$idx]}"
-        temporal_exit=1
-      fi
-    done
-    if (( temporal_exit != 0 )); then
-      err "One or more Temporal role Deployments did not become Available within 300s."
-      return 1
-    fi
-
-    # Restores the 'default' Temporal namespace that `auto-setup` used
-    # to register on every boot but `temporalio/server` does not. SDK
-    # clients (workflow-worker, connector-runtime) crash on first
-    # boot otherwise with `Namespace default is not found.`. The Job
-    # waits internally for the frontend to be SERVING; we add the
-    # outer kubectl wait so failures surface in the bootstrap log
-    # instead of as later SDK errors.
+    # The namespace-bootstrap Job ensures the `default` namespace and the
+    # `TenantId` search attribute exist — SDK clients (workflow-worker,
+    # connector-runtime) crash on first boot otherwise. The Job waits
+    # internally for the frontend to be SERVING; the outer kubectl wait
+    # surfaces failures in the bootstrap log instead of as later SDK
+    # errors.
     log "Waiting for temporal namespace bootstrap Job in ${ns}..."
     kubectl wait --namespace "$ns" \
       --for=condition=complete \
       job/temporal-namespace-bootstrap-1-28-4 \
       --timeout=420s
-
-    # Force a balanced history shard ring. Temporal's ringpop only
-    # rebalances shards on host LEAVE, not on host JOIN — so the
-    # first pod to register in `cluster_membership` claims all 16
-    # shards, and the second pod stays idle until something forces
-    # a churn event. A rolling-restart of history triggers exactly
-    # that: each pod leaves once, the survivor takes all shards, and
-    # on rejoin the new pod acquires its hash-assigned half via
-    # consistent hashing (now that the survivor is the sole writer
-    # under low post-restart load, the rejoining pod wins its CAS
-    # races). Without this step the 2026-05-23 stress run saw 16/0
-    # skew and 57k workflows TimedOut — see
-    # `DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md` §5.1.
-    log "Rebalancing temporal history shards in ${ns}..."
-    kubectl rollout restart deployment/temporal-history --namespace "$ns"
-    kubectl rollout status deployment/temporal-history \
-      --namespace "$ns" --timeout=300s
 
     # Temporal UI + the observability stack (otel-collector, tempo,
     # prometheus, loki, grafana) have no inter-dependency at the
@@ -684,12 +591,8 @@ build_images() {
 
   log "Building service images (Docker > OrbStack shared daemon)"
 
-  local services=(api-gateway auth-service cache-service \
-             audit-service tenant-service \
-             registry-service connector-admin \
-             channel-service workflow-service connector-runtime \
-             proxy-service agent-admin-service ai-agent-gateway admin-console \
-             usage-aggregator-service)
+  source "${script_dir}/services.conf"
+  local services=($YZ_SERVICES)
 
   # BUILD_PARALLELISM controls how many `docker build` invocations run
   # concurrently. Default of 2 is the sweet spot on a typical dev box:
@@ -791,7 +694,7 @@ build_images() {
 verify_cluster() {
   if ! kubectl cluster-info &>/dev/null; then
     err "Kubernetes cluster is not reachable."
-    err "Run './bootstrap-orbstack.sh <env> support-services' first."
+    err "Run './bootstrap-orbstack.sh support-services' first."
     exit 1
   fi
   log "Cluster is reachable (context: orbstack)"
@@ -800,16 +703,10 @@ verify_cluster() {
 verify_support_services() {
   local core_deployments=(otel-collector tempo prometheus loki grafana)
 
-  if ! kubectl get crd scaledobjects.keda.sh &>/dev/null; then
-    err "KEDA CRDs not found in cluster."
-    err "The platform services require KEDA — run './bootstrap-orbstack.sh <env> support-services' first."
-    exit 1
-  fi
-
   if ! kubectl get crd clusters.postgresql.cnpg.io &>/dev/null \
     || ! kubectl get crd poolers.postgresql.cnpg.io &>/dev/null; then
     err "CloudNativePG CRDs not found in cluster."
-    err "Run './bootstrap-orbstack.sh <env> support-services' before platform-services."
+    err "Run './bootstrap-orbstack.sh support-services' before platform-services."
     exit 1
   fi
 
@@ -852,13 +749,9 @@ verify_support_services() {
       fi
     done
 
-    # Post-HA-migration: 4 role Deployments replace the single
-    # `temporal` Deployment. Check all 4 + the UI.
+    # Developer mode: a single `temporal` (auto-setup) Deployment + the UI.
     local temporal_deploys=(
-      temporal-frontend
-      temporal-history
-      temporal-matching
-      temporal-worker
+      temporal
       temporal-ui
     )
     for dep in "${temporal_deploys[@]}"; do
@@ -880,14 +773,13 @@ run_support_services() {
   install_metrics_server
   install_knative_serving
   install_kourier
-  install_keda
   install_cloudnative_pg
-  # Both helm installs above run without `--wait`. Their CRDs are
-  # available synchronously; the operator pods reconcile in the
-  # background. We fold the readiness wait here, in parallel for
-  # both operators, before any infra manifest references their CRs.
+  # Helm install above runs without `--wait`. CRDs land synchronously;
+  # the operator pod reconciles in the background. We wait here before
+  # any infra manifest references its CRs.
   wait_for_operators_ready
   configure_dns
+  ensure_dev_hosts
   configure_local_registry
   apply_namespaces
   apply_infrastructure
@@ -916,8 +808,8 @@ print_summary() {
   log "=============================="
   echo ""
   echo "  Cluster:       OrbStack Kubernetes"
-  echo "  DNS domain:    127.0.0.1.sslip.io"
-  echo "  Environments:  ${ENVIRONMENTS[*]}"
+  echo "  DNS domain:    dev.local"
+  echo "  Environment:   dev"
   echo "  Group:         ${group_label}"
   echo "  Storage engine: ${STORAGE_ENGINE}"
   if is_mongo_storage_engine; then
@@ -948,7 +840,7 @@ print_summary() {
     echo "    kubectl get pods --all-namespaces -l app.kubernetes.io/part-of=yoizen-arch"
     echo "    kubectl get storageclass"
     echo ""
-    echo "  API Gateway (dev): http://api-gateway.platform-services-dev.127.0.0.1.sslip.io"
+    echo "  API Gateway (dev): http://api-gateway.platform-services-dev.dev.local"
     echo ""
     echo "  Port-forwarding (run in a separate terminal):"
     if is_mongo_storage_engine; then
@@ -968,7 +860,7 @@ main() {
   parse_args "$@"
 
   log "Event-Driven Architecture Bootstrap — OrbStack"
-  log "Environments: ${ENVIRONMENTS[*]}"
+  log "Environment:  dev"
   log "Group:        ${SERVICE_GROUP:-all}"
   log "Storage:      ${STORAGE_ENGINE}"
   print_storage_engine_banner

@@ -72,9 +72,13 @@ describe("SKBIngestionWorkerService", () => {
     process.env.SERVICE_MODE = "worker";
 
     mockJsm = {
-      consumers: vi.fn(),
-      streams: vi.fn(),
-      getStreamInfo: vi.fn(),
+      consumers: {
+        add: vi.fn(),
+      },
+      streams: {
+        info: vi.fn().mockResolvedValue({}),
+        add: vi.fn(),
+      },
     };
 
     mockJs = {
@@ -161,7 +165,8 @@ describe("SKBIngestionWorkerService", () => {
 
       await service.onModuleInit();
 
-      expect(mockJsm.consumers).toHaveBeenCalledWith(
+      expect(mockJsm.consumers.add).toHaveBeenCalledWith(
+        "SKB-INGESTION",
         expect.objectContaining({
           filter_subject: expectedFilterSubject,
         }),
@@ -171,14 +176,33 @@ describe("SKBIngestionWorkerService", () => {
     it("should skip init when SERVICE_MODE is not 'worker'", async () => {
       process.env.SERVICE_MODE = "api";
       await service.onModuleInit();
-      expect(mockJsm.consumers).not.toHaveBeenCalled();
+      expect(mockJsm.consumers.add).not.toHaveBeenCalled();
     });
 
     it("should use a durable consumer named 'skb-ingestion-worker'", async () => {
       await service.onModuleInit();
-      expect(mockJsm.consumers).toHaveBeenCalledWith(
+      expect(mockJsm.consumers.add).toHaveBeenCalledWith(
+        "SKB-INGESTION",
         expect.objectContaining({
           durable_name: "skb-ingestion-worker",
+        }),
+      );
+    });
+
+    it("should ensure the SKB-INGESTION stream exists", async () => {
+      await service.onModuleInit();
+      expect(mockJsm.streams.info).toHaveBeenCalledWith("SKB-INGESTION");
+    });
+
+    it("should create the stream when it does not exist", async () => {
+      mockJsm.streams.info.mockRejectedValue(new Error("stream not found"));
+
+      await service.onModuleInit();
+
+      expect(mockJsm.streams.add).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "SKB-INGESTION",
+          subjects: expect.arrayContaining([expect.any(String)]),
         }),
       );
     });

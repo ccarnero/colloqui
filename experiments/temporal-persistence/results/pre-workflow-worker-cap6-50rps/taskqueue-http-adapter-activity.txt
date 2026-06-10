@@ -1,0 +1,5 @@
+Task Queue Statistics:
+    BuildID    TaskQueueType  ApproximateBacklogCount  ApproximateBacklogAge  BacklogIncreaseRate  TasksAddRate  TasksDispatchRate
+  UNVERSIONED  activity                             0  0s                                       0             0                  0
+Pollers:
+  BuildID  TaskQueueType  Identity  LastAccessTime  RatePerSecond

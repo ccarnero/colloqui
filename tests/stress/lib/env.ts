@@ -9,7 +9,7 @@ const DEFAULTS = Object.freeze({
     API_PREFIX: "/api",
     KOURIER_HOST: "localhost",
     KOURIER_PORT: "8080",
-    MINIKUBE_DOMAIN: "10.107.168.96.sslip.io",
+    DEV_DOMAIN: "dev.local",
     NAMESPACE: "platform-services-dev",
     SINK_URL: "http://stress-sink.platform-services-dev.svc.cluster.local/sink",
     TARGET: "http://localhost:8080",
@@ -63,7 +63,7 @@ const DEFAULTS = Object.freeze({
       env.API_GATEWAY_URL ?? "",
       env.SMOKE_TEST_NAMESPACE ?? "",
       env.STRESS_NAMESPACE ?? "",
-      env.MINIKUBE_DOMAIN ?? "",
+      env.DEV_DOMAIN ?? env.MINIKUBE_DOMAIN ?? "",
       env.KOURIER_HOST ?? "",
       env.KOURIER_PORT ?? "",
       env.E2E_TENANT ?? "",
@@ -80,7 +80,8 @@ const DEFAULTS = Object.freeze({
   function computeRuntimeConfig(env: EnvBag): RuntimeConfig {
     const namespace =
       env.STRESS_NAMESPACE ?? env.SMOKE_TEST_NAMESPACE ?? DEFAULTS.NAMESPACE;
-    const minikubeDomain = env.MINIKUBE_DOMAIN ?? DEFAULTS.MINIKUBE_DOMAIN;
+    // DEV_DOMAIN is canonical; MINIKUBE_DOMAIN accepted as backward-compat fallback.
+    const minikubeDomain = env.DEV_DOMAIN ?? env.MINIKUBE_DOMAIN ?? DEFAULTS.DEV_DOMAIN;
     const apiPrefix = env.STRESS_API_PREFIX ?? DEFAULTS.API_PREFIX;
     const tenant = env.E2E_TENANT ?? DEFAULTS.TENANT;
     const sinkUrl = env.STRESS_SINK_URL ?? DEFAULTS.SINK_URL;

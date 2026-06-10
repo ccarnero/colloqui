@@ -1,20 +1,28 @@
-# Per-role Services exposing the Prometheus exporter on :9090. Not
-# required by the Temporal server itself — its discovery is done via
-# pod labels in `infrastructure/base/observability/prometheus/configmap.yaml`
-# `temporal-server` job. These Services exist purely so an operator
-# can curl a specific role's metrics endpoint without grepping for
-# pod IPs:
+# Single metrics Service for the temporal auto-setup pod.
+#
+# Post-HA collapse: the 4-role HA deployment (frontend, history, matching,
+# worker as separate Deployments) was replaced with a single
+# `temporalio/auto-setup` Deployment named `temporal` that carries both
+# labels:
+#   app.kubernetes.io/name=temporal
+#   temporal.io/role=frontend
+#
+# The history/matching/worker metrics Services that previously existed here
+# were deleted — those workloads no longer exist.
+#
+# This headless Service lets an operator curl the metrics endpoint directly:
 #
 #   kubectl run -it --rm tmp --image=curlimages/curl:8.10.1 \
-#     --restart=Never -- curl temporal-history-metrics:9090/metrics
+#     --restart=Never -- curl temporal-metrics:9090/metrics
 #
-# Each is headless (`clusterIP: None`) so resolution returns every
-# pod's IP, not a load-balanced single endpoint — round-robin between
-# 2 history pods would lose half the metrics on a single scrape.
+# Prometheus scrapes via pod-level kubernetes_sd (see
+# infrastructure/base/observability/prometheus/configmap.yaml job
+# `temporal-server`) rather than through this Service, so removing the
+# per-role Services does not affect metric collection.
 apiVersion: v1
 kind: Service
 metadata:
-  name: temporal-frontend-metrics
+  name: temporal-metrics
   labels:
     app.kubernetes.io/name: temporal
     app.kubernetes.io/component: workflow-engine
@@ -26,69 +34,6 @@ spec:
   selector:
     app.kubernetes.io/name: temporal
     temporal.io/role: frontend
-  ports:
-    - name: metrics
-      port: 9090
-      targetPort: 9090
-      protocol: TCP
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: temporal-history-metrics
-  labels:
-    app.kubernetes.io/name: temporal
-    app.kubernetes.io/component: workflow-engine
-    temporal.io/role: history
-spec:
-  type: ClusterIP
-  clusterIP: None
-  publishNotReadyAddresses: true
-  selector:
-    app.kubernetes.io/name: temporal
-    temporal.io/role: history
-  ports:
-    - name: metrics
-      port: 9090
-      targetPort: 9090
-      protocol: TCP
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: temporal-matching-metrics
-  labels:
-    app.kubernetes.io/name: temporal
-    app.kubernetes.io/component: workflow-engine
-    temporal.io/role: matching
-spec:
-  type: ClusterIP
-  clusterIP: None
-  publishNotReadyAddresses: true
-  selector:
-    app.kubernetes.io/name: temporal
-    temporal.io/role: matching
-  ports:
-    - name: metrics
-      port: 9090
-      targetPort: 9090
-      protocol: TCP
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: temporal-worker-metrics
-  labels:
-    app.kubernetes.io/name: temporal
-    app.kubernetes.io/component: workflow-engine
-    temporal.io/role: worker
-spec:
-  type: ClusterIP
-  clusterIP: None
-  publishNotReadyAddresses: true
-  selector:
-    app.kubernetes.io/name: temporal
-    temporal.io/role: worker
   ports:
     - name: metrics
       port: 9090

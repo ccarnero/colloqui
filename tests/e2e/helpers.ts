@@ -60,7 +60,9 @@ export function isPlatformDbHealthy(body: Record<string, unknown>): boolean {
 const NAMESPACE = process.env.SMOKE_TEST_NAMESPACE ?? 'platform-services-dev';
 const KOURIER_HOST = process.env.KOURIER_HOST ?? 'localhost';
 const KOURIER_PORT = process.env.KOURIER_PORT ?? '8080';
-const MINIKUBE_DOMAIN = process.env.MINIKUBE_DOMAIN ?? '192.168.49.2.sslip.io';
+// DEV_DOMAIN is the canonical env var; MINIKUBE_DOMAIN accepted as a
+// backward-compat fallback so existing CI scripts keep working without changes.
+const DEV_DOMAIN = process.env.DEV_DOMAIN ?? process.env.MINIKUBE_DOMAIN ?? 'dev.local';
 
 /**
  * Default per-request budget (ms). Sized for Knative scale-from-zero on
@@ -82,7 +84,7 @@ const RETRY_INITIAL_DELAY_MS = 250;
 const RETRY_MAX_DELAY_MS = 2_000;
 
 function knativeUrl(service: string): string {
-  return `http://${service}.${NAMESPACE}.${MINIKUBE_DOMAIN}`;
+  return `http://${service}.${NAMESPACE}.${DEV_DOMAIN}`;
 }
 
 // Phase 1.5: e2e suites continue to use the *logical* short name but

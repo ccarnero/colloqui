@@ -1,0 +1,20 @@
+Task Queue Statistics:
+    BuildID    TaskQueueType  ApproximateBacklogCount  ApproximateBacklogAge  BacklogIncreaseRate  TasksAddRate  TasksDispatchRate
+  UNVERSIONED  activity                             0  0s                          -2.9802322e-08    0.27545673         0.27545676
+Pollers:
+    BuildID    TaskQueueType                Identity                LastAccessTime  RatePerSecond
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-lm68h  now                    100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-pskwr  now                    100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-spq9x  25 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-fxcp7  32 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-c4gtr  33 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-trbw6  34 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-n7cv7  39 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-bvpws  39 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-fxw4z  40 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-nl2l4  40 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-f7gz9  40 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-l4qhq  43 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-c8j96  48 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-49dlh  49 seconds ago         100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-pkgkn  51 seconds ago         100000

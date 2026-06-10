@@ -35,7 +35,6 @@ resources:
   - agent-memory-service.yaml
   - agent-ai-service.yaml
   - agent-scheduler-service.yaml
-  # ----- Plain Deployments + KEDA Temporal scalers (Phase 1) -----
+  # ----- Plain Deployments (Temporal workers, fixed 1 replica) -----
   - workflow-worker.yaml
   - connector-runtime.yaml
-  - scaledobjects

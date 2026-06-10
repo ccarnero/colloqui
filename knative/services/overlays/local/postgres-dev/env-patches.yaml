@@ -19,7 +19,7 @@ spec:
         - name: REDIS_PORT
           value: '6379'
         - name: REDIS_CLUSTER_MODE
-          value: 'true'
+          value: 'false'
         - name: AUDIT_SERVICE_URL
           value: http://audit-service-api.platform-services-dev.svc.cluster.local
         - name: TENANT_SERVICE_URL
@@ -96,7 +96,7 @@ spec:
         - name: REDIS_PORT
           value: '6379'
         - name: REDIS_CLUSTER_MODE
-          value: 'true'
+          value: 'false'
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://otel-collector.support-services-dev.svc.cluster.local:4318
         - name: OTEL_SERVICE_NAME
@@ -225,7 +225,7 @@ spec:
         - name: REDIS_PORT
           value: '6379'
         - name: REDIS_CLUSTER_MODE
-          value: 'true'
+          value: 'false'
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://otel-collector.support-services-dev.svc.cluster.local:4318
         - name: OTEL_SERVICE_NAME
@@ -389,7 +389,7 @@ spec:
         - name: REDIS_PORT
           value: '6379'
         - name: REDIS_CLUSTER_MODE
-          value: 'true'
+          value: 'false'
         - name: PLATFORM_ENVIRONMENT
           value: dev
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -563,7 +563,7 @@ spec:
         - name: REDIS_PORT
           value: '6379'
         - name: REDIS_CLUSTER_MODE
-          value: 'true'
+          value: 'false'
         - name: POSTGRES_HOST
           value: postgres.support-services-dev.svc.cluster.local
         - name: POSTGRES_PORT
@@ -716,7 +716,7 @@ spec:
         - name: REDIS_PORT
           value: '6379'
         - name: REDIS_CLUSTER_MODE
-          value: 'true'
+          value: 'false'
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://otel-collector.support-services-dev.svc.cluster.local:4318
         - name: OTEL_SERVICE_NAME
@@ -748,7 +748,7 @@ spec:
         - name: REDIS_PORT
           value: '6379'
         - name: REDIS_CLUSTER_MODE
-          value: 'true'
+          value: 'false'
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://otel-collector.support-services-dev.svc.cluster.local:4318
         - name: OTEL_SERVICE_NAME
@@ -932,7 +932,7 @@ spec:
         - name: REDIS_PORT
           value: '6379'
         - name: REDIS_CLUSTER_MODE
-          value: 'true'
+          value: 'false'
         - name: POSTGRES_HOST
           value: postgres.support-services-dev.svc.cluster.local
         - name: POSTGRES_DB
@@ -990,7 +990,7 @@ spec:
         - name: REDIS_PORT
           value: '6379'
         - name: REDIS_CLUSTER_MODE
-          value: 'true'
+          value: 'false'
         - name: POSTGRES_HOST
           value: postgres.support-services-dev.svc.cluster.local
         - name: POSTGRES_USER

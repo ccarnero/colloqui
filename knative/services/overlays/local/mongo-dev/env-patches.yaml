@@ -19,7 +19,7 @@ spec:
             - name: REDIS_PORT
               value: "6379"
             - name: REDIS_CLUSTER_MODE
-              value: "true"
+              value: "false"
             # ----- DNS for split services (Phase 1.5): use *-api ------
             - name: AUDIT_SERVICE_URL
               value: "http://audit-service-api.platform-services-dev.svc.cluster.local"
@@ -107,7 +107,7 @@ spec:
             - name: REDIS_PORT
               value: "6379"
             - name: REDIS_CLUSTER_MODE
-              value: "true"
+              value: "false"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -260,7 +260,7 @@ spec:
             - name: REDIS_PORT
               value: "6379"
             - name: REDIS_CLUSTER_MODE
-              value: "true"
+              value: "false"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -443,7 +443,7 @@ spec:
             - name: REDIS_PORT
               value: "6379"
             - name: REDIS_CLUSTER_MODE
-              value: "true"
+              value: "false"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -794,7 +794,7 @@ spec:
             # ReplyError. `executeAgentCall` (circuit breaker +
             # YoizenClawExecutionClient cache) is the consumer here.
             - name: REDIS_CLUSTER_MODE
-              value: "true"
+              value: "false"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -837,7 +837,7 @@ spec:
             - name: REDIS_PORT
               value: "6379"
             - name: REDIS_CLUSTER_MODE
-              value: "true"
+              value: "false"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
@@ -1099,7 +1099,7 @@ spec:
             - name: REDIS_PORT
               value: "6379"
             - name: REDIS_CLUSTER_MODE
-              value: "true"
+              value: "false"
             - name: MONGO_HOST
               value: "mongo-platform.support-services-dev.svc.cluster.local"
             - name: MONGO_USAGE_HOST
@@ -1177,7 +1177,7 @@ spec:
             - name: REDIS_PORT
               value: "6379"
             - name: REDIS_CLUSTER_MODE
-              value: "true"
+              value: "false"
             - name: MONGO_DB
               value: "yoizen"
             - name: MONGO_USER

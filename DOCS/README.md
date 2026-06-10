@@ -1,6 +1,93 @@
 # Platform Cluster
 
-Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack) with Knative Serving, NATS JetStream, Redis, PostgreSQL, and Temporal. Supports multi-environment deployment (dev, qa, staging, production) with per-environment isolation, multi-tenant namespace management with dedicated PostgreSQL per tenant, JWT authentication, dynamic service routing, workflow orchestration, job scheduling, and canary deployments.
+Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack) with Knative Serving, NATS JetStream, Redis, PostgreSQL, and Temporal. Single-node developer configuration with stable `dev.local` hostnames, no KEDA autoscaling, and one-command bring-up.
+
+## Developer mode — quickstart
+
+```bash
+# OrbStack (recommended on macOS)
+./bootstrap-orbstack-osx.sh          # bring up support + platform services
+./bootstrap-orbstack-osx.sh --smoke  # same + run smoke tests at the end
+
+# Minikube
+./bootstrap-minikube.sh              # bring up (requires: sudo minikube tunnel in parallel)
+
+# Iterate: rebuild only changed service images
+./rebuild-changed.sh
+
+# Smoke test (standalone)
+ADMIN_EMAIL=admin@yoizen.test ADMIN_PASSWORD=admin bash scripts/smoke-test.sh
+```
+
+Bootstrap writes `/etc/hosts` entries — no extra DNS setup needed:
+
+```
+# Access after bootstrap:
+http://api-gateway.platform-services-dev.dev.local
+http://admin-console.platform-services-dev.dev.local
+```
+
+Optional storage engine: `STORAGE_ENGINE=mongo ./bootstrap-orbstack-osx.sh`
+
+Tilt is an optional hot-reload layer — see the `Tiltfile` header.
+
+## Create a tenant & run a workflow
+
+Once the cluster is up and the `/etc/hosts` block is in place, provision a tenant and exercise a workflow end-to-end.
+
+### Requirements
+
+- A running dev cluster (see the quickstart above). The API gateway resolves to `http://api-gateway.platform-services-dev.dev.local`.
+- `curl`, `jq`, and `kubectl` on your `PATH`. Optional: the `nats` CLI (`brew install nats-io/nats-tools/nats`) for the stream-cleanup workaround below.
+- Platform admin credentials (defaults): `admin@yoizen.io` / `yoizen-admin-change-me`.
+
+### Provision the `acme` tenant
+
+```bash
+ADMIN_EMAIL=admin@yoizen.io ADMIN_PASSWORD=yoizen-admin-change-me \
+  ./tests/stress/scripts/provision.sh
+```
+
+Defaults to `TENANT_NAME=acme`; creates the tenant plus a registry service, a Telegram channel, and a sample workflow. Override with `TENANT_NAME=<slug>` or point at a different gateway with `API_GATEWAY_URL=`.
+
+### Run a workflow in a tenant
+
+Direct-execute a `jsFunction` workflow (no channel required). Tenant-scoped calls carry **both** `Authorization: Bearer` and `x-yoizen-tenant`:
+
+```bash
+GW=http://api-gateway.platform-services-dev.dev.local
+TOKEN=$(curl -s $GW/api/auth/login -H 'content-type: application/json' \
+  -d '{"email":"admin@yoizen.io","password":"yoizen-admin-change-me"}' | jq -r .access_token)
+
+# create (tenant-scoped → needs x-yoizen-tenant)
+WID=$(curl -s -X POST $GW/api/workflows -H "authorization: Bearer $TOKEN" \
+  -H 'x-yoizen-tenant: acme' -H 'content-type: application/json' \
+  -d '{"name":"hello","application":"test","actions":[{"activity":"jsFunction","name":"greet","args":{"code":"(ctx)=>({greeting:\"hi\"})"}}]}' | jq -r .id)
+
+# execute → poll until COMPLETED
+EID=$(curl -s -X POST $GW/api/workflows/$WID/execute -H "authorization: Bearer $TOKEN" \
+  -H 'x-yoizen-tenant: acme' -H 'content-type: application/json' -d '{"request":{}}' | jq -r .executionId)
+
+curl -s $GW/api/workflows/$WID/executions/$EID \
+  -H "authorization: Bearer $TOKEN" -H 'x-yoizen-tenant: acme' | jq
+```
+
+A `"status": "COMPLETED"` confirms the whole chain: gateway → workflow-service → Temporal → workflow-worker → per-tenant Postgres.
+
+> **Tenant routes:** tenant *creation* uses `Authorization: Bearer` only (tenant routes are `@SkipTenant`); every tenant-*scoped* call (workflows, channels) needs **both** the Bearer token and `x-yoizen-tenant: <tenant>`.
+
+### Troubleshooting: `provisioning failed: subjects overlap with an existing stream`
+
+The global `SKB-INGESTION` JetStream stream (`evt.*.…`) overlaps a tenant's per-tenant ingress stream (`evt.<tenant>.>`), so the second one to be created is rejected. Delete the failed tenant and the colliding stream, then re-provision:
+
+```bash
+curl -s -X DELETE $GW/api/tenants/acme -H "authorization: Bearer $TOKEN"
+kubectl port-forward -n support-services-dev svc/nats 4222:4222 &
+nats stream rm SKB-INGESTION -f -s nats://localhost:4222
+ADMIN_EMAIL=admin@yoizen.io ADMIN_PASSWORD=yoizen-admin-change-me ./tests/stress/scripts/provision.sh
+```
+
+---
 
 ## Getting Started
 
@@ -63,10 +150,10 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 │  Kubernetes Cluster (Minikube or OrbStack)                            │
 │                                                                       │
 │  ┌─── knative-serving ─────────────────────────────────────────────┐  │
-│  │  Kourier Ingress  ·  KPA Autoscaler  ·  sslip.io DNS           │  │
+│  │  Kourier Ingress  ·  KPA Autoscaler  ·  dev.local DNS          │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │                                                                       │
-│  ┌─── Per Environment (x4: dev, qa, staging, production) ──────────┐  │
+│  ┌─── Developer mode (single env: dev) ────────────────────────────┐  │
 │  │                                                                 │  │
 │  │  ┌─ platform-services-{env} (Knative Services) ──────────────┐  │  │
 │  │  │  api-gateway · auth-service · audit-service                │  │  │
@@ -92,16 +179,13 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 
 ### Environments
 
-Each environment gets a fully isolated stack with its own infrastructure and platform services:
+**Developer mode uses only the `dev` environment.** The qa/staging/production overlays and the `cloud/` overlay tree were removed from the repository to keep the developer configuration minimal.
 
 | Environment | Support Namespace | Platform Namespace |
 |-------------|-------------------|--------------------|
 | dev | `support-services-dev` | `platform-services-dev` |
-| qa | `support-services-qa` | `platform-services-qa` |
-| staging | `support-services-staging` | `platform-services-staging` |
-| production | `support-services-production` | `platform-services-production` |
 
-You can also deploy a single environment for lighter local development:
+Manual kustomize apply (use the bootstrap scripts instead for day-to-day work):
 
 ```bash
 # Minikube

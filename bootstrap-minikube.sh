@@ -2,15 +2,13 @@
 set -euo pipefail
 
 PROFILE="yoizen-arch"
-ALL_ENVIRONMENTS=(dev qa staging production)
-ALL_GROUPS=(support-services platform-services refresh-dns)
-ENVIRONMENTS=()
+ALL_GROUPS=(support-services platform-services)
+ENVIRONMENTS=(dev)
 SERVICE_GROUP=""
 STORAGE_ENGINE="${STORAGE_ENGINE:-postgres}"
+RUN_SMOKE=false
 KNATIVE_VERSION="v1.17.0"
 KOURIER_VERSION="v1.17.0"
-KEDA_VERSION="2.18.3"
-KEDA_NAMESPACE="keda"
 CNPG_CHART_VERSION="0.27.1"
 CNPG_NAMESPACE="cnpg-system"
 # CPUs go straight through to `minikube start --cpus`. Set to the host's
@@ -68,34 +66,31 @@ resolve_minikube_memory_mb() {
 
 usage() {
   cat <<EOF
-Usage: $0 [OPTIONS] [ENV|GROUP]...
-
-Environments: ${ALL_ENVIRONMENTS[*]}
-  (defaults to all if omitted)
+Usage: $0 [OPTIONS] [GROUP]
 
 Groups: ${ALL_GROUPS[*]}
-  (defaults to both if omitted)
+  (defaults to both if omitted — always targets the dev environment)
 
 Options:
   -h, --help                      Show this help message
   --storage-engine=ENGINE         OLTP storage: postgres (default) or mongo
   --storage-engine ENGINE         Same as --storage-engine=ENGINE
+  --smoke                         Run scripts/smoke-test.sh after platform
+                                  services are ready (best-effort; failure
+                                  warns but does not abort bootstrap)
 
 Environment variables:
   STORAGE_ENGINE                    Same as --storage-engine (postgres|mongo)
-  MINIKUBE_CPUS                         Override the Minikube CPU count
-  MINIKUBE_MEMORY_MB                    Override the Minikube memory limit in MB
+  MINIKUBE_CPUS                     Override the Minikube CPU count
+  MINIKUBE_MEMORY_MB                Override the Minikube memory limit in MB
 
 Examples:
-  $0 support-services           # Infra only for all environments
-  $0 dev support-services       # Cluster init + infrastructure only
-  $0 support-services dev       # Same as above (order does not matter)
-  $0 platform-services dev qa   # Build + deploy for dev and qa
-  $0 dev                        # Full bootstrap (both groups)
-  $0 --storage-engine=mongo dev support-services
+  $0                            # Full dev bring-up (support + platform)
+  $0 --smoke                    # Full bring-up + smoke test
+  $0 support-services           # Infra only (dev)
+  $0 platform-services          # Build + deploy only (dev)
+  $0 --storage-engine=mongo support-services
                                 # Mongo OLTP + usage; Temporal stays on Postgres
-  $0 dev refresh-dns            # Re-sync config-domain with Kourier EXTERNAL-IP
-                                # (use after starting/stopping minikube tunnel)
 EOF
 }
 
@@ -110,9 +105,9 @@ normalize_storage_engine() {
 }
 
 parse_args() {
-  ENVIRONMENTS=()
   SERVICE_GROUP=""
   STORAGE_ENGINE="${STORAGE_ENGINE:-postgres}"
+  RUN_SMOKE=false
   local positional=()
 
   while (( $# > 0 )); do
@@ -122,6 +117,9 @@ parse_args() {
       -h|--help)
         usage
         exit 0
+        ;;
+      --smoke)
+        RUN_SMOKE=true
         ;;
       --storage-engine=*)
         STORAGE_ENGINE="$(normalize_storage_engine "${arg#*=}")"
@@ -161,24 +159,11 @@ parse_args() {
       continue
     fi
 
-    local valid_env=0
-    for e in "${ALL_ENVIRONMENTS[@]}"; do
-      [[ "$arg" == "$e" ]] && valid_env=1 && break
-    done
-    if (( valid_env )); then
-      ENVIRONMENTS+=("$arg")
-    else
-      err "Invalid environment or group: $arg"
-      echo "Valid environments: ${ALL_ENVIRONMENTS[*]}"
-      echo "Valid groups: ${ALL_GROUPS[*]}"
-      exit 1
-    fi
+    err "Unknown argument: $arg"
+    echo "Valid groups: ${ALL_GROUPS[*]}"
+    exit 1
   done
   unset arg
-
-  if (( ${#ENVIRONMENTS[@]} == 0 )); then
-    ENVIRONMENTS=("${ALL_ENVIRONMENTS[@]}")
-  fi
 }
 
 is_mongo_storage_engine() {
@@ -305,9 +290,7 @@ install_knative_serving() {
     # serving-hpa ships the `autoscaler-hpa` controller that reconciles
     # PodAutoscaler objects created by Knative Services annotated with
     # `autoscaling.knative.dev/class: hpa.autoscaling.knative.dev` into
-    # native HPAs. Without it those Revisions stay stuck in Deploying,
-    # which in turn prevents KEDA from transferring HPA ownership via
-    # `scaledobject.keda.sh/transfer-hpa-ownership`.
+    # native HPAs. Without it those Revisions stay stuck in Deploying.
     log "Installing Knative Serving HPA autoscaler (${KNATIVE_VERSION})"
     retry 10 5 kubectl apply -f "https://github.com/knative/serving/releases/download/knative-${KNATIVE_VERSION}/serving-hpa.yaml"
   fi
@@ -327,30 +310,6 @@ install_kourier() {
     --namespace knative-serving \
     --type merge \
     --patch '{"data":{"ingress-class":"kourier.ingress.networking.knative.dev"}}'
-}
-
-install_keda() {
-  # KEDA is a cluster-wide dependency (CRDs + operator) shared by every
-  # environment. We install it once via the official Helm chart; running
-  # this after an existing install is a no-op thanks to the CRD guard.
-  # Chart docs: infrastructure/base/keda/README.md
-  if kubectl get crd scaledobjects.keda.sh &>/dev/null; then
-    log "KEDA CRDs already installed — skipping"
-    return
-  fi
-
-  log "Adding kedacore Helm repo"
-  helm repo add kedacore https://kedacore.github.io/charts &>/dev/null || true
-  retry 3 3 helm repo update kedacore
-
-  log "Installing KEDA ${KEDA_VERSION} into '${KEDA_NAMESPACE}' namespace"
-  retry 3 5 helm upgrade --install keda kedacore/keda \
-    --namespace "$KEDA_NAMESPACE" \
-    --create-namespace \
-    --version "$KEDA_VERSION" \
-    --set prometheus.metricServer.enabled=true \
-    --set prometheus.operator.enabled=true \
-    --timeout 180s
 }
 
 install_cloudnative_pg() {
@@ -401,99 +360,52 @@ wait_for_cnpg_webhook() {
   log "CloudNativePG webhook is ready"
 }
 
-wait_for_keda_ready() {
-  log "Waiting for KEDA operator..."
-  retry 30 5 kubectl wait deployment --all \
-    --namespace "$KEDA_NAMESPACE" \
-    --for=condition=Available \
-    --timeout=120s
-}
+configure_dns() {
+  log "Configuring Knative config-domain -> dev.local (static)"
+  # Remove any legacy sslip.io key and set the stable dev.local domain.
+  local old_domain
+  old_domain="$(kubectl get configmap config-domain -n knative-serving \
+    -o go-template='{{range $k,$v := .data}}{{if ne $k "_example"}}{{$k}}{{"\n"}}{{end}}{{end}}' \
+    2>/dev/null | grep -v '^dev\.local$' | head -n1 || true)"
 
-get_kourier_external_ip() {
-  kubectl get svc kourier \
-    --namespace kourier-system \
-    -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true
-}
-
-# Returns the current sslip.io domain configured in Knative's config-domain
-# ConfigMap (i.e. the key ending in `.sslip.io`, excluding the `_example`
-# comment). Empty string if none.
-get_current_sslip_domain() {
-  kubectl get configmap config-domain -n knative-serving \
-    -o go-template='{{range $k, $v := .data}}{{if ne $k "_example"}}{{$k}}{{"\n"}}{{end}}{{end}}' \
-    2>/dev/null | grep -E '\.sslip\.io$' | head -n1
-}
-
-# Re-patches config-domain so Knative Routes advertise the given ingress IP.
-# Removes the previous sslip.io key so `config-domain` never has two
-# conflicting entries at the same time.
-patch_config_domain_to() {
-  local ingress_ip=$1
-  local previous_domain
-  previous_domain="$(get_current_sslip_domain || true)"
-
-  local patch="{\"data\":{\"${ingress_ip}.sslip.io\":\"\""
-  if [[ -n "$previous_domain" && "$previous_domain" != "${ingress_ip}.sslip.io" ]]; then
-    patch+=",\"${previous_domain}\":null"
+  local patch='{"data":{"dev.local":""}}'
+  if [[ -n "$old_domain" ]]; then
+    patch="{\"data\":{\"dev.local\":\"\",\"${old_domain}\":null}}"
+    log "Removing legacy domain key: ${old_domain}"
   fi
-  patch+="}}"
-
-  log "Patching config-domain -> ${ingress_ip}.sslip.io"
   retry 5 3 kubectl patch configmap/config-domain \
     --namespace knative-serving \
     --type merge \
     --patch "$patch"
 }
 
-configure_dns() {
-  local ingress_ip
-  ingress_ip="$(get_kourier_external_ip)"
+ensure_dev_hosts() {
+  local hosts_file="/etc/hosts"
+  local begin_marker="# yoizen-dev BEGIN"
+  local end_marker="# yoizen-dev END"
 
-  if [[ -n "$ingress_ip" && "$ingress_ip" != "<pending>" ]]; then
-    log "Kourier EXTERNAL-IP: ${ingress_ip}"
+  local block
+  block="$(printf '%s\n127.0.0.1 api-gateway.platform-services-dev.dev.local\n127.0.0.1 admin-console.platform-services-dev.dev.local\n%s' \
+    "$begin_marker" "$end_marker")"
+
+  log "Updating /etc/hosts managed block (yoizen-dev)..."
+
+  local tmp
+  tmp="$(mktemp)"
+  if ! sudo bash -c "
+    awk '/# yoizen-dev BEGIN/{found=1} !found{print} /# yoizen-dev END/{found=0}' \"$hosts_file\" > \"$tmp\" \
+    && printf '%s\n' '$block' >> \"$tmp\" \
+    && cp \"$tmp\" \"$hosts_file\"
+    rm -f \"$tmp\"
+  " 2>/dev/null; then
+    warn "/etc/hosts update failed (sudo unavailable?). Add these lines manually:"
+    warn "  ${begin_marker}"
+    warn "  127.0.0.1 api-gateway.platform-services-dev.dev.local"
+    warn "  127.0.0.1 admin-console.platform-services-dev.dev.local"
+    warn "  ${end_marker}"
   else
-    ingress_ip="$(minikube ip -p "$PROFILE")"
-    warn "Kourier EXTERNAL-IP not assigned — falling back to Minikube node IP (${ingress_ip})."
-    warn "If you later run 'sudo minikube tunnel -p ${PROFILE}' in another terminal, re-sync via:"
-    warn "    ./bootstrap-minikube.sh ${ENVIRONMENTS[0]:-dev} refresh-dns"
+    log "/etc/hosts block updated."
   fi
-
-  patch_config_domain_to "$ingress_ip"
-}
-
-# Standalone runner: re-patches config-domain using the current Kourier
-# EXTERNAL-IP. Safe to call any time `minikube tunnel` comes up/down or
-# Kourier gets a new LB IP.
-run_refresh_dns() {
-  log "===== refresh-dns (re-sync Knative config-domain with Kourier LB) ====="
-  echo ""
-  verify_cluster
-
-  if ! kubectl get namespace kourier-system &>/dev/null; then
-    err "Namespace 'kourier-system' not found. Run support-services first."
-    exit 1
-  fi
-
-  local ingress_ip
-  ingress_ip="$(get_kourier_external_ip)"
-  if [[ -z "$ingress_ip" || "$ingress_ip" == "<pending>" ]]; then
-    err "Kourier EXTERNAL-IP is <pending>."
-    err "Start 'sudo minikube tunnel -p ${PROFILE}' in another terminal and retry."
-    exit 1
-  fi
-
-  local previous_domain
-  previous_domain="$(get_current_sslip_domain || true)"
-  log "Kourier EXTERNAL-IP: ${ingress_ip}"
-  log "Previous domain:     ${previous_domain:-<none>}"
-  log "Target domain:       ${ingress_ip}.sslip.io"
-
-  if [[ "$previous_domain" == "${ingress_ip}.sslip.io" ]]; then
-    log "config-domain is already up to date — nothing to do"
-    return
-  fi
-
-  patch_config_domain_to "$ingress_ip"
 }
 
 configure_local_registry() {
@@ -533,22 +445,37 @@ apply_infrastructure() {
     log "Applying infrastructure for '${env}' (${STORAGE_ENGINE})"
     kubectl apply -k "$overlay_path"
 
-    # Force a balanced history shard ring. Temporal's ringpop only
-    # rebalances shards on host LEAVE, not on host JOIN — so the
-    # first pod to register in `cluster_membership` claims all 16
-    # shards, and the second pod stays idle until something forces
-    # a churn event. A rolling-restart of history triggers exactly
-    # that: each pod leaves once, the survivor takes all shards, and
-    # on rejoin the new pod acquires its hash-assigned half via
-    # consistent hashing (now that the survivor is the sole writer
-    # under low post-restart load, the rejoining pod wins its CAS
-    # races). Without this step the 2026-05-23 stress run saw 16/0
-    # skew and 57k workflows TimedOut — see
-    # `DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md` §5.1.
-    if kubectl get deployment/temporal-history --namespace "$ns" &>/dev/null; then
-      log "Rebalancing temporal history shards in ${ns}..."
-      kubectl rollout restart deployment/temporal-history --namespace "$ns"
-    fi
+    log "Waiting for NATS in ${ns}..."
+    kubectl rollout status statefulset/nats \
+      --namespace "$ns" \
+      --timeout=180s
+
+    log "Waiting for Redis StatefulSet in ${ns}..."
+    kubectl rollout status statefulset/redis \
+      --namespace "$ns" \
+      --timeout=180s
+
+    # Developer mode runs a single `temporalio/auto-setup` pod, which
+    # runs schema setup AND default-namespace registration itself on
+    # boot. So there is no separate schema Job, no multi-role rollout,
+    # and no history-shard rebalance (one pod owns all 16 shards). Just
+    # wait for the single `temporal` Deployment to become Available.
+    log "Waiting for Temporal (auto-setup) Deployment in ${ns}..."
+    kubectl rollout status deployment/temporal \
+      --namespace "$ns" \
+      --timeout=300s
+
+    # The namespace-bootstrap Job ensures the `default` namespace and the
+    # `TenantId` search attribute exist — SDK clients (workflow-worker,
+    # connector-runtime) crash on first boot otherwise. The Job waits
+    # internally for the frontend to be SERVING; the outer kubectl wait
+    # surfaces failures in the bootstrap log instead of as later SDK
+    # errors.
+    log "Waiting for temporal namespace bootstrap Job in ${ns}..."
+    kubectl wait --namespace "$ns" \
+      --for=condition=complete \
+      job/temporal-namespace-bootstrap-1-28-4 \
+      --timeout=420s
   done
 }
 
@@ -591,13 +518,8 @@ build_images() {
     eval "$(minikube docker-env -p "$PROFILE" --shell=bash)"
   fi
 
-  local services=(api-gateway auth-service cache-service \
-             audit-service tenant-service \
-             registry-service connector-admin \
-             channel-service workflow-service connector-runtime \
-             proxy-service agent-admin-service ai-agent-gateway admin-console \
-             usage-aggregator-service \
-             agent-memory-service agent-ai-service agent-scheduler-service)
+  source "${script_dir}/services.conf"
+  local services=($YZ_SERVICES)
 
   # BUILD_PARALLELISM controls how many `docker build` invocations run
   # concurrently. Default of 2 is the sweet spot on a 12-core dev box:
@@ -699,7 +621,7 @@ build_images() {
 verify_cluster() {
   if ! minikube status -p "$PROFILE" &>/dev/null; then
     err "Minikube profile '$PROFILE' is not running."
-    err "Run './bootstrap-minikube.sh <env> support-services' first."
+    err "Run './bootstrap-minikube.sh support-services' first."
     exit 1
   fi
   kubectl config use-context "$PROFILE" &>/dev/null
@@ -709,16 +631,10 @@ verify_cluster() {
 verify_support_services() {
   local core_deployments=(otel-collector tempo prometheus loki grafana)
 
-  if ! kubectl get crd scaledobjects.keda.sh &>/dev/null; then
-    err "KEDA CRDs not found in cluster."
-    err "The platform services require KEDA — run './bootstrap-minikube.sh <env> support-services' first."
-    exit 1
-  fi
-
   if ! kubectl get crd clusters.postgresql.cnpg.io &>/dev/null \
     || ! kubectl get crd poolers.postgresql.cnpg.io &>/dev/null; then
     err "CloudNativePG CRDs not found in cluster."
-    err "Run './bootstrap-minikube.sh <env> support-services' before platform-services."
+    err "Run './bootstrap-minikube.sh support-services' before platform-services."
     exit 1
   fi
 
@@ -761,13 +677,9 @@ verify_support_services() {
       fi
     done
 
-    # Post-HA-migration: 4 role Deployments replace the single
-    # `temporal` Deployment. Check all 4 + the UI.
+    # Developer mode: a single `temporal` (auto-setup) Deployment + the UI.
     local temporal_deploys=(
-      temporal-frontend
-      temporal-history
-      temporal-matching
-      temporal-worker
+      temporal
       temporal-ui
     )
     for dep in "${temporal_deploys[@]}"; do
@@ -788,10 +700,9 @@ run_support_services() {
   start_minikube
   install_knative_serving
   install_kourier
-  install_keda
   install_cloudnative_pg
-  wait_for_keda_ready
   configure_dns
+  ensure_dev_hosts
   configure_local_registry
   apply_namespaces
   apply_infrastructure
@@ -812,15 +723,6 @@ run_platform_services() {
 # ---------------------------------------------------------------------------
 
 print_summary() {
-  local minikube_ip ingress_ip kourier_ip current_domain
-  minikube_ip="$(minikube ip -p "$PROFILE")"
-  kourier_ip="$(get_kourier_external_ip)"
-  current_domain="$(get_current_sslip_domain || true)"
-  if [[ -n "$kourier_ip" && "$kourier_ip" != "<pending>" ]]; then
-    ingress_ip="$kourier_ip"
-  else
-    ingress_ip="$minikube_ip"
-  fi
   local group_label="${SERVICE_GROUP:-all}"
 
   echo ""
@@ -828,23 +730,18 @@ print_summary() {
   log " Setup complete! [${group_label}]"
   log "=============================="
   echo ""
-  echo "  Minikube IP:       ${minikube_ip}"
-  echo "  Kourier LB IP:     ${kourier_ip:-<pending>}"
-  echo "  Ingress IP in use: ${ingress_ip}"
-  echo "  DNS domain (cfg):  ${current_domain:-${ingress_ip}.sslip.io}"
-  echo "  Environments:      ${ENVIRONMENTS[*]}"
-  echo "  Group:             ${group_label}"
-  echo "  Storage engine:    ${STORAGE_ENGINE}"
+  echo "  Cluster:        Minikube (profile: ${PROFILE})"
+  echo "  DNS domain:     dev.local"
+  echo "  Environment:    dev"
+  echo "  Group:          ${group_label}"
+  echo "  Storage engine: ${STORAGE_ENGINE}"
   if is_mongo_storage_engine; then
-    echo "                     (hybrid with Temporal Postgres)"
+    echo "                  (hybrid with Temporal Postgres)"
   fi
   echo ""
-
-  if [[ -n "$kourier_ip" && -n "$current_domain" && "$current_domain" != "${kourier_ip}.sslip.io" ]]; then
-    warn "config-domain (${current_domain}) does not match Kourier EXTERNAL-IP (${kourier_ip})."
-    warn "Run './bootstrap-minikube.sh ${ENVIRONMENTS[0]:-dev} refresh-dns' to re-sync."
-    echo ""
-  fi
+  echo "  minikube tunnel must be running for Kourier LB to be reachable at 127.0.0.1:"
+  echo "    sudo minikube tunnel -p ${PROFILE}"
+  echo ""
 
   if [[ "$SERVICE_GROUP" != "platform-services" ]]; then
     echo "  Namespaces:"
@@ -868,9 +765,8 @@ print_summary() {
     done
     echo "    kubectl get pods --all-namespaces -l app.kubernetes.io/part-of=yoizen-arch"
     echo "    kubectl get storageclass"
-    echo "    minikube tunnel -p ${PROFILE}"
     echo ""
-    echo "  API Gateway (dev): http://api-gateway.platform-services-dev.${ingress_ip}.sslip.io"
+    echo "  API Gateway (dev): http://api-gateway.platform-services-dev.dev.local"
     echo ""
     echo "  Port-forwarding (run in a separate terminal):"
     if is_mongo_storage_engine; then
@@ -883,6 +779,29 @@ print_summary() {
 }
 
 # ---------------------------------------------------------------------------
+# Smoke test (optional, best-effort)
+# ---------------------------------------------------------------------------
+
+run_smoke_tests() {
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local smoke_script="${script_dir}/scripts/smoke-test.sh"
+
+  if [[ ! -f "$smoke_script" ]]; then
+    warn "--smoke requested but scripts/smoke-test.sh not found — skipping"
+    return
+  fi
+
+  log "Running smoke tests (scripts/smoke-test.sh)..."
+  if bash "$smoke_script"; then
+    log "Smoke tests passed."
+  else
+    warn "Smoke tests FAILED — cluster is up but e2e suite reported errors."
+    warn "Run manually: bash scripts/smoke-test.sh"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -890,7 +809,7 @@ main() {
   parse_args "$@"
 
   log "Event-Driven Architecture Bootstrap"
-  log "Environments: ${ENVIRONMENTS[*]}"
+  log "Environment:  dev"
   log "Group:        ${SERVICE_GROUP:-all}"
   log "Storage:      ${STORAGE_ENGINE}"
   print_storage_engine_banner
@@ -904,15 +823,16 @@ main() {
       ;;
     platform-services)
       run_platform_services
-      ;;
-    refresh-dns)
-      run_refresh_dns
-      print_summary
-      return
+      if [[ "$RUN_SMOKE" == "true" ]]; then
+        run_smoke_tests
+      fi
       ;;
     "")
       run_support_services
       run_platform_services
+      if [[ "$RUN_SMOKE" == "true" ]]; then
+        run_smoke_tests
+      fi
       ;;
   esac
 

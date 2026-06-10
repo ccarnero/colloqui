@@ -1,0 +1,1 @@
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"datname":"temporal"},"value":[1779977939.441,"0"]}]},"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"cnpg_pg_stat_database_blk_write_time\" (1:24)"]}

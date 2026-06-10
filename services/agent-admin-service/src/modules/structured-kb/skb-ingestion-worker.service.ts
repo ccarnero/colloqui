@@ -4,7 +4,16 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
-import type { JetStreamClient, JetStreamManager, JsMsg } from "nats";
+import {
+  AckPolicy,
+  DeliverPolicy,
+  ReplayPolicy,
+  RetentionPolicy,
+  StorageType,
+  type JetStreamClient,
+  type JetStreamManager,
+  type JsMsg,
+} from "nats";
 import { PinoLoggerService } from "@yoizen/observability";
 import { PermanentError } from "@yoizen/shared";
 import { type TenantConnectionManager } from "@yoizen/database";
@@ -22,9 +31,9 @@ import { JobTrackingService } from "../knowledge-bases/job-tracking.service";
 const DURABLE_NAME = "skb-ingestion-worker";
 
 /**
- * Regex matching every per-tenant ingress stream.
+ * Dedicated stream that aggregates SKB file ingestion events across all tenants.
  */
-const TENANT_STREAM_PATTERN = /^INGRESS-/;
+const SKB_STREAM = "SKB-INGESTION";
 
 /**
  * Cross-tenant subject filter scoped to SKB file ingestion events.
@@ -89,23 +98,48 @@ export class SKBIngestionWorkerService
       return;
     }
 
+    await this.ensureStream();
+
     const consumerConfig = {
-      filter_subject: FILTER_SUBJECT,
       durable_name: DURABLE_NAME,
+      deliver_policy: DeliverPolicy.All,
+      ack_policy: AckPolicy.Explicit,
+      replay_policy: ReplayPolicy.Instant,
+      filter_subject: FILTER_SUBJECT,
       max_deliver: MAX_DELIVER,
       ack_wait: ACK_WAIT_MS * 1_000_000,
       backoff: BACKOFF_MS.map((b) => b * 1_000_000),
       description: "SKB file ingestion worker",
     };
 
-    // Register the durable consumer via JetStreamManager
-    await (this.jsm.consumers as unknown as (
-      cfg: Record<string, unknown>,
-    ) => Promise<void>)(consumerConfig);
+    await this.jsm.consumers.add(SKB_STREAM, consumerConfig);
 
     this.logger.log(
-      `SKB ingestion worker started, consuming '${FILTER_SUBJECT}'`,
+      `SKB ingestion worker started on stream '${SKB_STREAM}', consuming '${FILTER_SUBJECT}'`,
     );
+  }
+
+  private async ensureStream(): Promise<void> {
+    try {
+      await this.jsm.streams.info(SKB_STREAM);
+      this.logger.log(`Stream '${SKB_STREAM}' already exists`);
+      return;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes("not found") && !msg.includes("stream not found")) {
+        throw err;
+      }
+    }
+
+    this.logger.log(`Creating stream '${SKB_STREAM}'...`);
+    await this.jsm.streams.add({
+      name: SKB_STREAM,
+      subjects: [FILTER_SUBJECT],
+      retention: RetentionPolicy.Limits,
+      storage: StorageType.File,
+      max_age: 7 * 24 * 60 * 60 * 1_000_000_000, // 7 days in nanos
+    });
+    this.logger.log(`Stream '${SKB_STREAM}' created`);
   }
 
   async onModuleDestroy(): Promise<void> {

@@ -115,27 +115,9 @@ resolve_gateway_url() {
     return
   fi
 
-  local profile="${MINIKUBE_PROFILE:-yoizen-arch}"
-  local ns="${INGRESS_NS:-kourier-system}"
-  local svc="${INGRESS_SVC:-kourier}"
-  local ingress_ip=""
-
-  ingress_ip="$(kubectl -n "$ns" get svc "$svc" \
-    -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
-
-  if [[ -z "$ingress_ip" ]]; then
-    warn "Kourier LB IP unavailable; falling back to 'minikube ip -p ${profile}'."
-    require_cmd minikube
-    ingress_ip="$(minikube ip -p "$profile" 2>/dev/null || true)"
-  fi
-
-  if [[ -z "$ingress_ip" ]]; then
-    err "Could not discover an ingress IP. Set API_GATEWAY_URL or start minikube."
-    exit 1
-  fi
-
-  API_GATEWAY_URL="http://api-gateway.platform-services-dev.${ingress_ip}.sslip.io"
-  log "Discovered API gateway: ${API_GATEWAY_URL}"
+  local dev_domain="${DEV_DOMAIN:-${MINIKUBE_DOMAIN:-dev.local}}"
+  API_GATEWAY_URL="http://api-gateway.platform-services-dev.${dev_domain}"
+  log "Using API gateway: ${API_GATEWAY_URL}"
 }
 
 # ---------------------------------------------------------------------------

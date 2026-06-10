@@ -81,34 +81,13 @@ spec:
       # DO NOT propagate this to base (production HA).
       synchronous_commit: "off"
 ---
-# Local-dev override for the 4 Temporal role Deployments
-# (`temporal-frontend`, `temporal-history`, `temporal-matching`,
-# `temporal-worker`). User explicitly chose 2 replicas per role even
-# in dev for full HA topology parity (see plan §dev_profile), EXCEPT
-# for history which was bumped to 3 replicas in base on 2026-05-24
-# (inherited here — see
-# `infrastructure/base/temporal/deployment-history.yaml` for the
-# rationale: with 3 pods + 16 shards, max ringpop skew is 6/5/5 =
-# 37.5% which is structurally below the `TemporalHistoryShardImbalance`
-# 75% threshold, eliminating the restart-storm hazard observed
-# 2026-05-24 stress §3).
-#
-# Per-role request sizing kept proportional to the base manifest but
-# trimmed to fit a 12-core minikube node alongside the rest of the
-# workflow-* worker family. History per-pod sizing dropped (3 pods
-# share the load) — aggregate budget slightly reduced overall.
-#
-# Total dev footprint (per env, all replicas):
-#   frontend: 2 × {req 250m/512Mi, lim 1500m/1Gi}
-#   history:  3 × {req 350m/768Mi, lim 2/2Gi}      ← bumped to 3
-#   matching: 2 × {req 250m/512Mi, lim 1500m/1Gi}
-#   worker:   2 × {req 150m/256Mi, lim 750m/512Mi}
-#   Σ req ≈ 2350m CPU + 4.7Gi mem
-#   Σ lim ≈ 13    CPU + 11 Gi mem (slight saving vs old 2-pod 13.5 CPU)
+# Local-dev resource sizing for the single auto-setup Deployment.
+# Replaces the 4-role HA patches (temporal-frontend/history/matching/worker)
+# now that base collapsed to a single `temporalio/auto-setup` pod.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: temporal-frontend
+  name: temporal
 spec:
   template:
     spec:
@@ -116,64 +95,8 @@ spec:
         - name: temporal
           resources:
             requests:
-              cpu: 250m
+              cpu: 500m
               memory: 512Mi
             limits:
-              cpu: "1500m"
+              cpu: "2"
               memory: 1Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: temporal-history
-spec:
-  template:
-    spec:
-      containers:
-        - name: temporal
-          resources:
-            requests:
-              cpu: 350m
-              memory: 768Mi
-            limits:
-              cpu: "3"
-              memory: 3Gi
-          env:
-            - name: SQL_MAX_CONNS
-              value: "32"
-            - name: SQL_VIS_MAX_CONNS
-              value: "16"
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: temporal-matching
-spec:
-  template:
-    spec:
-      containers:
-        - name: temporal
-          resources:
-            requests:
-              cpu: 250m
-              memory: 512Mi
-            limits:
-              cpu: "1500m"
-              memory: 1Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: temporal-worker
-spec:
-  template:
-    spec:
-      containers:
-        - name: temporal
-          resources:
-            requests:
-              cpu: 150m
-              memory: 256Mi
-            limits:
-              cpu: "750m"
-              memory: 512Mi

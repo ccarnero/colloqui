@@ -368,46 +368,12 @@ data:
                 workflow population or aggressive scale-down.
                 Bump `minReplicaCount` or workflow cache size.
 
-          # History shard imbalance (post-mortem §10.2 / 2026-05-23
-          # stress §3). Temporal's ringpop only rebalances shards on
-          # host LEAVE, not on JOIN — so a fresh history pod can
-          # stay idle forever while its sibling owns all 16 shards
-          # and saturates. Detection: one history pod issues >75% of
-          # persistence ops while another is reachable.
-          #
-          # Guard `AND total_rate > 10` is critical — without it the
-          # alert flaps on every transient single-op blip when the
-          # cluster is idle (1/0 split = ratio 1.0 = noise).
-          #
-          # Mitigation runbook: rolling-restart history. See
-          # `DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md` §5.1.
-          - alert: TemporalHistoryShardImbalance
-            expr: >
-              (
-                sum by (instance) (
-                  rate(persistence_latency_count{temporal_role="history"}[5m])
-                )
-                / scalar(
-                  sum(rate(persistence_latency_count{temporal_role="history"}[5m]))
-                )
-              ) > 0.75
-              and on()
-              sum(rate(persistence_latency_count{temporal_role="history"}[5m])) > 10
-            for: 5m
-            labels:
-              severity: critical
-              category: temporal
-            annotations:
-              summary: "Temporal history shard imbalance ({{ $labels.instance }} owns >75% of load)"
-              description: >
-                History pod `{{ $labels.instance }}` is serving >75% of
-                persistence operations for the last 5m while at least
-                one sibling pod is reachable. Almost always means the
-                ringpop ring stuck in a skewed state after a Postgres
-                restart or fresh history pod boot.
-                Mitigation: rolling-restart history with
-                `kubectl rollout restart deployment/temporal-history -n {{ $labels.kubernetes_namespace }}`.
-                See `DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md` §5.1.
+          # NOTE: TemporalHistoryShardImbalance was removed — the 4-role
+          # HA deployment (temporal-history, temporal-matching,
+          # temporal-worker as separate Deployments) no longer exists.
+          # The single-node developer config runs one
+          # `temporalio/auto-setup` pod (temporal.io/role=frontend)
+          # where shard-imbalance between roles is not applicable.
 
       - name: nats-consumer-lag
         rules:

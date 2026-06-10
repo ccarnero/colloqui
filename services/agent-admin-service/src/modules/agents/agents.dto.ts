@@ -34,6 +34,7 @@ export class CreateAgentDto {
 
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   tools?: unknown[];
 
   @IsArray()
@@ -75,6 +76,7 @@ export class UpdateAgentDto {
 
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   tools?: unknown[];
 
   @IsArray()

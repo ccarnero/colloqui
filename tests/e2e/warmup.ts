@@ -54,7 +54,8 @@ declare const Bun: { sleep: (ms: number) => Promise<void> };
 const NAMESPACE = process.env.SMOKE_TEST_NAMESPACE ?? "platform-services-dev";
 const KOURIER_HOST = process.env.KOURIER_HOST ?? "localhost";
 const KOURIER_PORT = process.env.KOURIER_PORT ?? "8080";
-const MINIKUBE_DOMAIN = process.env.MINIKUBE_DOMAIN ?? "192.168.49.2.sslip.io";
+// DEV_DOMAIN is canonical; MINIKUBE_DOMAIN accepted as backward-compat fallback.
+const DEV_DOMAIN = process.env.DEV_DOMAIN ?? process.env.MINIKUBE_DOMAIN ?? "dev.local";
 
 const WARMUP_BUDGET_MS = Number(process.env.E2E_WARMUP_TIMEOUT_MS ?? 180_000);
 const WARMUP_PROBE_TIMEOUT_MS = 30_000;
@@ -84,7 +85,7 @@ function gatewayHealthUrl(): string {
   if (process.env.API_GATEWAY_URL) {
     return `${process.env.API_GATEWAY_URL}/health`;
   }
-  return `http://api-gateway.${NAMESPACE}.${MINIKUBE_DOMAIN}/health`;
+  return `http://api-gateway.${NAMESPACE}.${DEV_DOMAIN}/health`;
 }
 
 /**

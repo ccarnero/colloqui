@@ -4,6 +4,3 @@ kind: Kustomization
 resources:
   - namespaces.yaml
   - dev
-  - qa
-  - staging
-  - production

@@ -1,0 +1,20 @@
+Task Queue Statistics:
+    BuildID    TaskQueueType  ApproximateBacklogCount  ApproximateBacklogAge  BacklogIncreaseRate  TasksAddRate  TasksDispatchRate
+  UNVERSIONED  workflow                             0  0s                                       0             0                  0
+Pollers:
+    BuildID    TaskQueueType               Identity               LastAccessTime  RatePerSecond
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-qlbkb  42 seconds ago         100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-rk5dl  43 seconds ago         100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-zg56w  43 seconds ago         100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-h4fvj  43 seconds ago         100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-6d967  43 seconds ago         100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-xvnmc  43 seconds ago         100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-m8l46  44 seconds ago         100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-jzxhp  45 seconds ago         100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-hqpqf  45 seconds ago         100000
+  UNVERSIONED  workflow       7@workflow-worker-5586c8f57f-5c8kq  45 seconds ago         100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-7qwm8  46 seconds ago         100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-mk2p2  46 seconds ago         100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-cll22  2 minutes ago          100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-shc42  2 minutes ago          100000
+  UNVERSIONED  workflow       8@workflow-worker-5586c8f57f-42vl2  2 minutes ago          100000

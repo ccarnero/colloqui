@@ -5,6 +5,3 @@ resources:
   - storage-class-compat.yaml
   - namespaces.yaml
   - dev
-  - qa
-  - staging
-  - production

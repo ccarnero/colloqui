@@ -1,0 +1,11 @@
+# Python sidecar
+python/.venv/
+python/__pycache__/
+python/**/__pycache__/
+python/.pytest_cache/
+python/*.egg-info/
+python/.python-version
+
+# Generated audio
+*.wav
+out/

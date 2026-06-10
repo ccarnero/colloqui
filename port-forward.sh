@@ -72,11 +72,9 @@ FORWARD_LOGS=()
 
 IS_ORBSTACK="false"
 CLUSTER_NAME=""
-SSLIP_DOMAIN=""
-INGRESS_HOST=""
+DEV_DOMAIN="${DEV_DOMAIN:-${MINIKUBE_DOMAIN:-dev.local}}"
+INGRESS_HOST="127.0.0.1"
 KOURIER_AVAILABLE="false"
-EXPECTED_SSLIP_DOMAIN=""
-DOMAIN_DRIFT="false"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -109,7 +107,7 @@ usage() {
     "" \
     "Access modes:" \
     "  - localhost ports for direct pod/service forwards" \
-    "  - sslip.io domains through the cluster ingress when reachable" \
+    "  - dev.local domains through the cluster ingress when /etc/hosts is configured" \
     "" \
     "Environment variables:" \
     "  API_GATEWAY_PORT          Local port for api-gateway       (default: 8080)" \
@@ -156,8 +154,6 @@ detect_context() {
   if [[ "$current_context" == "orbstack" ]]; then
     IS_ORBSTACK="true"
     CLUSTER_NAME="OrbStack"
-    SSLIP_DOMAIN="127.0.0.1.sslip.io"
-    INGRESS_HOST="127.0.0.1"
     log "Detected OrbStack cluster context"
     return
   fi
@@ -165,8 +161,6 @@ detect_context() {
   if command -v minikube &>/dev/null && minikube status -p "$MINIKUBE_PROFILE" &>/dev/null; then
     IS_ORBSTACK="false"
     CLUSTER_NAME="Minikube"
-    INGRESS_HOST="$(minikube ip -p "$MINIKUBE_PROFILE")"
-    SSLIP_DOMAIN="${INGRESS_HOST}.sslip.io"
     log "Detected Minikube profile '${MINIKUBE_PROFILE}'"
     kubectl config use-context "$MINIKUBE_PROFILE" &>/dev/null
     return
@@ -208,71 +202,11 @@ lookup_pod() {
     -o jsonpath='{.items[0].metadata.name}' 2>/dev/null
 }
 
-extract_host_from_url() {
-  local url=$1
-  local without_scheme="${url#http://}"
-  without_scheme="${without_scheme#https://}"
-  printf '%s\n' "${without_scheme%%/*}"
-}
-
-set_sslip_domain() {
-  local domain=$1
-  SSLIP_DOMAIN="$domain"
-  if [[ "$SSLIP_DOMAIN" == *.sslip.io ]]; then
-    INGRESS_HOST="${SSLIP_DOMAIN%.sslip.io}"
-  fi
-}
-
-get_kourier_external_ip() {
-  kubectl get svc kourier -n "$KOURIER_NAMESPACE" \
-    -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true
-}
-
 populate_host_map() {
   local svc
   for svc in "${SERVICES[@]}"; do
-    set_ns HOST_FOR_SVC "$svc" "${svc}.${NAMESPACE}.${SSLIP_DOMAIN}"
+    set_ns HOST_FOR_SVC "$svc" "${svc}.${NAMESPACE}.${DEV_DOMAIN}"
   done
-}
-
-resolve_sslip_domain() {
-  local url="" host="" prefix="" actual_domain="" kourier_ip=""
-  url="$(
-    kubectl get ksvc api-gateway -n "$NAMESPACE" \
-      -o jsonpath='{.status.url}' 2>/dev/null || true
-  )"
-
-  if [[ -n "$url" ]]; then
-    host="$(extract_host_from_url "$url")"
-    prefix="api-gateway.${NAMESPACE}."
-    if [[ "$host" == "$prefix"* ]]; then
-      actual_domain="${host#"$prefix"}"
-    else
-      warn "Could not derive sslip domain from '${host}', keeping '${SSLIP_DOMAIN}'."
-    fi
-  fi
-
-  if [[ "$IS_ORBSTACK" == "false" && "$KOURIER_AVAILABLE" == "true" ]]; then
-    kourier_ip="$(get_kourier_external_ip)"
-    if [[ -n "$kourier_ip" && "$kourier_ip" != "<pending>" ]]; then
-      EXPECTED_SSLIP_DOMAIN="${kourier_ip}.sslip.io"
-      if [[ -n "$actual_domain" && "$actual_domain" != "$EXPECTED_SSLIP_DOMAIN" ]]; then
-        DOMAIN_DRIFT="true"
-        set_sslip_domain "$actual_domain"
-        populate_host_map
-        return
-      fi
-      set_sslip_domain "$EXPECTED_SSLIP_DOMAIN"
-      populate_host_map
-      return
-    fi
-  fi
-
-  if [[ -n "$actual_domain" ]]; then
-    set_sslip_domain "$actual_domain"
-  fi
-
-  populate_host_map
 }
 
 start_app_forward() {
@@ -344,11 +278,11 @@ start_support_forward() {
   done
 }
 
-set_sslip_statuses() {
+set_ingress_statuses() {
   local status=$1
   local svc
   for svc in "${SERVICES[@]}"; do
-    set_ns SSLIP_STATUS_FOR_SVC "$svc" "$status"
+    set_ns INGRESS_STATUS_FOR_SVC "$svc" "$status"
   done
 }
 
@@ -360,80 +294,51 @@ ingress_ready_at() {
 
 report_ingress_status() {
   if [[ "$KOURIER_AVAILABLE" != "true" ]]; then
-    set_sslip_statuses "unavailable"
-    warn "Namespace '${KOURIER_NAMESPACE}' not found — sslip URLs will not be available."
+    set_ingress_statuses "unavailable"
+    warn "Namespace '${KOURIER_NAMESPACE}' not found — direct ingress URLs will not be available."
     return
   fi
 
-  # Case 1: Knative Routes point at a different IP than the Kourier
-  # EXTERNAL-IP. Browser traffic to the ksvc URL will hit the wrong IP,
-  # so mark all services as stale regardless of reachability.
-  if [[ "$DOMAIN_DRIFT" == "true" ]]; then
-    set_sslip_statuses "stale-domain"
-    warn "Knative domain drift detected."
-    warn "ksvc URLs currently resolve to '${SSLIP_DOMAIN}' (${INGRESS_HOST})."
-    warn "Kourier EXTERNAL-IP is '${EXPECTED_SSLIP_DOMAIN%.sslip.io}'."
-    if [[ "$IS_ORBSTACK" == "false" ]]; then
-      warn "Fix with:  ./bootstrap-minikube.sh ${ENVIRONMENT} refresh-dns"
-    else
-      warn "Re-run bootstrap-orbstack.sh to refresh config-domain."
-    fi
-    return
-  fi
-
-  # Case 2: No drift, ingress is reachable via the sslip.io IP. 
   if ingress_ready_at "$INGRESS_HOST"; then
-    set_sslip_statuses "READY"
-    log "Ingress is reachable at ${INGRESS_HOST}:80"
+    set_ingress_statuses "READY"
+    log "Ingress is reachable at ${INGRESS_HOST}:80 (dev.local)"
     return
   fi
 
-  # Case 3: No drift but Kourier's IP is not reachable from the host.
-  # In Minikube (Docker driver) this almost always means `minikube tunnel`
-  # is not running. In OrbStack it usually means the LoadBalancer has not
-  # finished initializing yet.
   if [[ "$IS_ORBSTACK" == "true" ]]; then
-    set_sslip_statuses "unavailable"
+    set_ingress_statuses "unavailable"
     warn "Ingress is not reachable at ${INGRESS_HOST}:80. Check that OrbStack and the Kourier LoadBalancer are running."
     return
   fi
 
-  set_sslip_statuses "needs-tunnel"
+  set_ingress_statuses "needs-tunnel"
   warn "Ingress is not reachable at ${INGRESS_HOST}:80."
-  warn "Run this in another terminal to enable the .sslip.io URLs:"
+  warn "Run this in another terminal to expose the Kourier LoadBalancer:"
   warn "  sudo minikube tunnel -p ${MINIKUBE_PROFILE}"
-  warn "Then re-run:  ./bootstrap-minikube.sh ${ENVIRONMENT} refresh-dns"
 }
 
 print_summary() {
-  local svc local_port local_url sslip_url sslip_status
+  local svc local_port local_url ingress_url ingress_status
 
   echo ""
   log "=============================="
   log " Port-forwards active"
   log "=============================="
   echo ""
-  log "Cluster: ${CLUSTER_NAME}"
+  log "Cluster:   ${CLUSTER_NAME}"
   log "Namespace: ${NAMESPACE}"
-  if [[ "$DOMAIN_DRIFT" == "true" ]]; then
-    log "Expected ingress domain: ${EXPECTED_SSLIP_DOMAIN}"
-    log "Current ksvc domain: ${SSLIP_DOMAIN}"
-  fi
+  log "Domain:    ${DEV_DOMAIN}"
   echo ""
 
   for svc in "${SERVICES[@]}"; do
     local_port="$(local_port_for "$svc")"
     local_url="http://localhost:${local_port}"
-    sslip_url="http://$(get_ns HOST_FOR_SVC "$svc")/"
-    sslip_status="$(get_ns SSLIP_STATUS_FOR_SVC "$svc" unknown)"
+    ingress_url="http://$(get_ns HOST_FOR_SVC "$svc")/"
+    ingress_status="$(get_ns INGRESS_STATUS_FOR_SVC "$svc" unknown)"
 
     echo "  ${svc}:"
     echo "    localhost : ${local_url}"
-    echo "    sslip     : ${sslip_url} [${sslip_status}]"
-
-    if [[ "$DOMAIN_DRIFT" == "true" && -n "$EXPECTED_SSLIP_DOMAIN" ]]; then
-      echo "    working   : http://${svc}.${NAMESPACE}.${EXPECTED_SSLIP_DOMAIN}/"
-    fi
+    echo "    ingress   : ${ingress_url} [${ingress_status}]"
   done
 
   if kubectl get namespace "$SUPPORT_NAMESPACE" &>/dev/null; then
@@ -453,17 +358,7 @@ print_summary() {
   echo ""
   echo "  curl examples:"
   echo "    curl http://localhost:$(local_port_for api-gateway)/health"
-  if [[ "$DOMAIN_DRIFT" == "true" && -n "$EXPECTED_SSLIP_DOMAIN" ]]; then
-    echo "    curl http://api-gateway.${NAMESPACE}.${EXPECTED_SSLIP_DOMAIN}/health"
-  else
-    echo "    curl http://$(get_ns HOST_FOR_SVC api-gateway)/health"
-  fi
-
-  if [[ "$DOMAIN_DRIFT" == "true" && "$IS_ORBSTACK" == "false" ]]; then
-    echo ""
-    echo "  To fix stale sslip URLs (re-syncs Knative with the current Kourier LB):"
-    echo "    ./bootstrap-minikube.sh ${ENVIRONMENT} refresh-dns"
-  fi
+  echo "    curl http://$(get_ns HOST_FOR_SVC api-gateway)/health"
 
   echo ""
   log "Press Ctrl+C to stop all port-forwards."
@@ -519,7 +414,7 @@ main() {
     exit 1
   fi
 
-  resolve_sslip_domain
+  populate_host_map
   report_ingress_status
   print_summary
 

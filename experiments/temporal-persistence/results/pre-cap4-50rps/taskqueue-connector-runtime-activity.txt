@@ -1,0 +1,10 @@
+Task Queue Statistics:
+    BuildID    TaskQueueType  ApproximateBacklogCount  ApproximateBacklogAge  BacklogIncreaseRate  TasksAddRate  TasksDispatchRate
+  UNVERSIONED  activity                             0  0s                                       0             0                  0
+Pollers:
+    BuildID    TaskQueueType                Identity                LastAccessTime  RatePerSecond
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-49dlh  now                    100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-pskwr  now                    100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-nl2l4  1 second ago           100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-bvpws  1 second ago           100000
+  UNVERSIONED  activity       1@connector-runtime-5fdbcfb8b4-fxcp7  7 seconds ago          100000

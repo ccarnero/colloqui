@@ -1,0 +1,8 @@
+NAME                             SCALETARGETKIND      SCALETARGETNAME           MIN   MAX   READY   ACTIVE   FALLBACK   PAUSED   TRIGGERS     AUTHENTICATIONS   AGE
+audit-service-worker-scaler      apps/v1.Deployment   audit-service-worker      0     10    True    False    Unknown    False    prometheus                     18h
+channel-service-worker-scaler    apps/v1.Deployment   channel-service-worker    0     12    True    False    False      False    prometheus                     18h
+connector-admin-worker-scaler    apps/v1.Deployment   connector-admin-worker    0     3     True    False    False      False    prometheus                     18h
+connector-runtime-scaler         apps/v1.Deployment   connector-runtime         5     15    True    True     False      False    prometheus                     18h
+usage-aggregator-worker-scaler   apps/v1.Deployment   usage-aggregator-worker   0     3     True    False    Unknown    False    prometheus                     18h
+workflow-service-worker-scaler   apps/v1.Deployment   workflow-service-worker   2     8     True    False    False      True     prometheus                     18h
+workflow-worker-scaler           apps/v1.Deployment   workflow-worker           3     12    True    False    False      False    prometheus                     18h

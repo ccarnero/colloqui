@@ -1,0 +1,152 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/component: workflow-engine
+    temporal.io/role: frontend
+# Single-node dev replacement for the 4-role HA topology
+# (temporal-frontend / history / matching / worker). Runs
+# `temporalio/auto-setup` which executes schema setup and starts all
+# 4 internal services in one process — the upstream design for dev
+# environments.
+#
+# Reverts to the pre-HA single Deployment approach recovered from
+# git commit e05c543, reconciled with the current postgres-temporal
+# DB env vars and secret names from deployment-frontend.yaml.
+#
+# Pod labels include `temporal.io/role: frontend` so the existing
+# `temporal` Service (service-frontend.yaml) selector
+# `{app.kubernetes.io/name: temporal, temporal.io/role: frontend}`
+# keeps resolving :7233 without changes.
+#
+# SKIP_SCHEMA_SETUP=false: auto-setup runs the schema itself via its
+# internal `temporal-sql-tool` calls — no external schema Job needed.
+# The namespace-bootstrap Job (job-namespace-bootstrap.yaml) is kept
+# because it registers the `TenantId` search attribute which
+# auto-setup does NOT handle.
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: temporal
+      temporal.io/role: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: temporal
+        app.kubernetes.io/component: workflow-engine
+        temporal.io/role: frontend
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: temporal
+          image: temporalio/auto-setup:1.28.4
+          ports:
+            - name: grpc
+              containerPort: 7233
+              protocol: TCP
+            - name: http
+              containerPort: 7243
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            # auto-setup mode: run schema setup on boot, then start the
+            # server. No external schema Job required.
+            - name: SKIP_SCHEMA_SETUP
+              value: "false"
+            # Force bind on all interfaces (0.0.0.0) so the pod is
+            # reachable via IPv4 on dual-stack dev clusters (OrbStack).
+            # See original e05c543 comment.
+            - name: BIND_ON_IP
+              value: "0.0.0.0"
+            - name: PROMETHEUS_ENDPOINT
+              value: "0.0.0.0:9090"
+            - name: PUBLIC_FRONTEND_ADDRESS
+              value: "temporal:7233"
+            # DB config — copied verbatim from deployment-frontend.yaml
+            - name: DB
+              value: "postgres12"
+            - name: DB_PORT
+              value: "5432"
+            - name: DBNAME
+              value: "temporal"
+            - name: VISIBILITY_DBNAME
+              value: "temporal_visibility"
+            - name: VISIBILITY_DB_PORT
+              value: "5432"
+            - name: POSTGRES_SEEDS
+              value: "postgres-temporal-rw"
+            # Developer mode runs ONE Postgres for Temporal: visibility lives
+            # in the `temporal_visibility` database on the SAME postgres-temporal
+            # cluster. `temporalio/auto-setup` ignores VISIBILITY_POSTGRES_SEEDS
+            # during schema setup and always provisions visibility on
+            # POSTGRES_SEEDS — so the server must read it from there too, or it
+            # crashes with `temporal_visibility ... schema_version does not exist`.
+            # (The separate postgres-temporal-visibility cluster is unused now.)
+            - name: VISIBILITY_POSTGRES_SEEDS
+              value: "postgres-temporal-rw"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-temporal-credentials
+                  key: username
+            - name: POSTGRES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-temporal-credentials
+                  key: password
+            - name: VISIBILITY_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-temporal-credentials
+                  key: username
+            - name: VISIBILITY_POSTGRES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-temporal-credentials
+                  key: password
+            # numHistoryShards pinned at 16 — matches the existing schema
+            # bootstrap (changing this after bootstrap orphans history).
+            - name: NUM_HISTORY_SHARDS
+              value: "16"
+            - name: DYNAMIC_CONFIG_FILE_PATH
+              value: "/etc/temporal/config/dynamicconfig/production-sql.yaml"
+          volumeMounts:
+            - name: dynamic-config
+              mountPath: /etc/temporal/config/dynamicconfig
+              readOnly: true
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          # auto-setup can take 2-4 min on first boot (schema migrations).
+          # 60 × 5s = 5 min maximum startup window — same as original.
+          startupProbe:
+            tcpSocket:
+              port: grpc
+            failureThreshold: 60
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 0
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: dynamic-config
+          configMap:
+            name: temporal-dynamic-config

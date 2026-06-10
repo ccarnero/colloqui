@@ -1,0 +1,2 @@
+label,target_rate,duration,sent,actual_rate,http_failure_rate,ack_p95_ms,ack_p99_ms,ack_max_ms,dropped_iterations,delivered,lost,loss_rate,duplicates,e2e_p50_ms,e2e_p95_ms,e2e_p99_ms
+workflow-worker-cap6-50rps,50,2m,5999,49.99,0.000000,30.30,212.06,1083.71,0,5994,5,0.000833,0,162772.79,285870.06,311743.51

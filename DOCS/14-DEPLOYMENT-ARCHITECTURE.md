@@ -1,6 +1,25 @@
 # Kubernetes Deployment Architecture
 
-How the platform services are deployed using Kustomize, KEDA scaling, and per-environment overlays.
+> **Developer mode — READ THIS FIRST**
+>
+> This document was written for the previous multi-environment + KEDA setup.
+> The following sections are now **partially stale** and need follow-up rewrites:
+>
+> - Directory structure diagrams: `cloud/`, `qa/`, `staging/`, `production/`
+>   overlays were deleted. Only `local/dev` and `orbstack/dev` exist.
+> - KEDA ScaledObjects section: KEDA was removed. All worker Deployments use
+>   fixed `replicas: 1` (min-scale=max-scale=1 in developer mode).
+> - The `_components/scale-to-zero-*` section: those components are not used
+>   by any active overlay.
+> - Temporal 4-role HA references: collapsed to one `temporalio/auto-setup`
+>   Deployment named `temporal` (role=frontend).
+> - Redis cluster references: replaced by standalone Redis.
+>
+> Accurate current-state documentation is in `DOCS/02-INFRASTRUCTURE.md`.
+> The rest of this file is preserved for historical reference and because
+> the base manifest patterns and Kustomize principles still apply.
+
+How the platform services are deployed using Kustomize and per-environment overlays.
 
 ## Overview
 

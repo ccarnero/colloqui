@@ -48,36 +48,17 @@ Y_SOCIAL_URL="${Y_SOCIAL_URL:-}"
 Y_FLOW_URL="${Y_FLOW_URL:-}"
 
 resolve_gateway_target() {
-  local default_host_header
-
-  if kubectl config current-context 2>/dev/null | grep -q "^orbstack$"; then
-    default_host_header="api-gateway.platform-services-${ENVIRONMENT}.127.0.0.1.sslip.io"
-    if [[ -z "$HOST_HEADER" ]]; then
-      HOST_HEADER="$default_host_header"
-    fi
-    if [[ "$USER_SUPPLIED_BASE_URL" != "true" ]]; then
-      BASE_URL="http://${HOST_HEADER}"
-      log "Detected OrbStack cluster context"
-      log "Using direct OrbStack ingress at ${BASE_URL}"
-      return
-    fi
-    log "Detected OrbStack cluster context"
-    return
-  fi
-
-  if command -v minikube &>/dev/null && minikube status -p "$MINIKUBE_PROFILE" &>/dev/null; then
-    default_host_header="api-gateway.platform-services-${ENVIRONMENT}.$(minikube ip -p "$MINIKUBE_PROFILE").sslip.io"
-    if [[ -z "$HOST_HEADER" ]]; then
-      HOST_HEADER="$default_host_header"
-    fi
-    log "Detected Minikube profile '${MINIKUBE_PROFILE}'"
-    return
-  fi
+  local dev_domain="${DEV_DOMAIN:-${MINIKUBE_DOMAIN:-dev.local}}"
+  local default_host_header="api-gateway.platform-services-${ENVIRONMENT}.${dev_domain}"
 
   if [[ -z "$HOST_HEADER" ]]; then
-    HOST_HEADER="api-gateway.platform-services-${ENVIRONMENT}.127.0.0.1.sslip.io"
+    HOST_HEADER="$default_host_header"
   fi
-  warn "Could not detect OrbStack or Minikube. Falling back to ${HOST_HEADER}"
+
+  if [[ "$USER_SUPPLIED_BASE_URL" != "true" ]]; then
+    BASE_URL="http://${HOST_HEADER}"
+    log "Using API gateway at ${BASE_URL}"
+  fi
 }
 
 resolve_gateway_target
