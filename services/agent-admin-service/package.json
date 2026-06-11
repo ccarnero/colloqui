@@ -16,9 +16,10 @@
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-fastify": "^11.0.0",
-    "@yoizen/database": "file:../../packages/database",
-    "@yoizen/observability": "file:../../packages/observability",
-    "@yoizen/shared": "file:../../packages/shared",
+    "fastify": "^5.2.2",
+    "@yoizen/database": "workspace:*",
+    "@yoizen/observability": "workspace:*",
+    "@yoizen/shared": "workspace:*",
     "ai": "^6.0.197",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -47,6 +48,7 @@
     "@types/xlsx": "^0.0.36",
     "supertest": "^7.0.0",
     "testcontainers": "^12.0.1",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.2"
   }
 }

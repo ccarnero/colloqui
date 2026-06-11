@@ -246,7 +246,7 @@ Unit tests use `makeFakeTenantConnections(sql)` from `test/make-sql-mock.ts` to 
 ### Run locally
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

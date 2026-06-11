@@ -5,7 +5,7 @@ HTTP entry point for the Yoizen event-driven platform. Validates and publishes e
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

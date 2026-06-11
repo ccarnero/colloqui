@@ -5,7 +5,7 @@ Knative-based service registry for tenant workloads. Tenants can register, deplo
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

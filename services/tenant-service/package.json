@@ -6,18 +6,19 @@
     "build": "tsc -p tsconfig.json",
     "start": "bun run dist/main.js",
     "start:dev": "bun run --watch src/main.ts",
-    "test": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} bun test",
-    "test:unit": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} bun test test/unit",
-    "test:integration": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} bun test test/integration"
+    "test": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} pnpm test",
+    "test:unit": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} pnpm test test/unit",
+    "test:integration": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} pnpm test test/integration"
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.2.0",
     "@nestjs/common": "^11.1.14",
     "@nestjs/core": "^11.1.14",
     "@nestjs/platform-fastify": "^11.1.14",
-    "@yoizen/database": "file:../../packages/database",
-    "@yoizen/observability": "file:../../packages/observability",
-    "@yoizen/shared": "file:../../packages/shared",
+    "fastify": "^5.2.2",
+    "@yoizen/database": "workspace:*",
+    "@yoizen/observability": "workspace:*",
+    "@yoizen/shared": "workspace:*",
     "class-transformer": "^0.5.1",
     "postgres": "^3.4.5",
     "class-validator": "^0.15.1",
@@ -27,9 +28,10 @@
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
-    "@yoizen/testing": "file:../../packages/testing",
+    "@yoizen/testing": "workspace:*",
     "@nestjs/testing": "^11.0.0",
     "@types/node": "^22.10.1",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2"
   }
 }

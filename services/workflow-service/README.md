@@ -13,7 +13,7 @@ The service stores workflow definitions and execution history in **per-tenant Po
 ### API Server
 
 ```bash
-bun install
+pnpm install
 
 # Terminal 1: API server
 bun run start:dev

@@ -174,7 +174,7 @@ canary_deployments (
 ### Run locally
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

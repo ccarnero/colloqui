@@ -1,39 +1,42 @@
-FROM oven/bun:1.3-alpine AS builder
+# syntax=docker/dockerfile:1
 
+FROM node:24-alpine AS deps
 WORKDIR /app
 
-COPY packages/shared ./packages/shared
-RUN cd packages/shared && bun install
-COPY packages/observability ./packages/observability
-RUN cd packages/observability && bun install
-COPY services/proxy-service/package.json ./services/proxy-service/
-WORKDIR /app/services/proxy-service
-RUN bun install
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 
-RUN rm -rf ../../packages/observability/node_modules/@nestjs \
-  && mkdir -p ../../packages/observability/node_modules \
-  && ln -sfn ../../../services/proxy-service/node_modules/@nestjs \
-    ../../packages/observability/node_modules/@nestjs
+COPY packages packages
 
-COPY services/proxy-service/src ./src
-COPY services/proxy-service/tsconfig.json ./
-RUN bun run build
+COPY services/proxy-service/package.json services/proxy-service/
 
-FROM oven/bun:1.3-alpine
+RUN corepack enable pnpm && \
+    pnpm install --ignore-scripts && \
+    pnpm rebuild esbuild
 
-WORKDIR /app/services/proxy-service
+FROM deps AS build
+WORKDIR /app
+
+COPY services/proxy-service/tsconfig.json services/proxy-service/
+COPY services/proxy-service/src services/proxy-service/src
+
+RUN corepack enable pnpm && \
+    pnpm exec tsc -p services/proxy-service/tsconfig.json
+
+FROM oven/bun:1.3.14-alpine AS runtime
 
 RUN addgroup -g 1001 -S app && adduser -u 1001 -S app -G app
 
-COPY --from=builder /app/packages/shared /app/packages/shared
-COPY --from=builder /app/packages/observability /app/packages/observability
-COPY --from=builder /app/services/proxy-service/node_modules ./node_modules
-COPY --from=builder /app/services/proxy-service/dist ./dist
-COPY --from=builder /app/services/proxy-service/package.json ./
-COPY --from=builder /app/services/proxy-service/tsconfig.json ./
+COPY --from=build /app/node_modules /app/node_modules
+COPY --from=build /app/packages /app/packages
+COPY --from=build /app/services/proxy-service/node_modules /app/services/proxy-service/node_modules
+COPY --from=build /app/services/proxy-service/dist /app/services/proxy-service/dist
+COPY --from=build /app/services/proxy-service/package.json /app/services/proxy-service/package.json
+COPY --from=build /app/services/proxy-service/tsconfig.json /app/services/proxy-service/tsconfig.json
+
+WORKDIR /app/services/proxy-service
 
 USER 1001:1001
 
 EXPOSE 3000
 
-CMD ["bun", "run", "dist/main.js"]
+CMD ["bun", "dist/main.js"]

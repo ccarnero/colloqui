@@ -5,7 +5,7 @@ Consumes all events from the NATS JetStream `EVENTS` stream via the `audit-write
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

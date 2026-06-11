@@ -11,8 +11,7 @@
     }
   },
   "scripts": {
-    "build": "node ./scripts/build-lib.mjs",
-    "prepare": "npm run build"
+    "build": "node ./scripts/build-lib.mjs"
   },
   "peerDependencies": {
     "@angular/common": "^21.0.0",

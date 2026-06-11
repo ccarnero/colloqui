@@ -5,7 +5,7 @@ Proxies incoming HTTP requests to external servers, preserving all headers, body
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

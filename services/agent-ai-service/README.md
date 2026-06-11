@@ -18,7 +18,7 @@ The service consumes CloudEvents from per-tenant NATS JetStream ingress streams 
 ## Development
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

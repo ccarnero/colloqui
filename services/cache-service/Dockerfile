@@ -1,47 +1,42 @@
-FROM oven/bun:1.3-alpine AS builder
+# syntax=docker/dockerfile:1
 
+FROM node:24-alpine AS deps
 WORKDIR /app
 
-COPY packages/shared ./packages/shared
-RUN cd packages/shared && bun install
-COPY packages/observability ./packages/observability
-RUN cd packages/observability && bun install
-COPY packages/database ./packages/database
-RUN cd packages/database && bun install
-COPY services/cache-service/package.json ./services/cache-service/
-WORKDIR /app/services/cache-service
-RUN bun install
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 
-# Fix: bun install at service level corrupts packages/database/node_modules/@yoizen/shared
-# (file: deps with nested installs). Re-create the symlink so tsc resolves @yoizen/shared
-# from packages/database/src/*.ts.
-RUN rm -rf ../../packages/database/node_modules/@yoizen/shared \
-  && ln -sfn ../../../shared ../../packages/database/node_modules/@yoizen/shared
-RUN rm -rf ../../packages/observability/node_modules/@nestjs \
-  && mkdir -p ../../packages/observability/node_modules \
-  && ln -sfn ../../../services/cache-service/node_modules/@nestjs \
-    ../../packages/observability/node_modules/@nestjs
+COPY packages packages
 
-COPY services/cache-service/src ./src
-COPY services/cache-service/tsconfig.json ./
-RUN bun run build
+COPY services/cache-service/package.json services/cache-service/
 
-FROM oven/bun:1.3-alpine
+RUN corepack enable pnpm && \
+    pnpm install --ignore-scripts && \
+    pnpm rebuild esbuild
 
-WORKDIR /app/services/cache-service
+FROM deps AS build
+WORKDIR /app
+
+COPY services/cache-service/tsconfig.json services/cache-service/
+COPY services/cache-service/src services/cache-service/src
+
+RUN corepack enable pnpm && \
+    pnpm exec tsc -p services/cache-service/tsconfig.json
+
+FROM oven/bun:1.3.14-alpine AS runtime
 
 RUN addgroup -g 1001 -S app && adduser -u 1001 -S app -G app
 
-COPY --from=builder /app/packages/shared /app/packages/shared
-COPY --from=builder /app/packages/observability /app/packages/observability
-COPY --from=builder /app/packages/database /app/packages/database
-COPY --from=builder /app/services/cache-service/node_modules ./node_modules
-COPY --from=builder /app/services/cache-service/dist ./dist
-COPY --from=builder /app/services/cache-service/package.json ./
-COPY --from=builder /app/services/cache-service/tsconfig.json ./
+COPY --from=build /app/node_modules /app/node_modules
+COPY --from=build /app/packages /app/packages
+COPY --from=build /app/services/cache-service/node_modules /app/services/cache-service/node_modules
+COPY --from=build /app/services/cache-service/dist /app/services/cache-service/dist
+COPY --from=build /app/services/cache-service/package.json /app/services/cache-service/package.json
+COPY --from=build /app/services/cache-service/tsconfig.json /app/services/cache-service/tsconfig.json
+
+WORKDIR /app/services/cache-service
 
 USER 1001:1001
 
 EXPOSE 3000
 
-CMD ["bun", "run", "dist/main.js"]
+CMD ["bun", "dist/main.js"]

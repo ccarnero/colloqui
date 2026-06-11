@@ -1,49 +1,42 @@
-FROM oven/bun:1.3-debian AS builder
+# syntax=docker/dockerfile:1
 
+FROM node:24-alpine AS deps
 WORKDIR /app
 
-COPY packages/shared ./packages/shared
-RUN cd packages/shared && bun install
-COPY packages/observability ./packages/observability
-RUN cd packages/observability && bun install
-COPY packages/database ./packages/database
-RUN cd packages/database && bun install
-COPY services/workflow-service/package.json ./services/workflow-service/
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+
+COPY packages packages
+
+COPY services/workflow-service/package.json services/workflow-service/
+
+RUN corepack enable pnpm && \
+    pnpm install --ignore-scripts && \
+    pnpm rebuild esbuild
+
+FROM deps AS build
+WORKDIR /app
+
+COPY services/workflow-service/tsconfig.json services/workflow-service/
+COPY services/workflow-service/src services/workflow-service/src
+
+RUN corepack enable pnpm && \
+    pnpm exec tsc -p services/workflow-service/tsconfig.json
+
+FROM oven/bun:1.3.14-alpine AS runtime
+
+RUN addgroup -g 1001 -S app && adduser -u 1001 -S app -G app
+
+COPY --from=build /app/node_modules /app/node_modules
+COPY --from=build /app/packages /app/packages
+COPY --from=build /app/services/workflow-service/node_modules /app/services/workflow-service/node_modules
+COPY --from=build /app/services/workflow-service/dist /app/services/workflow-service/dist
+COPY --from=build /app/services/workflow-service/package.json /app/services/workflow-service/package.json
+COPY --from=build /app/services/workflow-service/tsconfig.json /app/services/workflow-service/tsconfig.json
+
 WORKDIR /app/services/workflow-service
-RUN bun install
-
-# Fix: bun install at service level corrupts packages/database/node_modules/@yoizen/shared
-# (file: deps with nested installs). Re-create the symlink so tsc resolves @yoizen/shared
-# from packages/database/src/*.ts.
-RUN rm -rf ../../packages/database/node_modules/@yoizen/shared \
-  && ln -sfn ../../../shared ../../packages/database/node_modules/@yoizen/shared
-RUN rm -rf ../../packages/observability/node_modules/@nestjs \
-  && mkdir -p ../../packages/observability/node_modules \
-  && ln -sfn ../../../services/workflow-service/node_modules/@nestjs \
-    ../../packages/observability/node_modules/@nestjs
-
-COPY services/workflow-service/src ./src
-COPY services/workflow-service/tsconfig.json ./
-RUN bun run build
-
-FROM oven/bun:1.3-debian
-
-WORKDIR /app/services/workflow-service
-
-RUN groupadd -g 1001 app && useradd -u 1001 -g app -s /bin/sh app
-
-COPY --from=builder /app/packages/shared /app/packages/shared
-COPY --from=builder /app/packages/observability /app/packages/observability
-COPY --from=builder /app/packages/database /app/packages/database
-COPY --from=builder /app/services/workflow-service/node_modules ./node_modules
-COPY --from=builder /app/services/workflow-service/dist ./dist
-COPY --from=builder /app/services/workflow-service/package.json ./
-COPY --from=builder /app/services/workflow-service/tsconfig.json ./
 
 USER 1001:1001
 
 EXPOSE 3000
 
-ARG ENTRYPOINT=dist/main.js
-ENV ENTRYPOINT=${ENTRYPOINT}
-CMD ["sh", "-c", "bun run ${ENTRYPOINT}"]
+CMD ["bun", "dist/main.js"]

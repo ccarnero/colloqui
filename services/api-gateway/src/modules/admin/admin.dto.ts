@@ -16,7 +16,7 @@ import {
   MinLength,
 } from "class-validator";
 import { Type, Transform } from "class-transformer";
-import { PaginatedQueryDto } from "@yoizen/shared";
+import { PaginatedQueryDto } from "@yoizen/shared/dto/pagination";
 
 const MAX_NAME_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -89,6 +89,7 @@ export class CreateAgentDto {
 
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   tools?: unknown[];
 
   @IsArray()
@@ -125,6 +126,7 @@ export class UpdateAgentDto {
 
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   tools?: unknown[];
 
   @IsArray()

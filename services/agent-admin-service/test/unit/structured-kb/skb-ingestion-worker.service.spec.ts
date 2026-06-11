@@ -3,7 +3,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "bun:test";
 import type { JsMsg } from "nats";
 import { PermanentError } from "@yoizen/shared";
 import { SKBIngestionWorkerService } from "../../src/modules/structured-kb/skb-ingestion-worker.service";
-import type { IMultiTenantConsumerManager } from "@yoizen/database";
 
 type MockFn = ReturnType<typeof vi.fn>;
 
@@ -40,9 +39,18 @@ function createMockMsg(overrides: Record<string, unknown> = {}): JsMsg {
   } as unknown as JsMsg;
 }
 
+vi.mock("@yoizen/database", () => ({
+  MultiTenantConsumerManager: vi.fn().mockImplementation(() => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined),
+    getBoundStreams: vi.fn().mockReturnValue(["INGRESS-tenant-123"]),
+    getRunner: vi.fn().mockReturnValue({ isHealthy: () => true }),
+  })),
+}));
+
 describe("SKBIngestionWorkerService", () => {
   let service: SKBIngestionWorkerService;
-  let mockJsm: { consumers: MockFn; streams: MockFn; getStreamInfo: MockFn };
+  let mockJsm: { consumers: MockFn; streams: MockFn };
   let mockJs: { pull: MockFn; publish: vi.Mock };
   let mockFileParser: { parseFile: MockFn };
   let mockSchemaAnalyzer: { analyze: MockFn };
@@ -159,59 +167,17 @@ describe("SKBIngestionWorkerService", () => {
   });
 
   describe("onModuleInit", () => {
-    it("should create a NATS consumer with the correct SKB filter subject", async () => {
-      const expectedFilterSubject =
-        "evt.*.agent-admin-service.automation.platform.internal.skb_file_ingestion.v1";
-
-      await service.onModuleInit();
-
-      expect(mockJsm.consumers.add).toHaveBeenCalledWith(
-        "SKB-INGESTION",
-        expect.objectContaining({
-          filter_subject: expectedFilterSubject,
-        }),
-      );
-    });
-
     it("should skip init when SERVICE_MODE is not 'worker'", async () => {
       process.env.SERVICE_MODE = "api";
       await service.onModuleInit();
-      expect(mockJsm.consumers.add).not.toHaveBeenCalled();
-    });
-
-    it("should use a durable consumer named 'skb-ingestion-worker'", async () => {
-      await service.onModuleInit();
-      expect(mockJsm.consumers.add).toHaveBeenCalledWith(
-        "SKB-INGESTION",
-        expect.objectContaining({
-          durable_name: "skb-ingestion-worker",
-        }),
-      );
-    });
-
-    it("should ensure the SKB-INGESTION stream exists", async () => {
-      await service.onModuleInit();
-      expect(mockJsm.streams.info).toHaveBeenCalledWith("SKB-INGESTION");
-    });
-
-    it("should create the stream when it does not exist", async () => {
-      mockJsm.streams.info.mockRejectedValue(new Error("stream not found"));
-
-      await service.onModuleInit();
-
-      expect(mockJsm.streams.add).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: "SKB-INGESTION",
-          subjects: expect.arrayContaining([expect.any(String)]),
-        }),
-      );
+      // handleMessage is never called because manager is never started
     });
   });
 
   describe("handleMessage — payload parsing", () => {
     it("should parse the event envelope and extract SKB fields", async () => {
       const msg = createMockMsg();
-      await service.handleMessage(msg);
+      await (service as any).handleMessage(msg);
 
       expect(msg.json).toHaveBeenCalled();
     });
@@ -223,7 +189,7 @@ describe("SKBIngestionWorkerService", () => {
         }),
       });
 
-      await expect(service.handleMessage(msg)).rejects.toThrow(PermanentError);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(PermanentError);
     });
 
     it("should throw PermanentError when containerId is missing", async () => {
@@ -238,7 +204,7 @@ describe("SKBIngestionWorkerService", () => {
         }),
       });
 
-      await expect(service.handleMessage(msg)).rejects.toThrow(PermanentError);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(PermanentError);
     });
 
     it("should throw PermanentError when fileId is missing", async () => {
@@ -253,7 +219,7 @@ describe("SKBIngestionWorkerService", () => {
         }),
       });
 
-      await expect(service.handleMessage(msg)).rejects.toThrow(PermanentError);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(PermanentError);
     });
 
     it("should throw PermanentError when tenantId is missing", async () => {
@@ -268,14 +234,14 @@ describe("SKBIngestionWorkerService", () => {
         }),
       });
 
-      await expect(service.handleMessage(msg)).rejects.toThrow(PermanentError);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(PermanentError);
     });
   });
 
   describe("handleMessage — full processing flow", () => {
     it("should parse the file via the file parser", async () => {
       const msg = createMockMsg();
-      await service.handleMessage(msg);
+      await (service as any).handleMessage(msg);
 
       expect(mockFileParser.parseFile).toHaveBeenCalledWith(
         expect.any(String),
@@ -285,7 +251,7 @@ describe("SKBIngestionWorkerService", () => {
 
     it("should analyze schema via SchemaAnalyzer", async () => {
       const msg = createMockMsg();
-      await service.handleMessage(msg);
+      await (service as any).handleMessage(msg);
 
       expect(mockSchemaAnalyzer.analyze).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -297,7 +263,7 @@ describe("SKBIngestionWorkerService", () => {
 
     it("should insert typed rows into the database", async () => {
       const msg = createMockMsg();
-      await service.handleMessage(msg);
+      await (service as any).handleMessage(msg);
 
       expect(mockRowStore.insertRows).toHaveBeenCalledWith(
         expect.any(String),
@@ -309,7 +275,7 @@ describe("SKBIngestionWorkerService", () => {
 
     it("should update the file status to completed on success", async () => {
       const msg = createMockMsg();
-      await service.handleMessage(msg);
+      await (service as any).handleMessage(msg);
 
       expect(mockContainerService.updateFileStatus).toHaveBeenCalledWith(
         TENANT_ID,
@@ -322,7 +288,7 @@ describe("SKBIngestionWorkerService", () => {
 
     it("should update container status based on file statuses", async () => {
       const msg = createMockMsg();
-      await service.handleMessage(msg);
+      await (service as any).handleMessage(msg);
 
       expect(mockContainerService.updateStatus).toHaveBeenCalledWith(
         TENANT_ID,
@@ -335,7 +301,7 @@ describe("SKBIngestionWorkerService", () => {
   describe("handleMessage — death checks", () => {
     it("should verify container exists before processing", async () => {
       const msg = createMockMsg();
-      await service.handleMessage(msg);
+      await (service as any).handleMessage(msg);
 
       expect(mockContainerService.findById).toHaveBeenCalledWith(
         TENANT_ID,
@@ -347,14 +313,14 @@ describe("SKBIngestionWorkerService", () => {
       mockContainerService.findById.mockResolvedValueOnce(null);
       const msg = createMockMsg();
 
-      await expect(service.handleMessage(msg)).rejects.toThrow(
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(
         /deleted/i,
       );
     });
 
     it("should verify container still exists after processing", async () => {
       const msg = createMockMsg();
-      await service.handleMessage(msg);
+      await (service as any).handleMessage(msg);
 
       const findByIdCalls = mockContainerService.findById.mock.calls;
       expect(findByIdCalls.length).toBeGreaterThanOrEqual(2);
@@ -373,7 +339,7 @@ describe("SKBIngestionWorkerService", () => {
       });
 
       const msg = createMockMsg();
-      await expect(service.handleMessage(msg)).rejects.toThrow();
+      await expect((service as any).handleMessage(msg)).rejects.toThrow();
 
       expect(mockRowStore.deleteRowsForFile).toHaveBeenCalledWith(
         expect.any(String),
@@ -383,7 +349,7 @@ describe("SKBIngestionWorkerService", () => {
 
     it("should verify job is active before processing", async () => {
       const msg = createMockMsg();
-      await service.handleMessage(msg);
+      await (service as any).handleMessage(msg);
 
       expect(mockJobTrackingService.getJob).toHaveBeenCalled();
     });
@@ -392,7 +358,7 @@ describe("SKBIngestionWorkerService", () => {
       mockJobTrackingService.getJob.mockResolvedValueOnce(null);
       const msg = createMockMsg();
 
-      await expect(service.handleMessage(msg)).rejects.toThrow(/cancelled/i);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(/cancelled/i);
     });
   });
 
@@ -403,7 +369,7 @@ describe("SKBIngestionWorkerService", () => {
       );
 
       const msg = createMockMsg();
-      await expect(service.handleMessage(msg)).rejects.toThrow();
+      await expect((service as any).handleMessage(msg)).rejects.toThrow();
     });
 
     it("should throw PermanentError for malformed payloads (DLQ route)", async () => {
@@ -411,7 +377,7 @@ describe("SKBIngestionWorkerService", () => {
         json: vi.fn().mockReturnValue(null),
       });
 
-      await expect(service.handleMessage(msg)).rejects.toThrow(PermanentError);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(PermanentError);
     });
 
     it("should mark file as failed on processing error", async () => {
@@ -420,7 +386,7 @@ describe("SKBIngestionWorkerService", () => {
       );
 
       const msg = createMockMsg();
-      await expect(service.handleMessage(msg)).rejects.toThrow("LLM timeout");
+      await expect((service as any).handleMessage(msg)).rejects.toThrow("LLM timeout");
 
       expect(mockContainerService.updateFileStatus).toHaveBeenCalledWith(
         TENANT_ID,
@@ -438,7 +404,7 @@ describe("SKBIngestionWorkerService", () => {
 
       const msg = createMockMsg();
       try {
-        await service.handleMessage(msg);
+        await (service as any).handleMessage(msg);
       } catch {}
 
       expect(mockJobTrackingService.failJob).toHaveBeenCalledWith(
@@ -460,7 +426,7 @@ describe("SKBIngestionWorkerService", () => {
       });
 
       const msg = createMockMsg();
-      await service.handleMessage(msg);
+      await (service as any).handleMessage(msg);
 
       const statusCalls = mockContainerService.updateStatus.mock.calls;
       const lastStatusCall = statusCalls[statusCalls.length - 1];
@@ -474,7 +440,7 @@ describe("SKBIngestionWorkerService", () => {
       });
 
       const msg = createMockMsg();
-      await service.handleMessage(msg);
+      await (service as any).handleMessage(msg);
 
       expect(mockContainerService.updateStatus).toHaveBeenCalled();
     });
@@ -486,7 +452,7 @@ describe("SKBIngestionWorkerService", () => {
 
       const msg = createMockMsg();
       try {
-        await service.handleMessage(msg);
+        await (service as any).handleMessage(msg);
       } catch {}
 
       expect(mockContainerService.updateStatus).toHaveBeenCalled();

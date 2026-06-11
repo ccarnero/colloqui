@@ -1,0 +1,25 @@
+# Bun-style `workspaces` in package.json is not read by pnpm; this file is the
+# single source of truth for workspace membership.
+packages:
+  - 'packages/*'
+  - 'services/*'
+  # Not real workspace members (stale / non-Node):
+  - '!services/messaging-console'
+  - '!services/yoizenclaw-runtime'
+
+# Native deps whose install scripts we intentionally DON'T run (supply-chain
+# hardening). They all ship prebuilt binaries selected at runtime, so blocking
+# their build scripts is safe — matches the previous Bun behaviour.
+#
+# NOTE: esbuild is NOT ignored because its postinstall script is benign
+# (downloads platform-specific prebuilt binaries).
+ignoredBuiltDependencies:
+  - '@parcel/watcher'
+  - '@swc/core'
+  - cpu-features
+  - lmdb
+  - msgpackr-extract
+  - protobufjs
+  - ssh2
+
+minimumReleaseAge: 1440

@@ -12,7 +12,7 @@ import {
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
-import { PaginatedQueryDto } from "@yoizen/shared";
+import { PaginatedQueryDto } from "@yoizen/shared/dto/pagination";
 
 export class SkillFileDto {
   @IsString()

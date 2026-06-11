@@ -1,5 +1,5 @@
 import { IsDateString, IsOptional, IsString } from "class-validator";
-import { PaginatedQueryDto } from "@yoizen/shared";
+import { PaginatedQueryDto } from "@yoizen/shared/dto/pagination";
 
 export class QueryGatewayEventsDto extends PaginatedQueryDto {
   @IsOptional()

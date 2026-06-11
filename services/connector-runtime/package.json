@@ -13,11 +13,12 @@
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-fastify": "^11.0.0",
+    "fastify": "^5.2.2",
     "@temporalio/activity": "^1.11.0",
     "@temporalio/interceptors-opentelemetry": "^1.17.2",
     "@temporalio/worker": "^1.11.0",
-    "@yoizen/observability": "file:../../packages/observability",
-    "@yoizen/shared": "file:../../packages/shared",
+    "@yoizen/observability": "workspace:*",
+    "@yoizen/shared": "workspace:*",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "ioredis": "^5.4.1"
@@ -26,6 +27,7 @@
     "@opentelemetry/api": "^1.9.0",
     "@types/node": "^22.10.1",
     "reflect-metadata": "^0.2.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2"
   }
 }

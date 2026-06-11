@@ -204,7 +204,7 @@ Readiness probe: `GET /health` on port 3000
 
 ```bash
 # API server
-bun install
+pnpm install
 bun run start:dev
 
 # Worker (separate terminal)

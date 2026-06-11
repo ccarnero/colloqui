@@ -4,23 +4,24 @@
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "bun run dist/main.js",
-    "start:dev": "bun run --watch src/main.ts",
-    "backfill:internal-mirrors": "bun run src/scripts/backfill-internal-mirrors.ts",
-    "test": "bun run test:unit",
-    "test:unit": "bun test test/unit",
-    "test:integration": "bun test --timeout 120000 test/integration"
+    "start": "node dist/main.js",
+    "start:dev": "tsx watch src/main.ts",
+    "backfill:internal-mirrors": "tsx src/scripts/backfill-internal-mirrors.ts",
+    "test": "node --import tsx test/unit",
+    "test:unit": "node --import tsx test/unit",
+    "test:integration": "node --import tsx --test test/integration"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.14",
     "@opentelemetry/api": "^1.9.0",
     "@nestjs/core": "^11.1.14",
     "@nestjs/platform-fastify": "^11.1.14",
-    "@yoizen/database": "file:../../packages/database",
-    "@yoizen/observability": "file:../../packages/observability",
-    "@yoizen/shared": "file:../../packages/shared",
+    "@yoizen/database": "workspace:*",
+    "@yoizen/observability": "workspace:*",
+    "@yoizen/shared": "workspace:*",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "fastify": "^5.2.2",
     "mongodb": "^7.2.0",
     "postgres": "^3.4.5",
     "reflect-metadata": "^0.2.2",
@@ -29,9 +30,9 @@
   "devDependencies": {
     "@nestjs/testing": "^11.0.0",
     "@types/node": "^22.10.1",
-
     "nats": "^2.28.0",
     "testcontainers": "^12.0.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }

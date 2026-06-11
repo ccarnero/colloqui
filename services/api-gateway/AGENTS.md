@@ -214,7 +214,7 @@ The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching p
 ### Run locally
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

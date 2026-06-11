@@ -83,7 +83,7 @@ This is a **separate platform service** (not tenant-scoped) that:
 ## Running Locally
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

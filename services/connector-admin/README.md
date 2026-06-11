@@ -5,7 +5,7 @@ Multi-tenant HTTP adapter configuration service. Manages adapters (base URL, aut
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

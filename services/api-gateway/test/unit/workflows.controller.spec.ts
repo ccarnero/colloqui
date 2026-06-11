@@ -44,7 +44,8 @@ describe("WorkflowsController", () => {
       application: "app",
       actions: [{ type: "noop" }],
     } as CreateWorkflowGatewayDto;
-    await controller.createWorkflow(req, body);
+    const localReq = { ...req, body } as ITenantScopedRequest;
+    await controller.createWorkflow(localReq);
     expect(proxy).toHaveBeenCalledWith({
       method: "POST",
       path: "/workflows",
@@ -59,7 +60,8 @@ describe("WorkflowsController", () => {
       application: "app",
       actions: [{ type: "noop" }],
     } as UpdateWorkflowGatewayDto;
-    await controller.updateWorkflow(req, "wf-1", body);
+    const localReq = { ...req, body } as ITenantScopedRequest;
+    await controller.updateWorkflow(localReq, "wf-1");
     expect(proxy).toHaveBeenCalledWith({
       method: "PUT",
       path: "/workflows/wf-1",

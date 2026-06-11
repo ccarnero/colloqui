@@ -142,7 +142,7 @@ AppModule
 ### Run locally
 
 ```bash
-bun install
+pnpm install
 bun run start:dev   # watch mode on src/main.ts
 ```
 

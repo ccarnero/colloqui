@@ -581,7 +581,7 @@ docker run -d --name temporal -p 7233:7233 -p 8233:8233 \
 
 # Run a service
 cd services/api-gateway
-bun install
+pnpm install
 bun run start:dev
 ```
 
@@ -590,13 +590,13 @@ bun run start:dev
 ### Unit tests (per service)
 
 ```bash
-cd services/<service> && bun test:unit
+cd services/<service> && bun run test:unit
 ```
 
 ### Integration tests (per service)
 
 ```bash
-cd services/<service> && bun test:integration
+cd services/<service> && bun run test:integration
 ```
 
 ### E2E tests (full flow)
@@ -607,7 +607,7 @@ cd services/<service> && bun test:integration
 
 # Against local services
 cd tests/e2e
-bun install
+pnpm install
 API_GATEWAY_URL=http://localhost:3000 bun test
 ```
 

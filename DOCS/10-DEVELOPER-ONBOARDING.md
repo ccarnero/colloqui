@@ -53,7 +53,7 @@ git clone <repo-url>
 cd platform-cluster
 
 # Install dependencies
-bun install
+pnpm install
 
 # Bring up the full dev cluster (OrbStack — recommended on macOS)
 ./bootstrap-orbstack-osx.sh
@@ -236,7 +236,7 @@ packages/shared/
 cd services/connector-runtime
 
 # Install dependencies
-bun install
+pnpm install
 
 # Start worker
 bun run start:dev
@@ -259,7 +259,7 @@ tail -f logs/worker.log
 cd services/workflow-service
 
 # Install dependencies
-bun install
+pnpm install
 
 # Terminal 1: API server
 bun run start:dev

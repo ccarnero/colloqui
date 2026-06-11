@@ -15,9 +15,11 @@
     "@nestjs/common": "^11.1.14",
     "@nestjs/core": "^11.1.14",
     "@nestjs/platform-fastify": "^11.1.14",
-    "@yoizen/database": "file:../../packages/database",
-    "@yoizen/observability": "file:../../packages/observability",
-    "@yoizen/shared": "file:../../packages/shared",
+    "fastify": "^5.2.2",
+    "@opentelemetry/api": "^1.9.0",
+    "@yoizen/database": "workspace:*",
+    "@yoizen/observability": "workspace:*",
+    "@yoizen/shared": "workspace:*",
     "class-transformer": "^0.5.1",
     "nats": "^2.29.3",
     "class-validator": "^0.15.1",
@@ -27,9 +29,9 @@
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
-
     "@nestjs/testing": "^11.0.0",
     "@types/node": "^22.10.1",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2"
   }
 }

@@ -15,7 +15,7 @@ All HTTP calls are instrumented with OpenTelemetry for observability. The servic
 
 ```bash
 # Install dependencies
-bun install
+pnpm install
 
 # Run locally with Temporal on localhost:7233
 bun run start:dev

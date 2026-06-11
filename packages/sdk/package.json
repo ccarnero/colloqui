@@ -8,6 +8,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@yoizen/shared": "file:../shared"
+    "@yoizen/shared": "workspace:*"
   }
 }

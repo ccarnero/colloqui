@@ -181,7 +181,7 @@ There is no `test/integration/` directory in this service; use `bun test test/un
 ### Run locally
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

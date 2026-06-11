@@ -133,7 +133,7 @@ Each tenant namespace (`<tenant>-<env>-ns`) contains:
 ### Run locally
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

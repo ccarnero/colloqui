@@ -5,7 +5,7 @@ Provisions and manages tenant namespaces via the Kubernetes API. On creation, de
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

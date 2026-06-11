@@ -84,7 +84,7 @@ run_tests() {
 
   if [[ ! -d node_modules ]]; then
     log "Installing test dependencies..."
-    bun install
+    pnpm install
   fi
 
   # Stable hostname — bootstrap writes /etc/hosts entries so

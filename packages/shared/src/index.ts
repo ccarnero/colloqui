@@ -1,5 +1,3 @@
-import "reflect-metadata";
-
 export {
   RESULT_KEY_PREFIX,
   PENDING_KEY_PREFIX,
@@ -389,8 +387,6 @@ export {
   clampListOffset,
   type IPaginationQueryDto,
 } from './pagination';
-
-export { PaginatedQueryDto } from './paginated-query.dto';
 
 export {
   VALID_ENVIRONMENTS,

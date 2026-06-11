@@ -163,7 +163,7 @@ Consumer: `audit-writer` -- explicit ack, deliver all, max deliver 5.
 ### Run locally
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

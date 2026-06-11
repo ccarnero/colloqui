@@ -1,7 +1,26 @@
+# Build artifacts and deps — always reinstalled/rebuilt inside the image.
 **/node_modules
 **/dist
+**/.angular
+
+# Docs and VCS
 **/*.md
 .git
 .gitignore
+
+# Secrets and local env — must never enter the build context or image layers.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.crt
+**/.npmrc
+**/.netrc
+
+# Repo-local tooling / infra that no image build needs.
 infrastructure
 knative
+.github
+.vscode
+test-results
+test-data

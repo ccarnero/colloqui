@@ -79,7 +79,7 @@ done
 # ── Config (derived from CLI args / defaults) ─────────────────
 BASE_URL="${API_URL%/}"
 API_BASE="${BASE_URL}/api"
-KOURIER_HOST="Host: api-gateway.platform-services-dev.192.168.49.2.sslip.io"
+KOURIER_HOST="Host: api-gateway.platform-services-dev.dev.local"
 
 PLATFORM_ADMIN_EMAIL="admin@yoizen.io"
 PLATFORM_ADMIN_PASS="yoizen-admin-change-me"
@@ -141,7 +141,7 @@ header "Verifying API at ${BASE_URL}"
 
 http_code=$(curl -s -o /dev/null -w "%{http_code}" \
   -H "${KOURIER_HOST}" \
-  "http://localhost:4200/health" 2>/dev/null || echo "000")
+  "${BASE_URL}/health" 2>/dev/null || echo "000")
 if [[ "$http_code" != "200" ]]; then
   error "API is not reachable (HTTP ${http_code})"
   error "Ensure Kourier is routing with the Host header — start the API first and try again."

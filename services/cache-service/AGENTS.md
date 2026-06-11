@@ -144,7 +144,7 @@ Unit tests mock the `REDIS_CLIENT` token. Integration tests bootstrap the full a
 ### Run locally
 
 ```bash
-bun install
+pnpm install
 bun run start:dev   # watch mode on src/main.ts
 ```
 

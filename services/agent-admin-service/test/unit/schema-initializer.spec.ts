@@ -1,9 +1,9 @@
 import "reflect-metadata";
 import { describe, it, expect } from "bun:test";
 import type { Sql } from "@yoizen/database";
-import { initTenantSchema } from "../../src/providers/schema-initializer";
+import { initAgentAdminTenantSchema } from "../../src/providers/schema-initializer";
 
-describe("initTenantSchema", () => {
+describe("initAgentAdminTenantSchema", () => {
   it("runs tenant DDL inside a transaction", async () => {
     const unsafeCalls: string[] = [];
     const tx = {
@@ -18,7 +18,7 @@ describe("initTenantSchema", () => {
       },
     } as unknown as Sql;
 
-    await initTenantSchema("tenant-1", sql);
+    await initAgentAdminTenantSchema("tenant-1", sql);
 
     expect(
       unsafeCalls.some((c) => c.includes("CREATE TABLE IF NOT EXISTS agents")),

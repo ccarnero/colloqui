@@ -104,6 +104,7 @@ describe("AdaptersMongoRepository", () => {
     const db = makeMockDb({
       http_adapters: {
         findOne: mock(async () => null),
+        countDocuments: mock(async () => 0),
       },
     });
     const { repo } = await createAdaptersRepository(db);
@@ -114,6 +115,7 @@ describe("AdaptersMongoRepository", () => {
     const db = makeMockDb({
       http_adapters: {
         findOne: mock(async () => null),
+        countDocuments: mock(async () => 0),
       },
     });
     const { repo, connections } = await createAdaptersRepository(db);

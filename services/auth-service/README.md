@@ -5,7 +5,7 @@ Authentication and authorization service for the Yoizen platform. Issues JWT acc
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

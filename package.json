@@ -1,29 +1,10 @@
 {
   "name": "yoizen-platform",
   "private": true,
-  "workspaces": [
-    "packages/*",
-    "services/agent-memory-service",
-    "services/api-gateway",
-    "services/auth-service",
-    "services/audit-service",
-    "services/cache-service",
-    "services/channel-service",
-    "services/connector-admin",
-    "services/connector-runtime",
-    "services/proxy-service",
-    "services/registry-service",
-    "services/tenant-service",
-    "services/usage-aggregator-service",
-    "services/workflow-service",
-    "services/agent-ai-service",
-    "services/agent-scheduler-service",
-    "services/agent-admin-service",
-    "services/ai-agent-gateway",
-    "services/admin-console"
-  ],
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "reflect-metadata": "^0.2.2",
+    "tsx": "^4.19.2",
     "typescript": "^5.9.3"
   }
 }

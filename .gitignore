@@ -132,3 +132,11 @@ CURSOR.md
 CLAUDE.md
 .claude/
 .ywai/
+
+# Build caches / compiled artifacts — never commit
+**/.angular/
+**/__pycache__/
+*.pyc
+playwright-report/
+test-results/
+test-data/

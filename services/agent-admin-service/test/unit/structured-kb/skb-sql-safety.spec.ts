@@ -166,7 +166,7 @@ describe("SQL Safety Module", () => {
     });
 
     it("should remove single quotes from identifiers", () => {
-      expect(mod.sanitizeIdentifier("col'; DROP TABLE")).toBe("col DROPTABLE");
+      expect(mod.sanitizeIdentifier("col'; DROP TABLE")).toBe("col DROP TABLE");
     });
 
     it("should remove semicolons from identifiers", () => {

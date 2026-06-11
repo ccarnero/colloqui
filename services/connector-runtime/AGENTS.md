@@ -128,7 +128,7 @@ There is no `test/integration/` suite in this package yet; use `bun test` for th
 ### Run locally
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

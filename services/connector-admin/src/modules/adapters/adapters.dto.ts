@@ -19,8 +19,8 @@ import { Type } from "class-transformer";
 import {
   AdapterCacheMethod,
   AdapterCacheQueryParamsMode,
-  PaginatedQueryDto,
 } from "@yoizen/shared";
+import { PaginatedQueryDto } from "@yoizen/shared/dto/pagination";
 
 const HTTP_METHODS = [
   "GET",

@@ -5,7 +5,7 @@ HTTP CRUD API backed by a two-tier cache: L1 in-memory `Map` (1000 entries, FIFO
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run start:dev
 ```
 

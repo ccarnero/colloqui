@@ -4,19 +4,14 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
-import {
-  AckPolicy,
-  DeliverPolicy,
-  ReplayPolicy,
-  RetentionPolicy,
-  StorageType,
-  type JetStreamClient,
-  type JetStreamManager,
-  type JsMsg,
-} from "nats";
+import type { JetStreamClient, JetStreamManager, JsMsg } from "nats";
 import { PinoLoggerService } from "@yoizen/observability";
 import { PermanentError } from "@yoizen/shared";
-import { type TenantConnectionManager } from "@yoizen/database";
+import {
+  MultiTenantConsumerManager,
+  type IMultiTenantConsumerConfig,
+  type TenantConnectionManager,
+} from "@yoizen/database";
 import { JETSTREAM, JETSTREAM_MANAGER } from "../../providers/nats.provider";
 import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import { SKBFileParser } from "./skb-file-parser";
@@ -30,10 +25,8 @@ import { JobTrackingService } from "../knowledge-bases/job-tracking.service";
  */
 const DURABLE_NAME = "skb-ingestion-worker";
 
-/**
- * Dedicated stream that aggregates SKB file ingestion events across all tenants.
- */
-const SKB_STREAM = "SKB-INGESTION";
+/** Regex matching every per-tenant ingress stream. */
+const TENANT_STREAM_PATTERN = /^INGRESS-/;
 
 /**
  * Cross-tenant subject filter scoped to SKB file ingestion events.
@@ -47,23 +40,15 @@ const FILTER_SUBJECT =
 const PERMANENT_ERROR_STAGE = "skb-ingestion-worker";
 
 /**
- * Maximum delivery attempts before the message is sent to the DLQ.
- */
-const MAX_DELIVER = 5;
-
-/**
- * Acknowledgement wait in milliseconds (5 min — files can be large).
- */
-const ACK_WAIT_MS = 300_000;
-
-/**
- * Backoff delays in milliseconds between retries.
- */
-const BACKOFF_MS = [60_000, 120_000, 300_000, 600_000];
-
-/**
  * Pull-based JetStream consumer that processes SKB file ingestion
  * events across all tenant INGRESS streams.
+ *
+ * Uses {@link MultiTenantConsumerManager} which:
+ *   - Auto-discovers tenant streams via regex at startup
+ *   - Creates a durable consumer on each stream (same DURABLE_NAME)
+ *   - Spawns a {@link NatsConsumerRunner} per stream with ack/nak/term
+ *   - Reconciles periodically to pick up new tenants without restart
+ *   - Routes permanent failures to per-tenant DLQ (DLQ-<tenant>)
  *
  * Error taxonomy (handled by the runner):
  *   - handler resolves            → msg.ack()
@@ -77,6 +62,7 @@ export class SKBIngestionWorkerService
   private readonly logger = new PinoLoggerService(
     SKBIngestionWorkerService.name,
   );
+  private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
     @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
@@ -98,56 +84,40 @@ export class SKBIngestionWorkerService
       return;
     }
 
-    await this.ensureStream();
-
-    const consumerConfig = {
-      durable_name: DURABLE_NAME,
-      deliver_policy: DeliverPolicy.All,
-      ack_policy: AckPolicy.Explicit,
-      replay_policy: ReplayPolicy.Instant,
-      filter_subject: FILTER_SUBJECT,
-      max_deliver: MAX_DELIVER,
-      ack_wait: ACK_WAIT_MS * 1_000_000,
-      backoff: BACKOFF_MS.map((b) => b * 1_000_000),
+    const config: IMultiTenantConsumerConfig = {
+      streamPattern: TENANT_STREAM_PATTERN,
+      durableName: DURABLE_NAME,
+      filterSubject: FILTER_SUBJECT,
       description: "SKB file ingestion worker",
+      maxDeliver: 5,
+      ackWaitMs: 300_000, // 5 min — files can be large
+      backoffMs: [60_000, 120_000, 300_000, 600_000],
     };
 
-    await this.jsm.consumers.add(SKB_STREAM, consumerConfig);
+    this.manager = new MultiTenantConsumerManager(
+      this.jsm,
+      this.js,
+      config,
+      (msg: JsMsg) => this.handleMessage(msg),
+      this.logger,
+    );
+
+    await this.manager.start();
 
     this.logger.log(
-      `SKB ingestion worker started on stream '${SKB_STREAM}', consuming '${FILTER_SUBJECT}'`,
+      `SKB ingestion worker started, consuming '${FILTER_SUBJECT}' from all tenant streams`,
     );
   }
 
-  private async ensureStream(): Promise<void> {
-    try {
-      await this.jsm.streams.info(SKB_STREAM);
-      this.logger.log(`Stream '${SKB_STREAM}' already exists`);
-      return;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes("not found") && !msg.includes("stream not found")) {
-        throw err;
-      }
-    }
-
-    this.logger.log(`Creating stream '${SKB_STREAM}'...`);
-    await this.jsm.streams.add({
-      name: SKB_STREAM,
-      subjects: [FILTER_SUBJECT],
-      retention: RetentionPolicy.Limits,
-      storage: StorageType.File,
-      max_age: 7 * 24 * 60 * 60 * 1_000_000_000, // 7 days in nanos
-    });
-    this.logger.log(`Stream '${SKB_STREAM}' created`);
-  }
-
   async onModuleDestroy(): Promise<void> {
-    // No per-stream runners to clean up in this simplified setup
+    if (this.manager) {
+      await this.manager.stop();
+      this.manager = null;
+    }
   }
 
   /**
-   * Per-message handler invoked by the NATS consumer.
+   * Per-message handler invoked by the runner.
    *
    * Processing flow:
    *   1. Parse the event envelope and extract SKB fields
@@ -163,7 +133,7 @@ export class SKBIngestionWorkerService
    * Re-thrown errors are propagated to the runner which decides
    * disposition: PermanentError → term + DLQ, anything else → nak.
    */
-  async handleMessage(msg: JsMsg): Promise<void> {
+  private async handleMessage(msg: JsMsg): Promise<void> {
     let envelope: unknown;
     try {
       envelope = msg.json();
