@@ -35,7 +35,11 @@ Redis serves three distinct roles across the platform:
 
 ### Temporal
 
-Developer mode runs a **single `temporalio/auto-setup` Deployment** named `temporal` (labels: `app.kubernetes.io/name=temporal`, `temporal.io/role=frontend`). The previous 4-role HA setup (separate `temporal-frontend`, `temporal-history`, `temporal-matching`, `temporal-worker` Deployments) was collapsed to this single pod. The `temporal` Service still serves `:7233`.
+Developer mode runs a **single `temporalio/auto-setup` Deployment** named `temporal` (labels: `app.kubernetes.io/name=temporal`, `temporal.io/role=frontend`). All four internal Temporal roles (frontend, history, matching, worker) run in one process. The `temporal` Service serves `:7233`.
+
+The 4-role HA split (separate `temporal-frontend`, `-history`, `-matching`, `-worker` Deployments) was an experiment used during stress testing but is no longer the active configuration. `RUNBOOK-TEMPORAL-HA-MIGRATION.md` describes that one-time migration for historical context.
+
+Developer mode also uses a single `postgres-temporal` CNPG cluster for both workflow state and visibility (both `POSTGRES_SEEDS` and `VISIBILITY_POSTGRES_SEEDS` point to `postgres-temporal-rw`). The separate `postgres-temporal-visibility` cluster described in `RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md` is not active in developer mode.
 
 ## Deployment Models
 
@@ -79,6 +83,5 @@ flowchart TD
 
 ## References
 
-- `DOCS/14-DEPLOYMENT-ARCHITECTURE.md` — deep Kustomize structure reference (partially stale; see note at top)
 - `infrastructure/base/`
 - `infrastructure/overlays/`

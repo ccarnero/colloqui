@@ -1,6 +1,6 @@
 # Vercel AI SDK v6 — Technical Reference for NestJS Agent Services
 
-> SDK version: **6.x** (latest) | Package: `ai` | Providers: `@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`
+> SDK version: **6.0.197** (`ai: ^6.0.197`) | Provider packages: `@ai-sdk/openai ^3.0.68`, `@ai-sdk/anthropic ^3.0.81` | Verified against `services/agent-ai-service/package.json`
 
 ---
 
@@ -168,7 +168,11 @@ for await (const part of result.fullStream) {
 
 ## 3. Structured Data: Output API
 
-v6 replaces the deprecated `generateObject`/`streamObject` with the `Output` property on `generateText`/`streamText`.
+v6 deprecates `generateObject`/`streamObject` in favour of the `Output` property on `generateText`/`streamText`.
+
+> **Project status**: `agent-ai-service` and `agent-admin-service` (SKB module) still call `generateObject` directly from `ai` v6. The functions remain available but are deprecated. Migration to the `Output` API is pending.
+
+### v6 preferred API
 
 ### `Output.object()` — Generate typed objects
 
@@ -1279,18 +1283,18 @@ export class RagMiddleware {
 
 ## 13. v5 → v6 Migration Notes
 
-| v5 (old) | v6 (new) |
-|---|---|
-| `generateObject({ model, schema, prompt })` | `generateText({ model, output: Output.object({ schema }), prompt })` |
-| `streamObject({ model, schema, prompt })` | `streamText({ model, output: Output.object({ schema }), prompt })` |
-| `maxSteps: 5` | `stopWhen: stepCountIs(5)` |
-| `tools: { name: { description, parameters, execute } }` | `tools: { name: tool({ description, inputSchema, execute }) }` |
-| `parameters` (JSON schema) | `inputSchema` (Zod schema) |
-| `maxTokens` | `maxOutputTokens` |
-| `system` remains `system` | No change |
-| Provider instances only | Gateway string syntax: `"anthropic/claude-sonnet-4.5"` |
-| `jsonSchema()` helper | Still available for JSON schema input |
-| Telemetry span: `ai.generateObject` | Telemetry span: `ai.generateText` (with output) |
+| v5 (old) | v6 (new / preferred) | Project status |
+|---|---|---|
+| `generateObject({ model, schema, prompt })` | `generateText({ model, output: Output.object({ schema }), prompt })` | **Still using v5 form** in `agent-ai-service` and `agent-admin-service` (SKB). Migration pending. |
+| `streamObject({ model, schema, prompt })` | `streamText({ model, output: Output.object({ schema }), prompt })` | Not used — migrate when needed |
+| `maxSteps: 5` | `stopWhen: stepCountIs(5)` | `agent-ai-service` uses `stopWhen` correctly |
+| `tools: { name: { description, parameters, execute } }` | `tools: { name: tool({ description, inputSchema, execute }) }` | `agent-ai-service` uses `tool()` correctly |
+| `parameters` (JSON schema) | `inputSchema` (Zod schema) | Migrated |
+| `maxTokens` | `maxOutputTokens` | Migrated (see comment in `llm-executor.service.ts`) |
+| `system` remains `system` | No change | — |
+| Provider instances only | Gateway string syntax: `"anthropic/claude-sonnet-4.5"` | Both forms in use |
+| `jsonSchema()` helper | Still available for JSON schema input | — |
+| Telemetry span: `ai.generateObject` | Telemetry span: `ai.generateText` (with output) | N/A until generateObject migrated |
 
 ---
 

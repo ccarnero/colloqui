@@ -9,7 +9,7 @@ import type { VariableResolutionContext } from "./variable.interfaces";
  * envelope consumed by `TriggerConsumerService`) through
  * {@link WorkflowDefinition}, {@link WorkflowExecutionContext}, and
  * finally into publishing activities so derived envelopes comply with
- * §6 of wdocs-02:
+ * §6 of DOCS/arquitectura/02:
  *
  *  - `causation_id` of a new envelope must equal `incoming.id`.
  *  - `correlation_id` must be copied from `incoming.correlation_id`.
@@ -125,7 +125,7 @@ export interface ServiceCallArgs {
   /**
    * Optional endpoint id from the internal-adapter mirror. When provided,
    * the worker resolves the request through {@link AdapterClient} and
-   * uses the endpoint's pre-declared method/path (see wdocs D-service-adapter).
+   * uses the endpoint's pre-declared method/path (see decision D-service-adapter in DOCS/arquitectura/README.md).
    * When absent, the worker falls back to concatenating `args.path` onto
    * the mirror's `baseUrl` (hybrid mode).
    */

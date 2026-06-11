@@ -394,34 +394,11 @@ const result = await executeEndpointCall({
 // 4. If test fails: circuit reopens
 ```
 
-### Workflow Service: Explicit Retry Action
+### Workflow Service: Activity-Level Retry Policy
 
-For workflows, retry via branch + sleep:
+For `endpointCall` and `serviceCall`, Temporal's activity retry policy handles retries automatically. The workflow-service configures them as follows: max 5 attempts, 1 s initial interval, 2× backoff coefficient, 30 s maximum interval. This covers one full circuit-breaker cooldown window (30 s in `connector-runtime`).
 
-```
-{
-  type: "jsFunction",
-  name: "retryWithBackoff",
-  args: {
-    code: `
-      let attempts = 0;
-      while (attempts < 3) {
-        try {
-          const result = await context.executeActivity('endpointCall', {...});
-          return result;
-        } catch (e) {
-          attempts++;
-          if (attempts < 3) {
-            await context.sleep(Math.pow(2, attempts) * 1000);
-          } else {
-            throw e;
-          }
-        }
-      }
-    `
-  }
-}
-```
+The `jsFunction` activity sandbox (`new Function()`) does NOT have access to Temporal or NATS APIs. Code inside a `jsFunction` action cannot call activities, sleep for Temporal-durable delays, or publish events directly. Use a `branch` or `conditional` action to sequence retry logic across multiple `endpointCall` steps, or rely on the built-in activity retry policy.
 
 ---
 
@@ -450,13 +427,13 @@ Use case: Real-time CRM enrichment
     └─ Total: ~40ms (PASSES latency SLA)
 ```
 
-**Scaling Numbers**:
+**Scaling Numbers** (approximate — subject to deployment config):
 
-| Component | Concurrency | Max Throughput | Latency |
-|-----------|-------------|----------------|---------|
-| **Connector Runtime** | 200 activities/replica | 200 req/sec (1 replica) | 20-50ms |
-| **Workflow Worker** | 100 workflows/replica | 50 workflows/sec (1 replica) | 100-300ms |
-| **Workflow API** | Knative KPA | 500 req/sec (5 replicas) | 10-100ms |
+| Component | Concurrency (configured) | Notes |
+|-----------|--------------------------|-------|
+| **Connector Runtime** | 400 activities/replica (`maxConcurrentActivityTaskExecutions`) | Pure I/O worker; Knative KPA auto-scales horizontally |
+| **Workflow Worker** | 100 activity tasks, 50 workflow tasks per replica | Orchestration overhead adds latency relative to direct dispatch |
+| **Workflow API** | Knative KPA (min 1, max 5) | Stateless REST endpoint |
 
 **Recommendation**:
 - Use **Connector Runtime directly** for: Real-time, high-throughput, low-latency needs

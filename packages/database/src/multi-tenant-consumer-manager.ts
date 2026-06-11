@@ -3,11 +3,13 @@ import type {
   JetStreamClient,
   JetStreamManager,
   JsMsg,
+  ObjectStore,
 } from "nats";
 import { headers as natsHeaders } from "nats";
 import {
   buildDlqMessageSubject,
   buildDlqStreamName,
+  isCompliantEnvelope,
   PermanentError,
 } from "@yoizen/shared";
 import {
@@ -22,6 +24,12 @@ import {
   type IDurableConsumerOptions,
 } from "./nats-durable-consumer";
 import { ensureTenantDlqStream } from "./nats-dlq";
+import {
+  looksLikeClaimCheck,
+  resolveClaimCheckEnvelope,
+  withInflatedData,
+} from "./claim-check";
+import type { EventEnvelope } from "@yoizen/shared";
 
 /**
  * Configuration for a multi-tenant durable consumer — one durable
@@ -140,6 +148,12 @@ export class MultiTenantConsumerManager {
   private readonly ensuredStreams = new Set<string>();
   private reconcileHandle: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
+
+  /**
+   * Lazy per-bucket Object Store cache for the claim-check middleware.
+   * Open-only (no creation options) — the producer owns bucket creation.
+   */
+  private readonly claimCheckStores = new Map<string, ObjectStore>();
 
   constructor(
     private readonly jsm: JetStreamManager,
@@ -280,7 +294,7 @@ export class MultiTenantConsumerManager {
     const onPermanent = this.resolvePermanentHandler(stream);
     const runner = new NatsConsumerRunner(
       consumer,
-      this.handler,
+      this.wrapHandler(this.handler),
       this.logger,
       this.config.runnerOptions,
       onPermanent ? { onPermanent } : {},
@@ -289,6 +303,100 @@ export class MultiTenantConsumerManager {
     );
     await runner.start();
     this.runners.set(stream, { runner, consumer });
+  }
+
+  /**
+   * Lazy per-bucket Object Store accessor for the claim-check middleware.
+   * Open-only (no creation options) — the producer owns bucket creation.
+   */
+  private async getClaimCheckStore(bucket: string): Promise<ObjectStore> {
+    const cached = this.claimCheckStores.get(bucket);
+    if (cached) return cached;
+    const store = await this.js.views.os(bucket);
+    this.claimCheckStores.set(bucket, store);
+    return store;
+  }
+
+  /**
+   * Wraps an inner handler with claim-check middleware.
+   *
+   * Flow:
+   *   1. `!looksLikeClaimCheck(msg.data)` → call inner handler untouched.
+   *   2. Parse JSON; on parse failure → passthrough.
+   *   3. Guard `isCompliantEnvelope && payload_inline === false`, else passthrough.
+   *   4. Resolve via `resolveClaimCheckEnvelope` → record metric → call inner
+   *      handler with a Proxy that overrides `data` with the inflated bytes.
+   *   5. On resolve error: record failed metric, re-throw (→ nak → backoff → DLQ).
+   */
+  private wrapHandler(
+    inner: (msg: JsMsg) => Promise<void>,
+  ): (msg: JsMsg) => Promise<void> {
+    return async (msg: JsMsg): Promise<void> => {
+      if (!looksLikeClaimCheck(msg.data)) {
+        return inner(msg);
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(Buffer.from(msg.data).toString("utf8"));
+      } catch {
+        // Unparseable JSON — pass through byte-identical
+        return inner(msg);
+      }
+
+      if (
+        !isCompliantEnvelope(parsed) ||
+        (parsed as EventEnvelope).data.payload_inline !== false
+      ) {
+        // Marker false-positive — pass through
+        return inner(msg);
+      }
+
+      const envelope = parsed as EventEnvelope;
+      try {
+        const inflated = await resolveClaimCheckEnvelope(
+          envelope,
+          (bucket) => this.getClaimCheckStore(bucket),
+        );
+        if (
+          this.config.metrics?.recordClaimCheckResolved &&
+          this.config.durableName
+        ) {
+          try {
+            this.config.metrics.recordClaimCheckResolved(
+              this.config.durableName,
+            );
+          } catch {
+            // metrics are best-effort
+          }
+        }
+        const inflatedBytes = new TextEncoder().encode(
+          JSON.stringify(inflated),
+        );
+        return inner(withInflatedData(msg, inflatedBytes));
+      } catch (err) {
+        if (
+          this.config.metrics?.recordClaimCheckResolveFailed &&
+          this.config.durableName
+        ) {
+          const code =
+            err instanceof Error &&
+            "code" in err &&
+            typeof (err as { code: unknown }).code === "string"
+              ? (err as { code: string }).code
+              : "unknown";
+          try {
+            this.config.metrics.recordClaimCheckResolveFailed(
+              this.config.durableName,
+              code,
+            );
+          } catch {
+            // metrics are best-effort
+          }
+        }
+        throw err;
+      }
+    };
   }
 
   /**

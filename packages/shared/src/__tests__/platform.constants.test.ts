@@ -20,49 +20,49 @@ describe("Platform NATS Subjects", () => {
       );
     });
 
-    test("PLATFORM_CONFIG_SYNC follows wdocs convention", () => {
+    test("PLATFORM_CONFIG_SYNC follows subject convention (DOCS/arquitectura/01-service-bus.md)", () => {
       expect(PLATFORM_CONFIG_SYNC).toBe(
         "evt.{tenant}.agent-admin-service.automation.platform.internal.config_sync.v1",
       );
     });
 
-    test("PLATFORM_JOBS_SYNC follows wdocs convention", () => {
+    test("PLATFORM_JOBS_SYNC follows subject convention (DOCS/arquitectura/01-service-bus.md)", () => {
       expect(PLATFORM_JOBS_SYNC).toBe(
         "evt.{tenant}.agent-admin-service.automation.platform.internal.jobs_sync.v1",
       );
     });
 
-    test("PLATFORM_JOB_TRIGGER follows wdocs convention", () => {
+    test("PLATFORM_JOB_TRIGGER follows subject convention (DOCS/arquitectura/01-service-bus.md)", () => {
       expect(PLATFORM_JOB_TRIGGER).toBe(
         "evt.{tenant}.agent-admin-service.automation.platform.internal.job_trigger.v1",
       );
     });
 
-    test("PLATFORM_CHAT_RESPOND follows wdocs convention", () => {
+    test("PLATFORM_CHAT_RESPOND follows subject convention (DOCS/arquitectura/01-service-bus.md)", () => {
       expect(PLATFORM_CHAT_RESPOND).toBe(
         "evt.{tenant}.agent-admin-service.automation.platform.internal.chat_respond.v1",
       );
     });
 
-    test("PLATFORM_ONLINE follows wdocs convention", () => {
+    test("PLATFORM_ONLINE follows subject convention (DOCS/arquitectura/01-service-bus.md)", () => {
       expect(PLATFORM_ONLINE).toBe(
         "evt.{tenant}.agent-admin-service.automation.platform.internal.online.v1",
       );
     });
 
-    test("PLATFORM_AGENT_OUTBOUND follows wdocs convention", () => {
+    test("PLATFORM_AGENT_OUTBOUND follows subject convention (DOCS/arquitectura/01-service-bus.md)", () => {
       expect(PLATFORM_AGENT_OUTBOUND).toBe(
         "evt.{tenant}.agent-admin-service.automation.platform.internal.agent_outbound.v1",
       );
     });
 
-    test("PLATFORM_EXECUTION_STATUS follows wdocs convention", () => {
+    test("PLATFORM_EXECUTION_STATUS follows subject convention (DOCS/arquitectura/01-service-bus.md)", () => {
       expect(PLATFORM_EXECUTION_STATUS).toBe(
         "evt.{tenant}.agent-admin-service.automation.platform.internal.execution_status.v1",
       );
     });
 
-    test("PLATFORM_EVENT follows wdocs convention", () => {
+    test("PLATFORM_EVENT follows subject convention (DOCS/arquitectura/01-service-bus.md)", () => {
       expect(PLATFORM_EVENT).toBe(
         "evt.{tenant}.agent-admin-service.automation.platform.internal.event.v1",
       );

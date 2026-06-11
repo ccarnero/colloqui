@@ -1,6 +1,6 @@
 // Documentos de referencia para multi-tenant
 
-## Documentación completa en wdocs/docs/canales/
+## Documentación completa en DOCS/canales/
 
 ### 01-multi-tenant-fundacion.md
 - Fundamentos de arquitectura multi-tenant
@@ -40,5 +40,5 @@
 
 ## Referencias adicionales
 
-- wdocs/docs/arquitectura/02-diseno-de-mensajes.md — Envelopes con campo tenant
-- wdocs/docs/arquitectura/01-service-bus.md — Streams por tenant en NATS
+- DOCS/arquitectura/02-diseno-de-mensajes.md — Envelopes con campo tenant
+- DOCS/arquitectura/01-service-bus.md — Streams por tenant en NATS

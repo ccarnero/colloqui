@@ -88,7 +88,10 @@ export type {
   INatsConsumerRunnerState,
   NatsReattachReason,
 } from "./nats-consumer-runner";
-export { ensureTenantDlqStream } from "./nats-dlq";
+export {
+  ensureTenantDlqStream,
+  __resetEnsuredDlqStreamCacheForTests,
+} from "./nats-dlq";
 export {
   ensureDurableConsumer,
   getDurableConsumer,
@@ -141,3 +144,12 @@ export {
 export type {
   ITenantDbConnectionManager,
 } from "./tenant-connection-manager.token";
+export {
+  looksLikeClaimCheck,
+  parseClaimCheckRef,
+  ClaimCheckResolveError,
+  resolveClaimCheckEnvelope,
+  withInflatedData,
+  isClaimCheckEnvelope,
+} from "./claim-check";
+export type { ClaimCheckRef, ClaimCheckErrorCode } from "./claim-check";

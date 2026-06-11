@@ -1,43 +1,26 @@
-// Documento de referencia
-// Ver: wdocs/docs/arquitectura/02-diseño-de-mensajes.md
+## Fuentes de verdad as-built — Diseño de mensajes
 
-Referencia al documento completo de diseño de mensajes:
-- **Ubicación**: `wdocs/docs/arquitectura/02-diseño-de-mensajes.md`
-- **Estado**: Borrador para revisión
-- **Audiencia**: Developers
+Este archivo es un índice de las fuentes de verdad del sistema de mensajería implementado.
+Las tres secciones de documentación de arquitectura y el documento operativo de NATS/JetStream
+son la referencia canónica. El código prevalece sobre los documentos ante cualquier divergencia.
 
-## Contenido del documento original
+### Documentación de arquitectura (as-built)
 
-1. Principios de diseño
-   - Envelope genérico + raw payload intacto
-   - Routing por subject
-   - 1 evento por ingress
-   - Trazabilidad completa (trace ID, causation ID, correlation ID)
+| Documento | Contenido |
+|---|---|
+| `DOCS/arquitectura/02-diseño-de-mensajes.md` | Contrato canónico de envelope (CloudEvents-inspired), formato de subjects de 8 tokens, allowlist de headers, idempotencia, cadena causal (causation/correlation/depth), claim-check (resumen) |
+| `DOCS/arquitectura/03-ingress-agentes.md` | Flujo de ingress de dos etapas (webhook bridge api-gateway → channel-service), ciclo de vida de agentes AI as-built, backpressure y timeout del publisher |
+| `DOCS/arquitectura/04-claim-check.md` | Protocolo completo de claim-check: producer (channel-service), consumer middleware (MultiTenantConsumerManager), Object Store (PAYLOAD-<tenant>), invariante de checksum, métricas, diagramas de secuencia |
+| `DOCS/03-NATS-JETSTREAM.md` | Topología de streams (INGRESS-<tenant>, DLQ-<tenant>, PAYLOAD-<tenant>), taxonomía de subjects, ciclo de vida de provisioning de streams y consumers |
 
-2. Diseño de subjects
-   - Formato: `evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v1`
-   - Wildcards: `*` y `>`
-   - Kinds: ingress, agent_outbound, agent_action, agent_observation
+### Fuente de verdad de tipos
 
-3. Contrato del envelope (CloudEvents 1.0)
-   - Campos requeridos
-   - Ejemplo completo de ingress de WhatsApp
-
-4. Abstracción de transporte
-   - Métodos: webhook, poll, stream, queue_bridge, agent
-   - Headers allowlist
-
-5. Campo `data`
-   - Inline vs claim check
-   - Payload con checksum
-
-6. Cadena causal y correlación
-   - causation_id
-   - correlation_id
-
-7. Idempotencia
-   - idempotencykey = sha256(canonical_json(raw_body))
-   - Nats-Msg-Id header para JetStream deduplication
-
-8. Interfaz del módulo de ingress
-   - Pipeline: verifySignature |> validateStructure |> checkPayloadSize |> storeIfClaimCheck |> buildEnvelope |> publish
+```
+packages/shared/src/interfaces.ts   → EventEnvelope, EventTransport, EventData
+packages/shared/src/channel.constants.ts → CHANNEL_PRODUCER, WEBHOOK_FORWARDED_HEADERS, CLAIM_CHECK_THRESHOLD_BYTES
+packages/shared/src/envelope.utils.ts → computeIdempotencyKey, canonicalJson, buildSubject, deriveEnvelope, MAX_DEPTH_BY_CATEGORY
+services/channel-service/src/domain/envelope.factory.ts → createChannelEnvelope (id: crypto.randomUUID(), type: io.yoizen.messaging.<channel>.<provider>.<kind>.v1)
+services/channel-service/src/modules/ingress/ingress.service.ts → lógica de claim-check (producer)
+packages/database/src/claim-check.ts → resolveClaimCheckEnvelope (consumer)
+packages/shared/src/webhook.interfaces.ts → WebhookIngressEnvelope
+```

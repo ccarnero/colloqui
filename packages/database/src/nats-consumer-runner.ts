@@ -75,6 +75,18 @@ export interface INatsConsumerMetrics {
    * Optional — runners predating this method are still supported.
    */
   recordReattach?(durable: string, reason: NatsReattachReason): void;
+  /**
+   * Increments the claim-check resolved counter.
+   * Optional — runners without claim-check middleware are unaffected.
+   */
+  recordClaimCheckResolved?(durable: string): void;
+  /**
+   * Increments the claim-check resolution-failed counter.
+   * `code` is one of the four `ClaimCheckErrorCode` values — bounded
+   * Prometheus cardinality.
+   * Optional.
+   */
+  recordClaimCheckResolveFailed?(durable: string, code: string): void;
 }
 
 /**

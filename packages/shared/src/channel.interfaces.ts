@@ -11,7 +11,7 @@ export type MessageKind =
   | "send";
 
 /**
- * Channel envelope — canonical `EventEnvelope` (wdocs 02 §2) tagged
+ * Channel envelope — canonical `EventEnvelope` (DOCS/arquitectura/02 §2) tagged
  * with the channel taxonomy (`channel`, `provider`, `kind`).
  *
  * Subject is reconstructed via `buildChannelSubject` on publish;

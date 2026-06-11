@@ -169,14 +169,7 @@ DELETE /admin/structured-kb/containers/:id
 
 Soft-deletes a container (sets `is_active = false`). Cascades to all files, schemas, and rows.
 
-**Response `200 OK`:**
-
-```json
-{
-  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "is_active": false
-}
-```
+**Response `204 No Content`** (no body).
 
 ---
 
@@ -409,11 +402,8 @@ Translates a natural language query to SQL, executes it against the container's 
       "date": "2026-01-20"
     }
   ],
-  "filter_applied": "(data->>'product')::text ILIKE '%laptop%' AND (data->>'price')::numeric > 500",
-  "sort_applied": "(data->>'date') DESC",
-  "limit_applied": 20,
-  "total_documents": 2,
-  "returned": 2
+  "sql": "SELECT data FROM skb_rows WHERE container_id = '...' AND tenant_id = '...' AND ((data->>'product')::text ILIKE '%laptop%') ORDER BY created_at DESC LIMIT 20 OFFSET 0",
+  "totalCount": 2
 }
 ```
 
@@ -461,11 +451,14 @@ All endpoints return errors in a consistent format:
 
 ## Rate Limiting
 
-| Endpoint | Limit | Window |
-|----------|-------|--------|
-| `POST .../query` | 60 requests | per minute per tenant |
-| `POST .../files` | 10 requests | per minute per tenant |
-| All other endpoints | 120 requests | per minute per tenant |
+`SKBRateLimitGuard` is applied to the query endpoint only. File upload rate limiting is
+enforced at the api-gateway / infrastructure layer.
+
+| Endpoint | Limit | Window | Enforcement |
+|----------|-------|--------|-------------|
+| `POST .../query` | 60 requests | per minute per tenant | `SKBRateLimitGuard` in agent-admin-service |
+| `POST .../files` | 10 requests | per minute per tenant | api-gateway (design intent) |
+| All other endpoints | 120 requests | per minute per tenant | api-gateway (design intent) |
 
 Rate limit headers are included in every response:
 

@@ -132,7 +132,7 @@ sequenceDiagram
 
 ## References
 
-- `services/admin-console/src/app/core/services/ai-runtime.service.ts`
+- `services/admin-console/src/app/core/services/agent-runtime.service.ts`
 - `services/admin-console/src/app/features/automation/ai/playground.component.ts`
 - `services/admin-console/src/app/core/services/channel-admin.service.ts`
 - `services/api-gateway/src/modules/runtime/runtime.controller.ts`

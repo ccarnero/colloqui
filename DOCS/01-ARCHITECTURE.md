@@ -108,7 +108,7 @@ flowchart LR
 ## Related Documents
 
 - `DOCS/README.md` — entry point and reading order
-- `SERVICES.md` — complete service communication map
+- `DOCS/03-NATS-JETSTREAM.md` — canonical streams, subjects, and envelope contract (also covers claim-check)
 - `DOCS/08-WORKFLOW-TELEGRAM-SEQUENCE.md` — concrete Telegram inbound execution path
 - `DOCS/03-NATS-JETSTREAM.md` — canonical streams, subjects, and envelope contract
 - `DOCS/04-WORKFLOW-ENGINE.md` — trigger consumer and action execution model
@@ -151,7 +151,7 @@ sequenceDiagram
     participant WF as Workflow API
     participant T as Temporal
     participant WW as Workflow Worker
-    participant HW as HTTP Worker
+    participant HW as connector-runtime
     participant NATS as NATS
     participant EXT as External Endpoint
 
@@ -457,7 +457,7 @@ Actions support `{{path.to.value}}` template resolution against the execution co
 |--------|--------|
 | **Role** | Standalone Temporal worker for generic HTTP execution activities |
 | **Port** | 3000 (health only) |
-| **Scale** | 1 -- 5 replicas (KEDA-driven on `connector-runtime` task queue) |
+| **Scale** | Plain Deployment, replicas: 1 in developer mode (KEDA removed) |
 | **Task Queue** | `CONNECTOR_RUNTIME_TASK_QUEUE` (`connector-runtime`) |
 | **Config Source** | `connector-admin` REST API via `AdapterClient` (Redis SWR cache) |
 
@@ -469,19 +469,18 @@ Executes `endpointCall` and `serviceCall` via `tracedFetch` with automatic `x-yo
 
 ### Kubernetes Namespaces
 
+Developer mode uses only the `dev` environment. The qa/staging/production overlays were removed from the repository to keep the developer configuration minimal.
+
 | Environment | Support Namespace | Platform Namespace |
 |-------------|-------------------|--------------------|
 | dev | `support-services-dev` | `platform-services-dev` |
-| qa | `support-services-qa` | `platform-services-qa` |
-| staging | `support-services-staging` | `platform-services-staging` |
-| production | `support-services-production` | `platform-services-production` |
 
-Additionally, each tenant gets `<tenant>-<env>-ns` namespaces with isolated PostgreSQL.
+Additionally, each tenant gets a `<tenant>-dev-ns` namespace with isolated PostgreSQL and a per-tenant `agent-ai-service` Knative Service.
 
 ```mermaid
 graph TB
-    subgraph perEnv ["Repeated per environment (dev, qa, staging, production)"]
-        subgraph platformSvc ["platform-services-{env}"]
+    subgraph perEnv ["Developer mode — env: dev"]
+        subgraph platformSvc ["platform-services-dev (Knative Services unless noted)"]
             GW[API Gateway]
             AUTH[Auth Service]
             AS[Audit Service]
@@ -490,14 +489,14 @@ graph TB
             TS[Tenant Service]
             REG[Registry Service]
             WF_API[Workflow API]
-            WF_W[Workflow Worker]
-            CR[Connector Runtime]
+            WF_W["Workflow Worker<br/>(Plain Deployment)"]
+            CR["Connector Runtime<br/>(Plain Deployment)"]
             CA[Connector Admin]
-            YZA[YoizenClaw Admin]
-            YZG[YoizenClaw Runtime Gateway]
+            YZA[Agent Admin Service]
+            YZG[AI Agent Gateway]
         end
 
-        subgraph supportSvc ["support-services-{env}"]
+        subgraph supportSvc ["support-services-dev"]
             NATS[NATS JetStream<br/>StatefulSet]
             Redis[Redis<br/>Deployment]
             PG[PostgreSQL<br/>StatefulSet]
@@ -505,7 +504,7 @@ graph TB
         end
 
         subgraph tenantNs ["tenant namespaces"]
-            T_PG["PostgreSQL per tenant<br/>{tenant}-{env}-ns"]
+            T_PG["PostgreSQL + agent-ai-service<br/>{tenant}-dev-ns"]
         end
     end
 
@@ -529,7 +528,7 @@ graph TB
 | Workflow API | 1 | 5 | 50 |
 | Workflow Worker | 1 | 3 | 50 |
 | Connector Admin (API + worker) | 1 | 5 | 50 |
-| Connector Runtime | 1 | 5 | 100 (KEDA on Temporal queue) |
+| Connector Runtime | — | — | Plain Deployment (not Knative; KEDA removed) |
 | YoizenClaw Admin Service | 1 | 5 | 50 |
 | YoizenClaw Runtime Gateway | 1 | 5 | 50 |
 
@@ -583,17 +582,20 @@ Provides type-safe constants and interfaces consumed by all services.
 
 ### Core Interfaces
 
+Canonical source: `packages/shared/src/interfaces.ts`. Key types:
+
 ```
-EventEnvelope    → { id, type, payload, metadata?, callbackUrl? }
-EventMetadata    → { receivedAt, source, subject, tenantId? }
-ProcessedEvent   → { ...envelope, result, processedAt, processingTime }
-CompletionEvent  → { eventId, type, status, result, completedAt, callbackUrl? }
-EventResult      → { eventId, status, data, processedAt, processingTime }
-MetricsPayload   → { source, name, value, tags?, metadata?, timestamp? }
-JwtPayload       → { sub, type, scope, role?, env, iat, exp }
-TokenResponse    → { access_token, token_type, expires_in, scope, refresh_token? }
+EventEnvelope  → CloudEvents-inspired; fields: specversion, id, source, type, resource, time,
+                 traceid, causation_id, correlation_id, tenant, producer, domain, channel,
+                 provider, accountid, idempotencykey, transport (EventTransport), data (EventData)
+EventData      → { payload_inline: boolean, payload: object|null, payload_ref: string|null,
+                   checksum: string|null }   ← slim when claim-check active
+EventTransport → { method, protocol, agent_id?, depth? }
+ChannelEnvelope → canonical post-ingress envelope produced by channel-service
+WebhookIngressEnvelope → pre-ingress envelope produced by api-gateway (no accountid)
+JwtPayload     → { sub, type, scope, role?, env, iat, exp }
 WorkflowDefinition → { name, tenant, application, request, actions }
-WorkflowAction   → EndpointCallAction | JsFunctionAction | ServiceBusCallAction | BranchAction
+WorkflowAction → EndpointCallAction | JsFunctionAction | ServiceBusCallAction | BranchAction | AgentCallAction
 ```
 
 ---
@@ -607,9 +609,9 @@ graph TD
     end
 
     subgraph eventBus ["Event Bus — NATS JetStream"]
-        EVENTS["EVENTS Stream<br/>events.>"]
-        RESULTS["RESULTS Stream<br/>results.>"]
-        DLQ["DLQ Stream<br/>dlq.>"]
+        INGRESS["INGRESS-&lt;tenant&gt; Stream<br/>evt.&lt;tenant&gt;.>"]
+        DLQ["DLQ-&lt;tenant&gt; Stream<br/>dlq.&lt;tenant&gt;.>"]
+        PAYLOAD["PAYLOAD-&lt;tenant&gt; Object Store<br/>(claim-check blobs)"]
     end
 
     subgraph Persistence
@@ -626,16 +628,15 @@ graph TD
         WF_W[Workflow Worker] -->|Execute| TEMPORAL
         CR[Connector Runtime] -->|Execute| TEMPORAL
         CR -->|"GET /connectors/:id"| CA[Connector Admin]
-        WF_W -->|NATS publish| EVENTS
+        WF_W -->|"serviceBusCall NATS publish"| INGRESS
     end
 
-    GW -->|publish| EVENTS
-    GW -->|"pending/result R/W"| Redis
+    GW -->|"publish webhook_received<br/>evt.&lt;tenant&gt;.api-gateway.>"| INGRESS
+    GW -->|"audit.gateway.request"| GATEWAYAUDIT["GATEWAY_AUDIT Stream"]
 
-    EVENTS -->|audit-writer| AS
-
-    C -->|GET /results/:id| GW
-    GW -->|read| Redis
+    INGRESS -->|"channel-service durable consumer<br/>(verify + re-publish canonical)"| CHS[Channel Service]
+    CHS -->|"canonical ChannelEnvelope<br/>evt.&lt;tenant&gt;.channel-service.>"| INGRESS
+    INGRESS -->|"audit-service durable consumer"| AS
 
     C -->|GET /audit/events| GW
     GW -->|HTTP proxy| AS
@@ -671,17 +672,18 @@ graph TD
 │  Minikube Cluster (6 CPU, 16GB RAM, Docker driver)                    │
 │                                                                       │
 │  ┌─── knative-serving ─────────────────────────────────────────────┐  │
-│  │  Kourier Ingress  ·  dev.local DNS  ·  pinned 1 replica        │  │
+│  │  Kourier Ingress  ·  dev.local DNS  ·  KPA Autoscaler          │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │                                                                       │
 │  ┌─── Developer mode (single env: dev) ────────────────────────────┐  │
 │  │                                                                 │  │
-│  │  ┌─ platform-services-{env} (Knative Services) ──────────────┐  │  │
+│  │  ┌─ platform-services-dev (Knative Services + Deployments) ──┐  │  │
 │  │  │  api-gateway · auth-service · audit-service                │  │  │
 │  │  │  cache-service · channel-service · tenant-service          │  │  │
-│  │  │  registry-service · workflow-service · workflow-worker     │  │  │
-│  │  │  connector-runtime · connector-admin                       │  │  │
-│  │  │  agent-admin-service · ai-agent-gateway     │  │  │
+│  │  │  registry-service · workflow-service · connector-admin     │  │  │
+│  │  │  workflow-worker (Deployment) · connector-runtime (Dep.)   │  │  │
+│  │  │  agent-admin-service · ai-agent-gateway                    │  │  │
+│  │  │  agent-memory-service · agent-scheduler-service            │  │  │
 │  │  │  usage-aggregator-service · proxy-service · admin-console  │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │

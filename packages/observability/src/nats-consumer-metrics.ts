@@ -14,11 +14,23 @@ export type NatsMessageResult = "ack" | "nak" | "term";
  * All methods are O(1) and non-throwing — OpenTelemetry SDK buffers
  * writes internally and the view/export pipeline runs on a separate
  * batch timer so the hot path is never blocked on metric emission.
+ *
+ * Claim-check methods are optional so existing constructors do not need
+ * to be updated (backward-compatible extension).
  */
 export interface INatsConsumerMetricsSink {
   recordProcessed(durable: string, result: NatsMessageResult): void;
   recordDuration(durable: string, ms: number): void;
   adjustInFlight(durable: string, delta: number): void;
+  /** Increments the claim-check resolved counter. Optional. */
+  recordClaimCheckResolved?(durable: string): void;
+  /**
+   * Increments the claim-check resolution-failed counter.
+   * `code` is one of the four `ClaimCheckErrorCode` values — bounded
+   * cardinality, safe for Prometheus labels.
+   * Optional.
+   */
+  recordClaimCheckResolveFailed?(durable: string, code: string): void;
 }
 
 /**
@@ -78,6 +90,22 @@ export function createNatsConsumerMetrics(
       "consumer. Rises on dispatch, falls on ack/nak/term.",
   });
 
+  const claimCheckResolved = meter.createCounter(
+    "nats.consumer.claimcheck.resolved",
+    {
+      description:
+        "Total claim-check envelopes successfully resolved by a durable consumer.",
+    },
+  );
+
+  const claimCheckResolveFailed = meter.createCounter(
+    "nats.consumer.claimcheck.resolve_failed",
+    {
+      description:
+        "Total claim-check resolution failures, labeled by durable and error code.",
+    },
+  );
+
   const sink: INatsConsumerMetricsSink = {
     recordProcessed(durable, result) {
       processed.add(1, { durable, result });
@@ -87,6 +115,12 @@ export function createNatsConsumerMetrics(
     },
     adjustInFlight(durable, delta) {
       inFlight.add(delta, { durable });
+    },
+    recordClaimCheckResolved(durable) {
+      claimCheckResolved.add(1, { durable });
+    },
+    recordClaimCheckResolveFailed(durable, code) {
+      claimCheckResolveFailed.add(1, { durable, code });
     },
   };
 

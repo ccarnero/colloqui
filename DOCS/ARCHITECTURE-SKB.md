@@ -260,51 +260,45 @@ the existing `admin/knowledge-bases`.
 
 ### 3.1 Container Endpoints
 
+Handled by `SKBContainersController` (`@Controller("admin/structured-kb/containers")`).
+
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/admin/structured-kb` | Create empty container |
-| `GET` | `/admin/structured-kb` | List containers |
-| `GET` | `/admin/structured-kb/:id` | Get container detail |
-| `PATCH` | `/admin/structured-kb/:id` | Update container config |
-| `DELETE` | `/admin/structured-kb/:id` | Soft-delete container |
+| `POST` | `/admin/structured-kb/containers` | Create empty container |
+| `GET` | `/admin/structured-kb/containers` | List containers |
+| `GET` | `/admin/structured-kb/containers/:id` | Get container detail |
+| `PATCH` | `/admin/structured-kb/containers/:id` | Update container config |
+| `DELETE` | `/admin/structured-kb/containers/:id` | Soft-delete container (returns 204 No Content) |
 
 ### 3.2 File Endpoints
 
+File ingest is routed through the api-gateway (`AdminStructuredKBController`) which proxies to `agent-admin-service`. There is no dedicated files controller in `agent-admin-service` — file metadata is managed by `SKBContainersService` and the ingestion worker.
+
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/admin/structured-kb/:id/ingest` | Upload + queue CSV/Excel for ingestion |
-| `GET` | `/admin/structured-kb/:id/files` | List files in container |
-| `DELETE` | `/admin/structured-kb/:id/files/:fileId` | Remove file + its rows |
-| `GET` | `/admin/structured-kb/:id/files/:fileId/schema` | Get per-file LLM schema |
+| `POST` | `/admin/structured-kb/containers/:id/files` | Upload + queue CSV/Excel for ingestion |
+
+> **Note**: List files, delete file, and get file schema endpoints are proxied via api-gateway but the corresponding handler routes in `agent-admin-service` are not yet implemented in the controllers layer. File status is queryable via `skb_files` directly.
 
 ### 3.3 Query Endpoint
 
+Handled by `StructuredKBController` (`@Controller("admin/structured-kb")`).
+
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/admin/structured-kb/:id/query` | Natural language → SQL query |
+| `POST` | `/admin/structured-kb/containers/:id/query` | Natural language → SQL query |
 
 ### 3.4 DTOs
 
 ```typescript
-// Create container
+// Create container — actual DTO (version/ingest_model/query_model/provider_config
+// are set at DB default level; not exposed in the create DTO)
 export class CreateSKBDto {
   @IsString() @IsNotEmpty()
   name!: string;
 
   @IsString() @IsOptional()
   description?: string;
-
-  @IsString() @IsOptional()
-  version?: string;
-
-  @IsString() @IsOptional()
-  ingest_model?: string;
-
-  @IsString() @IsOptional()
-  query_model?: string;
-
-  @IsObject() @IsOptional()
-  provider_config?: Record<string, unknown>;
 }
 
 // Ingest file
@@ -340,14 +334,11 @@ export class QuerySKBDto {
   offset?: number;
 }
 
-// Responses
-export interface SKBQueryResult {
+// Responses — as returned by SKBQueryService
+export interface QueryResult {
   results: Record<string, unknown>[];
-  filter_applied: string;
-  sort_applied: string;
-  limit_applied: number;
-  total_documents: number;
-  returned: number;
+  sql: string;          // debug: full SQL that was executed
+  totalCount: number;   // total matching rows (before limit)
 }
 ```
 
@@ -369,20 +360,20 @@ export interface SKBQueryResult {
 ### 4.1 Flow
 
 ```
-Admin Console
-    │ POST /admin/structured-kb/:id/ingest
+Admin Console / api-gateway
+    │ POST /admin/structured-kb/containers/:id/files
     │ (file_base64 + filename)
     ▼
-SKBController.ingest()
+AdminStructuredKBController (api-gateway) → proxy to agent-admin-service
     │ 1. Decode base64 → Buffer
     │ 2. Create skb_files row (status=pending)
     │ 3. Publish NATS event: skb_file_ingestion.v1
     │ 4. Return { fileId, status: "pending" }
     ▼
-NATS JetStream (INGRESS-{tenant})
+NATS JetStream (SKB-INGESTION stream — single cross-tenant stream)
     │ evt.{tenant}.agent-admin-service.automation.platform.internal.skb_file_ingestion.v1
     ▼
-SKBIngestionWorker (SERVICE_MODE=worker)
+SKBIngestionWorkerService (SERVICE_MODE=worker)
     │ 1. Mark file status=processing
     │ 2. Recompute container status
     │ 3. Parse file (CSV/Excel) → ParsedTable
@@ -433,36 +424,20 @@ Following the Python reference pattern (`_skb_version_exists`, `_skb_job_is_acti
 
 ### 4.4 Worker Pattern
 
-Follow the exact same pattern as `IngestionWorkerService`:
+The `SKBIngestionWorkerService` uses a **single dedicated stream** (`SKB-INGESTION`) rather than
+per-tenant `INGRESS-{tenant}` streams. Key parameters as implemented:
 
-```typescript
-@Injectable()
-export class SKBIngestionWorkerService implements OnModuleInit, OnModuleDestroy {
-  private manager: MultiTenantConsumerManager | null = null;
+| Parameter | Value |
+|-----------|-------|
+| Stream | `SKB-INGESTION` (created by worker on startup if absent) |
+| Durable name | `skb-ingestion-worker` |
+| Filter subject | `evt.*.agent-admin-service.automation.platform.internal.skb_file_ingestion.v1` |
+| Max deliveries | 5 |
+| Ack wait | 5 min (300 000 ms) |
+| Backoff | 60 s → 120 s → 300 s → 600 s |
 
-  async onModuleInit(): Promise<void> {
-    if (process.env.SERVICE_MODE !== 'worker') return;
-
-    const config: IMultiTenantConsumerConfig = {
-      streamPattern: TENANT_STREAM_PATTERN,
-      durableName: 'skb-ingestion-worker',
-      filterSubject:
-        'evt.*.agent-admin-service.automation.platform.internal.skb_file_ingestion.v1',
-      description: 'SKB file ingestion — parse + schema analysis + row storage',
-      maxDeliver: 3,
-      ackWaitMs: 900_000, // 15 min
-      backoffMs: [60_000, 300_000, 900_000],
-    };
-
-    this.manager = new MultiTenantConsumerManager(
-      this.jsm, this.js, config,
-      (msg) => this.handleMessage(msg),
-      this.logger,
-    );
-    await this.manager.start();
-  }
-}
-```
+The stream is created automatically at worker startup if it does not exist. Worker only
+starts when `SERVICE_MODE=worker`.
 
 ---
 
@@ -791,36 +766,42 @@ These can be created dynamically after schema analysis detects a numeric column 
 
 ## 8. File Change Plan
 
-### 8.1 New Files to Create
+### 8.1 Implemented Files
 
-#### `services/agent-admin-service/src/modules/structured-kb/`
+#### `services/agent-admin-service/src/modules/structured-kb/` (as built)
 
 ```
 structured-kb/
 ├── structured-kb.module.ts
-├── structured-kb.controller.ts
+├── structured-kb.controller.ts          ← query endpoint only
+├── containers.controller.ts             ← container CRUD (new, not in original plan)
+├── containers.service.ts                ← thin facade over skb-containers.service
 ├── skb-containers.service.ts
 ├── skb-containers.repository.ts
-├── skb-files.service.ts
-├── skb-files.repository.ts
 ├── skb-rows.repository.ts
+├── skb-schema.repository.ts             ← added (not in original plan)
 ├── skb-query.service.ts
+├── skb-query-history.service.ts         ← added
+├── skb-query-history.repository.ts      ← added
+├── skb-row-index.service.ts             ← added (dynamic functional indexes)
 ├── skb-ingestion-worker.service.ts
 ├── skb-ingestion-watchdog.service.ts
 ├── skb-schema-analyzer.service.ts
 ├── skb-file-parser.ts
 ├── skb-sql-safety.ts
+├── row-type-casting.ts                  ← extracted cast logic
+├── skb-rate-limit.guard.ts              ← added
 ├── types/
 │   └── skb.types.ts
-├── dto/
-│   ├── create-skb.dto.ts
-│   ├── ingest-skb-file.dto.ts
-│   ├── query-skb.dto.ts
-│   └── update-skb.dto.ts
-└── prompts/
-    ├── schema-analysis.prompt.ts
-    └── query-translation.prompt.ts
+└── dto/
+    ├── create-skb.dto.ts
+    ├── query-skb.dto.ts
+    └── update-skb.dto.ts
 ```
+
+> `SKBFilesService`, `SKBFilesRepository`, and `ingest-skb-file.dto.ts` were NOT created as
+> standalone files. File ingestion state is managed within `SKBContainersService/Repository`.
+> The `prompts/` subdirectory was not created — prompts are inline in service files.
 
 ### 8.2 Files to Modify
 
@@ -834,38 +815,36 @@ structured-kb/
 
 #### `structured-kb.module.ts`
 
-```typescript
-import { Module } from '@nestjs/common';
-import { StructuredKBController } from './structured-kb.controller';
-import { SKBContainersService } from './skb-containers.service';
-import { SKBContainersRepository } from './skb-containers.repository';
-import { SKBFilesService } from './skb-files.service';
-import { SKBFilesRepository } from './skb-files.repository';
-import { SKBRowsRepository } from './skb-rows.repository';
-import { SKBQueryService } from './skb-query.service';
-import { SKBIngestionWorkerService } from './skb-ingestion-worker.service';
-import { SKBIngestionWatchdogService } from './skb-ingestion-watchdog.service';
-import { SKBSchemaAnalyzerService } from './skb-schema-analyzer.service';
-import { SKBFileParser } from './skb-file-parser';
+The actual module registers two controllers and includes additional services
+(`SKBQueryHistoryService`, `SKBRowIndexService`, `JobTrackingService`, `SKBRateLimitGuard`)
+that were added during implementation:
 
+```typescript
+// Key shape — see src/modules/structured-kb/structured-kb.module.ts for the full list
 @Module({
-  controllers: [StructuredKBController],
+  controllers: [SKBContainersController, StructuredKBController],
   providers: [
-    SKBContainersService,
-    SKBContainersRepository,
-    SKBFilesService,
-    SKBFilesRepository,
-    SKBRowsRepository,
+    SKBContainersService, SKBContainersRepository,
+    SKBFileParser, SKBSchemaAnalyzerService,
+    SKBRowsRepository, SKBSchemaRepository,
     SKBQueryService,
-    SKBIngestionWorkerService,
-    SKBIngestionWatchdogService,
-    SKBSchemaAnalyzerService,
-    SKBFileParser,
+    SKBIngestionWorkerService, SKBIngestionWatchdogService,
+    SKBQueryHistoryService, SKBQueryHistoryRepository,
+    SKBRowIndexService,
+    JobTrackingService, SKBRateLimitGuard,
+    // String-token providers for @Inject("...")
+    { provide: "SKBSchemaRepository", useExisting: SKBSchemaRepository },
+    { provide: "SKBRowsRepository", useExisting: SKBRowsRepository },
+    { provide: "TenantConnectionManager", useExisting: YoizenclawTenantConnectionManager },
+    { provide: "RowIndexSqlProvider", useExisting: YoizenclawTenantConnectionManager },
   ],
-  exports: [SKBContainersService, SKBFilesService, SKBQueryService],
+  exports: [SKBContainersService, SKBQueryService, SKBRowIndexService],
 })
 export class StructuredKBModule {}
 ```
+
+> **Note**: `SKBFilesService` and `SKBFilesRepository` as separate classes do not exist.
+> File operations are handled via `SKBContainersService` and `SKBContainersRepository`.
 
 #### `skb-file-parser.ts`
 
@@ -1141,7 +1120,10 @@ CREATE INDEX IF NOT EXISTS idx_skb_query_history_container ON skb_query_history(
 }
 ```
 
-> Note: `ai` and `@ai-sdk/openai` are already in dependencies.
+> Note: `ai` (^6.0.197) and `@ai-sdk/openai` (^3.0.68) are already in dependencies.
+> The SKB module uses `generateObject` from `ai` v6 — note that `generateObject` is
+> deprecated in v6 in favour of `generateText({ output: Output.object(...) })` but
+> the migration has not been done yet.
 
 ### 8.6 Admin Console UI Components (Future — Phase 3)
 
@@ -1256,18 +1238,18 @@ See [SKB-API.md](./SKB-API.md) for the full API reference with request/response 
 
 ### Endpoint Summary
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/admin/structured-kb/containers` | Create container |
-| `GET` | `/admin/structured-kb/containers` | List containers |
-| `GET` | `/admin/structured-kb/containers/:id` | Get container detail |
-| `PATCH` | `/admin/structured-kb/containers/:id` | Update container config |
-| `DELETE` | `/admin/structured-kb/containers/:id` | Soft-delete container |
-| `POST` | `/admin/structured-kb/containers/:id/files` | Upload file for ingestion |
-| `GET` | `/admin/structured-kb/containers/:id/files` | List files in container |
-| `DELETE` | `/admin/structured-kb/containers/:id/files/:fileId` | Remove file + rows |
-| `GET` | `/admin/structured-kb/containers/:id/files/:fileId/schema` | Get file schema |
-| `POST` | `/admin/structured-kb/containers/:id/query` | NL→SQL query |
+| Method | Path | Controller | Status |
+|--------|------|------------|--------|
+| `POST` | `/admin/structured-kb/containers` | `SKBContainersController` | Implemented |
+| `GET` | `/admin/structured-kb/containers` | `SKBContainersController` | Implemented |
+| `GET` | `/admin/structured-kb/containers/:id` | `SKBContainersController` | Implemented |
+| `PATCH` | `/admin/structured-kb/containers/:id` | `SKBContainersController` | Implemented |
+| `DELETE` | `/admin/structured-kb/containers/:id` | `SKBContainersController` | Implemented (204) |
+| `POST` | `/admin/structured-kb/containers/:id/files` | api-gateway proxy | Implemented |
+| `GET` | `/admin/structured-kb/containers/:id/files` | api-gateway proxy | Pending |
+| `DELETE` | `/admin/structured-kb/containers/:id/files/:fileId` | api-gateway proxy | Pending |
+| `GET` | `/admin/structured-kb/containers/:id/files/:fileId/schema` | api-gateway proxy | Pending |
+| `POST` | `/admin/structured-kb/containers/:id/query` | `StructuredKBController` | Implemented |
 
 ---
 
@@ -1280,7 +1262,7 @@ See [SKB-API.md](./SKB-API.md) for the full API reference with request/response 
 | `SKB_MAX_COLUMNS` | `100` | Maximum columns per file |
 | `SKB_MAX_ROWS` | `500000` | Maximum rows per file |
 | `SKB_BATCH_SIZE` | `5000` | Rows per INSERT batch |
-| `SKB_INGEST_TIMEOUT_MS` | `900000` | Worker ack timeout (15 min) |
+| `SKB_INGEST_TIMEOUT_MS` | `300000` | Worker ack timeout (5 min — as implemented) |
 | `SKB_DEFAULT_INGEST_MODEL` | `gpt-4.1-mini` | Default LLM for schema analysis |
 | `SKB_DEFAULT_QUERY_MODEL` | `gpt-4.1-mini` | Default LLM for NL→SQL |
 | `SKB_QUERY_MAX_LIMIT` | `1000` | Maximum query result limit |
@@ -1319,18 +1301,18 @@ pending → processing → completed
 
 ### File ingestion stuck in `processing`
 
-**Symptoms**: File status stays `processing` for more than 15 minutes.
+**Symptoms**: File status stays `processing` for more than 10 minutes.
 
 **Cause**: Worker crash or NATS connection loss during ingestion.
 
 **Resolution**:
 
 1. Check worker logs: `kubectl logs -l app=agent-admin-service -c worker --tail=200`
-2. Verify NATS connectivity: `kubectl exec -it nats-box -- nats sub "evt.*.skb_file_ingestion.v1"`
-3. The `SKBIngestionWatchdogService` should auto-reset stuck files. If not:
+2. Verify NATS connectivity: `kubectl exec -it nats-box -- nats consumer info SKB-INGESTION skb-ingestion-worker`
+3. The `SKBIngestionWatchdogService` auto-resets stuck files after 10 minutes. If not:
    ```sql
    UPDATE skb_files SET status = 'failed', error_message = 'Manual reset'
-   WHERE status = 'processing' AND updated_at < NOW() - INTERVAL '15 minutes';
+   WHERE status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes';
    ```
 4. Recompute container status after resetting files.
 

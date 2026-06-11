@@ -1,15 +1,15 @@
 # RUNBOOK — Temporal HA Migration (auto-setup → split services)
 
-> Status: Historical. This doc captures the ONE-TIME migration from
+> **Status: Historical.** This doc captures the ONE-TIME migration from
 > `temporalio/auto-setup` to a split-role HA topology applied on
-> 2026-05-22. For DAY-2 operations of the current cluster (inspect,
-> restart, scale, upgrade, troubleshoot), see
-> [`DOCS/RUNBOOK-TEMPORAL.md`](RUNBOOK-TEMPORAL.md) — that's the
-> primary operations reference now.
+> 2026-05-22. **The 4-role HA topology is no longer the active configuration.**
+> The project reverted to a single `temporalio/auto-setup` Deployment (developer
+> mode). For DAY-2 operations of the current cluster, see
+> [`DOCS/RUNBOOK-TEMPORAL.md`](RUNBOOK-TEMPORAL.md).
 >
 > Companions for the migration context:
-> - [`DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md`](RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md) — visibility datastore split
-> - [`post-mortem/POST-MORTEM.md`](../post-mortem/POST-MORTEM.md) — stress run that motivated both
+> - [`DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md`](RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md) — visibility datastore split (also historical)
+> - `post-mortem/POST-MORTEM.md` — stress run that motivated both (file deleted from repo)
 
 ## 1. What changed
 
@@ -381,7 +381,7 @@ the `temporal` Service for the gRPC frontend.
 ## 6. Validation gates
 
 In addition to the gates in
-[`post-mortem/POST-MORTEM.md`](../post-mortem/POST-MORTEM.md) §10.6:
+`post-mortem/POST-MORTEM.md` (file deleted from repo) §10.6:
 
 | Signal | Where | Target |
 |---|---|---|
@@ -422,6 +422,8 @@ kubectl -n $NS delete rolebinding/temporal-schema-wait \
 kubectl apply -k infrastructure/overlays/local/dev
 
 # 4. Run the legacy visibility-schema helper (now back from git).
+#    Note: infrastructure/scripts/ was deleted; restore this file from
+#    the pre-migration git commit referenced in step 1.
 ./infrastructure/scripts/ensure-temporal-visibility-schema.sh $NS
 
 # 5. Wait for the legacy Deployment.

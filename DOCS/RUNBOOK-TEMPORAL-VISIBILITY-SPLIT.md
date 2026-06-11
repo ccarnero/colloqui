@@ -1,7 +1,17 @@
 # Runbook — Splitting Temporal's `visibility` datasource onto its own Postgres
 
 **Audience:** Platform / SRE operators.
-**Why this exists:** The 2026-05-22 stress run ([`post-mortem/POST-MORTEM.md`](../post-mortem/POST-MORTEM.md)) showed `executions_visibility` autovacuum + insert pressure was starving the hot `executions` write path on the shared `postgres-temporal` CNPG cluster. Splitting `temporal_visibility` onto its own CNPG cluster (`postgres-temporal-visibility`) removes that contention.
+**Status:** Historical. This describes the one-time visibility split applied
+on 2026-05-22. **Developer mode has reverted** to a single `postgres-temporal`
+cluster where both `temporal` and `temporal_visibility` databases live together.
+The `postgres-temporal-visibility` CNPG cluster manifest still exists but is
+not active in developer mode (see `DOCS/RUNBOOK-TEMPORAL.md` §3.2).
+
+**Why this exists:** The 2026-05-22 stress run (post-mortem deleted from repo)
+showed `executions_visibility` autovacuum + insert pressure was starving the
+hot `executions` write path on the shared `postgres-temporal` CNPG cluster.
+Splitting `temporal_visibility` onto its own CNPG cluster (`postgres-temporal-visibility`)
+removes that contention.
 
 ## What changed in code
 
@@ -10,7 +20,7 @@
 | [`infrastructure/base/postgres/postgres-temporal-visibility-cluster.yaml`](../infrastructure/base/postgres/postgres-temporal-visibility-cluster.yaml) | New CNPG cluster (2 instances in base, 1 in dev overlays). |
 | [`infrastructure/base/postgres/secret.yaml`](../infrastructure/base/postgres/secret.yaml) | New `postgres-temporal-visibility-credentials` Secret (mirrors `postgres-temporal-credentials`). |
 | [`infrastructure/base/postgres/kustomization.yaml`](../infrastructure/base/postgres/kustomization.yaml) | Registered the new cluster manifest. |
-| [`infrastructure/base/temporal/deployment.yaml`](../infrastructure/base/temporal/deployment.yaml) | Added `VISIBILITY_POSTGRES_SEEDS` / `VISIBILITY_POSTGRES_USER` / `VISIBILITY_POSTGRES_PWD` / `VISIBILITY_DB_PORT` env vars so the Temporal server runtime points visibility at the new cluster. |
+| `infrastructure/base/temporal/deployment-autosetup.yaml` | Added `VISIBILITY_POSTGRES_SEEDS` / `VISIBILITY_POSTGRES_USER` / `VISIBILITY_POSTGRES_PWD` / `VISIBILITY_DB_PORT` env vars. In developer mode these point to the same `postgres-temporal-rw` as the default datastore. |
 | `infrastructure/overlays/local/local-base/patches/postgres-temporal-visibility-resources.yaml` | Dev-sized overlay for local. |
 | `infrastructure/overlays/orbstack/orbstack-base/patches/postgres-temporal-visibility.yaml` | Dev-sized overlay for orbstack. |
 | [`infrastructure/scripts/ensure-temporal-visibility-schema.sh`](../infrastructure/scripts/ensure-temporal-visibility-schema.sh) | Idempotent helper that runs `temporal-sql-tool setup-schema` + `update-schema` directly against `postgres-temporal-visibility-rw`, working around an `auto-setup` bug (see "Known issue" below). |
@@ -183,7 +193,7 @@ kubectl exec -it postgres-temporal-1 -- \
 
 To revert (point Temporal back at the shared cluster):
 
-1. Remove the `VISIBILITY_POSTGRES_*` env block from [`infrastructure/base/temporal/deployment.yaml`](../infrastructure/base/temporal/deployment.yaml).
+1. Remove the `VISIBILITY_POSTGRES_*` env block from `infrastructure/base/temporal/deployment-autosetup.yaml` and set `VISIBILITY_POSTGRES_SEEDS` back to `postgres-temporal-rw` (same as `POSTGRES_SEEDS`).
 2. `kustomize build … | kubectl apply -f -`.
 3. `kubectl rollout restart deploy/temporal`. `auto-setup` will recreate `temporal_visibility` on the original cluster from schema (path A blast radius — visibility history is lost on the way back).
 4. Optionally `kubectl delete cluster/postgres-temporal-visibility` to free the resources.
@@ -195,4 +205,4 @@ To revert (point Temporal back at the shared cluster):
 | Temporal connects to both DBs | `kubectl logs -l app.kubernetes.io/name=temporal` | `"Schema setup complete"` once per DB on boot. |
 | Visibility writes land on the new cluster | `kubectl exec -it postgres-temporal-visibility-1 -- psql -U postgres -d temporal_visibility -c "SELECT count(*) FROM executions_visibility;"` | Count grows as you start workflows. |
 | Old cluster no longer has visibility load | `kubectl exec -it postgres-temporal-1 -- psql -U postgres -c "\l+"` | `temporal_visibility` not present (after step 4 / 8). |
-| Post-mortem regression gate | Re-run [`tests/stress/scripts/run.sh`](../tests/stress/scripts/run.sh) | `postgres-temporal.log` shows no `57014 canceling statement due to user request`; duplicate-key INSERT rate stays flat. |
+| Post-mortem regression gate | `tests/stress/` was deleted from repo — re-validate manually via workflow load against the split cluster | `postgres-temporal.log` shows no `57014 canceling statement due to user request`; duplicate-key INSERT rate stays flat. |

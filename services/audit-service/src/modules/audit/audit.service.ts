@@ -37,7 +37,7 @@ import {
 export type { IAuditEvent };
 
 /**
- * Canonical platform-event pattern (wdocs 02 §9.2 / §9.3). Matches
+ * Canonical platform-event pattern (DOCS/arquitectura/02 §9.2 / §9.3). Matches
  * `evt.<tenant>.<producer>.platform.<channel>.<provider>.<kind>.v1`
  * across every tenant. Audit-service persists one row per message
  * from the per-tenant `INGRESS-<tenant>` streams via a durable pull

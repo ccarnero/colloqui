@@ -1,6 +1,6 @@
 # ADR: Knowledge Base & RAG System for Agent Platform
 
-**Status**: Proposed  
+**Status**: Partially implemented — Phase 1 (KB CRUD + sync ingestion) and Phase 2 (RAG middleware + `getInformation`/`addResource` tool definitions, `knowledgeBaseIds` on agent config) are implemented in `services/agent-admin-service` and `services/agent-ai-service`. Phase 3 (dedicated ingestion-service, PDF async pipeline, drag-drop UI) is not yet started. `getInformation` and `addResource` are defined as tool metadata but builtin handler implementations are not present in `src/modules/tools/builtin-tools/`. The proposed `ingestion-service` microservice does not exist.
 **Author**: Architect  
 **Date**: 2026-06-07
 

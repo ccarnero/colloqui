@@ -37,7 +37,7 @@ async function getConnection(): Promise<NatsConnection> {
 
 /**
  * Canonical subject for workflow execution completion events.
- * Lands in `INGRESS-<tenant>` per wdocs-02 §9.3.
+ * Lands in `INGRESS-<tenant>` per DOCS/arquitectura/02 §9.3.
  *
  * `workflow-api` binds a durable consumer (`workflow-projector`)
  * filtered on this subject and batches UPSERTs into

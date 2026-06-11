@@ -1,47 +1,34 @@
-// Template: Subject Builder
-// Build NATS subjects following the convention
-
-interface SubjectParams {
-  tenant: string;
-  producer: string;
-  domain: string;
-  channel: string;
-  provider: string;
-  kind: "ingress" | "agent_outbound" | "agent_action" | "agent_observation";
-  version?: string;
-}
-
 /**
- * Builds a NATS subject following the convention:
- * evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v1
+ * Thin pointer to the canonical subject builders.
+ *
+ * Do NOT maintain subject-building logic here.
+ * The as-built implementations live at:
+ *
+ *   packages/shared/src/channel.utils.ts
+ *     - buildChannelSubject(tenant, channel, provider, kind, version?)
+ *         → evt.<tenant>.channel-service.messaging.<channel>.<provider>.<kind>.v1
+ *     - buildWebhookIngressSubject(tenant, channel)
+ *         → evt.<tenant>.api-gateway.messaging.<channel>.webhook.webhook_received.v1
+ *     - buildTenantWildcard(tenant)
+ *         → evt.<tenant>.channel-service.messaging.>
+ *     - parseChannelSubject(subject) → ParsedSubject | null
+ *     - parseWebhookIngressSubject(subject) → parsed | null
+ *
+ *   packages/shared/src/envelope.utils.ts
+ *     - buildSubject(params: BuildSubjectParams) — generic 8-token builder
+ *
+ * Key constants (packages/shared/src/channel.constants.ts):
+ *   CHANNEL_PRODUCER                 = "channel-service"
+ *   CHANNEL_STREAM_SUBJECTS_PATTERN  = "evt.*.channel-service.messaging.>"
+ *   WEBHOOK_INGRESS_SUBJECT_FILTER   = "evt.*.api-gateway.messaging.*.webhook.webhook_received.v1"
+ *
+ * Subject format (8 tokens):
+ *   evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>
+ *
+ * Examples:
+ *   evt.acme.channel-service.messaging.whatsapp.meta.received.v1
+ *   evt.acme.api-gateway.messaging.telegram.webhook.webhook_received.v1
+ *   evt.acme.channel-service.messaging.whatsapp.meta.send.v1
  */
-export function buildSubject(params: SubjectParams): string {
-  const version = params.version ?? "v1";
-  return `evt.${params.tenant}.${params.producer}.${params.domain}.${params.channel}.${params.provider}.${params.kind}.${version}`;
-}
 
-/**
- * Builds a wildcard pattern for subscriptions
- */
-export function buildWildcard(
-  tenant?: string,
-  domain?: string,
-  channel?: string,
-  kind?: string
-): string {
-  const parts = ["evt"];
-  parts.push(tenant ?? "*");
-  parts.push("coexistance"); // producer is fixed
-  parts.push(domain ?? "*");
-  parts.push(channel ?? "*");
-  parts.push("*"); // provider wildcard
-  parts.push(kind ?? ">");
-  return parts.join(".");
-}
-
-// Ejemplos:
-// buildSubject({ tenant: "acme", producer: "coexistance", domain: "messaging", channel: "whatsapp", provider: "meta", kind: "ingress" })
-// → evt.acme.coexistance.messaging.whatsapp.meta.ingress.v1
-
-// buildWildcard("acme", "messaging", "whatsapp")
-// → evt.acme.coexistance.messaging.whatsapp.*.>
+export {}; // Module marker — no runtime exports; see files referenced above.

@@ -1,6 +1,6 @@
 # ADR: Scoped Variable System for Agent/Workflow Platform
 
-**Status**: Proposed  
+**Status**: Partially implemented — Phase 1 (system variables CRUD in `agent-admin-service`, `inputVariables`/`outputVariables` on `IAgentConfig`, `variables` namespace added to `PROMPT_ALLOWED_NAMESPACES` in `TemplateRendererService`, `knowledgeBaseIds` on agent config) is implemented. Phase 2 (workflow data flow / output capture / `variableBindings` in `AgentCallArgs`) and Phase 3 (visual canvas wiring) are not yet started. `variable.interfaces.ts` exists in `packages/shared/src/`.
 **Author**: Architect  
 **Date**: 2026-06-07
 

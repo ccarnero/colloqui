@@ -141,6 +141,43 @@ Code references:
 - Tenant DLQ stream pattern is `DLQ-<tenant>` with subjects `dlq.<tenant>.>`.
 - Some services also consume DLQ streams via a second manager instance (for example usage aggregation).
 
+### Claim-Check Pattern
+
+Large payloads (above `CLAIM_CHECK_THRESHOLD_BYTES`) are offloaded to the `PAYLOAD-<tenant>` Object Store so the NATS message envelope stays slim.
+
+**Producer (channel-service `IngressService`)**
+
+1. Serializes `canonicalJson(data.payload)` to UTF-8 bytes.
+2. Computes a SHA-256 checksum: `computePayloadChecksum(rawBytes)`.
+3. Stores the bytes in the `PAYLOAD-<tenant>` Object Store under key `<event-id>-payload`.
+4. Publishes a slim `EventEnvelope` with `data.payload_inline: false`, `data.payload: null`, `data.payload_ref: "nats://objstore/PAYLOAD-<tenant>/<event-id>-payload"`, and `data.checksum` set.
+
+Bucket settings: TTL 7 days, max bytes 512 MB, `StorageType.File`.
+
+On Object Store write failure: publishes a best-effort DLQ message to `dlq.<tenant>.<subject>` with header `X-Dlq-Reason: claim_check_store_failed` (and `X-Dlq-Stage`, `X-Dlq-Original-Subject`, `X-Dlq-Stream`, `X-Dlq-Original-Msg-Id`), then rethrows the store error so the original NATS publish never happens.
+
+**Consumer middleware (`packages/database/src/claim-check.ts` + `MultiTenantConsumerManager.wrapHandler`)**
+
+`MultiTenantConsumerManager.wrapHandler` intercepts every `JsMsg` before it reaches the application handler:
+
+1. Fast pre-check: `looksLikeClaimCheck(msg.data)` — byte-level scan for `"payload_inline":false`. Passes 99% of messages through with zero parsing.
+2. If claim-check envelope detected: parses the envelope, extracts `data.payload_ref`, looks up the object in the `PAYLOAD-<tenant>` bucket, verifies SHA-256 over the raw stored bytes.
+3. On checksum match: re-inflates the envelope (`payload_inline: true`, `payload` populated) and calls the handler with the resolved envelope.
+4. On resolution failure (blob missing, checksum mismatch, malformed ref): throws `ClaimCheckResolveError` — NOT a `PermanentError`, so the message is nak'd, follows exponential backoff, and lands in the DLQ after `MAX_DELIVER` attempts.
+
+**Observability**
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `nats.consumer.claimcheck.resolved` | Counter | Successful claim-check resolutions (label: `durable`) |
+| `nats.consumer.claimcheck.resolve_failed` | Counter | Failed resolutions (labels: `durable`, `code`) |
+
+Code references:
+- `packages/database/src/claim-check.ts` — `looksLikeClaimCheck`, `parseClaimCheckRef`, `resolveClaimCheckEnvelope`, `ClaimCheckResolveError`
+- `packages/database/src/multi-tenant-consumer-manager.ts` — `wrapHandler`
+- `packages/observability/src/nats-consumer-metrics.ts` — metric counters
+- `services/channel-service/src/modules/ingress/ingress.service.ts` — producer
+
 ### Tiered Limits Status
 
 - Tier-aware limits (free/pro/enterprise) exist in constants and helpers.

@@ -21,11 +21,13 @@
 ## 1. Service Architecture
 
 ```
-Admin Console → POST /admin/structured-kb/:id/ingest
-    → SKBController → NATS JetStream (skb_file_ingestion.v1)
-    → SKBIngestionWorker (SERVICE_MODE=worker)
+Admin Console → api-gateway (AdminStructuredKBController)
+    → POST /admin/structured-kb/containers/:id/files → proxy to agent-admin-service
+    → Publishes NATS event on SKB-INGESTION stream (skb_file_ingestion.v1)
+    → SKBIngestionWorkerService (SERVICE_MODE=worker)
         → Parse file → LLM schema analysis → Batch INSERT rows
     → SKBQueryService (SERVICE_MODE=api)
+        → POST /admin/structured-kb/containers/:id/query
         → NL query → LLM translation → Safe SQL execution
 ```
 
@@ -72,11 +74,11 @@ kubectl logs <worker-pod-name> -n <tenant-ns> | grep "SKB ingestion worker start
 ### NATS consumer health
 
 ```bash
-# Check consumer exists and is active
-nats consumer info INGRESS-<tenant> skb-ingestion-worker
+# Check consumer exists and is active (single cross-tenant stream)
+nats consumer info SKB-INGESTION skb-ingestion-worker
 
 # Check for redelivered messages (indicates processing failures)
-nats consumer info INGRESS-<tenant> skb-ingestion-worker | grep Redelivered
+nats consumer info SKB-INGESTION skb-ingestion-worker | grep Redelivered
 ```
 
 ---
@@ -113,10 +115,10 @@ WHERE c.status != 'ready' AND c.is_active = true;
 
 ```bash
 # Check dead-letter queue for permanently failed messages
-nats consumer info INGRESS-<tenant> skb-ingestion-worker
+nats consumer info SKB-INGESTION skb-ingestion-worker
 
-# View DLQ messages
-nats stream view INGRESS-<tenant> --last
+# View recent messages on the stream
+nats stream view SKB-INGESTION --last
 ```
 
 ---
@@ -127,7 +129,7 @@ nats stream view INGRESS-<tenant> --last
 
 ```bash
 # Re-ingest a specific file
-curl -X POST "https://<host>/admin/structured-kb/<container-id>/ingest" \
+curl -X POST "https://<host>/admin/structured-kb/containers/<container-id>/files" \
   -H "x-yoizen-tenant: <tenant>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -152,12 +154,13 @@ WHERE id = '<file-id>';
 ### Full container re-ingest
 
 ```bash
-# 1. Get all files for the container
-curl "https://<host>/admin/structured-kb/<container-id>/files" \
-  -H "x-yoizen-tenant: <tenant>"
-
-# 2. For each file, re-upload via ingest endpoint
+# 1. Get all files for the container (list-files route is pending implementation)
+# 2. For each file, re-upload via the files endpoint
 # (The ingestion pipeline deletes previous rows for the same file_id before inserting)
+curl -X POST "https://<host>/admin/structured-kb/containers/<container-id>/files" \
+  -H "x-yoizen-tenant: <tenant>" \
+  -H "Content-Type: application/json" \
+  -d '{ "file_id": "...", "filename": "data.csv", "file_base64": "..." }'
 ```
 
 ---
@@ -343,4 +346,4 @@ status stays `processing`.
 - Architecture doc: `DOCS/ARCHITECTURE-SKB.md`
 - Security review: `DOCS/SKB-SECURITY.md`
 - Service repository: `services/agent-admin-service/`
-- Test suite: `test/unit/structured-kb/`
+- Test suite: `services/agent-admin-service/test/unit/structured-kb/`

@@ -1,2 +1,0 @@
-stage,sent,delivered,lost,loss_rate,duplicates,p50_ms,p95_ms,p99_ms,min_ms,max_ms,mean_ms
-medium,5999,5979,20,0.003334,0,413133.92,665348.19,694805.67,22854.00,739691.00,396580.93

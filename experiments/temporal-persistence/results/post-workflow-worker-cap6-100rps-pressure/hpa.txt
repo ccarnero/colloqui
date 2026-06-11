@@ -1,8 +1,0 @@
-NAME                                      REFERENCE                            TARGETS                                      MINPODS   MAXPODS   REPLICAS   AGE
-keda-hpa-audit-service-worker-scaler      Deployment/audit-service-worker      0/5k (avg), 0/5k (avg)                       1         10        1          22h
-keda-hpa-channel-service-worker-scaler    Deployment/channel-service-worker    0/500 (avg), 0/1k (avg) + 1 more...          1         12        1          22h
-keda-hpa-connector-admin-worker-scaler    Deployment/connector-admin-worker    <unknown>/100 (avg)                          1         3         0          22h
-keda-hpa-connector-runtime-scaler         Deployment/connector-runtime         1934m/120 (avg), 335186839m/1k (avg)         5         15        15         22h
-keda-hpa-usage-aggregator-worker-scaler   Deployment/usage-aggregator-worker   <unknown>/5k (avg), <unknown>/100 (avg)      1         3         0          22h
-keda-hpa-workflow-service-worker-scaler   Deployment/workflow-service-worker   1322125m/1k (avg), 0/5k (avg)                2         8         8          4h55m
-keda-hpa-workflow-worker-scaler           Deployment/workflow-worker           6500m/45 (avg), 5334m/60 (avg) + 1 more...   3         6         6          22h

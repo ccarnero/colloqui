@@ -13,7 +13,7 @@ export const JETSTREAM_MANAGER = "JETSTREAM_MANAGER";
 export const JETSTREAM = "JETSTREAM";
 
 /**
- * Connects to NATS for registry-service event emission (wdocs 02 §9).
+ * Connects to NATS for registry-service event emission (DOCS/arquitectura/02 §9).
  * registry-service is a pure producer here — the tenant INGRESS streams
  * are owned by api-gateway, so this provider ensures no streams.
  */

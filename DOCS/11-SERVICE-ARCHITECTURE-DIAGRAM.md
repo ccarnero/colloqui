@@ -219,14 +219,14 @@ graph TB
     
     subgraph "Data Layer"
         PG_ACME["Postgres Instance<br/>postgres.acme-dev-ns<br/>Database: acme_dev<br/>Tables: workflow_*"]
-        NATS_ACME["NATS Subjects<br/>events.acme.*<br/>results.acme.*"]
+        NATS_ACME["NATS JetStream<br/>INGRESS-ACME stream<br/>evt.acme.>"]
         REDIS_ACME["Redis Keys<br/>adapter:acme:*<br/>callback:acme:*"]
     end
     
     CLIENT -->|/workflows| GATEWAY
     GATEWAY -->|Tenant: acme| WF
     WF -->|Tenant: acme| PG_ACME
-    WF -->|Subject: events.acme.*| NATS_ACME
+    WF -->|serviceBusCall<br/>evt.acme.channel-service.>| NATS_ACME
     WF -->|Activity to connector-runtime<br/>TenantId attribute| HA
     
     HA -->|Header: x-yoizen-tenant: acme| ADA
@@ -272,7 +272,8 @@ graph TB
         JS["jsFunction<br/>Local Activity"]
         SB["serviceBusCall<br/>Local Activity"]
         CH["channelSend<br/>Local Activity"]
-        AG["agentCall<br/>Local Activity"]
+        AG["agentCall<br/>Remote Activity"]
+        COND["conditional<br/>Workflow-level"]
     end
     
     subgraph "connector-runtime Queue"
@@ -281,14 +282,9 @@ graph TB
         SC["serviceCall<br/>Remote Activity"]
     end
 
-    subgraph "Workers"
-        WFW["workflow-service<br/>Worker Process<br/>Concurrency: 100 workflows<br/>50 activities"]
-        HAW["connector-runtime<br/>Worker Process<br/>Concurrency: 200 activities"]
-    end
-
-    subgraph "Scaling"
-        KEDA_WF["KEDA Scaler<br/>Monitor: orchestrator<br/>queue depth<br/>Min: 1, Max: 3<br/>Cooldown: 300s"]
-        KEDA_HA["KEDA Scaler<br/>Monitor: connector-runtime<br/>queue depth<br/>Min: 1, Max: 20<br/>Cooldown: 300s"]
+    subgraph "Workers (Plain Deployments — KEDA removed)"
+        WFW["workflow-service worker<br/>(Deployment, replicas: 1 dev mode)"]
+        HAW["connector-runtime<br/>(Deployment, replicas: 1 dev mode)"]
     end
     
     TEMPORAL -->|Dispatch| COORD
@@ -304,21 +300,16 @@ graph TB
     COORD -->|Register| WFW
     HTTP -->|Register| HAW
     
-    KEDA_WF -->|Monitor depth<br/>Scale replicas| WFW
-    KEDA_HA -->|Monitor depth<br/>Scale replicas| HAW
-    
     style TEMPORAL fill:#ede7f6
     style WFW fill:#e1f5ff
     style HAW fill:#fff3e0
-    style KEDA_WF fill:#f1f8e9
-    style KEDA_HA fill:#f1f8e9
 ```
 
 **Queue Design**:
-- **workflow-orchestrator**: Coordinates multi-step execution; local activities (JS, NATS) run inline
+- **workflow-orchestrator**: Coordinates multi-step execution; local activities (JS, NATS, channelSend) run inline; `agentCall` dispatches remotely to `agent-ai-service`
 - **connector-runtime**: Specialized for HTTP; high concurrency (200) to handle network latency
-- **Separate scaling**: Each queue scales independently based on task depth
-- **Temporal dispatch**: Remote activities (endpointCall) dispatch back to Temporal for load balancing
+- **Both workers are plain Deployments** (not Knative), deployed with `replicas: 1` in developer mode; KEDA was removed
+- **Temporal dispatch**: Remote activities (endpointCall, serviceCall) dispatch back to Temporal for load balancing
 
 ---
 
@@ -336,24 +327,22 @@ graph TB
     SWITCH -->|jsFunction| JS["Local Activity<br/>executeJsFunction"]
     SWITCH -->|serviceBusCall| SB["Local Activity<br/>executeServiceBusCall<br/>→ NATS"]
     SWITCH -->|channelSend| CH["Local Activity<br/>executeChannelSend<br/>→ channel-service"]
-    SWITCH -->|agentCall| AG["Remote Activity<br/>→ agent-ai-service"]
+    SWITCH -->|agentCall| AG["Remote Activity<br/>connector-runtime queue<br/>→ agent-ai-service HTTP"]
     SWITCH -->|branch| BR["Promise.all<br/>Parallel execution"]
-    SWITCH -->|sleep| SLP["Temporal timer"]
+    SWITCH -->|conditional| COND["Evaluate branches<br/>in order; first match wins"]
     
     HAQ -->|Pull activity| HAW["connector-runtime<br/>Worker"]
     HAW -->|tracedFetch| EXT["External<br/>Endpoint"]
     
     JS -->|Inline| EXEC["new Function()<br/>eval JS"]
     
-    SB -->|Publish| NATS["NATS Subject"]
+    SB -->|Publish to INGRESS-&lt;tenant&gt;| NATS["NATS JetStream<br/>evt.&lt;tenant&gt;.>"]
     
-    CH -->|Send message| CHAN["Channel<br/>Delivery<br/>email/SMS/etc"]
+    CH -->|HTTP call| CHAN["channel-service<br/>(outbound send)"]
     
-    AG -->|Agent execution| YCR["YoizenClaw<br/>Runtime"]
+    AG -->|HTTP chat endpoint| YCR["agent-ai-service<br/>(per-tenant runtime)"]
     
     BR -->|Each branch| SUB["Sub-action<br/>sequence"]
-    
-    SLP -->|Timer| TIMER["Temporal<br/>Sleep"]
     
     style WF fill:#e1f5ff
     style HAW fill:#fff3e0
@@ -363,10 +352,11 @@ graph TB
 ```
 
 **Routing Logic**:
-- **Remote activities** (endpointCall, serviceCall, agentCall): Dispatch to task queue, await result
-- **Local activities** (jsFunction, serviceBusCall, channelSend): Execute inline, await result
-- **Control flow** (branch, sleep): Temporal native (no activity)
+- **Remote activities on connector-runtime queue** (endpointCall, serviceCall, agentCall): Dispatch to Temporal task queue, await result
+- **Local activities** (jsFunction, serviceBusCall, channelSend): Execute inline in the workflow-service worker process
+- **Control flow** (branch, conditional): Temporal workflow-level; no separate activity
 - **Error handling**: Failed action blocks workflow (no automatic compensation)
+- **No `sleep` action**: there is no built-in sleep; use jsFunction or an external scheduled trigger instead
 
 ---
 
@@ -446,6 +436,52 @@ stateDiagram-v2
 3. **Recovery (HALF_OPEN)**: Allow one test request; success closes circuit, failure reopens
 4. **Retries**: Exponential backoff for transient failures (network timeout, 5xx)
 5. **Non-retryable**: 4xx status codes fail immediately
+
+---
+
+## 9. Two-Stage Webhook Bridge & Claim-Check
+
+How inbound provider webhooks flow through the system, including large-payload offload:
+
+```mermaid
+sequenceDiagram
+    participant P as Provider<br/>(e.g. Telegram)
+    participant GW as api-gateway
+    participant NATS as NATS JetStream<br/>INGRESS-&lt;tenant&gt;
+    participant CS as channel-service
+    participant OBJ as PAYLOAD-&lt;tenant&gt;<br/>Object Store
+    participant CONS as Consumer Services<br/>(audit, workflow, agent)
+
+    P->>GW: POST /webhooks/telegram/{tenant}
+    GW->>GW: Extract allowed headers<br/>Build WebhookIngressEnvelope
+    GW->>NATS: Publish evt.&lt;tenant&gt;.api-gateway.messaging.telegram.webhook.webhook_received.v1
+
+    Note over CS: channel-service durable consumer
+    NATS-->>CS: Deliver pre-ingress envelope
+    CS->>CS: Verify provider signature<br/>Resolve account ID<br/>Build canonical ChannelEnvelope
+
+    alt Payload > CLAIM_CHECK_THRESHOLD_BYTES
+        CS->>OBJ: Store utf8(canonicalJson(payload))<br/>key: &lt;event-id&gt;-payload (TTL 7d)
+        CS->>NATS: Publish slim envelope<br/>payload_inline:false, payload_ref: nats://objstore/...
+    else Payload within threshold
+        CS->>NATS: Publish full envelope<br/>payload_inline:true
+    end
+
+    Note over CONS: Each consumer: wrapHandler middleware
+    NATS-->>CONS: Deliver envelope
+    alt Slim envelope (claim-check)
+        CONS->>OBJ: Fetch blob by payload_ref
+        CONS->>CONS: Verify SHA-256 checksum
+        CONS->>CONS: Re-inflate envelope<br/>payload_inline:true
+    end
+    CONS->>CONS: Call application handler
+```
+
+**Key invariants**:
+- `api-gateway` publishes `WebhookIngressEnvelope` (no `accountid`; signature not yet verified)
+- `channel-service` is the only service that verifies signatures and re-publishes the canonical `ChannelEnvelope` with `accountid` set
+- All downstream consumers MUST use the canonical envelope, not the pre-ingress one
+- `wrapHandler` in `MultiTenantConsumerManager` is the single resolution point for claim-check envelopes; individual handlers never deal with `payload_inline: false`
 
 ---
 

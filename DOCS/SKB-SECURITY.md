@@ -215,4 +215,4 @@ non-SELECT), but they should remain as defense-in-depth.
 - Architecture: `DOCS/ARCHITECTURE-SKB.md` — Section 6 (Query Pipeline)
 - SQL safety implementation: `src/modules/structured-kb/skb-sql-safety.ts`
 - Query service: `src/modules/structured-kb/skb-query.service.ts`
-- SQL safety tests: `test/unit/structured-kb/skb-sql-safety.spec.ts`
+- SQL safety tests: `services/agent-admin-service/test/unit/structured-kb/skb-sql-safety.spec.ts`

@@ -1,10 +1,10 @@
 """NATS subject constants and helpers for platform-level events.
 
 Contains legacy flat subject constants (used by nats_bridge.py) and
-new wdocs-compliant tenant-scoped subject helpers.
+new spec-compliant tenant-scoped subject helpers.
 
-wdocs convention: evt.{tenant}.agent-admin-service.automation.platform.internal.{action}.v1
-See: wdocs/docs/arquitectura/01-service-bus.md
+subject convention (DOCS/arquitectura/01-service-bus.md): evt.{tenant}.agent-admin-service.automation.platform.internal.{action}.v1
+See: DOCS/arquitectura/01-service-bus.md
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ RUNTIME_EVENT = "platform.runtime.event"
 TOOL_REQUEST = "platform.tool.request"
 
 # ---------------------------------------------------------------------------
-# wdocs-compliant tenant-scoped subject definitions
+# spec-compliant tenant-scoped subject definitions
 # Convention: evt.{tenant}.agent-admin-service.automation.platform.internal.{action}.v1
 # ---------------------------------------------------------------------------
 
@@ -56,7 +56,7 @@ AI_AGENT_GATEWAY_ACTIONS: dict[str, str] = {
 
 
 def build_subject(tenant: str, action: str) -> str:
-    """Build a wdocs-compliant NATS subject for a tenant and action.
+    """Build a spec-compliant NATS subject for a tenant and action.
 
     Args:
         tenant: Tenant identifier (e.g. "acme").
@@ -74,7 +74,7 @@ def build_subject(tenant: str, action: str) -> str:
 
 
 def extract_tenant_from_subject(subject: str) -> str | None:
-    """Extract the tenant identifier from a wdocs-compliant NATS subject.
+    """Extract the tenant identifier from a spec-compliant NATS subject.
 
     Expects subjects in the form ``evt.{tenant}.{domain}.{action}.v1``.
 
@@ -83,7 +83,7 @@ def extract_tenant_from_subject(subject: str) -> str | None:
 
     Returns:
         The tenant identifier, or ``None`` if the subject does not follow
-        the wdocs convention.
+        the subject convention (DOCS/arquitectura/01-service-bus.md).
     """
     parts = subject.split(".")
     if len(parts) >= 2 and parts[0] == "evt":

@@ -1,12 +1,18 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { JetStreamClient, JetStreamManager, ObjectStore } from "nats";
-import { headers as natsHeaders } from "nats";
-import type { Channel, ChannelProvider, InboundMessage } from "@yoizen/shared";
+import { headers as natsHeaders, StorageType } from "nats";
+import type { Channel, ChannelProvider, EventEnvelope, InboundMessage } from "@yoizen/shared";
 import {
   TENANT_HEADER,
   CLAIM_CHECK_THRESHOLD_BYTES,
+  CLAIM_CHECK_BUCKET_TTL_NS,
+  CLAIM_CHECK_BUCKET_MAX_BYTES,
   buildChannelSubject,
   buildClaimCheckBucket,
+  buildDlqMessageSubject,
+  buildDlqStreamName,
+  canonicalJson,
+  canonicalByteLength,
   computePayloadChecksum,
 } from "@yoizen/shared";
 import {
@@ -14,7 +20,7 @@ import {
   PinoLoggerService,
   startNatsProducerSpan,
 } from "@yoizen/observability";
-import { ensureTenantIngressStream } from "@yoizen/database";
+import { ensureTenantIngressStream, ensureTenantDlqStream } from "@yoizen/database";
 import {
   JETSTREAM_PUBLISHER,
   JETSTREAM_MANAGER,
@@ -47,20 +53,21 @@ interface IPublishMessageOptions {
   message: InboundMessage;
 }
 
-/** Claim-check publish: small reference message when payload exceeds threshold. */
+/**
+ * Claim-check publish: publishes a compliant slim envelope when the
+ * full envelope serialization exceeds CLAIM_CHECK_THRESHOLD_BYTES.
+ * Carries the full envelope so the slim envelope and DLQ body can be built.
+ */
 interface IPublishWithClaimCheckParams {
   readonly tenantId: string;
   readonly subject: string;
-  readonly envelopeId: string;
-  readonly idempotencyKey: string;
-  readonly payloadBytes: Uint8Array;
-  readonly payloadChecksum: string;
+  readonly envelope: EventEnvelope;
 }
 
 @Injectable()
 export class IngressService {
   private readonly logger = new PinoLoggerService(IngressService.name);
-  /** tenantId -> ObjectStore bucket. Bound lazily on first use. */
+  /** tenantId → ObjectStore bucket. Bound lazily on first use. */
   private readonly claimCheckBuckets = new Map<string, ObjectStore>();
 
   constructor(
@@ -71,6 +78,14 @@ export class IngressService {
   /**
    * Resolves (and lazily creates) the tenant-scoped Object Store bucket for
    * claim-check payloads. Bucket layout: `PAYLOAD-<tenant>`.
+   *
+   * Bucket options align with doc §4.2:
+   *   - `ttl`: 7 days in nanoseconds (aligned to stream max_age).
+   *   - `max_bytes`: 512 MB.
+   *   - `storage`: File (durable across server restarts).
+   *
+   * Note: `views.os` does not reconfigure an existing bucket — dev buckets
+   * created earlier keep their defaults until recreated (`nats object rm`).
    */
   private async getClaimCheckBucket(tenantId: string): Promise<ObjectStore> {
     const cached = this.claimCheckBuckets.get(tenantId);
@@ -78,6 +93,10 @@ export class IngressService {
     const bucketName = buildClaimCheckBucket(tenantId);
     const os = await this.js.views.os(bucketName, {
       description: `Claim-check payloads for tenant ${tenantId}`,
+      // CLAIM_CHECK_BUCKET_TTL_NS is already nanoseconds — do NOT wrap in nanos()
+      ttl: CLAIM_CHECK_BUCKET_TTL_NS,
+      max_bytes: CLAIM_CHECK_BUCKET_MAX_BYTES,
+      storage: StorageType.File,
     });
     this.claimCheckBuckets.set(tenantId, os);
     return os;
@@ -134,23 +153,146 @@ export class IngressService {
     });
     const subject = buildChannelSubject(tenantId, channel, provider, "received");
 
-    const payload = JSON.stringify(envelope);
-    const payloadBytes = UTF8_TEXT_ENCODER.encode(payload);
+    // Trigger on full-serialized-envelope byte length: guards the actual
+    // 1 MB NATS max_payload. The slim claim-check envelope is ~2 KB so it
+    // always fits. 256 KB is the configured threshold (CLAIM_CHECK_THRESHOLD_BYTES).
+    const payloadBytes = UTF8_TEXT_ENCODER.encode(JSON.stringify(envelope));
     const start = performance.now();
 
     if (payloadBytes.byteLength > CLAIM_CHECK_THRESHOLD_BYTES) {
       ingressClaimCheckCount.add(1, { channel, tenant: tenantId });
-      const payloadChecksum = computePayloadChecksum(envelope.data?.payload);
-      await this.publishWithClaimCheck({
-        tenantId,
-        subject,
-        envelopeId: envelope.id,
-        idempotencyKey: envelope.idempotencykey,
-        payloadBytes,
-        payloadChecksum,
-      });
+      try {
+        await this.publishWithClaimCheck({ tenantId, subject, envelope });
+      } finally {
+        ingressPublishDuration.record(performance.now() - start, {
+          channel,
+          tenant: tenantId,
+        });
+      }
       return;
     }
+
+    await this.publishInline(subject, envelope, payloadBytes, start, channel, tenantId);
+  }
+
+  /** Publish the full envelope bytes inline (common path). */
+  private async publishInline(
+    subject: string,
+    envelope: EventEnvelope,
+    payloadBytes: Uint8Array,
+    start: number,
+    channel: string,
+    tenantId: string,
+  ): Promise<void> {
+    const hdrs = natsHeaders();
+    hdrs.set(TENANT_HEADER, tenantId);
+    hdrs.set("Nats-Msg-Id", envelope.idempotencykey);
+    injectTraceContext(hdrs);
+
+    const { span } = startNatsProducerSpan(
+      "channel-service",
+      subject,
+      hdrs,
+    );
+
+    try {
+      await this.js.publish(subject, payloadBytes, { headers: hdrs });
+    } finally {
+      span.end();
+      ingressPublishDuration.record(performance.now() - start, {
+        channel,
+        tenant: tenantId,
+      });
+    }
+  }
+
+  /**
+   * Claim-check publish (DOCS/arquitectura/04 §3):
+   * 1. Store exactly `canonicalJson(envelope.data.payload)` bytes in the
+   *    tenant's Object Store bucket. This is the invariant that lets
+   *    the consumer verify: sha256(storedRawBytes) === payload_checksum.
+   * 2. Publish a compliant slim EventEnvelope with payload_inline:false.
+   * 3. On store failure: best-effort DLQ publish (original envelope as body)
+   *    then rethrow the original error.
+   *
+   * Headers are identical to the inline path: TENANT_HEADER, Nats-Msg-Id,
+   * trace context, and producer span. No X-Claim-Check header (detection
+   * is via body — envelope.data.payload_inline === false).
+   */
+  private async publishWithClaimCheck(
+    params: IPublishWithClaimCheckParams,
+  ): Promise<void> {
+    const { tenantId, subject, envelope } = params;
+    const objectKey = `${envelope.id}-payload`;
+    const bucketName = buildClaimCheckBucket(tenantId);
+    const payloadRef = `nats://objstore/${bucketName}/${objectKey}`;
+
+    // Store exactly the UTF-8 bytes of canonicalJson(payload).
+    // Consumer verifies sha256 over these RAW bytes (never re-canonicalizes).
+    const payloadCanonical = UTF8_TEXT_ENCODER.encode(
+      canonicalJson(envelope.data?.payload),
+    );
+
+    try {
+      const bucket = await this.getClaimCheckBucket(tenantId);
+      await bucket.putBlob(
+        {
+          name: objectKey,
+          description: `Envelope ${envelope.id} claim-check payload (${payloadCanonical.byteLength} bytes)`,
+        },
+        payloadCanonical,
+      );
+      ingressClaimCheckStored.add(1, { tenant: tenantId });
+    } catch (storeErr) {
+      ingressClaimCheckStoreFailed.add(1, { tenant: tenantId });
+      this.logger.error(
+        `Claim-check store failed for ${objectKey}: ${storeErr instanceof Error ? storeErr.message : storeErr}`,
+      );
+
+      // Best-effort DLQ publish on store failure (doc §3.3).
+      // The DLQ body is the FULL original envelope (inline payload) so it
+      // can be replayed. This publish is wrapped in its own try/catch so a
+      // DLQ failure does NOT mask the store error.
+      try {
+        await ensureTenantDlqStream(this.jsm, tenantId);
+        const dlqSubject = buildDlqMessageSubject(tenantId, subject);
+        const dlqHdrs = natsHeaders();
+        dlqHdrs.set("X-Dlq-Reason", "claim_check_store_failed");
+        dlqHdrs.set("X-Dlq-Stage", "ingress_claim_check");
+        dlqHdrs.set("X-Dlq-Original-Subject", subject);
+        dlqHdrs.set("X-Dlq-Stream", buildDlqStreamName(tenantId));
+        dlqHdrs.set("X-Dlq-Original-Msg-Id", envelope.idempotencykey);
+        await this.js.publish(
+          dlqSubject,
+          UTF8_TEXT_ENCODER.encode(JSON.stringify(envelope)),
+          {
+            headers: dlqHdrs,
+            msgID: `dlq:${envelope.idempotencykey}`,
+          },
+        );
+      } catch (dlqErr) {
+        this.logger.error(
+          `DLQ publish failed for ${objectKey} (original store error is still thrown): ${dlqErr instanceof Error ? dlqErr.message : dlqErr}`,
+        );
+      }
+
+      // Always rethrow the original store error regardless of DLQ outcome.
+      throw storeErr;
+    }
+
+    // Build a compliant slim EventEnvelope (payload_inline:false).
+    // payload_bytes reflects the canonical payload size (not the envelope size).
+    const slimEnvelope: EventEnvelope = {
+      ...envelope,
+      data: {
+        ...envelope.data,
+        payload_inline: false,
+        payload_ref: payloadRef,
+        payload_bytes: canonicalByteLength(envelope.data?.payload),
+        payload_checksum: computePayloadChecksum(envelope.data?.payload),
+        payload: null,
+      },
+    };
 
     const hdrs = natsHeaders();
     hdrs.set(TENANT_HEADER, tenantId);
@@ -164,113 +306,16 @@ export class IngressService {
     );
 
     try {
-      await this.js.publish(subject, payloadBytes, {
-        headers: hdrs,
-      });
-    } finally {
-      span.end();
-    }
-
-    ingressPublishDuration.record(performance.now() - start, {
-      channel,
-      tenant: tenantId,
-    });
-  }
-
-  /**
-   * Claim-check publish (wdocs 02 §5.3):
-   * 1. Store the raw envelope bytes in the tenant's Object Store bucket.
-   * 2. Publish a slim reference envelope (`payload_inline:false`, `payload_ref`).
-   * 3. Record success/failure metrics.
-   *
-   * Consumers should call `IngressService.resolveClaimCheckPayload(ref)` to
-   * fetch the original bytes.
-   */
-  private async publishWithClaimCheck(
-    params: IPublishWithClaimCheckParams,
-  ): Promise<void> {
-    const {
-      tenantId,
-      subject,
-      envelopeId,
-      idempotencyKey,
-      payloadBytes,
-      payloadChecksum,
-    } = params;
-    const objectKey = `${envelopeId}-payload`;
-    const bucketName = buildClaimCheckBucket(tenantId);
-    const payloadRef = `nats://objstore/${bucketName}/${objectKey}`;
-
-    try {
-      const bucket = await this.getClaimCheckBucket(tenantId);
-      await bucket.putBlob(
-        {
-          name: objectKey,
-          description: `Envelope ${envelopeId} claim-check payload (${payloadBytes.byteLength} bytes)`,
-        },
-        payloadBytes,
-      );
-      ingressClaimCheckStored.add(1, { tenant: tenantId });
-    } catch (err) {
-      ingressClaimCheckStoreFailed.add(1, { tenant: tenantId });
-      this.logger.error(
-        `Claim-check store failed for ${objectKey}: ${err instanceof Error ? err.message : err}`,
-      );
-      throw err;
-    }
-
-    const claimRef = JSON.stringify({
-      claimCheck: true,
-      tenantId,
-      envelopeId,
-      payload_ref: payloadRef,
-      payload_bytes: payloadBytes.byteLength,
-      payload_checksum: payloadChecksum,
-    });
-
-    const hdrs = natsHeaders();
-    hdrs.set(TENANT_HEADER, tenantId);
-    hdrs.set("Nats-Msg-Id", idempotencyKey);
-    hdrs.set("X-Claim-Check", payloadRef);
-    injectTraceContext(hdrs);
-
-    const { span } = startNatsProducerSpan(
-      "channel-service",
-      subject,
-      hdrs,
-    );
-
-    try {
       this.logger.log(
-        `Claim-check: payload ${payloadBytes.byteLength} bytes stored at ${payloadRef}`,
+        `Claim-check: ${payloadCanonical.byteLength} bytes stored at ${payloadRef}`,
       );
-      await this.js.publish(subject, UTF8_TEXT_ENCODER.encode(claimRef), {
-        headers: hdrs,
-      });
+      await this.js.publish(
+        subject,
+        UTF8_TEXT_ENCODER.encode(JSON.stringify(slimEnvelope)),
+        { headers: hdrs },
+      );
     } finally {
       span.end();
     }
-  }
-
-  /**
-   * Consumer-side helper: fetches the raw payload bytes referenced by a
-   * claim-check envelope. Accepts either a `nats://objstore/<bucket>/<key>`
-   * URI or a raw `{ bucket, key }` pair.
-   */
-  async resolveClaimCheckPayload(payloadRef: string): Promise<Uint8Array> {
-    const m = /^nats:\/\/objstore\/([^/]+)\/(.+)$/.exec(payloadRef);
-    if (!m) {
-      throw new Error(`Invalid claim-check ref: ${payloadRef}`);
-    }
-    const [, bucketName, objectKey] = m;
-    const tenantId = bucketName.startsWith("PAYLOAD-")
-      ? bucketName.slice("PAYLOAD-".length)
-      : bucketName;
-    const bucket = await this.getClaimCheckBucket(tenantId);
-    const bytes = await bucket.getBlob(objectKey);
-    if (!bytes) {
-      throw new Error(`Claim-check payload not found: ${payloadRef}`);
-    }
-    return bytes;
   }
 }

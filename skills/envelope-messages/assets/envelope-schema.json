@@ -1,7 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Message Envelope",
-  "description": "CloudEvents-inspired envelope for NATS messaging",
+  "$comment": "Informational schema — canonical source is packages/shared/src/interfaces.ts (EventEnvelope, EventTransport, EventData). This file exists only to aid IDE tooling and documentation. Do not use as validation authority.",
+  "title": "EventEnvelope",
+  "description": "CloudEvents-inspired envelope for NATS JetStream messaging. Producer for channel events is 'channel-service'. IDs are crypto.randomUUID(). Type format: io.yoizen.<domain>.<channel>.<provider>.<kind>.v1.",
   "type": "object",
   "required": [
     "specversion",
@@ -11,6 +12,8 @@
     "resource",
     "time",
     "traceid",
+    "causation_id",
+    "correlation_id",
     "tenant",
     "producer",
     "domain",
@@ -25,159 +28,161 @@
     "specversion": {
       "type": "string",
       "enum": ["1.0"],
-      "description": "Versión de la especificación"
+      "description": "CloudEvents spec version"
     },
     "id": {
       "type": "string",
-      "description": "ID único del evento (ULID recomendado)"
+      "description": "Unique event ID — crypto.randomUUID() (UUID v4)",
+      "example": "550e8400-e29b-41d4-a716-446655440000"
     },
     "source": {
       "type": "string",
-      "description": "URI del servicio + endpoint que produce el evento",
-      "example": "/services/coexistance/ingress/meta/whatsapp"
+      "description": "URI of the service that produced the event",
+      "example": "//channel-service/accounts/69bea8cd868e860918359cc7"
     },
     "type": {
       "type": "string",
-      "description": "Tipo de evento en notación reverse-domain",
-      "example": "io.yoizen.messaging.ingress.received.v1"
+      "description": "Reverse-domain event type. Format: io.yoizen.<domain>.<channel>.<provider>.<kind>.v1",
+      "example": "io.yoizen.messaging.whatsapp.meta.received.v1"
     },
     "resource": {
       "type": "string",
-      "description": "Identifica el recurso al que aplica el evento",
-      "example": "tenant/acme/account/69bea8cd/channel/whatsapp/provider/meta"
+      "description": "Resource this event applies to",
+      "example": "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta"
     },
     "time": {
       "type": "string",
       "format": "date-time",
-      "description": "Timestamp ISO 8601 de creación del evento"
+      "description": "ISO 8601 creation timestamp"
     },
     "traceid": {
       "type": "string",
-      "description": "Trace ID de OpenTelemetry"
+      "description": "OpenTelemetry trace ID"
     },
     "causation_id": {
       "type": ["string", "null"],
-      "description": "ID del evento que causó este. null si es raíz"
+      "description": "ID of the event that caused this one. null for root events."
     },
     "correlation_id": {
       "type": "string",
-      "description": "ID del flujo de negocio al que pertenece"
+      "description": "End-to-end business flow ID. Propagated unchanged. Defaults to the root event's id."
     },
     "tenant": {
       "type": "string",
-      "description": "Identificador del tenant",
+      "description": "Tenant identifier",
       "example": "acme"
     },
     "producer": {
       "type": "string",
-      "description": "Servicio que publicó el evento",
-      "example": "coexistance"
+      "description": "Service that published the event. Channel events: 'channel-service'. Webhook pre-ingress: 'api-gateway'.",
+      "example": "channel-service"
     },
     "domain": {
       "type": "string",
-      "description": "Dominio de negocio",
+      "description": "Business domain",
       "example": "messaging"
     },
     "channel": {
       "type": "string",
-      "description": "Canal de comunicación",
+      "description": "Logical communication channel",
+      "enum": ["whatsapp", "instagram", "telegram"],
       "example": "whatsapp"
     },
     "provider": {
       "type": "string",
-      "description": "Proveedor de infraestructura",
+      "description": "Infrastructure provider",
       "example": "meta"
     },
     "accountid": {
       "type": "string",
-      "description": "ID de cuenta del provider dentro del tenant"
+      "description": "Provider account ID within the tenant. Absent in WebhookIngressEnvelope (unknown before signature verification)."
     },
     "idempotencykey": {
       "type": "string",
-      "description": "Clave determinística para deduplicación",
+      "description": "Deterministic dedupe key: sha256(canonicalJson(payload)). Mapped to NATS Nats-Msg-Id header.",
       "example": "sha256:a1b2c3d4..."
     },
     "transport": {
       "type": "object",
       "required": ["method", "protocol"],
+      "description": "How the event arrived. Canonical type: EventTransport in packages/shared/src/interfaces.ts.",
       "properties": {
         "method": {
           "type": "string",
           "enum": ["webhook", "poll", "stream", "queue_bridge", "agent"],
-          "description": "Método de transporte"
+          "description": "Transport method"
         },
         "protocol": {
           "type": "string",
-          "enum": ["https", "wss", "amqp", "internal", "thirdparty", "platform"],
-          "description": "Protocolo de transporte"
-        },
-        "headers": {
-          "type": "object",
-          "description": "Headers específicos (solo para webhook)"
-        },
-        "poll_source": {
-          "type": "string",
-          "description": "URL de polling (solo para poll)"
-        },
-        "poll_cursor": {
-          "type": "string",
-          "description": "Cursor de polling (solo para poll)"
-        },
-        "connection_id": {
-          "type": "string",
-          "description": "ID de conexión (solo para stream)"
-        },
-        "source_queue": {
-          "type": "string",
-          "description": "Cola origen (solo para queue_bridge)"
-        },
-        "delivery_tag": {
-          "type": "string",
-          "description": "Tag de entrega (solo para queue_bridge)"
+          "enum": ["https", "wss", "amqp", "internal"],
+          "description": "Transport protocol"
         },
         "agent_id": {
           "type": "string",
-          "description": "ID del agente (solo para agent)"
-        },
-        "agent_model": {
-          "type": "string",
-          "description": "Modelo del agente (solo para agent)"
+          "description": "Agent ID (method=agent only)"
         },
         "depth": {
           "type": "number",
-          "description": "Profundidad en la cadena causal (solo para agent)"
+          "description": "Causal chain depth for anti-loop enforcement (see MAX_DEPTH_BY_CATEGORY in envelope.utils.ts)"
         }
       }
     },
     "data": {
       "type": "object",
-      "required": ["received_at", "payload_inline", "payload_bytes", "payload_checksum"],
+      "required": ["received_at", "payload_inline", "payload_ref", "payload_bytes", "payload_checksum", "payload"],
+      "description": "Payload metadata and content. Canonical type: EventData in packages/shared/src/interfaces.ts.",
       "properties": {
         "received_at": {
           "type": "string",
           "format": "date-time",
-          "description": "Timestamp ISO 8601 de recepción"
+          "description": "ISO 8601 reception timestamp"
         },
         "payload_inline": {
           "type": "boolean",
-          "description": "true si el payload viaja en el mensaje"
+          "description": "true when the payload is embedded; false for claim-check (large payload)"
         },
         "payload_ref": {
           "type": ["string", "null"],
-          "description": "URI de referencia al Object Store. null si inline"
+          "description": "Object Store URI when payload_inline=false. Format: nats://objstore/PAYLOAD-<tenant>/<envelope.id>-payload"
         },
         "payload_bytes": {
           "type": "number",
-          "description": "Tamaño en bytes del payload original"
+          "description": "UTF-8 byte length of canonicalJson(payload)"
         },
         "payload_checksum": {
           "type": "string",
-          "description": "SHA256 del payload para verificación"
+          "description": "sha256 of canonicalJson(payload) bytes. Used by claim-check consumer for integrity verification."
         },
         "payload": {
           "type": ["object", "null"],
-          "description": "Raw payload cuando viaja inline. null si claim check"
+          "description": "Actual payload when payload_inline=true. null when claim-check."
         }
+      }
+    },
+    "callback_url": {
+      "type": "string",
+      "description": "Optional pipeline extension: URL to POST completion results to"
+    },
+    "adapter_id": {
+      "type": "string",
+      "description": "Optional pipeline extension: adapter ID for webhook delivery auth"
+    },
+    "enrich_adapter": {
+      "type": "object",
+      "required": ["adapterId", "endpointId"],
+      "description": "Optional pipeline extension: adapter ref for pre-handler enrichment",
+      "properties": {
+        "adapterId": { "type": "string" },
+        "endpointId": { "type": "string" }
+      }
+    },
+    "forward_adapter": {
+      "type": "object",
+      "required": ["adapterId", "endpointId"],
+      "description": "Optional pipeline extension: adapter ref for post-handler forwarding",
+      "properties": {
+        "adapterId": { "type": "string" },
+        "endpointId": { "type": "string" }
       }
     }
   }

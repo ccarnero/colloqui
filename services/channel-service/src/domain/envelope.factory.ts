@@ -33,8 +33,8 @@ interface ICreateChannelEnvelopeOptions {
 }
 
 /**
- * Creates a compliant envelope for a channel messaging event (wdocs
- * 02 §2). Output satisfies both the canonical `EventEnvelope` shape
+ * Creates a compliant envelope for a channel messaging event
+ * (DOCS/arquitectura/02 §2). Output satisfies both the canonical `EventEnvelope` shape
  * **and** the legacy `ChannelEnvelope` camelCase aliases so in-flight
  * consumers keep working during the migration window.
  *

@@ -36,8 +36,8 @@ Any violation of points marked as 🛑 **BLOCKING** requires immediate changes.
 - [ ] **Error Handling**: Proper `HttpException` (404, 400) thrown instead of generic 500 errors.
 
 ## 4. 🧪 Testing
-- [ ] **Unit Tests**: New business logic is covered.
-- [ ] **Integration**: If an endpoint changed, E2E tests pass or were updated.
+- [ ] **Unit Tests**: New business logic is covered (per-service `bun test`).
+- [ ] **Integration**: If an endpoint changed, manually verify via the local bootstrapped cluster. There is no automated E2E suite — `tests/e2e` was removed.
 - [ ] **Coverage**: Overall project coverage does not decrease significantly.
 
 ## 5. 📝 Maintainability

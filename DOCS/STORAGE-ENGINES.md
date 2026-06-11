@@ -65,17 +65,19 @@ STORAGE_ENGINE=mongo ./port-forward-minikube.sh dev      # 27017 platform, 27018
 
 Temporal Postgres ports are forwarded in **both** modes.
 
-## E2E / stress tests
+## Testing
 
-```bash
-# Matches bootstrap default
-bun test tests/e2e
-
-# Explicit engine (overrides bootstrap env)
-E2E_STORAGE_ENGINE=mongo bun test tests/e2e
-```
-
-`tests/stress/scripts/provision.sh` is engine-agnostic (HTTP API). Postgres tenant provisioning deploys two StatefulSets and may take longer than Mongo before `wait_tenant_ready` succeeds.
+> `tests/e2e`, `tests/stress`, and `experiments/` were deleted from the
+> repository. Per-service unit tests run from within each service:
+>
+> ```bash
+> cd services/<service-name>
+> bun test
+> ```
+>
+> Integration testing is done manually: bootstrap the cluster with the desired
+> engine, then exercise the platform API. Tenant provisioning can be scripted
+> via `scripts/provision-tenant.sh`.
 
 ## Switching engines on an existing cluster
 

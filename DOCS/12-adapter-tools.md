@@ -1,6 +1,6 @@
 # Adapter Tools
 
-Adapter tools allow YoizenClaw agents to invoke external APIs through centrally managed adapter configurations, instead of hardcoding HTTP endpoint details in each agent.
+Adapter tools allow agents to invoke external APIs through centrally managed adapter configurations, instead of hardcoding HTTP endpoint details in each agent.
 
 ## Overview
 
@@ -9,7 +9,6 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 - **Centralized configuration**: Auth credentials, base URLs, and retry policies managed in one place.
 - **Reusability**: Multiple agents can reference the same connector/endpoint.
 - **Security**: Credentials are never stored in agent configs — resolved at execution time.
-- **Resilience**: Stale-while-revalidate (SWR) caching with automatic fallback when `connector-admin` is unavailable.
 
 ## Architecture
 
@@ -19,7 +18,7 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 ┌──────────────────────────────────────────────────────────────────┐
 │ Configuration Phase                                              │
 │                                                                  │
-│  Admin Console ──POST /admin/agents──▶ agent-admin-service │
+│  Admin Console ──POST /admin/agents──▶ agent-admin-service       │
 │     {tools: [{adapterRef: {adapterId, endpointId}}]}             │
 │                                          │                       │
 │                                   Validate adapterRef            │
@@ -30,29 +29,24 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 ┌──────────────────────────────────────────────────────────────────┐
 │ Execution Phase                                                  │
 │                                                                  │
-│  YoizenClaw Runtime                                              │
+│  agent-ai-service                                                │
 │     │                                                            │
 │     ▼                                                            │
-│  ToolExecutor._execute_configured_tool()                         │
+│  ToolExecutorService.execute()                                   │
 │     │                                                            │
-│     ├── adapterRef present? ──YES──▶ AdapterToolExecutor         │
+│     ├── adapterRef present? ──YES──▶ AdapterExecutorService      │
 │     │                                      │                     │
-│     │                               AdapterClient                │
-│     │                              (SWR cache check)             │
+│     │                               GET /connectors/{id}         │
+│     │                               (connector-admin)            │
 │     │                                      │                     │
-│     │                              GET /connectors/{id}          │
-│     │                              (connector-admin)             │
+│     │                               Resolve URL + headers         │
+│     │                               + inject auth                │
 │     │                                      │                     │
-│     │                              Resolve URL + headers          │
-│     │                              + inject auth                 │
+│     │                               HTTP request to external API │
 │     │                                      │                     │
-│     │                              HTTP request to external API  │
-│     │                                      │                     │
-│     │                              Truncate if >100KB            │
-│     │                                      │                     │
-│     │                              Return ToolResult             │
+│     │                               Return ToolResult            │
 │     │                                                            │
-│     └── endpoint present? ──YES──▶ HTTP/NATS (existing path)    │
+│     └── endpoint present? ──YES──▶ HTTP (existing path)         │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -60,13 +54,11 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 
 | Component | File | Responsibility |
 |-----------|------|---------------|
-| `AdapterClient` | `services/agent-ai-service/src/shared/adapter_client.py` | Resolve adapter configs with SWR caching |
-| `AdapterToolExecutor` | `services/agent-ai-service/src/tools/adapter_executor.py` | Execute HTTP calls via adapter resolution |
-| `ToolExecutor` | `services/agent-ai-service/src/application/agents/tool_executor.py` | Dispatch to adapter or HTTP path |
-| `AdapterReference` | `services/agent-ai-service/src/shared/config/agent_config.py` | Pydantic model for adapter references |
-| `AdapterReferenceDto` | `services/agent-admin-service/src/modules/agents/agents.dto.ts` | DTO validation in admin-service |
+| `AdapterExecutorService` | `services/agent-ai-service/src/modules/tools/adapter-executor.service.ts` | Resolve adapter config from connector-admin, inject auth headers, execute HTTP call |
+| `ToolExecutorService` | `services/agent-ai-service/src/modules/tools/tool-executor.service.ts` | Dispatch to adapter or HTTP path based on tool definition |
+| `AdaptersService` (agent-admin) | `services/agent-admin-service/src/modules/adapters/adapters.service.ts` | Validate adapterRef existence on agent create/update |
 | `AdaptersController` | `services/agent-admin-service/src/modules/adapters/adapters.controller.ts` | `GET /admin/adapters` for UI |
-| `AdaptersService` | `services/admin-console/src/app/core/services/adapters.service.ts` | Angular service for adapter API |
+| `AdaptersService` (admin-console) | `services/admin-console/src/app/core/services/adapters.service.ts` | Angular service for adapter API |
 | `ToolAdapterFormComponent` | `services/admin-console/src/app/features/automation/ai/tool-adapter-form.component.ts` | UI for adapter selection |
 
 ## Configuration
@@ -75,12 +67,9 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ADAPTER_TOOLS_ENABLED` | `true` | Feature flag for adapter tools |
-| `CONNECTOR_ADMIN_URL` | `http://connector-admin-api:3000` | Primary `connector-admin` base URL (consumed by `agent-ai-service` settings) |
-| `ADAPTER_SERVICE_URL` | `http://connector-admin-api:3000` | **Legacy alias** for `CONNECTOR_ADMIN_URL`; honoured for backwards compatibility only |
-| `TOOL_RESPONSE_MAX_BYTES` | `100000` | Response truncation limit (bytes) |
-| `ADAPTER_CACHE_TTL_SECONDS` | `60` | Cache soft TTL (fresh threshold) |
-| `ADAPTER_CACHE_HARD_TTL_SECONDS` | `300` | Cache hard TTL (stale fallback) |
+| `CONNECTOR_ADMIN_URL` | `http://connector-admin-api:3000` | Base URL for connector-admin API (consumed by `agent-ai-service`) |
+
+Note: The legacy `ADAPTER_SERVICE_URL`, `ADAPTER_TOOLS_ENABLED`, `ADAPTER_CACHE_TTL_SECONDS`, `ADAPTER_CACHE_HARD_TTL_SECONDS`, and `TOOL_RESPONSE_MAX_BYTES` variables referenced in older docs are **not present** in the current TypeScript implementation. The TypeScript `AdapterExecutorService` calls connector-admin directly on each tool invocation; there is no SWR cache layer at the agent-ai-service level.
 
 ### Agent Tool Schema
 
@@ -94,7 +83,7 @@ Each agent tool must have **either** `endpoint` **or** `adapterRef`, never both:
   "method": "GET"
 }
 
-// Adapter tool (new)
+// Adapter tool
 {
   "name": "search-crm",
   "adapterRef": {
@@ -228,88 +217,49 @@ When an endpoint ID does not exist within the adapter:
 
 ### Connector Admin Unavailable
 
-The `AdapterClient` uses a stale-while-revalidate (SWR) cache:
-
-1. **Fresh cache (within 60s)**: Returns cached config immediately.
-2. **Stale cache (60s-300s)**: Returns cached config, triggers background refresh.
-3. **Expired cache (>300s)**: Must fetch fresh. If `connector-admin` is down, returns an error.
-4. **No cache**: Must fetch. If `connector-admin` is down, returns an error immediately.
-
-### Response Truncation
-
-Adapter responses exceeding 100KB are truncated to prevent LLM context overflow:
-
-```json
-{
-  "_truncated": true,
-  "original_size_bytes": 150000,
-  "top_level_keys": ["results", "pagination"],
-  "message": "Response truncated: 150000 bytes exceeded limit of 100000 bytes"
-}
-```
+When connector-admin returns a non-2xx response or is unreachable, `AdapterExecutorService` returns a `ToolResult` with `success: false` and the HTTP error message. There is no SWR fallback at the agent-ai-service level — the error propagates to the LLM as tool failure.
 
 ### Timeout Handling
 
-Each adapter has a configurable timeout (default: 5000ms). If the external API does not respond within the timeout:
-
-```json
-{
-  "success": false,
-  "error": "Request to https://crm.example.com/api/v2/contacts/search timed out after 5000ms"
-}
-```
+Each adapter endpoint has a configurable timeout (default: 5000 ms, from the endpoint or adapter config in connector-admin). If the external API does not respond within the timeout, `AbortSignal.timeout` causes an abort and the error is returned as a `ToolResult` failure.
 
 ## Security
 
 ### Auth Credential Handling
 
-Adapter tools support five authentication types:
+`AdapterExecutorService` supports five authentication types via `injectAuthHeaders`:
 
 | Auth Type | Header Injected | Configuration |
 |-----------|----------------|---------------|
 | `none` | None | No credentials needed |
-| `api-key` | `X-Api-Key: {key}` (or custom header) | `authConfig.key`, `authConfig.header_name` |
-| `bearer` | `Authorization: Bearer {token}` | `authConfig.token` |
+| `api-key` | `X-Api-Key: {key}` (or `authConfig.headerName`) | `authConfig.key`, `authConfig.headerName` |
+| `bearer` | `Authorization: Bearer {token}` | `authConfig.token` or `authConfig.bearerToken` |
 | `basic` | `Authorization: Basic {base64}` | `authConfig.username`, `authConfig.password` |
 | `oauth2-client` | `Authorization: Bearer {access_token}` | `authConfig.access_token` |
 
 Key security principles:
 
-- **Never logged**: Auth tokens are never included in log messages or error responses.
 - **Resolved at execution time**: Credentials are fetched from `connector-admin` for each tool execution, never stored in agent configuration.
 - **Tenant isolation**: Every connector request includes the `X-Yoizen-Tenant` header. `connector-admin` enforces tenant-scoped access.
-- **Sanitized errors**: Error messages returned to the LLM do not contain auth headers or credential values.
 
 ### Tenant Context Propagation
 
 ```
-Agent (tenant: acme) → AdapterToolExecutor
-  → AdapterClient.get_adapter(adapter_id)
-    → GET /connectors/{id} (X-Yoizen-Tenant: acme)
-  → resolve_request() (includes auth headers)
+Agent (tenant: acme) → AdapterExecutorService
+  → GET /connectors/{id} (X-Yoizen-Tenant: acme)
+  → resolve URL + auth headers
   → HTTP request to external API
     (X-Yoizen-Tenant: acme + adapter auth headers)
 ```
-
-## Feature Flag
-
-Adapter tools are controlled by the `ADAPTER_TOOLS_ENABLED` environment variable.
-
-| Value | Behaviour |
-|-------|-----------|
-| `true` (default) | Adapter tools are enabled. `adapterRef` tools are resolved and executed. |
-| `false` | Adapter tools are disabled. Tool calls with `adapterRef` return an error. |
-
-> **Note**: The feature flag is temporary and should be removed after production validation. See Task 6.2 in the adapter-tools change.
 
 ## File Reference
 
 | File | Language | Description |
 |------|----------|-------------|
-| `services/agent-ai-service/src/shared/adapter_client.py` | Python | AdapterClient with SWR cache |
-| `services/agent-ai-service/src/tools/adapter_executor.py` | Python | AdapterToolExecutor |
-| `services/agent-ai-service/src/shared/config/agent_config.py` | Python | `AdapterReference` model |
-| `services/agent-admin-service/src/modules/agents/agents.dto.ts` | TypeScript | `AdapterReferenceDto` validation |
-| `services/agent-admin-service/src/modules/adapters/` | TypeScript | Adapter lookup controller + service |
+| `services/agent-ai-service/src/modules/tools/adapter-executor.service.ts` | TypeScript | AdapterExecutorService — resolves connector-admin config, injects auth, executes HTTP call |
+| `services/agent-ai-service/src/modules/tools/tool-executor.service.ts` | TypeScript | ToolExecutorService — dispatches to adapter or direct HTTP path |
+| `services/agent-ai-service/src/modules/tools/tool-definition.ts` | TypeScript | `AdapterReference` type and `ToolResult` interface |
+| `services/agent-admin-service/src/modules/agents/agents.service.ts` | TypeScript | `validateAdapterRefs` on agent create/update |
+| `services/agent-admin-service/src/modules/adapters/` | TypeScript | Adapter lookup controller and service |
 | `services/admin-console/src/app/core/services/adapters.service.ts` | TypeScript | Angular adapter API service |
 | `services/admin-console/src/app/features/automation/ai/tool-adapter-form.component.ts` | TypeScript | Adapter selection UI component |

@@ -380,7 +380,8 @@ Connectors are managed by `connector-admin` and consumed by `connector-runtime`:
 
 ### Task 5: Query Workflows in Temporal Web UI
 
-1. Open http://localhost:8080 (Temporal Web UI)
+1. Run `kubectl port-forward -n support-services-dev svc/temporal-ui 8233:80`
+2. Open http://localhost:8233 (Temporal Web UI)
 2. Go to "Workflows" tab
 3. Select namespace (default `default`)
 4. Search by workflow ID: `{tenantId}:*` (e.g., `acme:*`)
@@ -513,17 +514,15 @@ curl http://localhost:3000/workflows \
 | Workflow with 3 actions | 300-600ms |
 | Parallel branch (2 branches) | 150-300ms (concurrent) |
 
-### Scaling for Production
+### Scaling (Developer Mode)
 
-**Connector Runtime**:
-- Max 200 concurrent activities per replica
-- KEDA scales 1-20 replicas based on task queue depth
-- For 1000 req/sec: 5-10 replicas recommended
+Developer mode runs all Deployments at a fixed **1 replica** (no KEDA, no
+scale-to-zero). All Knative Services are pinned to `minScale: 1, maxScale: 1`.
 
-**Workflow Service**:
-- API: Knative scales 1-20 based on request concurrency
-- Worker: KEDA scales 1-3 based on task queue depth
-- For 100 workflows/sec: 2-3 replicas recommended
+For future production deployments:
+- **Connector Runtime**: max 200 concurrent activities per replica; KEDA can scale 1-20 based on task queue depth.
+- **Workflow Service API**: Knative request-based autoscaling; Worker would use KEDA.
+- KEDA ScaledObjects are not currently in the codebase — they would need to be re-added for production scale.
 
 ---
 

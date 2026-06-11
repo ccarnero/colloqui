@@ -2,6 +2,10 @@
 
 Practical pseudocode examples for common use cases with `connector-runtime` and `workflow-service`.
 
+> **Field name note**: The real `WorkflowAction` schema uses `activity` (not `type`) to identify the action kind. The recipes below use pseudo-JSON; in actual API payloads write `"activity": "endpointCall"` etc. See `packages/shared/src/workflow.interfaces.ts` for the canonical type definitions.
+
+> **Available action kinds** (verified in `services/workflow-service/src/temporal/workflows.ts`): `endpointCall`, `serviceCall`, `jsFunction`, `serviceBusCall`, `channelSend`, `agentCall`, `branch`, `conditional`.
+
 ## Pattern 1: Simple HTTP Call via Connector Runtime
 
 **Use case**: Single HTTP request, no orchestration needed.
@@ -379,9 +383,11 @@ POST /workflows
   ]
 }
 
-// Note: Both branches always execute in workflow
-// For true if/then/else, use jsFunction to decide,
-// then publish different events for downstream handling
+// Note: with `branch`, both branches always execute in parallel.
+// For true if/then/else, use the `conditional` action type:
+//   { activity: "conditional", branches: [{ condition: {...}, actions: [...] }], default: [...] }
+// The `conditional` action evaluates branches in order and executes
+// only the first matching branch (or `default` if none match).
 ```
 
 ---
@@ -786,11 +792,8 @@ POST /workflows
   },
   actions: [
     // Execute async operations (e.g., generate report, process in background)
-    {
-      type: "sleep",
-      name: "allowAsyncProcessing",
-      args: { duration: 5000 }
-    },
+    // Note: there is no built-in `sleep` action. Use jsFunction with a
+    // timeout loop, or trigger a separate delayed workflow via serviceBusCall.
     
     // Notify completion
     {
@@ -828,7 +831,7 @@ POST /workflows
 | Adapter-driven | Config-managed API | adapterId + endpointId |
 | Multi-step | Sequential actions | Template resolution |
 | Parallel | Concurrent actions | branch action type |
-| Conditional | if/then/else logic | jsFunction + branch |
+| Conditional | if/then/else logic | `conditional` action (or jsFunction + branch for runtime decisions) |
 | Template substitution | Dynamic arguments | {{path.to.value}} syntax |
 | Error handling | Failure recovery | Retries + fallback branches |
 | AI classification | Intelligent routing | agentCall action type |
@@ -843,6 +846,6 @@ POST /workflows
 - [Connector Admin README](../services/connector-admin/README.md) — Connector configuration
 - [Workflow Service README](../services/workflow-service/README.md) — Orchestration
 - [Connector Runtime vs Workflow Service](./07-CONNECTOR-RUNTIME-VS-WORKFLOW-SERVICE.md) — Decision guide
-- [@yoizen/shared](../packages/shared/README.md) — Type definitions
+- `packages/shared/src/` — Canonical type definitions (no README; read source directly)
 - [Platform Architecture](./01-ARCHITECTURE.md) — High-level service boundaries
 - [Workflow Engine](./04-WORKFLOW-ENGINE.md) — Action execution model
