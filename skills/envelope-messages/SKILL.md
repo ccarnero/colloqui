@@ -14,9 +14,9 @@ metadata:
 ---
 
 > **Fuentes de verdad as-built:**
-> - `DOCS/es/arquitectura/02-diseño-de-mensajes.md` — contrato de envelope, subjects, idempotencia, cadena causal, claim-check (referencia canónica del sistema implementado).
-> - `DOCS/es/arquitectura/04-claim-check.md` — protocolo completo de claim-check (producer + consumer).
-> - `DOCS/03-messaging.md` — topología de streams, taxonomía de subjects y referencia operativa de NATS/JetStream.
+> - `DOCS/messaging/envelope.md` — contrato de envelope, subjects, idempotencia, cadena causal, claim-check (referencia canónica del sistema implementado).
+> - `DOCS/messaging/claim-check.md` — protocolo completo de claim-check (producer + consumer).
+> - `DOCS/messaging/service-bus.md` — topología de streams, taxonomía de subjects y referencia operativa de NATS/JetStream.
 >
 > Ante cualquier discrepancia entre los documentos y el código, prevalece el código.
 > Fuente de verdad de tipos: `packages/shared/src/interfaces.ts` (`EventEnvelope`, `EventTransport`, `EventData`).
@@ -356,9 +356,9 @@ Evento derivado (workflow/agente)                  ← deriveEnvelope
 
 ## References
 
-- `DOCS/es/arquitectura/02-diseño-de-mensajes.md` — contrato canónico de envelope, subjects, idempotencia, cadena causal, claim-check (as-built)
-- `DOCS/es/arquitectura/04-claim-check.md` — protocolo completo de claim-check: producer, consumer middleware, Object Store, métricas (as-built)
-- `DOCS/03-messaging.md` — topología de streams, taxonomía de subjects y referencia operativa de NATS/JetStream
+- `DOCS/messaging/envelope.md` — contrato canónico de envelope, subjects, idempotencia, cadena causal, claim-check (as-built)
+- `DOCS/messaging/claim-check.md` — protocolo completo de claim-check: producer, consumer middleware, Object Store, métricas (as-built)
+- `DOCS/messaging/service-bus.md` — topología de streams, taxonomía de subjects y referencia operativa de NATS/JetStream
 - `packages/shared/src/interfaces.ts` — tipos `EventEnvelope`, `EventTransport`, `EventData`
 - `packages/shared/src/channel.interfaces.ts` — `Channel`, `ChannelProvider`, `MessageKind`, `ChannelEnvelope`
 - `packages/shared/src/channel.constants.ts` — `CHANNEL_PRODUCER`, `WEBHOOK_FORWARDED_HEADERS`, `CLAIM_CHECK_THRESHOLD_BYTES`, `CLAIM_CHECK_BUCKET_TTL_NS`, `CLAIM_CHECK_BUCKET_MAX_BYTES`

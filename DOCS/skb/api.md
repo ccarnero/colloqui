@@ -1,5 +1,7 @@
 # SKB API Reference
 
+*SKB is a module inside `agent-admin-service` (`src/modules/structured-kb/`, `SERVICE_MODE=api|worker`) — there is no standalone SKB service.*
+
 > Complete API reference for the Structured Knowledge Base (SKB) service.
 
 ---

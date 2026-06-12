@@ -6,10 +6,10 @@ Platform OLTP data can run on **PostgreSQL** (default) or **MongoDB**, selected 
 
 ```bash
 # Default — Postgres OLTP + Temporal Postgres
-./bootstrap-minikube.sh dev support-services platform-services
+./bootstrap-orbstack-osx.sh dev support-services platform-services
 
 # Mongo OLTP + Temporal Postgres (hybrid)
-./bootstrap-minikube.sh --storage-engine=mongo dev support-services platform-services
+./bootstrap-orbstack-osx.sh --storage-engine=mongo dev support-services platform-services
 ```
 
 Environment variables (same semantics):
@@ -59,8 +59,8 @@ Each migrated NestJS service uses:
 ## Port-forward
 
 ```bash
-STORAGE_ENGINE=postgres ./port-forward-minikube.sh dev   # 5432 shared postgres
-STORAGE_ENGINE=mongo ./port-forward-minikube.sh dev      # 27017 platform, 27018 usage
+STORAGE_ENGINE=postgres ./port-forward.sh dev   # 5432 shared postgres
+STORAGE_ENGINE=mongo ./port-forward.sh dev      # 27017 platform, 27018 usage
 ```
 
 Temporal Postgres ports are forwarded in **both** modes.
@@ -77,14 +77,14 @@ Temporal Postgres ports are forwarded in **both** modes.
 >
 > Integration testing is done manually: bootstrap the cluster with the desired
 > engine, then exercise the platform API. Tenant provisioning can be scripted
-> via `scripts/provision-tenant.sh`.
+> via `setup-tenant.sh`.
 
 ## Switching engines on an existing cluster
 
 Dev data is disposable. Changing `--storage-engine` without a full reset leaves tenants provisioned for the previous engine. Prefer:
 
 ```bash
-./bootstrap-minikube.sh --reset --storage-engine=mongo dev support-services platform-services
+./bootstrap-orbstack-osx.sh --reset --storage-engine=mongo dev support-services platform-services
 ```
 
 ## Out of scope

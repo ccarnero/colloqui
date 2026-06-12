@@ -9,9 +9,9 @@
 > split that was used during stress testing.
 >
 > Companion docs (historical context, not current operations):
-> - [`DOCS/runbooks/temporal-ha-migration.md`](./temporal-ha-migration.md) —
+> - [`DOCS/runbooks/archive/temporal-ha-migration.md`](./archive/temporal-ha-migration.md) —
 >   the one-time migration to 4-role HA (no longer the active config).
-> - [`DOCS/runbooks/temporal-visibility-split.md`](./temporal-visibility-split.md) —
+> - [`DOCS/runbooks/archive/temporal-visibility-split.md`](./archive/temporal-visibility-split.md) —
 >   the visibility datastore split to its own CNPG cluster (also historical —
 >   developer mode uses one shared `postgres-temporal` cluster for both).
 
@@ -199,8 +199,7 @@ kubectl -n $NS exec deploy/temporal -c temporal -- \
 # Expect: temporal.api.workflowservice.v1.WorkflowService: SERVING
 ```
 
-The bootstrap scripts ([`bootstrap-minikube.sh`](../../bootstrap-minikube.sh),
-[`bootstrap-orbstack.sh`](../../bootstrap-orbstack.sh)) run steps 2-4 automatically.
+The bootstrap script ([`bootstrap-orbstack-osx.sh`](../../bootstrap-orbstack-osx.sh)) runs steps 2-4 automatically.
 
 ### 5.2 Re-apply (idempotent path, after config change)
 
@@ -417,8 +416,8 @@ All alerts live in
 - **Manifests**: [`infrastructure/base/temporal/`](../../infrastructure/base/temporal/)
 - **Persistence**: [`infrastructure/base/postgres/postgres-temporal-cluster.yaml`](../../infrastructure/base/postgres/postgres-temporal-cluster.yaml)
 - **Overlays**: [`infrastructure/overlays/local/local-base/patches/postgres-temporal-resources.yaml`](../../infrastructure/overlays/local/local-base/patches/postgres-temporal-resources.yaml), [`infrastructure/overlays/orbstack/orbstack-base/patches/postgres-temporal.yaml`](../../infrastructure/overlays/orbstack/orbstack-base/patches/postgres-temporal.yaml)
-- **Bootstrap scripts**: [`bootstrap-minikube.sh`](../../bootstrap-minikube.sh), [`bootstrap-orbstack.sh`](../../bootstrap-orbstack.sh)
+- **Bootstrap script**: [`bootstrap-orbstack-osx.sh`](../../bootstrap-orbstack-osx.sh)
 - **Purge script**: [`scripts/purge-temporal.sh`](../../scripts/purge-temporal.sh)
 - **Prometheus alerts**: [`infrastructure/base/observability/prometheus/alerts.yaml`](../../infrastructure/base/observability/prometheus/alerts.yaml)
-- **Historical HA migration runbook**: [`DOCS/runbooks/temporal-ha-migration.md`](./temporal-ha-migration.md)
-- **Historical visibility-split runbook**: [`DOCS/runbooks/temporal-visibility-split.md`](./temporal-visibility-split.md)
+- **Historical HA migration runbook**: [`DOCS/runbooks/archive/temporal-ha-migration.md`](./archive/temporal-ha-migration.md)
+- **Historical visibility-split runbook**: [`DOCS/runbooks/archive/temporal-visibility-split.md`](./archive/temporal-visibility-split.md)

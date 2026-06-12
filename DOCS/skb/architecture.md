@@ -1,5 +1,7 @@
 # SKB — Structured Knowledge Base Architecture
 
+*SKB is a module inside `agent-admin-service` (`src/modules/structured-kb/`, `SERVICE_MODE=api|worker`) — there is no standalone SKB service.*
+
 > ADR-style design for porting Yoizen.yIA.Ingest's SKB pipeline to the
 > TypeScript / NestJS / PostgreSQL / pgvector stack.
 

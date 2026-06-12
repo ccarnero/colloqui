@@ -207,7 +207,7 @@ export class IngressService {
   }
 
   /**
-   * Claim-check publish (DOCS/es/arquitectura/04 §3):
+   * Claim-check publish (DOCS/messaging/claim-check.md §3):
    * 1. Store exactly `canonicalJson(envelope.data.payload)` bytes in the
    *    tenant's Object Store bucket. This is the invariant that lets
    *    the consumer verify: sha256(storedRawBytes) === payload_checksum.

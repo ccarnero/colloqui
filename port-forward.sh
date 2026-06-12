@@ -167,7 +167,7 @@ detect_context() {
   fi
 
   err "No reachable cluster found (tried OrbStack context and Minikube profile '${MINIKUBE_PROFILE}')."
-  err "Run bootstrap-orbstack.sh or bootstrap-minikube.sh first."
+  err "Run bootstrap-orbstack-osx.sh first."
   exit 1
 }
 

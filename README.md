@@ -13,15 +13,6 @@ Single-node, single-environment (`dev`) setup. No env argument, no KEDA, single-
 ./bootstrap-orbstack-osx.sh --smoke  # same + run smoke tests at the end
 ```
 
-### Bring up (Minikube)
-
-```bash
-./bootstrap-minikube.sh              # full bring-up
-./bootstrap-minikube.sh --smoke      # same + smoke tests
-# In a separate terminal once cluster is ready:
-sudo minikube tunnel -p yoizen-arch
-```
-
 Bootstrap writes a `/etc/hosts` managed block so the stable hostname resolves immediately:
 
 ```

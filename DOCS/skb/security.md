@@ -1,5 +1,7 @@
 # SKB NL→SQL Pipeline — Security Review
 
+*SKB is a module inside `agent-admin-service` (`src/modules/structured-kb/`, `SERVICE_MODE=api|worker`) — there is no standalone SKB service.*
+
 > Threat model and defense-in-depth analysis for the Structured Knowledge Base
 > natural-language → SQL query pipeline.
 

@@ -9,7 +9,7 @@ import {
  * emitted by `registry-service` and consumed by other platform services
  * (e.g. `adapter-service` for the internal adapter mirror).
  *
- * Format (DOCS/es/arquitectura/02 §3):
+ * Format (DOCS/messaging/envelope.md §3):
  *   evt.<tenant>.registry-service.platform.<resource>.system.<kind>.v<version>
  *
  * `resource` fills the "channel" slot (e.g. "service"). The "provider"

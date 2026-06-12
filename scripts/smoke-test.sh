@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROFILE="yoizen-arch"
 NAMESPACE="${SMOKE_TEST_NAMESPACE:-platform-services-dev}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -88,8 +87,6 @@ preflight_check() {
 main() {
   log "Smoke Test Runner"
   echo ""
-
-  kubectl config use-context "$PROFILE" 2>/dev/null || true
 
   preflight_check
 }

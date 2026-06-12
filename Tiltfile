@@ -3,13 +3,13 @@
 # =============================================================================
 #
 # Optional convenience layer: replaces the manual
-#   ./bootstrap-minikube.sh dev platform-services + ./port-forward.sh dev
+#   ./bootstrap-orbstack-osx.sh dev platform-services + ./port-forward.sh dev
 # workflow during active development. The bootstrap scripts are the primary
 # and authoritative way to stand up the cluster.
 #
 # Prerequisites (run once before `tilt up`):
 #   1. Minikube profile "yoizen-arch" running
-#   2. ./bootstrap-minikube.sh support-services
+#   2. ./bootstrap-orbstack-osx.sh support-services
 #      (installs Knative, Kourier, CNPG, infrastructure)
 #
 # Usage:
@@ -220,7 +220,7 @@ k8s_resource(
 # Port-forwards for support services
 #
 # These services are NOT deployed by Tilt (they come from
-# ./bootstrap-minikube.sh dev support-services). We use local_resource
+# ./bootstrap-orbstack-osx.sh dev support-services). We use local_resource
 # with serve_cmd to maintain persistent kubectl port-forward connections.
 # ---------------------------------------------------------------------------
 local_resource(

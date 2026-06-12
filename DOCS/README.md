@@ -1,6 +1,6 @@
 # Platform Cluster
 
-Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack) with Knative Serving, NATS JetStream, Redis, PostgreSQL, and Temporal. Single-node developer configuration with stable `dev.local` hostnames, no KEDA autoscaling, and one-command bring-up.
+Serverless event-driven architecture running on Kubernetes (OrbStack) with Knative Serving, NATS JetStream, Redis, PostgreSQL, and Temporal. Single-node developer configuration with stable `dev.local` hostnames, no KEDA autoscaling, and one-command bring-up.
 
 ## Developer mode — quickstart
 
@@ -8,9 +8,6 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 # OrbStack (recommended on macOS)
 ./bootstrap-orbstack-osx.sh          # bring up support + platform services
 ./bootstrap-orbstack-osx.sh --smoke  # same + readiness preflight at the end
-
-# Minikube
-./bootstrap-minikube.sh              # bring up (requires: sudo minikube tunnel in parallel)
 
 # Iterate: rebuild only changed service images
 ./rebuild-changed.sh
@@ -44,16 +41,10 @@ Once the cluster is up and the `/etc/hosts` block is in place, provision a tenan
 ### Provision the `acme` tenant
 
 ```bash
-./scripts/provision-tenant.sh
-# or the richer wrapper (named flags, idempotent checks, provisioning-wait):
 ./setup-tenant.sh
 ```
 
-`scripts/provision-tenant.sh` takes positional arguments `TENANT_NAME USER_EMAIL USER_PASSWORD USER_DISPLAY_NAME USER_ROLE` (defaults: `acme admin@acme.com password admin tenant_admin`). Platform admin credentials are read from `PLATFORM_ADMIN_EMAIL` / `PLATFORM_ADMIN_PASSWORD` (defaults: `admin@yoizen.io` / `yoizen-admin-change-me`). It creates the tenant and a tenant admin user only — no registry service, channel, or sample workflow.
-
-`setup-tenant.sh` is an alternative entry point with named flags (`--tenant-id`, `--email`, `--password`, `--api-url`, etc.), idempotency checks, and a provisioning-status wait loop. Both scripts target the same API.
-
-Override the gateway URL with `BASE_URL=<url>` (provision-tenant.sh) or `--api-url <url>` (setup-tenant.sh).
+`setup-tenant.sh` takes named flags (`--tenant-id`, `--email`, `--password`, `--api-url`, etc.), includes idempotency checks and a provisioning-status wait loop, and creates the tenant plus a tenant admin user only — no registry service, channel, or sample workflow. Override the gateway URL with `--api-url <url>`.
 
 ### Run a workflow in a tenant
 
@@ -89,7 +80,7 @@ Older versions created a dedicated `SKB-INGESTION` stream whose `evt.*.…` subj
 curl -s -X DELETE $GW/api/tenants/acme -H "authorization: Bearer $TOKEN"
 kubectl port-forward -n support-services-dev svc/nats 4222:4222 &
 nats stream rm SKB-INGESTION -f -s nats://localhost:4222
-./scripts/provision-tenant.sh
+./setup-tenant.sh
 ```
 
 ---
@@ -98,16 +89,16 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 
 **New to the platform?** Follow this reading order:
 
-1. [01 Platform Architecture](./01-platform-architecture.md) — High-level ownership and service boundaries (20 min)
-2. [02 Infrastructure and Deployment](./02-infrastructure-deployment.md) — Support services, overlays, and scaling (20 min)
-3. [03 NATS and JetStream](./03-messaging.md) — Canonical messaging topology (20 min)
-4. [04 Workflow Engine](./04-workflows.md) — Trigger bridge and action dispatch model (20 min)
-5. [05 Agent Execution Flow](./05-agent-execution.md) — `agentCall` runtime lifecycle (15 min)
-6. [06 UI Flows](./06-ui.md) — Console-to-backend flow mapping (15 min)
-7. [07 Connector Runtime vs Workflow Service](./07-connector-vs-workflow.md) — Decision matrix and scenarios (30 min)
-8. [08 Workflow Telegram Sequence](./08-telegram-sequence.md) — Concrete end-to-end runtime flow (15 min)
-9. [09 Common Patterns](./09-patterns.md) — Pseudocode recipes (20 min)
-10. [10 Developer Onboarding Guide](./10-onboarding.md) — Setup and day-to-day workflows (30 min)
+1. [Platform Architecture](./architecture/overview.md) — High-level ownership and service boundaries (20 min)
+2. [Infrastructure and Deployment](./architecture/infrastructure.md) — Support services, overlays, and scaling (20 min)
+3. [NATS and JetStream](./messaging/service-bus.md) — Canonical messaging topology (20 min)
+4. [Workflow Engine](./workflows/engine.md) — Trigger bridge and action dispatch model (20 min)
+5. [Agent Execution Flow](./agents/execution.md) — `agentCall` runtime lifecycle (15 min)
+6. [UI Flows](./guides/ui-flows.md) — Console-to-backend flow mapping (15 min)
+7. [Connector Runtime vs Workflow Service](./workflows/connector-vs-workflow.md) — Decision matrix and scenarios (30 min)
+8. [Workflow Telegram Sequence](./channels/telegram-sequence.md) — Concrete end-to-end runtime flow (15 min)
+9. [Common Patterns](./workflows/patterns.md) — Pseudocode recipes (20 min)
+10. [Developer Onboarding Guide](./guides/onboarding.md) — Setup and day-to-day workflows (30 min)
 11. Service READMEs:
    - [Connector Runtime](../services/connector-runtime/README.md) — Generic HTTP execution
    - [Connector Admin](../services/connector-admin/README.md) — Connector configuration API
@@ -120,37 +111,36 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 
 | Document | Purpose | Audience |
 |----------|---------|----------|
-| [01 Platform Architecture](./01-platform-architecture.md) | High-level service boundaries and ownership model | All developers |
-| [02 Infrastructure and Deployment](./02-infrastructure-deployment.md) | Support services, deployment models, overlays, and scaling | DevOps/Platform engineers |
-| [03 NATS and JetStream](./03-messaging.md) | Canonical messaging topology, subjects, and envelope contract | Backend/platform engineers |
-| [04 Workflow Engine](./04-workflows.md) | Trigger bridge, action dispatch, and task queue model | Automation developers |
-| [05 Agent Execution Flow](./05-agent-execution.md) | `agentCall` lifecycle from workflow to runtime and back | Automation/AI developers |
-| [06 UI Flows](./06-ui.md) | Admin and messaging console flows mapped to backend services | Frontend/full-stack developers |
-| [07 Connector Runtime vs Workflow Service](./07-connector-vs-workflow.md) | Decision matrix and when to use each service with scenario walkthroughs | Feature implementers |
-| [08 Workflow Telegram Sequence](./08-telegram-sequence.md) | Concrete Telegram inbound flow with hosted + agent branches | All developers |
-| [09 Common Patterns](./09-patterns.md) | Practical pseudocode recipes for 10 common use cases | All developers |
-| [10 Developer Onboarding Guide](./10-onboarding.md) | Setup, navigation, common tasks, debugging, testing | New team members |
-| [11 Service Architecture Diagrams](./11-diagrams.md) | Visual reference for service boundaries, data flow, scaling, and multi-tenancy patterns | All developers |
-| [12 Adapter Tools](./12-adapter-tools.md) | Connector tooling and helper references | Feature implementers |
-| [13 Review](./13-code-review.md) | Code review standards and checklist | All contributors |
+| [Platform Architecture](./architecture/overview.md) | High-level service boundaries and ownership model | All developers |
+| [Infrastructure and Deployment](./architecture/infrastructure.md) | Support services, deployment models, overlays, and scaling | DevOps/Platform engineers |
+| [NATS and JetStream](./messaging/service-bus.md) | Canonical messaging topology, subjects, and envelope contract | Backend/platform engineers |
+| [Workflow Engine](./workflows/engine.md) | Trigger bridge, action dispatch, and task queue model | Automation developers |
+| [Agent Execution Flow](./agents/execution.md) | `agentCall` lifecycle from workflow to runtime and back | Automation/AI developers |
+| [UI Flows](./guides/ui-flows.md) | Admin and messaging console flows mapped to backend services | Frontend/full-stack developers |
+| [Connector Runtime vs Workflow Service](./workflows/connector-vs-workflow.md) | Decision matrix and when to use each service with scenario walkthroughs | Feature implementers |
+| [Workflow Telegram Sequence](./channels/telegram-sequence.md) | Concrete Telegram inbound flow with hosted + agent branches | All developers |
+| [Common Patterns](./workflows/patterns.md) | Practical pseudocode recipes for 10 common use cases | All developers |
+| [Developer Onboarding Guide](./guides/onboarding.md) | Setup, navigation, common tasks, debugging, testing | New team members |
+| [Service Architecture Diagrams](./architecture/overview.md) | Visual reference for service boundaries, data flow, scaling, and multi-tenancy patterns (diagrams folded into overview) | All developers |
+| [Adapter Tools](./agents/adapter-tools.md) | Connector tooling and helper references | Feature implementers |
+| [Code Review](./guides/code-review.md) | Code review standards and checklist | All contributors |
 
 ### Specialized Documentation
 
 | Folder | Contents |
 |--------|----------|
 | [`skb/`](./skb/) | Structured Knowledge Base subsystem — [architecture](./skb/architecture.md), [API](./skb/api.md), [runbook](./skb/runbook.md), [security](./skb/security.md) |
-| [`runbooks/`](./runbooks/) | Operations — [Temporal](./runbooks/temporal.md), [storage engines](./runbooks/storage-engines.md), historical migration runbooks |
+| [`runbooks/`](./runbooks/) | Operations — [Temporal](./runbooks/temporal.md), [storage engines](./runbooks/storage-engines.md); historical migration runbooks archived at [`runbooks/archive/`](./runbooks/archive/) |
 | [`adr/`](./adr/) | Architecture decision records — [RAG system](./adr/rag-system.md), [variable system](./adr/variable-system.md), [agent improvements](./adr/agent-architecture-improvements.md) |
 | [`reference/`](./reference/) | Technical references — [AI SDK](./reference/ai-sdk.md) |
 
-### Spanish Documentation (`es/`)
+### New Documentation Folders
 
 | Folder | Contents |
 |--------|----------|
-| [`es/arquitectura/`](./es/arquitectura/) | Messaging design and as-built state (service bus, message design, agent ingress, claim-check, security, observability) |
-| [`es/canales/`](./es/canales/) | Channel and multi-tenant docs (foundations, tenant resolution, data model, multi-channel architecture, Instagram) |
-| [`es/flujos/`](./es/flujos/) | End-to-end message flows (receive, auto-reply, send, ping-pong cycle) |
-| [`es/help/`](./es/help/) | Operator guides (first steps, Meta dashboard, API reference, architecture, Cloudflare tunnel) |
+| [`messaging/`](./messaging/) | Messaging layer — service bus topology, envelope contract, claim-check, ingress bridge |
+| [`channels/`](./channels/) | Channel integration — Telegram sequence, channel-service pipeline, Instagram, Meta provider pattern |
+| [`agents/`](./agents/) | Agent runtime — execution flow, adapter tools, memory management (`agents/memory.md`), scheduled jobs (`agents/jobs.md`) |
 
 ### Service READMEs
 
@@ -165,11 +155,11 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 
 ### Focused Runtime Sequences
 
-- [`08-telegram-sequence.md`](./08-telegram-sequence.md) — concrete Telegram inbound flow split into shared ingress plus two execution branches: simple hosted service call and YoizenClaw `agentCall`.
+- [`channels/telegram-sequence.md`](./channels/telegram-sequence.md) — concrete Telegram inbound flow split into shared ingress plus two execution branches: simple hosted service call and YoizenClaw `agentCall`.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│  Kubernetes Cluster (Minikube or OrbStack)                            │
+│  Kubernetes Cluster (OrbStack)                                        │
 │                                                                       │
 │  ┌─── knative-serving ─────────────────────────────────────────────┐  │
 │  │  Kourier Ingress  ·  KPA Autoscaler  ·  dev.local DNS          │  │
@@ -191,7 +181,8 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  │  ┌─ {tenant}-{env}-ns (Per-Tenant Namespaces) ───────────────┐  │  │
-│  │  │  PostgreSQL StatefulSet (dedicated per tenant)              │  │  │
+│  │  │  postgres ExternalName → shared CNPG (tier: shared)        │  │  │
+│  │  │  PostgreSQL StatefulSet (tier: dedicated only)             │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
@@ -210,10 +201,6 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 Manual kustomize apply (use the bootstrap scripts instead for day-to-day work):
 
 ```bash
-# Minikube
-kubectl apply -k infrastructure/overlays/local/dev
-kubectl apply -k knative/services/overlays/local/dev
-
 # OrbStack
 kubectl apply -k infrastructure/overlays/orbstack/dev
 kubectl apply -k knative/services/overlays/local/dev
@@ -228,15 +215,15 @@ kubectl apply -k knative/services/overlays/local/dev
 | **Audit Service** | Knative Service | Independent NATS consumer that persists every event to per-tenant PostgreSQL. Exposes paginated query API |
 | **Cache Service** | Knative Service | CRUD API with L1 in-memory + L2 Redis cache-aside pattern |
 | **Channel Service** | Knative Service | Multi-tenant messaging channel configuration and inbound webhook ingress |
-| **Tenant Service** | Knative Service | Environment-scoped tenant namespace management. Provisions dedicated PostgreSQL StatefulSet and per-tenant `agent-ai-service` Knative Service |
+| **Tenant Service** | Knative Service | Environment-scoped tenant namespace management. Provisions PostgreSQL (shared CNPG logical DB for `shared` tier, StatefulSet for `dedicated` tier) and NATS streams |
 | **Registry Service** | Knative Service | Knative-based service registry with route management, canary deployments, and traffic splitting |
 | **Workflow Service** | Knative Service | REST API + Temporal orchestrator for multi-step workflows (start, status, list) |
 | **Workflow Worker** | Deployment (plain, fixed replicas) | Temporal orchestrator worker executing JS functions and NATS service bus activities |
 | **Connector Admin** | Knative Service | Manages multi-tenant HTTP connector configurations (base URL, auth, headers, timeouts, retries) and their endpoints. Consumed via `AdapterClient` by `connector-runtime` |
 | **Connector Runtime** | Deployment (plain, fixed replicas) | Generic Temporal HTTP execution worker for `endpointCall` and `serviceCall`; uses `tracedFetch`, connector resolution, response caching, and internal service mirror lookup |
-| **Agent Admin Service** | Knative Service | Authoring API for AI agents/workflows (config-only persistence; runtime is per-tenant) |
-| **AI Agent Gateway** | Knative Service | Stateless inbound bridge that fans out execution requests to the per-tenant `agent-ai-service` Knative Service |
-| **Agent AI Service** | Knative Service (per-tenant) | Per-tenant agent execution runtime auto-provisioned by `tenant-service` into the tenant namespace |
+| **Agent Admin Service** | Knative Service | Authoring API for AI agents/workflows (config-only persistence) |
+| **AI Agent Gateway** | Knative Service | Stateless inbound bridge that fans out execution requests to the platform-tier `agent-ai-service` Knative Service |
+| **Agent AI Service** | Knative Service | Platform-tier agent execution runtime (single deployment shared across all tenants) |
 | **Usage Aggregator Service** | Knative Service | Aggregates per-tenant usage events into the usage Postgres |
 | **Proxy Service** | Knative Service | Egress proxy for tenant-bound HTTP traffic |
 | **Admin Console** | Knative Service | Angular admin UI |
@@ -273,7 +260,7 @@ The API Gateway supports dynamic routing for tenant-registered services. Tenants
 
 ### Workflow Orchestration
 
-Temporal-based workflow orchestration supports four action types:
+Temporal-based workflow orchestration supports eight action types:
 
 | Action | Execution | Description |
 |--------|-----------|-------------|
@@ -281,7 +268,10 @@ Temporal-based workflow orchestration supports four action types:
 | `serviceCall` | Remote (`connector-runtime`) | Internal service call resolved against the registry mirror |
 | `jsFunction` | Local (workflow-worker) | Inline JS evaluation |
 | `serviceBusCall` | Local (workflow-worker) | NATS publish with tenant header |
+| `channelSend` | Local (workflow-worker) | Outbound channel message via channel-service |
+| `agentCall` | Remote (`connector-runtime`) | HTTP call to `agent-ai-service` chat endpoint |
 | `branch` | Workflow-level | Parallel execution of sub-action branches |
+| `conditional` | Workflow-level | Evaluates branches in order; first match executes |
 
 Actions support `{{path.to.value}}` template resolution against the workflow execution context.
 
@@ -299,9 +289,9 @@ The Registry Service manages tenant Knative services with full lifecycle support
 Each environment runs its own tenant-service scoped by `PLATFORM_ENVIRONMENT`. Creating a tenant provisions:
 
 1. Kubernetes namespace `<tenant>-<env>-ns` with discovery labels
-2. Dedicated PostgreSQL StatefulSet with pre-configured tenant schema
-3. Per-tenant `agent-ai-service` Knative Service applied right after Postgres readiness
-4. Services connect to per-tenant PostgreSQL at `postgres.<tenant>-<env>-ns.svc.cluster.local`
+2. PostgreSQL: shared-tier tenants get a logical database on the shared CNPG cluster with an `ExternalName` Service named `postgres` in the tenant namespace; dedicated-tier tenants get a per-tenant StatefulSet
+3. NATS ingress stream (`INGRESS-<TENANT>`) ensured before any runtime consumers attach
+4. Services connect to tenant PostgreSQL at `postgres.<tenant>-<env>-ns.svc.cluster.local`
 
 ### NATS JetStream Streams
 
@@ -338,32 +328,9 @@ The `packages/shared/` package (`@yoizen/shared`) contains all cross-service typ
 |------|---------|---------|
 | [kubectl](https://kubernetes.io/docs/tasks/tools/) | >= 1.28 | Cluster management |
 | [Docker](https://docs.docker.com/get-docker/) | >= 24 | Image builds |
-| [minikube](https://minikube.sigs.k8s.io/docs/start/) | >= 1.32 | Local cluster (Minikube path) |
-| [OrbStack](https://orbstack.dev/) | >= 1.6 | Local cluster (OrbStack path) |
+| [OrbStack](https://orbstack.dev/) | >= 1.6 | Local cluster |
 
 ## Quick Start
-
-### Minikube
-
-```bash
-./bootstrap.sh
-```
-
-This script will:
-1. Start minikube with profile `yoizen-arch` (6 CPUs, memory auto-scales to
-   Docker Desktop and stays below the 16GB cap)
-2. Enable `metrics-server` addon
-3. Install Knative Serving + Kourier networking layer
-4. Deploy NATS JetStream, Redis, PostgreSQL, and Temporal to `support-services-dev`
-5. Build service Docker images inside minikube
-6. Deploy Knative Services to `platform-services-dev`
-
-If you want to force a specific memory value, set `MINIKUBE_MEMORY_MB` before
-running the bootstrap. Example:
-
-```bash
-MINIKUBE_MEMORY_MB=14336 ./bootstrap.sh dev
-```
 
 ### OrbStack
 
@@ -387,11 +354,9 @@ This script will:
 
 ```
 Arch/
-├── bootstrap.sh                     # One-command setup (Minikube)
-├── bootstrap-orbstack.sh            # One-command setup (OrbStack)
+├── bootstrap-orbstack-osx.sh        # One-command setup (OrbStack)
 ├── scripts/
-│   ├── smoke-test.sh                # kubectl readiness preflight for all Knative services and Deployments
-│   └── provision-tenant.sh          # Create tenant + tenant admin user (positional args)
+│   └── smoke-test.sh                # kubectl readiness preflight for all Knative services and Deployments
 ├── packages/
 │   └── shared/                      # @yoizen/shared — cross-service types and constants
 │       └── src/
@@ -432,18 +397,17 @@ Arch/
 │   ├── audit-service/                 # NestJS + Fastify — NATS consumer, per-tenant PostgreSQL
 │   ├── cache-service/                 # NestJS + Fastify — L1/L2 cache API
 │   ├── channel-service/               # NestJS + Fastify — Messaging channel config + inbound webhooks
-│   ├── tenant-service/                # NestJS + Fastify — K8s namespace + PostgreSQL + agent-ai-service provisioning
+│   ├── tenant-service/                # NestJS + Fastify — K8s namespace + PostgreSQL + NATS provisioning
 │   ├── registry-service/              # NestJS + Fastify — Knative service registry + canary
 │   ├── connector-admin/               # NestJS + Fastify — Multi-tenant HTTP connector config + endpoints
 │   ├── connector-runtime/             # Standalone Temporal worker — generic HTTP execution (connector-aware)
 │   ├── workflow-service/              # NestJS + Fastify + Temporal — Workflow API + worker
-│   ├── workflow-http-worker/          # Temporal worker — high-concurrency HTTP execution
 │   ├── usage-aggregator-service/      # NestJS + Fastify — Per-tenant usage aggregation
 │   ├── proxy-service/                 # NestJS + Fastify — Tenant egress proxy
 │   ├── admin-console/                 # Angular admin UI
-│   ├── agent-admin-service/      # NestJS + Fastify — YoizenClaw authoring API
-│   ├── ai-agent-gateway/    # NestJS + Fastify — Stateless inbound bridge to per-tenant runtimes
-│   └── agent-ai-service/            # TypeScript — Per-tenant agent execution runtime (provisioned per tenant)
+│   ├── agent-admin-service/           # NestJS + Fastify — Agent authoring API
+│   ├── ai-agent-gateway/              # NestJS + Fastify — Stateless inbound bridge to agent-ai-service
+│   └── agent-ai-service/              # Python — Platform-tier agent execution runtime (Knative Service)
 └── setup-tenant.sh                    # Create tenant + admin user (named flags, idempotent)
 ```
 
@@ -452,10 +416,6 @@ Arch/
 ### Apply infrastructure only
 
 ```bash
-# Minikube
-kubectl apply -k infrastructure/overlays/local/dev
-
-# OrbStack
 kubectl apply -k infrastructure/overlays/orbstack/dev
 ```
 
@@ -466,21 +426,12 @@ kubectl apply -k knative/serving
 kubectl apply -k knative/services/overlays/local/dev
 ```
 
-### Build images (Minikube)
-
-```bash
-eval $(minikube docker-env -p yoizen-arch)
-for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service workflow-http-worker usage-aggregator-service proxy-service agent-admin-service ai-agent-gateway; do
-  docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
-done
-```
-
 ### Build images (OrbStack)
 
 OrbStack >= 1.6 shares the local Docker daemon with the cluster — just build normally:
 
 ```bash
-for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service workflow-http-worker usage-aggregator-service proxy-service agent-admin-service ai-agent-gateway; do
+for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service usage-aggregator-service proxy-service agent-admin-service ai-agent-gateway agent-ai-service; do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```
@@ -516,35 +467,6 @@ For local localhost access to the frontends/API, you can also use:
 ./port-forward.sh dev
 ```
 
-#### Minikube
-
-Start the minikube tunnel (required for Kourier LoadBalancer):
-
-```bash
-minikube tunnel -p yoizen-arch
-```
-
-Then use the Knative service URLs:
-
-```bash
-# Authenticate (get a token)
-curl -X POST http://api-gateway.platform-services-dev.<MINIKUBE_IP>.sslip.io/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"grant_type":"client_credentials","client_id":"...","client_secret":"..."}'
-
-# Create a tenant
-curl -X POST http://api-gateway.platform-services-dev.<MINIKUBE_IP>.sslip.io/tenants \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <TOKEN>" \
-  -d '{"name":"acme"}'
-
-# Start a workflow
-curl -X POST http://api-gateway.platform-services-dev.<MINIKUBE_IP>.sslip.io/workflows \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "x-yoizen-tenant: acme" \
-  -d '{"name":"my-flow","application":"test","request":{},"actions":[...]}'
-```
 
 ### Local development (without K8s)
 
@@ -600,7 +522,7 @@ The smoke test is a kubectl-based readiness preflight — it checks that all Kna
 | Enrichment pipeline | Ordered stages (ajv + metadata + transform) | Separates cross-cutting concerns from handler logic |
 | Per-tenant stream design | `INGRESS-<tenant>` + `DLQ-<tenant>` + `PAYLOAD-<tenant>` | Full tenant isolation; prevents subject overlap; claim-check keeps envelopes slim |
 | Authentication | JWT via `jose` (HS256) | Stateless, minimal overhead; argon2id for password storage |
-| Tenant isolation | Per-tenant PostgreSQL StatefulSet | Full data isolation; provisioned by tenant-service on creation |
+| Tenant isolation | Per-tenant logical DB on shared CNPG (`shared` tier) or dedicated StatefulSet (`dedicated` tier) | Logical isolation covers most tenants; physical isolation available on demand |
 | Workflow engine | Temporal | Durable, retryable, language-agnostic workflow orchestration |
 | Job scheduling | In-process Temporal + K8s Jobs | Lightweight for inline JS; K8s Jobs for isolated docker execution |
 | Service registry | Knative + PostgreSQL | Leverages Knative for autoscaling; PostgreSQL for route/canary state |
@@ -623,6 +545,6 @@ The smoke test is a kubectl-based readiness preflight — it checks that all Kna
 - **Auth**: JWT via `jose` (HS256), `Bun.password` argon2id hashing
 - **Validation**: class-validator + class-transformer, ajv (pipeline payload schemas)
 - **K8s Client**: @kubernetes/client-node (Tenant, Registry services)
-- **Orchestration**: Kubernetes (Minikube)
+- **Orchestration**: Kubernetes (OrbStack)
 - **Serverless**: Knative Serving + Kourier
 - **IaC**: Kustomize (base + per-environment overlays)

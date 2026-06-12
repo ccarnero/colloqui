@@ -196,7 +196,7 @@ export class TriggerConsumerService
     const baseIdempotencyKey = envelope.idempotencykey;
 
     /**
-     * Causal chain snapshot from the triggering envelope (DOCS/es/arquitectura/02 §6).
+     * Causal chain snapshot from the triggering envelope (DOCS/messaging/envelope.md §6).
      * Passed to every workflow started from this message so publishing
      * activities can emit derived envelopes with `causation_id`,
      * `correlation_id`, and `transport.depth` correctly inherited.

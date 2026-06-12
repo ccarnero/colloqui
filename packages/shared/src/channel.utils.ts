@@ -8,7 +8,7 @@ import {
 import type { Channel, ChannelProvider, MessageKind } from "./channel.interfaces";
 
 /**
- * Builds a NATS subject for channel messaging events (8 tokens — DOCS/es/arquitectura/02 §3).
+ * Builds a NATS subject for channel messaging events (8 tokens — DOCS/messaging/envelope.md §3).
  * Format:
  *   evt.<tenant>.channel-service.messaging.<channel>.<provider>.<kind>.v<version>
  */

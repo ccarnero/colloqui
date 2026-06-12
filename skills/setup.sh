@@ -899,7 +899,7 @@ Access specialized skills through the skills/ directory symlinked at .claude/ski
 ## Key Commands
 - Use skills for complex tasks (linting, testing, etc.)
 - Follow lefthook pre-commit validation
-- Reference DOCS/13-code-review.md for code review standards
+- Reference DOCS/guides/code-review.md for code review standards
 EOF
         echo -e "${GREEN}  ✓ Created .claude/Claude.md${NC}"
     else
@@ -935,7 +935,7 @@ Access specialized skills through the skills/ directory symlinked at .gemini/ski
 ## Key Commands
 - Use skills for complex tasks (linting, testing, etc.)
 - Follow lefthook pre-commit validation
-- Reference DOCS/13-code-review.md for code review standards
+- Reference DOCS/guides/code-review.md for code review standards
 EOF
         echo -e "${GREEN}  ✓ Created .gemini/gemini.md${NC}"
     else

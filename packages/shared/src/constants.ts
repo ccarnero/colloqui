@@ -38,7 +38,7 @@ export const REGISTRY_KNATIVE_REVISIONS_PLURAL = 'revisions';
 export const REGISTRY_DEFAULT_SERVICE_PORT = 3000;
 
 /**
- * Producer/domain tokens for platform-level events (DOCS/es/arquitectura/02 §3).
+ * Producer/domain tokens for platform-level events (DOCS/messaging/envelope.md §3).
  * Used by registry-service when emitting service lifecycle events that
  * other services (adapter-service) materialize as internal adapters.
  */

@@ -1,5 +1,7 @@
 # SKB Operational Runbook
 
+*SKB is a module inside `agent-admin-service` (`src/modules/structured-kb/`, `SERVICE_MODE=api|worker`) — there is no standalone SKB service.*
+
 > Operational procedures for the Structured Knowledge Base service —
 > ingestion, querying, monitoring, and incident response.
 

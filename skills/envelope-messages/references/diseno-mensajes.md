@@ -7,10 +7,10 @@ El código prevalece sobre cualquier documento ante divergencias.
 
 | Documento | Contenido |
 |---|---|
-| `DOCS/es/arquitectura/02-diseño-de-mensajes.md` | Contrato canónico de envelope (CloudEvents-inspired), formato de subjects de 8 tokens, allowlist de headers, idempotencia, cadena causal (causation/correlation/depth), claim-check (resumen), ejemplos por tipo de producer |
-| `DOCS/es/arquitectura/03-ingress-agentes.md` | Flujo de ingress de dos etapas (webhook bridge api-gateway → channel-service), ciclo de vida de agentes AI as-built |
-| `DOCS/es/arquitectura/04-claim-check.md` | Protocolo completo de claim-check: producer (IngressService), consumer middleware (MultiTenantConsumerManager), Object Store (PAYLOAD-<tenant>), invariante de checksum sha256, códigos de error, métricas, diagramas de secuencia |
-| `DOCS/03-messaging.md` | Topología de streams (INGRESS-<tenant>, DLQ-<tenant>, PAYLOAD-<tenant>, GATEWAY_AUDIT, PLATFORM_TENANTS), taxonomía de subjects (8 tokens), ciclo de vida de provisioning, claim-check pattern (as-built) |
+| `DOCS/messaging/envelope.md` | Contrato canónico de envelope (CloudEvents-inspired), formato de subjects de 8 tokens, allowlist de headers, idempotencia, cadena causal (causation/correlation/depth), claim-check (resumen), ejemplos por tipo de producer |
+| `DOCS/messaging/ingress.md` | Flujo de ingress de dos etapas (webhook bridge api-gateway → channel-service), ciclo de vida de agentes AI as-built |
+| `DOCS/messaging/claim-check.md` | Protocolo completo de claim-check: producer (IngressService), consumer middleware (MultiTenantConsumerManager), Object Store (PAYLOAD-<tenant>), invariante de checksum sha256, códigos de error, métricas, diagramas de secuencia |
+| `DOCS/messaging/service-bus.md` | Topología de streams (INGRESS-<tenant>, DLQ-<tenant>, PAYLOAD-<tenant>, GATEWAY_AUDIT, PLATFORM_TENANTS), taxonomía de subjects (8 tokens), ciclo de vida de provisioning, claim-check pattern (as-built) |
 
 ### Fuente de verdad de tipos y helpers
 

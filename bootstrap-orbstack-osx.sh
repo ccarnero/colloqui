@@ -5,18 +5,9 @@ set -euo pipefail
 # bootstrap-orbstack-osx.sh — complete OrbStack bootstrap for macOS
 # =============================================================================
 #
-# Specialized, self-contained variant of bootstrap-orbstack.sh that is verified
-# to bring up a FUNCTIONAL cluster on OrbStack Kubernetes (macOS). It does not
-# modify any other script or service.
-#
-# Why a dedicated script:
-#   The original bootstrap-orbstack.sh build_images() list was missing three
-#   service images that the Knative overlays (knative/services/base/*) actually
-#   reference: agent-ai-service, agent-memory-service, agent-scheduler-service.
-#   On OrbStack those Knative Services would never find their dev.local images
-#   and stay stuck pulling. bootstrap-minikube.sh and the Tiltfile both build
-#   all 18 images — this script aligns OrbStack with them so a clean run yields
-#   every platform service Running.
+# Self-contained bootstrap verified to bring up a FUNCTIONAL cluster on
+# OrbStack Kubernetes (macOS). It does not modify any other script or service.
+# This is the canonical (and only) bootstrap entry point for the repo.
 #
 # OrbStack specifics handled here (vs. minikube):
 #   - Uses the shared OrbStack Docker daemon: `docker build` produces images the

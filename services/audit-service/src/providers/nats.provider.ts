@@ -26,7 +26,7 @@ export const natsProvider: FactoryProvider = createNatsConnectionProvider(
 
 /**
  * AuditService now consumes canonical platform events straight from
- * Core NATS (`evt.*.*.platform.>` — DOCS/es/arquitectura/02 §9). The legacy `EVENTS`
+ * Core NATS (`evt.*.*.platform.>` — DOCS/messaging/envelope.md §9). The legacy `EVENTS`
  * JetStream durable consumer has been dropped per REFACTOR-EVENTING
  * fase 3.4. This manager only ensures the gateway-audit stream, which
  * is a distinct pipeline (auth/HTTP-level audit).

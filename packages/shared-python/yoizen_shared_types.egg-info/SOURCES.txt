@@ -1,9 +1,0 @@
-cloudevent_envelope.py
-envelope.py
-nats_helpers.py
-pyproject.toml
-subjects.py
-yoizen_shared_types.egg-info/PKG-INFO
-yoizen_shared_types.egg-info/SOURCES.txt
-yoizen_shared_types.egg-info/dependency_links.txt
-yoizen_shared_types.egg-info/top_level.txt
