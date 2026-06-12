@@ -86,6 +86,37 @@ describe("AccountsService", () => {
       });
       expect(registerWebhook).toHaveBeenCalled();
     });
+
+    it("auto-generates appSecret for http account", async () => {
+      const insertOne = mock(async () => ({ acknowledged: true }));
+      const db = makeMockDb({ channel_accounts: { insertOne } });
+      const service = await compile(db);
+      const acc = await service.create("tenant-a", {
+        channel: "http" as never,
+        provider: "http" as never,
+        name: "HTTP ingest",
+        externalId: "http-source-1",
+        accessToken: "placeholder",
+        isActive: true,
+      });
+      expect(typeof acc.appSecret).toBe("string");
+      expect((acc.appSecret ?? "").length).toBeGreaterThan(0);
+    });
+
+    it("does not call registerWebhook for http account", async () => {
+      const insertOne = mock(async () => ({ acknowledged: true }));
+      const db = makeMockDb({ channel_accounts: { insertOne } });
+      const service = await compile(db);
+      await service.create("tenant-a", {
+        channel: "http" as never,
+        provider: "http" as never,
+        name: "HTTP ingest",
+        externalId: "http-source-1",
+        accessToken: "placeholder",
+        isActive: true,
+      });
+      expect(registerWebhook).not.toHaveBeenCalled();
+    });
   });
 
   describe("list", () => {

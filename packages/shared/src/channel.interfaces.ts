@@ -1,7 +1,7 @@
 import type { EventEnvelope } from "./interfaces";
 
-export type Channel = "whatsapp" | "instagram" | "telegram";
-export type ChannelProvider = "meta" | "telegram";
+export type Channel = "whatsapp" | "instagram" | "telegram" | "http";
+export type ChannelProvider = "meta" | "telegram" | "http";
 export type MessageKind =
   | "received"
   | "sent"

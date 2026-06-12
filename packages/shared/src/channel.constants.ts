@@ -57,6 +57,7 @@ export const WEBHOOK_FORWARDED_HEADERS = Object.freeze([
   "x-hub-signature-256",
   "x-hub-signature",
   "x-telegram-bot-api-secret-token",
+  "x-http-channel-token",
   "x-request-id",
   "user-agent",
 ] as const);

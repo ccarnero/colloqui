@@ -10,7 +10,7 @@
 export const CHANNEL_ACCOUNTS_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS channel_accounts (
   id                 TEXT        PRIMARY KEY,
-  channel            TEXT        NOT NULL CHECK (channel IN ('whatsapp', 'instagram', 'telegram')),
+  channel            TEXT        NOT NULL CHECK (channel IN ('whatsapp', 'instagram', 'telegram', 'http')),
   provider           TEXT        NOT NULL DEFAULT 'meta',
   name               TEXT        NOT NULL,
   external_id        TEXT        NOT NULL,
@@ -42,7 +42,7 @@ BEGIN
     DROP CONSTRAINT IF EXISTS channel_accounts_channel_check;
   ALTER TABLE channel_accounts
     ADD CONSTRAINT channel_accounts_channel_check
-    CHECK (channel IN ('whatsapp', 'instagram', 'telegram'));
+    CHECK (channel IN ('whatsapp', 'instagram', 'telegram', 'http'));
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 `;

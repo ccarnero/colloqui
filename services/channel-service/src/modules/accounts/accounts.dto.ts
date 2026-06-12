@@ -1,12 +1,12 @@
 import { IsString, IsIn, IsOptional, IsBoolean } from "class-validator";
 
 export class CreateAccountDto {
-  @IsIn(["whatsapp", "instagram", "telegram"])
-  channel!: "whatsapp" | "instagram" | "telegram";
+  @IsIn(["whatsapp", "instagram", "telegram", "http"])
+  channel!: "whatsapp" | "instagram" | "telegram" | "http";
 
   @IsOptional()
-  @IsIn(["meta", "telegram"])
-  provider?: "meta" | "telegram";
+  @IsIn(["meta", "telegram", "http"])
+  provider?: "meta" | "telegram" | "http";
 
   @IsString()
   name!: string;
@@ -86,6 +86,6 @@ export class RefreshTokenResponseDto {
 /** Query params for `GET /channels/accounts`. */
 export class ListAccountsQueryDto {
   @IsOptional()
-  @IsIn(["whatsapp", "instagram", "telegram"])
-  channel?: "whatsapp" | "instagram" | "telegram";
+  @IsIn(["whatsapp", "instagram", "telegram", "http"])
+  channel?: "whatsapp" | "instagram" | "telegram" | "http";
 }

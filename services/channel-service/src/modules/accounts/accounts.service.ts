@@ -58,7 +58,7 @@ export class AccountsService {
     const id = crypto.randomUUID();
 
     let appSecret = data.appSecret ?? null;
-    if (data.channel === "telegram" && !appSecret) {
+    if ((data.channel === "telegram" || data.channel === "http") && !appSecret) {
       appSecret = crypto.randomUUID().replace(/-/g, "");
     }
 

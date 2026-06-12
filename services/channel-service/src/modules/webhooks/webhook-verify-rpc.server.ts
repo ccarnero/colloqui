@@ -102,7 +102,10 @@ export class WebhookVerifyRpcServer implements OnModuleInit, OnModuleDestroy {
 
   private isSupportedChannel(channel: string): channel is Channel {
     return (
-      channel === "whatsapp" || channel === "instagram" || channel === "telegram"
+      channel === "whatsapp" ||
+      channel === "instagram" ||
+      channel === "telegram" ||
+      channel === "http"
     );
   }
 }

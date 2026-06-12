@@ -377,6 +377,66 @@ describe("WebhookIngressService", () => {
     expect(mockIngress.processInbound).not.toHaveBeenCalled();
   });
 
+  it("rejects http webhook when the signature header is missing", async () => {
+    mockProvider.provider = "http" as never;
+    mockProvider.signatureHeader = "x-http-channel-token";
+    mockProvider.parseWebhook.mockReturnValue([
+      createInboundMessage({ text: "hello" }),
+    ]);
+    mockAccounts.listActive.mockResolvedValue([
+      createAccount({
+        id: "h1",
+        channel: "http" as never,
+        provider: "http" as never,
+        appSecret: "my-secret",
+      }),
+    ]);
+
+    const out = await service.processEnvelope(
+      "http",
+      "t1",
+      Buffer.from("{}"),
+      {},
+      { from: "user-1", text: "hello" },
+    );
+
+    expect(out.status).toBe("signature_mismatch");
+    await flushImmediate();
+    expect(mockIngress.processInbound).not.toHaveBeenCalled();
+  });
+
+  it("accepts http webhook when token matches", async () => {
+    mockProvider.provider = "http" as never;
+    mockProvider.signatureHeader = "x-http-channel-token";
+    mockProvider.parseWebhook.mockReturnValue([
+      createInboundMessage({ text: "hello" }),
+    ]);
+    mockProvider.verifySignature.mockImplementation(
+      (_rawBody: Buffer, signature: string, secret: string) =>
+        signature === secret,
+    );
+    mockAccounts.listActive.mockResolvedValue([
+      createAccount({
+        id: "h1",
+        channel: "http" as never,
+        provider: "http" as never,
+        appSecret: "my-secret",
+      }),
+    ]);
+
+    const out = await service.processEnvelope(
+      "http",
+      "t1",
+      Buffer.from("{}"),
+      { "x-http-channel-token": "my-secret" },
+      { from: "user-1", text: "hello" },
+    );
+
+    expect(out.status).toBe("accepted");
+    await flushImmediate();
+    expect(mockIngress.processInbound).toHaveBeenCalled();
+  });
+
   it("uses the first Telegram account when its secret token matches", async () => {
     mockProvider.provider = "telegram";
     mockProvider.signatureHeader = "x-telegram-bot-api-secret-token";

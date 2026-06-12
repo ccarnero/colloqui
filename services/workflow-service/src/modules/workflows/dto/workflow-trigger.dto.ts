@@ -16,12 +16,12 @@ class MessageReceivedTriggerConfigDto {
 
   @IsOptional()
   @IsArray()
-  @IsIn(["whatsapp", "instagram", "telegram"], { each: true })
+  @IsIn(["whatsapp", "instagram", "telegram", "http"], { each: true })
   channels?: Channel[];
 
   @IsOptional()
   @IsArray()
-  @IsIn(["meta", "telegram"], { each: true })
+  @IsIn(["meta", "telegram", "http"], { each: true })
   providers?: ChannelProvider[];
 
   @IsOptional()

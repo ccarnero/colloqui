@@ -6,6 +6,7 @@ import { WhatsAppProvider } from "../../providers/meta/whatsapp/whatsapp.provide
 import { InstagramProvider } from "../../providers/meta/instagram/instagram.provider";
 import { ProviderRegistry } from "../../providers/meta/provider-registry";
 import { TelegramModule } from "../../providers/telegram/telegram.module";
+import { HttpModule } from "../../providers/http/http.module";
 import { ChannelRouter } from "../../providers/channel-router";
 import { IngressModule } from "../ingress/ingress.module";
 import { AccountsModule } from "../accounts/accounts.module";
@@ -15,6 +16,7 @@ import { AccountsModule } from "../accounts/accounts.module";
     forwardRef(() => IngressModule),
     forwardRef(() => AccountsModule),
     TelegramModule,
+    HttpModule,
   ],
   providers: [
     WebhookIngressService,
@@ -31,6 +33,7 @@ import { AccountsModule } from "../accounts/accounts.module";
     WhatsAppProvider,
     InstagramProvider,
     TelegramModule,
+    HttpModule,
   ],
 })
 export class WebhooksModule {}

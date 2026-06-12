@@ -2,10 +2,11 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import type { IChannelProvider, Channel } from "@yoizen/shared";
 import { ProviderRegistry } from "./meta/provider-registry";
 import { TelegramProvider } from "./telegram/telegram.provider";
+import { HttpProvider } from "./http/http.provider";
 
 /**
  * Top-level channel router that aggregates all provider registries
- * (Meta, Telegram, future ones) into a single lookup Map.
+ * (Meta, Telegram, Http, future ones) into a single lookup Map.
  *
  * All consumers (WebhooksController, EgressService, etc.) should
  * inject ChannelRouter instead of individual registries.
@@ -14,7 +15,11 @@ import { TelegramProvider } from "./telegram/telegram.provider";
 export class ChannelRouter {
   private readonly providers: Map<Channel, IChannelProvider>;
 
-  constructor(metaRegistry: ProviderRegistry, telegram: TelegramProvider) {
+  constructor(
+    metaRegistry: ProviderRegistry,
+    telegram: TelegramProvider,
+    http: HttpProvider,
+  ) {
     this.providers = new Map<Channel, IChannelProvider>();
 
     for (const channel of metaRegistry.channels()) {
@@ -25,6 +30,7 @@ export class ChannelRouter {
     }
 
     this.providers.set(telegram.channel, telegram);
+    this.providers.set(http.channel, http);
   }
 
   get(channel: Channel): IChannelProvider | undefined {

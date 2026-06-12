@@ -145,9 +145,9 @@ export class WebhookIngressService {
    * Picks the account for ingress: verifies HMAC when a signature header is
    * present; disambiguates multiple Meta accounts via payload metadata.
    *
-   * For Telegram, the `X-Telegram-Bot-Api-Secret-Token` is the ONLY signal
-   * that identifies which bot delivered the update (the payload carries no
-   * bot id), so a missing/empty secret is treated as `signature_mismatch`
+   * For Telegram and Http, the signature header is the ONLY signal that
+   * identifies which account delivered the update (the payload carries no
+   * account id), so a missing/empty secret is treated as `signature_mismatch`
    * to avoid silent routing to the first active account (which would also
    * be a spoofing vector). WhatsApp/Instagram keep the legacy fallback
    * because they can disambiguate via `phone_number_id` / `ig_user_id`.
@@ -174,10 +174,10 @@ export class WebhookIngressService {
     } = options;
 
     if (!signature) {
-      if (channel === "telegram") {
+      if (channel === "telegram" || channel === "http") {
         webhookVerificationFailures.add(1, { channel, tenant: tenantId });
         this.logger.warn(
-          `Telegram webhook rejected: missing X-Telegram-Bot-Api-Secret-Token (tenant=${tenantId})`,
+          `${channel} webhook rejected: missing ${provider.signatureHeader} (tenant=${tenantId})`,
         );
         return { status: "signature_mismatch" };
       }

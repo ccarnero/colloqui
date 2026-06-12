@@ -37,12 +37,12 @@ export class ListAutoReplyRulesQueryDto {
 
 /** Mirrors channel-service `CreateAccountDto` for gateway validation. */
 export class CreateChannelAccountBodyDto {
-  @IsIn(["whatsapp", "instagram", "telegram"])
-  channel!: "whatsapp" | "instagram" | "telegram";
+  @IsIn(["whatsapp", "instagram", "telegram", "http"])
+  channel!: "whatsapp" | "instagram" | "telegram" | "http";
 
   @IsOptional()
-  @IsIn(["meta", "telegram"])
-  provider?: "meta" | "telegram";
+  @IsIn(["meta", "telegram", "http"])
+  provider?: "meta" | "telegram" | "http";
 
   @IsString()
   name!: string;

@@ -15,8 +15,8 @@ import type { ValidationError } from "./validation.types";
 
 const VALID_TRIGGER_TYPES = ["message_received"];
 const VALID_TRIGGER_MODES = ["exclusive", "shared"];
-const VALID_CHANNELS = ["whatsapp", "instagram", "telegram"];
-const VALID_PROVIDERS = ["meta", "telegram"];
+const VALID_CHANNELS = ["whatsapp", "instagram", "telegram", "http"];
+const VALID_PROVIDERS = ["meta", "telegram", "http"];
 
 interface TriggerContext {
   /** Visual node key of the inbound CHANNEL node, when known. */
