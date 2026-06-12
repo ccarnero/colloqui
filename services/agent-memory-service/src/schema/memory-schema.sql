@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS memories (
     project VARCHAR(255),
     scope VARCHAR(20) NOT NULL CHECK (scope IN ('SESSION', 'USER', 'TENANT')),
     kind VARCHAR(20) NOT NULL CHECK (kind IN ('PROMO', 'INCIDENT', 'NOTICE', 'PREFERENCE', 'FACT')),
-    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PROPOSED', 'PUBLISHED', 'REJECTED', 'EXPIRED')),
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    CONSTRAINT memories_status_check CHECK (status IN ('PROPOSED', 'ACTIVE', 'REJECTED', 'ARCHIVED')),
     title TEXT NOT NULL,
     content TEXT NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}',
@@ -15,8 +16,8 @@ CREATE TABLE IF NOT EXISTS memories (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     search_vector tsvector GENERATED ALWAYS AS (
-        setweight(to_tsvector('spanish', coalesce(title, '')), 'A') ||
-        setweight(to_tsvector('spanish', coalesce(content, '')), 'B')
+        setweight(to_tsvector('__FTS_LANGUAGE__', coalesce(title, '')), 'A') ||
+        setweight(to_tsvector('__FTS_LANGUAGE__', coalesce(content, '')), 'B')
     ) STORED
 );
 

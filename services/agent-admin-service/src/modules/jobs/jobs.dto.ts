@@ -10,6 +10,7 @@ import {
 } from "class-validator";
 import { Type } from "class-transformer";
 import { PaginatedQueryDto } from "@yoizen/shared/dto/pagination";
+import { IsSchedule } from "./schedule.validator";
 
 export class CreateJobDto {
   @IsString()
@@ -24,6 +25,7 @@ export class CreateJobDto {
   @IsString()
   @IsNotEmpty()
   @Length(1, 255)
+  @IsSchedule()
   schedule!: string;
 
   @IsObject()
@@ -50,6 +52,7 @@ export class UpdateJobDto {
   @IsString()
   @IsOptional()
   @Length(1, 255)
+  @IsSchedule()
   schedule?: string;
 
   @IsObject()

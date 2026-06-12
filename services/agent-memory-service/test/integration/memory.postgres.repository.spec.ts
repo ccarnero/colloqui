@@ -15,6 +15,7 @@ const SCHEMA_SQL = `
     scope VARCHAR(20) NOT NULL DEFAULT 'SESSION',
     kind VARCHAR(20) NOT NULL DEFAULT 'FACT',
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    CONSTRAINT memories_status_check CHECK (status IN ('PROPOSED', 'ACTIVE', 'REJECTED', 'ARCHIVED')),
     title TEXT,
     content TEXT NOT NULL,
     metadata JSONB DEFAULT '{}',
@@ -23,7 +24,8 @@ const SCHEMA_SQL = `
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     search_vector TSVECTOR GENERATED ALWAYS AS (
-      to_tsvector('spanish', COALESCE(title, '') || ' ' || content)
+      setweight(to_tsvector('spanish', COALESCE(title, '')), 'A') ||
+      setweight(to_tsvector('spanish', COALESCE(content, '')), 'B')
     ) STORED
   );
 

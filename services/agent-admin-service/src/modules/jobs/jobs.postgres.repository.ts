@@ -11,6 +11,7 @@ import type {
   IJobsRepository,
   IUpdateJobData,
 } from "./jobs.repository.interface";
+import { calculateNextRun } from "./schedule.utils";
 
 @Injectable()
 export class JobsPostgresRepository extends TenantScopedPostgresRepository implements IJobsRepository {
@@ -115,7 +116,7 @@ export class JobsPostgresRepository extends TenantScopedPostgresRepository imple
     const sql = await this.getSql(tenantId);
     const jobId = randomUUID();
 
-    const nextRun = this.calculateNextRun(data.schedule);
+    const nextRun = calculateNextRun(data.schedule);
 
     const results = await sql<IJob[]>`
       INSERT INTO jobs (
@@ -180,7 +181,7 @@ export class JobsPostgresRepository extends TenantScopedPostgresRepository imple
     }
     if (data.schedule !== undefined) {
       setClause = sql`${setClause}, schedule = ${data.schedule}`;
-      const nextRun = this.calculateNextRun(data.schedule);
+      const nextRun = calculateNextRun(data.schedule);
       setClause = sql`${setClause}, next_run = ${nextRun}`;
     }
     if (data.payload !== undefined) {
@@ -290,7 +291,7 @@ export class JobsPostgresRepository extends TenantScopedPostgresRepository imple
     schedule: string,
   ): Promise<IJob | null> {
     const sql = await this.getSql(tenantId);
-    const nextRun = this.calculateNextRun(schedule);
+    const nextRun = calculateNextRun(schedule);
 
     const results = await sql<IJob[]>`
       UPDATE jobs
@@ -315,27 +316,4 @@ export class JobsPostgresRepository extends TenantScopedPostgresRepository imple
     return results[0] ?? null;
   }
 
-  /**
-   * Computes next run time from schedule.
-   * Supports: cron expression, interval:X (minutes), once
-   */
-  private calculateNextRun(schedule: string): Date | null {
-    const now = new Date();
-
-    if (schedule === "once") {
-      return null;
-    }
-
-    if (schedule.startsWith("interval:")) {
-      const minutes = parseInt(schedule.split(":")[1], 10);
-      if (isNaN(minutes)) {
-        return null;
-      }
-      return new Date(now.getTime() + minutes * 60 * 1000);
-    }
-
-    // Assume cron-like expression — simplified: use now + 1 hour
-    // Production should use a library such as cron-parser
-    return new Date(now.getTime() + 60 * 60 * 1000);
-  }
 }

@@ -11,6 +11,7 @@ import type {
   IJobsRepository,
   IUpdateJobData,
 } from "./jobs.repository.interface";
+import { calculateNextRun } from "./schedule.utils";
 
 function docToJob(doc: WithId<IStringIdDoc>): IJob {
   return {
@@ -82,7 +83,7 @@ export class JobsMongoRepository extends TenantScopedMongoRepository implements 
   async create(tenantId: string, data: ICreateJobData): Promise<IJob> {
     const db = await this.getDb(tenantId);
     const now = new Date();
-    const nextRun = this.calculateNextRun(data.schedule);
+    const nextRun = calculateNextRun(data.schedule);
     const doc = {
       _id: randomUUID(),
       name: data.name,
@@ -110,7 +111,7 @@ export class JobsMongoRepository extends TenantScopedMongoRepository implements 
     if (data.agent_id !== undefined) setFields.agent_id = data.agent_id;
     if (data.schedule !== undefined) {
       setFields.schedule = data.schedule;
-      setFields.next_run = this.calculateNextRun(data.schedule);
+      setFields.next_run = calculateNextRun(data.schedule);
     }
     if (data.payload !== undefined) setFields.payload = data.payload;
     if (data.is_active !== undefined) setFields.is_active = data.is_active;
@@ -148,7 +149,7 @@ export class JobsMongoRepository extends TenantScopedMongoRepository implements 
       {
         $set: {
           last_run: new Date(),
-          next_run: this.calculateNextRun(schedule),
+          next_run: calculateNextRun(schedule),
           updated_at: new Date(),
         },
       },
@@ -171,14 +172,4 @@ export class JobsMongoRepository extends TenantScopedMongoRepository implements 
     return result ? docToJob(result) : null;
   }
 
-  private calculateNextRun(schedule: string): Date | null {
-    const now = new Date();
-    if (schedule === "once") return null;
-    if (schedule.startsWith("interval:")) {
-      const minutes = Number.parseInt(schedule.split(":")[1] ?? "", 10);
-      if (Number.isNaN(minutes)) return null;
-      return new Date(now.getTime() + minutes * 60 * 1000);
-    }
-    return new Date(now.getTime() + 60 * 60 * 1000);
-  }
 }

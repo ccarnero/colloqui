@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
+import { parseSchedule } from "@yoizen/shared";
 import { SchedulerTenantConnectionManager } from "../../providers/tenant-connection.manager";
 import { JobReaderService } from "./job-reader.service";
 import { JobTriggerService } from "./job-trigger.service";
@@ -202,28 +203,41 @@ export class SchedulerService implements OnModuleDestroy {
   private addSchedule(tenantId: string, job: JobDefinition): void {
     const jobId = `${tenantId}:${job.id}`;
 
-    const handler = async () => {
-      await this.executeJob(tenantId, job);
-    };
+    try {
+      const handler = async () => {
+        await this.executeJob(tenantId, job);
+      };
 
-    const asyncTask = new AsyncTask(jobId, handler);
+      const asyncTask = new AsyncTask(jobId, handler);
 
-    if (job.schedule_type === "interval") {
-      const millis = Number.parseInt(job.schedule, 10) * 1000;
-      const task = new SimpleIntervalJob({ milliseconds: millis }, asyncTask, {
-        id: jobId,
-      });
-      this.scheduler.addSimpleIntervalJob(task);
-    } else {
-      const task = new CronJob({ cronExpression: job.schedule }, asyncTask, {
-        id: jobId,
-      });
-      this.scheduler.addCronJob(task);
+      if (job.schedule_type === "interval") {
+        const parsed = parseSchedule(job.schedule);
+        if (parsed.kind !== "interval") {
+          this.logger.error(
+            `Job '${job.id}' (tenant '${tenantId}') has schedule_type=interval but schedule "${job.schedule}" did not parse as a valid interval (kind=${parsed.kind}) — skipping`,
+          );
+          return;
+        }
+        const task = new SimpleIntervalJob({ milliseconds: parsed.intervalMs }, asyncTask, {
+          id: jobId,
+        });
+        this.scheduler.addSimpleIntervalJob(task);
+      } else {
+        const task = new CronJob({ cronExpression: job.schedule }, asyncTask, {
+          id: jobId,
+        });
+        this.scheduler.addCronJob(task);
+      }
+
+      this.logger.debug(
+        `Scheduled ${job.schedule_type} job '${job.name}' (${job.id}) for tenant '${tenantId}'`,
+      );
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Failed to schedule job '${job.id}' (tenant '${tenantId}'): ${msg} — skipping`,
+      );
     }
-
-    this.logger.debug(
-      `Scheduled ${job.schedule_type} job '${job.name}' (${job.id}) for tenant '${tenantId}'`,
-    );
   }
 
   private removeSchedule(

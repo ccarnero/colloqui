@@ -402,6 +402,9 @@ export {
 
 export { platformServiceUrl } from "./platform-service-url";
 
+export { parseSchedule } from "./schedule.utils";
+export type { ParsedSchedule } from "./schedule.utils";
+
 export { WORKFLOW_SCHEMA_SQL } from "./workflow-schema";
 
 export { ADAPTER_SCHEMA_SQL } from "./adapter-schema";

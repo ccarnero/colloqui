@@ -13,6 +13,9 @@ import type {
 } from "../domain/memory.repository.interface";
 import { MemoryScope, MemoryStatus } from "../domain/enums";
 import type { JsonValue } from "@yoizen/shared";
+import { agentMemoryServiceConfig } from "../../../config";
+
+const ftsLanguage = agentMemoryServiceConfig.ftsLanguage;
 
 const MEMORY_COLUMNS = [
   'id',
@@ -70,7 +73,7 @@ export class MemoryPostgresRepository
     if (!includeExpired)
       where = sql`${where} AND (expires_at IS NULL OR expires_at > NOW())`;
     if (search)
-      where = sql`${where} AND search_vector @@ websearch_to_tsquery('spanish', ${search})`;
+      where = sql`${where} AND search_vector @@ websearch_to_tsquery(${ftsLanguage}::regconfig, ${search})`;
 
     const results = await sql<
       Array<IMemory & { total: string }>

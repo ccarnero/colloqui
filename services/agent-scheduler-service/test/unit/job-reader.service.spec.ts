@@ -1,7 +1,7 @@
 // services/agent-scheduler-service/test/unit/job-reader.service.spec.ts
 // ── Validation Suite ─────────────────────────────────────────────────────────
 // Full validation for JobReaderService: tenant job reading, schedule type
-// resolution, and error handling.
+// resolution, filtering, and error handling.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
@@ -80,7 +80,7 @@ describe("JobReaderService", () => {
 
   beforeEach(() => {
     // Default mock SQL — returns the standard fixture rows
-    mockSql = mock((strings: TemplateStringsArray, ...values: unknown[]) => {
+    mockSql = mock((_strings: TemplateStringsArray, ..._values: unknown[]) => {
       return Promise.resolve(MOCK_JOB_ROWS);
     });
 
@@ -97,37 +97,94 @@ describe("JobReaderService", () => {
   });
 
   // ════════════════════════════════════════════════════════════════════════
-  //  resolveScheduleType (private)
+  //  Schedule classification via parseSchedule
   // ════════════════════════════════════════════════════════════════════════
 
-  describe("resolveScheduleType", () => {
-    it("should return 'cron' for a schedule containing non-digits (cron expression)", () => {
-      const result = (service as any).resolveScheduleType("*/5 * * * *");
-      expect(result).toBe("cron");
+  describe("schedule classification", () => {
+    it("classifies bare-integer schedule as 'interval'", async () => {
+      mockTenantManager.getKnownTenantIds.mockImplementation(() => ["tenant-1"]);
+      const rows = [{ ...MOCK_JOB_ROWS[1], schedule: "300" }];
+      const sql = mock(() => Promise.resolve(rows));
+      mockTenantManager.getConnection.mockImplementation(() => sql);
+
+      const result = await service.readAllTenantJobs();
+      const jobs = result.get("tenant-1")!;
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].schedule_type).toBe("interval");
     });
 
-    it("should return 'cron' for a schedule with mixed content (e.g. 'every 5m')", () => {
-      const result = (service as any).resolveScheduleType("every 5m");
-      expect(result).toBe("cron");
+    it("classifies 'interval:60' schedule as 'interval'", async () => {
+      mockTenantManager.getKnownTenantIds.mockImplementation(() => ["tenant-1"]);
+      const rows = [{ ...MOCK_JOB_ROWS[1], schedule: "interval:60" }];
+      const sql = mock(() => Promise.resolve(rows));
+      mockTenantManager.getConnection.mockImplementation(() => sql);
+
+      const result = await service.readAllTenantJobs();
+      const jobs = result.get("tenant-1")!;
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].schedule_type).toBe("interval");
+      expect(jobs[0].schedule).toBe("interval:60");
     });
 
-    it("should return 'interval' for a schedule containing only digits", () => {
-      const result = (service as any).resolveScheduleType("300");
-      expect(result).toBe("interval");
+    it("classifies cron expression as 'cron'", async () => {
+      mockTenantManager.getKnownTenantIds.mockImplementation(() => ["tenant-1"]);
+      const rows = [{ ...MOCK_JOB_ROWS[0], schedule: "*/5 * * * *" }];
+      const sql = mock(() => Promise.resolve(rows));
+      mockTenantManager.getConnection.mockImplementation(() => sql);
+
+      const result = await service.readAllTenantJobs();
+      const jobs = result.get("tenant-1")!;
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].schedule_type).toBe("cron");
     });
 
-    it("should return 'cron' for an empty schedule string", () => {
-      // "" does not match /^\d+$/ so it falls through to "cron"
-      const result = (service as any).resolveScheduleType("");
-      expect(result).toBe("cron");
+    it("filters out jobs with 'once' schedule (warn log, not in result)", async () => {
+      mockTenantManager.getKnownTenantIds.mockImplementation(() => ["tenant-1"]);
+      const rows = [{ ...MOCK_JOB_ROWS[0], schedule: "once" }];
+      const sql = mock(() => Promise.resolve(rows));
+      mockTenantManager.getConnection.mockImplementation(() => sql);
+
+      const result = await service.readAllTenantJobs();
+      // Job with "once" is filtered → tenant has no active recurring jobs
+      expect(result.size).toBe(0);
     });
 
-    it("should return 'cron' for a schedule with leading zeros (not pure digits semantically)", () => {
-      // "0" matches /^\d+$/ — technically digits, but the real case is
-      // that strings like "* * * * *" are cron. "0" as a schedule would
-      // be treated as interval, which is an edge case of the simple heuristic.
-      const result = (service as any).resolveScheduleType("0");
-      expect(result).toBe("interval");
+    it("filters out jobs with invalid schedule 'interval:abc'", async () => {
+      mockTenantManager.getKnownTenantIds.mockImplementation(() => ["tenant-1"]);
+      const rows = [{ ...MOCK_JOB_ROWS[0], schedule: "interval:abc" }];
+      const sql = mock(() => Promise.resolve(rows));
+      mockTenantManager.getConnection.mockImplementation(() => sql);
+
+      const result = await service.readAllTenantJobs();
+      expect(result.size).toBe(0);
+    });
+
+    it("filters out jobs with '0' schedule (zero seconds, invalid)", async () => {
+      mockTenantManager.getKnownTenantIds.mockImplementation(() => ["tenant-1"]);
+      const rows = [{ ...MOCK_JOB_ROWS[0], schedule: "0" }];
+      const sql = mock(() => Promise.resolve(rows));
+      mockTenantManager.getConnection.mockImplementation(() => sql);
+
+      const result = await service.readAllTenantJobs();
+      expect(result.size).toBe(0);
+    });
+
+    it("keeps valid jobs and filters invalid ones in the same batch", async () => {
+      mockTenantManager.getKnownTenantIds.mockImplementation(() => ["tenant-1"]);
+      const rows = [
+        { ...MOCK_JOB_ROWS[0], id: "valid-1", schedule: "0 6 * * *" },
+        { ...MOCK_JOB_ROWS[1], id: "invalid-1", schedule: "once" },
+        { ...MOCK_JOB_ROWS[1], id: "valid-2", schedule: "300" },
+        { ...MOCK_JOB_ROWS[1], id: "invalid-2", schedule: "interval:abc" },
+      ];
+      const sql = mock(() => Promise.resolve(rows));
+      mockTenantManager.getConnection.mockImplementation(() => sql);
+
+      const result = await service.readAllTenantJobs();
+      expect(result.size).toBe(1);
+      const jobs = result.get("tenant-1")!;
+      expect(jobs).toHaveLength(2);
+      expect(jobs.map((j) => j.id)).toEqual(["valid-1", "valid-2"]);
     });
   });
 
@@ -161,7 +218,7 @@ describe("JobReaderService", () => {
       expect(jobs[0].schedule).toBe("0 6 * * *");
       expect(jobs[0].schedule_type).toBe("cron");
 
-      // Second job: interval schedule
+      // Second job: interval schedule (bare integer)
       expect(jobs[1].id).toBe("job-2");
       expect(jobs[1].schedule).toBe("300");
       expect(jobs[1].schedule_type).toBe("interval");

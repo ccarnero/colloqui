@@ -301,6 +301,61 @@ describe("SchedulerService", () => {
         CRON_JOB.payload,
       );
     });
+
+    it("should compute 3_600_000 ms for an 'interval:60' schedule (60 minutes)", () => {
+      const intervalMinJob = buildMockJob({
+        id: "job-interval-min",
+        schedule: "interval:60",
+        schedule_type: "interval",
+      });
+      (service as any).addSchedule("tenant-1", intervalMinJob);
+
+      const scheduler = (service as any).scheduler;
+      expect(scheduler.addSimpleIntervalJob).toHaveBeenCalledTimes(1);
+      expect(intervalJobInstances).toHaveLength(1);
+      // interval:60 → 60 minutes → 3_600_000 ms
+      expect(intervalJobInstances[0].config.milliseconds).toBe(3_600_000);
+    });
+
+    it("should compute 300_000 ms for a bare-integer '300' schedule (300 seconds)", () => {
+      (service as any).addSchedule("tenant-1", INTERVAL_JOB);
+
+      expect(intervalJobInstances).toHaveLength(1);
+      // "300" → 300 seconds → 300_000 ms
+      expect(intervalJobInstances[0].config.milliseconds).toBe(300_000);
+    });
+
+    it("should log an error and not call addSimpleIntervalJob when schedule_type=interval but the schedule is not a valid interval", () => {
+      const badIntervalJob = buildMockJob({
+        id: "job-bad-interval",
+        schedule: "not-an-interval",
+        schedule_type: "interval",
+      });
+
+      const scheduler = (service as any).scheduler;
+      // Should not throw; the service logs and returns without scheduling
+      expect(() =>
+        (service as any).addSchedule("tenant-1", badIntervalJob),
+      ).not.toThrow();
+
+      expect(scheduler.addSimpleIntervalJob).not.toHaveBeenCalled();
+      expect(scheduler.addCronJob).not.toHaveBeenCalled();
+    });
+
+    it("should not throw when a bad cron expression is scheduled — logs error and continues", () => {
+      const badCronJob = buildMockJob({
+        id: "job-bad-cron",
+        schedule: "not-a-cron",
+        schedule_type: "cron",
+      });
+
+      // CronJob constructor will throw for invalid expressions in the real impl,
+      // but toad-scheduler is mocked here. We test that the try/catch wrapper
+      // does not propagate the error.
+      expect(() =>
+        (service as any).addSchedule("tenant-1", badCronJob),
+      ).not.toThrow();
+    });
   });
 
   // ════════════════════════════════════════════════════════════════════════

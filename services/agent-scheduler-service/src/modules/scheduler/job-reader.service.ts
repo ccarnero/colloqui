@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
+import { parseSchedule } from "@yoizen/shared";
 import { SchedulerTenantConnectionManager } from "../../providers/tenant-connection.manager";
 import type { JobDefinition } from "../../abstractions/job-definition.interface";
 
@@ -84,27 +85,40 @@ export class JobReaderService {
         AND schedule != ''
     `;
 
-    return rows.map((row) => ({
-      id: String(row.id),
-      name: row.name,
-      agent_id: String(row.agent_id),
-      schedule: row.schedule,
-      schedule_type: this.resolveScheduleType(row.schedule) as
-        | "cron"
-        | "interval",
-      payload: (row.payload as Record<string, unknown>) ?? {},
-      is_active: row.is_active,
-      last_run: row.last_run,
-      next_run: row.next_run,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    }));
-  }
+    const jobs: JobDefinition[] = [];
 
-  private resolveScheduleType(schedule: string): "cron" | "interval" {
-    if (/^\d+$/.test(schedule)) {
-      return "interval";
+    for (const row of rows) {
+      const parsed = parseSchedule(row.schedule);
+
+      if (parsed.kind === "once") {
+        this.logger.warn(
+          `Job '${row.id}' (tenant '${tenantId}') has schedule "once" — skipping recurring registration`,
+        );
+        continue;
+      }
+
+      if (parsed.kind === "invalid") {
+        this.logger.warn(
+          `Job '${row.id}' (tenant '${tenantId}') has invalid schedule "${row.schedule}": ${parsed.reason} — skipping`,
+        );
+        continue;
+      }
+
+      jobs.push({
+        id: String(row.id),
+        name: row.name,
+        agent_id: String(row.agent_id),
+        schedule: row.schedule,
+        schedule_type: parsed.kind as "cron" | "interval",
+        payload: (row.payload as Record<string, unknown>) ?? {},
+        is_active: row.is_active,
+        last_run: row.last_run,
+        next_run: row.next_run,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
     }
-    return "cron";
+
+    return jobs;
   }
 }
