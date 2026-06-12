@@ -59,6 +59,7 @@ spec:
         - name: user-container
           image: dev.local/workflow-service:local
           imagePullPolicy: IfNotPresent
+          command: ["bun", "dist/temporal/worker.js"]
           ports:
             - name: http
               containerPort: 3000
@@ -71,8 +72,6 @@ spec:
               containerPort: 9464
               protocol: TCP
           env:
-            - name: ENTRYPOINT
-              value: "dist/temporal/worker.js"
             - name: PROMETHEUS_BIND_ADDRESS
               value: "0.0.0.0:9464"
           readinessProbe:

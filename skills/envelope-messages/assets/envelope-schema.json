@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$comment": "Informational schema — canonical source is packages/shared/src/interfaces.ts (EventEnvelope, EventTransport, EventData). This file exists only to aid IDE tooling and documentation. Do not use as validation authority.",
   "title": "EventEnvelope",
-  "description": "CloudEvents-inspired envelope for NATS JetStream messaging. Producer for channel events is 'channel-service'. IDs are crypto.randomUUID(). Type format: io.yoizen.<domain>.<channel>.<provider>.<kind>.v1.",
+  "description": "CloudEvents-inspired envelope for NATS JetStream messaging. Producers: api-gateway, channel-service, registry-service, agent-admin-service, ai-agent-gateway. IDs are crypto.randomUUID() (UUID v4). Type format for messaging: io.yoizen.messaging.<channel>.<provider>.<kind>.v1. correlation_id defaults to envelope id when not propagated.",
   "type": "object",
   "required": [
     "specversion",
@@ -42,7 +42,7 @@
     },
     "type": {
       "type": "string",
-      "description": "Reverse-domain event type. Format: io.yoizen.<domain>.<channel>.<provider>.<kind>.v1",
+      "description": "Reverse-domain event type. Messaging format: io.yoizen.messaging.<channel>.<provider>.<kind>.v1. Other producers use their own domain token.",
       "example": "io.yoizen.messaging.whatsapp.meta.received.v1"
     },
     "resource": {
@@ -65,7 +65,7 @@
     },
     "correlation_id": {
       "type": "string",
-      "description": "End-to-end business flow ID. Propagated unchanged. Defaults to the root event's id."
+      "description": "End-to-end business flow ID. Propagated unchanged via deriveEnvelope. Defaults to the envelope's own id when not explicitly passed (buildEventEnvelope / createChannelEnvelope)."
     },
     "tenant": {
       "type": "string",
@@ -74,7 +74,7 @@
     },
     "producer": {
       "type": "string",
-      "description": "Service that published the event. Channel events: 'channel-service'. Webhook pre-ingress: 'api-gateway'.",
+      "description": "Service that published the event. Real producers: api-gateway, channel-service, registry-service, agent-admin-service, ai-agent-gateway.",
       "example": "channel-service"
     },
     "domain": {

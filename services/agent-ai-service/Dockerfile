@@ -17,10 +17,11 @@ FROM deps AS build
 WORKDIR /app
 
 COPY services/agent-ai-service/tsconfig.json services/agent-ai-service/
+COPY services/agent-ai-service/tsconfig.build.json services/agent-ai-service/
 COPY services/agent-ai-service/src services/agent-ai-service/src
 
 RUN corepack enable pnpm && \
-    pnpm exec tsc -p services/agent-ai-service/tsconfig.json
+    pnpm exec tsc -p services/agent-ai-service/tsconfig.build.json
 
 FROM oven/bun:1.3.14-alpine AS runtime
 

@@ -17,10 +17,11 @@ FROM deps AS build
 WORKDIR /app
 
 COPY services/agent-scheduler-service/tsconfig.json services/agent-scheduler-service/
+COPY services/agent-scheduler-service/tsconfig.build.json services/agent-scheduler-service/
 COPY services/agent-scheduler-service/src services/agent-scheduler-service/src
 
 RUN corepack enable pnpm && \
-    pnpm exec tsc -p services/agent-scheduler-service/tsconfig.json
+    pnpm exec tsc -p services/agent-scheduler-service/tsconfig.build.json
 
 FROM oven/bun:1.3.14-alpine AS runtime
 

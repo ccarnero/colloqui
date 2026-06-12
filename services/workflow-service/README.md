@@ -680,5 +680,5 @@ Usually available at `http://localhost:8080`:
 
 - [AGENTS.md](AGENTS.md) — Detailed architecture, worker configuration, database schema
 - [Temporal Workflow Documentation](https://temporal.io/docs/concepts/what-is-a-workflow-definition)
-- [Template Resolution Guide](../DOCS/09-COMMON-PATTERNS.md#template-resolution)
+- [Template Resolution Guide](../DOCS/09-patterns.md#template-resolution)
 - [Connector Runtime Integration](../http-adapter/README.md)

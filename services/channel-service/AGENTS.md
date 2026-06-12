@@ -6,7 +6,7 @@ The Channel Service manages messaging accounts, auto-replies, and usage metrics 
 
 ## Storage engines
 
-Repository interfaces + dual adapters for accounts, auto-reply, and usage. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+Repository interfaces + dual adapters for accounts, auto-reply, and usage. See [DOCS/runbooks/storage-engines.md](../../DOCS/runbooks/storage-engines.md).
 
 ## Tech Stack
 

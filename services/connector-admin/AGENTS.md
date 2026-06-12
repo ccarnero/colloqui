@@ -8,7 +8,7 @@ Adapter state lives **inside each tenant's own MongoDB instance** (provisioned b
 
 ## Storage engines
 
-Supports **Postgres** (default) and **Mongo** per-tenant via `IAdaptersRepository` + engine-specific tenant connection managers. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+Supports **Postgres** (default) and **Mongo** per-tenant via `IAdaptersRepository` + engine-specific tenant connection managers. See [DOCS/runbooks/storage-engines.md](../../DOCS/runbooks/storage-engines.md).
 
 ## Tech Stack
 

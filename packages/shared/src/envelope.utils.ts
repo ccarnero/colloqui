@@ -3,7 +3,7 @@ import type { EventData, EventEnvelope, EventTransport, JsonValue } from "./inte
 
 /**
  * Producer categories for anti-loop MAX_DEPTH enforcement (D12).
- * See DOCS/arquitectura/02-diseño-de-mensajes.md §6.3.
+ * See DOCS/es/arquitectura/02-diseño-de-mensajes.md §6.3.
  */
 export type ProducerCategory =
   | "root"

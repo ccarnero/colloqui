@@ -6,7 +6,7 @@ The YoizenClaw Admin Service manages the administrative configuration for conver
 
 ## Storage engines
 
-Supports **Postgres** (default) and **Mongo** for agents, jobs, job-executions, and config-files repositories. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+Supports **Postgres** (default) and **Mongo** for agents, jobs, job-executions, and config-files repositories. See [DOCS/runbooks/storage-engines.md](../../DOCS/runbooks/storage-engines.md).
 
 ## Tech Stack
 

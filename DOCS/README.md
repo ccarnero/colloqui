@@ -7,7 +7,7 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 ```bash
 # OrbStack (recommended on macOS)
 ./bootstrap-orbstack-osx.sh          # bring up support + platform services
-./bootstrap-orbstack-osx.sh --smoke  # same + run smoke tests at the end
+./bootstrap-orbstack-osx.sh --smoke  # same + readiness preflight at the end
 
 # Minikube
 ./bootstrap-minikube.sh              # bring up (requires: sudo minikube tunnel in parallel)
@@ -15,8 +15,8 @@ Serverless event-driven architecture running on Kubernetes (Minikube or OrbStack
 # Iterate: rebuild only changed service images
 ./rebuild-changed.sh
 
-# Smoke test (standalone)
-ADMIN_EMAIL=admin@yoizen.test ADMIN_PASSWORD=admin bash scripts/smoke-test.sh
+# Readiness preflight (standalone)
+bash scripts/smoke-test.sh
 ```
 
 Bootstrap writes `/etc/hosts` entries — no extra DNS setup needed:
@@ -44,11 +44,16 @@ Once the cluster is up and the `/etc/hosts` block is in place, provision a tenan
 ### Provision the `acme` tenant
 
 ```bash
-ADMIN_EMAIL=admin@yoizen.io ADMIN_PASSWORD=yoizen-admin-change-me \
-  ./tests/stress/scripts/provision.sh
+./scripts/provision-tenant.sh
+# or the richer wrapper (named flags, idempotent checks, provisioning-wait):
+./setup-tenant.sh
 ```
 
-Defaults to `TENANT_NAME=acme`; creates the tenant plus a registry service, a Telegram channel, and a sample workflow. Override with `TENANT_NAME=<slug>` or point at a different gateway with `API_GATEWAY_URL=`.
+`scripts/provision-tenant.sh` takes positional arguments `TENANT_NAME USER_EMAIL USER_PASSWORD USER_DISPLAY_NAME USER_ROLE` (defaults: `acme admin@acme.com password admin tenant_admin`). Platform admin credentials are read from `PLATFORM_ADMIN_EMAIL` / `PLATFORM_ADMIN_PASSWORD` (defaults: `admin@yoizen.io` / `yoizen-admin-change-me`). It creates the tenant and a tenant admin user only — no registry service, channel, or sample workflow.
+
+`setup-tenant.sh` is an alternative entry point with named flags (`--tenant-id`, `--email`, `--password`, `--api-url`, etc.), idempotency checks, and a provisioning-status wait loop. Both scripts target the same API.
+
+Override the gateway URL with `BASE_URL=<url>` (provision-tenant.sh) or `--api-url <url>` (setup-tenant.sh).
 
 ### Run a workflow in a tenant
 
@@ -78,13 +83,13 @@ A `"status": "COMPLETED"` confirms the whole chain: gateway → workflow-service
 
 ### Troubleshooting: `provisioning failed: subjects overlap with an existing stream`
 
-The global `SKB-INGESTION` JetStream stream (`evt.*.…`) overlaps a tenant's per-tenant ingress stream (`evt.<tenant>.>`), so the second one to be created is rejected. Delete the failed tenant and the colliding stream, then re-provision:
+Older versions created a dedicated `SKB-INGESTION` stream whose `evt.*.…` subjects overlap the per-tenant ingress streams (`evt.<tenant>.>`), so tenant provisioning was rejected. Current code no longer creates that stream (the SKB worker consumes from the per-tenant `INGRESS-*` streams), but a cluster bootstrapped before the fix may still carry the orphaned stream. Delete the failed tenant and the orphaned stream, then re-provision:
 
 ```bash
 curl -s -X DELETE $GW/api/tenants/acme -H "authorization: Bearer $TOKEN"
 kubectl port-forward -n support-services-dev svc/nats 4222:4222 &
 nats stream rm SKB-INGESTION -f -s nats://localhost:4222
-ADMIN_EMAIL=admin@yoizen.io ADMIN_PASSWORD=yoizen-admin-change-me ./tests/stress/scripts/provision.sh
+./scripts/provision-tenant.sh
 ```
 
 ---
@@ -93,21 +98,21 @@ ADMIN_EMAIL=admin@yoizen.io ADMIN_PASSWORD=yoizen-admin-change-me ./tests/stress
 
 **New to the platform?** Follow this reading order:
 
-1. [01 Platform Architecture](./01-ARCHITECTURE.md) — High-level ownership and service boundaries (20 min)
-2. [02 Infrastructure and Deployment](./02-INFRASTRUCTURE.md) — Support services, overlays, and scaling (20 min)
-3. [03 NATS and JetStream](./03-NATS-JETSTREAM.md) — Canonical messaging topology (20 min)
-4. [04 Workflow Engine](./04-WORKFLOW-ENGINE.md) — Trigger bridge and action dispatch model (20 min)
-5. [05 Agent Execution Flow](./05-AGENT-EXECUTION-FLOW.md) — `agentCall` runtime lifecycle (15 min)
-6. [06 UI Flows](./06-UI-FLOWS.md) — Console-to-backend flow mapping (15 min)
-7. [07 Connector Runtime vs Workflow Service](./07-CONNECTOR-RUNTIME-VS-WORKFLOW-SERVICE.md) — Decision matrix and scenarios (30 min)
-8. [08 Workflow Telegram Sequence](./08-WORKFLOW-TELEGRAM-SEQUENCE.md) — Concrete end-to-end runtime flow (15 min)
-9. [09 Common Patterns](./09-COMMON-PATTERNS.md) — Pseudocode recipes (20 min)
-10. [10 Developer Onboarding Guide](./10-DEVELOPER-ONBOARDING.md) — Setup and day-to-day workflows (30 min)
+1. [01 Platform Architecture](./01-platform-architecture.md) — High-level ownership and service boundaries (20 min)
+2. [02 Infrastructure and Deployment](./02-infrastructure-deployment.md) — Support services, overlays, and scaling (20 min)
+3. [03 NATS and JetStream](./03-messaging.md) — Canonical messaging topology (20 min)
+4. [04 Workflow Engine](./04-workflows.md) — Trigger bridge and action dispatch model (20 min)
+5. [05 Agent Execution Flow](./05-agent-execution.md) — `agentCall` runtime lifecycle (15 min)
+6. [06 UI Flows](./06-ui.md) — Console-to-backend flow mapping (15 min)
+7. [07 Connector Runtime vs Workflow Service](./07-connector-vs-workflow.md) — Decision matrix and scenarios (30 min)
+8. [08 Workflow Telegram Sequence](./08-telegram-sequence.md) — Concrete end-to-end runtime flow (15 min)
+9. [09 Common Patterns](./09-patterns.md) — Pseudocode recipes (20 min)
+10. [10 Developer Onboarding Guide](./10-onboarding.md) — Setup and day-to-day workflows (30 min)
 11. Service READMEs:
    - [Connector Runtime](../services/connector-runtime/README.md) — Generic HTTP execution
    - [Connector Admin](../services/connector-admin/README.md) — Connector configuration API
    - [Workflow Service](../services/workflow-service/README.md) — Multi-step orchestration
-   - [@yoizen/shared Package](../packages/shared/README.md) — Types and constants
+   - [@yoizen/shared Package](../packages/shared/src/index.ts) — Types and constants
 
 ## Core Documentation
 
@@ -115,20 +120,37 @@ ADMIN_EMAIL=admin@yoizen.io ADMIN_PASSWORD=yoizen-admin-change-me ./tests/stress
 
 | Document | Purpose | Audience |
 |----------|---------|----------|
-| [01 Platform Architecture](./01-ARCHITECTURE.md) | High-level service boundaries and ownership model | All developers |
-| [02 Infrastructure and Deployment](./02-INFRASTRUCTURE.md) | Support services, deployment models, overlays, and scaling | DevOps/Platform engineers |
-| [03 NATS and JetStream](./03-NATS-JETSTREAM.md) | Canonical messaging topology, subjects, and envelope contract | Backend/platform engineers |
-| [04 Workflow Engine](./04-WORKFLOW-ENGINE.md) | Trigger bridge, action dispatch, and task queue model | Automation developers |
-| [05 Agent Execution Flow](./05-AGENT-EXECUTION-FLOW.md) | `agentCall` lifecycle from workflow to runtime and back | Automation/AI developers |
-| [06 UI Flows](./06-UI-FLOWS.md) | Admin and messaging console flows mapped to backend services | Frontend/full-stack developers |
-| [07 Connector Runtime vs Workflow Service](./07-CONNECTOR-RUNTIME-VS-WORKFLOW-SERVICE.md) | Decision matrix and when to use each service with scenario walkthroughs | Feature implementers |
-| [08 Workflow Telegram Sequence](./08-WORKFLOW-TELEGRAM-SEQUENCE.md) | Concrete Telegram inbound flow with hosted + agent branches | All developers |
-| [09 Common Patterns](./09-COMMON-PATTERNS.md) | Practical pseudocode recipes for 10 common use cases | All developers |
-| [10 Developer Onboarding Guide](./10-DEVELOPER-ONBOARDING.md) | Setup, navigation, common tasks, debugging, testing | New team members |
-| [11 Service Architecture Diagrams](./11-SERVICE-ARCHITECTURE-DIAGRAM.md) | Visual reference for service boundaries, data flow, scaling, and multi-tenancy patterns | All developers |
+| [01 Platform Architecture](./01-platform-architecture.md) | High-level service boundaries and ownership model | All developers |
+| [02 Infrastructure and Deployment](./02-infrastructure-deployment.md) | Support services, deployment models, overlays, and scaling | DevOps/Platform engineers |
+| [03 NATS and JetStream](./03-messaging.md) | Canonical messaging topology, subjects, and envelope contract | Backend/platform engineers |
+| [04 Workflow Engine](./04-workflows.md) | Trigger bridge, action dispatch, and task queue model | Automation developers |
+| [05 Agent Execution Flow](./05-agent-execution.md) | `agentCall` lifecycle from workflow to runtime and back | Automation/AI developers |
+| [06 UI Flows](./06-ui.md) | Admin and messaging console flows mapped to backend services | Frontend/full-stack developers |
+| [07 Connector Runtime vs Workflow Service](./07-connector-vs-workflow.md) | Decision matrix and when to use each service with scenario walkthroughs | Feature implementers |
+| [08 Workflow Telegram Sequence](./08-telegram-sequence.md) | Concrete Telegram inbound flow with hosted + agent branches | All developers |
+| [09 Common Patterns](./09-patterns.md) | Practical pseudocode recipes for 10 common use cases | All developers |
+| [10 Developer Onboarding Guide](./10-onboarding.md) | Setup, navigation, common tasks, debugging, testing | New team members |
+| [11 Service Architecture Diagrams](./11-diagrams.md) | Visual reference for service boundaries, data flow, scaling, and multi-tenancy patterns | All developers |
 | [12 Adapter Tools](./12-adapter-tools.md) | Connector tooling and helper references | Feature implementers |
-| [13 Review](./13-REVIEW.md) | Code review standards and checklist | All contributors |
-| [14 Deployment Architecture](./14-DEPLOYMENT-ARCHITECTURE.md) | Legacy deep-dive details for Kustomize and KEDA | DevOps/Platform engineers |
+| [13 Review](./13-code-review.md) | Code review standards and checklist | All contributors |
+
+### Specialized Documentation
+
+| Folder | Contents |
+|--------|----------|
+| [`skb/`](./skb/) | Structured Knowledge Base subsystem — [architecture](./skb/architecture.md), [API](./skb/api.md), [runbook](./skb/runbook.md), [security](./skb/security.md) |
+| [`runbooks/`](./runbooks/) | Operations — [Temporal](./runbooks/temporal.md), [storage engines](./runbooks/storage-engines.md), historical migration runbooks |
+| [`adr/`](./adr/) | Architecture decision records — [RAG system](./adr/rag-system.md), [variable system](./adr/variable-system.md), [agent improvements](./adr/agent-architecture-improvements.md) |
+| [`reference/`](./reference/) | Technical references — [AI SDK](./reference/ai-sdk.md) |
+
+### Spanish Documentation (`es/`)
+
+| Folder | Contents |
+|--------|----------|
+| [`es/arquitectura/`](./es/arquitectura/) | Messaging design and as-built state (service bus, message design, agent ingress, claim-check, security, observability) |
+| [`es/canales/`](./es/canales/) | Channel and multi-tenant docs (foundations, tenant resolution, data model, multi-channel architecture, Instagram) |
+| [`es/flujos/`](./es/flujos/) | End-to-end message flows (receive, auto-reply, send, ping-pong cycle) |
+| [`es/help/`](./es/help/) | Operator guides (first steps, Meta dashboard, API reference, architecture, Cloudflare tunnel) |
 
 ### Service READMEs
 
@@ -137,13 +159,13 @@ ADMIN_EMAIL=admin@yoizen.io ADMIN_PASSWORD=yoizen-admin-change-me ./tests/stress
 | [Connector Runtime](../services/connector-runtime/README.md) | Standalone Temporal worker for high-concurrency HTTP execution with connector-driven config | Core service |
 | [Connector Admin](../services/connector-admin/README.md) | Multi-tenant HTTP connector configuration API (base URL, auth, headers, timeouts, retries) | Core service |
 | [Workflow Service](../services/workflow-service/README.md) | REST API + Temporal orchestrator for multi-step workflows with state management | Core service |
-| [@yoizen/shared Package](../packages/shared/README.md) | Cross-service types, interfaces, constants, and `AdapterClient` | Shared library |
+| [@yoizen/shared Package](../packages/shared/src/index.ts) | Cross-service types, interfaces, constants, and `AdapterClient` | Shared library |
 
 ## Architecture Overview
 
 ### Focused Runtime Sequences
 
-- [`08-WORKFLOW-TELEGRAM-SEQUENCE.md`](./08-WORKFLOW-TELEGRAM-SEQUENCE.md) — concrete Telegram inbound flow split into shared ingress plus two execution branches: simple hosted service call and YoizenClaw `agentCall`.
+- [`08-telegram-sequence.md`](./08-telegram-sequence.md) — concrete Telegram inbound flow split into shared ingress plus two execution branches: simple hosted service call and YoizenClaw `agentCall`.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
@@ -209,33 +231,30 @@ kubectl apply -k knative/services/overlays/local/dev
 | **Tenant Service** | Knative Service | Environment-scoped tenant namespace management. Provisions dedicated PostgreSQL StatefulSet and per-tenant `agent-ai-service` Knative Service |
 | **Registry Service** | Knative Service | Knative-based service registry with route management, canary deployments, and traffic splitting |
 | **Workflow Service** | Knative Service | REST API + Temporal orchestrator for multi-step workflows (start, status, list) |
-| **Workflow Worker** | Knative Service | Temporal orchestrator worker executing JS functions and NATS service bus activities |
+| **Workflow Worker** | Deployment (plain, fixed replicas) | Temporal orchestrator worker executing JS functions and NATS service bus activities |
 | **Connector Admin** | Knative Service | Manages multi-tenant HTTP connector configurations (base URL, auth, headers, timeouts, retries) and their endpoints. Consumed via `AdapterClient` by `connector-runtime` |
-| **Connector Runtime** | Knative Service (KEDA-scaled) | Generic Temporal HTTP execution worker for `endpointCall` and `serviceCall`; uses `tracedFetch`, connector resolution, response caching, and internal service mirror lookup |
+| **Connector Runtime** | Deployment (plain, fixed replicas) | Generic Temporal HTTP execution worker for `endpointCall` and `serviceCall`; uses `tracedFetch`, connector resolution, response caching, and internal service mirror lookup |
 | **Agent Admin Service** | Knative Service | Authoring API for AI agents/workflows (config-only persistence; runtime is per-tenant) |
 | **AI Agent Gateway** | Knative Service | Stateless inbound bridge that fans out execution requests to the per-tenant `agent-ai-service` Knative Service |
 | **Agent AI Service** | Knative Service (per-tenant) | Per-tenant agent execution runtime auto-provisioned by `tenant-service` into the tenant namespace |
 | **Usage Aggregator Service** | Knative Service | Aggregates per-tenant usage events into the usage Postgres |
 | **Proxy Service** | Knative Service | Egress proxy for tenant-bound HTTP traffic |
 | **Admin Console** | Knative Service | Angular admin UI |
-| **NATS JetStream** | StatefulSet | Persistent event streaming backbone with 7-day retention. Streams: EVENTS, RESULTS, DLQ |
+| **NATS JetStream** | StatefulSet | Persistent event streaming backbone with 7-day retention. Per-tenant streams: `INGRESS-<tenant>` (`evt.<tenant>.>`), `DLQ-<tenant>` (`dlq.<tenant>.>`), `PAYLOAD-<tenant>` Object Store (claim-check). Platform-level: `GATEWAY_AUDIT`, `PLATFORM_TENANTS`. Legacy global: `DLQ` (`dlq.webhook`) |
 | **Redis** | Deployment | Pure cache (no persistence, LRU eviction) |
 | **PostgreSQL** | StatefulSet | Shared database for auth, registry, and connector services |
 | **Temporal** | Deployment | Workflow execution engine with PostgreSQL backend and Web UI |
 
 ### Event Flow
 
-The slim stack centres on Temporal-driven workflow execution and per-tenant
-agent runtimes. Event ingestion is now a thin path that hands off to those
-engines:
+Two-stage webhook ingress feeds durable per-tenant consumers; Temporal handles orchestration and egress:
 
-1. Client sends `POST /events` to API Gateway with a JWT Bearer token
-2. Gateway authenticates the request, resolves tenant, and validates the payload
-3. Gateway publishes the envelope to NATS JetStream (`EVENTS` stream) and returns `202 Accepted` with the event ID
-4. Audit Service independently consumes EVENTS and persists every event to per-tenant PostgreSQL
-5. Trigger consumers (workflow-service, agent-ai-service) consume the events they care about and start Temporal workflows or agent executions
-6. Workflow activities run on `workflow-service-worker` (orchestration) and `connector-runtime` (HTTP execution against `connector-admin`-managed connectors)
-7. Completion events are published back to NATS (`RESULTS` stream) and clients can fetch the result via the gateway or receive it via SSE
+1. **Webhook ingress**: API Gateway authenticates the request, resolves the tenant, and publishes a `webhook_received` envelope to `INGRESS-<tenant>` (`evt.<tenant>.api-gateway.messaging.…`) — returns `202 Accepted` immediately
+2. **Signature verification + canonical event**: channel-service's durable consumer reads from `INGRESS-<tenant>`, verifies the provider signature, and re-publishes a normalized `ChannelEnvelope` back to `INGRESS-<tenant>` (`evt.<tenant>.channel-service.messaging.…`)
+3. **Durable fan-out**: all services attach durable consumers to `INGRESS-<tenant>` — audit-service persists every event to per-tenant PostgreSQL; workflow-triggers starts Temporal workflows; usage-aggregator records usage; agent-ai-service drives AI executions
+4. **Orchestration**: Temporal workers (`workflow-service-worker`) execute JS functions locally and dispatch HTTP/agent activities to `connector-runtime` via the `connector-runtime` task queue
+5. **Egress**: channel-service publishes outbound messages (e.g. Telegram replies) back through the provider API
+6. **Claim-check**: payloads above 256 KB are stored in `PAYLOAD-<tenant>` Object Store; the consumer middleware resolves them transparently before the handler is called
 
 ### Authentication & Authorization
 
@@ -286,24 +305,27 @@ Each environment runs its own tenant-service scoped by `PLATFORM_ENVIRONMENT`. C
 
 ### NATS JetStream Streams
 
-| Stream | Subjects | Purpose |
+| Stream / Bucket | Subjects | Purpose |
 |---|---|---|
-| `EVENTS` | `events.>` | Ingested events from the API Gateway |
-| `RESULTS` | `results.>` | Completion events emitted by workflows and runtimes |
-| `DLQ` | `dlq.>` | Failed webhook deliveries |
+| `INGRESS-<tenant>` | `evt.<tenant>.>` | Canonical per-tenant event bus (producers: api-gateway, channel-service, registry-service, agent-admin-service, ai-agent-gateway) |
+| `DLQ-<tenant>` | `dlq.<tenant>.>` | Per-tenant dead letters and post-processing |
+| `PAYLOAD-<tenant>` | Object Store | Claim-check storage for large payloads (>256 KB); TTL 7 days, max 512 MB |
+| `GATEWAY_AUDIT` | `audit.gateway.>` | API Gateway per-request audit trail |
+| `PLATFORM_TENANTS` | `platform.tenant.>` | Tenant lifecycle provisioning messages (workqueue) |
+| `DLQ` | `dlq.webhook` | Legacy global DLQ for webhook delivery failures (no slim-stack producer; retained for ops replay) |
 
 | Setting | Value |
 |---|---|
 | `retention` | Limits |
-| `max_age` | 7 days |
-| `max_bytes` | 512 MB (EVENTS), 256 MB (RESULTS), 64 MB (DLQ) |
+| `max_age` | 7 days (free tier) |
+| `max_bytes` | 256 MB per ingress stream (free tier); 512 MB Object Store |
 | `max_deliver` | 5 |
 
 ### Shared Types Package
 
 The `packages/shared/` package (`@yoizen/shared`) contains all cross-service types and constants:
 
-- **Event interfaces**: `EventEnvelope`, `EventResult`, `ProcessedEvent`, `CompletionEvent`, `MetricsPayload`
+- **Event interfaces**: `EventEnvelope`, `EventTransport`, `EventData`, `ChannelEnvelope`, `WebhookIngressEnvelope`
 - **Auth interfaces**: `JwtPayload`, `TokenResponse`, `TokenScope`, `PublicRouteEntry`
 - **Workflow interfaces**: `WorkflowDefinition`, `WorkflowAction`, `WorkflowExecutionContext`
 - **Adapter interfaces**: `AdapterConfig`, `AdapterEndpointConfig`, `AdapterCache`, `ResolvedAdapterRequest`, `AdapterReference`
@@ -332,9 +354,9 @@ This script will:
    Docker Desktop and stays below the 16GB cap)
 2. Enable `metrics-server` addon
 3. Install Knative Serving + Kourier networking layer
-4. Deploy NATS JetStream, Redis, PostgreSQL, and Temporal to all 4 `support-services-{env}` namespaces
+4. Deploy NATS JetStream, Redis, PostgreSQL, and Temporal to `support-services-dev`
 5. Build service Docker images inside minikube
-6. Deploy Knative Services to all 4 `platform-services-{env}` namespaces
+6. Deploy Knative Services to `platform-services-dev`
 
 If you want to force a specific memory value, set `MINIKUBE_MEMORY_MB` before
 running the bootstrap. Example:
@@ -349,7 +371,7 @@ MINIKUBE_MEMORY_MB=14336 ./bootstrap.sh dev
 2. Run:
 
 ```bash
-./bootstrap-orbstack.sh
+./bootstrap-orbstack-osx.sh
 ```
 
 This script will:
@@ -357,13 +379,7 @@ This script will:
 2. Install Knative Serving + Kourier networking layer
 3. Deploy NATS JetStream, Redis, PostgreSQL, and Temporal using the `orbstack` overlay (StorageClass: `local-path`)
 4. Build service Docker images (OrbStack shares the local Docker daemon with the cluster — no extra configuration needed)
-5. Deploy Knative Services to all 4 `platform-services-{env}` namespaces
-
-Deploy a single environment:
-
-```bash
-./bootstrap-orbstack.sh dev
-```
+5. Deploy Knative Services to `platform-services-dev`
 
 > **Note on PVCs from other clusters**: if you apply manifests originally designed for Minikube, EKS, GKE, or AKS that hardcode a `storageClassName` (`standard`, `gp2`, `gp3`, `standard-rwo`, `managed-premium`), the OrbStack overlay registers those as aliases for `rancher.io/local-path` so PVCs bind correctly without modifying the original YAMLs.
 
@@ -374,12 +390,13 @@ Arch/
 ├── bootstrap.sh                     # One-command setup (Minikube)
 ├── bootstrap-orbstack.sh            # One-command setup (OrbStack)
 ├── scripts/
-│   └── smoke-test.sh                # E2E smoke tests against minikube
+│   ├── smoke-test.sh                # kubectl readiness preflight for all Knative services and Deployments
+│   └── provision-tenant.sh          # Create tenant + tenant admin user (positional args)
 ├── packages/
 │   └── shared/                      # @yoizen/shared — cross-service types and constants
 │       └── src/
 │           ├── constants.ts          # Stream names, key prefixes, TTLs, task queues, Knative API
-│           ├── interfaces.ts         # EventEnvelope, EventResult, ProcessedEvent, MetricsPayload
+│           ├── interfaces.ts         # EventEnvelope, EventTransport, EventData
 │           ├── auth.constants.ts     # JWT TTLs, public routes cache config
 │           ├── auth.interfaces.ts    # JwtPayload, TokenResponse, TokenScope, PublicRouteEntry
 │           ├── workflow.interfaces.ts # WorkflowDefinition, WorkflowAction, activity args
@@ -393,28 +410,22 @@ Arch/
 │   │   ├── postgres/                 # PostgreSQL StatefulSet
 │   │   └── temporal/                 # Temporal Deployment + Service
 │   └── overlays/
-│       ├── local/                    # Minikube per-environment overlays
-│       │   ├── namespaces.yaml       # All 8 namespace definitions
+│       ├── local/                    # Minikube overlays (dev-only)
+│       │   ├── namespaces.yaml       # Namespace definitions
 │       │   ├── local-base/           # Shared patches (resource limits)
-│       │   ├── dev/                  # namespace: support-services-dev
-│       │   ├── qa/                   # namespace: support-services-qa
-│       │   ├── staging/              # namespace: support-services-staging
-│       │   └── production/           # namespace: support-services-production
-│       └── orbstack/                 # OrbStack per-environment overlays
+│       │   └── dev/                  # namespace: support-services-dev
+│       └── orbstack/                 # OrbStack overlays (dev-only)
 │           ├── storage-class-compat.yaml  # Aliases: standard/gp2/gp3/… → local-path
-│           ├── namespaces.yaml       # All 8 namespace definitions
+│           ├── namespaces.yaml       # Namespace definitions
 │           ├── orbstack-base/        # Shared patches (resource limits + storageClassName)
-│           ├── dev/
-│           ├── qa/
-│           ├── staging/
-│           └── production/
+│           └── dev/
 ├── knative/
 │   ├── serving/                      # Autoscaler ConfigMap
 │   └── services/
 │       ├── base/                     # Service YAMLs
 │       ├── rbac/                     # ClusterRole + per-env ClusterRoleBindings
 │       └── overlays/
-│           └── local/                # Per-environment overlays with env patches
+│           └── local/                # dev overlay with env patches
 ├── services/                          # Application source code
 │   ├── api-gateway/                   # NestJS + Fastify — HTTP entry point, auth, dynamic routing
 │   ├── auth-service/                  # NestJS + Fastify — JWT auth, users, clients, public routes
@@ -433,8 +444,7 @@ Arch/
 │   ├── agent-admin-service/      # NestJS + Fastify — YoizenClaw authoring API
 │   ├── ai-agent-gateway/    # NestJS + Fastify — Stateless inbound bridge to per-tenant runtimes
 │   └── agent-ai-service/            # TypeScript — Per-tenant agent execution runtime (provisioned per tenant)
-└── tests/
-    └── e2e/                           # Cross-service end-to-end tests
+└── setup-tenant.sh                    # Create tenant + admin user (named flags, idempotent)
 ```
 
 ## Manual Operations
@@ -442,27 +452,16 @@ Arch/
 ### Apply infrastructure only
 
 ```bash
-# Minikube — all environments
-kubectl apply -k infrastructure/overlays/local
-
-# Minikube — single environment
+# Minikube
 kubectl apply -k infrastructure/overlays/local/dev
 
-# OrbStack — all environments
-kubectl apply -k infrastructure/overlays/orbstack
-
-# OrbStack — single environment
+# OrbStack
 kubectl apply -k infrastructure/overlays/orbstack/dev
 ```
 
 ### Apply Knative services only
 
 ```bash
-# All environments (same overlay for both Minikube and OrbStack)
-kubectl apply -k knative/serving
-kubectl apply -k knative/services/overlays/local
-
-# Single environment
 kubectl apply -k knative/serving
 kubectl apply -k knative/services/overlays/local/dev
 ```
@@ -533,23 +532,6 @@ curl -X POST http://api-gateway.platform-services-dev.<MINIKUBE_IP>.sslip.io/aut
   -H "Content-Type: application/json" \
   -d '{"grant_type":"client_credentials","client_id":"...","client_secret":"..."}'
 
-# Publish an event
-curl -X POST http://api-gateway.platform-services-dev.<MINIKUBE_IP>.sslip.io/events \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "x-yoizen-tenant: acme" \
-  -d '{"type":"created","payload":{"name":"test"}}'
-
-# Get result
-curl http://api-gateway.platform-services-dev.<MINIKUBE_IP>.sslip.io/results/<EVENT_ID> \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "x-yoizen-tenant: acme"
-
-# Stream events (SSE)
-curl -N http://api-gateway.platform-services-dev.<MINIKUBE_IP>.sslip.io/events/stream \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "x-yoizen-tenant: acme"
-
 # Create a tenant
 curl -X POST http://api-gateway.platform-services-dev.<MINIKUBE_IP>.sslip.io/tenants \
   -H "Content-Type: application/json" \
@@ -599,17 +581,14 @@ cd services/<service> && bun run test:unit
 cd services/<service> && bun run test:integration
 ```
 
-### E2E tests (full flow)
+### Readiness preflight (full cluster)
 
 ```bash
-# Against minikube
-./scripts/smoke-test.sh
-
-# Against local services
-cd tests/e2e
-pnpm install
-API_GATEWAY_URL=http://localhost:3000 bun test
+# Against the running cluster
+bash scripts/smoke-test.sh
 ```
+
+The smoke test is a kubectl-based readiness preflight — it checks that all Knative services and plain Deployments are ready. It does not execute HTTP-level tests.
 
 ## Design Decisions
 
@@ -619,18 +598,18 @@ API_GATEWAY_URL=http://localhost:3000 bun test
 | Event transport | NATS JetStream (direct) | Lower latency than Knative Eventing, full control over streams/consumers |
 | Event processing | Pluggable handler registry | New event types added by creating a handler class — no core changes |
 | Enrichment pipeline | Ordered stages (ajv + metadata + transform) | Separates cross-cutting concerns from handler logic |
-| Two-stream design | EVENTS + RESULTS | Prevents feedback loops; enables independent fan-out |
+| Per-tenant stream design | `INGRESS-<tenant>` + `DLQ-<tenant>` + `PAYLOAD-<tenant>` | Full tenant isolation; prevents subject overlap; claim-check keeps envelopes slim |
 | Authentication | JWT via `jose` (HS256) | Stateless, minimal overhead; argon2id for password storage |
 | Tenant isolation | Per-tenant PostgreSQL StatefulSet | Full data isolation; provisioned by tenant-service on creation |
 | Workflow engine | Temporal | Durable, retryable, language-agnostic workflow orchestration |
-| Job scheduling | In-process engine + K8s Jobs | Lightweight for inline JS; K8s Jobs for isolated docker execution |
+| Job scheduling | In-process Temporal + K8s Jobs | Lightweight for inline JS; K8s Jobs for isolated docker execution |
 | Service registry | Knative + PostgreSQL | Leverages Knative for autoscaling; PostgreSQL for route/canary state |
 | Dynamic routing | Gateway poll + prefix matching | Decoupled from registry; 15s eventual consistency is acceptable |
 | HTTP framework | Fastify | 2-3x faster than Express for NestJS |
 | Cache client | ioredis | Better pipelining, cluster support, and benchmark performance |
 | IaC format | Kustomize | Native to kubectl, zero external dependencies |
 | HTTP adapters | Shared `AdapterClient` with Redis SWR cache | Centralizes auth, headers, retries, and timeouts; stale-while-revalidate avoids blocking on cache miss |
-| Multi-environment | 4 isolated env pairs | Each env gets its own NATS, Redis, Postgres, Temporal, and full service stack |
+| Developer mode | Single `dev` environment only | qa/staging/production overlays removed; KEDA removed in favor of fixed-replica Deployments for workers |
 
 ## Tech Stack
 

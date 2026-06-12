@@ -76,7 +76,7 @@ export class EgressService {
    *
    * @param causal - Optional causal context. When provided, the
    *   shadow `sent.v1` envelope inherits causation/correlation so the
-   *   chain stays intact (DOCS/arquitectura/02 §6).
+   *   chain stays intact (DOCS/es/arquitectura/02 §6).
    */
   async send(
     tenantId: string,

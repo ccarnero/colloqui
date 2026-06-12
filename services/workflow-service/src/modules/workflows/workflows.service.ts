@@ -125,7 +125,7 @@ export interface IExecuteWorkflowOptions {
    * When present, publishing activities (e.g. `channelSend`) will set
    * `causation_id = causal.causation_id`, copy `correlation_id`, and
    * increment `transport.depth`, keeping the bus chain traceable
-   * (DOCS/arquitectura/02 §6).
+   * (DOCS/es/arquitectura/02 §6).
    */
   readonly causal?: EventCausalContext;
   /**

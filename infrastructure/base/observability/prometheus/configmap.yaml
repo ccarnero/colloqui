@@ -25,7 +25,7 @@ data:
               - nats:7777
 
       # Temporal Server self-metrics. Post-HA-migration (see
-      # DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md) the cluster runs the 4
+      # DOCS/runbooks/temporal-ha-migration.md) the cluster runs the 4
       # roles (frontend, history, matching, worker) as separate
       # Deployments under the same `app.kubernetes.io/name=temporal`
       # label, distinguished by `temporal.io/role`. The keep filter

@@ -6,7 +6,7 @@ The Usage Aggregator Service consumes billing/usage events from per-tenant NATS 
 
 ## Storage engines
 
-**Postgres** (default) or **Mongo** batch inserter behind `ITenantProvisioner` usage path. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+**Postgres** (default) or **Mongo** batch inserter behind `ITenantProvisioner` usage path. See [DOCS/runbooks/storage-engines.md](../../DOCS/runbooks/storage-engines.md).
 
 ## Tech Stack
 

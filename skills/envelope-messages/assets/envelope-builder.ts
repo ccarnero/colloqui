@@ -17,6 +17,7 @@
  *   - type: `io.yoizen.messaging.${channel}.${provider}.${kind}.v1`
  *   - source: `//channel-service/accounts/${accountId}`
  *   - producer: CHANNEL_PRODUCER ("channel-service")
+ *   - correlation_id: defaults to envelope id if not propagated
  *   - idempotencykey: computeIdempotencyKey(rawPayload) = sha256(canonicalJson(rawPayload))
  *   - payload_bytes: canonicalByteLength(rawPayload)  (UTF-8 bytes of canonical JSON)
  *   - payload_checksum: computePayloadChecksum(rawPayload) = sha256(canonicalJson(rawPayload))
@@ -24,8 +25,10 @@
  * For the webhook pre-ingress envelope (kind: webhook_received) see:
  *   services/api-gateway/src/modules/channels/webhook-ingress-publisher.service.ts
  *     - producer: "api-gateway"
- *     - type: "io.yoizen.messaging.webhook.received.v1"
- *     - data includes raw_body_b64 and filtered headers (WEBHOOK_FORWARDED_HEADERS)
+ *     - type: `io.yoizen.messaging.${channel}.webhook.webhook_received.v1`
+ *     - source: "//api-gateway/webhooks"
+ *     - accountid: OMITTED (unknown at this stage — resolved in stage 2)
+ *     - data includes raw_body_b64 and filtered headers (WEBHOOK_FORWARDED_HEADERS — 6 entries)
  */
 
 export {}; // Module marker — no runtime exports; see files referenced above.

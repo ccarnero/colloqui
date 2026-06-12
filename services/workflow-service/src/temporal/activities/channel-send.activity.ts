@@ -40,7 +40,7 @@ async function getConnection(): Promise<NatsConnection> {
  * JetStream stream. The channel-service picks it up and
  * delivers via the appropriate provider (WhatsApp / Telegram).
  *
- * The envelope is DOCS/arquitectura/02 compliant: `payload_checksum` is the pure
+ * The envelope is DOCS/es/arquitectura/02 compliant: `payload_checksum` is the pure
  * canonical hash of the outbound payload; `idempotencykey` (and the
  * `Nats-Msg-Id` header derived from it) is scoped by
  * `{payload, correlation_id, causation_id}` so that:
@@ -60,7 +60,7 @@ async function getConnection(): Promise<NatsConnection> {
  * `traceid` comes from the active OTEL span; when an
  * {@link EventCausalContext} is provided, `causation_id`,
  * `correlation_id` and `transport.depth` are inherited from the
- * triggering envelope (§6 of DOCS/arquitectura/02).
+ * triggering envelope (§6 of DOCS/es/arquitectura/02).
  *
  * @param args - Outbound message details (account, recipient, content).
  * @param tenantId - Tenant that owns the workflow.

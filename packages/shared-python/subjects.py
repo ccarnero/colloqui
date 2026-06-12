@@ -3,8 +3,8 @@
 Contains legacy flat subject constants (used by nats_bridge.py) and
 new spec-compliant tenant-scoped subject helpers.
 
-subject convention (DOCS/arquitectura/01-service-bus.md): evt.{tenant}.agent-admin-service.automation.platform.internal.{action}.v1
-See: DOCS/arquitectura/01-service-bus.md
+subject convention (DOCS/es/arquitectura/01-service-bus.md): evt.{tenant}.agent-admin-service.automation.platform.internal.{action}.v1
+See: DOCS/es/arquitectura/01-service-bus.md
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ def extract_tenant_from_subject(subject: str) -> str | None:
 
     Returns:
         The tenant identifier, or ``None`` if the subject does not follow
-        the subject convention (DOCS/arquitectura/01-service-bus.md).
+        the subject convention (DOCS/es/arquitectura/01-service-bus.md).
     """
     parts = subject.split(".")
     if len(parts) >= 2 and parts[0] == "evt":

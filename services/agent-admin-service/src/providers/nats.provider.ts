@@ -76,9 +76,9 @@ interface IBuildEventOptions {
   resource: string;
   correlationId: string;
   source: string;
-  /** Optional causation id for cascaded events (DOCS/arquitectura/02 §6). */
+  /** Optional causation id for cascaded events (DOCS/es/arquitectura/02 §6). */
   causationId?: string | null;
-  /** Optional causal depth (DOCS/arquitectura/02 §6.3). Defaults to 0. */
+  /** Optional causal depth (DOCS/es/arquitectura/02 §6.3). Defaults to 0. */
   depth?: number;
 }
 
@@ -574,7 +574,7 @@ export class NatsPublisher implements OnModuleDestroy {
 
 /**
  * Causal context accepted by the `publish*` helpers. Used to chain
- * derived events to the request that triggered them (DOCS/arquitectura/02 §6).
+ * derived events to the request that triggered them (DOCS/es/arquitectura/02 §6).
  */
 export interface ICausalContext {
   readonly causationId?: string | null;

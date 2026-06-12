@@ -10,7 +10,7 @@
 # Truncating the data tables drops it to ~5–10s end-to-end.
 #
 # Topology note (2026-05-22 split — see
-# `DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md`): the visibility datasource
+# `DOCS/runbooks/temporal-visibility-split.md`): the visibility datasource
 # now lives on its OWN CNPG cluster (`postgres-temporal-visibility`,
 # primary pod `postgres-temporal-visibility-1`). The workflow-state
 # datasource remains on `postgres-temporal` (primary pod
@@ -22,7 +22,7 @@
 #   1. Scales every Temporal role Deployment (`temporal-frontend`,
 #      `temporal-history`, `temporal-matching`, `temporal-worker` —
 #      post-HA-migration topology, see
-#      `DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md`) to 0 so no in-flight
+#      `DOCS/runbooks/temporal-ha-migration.md`) to 0 so no in-flight
 #      writer is holding row locks while we TRUNCATE (TRUNCATE takes
 #      AccessExclusiveLock; an active history pod would deadlock the
 #      script). Each Deployment's original replica count is captured
@@ -113,7 +113,7 @@ TEMPORAL_DEPLOYMENTS=(
 DEFAULT_PG_POD="postgres-temporal-1"
 DEFAULT_PG_USER="postgres"
 # Visibility moved to its own CNPG cluster on 2026-05-22 (see
-# RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md). Default targets the dedicated
+# runbooks/temporal-visibility-split.md). Default targets the dedicated
 # primary; legacy collapsed-cluster setups can override with
 # `--vis-pg-pod=postgres-temporal-1`.
 DEFAULT_VIS_PG_POD="postgres-temporal-visibility-1"
@@ -317,7 +317,7 @@ ensure_vis_pg_pod_exists() {
   if ! "${KCTL[@]}" -n "$NAMESPACE" get pod "$VIS_PG_POD" >/dev/null 2>&1; then
     err "Visibility Postgres pod not found: ${NAMESPACE}/${VIS_PG_POD}"
     err "  Hint: pass --vis-pg-pod=postgres-temporal-1 for legacy"
-    err "        single-cluster setups; see RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md."
+    err "        single-cluster setups; see runbooks/temporal-visibility-split.md."
     exit 2
   fi
 }

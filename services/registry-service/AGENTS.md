@@ -6,7 +6,7 @@ The Registry Service manages a Knative-based service registry where tenants can 
 
 ## Storage engines
 
-Supports **Postgres** (default) and **Mongo** via repository interfaces + `createRepositoryProvider`. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+Supports **Postgres** (default) and **Mongo** via repository interfaces + `createRepositoryProvider`. See [DOCS/runbooks/storage-engines.md](../../DOCS/runbooks/storage-engines.md).
 
 ## Tech Stack
 

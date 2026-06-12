@@ -6,7 +6,7 @@ The Auth Service handles authentication and authorization for the platform. It i
 
 ## Storage engines
 
-Supports **Postgres** (default) and **Mongo**, selected at bootstrap (`--storage-engine` / `DB_ENGINE`). Repository ports use `createRepositoryProvider`; `ProvidersModule` imports `AuthPostgresModule` or `AuthMongoModule`. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+Supports **Postgres** (default) and **Mongo**, selected at bootstrap (`--storage-engine` / `DB_ENGINE`). Repository ports use `createRepositoryProvider`; `ProvidersModule` imports `AuthPostgresModule` or `AuthMongoModule`. See [DOCS/runbooks/storage-engines.md](../../DOCS/runbooks/storage-engines.md).
 
 ## Tech Stack
 

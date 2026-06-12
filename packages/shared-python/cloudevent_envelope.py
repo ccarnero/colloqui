@@ -1,6 +1,6 @@
 """CloudEvents envelope builder for internal agent messaging.
 
-Compliant with DOCS/arquitectura/02-diseño-de-mensajes.md CloudEvents spec.
+Compliant with DOCS/es/arquitectura/02-diseño-de-mensajes.md CloudEvents spec.
 Agent Admin Service operates as an internal agent (transport.protocol="internal").
 """
 

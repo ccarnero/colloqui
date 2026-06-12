@@ -705,8 +705,6 @@ spec:
       containers:
       - name: user-container
         env:
-        - name: ENTRYPOINT
-          value: dist/temporal/worker.js
         - name: TEMPORAL_ADDRESS
           value: temporal.support-services-dev.svc.cluster.local:7233
         - name: NATS_URL

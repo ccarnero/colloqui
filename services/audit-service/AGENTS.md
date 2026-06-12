@@ -6,7 +6,7 @@ The Audit Service consumes domain events from the NATS JetStream `EVENTS` stream
 
 ## Storage engines
 
-Supports **Postgres** (default) and **Mongo** per-tenant via `AuditTenantConnectionManager` (postgres/mongo variants) and repository adapters. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+Supports **Postgres** (default) and **Mongo** per-tenant via `AuditTenantConnectionManager` (postgres/mongo variants) and repository adapters. See [DOCS/runbooks/storage-engines.md](../../DOCS/runbooks/storage-engines.md).
 
 ## Tech Stack
 

@@ -15,7 +15,7 @@ spec:
   # range scans, no FOR UPDATE contention on shard queue tables.
   #
   # CUTOVER: this cluster MUST be empty before Temporal points at it.
-  # See `DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md` for the cold
+  # See `DOCS/runbooks/temporal-visibility-split.md` for the cold
   # (drop+rebootstrap) and hot (pg_dump+restore) playbooks.
   #
   # Dev overlays (local/orbstack) drop this to a single instance.

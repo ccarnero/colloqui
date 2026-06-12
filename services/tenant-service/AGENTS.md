@@ -6,7 +6,7 @@ The Tenant Service provisions and manages tenant namespaces via the Kubernetes A
 
 ## Storage engines
 
-Catalog + provisioning are engine-aware (`ITenantsRepository`, `TENANT_PROVISIONER`). See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+Catalog + provisioning are engine-aware (`ITenantsRepository`, `TENANT_PROVISIONER`). See [DOCS/runbooks/storage-engines.md](../../DOCS/runbooks/storage-engines.md).
 
 ## Tech Stack
 

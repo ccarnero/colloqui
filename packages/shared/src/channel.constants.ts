@@ -10,7 +10,7 @@ export const CHANNEL_STREAM_SUBJECTS_PATTERN =
 export const CHANNEL_CONSUMER_NAME = "channel-processor";
 
 export const CHANNEL_SUBJECT_PREFIX = "evt";
-/** Producer token (§3 of DOCS/arquitectura/02). */
+/** Producer token (§3 of DOCS/es/arquitectura/02). */
 export const CHANNEL_PRODUCER = "channel-service";
 export const CHANNEL_DOMAIN = "messaging";
 
@@ -20,7 +20,7 @@ export const CHANNEL_MAX_DELIVER = 5;
 
 export const CLAIM_CHECK_THRESHOLD_BYTES = 256 * 1024;
 export const CLAIM_CHECK_BUCKET_PREFIX = "PAYLOAD";
-/** Object Store TTL aligned to stream max_age (DOCS/arquitectura/04 §4.2). Already in nanoseconds — pass directly as `ttl`. */
+/** Object Store TTL aligned to stream max_age (DOCS/es/arquitectura/04 §4.2). Already in nanoseconds — pass directly as `ttl`. */
 export const CLAIM_CHECK_BUCKET_TTL_NS = CHANNEL_STREAM_MAX_AGE_NS;
 /** Maximum bytes per tenant claim-check bucket (same magnitude as DLQ_TENANT_STREAM_MAX_BYTES). */
 export const CLAIM_CHECK_BUCKET_MAX_BYTES = 512 * 1024 * 1024;

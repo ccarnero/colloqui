@@ -22,9 +22,9 @@ COPY services/workflow-service/src services/workflow-service/src
 RUN corepack enable pnpm && \
     pnpm exec tsc -p services/workflow-service/tsconfig.json
 
-FROM oven/bun:1.3.14-alpine AS runtime
+FROM oven/bun:1.3.14-slim AS runtime
 
-RUN addgroup -g 1001 -S app && adduser -u 1001 -S app -G app
+RUN groupadd --gid 1001 app && useradd --uid 1001 --gid 1001 --no-create-home --shell /usr/sbin/nologin app
 
 COPY --from=build /app/node_modules /app/node_modules
 COPY --from=build /app/packages /app/packages

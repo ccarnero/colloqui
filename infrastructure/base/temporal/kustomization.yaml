@@ -4,7 +4,7 @@ kind: Kustomization
 # Single-node dev topology: one `temporalio/auto-setup` pod runs all
 # 4 internal services (frontend, history, matching, worker) in one
 # process. Reverts the 4-role HA split introduced for stress testing
-# (see DOCS/RUNBOOK-TEMPORAL-HA-MIGRATION.md) — dev mode does not
+# (see DOCS/runbooks/temporal-ha-migration.md) — dev mode does not
 # need HA topology.
 #
 # Recovered from git commit e05c543 (pre-HA single Deployment),

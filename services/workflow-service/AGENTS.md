@@ -6,7 +6,7 @@ The Workflow Service provides a REST API for starting and querying Temporal work
 
 ## Storage engines
 
-Workflow **definitions/executions** support **Postgres** (default) and **Mongo** (repository adapters). **Temporal** remains on dedicated Postgres regardless of OLTP engine. See [DOCS/STORAGE-ENGINES.md](../../DOCS/STORAGE-ENGINES.md).
+Workflow **definitions/executions** support **Postgres** (default) and **Mongo** (repository adapters). **Temporal** remains on dedicated Postgres regardless of OLTP engine. See [DOCS/runbooks/storage-engines.md](../../DOCS/runbooks/storage-engines.md).
 
 ## Tech Stack
 

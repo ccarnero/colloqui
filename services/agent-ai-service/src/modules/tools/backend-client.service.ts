@@ -6,7 +6,7 @@ import { agentAiServiceConfig } from "../../config";
 
 /**
  * NATS subject for tool execution requests.
- * Follows subject convention (DOCS/arquitectura/01-service-bus.md): evt.{tenant}.platform.tool.request.v1
+ * Follows subject convention (DOCS/es/arquitectura/01-service-bus.md): evt.{tenant}.platform.tool.request.v1
  */
 const TOOL_REQUEST_SUBJECT_TEMPLATE =
   "evt.{tenant}.platform.tool.request.v1";

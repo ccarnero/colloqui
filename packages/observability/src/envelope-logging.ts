@@ -4,8 +4,8 @@ import { getActiveTraceId } from "./trace-utils";
 
 /**
  * Minimal shape a log helper needs from an envelope. Mirrors the
- * canonical `EventEnvelope` (DOCS/arquitectura/02 §2) fields required for
- * structured logging (DOCS/arquitectura/06 §3.1).
+ * canonical `EventEnvelope` (DOCS/es/arquitectura/02 §2) fields required for
+ * structured logging (DOCS/es/arquitectura/06 §3.1).
  */
 export interface IEnvelopeLogContext {
   readonly id?: string;
@@ -21,7 +21,7 @@ export interface IEnvelopeLogContext {
   readonly transport?: { depth?: number };
 }
 
-/** Required structured fields per DOCS/arquitectura/06 §3.1. */
+/** Required structured fields per DOCS/es/arquitectura/06 §3.1. */
 export interface IStructuredLogFields {
   event_id?: string;
   trace_id?: string;
@@ -39,7 +39,7 @@ export interface IStructuredLogFields {
 
 /**
  * Extracts the canonical set of structured log fields required by
- * DOCS/arquitectura/06-observabilidad.md §3.1 from an envelope.
+ * DOCS/es/arquitectura/06-observabilidad.md §3.1 from an envelope.
  * Tolerates the legacy camelCase aliases in `ChannelEnvelope`.
  */
 export function envelopeLogFields(

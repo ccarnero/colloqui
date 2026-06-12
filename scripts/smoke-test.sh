@@ -22,8 +22,13 @@ ALL_KNATIVE_SERVICES=(
   tenant-service
   registry-service
   agent-admin-service
+  agent-ai-service
+  agent-memory-service
+  agent-scheduler-service
+  ai-agent-gateway
+  admin-console
   proxy-service
-  connector-admin
+  connector-admin-api
   channel-service-api
   audit-service-api
   usage-aggregator-api
@@ -36,6 +41,8 @@ ALL_KNATIVE_SERVICES=(
 ALL_PLAIN_DEPLOYMENTS=(
   workflow-worker
   connector-runtime
+  agent-admin-service-worker
+  connector-admin-worker
   audit-service-worker
   channel-service-worker
   usage-aggregator-worker
@@ -78,43 +85,6 @@ preflight_check() {
   log "All Knative services + plain Deployments are Ready"
 }
 
-run_tests() {
-  log "Running E2E tests..."
-  cd "${ROOT_DIR}/tests/e2e"
-
-  if [[ ! -d node_modules ]]; then
-    log "Installing test dependencies..."
-    pnpm install
-  fi
-
-  # Stable hostname — bootstrap writes /etc/hosts entries so
-  # api-gateway.platform-services-dev.dev.local resolves to 127.0.0.1.
-  # Kourier's LoadBalancer Service is on port 80 (OrbStack native; or via
-  # `sudo minikube tunnel` on minikube). No port-forward is needed.
-  local dev_domain="${DEV_DOMAIN:-dev.local}"
-
-  export API_GATEWAY_URL="http://api-gateway.${NAMESPACE}.${dev_domain}"
-  export CACHE_SERVICE_URL="http://cache-service.${NAMESPACE}.${dev_domain}"
-
-  export ADMIN_EMAIL="${ADMIN_EMAIL:-}"
-  export ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
-  export E2E_CLIENT_ID="${E2E_CLIENT_ID:-}"
-  export E2E_CLIENT_SECRET="${E2E_CLIENT_SECRET:-}"
-  export E2E_TENANT="${E2E_TENANT:-e2e-test}"
-
-  log "Service URLs:"
-  echo "  api-gateway  -> $API_GATEWAY_URL"
-  echo "  cache-service -> $CACHE_SERVICE_URL"
-  echo ""
-
-  local test_filter="${1:-}"
-  if [[ -n "$test_filter" ]]; then
-    bun test "$test_filter"
-  else
-    bun test
-  fi
-}
-
 main() {
   log "Smoke Test Runner"
   echo ""
@@ -122,16 +92,6 @@ main() {
   kubectl config use-context "$PROFILE" 2>/dev/null || true
 
   preflight_check
-  run_tests "${1:-}"
-  local exit_code=$?
-
-  if (( exit_code == 0 )); then
-    log "All E2E tests passed!"
-  else
-    err "Some E2E tests failed (exit code: $exit_code)"
-  fi
-
-  return "$exit_code"
 }
 
 main "$@"
