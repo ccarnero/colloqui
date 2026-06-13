@@ -88,6 +88,52 @@ is_known_service() {
   return 1
 }
 
+# Returns 0 (true) if ANY of the Kubernetes objects owned by the logical
+# service name carries the yoizen.io/dev-mode=true annotation.
+# Falls through to return 1 (false) when the cluster is unreachable so the
+# normal rebuild path is taken without breaking offline or CI usage.
+is_dev_mode() {
+  local svc="$1"
+  local ns="platform-services-${ENVIRONMENT}"
+
+  # Derive ksvc and deployment names using the same rules as rebuild-redeploy.sh.
+  # NOTE: case-in-$() is broken in bash 3.2 (macOS built-in) — use if/elif instead.
+  local ksvc_name deploy_names
+  if   [[ "$svc" == "connector-admin" ]];          then ksvc_name="connector-admin-api"
+  elif [[ "$svc" == "audit-service" ]];             then ksvc_name="audit-service-api"
+  elif [[ "$svc" == "channel-service" ]];           then ksvc_name="channel-service-api"
+  elif [[ "$svc" == "usage-aggregator-service" ]];  then ksvc_name="usage-aggregator-api"
+  elif [[ "$svc" == "workflow-service" ]];          then ksvc_name="workflow-service-api"
+  else ksvc_name="$svc"; fi
+
+  if   [[ "$svc" == "connector-admin" ]];          then deploy_names="connector-admin-worker"
+  elif [[ "$svc" == "audit-service" ]];             then deploy_names="audit-service-worker"
+  elif [[ "$svc" == "channel-service" ]];           then deploy_names="channel-service-worker"
+  elif [[ "$svc" == "usage-aggregator-service" ]];  then deploy_names="usage-aggregator-worker"
+  elif [[ "$svc" == "workflow-service" ]];          then deploy_names="workflow-service-worker workflow-worker"
+  elif [[ "$svc" == "connector-runtime" ]];         then deploy_names="connector-runtime"
+  else deploy_names=""; fi
+
+  # Check ksvc annotation
+  local ann
+  ann="$(kubectl get ksvc "$ksvc_name" \
+    --namespace "$ns" \
+    -o jsonpath="{.metadata.annotations['yoizen\.io/dev-mode']}" \
+    2>/dev/null || true)"
+  [[ "$ann" == "true" ]] && return 0
+
+  # Check each deployment annotation
+  for dep in $deploy_names; do
+    ann="$(kubectl get deployment "$dep" \
+      --namespace "$ns" \
+      -o jsonpath="{.metadata.annotations['yoizen\.io/dev-mode']}" \
+      2>/dev/null || true)"
+    [[ "$ann" == "true" ]] && return 0
+  done
+
+  return 1
+}
+
 # ── Collect the list of changed files from git ────────────────────────────────
 collect_changed_files() {
   if ! git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
@@ -316,6 +362,15 @@ for svc in "${SELECTED_SVCS[@]}"; do
   count=$((count+1))
   echo ""
   bold "── [${count}/${total}] ${svc} ──────────────────────────────────────────"
+
+  # Skip services that are currently in source-mounted dev mode to avoid
+  # overwriting the dev-mode patch with a stale image rollout.
+  if is_dev_mode "$svc" 2>/dev/null; then
+    warn "${svc} is in source-mounted dev mode — skipping image rebuild"
+    warn "  Run ./dev-mode.sh ${svc} off  to return to image mode"
+    continue
+  fi
+
   if run_rebuild "$svc"; then
     log "✔ ${svc} rebuilt + redeployed"
   else

@@ -31,7 +31,7 @@ runTemporalWorkerCli(
       // Stress-grade concurrency. HTTP activities are pure I/O
       // (outbound `tracedFetch`) so a single pod can comfortably
       // sustain hundreds of in-flight requests. 400 doubles the
-      // per-pod ceiling; KEDA picks up the slack horizontally.
+      // per-pod ceiling.
       maxConcurrentActivityTaskExecutions: 400,
       maxConcurrentActivityTaskPolls: 20,
       shutdownGraceTime: "30s",

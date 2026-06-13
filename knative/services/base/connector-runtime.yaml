@@ -1,8 +1,7 @@
 # Plain Kubernetes Deployment (NOT a Knative Service). Same rationale
-# as `workflow-worker.yaml`:
-#   • Temporal pull-based worker, no inbound HTTP traffic.
-#   • KEDA cannot scale a Knative Service (no /scale subresource).
-#   • Deployment exposes /scale natively → KEDA Temporal scaler works.
+# as `workflow-worker.yaml`: a Temporal pull-based worker with no inbound
+# HTTP traffic, so Knative's activator/KPA model adds nothing. A plain
+# Deployment with a RollingUpdate strategy is the simple, correct fit.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

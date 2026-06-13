@@ -14,9 +14,9 @@
 #     `services/audit-service/src/modules/*/*.service.ts` `isWorkerMode()`
 #     guards).
 #   • audit-service-worker → see `audit-service-worker.yaml`. Plain
-#     `apps/v1.Deployment` (KEDA-managed), runs `SERVICE_MODE=worker`
-#     so the Fastify HTTP server is never started and only the durables
-#     are active.
+#     `apps/v1.Deployment` (fixed 1 replica in developer mode), runs
+#     `SERVICE_MODE=worker` so the Fastify HTTP server is never started
+#     and only the durables are active.
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:

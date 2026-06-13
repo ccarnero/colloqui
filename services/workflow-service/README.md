@@ -577,11 +577,8 @@ Branch on failure: if results.processResource.status === FAILED
 
 ### Orchestrator Worker Scaling
 
-- **Type**: Plain Deployment + KEDA
-- **Min replicas**: 1
-- **Max replicas**: 3
-- **KEDA scaler**: Monitors `workflow-orchestrator` task queue depth
-- **Cooldown**: 300s (prevents flapping)
+- **Type**: Plain Deployment (Temporal pull-based worker, no inbound HTTP)
+- **Replicas**: fixed 1 in developer mode (no autoscaling)
 - **Concurrency**: 100 workflow tasks + 50 activity tasks per replica
 
 ### Temporal Timeouts

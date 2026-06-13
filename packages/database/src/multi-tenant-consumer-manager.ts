@@ -93,11 +93,10 @@ export interface IMultiTenantConsumerConfig {
    * consumed. Reconciliation still picks up new tenant streams so
    * they get their durable too.
    *
-   * Use case (Phase 1.5): `*-api` pods run in `ensureOnly` mode so
-   * `jetstream_consumer_num_pending{consumer_name="<durable>"}` is
-   * always populated in Prometheus, breaking the chicken-and-egg
-   * loop where KEDA can't scale `*-worker` from zero because the
-   * consumer doesn't exist yet.
+   * Use case (Phase 1.5): `*-api` pods run in `ensureOnly` mode so the
+   * durable always exists and
+   * `jetstream_consumer_num_pending{consumer_name="<durable>"}` stays
+   * populated in Prometheus even when no `*-worker` is running yet.
    *
    * @default false
    */

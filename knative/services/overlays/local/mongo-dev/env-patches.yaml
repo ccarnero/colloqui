@@ -798,15 +798,14 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: "workflow-worker"
           # Trimmed for single-node minikube. Base requests 250m / 512Mi
-          # for stress-grade multi-node packing. On a 12-CPU local node
-          # the cluster sits at ~99% CPU-request saturation when KEDA
-          # tries to spawn the `maxReplicaCount: 20` ceiling, blocking
-          # all new pods with `Insufficient cpu`. `kubectl top` shows
-          # actual avg usage ~150m / 280Mi per replica even under the
-          # stress-test workload, so 100m / 256Mi requests preserve
-          # scheduler accuracy without changing burst capacity (limits
-          # stay at 2 CPU / 1Gi from the base). Same precedent as
-          # api-gateway above.
+          # for stress-grade multi-node packing. Summed across the
+          # co-located workloads on a 12-CPU local node, those requests
+          # push the cluster to ~99% CPU-request saturation, blocking new
+          # pods with `Insufficient cpu`. `kubectl top` shows actual avg
+          # usage ~150m / 280Mi per replica even under the stress-test
+          # workload, so 100m / 256Mi requests preserve scheduler accuracy
+          # without changing burst capacity (limits stay at 2 CPU / 1Gi
+          # from the base). Same precedent as api-gateway above.
           resources:
             requests:
               cpu: 100m

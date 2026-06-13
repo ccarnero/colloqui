@@ -10,7 +10,7 @@ resources:
   # Each pair shares one Docker image and branches on `SERVICE_MODE`
   # at startup. *-api pods host HTTP controllers (Knative Service,
   # KPA-managed); *-worker pods host JetStream durable consumers
-  # (apps/v1.Deployment, KEDA-managed). See `scaledobjects/`.
+  # (apps/v1.Deployment, fixed 1 replica in developer mode).
   - connector-admin-api.yaml
   - connector-admin-worker.yaml
   - audit-service-api.yaml

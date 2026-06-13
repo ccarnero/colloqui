@@ -286,7 +286,7 @@ Requires at least one per-tenant Postgres instance reachable at `mongo.<tenantId
 | Workload | Kind | `SERVICE_MODE` | Purpose | Scaling |
 |----------|------|-----------------|---------|---------|
 | `adapter-service-api` | `serving.knative.dev/v1.Service` | `api` | HTTP CRUD endpoints (`/adapters`, `/health`, `/healthz`, `/readyz`) | KPA. `min-scale: "1"` in prod, `"0"` in non-prod overlays. |
-| `adapter-service-worker` | `apps/v1.Deployment` | `worker` | Pull-based JetStream consumer (`adapter-internal-sync`). No HTTP CRUD. | KEDA `ScaledObject` → Prometheus trigger. `idleReplicaCount: 0`, `minReplicaCount: 1`, `maxReplicaCount: 3`. Scale-to-zero in non-prod. |
+| `adapter-service-worker` | `apps/v1.Deployment` | `worker` | Pull-based JetStream consumer (`adapter-internal-sync`). No HTTP CRUD. | Fixed 1 replica in developer mode (no autoscaling). |
 
 Bootstrap is unified through `bootstrapSplitService({ baseServiceName: "adapter-service", module: AppModule, … })` from `@yoizen/observability`. Missing or unknown `SERVICE_MODE` (anything outside `["api", "worker"]`) is a fatal startup error.
 
@@ -312,7 +312,7 @@ Bootstrap is unified through `bootstrapSplitService({ baseServiceName: "adapter-
 
 The `MultiTenantConsumerManager` is constructed with `ensureOnly: !isWorkerMode()`:
 
-- **api pods** (`ensureOnly: true`): create the durable on every reachable `INGRESS-<TENANT>` stream but do NOT pull messages. This guarantees the JetStream `num_pending` metric is observable to Prometheus even when the worker Deployment is at 0 replicas — breaks the KEDA cold-start chicken-and-egg.
+- **api pods** (`ensureOnly: true`): create the durable on every reachable `INGRESS-<TENANT>` stream but do NOT pull messages. This guarantees the durable exists for the worker to bind on and that the JetStream `num_pending` metric stays observable to Prometheus regardless of whether the worker is running.
 - **worker pods** (`ensureOnly: false`): drive the runner with concurrency 4 and actually consume.
 
 ### Health gates
@@ -329,9 +329,9 @@ The `MultiTenantConsumerManager` is constructed with `ensureOnly: !isWorkerMode(
 The migration is reversible without redeploying source code:
 
 1. Set `REGISTRY_EMIT_ADAPTER_SYNC=false` on `registry-service` env. Publisher short-circuits; no broker contact.
-2. Scale `adapter-service-worker` Deployment to `replicas: 0` (or set `idleReplicaCount: 0` and let KEDA hold it idle).
+2. Scale `adapter-service-worker` Deployment to `replicas: 0`.
 3. `adapter-service-api` keeps serving HTTP CRUD throughout — its `/readyz` does not depend on NATS.
 
-To re-enable: deploy registry first, run `scripts/backfill-internal-mirrors.ts` once to catch drift, then flip `REGISTRY_EMIT_ADAPTER_SYNC=true` and let KEDA wake the worker.
+To re-enable: deploy registry first, run `scripts/backfill-internal-mirrors.ts` once to catch drift, then flip `REGISTRY_EMIT_ADAPTER_SYNC=true` and scale the worker Deployment back up.
 
 > Cross-references: `REQ-AST-001..007`, `REQ-ASIS-001/003`, `REQ-ASA-001..006` in `.sdd/changes/adapter-internal-sync-durable/specs/`.

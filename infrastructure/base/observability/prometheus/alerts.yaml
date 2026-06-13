@@ -296,8 +296,8 @@ data:
               description: >
                 Workflow tasks on {{ $labels.task_queue }} are sitting
                 in the queue for >5s before any worker picks them up.
-                Symptom of worker starvation — scale the Deployment
-                that owns this task queue or lower KEDA targetQueueSize.
+                Symptom of worker starvation — scale up the Deployment
+                that owns this task queue.
 
           - alert: TemporalActivityScheduleToStartHigh
             expr: >

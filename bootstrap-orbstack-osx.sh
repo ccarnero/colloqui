@@ -464,6 +464,26 @@ configure_local_registry() {
     --patch '{"data":{"registries-skipping-tag-resolving":"dev.local"}}'
 }
 
+configure_knative_dev_mode_features() {
+  # Enable the Knative feature flags required for source-mounted dev mode.
+  # These flags allow hostPath volumes, PVC mounts, writable PVCs, pod-level
+  # securityContext, and init containers on Knative Services. The patch is
+  # idempotent — re-running bootstrap is safe.
+  log "Configuring Knative config-features for dev-mode (hostPath, PVC, securityContext, init-containers)"
+  retry 5 3 kubectl patch configmap/config-features \
+    --namespace knative-serving \
+    --type merge \
+    --patch '{
+      "data": {
+        "kubernetes.podspec-volumes-hostpath": "enabled",
+        "kubernetes.podspec-persistent-volume-claim": "enabled",
+        "kubernetes.podspec-persistent-volume-write": "enabled",
+        "kubernetes.podspec-securitycontext": "enabled",
+        "kubernetes.podspec-init-containers": "enabled"
+      }
+    }'
+}
+
 apply_namespaces() {
   for env in "${ENVIRONMENTS[@]}"; do
     for prefix in support-services platform-services; do
@@ -632,6 +652,11 @@ apply_knative_config() {
 
   log "Applying Knative RBAC"
   retry 5 3 kubectl apply -k "${script_dir}/knative/services/rbac"
+
+  # Ensure the dev-mode deps PVC exists before services are deployed.
+  # kubectl apply is idempotent — safe to run on every bootstrap.
+  log "Applying dev-mode deps PVC"
+  kubectl apply -f "${script_dir}/knative/dev-mode/deps-pvc.yaml"
 
   for env in "${ENVIRONMENTS[@]}"; do
     local knative_overlay
@@ -845,6 +870,7 @@ run_support_services() {
   configure_dns
   ensure_dev_hosts
   configure_local_registry
+  configure_knative_dev_mode_features
   apply_namespaces
   apply_infrastructure
 }

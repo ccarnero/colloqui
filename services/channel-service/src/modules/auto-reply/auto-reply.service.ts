@@ -81,7 +81,7 @@ export class AutoReplyService implements OnModuleInit, OnModuleDestroy {
     const ensureOnly = !isWorkerMode();
 
     // Rules cache is only useful for worker mode (where messages get
-    // processed). API pods just pre-create the consumer for KEDA.
+    // processed). API pods just pre-create the consumer's durable.
     if (!ensureOnly) {
       await this.refreshRulesCache();
 

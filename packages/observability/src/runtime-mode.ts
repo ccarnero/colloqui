@@ -33,7 +33,7 @@ export function serviceMode(): ServiceMode {
   return cachedMode;
 }
 
-/** True when the current pod runs as a NATS worker (Plain Deployment + KEDA). */
+/** True when the current pod runs as a NATS worker (Plain Deployment). */
 export function isWorkerMode(): boolean {
   return serviceMode() === "worker";
 }

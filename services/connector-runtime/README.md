@@ -283,16 +283,9 @@ If test succeeds → circuit closes, normal operation resumes
 
 ### Scaling
 
-The service is deployed as a plain Kubernetes Deployment (not Knative Service) because Temporal uses pull-based task distribution. KEDA monitors the `connector-runtime` task queue depth and scales accordingly:
+The service is deployed as a plain Kubernetes Deployment (not Knative Service) because Temporal uses pull-based task distribution — it pulls tasks over a long-lived gRPC connection and never receives inbound HTTP, so Knative's activator/KPA model adds nothing.
 
-```
-Task queue depth 0-10: 1 replica
-Task queue depth 10-100: 2-5 replicas
-Task queue depth 100+: 5-20 replicas (max)
-Scale-down cooldown: 300s
-```
-
-This ensures sufficient concurrency for high-throughput execution without over-provisioning idle replicas.
+In developer mode it runs at a fixed **1 replica** with no autoscaling. Each replica sustains up to 200 concurrent activities; horizontal capacity would come from raising the replica count.
 
 ## Configuration
 
@@ -364,7 +357,7 @@ Use Temporal Web UI (usually at `http://localhost:8080`):
 2. Find `connector-runtime`
 3. Observe pending task count
 
-High pending count → consider scaling replicas up manually or adjusting KEDA thresholds.
+High pending count → consider raising the replica count manually.
 
 ### Common Issues
 

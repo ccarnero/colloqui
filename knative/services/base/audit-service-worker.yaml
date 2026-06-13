@@ -1,12 +1,10 @@
 # audit-service worker pod (NATS JetStream consumers).
 #
-# Plain `apps/v1.Deployment` (NOT a Knative Service) because:
-#   1. The worker doesn't receive inbound HTTP — KPA / activator have
-#      no signal to wake it from zero.
-#   2. KEDA cannot scale a Knative Service (no `/scale` subresource on
-#      `serving.knative.dev/v1.Service`); plain Deployment exposes
-#      `/scale` natively so the KEDA HPA shim can drive replicas based
-#      on JetStream consumer lag.
+# Plain `apps/v1.Deployment` (NOT a Knative Service) because the worker
+# doesn't receive inbound HTTP — it only consumes NATS JetStream
+# durables. Knative's activator/KPA model is built around HTTP request
+# traffic, so it has no signal to drive this workload and adds nothing
+# here. A plain Deployment is the simple, correct fit.
 #
 # Runs `SERVICE_MODE=worker` so the same Docker image as
 # audit-service-api skips Fastify bootstrap (no HTTP listener) and only

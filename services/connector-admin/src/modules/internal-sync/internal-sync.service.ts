@@ -47,9 +47,9 @@ import {
 
 /**
  * Durable name used across every per-tenant `INGRESS-<tenant>` stream.
- * The same name is reused per stream so KEDA can aggregate
+ * The same name is reused per stream so
  * `jetstream_consumer_num_pending{consumer_name="adapter-internal-sync"}`
- * across tenants in a single Prometheus query.
+ * aggregates across tenants in a single Prometheus query.
  */
 const DURABLE_NAME = "adapter-internal-sync";
 
@@ -108,21 +108,20 @@ const ACCEPTED_EVENT_TYPES = new Set<string>([
  * onto the per-tenant `http_adapters` mirror table. Backed by a
  * JetStream durable consumer (one per tenant stream, all sharing the
  * `adapter-internal-sync` durable name) for at-least-once delivery
- * with replay across pod restarts and KEDA scale-from-zero events.
+ * with replay across pod restarts.
  *
  * Mode semantics ({@link isWorkerMode} → `SERVICE_MODE` env):
- *  - `worker` mode (`apps/v1.Deployment` + KEDA `ScaledObject`):
+ *  - `worker` mode (`apps/v1.Deployment`):
  *    `ensureOnly: false` — the manager creates the durable on every
  *    `INGRESS-<tenant>` stream AND drives a `NatsConsumerRunner` on
  *    each, pulling messages and acking them.
  *  - `api` mode (`serving.knative.dev/v1.Service`, default):
  *    `ensureOnly: true` — the manager creates / reconciles durables
  *    on every tenant stream but never spawns a runner. This guarantees
+ *    the durable exists for the worker to bind on and that
  *    `jetstream_consumer_num_pending{consumer_name="adapter-internal-sync"}`
- *    series exist in Prometheus *before* the worker first scales up,
- *    breaking the KEDA cold-start chicken-and-egg loop. Without this
- *    flag, the worker would never wake from 0 replicas because the
- *    metric series wouldn't exist yet to be polled.
+ *    series exist in Prometheus regardless of whether a worker is
+ *    running.
  *
  * Error taxonomy (mapped onto JetStream dispositions by the runner):
  *  - handler resolves          → `msg.ack()`

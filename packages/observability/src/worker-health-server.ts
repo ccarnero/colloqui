@@ -3,9 +3,9 @@ import { createServer, type Server } from "http";
 /**
  * Minimal HTTP health server for `SERVICE_MODE=worker` pods (Phase 1.5).
  *
- * Plain Kubernetes Deployments exposed via KEDA need a `readinessProbe` so the
- * kubelet can report the pod as `Ready` (which gates rolling updates and
- * lets KEDA scale the deployment without traffic gaps). Workers don't run
+ * Plain Kubernetes Deployment worker pods still need a `readinessProbe` so the
+ * kubelet can report the pod as `Ready` (which gates rolling updates so they
+ * roll without traffic gaps). Workers don't run
  * Fastify, so we ship a tiny Node-native listener that answers `/health` and
  * `/readyz`. The footprint is one socket + one file descriptor.
  *

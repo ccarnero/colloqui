@@ -35,6 +35,19 @@ Admin Console: http://admin-console.platform-services-dev.dev.local
 
 Tilt is an optional alternative — see the `Tiltfile` header for details.
 
+### Source-mounted dev mode (skip image rebuilds)
+
+For rapid TypeScript iteration without rebuilding Docker images:
+
+```bash
+./dev-mode.sh deps                  # populate node_modules PVC (once)
+./dev-mode.sh channel-service on    # mount source + bun --watch
+./dev-mode.sh channel-service off   # restore image mode
+./dev-mode.sh status                # show what's in dev mode
+```
+
+See [DOCS/guides/dev-mode.md](DOCS/guides/dev-mode.md) for full documentation.
+
 ### Smoke test
 
 ```bash

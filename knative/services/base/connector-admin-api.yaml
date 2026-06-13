@@ -13,13 +13,14 @@
 #     concurrency, can scale to zero in non-prod via overlays. Runs
 #     `SERVICE_MODE=api` so the `MultiTenantConsumerManager` boots in
 #     `ensureOnly: true` mode (registers durables on every tenant
-#     stream so KEDA has metric series, but never consumes — see
+#     stream so they exist and their consumer lag stays observable, but
+#     never consumes — see
 #     `services/adapter-service/src/modules/internal-sync/internal-sync.service.ts`
 #     `isWorkerMode()` guards).
 #   • adapter-service-worker → see `adapter-service-worker.yaml`. Plain
-#     `apps/v1.Deployment` (KEDA-managed), runs `SERVICE_MODE=worker`
-#     so the `MultiTenantConsumerManager` consumes the
-#     `adapter-internal-sync` durable across every `INGRESS-<TENANT>`
+#     `apps/v1.Deployment` (fixed 1 replica in developer mode), runs
+#     `SERVICE_MODE=worker` so the `MultiTenantConsumerManager` consumes
+#     the `adapter-internal-sync` durable across every `INGRESS-<TENANT>`
 #     stream.
 apiVersion: serving.knative.dev/v1
 kind: Service

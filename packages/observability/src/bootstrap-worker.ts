@@ -25,8 +25,8 @@ export interface IBootstrapWorkerOptions {
  * plus a tiny Node-native readiness server on `healthPort` so kubelet can mark
  * the pod `Ready`.
  *
- * Worker pods are scaled by KEDA against NATS JetStream lag and only need the
- * IoC container alive to run NATS consumers wired via `OnModuleInit`. Skipping
+ * Worker pods run at a fixed replica count and only need the IoC container
+ * alive to run NATS consumers wired via `OnModuleInit`. Skipping
  * Fastify keeps the worker memory profile ~20MB lower vs. the API pod and
  * avoids the NestJS/Fastify HTTP stack overhead — but the kubelet still
  * requires *some* HTTP listener answering 200 on the configured probe path,

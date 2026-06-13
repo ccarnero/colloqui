@@ -99,7 +99,7 @@ Both values are configurable via `gatewayConfig.webhook`.
 | Filter subject | `evt.*.api-gateway.messaging.*.webhook.webhook_received.v1` |
 | Concurrency | 32 concurrent handlers (configurable via `WEBHOOK_INGRESS_HANDLER_CONCURRENCY`) |
 
-On API pods (not worker pods) the manager runs in `ensureOnly` mode: it creates the durable without processing messages, so KEDA can read `jetstream_consumer_num_pending` even when no workers are active.
+On API pods (not worker pods) the manager runs in `ensureOnly` mode: it creates the durable without processing messages, so the consumer exists and its `jetstream_consumer_num_pending` depth stays observable even when no workers are active.
 
 File: `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.service.ts`
 

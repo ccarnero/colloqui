@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dev-mode-deps
+  namespace: platform-services-dev
+  labels:
+    yoizen.io/component: dev-mode
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 6Gi

@@ -1,17 +1,12 @@
 # Plain Kubernetes Deployment (NOT a Knative Service).
 #
 # Why not Knative?
-#   Knative Service expects HTTP traffic for its activator-based
-#   scale-from-zero. workflow-worker is a Temporal worker — it pulls
-#   tasks from Temporal frontend over a long-lived gRPC connection and
-#   never receives inbound HTTP. KPA / activator have no signal to wake
-#   it from 0; KEDA can't scale a Knative Service because Knative does
-#   not expose the `/scale` subresource on `serving.knative.dev/v1.Service`
-#   (KEDA logs `ScaledObjectCheckFailed: target resource doesn't expose
-#   /scale subresource`). Plain Deployment exposes `/scale` natively, so
-#   KEDA's Temporal scaler can drive replicas based on
-#   `workflow-orchestrator` task-queue depth — see
-#   `scaledobjects/workflow-worker.yaml`.
+#   workflow-worker is a Temporal worker — it pulls tasks from the
+#   Temporal frontend over a long-lived gRPC connection and never
+#   receives inbound HTTP. Knative's activator/KPA model is built around
+#   HTTP request traffic, so it has no signal to drive this workload and
+#   adds nothing here. A plain Deployment with a RollingUpdate strategy
+#   is the simple, correct fit.
 #
 # What we lose vs Knative:
 #   - No Kourier/Knative Route → no external `*.example.com` URL.
@@ -20,10 +15,9 @@
 #     Acceptable: standard Deployment rollout (RollingUpdate) works fine.
 #
 # What we keep:
-#   - Same image, env, securityContext, resources as before.
-#   - readinessProbe on `/health` (3000) — driven by `temporal-worker-health.ts`,
-#     same as before. Protects rolling updates from sending traffic to a
-#     not-yet-connected worker.
+#   - readinessProbe on `/health` (3000) — driven by `temporal-worker-health.ts`.
+#     Protects rolling updates from sending traffic to a not-yet-connected
+#     worker.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,9 +26,7 @@ metadata:
     app.kubernetes.io/name: workflow-worker
     app.kubernetes.io/component: workflow
 spec:
-  # Default 1; non-prod overlays set `idleReplicaCount: 0` on the
-  # ScaledObject so KEDA scales this down once the Temporal queue
-  # is drained for the cooldownPeriod.
+  # Fixed single replica in developer mode — no autoscaling.
   replicas: 1
   selector:
     matchLabels:
@@ -50,10 +42,11 @@ spec:
         app.kubernetes.io/name: workflow-worker
         app.kubernetes.io/component: workflow
     spec:
-      # 30s grace period matches `shutdownGraceTime: "30s"` in
-      # services/workflow-service/src/temporal/worker.ts so SIGTERM
-      # gives the worker time to drain in-flight activities before the
-      # kubelet sends SIGKILL.
+      # The worker's `shutdownGraceTime: "30s"` in
+      # services/workflow-service/src/temporal/worker.ts is the in-process
+      # budget to drain in-flight activities on SIGTERM; this 60s pod
+      # grace period leaves headroom on top of it before the kubelet
+      # sends SIGKILL.
       terminationGracePeriodSeconds: 60
       containers:
         - name: user-container

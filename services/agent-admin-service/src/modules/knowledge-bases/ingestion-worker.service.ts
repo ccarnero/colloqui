@@ -21,9 +21,9 @@ import { verifyKbExists, verifyJobActive } from "./death-checks";
 
 /**
  * Durable name shared across every tenant INGRESS stream. The same
- * name is reused per stream so KEDA can aggregate
+ * name is reused per stream so
  * `jetstream_consumer_num_pending{consumer_name="ingestion-worker"}`
- * across tenants in a single Prometheus query.
+ * aggregates across tenants in a single Prometheus query.
  */
 const DURABLE_NAME = "ingestion-worker";
 
