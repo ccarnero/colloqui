@@ -82,7 +82,7 @@
 #   --dry-run            print the SQL plus the kubectl commands without
 #                          executing anything mutating
 #   --yes / -y           skip the interactive confirmation
-#   --context=CTX        kubectl context (default: yoizen-arch
+#   --context=CTX        kubectl context (default: orbstack
 #                          or KUBECTL_CONTEXT)
 #
 # Exit codes:
@@ -120,11 +120,11 @@ DEFAULT_VIS_PG_POD="postgres-temporal-visibility-1"
 DEFAULT_VIS_PG_USER="postgres"
 DEFAULT_DB="temporal"
 DEFAULT_VIS_DB="temporal_visibility"
-DEFAULT_CONTEXT="${KUBECTL_CONTEXT:-yoizen-arch}"
+DEFAULT_CONTEXT="${KUBECTL_CONTEXT:-orbstack}"
 
 # Per-resource readiness timeout for `kubectl wait` and the rollback
 # rollout. Auto-setup against an existing schema is fast (<30s); 180s
-# leaves plenty of slack on a busy minikube.
+# leaves plenty of slack on a busy cluster.
 SCALE_TIMEOUT=180
 
 # ----- color logging --------------------------------------------------------

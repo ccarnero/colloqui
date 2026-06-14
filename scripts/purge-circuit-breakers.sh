@@ -3,7 +3,7 @@
 # the shared Redis cluster between stress runs WITHOUT flushing other
 # data (rate-limit counters, http-response cache, adapter SWR, etc.).
 #
-# Use case: the breakers in `workflow-http-worker` (HTTP + agent) and
+# Use case: the breakers in `connector-runtime` (HTTP + agent) and
 # `channel-service` (egress) keep state in Redis with a TTL of ~ window
 # + cooldown + 10 s (≈ 100 s for the HTTP breaker). After a stress run
 # trips a breaker OPEN, that state survives between test runs and
@@ -19,9 +19,11 @@
 # i.e. the breaker is OPEN from a *previous* run.
 #
 # What it does:
-#   1. Resolves the master endpoints in the Redis cluster via
-#      `CLUSTER NODES` (skipping replicas) — each master only owns
-#      ~1/3 of the slots so we MUST iterate them all.
+#   1. Detects CLUSTER vs STANDALONE mode via `CLUSTER INFO`. In
+#      cluster mode it resolves the master endpoints via `CLUSTER
+#      NODES` (skipping replicas) — each master owns only ~1/3 of the
+#      slots so we MUST iterate them all. In standalone mode (dev)
+#      there is a single endpoint and CLUSTER NODES is skipped.
 #   2. For each requested key prefix, runs `SCAN MATCH '<prefix>:*'`
 #      on every master and pipes the matches into `UNLINK` (non-
 #      blocking O(1) DEL). SCAN/UNLINK are slot-local, which is why
@@ -36,9 +38,9 @@
 #   - any key not matching one of the configured `--prefix` values
 #
 # Default prefixes (matches the constitution as of 2026-05):
-#   cb:workflow:http     workflow-http-worker  service / endpoint calls
-#   cb:workflow:agent    workflow-http-worker  LLM / agent calls
-#   cb:channel:egress    channel-service       outbound providers
+#   cb:workflow:http     connector-runtime  service / endpoint calls
+#   cb:workflow:agent    connector-runtime  LLM / agent calls
+#   cb:channel:egress    channel-service    outbound providers
 #
 # Subcommands:
 #   purge   (default) UNLINK every matching key
@@ -56,7 +58,7 @@
 #                           we use all three defaults above. Use this
 #                           if you only want to nuke one breaker
 #                           family (e.g. `--prefix=cb:workflow:http`).
-#   --context=CTX         kubectl context (default: yoizen-arch
+#   --context=CTX         kubectl context (default: orbstack
 #                           or KUBECTL_CONTEXT)
 #   --dry-run             Count + print what WOULD be deleted; no
 #                           UNLINK is issued.
@@ -74,7 +76,7 @@ set -euo pipefail
 DEFAULT_NAMESPACE="support-services-dev"
 DEFAULT_POD="redis-0"
 DEFAULT_PORT="6379"
-DEFAULT_CONTEXT="${KUBECTL_CONTEXT:-yoizen-arch}"
+DEFAULT_CONTEXT="${KUBECTL_CONTEXT:-orbstack}"
 
 DEFAULT_PREFIXES=(
   "cb:workflow:http"
@@ -94,7 +96,7 @@ DRY_RUN=0
 ASSUME_YES=0
 
 usage() {
-  sed -n '2,68p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,70p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 parse_flag_value() {
@@ -188,24 +190,40 @@ if ! "${KCTL[@]}" get pod "${POD}" >/dev/null 2>&1; then
   fail "pod ${POD} not found in ${NAMESPACE} (context=${CONTEXT}). Use --pod=<existing-redis-pod>."
 fi
 
-# Bail early if the cluster isn't healthy: an unreachable master would
-# silently lose its share of keys from the sweep.
-INFO=$("${KCTL[@]}" exec -i "${POD}" -- redis-cli -p "${PORT}" cluster info </dev/null || true)
-if ! grep -q "cluster_state:ok" <<<"${INFO}"; then
+# Detect cluster vs standalone. A standalone instance either reports
+# `cluster_enabled:0` or errors outright with "cluster support disabled"
+# depending on the build — capture stderr (2>&1) so we can match either.
+INFO=$("${KCTL[@]}" exec -i "${POD}" -- redis-cli -p "${PORT}" cluster info </dev/null 2>&1 || true)
+
+if grep -qiE "cluster support disabled|cluster_enabled:0" <<<"${INFO}"; then
+  MODE="standalone"
+elif grep -q "cluster_state:ok" <<<"${INFO}"; then
+  MODE="cluster"
+else
+  # Cluster mode but unhealthy: an unreachable master would silently
+  # lose its share of keys from the sweep, so refuse to proceed.
   log "cluster_state is NOT ok — refusing to proceed:"
   printf '%s\n' "${INFO}" >&2
   exit 2
 fi
 
-mapfile -t MASTERS < <(list_masters)
-if [[ ${#MASTERS[@]} -eq 0 ]]; then
-  fail "could not discover any master from CLUSTER NODES"
+if [[ "${MODE}" == "cluster" ]]; then
+  # Each master owns ~1/3 of the slots; discover and iterate them all.
+  mapfile -t MASTERS < <(list_masters)
+  if [[ ${#MASTERS[@]} -eq 0 ]]; then
+    fail "could not discover any master from CLUSTER NODES"
+  fi
+else
+  # Standalone (dev): a single endpoint, reachable as localhost from
+  # inside the pod. Skip CLUSTER NODES / multi-master iteration; the
+  # existing SCAN+UNLINK main loop runs against this one endpoint.
+  MASTERS=("127.0.0.1:${PORT}")
 fi
 
 # ----- summary + confirmation ------------------------------------------------
 
-log "Redis cluster:    ns=${NAMESPACE} pod=${POD}:${PORT} (context=${CONTEXT})"
-log "Masters:          ${MASTERS[*]}"
+log "Redis:            ns=${NAMESPACE} pod=${POD}:${PORT} (context=${CONTEXT}, mode=${MODE})"
+log "Endpoints:        ${MASTERS[*]}"
 log "Prefixes:         ${PREFIXES[*]}"
 log "Subcommand:       ${SUBCOMMAND}$([[ ${DRY_RUN} -eq 1 ]] && echo ' (dry-run)')"
 

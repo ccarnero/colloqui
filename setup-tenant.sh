@@ -17,7 +17,7 @@ set -euo pipefail
 #   --password <password>   Tenant admin password (default: admin123)
 #   --role <role>           Tenant admin role (default: tenant_admin)
 #   --display-name <name>   Tenant display name (default: derived from email)
-#   --api-url <url>         API base URL (default: http://localhost:4200)
+#   --api-url <url>         API base URL (default: http://api-gateway.platform-services-dev.dev.local)
 #   -h, --help              Show this help message
 # ──────────────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ TENANT_ADMIN_EMAIL="yclawd@demo.io"
 TENANT_ADMIN_PASS="admin123"
 TENANT_ADMIN_ROLE="tenant_admin"
 TENANT_DISPLAY_NAME=""
-API_URL="http://localhost:4200"
+API_URL="http://api-gateway.platform-services-dev.dev.local"
 
 # ── Arguments ─────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do

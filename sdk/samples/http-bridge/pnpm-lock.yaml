@@ -1,0 +1,23 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@yoizen/http-sdk':
+        specifier: file:../..
+        version: file:../..
+
+packages:
+
+  '@yoizen/http-sdk@file:../..':
+    resolution: {directory: ../.., type: directory}
+    engines: {node: '>=18'}
+
+snapshots:
+
+  '@yoizen/http-sdk@file:../..': {}
