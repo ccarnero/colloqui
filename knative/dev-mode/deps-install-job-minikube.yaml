@@ -1,0 +1,87 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: dev-deps-install-
+  namespace: platform-services-dev
+  labels:
+    yoizen.io/component: dev-mode
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        fsGroup: 1000
+      volumes:
+        - name: src
+          hostPath:
+            # __REPO_PATH__ is substituted by dev-mode-minikube.sh with the repo
+            # root (= the path minikube 9p-mounts into the node). Unlike OrbStack
+            # (VirtioFS), the host repo is only visible in the node while
+            # `minikube mount` is running — dev-mode-minikube.sh starts it first.
+            path: __REPO_PATH__
+        - name: deps
+          persistentVolumeClaim:
+            claimName: dev-mode-deps
+      containers:
+        - name: installer
+          image: node:24-slim
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: src
+              mountPath: /src
+              readOnly: true
+            - name: deps
+              mountPath: /deps
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+
+              echo "=== Installing corepack + pnpm (mirrors Dockerfile build stage) ==="
+              corepack enable pnpm
+
+              echo "=== Copying workspace root files ==="
+              cp /src/pnpm-workspace.yaml /deps/
+              cp /src/pnpm-lock.yaml /deps/
+              cp /src/package.json /deps/
+
+              echo "=== Copying packages/*/package.json ==="
+              for f in $(find /src/packages -maxdepth 2 -name "package.json" -not -path "*/node_modules/*"); do
+                rel="${f#/src/}"
+                dir="/deps/$(dirname $rel)"
+                mkdir -p "$dir"
+                cp "$f" "$dir/"
+              done
+
+              echo "=== Copying services/*/package.json ==="
+              for f in $(find /src/services -maxdepth 2 -name "package.json" -not -path "*/node_modules/*"); do
+                rel="${f#/src/}"
+                dir="/deps/$(dirname $rel)"
+                mkdir -p "$dir"
+                cp "$f" "$dir/"
+              done
+
+              echo "=== Wiping existing node_modules (ensures clean glibc install) ==="
+              # A full wipe is required: pnpm resolves platform-specific optional deps
+              # based on the running OS/libc at install time.  An in-place upgrade from
+              # an alpine-based tree leaves musl .node binaries in the pnpm store that
+              # break @swc/core on glibc containers.  Always start clean on node:24-slim.
+              rm -rf /deps/node_modules
+              mkdir -p /deps/node_modules
+
+              echo "=== Running pnpm install --ignore-scripts (mirrors Dockerfile) ==="
+              cd /deps
+              pnpm install --ignore-scripts
+
+              echo "=== Running pnpm rebuild esbuild (mirrors Dockerfile) ==="
+              pnpm rebuild esbuild
+
+              echo "=== Writing lockfile hash ==="
+              sha256sum /src/pnpm-lock.yaml | awk '{print $1}' > /deps/.lock-sha256
+              HASH=$(cat /deps/.lock-sha256)
+
+              echo "=== DONE: deps installed, lock-sha256=${HASH} ==="

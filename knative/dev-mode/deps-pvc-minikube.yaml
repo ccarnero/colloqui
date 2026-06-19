@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dev-mode-deps
+  namespace: platform-services-dev
+  labels:
+    yoizen.io/component: dev-mode
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # No storageClassName: bind via the cluster's default StorageClass. On minikube
+  # that is `standard` (k8s.io/minikube-hostpath). The OrbStack variant
+  # (deps-pvc.yaml) pins `local-path`, which does not exist on minikube.
+  resources:
+    requests:
+      storage: 6Gi

@@ -64,4 +64,114 @@ Runs the e2e workflow suite (`tests/e2e/workflow.e2e.spec.ts` + `auth.setup.ts`)
 STORAGE_ENGINE=mongo ./bootstrap-orbstack-osx.sh
 ```
 
+## Minikube (Linux)
+
+For running locally on a Linux host with minikube (docker driver). Same workflow
+as OrbStack, with three adaptations baked into dedicated `*-minikube*` variants
+(the OrbStack scripts are untouched): images build into minikube's own daemon,
+infrastructure uses the `local` overlay, and dev mode uses a polling reloader
+because the 9p mount carries no inotify events.
+
+### Prerequisites
+
+- minikube (docker driver), started and running on the Linux host:
+  ```bash
+  minikube start -p minikube --addons=metrics-server
+  ```
+- On `PATH`: `docker`, `kubectl`, `helm`, `npm`, `jq`, `yq`, and a standalone
+  `kustomize` >= 5.7.0 (avoids the kubectl-bundled kustomize SIGSEGV, #5552).
+- The repo cloned on the **same host** where minikube runs — source-mounted dev
+  mode mounts the local clone into the node.
+
+### Resource tuning (recommended on modest boxes)
+
+minikube's `--cpus` flag may not apply with the docker driver, leaving the
+cluster uncapped so it can starve the host (and your shell). Cap the container
+directly so the host keeps headroom:
+
+```bash
+docker update --cpus=6 --memory=13g --memory-swap=13g minikube
+```
+
+Persists across `minikube stop/start` and host reboot; re-apply only after a
+`minikube delete`.
+
+### Bring up
+
+```bash
+BUILD_PARALLELISM=2 ./bootstrap-minikube-linux.sh           # full bring-up (support + platform)
+BUILD_PARALLELISM=2 ./bootstrap-minikube-linux.sh --smoke   # same + smoke tests
+STORAGE_ENGINE=mongo BUILD_PARALLELISM=2 ./bootstrap-minikube-linux.sh   # mongo OLTP
+```
+
+Builds images into minikube's own daemon (`minikube docker-env`) and applies
+`infrastructure/overlays/local` (relies on minikube's default `standard`
+StorageClass). `BUILD_PARALLELISM=2` paces the 18-image build on smaller machines.
+
+### Access (ingress)
+
+Unlike OrbStack, minikube needs a tunnel for the Kourier LoadBalancer, and the
+`/etc/hosts` block requires sudo (the bootstrap warns and prints it if sudo is
+unavailable):
+
+```bash
+sudo minikube tunnel -p minikube    # separate terminal, keep it running
+```
+
+```
+127.0.0.1 api-gateway.platform-services-dev.dev.local
+127.0.0.1 admin-console.platform-services-dev.dev.local
+```
+
+### Validate (tenant + remote execution)
+
+Without `minikube tunnel`, exercise the running platform through a Kourier
+port-forward and point the scripts at `localhost` (they send the `Host` header
+themselves, so Kourier still routes by hostname):
+
+```bash
+kubectl port-forward -n kourier-system svc/kourier 8080:80 &   # keep it running
+
+# 1. provision the demo tenant (acme) + tenant admin (yclawd@demo.io)
+./setup-tenant.sh --api-url http://localhost:8080
+
+# 2. remote-execution e2e: http POST -> channel-service -> NATS -> workflow
+#    trigger -> Temporal -> jsFunction console.log (asserts the nonce in logs)
+E2E_API_URL=http://localhost:8080 ./scripts/e2e-http-workflow.sh
+
+# 3. preflight: every ksvc + worker Deployment is Ready
+./scripts/smoke-test.sh
+```
+
+The first request to a scaled-to-zero Knative service cold-starts it (the
+activator holds the request); the scripts retry, so an initial slow response is
+expected. The e2e passes even with `channel-service` in dev mode.
+
+### Source-mounted dev mode (minikube)
+
+```bash
+./dev-mode-minikube.sh deps                  # populate node_modules PVC (once)
+./dev-mode-minikube.sh channel-service on    # 9p-mount source + polling reloader
+./dev-mode-minikube.sh channel-service off   # restore image mode
+./dev-mode-minikube.sh status                # show what's in dev mode
+```
+
+The dev container runs a mtime **polling reloader** (`scripts/dev-poll-reload.sh`)
+instead of `bun --watch`, since 9p carries file data but not inotify events.
+Reload latency ~1-2s. `dev-mode-minikube.sh on` starts the `minikube mount`
+automatically (`mount`/`unmount` for manual control).
+
+### Caveats
+
+- `/etc/hosts` and `minikube tunnel` need sudo — run them by hand if `chris` has
+  no passwordless sudo.
+- First bring-up pulls images cold into minikube's daemon, so infra waits are
+  300s (vs OrbStack's faster shared daemon).
+- After a host reboot / minikube restart, the CloudNativePG operator pod can hang
+  in `ContainerCreating` ("Pod sandbox changed") — recreate it, then re-run the
+  bootstrap (idempotent):
+  ```bash
+  kubectl delete pod -n cnpg-system -l app.kubernetes.io/name=cloudnative-pg --force
+  ```
+
 Full documentation: [DOCS/README.md](DOCS/README.md)
