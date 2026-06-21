@@ -42,6 +42,9 @@ interface IProcessInboundOptions {
   provider: ChannelProvider;
   accountId: string;
   messages: InboundMessage[];
+  correlationId?: string;
+  causationId?: string | null;
+  depth?: number;
 }
 
 /** Options for publishing a single inbound message to JetStream. */
@@ -51,6 +54,9 @@ interface IPublishMessageOptions {
   provider: ChannelProvider;
   accountId: string;
   message: InboundMessage;
+  correlationId?: string;
+  causationId?: string | null;
+  depth?: number;
 }
 
 /**
@@ -107,7 +113,7 @@ export class IngressService {
    * Returns immediately — publishing happens asynchronously per message.
    */
   async processInbound(options: IProcessInboundOptions): Promise<void> {
-    const { tenantId, channel, provider, accountId, messages } = options;
+    const { tenantId, channel, provider, accountId, messages, correlationId, causationId, depth } = options;
     await ensureTenantIngressStream(this.jsm, tenantId);
 
     const publishPromises = messages.map((msg) =>
@@ -117,6 +123,9 @@ export class IngressService {
         provider,
         accountId,
         message: msg,
+        correlationId,
+        causationId,
+        depth,
       }),
     );
 
@@ -142,7 +151,7 @@ export class IngressService {
   private async publishMessage(
     options: IPublishMessageOptions,
   ): Promise<void> {
-    const { tenantId, channel, provider, accountId, message } = options;
+    const { tenantId, channel, provider, accountId, message, correlationId, causationId, depth } = options;
     const envelope = createChannelEnvelope({
       tenantId,
       channel,
@@ -150,6 +159,9 @@ export class IngressService {
       kind: "received",
       message,
       accountId,
+      correlationId,
+      causationId,
+      depth,
     });
     const subject = buildChannelSubject(tenantId, channel, provider, "received");
 

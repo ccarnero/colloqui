@@ -1,4 +1,5 @@
 import type { Document } from "mongodb";
+import type { ChainInputEvent } from "../modules/audit/build-chain-tree";
 
 /**
  * Shared SELECT list for `channel_events` row mapping (camelCase aliases).
@@ -6,19 +7,22 @@ import type { Document } from "mongodb";
  */
 export const CHANNEL_AUDIT_SELECT_PROJECTION = `
   id,
-  tenant_id     AS "tenantId",
+  tenant_id        AS "tenantId",
   channel,
   provider,
   kind,
-  account_id    AS "accountId",
-  from_id       AS "fromId",
-  to_id         AS "toId",
-  message_type  AS "messageType",
-  message_text  AS "messageText",
+  account_id       AS "accountId",
+  from_id          AS "fromId",
+  to_id            AS "toId",
+  message_type     AS "messageType",
+  message_text     AS "messageText",
   provider_message_id AS "providerMessageId",
+  correlation_id   AS "correlationId",
+  causation_id     AS "causationId",
+  depth,
   data,
-  nats_subject  AS "natsSubject",
-  created_at    AS "createdAt"
+  nats_subject     AS "natsSubject",
+  created_at       AS "createdAt"
 `.trim();
 
 export interface IStoredChannelEvent {
@@ -33,9 +37,26 @@ export interface IStoredChannelEvent {
   messageType: string | null;
   messageText: string | null;
   providerMessageId: string | null;
+  correlationId: string | null;
+  causationId: string | null;
+  depth: number | null;
   data: Record<string, unknown>;
   natsSubject: string;
   createdAt: string;
+}
+
+/**
+ * Maps a stored channel event row to the minimal shape required by buildChainTree.
+ */
+export function toChainInput(row: IStoredChannelEvent): ChainInputEvent {
+  return {
+    id: row.id,
+    type: row.kind,
+    subject: row.natsSubject,
+    causation_id: row.causationId,
+    depth: row.depth ?? 0,
+    created_at: row.createdAt,
+  };
 }
 
 function readDate(value: unknown): string {
@@ -66,6 +87,9 @@ export function mapChannelAuditDoc(doc: Document): IStoredChannelEvent {
     messageText: (doc.message_text as string | null | undefined) ?? null,
     providerMessageId:
       (doc.provider_message_id as string | null | undefined) ?? null,
+    correlationId: (doc.correlation_id as string | null | undefined) ?? null,
+    causationId: (doc.causation_id as string | null | undefined) ?? null,
+    depth: typeof doc.depth === "number" ? doc.depth : null,
     data:
       typeof data === "object" && data !== null && !Array.isArray(data)
         ? (data as Record<string, unknown>)

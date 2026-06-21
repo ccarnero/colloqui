@@ -311,6 +311,38 @@ Three IDs are maintained throughout the event chain:
 
 In addition, the W3C `traceparent` header is injected into NATS message headers so consumers can resume the OTel span without parsing the body.
 
+**Causal chain — now queryable via audit-service (from 2026-06-20):**
+
+The lineage backbone is `correlation_id` + `causation_id` + `transport.depth`. These three fields
+are persisted top-level (indexed) in the per-tenant `events` store by audit-service. `traceid` is
+**not** used for lineage (it is unreliable per D9); it continues to be stored in `metadata.traceid`
+for forward reference only.
+
+New audit-service API endpoints:
+
+- `GET /audit/events?correlation_id=<id>` — paginated flat list of all events in a correlation group.
+- `GET /audit/events/chain/<correlationId>` — assembled causal-chain tree for the full flow.
+- `GET /audit/channel-events/chain/<correlationId>` — assembled causal-chain tree for channel events (Telegram in → reply out). Returns the same `ChainTreeResult` shape. Tenant-scoped (`X-Tenant-Id` header required). Returns 404 when no channel events are found for the correlation_id.
+
+Response shape for the chain endpoint:
+
+```json
+{
+  "correlation_id": "string",
+  "root": { "id": "...", "type": "...", "subject": "...", "depth": 0, "children": [] },
+  "node_count": 3,
+  "max_depth": 2,
+  "truncated": false,
+  "synthetic_root": false,
+  "orphans": [],
+  "extra_roots": []
+}
+```
+
+Cutover note: events persisted before 2026-06-20 have `null` in `correlation_id`, `causation_id`,
+and `depth` (cutover strategy — no backfill). Historical events are accessible via the flat
+`?correlation_id=` filter only if they were written after the deploy date.
+
 ---
 
 ## 9. Two-Stage Ingress Summary

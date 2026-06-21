@@ -569,7 +569,7 @@ Images are built against the shared OrbStack Docker daemon as `dev.local/<servic
 | `@yoizen/observability` | `PinoLoggerService`, OpenTelemetry setup, NATS spans, split-service bootstrap (`SERVICE_MODE`) |
 | `@yoizen/angular-shared` | Shared Angular building blocks for `admin-console` |
 | `@yoizen/testing` | Test utilities (consumed by auth/tenant services) |
-| `@yoizen/sdk` | Publishable client SDK for tenant developers |
+| `@yoizen/http-sdk` | Plain-Node ESM ingest SDK (sends messages via the http channel). Lives at repo-root `sdk/` — **not** a workspace member (imported by path). |
 
 ## Shared Package: `@yoizen/shared`
 

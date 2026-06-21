@@ -13,4 +13,8 @@ export class QueryEventsDto extends PaginatedQueryDto {
   @IsOptional()
   @IsDateString()
   to?: string;
+
+  @IsOptional()
+  @IsString()
+  correlation_id?: string;
 }

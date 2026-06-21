@@ -23,6 +23,9 @@ export const GATEWAY_AUDIT_SELECT_PROJECTION = `
   rate_limit_applied as "rateLimitApplied",
   rate_limit_remaining as "rateLimitRemaining",
   error,
+  correlation_id as "correlationId",
+  causation_id as "causationId",
+  depth,
   created_at
 `.trim();
 
@@ -48,6 +51,9 @@ interface IGatewayAuditSqlRow {
   rateLimitApplied: boolean;
   rateLimitRemaining: number | null;
   error: string | null;
+  correlationId: string | null;
+  causationId: string | null;
+  depth: number | null;
   created_at: string | Date;
 }
 
@@ -82,6 +88,9 @@ export function mapGatewayAuditSqlRow(
     rateLimitApplied: row.rateLimitApplied,
     rateLimitRemaining: row.rateLimitRemaining ?? undefined,
     error: row.error ?? undefined,
+    correlationId: row.correlationId ?? null,
+    causationId: row.causationId ?? null,
+    depth: row.depth ?? null,
     timestamp: createdAt,
     created_at: createdAt,
   };
@@ -131,6 +140,9 @@ export function mapGatewayAuditDoc(
     rateLimitRemaining:
       (doc.rate_limit_remaining as number | null | undefined) ?? undefined,
     error: (doc.error as string | undefined) ?? undefined,
+    correlationId: (doc.correlation_id as string | null | undefined) ?? null,
+    causationId: (doc.causation_id as string | null | undefined) ?? null,
+    depth: typeof doc.depth === "number" ? doc.depth : null,
     timestamp: readDate(doc.created_at),
     created_at: readDate(doc.created_at),
   };

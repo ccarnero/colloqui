@@ -13,6 +13,7 @@ import type { IAuditQueryParams } from "../../common/audit-query-params";
 import { ensureTenantSchemaOnce } from "../../common/ensure-tenant-schema";
 import { AuditTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import type { IAuditEvent, IAuditRepository } from "./audit.repository.interface";
+import { MAX_CHAIN_NODES } from "./build-chain-tree";
 
 function readCreatedAt(value: unknown): string {
   if (value instanceof Date) {
@@ -42,6 +43,10 @@ function mapEventDoc(doc: Record<string, unknown>): IAuditEvent {
         : {},
     subject: String(doc.subject ?? ""),
     created_at: readCreatedAt(doc.created_at),
+    correlation_id:
+      doc.correlation_id != null ? String(doc.correlation_id) : null,
+    causation_id: doc.causation_id != null ? String(doc.causation_id) : null,
+    depth: typeof doc.depth === "number" ? doc.depth : 0,
   };
 }
 
@@ -81,6 +86,9 @@ export class AuditMongoRepository implements IAuditRepository {
       type: envelope.type,
       payload,
       metadata,
+      correlation_id: envelope.correlation_id ?? null,
+      causation_id: envelope.causation_id ?? null,
+      depth: envelope.transport?.depth ?? 0,
       subject,
       created_at: new Date(),
     };
@@ -99,12 +107,15 @@ export class AuditMongoRepository implements IAuditRepository {
     params: IAuditQueryParams,
     tenantId: string,
   ): Promise<IAuditEvent[]> {
-    const { type, from, to, limit, offset } = params;
+    const { type, from, to, limit, offset, correlation_id } = params;
     const collection = await this.eventsCollection(tenantId);
 
     const filter: Filter<IStringIdDoc> = {};
     if (type) {
       filter.type = type;
+    }
+    if (correlation_id) {
+      filter.correlation_id = correlation_id;
     }
     if (from || to) {
       const createdAt: Record<string, Date> = {};
@@ -131,5 +142,18 @@ export class AuditMongoRepository implements IAuditRepository {
     const collection = await this.eventsCollection(tenantId);
     const doc = await collection.findOne({ _id: id });
     return doc ? mapEventDoc(doc as Record<string, unknown>) : null;
+  }
+
+  async findByCorrelationId(
+    correlationId: string,
+    tenantId: string,
+  ): Promise<IAuditEvent[]> {
+    const collection = await this.eventsCollection(tenantId);
+    const docs = await collection
+      .find({ correlation_id: correlationId })
+      .sort({ depth: 1, created_at: 1 })
+      .limit(MAX_CHAIN_NODES + 1) // fetch one extra to detect truncation at repo level
+      .toArray();
+    return docs.map((doc) => mapEventDoc(doc as Record<string, unknown>));
   }
 }

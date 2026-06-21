@@ -28,6 +28,14 @@ export const AUDIT_MONGO_SCHEMA: IMongoCollectionSchema[] = [
         keys: { type: 1, created_at: -1 },
         options: { name: "idx_events_type_created" },
       },
+      {
+        keys: { correlation_id: 1, depth: 1, created_at: 1 },
+        options: { name: "idx_events_correlation" },
+      },
+      {
+        keys: { causation_id: 1 },
+        options: { name: "idx_events_causation" },
+      },
     ],
   },
   {
@@ -53,6 +61,14 @@ export const AUDIT_MONGO_SCHEMA: IMongoCollectionSchema[] = [
         keys: { trace_id: 1 },
         options: { name: "idx_gw_audit_trace" },
       },
+      {
+        keys: { correlation_id: 1, depth: 1, created_at: 1 },
+        options: { name: "idx_gw_audit_correlation" },
+      },
+      {
+        keys: { causation_id: 1 },
+        options: { name: "idx_gw_audit_causation" },
+      },
     ],
   },
   {
@@ -77,6 +93,14 @@ export const AUDIT_MONGO_SCHEMA: IMongoCollectionSchema[] = [
       {
         keys: { account_id: 1, created_at: -1 },
         options: { name: "idx_ch_evt_account" },
+      },
+      {
+        keys: { correlation_id: 1, depth: 1, created_at: 1 },
+        options: { name: "idx_ch_evt_correlation" },
+      },
+      {
+        keys: { causation_id: 1 },
+        options: { name: "idx_ch_evt_causation" },
       },
     ],
   },

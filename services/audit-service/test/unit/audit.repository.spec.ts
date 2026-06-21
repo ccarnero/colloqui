@@ -170,6 +170,52 @@ describe("AuditMongoRepository", () => {
     expect((docs[0] as { _id: string })._id).toBe("e1");
   });
 
+  it("insertAuditEvent persists correlation_id, causation_id, and depth top-level", async () => {
+    const envelope: EventEnvelope = {
+      specversion: "1.0",
+      id: "e2",
+      source: "src",
+      type: "t",
+      resource: "r",
+      time: new Date().toISOString(),
+      traceid: "tr",
+      causation_id: "parent-id",
+      correlation_id: "corr-1",
+      tenant: "tenant-a",
+      transport: { method: "webhook", protocol: "https", depth: 2 },
+      data: { payload: { x: 1 } },
+    };
+
+    await repo.insertAuditEvent("tenant-a", envelope, "subj");
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    const docs = insertMany.mock.calls[0]?.[0] as Array<Record<string, unknown>>;
+    expect(docs[0]?.correlation_id).toBe("corr-1");
+    expect(docs[0]?.causation_id).toBe("parent-id");
+    expect(docs[0]?.depth).toBe(2);
+  });
+
+  it("insertAuditEvent persists null causation_id and depth 0 for root events", async () => {
+    const envelope: EventEnvelope = {
+      specversion: "1.0",
+      id: "e3",
+      source: "src",
+      type: "t",
+      resource: "r",
+      time: new Date().toISOString(),
+      traceid: "tr",
+      causation_id: null,
+      correlation_id: "corr-root",
+      tenant: "tenant-a",
+      data: { payload: {} },
+    };
+
+    await repo.insertAuditEvent("tenant-a", envelope, "subj");
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    const docs = insertMany.mock.calls[0]?.[0] as Array<Record<string, unknown>>;
+    expect(docs[0]?.causation_id).toBeNull();
+    expect(docs[0]?.depth).toBe(0);
+  });
+
   it("insertAuditEvent ignores duplicate key errors", async () => {
     insertMany.mockImplementation(async () => {
       const error = { code: 11000 };

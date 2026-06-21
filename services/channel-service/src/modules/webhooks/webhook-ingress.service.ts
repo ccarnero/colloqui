@@ -73,6 +73,7 @@ export class WebhookIngressService {
     rawBody: Buffer,
     headers: Record<string, string>,
     parsedBody: unknown,
+    causal?: { correlationId?: string; causationId?: string | null; depth?: number },
   ): Promise<{ status: string }> {
     const channelType = channel as Channel;
     webhookRequests.add(1, { channel, tenant: tenantId });
@@ -137,6 +138,7 @@ export class WebhookIngressService {
       provider,
       account,
       messages,
+      causal,
     });
     return { status: "accepted" };
   }
@@ -253,8 +255,9 @@ export class WebhookIngressService {
     provider: IChannelProvider;
     account: IAccountWithSecret;
     messages: InboundMessage[];
+    causal?: { correlationId?: string; causationId?: string | null; depth?: number };
   }): void {
-    const { tenantId, channelType, provider, account, messages } = options;
+    const { tenantId, channelType, provider, account, messages, causal } = options;
     setImmediate(() => {
       this.ingress
         .processInbound({
@@ -263,6 +266,7 @@ export class WebhookIngressService {
           provider: provider.provider,
           accountId: account.id,
           messages,
+          ...causal,
         })
         .catch((err) => {
           this.logger.error(

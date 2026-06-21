@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import type { Channel } from "@yoizen/shared";
+import type { IYoizenRequest } from "../../types/yoizen-request";
 import { Public } from "../../decorators/public.decorator";
 import { SkipTenant } from "../../decorators/skip-tenant.decorator";
 import { WebhookVerificationQueryDto } from "./webhooks-gateway.dto";
@@ -65,6 +66,7 @@ export class WebhooksController {
       rawBody: request.rawBody,
       headers: request.headers as Record<string, unknown>,
       parsedBody: request.body,
+      request: request as unknown as IYoizenRequest,
     });
 
     return { status: "accepted" };

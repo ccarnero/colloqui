@@ -94,6 +94,9 @@ export class GatewayAuditMongoRepository implements IGatewayAuditRepository {
       rate_limit_applied: event.rateLimitApplied,
       rate_limit_remaining: event.rateLimitRemaining ?? null,
       error: event.error ?? null,
+      correlation_id: event.correlationId ?? null,
+      causation_id: event.causationId ?? null,
+      depth: event.depth ?? null,
       created_at: new Date(event.timestamp),
     };
 

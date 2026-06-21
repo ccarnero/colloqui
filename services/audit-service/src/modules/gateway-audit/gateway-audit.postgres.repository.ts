@@ -58,30 +58,35 @@ export class GatewayAuditPostgresRepository implements IGatewayAuditRepository {
       async (s) => {
         await s`
           CREATE TABLE IF NOT EXISTS gateway_audit_events (
-            request_id        TEXT        PRIMARY KEY,
-            trace_id          TEXT        NOT NULL DEFAULT '',
-            tenant_id         TEXT,
-            method            TEXT        NOT NULL,
-            path              TEXT        NOT NULL,
-            status_code       INTEGER     NOT NULL,
-            duration_ms       REAL        NOT NULL,
-            client_ip         TEXT        NOT NULL DEFAULT '',
-            user_agent        TEXT        NOT NULL DEFAULT '',
-            jwt_subject       TEXT,
-            route_type        TEXT        NOT NULL,
-            upstream_url      TEXT,
-            upstream_status   INTEGER,
-            upstream_duration REAL,
-            rate_limit_applied BOOLEAN    NOT NULL DEFAULT false,
+            request_id           TEXT        PRIMARY KEY,
+            trace_id             TEXT        NOT NULL DEFAULT '',
+            tenant_id            TEXT,
+            method               TEXT        NOT NULL,
+            path                 TEXT        NOT NULL,
+            status_code          INTEGER     NOT NULL,
+            duration_ms          REAL        NOT NULL,
+            client_ip            TEXT        NOT NULL DEFAULT '',
+            user_agent           TEXT        NOT NULL DEFAULT '',
+            jwt_subject          TEXT,
+            route_type           TEXT        NOT NULL,
+            upstream_url         TEXT,
+            upstream_status      INTEGER,
+            upstream_duration    REAL,
+            rate_limit_applied   BOOLEAN     NOT NULL DEFAULT false,
             rate_limit_remaining INTEGER,
-            error             TEXT,
-            created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            error                TEXT,
+            created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            correlation_id       TEXT,
+            causation_id         TEXT,
+            depth                INTEGER
           )
         `;
         await s`CREATE INDEX IF NOT EXISTS idx_gw_audit_created ON gateway_audit_events (created_at DESC)`;
         await s`CREATE INDEX IF NOT EXISTS idx_gw_audit_method ON gateway_audit_events (method, created_at DESC)`;
         await s`CREATE INDEX IF NOT EXISTS idx_gw_audit_route_type ON gateway_audit_events (route_type, created_at DESC)`;
         await s`CREATE INDEX IF NOT EXISTS idx_gw_audit_trace ON gateway_audit_events (trace_id)`;
+        await s`CREATE INDEX IF NOT EXISTS idx_gw_audit_correlation ON gateway_audit_events (correlation_id, depth, created_at)`;
+        await s`CREATE INDEX IF NOT EXISTS idx_gw_audit_causation   ON gateway_audit_events (causation_id)`;
       },
     );
   }
@@ -98,7 +103,9 @@ export class GatewayAuditPostgresRepository implements IGatewayAuditRepository {
         request_id, trace_id, tenant_id, method, path,
         status_code, duration_ms, client_ip, user_agent, jwt_subject,
         route_type, upstream_url, upstream_status, upstream_duration,
-        rate_limit_applied, rate_limit_remaining, error, created_at
+        rate_limit_applied, rate_limit_remaining, error,
+        correlation_id, causation_id, depth,
+        created_at
       ) VALUES (
         ${event.requestId},
         ${event.traceId},
@@ -117,6 +124,9 @@ export class GatewayAuditPostgresRepository implements IGatewayAuditRepository {
         ${event.rateLimitApplied},
         ${event.rateLimitRemaining ?? null},
         ${event.error ?? null},
+        ${event.correlationId ?? null},
+        ${event.causationId ?? null},
+        ${event.depth ?? null},
         ${event.timestamp}
       )
       ON CONFLICT (request_id) DO NOTHING

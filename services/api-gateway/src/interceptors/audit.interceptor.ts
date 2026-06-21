@@ -86,6 +86,10 @@ export class AuditInterceptor implements NestInterceptor {
         parseRateLimitHeader(reply) !== undefined,
       rateLimitRemaining: parseRateLimitHeader(reply),
       error: error ? String(error) : undefined,
+      // Webhook ingress correlation — null for all other HTTP paths (no fabrication).
+      correlationId: request.__correlationId ?? null,
+      causationId: request.__causationId ?? null,
+      depth: request.__depth ?? null,
     };
 
     publishGatewayAuditEvent({

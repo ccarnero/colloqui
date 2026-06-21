@@ -26,4 +26,8 @@ export interface IChannelAuditRepository {
     id: string,
     tenantId: string,
   ): Promise<IStoredChannelEvent | null>;
+  findByCorrelationId(
+    correlationId: string,
+    tenantId: string,
+  ): Promise<IStoredChannelEvent[]>;
 }

@@ -33,6 +33,7 @@ import {
   type IAuditEvent,
   type IAuditRepository,
 } from "./audit.repository.interface";
+import { buildChainTree, type ChainTreeResult } from "./build-chain-tree";
 
 export type { IAuditEvent };
 
@@ -165,5 +166,23 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     tenantId: string,
   ): Promise<IAuditEvent | null> {
     return this.auditRepository.getEventById(id, tenantId);
+  }
+
+  /**
+   * Fetches all events for a correlation_id and assembles the causal-chain tree.
+   *
+   * @param correlationId  Chain root key.
+   * @param tenantId  Tenant scope — chain query is strictly per-tenant.
+   * @returns Assembled chain tree, or `null` if no events found (caller maps to 404).
+   */
+  async getChain(
+    correlationId: string,
+    tenantId: string,
+  ): Promise<ChainTreeResult | null> {
+    const events = await this.auditRepository.findByCorrelationId(
+      correlationId,
+      tenantId,
+    );
+    return buildChainTree(events, correlationId);
   }
 }

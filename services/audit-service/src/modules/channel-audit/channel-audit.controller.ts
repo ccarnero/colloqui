@@ -2,6 +2,7 @@ import { Controller, Get, Param, Query, UseGuards } from "@nestjs/common";
 import { assertFoundOrThrow } from "../../common/audit-http.util";
 import { auditPaginatedQuery } from "../../common/audit-list-helpers";
 import { TenantGuard, TenantId } from "@yoizen/database";
+import type { ChainTreeResult } from "../audit/build-chain-tree";
 import { ChannelAuditService } from "./channel-audit.service";
 import { QueryChannelEventsDto } from "./channel-audit.dto";
 
@@ -25,6 +26,22 @@ export class ChannelAuditController {
         tenantId,
       ),
     );
+  }
+
+  /**
+   * Returns the causal-chain tree for a correlation_id.
+   * Declared ABOVE @Get(":id") to prevent NestJS route shadowing.
+   */
+  @Get("chain/:correlationId")
+  async getChannelChain(
+    @TenantId() tenantId: string,
+    @Param("correlationId") correlationId: string,
+  ): Promise<ChainTreeResult> {
+    const chain = await this.channelAuditService.getChannelChain(
+      correlationId,
+      tenantId,
+    );
+    return assertFoundOrThrow(chain, `Channel chain ${correlationId} not found`);
   }
 
   /**

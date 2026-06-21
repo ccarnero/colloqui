@@ -7,4 +7,5 @@ export interface IAuditQueryParams {
   to?: string;
   limit: number;
   offset: number;
+  correlation_id?: string;
 }

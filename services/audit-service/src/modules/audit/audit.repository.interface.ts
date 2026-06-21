@@ -10,6 +10,9 @@ export interface IAuditEvent {
   metadata: Record<string, unknown>;
   subject: string;
   created_at: string;
+  correlation_id?: string | null;
+  causation_id?: string | null;
+  depth?: number;
 }
 
 export interface IAuditRepository {
@@ -23,4 +26,8 @@ export interface IAuditRepository {
     tenantId: string,
   ): Promise<IAuditEvent[]>;
   getEventById(id: string, tenantId: string): Promise<IAuditEvent | null>;
+  findByCorrelationId(
+    correlationId: string,
+    tenantId: string,
+  ): Promise<IAuditEvent[]>;
 }

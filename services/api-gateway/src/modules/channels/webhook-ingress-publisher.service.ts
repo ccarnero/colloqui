@@ -23,6 +23,7 @@ import {
 } from "../../providers/nats.provider";
 import { gatewayConfig } from "../../config";
 import { WebhookPublishUnavailableError } from "./webhook-publish-unavailable.error";
+import type { IYoizenRequest } from "../../types/yoizen-request";
 
 interface IPublishWebhookParams {
   tenantId: string;
@@ -30,6 +31,8 @@ interface IPublishWebhookParams {
   rawBody: Buffer;
   headers: Record<string, unknown>;
   parsedBody: unknown;
+  /** The Fastify request — correlation IDs are stamped onto it so the audit interceptor can read them. */
+  request?: IYoizenRequest;
 }
 
 @Injectable()
@@ -54,7 +57,7 @@ export class WebhookIngressPublisherService {
   ) {}
 
   async publishWebhook(params: IPublishWebhookParams): Promise<string> {
-    const { tenantId, channel, rawBody, headers, parsedBody } = params;
+    const { tenantId, channel, rawBody, headers, parsedBody, request } = params;
 
     /**
      * Enforce the per-pod in-flight cap before we allocate any
@@ -72,13 +75,22 @@ export class WebhookIngressPublisherService {
     this.inFlight++;
 
     const id = crypto.randomUUID();
+    const correlationId = id;
+
+    // Stamp correlation onto the request BEFORE we yield to the publish path so
+    // the audit interceptor (which runs in the response tap) can always read them.
+    if (request !== undefined) {
+      request.__correlationId = correlationId;
+      request.__causationId = null;
+      request.__depth = 0;
+    }
+
     const subject = buildWebhookIngressSubject(tenantId, channel);
     const now = new Date().toISOString();
     const payload = this.toPayload(parsedBody, rawBody);
     const payloadBytes = canonicalByteLength(payload);
     const payloadChecksum = computePayloadChecksum(payload);
     const idempotencykey = computeIdempotencyKey(payload);
-    const correlationId = id;
 
     /**
      * `accountid` is deliberately absent: at this stage of the pipeline

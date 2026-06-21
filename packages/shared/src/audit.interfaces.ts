@@ -15,6 +15,10 @@ export interface GatewayAuditEvent {
   rateLimitApplied: boolean;
   rateLimitRemaining?: number;
   error?: string;
+  /** Causal chain — populated only for webhook ingress rows; NULL elsewhere. */
+  correlationId?: string | null;
+  causationId?: string | null;
+  depth?: number | null;
 }
 
 export interface GatewayAuditUpstream {

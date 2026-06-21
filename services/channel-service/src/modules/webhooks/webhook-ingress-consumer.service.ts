@@ -146,6 +146,11 @@ export class WebhookIngressConsumerService
       rawBody,
       this.normalizeHeaders(envelope.data?.headers),
       envelope.data?.payload ?? null,
+      {
+        correlationId: envelope.correlation_id,
+        causationId: envelope.id,
+        depth: (envelope.transport?.depth ?? 0) + 1,
+      },
     );
   }
 

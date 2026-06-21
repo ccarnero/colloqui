@@ -26,7 +26,14 @@ import {
   CHANNEL_AUDIT_SUBJECT_PATTERN,
   type ChannelEnvelope,
 } from "@yoizen/shared";
-import type { IStoredChannelEvent } from "../../common/channel-audit-projection";
+import {
+  toChainInput,
+  type IStoredChannelEvent,
+} from "../../common/channel-audit-projection";
+import {
+  buildChainTree,
+  type ChainTreeResult,
+} from "../audit/build-chain-tree";
 import {
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
@@ -150,5 +157,16 @@ export class ChannelAuditService implements OnModuleInit, OnModuleDestroy {
     tenantId: string,
   ): Promise<IStoredChannelEvent | null> {
     return this.channelAuditRepository.getEventById(id, tenantId);
+  }
+
+  async getChannelChain(
+    correlationId: string,
+    tenantId: string,
+  ): Promise<ChainTreeResult | null> {
+    const rows = await this.channelAuditRepository.findByCorrelationId(
+      correlationId,
+      tenantId,
+    );
+    return buildChainTree(rows.map(toChainInput), correlationId);
   }
 }

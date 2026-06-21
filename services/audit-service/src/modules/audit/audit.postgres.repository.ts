@@ -7,6 +7,7 @@ import {
 } from "../../common/ensure-tenant-schema.postgres";
 import { AuditTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import type { IAuditEvent, IAuditRepository } from "./audit.repository.interface";
+import { MAX_CHAIN_NODES } from "./build-chain-tree";
 
 @Injectable()
 export class AuditPostgresRepository implements IAuditRepository {
@@ -22,17 +23,22 @@ export class AuditPostgresRepository implements IAuditRepository {
       async (sql) => {
         await sql`
           CREATE TABLE IF NOT EXISTS events (
-            id          TEXT        PRIMARY KEY,
-            type        TEXT        NOT NULL,
-            payload     JSONB       NOT NULL DEFAULT '{}',
-            metadata    JSONB       NOT NULL DEFAULT '{}',
-            subject     TEXT        NOT NULL DEFAULT '',
-            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            id             TEXT        PRIMARY KEY,
+            type           TEXT        NOT NULL,
+            payload        JSONB       NOT NULL DEFAULT '{}',
+            metadata       JSONB       NOT NULL DEFAULT '{}',
+            subject        TEXT        NOT NULL DEFAULT '',
+            created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            correlation_id TEXT,
+            causation_id   TEXT,
+            depth          INTEGER     NOT NULL DEFAULT 0
           )
         `;
         await sql`CREATE INDEX IF NOT EXISTS idx_events_type ON events (type)`;
         await sql`CREATE INDEX IF NOT EXISTS idx_events_created_at ON events (created_at DESC)`;
         await sql`CREATE INDEX IF NOT EXISTS idx_events_type_created ON events (type, created_at DESC)`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_events_correlation ON events (correlation_id, depth, created_at)`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_events_causation   ON events (causation_id)`;
       },
     );
   }
@@ -53,14 +59,21 @@ export class AuditPostgresRepository implements IAuditRepository {
       traceid: envelope.traceid,
     };
 
+    const correlationId = envelope.correlation_id ?? null;
+    const causationId = envelope.causation_id ?? null;
+    const depth = envelope.transport?.depth ?? 0;
+
     await sql`
-      INSERT INTO events (id, type, payload, metadata, subject)
+      INSERT INTO events (id, type, payload, metadata, subject, correlation_id, causation_id, depth)
       VALUES (
         ${envelope.id},
         ${envelope.type},
         ${JSON.stringify(payload)},
         ${JSON.stringify(metadata)},
-        ${subject}
+        ${subject},
+        ${correlationId},
+        ${causationId},
+        ${depth}
       )
       ON CONFLICT (id) DO NOTHING
     `;
@@ -70,15 +83,17 @@ export class AuditPostgresRepository implements IAuditRepository {
     params: IAuditQueryParams,
     tenantId: string,
   ): Promise<IAuditEvent[]> {
-    const { type, from, to, limit, offset } = params;
+    const { type, from, to, limit, offset, correlation_id } = params;
     await this.ensureEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
 
     return sql<IAuditEvent[]>`
-      SELECT id, type, payload, metadata, subject, created_at
+      SELECT id, type, payload, metadata, subject, created_at,
+             correlation_id, causation_id, depth
       FROM events
       WHERE 1=1
         ${type ? sql`AND type = ${type}` : sql``}
+        ${correlation_id ? sql`AND correlation_id = ${correlation_id}` : sql``}
         ${from ? sql`AND created_at >= ${from}` : sql``}
         ${to ? sql`AND created_at <= ${to}` : sql``}
       ORDER BY created_at DESC
@@ -92,10 +107,30 @@ export class AuditPostgresRepository implements IAuditRepository {
     const sql = this.tenantConnections.getConnection(tenantId);
 
     const rows = await sql<IAuditEvent[]>`
-      SELECT id, type, payload, metadata, subject, created_at
+      SELECT id, type, payload, metadata, subject, created_at,
+             correlation_id, causation_id, depth
       FROM events
       WHERE id = ${id}
     `;
     return rows[0] ?? null;
+  }
+
+  async findByCorrelationId(
+    correlationId: string,
+    tenantId: string,
+  ): Promise<IAuditEvent[]> {
+    await this.ensureEventsTable(tenantId);
+    const sql = this.tenantConnections.getConnection(tenantId);
+    // Fetch one extra row so buildChainTree can detect truncation
+    const cap = MAX_CHAIN_NODES + 1;
+
+    return sql<IAuditEvent[]>`
+      SELECT id, type, payload, metadata, subject, created_at,
+             correlation_id, causation_id, depth
+      FROM events
+      WHERE correlation_id = ${correlationId}
+      ORDER BY depth ASC, created_at ASC
+      LIMIT ${cap}
+    `;
   }
 }

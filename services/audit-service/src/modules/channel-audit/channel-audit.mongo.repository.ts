@@ -75,6 +75,9 @@ export class ChannelAuditMongoRepository implements IChannelAuditRepository {
       message_type: messageType,
       message_text: messageText,
       provider_message_id: providerMessageId,
+      correlation_id: envelope.correlation_id ?? null,
+      causation_id: envelope.causation_id ?? null,
+      depth: envelope.transport?.depth ?? 0,
       data,
       nats_subject: natsSubject,
       created_at: new Date(envelope.time ?? new Date().toISOString()),
@@ -135,5 +138,17 @@ export class ChannelAuditMongoRepository implements IChannelAuditRepository {
     const collection = await this.channelEventsCollection(tenantId);
     const doc = await collection.findOne({ _id: id });
     return doc ? mapChannelAuditDoc(doc) : null;
+  }
+
+  async findByCorrelationId(
+    correlationId: string,
+    tenantId: string,
+  ): Promise<IStoredChannelEvent[]> {
+    const collection = await this.channelEventsCollection(tenantId);
+    const docs = await collection
+      .find({ correlation_id: correlationId })
+      .sort({ created_at: 1 })
+      .toArray();
+    return docs.map((doc) => mapChannelAuditDoc(doc));
   }
 }

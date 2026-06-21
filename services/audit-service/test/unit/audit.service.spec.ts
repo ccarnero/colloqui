@@ -58,27 +58,36 @@ describe("AuditService", () => {
       metadata: { tenant: "t1" },
       subject: "events.user",
       created_at: new Date().toISOString(),
+      correlation_id: "co",
+      causation_id: null,
+      depth: 0,
     };
 
     insertMany = mock(async () => ({ insertedCount: 1 }));
+    const sampleDoc = {
+      _id: sample.id,
+      type: sample.type,
+      payload: sample.payload,
+      metadata: sample.metadata,
+      subject: sample.subject,
+      created_at: new Date(sample.created_at),
+      correlation_id: "co",
+      causation_id: null,
+      depth: 0,
+    };
     const collection = makeMongoCollectionMock({
       insertMany,
       find: mock(() => ({
         sort: mock(() => ({
           skip: mock(() => ({
             limit: mock(() => ({
-              toArray: mock(async () => [
-                {
-                  _id: sample.id,
-                  type: sample.type,
-                  payload: sample.payload,
-                  metadata: sample.metadata,
-                  subject: sample.subject,
-                  created_at: new Date(sample.created_at),
-                },
-              ]),
+              toArray: mock(async () => [sampleDoc]),
             })),
           })),
+          limit: mock(() => ({
+            toArray: mock(async () => [sampleDoc]),
+          })),
+          toArray: mock(async () => [sampleDoc]),
         })),
       })),
       findOne: mock(async (filter: { _id?: string }) =>
@@ -91,6 +100,9 @@ describe("AuditService", () => {
               metadata: sample.metadata,
               subject: sample.subject,
               created_at: new Date(sample.created_at),
+              correlation_id: "co",
+              causation_id: null,
+              depth: 0,
             },
       ),
     });
@@ -139,6 +151,51 @@ describe("AuditService", () => {
   it("getEventById returns null when no row", async () => {
     const row = await service.getEventById("missing", "tenant-a");
     expect(row).toBeNull();
+  });
+
+  it("getChain returns assembled tree when events found", async () => {
+    const chain = await service.getChain("co", "tenant-a");
+    expect(chain).not.toBeNull();
+    expect(chain!.correlation_id).toBe("co");
+    expect(chain!.root.id).toBe("evt-1");
+  });
+
+  it("getChain returns null when no events found", async () => {
+    // Rebuild service with empty collection
+    const emptyCollection = makeMongoCollectionMock({
+      insertMany: mock(async () => ({ insertedCount: 0 })),
+      find: mock(() => ({
+        sort: mock(() => ({
+          skip: mock(() => ({
+            limit: mock(() => ({
+              toArray: mock(async () => []),
+            })),
+          })),
+          limit: mock(() => ({
+            toArray: mock(async () => []),
+          })),
+          toArray: mock(async () => []),
+        })),
+      })),
+      findOne: mock(async () => null),
+    });
+    const emptyMgr = makeFakeTenantMongoConnections(
+      makeMockDb({ events: emptyCollection as unknown as Record<string, unknown> }),
+    );
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        AuditMongoRepository,
+        { provide: AUDIT_REPOSITORY, useExisting: AuditMongoRepository },
+        AuditService,
+        { provide: NATS_CONNECTION, useValue: mockNatsConnection },
+        { provide: JETSTREAM_MANAGER, useValue: mockJsm },
+        { provide: JETSTREAM_PUBLISHER, useValue: mockJs },
+        { provide: AuditTenantConnectionManager, useValue: emptyMgr },
+      ],
+    }).compile();
+    const svc = moduleRef.get(AuditService);
+    const result = await svc.getChain("unknown-corr", "tenant-a");
+    expect(result).toBeNull();
   });
 
   it("persistAuditEnvelope inserts when tenant present", async () => {

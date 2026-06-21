@@ -18,13 +18,26 @@ export class AuditController {
     @TenantId() tenantId: string,
     @Query() query: QueryEventsDto,
   ) {
-    const { type, from, to } = query;
+    const { type, from, to, correlation_id } = query;
     return auditPaginatedQuery(query.limit, query.offset, (limit, offset) =>
       this.auditService.queryEvents(
-        { type, from, to, limit, offset },
+        { type, from, to, correlation_id, limit, offset },
         tenantId,
       ),
     );
+  }
+
+  /**
+   * Returns the causal-chain tree for a correlation_id.
+   * Declared ABOVE @Get(":id") to prevent NestJS route shadowing.
+   */
+  @Get("chain/:correlationId")
+  async getChain(
+    @TenantId() tenantId: string,
+    @Param("correlationId") correlationId: string,
+  ) {
+    const chain = await this.auditService.getChain(correlationId, tenantId);
+    return assertFoundOrThrow(chain, `Chain ${correlationId} not found`);
   }
 
   /**

@@ -42,13 +42,18 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
             provider_message_id TEXT,
             data                JSONB       NOT NULL DEFAULT '{}',
             nats_subject        TEXT        NOT NULL DEFAULT '',
-            created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            correlation_id      TEXT,
+            causation_id        TEXT,
+            depth               INTEGER     NOT NULL DEFAULT 0
           )
         `;
         await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_created ON channel_events (created_at DESC)`;
         await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_channel ON channel_events (channel, created_at DESC)`;
         await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_kind ON channel_events (kind, created_at DESC)`;
         await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_account ON channel_events (account_id, created_at DESC)`;
+        await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_correlation ON channel_events (correlation_id, depth, created_at)`;
+        await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_causation   ON channel_events (causation_id)`;
       },
     );
   }
@@ -84,6 +89,7 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
         id, tenant_id, channel, provider, kind,
         account_id, from_id, to_id,
         message_type, message_text, provider_message_id,
+        correlation_id, causation_id, depth,
         data, nats_subject, created_at
       ) VALUES (
         ${envelope.id},
@@ -97,6 +103,9 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
         ${messageType},
         ${messageText},
         ${providerMessageId},
+        ${envelope.correlation_id ?? null},
+        ${envelope.causation_id ?? null},
+        ${envelope.transport?.depth ?? 0},
         ${JSON.stringify(data)},
         ${natsSubject},
         ${envelope.time ?? new Date().toISOString()}
@@ -142,5 +151,20 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
     `;
 
     return rows[0] ?? null;
+  }
+
+  async findByCorrelationId(
+    correlationId: string,
+    tenantId: string,
+  ): Promise<IStoredChannelEvent[]> {
+    await this.ensureChannelEventsTable(tenantId);
+    const sql = this.tenantConnections.getConnection(tenantId);
+
+    return sql<IStoredChannelEvent[]>`
+      SELECT ${sql.unsafe(CHANNEL_AUDIT_SELECT_PROJECTION)}
+      FROM channel_events
+      WHERE correlation_id = ${correlationId}
+      ORDER BY created_at ASC
+    `;
   }
 }

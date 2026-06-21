@@ -20,6 +20,10 @@ export interface IYoizenRequest extends FastifyRequest {
     statusCode: number;
     durationMs: number;
   };
+  /** Stamped by WebhookIngressPublisherService after minting the envelope id. */
+  __correlationId?: string;
+  __causationId?: string | null;
+  __depth?: number;
 }
 
 /** After TenantGuard on routes that do not use @SkipTenant(). */
