@@ -1,0 +1,17 @@
+{
+  "name": "catfacts",
+  "context": "external",
+  "baseUrl": "https://catfact.ninja",
+  "authType": "none",
+  "authConfig": {},
+  "timeoutMs": 10000,
+  "maxRetries": 2,
+  "retryBackoffMs": 300,
+  "healthCheckPath": "/fact",
+  "tags": ["sample", "public", "no-auth"],
+  "endpoints": [
+    { "label": "Get a random cat fact", "method": "GET", "path": "/fact" },
+    { "label": "List cat facts (paginated)", "method": "GET", "path": "/facts" },
+    { "label": "List cat breeds (paginated)", "method": "GET", "path": "/breeds" }
+  ]
+}

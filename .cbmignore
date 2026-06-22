@@ -1,0 +1,19 @@
+# codebase-memory-mcp ignore rules (gitignore syntax)
+# node_modules/ and .git/ are ignored by the tool automatically; these are project-specific.
+
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# lockfiles (huge, no symbols to index)
+pnpm-lock.yaml
+bun.lock
+*.lock
+
+# local caches / agent scratch
+.turbo/
+.codegraph/
+.atl/
+.claude/worktrees/
+.opencode/

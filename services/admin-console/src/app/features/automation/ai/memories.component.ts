@@ -1,11 +1,11 @@
-import { DatePipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   inject,
   signal,
 } from "@angular/core";
-import { FormsModule, FormControl, ReactiveFormsModule } from "@angular/forms";
+import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
+import { FormControl, FormsModule, ReactiveFormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatFormFieldModule } from "@angular/material/form-field";
@@ -17,27 +17,27 @@ import { MatTableModule } from "@angular/material/table";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { firstValueFrom } from "rxjs";
 import { debounceTime, distinctUntilChanged } from "rxjs/operators";
-import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import {
+  type IAgentMemory,
+  type IAgentMemoryQuery,
   MEMORY_KIND,
   MEMORY_SCOPE,
   MEMORY_STATUS,
-  type IAgentMemory,
-  type IAgentMemoryQuery,
   type MemoryKind,
   type MemoryScope,
   type MemoryStatus,
 } from "../../../core/models/agent.model";
 import { AgentAdminService } from "../../../core/services/agent-admin.service";
-import {
-  StatusBadgeComponent,
-  type StatusBadgeColor,
-} from "../../../shared/components/status-badge/status-badge.component";
 import { ConfirmDialogComponent } from "../../../shared/components/confirm-dialog/confirm-dialog.component";
 import {
-  MemoryFormDialogComponent,
+  type StatusBadgeColor,
+  StatusBadgeComponent,
+} from "../../../shared/components/status-badge/status-badge.component";
+import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
+import {
   type IMemoryDialogData,
   type IMemoryDialogResult,
+  MemoryFormDialogComponent,
 } from "./memory-form-dialog.component";
 import { AgentMemoryProposalsPanelComponent } from "./memory-proposals-panel.component";
 
@@ -69,7 +69,7 @@ const STATUS_OPTIONS: { value: MemoryStatus; label: string }[] = [
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DatePipe,
+    UtcDatePipe,
     FormsModule,
     ReactiveFormsModule,
     MatButtonModule,
@@ -228,7 +228,7 @@ const STATUS_OPTIONS: { value: MemoryStatus; label: string }[] = [
           <ng-container matColumnDef="createdAt">
             <th mat-header-cell *matHeaderCellDef>Created</th>
             <td mat-cell *matCellDef="let m" style="color: var(--text3)">
-              {{ m.createdAt | date: "mediumDate" }}
+              {{ m.createdAt | utcDate: "mediumDate" }}
             </td>
           </ng-container>
 
@@ -568,15 +568,23 @@ export class AgentMemoriesComponent {
     this.error.set(null);
 
     const query: IAgentMemoryQuery = {};
-    if (this.filterStatus) query.status = this.filterStatus;
-    if (this.filterKind) query.kind = this.filterKind;
-    if (this.filterScope) query.scope = this.filterScope;
+    if (this.filterStatus) {
+      query.status = this.filterStatus;
+    }
+    if (this.filterKind) {
+      query.kind = this.filterKind;
+    }
+    if (this.filterScope) {
+      query.scope = this.filterScope;
+    }
     const searchTerm = this.filterSearch.value.trim();
-    if (searchTerm) query.search = searchTerm;
+    if (searchTerm) {
+      query.search = searchTerm;
+    }
 
     try {
       const response = await firstValueFrom(
-        this.agentAdminService.listMemories(query),
+        this.agentAdminService.listMemories(query)
       );
       this.memories.set(response.items);
       this.total.set(response.total);
@@ -626,7 +634,9 @@ export class AgentMemoriesComponent {
     });
 
     const confirmed = await firstValueFrom(ref.afterClosed());
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     this.busyId.set(id);
     this.error.set(null);
@@ -654,7 +664,9 @@ export class AgentMemoriesComponent {
     });
 
     const confirmed = await firstValueFrom(ref.afterClosed());
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     this.busyId.set(id);
     this.error.set(null);
@@ -682,15 +694,15 @@ export class AgentMemoriesComponent {
     });
 
     const confirmed = await firstValueFrom(ref.afterClosed());
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     this.busyId.set(memory.id);
     this.error.set(null);
 
     try {
-      await firstValueFrom(
-        this.agentAdminService.deleteMemory(memory.id),
-      );
+      await firstValueFrom(this.agentAdminService.deleteMemory(memory.id));
       this.loadMemories();
     } catch {
       this.error.set("Failed to delete memory.");
@@ -700,7 +712,9 @@ export class AgentMemoriesComponent {
   }
 
   truncateContent(content: string): string {
-    if (content.length <= 80) return content;
+    if (content.length <= 80) {
+      return content;
+    }
     return content.slice(0, 80) + "...";
   }
 

@@ -1,23 +1,24 @@
+import { CommonModule } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   inject,
-  OnInit,
+  type OnInit,
   signal,
 } from "@angular/core";
-import { CommonModule } from "@angular/common";
-import { RouterLink } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
-import { MatIconModule } from "@angular/material/icon";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
+import { MatIconModule } from "@angular/material/icon";
 import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
+import { RouterLink } from "@angular/router";
 import {
-  KnowledgeBasesService,
   type IKnowledgeBase,
+  KnowledgeBasesService,
 } from "../../../../core/services/knowledge-bases.service";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
 import {
-  KnowledgeBaseFormDialogComponent,
   type IKnowledgeBaseDialogResult,
+  KnowledgeBaseFormDialogComponent,
 } from "./knowledge-base-form-dialog.component";
 
 @Component({
@@ -26,6 +27,7 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
+    UtcDatePipe,
     RouterLink,
     MatButtonModule,
     MatIconModule,
@@ -75,7 +77,7 @@ import {
             </div>
             <div class="kb-footer">
               <span class="kb-date">
-                Updated {{ kb.updated_at | date:"short" }}
+                Updated {{ kb.updated_at | utcDate:"short" }}
               </span>
               <div class="kb-actions" (click)="$event.stopPropagation()">
                 <button
@@ -178,16 +180,14 @@ export class KnowledgeBasesPageComponent implements OnInit {
     });
     ref
       .afterClosed()
-      .subscribe(
-        (result: IKnowledgeBaseDialogResult | undefined) => {
-          if (result?.saved) {
-            this.loadKnowledgeBases();
-            this.snackBar.open("Knowledge base created", "OK", {
-              duration: 2000,
-            });
-          }
-        },
-      );
+      .subscribe((result: IKnowledgeBaseDialogResult | undefined) => {
+        if (result?.saved) {
+          this.loadKnowledgeBases();
+          this.snackBar.open("Knowledge base created", "OK", {
+            duration: 2000,
+          });
+        }
+      });
   }
 
   editKnowledgeBase(kb: IKnowledgeBase): void {
@@ -197,20 +197,20 @@ export class KnowledgeBasesPageComponent implements OnInit {
     });
     ref
       .afterClosed()
-      .subscribe(
-        (result: IKnowledgeBaseDialogResult | undefined) => {
-          if (result?.saved) {
-            this.loadKnowledgeBases();
-            this.snackBar.open("Knowledge base updated", "OK", {
-              duration: 2000,
-            });
-          }
-        },
-      );
+      .subscribe((result: IKnowledgeBaseDialogResult | undefined) => {
+        if (result?.saved) {
+          this.loadKnowledgeBases();
+          this.snackBar.open("Knowledge base updated", "OK", {
+            duration: 2000,
+          });
+        }
+      });
   }
 
   deleteKnowledgeBase(kb: IKnowledgeBase): void {
-    if (!confirm(`Delete knowledge base "${kb.name}"?`)) return;
+    if (!confirm(`Delete knowledge base "${kb.name}"?`)) {
+      return;
+    }
     this.service.delete(kb.id).subscribe({
       next: () => {
         this.loadKnowledgeBases();

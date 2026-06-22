@@ -5,13 +5,13 @@ import {
   inject,
 } from "@angular/core";
 import { Router } from "@angular/router";
-import { SectionLandingShellComponent } from "../../shared/components/section-landing-shell/section-landing-shell.component";
-import { KpiCardComponent } from "../../shared/components/kpi-card/kpi-card.component";
+import { ProcessesMetricsService } from "../../core/services/metrics/processes-metrics.service";
 import {
   ActivityFeedComponent,
   type IActivityEntry,
 } from "../../shared/components/activity-feed/activity-feed.component";
-import { ProcessesMetricsService } from "../../core/services/metrics/processes-metrics.service";
+import { KpiCardComponent } from "../../shared/components/kpi-card/kpi-card.component";
+import { SectionLandingShellComponent } from "../../shared/components/section-landing-shell/section-landing-shell.component";
 
 interface ITopWorkflow {
   id: string;
@@ -50,9 +50,9 @@ interface ITopWorkflow {
 
       <div slot="kpis" class="kpis">
         <app-kpi-card
-          label="Workflows active"
-          [value]="metrics.workflowsActive() ?? '—'"
-          [sub]="failingSub()"
+          label="Workflows"
+          [value]="metrics.workflowsTotal() ?? '—'"
+          sub="total configured"
         />
         <app-kpi-card
           label="Executions today"
@@ -72,12 +72,17 @@ interface ITopWorkflow {
               {{ (w.successRate * 100).toFixed(1) }}%
             </span>
           </a>
+        } @empty {
+          <p class="empty-hint">No data yet</p>
         }
       </div>
 
       <div slot="secondary" class="panel">
         <h2 class="panel-h">Recent executions</h2>
-        <app-activity-feed [entries]="recentExecutions()" />
+        <app-activity-feed
+          [entries]="recentExecutions()"
+          emptyText="No recent executions"
+        />
       </div>
     </app-section-landing-shell>
   `,
@@ -147,47 +152,55 @@ interface ITopWorkflow {
       color: #fff;
       border-color: var(--primary, #1a66ff);
     }
+    .empty-hint {
+      font-size: 12px;
+      color: var(--text3);
+      padding: 12px 0;
+      margin: 0;
+      text-align: center;
+    }
   `,
 })
 export class ProcessesLandingComponent {
   protected readonly metrics = inject(ProcessesMetricsService);
   private readonly router = inject(Router);
 
-  protected readonly failingSub = computed(() => {
-    const f = this.metrics.workflowsFailing() ?? 0;
-    return f > 0 ? `${f} failing` : "all healthy";
-  });
+  constructor() {
+    this.metrics.loadCounts();
+    this.metrics.loadTopWorkflows();
+  }
 
   protected readonly execTotalLabel = computed(() => {
-    const s = this.metrics.executionsSuccessToday() ?? 0;
-    const f = this.metrics.executionsFailedToday() ?? 0;
-    return this.formatNum(s + f);
+    const s = this.metrics.executionsSuccessToday();
+    const f = this.metrics.executionsFailedToday();
+    if (s === null && f === null) {
+      return "—";
+    }
+    return this.formatNum((s ?? 0) + (f ?? 0));
   });
 
   protected readonly execBreakdownSub = computed(() => {
-    const s = this.metrics.executionsSuccessToday() ?? 0;
-    const f = this.metrics.executionsFailedToday() ?? 0;
-    return `${this.formatNum(s)} ok · ${f} failed`;
+    const s = this.metrics.executionsSuccessToday();
+    const f = this.metrics.executionsFailedToday();
+    if (s === null && f === null) {
+      return "";
+    }
+    return `${this.formatNum(s ?? 0)} ok · ${f ?? 0} failed`;
   });
 
-  protected readonly topWorkflows = computed<ITopWorkflow[]>(() => [
-    { id: "lead-qualification", name: "lead-qualification", runs7d: 1_247, successRate: 0.964 },
-    { id: "support-routing", name: "support-routing", runs7d: 982, successRate: 0.991 },
-    { id: "daily-summary", name: "daily-summary", runs7d: 168, successRate: 1 },
-    { id: "lead-enrichment", name: "lead-enrichment", runs7d: 412, successRate: 0.88 },
-    { id: "abandoned-cart", name: "abandoned-cart", runs7d: 304, successRate: 0.97 },
-  ]);
+  protected readonly topWorkflows = computed<ITopWorkflow[]>(() =>
+    this.metrics.topWorkflows()
+  );
 
-  protected readonly recentExecutions = computed<IActivityEntry[]>(() => [
-    { time: "2m ago", tone: "danger", html: '<strong>lead-qualification</strong> · run failed at score-lead' },
-    { time: "5m ago", tone: "ok", html: '<strong>support-routing</strong> · run ok · 1.2s' },
-    { time: "12m ago", tone: "ok", html: '<strong>daily-summary</strong> · run ok · 4.8s' },
-    { time: "18m ago", tone: "warn", html: '<strong>lead-enrichment</strong> · http retry · ok' },
-  ]);
+  protected readonly recentExecutions = computed<IActivityEntry[]>(() => []);
 
   protected formatNum(n: number): string {
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+    if (n >= 1_000_000) {
+      return `${(n / 1_000_000).toFixed(1)}M`;
+    }
+    if (n >= 1_000) {
+      return `${(n / 1_000).toFixed(1)}K`;
+    }
     return String(n);
   }
 

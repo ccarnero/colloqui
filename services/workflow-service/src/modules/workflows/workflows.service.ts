@@ -1,8 +1,8 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
+  type Client,
   WorkflowExecutionAlreadyStartedError,
   WorkflowFailedError,
-  type Client,
 } from "@temporalio/client";
 import {
   ActivityFailure,
@@ -10,38 +10,36 @@ import {
   WorkflowIdConflictPolicy,
   WorkflowIdReusePolicy,
 } from "@temporalio/common";
-import { nanoid } from "nanoid";
-import {
-  WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
-  WORKFLOW_DEFAULT_TIMEOUT_MS,
-  WORKFLOW_TASK_TIMEOUT_MS,
-} from "@yoizen/shared";
+import { PinoLoggerService } from "@yoizen/observability";
 import type {
   EventCausalContext,
-  WorkflowDefinition,
   WorkflowAction,
-  WorkflowTrigger,
+  WorkflowDefinition,
   WorkflowExecutionContext,
+  WorkflowTrigger,
 } from "@yoizen/shared";
+import {
+  WORKFLOW_DEFAULT_TIMEOUT_MS,
+  WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
+  WORKFLOW_TASK_TIMEOUT_MS,
+} from "@yoizen/shared";
+import { nanoid } from "nanoid";
 import { TEMPORAL_CLIENT } from "../../providers/temporal.provider";
+import type { IListExecutionsQuery } from "./dto/list-executions-query.dto";
 import {
   EXECUTIONS_REPOSITORY,
   type IExecutionsRepository,
+  type ITopDefinitionRow,
   type IWorkflowExecutionRow,
 } from "./executions.repository.interface";
+import { RegisteredServicesResolver } from "./registered-services.resolver";
+import { augmentActionsWithSlug, collectServiceIds } from "./service-id-walker";
+import { SystemVariablesProvider } from "./system-variables.provider";
 import {
-  WORKFLOWS_REPOSITORY,
   type IWorkflowDefinitionRow,
   type IWorkflowsRepository,
+  WORKFLOWS_REPOSITORY,
 } from "./workflows.repository.interface";
-import { PinoLoggerService } from "@yoizen/observability";
-import type { IListExecutionsQuery } from "./dto/list-executions-query.dto";
-import { RegisteredServicesResolver } from "./registered-services.resolver";
-import {
-  augmentActionsWithSlug,
-  collectServiceIds,
-} from "./service-id-walker";
-import { SystemVariablesProvider } from "./system-variables.provider";
 
 /** Execution row exposed over HTTP (camelCase). */
 export interface IWorkflowExecutionListItem {
@@ -157,6 +155,19 @@ export interface IExecutionStatusResult {
   createdAt: Date;
 }
 
+export interface IWorkflowsSummary {
+  readonly activeDefinitions: number;
+  readonly definitionsFailingNow: number;
+  readonly definitionsWithFailuresLast7d: number;
+  readonly executionsCompletedLast7d: number;
+  readonly executionsFailedLast7d: number;
+  readonly executionsRunningLast7d: number;
+  readonly executionsCompletedLast24h: number;
+  readonly topByExecutionCountLast7d: readonly ITopDefinitionRow[];
+}
+
+const FAIL_STATUSES = ["FAILED", "TIMED_OUT", "CANCELLED", "TERMINATED"];
+
 @Injectable()
 export class WorkflowsService {
   private readonly logger = new PinoLoggerService(WorkflowsService.name);
@@ -178,7 +189,7 @@ export class WorkflowsService {
    * @returns Created row metadata.
    */
   async createWorkflow(
-    params: ICreateWorkflowParams,
+    params: ICreateWorkflowParams
   ): Promise<ICreateWorkflowResult> {
     const { tenantId, name, application, actions, trigger, variables } = params;
     const id = nanoid();
@@ -193,7 +204,7 @@ export class WorkflowsService {
     });
 
     this.logger.log(
-      `Created workflow definition ${row.id} (${name}) for tenant ${tenantId}`,
+      `Created workflow definition ${row.id} (${name}) for tenant ${tenantId}`
     );
 
     return this.toCreateResult(row, tenantId);
@@ -206,7 +217,7 @@ export class WorkflowsService {
    * @returns Updated row metadata.
    */
   async updateWorkflow(
-    params: IUpdateWorkflowParams,
+    params: IUpdateWorkflowParams
   ): Promise<ICreateWorkflowResult> {
     const row = await this.definitions.updateDefinition(params);
     if (!row) {
@@ -214,7 +225,7 @@ export class WorkflowsService {
     }
 
     this.logger.log(
-      `Updated workflow definition ${row.id} for tenant ${params.tenantId}`,
+      `Updated workflow definition ${row.id} for tenant ${params.tenantId}`
     );
 
     return this.toCreateResult(row, params.tenantId);
@@ -228,7 +239,7 @@ export class WorkflowsService {
    */
   async getWorkflow(
     id: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<ICreateWorkflowResult> {
     const row = await this.definitions.findDefinitionById(id, tenantId);
     if (!row) {
@@ -259,7 +270,7 @@ export class WorkflowsService {
       throw new NotFoundException("Workflow definition not found");
     }
     this.logger.log(
-      `Soft-deleted workflow definition ${id} for tenant ${tenantId}`,
+      `Soft-deleted workflow definition ${id} for tenant ${tenantId}`
     );
   }
 
@@ -274,11 +285,11 @@ export class WorkflowsService {
     definitionId: string,
     tenantId: string,
     request: Record<string, unknown>,
-    options: IExecuteWorkflowOptions = {},
+    options: IExecuteWorkflowOptions = {}
   ): Promise<IExecuteWorkflowResult> {
     const definition = await this.definitions.findDefinitionById(
       definitionId,
-      tenantId,
+      tenantId
     );
     if (!definition) {
       throw new NotFoundException("Workflow definition not found");
@@ -299,9 +310,13 @@ export class WorkflowsService {
       application: definition.application,
       request,
       actions,
-      ...(definition.variables ? { variables: definition.variables as Record<string, unknown> } : {}),
+      ...(definition.variables
+        ? { variables: definition.variables as Record<string, unknown> }
+        : {}),
       ...(options.causal && { causal: options.causal }),
-      ...(options.agentTimeoutMs !== undefined && { agentTimeoutMs: options.agentTimeoutMs }),
+      ...(options.agentTimeoutMs !== undefined && {
+        agentTimeoutMs: options.agentTimeoutMs,
+      }),
     };
 
     // Load system variables for the tenant (cached, 5-min TTL).
@@ -311,7 +326,7 @@ export class WorkflowsService {
       systemVars = await this.systemVarsProvider.loadForTenant(tenantId);
     } catch {
       this.logger.log(
-        `Failed to load system variables for tenant ${tenantId}, continuing with empty system vars`,
+        `Failed to load system variables for tenant ${tenantId}, continuing with empty system vars`
       );
     }
 
@@ -339,13 +354,14 @@ export class WorkflowsService {
         tenantId,
         temporalWorkflowId,
         temporalRunId: handle.firstExecutionRunId,
+        correlationId: options.causal?.correlation_id ?? null,
         request,
       });
 
       this.logger.log(
         `Started execution ${row.id} for definition ${definitionId} ` +
           `(temporal=${temporalWorkflowId}, runId=${handle.firstExecutionRunId})` +
-          (options.requestId ? `, requestId=${options.requestId}` : ""),
+          (options.requestId ? `, requestId=${options.requestId}` : "")
       );
 
       return {
@@ -357,7 +373,7 @@ export class WorkflowsService {
     } catch (err: unknown) {
       if (isIdempotent && err instanceof WorkflowExecutionAlreadyStartedError) {
         this.logger.log(
-          `Duplicate trigger ignored: workflow ${temporalWorkflowId} already started`,
+          `Duplicate trigger ignored: workflow ${temporalWorkflowId} already started`
         );
         return {
           executionId,
@@ -384,11 +400,11 @@ export class WorkflowsService {
   async listExecutions(
     definitionId: string,
     tenantId: string,
-    query: IListExecutionsQuery,
+    query: IListExecutionsQuery
   ): Promise<IWorkflowExecutionsPage> {
     const definition = await this.definitions.findDefinitionById(
       definitionId,
-      tenantId,
+      tenantId
     );
     if (!definition) {
       throw new NotFoundException("Workflow definition not found");
@@ -425,17 +441,93 @@ export class WorkflowsService {
    * for O(1) per-card lookups.
    */
   async getExecutionCountsByTenant(
-    tenantId: string,
+    tenantId: string
   ): Promise<Record<string, number>> {
-    const rows = await this.executions.countExecutionsGroupedByDefinition(
-      tenantId,
-    );
+    const rows =
+      await this.executions.countExecutionsGroupedByDefinition(tenantId);
     const counts: Record<string, number> = {};
     for (let i = 0, len = rows.length; i < len; i++) {
       const row = rows[i]!;
       counts[row.definition_id] = row.count;
     }
     return counts;
+  }
+
+  /**
+   * Tenant-wide executions for one correlation_id (Message trace lookup).
+   * Returns the run records (incl. `temporalWorkflowId`) so the trace UI can
+   * render a workflow node and deep-link into Temporal.
+   */
+  async findExecutionsByCorrelation(
+    tenantId: string,
+    correlationId: string
+  ): Promise<IWorkflowExecutionListItem[]> {
+    if (!correlationId) {
+      return [];
+    }
+    const rows = await this.executions.findExecutionsByCorrelation(
+      correlationId,
+      tenantId
+    );
+    return rows.map((row) => this.mapExecutionRow(row, tenantId));
+  }
+
+  /**
+   * 8-way parallel summary for the workflows dashboard card.
+   * All queries run against the per-tenant DB concurrently so total
+   * latency equals the slowest single query.
+   */
+  async getWorkflowsSummary(tenantId: string): Promise<IWorkflowsSummary> {
+    const now = new Date();
+    const since7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1_000);
+    const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1_000);
+
+    const [
+      activeDefinitions,
+      definitionsFailingNow,
+      definitionsWithFailuresLast7d,
+      executionsCompletedLast7d,
+      executionsFailedLast7d,
+      executionsRunningLast7d,
+      executionsCompletedLast24h,
+      topByExecutionCountLast7d,
+    ] = await Promise.all([
+      this.definitions.countActiveDefinitions(tenantId),
+      this.executions.countFailingByLastRun(tenantId),
+      this.executions.countFailingByWindow7d(tenantId, since7d),
+      this.executions.countExecutionsByStatusSince(
+        tenantId,
+        ["COMPLETED"],
+        since7d
+      ),
+      this.executions.countExecutionsByStatusSince(
+        tenantId,
+        FAIL_STATUSES,
+        since7d
+      ),
+      this.executions.countExecutionsByStatusSince(
+        tenantId,
+        ["RUNNING"],
+        since7d
+      ),
+      this.executions.countExecutionsByStatusSince(
+        tenantId,
+        ["COMPLETED"],
+        since24h
+      ),
+      this.executions.topDefinitionsByExecutionCount(tenantId, since7d, 5),
+    ]);
+
+    return {
+      activeDefinitions,
+      definitionsFailingNow,
+      definitionsWithFailuresLast7d,
+      executionsCompletedLast7d,
+      executionsFailedLast7d,
+      executionsRunningLast7d,
+      executionsCompletedLast24h,
+      topByExecutionCountLast7d,
+    };
   }
 
   /**
@@ -448,11 +540,11 @@ export class WorkflowsService {
   async getExecutionStatus(
     definitionId: string,
     executionId: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IExecutionStatusResult> {
     const execution = await this.executions.findExecutionById(
       executionId,
-      tenantId,
+      tenantId
     );
     if (!execution) {
       throw new NotFoundException("Workflow execution not found");
@@ -462,7 +554,7 @@ export class WorkflowsService {
     }
 
     const handle = this.temporal.workflow.getHandle(
-      execution.temporal_workflow_id,
+      execution.temporal_workflow_id
     );
     const describe = await handle.describe();
     const currentStatus = describe.status.name;
@@ -471,7 +563,7 @@ export class WorkflowsService {
       await this.executions.updateExecutionStatus(
         executionId,
         tenantId,
-        currentStatus,
+        currentStatus
       );
     }
 
@@ -511,34 +603,20 @@ export class WorkflowsService {
    * `branch` arms), resolves each unique `serviceId` (UUID) to the
    * `registered_services.name` (slug) via {@link RegisteredServicesResolver},
    * and returns a new actions array with `args.serviceSlug` populated.
-   *
-   * Rationale: the adapter mirror in `adapter-service` is keyed by slug,
-   * not by UUID. Without this pre-resolution, the activity's mirror
-   * lookup misses on every call (negative-cached for 10s) and falls
-   * back through `registry-service` — adding one HTTP hop and pinning
-   * the run's latency to `adapter-service-api`'s cold-start time.
-   *
-   * Failure handling: lookup errors fall through silently. The action
-   * goes to Temporal without `serviceSlug`; the activity reverts to
-   * the legacy registry path — same behaviour as before this fix.
-   *
-   * Performance:
-   *  - Two linear walks over the actions array (collect + augment),
-   *    each O(n) in total node count.
-   *  - One bulk parallel resolver call: O(k) network round-trips on
-   *    cold cache, O(0) on warm cache (Map lookup is O(1) per key).
-   *  - Single-flight inside the resolver dedupes concurrent callers
-   *    requesting the same id, preventing thundering herd at start-up.
    */
   private async preResolveServiceSlugs(
     actions: WorkflowAction[],
-    tenantId: string,
+    tenantId: string
   ): Promise<WorkflowAction[]> {
     const ids = collectServiceIds(actions);
-    if (ids.size === 0) return actions;
+    if (ids.size === 0) {
+      return actions;
+    }
 
     const slugMap = await this.servicesResolver.resolveSlugs(tenantId, ids);
-    if (slugMap.size === 0) return actions;
+    if (slugMap.size === 0) {
+      return actions;
+    }
 
     return augmentActionsWithSlug(actions, slugMap);
   }
@@ -571,7 +649,7 @@ export class WorkflowsService {
 
   private mapExecutionRow(
     row: IWorkflowExecutionRow,
-    tenantId: string,
+    tenantId: string
   ): IWorkflowExecutionListItem {
     return {
       id: row.id,
@@ -588,7 +666,7 @@ export class WorkflowsService {
 
   private toCreateResult(
     row: IWorkflowDefinitionRow,
-    tenantId: string,
+    tenantId: string
   ): ICreateWorkflowResult {
     return {
       id: row.id,

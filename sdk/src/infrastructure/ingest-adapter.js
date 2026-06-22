@@ -13,9 +13,17 @@ const CHANNEL_TOKEN_HEADER = "x-http-channel-token";
  * @returns {import("../application/ports.js").IngestPort}
  */
 export function createIngestAdapter({ fetchImpl, baseUrl, timeoutMs }) {
-  async function ingest({ tenant, appSecret, body }) {
+  async function ingest({ tenant, appSecret, body, instance }) {
+    // Instance-addressed URL when the account externalId is known
+    // (`/api/webhooks/http/<tenant>/<instance>`); otherwise the legacy
+    // per-tenant URL (token-only routing). The token header is sent either way.
+    const base = `${baseUrl}/api/webhooks/http/${encodeURIComponent(tenant)}`;
+    const url =
+      typeof instance === "string" && instance.length > 0
+        ? `${base}/${encodeURIComponent(instance)}`
+        : base;
     const { status, ok, body: resBody } = await httpJson(fetchImpl, {
-      url: `${baseUrl}/api/webhooks/http/${encodeURIComponent(tenant)}`,
+      url,
       method: "POST",
       headers: { [CHANNEL_TOKEN_HEADER]: appSecret },
       body,

@@ -6,6 +6,7 @@ import type {
   IExecutionsCountByDefinition,
   IExecutionsRepository,
   IFindExecutionsParams,
+  ITopDefinitionRow,
   IWorkflowExecutionRow,
 } from "./executions.repository.interface";
 
@@ -21,7 +22,7 @@ export class ExecutionsPostgresRepository implements IExecutionsRepository {
   }
 
   async createExecution(
-    params: ICreateExecutionParams,
+    params: ICreateExecutionParams
   ): Promise<IWorkflowExecutionRow> {
     const {
       id,
@@ -29,20 +30,21 @@ export class ExecutionsPostgresRepository implements IExecutionsRepository {
       tenantId,
       temporalWorkflowId,
       temporalRunId,
+      correlationId,
       request,
     } = params;
     const sql = await this.sqlFor(tenantId);
     const [row] = await sql<IWorkflowExecutionRow[]>`
       INSERT INTO workflow_executions
         (id, definition_id, temporal_workflow_id,
-         temporal_run_id, request)
+         temporal_run_id, correlation_id, request)
       VALUES
         (${id}, ${definitionId},
          ${temporalWorkflowId}, ${temporalRunId},
-         ${sql.json(request as never)})
+         ${correlationId ?? null}, ${sql.json(request as never)})
       RETURNING id, definition_id,
                 temporal_workflow_id, temporal_run_id,
-                request, status, created_at, updated_at
+                correlation_id, request, status, created_at, updated_at
     `;
     return row!;
   }
@@ -50,7 +52,7 @@ export class ExecutionsPostgresRepository implements IExecutionsRepository {
   async updateExecutionStatus(
     id: string,
     tenantId: string,
-    status: string,
+    status: string
   ): Promise<boolean> {
     const sql = await this.sqlFor(tenantId);
     const result = await sql`
@@ -63,13 +65,13 @@ export class ExecutionsPostgresRepository implements IExecutionsRepository {
 
   async findExecutionById(
     id: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IWorkflowExecutionRow | undefined> {
     const sql = await this.sqlFor(tenantId);
     const [row] = await sql<IWorkflowExecutionRow[]>`
       SELECT id, definition_id,
              temporal_workflow_id, temporal_run_id,
-             request, status, created_at, updated_at
+             correlation_id, request, status, created_at, updated_at
       FROM workflow_executions
       WHERE id = ${id}
     `;
@@ -77,7 +79,7 @@ export class ExecutionsPostgresRepository implements IExecutionsRepository {
   }
 
   async findExecutionsByDefinition(
-    params: IFindExecutionsParams,
+    params: IFindExecutionsParams
   ): Promise<IWorkflowExecutionRow[]> {
     const { definitionId, tenantId, limit, offset, sort } = params;
     const sql = await this.sqlFor(tenantId);
@@ -86,7 +88,7 @@ export class ExecutionsPostgresRepository implements IExecutionsRepository {
     return sql<IWorkflowExecutionRow[]>`
       SELECT id, definition_id,
              temporal_workflow_id, temporal_run_id,
-             request, status, created_at, updated_at
+             correlation_id, request, status, created_at, updated_at
       FROM workflow_executions
       WHERE definition_id = ${definitionId}
       ORDER BY ${orderFragment}
@@ -94,9 +96,24 @@ export class ExecutionsPostgresRepository implements IExecutionsRepository {
     `;
   }
 
+  async findExecutionsByCorrelation(
+    correlationId: string,
+    tenantId: string
+  ): Promise<IWorkflowExecutionRow[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql<IWorkflowExecutionRow[]>`
+      SELECT id, definition_id,
+             temporal_workflow_id, temporal_run_id,
+             correlation_id, request, status, created_at, updated_at
+      FROM workflow_executions
+      WHERE correlation_id = ${correlationId}
+      ORDER BY created_at ASC
+    `;
+  }
+
   async countExecutionsByDefinition(
     definitionId: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<number> {
     const sql = await this.sqlFor(tenantId);
     const [row] = await sql<{ total: number }[]>`
@@ -108,13 +125,72 @@ export class ExecutionsPostgresRepository implements IExecutionsRepository {
   }
 
   async countExecutionsGroupedByDefinition(
-    tenantId: string,
+    tenantId: string
   ): Promise<IExecutionsCountByDefinition[]> {
     const sql = await this.sqlFor(tenantId);
     return sql<IExecutionsCountByDefinition[]>`
       SELECT definition_id, COUNT(*)::int AS count
       FROM workflow_executions
       GROUP BY definition_id
+    `;
+  }
+
+  async countFailingByLastRun(tenantId: string): Promise<number> {
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<{ total: number }[]>`
+      WITH latest AS (
+        SELECT DISTINCT ON (e.definition_id)
+          e.definition_id, e.status
+        FROM workflow_executions e
+        JOIN workflow_definitions d ON d.id = e.definition_id AND d.deleted_at IS NULL
+        WHERE e.status = ANY(ARRAY['COMPLETED','FAILED','TIMED_OUT','CANCELLED','TERMINATED'])
+        ORDER BY e.definition_id, e.created_at DESC
+      )
+      SELECT COUNT(*)::int AS total FROM latest WHERE status != 'COMPLETED'
+    `;
+    return row?.total ?? 0;
+  }
+
+  async countFailingByWindow7d(tenantId: string, since: Date): Promise<number> {
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<{ total: number }[]>`
+      SELECT COUNT(DISTINCT definition_id)::int AS total
+      FROM workflow_executions
+      WHERE status = ANY(ARRAY['FAILED','TIMED_OUT','CANCELLED','TERMINATED'])
+        AND created_at >= ${since}
+    `;
+    return row?.total ?? 0;
+  }
+
+  async countExecutionsByStatusSince(
+    tenantId: string,
+    statuses: string[],
+    since: Date
+  ): Promise<number> {
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<{ total: number }[]>`
+      SELECT COUNT(*)::int AS total
+      FROM workflow_executions
+      WHERE status = ANY(${sql.array(statuses)}::text[])
+        AND created_at >= ${since}
+    `;
+    return row?.total ?? 0;
+  }
+
+  async topDefinitionsByExecutionCount(
+    tenantId: string,
+    since: Date,
+    limit: number
+  ): Promise<ITopDefinitionRow[]> {
+    const sql = await this.sqlFor(tenantId);
+    return sql<ITopDefinitionRow[]>`
+      SELECT e.definition_id, d.name, d.application, COUNT(*)::int AS count
+      FROM workflow_executions e
+      JOIN workflow_definitions d ON d.id = e.definition_id
+      WHERE e.created_at >= ${since}
+      GROUP BY e.definition_id, d.name, d.application
+      ORDER BY count DESC
+      LIMIT ${limit}
     `;
   }
 }

@@ -24,6 +24,7 @@ spec:
     shared_preload_libraries:
       - timescaledb
     parameters:
+      timezone: "UTC"
       timescaledb.telemetry_level: "off"
       max_connections: "200"
       shared_buffers: "256MB"

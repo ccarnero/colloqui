@@ -24,6 +24,7 @@ import {
 import { validateAction } from "./action-validators";
 import { validateGraph } from "./graph.validator";
 import { validateTrigger } from "./trigger.validator";
+import { SOURCE_ACCOUNT_TEMPLATE } from "../workflow-node-defaults";
 import {
   WORKFLOW_APPLICATION_MAX,
   WORKFLOW_NAME_MAX,
@@ -182,12 +183,15 @@ function validateOutboundAccountAgainstTrigger(
   node: IWorkflowNode,
   triggerAccountIds: string[],
 ): ValidationError[] {
-  if (triggerAccountIds.length === 0) return [];
   const accountId = node.configuration["accountId"];
   if (typeof accountId !== "string" || accountId.length === 0) {
     // Missing accountId is already flagged by validateChannelSend.
     return [];
   }
+  // "Same as incoming message" resolves at runtime to the account that
+  // received the message — by definition one the trigger listens on.
+  if (accountId === SOURCE_ACCOUNT_TEMPLATE) return [];
+  if (triggerAccountIds.length === 0) return [];
   if (triggerAccountIds.includes(accountId)) return [];
   return [
     {

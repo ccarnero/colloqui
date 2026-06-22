@@ -79,6 +79,7 @@ spec:
     # pages resident; `effective_cache_size` doubled to match the new
     # `limits.memory: 8Gi`.
     parameters:
+      timezone: "UTC"
       shared_buffers: "2GB"
       effective_cache_size: "6GB"
       work_mem: "32MB"

@@ -151,6 +151,7 @@ export class WebhookIngressConsumerService
         causationId: envelope.id,
         depth: (envelope.transport?.depth ?? 0) + 1,
       },
+      envelope.data?.instance,
     );
   }
 

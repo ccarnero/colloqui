@@ -1,30 +1,31 @@
+import { CommonModule } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   inject,
-  OnInit,
+  type OnInit,
   signal,
 } from "@angular/core";
-import { CommonModule } from "@angular/common";
-import { ActivatedRoute, RouterLink } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
-import { MatIconModule } from "@angular/material/icon";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
+import { MatIconModule } from "@angular/material/icon";
 import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
-import {
-  KnowledgeBasesService,
-  type IKnowledgeBase,
-  type IDocument,
-} from "../../../../core/services/knowledge-bases.service";
+import { ActivatedRoute, RouterLink } from "@angular/router";
 import {
   AdaptersService,
   type IAdapterSummary,
 } from "../../../../core/services/adapters.service";
 import {
+  type IDocument,
+  type IKnowledgeBase,
+  KnowledgeBasesService,
+} from "../../../../core/services/knowledge-bases.service";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
+import { ChunkViewerDialogComponent } from "./chunk-viewer-dialog.component";
+import {
   DocumentUploadDialogComponent,
   type IDocumentUploadDialogResult,
 } from "./document-upload-dialog.component";
-import { ChunkViewerDialogComponent } from "./chunk-viewer-dialog.component";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "#ffa726",
@@ -39,6 +40,7 @@ const STATUS_COLORS: Record<string, string> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
+    UtcDatePipe,
     RouterLink,
     MatButtonModule,
     MatIconModule,
@@ -131,7 +133,7 @@ const STATUS_COLORS: Record<string, string> = {
                     {{ doc.chunk_count }}
                   }
                 </span>
-                <span class="col-date">{{ doc.created_at | date:"short" }}</span>
+                <span class="col-date">{{ doc.created_at | utcDate:"short" }}</span>
                 <span class="col-actions">
                   @if (doc.status?.toLowerCase() === 'failed' || doc.status?.toLowerCase() === 'processing') {
                     <button
@@ -317,14 +319,12 @@ export class KnowledgeBaseDetailComponent implements OnInit {
   }
 
   formatConfigKey(key: string): string {
-    return key
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   formatConfigValue(key: string, value: unknown): string {
     if (key === "provider_connector_id" && typeof value === "string") {
-      const conn = this.llmConnectors().find(c => c.id === value);
+      const conn = this.llmConnectors().find((c) => c.id === value);
       return conn ? conn.name : value;
     }
     return String(value ?? "");
@@ -368,14 +368,12 @@ export class KnowledgeBaseDetailComponent implements OnInit {
     });
     ref
       .afterClosed()
-      .subscribe(
-        (result: IDocumentUploadDialogResult | undefined) => {
-          if (result?.saved) {
-            this.loadDocuments();
-            this.snackBar.open("Document uploaded", "OK", { duration: 2000 });
-          }
-        },
-      );
+      .subscribe((result: IDocumentUploadDialogResult | undefined) => {
+        if (result?.saved) {
+          this.loadDocuments();
+          this.snackBar.open("Document uploaded", "OK", { duration: 2000 });
+        }
+      });
   }
 
   openChunkViewer(doc: IDocument): void {
@@ -390,19 +388,27 @@ export class KnowledgeBaseDetailComponent implements OnInit {
   }
 
   reingestDocument(doc: IDocument): void {
-    if (!confirm(`Retry ingestion for "${doc.original_filename}"?`)) return;
+    if (!confirm(`Retry ingestion for "${doc.original_filename}"?`)) {
+      return;
+    }
     this.service.reingestDocument(this.kbId, doc.id).subscribe({
       next: () => {
         this.loadDocuments();
-        this.snackBar.open("Document queued for re-ingestion", "OK", { duration: 2000 });
+        this.snackBar.open("Document queued for re-ingestion", "OK", {
+          duration: 2000,
+        });
       },
       error: () =>
-        this.snackBar.open("Failed to retry document", "OK", { duration: 3000 }),
+        this.snackBar.open("Failed to retry document", "OK", {
+          duration: 3000,
+        }),
     });
   }
 
   deleteDocument(doc: IDocument): void {
-    if (!confirm(`Delete document "${doc.original_filename}"?`)) return;
+    if (!confirm(`Delete document "${doc.original_filename}"?`)) {
+      return;
+    }
     this.service.deleteDocument(this.kbId, doc.id).subscribe({
       next: () => {
         this.loadDocuments();

@@ -3,34 +3,33 @@ import {
   Component,
   computed,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { DatePipe } from "@angular/common";
-import { Router } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
 import { MatDialog } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatSnackBar } from "@angular/material/snack-bar";
+import { Router } from "@angular/router";
 import { forkJoin } from "rxjs";
-import { catchError } from "rxjs/operators";
-import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
+import type { IAgent } from "../../../core/models/agent.model";
+import type { IJob } from "../../../core/models/scheduler.model";
+import { AgentAdminService } from "../../../core/services/agent-admin.service";
+import { SchedulerApiService } from "../../../core/services/scheduler-api.service";
 import {
   ConfirmDialogComponent,
   type IConfirmDialogData,
 } from "../../../shared/components/confirm-dialog/confirm-dialog.component";
 import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
-import { SchedulerApiService } from "../../../core/services/scheduler-api.service";
-import { AgentAdminService } from "../../../core/services/agent-admin.service";
-import type { IAgent } from "../../../core/models/agent.model";
-import type { IJob } from "../../../core/models/scheduler.model";
+import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
+import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
 import type { IScheduleFormData } from "./schedule-form-dialog.component";
 
 @Component({
   selector: "app-schedules",
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DatePipe,
+    UtcDatePipe,
     MatButtonModule,
     MatIconModule,
     PageHeaderComponent,
@@ -82,7 +81,7 @@ import type { IScheduleFormData } from "./schedule-form-dialog.component";
             @if (job.last_run) {
               <span class="sc-date-item">
                 <mat-icon class="sc-date-icon">check_circle</mat-icon>
-                Last: {{ job.last_run | date }}
+                Last: {{ job.last_run | utcDate }}
               </span>
             } @else {
               <span class="sc-date-item sc-date-muted">
@@ -93,7 +92,7 @@ import type { IScheduleFormData } from "./schedule-form-dialog.component";
             @if (job.next_run) {
               <span class="sc-date-item">
                 <mat-icon class="sc-date-icon">play_arrow</mat-icon>
-                Next: {{ job.next_run | date }}
+                Next: {{ job.next_run | utcDate }}
               </span>
             } @else {
               <span class="sc-date-item sc-date-muted">
@@ -357,11 +356,11 @@ export class SchedulesComponent implements OnInit {
   readonly runningId = signal<string | null>(null);
   readonly agentMap = signal<Map<string, string>>(new Map());
 
-  readonly currentPage = computed(() =>
-    Math.floor(this.offset() / this.limit) + 1,
+  readonly currentPage = computed(
+    () => Math.floor(this.offset() / this.limit) + 1
   );
   readonly totalPages = computed(() =>
-    Math.max(1, Math.ceil(this.total() / this.limit)),
+    Math.max(1, Math.ceil(this.total() / this.limit))
   );
 
   ngOnInit(): void {
@@ -385,7 +384,7 @@ export class SchedulesComponent implements OnInit {
         this.jobs.set(list.jobs);
         this.total.set(list.total);
         this.agentMap.set(
-          new Map(agents.agents.map((a: IAgent) => [a.id, a.name])),
+          new Map(agents.agents.map((a: IAgent) => [a.id, a.name]))
         );
         this.loading.set(false);
       },
@@ -443,26 +442,30 @@ export class SchedulesComponent implements OnInit {
         width: "640px",
       });
       ref.afterClosed().subscribe((result: IScheduleFormData | undefined) => {
-        if (!result) return;
-        this.api.createJob({
-          name: result.name,
-          agent_id: result.agent_id,
-          schedule: result.schedule,
-          payload: result.payload
-            ? this.parsePayload(result.payload)
-            : undefined,
-          is_active: result.is_active,
-        }).subscribe({
-          next: () => {
-            this.snackBar.open("Schedule created", "OK", { duration: 3000 });
-            this.loadJobs();
-          },
-          error: () => {
-            this.snackBar.open("Failed to create schedule", "OK", {
-              duration: 5000,
-            });
-          },
-        });
+        if (!result) {
+          return;
+        }
+        this.api
+          .createJob({
+            name: result.name,
+            agent_id: result.agent_id,
+            schedule: result.schedule,
+            payload: result.payload
+              ? this.parsePayload(result.payload)
+              : undefined,
+            is_active: result.is_active,
+          })
+          .subscribe({
+            next: () => {
+              this.snackBar.open("Schedule created", "OK", { duration: 3000 });
+              this.loadJobs();
+            },
+            error: () => {
+              this.snackBar.open("Failed to create schedule", "OK", {
+                duration: 5000,
+              });
+            },
+          });
       });
     } catch {
       this.snackBar.open("Coming soon", "OK", { duration: 3000 });
@@ -483,26 +486,30 @@ export class SchedulesComponent implements OnInit {
         data: job,
       });
       ref.afterClosed().subscribe((result: IScheduleFormData | undefined) => {
-        if (!result) return;
-        this.api.updateJob(job.id, {
-          name: result.name,
-          agent_id: result.agent_id,
-          schedule: result.schedule,
-          payload: result.payload
-            ? this.parsePayload(result.payload)
-            : undefined,
-          is_active: result.is_active,
-        }).subscribe({
-          next: () => {
-            this.snackBar.open("Schedule updated", "OK", { duration: 3000 });
-            this.loadJobs();
-          },
-          error: () => {
-            this.snackBar.open("Failed to update schedule", "OK", {
-              duration: 5000,
-            });
-          },
-        });
+        if (!result) {
+          return;
+        }
+        this.api
+          .updateJob(job.id, {
+            name: result.name,
+            agent_id: result.agent_id,
+            schedule: result.schedule,
+            payload: result.payload
+              ? this.parsePayload(result.payload)
+              : undefined,
+            is_active: result.is_active,
+          })
+          .subscribe({
+            next: () => {
+              this.snackBar.open("Schedule updated", "OK", { duration: 3000 });
+              this.loadJobs();
+            },
+            error: () => {
+              this.snackBar.open("Failed to update schedule", "OK", {
+                duration: 5000,
+              });
+            },
+          });
       });
     } catch {
       this.snackBar.open("Coming soon", "OK", { duration: 3000 });
@@ -524,7 +531,7 @@ export class SchedulesComponent implements OnInit {
       next: (updated) => {
         this.togglingId.set(null);
         this.jobs.update((list) =>
-          list.map((j) => (j.id === updated.id ? updated : j)),
+          list.map((j) => (j.id === updated.id ? updated : j))
         );
       },
       error: () => {
@@ -532,7 +539,7 @@ export class SchedulesComponent implements OnInit {
         this.snackBar.open(
           `Failed to ${job.is_active ? "disable" : "enable"} schedule`,
           "OK",
-          { duration: 5000 },
+          { duration: 5000 }
         );
       },
     });
@@ -577,11 +584,13 @@ export class SchedulesComponent implements OnInit {
     this.dialog
       .open<ConfirmDialogComponent, IConfirmDialogData, boolean>(
         ConfirmDialogComponent,
-        { data, autoFocus: false, restoreFocus: true },
+        { data, autoFocus: false, restoreFocus: true }
       )
       .afterClosed()
       .subscribe((confirmed) => {
-        if (confirmed === true) this.deleteJob(job);
+        if (confirmed === true) {
+          this.deleteJob(job);
+        }
       });
   }
 
@@ -630,7 +639,9 @@ export class SchedulesComponent implements OnInit {
    * rather than sending null.
    */
   private parsePayload(json: string): Record<string, unknown> | undefined {
-    if (!json || !json.trim()) return undefined;
+    if (!json || !json.trim()) {
+      return undefined;
+    }
     try {
       return JSON.parse(json) as Record<string, unknown>;
     } catch {

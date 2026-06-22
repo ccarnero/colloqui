@@ -6,47 +6,61 @@ import {
   effect,
   inject,
   input,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { DatePipe } from "@angular/common";
 import { FormsModule } from "@angular/forms";
-import { Router } from "@angular/router";
+import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { MatSelectModule } from "@angular/material/select";
 import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
-import { MatDialog, MatDialogModule } from "@angular/material/dialog";
+import { Router } from "@angular/router";
 import { MonacoEditorModule } from "ngx-monaco-editor-v2";
-import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
-import { AgentEditorBridgeService } from "./agent-editor-bridge.service";
-import { AgentAdminService } from "../../../core/services/agent-admin.service";
-import { AgentRuntimeService } from "../../../core/services/agent-runtime.service";
+import { firstValueFrom, type Observable } from "rxjs";
+import {
+  getAgentLlmConfig,
+  type IAgent,
+  type IAgentDraft,
+  type IAgentToolDraft,
+  type ISubagentDraft,
+  type ITemplate,
+  type VariableDeclaration,
+} from "../../../core/models/agent.model";
 import {
   AdaptersService,
   type IAdapterSummary,
 } from "../../../core/services/adapters.service";
+import { AgentAdminService } from "../../../core/services/agent-admin.service";
+import { AgentRuntimeService } from "../../../core/services/agent-runtime.service";
 import {
-  type IAgentToolDraft,
-  type IAgent,
-  type IAgentDraft,
-  type ISubagentDraft,
-  type ITemplate,
-  type VariableDeclaration,
-  getAgentLlmConfig,
-} from "../../../core/models/agent.model";
+  type IKnowledgeBase,
+  KnowledgeBasesService,
+} from "../../../core/services/knowledge-bases.service";
+import {
+  type ISkill,
+  SkillsService,
+} from "../../../core/services/skills.service";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
+import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
 import { AiAgentConfigComponent } from "./agent-config.component";
 import {
-  type IAgentRuntimeHealth,
-  AiExistingAgentsPanelComponent,
-} from "./existing-agents-panel.component";
+  areDraftsEqual,
+  clearAgentDraft,
+  loadAgentDraft,
+  saveAgentDraft,
+} from "./agent-draft.helpers";
+import {
+  type IAgentEditorSelection,
+  SELECTION_INSTRUCTION_PROMPT,
+  selectSkill,
+  selectTool,
+} from "./agent-editor.types";
+import { AgentEditorBridgeService } from "./agent-editor-bridge.service";
 import { AiAgentEditorNavComponent } from "./agent-editor-nav.component";
 import { AiAgentEditorSkillFormComponent } from "./agent-editor-skill-form.component";
 import { AiAgentEditorToolFormComponent } from "./agent-editor-tool-form.component";
-import { AiTopBarComponent } from "./ai-top-bar.component";
-import { AiBuiltinToolsComponent } from "./builtin-tools.component";
-import { AiMcpServersSelectorComponent } from "./mcp-servers-selector.component";
 import { AgentVersionsComponent } from "./agent-versions.component";
 import {
   buildToolPayloadsFromDrafts,
@@ -56,36 +70,24 @@ import {
   parseToolPayload,
 } from "./ai.helpers";
 import {
-  registerAiMonacoCompletionProvider,
-  registerAiMonacoHoverProvider,
-} from "./ai-monaco-hover";
-import {
+  cloneSubagents,
   DEFAULT_TEMPLATE_ID,
   type ISkillInfo,
   type IToolInfo,
-  cloneSubagents,
 } from "./ai.types";
 import {
-  type IAgentEditorSelection,
-  SELECTION_INSTRUCTION_PROMPT,
-  SELECTION_KNOWLEDGE_BASES,
-  SELECTION_MCP_SERVERS,
-  SELECTION_VARIABLES,
-  SELECTION_VERSIONS,
-  selectSkill,
-  selectTool,
-} from "./agent-editor.types";
+  registerAiMonacoCompletionProvider,
+  registerAiMonacoHoverProvider,
+} from "./ai-monaco-hover";
+import { AiTopBarComponent } from "./ai-top-bar.component";
+import { AiBuiltinToolsComponent } from "./builtin-tools.component";
 import {
-  areDraftsEqual,
-  clearAgentDraft,
-  loadAgentDraft,
-  saveAgentDraft,
-} from "./agent-draft.helpers";
-import { SkillsService, type ISkill } from "../../../core/services/skills.service";
-import { KnowledgeBasesService, type IKnowledgeBase } from "../../../core/services/knowledge-bases.service";
+  AiExistingAgentsPanelComponent,
+  type IAgentRuntimeHealth,
+} from "./existing-agents-panel.component";
+import { AiMcpServersSelectorComponent } from "./mcp-servers-selector.component";
 import { SkillFormDialogComponent } from "./skills/skill-form-dialog.component";
 import { SkillPickerDialogComponent } from "./skills/skill-picker-dialog.component";
-import { firstValueFrom, type Observable } from "rxjs";
 
 const AUTOSAVE_INTERVAL_MS = 800;
 
@@ -93,7 +95,7 @@ const AUTOSAVE_INTERVAL_MS = 800;
   selector: "app-ai",
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DatePipe,
+    UtcDatePipe,
     FormsModule,
     MatFormFieldModule,
     MatIconModule,
@@ -165,7 +167,7 @@ const AUTOSAVE_INTERVAL_MS = 800;
         <div class="alert alert-info draft-banner">
           <mat-icon>history</mat-icon>
           <div>
-            Restored your unsaved changes from {{ draftRestored() | date: 'short' }}.
+            Restored your unsaved changes from {{ draftRestored() | utcDate: 'short' }}.
             <button type="button" class="link-btn" (click)="discardDraft()">
               Discard and reload saved version
             </button>
@@ -495,7 +497,9 @@ export class AiComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly snackBar = inject(MatSnackBar);
   private readonly dialog = inject(MatDialog);
-  private readonly bridge = inject(AgentEditorBridgeService, { optional: true });
+  private readonly bridge = inject(AgentEditorBridgeService, {
+    optional: true,
+  });
   private readonly skillsService = inject(SkillsService);
   private readonly knowledgeBasesService = inject(KnowledgeBasesService);
 
@@ -517,7 +521,9 @@ export class AiComponent implements OnInit {
   readonly successMessage = signal("");
 
   // ---- Editor selection ----
-  readonly selection = signal<IAgentEditorSelection>(SELECTION_INSTRUCTION_PROMPT);
+  readonly selection = signal<IAgentEditorSelection>(
+    SELECTION_INSTRUCTION_PROMPT
+  );
   readonly paletteCollapsed = signal(false);
 
   // ---- Draft persistence ----
@@ -527,7 +533,10 @@ export class AiComponent implements OnInit {
 
   // ---- Built-in tools ----
   readonly currentEnabledTools = signal<string[] | null>(null);
-  readonly currentToolDescriptionOverrides = signal<Record<string, string> | null>(null);
+  readonly currentToolDescriptionOverrides = signal<Record<
+    string,
+    string
+  > | null>(null);
 
   // ---- MCP servers ----
   readonly currentMcpServers = signal<string[] | null>(null);
@@ -537,21 +546,27 @@ export class AiComponent implements OnInit {
 
   readonly focusedIndex = computed(() => {
     const sel = this.selection();
-    if (sel.kind === "skill" || sel.kind === "tool") return sel.index;
+    if (sel.kind === "skill" || sel.kind === "tool") {
+      return sel.index;
+    }
     return -1;
   });
 
   readonly focusedSkill = computed(() => {
     this.version();
     const sel = this.selection();
-    if (sel.kind !== "skill") return null;
+    if (sel.kind !== "skill") {
+      return null;
+    }
     return this.subagents[sel.index] ?? null;
   });
 
   readonly focusedTool = computed(() => {
     this.version();
     const sel = this.selection();
-    if (sel.kind !== "tool") return null;
+    if (sel.kind !== "tool") {
+      return null;
+    }
     return this.tools[sel.index] ?? null;
   });
 
@@ -559,7 +574,7 @@ export class AiComponent implements OnInit {
     this.version();
     const mentions = extractMentionsFromPrompt(this.systemPrompt);
     // Normalize skill mentions: replace spaces with hyphens to match availableSkills IDs
-    return mentions.map(m => {
+    return mentions.map((m) => {
       if (m.startsWith("@skill:")) {
         const name = m.slice(7);
         return `@skill:${name.toLowerCase().replace(/\s+/g, "-")}`;
@@ -627,7 +642,7 @@ export class AiComponent implements OnInit {
 
     const intervalHandle = setInterval(
       () => this.runDraftAutosave(),
-      AUTOSAVE_INTERVAL_MS,
+      AUTOSAVE_INTERVAL_MS
     );
     this.destroyRef.onDestroy(() => {
       clearInterval(intervalHandle);
@@ -640,7 +655,7 @@ export class AiComponent implements OnInit {
       const bridge = this.bridge;
       effect(() => {
         bridge.editingAgentId.set(
-          this.viewMode() === "editor" ? this.editingAgentId() : null,
+          this.viewMode() === "editor" ? this.editingAgentId() : null
         );
         bridge.saving.set(this.saving());
         bridge.loading.set(this.loading());
@@ -691,16 +706,18 @@ export class AiComponent implements OnInit {
       this.subagents.every(
         (subagent) =>
           subagent.name.trim().length > 0 &&
-          subagent.systemPrompt.trim().length > 0,
+          subagent.systemPrompt.trim().length > 0
       )
     );
   }
 
   applyTemplateById(templateId: string): void {
     const template = this.templates().find(
-      (option: ITemplate) => option.id === templateId,
+      (option: ITemplate) => option.id === templateId
     );
-    if (!template) return;
+    if (!template) {
+      return;
+    }
 
     this.selectedTemplateId = template.id;
     this.agentName = template.name;
@@ -709,7 +726,7 @@ export class AiComponent implements OnInit {
     this.rules = template.rules;
     this.soul = template.soul;
     this.subagents = cloneSubagents(
-      template.subagents.map(mapSubagentConfigToDraft),
+      template.subagents.map(mapSubagentConfigToDraft)
     );
     this.successMessage.set("");
     this.errorMessage.set("");
@@ -756,64 +773,82 @@ export class AiComponent implements OnInit {
   }
 
   addSubagentFromCatalog(): void {
-    const existingNames = new Set(this.subagents.map((s) => s.name.toLowerCase().trim()));
+    const existingNames = new Set(
+      this.subagents.map((s) => s.name.toLowerCase().trim())
+    );
 
     const dialogRef = this.dialog.open(SkillPickerDialogComponent, {
       width: "500px",
     });
 
-    dialogRef.afterClosed().subscribe((selectedSkills: { id: string; name: string }[] | undefined) => {
-      if (!selectedSkills || selectedSkills.length === 0) return;
-
-      // Filter out already-added skills
-      const newSkills = selectedSkills.filter(
-        (s) => !existingNames.has(s.name.toLowerCase().trim()),
-      );
-
-      if (newSkills.length === 0) {
-        this.snackBar.open("Selected skills are already added.", "OK", { duration: 2000 });
-        return;
-      }
-
-      // Fetch full skill data for selected skills
-      this.skillsService.list().subscribe({
-        next: (response) => {
-          const catalog = response.skills || [];
-          for (const { id, name } of newSkills) {
-            const skill = catalog.find((s) => s.id === id);
-            this.subagents = [
-              ...this.subagents,
-              {
-                name: skill?.name ?? name,
-                description: skill?.description ?? "",
-                systemPrompt: skill?.system_prompt ?? "",
-                enabled: true,
-                source: "catalog",
-                catalogSkillId: id,
-              },
-            ];
+    dialogRef
+      .afterClosed()
+      .subscribe(
+        (selectedSkills: { id: string; name: string }[] | undefined) => {
+          if (!selectedSkills || selectedSkills.length === 0) {
+            return;
           }
-          this.bumpVersion();
-          this.snackBar.open(`Added ${newSkills.length} skill(s)`, "OK", { duration: 2000 });
-        },
-        error: () => {
-          this.snackBar.open("Failed to load skill details", "OK", { duration: 3000 });
-        },
-      });
-    });
+
+          // Filter out already-added skills
+          const newSkills = selectedSkills.filter(
+            (s) => !existingNames.has(s.name.toLowerCase().trim())
+          );
+
+          if (newSkills.length === 0) {
+            this.snackBar.open("Selected skills are already added.", "OK", {
+              duration: 2000,
+            });
+            return;
+          }
+
+          // Fetch full skill data for selected skills
+          this.skillsService.list().subscribe({
+            next: (response) => {
+              const catalog = response.skills || [];
+              for (const { id, name } of newSkills) {
+                const skill = catalog.find((s) => s.id === id);
+                this.subagents = [
+                  ...this.subagents,
+                  {
+                    name: skill?.name ?? name,
+                    description: skill?.description ?? "",
+                    systemPrompt: skill?.system_prompt ?? "",
+                    enabled: true,
+                    source: "catalog",
+                    catalogSkillId: id,
+                  },
+                ];
+              }
+              this.bumpVersion();
+              this.snackBar.open(`Added ${newSkills.length} skill(s)`, "OK", {
+                duration: 2000,
+              });
+            },
+            error: () => {
+              this.snackBar.open("Failed to load skill details", "OK", {
+                duration: 3000,
+              });
+            },
+          });
+        }
+      );
   }
 
   removeSubagent(index: number): void {
-    if (index < 0 || index >= this.subagents.length) return;
+    if (index < 0 || index >= this.subagents.length) {
+      return;
+    }
     this.subagents = this.subagents.filter((_, i) => i !== index);
     this.bumpVersion();
     this.shiftSelectionAfterRemove("skill", index, this.subagents.length);
   }
 
   onSkillFormChange(index: number, next: ISubagentDraft): void {
-    if (index < 0 || index >= this.subagents.length) return;
+    if (index < 0 || index >= this.subagents.length) {
+      return;
+    }
     this.subagents = this.subagents.map((current, i) =>
-      i === index ? next : current,
+      i === index ? next : current
     );
     this.bumpVersion();
   }
@@ -840,14 +875,18 @@ export class AiComponent implements OnInit {
   }
 
   removeTool(index: number): void {
-    if (index < 0 || index >= this.tools.length) return;
+    if (index < 0 || index >= this.tools.length) {
+      return;
+    }
     this.tools = this.tools.filter((_, i) => i !== index);
     this.bumpVersion();
     this.shiftSelectionAfterRemove("tool", index, this.tools.length);
   }
 
   onToolFormChange(index: number, next: IAgentToolDraft): void {
-    if (index < 0 || index >= this.tools.length) return;
+    if (index < 0 || index >= this.tools.length) {
+      return;
+    }
     this.tools = this.tools.map((current, i) => (i === index ? next : current));
     this.bumpVersion();
   }
@@ -866,16 +905,20 @@ export class AiComponent implements OnInit {
 
   rollbackToVersion(versionId: string): void {
     const agentId = this.editingAgentId();
-    if (!agentId) return;
+    if (!agentId) {
+      return;
+    }
     const confirmed = window.confirm(
-      "Rollback to this version? Your current draft will be replaced.",
+      "Rollback to this version? Your current draft will be replaced."
     );
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     this.agentAdminService.rollbackToVersion(agentId, versionId).subscribe({
       next: (agent) => {
         this.agents.update((agents) =>
-          agents.map((a) => (a.id === agent.id ? agent : a)),
+          agents.map((a) => (a.id === agent.id ? agent : a))
         );
         this.applyAgentToForm(agent, false);
         this.snackBar.open("Rolled back to selected version.", undefined, {
@@ -886,8 +929,8 @@ export class AiComponent implements OnInit {
         this.notifyError(
           formatHttpErrorMessage(
             error.error?.message,
-            "Could not rollback to version.",
-          ),
+            "Could not rollback to version."
+          )
         );
       },
     });
@@ -902,7 +945,9 @@ export class AiComponent implements OnInit {
   // -----------------------------------------------------------------
 
   async saveToCatalog(skill: ISubagentDraft): Promise<void> {
-    if (skill.catalogSkillId) return;
+    if (skill.catalogSkillId) {
+      return;
+    }
 
     const dialogRef = this.dialog.open(SkillFormDialogComponent, {
       width: "600px",
@@ -914,25 +959,34 @@ export class AiComponent implements OnInit {
     });
 
     const result = await firstValueFrom(dialogRef.afterClosed());
-    if (!result) return;
+    if (!result) {
+      return;
+    }
 
     this.skillsService.create(result).subscribe({
       next: (created) => {
         const index = this.subagents.indexOf(skill);
         if (index >= 0) {
           this.subagents = this.subagents.map((current, i) =>
-            i === index ? { ...current, catalogSkillId: created.id } : current,
+            i === index ? { ...current, catalogSkillId: created.id } : current
           );
           this.bumpVersion();
         }
-        this.snackBar.open(`Saved "${skill.name}" to Catalog`, "OK", { duration: 2000 });
+        this.snackBar.open(`Saved "${skill.name}" to Catalog`, "OK", {
+          duration: 2000,
+        });
       },
-      error: () => this.snackBar.open("Failed to save to Catalog", "OK", { duration: 3000 }),
+      error: () =>
+        this.snackBar.open("Failed to save to Catalog", "OK", {
+          duration: 3000,
+        }),
     });
   }
 
   syncFromCatalog(skill: ISubagentDraft): void {
-    if (!skill.catalogSkillId) return;
+    if (!skill.catalogSkillId) {
+      return;
+    }
 
     this.skillsService.get(skill.catalogSkillId).subscribe({
       next: (catalogSkill) => {
@@ -946,23 +1000,30 @@ export class AiComponent implements OnInit {
                   description: catalogSkill.description,
                   systemPrompt: catalogSkill.system_prompt,
                 }
-              : current,
+              : current
           );
           this.bumpVersion();
         }
-        this.snackBar.open(`Synced "${skill.name}" from Catalog`, "OK", { duration: 2000 });
+        this.snackBar.open(`Synced "${skill.name}" from Catalog`, "OK", {
+          duration: 2000,
+        });
       },
-      error: () => this.snackBar.open("Failed to sync from Catalog", "OK", { duration: 3000 }),
+      error: () =>
+        this.snackBar.open("Failed to sync from Catalog", "OK", {
+          duration: 3000,
+        }),
     });
   }
 
   private shiftSelectionAfterRemove(
     kind: "skill" | "tool",
     removedIndex: number,
-    newLength: number,
+    newLength: number
   ): void {
     const sel = this.selection();
-    if (sel.kind !== kind) return;
+    if (sel.kind !== kind) {
+      return;
+    }
 
     if (newLength === 0) {
       this.selection.set(SELECTION_INSTRUCTION_PROMPT);
@@ -972,7 +1033,7 @@ export class AiComponent implements OnInit {
     if (sel.index === removedIndex) {
       const nextIndex = Math.min(sel.index, newLength - 1);
       this.selection.set(
-        kind === "skill" ? selectSkill(nextIndex) : selectTool(nextIndex),
+        kind === "skill" ? selectSkill(nextIndex) : selectTool(nextIndex)
       );
       return;
     }
@@ -981,7 +1042,7 @@ export class AiComponent implements OnInit {
       this.selection.set(
         kind === "skill"
           ? selectSkill(sel.index - 1)
-          : selectTool(sel.index - 1),
+          : selectTool(sel.index - 1)
       );
     }
   }
@@ -999,7 +1060,7 @@ export class AiComponent implements OnInit {
       this.notifyError(
         this.editingAgentId()
           ? "Complete the required fields before updating the agent."
-          : "Complete the required fields before creating the agent.",
+          : "Complete the required fields before creating the agent."
       );
       return;
     }
@@ -1019,8 +1080,8 @@ export class AiComponent implements OnInit {
           this.notifyError(
             formatHttpErrorMessage(
               error.error?.message,
-              "The agent could not be updated.",
-            ),
+              "The agent could not be updated."
+            )
           );
           this.saving.set(false);
         },
@@ -1037,32 +1098,25 @@ export class AiComponent implements OnInit {
           this.navigationMode() === "route" &&
           this.defaultMode() === "editor"
         ) {
-          void this.router.navigate([
-            "/ai/agents",
-            agent.id,
-            "overview",
-          ]);
+          void this.router.navigate(["/ai/agents", agent.id, "overview"]);
         }
       },
       error: (error: { error?: { message?: string | string[] } }) => {
         this.notifyError(
           formatHttpErrorMessage(
             error.error?.message,
-            "The agent could not be created.",
-          ),
+            "The agent could not be created."
+          )
         );
         this.saving.set(false);
       },
     });
   }
 
-  private handleSaveSuccess(
-    agent: IAgent,
-    verb: "created" | "updated",
-  ): void {
+  private handleSaveSuccess(agent: IAgent, verb: "created" | "updated"): void {
     if (verb === "updated") {
       this.agents.update((agents) =>
-        agents.map((a) => (a.id === agent.id ? agent : a)),
+        agents.map((a) => (a.id === agent.id ? agent : a))
       );
     }
 
@@ -1084,7 +1138,7 @@ export class AiComponent implements OnInit {
       agentId,
       () => this.agentAdminService.publishAgent(agentId),
       "published",
-      "Failed to publish agent.",
+      "Failed to publish agent."
     );
   }
 
@@ -1093,7 +1147,7 @@ export class AiComponent implements OnInit {
       agentId,
       () => this.agentAdminService.unpublishAgent(agentId),
       "unpublished",
-      "Failed to unpublish agent.",
+      "Failed to unpublish agent."
     );
   }
 
@@ -1101,27 +1155,29 @@ export class AiComponent implements OnInit {
     const target = this.agents().find((a) => a.id === agentId);
     const label = target?.name ?? agentId;
     const confirmed = window.confirm(
-      `Revert "${label}" to its last published state? Unsaved draft changes will be lost.`,
+      `Revert "${label}" to its last published state? Unsaved draft changes will be lost.`
     );
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     this.agentAdminService.revertToPublished(agentId).subscribe({
       next: (agent) => {
         this.agents.update((agents) =>
-          agents.map((a) => (a.id === agent.id ? agent : a)),
+          agents.map((a) => (a.id === agent.id ? agent : a))
         );
         this.snackBar.open(
           `Agent "${agent.name}" reverted to published state.`,
           undefined,
-          { duration: 3000 },
+          { duration: 3000 }
         );
       },
       error: (error: { error?: { message?: string | string[] } }) => {
         this.notifyError(
           formatHttpErrorMessage(
             error.error?.message,
-            "Could not revert agent.",
-          ),
+            "Could not revert agent."
+          )
         );
       },
     });
@@ -1131,7 +1187,7 @@ export class AiComponent implements OnInit {
     agentId: string,
     request: () => Observable<IAgent>,
     successVerb: "published" | "unpublished",
-    failMessage: string,
+    failMessage: string
   ): void {
     this.publishingId.set(agentId);
     this.errorMessage.set("");
@@ -1139,7 +1195,7 @@ export class AiComponent implements OnInit {
     request().subscribe({
       next: (agent) => {
         this.agents.update((agents) =>
-          agents.map((a) => (a.id === agent.id ? agent : a)),
+          agents.map((a) => (a.id === agent.id ? agent : a))
         );
         const message = `Agent "${agent.name}" ${successVerb} successfully.`;
         this.successMessage.set(message);
@@ -1148,7 +1204,7 @@ export class AiComponent implements OnInit {
       },
       error: (error: { error?: { message?: string | string[] } }) => {
         this.notifyError(
-          formatHttpErrorMessage(error.error?.message, failMessage),
+          formatHttpErrorMessage(error.error?.message, failMessage)
         );
         this.publishingId.set(null);
       },
@@ -1167,9 +1223,11 @@ export class AiComponent implements OnInit {
     const target = this.agents().find((agent) => agent.id === agentId);
     const label = target?.name ?? agentId;
     const confirmed = window.confirm(
-      `Delete agent "${label}"? This will remove it from active use.`,
+      `Delete agent "${label}"? This will remove it from active use.`
     );
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     this.deletingId.set(agentId);
     this.errorMessage.set("");
@@ -1203,8 +1261,8 @@ export class AiComponent implements OnInit {
         this.notifyError(
           formatHttpErrorMessage(
             error.error?.message,
-            "The agent could not be deleted.",
-          ),
+            "The agent could not be deleted."
+          )
         );
         this.deletingId.set(null);
       },
@@ -1227,7 +1285,9 @@ export class AiComponent implements OnInit {
     this.subagents = agent.model_config.subagents.map(mapSubagentConfigToDraft);
     this.tools = (agent.tools ?? []).map((raw) => parseToolPayload(raw));
     this.currentEnabledTools.set(agent.enabled_tools ?? null);
-    this.currentToolDescriptionOverrides.set(agent.tool_description_overrides ?? null);
+    this.currentToolDescriptionOverrides.set(
+      agent.tool_description_overrides ?? null
+    );
     this.currentMcpServers.set(agent.enabled_mcp_servers ?? null);
     this.inputVariables = agent.input_variables ?? [];
     this.outputVariables = agent.output_variables ?? [];
@@ -1257,11 +1317,7 @@ export class AiComponent implements OnInit {
     if (this.navigationMode() === "route" && this.defaultMode() === "editor") {
       const currentAgentId = this.editingAgentId();
       if (currentAgentId) {
-        void this.router.navigate([
-          "/ai/agents",
-          currentAgentId,
-          "overview",
-        ]);
+        void this.router.navigate(["/ai/agents", currentAgentId, "overview"]);
       } else {
         void this.router.navigate(["/ai/agents"]);
       }
@@ -1302,7 +1358,9 @@ export class AiComponent implements OnInit {
   }
 
   private runDraftAutosave(): void {
-    if (this.viewMode() !== "editor") return;
+    if (this.viewMode() !== "editor") {
+      return;
+    }
 
     // Keep bridge.canSave in sync with isValid() — derived from plain fields,
     // so we sample it on the same cadence as the dirty check.
@@ -1313,7 +1371,9 @@ export class AiComponent implements OnInit {
       }
     }
 
-    if (!this.baseline) return;
+    if (!this.baseline) {
+      return;
+    }
 
     const current = this.buildCurrentDraft();
     const equal = areDraftsEqual(current, this.baseline);
@@ -1340,7 +1400,9 @@ export class AiComponent implements OnInit {
     }
 
     const snapshot = result.value;
-    if (!snapshot) return;
+    if (!snapshot) {
+      return;
+    }
 
     if (this.baseline && areDraftsEqual(snapshot.draft, this.baseline)) {
       // The cached draft equals what came back from the server — nothing to do.
@@ -1409,47 +1471,45 @@ export class AiComponent implements OnInit {
       },
     });
 
-    this.agentAdminService
-      .listAgents({ limit: 12, offset: 0 })
-      .subscribe({
-        next: (response) => {
-          this.agents.set(response.agents);
-          this.runtimeHealth.update((current) => {
-            const next: Record<string, IAgentRuntimeHealth> = {};
-            for (const agent of response.agents) {
-              next[agent.id] = current[agent.id] ?? { state: "unknown" };
-            }
-            return next;
-          });
+    this.agentAdminService.listAgents({ limit: 12, offset: 0 }).subscribe({
+      next: (response) => {
+        this.agents.set(response.agents);
+        this.runtimeHealth.update((current) => {
+          const next: Record<string, IAgentRuntimeHealth> = {};
+          for (const agent of response.agents) {
+            next[agent.id] = current[agent.id] ?? { state: "unknown" };
+          }
+          return next;
+        });
 
-          this.checkRuntimeSync();
+        this.checkRuntimeSync();
 
-          const forcedAgentId = this.forcedAgentId();
-          if (forcedAgentId) {
-            const existing = response.agents.find(
-              (agent: IAgent) => agent.id === forcedAgentId,
-            );
-            if (existing) {
-              this.applyAgentToForm(existing, false);
-              this.loading.set(false);
-              return;
-            }
-
-            this.loadForcedAgent(forcedAgentId);
+        const forcedAgentId = this.forcedAgentId();
+        if (forcedAgentId) {
+          const existing = response.agents.find(
+            (agent: IAgent) => agent.id === forcedAgentId
+          );
+          if (existing) {
+            this.applyAgentToForm(existing, false);
+            this.loading.set(false);
             return;
           }
 
-          if (this.defaultMode() === "editor" && !this.editingAgentId()) {
-            this.createNewAgentInline();
-          }
+          this.loadForcedAgent(forcedAgentId);
+          return;
+        }
 
-          this.loading.set(false);
-        },
-        error: () => {
-          this.notifyError("Unable to load existing AI agents.");
-          this.loading.set(false);
-        },
-      });
+        if (this.defaultMode() === "editor" && !this.editingAgentId()) {
+          this.createNewAgentInline();
+        }
+
+        this.loading.set(false);
+      },
+      error: () => {
+        this.notifyError("Unable to load existing AI agents.");
+        this.loading.set(false);
+      },
+    });
 
     this.adaptersService.listByTag("llm").subscribe({
       next: (connectors) => this.llmConnectors.set(connectors),
@@ -1488,7 +1548,9 @@ export class AiComponent implements OnInit {
       ? this.agents().filter((a) => a.id === agentId)
       : [...this.agents()];
 
-    if (targetAgents.length === 0) return;
+    if (targetAgents.length === 0) {
+      return;
+    }
 
     // Set all targets to "checking"
     for (const agent of targetAgents) {
@@ -1504,7 +1566,7 @@ export class AiComponent implements OnInit {
     try {
       const result = await firstValueFrom(
         this.agentRuntimeService.checkRuntimeHealth(),
-        { defaultValue: undefined },
+        { defaultValue: undefined }
       );
       gatewayHealthy = result?.status === "ok";
       if (!gatewayHealthy && result) {

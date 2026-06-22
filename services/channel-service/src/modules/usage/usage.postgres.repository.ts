@@ -1,16 +1,17 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
   SharedTenantDatabaseMode,
-  TenantConnectionManager,
   type Sql,
+  type TenantConnectionManager,
 } from "@yoizen/database";
 import { UsageTenantConnectionManager } from "./tenant-connection-manager";
+import type { IUsageBucketRow, IUsageTotalsRow } from "./usage.dto";
 import type {
   IUsageQueryFilters,
   IUsageRepository,
+  IUsageSummaryChannelRow,
   IUsageTotalsFilters,
 } from "./usage.repository.interface";
-import type { IUsageBucketRow, IUsageTotalsRow } from "./usage.dto";
 
 interface IBucketRawRow {
   bucket: string;
@@ -25,6 +26,12 @@ interface ITotalsRawRow {
   events: string | number;
   first_ts: Date | string | null;
   last_ts: Date | string | null;
+}
+
+interface ISummaryRawRow {
+  channel: string;
+  direction: string;
+  events: string | number;
 }
 
 /**
@@ -45,15 +52,19 @@ export class UsagePostgresRepository implements IUsageRepository {
   ) {}
 
   async getBuckets(
-    filters: IUsageQueryFilters,
+    filters: IUsageQueryFilters
   ): Promise<readonly IUsageBucketRow[]> {
-    const target = await this.connections.resolveDatabaseTarget(filters.tenantId);
+    const target = await this.connections.resolveDatabaseTarget(
+      filters.tenantId
+    );
     const sql = await this.connections.ensureSchema(filters.tenantId);
     if (target.sharedDatabaseMode === SharedTenantDatabaseMode.SingleDatabase) {
       return this.getSharedBuckets(sql, filters);
     }
     const view =
-      filters.bucket === "day" ? "channel_events_daily" : "channel_events_hourly";
+      filters.bucket === "day"
+        ? "channel_events_daily"
+        : "channel_events_hourly";
     const bucketInterval = filters.bucket === "day" ? "1 day" : "1 hour";
 
     const rows = (await sql.unsafe(
@@ -104,7 +115,7 @@ export class UsagePostgresRepository implements IUsageRepository {
         filters.channel ?? null,
         filters.direction ?? null,
         bucketInterval,
-      ],
+      ]
     )) as IBucketRawRow[];
 
     const out: IUsageBucketRow[] = new Array(rows.length);
@@ -122,9 +133,11 @@ export class UsagePostgresRepository implements IUsageRepository {
   }
 
   async getTotals(
-    filters: IUsageTotalsFilters,
+    filters: IUsageTotalsFilters
   ): Promise<readonly IUsageTotalsRow[]> {
-    const target = await this.connections.resolveDatabaseTarget(filters.tenantId);
+    const target = await this.connections.resolveDatabaseTarget(
+      filters.tenantId
+    );
     const sql = await this.connections.ensureSchema(filters.tenantId);
     if (target.sharedDatabaseMode === SharedTenantDatabaseMode.SingleDatabase) {
       return this.getSharedTotals(sql, filters);
@@ -148,7 +161,7 @@ export class UsagePostgresRepository implements IUsageRepository {
         filters.to,
         filters.accountId ?? null,
         filters.channel ?? null,
-      ],
+      ]
     )) as ITotalsRawRow[];
 
     const out: IUsageTotalsRow[] = new Array(rows.length);
@@ -172,12 +185,38 @@ export class UsagePostgresRepository implements IUsageRepository {
     return out;
   }
 
+  async getSummary(
+    tenantId: string
+  ): Promise<readonly IUsageSummaryChannelRow[]> {
+    const target = await this.connections.resolveDatabaseTarget(tenantId);
+    const sql = await this.connections.ensureSchema(tenantId);
+    if (target.sharedDatabaseMode === SharedTenantDatabaseMode.SingleDatabase) {
+      return this.getSharedSummary(sql, tenantId);
+    }
+    const rows = (await sql.unsafe(
+      `
+      SELECT
+        channel,
+        direction,
+        SUM(events)::BIGINT AS events
+      FROM channel_events
+      WHERE ts >= NOW() - INTERVAL '24 hours'
+      GROUP BY channel, direction
+      ORDER BY channel, direction
+    `,
+      []
+    )) as ISummaryRawRow[];
+    return mapSummaryRows(rows);
+  }
+
   private async getSharedBuckets(
     sql: Sql,
-    filters: IUsageQueryFilters,
+    filters: IUsageQueryFilters
   ): Promise<readonly IUsageBucketRow[]> {
     const view =
-      filters.bucket === "day" ? "channel_events_daily" : "channel_events_hourly";
+      filters.bucket === "day"
+        ? "channel_events_daily"
+        : "channel_events_hourly";
     const bucketInterval = filters.bucket === "day" ? "1 day" : "1 hour";
     const rows = (await sql.unsafe(
       `
@@ -230,7 +269,7 @@ export class UsagePostgresRepository implements IUsageRepository {
         filters.channel ?? null,
         filters.direction ?? null,
         bucketInterval,
-      ],
+      ]
     )) as IBucketRawRow[];
 
     return mapBucketRows(rows);
@@ -238,7 +277,7 @@ export class UsagePostgresRepository implements IUsageRepository {
 
   private async getSharedTotals(
     sql: Sql,
-    filters: IUsageTotalsFilters,
+    filters: IUsageTotalsFilters
   ): Promise<readonly IUsageTotalsRow[]> {
     const rows = (await sql.unsafe(
       `
@@ -261,10 +300,31 @@ export class UsagePostgresRepository implements IUsageRepository {
         filters.to,
         filters.accountId ?? null,
         filters.channel ?? null,
-      ],
+      ]
     )) as ITotalsRawRow[];
 
     return mapTotalsRows(rows);
+  }
+
+  private async getSharedSummary(
+    sql: Sql,
+    tenantId: string
+  ): Promise<readonly IUsageSummaryChannelRow[]> {
+    const rows = (await sql.unsafe(
+      `
+      SELECT
+        channel,
+        direction,
+        SUM(events)::BIGINT AS events
+      FROM channel_events
+      WHERE tenant_id = $1
+        AND ts >= NOW() - INTERVAL '24 hours'
+      GROUP BY channel, direction
+      ORDER BY channel, direction
+    `,
+      [tenantId]
+    )) as ISummaryRawRow[];
+    return mapSummaryRows(rows);
   }
 }
 
@@ -300,6 +360,21 @@ function mapTotalsRows(rows: readonly ITotalsRawRow[]): IUsageTotalsRow[] {
       events: Number(r.events),
       firstTs,
       lastTs,
+    };
+  }
+  return out;
+}
+
+function mapSummaryRows(
+  rows: readonly ISummaryRawRow[]
+): IUsageSummaryChannelRow[] {
+  const out: IUsageSummaryChannelRow[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]!;
+    out[i] = {
+      channel: r.channel,
+      direction: r.direction as "ingress" | "egress" | "dlq",
+      events: Number(r.events),
     };
   }
   return out;

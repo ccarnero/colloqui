@@ -23,6 +23,8 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: TZ
+              value: "UTC"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:

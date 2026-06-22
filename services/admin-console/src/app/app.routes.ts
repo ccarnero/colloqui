@@ -1,4 +1,4 @@
-import { Routes } from "@angular/router";
+import type { Routes } from "@angular/router";
 import { authGuard } from "./core/guards/auth.guard";
 
 /**
@@ -26,14 +26,14 @@ export const routes: Routes = [
         path: "dashboard",
         loadComponent: () =>
           import("./features/overview/dashboard/dashboard.component").then(
-            (m) => m.DashboardComponent,
+            (m) => m.DashboardComponent
           ),
       },
       {
         path: "analytics",
         loadComponent: () =>
           import("./features/overview/analytics/analytics.component").then(
-            (m) => m.AnalyticsComponent,
+            (m) => m.AnalyticsComponent
           ),
       },
 
@@ -43,22 +43,22 @@ export const routes: Routes = [
         pathMatch: "full",
         loadComponent: () =>
           import("./features/channels/channels-landing.component").then(
-            (m) => m.ChannelsLandingComponent,
+            (m) => m.ChannelsLandingComponent
           ),
       },
       {
         path: "channels/:channel",
         loadComponent: () =>
           import("./features/channels/channels.component").then(
-            (m) => m.ChannelsComponent,
+            (m) => m.ChannelsComponent
           ),
       },
       {
         path: "channels/:channel/accounts/:accountId",
         loadComponent: () =>
-          import(
-            "./features/channels/detail/channel-detail.component"
-          ).then((m) => m.ChannelDetailComponent),
+          import("./features/channels/detail/channel-detail.component").then(
+            (m) => m.ChannelDetailComponent
+          ),
       },
 
       // ── Connections (Phase 4) ─────────────────────────────────────────
@@ -81,6 +81,13 @@ export const routes: Routes = [
                 "./features/data-integrations/connectors/connectors.component"
               ).then((m) => m.ConnectorsComponent),
           },
+          {
+            path: "http/:id",
+            loadComponent: () =>
+              import(
+                "./features/data-integrations/connectors/detail/connector-detail.component"
+              ).then((m) => m.ConnectorDetailComponent),
+          },
           // Back-compat for previously-split paths.
           { path: "internal-http", redirectTo: "http", pathMatch: "full" },
           { path: "external-http", redirectTo: "http", pathMatch: "full" },
@@ -89,9 +96,9 @@ export const routes: Routes = [
           {
             path: "mcp",
             loadComponent: () =>
-              import(
-                "./features/connections/mcp-servers-page.component"
-              ).then((m) => m.McpServersPageComponent),
+              import("./features/connections/mcp-servers-page.component").then(
+                (m) => m.McpServersPageComponent
+              ),
           },
           {
             path: "hosted-services",
@@ -104,7 +111,11 @@ export const routes: Routes = [
       },
       // Back-compat redirects
       { path: "connectors", redirectTo: "connections/http", pathMatch: "full" },
-      { path: "hosted-services", redirectTo: "connections/hosted-services", pathMatch: "full" },
+      {
+        path: "hosted-services",
+        redirectTo: "connections/hosted-services",
+        pathMatch: "full",
+      },
       { path: "data", redirectTo: "connections", pathMatch: "full" },
 
       // ── AI ─────────────────────────────────────────────────────
@@ -115,16 +126,16 @@ export const routes: Routes = [
             path: "",
             pathMatch: "full",
             loadComponent: () =>
-              import(
-                "./features/automation/ai/ai-landing.component"
-              ).then((m) => m.AiLandingComponent),
+              import("./features/automation/ai/ai-landing.component").then(
+                (m) => m.AiLandingComponent
+              ),
           },
           {
             path: "agents",
             loadComponent: () =>
-              import(
-                "./features/automation/ai/ai-agents-page.component"
-              ).then((m) => m.AiAgentsPageComponent),
+              import("./features/automation/ai/ai-agents-page.component").then(
+                (m) => m.AiAgentsPageComponent
+              ),
           },
           {
             path: "agents/new",
@@ -169,16 +180,16 @@ export const routes: Routes = [
           {
             path: "playground",
             loadComponent: () =>
-              import(
-                "./features/automation/ai/playground.component"
-              ).then((m) => m.PlaygroundComponent),
+              import("./features/automation/ai/playground.component").then(
+                (m) => m.PlaygroundComponent
+              ),
           },
           {
             path: "memories",
             loadComponent: () =>
-              import(
-                "./features/automation/ai/memories.component"
-              ).then((m) => m.AgentMemoriesComponent),
+              import("./features/automation/ai/memories.component").then(
+                (m) => m.AgentMemoriesComponent
+              ),
           },
           {
             path: "skills",
@@ -230,7 +241,21 @@ export const routes: Routes = [
         path: "processes",
         loadComponent: () =>
           import("./features/processes/processes-landing.component").then(
-            (m) => m.ProcessesLandingComponent,
+            (m) => m.ProcessesLandingComponent
+          ),
+      },
+      {
+        path: "processes/trace",
+        loadComponent: () =>
+          import("./features/processes/trace/message-trace.component").then(
+            (m) => m.MessageTraceComponent
+          ),
+      },
+      {
+        path: "processes/trace/:correlationId",
+        loadComponent: () =>
+          import("./features/processes/trace/message-trace.component").then(
+            (m) => m.MessageTraceComponent
           ),
       },
       { path: "automate", redirectTo: "processes", pathMatch: "full" },
@@ -346,35 +371,35 @@ export const routes: Routes = [
         path: "settings",
         loadComponent: () =>
           import("./features/settings-hub/settings-hub.component").then(
-            (m) => m.SettingsHubComponent,
+            (m) => m.SettingsHubComponent
           ),
       },
       {
         path: "users",
         loadComponent: () =>
           import("./features/identity/users/users.component").then(
-            (m) => m.UsersComponent,
+            (m) => m.UsersComponent
           ),
       },
       {
         path: "roles",
         loadComponent: () =>
           import("./features/identity/roles/roles.component").then(
-            (m) => m.RolesComponent,
+            (m) => m.RolesComponent
           ),
       },
       {
         path: "api-keys",
         loadComponent: () =>
           import("./features/identity/api-keys/api-keys.component").then(
-            (m) => m.ApiKeysComponent,
+            (m) => m.ApiKeysComponent
           ),
       },
       {
         path: "billing",
         loadComponent: () =>
           import("./features/tenant-management/billing/billing.component").then(
-            (m) => m.BillingComponent,
+            (m) => m.BillingComponent
           ),
       },
     ],

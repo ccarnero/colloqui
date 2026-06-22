@@ -1,24 +1,31 @@
 import {
-  Injectable,
-  NotFoundException,
   ConflictException,
   Inject,
+  Injectable,
+  NotFoundException,
+  Optional,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 
 import { PinoLoggerService } from "@yoizen/observability";
-import type {
-  CreateAdapterDto,
-  UpdateAdapterDto,
-  CreateEndpointDto,
-  UpdateEndpointDto,
-} from "./adapters.dto";
 import { ADAPTER_UPDATE_FIELD_KEYS } from "./adapter-update-fields";
 import {
+  ADAPTER_USAGE_REPOSITORY,
+  type AdapterUsagePostgresRepository,
+  type IAdapterUsageRow,
+} from "./adapter-usage.postgres.repository";
+import type {
+  CreateAdapterDto,
+  CreateEndpointDto,
+  UpdateAdapterDto,
+  UpdateEndpointDto,
+} from "./adapters.dto";
+import {
   ADAPTERS_REPOSITORY,
-  mapAdapter,
-  mapEndpoint,
   type IAdaptersRepository,
   type IEndpointRow,
+  mapAdapter,
+  mapEndpoint,
 } from "./adapters.repository.interface";
 
 const ENDPOINT_UPDATE_FIELD_KEYS = [
@@ -52,7 +59,7 @@ const REGISTRY_OWNED_FIELD_KEYS: ReadonlySet<string> = new Set([
  */
 const MANAGED_EDITABLE_FIELD_KEYS: readonly string[] =
   ADAPTER_UPDATE_FIELD_KEYS.filter(
-    (key) => !REGISTRY_OWNED_FIELD_KEYS.has(key),
+    (key) => !REGISTRY_OWNED_FIELD_KEYS.has(key)
   );
 
 /** Structured 409 body for managed-adapter conflicts (UI-consumable). */
@@ -67,6 +74,9 @@ interface IManagedAdapterConflict {
   readonly editableFields: readonly string[];
 }
 
+/** Default rolling window for adapter usage queries (days). */
+const DEFAULT_USAGE_WINDOW_DAYS = 7;
+
 @Injectable()
 export class AdaptersService {
   private readonly logger = new PinoLoggerService(AdaptersService.name);
@@ -74,6 +84,9 @@ export class AdaptersService {
   constructor(
     @Inject(ADAPTERS_REPOSITORY)
     private readonly adaptersRepository: IAdaptersRepository,
+    @Optional()
+    @Inject(ADAPTER_USAGE_REPOSITORY)
+    private readonly usageRepository: AdapterUsagePostgresRepository | null,
   ) {}
 
   /**
@@ -81,7 +94,7 @@ export class AdaptersService {
    */
   private async runWithUniqueConflict<T>(
     conflictMessage: string,
-    fn: () => Promise<T>,
+    fn: () => Promise<T>
   ): Promise<T> {
     try {
       return await fn();
@@ -107,14 +120,14 @@ export class AdaptersService {
         const { row, endpoints } =
           await this.adaptersRepository.insertAdapterWithEndpoints(
             tenantId,
-            dto,
+            dto
           );
         this.logger.log(`Created adapter '${dto.name}' for tenant ${tenantId}`);
         return {
           ...mapAdapter(row, tenantId),
           endpoints: endpoints.map(mapEndpoint),
         };
-      },
+      }
     );
   }
 
@@ -132,7 +145,7 @@ export class AdaptersService {
     limit: number,
     offset: number,
     tag?: string,
-    name?: string,
+    name?: string
   ) {
     const rows = await this.adaptersRepository.listRows(
       tenantId,
@@ -140,12 +153,12 @@ export class AdaptersService {
       limit,
       offset,
       tag,
-      name,
+      name
     );
     const adapterIds = rows.map((r) => r.id);
     const endpoints = await this.adaptersRepository.listEndpointsForAdapters(
       tenantId,
-      adapterIds,
+      adapterIds
     );
 
     const endpointsByAdapter = new Map<string, IEndpointRow[]>();
@@ -178,7 +191,7 @@ export class AdaptersService {
 
     const endpoints = await this.adaptersRepository.listEndpointsForAdapter(
       tenantId,
-      id,
+      id
     );
 
     return {
@@ -209,7 +222,7 @@ export class AdaptersService {
   private assertManagedFieldsEditable(
     id: string,
     managedBy: string | null,
-    dto: UpdateAdapterDto,
+    dto: UpdateAdapterDto
   ): void {
     if (!managedBy) {
       return;
@@ -253,7 +266,7 @@ export class AdaptersService {
     this.assertManagedFieldsEditable(id, row.managed_by, dto);
 
     const hasField = ADAPTER_UPDATE_FIELD_KEYS.some(
-      (k) => (dto as Record<string, unknown>)[k] !== undefined,
+      (k) => (dto as Record<string, unknown>)[k] !== undefined
     );
     if (!hasField) {
       return this.get(tenantId, id);
@@ -308,7 +321,7 @@ export class AdaptersService {
   async addEndpoint(
     tenantId: string,
     adapterId: string,
-    dto: CreateEndpointDto,
+    dto: CreateEndpointDto
   ) {
     await this.getRowOrThrow(tenantId, adapterId);
 
@@ -318,13 +331,13 @@ export class AdaptersService {
         const row = await this.adaptersRepository.insertEndpoint(
           tenantId,
           adapterId,
-          dto,
+          dto
         );
         this.logger.log(
-          `Added endpoint '${dto.method} ${dto.path}' to adapter ${adapterId}`,
+          `Added endpoint '${dto.method} ${dto.path}' to adapter ${adapterId}`
         );
         return mapEndpoint(row);
-      },
+      }
     );
   }
 
@@ -338,20 +351,20 @@ export class AdaptersService {
   async removeEndpoint(
     tenantId: string,
     adapterId: string,
-    endpointId: string,
+    endpointId: string
   ): Promise<void> {
     await this.getRowOrThrow(tenantId, adapterId);
 
     const count = await this.adaptersRepository.deleteEndpoint(
       tenantId,
       adapterId,
-      endpointId,
+      endpointId
     );
     if (count === 0) {
       throw new NotFoundException(`Endpoint '${endpointId}' not found`);
     }
     this.logger.log(
-      `Removed endpoint '${endpointId}' from adapter ${adapterId}`,
+      `Removed endpoint '${endpointId}' from adapter ${adapterId}`
     );
   }
 
@@ -368,12 +381,12 @@ export class AdaptersService {
     tenantId: string,
     adapterId: string,
     endpointId: string,
-    dto: UpdateEndpointDto,
+    dto: UpdateEndpointDto
   ) {
     await this.getRowOrThrow(tenantId, adapterId);
 
     const hasField = ENDPOINT_UPDATE_FIELD_KEYS.some(
-      (key) => (dto as Record<string, unknown>)[key] !== undefined,
+      (key) => (dto as Record<string, unknown>)[key] !== undefined
     );
     if (!hasField) {
       return this.getEndpointOrThrow(tenantId, adapterId, endpointId);
@@ -386,23 +399,45 @@ export class AdaptersService {
           tenantId,
           adapterId,
           endpointId,
-          dto,
+          dto
         );
-        this.logger.log(`Updated endpoint '${endpointId}' on adapter ${adapterId}`);
+        this.logger.log(
+          `Updated endpoint '${endpointId}' on adapter ${adapterId}`
+        );
         return this.getEndpointOrThrow(tenantId, adapterId, endpointId);
-      },
+      }
     );
+  }
+
+  /**
+   * Returns per-adapter call usage stats over a rolling window.
+   * Throws {@link ServiceUnavailableException} when the usage repository
+   * is not configured (e.g. postgres-usage-shared not deployed in dev).
+   *
+   * @param tenantId   - Tenant scope.
+   * @param windowDays - Rolling window in days (default: 7).
+   */
+  async getUsage(
+    tenantId: string,
+    windowDays: number = DEFAULT_USAGE_WINDOW_DAYS
+  ): Promise<readonly IAdapterUsageRow[]> {
+    if (!this.usageRepository) {
+      throw new ServiceUnavailableException(
+        "Usage metrics are not available in this environment"
+      );
+    }
+    return this.usageRepository.getTopByCallCount(tenantId, windowDays);
   }
 
   private async getEndpointOrThrow(
     tenantId: string,
     adapterId: string,
-    endpointId: string,
+    endpointId: string
   ): Promise<ReturnType<typeof mapEndpoint>> {
     const endpoint = await this.adaptersRepository.getEndpointRow(
       tenantId,
       adapterId,
-      endpointId,
+      endpointId
     );
     if (!endpoint) {
       throw new NotFoundException(`Endpoint '${endpointId}' not found`);

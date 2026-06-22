@@ -24,6 +24,8 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: TZ
+              value: "UTC"
             - name: NODE_EXTRA_CA_CERTS
               value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
           securityContext:

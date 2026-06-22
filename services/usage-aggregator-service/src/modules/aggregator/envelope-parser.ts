@@ -81,7 +81,7 @@ const EXPECTED_CHANNEL_PRODUCER = "channel-service";
 export function parseEnvelope(
   data: Uint8Array,
   subject: string,
-  streamName: string,
+  streamName: string
 ): ParseOutcome {
   // Cheap subject pre-filter: INGRESS-<tenant> carries the full
   // tenant firehose, so reject non-channel subjects before the JSON
@@ -97,10 +97,9 @@ export function parseEnvelope(
 
   let envelope: Partial<ChannelEnvelope> & Record<string, unknown>;
   try {
-    envelope = JSON.parse(new TextDecoder().decode(data)) as Partial<
-      ChannelEnvelope
-    > &
-      Record<string, unknown>;
+    envelope = JSON.parse(
+      new TextDecoder().decode(data)
+    ) as Partial<ChannelEnvelope> & Record<string, unknown>;
   } catch (err) {
     return {
       ok: false,
@@ -178,17 +177,131 @@ export function parseEnvelope(
  */
 function resolveDirection(
   kind: unknown,
-  streamName: string,
+  streamName: string
 ): "ingress" | "egress" | "dlq" | "skip" | null {
   if (streamName.startsWith("DLQ-")) {
     return "dlq";
   }
-  if (typeof kind !== "string") return null;
+  if (typeof kind !== "string") {
+    return null;
+  }
   const mapped = KIND_TO_DIRECTION.get(kind);
-  if (mapped === undefined) return null;
-  if (mapped === null) return "skip";
+  if (mapped === undefined) {
+    return null;
+  }
+  if (mapped === null) {
+    return "skip";
+  }
   return mapped;
 }
+
+// ─── Connector call event parser ─────────────────────────────────────────────
+
+/**
+ * Subject token that uniquely identifies connector-runtime call events.
+ * Format: `evt.<tenant>.connector-runtime.platform.endpoint.<kind>.v<n>`
+ */
+export const CONNECTOR_SUBJECT_MARKER = ".connector-runtime.platform.endpoint.";
+
+/** Normalized row parsed from a connector call envelope. */
+export interface IConnectorCallEventRow {
+  readonly ts: Date;
+  readonly idempotencyKey: string;
+  readonly adapterId: string;
+  readonly endpointId: string | null;
+  readonly status: number;
+  readonly durationMs: number;
+  readonly cacheResult: string | null;
+}
+
+/**
+ * Outcome of {@link parseConnectorCallEnvelope}. Structured so the
+ * caller can surface rejection reasons as metrics without allocating
+ * Error stack traces on the hot path.
+ */
+export type ConnectorParseOutcome =
+  | { readonly ok: true; readonly row: IConnectorCallEventRow }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * Parses a raw NATS message body into an {@link IConnectorCallEventRow}.
+ *
+ * Fast-path subject gate: returns `{ ok: false, reason: 'non-connector-subject' }`
+ * without a JSON decode when the subject does not contain
+ * {@link CONNECTOR_SUBJECT_MARKER}.
+ *
+ * @param data    Raw `msg.data` Uint8Array.
+ * @param subject `msg.subject` string.
+ */
+export function parseConnectorCallEnvelope(
+  data: Uint8Array,
+  subject: string
+): ConnectorParseOutcome {
+  if (!subject.includes(CONNECTOR_SUBJECT_MARKER)) {
+    return { ok: false, reason: "non-connector-subject" };
+  }
+
+  let envelope: Record<string, unknown>;
+  try {
+    envelope = JSON.parse(new TextDecoder().decode(data)) as Record<
+      string,
+      unknown
+    >;
+  } catch {
+    return { ok: false, reason: "json-parse-error" };
+  }
+
+  const idempotencyKey = envelope["idempotencykey"] as string | undefined;
+  if (!idempotencyKey) {
+    return { ok: false, reason: "missing-idempotency-key" };
+  }
+
+  const timeStr = envelope["time"] as string | undefined;
+  const ts = timeStr ? new Date(timeStr) : null;
+  if (!ts || isNaN(ts.getTime())) {
+    return { ok: false, reason: "invalid-time" };
+  }
+
+  // payload is nested under data.payload
+  const dataObj = envelope["data"] as Record<string, unknown> | undefined;
+  const payload = (dataObj?.["payload"] ?? dataObj) as
+    | Record<string, unknown>
+    | undefined;
+  if (!payload) {
+    return { ok: false, reason: "missing-payload" };
+  }
+
+  const adapterId = payload["adapterId"] as string | undefined;
+  if (!adapterId) {
+    return { ok: false, reason: "missing-adapterId" };
+  }
+
+  const status = payload["status"] as number | undefined;
+  if (typeof status !== "number") {
+    return { ok: false, reason: "missing-status" };
+  }
+
+  const durationMs = payload["durationMs"] as number | undefined;
+  if (typeof durationMs !== "number") {
+    return { ok: false, reason: "missing-durationMs" };
+  }
+
+  return {
+    ok: true,
+    row: {
+      ts,
+      idempotencyKey,
+      adapterId,
+      endpointId: (payload["endpointId"] as string | null | undefined) ?? null,
+      status,
+      durationMs,
+      cacheResult:
+        (payload["cacheResult"] as string | null | undefined) ?? null,
+    },
+  };
+}
+
+// ─── Channel helpers (private) ────────────────────────────────────────────────
 
 /**
  * Best-effort `message_type` extraction from the envelope payload.
@@ -196,10 +309,12 @@ function resolveDirection(
  * message type (e.g. pure status events like `delivered`).
  */
 function extractMessageType(
-  envelope: Partial<ChannelEnvelope> & Record<string, unknown>,
+  envelope: Partial<ChannelEnvelope> & Record<string, unknown>
 ): string | null {
   const data = envelope.data as { payload?: { type?: unknown } } | undefined;
   const type = data?.payload?.type;
-  if (typeof type === "string" && type.length > 0) return type;
+  if (typeof type === "string" && type.length > 0) {
+    return type;
+  }
   return null;
 }

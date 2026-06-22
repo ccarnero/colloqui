@@ -1,3 +1,4 @@
+import { DecimalPipe, JsonPipe, UpperCasePipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
@@ -5,25 +6,24 @@ import {
   inject,
   signal,
 } from "@angular/core";
-import {
-  DatePipe,
-  DecimalPipe,
-  JsonPipe,
-  UpperCasePipe,
-} from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
-import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from "@angular/material/dialog";
+import {
+  MAT_DIALOG_DATA,
+  MatDialogModule,
+  MatDialogRef,
+} from "@angular/material/dialog";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { MatSelectModule } from "@angular/material/select";
-import { ChannelAdminService } from "../../../core/services/channel-admin.service";
 import type {
   IStreamMessage,
   StreamInspectionMode,
 } from "../../../core/models/channel-streams.model";
+import { ChannelAdminService } from "../../../core/services/channel-admin.service";
+import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
 
 export interface IMessageInspectorDialogData {
   readonly streamKey: "ingress" | "dlq";
@@ -39,7 +39,7 @@ export interface IMessageInspectorDialogData {
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DatePipe,
+    UtcDatePipe,
     DecimalPipe,
     JsonPipe,
     UpperCasePipe,
@@ -123,7 +123,7 @@ export interface IMessageInspectorDialogData {
               <div class="message-item__header">
                 <span class="msg-seq">#{{ msg.seq | number }}</span>
                 <span class="msg-subject">{{ msg.subject }}</span>
-                <span class="msg-ts">{{ msg.ts | date: "medium" }}</span>
+                <span class="msg-ts">{{ msg.ts | utcDate: "medium" }}</span>
                 <span class="msg-size">{{ msg.size | number }} B</span>
               </div>
               @if (headerEntries(msg).length > 0) {
@@ -251,10 +251,10 @@ export interface IMessageInspectorDialogData {
   `,
 })
 export class MessageInspectorDialogComponent {
-  protected readonly dialogRef = inject<
-    MatDialogRef<MessageInspectorDialogComponent>
-  >(MatDialogRef);
-  protected readonly data = inject<IMessageInspectorDialogData>(MAT_DIALOG_DATA);
+  protected readonly dialogRef =
+    inject<MatDialogRef<MessageInspectorDialogComponent>>(MatDialogRef);
+  protected readonly data =
+    inject<IMessageInspectorDialogData>(MAT_DIALOG_DATA);
   private readonly channels = inject(ChannelAdminService);
 
   subject: string = this.data.defaultSubject ?? "";
@@ -304,8 +304,12 @@ export class MessageInspectorDialogComponent {
   private extractErrorMessage(err: unknown): string {
     if (err && typeof err === "object") {
       const e = err as { error?: { message?: string }; message?: string };
-      if (e.error?.message) return e.error.message;
-      if (e.message) return e.message;
+      if (e.error?.message) {
+        return e.error.message;
+      }
+      if (e.message) {
+        return e.message;
+      }
     }
     return "Failed to fetch messages";
   }

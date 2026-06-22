@@ -1,25 +1,28 @@
 import { ApplicationFailure } from "@temporalio/activity";
-import { TENANT_HEADER, computeBreakerKey } from "@yoizen/shared";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
 import type { EndpointCallArgs } from "@yoizen/shared";
-import { tracedFetch, PinoLoggerService } from "@yoizen/observability";
+import { computeBreakerKey, TENANT_HEADER } from "@yoizen/shared";
 import { workflowHttpWorkerConfig } from "../config";
 import {
   getAdapterClient,
   getHttpResponseCache,
 } from "./_shared/adapter-client.provider";
 import { getHttpBreaker, HTTP_BREAKER_COOLDOWN_MS } from "./_shared/breaker";
+import { publishEndpointCallEvent } from "./_shared/event-publisher";
+import {
+  createBypassHttpResponseCacheDecision,
+  resolveHttpResponseCachePolicy,
+} from "./_shared/http-cache/cache-policy";
+import { cachedFetch } from "./_shared/http-cache/cached-fetch";
 import {
   applyJsonBody,
   buildUrl,
   httpCallWithRetry,
   type IHttpCallResult,
 } from "./_shared/http-call-with-retry";
-import { cachedFetch } from "./_shared/http-cache/cached-fetch";
-import {
-  createBypassHttpResponseCacheDecision,
-  resolveHttpResponseCachePolicy,
-} from "./_shared/http-cache/cache-policy";
 import { HttpResponseCacheReason } from "./_shared/metrics";
+import { redactHeaders } from "./_shared/redact-headers";
+import { truncateBody } from "./_shared/truncate-body";
 
 type IEndpointCallResult = IHttpCallResult;
 
@@ -61,7 +64,7 @@ const logger = new PinoLoggerService("endpoint-call.activity");
 export async function executeEndpointCall(
   args: EndpointCallArgs,
   tenantId: string,
-  executionId?: string,
+  executionId?: string
 ): Promise<IEndpointCallResult> {
   if (executionId) {
     logger.log(`endpointCall executionId=${executionId} tenant=${tenantId}`);
@@ -109,13 +112,13 @@ export async function executeEndpointCall(
 
 async function executeWithAdapterEndpoint(
   args: EndpointCallArgs,
-  tenantId: string,
+  tenantId: string
 ): Promise<IEndpointCallResult> {
   const client = getAdapterClient();
   const resolved = await client.resolveRequest(
     tenantId,
     args.adapterId!,
-    args.endpointId!,
+    args.endpointId!
   );
 
   const mergedHeaders: Record<string, string> = {
@@ -136,7 +139,8 @@ async function executeWithAdapterEndpoint(
     body,
   });
 
-  return httpCallWithRetry({
+  const startedAt = Date.now();
+  const result = await httpCallWithRetry({
     url,
     method: resolved.method,
     headers: mergedHeaders,
@@ -149,6 +153,23 @@ async function executeWithAdapterEndpoint(
       store: getHttpResponseCache(),
     },
   });
+  publishEndpointCallEvent({
+    tenantId,
+    adapterId: args.adapterId ?? "",
+    endpointId: args.endpointId ?? null,
+    method: resolved.method,
+    resolvedUrl: url,
+    status: result.status,
+    durationMs: Date.now() - startedAt,
+    cacheResult: result.cacheResult ?? null,
+    requestHeaders: redactHeaders(mergedHeaders),
+    requestBody: truncateBody(body),
+    responseHeaders: redactHeaders(result.headers),
+    responseBody: truncateBody(result.data),
+    cacheKey: decision.policy?.key,
+    cacheTtlSeconds: decision.policy?.ttlSeconds,
+  });
+  return result;
 }
 
 /**
@@ -163,21 +184,25 @@ async function executeWithAdapterEndpoint(
  */
 async function executeWithAdapterBase(
   args: EndpointCallArgs,
-  tenantId: string,
+  tenantId: string
 ): Promise<IEndpointCallResult> {
   if (!args.url || args.url.length === 0) {
     throw ApplicationFailure.nonRetryable(
       "endpointCall: when 'adapterId' is set without 'endpointId', 'url' must be a non-empty path (e.g. '/resource').",
       "INVALID_ENDPOINT_CALL_ARGS",
-      { adapterId: args.adapterId },
+      { adapterId: args.adapterId }
     );
   }
 
   const client = getAdapterClient();
-  const resolved = await client.resolveAdapterRequest(tenantId, args.adapterId!, {
-    method: args.method,
-    path: args.url,
-  });
+  const resolved = await client.resolveAdapterRequest(
+    tenantId,
+    args.adapterId!,
+    {
+      method: args.method,
+      path: args.url,
+    }
+  );
 
   const mergedHeaders: Record<string, string> = {
     ...resolved.headers,
@@ -197,7 +222,8 @@ async function executeWithAdapterBase(
     body,
   });
 
-  return httpCallWithRetry({
+  const startedAt = Date.now();
+  const result = await httpCallWithRetry({
     url,
     method: resolved.method,
     headers: mergedHeaders,
@@ -210,11 +236,28 @@ async function executeWithAdapterBase(
       store: getHttpResponseCache(),
     },
   });
+  publishEndpointCallEvent({
+    tenantId,
+    adapterId: args.adapterId ?? "",
+    endpointId: null,
+    method: resolved.method,
+    resolvedUrl: url,
+    status: result.status,
+    durationMs: Date.now() - startedAt,
+    cacheResult: result.cacheResult ?? null,
+    requestHeaders: redactHeaders(mergedHeaders),
+    requestBody: truncateBody(body),
+    responseHeaders: redactHeaders(result.headers),
+    responseBody: truncateBody(result.data),
+    cacheKey: decision.policy?.key,
+    cacheTtlSeconds: decision.policy?.ttlSeconds,
+  });
+  return result;
 }
 
 async function executeRaw(
   args: EndpointCallArgs,
-  tenantId: string,
+  tenantId: string
 ): Promise<IEndpointCallResult> {
   assertAbsoluteUrl(args.url);
 
@@ -227,7 +270,7 @@ async function executeRaw(
   const body = applyJsonBody(args.data, headers);
   const decision = createBypassHttpResponseCacheDecision(
     args.method,
-    HttpResponseCacheReason.UNSUPPORTED_TARGET,
+    HttpResponseCacheReason.UNSUPPORTED_TARGET
   );
 
   const res = await cachedFetch(
@@ -242,7 +285,7 @@ async function executeRaw(
       decision,
       cache: getHttpResponseCache(),
       fetchFn: tracedFetch,
-    },
+    }
   );
 
   const responseHeaders: Record<string, string> = {};
@@ -283,7 +326,7 @@ function assertAbsoluteUrl(url: string): void {
     throw ApplicationFailure.nonRetryable(
       `endpointCall: 'url' must be absolute (e.g. 'https://…') when no 'adapterId' is provided; received '${url}'.`,
       "INVALID_ENDPOINT_CALL_URL",
-      { url },
+      { url }
     );
   }
 }

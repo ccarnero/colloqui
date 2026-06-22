@@ -5,11 +5,12 @@ mock.module("@yoizen/observability", () => ({
   getMeter: () => ({
     createCounter: () => ({ add() {} }),
   }),
-  tracedFetch: mock(async () =>
-    new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
+  tracedFetch: mock(
+    async () =>
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
   ),
   PinoLoggerService: class FakeLogger {
     log() {}
@@ -37,11 +38,12 @@ describe("cachedFetch", () => {
     get: mock(async () => null),
     setex: mock(async () => undefined),
   };
-  const fetchFn = mock(async () =>
-    new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
+  const fetchFn = mock(
+    async () =>
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
   );
 
   beforeEach(() => {
@@ -50,11 +52,12 @@ describe("cachedFetch", () => {
     cache.setex.mockReset();
     cache.setex.mockImplementation(async () => undefined);
     fetchFn.mockReset();
-    fetchFn.mockImplementation(async () =>
-      new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+    fetchFn.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
     );
   });
 
@@ -70,7 +73,7 @@ describe("cachedFetch", () => {
         },
         cache,
         fetchFn,
-      },
+      }
     );
 
     expect(cache.get).not.toHaveBeenCalled();
@@ -82,7 +85,7 @@ describe("cachedFetch", () => {
     cache.get.mockImplementation(async () => ({
       status: 200,
       bodyBase64: Buffer.from(JSON.stringify({ cached: true })).toString(
-        "base64",
+        "base64"
       ),
       headers: { "content-type": "application/json" },
       storedAtMs: Date.now(),
@@ -99,7 +102,7 @@ describe("cachedFetch", () => {
         },
         cache,
         fetchFn,
-      },
+      }
     );
 
     expect(fetchFn).not.toHaveBeenCalled();
@@ -118,7 +121,7 @@ describe("cachedFetch", () => {
         },
         cache,
         fetchFn,
-      },
+      }
     );
 
     expect(fetchFn).toHaveBeenCalledTimes(1);
@@ -131,11 +134,12 @@ describe("cachedFetch", () => {
   });
 
   it("does not store non-success responses", async () => {
-    fetchFn.mockImplementation(async () =>
-      new Response(JSON.stringify({ error: true }), {
-        status: 503,
-        headers: { "Content-Type": "application/json" },
-      }),
+    fetchFn.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ error: true }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        })
     );
 
     const response = await cachedFetch(
@@ -149,7 +153,7 @@ describe("cachedFetch", () => {
         },
         cache,
         fetchFn,
-      },
+      }
     );
 
     expect(cache.setex).not.toHaveBeenCalled();
@@ -173,10 +177,85 @@ describe("cachedFetch", () => {
         },
         cache,
         fetchFn,
-      },
+      }
     );
 
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect(await response.json()).toEqual({ ok: true });
+  });
+
+  it("calls onCacheResult with HIT on a cache hit", async () => {
+    cache.get.mockImplementation(async () => ({
+      status: 200,
+      bodyBase64: Buffer.from(JSON.stringify({ cached: true })).toString(
+        "base64"
+      ),
+      headers: { "content-type": "application/json" },
+      storedAtMs: Date.now(),
+    }));
+    const onCacheResult = mock(() => {});
+
+    await cachedFetch(
+      "https://example.com/items",
+      { method: "GET" },
+      {
+        decision: {
+          method: "GET",
+          policy: { key: "httpcache:v1:hit-cb", ttlSeconds: 60 },
+          reason: HttpResponseCacheReason.OK,
+        },
+        cache,
+        fetchFn,
+        onCacheResult,
+      }
+    );
+
+    expect(onCacheResult).toHaveBeenCalledTimes(1);
+    expect(onCacheResult.mock.calls[0]![0]).toBe("hit");
+  });
+
+  it("calls onCacheResult with MISS on a cache miss (not for STORE)", async () => {
+    const onCacheResult = mock(() => {});
+
+    await cachedFetch(
+      "https://example.com/items",
+      { method: "GET" },
+      {
+        decision: {
+          method: "GET",
+          policy: { key: "httpcache:v1:miss-cb", ttlSeconds: 60 },
+          reason: HttpResponseCacheReason.OK,
+        },
+        cache,
+        fetchFn,
+        onCacheResult,
+      }
+    );
+
+    // Called exactly once with MISS; STORE happens async and never calls onCacheResult
+    expect(onCacheResult).toHaveBeenCalledTimes(1);
+    expect(onCacheResult.mock.calls[0]![0]).toBe("miss");
+  });
+
+  it("calls onCacheResult with BYPASS when decision has no policy", async () => {
+    const onCacheResult = mock(() => {});
+
+    await cachedFetch(
+      "https://example.com/items",
+      { method: "GET" },
+      {
+        decision: {
+          method: "GET",
+          policy: null,
+          reason: HttpResponseCacheReason.UNSUPPORTED_TARGET,
+        },
+        cache,
+        fetchFn,
+        onCacheResult,
+      }
+    );
+
+    expect(onCacheResult).toHaveBeenCalledTimes(1);
+    expect(onCacheResult.mock.calls[0]![0]).toBe("bypass");
   });
 });

@@ -30,6 +30,9 @@ spec:
           ports:
             - containerPort: 3000
               protocol: TCP
+          env:
+            - name: TZ
+              value: "UTC"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

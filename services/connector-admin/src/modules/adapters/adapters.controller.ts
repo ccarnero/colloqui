@@ -1,26 +1,26 @@
 import {
-  Controller,
-  Post,
-  Get,
-  Patch,
-  Delete,
   Body,
-  Param,
-  Query,
+  Controller,
+  Delete,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
-import { clampListLimit, clampListOffset } from "@yoizen/shared";
 import { TenantGuard, TenantId } from "@yoizen/database";
-import { AdaptersService } from "./adapters.service";
+import { clampListLimit, clampListOffset } from "@yoizen/shared";
 import {
   CreateAdapterDto,
-  UpdateAdapterDto,
   CreateEndpointDto,
   ListAdaptersQueryDto,
+  UpdateAdapterDto,
   UpdateEndpointDto,
 } from "./adapters.dto";
+import { AdaptersService } from "./adapters.service";
 
 @Controller("connectors")
 @UseGuards(TenantGuard)
@@ -34,17 +34,14 @@ export class AdaptersController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(
-    @TenantId() tenantId: string,
-    @Body() dto: CreateAdapterDto,
-  ) {
+  async create(@TenantId() tenantId: string, @Body() dto: CreateAdapterDto) {
     return this.adaptersService.create(tenantId, dto);
   }
 
   @Get()
   async list(
     @TenantId() tenantId: string,
-    @Query() query: ListAdaptersQueryDto,
+    @Query() query: ListAdaptersQueryDto
   ) {
     const limit = clampListLimit(query.limit);
     const offset = clampListOffset(query.offset);
@@ -54,8 +51,26 @@ export class AdaptersController {
       limit,
       offset,
       query.tag,
-      query.name,
+      query.name
     );
+  }
+
+  /**
+   * Per-adapter call usage stats (counts, error rates, avg latency)
+   * over a rolling window. Declared before `@Get(':id')` so Nest does
+   * not match `usage` as an adapter id.
+   *
+   * @param tenantId  - Validated tenant from `x-yoizen-tenant`.
+   * @param window    - Rolling window in days (query param, default 7).
+   */
+  @Get("usage")
+  async usage(@TenantId() tenantId: string, @Query("window") window?: string) {
+    const windowDays = window ? Math.max(1, parseInt(window, 10) || 7) : 7;
+    const topByCallCount = await this.adaptersService.getUsage(
+      tenantId,
+      windowDays
+    );
+    return { windowDays, topByCallCount };
   }
 
   /**
@@ -76,7 +91,7 @@ export class AdaptersController {
   async update(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-    @Body() dto: UpdateAdapterDto,
+    @Body() dto: UpdateAdapterDto
   ) {
     return this.adaptersService.update(tenantId, id, dto);
   }
@@ -87,10 +102,7 @@ export class AdaptersController {
    */
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(
-    @TenantId() tenantId: string,
-    @Param("id") id: string,
-  ) {
+  async remove(@TenantId() tenantId: string, @Param("id") id: string) {
     return this.adaptersService.remove(tenantId, id);
   }
 
@@ -104,7 +116,7 @@ export class AdaptersController {
   async addEndpoint(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-    @Body() dto: CreateEndpointDto,
+    @Body() dto: CreateEndpointDto
   ) {
     return this.adaptersService.addEndpoint(tenantId, id, dto);
   }
@@ -119,7 +131,7 @@ export class AdaptersController {
   async removeEndpoint(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-    @Param("epId") epId: string,
+    @Param("epId") epId: string
   ) {
     return this.adaptersService.removeEndpoint(tenantId, id, epId);
   }
@@ -135,7 +147,7 @@ export class AdaptersController {
     @TenantId() tenantId: string,
     @Param("id") id: string,
     @Param("epId") epId: string,
-    @Body() dto: UpdateEndpointDto,
+    @Body() dto: UpdateEndpointDto
   ) {
     return this.adaptersService.updateEndpoint(tenantId, id, epId, dto);
   }

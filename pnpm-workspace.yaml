@@ -7,6 +7,16 @@ packages:
   - '!services/messaging-console'
   - '!services/yoizenclaw-runtime'
 
+allowBuilds:
+  '@parcel/watcher': set this to true or false
+  '@swc/core': set this to true or false
+  cpu-features: set this to true or false
+  esbuild: set this to true or false
+  lmdb: set this to true or false
+  msgpackr-extract: set this to true or false
+  protobufjs: set this to true or false
+  ssh2: set this to true or false
+
 # Native deps whose install scripts we intentionally DON'T run (supply-chain
 # hardening). They all ship prebuilt binaries selected at runtime, so blocking
 # their build scripts is safe — matches the previous Bun behaviour.

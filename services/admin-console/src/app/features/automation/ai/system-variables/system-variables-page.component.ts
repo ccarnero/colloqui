@@ -1,23 +1,24 @@
+import { CommonModule } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   inject,
-  OnInit,
+  type OnInit,
   signal,
 } from "@angular/core";
-import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
-import { MatIconModule } from "@angular/material/icon";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
+import { MatIconModule } from "@angular/material/icon";
 import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
 import {
-  SystemVariablesService,
   type ISystemVariable,
+  SystemVariablesService,
 } from "../../../../core/services/system-variables.service";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
 import {
-  SystemVariablesFormDialogComponent,
   type ISystemVariableFormResult,
+  SystemVariablesFormDialogComponent,
 } from "./system-variables-form-dialog.component";
 
 const TYPE_COLORS: Record<string, string> = {
@@ -54,6 +55,7 @@ function previewValue(variable: ISystemVariable): string {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
+    UtcDatePipe,
     FormsModule,
     MatButtonModule,
     MatIconModule,
@@ -107,7 +109,7 @@ function previewValue(variable: ISystemVariable): string {
             }
             <div class="variable-footer">
               <span class="variable-date">
-                Updated {{ variable.updated_at | date:"short" }}
+                Updated {{ variable.updated_at | utcDate:"short" }}
               </span>
               <div class="variable-actions">
                 <button
@@ -209,20 +211,22 @@ export class SystemVariablesPageComponent implements OnInit {
       width: "560px",
       data: {},
     });
-    ref.afterClosed().subscribe((result: ISystemVariableFormResult | undefined) => {
-      if (result) {
-        this.service.create(result).subscribe({
-          next: () => {
-            this.loadVariables();
-            this.snackBar.open("Variable created", "OK", { duration: 2000 });
-          },
-          error: () =>
-            this.snackBar.open("Failed to create variable", "OK", {
-              duration: 3000,
-            }),
-        });
-      }
-    });
+    ref
+      .afterClosed()
+      .subscribe((result: ISystemVariableFormResult | undefined) => {
+        if (result) {
+          this.service.create(result).subscribe({
+            next: () => {
+              this.loadVariables();
+              this.snackBar.open("Variable created", "OK", { duration: 2000 });
+            },
+            error: () =>
+              this.snackBar.open("Failed to create variable", "OK", {
+                duration: 3000,
+              }),
+          });
+        }
+      });
   }
 
   editVariable(variable: ISystemVariable): void {
@@ -230,24 +234,28 @@ export class SystemVariablesPageComponent implements OnInit {
       width: "560px",
       data: { variable },
     });
-    ref.afterClosed().subscribe((result: ISystemVariableFormResult | undefined) => {
-      if (result) {
-        this.service.update(variable.id, result).subscribe({
-          next: () => {
-            this.loadVariables();
-            this.snackBar.open("Variable updated", "OK", { duration: 2000 });
-          },
-          error: () =>
-            this.snackBar.open("Failed to update variable", "OK", {
-              duration: 3000,
-            }),
-        });
-      }
-    });
+    ref
+      .afterClosed()
+      .subscribe((result: ISystemVariableFormResult | undefined) => {
+        if (result) {
+          this.service.update(variable.id, result).subscribe({
+            next: () => {
+              this.loadVariables();
+              this.snackBar.open("Variable updated", "OK", { duration: 2000 });
+            },
+            error: () =>
+              this.snackBar.open("Failed to update variable", "OK", {
+                duration: 3000,
+              }),
+          });
+        }
+      });
   }
 
   deleteVariable(variable: ISystemVariable): void {
-    if (!confirm(`Delete variable "${variable.name}"?`)) return;
+    if (!confirm(`Delete variable "${variable.name}"?`)) {
+      return;
+    }
     this.service.delete(variable.id).subscribe({
       next: () => {
         this.loadVariables();

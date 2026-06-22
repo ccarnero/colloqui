@@ -1,20 +1,20 @@
-import type {
-  IHttpResponseCachePolicyDecision,
-} from "./cache-policy";
+import {
+  HttpResponseCacheReason,
+  HttpResponseCacheResult,
+  type HttpResponseCacheResultValue,
+  recordHttpResponseCache,
+} from "../metrics";
+import type { IHttpResponseCachePolicyDecision } from "./cache-policy";
 import type {
   ICachedHttpResponseEntry,
   IHttpResponseCache,
 } from "./http-response-cache";
-import {
-  HttpResponseCacheReason,
-  HttpResponseCacheResult,
-  recordHttpResponseCache,
-} from "../metrics";
 
 export interface ICachedFetchContext {
   readonly decision: IHttpResponseCachePolicyDecision;
   readonly cache: IHttpResponseCache;
   readonly fetchFn: typeof globalThis.fetch;
+  readonly onCacheResult?: (result: HttpResponseCacheResultValue) => void;
 }
 
 /**
@@ -27,15 +27,16 @@ export interface ICachedFetchContext {
 export async function cachedFetch(
   input: string,
   init: RequestInit,
-  context: ICachedFetchContext,
+  context: ICachedFetchContext
 ): Promise<Response> {
-  const { decision, cache, fetchFn } = context;
+  const { decision, cache, fetchFn, onCacheResult } = context;
   if (!decision.policy) {
     recordHttpResponseCache(
       HttpResponseCacheResult.BYPASS,
       decision.reason,
-      decision.method,
+      decision.method
     );
+    onCacheResult?.(HttpResponseCacheResult.BYPASS);
     return fetchFn(input, init);
   }
 
@@ -45,24 +46,27 @@ export async function cachedFetch(
       recordHttpResponseCache(
         HttpResponseCacheResult.HIT,
         HttpResponseCacheReason.OK,
-        decision.method,
+        decision.method
       );
+      onCacheResult?.(HttpResponseCacheResult.HIT);
       return rehydrateResponse(cached);
     }
   } catch {
     recordHttpResponseCache(
       HttpResponseCacheResult.BYPASS,
       HttpResponseCacheReason.REDIS_ERROR,
-      decision.method,
+      decision.method
     );
+    onCacheResult?.(HttpResponseCacheResult.BYPASS);
     return fetchFn(input, init);
   }
 
   recordHttpResponseCache(
     HttpResponseCacheResult.MISS,
     HttpResponseCacheReason.OK,
-    decision.method,
+    decision.method
   );
+  onCacheResult?.(HttpResponseCacheResult.MISS);
   const response = await fetchFn(input, init);
   const bodyBuffer = await response.arrayBuffer();
   const nextResponse = new Response(bodyBuffer.slice(0), {
@@ -74,7 +78,7 @@ export async function cachedFetch(
     recordHttpResponseCache(
       HttpResponseCacheResult.STORE_SKIP,
       HttpResponseCacheReason.STATUS,
-      decision.method,
+      decision.method
     );
     return nextResponse;
   }
@@ -92,14 +96,14 @@ export async function cachedFetch(
       recordHttpResponseCache(
         HttpResponseCacheResult.STORE,
         HttpResponseCacheReason.OK,
-        decision.method,
+        decision.method
       );
     })
     .catch(() => {
       recordHttpResponseCache(
         HttpResponseCacheResult.STORE_SKIP,
         HttpResponseCacheReason.REDIS_ERROR,
-        decision.method,
+        decision.method
       );
     });
   return nextResponse;

@@ -1,18 +1,19 @@
+import { DecimalPipe, UpperCasePipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
-  EventEmitter,
-  Output,
   computed,
+  EventEmitter,
   input,
+  Output,
 } from "@angular/core";
-import { DatePipe, DecimalPipe, UpperCasePipe } from "@angular/common";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import type {
   IUsageTotalsRow,
   UsageDirection,
 } from "../../../core/models/channel-streams.model";
+import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
 
 interface IScopedStreamRow {
   readonly direction: UsageDirection;
@@ -43,7 +44,7 @@ const DIRECTION_META: ReadonlyMap<
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DatePipe,
+    UtcDatePipe,
     DecimalPipe,
     UpperCasePipe,
     MatButtonModule,
@@ -85,7 +86,7 @@ const DIRECTION_META: ReadonlyMap<
               <div class="stat-label">First event</div>
               <div class="stat-value small">
                 @if (row.firstTs) {
-                  {{ row.firstTs | date: "medium" }}
+                  {{ row.firstTs | utcDate: "medium" }}
                 } @else {
                   —
                 }
@@ -95,7 +96,7 @@ const DIRECTION_META: ReadonlyMap<
               <div class="stat-label">Last event</div>
               <div class="stat-value small">
                 @if (row.lastTs) {
-                  {{ row.lastTs | date: "medium" }}
+                  {{ row.lastTs | utcDate: "medium" }}
                 } @else {
                   —
                 }

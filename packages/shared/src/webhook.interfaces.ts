@@ -16,6 +16,15 @@ export interface IWebhookIngressData extends EventData {
   payload: Record<string, unknown>;
   raw_body_b64: string;
   headers: Record<string, string>;
+  /**
+   * Optional channel-account **instance** selector taken from the ingress URL
+   * path: `/api/webhooks/<channel>/<tenant>/<instance>`, where `<instance>` is
+   * the account `externalId`. When present, `channel-service` resolves the
+   * account by `(channel, externalId)` (and still verifies the token), so a
+   * tenant can expose one addressable URL per configured account. Absent for
+   * the legacy `/api/webhooks/<channel>/<tenant>` path (token-only routing).
+   */
+  instance?: string;
 }
 
 /**

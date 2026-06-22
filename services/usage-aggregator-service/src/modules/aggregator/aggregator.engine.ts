@@ -1,37 +1,38 @@
 import {
   Inject,
   Injectable,
-  OnModuleDestroy,
-  OnModuleInit,
+  type OnModuleDestroy,
+  type OnModuleInit,
 } from "@nestjs/common";
+import {
+  type INatsConsumerLogger,
+  MultiTenantConsumerManager,
+  NATS_CONNECTION,
+  SharedTenantDatabaseMode,
+  type TenantConnectionManager,
+  type TenantMongoConnectionManager,
+} from "@yoizen/database";
+import { isWorkerMode, PinoLoggerService } from "@yoizen/observability";
+import { PermanentError } from "@yoizen/shared";
 import type {
   JetStreamClient,
   JetStreamManager,
   JsMsg,
   NatsConnection,
 } from "nats";
-import { PermanentError } from "@yoizen/shared";
-import {
-  MultiTenantConsumerManager,
-  SharedTenantDatabaseMode,
-  TenantConnectionManager,
-  TenantMongoConnectionManager,
-  type INatsConsumerLogger,
-  NATS_CONNECTION,
-} from "@yoizen/database";
-import { PinoLoggerService, isWorkerMode } from "@yoizen/observability";
-import {
-  JETSTREAM,
-  JETSTREAM_MANAGER,
-} from "../../providers/nats.provider";
-import { UsageTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import { usageAggregatorServiceConfig } from "../../config";
-import { BatchBuffer, type IBatchBufferHooks } from "./batch-buffer";
-import {
-  parseEnvelope,
-  type IChannelEventRow,
-} from "./envelope-parser";
+import { JETSTREAM, JETSTREAM_MANAGER } from "../../providers/nats.provider";
+import { UsageTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import { aggregatorMetrics } from "./aggregator.metrics";
+import { BatchBuffer, type IBatchBufferHooks } from "./batch-buffer";
+import { insertConnectorCallBatch } from "./batch-inserter.connector";
+import {
+  CONNECTOR_SUBJECT_MARKER,
+  type IChannelEventRow,
+  type IConnectorCallEventRow,
+  parseConnectorCallEnvelope,
+  parseEnvelope,
+} from "./envelope-parser";
 
 /**
  * Regexes driving `MultiTenantConsumerManager` reconciliation. The
@@ -51,14 +52,24 @@ const SKIP_REASONS = new Set<string>([
   "skipped-kind",
   "non-channel-subject",
   "non-channel-producer",
+  "non-connector-subject",
 ]);
+
+/**
+ * Minimal batch-buffer interface for connector events. Reuses the same
+ * BatchBuffer class; the connection type is always Sql (Postgres-only).
+ */
+type ConnectorBatchBuffer = {
+  enqueue(row: IConnectorCallEventRow): Promise<void>;
+  stop(): Promise<void>;
+};
 
 /**
  * Drives the entire aggregator pipeline: discovers tenant streams
  * dynamically (via `MultiTenantConsumerManager`'s reconciliation
  * loop), consumes messages off each durable, parses them into
- * `IChannelEventRow`s, and flushes batches to the tenant's own
- * `mongo-usage` instance.
+ * `IChannelEventRow`s or `IConnectorCallEventRow`s, and flushes
+ * batches to the tenant's own storage.
  *
  * Per-tenant batchers are keyed in a `Map` so enqueue → buffer is
  * O(1). Tenant discovery happens implicitly via stream discovery —
@@ -70,6 +81,7 @@ const SKIP_REASONS = new Set<string>([
 export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new PinoLoggerService(AggregatorEngine.name);
   private readonly buffers = new Map<string, BatchBuffer>();
+  private readonly connectorBuffers = new Map<string, ConnectorBatchBuffer>();
   private ingressManager: MultiTenantConsumerManager | null = null;
   private dlqManager: MultiTenantConsumerManager | null = null;
 
@@ -107,7 +119,7 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
         ensureOnly,
       },
       (msg) => this.handleMessage(msg, "ingress"),
-      runnerLogger,
+      runnerLogger
     );
 
     this.dlqManager = new MultiTenantConsumerManager(
@@ -122,35 +134,44 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
         ensureOnly,
       },
       (msg) => this.handleMessage(msg, "dlq"),
-      runnerLogger,
+      runnerLogger
     );
 
-    await Promise.all([
-      this.ingressManager.start(),
-      this.dlqManager.start(),
-    ]);
+    await Promise.all([this.ingressManager.start(), this.dlqManager.start()]);
 
     this.logger.log(
       ensureOnly
         ? `Pre-created '${cfg.ingressDurableName}' + '${cfg.dlqDurableName}' durable consumers (api mode, ensure-only)`
-        : "AggregatorEngine started: ingress + dlq durables reconciling tenant streams",
+        : "AggregatorEngine started: ingress + dlq durables reconciling tenant streams"
     );
   }
 
   async onModuleDestroy(): Promise<void> {
-    await Promise.all([
-      this.ingressManager?.stop(),
-      this.dlqManager?.stop(),
-    ]);
-    if (!isWorkerMode()) return;
-    const tasks: Promise<void>[] = [];
-    for (const buf of this.buffers.values()) tasks.push(buf.stop());
-    await Promise.allSettled(tasks);
+    await Promise.all([this.ingressManager?.stop(), this.dlqManager?.stop()]);
+    if (!isWorkerMode()) {
+      return;
+    }
+
+    const channelTasks: Promise<void>[] = [];
+    for (const buf of this.buffers.values()) {
+      channelTasks.push(buf.stop());
+    }
+
+    const connectorTasks: Promise<void>[] = [];
+    for (const buf of this.connectorBuffers.values()) {
+      connectorTasks.push(buf.stop());
+    }
+
+    await Promise.allSettled([...channelTasks, ...connectorTasks]);
     this.buffers.clear();
+    this.connectorBuffers.clear();
   }
 
   /**
    * Per-message entry point: parse → batch → `ack` only after commit.
+   *
+   * Connector call events are detected first by a cheap subject check
+   * ({@link CONNECTOR_SUBJECT_MARKER}) before the channel path runs.
    *
    * Permanent (non-retryable) failures bubble up as `PermanentError`
    * so the runner `msg.term()`s them; transient errors (Postgres
@@ -159,9 +180,38 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
    */
   private async handleMessage(
     msg: JsMsg,
-    streamKind: "ingress" | "dlq",
+    streamKind: "ingress" | "dlq"
   ): Promise<void> {
     const streamName = msg.info.stream;
+
+    // Fast-path: connector call events — check subject before channel parse.
+    if (msg.subject.includes(CONNECTOR_SUBJECT_MARKER)) {
+      const parse = parseConnectorCallEnvelope(msg.data, msg.subject);
+      if (!parse.ok) {
+        if (SKIP_REASONS.has(parse.reason)) {
+          aggregatorMetrics.recordSkipped(parse.reason);
+          return;
+        }
+        aggregatorMetrics.recordParseFailure(parse.reason);
+        throw new PermanentError(
+          "usage-aggregator.connector.parse",
+          `connector envelope rejected: ${parse.reason}`
+        );
+      }
+      const tenantId = extractTenantId(streamName, streamKind);
+      if (!tenantId) {
+        aggregatorMetrics.recordParseFailure("missing-tenant");
+        throw new PermanentError(
+          "usage-aggregator.connector.tenant",
+          `cannot derive tenant from stream '${streamName}'`
+        );
+      }
+      const buffer = await this.getConnectorBufferFor(tenantId);
+      await buffer.enqueue(parse.row);
+      return;
+    }
+
+    // Channel event path (unchanged).
     const parse = parseEnvelope(msg.data, msg.subject, streamName);
     if (!parse.ok) {
       if (SKIP_REASONS.has(parse.reason)) {
@@ -171,7 +221,7 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
       aggregatorMetrics.recordParseFailure(parse.reason);
       throw new PermanentError(
         "usage-aggregator.parse",
-        `envelope rejected: ${parse.reason}`,
+        `envelope rejected: ${parse.reason}`
       );
     }
 
@@ -180,7 +230,7 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
       aggregatorMetrics.recordParseFailure("missing-tenant");
       throw new PermanentError(
         "usage-aggregator.tenant",
-        `cannot derive tenant from stream '${streamName}'`,
+        `cannot derive tenant from stream '${streamName}'`
       );
     }
 
@@ -189,14 +239,14 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Lazily builds the per-tenant `BatchBuffer` the first time we
-   * see a message from that tenant. Connection + schema bootstrap
-   * are delegated to `UsageTenantConnectionManager.ensureSchema`,
-   * which dedupes concurrent cold starts internally.
+   * Lazily builds the per-tenant channel `BatchBuffer` the first time we
+   * see a message from that tenant.
    */
   private async getBufferFor(tenantId: string): Promise<BatchBuffer> {
     const cached = this.buffers.get(tenantId);
-    if (cached) return cached;
+    if (cached) {
+      return cached;
+    }
 
     const target = await this.usageConnections.resolveDatabaseTarget(tenantId);
     const connection = await this.usageConnections.ensureSchema(tenantId);
@@ -221,10 +271,81 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
     return buf;
   }
 
+  /**
+   * Lazily builds the per-tenant connector `BatchBuffer` the first time we
+   * see a connector call event from that tenant. Only works against the
+   * Postgres (TimescaleDB) storage backend — connector events are not
+   * mirrored to Mongo.
+   */
+  private async getConnectorBufferFor(
+    tenantId: string
+  ): Promise<ConnectorBatchBuffer> {
+    const cached = this.connectorBuffers.get(tenantId);
+    if (cached) {
+      return cached;
+    }
+
+    const sql = await (
+      this.usageConnections as TenantConnectionManager
+    ).ensureSchema(tenantId);
+
+    const rows: IConnectorCallEventRow[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const batchSize = usageAggregatorServiceConfig.batchSize;
+    const batchFlushMs = usageAggregatorServiceConfig.batchFlushMs;
+
+    const flush = async (): Promise<void> => {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      if (rows.length === 0) {
+        return;
+      }
+      const batch = rows.splice(0);
+      try {
+        await insertConnectorCallBatch(sql, batch, tenantId);
+        this.logger.log(
+          `Flushed ${batch.length} connector call events for tenant ${tenantId}`
+        );
+      } catch (err) {
+        this.logger.error(
+          `Connector flush failed for tenant ${tenantId} (${batch.length} rows): ${err instanceof Error ? err.message : String(err)}`
+        );
+        throw err;
+      }
+    };
+
+    const buf: ConnectorBatchBuffer = {
+      async enqueue(row: IConnectorCallEventRow): Promise<void> {
+        rows.push(row);
+        if (rows.length >= batchSize) {
+          await flush();
+          return;
+        }
+        if (!flushTimer) {
+          flushTimer = setTimeout(() => {
+            void flush();
+          }, batchFlushMs);
+        }
+      },
+      async stop(): Promise<void> {
+        if (flushTimer) {
+          clearTimeout(flushTimer);
+          flushTimer = null;
+        }
+        await flush();
+      },
+    };
+
+    this.connectorBuffers.set(tenantId, buf);
+    return buf;
+  }
+
   private recordFlushSuccess(
     tenantId: string,
     rows: IChannelEventRow[],
-    durationMs: number,
+    durationMs: number
   ): void {
     const counts = countByDirection(rows);
     for (const [direction, count] of counts) {
@@ -233,20 +354,22 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
     }
     const latest = rows.reduce<number>(
       (acc, r) => Math.max(acc, r.ts.getTime()),
-      0,
+      0
     );
-    if (latest > 0) aggregatorMetrics.recordLastEventTs(tenantId, latest);
+    if (latest > 0) {
+      aggregatorMetrics.recordLastEventTs(tenantId, latest);
+    }
   }
 
   private recordFlushFailure(
     tenantId: string,
     rows: IChannelEventRow[],
     _durationMs: number,
-    err: Error,
+    err: Error
   ): void {
     aggregatorMetrics.recordInsertFailure(tenantId, rows.length);
     this.logger.error(
-      `Usage flush failed for tenant ${tenantId} (${rows.length} rows): ${err.message}`,
+      `Usage flush failed for tenant ${tenantId} (${rows.length} rows): ${err.message}`
     );
   }
 }
@@ -258,7 +381,7 @@ export class AggregatorEngine implements OnModuleInit, OnModuleDestroy {
  */
 function extractTenantId(
   streamName: string,
-  streamKind: "ingress" | "dlq",
+  streamKind: "ingress" | "dlq"
 ): string | null {
   if (streamKind === "ingress") {
     const suffix = streamName.replace(INGRESS_STREAM_PATTERN, "");
@@ -275,7 +398,7 @@ function extractTenantId(
  * emission is effectively constant time.
  */
 function countByDirection(
-  rows: readonly IChannelEventRow[],
+  rows: readonly IChannelEventRow[]
 ): Map<string, number> {
   const counts = new Map<string, number>();
   for (let i = 0; i < rows.length; i++) {

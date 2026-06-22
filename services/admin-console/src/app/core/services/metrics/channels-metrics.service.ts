@@ -1,4 +1,5 @@
-import { Injectable, inject, signal, type Signal } from "@angular/core";
+import { Injectable, inject, type Signal, signal } from "@angular/core";
+import { forkJoin } from "rxjs";
 import { ChannelAdminService } from "../channel-admin.service";
 
 /**
@@ -6,52 +7,116 @@ import { ChannelAdminService } from "../channel-admin.service";
  *
  * `whatsappTotal` / `telegramTotal` back the per-channel sub-nav "created
  * resources" badges and are hydrated once via `loadCounts()` (a single
- * accounts fetch split per channel). Demo seeds remain for landing KPIs.
+ * accounts fetch split per channel). Usage traffic signals are hydrated
+ * via `loadUsageTotals()`.
  */
+
+function sumEvents(
+  rows: { direction: string; events: number }[],
+  direction: string
+): number {
+  return rows
+    .filter((r) => r.direction === direction)
+    .reduce((a, r) => a + r.events, 0);
+}
+
 @Injectable({ providedIn: "root" })
 export class ChannelsMetricsService {
   private readonly channelsApi = inject(ChannelAdminService);
-  private countsLoaded = false;
 
   /** Accounts created per channel. */
   readonly whatsappTotal = signal<number | null>(null);
   readonly telegramTotal = signal<number | null>(null);
+  readonly httpTotal = signal<number | null>(null);
 
-  readonly connectedCount = signal<number | null>(2);
-  readonly totalCount = signal<number | null>(2);
-  readonly messagesIn24h = signal<number | null>(18_240);
-  readonly messagesOut24h = signal<number | null>(15_982);
-  readonly failedDeliveries24h = signal<number | null>(42);
+  readonly connectedCount = signal<number | null>(null);
+  readonly totalCount = signal<number | null>(null);
+  readonly messagesIn24h = signal<number | null>(null);
+  readonly messagesOut24h = signal<number | null>(null);
+  readonly failedDeliveries24h = signal<number | null>(null);
+
+  readonly whatsappTraffic = signal<number | null>(null);
+  readonly telegramTraffic = signal<number | null>(null);
+  readonly httpTraffic = signal<number | null>(null);
 
   /**
    * Fetches accounts once and folds them into per-channel counts in a
    * single O(n) pass.
    */
   loadCounts(): void {
-    if (this.countsLoaded) return;
-    this.countsLoaded = true;
     this.channelsApi.listAccounts().subscribe({
       next: (accounts) => {
         let whatsapp = 0;
         let telegram = 0;
+        let http = 0;
         for (const account of accounts) {
-          if (account.channel === "whatsapp") whatsapp++;
-          else if (account.channel === "telegram") telegram++;
+          if (account.channel === "whatsapp") {
+            whatsapp++;
+          } else if (account.channel === "telegram") {
+            telegram++;
+          } else if (account.channel === "http") {
+            http++;
+          }
         }
         this.whatsappTotal.set(whatsapp);
         this.telegramTotal.set(telegram);
+        this.httpTotal.set(http);
+        this.connectedCount.set(accounts.length);
+        this.totalCount.set(accounts.length);
       },
       error: () => {
         this.whatsappTotal.set(null);
         this.telegramTotal.set(null);
+        this.httpTotal.set(null);
+        this.connectedCount.set(null);
+        this.totalCount.set(null);
+      },
+    });
+  }
+
+  /** Fetches 24h usage totals per channel. */
+  loadUsageTotals(): void {
+    const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const to = new Date().toISOString();
+    forkJoin({
+      all: this.channelsApi.getUsageTotals({ from, to }),
+      whatsapp: this.channelsApi.getUsageTotals({
+        from,
+        to,
+        channel: "whatsapp",
+      }),
+      telegram: this.channelsApi.getUsageTotals({
+        from,
+        to,
+        channel: "telegram",
+      }),
+      http: this.channelsApi.getUsageTotals({ from, to, channel: "http" }),
+    }).subscribe({
+      next: ({ all, whatsapp, telegram, http }) => {
+        this.messagesIn24h.set(sumEvents(all.items, "ingress"));
+        this.messagesOut24h.set(sumEvents(all.items, "egress"));
+        this.whatsappTraffic.set(
+          sumEvents(whatsapp.items, "ingress") +
+            sumEvents(whatsapp.items, "egress")
+        );
+        this.telegramTraffic.set(
+          sumEvents(telegram.items, "ingress") +
+            sumEvents(telegram.items, "egress")
+        );
+        this.httpTraffic.set(
+          sumEvents(http.items, "ingress") + sumEvents(http.items, "egress")
+        );
+      },
+      error: () => {
+        // signals stay null — template shows —
       },
     });
   }
 
   /** Forces a re-fetch of the counts (e.g. after a create/delete). */
   reload(): void {
-    this.countsLoaded = false;
     this.loadCounts();
+    this.loadUsageTotals();
   }
 
   resolve(source: string): Signal<number | null> | null {
@@ -60,6 +125,8 @@ export class ChannelsMetricsService {
         return this.whatsappTotal;
       case "channels.telegram.total":
         return this.telegramTotal;
+      case "channels.http.total":
+        return this.httpTotal;
       case "channels.failed.24h":
         return this.failedDeliveries24h;
       case "channels.connected":

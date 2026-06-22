@@ -2,34 +2,34 @@ import {
   ChangeDetectionStrategy,
   Component,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { DatePipe } from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
+import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
+import { MatPaginatorModule } from "@angular/material/paginator";
+import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { MatTableModule } from "@angular/material/table";
 import { MatTabsModule } from "@angular/material/tabs";
-import { MatPaginatorModule } from "@angular/material/paginator";
-import { MatDialogModule, MatDialog } from "@angular/material/dialog";
-import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
+import type { IUser } from "../../../core/models";
 import { AuthService } from "../../../core/services/auth.service";
 import { TenantService } from "../../../core/services/tenant.service";
-import {
-  StatusBadgeComponent,
-  type StatusBadgeColor,
-} from "../../../shared/components/status-badge/status-badge.component";
-import { CreateTenantUserDialogComponent } from "./create-tenant-user-dialog.component";
 import { TenantUsersService } from "../../../core/services/tenant-users.service";
-import type { IUser } from "../../../core/models";
 import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
+import {
+  type StatusBadgeColor,
+  StatusBadgeComponent,
+} from "../../../shared/components/status-badge/status-badge.component";
+import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
+import { CreateTenantUserDialogComponent } from "./create-tenant-user-dialog.component";
 
 @Component({
   selector: "app-users",
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DatePipe,
+    UtcDatePipe,
     FormsModule,
     MatTableModule,
     MatButtonModule,
@@ -118,7 +118,7 @@ import { PageHeaderComponent } from "../../../shared/components/page-header/page
           <ng-container matColumnDef="created_at">
             <th mat-header-cell *matHeaderCellDef>Created</th>
             <td mat-cell *matCellDef="let u" style="color: var(--text3)">
-              {{ u.created_at | date: "mediumDate" }}
+              {{ u.created_at | utcDate: "mediumDate" }}
             </td>
           </ng-container>
           <ng-container matColumnDef="actions">
@@ -199,7 +199,9 @@ export class UsersComponent implements OnInit {
   }
 
   roleColor(role: string): StatusBadgeColor {
-    if (role === "tenant_admin") return "purple";
+    if (role === "tenant_admin") {
+      return "purple";
+    }
     return "blue";
   }
 

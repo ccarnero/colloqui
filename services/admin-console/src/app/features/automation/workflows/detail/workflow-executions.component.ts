@@ -1,18 +1,18 @@
-import { DatePipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { ActivatedRoute, Router } from "@angular/router";
 import { toSignal } from "@angular/core/rxjs-interop";
+import { ActivatedRoute, Router } from "@angular/router";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
 import {
-  WorkflowApiService,
   type ExecutionSortDirection,
   type IWorkflowExecutionRow,
+  WorkflowApiService,
 } from "../services/workflow-api.service";
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -31,7 +31,7 @@ const DEFAULT_PAGE_SIZE = 20;
   selector: "app-workflow-executions",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe],
+  imports: [UtcDatePipe],
   template: `
     <section class="exec">
       <header class="exec-h">
@@ -69,7 +69,7 @@ const DEFAULT_PAGE_SIZE = 20;
                 <span class="dot"></span>{{ r.status }}
               </span>
               <span class="c-id">{{ shortId(r.id) }}</span>
-              <span class="c-time">{{ r.createdAt | date: "medium" }}</span>
+              <span class="c-time">{{ r.createdAt | utcDate: "medium" }}</span>
               <span class="c-tw">{{ r.temporalWorkflowId }}</span>
             </a>
           } @empty {
@@ -214,7 +214,7 @@ export class WorkflowExecutionsComponent implements OnInit {
   // Walk up to the parent's :id param.
   private readonly parentParams = toSignal(
     this.route.parent?.params ?? this.route.params,
-    { initialValue: this.route.parent?.snapshot.params ?? {} },
+    { initialValue: this.route.parent?.snapshot.params ?? {} }
   );
   private readonly id = computed<string>(() => this.parentParams()["id"] ?? "");
 
@@ -226,12 +226,14 @@ export class WorkflowExecutionsComponent implements OnInit {
   readonly sort = signal<ExecutionSortDirection>("desc");
 
   readonly hasNext = computed(
-    () => (this.page() + 1) * this.pageSize < this.total(),
+    () => (this.page() + 1) * this.pageSize < this.total()
   );
 
   readonly filteredRows = computed(() => {
     const f = this.statusFilter().toLowerCase();
-    if (!f) return this.rows();
+    if (!f) {
+      return this.rows();
+    }
     return this.rows().filter((r) => r.status.toLowerCase().includes(f));
   });
 
@@ -287,9 +289,15 @@ export class WorkflowExecutionsComponent implements OnInit {
 
   protected statusClass(status: string): "ok" | "fail" | "running" | "other" {
     const s = status.toLowerCase();
-    if (s.includes("complete") || s === "ok" || s === "success") return "ok";
-    if (s.includes("fail") || s.includes("error")) return "fail";
-    if (s.includes("run")) return "running";
+    if (s.includes("complete") || s === "ok" || s === "success") {
+      return "ok";
+    }
+    if (s.includes("fail") || s.includes("error")) {
+      return "fail";
+    }
+    if (s.includes("run")) {
+      return "running";
+    }
     return "other";
   }
 

@@ -73,6 +73,32 @@ describe("WebhookIngressConsumerService", () => {
     expect(payload).toEqual({ object: "whatsapp_business_account" });
   });
 
+  it("forwards data.instance as the 7th argument to processEnvelope", async () => {
+    const service = new WebhookIngressConsumerService(jsm, js, webhookIngress);
+    const envelopeWithInstance = {
+      ...buildEnvelope("t1"),
+      data: {
+        ...buildEnvelope("t1").data,
+        instance: "my-instance",
+      },
+    };
+    const msg = {
+      subject: "evt.t1.api-gateway.messaging.whatsapp.webhook.webhook_received.v1",
+      data: new TextEncoder().encode(JSON.stringify(envelopeWithInstance)),
+    };
+
+    await (
+      service as unknown as {
+        handleJsMessage: (message: unknown) => Promise<void>;
+      }
+    ).handleJsMessage(msg);
+
+    expect(processEnvelope).toHaveBeenCalledTimes(1);
+    const args = processEnvelope.mock.calls[0];
+    // 7th argument (index 6) must be the instance string
+    expect(args[6]).toBe("my-instance");
+  });
+
   it("ignores non-matching subjects", async () => {
     const service = new WebhookIngressConsumerService(jsm, js, webhookIngress);
     const msg = {

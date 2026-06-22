@@ -4,32 +4,33 @@ import {
   Component,
   computed,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
-import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import { MatChipsModule } from "@angular/material/chips";
 import { MatDialog } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
-import { MatTableModule } from "@angular/material/table";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
+import { MatTableModule } from "@angular/material/table";
+import { Router } from "@angular/router";
 import { concatMap, from, of, switchMap, toArray } from "rxjs";
-import { HttpAdapterDialogComponent } from "../../../shared/components/http-adapter-dialog/http-adapter-dialog.component";
-import {
-  type IHttpAdapter,
-  type IHttpAdapterCacheStrategy,
-  type IHttpAdapterContext,
-  type IHttpAdapterDialogData,
-  type IHttpAdapterDialogResult,
-} from "../../../shared/models/http-adapter.model";
-import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 import {
   HttpAdapterService,
   type IAdapterDto,
   type ICreateAdapterPayload,
   type IUpdateAdapterPayload,
 } from "../../../core/services/http-adapter.service";
+import { HttpAdapterDialogComponent } from "../../../shared/components/http-adapter-dialog/http-adapter-dialog.component";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
+import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
+import type {
+  IHttpAdapter,
+  IHttpAdapterCacheStrategy,
+  IHttpAdapterContext,
+  IHttpAdapterDialogData,
+  IHttpAdapterDialogResult,
+} from "../../../shared/models/http-adapter.model";
 
 /**
  * Phase 4: this component now lives at `/connections/external-http`.
@@ -59,7 +60,7 @@ interface IManagedConflictBody {
 }
 
 function toCacheStrategy(
-  cache?: IAdapterDto["defaultCache"],
+  cache?: IAdapterDto["defaultCache"]
 ): IHttpAdapterCacheStrategy | undefined {
   if (!cache) {
     return undefined;
@@ -111,7 +112,7 @@ function toRow(dto: IAdapterDto): IConnectorRow {
 
 function toCreatePayload(
   adapter: IHttpAdapter,
-  context: IHttpAdapterContext,
+  context: IHttpAdapterContext
 ): ICreateAdapterPayload {
   return {
     name: adapter.name,
@@ -312,8 +313,16 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
               <button
                 type="button"
                 mat-icon-button
+                aria-label="View"
+                (click)="view(r.id); $event.stopPropagation()"
+              >
+                <mat-icon>visibility</mat-icon>
+              </button>
+              <button
+                type="button"
+                mat-icon-button
                 aria-label="Edit"
-                (click)="openEdit(i)"
+                (click)="openEdit(i); $event.stopPropagation()"
               >
                 <mat-icon>edit</mat-icon>
               </button>
@@ -336,7 +345,14 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
             </td>
           </ng-container>
           <tr mat-header-row *matHeaderRowDef="cols"></tr>
-          <tr mat-row *matRowDef="let row; columns: cols"></tr>
+          <tr mat-row *matRowDef="let row; columns: cols" 
+            (click)="view(row.id)"
+            role="button"
+            tabindex="0"
+            (keydown.enter)="view(row.id)"
+            (keydown.space)="view(row.id)"
+            [attr.aria-label]="'View ' + row.adapter.name"
+            class="clickable-row"></tr>
         </table>
       </div>
     }
@@ -405,11 +421,25 @@ function toUpdatePayload(adapter: IHttpAdapter): IUpdateAdapterPayload {
     .is-managed {
       color: var(--text3);
     }
+    .clickable-row {
+      cursor: pointer;
+      transition: background-color 0.12s;
+    }
+    .clickable-row:hover {
+      background-color: rgba(255,255,255,0.07);
+    }
+    tbody td {
+      padding: 12px 8px;
+    }
+    tbody tr {
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
   `,
 })
 export class ConnectorsComponent implements OnInit {
   private readonly dialog = inject(MatDialog);
   private readonly adapterService = inject(HttpAdapterService);
+  private readonly router = inject(Router);
 
   readonly cols = [
     "name",
@@ -438,7 +468,9 @@ export class ConnectorsComponent implements OnInit {
 
   readonly filteredConnectors = computed(() => {
     const tag = this.activeTag();
-    if (!tag) return this.connectors();
+    if (!tag) {
+      return this.connectors();
+    }
     return this.connectors().filter((r) => r.tags.includes(tag));
   });
 
@@ -448,6 +480,10 @@ export class ConnectorsComponent implements OnInit {
 
   onTagFilter(tag: string): void {
     this.activeTag.set(tag ?? "");
+  }
+
+  view(id: string): void {
+    void this.router.navigate(["/connections/http", id]);
   }
 
   openCreate(): void {
@@ -461,7 +497,9 @@ export class ConnectorsComponent implements OnInit {
       })
       .afterClosed()
       .subscribe((result?: IHttpAdapterDialogResult) => {
-        if (!result) return;
+        if (!result) {
+          return;
+        }
         this.dismissError();
         this.adapterService
           .create(toCreatePayload(result.adapter, result.context))
@@ -491,7 +529,9 @@ export class ConnectorsComponent implements OnInit {
       })
       .afterClosed()
       .subscribe((result?: IHttpAdapterDialogResult) => {
-        if (!result) return;
+        if (!result) {
+          return;
+        }
         this.dismissError();
         // Preserve the managed flag so the payload omits locked fields.
         const nextAdapter: IHttpAdapter = {
@@ -501,26 +541,26 @@ export class ConnectorsComponent implements OnInit {
         const endpointOperations = this.buildEndpointOperations(
           row.id,
           row.adapter,
-          nextAdapter,
+          nextAdapter
         );
         const endpointSync$ =
           endpointOperations.length === 0
             ? of([])
             : from(endpointOperations).pipe(
                 concatMap((operation) => operation),
-                toArray(),
+                toArray()
               );
 
         this.adapterService
           .update(row.id, toUpdatePayload(nextAdapter))
           .pipe(
             switchMap(() => endpointSync$),
-            switchMap(() => this.adapterService.get(row.id)),
+            switchMap(() => this.adapterService.get(row.id))
           )
           .subscribe({
             next: (dto) => {
               this.connectors.update((rows) =>
-                rows.map((r) => (r.id === row.id ? toRow(dto) : r)),
+                rows.map((r) => (r.id === row.id ? toRow(dto) : r))
               );
             },
             error: (err: unknown) =>
@@ -531,7 +571,9 @@ export class ConnectorsComponent implements OnInit {
 
   remove(index: number): void {
     const row = this.filteredConnectors()[index];
-    if (!row) return;
+    if (!row) {
+      return;
+    }
 
     // Managed connectors can't be deleted — explain why up front instead
     // of round-tripping to a guaranteed 409.
@@ -606,23 +648,25 @@ export class ConnectorsComponent implements OnInit {
   private buildEndpointOperations(
     adapterId: string,
     current: IHttpAdapter,
-    next: IHttpAdapter,
+    next: IHttpAdapter
   ) {
     const currentById = new Map(
       current.endpoints
         .filter((endpoint) => endpoint.id)
-        .map((endpoint) => [endpoint.id!, endpoint]),
+        .map((endpoint) => [endpoint.id!, endpoint])
     );
     const nextById = new Map(
       next.endpoints
         .filter((endpoint) => endpoint.id)
-        .map((endpoint) => [endpoint.id!, endpoint]),
+        .map((endpoint) => [endpoint.id!, endpoint])
     );
     const operations = [];
 
     for (const endpointId of currentById.keys()) {
       if (!nextById.has(endpointId)) {
-        operations.push(this.adapterService.removeEndpoint(adapterId, endpointId));
+        operations.push(
+          this.adapterService.removeEndpoint(adapterId, endpointId)
+        );
       }
     }
 
@@ -633,7 +677,7 @@ export class ConnectorsComponent implements OnInit {
           method: endpoint.method,
           path: endpoint.path,
           cache: endpoint.cache ?? null,
-        }),
+        })
       );
     }
 
@@ -646,7 +690,7 @@ export class ConnectorsComponent implements OnInit {
             method: endpoint.method,
             path: endpoint.path,
             cache: endpoint.cache,
-          }),
+          })
         );
       }
     }

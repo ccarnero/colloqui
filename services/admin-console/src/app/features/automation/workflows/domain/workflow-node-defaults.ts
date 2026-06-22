@@ -1,6 +1,18 @@
 import { EWorkflowNodeType } from "./workflow-node.types";
 import type { IWorkflowNode } from "./workflow-node.types";
 
+/**
+ * "Reply on the same channel account that received the inbound message."
+ * These templates resolve at runtime from the triggering message, so an
+ * outbound Channel node stays valid even when the underlying account is
+ * recreated — and they let the builder represent the account-agnostic reply
+ * as a first-class "Same as incoming message" choice instead of a blank,
+ * unselectable account dropdown.
+ */
+export const SOURCE_ACCOUNT_TEMPLATE = "{{request.envelope.accountId}}";
+export const SOURCE_CHANNEL_TEMPLATE = "{{request.channel}}";
+export const SOURCE_PROVIDER_TEMPLATE = "{{request.provider}}";
+
 export interface INodeDefault {
   name: string;
   icon: string;
@@ -20,9 +32,9 @@ export const DEFAULT_NODE_MAP: Record<EWorkflowNodeType, INodeDefault> = {
       providers: [],
       patterns: [],
       mode: "shared",
-      accountId: "",
-      channel: "",
-      provider: "",
+      accountId: SOURCE_ACCOUNT_TEMPLATE,
+      channel: SOURCE_CHANNEL_TEMPLATE,
+      provider: SOURCE_PROVIDER_TEMPLATE,
       recipientMode: "sender",
       to: "{{request.from}}",
       messageType: "text",

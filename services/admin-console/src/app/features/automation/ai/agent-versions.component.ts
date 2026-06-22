@@ -1,19 +1,20 @@
+import { CommonModule } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
-  type OnInit,
   inject,
   input,
+  type OnInit,
   output,
   signal,
 } from "@angular/core";
-import { CommonModule, DatePipe } from "@angular/common";
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
+import type { IAgentVersion } from "../../../core/models/agent.model";
 import { AgentAdminService } from "../../../core/services/agent-admin.service";
-import { type IAgentVersion } from "../../../core/models/agent.model";
+import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
 
 @Component({
   selector: "app-agent-versions",
@@ -21,7 +22,7 @@ import { type IAgentVersion } from "../../../core/models/agent.model";
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
-    DatePipe,
+    UtcDatePipe,
     MatButtonModule,
     MatIconModule,
     MatProgressSpinnerModule,
@@ -64,7 +65,7 @@ import { type IAgentVersion } from "../../../core/models/agent.model";
                 'bump-patch': version.bump_type === 'patch'
               }">{{ version.bump_type }}</span>
             }
-            <span class="version-date">{{ version.created_at | date:'medium' }}</span>
+            <span class="version-date">{{ version.created_at | utcDate:'medium' }}</span>
           </div>
           <div class="version-details">
             <span class="version-field">Name: {{ version.snapshot['name'] || '—' }}</span>
@@ -252,20 +253,20 @@ export class AgentVersionsComponent implements OnInit {
 
   onDelete(version: IAgentVersion): void {
     const confirmed = window.confirm(
-      `Delete version v${version.version_number}? This cannot be undone.`,
+      `Delete version v${version.version_number}? This cannot be undone.`
     );
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     this.operating.set(true);
     this.adminService.deleteVersion(this.agentId(), version.id).subscribe({
       next: () => {
         this.versions.update((v) => v.filter((x) => x.id !== version.id));
         this.versionDeleted.emit(version.id);
-        this.snackBar.open(
-          `Version v${version.version_number} deleted`,
-          "OK",
-          { duration: 2000 },
-        );
+        this.snackBar.open(`Version v${version.version_number} deleted`, "OK", {
+          duration: 2000,
+        });
         this.operating.set(false);
       },
       error: () => {

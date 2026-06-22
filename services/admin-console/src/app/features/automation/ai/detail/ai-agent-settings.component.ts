@@ -1,24 +1,22 @@
-import { DatePipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import {
-  type IAgent,
-} from "../../../../core/models/agent.model";
-import { AgentAdminService } from "../../../../core/services/agent-admin.service";
 import { ActivatedRoute, Router } from "@angular/router";
-import { formatHttpErrorMessage } from "../ai.helpers";
+import type { IAgent } from "../../../../core/models/agent.model";
+import { AgentAdminService } from "../../../../core/services/agent-admin.service";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
 import { AgentEditorBridgeService } from "../agent-editor-bridge.service";
+import { formatHttpErrorMessage } from "../ai.helpers";
 
 @Component({
   selector: "app-ai-agent-settings",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe],
+  imports: [UtcDatePipe],
   template: `
     @if (!agent()) {
       <p class="empty">Loading settings...</p>
@@ -40,15 +38,15 @@ import { AgentEditorBridgeService } from "../agent-editor-bridge.service";
           <div class="metadata">
             <div class="meta-item">
               <span class="meta-label">Created</span>
-              <strong>{{ current.created_at | date: "medium" }}</strong>
+              <strong>{{ current.created_at | utcDate: "medium" }}</strong>
             </div>
             <div class="meta-item">
               <span class="meta-label">Updated</span>
-              <strong>{{ current.updated_at | date: "medium" }}</strong>
+              <strong>{{ current.updated_at | utcDate: "medium" }}</strong>
             </div>
             <div class="meta-item">
               <span class="meta-label">Published</span>
-              <strong>{{ current.published_at ? (current.published_at | date: "medium") : "Not published" }}</strong>
+              <strong>{{ current.published_at ? (current.published_at | utcDate: "medium") : "Not published" }}</strong>
             </div>
           </div>
 
@@ -200,7 +198,9 @@ export class AiAgentSettingsComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly agentAdminService = inject(AgentAdminService);
-  private readonly bridge = inject(AgentEditorBridgeService, { optional: true });
+  private readonly bridge = inject(AgentEditorBridgeService, {
+    optional: true,
+  });
 
   private readonly agentId =
     this.route.parent?.snapshot.paramMap.get("id") ?? "";
@@ -275,14 +275,18 @@ export class AiAgentSettingsComponent implements OnInit {
   }
 
   protected deleteAgent(): void {
-    if (!this.agentId) return;
+    if (!this.agentId) {
+      return;
+    }
 
     const current = this.agent();
     const label = current?.name ?? this.agentId;
     const confirmed = window.confirm(
-      `Delete agent "${label}"? This will remove it from active use.`,
+      `Delete agent "${label}"? This will remove it from active use.`
     );
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     this.processing.set(true);
     this.errorMessage.set("");
@@ -300,8 +304,8 @@ export class AiAgentSettingsComponent implements OnInit {
         this.errorMessage.set(
           formatHttpErrorMessage(
             error.error?.message,
-            "Failed to delete the agent.",
-          ),
+            "Failed to delete the agent."
+          )
         );
       },
     });

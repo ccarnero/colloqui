@@ -38,6 +38,14 @@ export function resolveConfig(userConfig = {}, env = process.env) {
     defaultFrom: userConfig.defaultFrom ?? env.YOIZEN_DEFAULT_FROM ?? email,
     appSecret: userConfig.appSecret ?? env.YOIZEN_HTTP_CHANNEL_TOKEN ?? null,
     channelSelector: userConfig.channelSelector,
+    /**
+     * Account `externalId` to address as a per-instance ingress URL
+     * (`/api/webhooks/http/<tenant>/<instance>`). Explicit override; when
+     * absent the SDK falls back to `channelSelector.externalId` and, failing
+     * that, to the `externalId` returned while resolving the appSecret.
+     */
+    instance:
+      userConfig.instance ?? env.YOIZEN_HTTP_CHANNEL_INSTANCE ?? null,
     timeoutMs: userConfig.timeoutMs ?? 10_000,
     tokenExpiryBufferMs: userConfig.tokenExpiryBufferMs ?? 60_000,
     onWarn: userConfig.onWarn,

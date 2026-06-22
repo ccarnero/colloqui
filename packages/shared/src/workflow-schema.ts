@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS workflow_executions (
   definition_id         TEXT        NOT NULL REFERENCES workflow_definitions(id),
   temporal_workflow_id  TEXT        NOT NULL,
   temporal_run_id       TEXT        NOT NULL,
+  correlation_id        TEXT,
   request               JSONB       NOT NULL,
   status                TEXT        NOT NULL DEFAULT 'RUNNING',
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -46,4 +47,9 @@ CREATE INDEX IF NOT EXISTS idx_workflow_executions_temporal_ids
   ON workflow_executions (temporal_workflow_id, temporal_run_id);
 CREATE INDEX IF NOT EXISTS idx_workflow_executions_definition_created_at
   ON workflow_executions (definition_id, created_at DESC);
+
+-- Migration: correlation_id for existing tenants + index for message-trace lookups.
+ALTER TABLE workflow_executions ADD COLUMN IF NOT EXISTS correlation_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_workflow_executions_correlation_id
+  ON workflow_executions (correlation_id);
 `;

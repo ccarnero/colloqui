@@ -130,6 +130,38 @@ sequenceDiagram
 
 - Telegram bot token and provider credentials are sent via account APIs; storage ownership is in `channel-service`.
 
+## Workflow Builder — outbound reply node (admin-console)
+
+The visual workflow builder represents a `channelSend` action as a **Channel** node with
+`Direction = Outbound (send)`. Two fields support "answer the message that just arrived":
+
+- **Recipient → "Reply to sender"** sets `to = {{request.from}}` (the inbound chat/sender id).
+- **Channel Account → "Same as incoming message"** sets `accountId = {{request.envelope.accountId}}`
+  and `channel`/`provider` to `{{request.channel}}` / `{{request.provider}}` — the reply rides the
+  **same account that received the message**. This is the default for new reply nodes.
+
+"Same as incoming message" is account-agnostic: it resolves from the triggering message at
+runtime, so the workflow keeps working even if the underlying channel account is recreated, and
+the builder no longer shows a blank, unselectable account dropdown for these replies. Pick a
+specific account instead only for cross-account / cross-channel sends. Implementation:
+`SOURCE_ACCOUNT_TEMPLATE` in `workflow-node-defaults.ts`, surfaced by `workflow-node-config.component.ts`.
+
+## Message trace (Processes › Diagnostics, admin-console)
+
+A role-gated (`diagnostics:read`) debug view that follows a single message across services by its
+`correlation_id`. It renders the **business trace** natively — the causal chain
+(`correlation_id`/`causation_id`/`depth`) plus the pub/sub fan-out (which durable consumers each
+event reaches, including the silent `audit-service` sink) — and hands off to the **tech trace**:
+`Open in Tempo` (OTel `traceid` span waterfall) and `Open in Temporal` (workflow run history). It
+also preloads recent correlations from the last 5 minutes.
+
+Slice 1 (route `/processes/trace[/:correlationId]`) is frontend-only and assembles the chain
+client-side from the existing audit list endpoints (`/audit/channel-events`, `/audit/events`); the
+chain-tree endpoint isn't exposed through the gateway. Live consumer health and per-message
+delivery are later slices. Temporal/Tempo links render only when `temporalUiBaseUrl` / `tempoBaseUrl`
+are configured. Entry points: direct lookup, the recent list, and a "View chain" link on the
+Workflow → Executions row. Spec: `.sdd/changes/processes-message-trace/`.
+
 ## References
 
 - `services/admin-console/src/app/core/services/agent-runtime.service.ts`

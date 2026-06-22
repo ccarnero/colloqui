@@ -34,19 +34,20 @@ export interface IUpdateDefinitionParams {
 
 export interface IWorkflowsRepository {
   createDefinition(
-    params: ICreateDefinitionParams,
+    params: ICreateDefinitionParams
   ): Promise<IWorkflowDefinitionRow>;
   updateDefinition(
-    params: IUpdateDefinitionParams,
+    params: IUpdateDefinitionParams
   ): Promise<IWorkflowDefinitionRow | undefined>;
   findDefinitionById(
     id: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IWorkflowDefinitionRow | undefined>;
   findDefinitionsByTenant(tenantId: string): Promise<IWorkflowDefinitionRow[]>;
   findDefinitionsByTriggerType(
     tenantId: string,
-    triggerType: string,
+    triggerType: string
   ): Promise<IWorkflowDefinitionRow[]>;
   softDeleteDefinition(id: string, tenantId: string): Promise<boolean>;
+  countActiveDefinitions(tenantId: string): Promise<number>;
 }

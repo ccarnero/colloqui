@@ -5,14 +5,14 @@ import {
   inject,
 } from "@angular/core";
 import { DashboardService } from "../../core/services/dashboard.service";
-import { SparklineComponent } from "../../shared/components/sparkline/sparkline.component";
 import { ProgressBarComponent } from "../../shared/components/progress-bar/progress-bar.component";
-import { DatePipe } from "@angular/common";
+import { SparklineComponent } from "../../shared/components/sparkline/sparkline.component";
+import { UtcDatePipe } from "../../shared/pipes/utc-date.pipe";
 
 @Component({
   selector: "app-right-panel",
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SparklineComponent, ProgressBarComponent, DatePipe],
+  imports: [SparklineComponent, ProgressBarComponent, UtcDatePipe],
   template: `
     <aside class="panel">
       <!-- Tenant Health -->
@@ -97,7 +97,7 @@ import { DatePipe } from "@angular/common";
             <div>
               <div class="activity-text">{{ item.text }}</div>
               <div class="activity-time">
-                {{ item.timestamp | date: "short" }}
+                {{ item.timestamp | utcDate: "short" }}
               </div>
             </div>
           </div>
@@ -125,68 +125,92 @@ export class RightPanelComponent {
   protected readonly stats = this.dashboard.stats;
 
   protected readonly recentActivity = computed(
-    () => this.stats()?.recentActivity ?? [],
+    () => this.stats()?.recentActivity ?? []
   );
 
   protected readonly uptimeColor = computed(() => {
     const u = this.stats()?.uptime ?? 100;
-    if (u >= 99) return "var(--green)";
-    if (u >= 95) return "var(--yellow)";
+    if (u >= 99) {
+      return "var(--green)";
+    }
+    if (u >= 95) {
+      return "var(--yellow)";
+    }
     return "var(--red)";
   });
 
   protected readonly uptimeSparkline = computed(() => {
     const breakdown = this.stats()?.dailyBreakdown ?? [];
-    if (breakdown.length === 0) return [100];
+    if (breakdown.length === 0) {
+      return [100];
+    }
     return breakdown.map(() => this.stats()?.uptime ?? 100);
   });
 
   protected readonly errorRateColor = computed(() => {
     const r = this.stats()?.errorRate ?? 0;
-    if (r < 1) return "var(--green)";
-    if (r < 5) return "var(--yellow)";
+    if (r < 1) {
+      return "var(--green)";
+    }
+    if (r < 5) {
+      return "var(--yellow)";
+    }
     return "var(--red)";
   });
 
   protected readonly errorRateSub = computed(() => {
     const d = this.stats()?.errorRateDelta ?? 0;
-    if (d <= 0) return `\u2193 ${Math.abs(d).toFixed(2)}% from yesterday`;
+    if (d <= 0) {
+      return `\u2193 ${Math.abs(d).toFixed(2)}% from yesterday`;
+    }
     return `\u2191 ${d.toFixed(2)}% from yesterday`;
   });
 
   protected readonly apiCallsPercent = computed(() => {
     const q = this.stats()?.quotaApiCalls;
-    if (!q || q.limit === 0) return 0;
+    if (!q || q.limit === 0) {
+      return 0;
+    }
     return Math.round((q.used / q.limit) * 100);
   });
 
   protected readonly apiCallsLabel = computed(() => {
     const q = this.stats()?.quotaApiCalls;
-    if (!q) return "0 / 0";
+    if (!q) {
+      return "0 / 0";
+    }
     return `${formatCompact(q.used)} / ${formatCompact(q.limit)}`;
   });
 
   protected readonly storagePercent = computed(() => {
     const q = this.stats()?.quotaStorage;
-    if (!q || q.limit === 0) return 0;
+    if (!q || q.limit === 0) {
+      return 0;
+    }
     return Math.round((q.used / q.limit) * 100);
   });
 
   protected readonly storageLabel = computed(() => {
     const q = this.stats()?.quotaStorage;
-    if (!q) return "0 / 0 GB";
+    if (!q) {
+      return "0 / 0 GB";
+    }
     return `${q.used} / ${q.limit} GB`;
   });
 
   protected readonly webhooksPercent = computed(() => {
     const q = this.stats()?.quotaWebhooks;
-    if (!q || q.limit === 0) return 0;
+    if (!q || q.limit === 0) {
+      return 0;
+    }
     return Math.round((q.used / q.limit) * 100);
   });
 
   protected readonly webhooksLabel = computed(() => {
     const q = this.stats()?.quotaWebhooks;
-    if (!q) return "0 / 0";
+    if (!q) {
+      return "0 / 0";
+    }
     return `${q.used} / ${q.limit}`;
   });
 
@@ -205,7 +229,11 @@ export class RightPanelComponent {
 }
 
 function formatCompact(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  if (n >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(1)}M`;
+  }
+  if (n >= 1_000) {
+    return `${(n / 1_000).toFixed(1)}K`;
+  }
   return String(n);
 }

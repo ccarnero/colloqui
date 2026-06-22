@@ -1,0 +1,19 @@
+{
+  "name": "httpbin-basic-auth",
+  "context": "external",
+  "baseUrl": "https://httpbin.org",
+  "authType": "basic",
+  "authConfig": {
+    "basicUsername": "user",
+    "basicPassword": "passwd"
+  },
+  "timeoutMs": 10000,
+  "maxRetries": 1,
+  "retryBackoffMs": 300,
+  "healthCheckPath": "/basic-auth/user/passwd",
+  "tags": ["sample", "public", "basic-auth"],
+  "endpoints": [
+    { "label": "Basic auth check (200 when creds match)", "method": "GET", "path": "/basic-auth/user/passwd" },
+    { "label": "Hidden basic auth check (404 when creds mismatch)", "method": "GET", "path": "/hidden-basic-auth/user/passwd" }
+  ]
+}

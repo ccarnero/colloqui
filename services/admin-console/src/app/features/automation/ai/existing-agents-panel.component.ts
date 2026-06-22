@@ -1,4 +1,3 @@
-import { DatePipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
@@ -8,13 +7,17 @@ import {
 import { MatButtonModule } from "@angular/material/button";
 import { MatIconModule } from "@angular/material/icon";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
-import {
-  AGENT_STATUSES,
-  type IAgent,
-} from "../../../core/models/agent.model";
+import { AGENT_STATUSES, type IAgent } from "../../../core/models/agent.model";
+import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
 
 export interface IAgentRuntimeHealth {
-  state: "unknown" | "checking" | "synced" | "unsynced" | "draft" | "misconfigured";
+  state:
+    | "unknown"
+    | "checking"
+    | "synced"
+    | "unsynced"
+    | "draft"
+    | "misconfigured";
   detail?: string;
   checkedAt?: number;
 }
@@ -23,7 +26,12 @@ export interface IAgentRuntimeHealth {
   selector: "app-ai-existing-agents",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, MatButtonModule, MatIconModule, MatProgressSpinnerModule],
+  imports: [
+    UtcDatePipe,
+    MatButtonModule,
+    MatIconModule,
+    MatProgressSpinnerModule,
+  ],
   template: `
     <aside class="stack-column">
       <section class="section-card">
@@ -74,7 +82,7 @@ export interface IAgentRuntimeHealth {
                   Runtime: {{ runtimeHealthLabel(agent.id) }}
                 </span>
                 <span>
-                  {{ agent.created_at | date: "mediumDate" }}
+                  {{ agent.created_at | utcDate: "mediumDate" }}
                 </span>
               </div>
 
@@ -423,7 +431,8 @@ export class AiExistingAgentsPanelComponent {
   readonly editingAgentId = input.required<string | null>();
   readonly publishingId = input.required<string | null>();
   readonly deletingId = input.required<string | null>();
-  readonly runtimeHealth = input.required<Record<string, IAgentRuntimeHealth>>();
+  readonly runtimeHealth =
+    input.required<Record<string, IAgentRuntimeHealth>>();
 
   readonly edit = output<IAgent>();
   readonly publish = output<string>();
@@ -447,13 +456,16 @@ export class AiExistingAgentsPanelComponent {
   }
 
   hasDraftChanges(agent: IAgent): boolean {
-    if (!agent.published_config) return agent.status === "published";
+    if (!agent.published_config) {
+      return agent.status === "published";
+    }
     const snap = agent.published_config;
     return (
       agent.name !== snap["name"] ||
       agent.description !== snap["description"] ||
       agent.system_prompt !== snap["system_prompt"] ||
-      JSON.stringify(agent.model_config) !== JSON.stringify(snap["model_config"])
+      JSON.stringify(agent.model_config) !==
+        JSON.stringify(snap["model_config"])
     );
   }
 

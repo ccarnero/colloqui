@@ -54,6 +54,35 @@ export class WebhooksController {
     @Param("tenantId") tenantId: string,
     @Req() request: RawBodyRequest<FastifyRequest>,
   ): Promise<{ status: string }> {
+    return this.ingest(channel, tenantId, undefined, request);
+  }
+
+  /**
+   * Instance-addressed ingress: `<instance>` is the channel account's
+   * `externalId`, so a tenant can expose one URL per configured account
+   * (`/api/webhooks/<channel>/<tenant>/<instance>`). The URL selects *which*
+   * account; the token header (e.g. `x-http-channel-token`) still
+   * authenticates downstream — the URL is not the credential.
+   */
+  @Post(":channel/:tenantId/:instance")
+  @Public()
+  @SkipTenant()
+  @HttpCode(HttpStatus.OK)
+  async receiveInstance(
+    @Param("channel") channel: string,
+    @Param("tenantId") tenantId: string,
+    @Param("instance") instance: string,
+    @Req() request: RawBodyRequest<FastifyRequest>,
+  ): Promise<{ status: string }> {
+    return this.ingest(channel, tenantId, instance, request);
+  }
+
+  private async ingest(
+    channel: string,
+    tenantId: string,
+    instance: string | undefined,
+    request: RawBodyRequest<FastifyRequest>,
+  ): Promise<{ status: string }> {
     if (!Buffer.isBuffer(request.rawBody) || request.rawBody.length === 0) {
       throw new BadRequestException(
         "Missing raw request body for webhook ingress",
@@ -63,6 +92,7 @@ export class WebhooksController {
     await this.publisher.publishWebhook({
       tenantId,
       channel: channel as Channel,
+      ...(instance !== undefined && { instance }),
       rawBody: request.rawBody,
       headers: request.headers as Record<string, unknown>,
       parsedBody: request.body,

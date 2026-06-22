@@ -1,25 +1,25 @@
+import { CommonModule } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   inject,
-  OnInit,
+  type OnInit,
   signal,
 } from "@angular/core";
-import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
-import { ActivatedRoute } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
-import { MatIconModule } from "@angular/material/icon";
 import { MatDialog } from "@angular/material/dialog";
+import { MatIconModule } from "@angular/material/icon";
 import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
-
+import { ActivatedRoute } from "@angular/router";
 import {
-  StructuredKbService,
+  type QueryHistoryRecord,
+  type QueryResult,
   type SKBContainer,
   type SKBFile,
-  type QueryResult,
-  type QueryHistoryRecord,
+  StructuredKbService,
 } from "../../../../core/services/structured-kb.service";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
 import { SkbUploadDialogComponent } from "./skb-upload-dialog.component";
 
 export type SkbTab = "files" | "schema" | "query" | "history";
@@ -34,6 +34,7 @@ export type SkbTab = "files" | "schema" | "query" | "history";
     MatButtonModule,
     MatIconModule,
     MatSnackBarModule,
+    UtcDatePipe,
   ],
   template: `
     <div class="detail-page">
@@ -107,7 +108,7 @@ export type SkbTab = "files" | "schema" | "query" | "history";
                     </span>
                   </span>
                   <span class="col-rows">{{ file.row_count }}</span>
-                  <span class="col-date">{{ file.created_at | date : "short" }}</span>
+                  <span class="col-date">{{ file.created_at | utcDate: "short" }}</span>
                 </div>
               }
             </div>
@@ -247,7 +248,7 @@ export type SkbTab = "files" | "schema" | "query" | "history";
                   <span class="col-sql"><code>{{ record.sql }}</code></span>
                   <span class="col-results">{{ record.results_count }}</span>
                   <span class="col-duration">{{ record.duration_ms }}ms</span>
-                  <span class="col-date">{{ record.created_at | date : "short" }}</span>
+                  <span class="col-date">{{ record.created_at | utcDate: "short" }}</span>
                 </div>
               }
             </div>
@@ -398,7 +399,9 @@ export class SkbDetailComponent implements OnInit {
     this.service.getContainer(this.containerId).subscribe({
       next: (res) => this.container.set(res),
       error: () =>
-        this.snackBar.open("Failed to load container", "OK", { duration: 3000 }),
+        this.snackBar.open("Failed to load container", "OK", {
+          duration: 3000,
+        }),
     });
   }
 
@@ -418,7 +421,9 @@ export class SkbDetailComponent implements OnInit {
   }
 
   executeQuery(nlQuery: string): void {
-    if (!nlQuery.trim()) return;
+    if (!nlQuery.trim()) {
+      return;
+    }
     this.queryLoading.set(true);
     this.queryError.set(null);
     this.queryResult.set(null);

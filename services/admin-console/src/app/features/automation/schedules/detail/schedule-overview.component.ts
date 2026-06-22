@@ -1,19 +1,20 @@
-import { DatePipe, JsonPipe } from "@angular/common";
+import { JsonPipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { ActivatedRoute } from "@angular/router";
 import { toSignal } from "@angular/core/rxjs-interop";
-import { SchedulerApiService } from "../../../../core/services/scheduler-api.service";
-import { AgentAdminService } from "../../../../core/services/agent-admin.service";
+import { ActivatedRoute } from "@angular/router";
 import type { IAgent } from "../../../../core/models/agent.model";
 import type { IJob } from "../../../../core/models/scheduler.model";
+import { AgentAdminService } from "../../../../core/services/agent-admin.service";
+import { SchedulerApiService } from "../../../../core/services/scheduler-api.service";
 import { StatusBadgeComponent } from "../../../../shared/components/status-badge/status-badge.component";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
 
 /**
  * Stateless overview tab for a schedule.
@@ -23,7 +24,7 @@ import { StatusBadgeComponent } from "../../../../shared/components/status-badge
   selector: "app-schedule-overview",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, JsonPipe, StatusBadgeComponent],
+  imports: [UtcDatePipe, JsonPipe, StatusBadgeComponent],
   template: `
     @if (job(); as j) {
       <div class="overview-grid">
@@ -59,7 +60,7 @@ import { StatusBadgeComponent } from "../../../../shared/components/status-badge
             <div class="section-card-title">Last Run</div>
           </div>
           <div class="section-card-body">
-            {{ j.last_run ? (j.last_run | date:'medium') : 'Never' }}
+            {{ j.last_run ? (j.last_run | utcDate:'medium') : 'Never' }}
           </div>
         </div>
 
@@ -68,7 +69,7 @@ import { StatusBadgeComponent } from "../../../../shared/components/status-badge
             <div class="section-card-title">Next Run</div>
           </div>
           <div class="section-card-body">
-            {{ j.next_run ? (j.next_run | date:'medium') : '—' }}
+            {{ j.next_run ? (j.next_run | utcDate:'medium') : '—' }}
           </div>
         </div>
 
@@ -77,7 +78,7 @@ import { StatusBadgeComponent } from "../../../../shared/components/status-badge
             <div class="section-card-title">Created</div>
           </div>
           <div class="section-card-body">
-            {{ j.created_at | date:'medium' }}
+            {{ j.created_at | utcDate:'medium' }}
           </div>
         </div>
       </div>
@@ -173,7 +174,7 @@ export class ScheduleOverviewComponent implements OnInit {
   // Walk up to the parent's :id param since this component is a child route.
   private readonly parentParams = toSignal(
     this.route.parent?.params ?? this.route.params,
-    { initialValue: this.route.parent?.snapshot.params ?? {} },
+    { initialValue: this.route.parent?.snapshot.params ?? {} }
   );
   private readonly id = computed<string>(() => this.parentParams()["id"] ?? "");
 
@@ -188,9 +189,7 @@ export class ScheduleOverviewComponent implements OnInit {
           this.job.set(j);
           this.agentAdmin.listAgents({ status: "published" }).subscribe({
             next: (res) => {
-              const match = res.agents.find(
-                (a: IAgent) => a.id === j.agent_id,
-              );
+              const match = res.agents.find((a: IAgent) => a.id === j.agent_id);
               this.agentName.set(match?.name ?? null);
             },
           });
@@ -207,11 +206,19 @@ export class ScheduleOverviewComponent implements OnInit {
 
   protected getActionType(j: IJob): string {
     const payload = j.payload as Record<string, unknown> | undefined;
-    if (!payload?.["action_type"]) return "Not configured";
+    if (!payload?.["action_type"]) {
+      return "Not configured";
+    }
     const at = payload["action_type"] as string;
-    if (at === "llm_call") return "LLM Call";
-    if (at === "webhook") return "Webhook";
-    if (at === "function") return "Function";
+    if (at === "llm_call") {
+      return "LLM Call";
+    }
+    if (at === "webhook") {
+      return "Webhook";
+    }
+    if (at === "function") {
+      return "Function";
+    }
     return at;
   }
 

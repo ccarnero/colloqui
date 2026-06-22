@@ -751,6 +751,8 @@ spec:
           value: http://otel-collector.support-services-dev.svc.cluster.local:4318
         - name: OTEL_SERVICE_NAME
           value: connector-runtime
+        - name: NATS_URL
+          value: nats://nats.support-services-dev.svc.cluster.local:4222
         resources:
           requests:
             cpu: 75m

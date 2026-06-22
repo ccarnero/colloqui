@@ -2,11 +2,12 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { TenantConnectionManager } from "@yoizen/database";
 import type { EventEnvelope } from "@yoizen/shared";
 import type { IAuditQueryParams } from "../../common/audit-query-params";
-import {
-  ensurePostgresTenantSchemaOnce,
-} from "../../common/ensure-tenant-schema.postgres";
+import { ensurePostgresTenantSchemaOnce } from "../../common/ensure-tenant-schema.postgres";
 import { AuditTenantConnectionManager } from "../../providers/tenant-connection-manager";
-import type { IAuditEvent, IAuditRepository } from "./audit.repository.interface";
+import type {
+  IAuditEvent,
+  IAuditRepository,
+} from "./audit.repository.interface";
 import { MAX_CHAIN_NODES } from "./build-chain-tree";
 
 @Injectable()
@@ -34,19 +35,22 @@ export class AuditPostgresRepository implements IAuditRepository {
             depth          INTEGER     NOT NULL DEFAULT 0
           )
         `;
+        await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS correlation_id TEXT`;
+        await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS causation_id   TEXT`;
+        await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS depth          INTEGER NOT NULL DEFAULT 0`;
         await sql`CREATE INDEX IF NOT EXISTS idx_events_type ON events (type)`;
         await sql`CREATE INDEX IF NOT EXISTS idx_events_created_at ON events (created_at DESC)`;
         await sql`CREATE INDEX IF NOT EXISTS idx_events_type_created ON events (type, created_at DESC)`;
         await sql`CREATE INDEX IF NOT EXISTS idx_events_correlation ON events (correlation_id, depth, created_at)`;
         await sql`CREATE INDEX IF NOT EXISTS idx_events_causation   ON events (causation_id)`;
-      },
+      }
     );
   }
 
   async insertAuditEvent(
     tenantId: string,
     envelope: EventEnvelope,
-    subject: string,
+    subject: string
   ): Promise<void> {
     await this.ensureEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
@@ -81,7 +85,7 @@ export class AuditPostgresRepository implements IAuditRepository {
 
   async queryEvents(
     params: IAuditQueryParams,
-    tenantId: string,
+    tenantId: string
   ): Promise<IAuditEvent[]> {
     const { type, from, to, limit, offset, correlation_id } = params;
     await this.ensureEventsTable(tenantId);
@@ -102,7 +106,10 @@ export class AuditPostgresRepository implements IAuditRepository {
     `;
   }
 
-  async getEventById(id: string, tenantId: string): Promise<IAuditEvent | null> {
+  async getEventById(
+    id: string,
+    tenantId: string
+  ): Promise<IAuditEvent | null> {
     await this.ensureEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
 
@@ -117,7 +124,7 @@ export class AuditPostgresRepository implements IAuditRepository {
 
   async findByCorrelationId(
     correlationId: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IAuditEvent[]> {
     await this.ensureEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);

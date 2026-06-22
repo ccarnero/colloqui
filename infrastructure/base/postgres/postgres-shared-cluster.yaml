@@ -18,6 +18,7 @@ spec:
         - CREATE EXTENSION IF NOT EXISTS vector;
   postgresql:
     parameters:
+      timezone: "UTC"
       max_connections: "200"
       shared_buffers: "256MB"
       work_mem: "8MB"

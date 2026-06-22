@@ -1,15 +1,24 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.3.2/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.0/schema.json",
   "files": {
     "ignoreUnknown": true,
     "includes": [
       "**",
-      "!!**/node_modules", "!!**/dist", "!!**/build",
-      "!!**/coverage", "!!**/.next", "!!**/.nuxt",
-      "!!**/.svelte-kit", "!!**/.turbo", "!!**/.vercel",
-      "!!**/.cache", "!!**/__generated__",
-      "!!**/*.generated.*", "!!**/*.gen.*",
-      "!!**/generated", "!!**/codegen"
+      "!!**/node_modules",
+      "!!**/dist",
+      "!!**/build",
+      "!!**/coverage",
+      "!!**/.next",
+      "!!**/.nuxt",
+      "!!**/.svelte-kit",
+      "!!**/.turbo",
+      "!!**/.vercel",
+      "!!**/.cache",
+      "!!**/__generated__",
+      "!!**/*.generated.*",
+      "!!**/*.gen.*",
+      "!!**/generated",
+      "!!**/codegen"
     ]
   },
   "formatter": {
@@ -70,7 +79,7 @@
           "level": "error",
           "options": {
             "attributes": ["className"],
-            "functions": ["clsx","cva","tw","twMerge","cn","twJoin","tv"]
+            "functions": ["clsx", "cva", "tw", "twMerge", "cn", "twJoin", "tv"]
           }
         }
       }
@@ -83,7 +92,7 @@
       "trailingCommas": "es5"
     }
   },
-  "organizeImports": { "enabled": true },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "vcs": {
     "enabled": true,
     "clientKind": "git",

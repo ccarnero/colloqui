@@ -28,6 +28,12 @@ import type { IYoizenRequest } from "../../types/yoizen-request";
 interface IPublishWebhookParams {
   tenantId: string;
   channel: Channel;
+  /**
+   * Optional account `externalId` from the instance-addressed ingress URL
+   * (`/api/webhooks/<channel>/<tenant>/<instance>`). Forwarded verbatim so
+   * channel-service can resolve the account by `(channel, externalId)`.
+   */
+  instance?: string;
   rawBody: Buffer;
   headers: Record<string, unknown>;
   parsedBody: unknown;
@@ -57,7 +63,8 @@ export class WebhookIngressPublisherService {
   ) {}
 
   async publishWebhook(params: IPublishWebhookParams): Promise<string> {
-    const { tenantId, channel, rawBody, headers, parsedBody, request } = params;
+    const { tenantId, channel, instance, rawBody, headers, parsedBody, request } =
+      params;
 
     /**
      * Enforce the per-pod in-flight cap before we allocate any
@@ -134,6 +141,7 @@ export class WebhookIngressPublisherService {
         payload,
         raw_body_b64: rawBody.toString("base64"),
         headers: this.filterHeaders(headers),
+        ...(instance !== undefined && { instance }),
       },
     };
 

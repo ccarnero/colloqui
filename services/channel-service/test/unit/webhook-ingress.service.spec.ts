@@ -168,6 +168,88 @@ describe("WebhookIngressService", () => {
     });
   });
 
+  it("instance-addressed http: routes to the account whose externalId matches", async () => {
+    // Both secrets "verify" — without the URL instance this would be ambiguous
+    // (signature_mismatch). The path segment must pick the right account.
+    const httpProvider = {
+      provider: "http",
+      signatureHeader: "x-http-channel-token",
+      parseWebhook: mock(() => [createInboundMessage({ text: "hola" })]),
+      verifySignature: mock(() => true),
+    };
+    const ingress = { processInbound: mock(() => Promise.resolve()) };
+    const accounts = {
+      listActive: mock(() =>
+        Promise.resolve([
+          createAccount({ id: "http-a", channel: "http", provider: "http", externalId: "webhook1", appSecret: "s1" }),
+          createAccount({ id: "http-b", channel: "http", provider: "http", externalId: "webhook2", appSecret: "s2" }),
+        ]),
+      ),
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        WebhookIngressService,
+        { provide: ChannelRouter, useValue: { get: mock(() => httpProvider) } },
+        { provide: IngressService, useValue: ingress },
+        { provide: AccountsService, useValue: accounts },
+      ],
+    }).compile();
+    const svc = moduleRef.get(WebhookIngressService);
+
+    const out = await svc.processEnvelope(
+      "http",
+      "t1",
+      Buffer.from("{}"),
+      { "x-http-channel-token": "tok" },
+      { from: "u", text: "hola" },
+      undefined,
+      "webhook2",
+    );
+
+    expect(out.status).toBe("accepted");
+    await flushImmediate();
+    expect(ingress.processInbound).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: "http-b" }),
+    );
+  });
+
+  it("instance-addressed http: unknown externalId is rejected", async () => {
+    const httpProvider = {
+      provider: "http",
+      signatureHeader: "x-http-channel-token",
+      parseWebhook: mock(() => [createInboundMessage({ text: "hola" })]),
+      verifySignature: mock(() => true),
+    };
+    const accounts = {
+      listActive: mock(() =>
+        Promise.resolve([
+          createAccount({ id: "http-a", channel: "http", provider: "http", externalId: "webhook1", appSecret: "s1" }),
+        ]),
+      ),
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        WebhookIngressService,
+        { provide: ChannelRouter, useValue: { get: mock(() => httpProvider) } },
+        { provide: IngressService, useValue: { processInbound: mock(() => Promise.resolve()) } },
+        { provide: AccountsService, useValue: accounts },
+      ],
+    }).compile();
+    const svc = moduleRef.get(WebhookIngressService);
+
+    const out = await svc.processEnvelope(
+      "http",
+      "t1",
+      Buffer.from("{}"),
+      { "x-http-channel-token": "tok" },
+      { from: "u", text: "hola" },
+      undefined,
+      "does-not-exist",
+    );
+
+    expect(out.status).toBe("unknown_instance");
+  });
+
   it("disambiguates WhatsApp accounts by phone_number_id when multiple verify", async () => {
     const inbound = createInboundMessage({ text: "hello" });
     mockProvider.parseWebhook.mockReturnValue([inbound]);

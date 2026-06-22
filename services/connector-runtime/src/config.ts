@@ -19,6 +19,7 @@ type WorkflowHttpWorkerConfig = {
   readonly adapterServiceUrl: string;
   readonly registryServiceUrl: string;
   readonly agentAdminServiceUrl: string;
+  readonly natsUrl: string;
 };
 
 export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
@@ -39,4 +40,5 @@ export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
   agentAdminServiceUrl:
     process.env.AGENT_ADMIN_SERVICE_URL ??
     platformServiceUrl("agent-admin-service", env),
+  natsUrl: process.env.NATS_URL ?? "nats://localhost:4222",
 };

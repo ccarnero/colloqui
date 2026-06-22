@@ -1,502 +1,441 @@
-export {
-  RESULT_KEY_PREFIX,
-  PENDING_KEY_PREFIX,
-  CALLBACK_KEY_PREFIX,
-  RESULT_TTL,
-  PENDING_TTL,
-  CALLBACK_TTL,
-  RESULT_CACHE_MAX,
-  STREAM_MAX_AGE_NS,
-  MAX_DELIVER,
-  TENANT_HEADER,
-  REGISTRY_KNATIVE_GROUP,
-  REGISTRY_KNATIVE_VERSION,
-  REGISTRY_KNATIVE_SERVICES_PLURAL,
-  REGISTRY_KNATIVE_REVISIONS_PLURAL,
-  REGISTRY_DEFAULT_SERVICE_PORT,
-  REGISTRY_PRODUCER,
-  REGISTRY_DOMAIN,
-  PLATFORM_NON_CHANNEL_TOKEN,
-  ADAPTER_MANAGED_BY_REGISTRY,
-  WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
-  CONNECTOR_RUNTIME_TASK_QUEUE,
-  WORKFLOW_DEFAULT_TIMEOUT_MS,
-  WORKFLOW_TASK_TIMEOUT_MS,
-  GATEWAY_AUDIT_STREAM_NAME,
-  GATEWAY_AUDIT_STREAM_SUBJECTS,
-  GATEWAY_AUDIT_SUBJECT,
-  GATEWAY_AUDIT_CONSUMER_NAME,
-  GATEWAY_AUDIT_STREAM_MAX_BYTES,
-  PLATFORM_PRODUCER,
-  PLATFORM_DOMAIN,
-  PLATFORM_CHANNEL,
-  PLATFORM_PROVIDER,
-  PLATFORM_ACCOUNT_ID,
-  PLATFORM_SUBJECT_PREFIX,
-  PLATFORM_AGENT_PUBLISHED,
-  PLATFORM_AGENT_UNPUBLISHED,
-  PLATFORM_CONFIG_SYNC,
-  PLATFORM_JOBS_SYNC,
-  PLATFORM_JOB_TRIGGER,
-  PLATFORM_CHAT_RESPOND,
-  PLATFORM_ONLINE,
-  PLATFORM_AGENT_OUTBOUND,
-  PLATFORM_EXECUTION_STATUS,
-  PLATFORM_EVENT,
-  PLATFORM_DOCUMENT_INGESTION,
-  PLATFORM_SKB_FILE_INGESTION,
-  AI_AGENT_GATEWAY_PRODUCER,
-  AI_AGENT_GATEWAY_SUBJECT_PREFIX,
-  PLATFORM_EXECUTION_REQUESTED,
-  PLATFORM_EXECUTION_STARTED,
-  PLATFORM_EXECUTION_COMPLETED,
-  PLATFORM_EXECUTION_FAILED,
-  SCHEDULER_SUBJECT_PREFIX,
-  PLATFORM_SCHEDULER_HEARTBEAT,
-} from './constants';
-
-export { buildPlatformSubject } from './constants';
-
-export {
-  extractTenantId,
-  validateTenantId,
-  isPlatformTenantRowIdParam,
-} from './tenant.utils';
-
-export {
-  ProvisioningStatus,
-  isProvisioningStatus,
-  PLATFORM_TENANTS_STREAM_NAME,
-  PLATFORM_TENANTS_SUBJECT_PATTERN,
-  TENANT_PROVISION_REQUESTED_SUBJECT,
-  TENANT_PROVISIONER_DURABLE,
-  TENANT_PROVISION_MAX_DELIVER,
-  TENANT_DELETED_SUBJECT,
-  TENANT_READY_SUBJECT,
-  isTenantProvisionRequestedMessageV1,
-  isTenantDeletedMessageV1,
-  isTenantReadyMessageV1,
-} from './tenant-events';
-export type {
-  ProvisioningStatusValue,
-  TenantProvisionRequestedMessageV1,
-  TenantDeletedMessageV1,
-  TenantReadyMessageV1,
-} from './tenant-events';
-
-export {
-  TenantDatabaseTier,
-  isTenantDatabaseTier,
-  tenantPostgresDatabaseName,
-  tenantPostgresRoleName,
-} from './tenant-database-tier';
-export type { TenantDatabaseTierValue } from './tenant-database-tier';
-
-export { generateId } from './id.utils';
-
-export { sleep } from './async.utils';
-
-export {
-  evictOldestIfCapacityBeforeSet,
-  evictOneOldestIfExceedsMax,
-} from './fifo-map';
-
-export type {
-  JsonValue,
-  EventTransport,
-  EventData,
-  EventEnvelope,
-} from './interfaces';
-
-export {
-  canonicalJson,
-  sha256Canonical,
-  computeIdempotencyKey,
-  computePayloadChecksum,
-  canonicalByteLength,
-  buildSubject,
-  parseSubject,
-  deriveEnvelope,
-  buildEventEnvelope,
-  DepthExceededError,
-  MAX_DEPTH_BY_CATEGORY,
-  DEFAULT_MAX_DEPTH,
-  isCompliantEnvelope,
-} from './envelope.utils';
-
-export type {
-  ProducerCategory,
-  BuildSubjectParams,
-  BuildEventEnvelopeOptions,
-  ParsedSubject,
-  DeriveEnvelopeOverrides,
-} from './envelope.utils';
-
-export {
-  ACCESS_TOKEN_TTL,
-  REFRESH_TOKEN_TTL,
-  PUBLIC_ROUTES_CACHE_KEY_PREFIX,
-  PUBLIC_ROUTES_CACHE_TTL,
-} from './auth.constants';
-
-export {
-  SYSTEM_ROLE_TENANT_ADMIN,
-} from './auth.interfaces';
-
-export type {
-  JwtPayload,
-  TokenResponse,
-  TokenScope,
-  TokenType,
-  PlatformUserRole,
-  TenantUserRole,
-  UserRole,
-  PublicRouteEntry,
-  ITenantRole,
-  ITenantRolePermission,
-} from './auth.interfaces';
-
-export type {
-  HttpEndpointRequest,
-  HttpServiceRequest,
-  AgentChatRequest,
-  AgentChatContextEntry,
-  HttpExecutionResult,
-} from './http-execution.interfaces';
-
-export type {
-  YoizenClawExecutionType,
-  YoizenClawExecutionState,
-  YoizenClawExecutionContextEntry,
-  YoizenClawChatExecutionInput,
-  YoizenClawExecutionRequest,
-  YoizenClawExecutionSubmitted,
-  YoizenClawExecutionResultPayload,
-  YoizenClawExecutionStatus,
-} from './execution.interfaces';
-
-export { YoizenClawExecutionClient } from './execution-client';
-export type {
-  YoizenClawExecutionCache,
-  YoizenClawExecutionClientOptions,
-  SubmitExecutionOptions,
-} from './execution-client';
-
-export type {
-  WorkflowExecutionContext,
-  EventCausalContext,
-  EndpointCallArgs,
-  JsFunctionArgs,
-  ServiceBusCallArgs,
-  ServiceCallArgs,
-  AgentCallArgs,
-  AgentCallContextEntry,
-  EndpointCallAction,
-  JsFunctionAction,
-  ServiceBusCallAction,
-  ServiceCallAction,
-  ChannelSendArgs,
-  ChannelSendAction,
-  AgentCallAction,
-  BranchAction,
-  ConditionComparator,
-  IConditionRule,
-  IConditionalBranch,
-  ConditionalAction,
-  WorkflowAction,
-  WorkflowDefinition,
-  TriggerMode,
-  MessageReceivedTriggerConfig,
-  MessageReceivedTrigger,
-  WorkflowTrigger,
-} from './workflow.interfaces';
-
-export type {
-  GatewayAuditEvent,
-  GatewayAuditUpstream,
-} from './audit.interfaces';
-
-export {
-  RATE_LIMIT_KEY_PREFIX,
-  RATE_LIMIT_DEFAULT_ALGORITHM,
-  RATE_LIMIT_DEFAULT_LIMIT,
-  RATE_LIMIT_DEFAULT_WINDOW_MS,
-  RATE_LIMIT_DEFAULT_CAPACITY,
-  RATE_LIMIT_DEFAULT_REFILL_RATE,
-  RATE_LIMIT_CONFIG_POLL_INTERVAL_MS,
-  RATE_LIMIT_CONFIG_FETCH_TIMEOUT_MS,
-} from './rate-limit.constants';
-
-export type {
-  RateLimitAlgorithm,
-  RateLimitTenantConfig,
-  RateLimitResult,
-} from './rate-limit.interfaces';
-
 export type {
   AdapterCache,
-  AdapterConfig,
-  AdapterCacheStrategy,
   AdapterCacheMethodValue,
   AdapterCacheQueryParamsModeValue,
+  AdapterCacheStrategy,
+  AdapterConfig,
   AdapterEndpointConfig,
+  AdapterReference,
+  AdapterStatusValue,
   IAdapterHeaderEntry,
   ResolvedAdapterRequest,
-  AdapterReference,
-} from './adapter.interfaces';
+} from "./adapter.interfaces";
 export {
   AdapterCacheMethod,
   AdapterCacheQueryParamsMode,
   AdapterStatus,
   DEFAULT_CONNECTOR_ADMIN_URL,
-} from './adapter.interfaces';
-export type { AdapterStatusValue } from './adapter.interfaces';
-
-export { applyAdapterAuthHeadersSync } from './adapter-auth-headers';
-
+} from "./adapter.interfaces";
+export { applyAdapterAuthHeadersSync } from "./adapter-auth-headers";
+export type { AdapterClientOptions } from "./adapter-client";
 export {
   AdapterClient,
   createAdapterClientWithRedisAndFetch,
-} from './adapter-client';
-export type { AdapterClientOptions } from './adapter-client';
-
+} from "./adapter-client";
+export { ADAPTER_MONGO_SCHEMA } from "./adapter-mongo-schema";
+export { ADAPTER_SCHEMA_SQL } from "./adapter-schema";
+export { PLATFORM_ADMIN_MONGO_SCHEMA } from "./admin-mongo-schema";
+export { sleep } from "./async.utils";
+export type {
+  GatewayAuditEvent,
+  GatewayAuditUpstream,
+} from "./audit.interfaces";
 export {
-  CHANNEL_STREAM_PREFIX,
-  CHANNEL_STREAM_SUBJECTS_PATTERN,
+  AUDIT_MONGO_SCHEMA,
+  CHANNEL_AUDIT_EVENTS_MONGO_SCHEMA,
+  CHANNEL_AUDIT_MONGO_NAMESPACE,
+  EVENTS_AUDIT_MONGO_SCHEMA,
+  GATEWAY_AUDIT_MONGO_NAMESPACE,
+  GATEWAY_AUDIT_MONGO_SCHEMA,
+} from "./audit-mongo-schema";
+export {
+  ACCESS_TOKEN_TTL,
+  PUBLIC_ROUTES_CACHE_KEY_PREFIX,
+  PUBLIC_ROUTES_CACHE_TTL,
+  REFRESH_TOKEN_TTL,
+} from "./auth.constants";
+export type {
+  ITenantRole,
+  ITenantRolePermission,
+  JwtPayload,
+  PlatformUserRole,
+  PublicRouteEntry,
+  TenantUserRole,
+  TokenResponse,
+  TokenScope,
+  TokenType,
+  UserRole,
+} from "./auth.interfaces";
+
+export { SYSTEM_ROLE_TENANT_ADMIN } from "./auth.interfaces";
+export {
+  buildDlqMessageSubject,
+  buildDlqStreamName,
+  buildDlqSubjectPattern,
+  CHANNEL_AUDIT_SUBJECT_PATTERN,
   CHANNEL_CONSUMER_NAME,
-  CHANNEL_SUBJECT_PREFIX,
-  CHANNEL_PRODUCER,
   CHANNEL_DOMAIN,
+  CHANNEL_MAX_DELIVER,
+  CHANNEL_PRODUCER,
+  CHANNEL_SEND_SUBJECT_PATTERN,
   CHANNEL_STREAM_MAX_AGE_NS,
   CHANNEL_STREAM_MAX_BYTES,
-  CHANNEL_MAX_DELIVER,
-  CLAIM_CHECK_THRESHOLD_BYTES,
+  CHANNEL_STREAM_PREFIX,
+  CHANNEL_STREAM_SUBJECTS_PATTERN,
+  CHANNEL_SUBJECT_PREFIX,
+  CLAIM_CHECK_BUCKET_MAX_BYTES,
   CLAIM_CHECK_BUCKET_PREFIX,
   CLAIM_CHECK_BUCKET_TTL_NS,
-  CLAIM_CHECK_BUCKET_MAX_BYTES,
-  CHANNEL_AUDIT_SUBJECT_PATTERN,
-  CHANNEL_SEND_SUBJECT_PATTERN,
-  WEBHOOK_VERIFY_RPC_SUBJECT,
+  CLAIM_CHECK_THRESHOLD_BYTES,
+  DLQ_TENANT_STREAM_MAX_AGE_NS,
+  DLQ_TENANT_STREAM_MAX_BYTES,
+  DLQ_TENANT_STREAM_PREFIX,
+  DLQ_TENANT_SUBJECT_PREFIX,
+  WEBHOOK_FORWARDED_HEADERS,
+  WEBHOOK_FORWARDED_HEADERS_SET,
   WEBHOOK_INGRESS_RECEIVED_KIND,
   WEBHOOK_INGRESS_RECEIVED_VERSION,
   WEBHOOK_INGRESS_SUBJECT_FILTER,
-  WEBHOOK_FORWARDED_HEADERS,
-  WEBHOOK_FORWARDED_HEADERS_SET,
-  DLQ_TENANT_STREAM_PREFIX,
-  DLQ_TENANT_SUBJECT_PREFIX,
-  DLQ_TENANT_STREAM_MAX_AGE_NS,
-  DLQ_TENANT_STREAM_MAX_BYTES,
-  buildDlqStreamName,
-  buildDlqSubjectPattern,
-  buildDlqMessageSubject,
-} from './channel.constants';
-
-export { PermanentError, isPermanentError } from './permanent-error';
-
-export {
-  DistributedCircuitBreaker,
-  computeBreakerKey,
-  type BreakerStatus,
-  type BreakerDecision,
-  type IBreakerConfig,
-  type ICircuitBreakerRedis,
-  type ICircuitBreakerLogger,
-  type ICircuitBreakerMetrics,
-} from './circuit-breaker';
-
+  WEBHOOK_VERIFY_RPC_SUBJECT,
+} from "./channel.constants";
 export type {
-  Channel,
-  ChannelProvider,
-  MessageKind,
-  ChannelEnvelope,
-  ChannelAccount,
-  InboundMessage,
-  OutboundMessage,
-  MessageMedia,
-  SendMessageResult,
-  IChannelProvider,
   AutoReplyRule,
-} from './channel.interfaces';
-
+  Channel,
+  ChannelAccount,
+  ChannelEnvelope,
+  ChannelProvider,
+  IChannelProvider,
+  InboundMessage,
+  MessageKind,
+  MessageMedia,
+  OutboundMessage,
+  SendMessageResult,
+} from "./channel.interfaces";
 export {
   buildChannelSubject,
-  buildIngressStreamName,
   buildClaimCheckBucket,
+  buildIngressStreamName,
   buildTenantWildcard,
-  parseChannelSubject,
   buildWebhookIngressSubject,
+  parseChannelSubject,
   parseWebhookIngressSubject,
-} from './channel.utils';
-
-export type {
-  IWebhookVerifyRequest,
-  IWebhookVerifyResponse,
-  IWebhookIngressData,
-  WebhookIngressEnvelope,
-} from './webhook.interfaces';
-
-export {
-  buildRegistryPlatformSubject,
-  buildRegistryPlatformWildcard,
-  PLATFORM_RESOURCE_SERVICE,
-  PLATFORM_KIND_SERVICE_UPSERTED,
-  PLATFORM_KIND_SERVICE_DELETED,
-  SERVICE_UPSERTED_EVENT_TYPE,
-  SERVICE_DELETED_EVENT_TYPE,
-  REGISTRY_EVENT_SOURCE,
-} from './platform.utils';
-
-export type {
-  IServiceConfigUpsertedPayload,
-  IServiceConfigDeletedPayload,
-} from './platform.utils';
-
-export type { ParsedSenderId, SenderIdType } from './phone.utils';
-export { parseSenderId, normalizeRecipient } from './phone.utils';
-
-export type {
-  DashboardStats,
-  DashboardDailyBreakdown,
-  DashboardQuota,
-  DashboardActivity,
-  AuditDashboardStats,
-} from './dashboard.interfaces';
-
-export {
-  DASHBOARD_CACHE_KEY_PREFIX,
-  DASHBOARD_CACHE_TTL,
-} from './dashboard.interfaces';
-
-export type {
-  TenantTier,
-  TenantStreamLimits,
-  TenantStreamConfig,
-  JetStreamStorageCheck,
-} from './tenant-stream.constants';
-
-export {
-  TENANT_TIER_LIMITS,
-  getTenantStreamName,
-  getTenantSubjectPattern,
-  buildTenantStreamConfig,
-  checkJetStreamCapacity,
-} from './tenant-stream.constants';
-
-export {
-  DEFAULT_LIST_LIMIT,
-  MAX_LIST_LIMIT,
-  clampListLimit,
-  clampListOffset,
-  type IPaginationQueryDto,
-} from './pagination';
-
-export {
-  VALID_ENVIRONMENTS,
-  type Environment,
-} from './platform-environment';
-
-export {
-  tenantKubernetesNamespaceName,
-  invalidPlatformEnvironmentMessage,
-} from "./tenant-namespace";
-
-export { platformServiceUrl } from "./platform-service-url";
-
-export { parseSchedule } from "./schedule.utils";
-export type { ParsedSchedule } from "./schedule.utils";
-
-export { WORKFLOW_SCHEMA_SQL } from "./workflow-schema";
-
-export { ADAPTER_SCHEMA_SQL } from "./adapter-schema";
-
-export {
-  CHANNEL_ACCOUNTS_SCHEMA_SQL,
-  AUTO_REPLY_SCHEMA_SQL,
-} from "./channel-schema";
-
-export { TENANT_AUTH_SCHEMA_SQL } from "./tenant-auth-schema";
-
-export {
-  CHANNEL_USAGE_SCHEMA_SQL,
-  SHARED_CHANNEL_USAGE_SCHEMA_SQL,
-} from "./channel-usage-schema";
-
-export type {
-  IMongoIndexSpec,
-  IMongoCollectionSchema,
-} from "./mongo-schema.types";
-
-export { WORKFLOW_MONGO_SCHEMA } from "./workflow-mongo-schema";
-
-export { TENANT_AUTH_MONGO_SCHEMA } from "./tenant-auth-mongo-schema";
-
+} from "./channel.utils";
 export { CHANNEL_MONGO_SCHEMA } from "./channel-mongo-schema";
-
-export { ADAPTER_MONGO_SCHEMA } from "./adapter-mongo-schema";
-
+export {
+  AUTO_REPLY_SCHEMA_SQL,
+  CHANNEL_ACCOUNTS_SCHEMA_SQL,
+} from "./channel-schema";
 export {
   CHANNEL_USAGE_MONGO_SCHEMA,
   SHARED_CHANNEL_USAGE_MONGO_SCHEMA,
 } from "./channel-usage-mongo-schema";
-
+export {
+  CHANNEL_USAGE_SCHEMA_SQL,
+  SHARED_CHANNEL_USAGE_SCHEMA_SQL,
+} from "./channel-usage-schema";
+export type {
+  ChunkingStrategy,
+  IChunker,
+  IChunkerConfig,
+} from "./chunker.interfaces";
+export {
+  type BreakerDecision,
+  type BreakerStatus,
+  computeBreakerKey,
+  DistributedCircuitBreaker,
+  type IBreakerConfig,
+  type ICircuitBreakerLogger,
+  type ICircuitBreakerMetrics,
+  type ICircuitBreakerRedis,
+} from "./circuit-breaker";
+export { CONNECTOR_CALL_USAGE_SCHEMA_SQL } from "./connector-call-usage-schema";
+export {
+  ADAPTER_MANAGED_BY_REGISTRY,
+  AI_AGENT_GATEWAY_PRODUCER,
+  AI_AGENT_GATEWAY_SUBJECT_PREFIX,
+  buildPlatformSubject,
+  CALLBACK_KEY_PREFIX,
+  CALLBACK_TTL,
+  CONNECTOR_RUNTIME_TASK_QUEUE,
+  GATEWAY_AUDIT_CONSUMER_NAME,
+  GATEWAY_AUDIT_STREAM_MAX_BYTES,
+  GATEWAY_AUDIT_STREAM_NAME,
+  GATEWAY_AUDIT_STREAM_SUBJECTS,
+  GATEWAY_AUDIT_SUBJECT,
+  MAX_DELIVER,
+  PENDING_KEY_PREFIX,
+  PENDING_TTL,
+  PLATFORM_ACCOUNT_ID,
+  PLATFORM_AGENT_OUTBOUND,
+  PLATFORM_AGENT_PUBLISHED,
+  PLATFORM_AGENT_UNPUBLISHED,
+  PLATFORM_CHANNEL,
+  PLATFORM_CHAT_RESPOND,
+  PLATFORM_CONFIG_SYNC,
+  PLATFORM_DOCUMENT_INGESTION,
+  PLATFORM_DOMAIN,
+  PLATFORM_EVENT,
+  PLATFORM_EXECUTION_COMPLETED,
+  PLATFORM_EXECUTION_FAILED,
+  PLATFORM_EXECUTION_REQUESTED,
+  PLATFORM_EXECUTION_STARTED,
+  PLATFORM_EXECUTION_STATUS,
+  PLATFORM_JOB_TRIGGER,
+  PLATFORM_JOBS_SYNC,
+  PLATFORM_NON_CHANNEL_TOKEN,
+  PLATFORM_ONLINE,
+  PLATFORM_PRODUCER,
+  PLATFORM_PROVIDER,
+  PLATFORM_SCHEDULER_HEARTBEAT,
+  PLATFORM_SKB_FILE_INGESTION,
+  PLATFORM_SUBJECT_PREFIX,
+  REGISTRY_DEFAULT_SERVICE_PORT,
+  REGISTRY_DOMAIN,
+  REGISTRY_KNATIVE_GROUP,
+  REGISTRY_KNATIVE_REVISIONS_PLURAL,
+  REGISTRY_KNATIVE_SERVICES_PLURAL,
+  REGISTRY_KNATIVE_VERSION,
+  REGISTRY_PRODUCER,
+  RESULT_CACHE_MAX,
+  RESULT_KEY_PREFIX,
+  RESULT_TTL,
+  SCHEDULER_SUBJECT_PREFIX,
+  STREAM_MAX_AGE_NS,
+  TENANT_HEADER,
+  WORKFLOW_DEFAULT_TIMEOUT_MS,
+  WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
+  WORKFLOW_TASK_TIMEOUT_MS,
+} from "./constants";
+export type {
+  AuditDashboardStats,
+  DashboardActivity,
+  DashboardDailyBreakdown,
+  DashboardQuota,
+  DashboardStats,
+} from "./dashboard.interfaces";
+export {
+  DASHBOARD_CACHE_KEY_PREFIX,
+  DASHBOARD_CACHE_TTL,
+} from "./dashboard.interfaces";
+export type {
+  EmbeddingClientConfig,
+  IEmbeddingClient,
+} from "./embedding-client.interfaces";
+export type {
+  BuildEventEnvelopeOptions,
+  BuildSubjectParams,
+  DeriveEnvelopeOverrides,
+  ParsedSubject,
+  ProducerCategory,
+} from "./envelope.utils";
+export {
+  buildEventEnvelope,
+  buildSubject,
+  canonicalByteLength,
+  canonicalJson,
+  computeIdempotencyKey,
+  computePayloadChecksum,
+  DEFAULT_MAX_DEPTH,
+  DepthExceededError,
+  deriveEnvelope,
+  isCompliantEnvelope,
+  MAX_DEPTH_BY_CATEGORY,
+  parseSubject,
+  sha256Canonical,
+} from "./envelope.utils";
+export type {
+  YoizenClawChatExecutionInput,
+  YoizenClawExecutionContextEntry,
+  YoizenClawExecutionRequest,
+  YoizenClawExecutionResultPayload,
+  YoizenClawExecutionState,
+  YoizenClawExecutionStatus,
+  YoizenClawExecutionSubmitted,
+  YoizenClawExecutionType,
+} from "./execution.interfaces";
+export type {
+  SubmitExecutionOptions,
+  YoizenClawExecutionCache,
+  YoizenClawExecutionClientOptions,
+} from "./execution-client";
+export { YoizenClawExecutionClient } from "./execution-client";
+export {
+  evictOldestIfCapacityBeforeSet,
+  evictOneOldestIfExceedsMax,
+} from "./fifo-map";
+export type {
+  IApiGatewayHealthResponse,
+  IAuthServiceHealthResponse,
+  ICacheServiceHealthResponse,
+  IGatewayCoreHealthResponse,
+  IGatewayDownstreamHealth,
+  IGatewayDownstreamHealthBody,
+  IHealthAggregateStatus,
+  IHealthConnectionState,
+  INatsPostgresHealthResponse,
+  INatsRedisHealthResponse,
+  IPlatformHealthResponse,
+  ITenantHealthResponse,
+  ITenantProvisionerState,
+} from "./health.interfaces";
+export type {
+  AgentChatContextEntry,
+  AgentChatRequest,
+  HttpEndpointRequest,
+  HttpExecutionResult,
+  HttpServiceRequest,
+} from "./http-execution.interfaces";
+export { generateId } from "./id.utils";
+export type {
+  EventData,
+  EventEnvelope,
+  EventTransport,
+  JsonValue,
+} from "./interfaces";
+export type {
+  DocumentContentType,
+  DocumentStatus,
+  IDocument,
+  IDocumentChunk,
+  IDocumentListResponse,
+  IKbListResponse,
+  IKnowledgeBase,
+} from "./knowledge-base.interfaces";
+export type {
+  IMongoCollectionSchema,
+  IMongoIndexSpec,
+} from "./mongo-schema.types";
+export {
+  clampListLimit,
+  clampListOffset,
+  DEFAULT_LIST_LIMIT,
+  type IPaginationQueryDto,
+  MAX_LIST_LIMIT,
+} from "./pagination";
+export { isPermanentError, PermanentError } from "./permanent-error";
+export type { ParsedSenderId, SenderIdType } from "./phone.utils";
+export { normalizeRecipient, parseSenderId } from "./phone.utils";
+export type {
+  IServiceConfigDeletedPayload,
+  IServiceConfigUpsertedPayload,
+} from "./platform.utils";
+export {
+  buildRegistryPlatformSubject,
+  buildRegistryPlatformWildcard,
+  PLATFORM_KIND_SERVICE_DELETED,
+  PLATFORM_KIND_SERVICE_UPSERTED,
+  PLATFORM_RESOURCE_SERVICE,
+  REGISTRY_EVENT_SOURCE,
+  SERVICE_DELETED_EVENT_TYPE,
+  SERVICE_UPSERTED_EVENT_TYPE,
+} from "./platform.utils";
+export {
+  type Environment,
+  VALID_ENVIRONMENTS,
+} from "./platform-environment";
 export {
   PLATFORM_MONGO_SCHEMA,
   PLATFORM_TENANT_DEFAULT_TIER,
 } from "./platform-mongo-schema";
-
-export { REGISTRY_MONGO_SCHEMA } from "./registry-mongo-schema";
-
-export { PLATFORM_ADMIN_MONGO_SCHEMA } from "./admin-mongo-schema";
-
+export { platformServiceUrl } from "./platform-service-url";
 export {
-  AUDIT_MONGO_SCHEMA,
-  EVENTS_AUDIT_MONGO_SCHEMA,
-  GATEWAY_AUDIT_MONGO_SCHEMA,
-  CHANNEL_AUDIT_EVENTS_MONGO_SCHEMA,
-  GATEWAY_AUDIT_MONGO_NAMESPACE,
-  CHANNEL_AUDIT_MONGO_NAMESPACE,
-} from "./audit-mongo-schema";
-
+  RATE_LIMIT_CONFIG_FETCH_TIMEOUT_MS,
+  RATE_LIMIT_CONFIG_POLL_INTERVAL_MS,
+  RATE_LIMIT_DEFAULT_ALGORITHM,
+  RATE_LIMIT_DEFAULT_CAPACITY,
+  RATE_LIMIT_DEFAULT_LIMIT,
+  RATE_LIMIT_DEFAULT_REFILL_RATE,
+  RATE_LIMIT_DEFAULT_WINDOW_MS,
+  RATE_LIMIT_KEY_PREFIX,
+} from "./rate-limit.constants";
 export type {
-  IKnowledgeBase,
-  IDocument,
-  IDocumentChunk,
-  IKbListResponse,
-  IDocumentListResponse,
-  DocumentContentType,
-  DocumentStatus,
-} from './knowledge-base.interfaces';
-
+  RateLimitAlgorithm,
+  RateLimitResult,
+  RateLimitTenantConfig,
+} from "./rate-limit.interfaces";
+export { REGISTRY_MONGO_SCHEMA } from "./registry-mongo-schema";
+export type { ParsedSchedule } from "./schedule.utils";
+export { parseSchedule } from "./schedule.utils";
+export {
+  extractTenantId,
+  isPlatformTenantRowIdParam,
+  validateTenantId,
+} from "./tenant.utils";
+export { TENANT_AUTH_MONGO_SCHEMA } from "./tenant-auth-mongo-schema";
+export { TENANT_AUTH_SCHEMA_SQL } from "./tenant-auth-schema";
+export type { TenantDatabaseTierValue } from "./tenant-database-tier";
+export {
+  isTenantDatabaseTier,
+  TenantDatabaseTier,
+  tenantPostgresDatabaseName,
+  tenantPostgresRoleName,
+} from "./tenant-database-tier";
 export type {
-  IHealthConnectionState,
-  IHealthAggregateStatus,
-  IAuthServiceHealthResponse,
-  ICacheServiceHealthResponse,
-  IGatewayCoreHealthResponse,
-  IGatewayDownstreamHealthBody,
-  IGatewayDownstreamHealth,
-  IApiGatewayHealthResponse,
-  ITenantHealthResponse,
-  ITenantProvisionerState,
-  INatsPostgresHealthResponse,
-  INatsRedisHealthResponse,
-  IPlatformHealthResponse,
-} from './health.interfaces';
-
+  ProvisioningStatusValue,
+  TenantDeletedMessageV1,
+  TenantProvisionRequestedMessageV1,
+  TenantReadyMessageV1,
+} from "./tenant-events";
+export {
+  isProvisioningStatus,
+  isTenantDeletedMessageV1,
+  isTenantProvisionRequestedMessageV1,
+  isTenantReadyMessageV1,
+  PLATFORM_TENANTS_STREAM_NAME,
+  PLATFORM_TENANTS_SUBJECT_PATTERN,
+  ProvisioningStatus,
+  TENANT_DELETED_SUBJECT,
+  TENANT_PROVISION_MAX_DELIVER,
+  TENANT_PROVISION_REQUESTED_SUBJECT,
+  TENANT_PROVISIONER_DURABLE,
+  TENANT_READY_SUBJECT,
+} from "./tenant-events";
+export {
+  invalidPlatformEnvironmentMessage,
+  tenantKubernetesNamespaceName,
+} from "./tenant-namespace";
 export type {
-  VariableType,
-  VariableDeclaration,
+  JetStreamStorageCheck,
+  TenantStreamConfig,
+  TenantStreamLimits,
+  TenantTier,
+} from "./tenant-stream.constants";
+export {
+  buildTenantStreamConfig,
+  checkJetStreamCapacity,
+  getTenantStreamName,
+  getTenantSubjectPattern,
+  TENANT_TIER_LIMITS,
+} from "./tenant-stream.constants";
+export type {
   IDataConnection,
+  VariableDeclaration,
   VariableResolutionContext,
-} from './variable.interfaces';
-
+  VariableType,
+} from "./variable.interfaces";
 export type {
-  ChunkingStrategy,
-  IChunkerConfig,
-  IChunker,
-} from './chunker.interfaces';
-
+  IWebhookIngressData,
+  IWebhookVerifyRequest,
+  IWebhookVerifyResponse,
+  WebhookIngressEnvelope,
+} from "./webhook.interfaces";
 export type {
-  EmbeddingClientConfig,
-  IEmbeddingClient,
-} from './embedding-client.interfaces';
+  AgentCallAction,
+  AgentCallArgs,
+  AgentCallContextEntry,
+  BranchAction,
+  ChannelSendAction,
+  ChannelSendArgs,
+  ConditionalAction,
+  ConditionComparator,
+  EndpointCallAction,
+  EndpointCallArgs,
+  EventCausalContext,
+  IConditionalBranch,
+  IConditionRule,
+  JsFunctionAction,
+  JsFunctionArgs,
+  MessageReceivedTrigger,
+  MessageReceivedTriggerConfig,
+  ServiceBusCallAction,
+  ServiceBusCallArgs,
+  ServiceCallAction,
+  ServiceCallArgs,
+  TriggerMode,
+  WorkflowAction,
+  WorkflowDefinition,
+  WorkflowExecutionContext,
+  WorkflowTrigger,
+} from "./workflow.interfaces";
+export { WORKFLOW_MONGO_SCHEMA } from "./workflow-mongo-schema";
+export { WORKFLOW_SCHEMA_SQL } from "./workflow-schema";

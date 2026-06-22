@@ -1,9 +1,9 @@
 import {
-  Injectable,
   computed,
+  Injectable,
   inject,
-  signal,
   type Signal,
+  signal,
 } from "@angular/core";
 import { HttpAdapterService } from "../http-adapter.service";
 import { RegistryService } from "../registry.service";
@@ -23,7 +23,6 @@ import { RegistryService } from "../registry.service";
 export class ConnectionsMetricsService {
   private readonly adapters = inject(HttpAdapterService);
   private readonly registry = inject(RegistryService);
-  private countsLoaded = false;
 
   /** Total HTTP connectors created (internal + external). */
   readonly httpConnectorsTotal = signal<number | null>(null);
@@ -37,19 +36,21 @@ export class ConnectionsMetricsService {
     return n > 0 ? n : null;
   });
 
-  readonly internalCount = signal<number | null>(4);
-  readonly externalCount = signal<number | null>(12);
-  readonly externalErrored = signal<number | null>(1);
-  /** Internal-side error count — currently zero in the demo seed. */
-  readonly internalErrored = signal<number | null>(0);
+  readonly internalCount = signal<number | null>(null);
+  readonly externalCount = signal<number | null>(null);
+  readonly externalErrored = signal<number | null>(null);
+  /** Internal-side error count. */
+  readonly internalErrored = signal<number | null>(null);
   readonly mcpCount = signal<number | null>(null);
-  readonly hostedCount = signal<number | null>(7);
+  readonly hostedCount = signal<number | null>(null);
 
   /** Combined HTTP count (internal + external). */
   readonly httpCount = computed<number | null>(() => {
     const i = this.internalCount();
     const e = this.externalCount();
-    if (i === null && e === null) return null;
+    if (i === null && e === null) {
+      return null;
+    }
     return (i ?? 0) + (e ?? 0);
   });
 
@@ -57,7 +58,9 @@ export class ConnectionsMetricsService {
   readonly httpErrored = computed<number | null>(() => {
     const i = this.internalErrored();
     const e = this.externalErrored();
-    if (i === null && e === null) return null;
+    if (i === null && e === null) {
+      return null;
+    }
     return (i ?? 0) + (e ?? 0);
   });
 
@@ -66,18 +69,23 @@ export class ConnectionsMetricsService {
    * first invocation triggers network requests.
    */
   loadCounts(): void {
-    if (this.countsLoaded) return;
-    this.countsLoaded = true;
     this.adapters.list().subscribe({
-      next: (rows) => this.httpConnectorsTotal.set(rows.length),
-      error: () => this.httpConnectorsTotal.set(null),
+      next: (rows) => {
+        this.httpConnectorsTotal.set(rows.length);
+        this.internalCount.set(rows.length);
+        this.externalCount.set(0);
+      },
+      error: () => {
+        this.httpConnectorsTotal.set(null);
+        this.internalCount.set(null);
+        this.externalCount.set(null);
+      },
     });
     this.registry.loadServices();
   }
 
   /** Forces a re-fetch of the counts (e.g. after a create/delete). */
   reload(): void {
-    this.countsLoaded = false;
     this.loadCounts();
   }
 

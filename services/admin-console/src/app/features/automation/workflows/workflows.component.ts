@@ -2,33 +2,33 @@ import {
   ChangeDetectionStrategy,
   Component,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { DatePipe } from "@angular/common";
-import { Router } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
 import { MatDialog } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatSnackBar } from "@angular/material/snack-bar";
+import { Router } from "@angular/router";
 import { forkJoin, of } from "rxjs";
 import { catchError } from "rxjs/operators";
-import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 import {
   ConfirmDialogComponent,
   type IConfirmDialogData,
 } from "../../../shared/components/confirm-dialog/confirm-dialog.component";
 import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
+import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
+import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
 import {
-  WorkflowApiService,
   type IWorkflowDefinitionDto,
+  WorkflowApiService,
 } from "./services/workflow-api.service";
 
 @Component({
   selector: "app-workflows",
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DatePipe,
+    UtcDatePipe,
     MatButtonModule,
     MatIconModule,
     PageHeaderComponent,
@@ -74,7 +74,7 @@ import {
           </span>
           <span class="wf-meta-item">
             <mat-icon>schedule</mat-icon>
-            {{ wf.createdAt | date }}
+            {{ wf.createdAt | utcDate }}
           </span>
           <span class="wf-meta-item">
             <mat-icon>history</mat-icon>
@@ -235,11 +235,11 @@ export class WorkflowsComponent implements OnInit {
   }
 
   triggerLabel(wf: IWorkflowDefinitionDto): string {
-    if (!wf.trigger) return "No trigger";
+    if (!wf.trigger) {
+      return "No trigger";
+    }
     const t = wf.trigger as { type: string };
-    return t.type === "message_received"
-      ? "Channel"
-      : t.type;
+    return t.type === "message_received" ? "Channel" : t.type;
   }
 
   actionCount(wf: IWorkflowDefinitionDto): number {
@@ -267,11 +267,13 @@ export class WorkflowsComponent implements OnInit {
     this.dialog
       .open<ConfirmDialogComponent, IConfirmDialogData, boolean>(
         ConfirmDialogComponent,
-        { data, autoFocus: false, restoreFocus: true },
+        { data, autoFocus: false, restoreFocus: true }
       )
       .afterClosed()
       .subscribe((confirmed) => {
-        if (confirmed === true) this.deleteWorkflow(wf);
+        if (confirmed === true) {
+          this.deleteWorkflow(wf);
+        }
       });
   }
 
@@ -280,9 +282,7 @@ export class WorkflowsComponent implements OnInit {
     this.api.delete(wf.id).subscribe({
       next: () => {
         this.deletingId.set(null);
-        this.workflows.update((list) =>
-          list.filter((w) => w.id !== wf.id),
-        );
+        this.workflows.update((list) => list.filter((w) => w.id !== wf.id));
         this.snackBar.open("Workflow deleted", "OK", {
           duration: 3000,
         });

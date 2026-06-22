@@ -66,7 +66,10 @@ describe("ChannelDetailComponent", () => {
         { provide: ChannelAdminService, useValue: channels },
         {
           provide: AuthService,
-          useValue: { tenantId: () => "tenant-1" },
+          useValue: {
+            tenantId: () => "tenant-1",
+            hasPermission: vi.fn().mockReturnValue(false),
+          },
         },
         {
           provide: MatDialog,

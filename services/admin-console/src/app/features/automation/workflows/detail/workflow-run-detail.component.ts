@@ -1,18 +1,19 @@
-import { DatePipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { ActivatedRoute, Router } from "@angular/router";
 import { toSignal } from "@angular/core/rxjs-interop";
+import { ActivatedRoute, Router } from "@angular/router";
+import { environment } from "../../../../../environments/environment";
 import { BreadcrumbsComponent } from "../../../../shared/components/breadcrumbs/breadcrumbs.component";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
 import {
-  WorkflowApiService,
   type IWorkflowExecutionDetail,
+  WorkflowApiService,
 } from "../services/workflow-api.service";
 
 type StepKind = "ok" | "fail" | "skip" | "run";
@@ -38,7 +39,7 @@ interface IStep {
   selector: "app-workflow-run-detail",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, BreadcrumbsComponent],
+  imports: [UtcDatePipe, BreadcrumbsComponent],
   template: `
     <div class="run">
       <app-breadcrumbs [crumbs]="crumbs()" />
@@ -58,6 +59,11 @@ interface IStep {
             </h1>
           </div>
           <div class="run-actions">
+            @if (temporalUrl(); as url) {
+              <a class="temporal-link" [href]="url" target="_blank" rel="noopener">
+                Open in Temporal
+              </a>
+            }
             <button class="btn" type="button" (click)="back()">Back</button>
             <button class="btn btn-primary" type="button" (click)="retry()">
               Retry
@@ -68,7 +74,7 @@ interface IStep {
         <div class="meta">
           <div class="meta-cell">
             <div class="meta-l">Started</div>
-            <div class="meta-v">{{ d.createdAt | date: "medium" }}</div>
+            <div class="meta-v">{{ d.createdAt | utcDate: "medium" }}</div>
           </div>
           <div class="meta-cell">
             <div class="meta-l">Status</div>
@@ -175,7 +181,19 @@ interface IStep {
     }
     .sp-other { background: var(--bg3); color: var(--text2); }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.85; }
-    .run-actions { display: flex; gap: 6px; }
+    .run-actions { display: flex; gap: 6px; align-items: center; }
+    .temporal-link {
+      display: inline-flex;
+      align-items: center;
+      font-size: 12px;
+      padding: 6px 12px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius, 6px);
+      text-decoration: none;
+      color: var(--text-primary);
+      background: var(--bg-surface);
+    }
+    .temporal-link:hover { background: var(--bg3); }
     .btn {
       font-size: 12px;
       padding: 6px 12px;
@@ -285,14 +303,14 @@ export class WorkflowRunDetailComponent implements OnInit {
 
   private readonly parentParams = toSignal(
     this.route.parent?.params ?? this.route.params,
-    { initialValue: this.route.parent?.snapshot.params ?? {} },
+    { initialValue: this.route.parent?.snapshot.params ?? {} }
   );
   private readonly ownParams = toSignal(this.route.params, {
     initialValue: this.route.snapshot.params,
   });
 
   readonly definitionId = computed<string>(
-    () => this.parentParams()["id"] ?? "",
+    () => this.parentParams()["id"] ?? ""
   );
   readonly runId = computed<string>(() => this.ownParams()["runId"] ?? "");
 
@@ -303,7 +321,9 @@ export class WorkflowRunDetailComponent implements OnInit {
 
   readonly steps = computed<IStep[]>(() => {
     const d = this.detail();
-    if (!d) return [];
+    if (!d) {
+      return [];
+    }
     const out: IStep[] = [];
     const results = (d.result?.results ?? {}) as Record<string, unknown>;
     const failedActivity = d.failure?.activityName ?? null;
@@ -325,7 +345,9 @@ export class WorkflowRunDetailComponent implements OnInit {
       });
     } else if (failedActivity) {
       const idx = out.findIndex((s) => s.name === failedActivity);
-      if (idx !== -1) out[idx]!.kind = "fail";
+      if (idx !== -1) {
+        out[idx]!.kind = "fail";
+      }
     }
 
     if (out.length === 0 && isFail && d.failure) {
@@ -354,6 +376,20 @@ export class WorkflowRunDetailComponent implements OnInit {
     },
     { label: this.shortId(this.runId()) },
   ]);
+
+  readonly temporalUrl = computed<string | null>(() => {
+    const d = this.detail();
+    const base = environment.temporalUiBaseUrl;
+    if (!base || !d?.temporalWorkflowId) {
+      return null;
+    }
+    const wf = encodeURIComponent(d.temporalWorkflowId);
+    const run = d.temporalRunId ? encodeURIComponent(d.temporalRunId) : null;
+    const ns = environment.temporalNamespace;
+    return run
+      ? `${base}/namespaces/${ns}/workflows/${wf}/${run}`
+      : `${base}/namespaces/${ns}/workflows/${wf}`;
+  });
 
   ngOnInit(): void {
     const def = this.definitionId();
@@ -392,9 +428,15 @@ export class WorkflowRunDetailComponent implements OnInit {
 
   protected statusClass(status: string): "ok" | "fail" | "running" | "other" {
     const s = status.toLowerCase();
-    if (s.includes("complete") || s === "ok" || s === "success") return "ok";
-    if (s.includes("fail") || s.includes("error")) return "fail";
-    if (s.includes("run")) return "running";
+    if (s.includes("complete") || s === "ok" || s === "success") {
+      return "ok";
+    }
+    if (s.includes("fail") || s.includes("error")) {
+      return "fail";
+    }
+    if (s.includes("run")) {
+      return "running";
+    }
     return "other";
   }
 
@@ -413,8 +455,12 @@ export class WorkflowRunDetailComponent implements OnInit {
  * objects and arrays go through JSON.stringify with 2-space indent.
  */
 function stringifyPayload(v: unknown): string | null {
-  if (v === null || v === undefined) return null;
-  if (typeof v === "string") return v;
+  if (v === null || v === undefined) {
+    return null;
+  }
+  if (typeof v === "string") {
+    return v;
+  }
   try {
     return JSON.stringify(v, null, 2);
   } catch {

@@ -74,6 +74,7 @@ export class WebhookIngressService {
     headers: Record<string, string>,
     parsedBody: unknown,
     causal?: { correlationId?: string; causationId?: string | null; depth?: number },
+    instance?: string,
   ): Promise<{ status: string }> {
     const channelType = channel as Channel;
     webhookRequests.add(1, { channel, tenant: tenantId });
@@ -116,6 +117,7 @@ export class WebhookIngressService {
       tenantId,
       activeAccounts,
       body,
+      instance,
     });
     if ("status" in resolution) {
       return resolution;
@@ -162,6 +164,8 @@ export class WebhookIngressService {
     tenantId: string;
     activeAccounts: IAccountWithSecret[];
     body: Record<string, unknown>;
+    /** Account `externalId` from the instance-addressed ingress URL, if any. */
+    instance?: string;
   }):
     | { account: IAccountWithSecret }
     | { status: string } {
@@ -171,9 +175,31 @@ export class WebhookIngressService {
       signature,
       channel,
       tenantId,
-      activeAccounts,
       body,
+      instance,
     } = options;
+
+    /**
+     * Instance-addressed ingress (`/api/webhooks/<channel>/<tenant>/<instance>`):
+     * the URL path segment is the account `externalId`. Narrow the candidate set
+     * to that single account so the URL selects *which* account — the token is
+     * still verified below (defense in depth; the URL is not the credential).
+     * An unknown instance is rejected rather than falling back to token-only
+     * matching across all accounts.
+     */
+    let activeAccounts = options.activeAccounts;
+    if (instance !== undefined && instance.length > 0) {
+      activeAccounts = activeAccounts.filter(
+        (account) => account.externalId === instance,
+      );
+      if (activeAccounts.length === 0) {
+        webhookVerificationFailures.add(1, { channel, tenant: tenantId });
+        this.logger.warn(
+          `Webhook rejected: no active ${channel} account with externalId='${instance}' (tenant=${tenantId})`,
+        );
+        return { status: "unknown_instance" };
+      }
+    }
 
     if (!signature) {
       if (channel === "telegram" || channel === "http") {

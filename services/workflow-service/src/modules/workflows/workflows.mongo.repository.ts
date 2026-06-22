@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { Filter, WithId } from "mongodb";
 import type { TenantMongoConnectionManager } from "@yoizen/database";
+import type { Filter, WithId } from "mongodb";
 import { WorkflowTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import type {
   ICreateDefinitionParams,
@@ -24,12 +24,14 @@ interface IWorkflowDefinitionDoc {
 const ACTIVE_FILTER: Filter<IWorkflowDefinitionDoc> = { deleted_at: null };
 
 function toDate(value: unknown): Date {
-  if (value instanceof Date) return value;
+  if (value instanceof Date) {
+    return value;
+  }
   return new Date(String(value ?? Date.now()));
 }
 
 function docToDefinitionRow(
-  doc: WithId<IWorkflowDefinitionDoc>,
+  doc: WithId<IWorkflowDefinitionDoc>
 ): IWorkflowDefinitionRow {
   return {
     id: String(doc._id),
@@ -60,9 +62,10 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
   }
 
   async createDefinition(
-    params: ICreateDefinitionParams,
+    params: ICreateDefinitionParams
   ): Promise<IWorkflowDefinitionRow> {
-    const { id, tenantId, name, application, actions, trigger, variables } = params;
+    const { id, tenantId, name, application, actions, trigger, variables } =
+      params;
     const now = new Date();
     const doc: IWorkflowDefinitionDoc = {
       _id: id,
@@ -81,9 +84,10 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
   }
 
   async updateDefinition(
-    params: IUpdateDefinitionParams,
+    params: IUpdateDefinitionParams
   ): Promise<IWorkflowDefinitionRow | undefined> {
-    const { id, tenantId, name, application, actions, trigger, variables } = params;
+    const { id, tenantId, name, application, actions, trigger, variables } =
+      params;
     const now = new Date();
     const col = await this.definitions(tenantId);
     const result = await col.findOneAndUpdate(
@@ -98,14 +102,14 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
           updated_at: now,
         },
       },
-      { returnDocument: "after" },
+      { returnDocument: "after" }
     );
     return result ? docToDefinitionRow(result) : undefined;
   }
 
   async findDefinitionById(
     id: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IWorkflowDefinitionRow | undefined> {
     const col = await this.definitions(tenantId);
     const doc = await col.findOne({ _id: id, ...ACTIVE_FILTER });
@@ -113,7 +117,7 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
   }
 
   async findDefinitionsByTenant(
-    tenantId: string,
+    tenantId: string
   ): Promise<IWorkflowDefinitionRow[]> {
     const col = await this.definitions(tenantId);
     const docs = await col
@@ -125,7 +129,7 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
 
   async findDefinitionsByTriggerType(
     tenantId: string,
-    triggerType: string,
+    triggerType: string
   ): Promise<IWorkflowDefinitionRow[]> {
     const col = await this.definitions(tenantId);
     const filter: Filter<IWorkflowDefinitionDoc> = {
@@ -142,8 +146,13 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
     const col = await this.definitions(tenantId);
     const result = await col.updateOne(
       { _id: id, ...ACTIVE_FILTER },
-      { $set: { deleted_at: now, updated_at: now } },
+      { $set: { deleted_at: now, updated_at: now } }
     );
     return result.modifiedCount > 0;
+  }
+
+  async countActiveDefinitions(tenantId: string): Promise<number> {
+    const col = await this.definitions(tenantId);
+    return col.countDocuments(ACTIVE_FILTER);
   }
 }

@@ -11,7 +11,7 @@ const DEFAULT_BUFFER_MS = 60_000;
  *
  * @param {{
  *   ports: { auth: import("./ports.js").AuthPort, channelDirectory: import("./ports.js").ChannelDirectoryPort, ingest: import("./ports.js").IngestPort },
- *   config: { tenant: string, email: string, password: string, defaultFrom?: string, appSecret?: string|null, channelSelector?: object, tokenExpiryBufferMs?: number, onWarn?: (msg: string) => void },
+ *   config: { tenant: string, email: string, password: string, defaultFrom?: string, appSecret?: string|null, channelSelector?: object, instance?: string|null, tokenExpiryBufferMs?: number, onWarn?: (msg: string) => void },
  *   clock: import("./ports.js").Clock,
  * }} deps
  */
@@ -29,6 +29,13 @@ export function createIngestClient({ ports, config, clock }) {
   let appSecret = config.appSecret ?? null;
   /** @type {Promise<string> | null} */
   let secretPromise = null;
+  /**
+   * Account externalId for the per-instance ingress URL. Seeded from explicit
+   * config / channelSelector; otherwise filled from the directory resolution.
+   * @type {string | null}
+   */
+  let instance =
+    config.instance ?? config.channelSelector?.externalId ?? null;
 
   function login() {
     return auth.login({ email: config.email, password: config.password, tenant });
@@ -82,8 +89,11 @@ export function createIngestClient({ ports, config, clock }) {
             selector: config.channelSelector,
           }),
         )
-        .then(({ appSecret: resolved }) => {
+        .then(({ appSecret: resolved, externalId }) => {
           appSecret = resolved;
+          if (!instance && typeof externalId === "string" && externalId.length > 0) {
+            instance = externalId;
+          }
           return resolved;
         })
         .finally(() => {
@@ -101,7 +111,7 @@ export function createIngestClient({ ports, config, clock }) {
   async function ingestOnce(body) {
     await ensureToken();
     const secret = await ensureSecret();
-    return ingest.ingest({ tenant, appSecret: secret, body });
+    return ingest.ingest({ tenant, appSecret: secret, body, instance });
   }
 
   /**

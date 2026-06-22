@@ -1,18 +1,18 @@
-import { DatePipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { ActivatedRoute, Router } from "@angular/router";
 import { toSignal } from "@angular/core/rxjs-interop";
+import { ActivatedRoute, Router } from "@angular/router";
 import { KpiCardComponent } from "../../../../shared/components/kpi-card/kpi-card.component";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
 import {
-  WorkflowApiService,
   type IWorkflowExecutionRow,
+  WorkflowApiService,
 } from "../services/workflow-api.service";
 
 interface IDayBar {
@@ -39,7 +39,7 @@ interface IFailingNode {
   selector: "app-workflow-overview",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, KpiCardComponent],
+  imports: [UtcDatePipe, KpiCardComponent],
   template: `
     <div class="ov">
       <div class="kpis">
@@ -117,7 +117,7 @@ interface IFailingNode {
                   <span class="dot"></span>{{ r.status }}
                 </span>
                 <span class="run-id">{{ shortId(r.id) }}</span>
-                <span class="run-time">{{ r.createdAt | date: "short" }}</span>
+                <span class="run-time">{{ r.createdAt | utcDate: "short" }}</span>
               </a>
             } @empty {
               <p class="empty">No runs yet.</p>
@@ -269,9 +269,11 @@ export class WorkflowOverviewComponent implements OnInit {
   // Walk up to the parent's :id param since this component is a child route.
   private readonly parentParams = toSignal(
     this.route.parent?.params ?? this.route.params,
-    { initialValue: this.route.parent?.snapshot.params ?? {} },
+    { initialValue: this.route.parent?.snapshot.params ?? {} }
   );
-  protected readonly id = computed<string>(() => this.parentParams()["id"] ?? "");
+  protected readonly id = computed<string>(
+    () => this.parentParams()["id"] ?? ""
+  );
 
   readonly recentRuns = signal<IWorkflowExecutionRow[]>([]);
   readonly loadingRuns = signal(true);
@@ -313,9 +315,15 @@ export class WorkflowOverviewComponent implements OnInit {
 
   protected statusClass(status: string): "ok" | "fail" | "running" | "other" {
     const s = status.toLowerCase();
-    if (s.includes("complete") || s === "ok" || s === "success") return "ok";
-    if (s.includes("fail") || s.includes("error")) return "fail";
-    if (s.includes("run")) return "running";
+    if (s.includes("complete") || s === "ok" || s === "success") {
+      return "ok";
+    }
+    if (s.includes("fail") || s.includes("error")) {
+      return "fail";
+    }
+    if (s.includes("run")) {
+      return "running";
+    }
     return "other";
   }
 

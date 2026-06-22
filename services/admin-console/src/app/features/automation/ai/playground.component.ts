@@ -1,30 +1,31 @@
+import { CommonModule } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   inject,
   input,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
-import { ActivatedRoute } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
+import { MatCardModule } from "@angular/material/card";
+import { MatChipsModule } from "@angular/material/chips";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
-import { MatSelectModule } from "@angular/material/select";
-import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
-import { MatCardModule } from "@angular/material/card";
 import { MatListModule } from "@angular/material/list";
-import { MatChipsModule } from "@angular/material/chips";
+import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
+import { MatSelectModule } from "@angular/material/select";
+import { ActivatedRoute } from "@angular/router";
 import { firstValueFrom } from "rxjs";
+import type { IAgent } from "../../../core/models/agent.model";
 import { AgentAdminService } from "../../../core/services/agent-admin.service";
 import {
   AgentRuntimeService,
   type IExecutionResult,
 } from "../../../core/services/agent-runtime.service";
-import type { IAgent } from "../../../core/models/agent.model";
+import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
 
 interface IChatMessage {
   role: "user" | "assistant" | "system";
@@ -33,9 +34,23 @@ interface IChatMessage {
   agentId?: string;
   agentName?: string;
   metadata?: {
-    toolCalls?: Array<{ type: string; toolName: string; args?: Record<string, unknown> }>;
-    toolResults?: Array<{ toolName: string; args?: Record<string, unknown>; result: unknown; success?: boolean }>;
-    usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; cachedInputTokens?: number };
+    toolCalls?: Array<{
+      type: string;
+      toolName: string;
+      args?: Record<string, unknown>;
+    }>;
+    toolResults?: Array<{
+      toolName: string;
+      args?: Record<string, unknown>;
+      result: unknown;
+      success?: boolean;
+    }>;
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+      cachedInputTokens?: number;
+    };
     costUsd?: number;
     model?: string;
     provider?: string;
@@ -52,6 +67,7 @@ interface IChatMessage {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
+    UtcDatePipe,
     FormsModule,
     MatButtonModule,
     MatFormFieldModule,
@@ -160,7 +176,7 @@ interface IChatMessage {
             <div class="msg-bubble">
               <div class="msg-meta" *ngIf="message.role !== 'system'">
                 <span class="msg-author">{{ message.role === 'user' ? 'You' : message.agentName || 'Assistant' }}</span>
-                <span class="msg-time">{{ message.timestamp | date:'shortTime' }}</span>
+                <span class="msg-time">{{ message.timestamp | utcDate:'shortTime' }}</span>
               </div>
               <div class="msg-text">{{ message.content }}</div>
               
@@ -345,14 +361,14 @@ export class PlaygroundComponent implements OnInit {
     try {
       this.loading.set(true);
       const response = await firstValueFrom(
-        this.agentService.listAgents({ status: "published" }),
+        this.agentService.listAgents({ status: "published" })
       );
       this.agents.set(response.agents);
 
       const requestedAgentId = this.resolveRequestedAgentId();
       if (requestedAgentId) {
         const requestedAgent = response.agents.find(
-          (agent: IAgent) => agent.id === requestedAgentId,
+          (agent: IAgent) => agent.id === requestedAgentId
         );
         if (requestedAgent) {
           this.selectedAgentId.set(requestedAgent.id);
@@ -363,7 +379,7 @@ export class PlaygroundComponent implements OnInit {
 
       // Auto-select first published agent
       const publishedAgent = response.agents.find(
-        (a: IAgent) => a.status === "published",
+        (a: IAgent) => a.status === "published"
       );
       if (publishedAgent) {
         this.selectedAgentId.set(publishedAgent.id);
@@ -404,7 +420,9 @@ export class PlaygroundComponent implements OnInit {
     const message = this.newMessage().trim();
     const agent = this.selectedAgent();
 
-    if (!message || !agent) return;
+    if (!message || !agent) {
+      return;
+    }
 
     // Add user message
     this.messages.update((msgs) => [
@@ -429,14 +447,18 @@ export class PlaygroundComponent implements OnInit {
           customerName: "Test User",
           context: this.buildContext(),
           userId: this.userId(),
-        }),
+        })
       );
 
       const response = await this.waitForExecution(submitted.executionId);
 
       // Capture timing for latency calculation
-      const completedAt = response.completedAt ? new Date(response.completedAt).getTime() : Date.now();
-      const startedAt = response.startedAt ? new Date(response.startedAt).getTime() : null;
+      const completedAt = response.completedAt
+        ? new Date(response.completedAt).getTime()
+        : Date.now();
+      const startedAt = response.startedAt
+        ? new Date(response.startedAt).getTime()
+        : null;
 
       if (response.state === "failed") {
         const detail =
@@ -488,8 +510,8 @@ export class PlaygroundComponent implements OnInit {
           agentName: agent.name,
           expanded: false,
           metadata: {
-            toolCalls: toolCalls as any || undefined,
-            toolResults: toolResults as any || undefined,
+            toolCalls: (toolCalls as any) || undefined,
+            toolResults: (toolResults as any) || undefined,
             usage: usage
               ? {
                   inputTokens: usage.inputTokens,
@@ -534,12 +556,12 @@ export class PlaygroundComponent implements OnInit {
   }
 
   private async waitForExecution(
-    executionId: string,
+    executionId: string
   ): Promise<IExecutionResult> {
     const timeoutAt = Date.now() + 300_000;
     while (Date.now() < timeoutAt) {
       const result = await firstValueFrom(
-        this.agentRuntimeService.getExecution(executionId),
+        this.agentRuntimeService.getExecution(executionId)
       );
       if (result.state === "completed" || result.state === "failed") {
         return result;

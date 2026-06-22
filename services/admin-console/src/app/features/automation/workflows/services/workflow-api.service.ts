@@ -1,5 +1,5 @@
-import { inject, Injectable } from "@angular/core";
 import { HttpClient, HttpParams } from "@angular/common/http";
+import { Injectable, inject } from "@angular/core";
 import type { Observable } from "rxjs";
 import { tap } from "rxjs/operators";
 import { environment } from "../../../../../environments/environment";
@@ -59,6 +59,7 @@ export interface IWorkflowExecutionDetail {
   executionId: string;
   definitionId: string;
   temporalWorkflowId: string;
+  temporalRunId?: string;
   status: string;
   result?: {
     workflow?: unknown;
@@ -101,14 +102,10 @@ export class WorkflowApiService {
   }
 
   get(id: string): Observable<IWorkflowDefinitionDto> {
-    return this.http.get<IWorkflowDefinitionDto>(
-      `${this.base}/${id}`,
-    );
+    return this.http.get<IWorkflowDefinitionDto>(`${this.base}/${id}`);
   }
 
-  create(
-    payload: ICreateWorkflowPayload,
-  ): Observable<IWorkflowDefinitionDto> {
+  create(payload: ICreateWorkflowPayload): Observable<IWorkflowDefinitionDto> {
     return this.http
       .post<IWorkflowDefinitionDto>(this.base, payload)
       .pipe(tap(() => this.mutations.notify("processes")));
@@ -116,12 +113,9 @@ export class WorkflowApiService {
 
   update(
     id: string,
-    payload: IUpdateWorkflowPayload,
+    payload: IUpdateWorkflowPayload
   ): Observable<IWorkflowDefinitionDto> {
-    return this.http.put<IWorkflowDefinitionDto>(
-      `${this.base}/${id}`,
-      payload,
-    );
+    return this.http.put<IWorkflowDefinitionDto>(`${this.base}/${id}`, payload);
   }
 
   delete(id: string): Observable<void> {
@@ -135,15 +129,14 @@ export class WorkflowApiService {
     options?: {
       agentTimeoutSec?: number;
       request?: Record<string, string>;
-    },
+    }
   ): Observable<IWorkflowExecutionDto> {
-    return this.http.post<IWorkflowExecutionDto>(
-      `${this.base}/${id}/execute`,
-      {
-        request: options?.request ?? {},
-        ...(options?.agentTimeoutSec !== undefined && { agentTimeoutSec: options.agentTimeoutSec }),
-      },
-    );
+    return this.http.post<IWorkflowExecutionDto>(`${this.base}/${id}/execute`, {
+      request: options?.request ?? {},
+      ...(options?.agentTimeoutSec !== undefined && {
+        agentTimeoutSec: options.agentTimeoutSec,
+      }),
+    });
   }
 
   /**
@@ -153,7 +146,7 @@ export class WorkflowApiService {
    */
   listExecutions(
     definitionId: string,
-    opts: IListExecutionsOptions,
+    opts: IListExecutionsOptions
   ): Observable<IWorkflowExecutionsPage> {
     const params = new HttpParams()
       .set("page", String(opts.page))
@@ -161,7 +154,7 @@ export class WorkflowApiService {
       .set("sort", opts.sort);
     return this.http.get<IWorkflowExecutionsPage>(
       `${this.base}/${definitionId}/executions`,
-      { params },
+      { params }
     );
   }
 
@@ -171,7 +164,7 @@ export class WorkflowApiService {
    */
   getExecutionCounts(): Observable<Record<string, number>> {
     return this.http.get<Record<string, number>>(
-      `${this.base}/executions/counts`,
+      `${this.base}/executions/counts`
     );
   }
 
@@ -183,10 +176,10 @@ export class WorkflowApiService {
    */
   getExecutionDetail(
     definitionId: string,
-    executionId: string,
+    executionId: string
   ): Observable<IWorkflowExecutionDetail> {
     return this.http.get<IWorkflowExecutionDetail>(
-      `${this.base}/${definitionId}/executions/${executionId}`,
+      `${this.base}/${definitionId}/executions/${executionId}`
     );
   }
 }

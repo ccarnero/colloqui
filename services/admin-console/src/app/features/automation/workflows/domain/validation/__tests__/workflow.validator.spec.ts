@@ -6,6 +6,7 @@ import {
   type IWorkflowNode,
 } from "../../workflow-node.types";
 import { validateWorkflow } from "../workflow.validator";
+import { SOURCE_ACCOUNT_TEMPLATE } from "../../workflow-node-defaults";
 
 function makeNode(
   key: string,
@@ -356,6 +357,34 @@ describe("validateWorkflow — outbound account vs trigger", () => {
           provider: "meta",
           to: "+1",
           messageType: "text",
+        }),
+      ],
+      [makeConn("c1", "t", "out")],
+    );
+    const result = validateWorkflow(flow);
+    expect(
+      result.errors.some(
+        (e) => e.nodeKey === "out" && e.field === "args.accountId",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not flag the 'same as incoming message' source-account template", () => {
+    const flow = makeFlow(
+      [
+        makeNode("t", EWorkflowNodeType.CHANNEL, {
+          direction: "inbound",
+          mode: "shared",
+          accountIds: ["acc-1"],
+        }),
+        makeNode("out", EWorkflowNodeType.CHANNEL, {
+          direction: "outbound",
+          accountId: SOURCE_ACCOUNT_TEMPLATE,
+          channel: "{{request.channel}}",
+          provider: "{{request.provider}}",
+          to: "{{request.from}}",
+          messageType: "text",
+          text: "hi",
         }),
       ],
       [makeConn("c1", "t", "out")],

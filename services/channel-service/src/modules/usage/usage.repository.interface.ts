@@ -1,4 +1,8 @@
-import type { IUsageBucketRow, IUsageTotalsRow, UsageBucket } from "./usage.dto";
+import type {
+  IUsageBucketRow,
+  IUsageTotalsRow,
+  UsageBucket,
+} from "./usage.dto";
 
 export const USAGE_REPOSITORY = Symbol("USAGE_REPOSITORY");
 
@@ -20,7 +24,14 @@ export interface IUsageTotalsFilters {
   readonly channel?: string;
 }
 
+export interface IUsageSummaryChannelRow {
+  readonly channel: string;
+  readonly direction: "ingress" | "egress" | "dlq";
+  readonly events: number;
+}
+
 export interface IUsageRepository {
   getBuckets(filters: IUsageQueryFilters): Promise<readonly IUsageBucketRow[]>;
   getTotals(filters: IUsageTotalsFilters): Promise<readonly IUsageTotalsRow[]>;
+  getSummary(tenantId: string): Promise<readonly IUsageSummaryChannelRow[]>;
 }

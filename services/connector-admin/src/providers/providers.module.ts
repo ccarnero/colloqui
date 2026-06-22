@@ -6,17 +6,18 @@ import {
   TenantMongoDeletionEvictionListener,
 } from "@yoizen/database";
 import { connectorAdminConfig } from "../config";
-import { AdapterTenantConnectionManagerMongo } from "./tenant-connection-manager.mongo";
-import { AdapterTenantConnectionManagerPostgres } from "./tenant-connection-manager.postgres";
-import { AdapterTenantConnectionManager } from "./tenant-connection-manager";
 import {
   JETSTREAM,
   JETSTREAM_MANAGER,
-  NATS_CONNECTION,
   jetStreamManagerProvider,
   jetStreamProvider,
+  NATS_CONNECTION,
   natsProvider,
 } from "./nats.provider";
+import { AdapterTenantConnectionManager } from "./tenant-connection-manager";
+import { AdapterTenantConnectionManagerMongo } from "./tenant-connection-manager.mongo";
+import { AdapterTenantConnectionManagerPostgres } from "./tenant-connection-manager.postgres";
+import { UsageTenantConnectionManager } from "./tenant-connection-manager.usage";
 
 const engine = connectorAdminConfig.dbEngine;
 
@@ -26,7 +27,9 @@ const tenantManagerClass =
     : AdapterTenantConnectionManagerMongo;
 
 const tenantBaseManagerToken =
-  engine === "postgres" ? TenantConnectionManager : TenantMongoConnectionManager;
+  engine === "postgres"
+    ? TenantConnectionManager
+    : TenantMongoConnectionManager;
 
 const tenantEvictionListener =
   engine === "postgres"
@@ -44,6 +47,7 @@ const tenantEvictionListener =
       provide: tenantBaseManagerToken,
       useExisting: AdapterTenantConnectionManager,
     },
+    UsageTenantConnectionManager,
     natsProvider,
     jetStreamManagerProvider,
     jetStreamProvider,
@@ -51,6 +55,7 @@ const tenantEvictionListener =
   ],
   exports: [
     AdapterTenantConnectionManager,
+    UsageTenantConnectionManager,
     NATS_CONNECTION,
     JETSTREAM_MANAGER,
     JETSTREAM,

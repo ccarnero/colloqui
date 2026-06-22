@@ -21,6 +21,11 @@ import {
   type IConditionalBranchConfig,
   type ConditionComparator,
 } from "../../../domain/workflow-node.types";
+import {
+  SOURCE_ACCOUNT_TEMPLATE,
+  SOURCE_CHANNEL_TEMPLATE,
+  SOURCE_PROVIDER_TEMPLATE,
+} from "../../../domain/workflow-node-defaults";
 import { ChannelAdminService } from "../../../../../../core/services/channel-admin.service";
 import type { IChannelAccount } from "../../../../../../core/models/channel-account.model";
 import {
@@ -173,6 +178,9 @@ import type {
                       onOutboundAccountChange($event)
                     "
                   >
+                    <mat-option [value]="SOURCE_ACCOUNT">
+                      Same as incoming message
+                    </mat-option>
                     @for (
                       acc of outboundAccounts();
                       track acc.id
@@ -182,13 +190,16 @@ import type {
                       </mat-option>
                     }
                   </mat-select>
+                  <mat-hint>
+                    "Same as incoming message" replies on the account
+                    that received the message.
+                  </mat-hint>
                   @if (
                     triggerAccountIds().length > 0 &&
                     outboundAccounts().length === 0
                   ) {
-                    <mat-hint>
-                      No accounts available. Update the trigger's
-                      Channel Accounts to enable sending.
+                    <mat-hint align="end">
+                      No specific accounts on the trigger.
                     </mat-hint>
                   }
                 </mat-form-field>
@@ -794,6 +805,8 @@ export class WorkflowNodeConfigComponent implements OnInit {
   readonly nameChange = output<{ key: string; name: string }>();
 
   readonly types = EWorkflowNodeType;
+  /** Sentinel value for the "Same as incoming message" account option. */
+  readonly SOURCE_ACCOUNT = SOURCE_ACCOUNT_TEMPLATE;
   readonly channelAccounts = signal<IChannelAccount[]>([]);
   readonly adapters = signal<IAdapterDto[]>([]);
   readonly aiAgents = signal<IAgent[]>([]);
@@ -944,11 +957,18 @@ export class WorkflowNodeConfigComponent implements OnInit {
   }
 
   /**
-   * When user picks an outbound account, auto-populate
-   * `channel` and `provider` from the account object.
+   * When user picks an outbound account, auto-populate `channel` and
+   * `provider`. For "Same as incoming message" these come from the inbound
+   * message at runtime (request templates) so the reply rides the source
+   * account; otherwise they're taken from the selected account object.
    */
   onOutboundAccountChange(accountId: string): void {
     this.updateConfig("accountId", accountId);
+    if (accountId === this.SOURCE_ACCOUNT) {
+      this.updateConfig("channel", SOURCE_CHANNEL_TEMPLATE);
+      this.updateConfig("provider", SOURCE_PROVIDER_TEMPLATE);
+      return;
+    }
     const acc = this.channelAccounts().find(
       (a) => a.id === accountId,
     );

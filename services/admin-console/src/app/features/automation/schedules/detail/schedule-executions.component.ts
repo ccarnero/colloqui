@@ -1,20 +1,18 @@
-import { DatePipe, JsonPipe } from "@angular/common";
+import { JsonPipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { ActivatedRoute } from "@angular/router";
 import { toSignal } from "@angular/core/rxjs-interop";
+import { ActivatedRoute } from "@angular/router";
+import type { IJobExecution } from "../../../../core/models/scheduler.model";
 import { SchedulerApiService } from "../../../../core/services/scheduler-api.service";
-import type {
-  IJobExecution,
-  IExecutionListResponse,
-} from "../../../../core/models/scheduler.model";
 import { StatusBadgeComponent } from "../../../../shared/components/status-badge/status-badge.component";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
 
 /**
  * Executions list tab for a schedule.
@@ -24,7 +22,7 @@ import { StatusBadgeComponent } from "../../../../shared/components/status-badge
   selector: "app-schedule-executions",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, JsonPipe, StatusBadgeComponent],
+  imports: [UtcDatePipe, JsonPipe, StatusBadgeComponent],
   template: `
     @if (loading()) {
       <div class="loading">Loading executions...</div>
@@ -45,7 +43,7 @@ import { StatusBadgeComponent } from "../../../../shared/components/status-badge
             <div class="execution-header">
               <app-status-badge [status]="e.status" />
               <span class="execution-time">
-                {{ e.started_at | date:'medium' }}
+                {{ e.started_at | utcDate:'medium' }}
               </span>
               <span class="execution-duration">
                 {{ formatDuration(e.started_at, e.finished_at) }}
@@ -79,7 +77,7 @@ import { StatusBadgeComponent } from "../../../../shared/components/status-badge
                 @if (e.finished_at) {
                   <div class="detail-section">
                     <div class="detail-label">Finished</div>
-                    <span>{{ e.finished_at | date:'medium' }}</span>
+                    <span>{{ e.finished_at | utcDate:'medium' }}</span>
                   </div>
                 }
 
@@ -277,7 +275,7 @@ export class ScheduleExecutionsComponent implements OnInit {
   // Walk up to the parent's :id param.
   private readonly parentParams = toSignal(
     this.route.parent?.params ?? this.route.params,
-    { initialValue: this.route.parent?.snapshot.params ?? {} },
+    { initialValue: this.route.parent?.snapshot.params ?? {} }
   );
   private readonly id = computed<string>(() => this.parentParams()["id"] ?? "");
 
@@ -317,15 +315,23 @@ export class ScheduleExecutionsComponent implements OnInit {
 
   protected formatDuration(
     startedAt: string | null,
-    finishedAt: string | null,
+    finishedAt: string | null
   ): string {
-    if (!startedAt) return "—";
+    if (!startedAt) {
+      return "—";
+    }
     const start = new Date(startedAt).getTime();
-    if (!finishedAt) return "running…";
+    if (!finishedAt) {
+      return "running…";
+    }
     const end = new Date(finishedAt).getTime();
     const ms = end - start;
-    if (ms < 1000) return `${ms}ms`;
-    if (ms < 60000) return `${Math.round(ms / 1000)}s`;
+    if (ms < 1000) {
+      return `${ms}ms`;
+    }
+    if (ms < 60000) {
+      return `${Math.round(ms / 1000)}s`;
+    }
     return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
   }
 

@@ -37,6 +37,8 @@ import {
   MessageInspectorDialogComponent,
   type IMessageInspectorDialogData,
 } from "./message-inspector-dialog.component";
+import { MessageTraceService } from "../../../core/services/message-trace.service";
+import type { IRecentTrace } from "../../processes/trace/domain/message-trace.model";
 
 interface IRangeSpec {
   readonly durationMs: number;
@@ -69,6 +71,8 @@ const CUSTOM_RANGE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+const DIAGNOSTICS_PERMISSION = "diagnostics:read";
 
 @Component({
   selector: "app-channel-detail",
@@ -145,6 +149,31 @@ const CUSTOM_RANGE_FORMATTER = new Intl.DateTimeFormat(undefined, {
         (inspect)="openInspector($event)"
       />
     </section>
+
+    @if (canViewTraces()) {
+      <section class="section">
+        <h3 class="section-title">Recent messages</h3>
+        @if (tracesLoading()) {
+          <div class="loader">
+            <mat-spinner diameter="24"></mat-spinner>
+            <span>Loading recent messages…</span>
+          </div>
+        } @else if (recentTraces().length === 0) {
+          <p class="no-traces">No recent messages in the last hour.</p>
+        } @else {
+          <div class="trace-list">
+            @for (t of recentTraces(); track t.correlationId) {
+              <a class="trace-row"
+                 [routerLink]="['/processes/trace', t.correlationId]">
+                <span class="trace-ts">{{ t.lastAt }}</span>
+                <span class="trace-verdict">{{ t.verdict }}</span>
+                <span class="trace-id">{{ shortCorrelationId(t.correlationId) }}</span>
+              </a>
+            }
+          </div>
+        }
+      </section>
+    }
   `,
   styles: `
     :host {
@@ -194,6 +223,48 @@ const CUSTOM_RANGE_FORMATTER = new Intl.DateTimeFormat(undefined, {
       color: var(--text3);
       padding: 24px;
     }
+    .no-traces {
+      color: var(--text3);
+      font-size: 13px;
+      margin: 0;
+    }
+    .trace-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .trace-row {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      text-decoration: none;
+      color: var(--text);
+      font-size: 13px;
+    }
+    .trace-row:hover {
+      background: var(--bg2);
+    }
+    .trace-ts {
+      color: var(--text3);
+      font-size: 12px;
+      min-width: 190px;
+      font-family: var(--font-mono, monospace);
+    }
+    .trace-verdict {
+      font-size: 11px;
+      padding: 1px 7px;
+      border-radius: 6px;
+      background: var(--bg2);
+      white-space: nowrap;
+    }
+    .trace-id {
+      font-family: var(--font-mono, monospace);
+      color: var(--text3);
+      font-size: 12px;
+    }
   `,
 })
 export class ChannelDetailComponent implements OnInit, OnDestroy {
@@ -201,6 +272,13 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
   private readonly channels = inject(ChannelAdminService);
   private readonly auth = inject(AuthService);
   private readonly dialog = inject(MatDialog);
+  private readonly traceService = inject(MessageTraceService);
+
+  readonly recentTraces  = signal<IRecentTrace[]>([]);
+  readonly tracesLoading = signal(false);
+  readonly canViewTraces = computed(() =>
+    this.auth.hasPermission(DIAGNOSTICS_PERMISSION),
+  );
 
   private readonly destroy$ = new Subject<void>();
 
@@ -298,6 +376,7 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
           this.loading.set(false);
         },
       });
+    this.loadRecentTraces();
   }
 
   openInspector(streamKey: "ingress" | "dlq"): void {
@@ -406,5 +485,25 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
 
   private formatCustomRangeLabel(from: Date, to: Date): string {
     return `${CUSTOM_RANGE_FORMATTER.format(from)} - ${CUSTOM_RANGE_FORMATTER.format(to)}`;
+  }
+
+  private loadRecentTraces(): void {
+    if (!this.canViewTraces()) return;
+    const accountId = this.accountId();
+    const channel   = this.channel();
+    if (!accountId || !channel) return;
+
+    this.tracesLoading.set(true);
+    this.traceService
+      .recentTraces(60, 20, { accountId, channel })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next:  (rows) => { this.recentTraces.set(rows); this.tracesLoading.set(false); },
+        error: ()     => { this.recentTraces.set([]);   this.tracesLoading.set(false); },
+      });
+  }
+
+  shortCorrelationId(id: string): string {
+    return id.length > 10 ? `${id.slice(0, 8)}…` : id;
   }
 }

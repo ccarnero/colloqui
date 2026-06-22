@@ -64,6 +64,23 @@ Requirements: the bridge is running, both devices on the same Wi-Fi, and macOS f
 incoming connections to `node`. The bridge has **no auth of its own** — only expose it on a
 trusted network, never the public internet.
 
+## telegram-transform-reply
+
+The **automation-side** counterpart to `http-bridge`: a message that arrives on **Telegram**
+is transformed by a workflow (echo + a millisecond-precision timestamp) and **replied back over
+Telegram** to the same chat. A single idempotent `setup.sh` provisions both artifacts — a
+Telegram **channel account** (wires the built-in adapter for receive + send) and the
+**workflow** — through the platform API. Unlike `http-bridge` it's shell-based and doesn't use
+`@yoizen/http-sdk`; the Telegram path is driven by the platform's built-in `TelegramProvider`.
+
+```bash
+cd sdk/samples/telegram-transform-reply
+TELEGRAM_BOT_TOKEN="123456:ABC-your-bot-token" ./setup.sh
+```
+
+See [`telegram-transform-reply/README.md`](telegram-transform-reply/README.md) for the
+end-to-end (`SIMULATE_INBOUND=1`) flow and the full env reference.
+
 ### Responses
 
 | Status | Meaning |

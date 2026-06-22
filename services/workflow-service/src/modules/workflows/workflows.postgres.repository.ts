@@ -20,9 +20,10 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
   }
 
   async createDefinition(
-    params: ICreateDefinitionParams,
+    params: ICreateDefinitionParams
   ): Promise<IWorkflowDefinitionRow> {
-    const { id, tenantId, name, application, actions, trigger, variables } = params;
+    const { id, tenantId, name, application, actions, trigger, variables } =
+      params;
     const sql = await this.sqlFor(tenantId);
     const triggerJson = trigger ? sql.json(trigger as never) : null;
     const variablesJson = variables ? sql.json(variables as never) : null;
@@ -39,9 +40,10 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
   }
 
   async updateDefinition(
-    params: IUpdateDefinitionParams,
+    params: IUpdateDefinitionParams
   ): Promise<IWorkflowDefinitionRow | undefined> {
-    const { id, tenantId, name, application, actions, trigger, variables } = params;
+    const { id, tenantId, name, application, actions, trigger, variables } =
+      params;
     const sql = await this.sqlFor(tenantId);
     const triggerJson = trigger ? sql.json(trigger as never) : null;
     const variablesJson = variables ? sql.json(variables as never) : null;
@@ -63,7 +65,7 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
 
   async findDefinitionById(
     id: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IWorkflowDefinitionRow | undefined> {
     const sql = await this.sqlFor(tenantId);
     const [row] = await sql<IWorkflowDefinitionRow[]>`
@@ -77,7 +79,7 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
   }
 
   async findDefinitionsByTenant(
-    tenantId: string,
+    tenantId: string
   ): Promise<IWorkflowDefinitionRow[]> {
     const sql = await this.sqlFor(tenantId);
     return sql<IWorkflowDefinitionRow[]>`
@@ -91,7 +93,7 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
 
   async findDefinitionsByTriggerType(
     tenantId: string,
-    triggerType: string,
+    triggerType: string
   ): Promise<IWorkflowDefinitionRow[]> {
     const sql = await this.sqlFor(tenantId);
     return sql<IWorkflowDefinitionRow[]>`
@@ -114,5 +116,15 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
         AND deleted_at IS NULL
     `;
     return result.count > 0;
+  }
+
+  async countActiveDefinitions(tenantId: string): Promise<number> {
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<{ total: number }[]>`
+      SELECT COUNT(*)::int AS total
+      FROM workflow_definitions
+      WHERE deleted_at IS NULL
+    `;
+    return row?.total ?? 0;
   }
 }

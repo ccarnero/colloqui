@@ -37,6 +37,8 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: TZ
+              value: "UTC"
             - name: ENTRYPOINT
               value: "dist/main.js"
             - name: SERVICE_MODE

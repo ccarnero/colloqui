@@ -51,7 +51,11 @@ export function createChannelDirectoryAdapter({ fetchImpl, baseUrl, timeoutMs })
       });
     }
 
-    return { appSecret: account.appSecret, accountId: account.id };
+    return {
+      appSecret: account.appSecret,
+      accountId: account.id,
+      externalId: account.externalId,
+    };
   }
 
   return { resolveHttpSecret };

@@ -1,21 +1,21 @@
+import { CommonModule } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   inject,
-  OnInit,
+  type OnInit,
   signal,
 } from "@angular/core";
-import { CommonModule } from "@angular/common";
-import { Router } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
-import { MatIconModule } from "@angular/material/icon";
 import { MatDialog } from "@angular/material/dialog";
+import { MatIconModule } from "@angular/material/icon";
 import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
-
+import { Router } from "@angular/router";
 import {
-  StructuredKbService,
   type SKBContainer,
+  StructuredKbService,
 } from "../../../../core/services/structured-kb.service";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
 import { SkbCreateDialogComponent } from "./skb-create-dialog.component";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -34,6 +34,7 @@ const STATUS_COLORS: Record<string, string> = {
     MatButtonModule,
     MatIconModule,
     MatSnackBarModule,
+    UtcDatePipe,
   ],
   template: `
     <div class="skb-list-page">
@@ -83,7 +84,7 @@ const STATUS_COLORS: Record<string, string> = {
                 <span [style.color]="getStatusColor(container.status)">{{ container.status }}</span>
               </span>
               <span class="col-files">{{ container.file_count }}</span>
-              <span class="col-date">{{ container.created_at | date : "short" }}</span>
+              <span class="col-date">{{ container.created_at | utcDate: "short" }}</span>
             </div>
           }
         </div>

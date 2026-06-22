@@ -24,6 +24,8 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: TZ
+              value: "UTC"
             - name: NATS_URL
               value: "nats://nats:4222"
             - name: AGENT_AI_SERVICE_URL

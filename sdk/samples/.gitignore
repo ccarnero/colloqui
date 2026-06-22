@@ -1,0 +1,7 @@
+# Local secrets for the sample run.sh scripts (bot tokens, chat ids, overrides).
+# Loaded by lib/resolve-env.sh; never commit these.
+.env
+**/.env
+
+# Cached chat_id written by telegram-onboard.sh
+.telegram-chat-id

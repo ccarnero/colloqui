@@ -1,0 +1,23 @@
+{
+  "name": "jsonplaceholder",
+  "context": "external",
+  "baseUrl": "https://jsonplaceholder.typicode.com",
+  "authType": "none",
+  "authConfig": {},
+  "timeoutMs": 10000,
+  "maxRetries": 2,
+  "retryBackoffMs": 300,
+  "healthCheckPath": "/posts/1",
+  "tags": ["sample", "public", "no-auth"],
+  "endpoints": [
+    { "label": "List all posts", "method": "GET", "path": "/posts" },
+    { "label": "Get post by id", "method": "GET", "path": "/posts/1" },
+    { "label": "Create a post", "method": "POST", "path": "/posts" },
+    { "label": "Replace a post by id", "method": "PUT", "path": "/posts/1" },
+    { "label": "Update post fields by id", "method": "PATCH", "path": "/posts/1" },
+    { "label": "Delete a post by id", "method": "DELETE", "path": "/posts/1" },
+    { "label": "List comments for a post", "method": "GET", "path": "/posts/1/comments" },
+    { "label": "Get todo by id", "method": "GET", "path": "/todos/1" },
+    { "label": "Get user by id", "method": "GET", "path": "/users/1" }
+  ]
+}

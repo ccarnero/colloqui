@@ -62,3 +62,20 @@ export interface IUsageTotalsRow {
   readonly firstTs: string | null;
   readonly lastTs: string | null;
 }
+
+export interface IUsageSummaryByChannelEntry {
+  readonly channel: string;
+  readonly ingress: number;
+  readonly egress: number;
+  readonly dlq: number;
+}
+
+export interface IUsageSummaryResponse {
+  readonly windowHours: 24;
+  readonly total: {
+    readonly ingress: number;
+    readonly egress: number;
+    readonly dlq: number;
+  };
+  readonly byChannel: readonly IUsageSummaryByChannelEntry[];
+}

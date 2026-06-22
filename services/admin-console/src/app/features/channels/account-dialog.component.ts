@@ -50,7 +50,7 @@ export interface IAccountDialogResult {
           {{
             isEdit
               ? "Update channel account settings"
-              : "Connect a WhatsApp or Telegram account"
+              : "Connect a WhatsApp, Telegram or HTTP account"
           }}
         </div>
       </div>
@@ -75,6 +75,7 @@ export interface IAccountDialogResult {
           >
             <mat-option value="whatsapp">WhatsApp</mat-option>
             <mat-option value="telegram">Telegram</mat-option>
+            <mat-option value="http">HTTP</mat-option>
           </mat-select>
         </mat-form-field>
 
@@ -85,7 +86,11 @@ export interface IAccountDialogResult {
             [ngModel]="name()"
             (ngModelChange)="name.set($event)"
             [placeholder]="
-              channel() === 'whatsapp' ? 'e.g. My WhatsApp Business' : 'e.g. My Telegram Bot'
+              channel() === 'whatsapp'
+                ? 'e.g. My WhatsApp Business'
+                : channel() === 'http'
+                  ? 'e.g. My HTTP Ingest'
+                  : 'e.g. My Telegram Bot'
             "
           />
         </mat-form-field>
@@ -97,7 +102,11 @@ export interface IAccountDialogResult {
             [ngModel]="externalId()"
             (ngModelChange)="externalId.set($event)"
             [placeholder]="
-              channel() === 'whatsapp' ? 'WABA ID' : 'Bot username'
+              channel() === 'whatsapp'
+                ? 'WABA ID'
+                : channel() === 'http'
+                  ? 'Ingest id (e.g. my-http-ingest)'
+                  : 'Bot username'
             "
             [disabled]="isEdit"
           />
@@ -129,7 +138,13 @@ export interface IAccountDialogResult {
 
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>
-            {{ channel() === "telegram" ? "App Secret Token (optional)" : "App Secret (optional)" }}
+            {{
+              channel() === "telegram"
+                ? "App Secret Token (optional)"
+                : channel() === "http"
+                  ? "Webhook token (optional, auto-generated)"
+                  : "App Secret (optional)"
+            }}
           </mat-label>
           <input
             matInput
@@ -139,12 +154,14 @@ export interface IAccountDialogResult {
             [placeholder]="
               channel() === 'telegram'
                 ? 'Used as Telegram webhook secret token'
-                : ''
+                : channel() === 'http'
+                  ? 'x-http-channel-token for the ingest endpoint'
+                  : ''
             "
           />
         </mat-form-field>
 
-        @if (channel() !== "telegram") {
+        @if (channel() === "whatsapp") {
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>Access Token</mat-label>
             <input
@@ -291,6 +308,10 @@ export class AccountDialogComponent implements OnInit {
     if (this.channel() === "telegram") {
       return hasBase && this.telegramBotToken().trim().length > 0;
     }
+    // http: accessToken is defaulted and appSecret is auto-generated — name + id is enough.
+    if (this.channel() === "http") {
+      return hasBase;
+    }
 
     return hasBase && this.accessToken().trim().length > 0;
   }
@@ -322,11 +343,15 @@ export class AccountDialogComponent implements OnInit {
         });
     } else {
       const isTelegram = this.channel() === "telegram";
+      const isHttp = this.channel() === "http";
       const botToken = this.telegramBotToken().trim();
 
       this.channels
         .createAccount({
           channel: this.channel(),
+          // Provider defaults to "meta" for non-telegram channels on the
+          // backend, so http must declare its provider explicitly.
+          ...(isHttp ? { provider: "http" } : {}),
           name: this.name().trim(),
           externalId: this.externalId().trim(),
           phoneNumberId: this.phoneNumberId().trim() || undefined,
@@ -335,7 +360,11 @@ export class AccountDialogComponent implements OnInit {
               ? this.externalId().trim()
               : undefined,
           telegramBotToken: botToken || undefined,
-          accessToken: isTelegram ? botToken : this.accessToken().trim(),
+          accessToken: isTelegram
+            ? botToken
+            : isHttp
+              ? this.accessToken().trim() || "placeholder"
+              : this.accessToken().trim(),
           appId: this.appId().trim() || undefined,
           appSecret: this.appSecret().trim() || undefined,
           verifyToken: this.verifyToken().trim() || undefined,

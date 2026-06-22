@@ -3,15 +3,16 @@ import {
   Component,
   computed,
   inject,
+  type OnInit,
 } from "@angular/core";
 import { Router } from "@angular/router";
-import { SectionLandingShellComponent } from "../../shared/components/section-landing-shell/section-landing-shell.component";
-import { KpiCardComponent } from "../../shared/components/kpi-card/kpi-card.component";
+import { ConnectionsMetricsService } from "../../core/services/metrics/connections-metrics.service";
 import {
   ActivityFeedComponent,
   type IActivityEntry,
 } from "../../shared/components/activity-feed/activity-feed.component";
-import { ConnectionsMetricsService } from "../../core/services/metrics/connections-metrics.service";
+import { KpiCardComponent } from "../../shared/components/kpi-card/kpi-card.component";
+import { SectionLandingShellComponent } from "../../shared/components/section-landing-shell/section-landing-shell.component";
 
 interface ITopConnector {
   name: string;
@@ -26,9 +27,6 @@ interface ITopConnector {
  * HTTP, MCP, Hosted services. KPIs show counts per type; primary panel
  * lists most-used connectors regardless of type; secondary panel is
  * recent activity (errors, sync events, additions).
- *
- * `Most-used connectors` and `Recent activity` are PHASE 4 DEMO data —
- * no aggregate endpoint exists yet.
  */
 @Component({
   selector: "app-connections-landing",
@@ -54,13 +52,13 @@ interface ITopConnector {
       <div slot="kpis" class="kpis">
         <app-kpi-card
           label="HTTP"
-          [value]="metrics.httpCount() ?? '—'"
+          [value]="metrics.httpConnectorsTotal() ?? '—'"
           [sub]="httpSub()"
         />
         <app-kpi-card label="MCP" value="—" sub="backend coming" />
         <app-kpi-card
           label="Hosted services"
-          [value]="metrics.hostedCount() ?? '—'"
+          [value]="metrics.hostedTotal() ?? '—'"
           sub="all healthy"
         />
       </div>
@@ -73,12 +71,17 @@ interface ITopConnector {
             <span class="kind">{{ c.kind }}</span>
             <span class="stat">{{ formatNum(c.calls7d) }} calls</span>
           </a>
+        } @empty {
+          <p class="empty-hint">Usage analytics coming soon</p>
         }
       </div>
 
       <div slot="secondary" class="panel">
         <h2 class="panel-h">Recent activity</h2>
-        <app-activity-feed [entries]="recentActivity()" />
+        <app-activity-feed
+          [entries]="recentActivity()"
+          emptyText="No recent activity"
+        />
       </div>
     </app-section-landing-shell>
   `,
@@ -140,41 +143,31 @@ interface ITopConnector {
       color: #fff;
       border-color: var(--primary, #1a66ff);
     }
+    .empty-hint {
+      font-size: 12px;
+      color: var(--text3);
+      padding: 12px 0;
+      margin: 0;
+      text-align: center;
+    }
   `,
 })
-export class ConnectionsLandingComponent {
+export class ConnectionsLandingComponent implements OnInit {
   protected readonly metrics = inject(ConnectionsMetricsService);
   private readonly router = inject(Router);
+
+  ngOnInit(): void {
+    this.metrics.loadCounts();
+  }
 
   protected readonly httpSub = computed(() => {
     const errs = this.metrics.httpErrored() ?? 0;
     return errs > 0 ? `${errs} errored` : "all healthy";
   });
 
-  protected readonly topConnectors = computed<ITopConnector[]>(() => [
-    { name: "hubspot-prod", kind: "external", calls7d: 2_140 },
-    { name: "payments-svc", kind: "internal", calls7d: 1_820 },
-    { name: "stripe-billing", kind: "external", calls7d: 980 },
-    { name: "leads-router", kind: "hosted", calls7d: 612 },
-  ]);
+  protected readonly topConnectors = computed<ITopConnector[]>(() => []);
 
-  protected readonly recentActivity = computed<IActivityEntry[]>(() => [
-    {
-      time: "1h ago",
-      tone: "danger",
-      html: '<strong>snowflake-dwh</strong> · auth expired · external',
-    },
-    {
-      time: "4m ago",
-      tone: "ok",
-      html: '<strong>salesforce-eu</strong> · sync ok',
-    },
-    {
-      time: "22m ago",
-      tone: "info",
-      html: '<strong>intercom-app</strong> · tenant added',
-    },
-  ]);
+  protected readonly recentActivity = computed<IActivityEntry[]>(() => []);
 
   protected formatNum(n: number): string {
     return n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : String(n);

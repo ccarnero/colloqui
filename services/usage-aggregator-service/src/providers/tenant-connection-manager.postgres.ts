@@ -1,13 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import {
-  SharedTenantDatabaseMode,
   TenantConnectionManager as BaseTenantConnectionManager,
+  SharedTenantDatabaseMode,
 } from "@yoizen/database";
 import {
   CHANNEL_USAGE_SCHEMA_SQL,
+  CONNECTOR_CALL_USAGE_SCHEMA_SQL,
   SHARED_CHANNEL_USAGE_SCHEMA_SQL,
 } from "@yoizen/shared";
-
 
 /** Tenant-aware connection manager for the usage TimescaleDB tier. */
 @Injectable()
@@ -34,11 +34,12 @@ export class UsageTenantConnectionManagerPostgres extends BaseTenantConnectionMa
     });
     this.setSchemaInitializer(async (tenantId, sql) => {
       const target = await this.resolveDatabaseTarget(tenantId);
-      const schema =
+      const channelSchema =
         target.sharedDatabaseMode === SharedTenantDatabaseMode.SingleDatabase
           ? SHARED_CHANNEL_USAGE_SCHEMA_SQL
           : CHANNEL_USAGE_SCHEMA_SQL;
-      await sql.unsafe(schema);
+      await sql.unsafe(channelSchema);
+      await sql.unsafe(CONNECTOR_CALL_USAGE_SCHEMA_SQL);
     });
   }
 }

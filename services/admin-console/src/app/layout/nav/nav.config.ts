@@ -75,6 +75,11 @@ export const NAV_SECTIONS: INavSection[] = [
         route: "/channels/telegram",
         indicator: { kind: "count", source: "channels.telegram.total" },
       },
+      {
+        label: "HTTP",
+        route: "/channels/http",
+        indicator: { kind: "count", source: "channels.http.total" },
+      },
     ],
   },
   {

@@ -1,13 +1,17 @@
 import { tracedFetch } from "@yoizen/observability";
 import { sleep } from "@yoizen/shared";
-import { cachedFetch } from "./http-cache/cached-fetch";
 import type { IHttpResponseCachePolicyDecision } from "./http-cache/cache-policy";
+import { cachedFetch } from "./http-cache/cached-fetch";
 import type { IHttpResponseCache } from "./http-cache/http-response-cache";
+import { toEndpointCacheResult } from "./http-cache/to-cache-result";
+
+export type EndpointCacheResult = "hit" | "miss" | "bypass" | null;
 
 export interface IHttpCallResult {
   status: number;
   data: unknown;
   headers: Record<string, string>;
+  cacheResult?: EndpointCacheResult; // NEW
 }
 
 export interface IHttpCallOptions {
@@ -30,19 +34,13 @@ export interface IHttpCallOptions {
  * retries (one attempt). Shared across endpoint-call and service-call.
  */
 export async function httpCallWithRetry(
-  options: IHttpCallOptions,
+  options: IHttpCallOptions
 ): Promise<IHttpCallResult> {
-  const {
-    url,
-    method,
-    headers,
-    body,
-    timeoutMs,
-    maxRetries,
-    retryBackoffMs,
-  } = options;
+  const { url, method, headers, body, timeoutMs, maxRetries, retryBackoffMs } =
+    options;
 
   let lastError: unknown;
+  let cacheResult: EndpointCacheResult = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0 && retryBackoffMs > 0) {
@@ -62,17 +60,22 @@ export async function httpCallWithRetry(
             decision: options.cache.decision,
             cache: options.cache.store,
             fetchFn: tracedFetch,
+            onCacheResult: (r) => {
+              cacheResult ??= toEndpointCacheResult(r);
+            },
           })
         : await tracedFetch(url, requestInit);
 
       if (res.ok || attempt === maxRetries || res.status < 500) {
-        return buildResult(res);
+        return { ...(await buildResult(res)), cacheResult };
       }
 
       lastError = new Error(`HTTP ${res.status}`);
     } catch (err) {
       lastError = err;
-      if (attempt === maxRetries) break;
+      if (attempt === maxRetries) {
+        break;
+      }
     }
   }
 
@@ -81,9 +84,11 @@ export async function httpCallWithRetry(
 
 export function buildUrl(
   base: string,
-  params?: Record<string, unknown>,
+  params?: Record<string, unknown>
 ): string {
-  if (!params) return base;
+  if (!params) {
+    return base;
+  }
   const url = new URL(base);
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null) {
@@ -96,9 +101,11 @@ export function buildUrl(
 /** Serializes JSON data and ensures Content-Type is set. */
 export function applyJsonBody(
   data: unknown,
-  headers: Record<string, string>,
+  headers: Record<string, string>
 ): string | undefined {
-  if (data === undefined) return undefined;
+  if (data === undefined) {
+    return undefined;
+  }
   headers["Content-Type"] ??= "application/json";
   return JSON.stringify(data);
 }

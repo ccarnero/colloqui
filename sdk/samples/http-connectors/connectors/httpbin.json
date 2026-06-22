@@ -1,0 +1,25 @@
+{
+  "name": "httpbin",
+  "context": "external",
+  "baseUrl": "https://httpbin.org",
+  "authType": "none",
+  "authConfig": {},
+  "timeoutMs": 10000,
+  "maxRetries": 2,
+  "retryBackoffMs": 300,
+  "healthCheckPath": "/get",
+  "tags": ["sample", "public", "no-auth"],
+  "endpoints": [
+    { "label": "Inspect GET request", "method": "GET", "path": "/get" },
+    { "label": "Inspect POST request", "method": "POST", "path": "/post" },
+    { "label": "Inspect PUT request", "method": "PUT", "path": "/put" },
+    { "label": "Inspect PATCH request", "method": "PATCH", "path": "/patch" },
+    { "label": "Inspect DELETE request", "method": "DELETE", "path": "/delete" },
+    { "label": "Generate a random UUID", "method": "GET", "path": "/uuid" },
+    { "label": "Echo request headers", "method": "GET", "path": "/headers" },
+    { "label": "Return origin IP", "method": "GET", "path": "/ip" },
+    { "label": "Return the User-Agent", "method": "GET", "path": "/user-agent" },
+    { "label": "Return sample JSON", "method": "GET", "path": "/json" },
+    { "label": "Return a fixed status code", "method": "GET", "path": "/status/200" }
+  ]
+}

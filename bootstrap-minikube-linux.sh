@@ -46,6 +46,10 @@ CNPG_CHART_VERSION="0.27.1"
 CNPG_NAMESPACE="cnpg-system"
 METRICS_SERVER_VERSION="v0.7.2"
 MINIKUBE_PROFILE="${MINIKUBE_PROFILE:-minikube}"
+# Readiness wait for kubectl wait/rollout-status calls. Raised from the old 120s/180s
+# because minikube boxes are usually slower/leaner than the OrbStack shared daemon.
+# Override for very constrained machines, e.g. READY_WAIT=600s.
+READY_WAIT="${READY_WAIT:-300s}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -314,11 +318,11 @@ install_metrics_server() {
   kubectl wait deployment/metrics-server \
     --namespace kube-system \
     --for=condition=Available \
-    --timeout=180s
+    --timeout="${READY_WAIT}"
 
   kubectl wait apiservice/v1beta1.metrics.k8s.io \
     --for=condition=Available \
-    --timeout=180s
+    --timeout="${READY_WAIT}"
 }
 
 wait_for_webhook() {
@@ -327,7 +331,7 @@ wait_for_webhook() {
     --namespace knative-serving \
     -l app=webhook \
     --for=condition=Ready \
-    --timeout=120s
+    --timeout="${READY_WAIT}"
   sleep 5
 }
 
@@ -386,7 +390,7 @@ install_kourier() {
   kubectl wait deployment --all \
     --namespace kourier-system \
     --for=condition=Available \
-    --timeout=180s
+    --timeout="${READY_WAIT}"
 }
 
 install_cloudnative_pg() {
@@ -411,7 +415,7 @@ install_cloudnative_pg() {
     --namespace "$CNPG_NAMESPACE" \
     --create-namespace \
     --version "$CNPG_CHART_VERSION" \
-    --timeout 180s
+    --timeout "${READY_WAIT}"
 }
 
 wait_for_operators_ready() {
@@ -419,7 +423,7 @@ wait_for_operators_ready() {
   kubectl wait deployment --all \
     --namespace "$CNPG_NAMESPACE" \
     --for=condition=Available \
-    --timeout=180s
+    --timeout="${READY_WAIT}"
 }
 
 configure_dns() {
@@ -642,7 +646,7 @@ apply_infrastructure() {
     for dep in "${obs_names[@]}"; do
       kubectl rollout status "deployment/$dep" \
         --namespace "$ns" \
-        --timeout=120s &
+        --timeout="${READY_WAIT}" &
       obs_pids+=($!)
     done
 
@@ -654,7 +658,7 @@ apply_infrastructure() {
       fi
     done
     if (( obs_exit != 0 )); then
-      err "One or more observability deployments failed to become Available within 120s."
+      err "One or more observability deployments failed to become Available within ${READY_WAIT}."
       return 1
     fi
   done

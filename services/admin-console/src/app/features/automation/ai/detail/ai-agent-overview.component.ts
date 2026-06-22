@@ -1,25 +1,25 @@
-import { DatePipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
 import { ActivatedRoute, Router } from "@angular/router";
-import { KpiCardComponent } from "../../../../shared/components/kpi-card/kpi-card.component";
 import {
   getAgentLlmConfig,
   type IAgent,
 } from "../../../../core/models/agent.model";
 import { AgentAdminService } from "../../../../core/services/agent-admin.service";
+import { KpiCardComponent } from "../../../../shared/components/kpi-card/kpi-card.component";
+import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
 
 @Component({
   selector: "app-ai-agent-overview",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, KpiCardComponent],
+  imports: [UtcDatePipe, KpiCardComponent],
   template: `
     @if (loading()) {
       <p class="empty">Loading agent overview...</p>
@@ -76,11 +76,11 @@ import { AgentAdminService } from "../../../../core/services/agent-admin.service
             </div>
             <div class="meta-item">
               <span class="meta-label">Created</span>
-              <strong>{{ current.created_at | date: "medium" }}</strong>
+              <strong>{{ current.created_at | utcDate: "medium" }}</strong>
             </div>
             <div class="meta-item">
               <span class="meta-label">Updated</span>
-              <strong>{{ current.updated_at | date: "medium" }}</strong>
+              <strong>{{ current.updated_at | utcDate: "medium" }}</strong>
             </div>
           </div>
         </div>

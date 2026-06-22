@@ -65,6 +65,7 @@ spec:
       - pg_stat_statements
       - auto_explain
     parameters:
+      timezone: "UTC"
       # Visibility working set is dominated by btree probes against
       # ~50 indexes on `executions_visibility`. 1GB shared_buffers
       # holds the hot index pages without overshooting the 4Gi

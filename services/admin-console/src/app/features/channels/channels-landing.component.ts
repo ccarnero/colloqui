@@ -5,13 +5,13 @@ import {
   inject,
 } from "@angular/core";
 import { Router } from "@angular/router";
-import { SectionLandingShellComponent } from "../../shared/components/section-landing-shell/section-landing-shell.component";
-import { KpiCardComponent } from "../../shared/components/kpi-card/kpi-card.component";
+import { ChannelsMetricsService } from "../../core/services/metrics/channels-metrics.service";
 import {
   ActivityFeedComponent,
   type IActivityEntry,
 } from "../../shared/components/activity-feed/activity-feed.component";
-import { ChannelsMetricsService } from "../../core/services/metrics/channels-metrics.service";
+import { KpiCardComponent } from "../../shared/components/kpi-card/kpi-card.component";
+import { SectionLandingShellComponent } from "../../shared/components/section-landing-shell/section-landing-shell.component";
 
 type ChannelStatus = "ok" | "warn" | "down";
 
@@ -25,9 +25,9 @@ interface IChannelStatus {
 /**
  * Channels section landing.
  *
- * KPIs lean operational (connected/total, messages 24h, hit rate, p95).
- * Primary panel is the per-channel status grid; secondary is recent
- * failed deliveries — both are demo data for Phase 2.
+ * An aggregate dashboard, not a channel index — navigation lives in the left
+ * rail. KPIs (connected/total, messages 24h) + traffic-by-channel + recent
+ * failed deliveries (needs-attention).
  */
 @Component({
   selector: "app-channels-landing",
@@ -63,33 +63,47 @@ interface IChannelStatus {
         />
         <app-kpi-card
           label="Auto-reply hit rate"
-          value="68.4%"
-          sub="of inbound matched"
-          trend="up"
-          trendLabel=""
+          value="—"
+          sub="metrics coming soon"
         />
         <app-kpi-card
           label="p95 response"
-          value="820ms"
-          sub="last 24h"
+          value="—"
+          sub="metrics coming soon"
         />
       </div>
 
       <div slot="primary" class="panel">
-        <h2 class="panel-h">Channels</h2>
+        <h2 class="panel-h">Traffic by channel · 24h</h2>
         @for (c of channels(); track c.slug) {
-          <a class="ch-row" (click)="openChannel(c)">
-            <span class="dot" [class]="'dot-' + c.status" aria-hidden="true"></span>
-            <span class="ch-name">{{ c.name }}</span>
-            <span class="ch-status">{{ statusLabel(c.status) }}</span>
-            <span class="ch-msgs">{{ formatNum(c.msgs24h) }} msgs</span>
-          </a>
+          <div class="tr-row">
+            <div class="tr-head">
+              <span>
+                <span
+                  class="dot"
+                  [class]="'dot-' + c.status"
+                  aria-hidden="true"
+                ></span>
+                {{ c.name }}
+              </span>
+              <span class="tr-num">{{ formatNum(c.msgs24h) }}</span>
+            </div>
+            <div class="tr-bar">
+              <span class="tr-fill" [style.width.%]="barPct(c.msgs24h)"></span>
+            </div>
+          </div>
         }
+        <p class="tr-hint">
+          Open a channel from the left rail to manage its accounts.
+        </p>
       </div>
 
       <div slot="secondary" class="panel">
         <h2 class="panel-h">Recent failed deliveries</h2>
-        <app-activity-feed [entries]="recentFailures()" />
+        <app-activity-feed
+          [entries]="recentFailures()"
+          emptyText="No recent failures"
+        />
       </div>
     </app-section-landing-shell>
   `,
@@ -114,32 +128,40 @@ interface IChannelStatus {
       margin: 0 0 10px;
       color: var(--text-primary);
     }
-    .ch-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    .tr-row {
       padding: 9px 0;
       border-bottom: 1px solid var(--border-subtle);
-      font-size: 13px;
-      cursor: pointer;
-      text-decoration: none;
-      color: inherit;
     }
-    .ch-row:last-child { border-bottom: none; }
-    .ch-row:hover { background: var(--bg3); }
+    .tr-row:last-of-type { border-bottom: none; }
+    .tr-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: var(--text-primary);
+    }
+    .tr-bar {
+      height: 8px;
+      border-radius: 6px;
+      background: var(--bg3, #ececec);
+      overflow: hidden;
+    }
+    .tr-fill {
+      display: block;
+      height: 100%;
+      background: var(--primary, #1a66ff);
+      border-radius: 6px;
+    }
+    .tr-hint { font-size: 12px; color: var(--text3); margin: 12px 0 0; }
     .dot {
       width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
     }
     .dot-ok { background: var(--green, #16a34a); }
     .dot-warn { background: var(--yellow, #eab308); }
     .dot-down { background: var(--red, #ef4444); }
-    .ch-name {
-      flex: 1;
-      color: var(--text-primary);
-      font-weight: 500;
-    }
-    .ch-status { color: var(--text2); width: 110px; }
-    .ch-msgs { color: var(--text3); width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
+    .tr-num { color: var(--text3); font-variant-numeric: tabular-nums; }
     .btn {
       font-size: 12px;
       padding: 6px 12px;
@@ -161,6 +183,11 @@ export class ChannelsLandingComponent {
   protected readonly metrics = inject(ChannelsMetricsService);
   private readonly router = inject(Router);
 
+  constructor() {
+    this.metrics.loadCounts();
+    this.metrics.loadUsageTotals();
+  }
+
   protected readonly connectedSummary = computed(() => {
     const c = this.metrics.connectedCount();
     const t = this.metrics.totalCount();
@@ -170,53 +197,67 @@ export class ChannelsLandingComponent {
   protected readonly reauthSub = computed(() => {
     const c = this.metrics.connectedCount();
     const t = this.metrics.totalCount();
-    if (c === null || t === null) return "";
+    if (c === null || t === null) {
+      return "";
+    }
     const diff = t - c;
     return diff > 0 ? `${diff} need reauth` : "all healthy";
   });
 
   protected readonly messages24hLabel = computed(() => {
-    const m = (this.metrics.messagesIn24h() ?? 0) + (this.metrics.messagesOut24h() ?? 0);
-    return this.formatNum(m);
+    const i = this.metrics.messagesIn24h();
+    const o = this.metrics.messagesOut24h();
+    if (i === null && o === null) {
+      return "—";
+    }
+    return this.formatNum((i ?? 0) + (o ?? 0));
   });
 
   protected readonly messagesDirSub = computed(() => {
-    const i = this.metrics.messagesIn24h() ?? 0;
-    const o = this.metrics.messagesOut24h() ?? 0;
-    return `${this.formatNum(i)} in · ${this.formatNum(o)} out`;
+    const i = this.metrics.messagesIn24h();
+    const o = this.metrics.messagesOut24h();
+    if (i === null && o === null) {
+      return "";
+    }
+    return `${this.formatNum(i ?? 0)} in · ${this.formatNum(o ?? 0)} out`;
   });
 
-  // PHASE 2 DEMO DATA.
   protected readonly channels = computed<IChannelStatus[]>(() => [
-    { name: "WhatsApp", slug: "whatsapp", status: "ok", msgs24h: 21_400 },
-    { name: "Telegram", slug: "telegram", status: "ok", msgs24h: 8_120 },
-    { name: "Auto-Reply", slug: "auto-reply", status: "warn", msgs24h: 4_702 },
-    { name: "Web widget", slug: "web", status: "down", msgs24h: 0 },
+    {
+      name: "WhatsApp",
+      slug: "whatsapp",
+      status: "ok",
+      msgs24h: this.metrics.whatsappTraffic() ?? 0,
+    },
+    {
+      name: "Telegram",
+      slug: "telegram",
+      status: "ok",
+      msgs24h: this.metrics.telegramTraffic() ?? 0,
+    },
+    {
+      name: "HTTP",
+      slug: "http",
+      status: "ok",
+      msgs24h: this.metrics.httpTraffic() ?? 0,
+    },
   ]);
 
-  protected readonly recentFailures = computed<IActivityEntry[]>(() => [
-    { time: "1m ago", tone: "danger", html: 'Web widget · WebSocket disconnected · 24 retries' },
-    { time: "8m ago", tone: "warn", html: 'WhatsApp · message <strong>5xx</strong> from Meta API' },
-    { time: "22m ago", tone: "warn", html: 'Telegram · webhook timeout · auto-retried' },
-    { time: "1h ago", tone: "danger", html: 'Web widget · TLS handshake failed' },
-  ]);
-
-  protected statusLabel(s: ChannelStatus): string {
-    return s === "ok" ? "Connected" : s === "warn" ? "Degraded" : "Down";
+  protected barPct(msgs: number): number {
+    const max = Math.max(...this.channels().map((c) => c.msgs24h), 1);
+    return Math.round((msgs / max) * 100);
   }
+
+  protected readonly recentFailures = computed<IActivityEntry[]>(() => []);
 
   protected formatNum(n: number): string {
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-    return String(n);
-  }
-
-  protected openChannel(c: IChannelStatus): void {
-    if (c.slug === "auto-reply") {
-      void this.router.navigate(["/auto-reply"]);
-    } else {
-      void this.router.navigate(["/channels", c.slug]);
+    if (n >= 1_000_000) {
+      return `${(n / 1_000_000).toFixed(1)}M`;
     }
+    if (n >= 1_000) {
+      return `${(n / 1_000).toFixed(1)}K`;
+    }
+    return String(n);
   }
 
   protected newChannel(): void {

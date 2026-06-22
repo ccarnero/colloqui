@@ -72,6 +72,23 @@ export class WorkflowsController {
     });
   }
 
+  /**
+   * Tenant-wide executions for one correlation_id (Message trace lookup).
+   * Declared before `@Get(":id")` so Nest does not match `executions` as an id.
+   */
+  @Get("executions")
+  async listExecutionsByCorrelation(
+    @Req() req: ITenantScopedRequest,
+    @Query() query: Record<string, string>,
+  ) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/workflows/executions",
+      tenantId: req.tenantId,
+      query,
+    });
+  }
+
   @Get(":id")
   async getWorkflow(
     @Req() req: ITenantScopedRequest,

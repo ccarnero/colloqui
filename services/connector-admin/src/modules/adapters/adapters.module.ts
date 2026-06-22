@@ -1,6 +1,10 @@
 import { Module } from "@nestjs/common";
 import { createRepositoryProvider } from "@yoizen/database";
 import { connectorAdminConfig } from "../../config";
+import {
+  ADAPTER_USAGE_REPOSITORY,
+  AdapterUsagePostgresRepository,
+} from "./adapter-usage.postgres.repository";
 import { AdaptersController } from "./adapters.controller";
 import { AdaptersMongoRepository } from "./adapters.mongo.repository";
 import { AdaptersPostgresRepository } from "./adapters.postgres.repository";
@@ -20,7 +24,12 @@ import { AdaptersService } from "./adapters.service";
       mongoClass: AdaptersMongoRepository,
     }),
     AdaptersService,
+    AdapterUsagePostgresRepository,
+    {
+      provide: ADAPTER_USAGE_REPOSITORY,
+      useExisting: AdapterUsagePostgresRepository,
+    },
   ],
-  exports: [ADAPTERS_REPOSITORY, AdaptersService],
+  exports: [ADAPTERS_REPOSITORY, AdaptersService, ADAPTER_USAGE_REPOSITORY],
 })
 export class AdaptersModule {}
