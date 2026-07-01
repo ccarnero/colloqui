@@ -1180,6 +1180,14 @@ spec:
           value: '5432'
         - name: POSTGRES_DB
           value: yoizen
+        - name: REDIS_HOST
+          value: redis.support-services-dev.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_CLUSTER_MODE
+          value: 'false'
+        - name: CONNECTOR_ADMIN_URL
+          value: http://connector-admin-api.platform-services-dev.svc.cluster.local
         - name: PLATFORM_ENVIRONMENT
           value: dev
         - name: OTEL_EXPORTER_OTLP_ENDPOINT

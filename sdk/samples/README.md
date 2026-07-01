@@ -4,6 +4,40 @@ Runnable examples for `@yoizen/http-sdk`. Each sample is a self-contained app wi
 `package.json` that depends on the SDK via a local `file:` link — so it consumes the SDK by
 name (`@yoizen/http-sdk`), exactly like an external project would.
 
+
+## ai-agent-playground
+
+A minimal admin-console AI counterpart: it creates/reuses an LLM connector, creates and
+publishes an AI agent, submits one `/api/runtime/executions` request, and polls the result.
+Unlike HTTP-only samples, this requires a real online LLM credential.
+
+```bash
+cd sdk/samples/ai-agent-playground
+cp .env.example .env   # set OPENAI_API_KEY or another provider key
+./run.sh
+```
+
+Default mode is connector-based, matching the admin-console “LLM Connector” field. Use
+`AI_CREDENTIAL_MODE=env` only when `agent-ai-service` already has the provider key in its own
+deployment environment.
+
+
+## ai-knowledge-base-agent
+
+A knowledge-base/RAG counterpart to `ai-agent-playground`: it creates a KB, uploads a
+Markdown FAQ, waits for ingestion, attaches the KB to an AI agent, publishes it, and asks a
+question whose answer must come from the uploaded document.
+
+```bash
+cd sdk/samples/ai-knowledge-base-agent
+cp .env.example .env   # set OPENAI_API_KEY or provider key
+./run.sh
+```
+
+Knowledge bases are standalone admin resources, but current runtime consumption is through
+agents via `knowledge_base_ids`. Runtime KB search also needs OpenAI embeddings available in
+`agent-ai-service`.
+
 ## http-bridge
 
 A tiny `node:http` server that **receives a message over HTTP and forwards it into the

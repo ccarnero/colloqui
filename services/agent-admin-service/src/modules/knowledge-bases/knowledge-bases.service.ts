@@ -112,40 +112,22 @@ export class KnowledgeBasesService {
     },
   ): Promise<IKnowledgeBaseRow | null> {
     const sql = await this.connectionManager.ensureSchema(tenantId);
-
-    // Build dynamic SET clauses using parameterized fragments
-    const setClauses: string[] = ["updated_at = NOW()"];
-
-    if (data.name !== undefined) {
-      setClauses.push(sql`name = ${data.name}` as unknown as string);
-    }
-    if (data.description !== undefined) {
-      setClauses.push(
-        sql`description = ${data.description}` as unknown as string,
-      );
-    }
-    if (data.project !== undefined) {
-      setClauses.push(sql`project = ${data.project}` as unknown as string);
-    }
-    if (data.category !== undefined) {
-      setClauses.push(sql`category = ${data.category}` as unknown as string);
-    }
-    if (data.icon !== undefined) {
-      setClauses.push(sql`icon = ${data.icon}` as unknown as string);
-    }
-    const setClause = setClauses.join(", ");
-
-    if (data.ingestion_config !== undefined) {
-      await sql`
-        UPDATE knowledge_bases
-        SET ingestion_config = ${sql.json(data.ingestion_config as JsonValue)}, updated_at = NOW()
-        WHERE id = ${id} AND tenant_id = ${tenantId} AND is_active = true
-      `;
-    }
+    const shouldUpdateIngestionConfig = data.ingestion_config !== undefined;
 
     const [row] = await sql<IKnowledgeBaseRow[]>`
       UPDATE knowledge_bases
-      SET ${sql.unsafe(setClause)}
+      SET
+        name = CASE WHEN ${data.name !== undefined} THEN ${data.name ?? null} ELSE name END,
+        description = CASE WHEN ${data.description !== undefined} THEN ${data.description ?? null} ELSE description END,
+        project = CASE WHEN ${data.project !== undefined} THEN ${data.project ?? null} ELSE project END,
+        category = CASE WHEN ${data.category !== undefined} THEN ${data.category ?? null} ELSE category END,
+        icon = CASE WHEN ${data.icon !== undefined} THEN ${data.icon ?? null} ELSE icon END,
+        ingestion_config = CASE
+          WHEN ${shouldUpdateIngestionConfig}
+          THEN ${sql.json((data.ingestion_config ?? {}) as JsonValue)}
+          ELSE ingestion_config
+        END,
+        updated_at = NOW()
       WHERE id = ${id} AND tenant_id = ${tenantId} AND is_active = true
       RETURNING id, name, description, project, category, icon, ingestion_config, is_active, created_at, updated_at
     `;
