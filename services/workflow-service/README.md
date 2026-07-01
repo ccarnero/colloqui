@@ -91,7 +91,7 @@ Orchestrator Worker:
 
 ### Action Types
 
-Workflows support 8 action types, each with distinct execution semantics:
+Workflows support 8 action activities, each with distinct execution semantics:
 
 | Action | Task Queue | Scope | Description |
 |--------|-----------|-------|-------------|
@@ -102,42 +102,33 @@ Workflows support 8 action types, each with distinct execution semantics:
 | `serviceBusCall` | `workflow-orchestrator` (local) | NATS publish | Publish event to NATS subject |
 | `channelSend` | `workflow-orchestrator` (local) | Channel delivery | Send message to configured channel (email, SMS, etc.) |
 | `branch` | — (workflow control) | Parallel execution | Execute multiple action lists concurrently |
-| `sleep` | — (workflow control) | Delay | Pause workflow for specified duration |
+| `conditional` | — (workflow control) | Conditional branch | Execute the first matching branch or an optional default branch |
 
-### Workflow Execution Lifecycle
+### Workflow Definition and Execution Lifecycle
 
 ```
 1. Client calls POST /workflows
    ↓
-2. API validates DTO (WorkflowDefinition, actions, request)
+2. API validates and stores a workflow definition
    ↓
-3. API calls temporal.workflow.start('runWorkflow', {
-     tenantId,
-     workflowId: {tenantId}:{name}:{nanoid()},
-     definition,
-     request
-   })
+3. Client calls POST /workflows/:id/execute with { request, agentTimeoutSec? }
    ↓
-4. Temporal queues workflow on workflow-orchestrator task queue
+4. API loads the definition and starts Temporal workflow runWorkflow on workflow-orchestrator
    ↓
-5. Orchestrator worker picks up workflow
+5. Orchestrator worker executes actions:
+   • Iterate sequentially by default
+   • Resolve {{templates}} against execution context
+   • Dispatch HTTP activities to connector-runtime and local activities to workflow-orchestrator
+   • Store each action result for downstream templates
    ↓
-6. runWorkflow() executes:
-   • Iterate over actions sequentially
-   • For each action:
-     - Resolve {{templates}} against execution context
-     - Dispatch to appropriate task queue (connector-runtime or local)
-     - Await result
-     - Store in results map for downstream actions
+6. Client queries GET /workflows/:id/executions/:executionId
    ↓
-7. Return final result to Temporal
-   ↓
-8. Client calls GET /workflows/:id to query status
-   ↓
-9. API queries Temporal: workflow.getHandle(id).describe()
-   ↓
-10. Return { status, result, execution_time }
+7. API reads the execution row, asks Temporal for current status/result, and syncs the row
 ```
+
+`GET /workflows/:id` returns the saved definition metadata, not execution status. Use
+`GET /workflows/:id/executions` to list runs for a definition and
+`GET /workflows/:id/executions/:executionId` to inspect one run.
 
 ### Template Resolution
 
@@ -199,7 +190,7 @@ Calls external HTTP endpoint with optional adapter-driven configuration.
 
 ```
 {
-  type: "endpointCall",
+  activity: "endpointCall",
   name: "fetchCustomer",
   args: {
     method: "GET",
@@ -228,7 +219,7 @@ Calls internal service via Kubernetes DNS. Identical to endpointCall but targets
 
 ```
 {
-  type: "serviceCall",
+  activity: "serviceCall",
   name: "auditLog",
   args: {
     service: "audit-service",
@@ -249,7 +240,7 @@ Invokes a YoizenClaw AI agent for autonomous decision-making or complex reasonin
 
 ```
 {
-  type: "agentCall",
+  activity: "agentCall",
   name: "classifyIncident",
   args: {
     agentId: "incident-classifier",
@@ -281,7 +272,7 @@ Executes arbitrary inline JavaScript code with access to execution context.
 
 ```
 {
-  type: "jsFunction",
+  activity: "jsFunction",
   name: "validateData",
   args: {
     code: `
@@ -314,7 +305,7 @@ Publishes event to NATS subject with tenant header injection.
 
 ```
 {
-  type: "serviceBusCall",
+  activity: "serviceBusCall",
   name: "notifySlack",
   args: {
     subject: "events.notifications.slack",
@@ -333,7 +324,7 @@ Sends message via configured channel (email, SMS, Slack, etc.).
 
 ```
 {
-  type: "channelSend",
+  activity: "channelSend",
   name: "emailNotification",
   args: {
     channel: "email",
@@ -350,58 +341,73 @@ Executes multiple action sequences in parallel, then waits for all to complete.
 
 ```
 {
-  type: "branch",
+  activity: "branch",
   name: "parallelProcessing",
-  args: {
-    branches: [
-      [
-        {
-          type: "serviceCall",
-          name: "enrichData1",
-          args: { service: "service1", path: "/enrich", method: "POST", data: {...} }
-        }
-      ],
-      [
-        {
-          type: "serviceCall",
-          name: "enrichData2",
-          args: { service: "service2", path: "/enrich", method: "POST", data: {...} }
-        }
-      ]
-    ]
-  }
+  enrichData1Branch: [
+    {
+      activity: "serviceCall",
+      name: "enrichData1",
+      args: { service: "service1", path: "/enrich", method: "POST", data: {...} }
+    }
+  ],
+  enrichData2Branch: [
+    {
+      activity: "serviceCall",
+      name: "enrichData2",
+      args: { service: "service2", path: "/enrich", method: "POST", data: {...} }
+    }
+  ]
 }
 ```
 
 All branches execute concurrently; workflow waits for all to complete before proceeding:
 
 ```
-results.parallelProcessing = {
-  status: "success",
-  data: [
-    { enrichData1: { status: 200, data: {...} } },
-    { enrichData2: { status: 200, data: {...} } }
-  ]
-}
+results.parallelProcessing = ["enrichData1Branch", "enrichData2Branch"]
+// Results produced inside each branch are merged back into context.results by action name.
 ```
 
-### sleep
+### conditional
 
-Pauses workflow execution for a specified duration.
+Runs the first matching conditional branch, or `default` when no branch matches.
 
 ```
 {
-  type: "sleep",
-  name: "waitForWebhook",
-  args: {
-    duration: 30000  // 30 seconds
-  }
+  "activity": "conditional",
+  "name": "routeByAmount",
+  "branches": [
+    {
+      "label": "highValue",
+      "condition": {
+        "variable": "request.amount",
+        "comparator": "gte",
+        "value": "1000"
+      },
+      "actions": [
+        {
+          "activity": "agentCall",
+          "name": "reviewOrder",
+          "args": { "agentId": "risk-reviewer", "input": "{{request.orderId}}" }
+        }
+      ]
+    }
+  ],
+  "default": [
+    {
+      "activity": "serviceBusCall",
+      "name": "autoApprove",
+      "args": {
+        "subject": "orders.approved",
+        "payload": { "orderId": "{{request.orderId}}" }
+      }
+    }
+  ]
 }
 ```
 
 ## REST API Reference
 
-### Start Workflow
+### Create Workflow Definition
 
 ```
 POST /workflows
@@ -411,70 +417,95 @@ X-Yoizen-Tenant: acme
 {
   "name": "processOrder",
   "application": "order-service",
-  "request": {
-    "orderId": "ORD-12345",
-    "customerId": "CUST-789"
-  },
   "actions": [
     {
-      "type": "endpointCall",
+      "activity": "endpointCall",
       "name": "fetchOrder",
       "args": { ... }
     },
     {
-      "type": "endpointCall",
+      "activity": "endpointCall",
       "name": "validatePayment",
       "args": { ... }
     }
   ]
 }
 
-Response (202 Accepted):
+Response (201 Created):
 {
-  "workflowId": "acme:processOrder:k3j2h1g",
-  "status": "RUNNING",
-  "startTime": "2026-05-11T10:30:00Z"
+  "id": "wf_def_123",
+  "name": "processOrder",
+  "application": "order-service",
+  "tenantId": "acme",
+  "actions": [ ... ],
+  "createdAt": "2026-05-11T10:30:00Z"
 }
 ```
 
-### Get Workflow Status
+### Execute Workflow Definition
 
 ```
-GET /workflows/:workflowId
+POST /workflows/:id/execute
+Content-Type: application/json
+X-Yoizen-Tenant: acme
+
+{
+  "request": {
+    "orderId": "ORD-12345",
+    "customerId": "CUST-789"
+  },
+  "agentTimeoutSec": 60
+}
+
+Response (202 Accepted):
+{
+  "executionId": "exec_456",
+  "definitionId": "wf_def_123",
+  "temporalWorkflowId": "acme:processOrder:k3j2h1g",
+  "runId": "..."
+}
+```
+
+### Get Workflow Definition
+
+```
+GET /workflows/:id
+X-Yoizen-Tenant: acme
+
+Response (200 OK): definition metadata, including actions, trigger, variables, and createdAt.
+```
+
+### List Definition Executions
+
+```
+GET /workflows/:id/executions?page=0&pageSize=20&status=COMPLETED
+X-Yoizen-Tenant: acme
+```
+
+### Get Execution Status
+
+```
+GET /workflows/:id/executions/:executionId
 X-Yoizen-Tenant: acme
 
 Response (200 OK):
 {
-  "workflowId": "acme:processOrder:k3j2h1g",
+  "executionId": "exec_456",
+  "definitionId": "wf_def_123",
+  "temporalWorkflowId": "acme:processOrder:k3j2h1g",
   "status": "COMPLETED",
-  "result": {
-    "status": 200,
-    "data": { "orderId": "ORD-12345", "processed": true }
-  },
-  "startTime": "2026-05-11T10:30:00Z",
-  "endTime": "2026-05-11T10:30:45Z",
-  "executionTime": 45000
+  "result": { ... },
+  "createdAt": "2026-05-11T10:30:00Z"
 }
 ```
 
-### List Workflows
+### List Workflow Definitions
 
 ```
 GET /workflows
 X-Yoizen-Tenant: acme
 
-Response (200 OK):
-{
-  "workflows": [
-    {
-      "workflowId": "acme:processOrder:k3j2h1g",
-      "name": "processOrder",
-      "status": "COMPLETED",
-      "startTime": "2026-05-11T10:30:00Z"
-    }
-  ],
-  "total": 1
-}
+Response (200 OK): an array of saved workflow definitions.
 ```
 
 ## Multi-Tenancy & Per-Tenant Databases
@@ -529,7 +560,7 @@ Result: error from validatePayment
 
 ### Retry Strategy
 
-Each action receives up to 3 attempts with 30s start-to-close timeout:
+Local workflow-orchestrator activities receive up to 3 attempts with a 30s start-to-close timeout. HTTP activities on `connector-runtime` receive up to 5 attempts with 1s initial interval, 2x backoff, and a 30s maximum interval. Agent calls use a 15m start-to-close timeout, 30s heartbeat, and 3 attempts capped at a 60s interval:
 
 ```
 Attempt 1: executeAction → Failure (timeout)
@@ -579,15 +610,16 @@ Branch on failure: if results.processResource.status === FAILED
 
 - **Type**: Plain Deployment (Temporal pull-based worker, no inbound HTTP)
 - **Replicas**: fixed 1 in developer mode (no autoscaling)
-- **Concurrency**: 100 workflow tasks + 50 activity tasks per replica
+- **Concurrency**: 150 workflow tasks + 200 activity tasks per replica
 
 ### Temporal Timeouts
 
 | Timeout | Value | Applied To |
 |---------|-------|-----------|
 | Workflow timeout | 24 hours | Entire workflow execution |
-| Activity timeout | 30s | Each individual action |
-| Retry timeout | 1 minute | Between retry attempts |
+| Activity timeout | 30s | Local workflow-orchestrator activities |
+| HTTP retry max interval | 30s | endpointCall/serviceCall on connector-runtime |
+| Agent retry max interval | 60s | agentCall |
 
 ## Configuration
 
@@ -654,7 +686,7 @@ Usually available at `http://localhost:8080`:
 | **NATS** | TCP | Service bus activity publishes events |
 | **connector-runtime** | Task queue | Executes endpointCall and serviceCall |
 | **Per-tenant Postgres** | TCP | Stores workflow definitions and executions |
-| **connector-api** | HTTP | Resolves adapter configs for serviceCall (via connector-runtime) |
+| **connector-admin** | HTTP | Resolves connector configs for connector-runtime |
 | **agent-ai-service** | HTTP | Executes agentCall activities |
 
 ## Integration Points
@@ -678,4 +710,4 @@ Usually available at `http://localhost:8080`:
 - [AGENTS.md](AGENTS.md) — Detailed architecture, worker configuration, database schema
 - [Temporal Workflow Documentation](https://temporal.io/docs/concepts/what-is-a-workflow-definition)
 - [Template Resolution Guide](../DOCS/workflows/patterns.md#template-resolution)
-- [Connector Runtime Integration](../http-adapter/README.md)
+- [Connector Runtime Integration](../connector-runtime/README.md)

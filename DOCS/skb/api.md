@@ -177,6 +177,13 @@ Soft-deletes a container (sets `is_active = false`). Cascades to all files, sche
 
 ## Files
 
+> **Current implementation status:** SKB file routes are not ready for use. The
+> api-gateway exposes `POST /admin/structured-kb/containers/:id/files`, but it
+> proxies to an `agent-admin-service` route that is not implemented. List,
+> delete, and schema file routes are also not implemented in
+> `agent-admin-service` controllers. Treat this section as the intended contract
+> until the missing agent-admin routes are added.
+
 ### Upload File for Ingestion
 
 ```
@@ -216,6 +223,9 @@ Uploads a CSV or Excel file for asynchronous ingestion. The file is queued via N
 }
 ```
 
+**Current behavior:** this gateway route is pending/broken because the target
+`agent-admin-service` route does not exist yet.
+
 **Constraints:**
 
 | Limit | Value |
@@ -233,6 +243,8 @@ Uploads a CSV or Excel file for asynchronous ingestion. The file is queued via N
 ```
 GET /admin/structured-kb/containers/:id/files
 ```
+
+**Current behavior:** not implemented in `agent-admin-service`.
 
 **Response `200 OK`:**
 
@@ -272,6 +284,8 @@ GET /admin/structured-kb/containers/:id/files
 DELETE /admin/structured-kb/containers/:id/files/:fileId
 ```
 
+**Current behavior:** not implemented in `agent-admin-service`.
+
 Removes a file and all its rows from the container.
 
 **Response `200 OK`:**
@@ -290,6 +304,8 @@ Removes a file and all its rows from the container.
 ```
 GET /admin/structured-kb/containers/:id/files/:fileId/schema
 ```
+
+**Current behavior:** not implemented in `agent-admin-service`.
 
 Returns the LLM-analyzed schema for a specific file.
 
@@ -454,28 +470,22 @@ All endpoints return errors in a consistent format:
 ## Rate Limiting
 
 `SKBRateLimitGuard` is applied to the query endpoint only. File upload rate limiting is
-enforced at the api-gateway / infrastructure layer.
+not implemented in `agent-admin-service`.
 
 | Endpoint | Limit | Window | Enforcement |
 |----------|-------|--------|-------------|
-| `POST .../query` | 60 requests | per minute per tenant | `SKBRateLimitGuard` in agent-admin-service |
-| `POST .../files` | 10 requests | per minute per tenant | api-gateway (design intent) |
-| All other endpoints | 120 requests | per minute per tenant | api-gateway (design intent) |
+| `POST .../query` | 30 requests | per minute per tenant per process | In-memory `SKBRateLimitGuard` in agent-admin-service |
+| `POST .../files` | — | — | Not implemented; gateway route target is missing |
+| All other endpoints | — | — | No SKB-specific limiter |
 
-Rate limit headers are included in every response:
-
-```
-X-RateLimit-Limit: 60
-X-RateLimit-Remaining: 45
-X-RateLimit-Reset: 1717843200
-```
+The query limiter does not emit `X-RateLimit-*` response headers.
 
 When rate limited, the response is:
 
 ```json
 {
   "statusCode": 429,
-  "message": "Rate limit exceeded. Retry after 30s.",
+  "message": "Rate limit exceeded. Max 30 queries per minute per tenant.",
   "error": "Too Many Requests"
 }
 ```
@@ -505,6 +515,10 @@ pending → processing → ready
 POST /files → NATS publish → Worker picks up → Parse file → LLM schema analysis
   → Type-cast rows → Batch INSERT (5000/batch) → Mark completed
 ```
+
+**Current implementation note:** the worker-side ingestion consumer exists, but
+the public file upload route is not wired end-to-end because the
+`agent-admin-service` file upload controller route is missing.
 
 **Timeout**: 15 minutes per file. Stuck files are reset by the ingestion watchdog service.
 

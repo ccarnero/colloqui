@@ -42,7 +42,7 @@ Both endpoints are public (`@Public()`, `@SkipTenant()`). The tenant is resolved
 
 File: `services/api-gateway/src/modules/channels/webhooks.controller.ts`
 
-Successful response: HTTP 200 with body `{ "status": "accepted" }`.
+Successful response: HTTP 200 with body `{ "status": "accepted" }`, returned only after the stage-1 JetStream publish succeeds.
 
 ### 2.2 WebhookIngressEnvelope
 
@@ -108,7 +108,7 @@ File: `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.se
 `webhook-ingress.service.ts` executes the business logic:
 
 1. Validates the channel (must have a registered `IChannelProvider` in `ChannelRouter`).
-2. Queries the tenant/channel's active accounts in MongoDB.
+2. Queries the tenant/channel's active accounts through the configured repository/storage engine (`postgres` by default, `mongo` when selected).
 3. Verifies the provider's HMAC signature against each active account.
 4. Resolves the concrete `accountid` (disambiguation by `phone_number_id` for WhatsApp or `ig_user_id` for Instagram when multiple accounts verify).
 5. Parses the webhook body using the corresponding provider → `InboundMessage[]`.
@@ -211,13 +211,13 @@ sequenceDiagram
     JS->>CS: deliver(WebhookIngressEnvelope)
     CS->>CS: verifySignature(HMAC)
     CS->>CS: resolveAccountId()
-    CS->>CS: createChannelEnvelope(depth=0)
+    CS->>CS: createChannelEnvelope(causation_id=webhook.id, correlation_id=webhook.correlation_id, depth=1)
     CS-->>JS: publish evt.<t>.channel-service.messaging.whatsapp.meta.received.v1
 
     JS->>AG: deliver(ChannelEnvelope)
-    AG->>AG: enforceDepthLimit(depth=0, max=5) → ok
+    AG->>AG: enforceDepthLimit(depth=1, max=5) → ok
     AG->>AG: execute agent
-    AG->>AG: deriveEnvelope(depth=1)
+    AG->>AG: deriveEnvelope(depth=2)
     AG-->>JS: publish evt.<t>.ai-agent-gateway.automation.platform.internal.execution_started.v1
 ```
 
@@ -366,8 +366,8 @@ Note: `accountid` is absent — typed as `Omit<EventEnvelope, "accountid">`.
   "resource": "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta",
   "time": "2026-06-11T12:00:01.000Z",
   "traceid": "4bf92f3577b34da6a3ce929d0e0e4736",
-  "causation_id": null,
-  "correlation_id": "b7d9e2f4-1a3c-5e7f-9b1d-2c3e4f5a6b7c",
+  "causation_id": "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
+  "correlation_id": "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
   "tenant": "acme",
   "producer": "channel-service",
   "domain": "messaging",
@@ -378,7 +378,7 @@ Note: `accountid` is absent — typed as `Omit<EventEnvelope, "accountid">`.
   "transport": {
     "method": "webhook",
     "protocol": "https",
-    "depth": 0
+    "depth": 1
   },
   "data": {
     "received_at": "2026-06-11T12:00:01.000Z",

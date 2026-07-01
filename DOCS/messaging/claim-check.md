@@ -13,7 +13,7 @@
 
 NATS is designed for small messages (sweet spot below 100 KB, default max 1 MB). For serialized envelopes that exceed the configured threshold, the platform uses the Claim-Check pattern: store only the payload in NATS Object Store and send a lightweight envelope with a reference over the bus.
 
-The pattern is **fully implemented**: the producer in `channel-service` and the consumer middleware in `MultiTenantConsumerManager` work end-to-end with checksum verification.
+The pattern is **implemented for canonical channel publish**: `channel-service` stores oversized `ChannelEnvelope` payloads and `MultiTenantConsumerManager` resolves slim envelopes with checksum verification. Stage-1 `WebhookIngressEnvelope` messages from `api-gateway` are not claim-checked; they are published inline.
 
 ---
 
@@ -187,11 +187,11 @@ In contrast, the `data.payload_bytes` field in the slim envelope reports the **c
 |-------|--------|---------------|
 | Global | `CLAIM_CHECK_THRESHOLD_BYTES` | `262144` (256 KB) — `packages/shared/src/channel.constants.ts` |
 
-### 5.3 Extended configurability (pending — not implemented)
+### 5.3 Extended configurability and duplicate constants (pending cleanup)
 
 > **Status: pending — not implemented**
 >
-> Per-tenant (`tenant.{id}.claim_check_threshold`) and per-agent-category (`agent.{category}.claim_check_threshold`) override levels exist in the original design but not in the code. Only the global threshold is implemented.
+> Per-tenant (`tenant.{id}.claim_check_threshold`) and per-agent-category (`agent.{category}.claim_check_threshold`) override levels exist in the original design but not in the code. Only the global threshold is implemented for channel ingress. The shared package exposes `CLAIM_CHECK_THRESHOLD_BYTES`; `agent-ai-service` also has a local 256 KB copy for its unused `ClaimCheckService`, so threshold configuration is not yet centralized.
 
 ---
 
@@ -305,7 +305,7 @@ Some consumers only need envelope metadata (e.g., a metrics service counting mes
 
 The `payload_ref` contract supports different URI schemes:
 
-- `nats://objstore/PAYLOAD-acme/{id}-payload` → NATS Object Store (implemented)
+- `nats://objstore/PAYLOAD-<tenant>/{id}-payload` → NATS Object Store (implemented; current code preserves the tenant ID casing supplied to `buildClaimCheckBucket`)
 - `s3://bucket-name/tenant/{id}-payload` → S3/MinIO (future design)
 - `mongodb://collection/{id}` → MongoDB (future design)
 

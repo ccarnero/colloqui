@@ -102,8 +102,9 @@ sequenceDiagram
 
     Note over GW: 1. Extract rawBody (Buffer)<br/>2. Filter headers (6-item allowlist)<br/>3. Build WebhookIngressEnvelope<br/>   (kind=webhook_received, no accountid)<br/>4. Publish to INGRESS-ACME
 
-    GW-->>Meta: 200 OK { status: "accepted" }
     GW->>JS: WebhookIngressEnvelope<br/>subject: evt.acme.api-gateway.messaging<br/>.whatsapp.webhook.webhook_received.v1
+    JS-->>GW: publish ack
+    GW-->>Meta: 200 OK { status: "accepted" }
 
     Note over CS: Durable consumer on INGRESS-ACME<br/>Filter: evt.*.api-gateway.messaging.*.webhook.webhook_received.v1
 
@@ -192,10 +193,10 @@ Defined in `WEBHOOK_FORWARDED_HEADERS` in `packages/shared/src/channel.constants
 
 #### Operational notes
 
-- The HTTP 200 to Meta is sent **immediately** upon receiving the request — before NATS publish. Meta requires a fast response or it retries.
+- The HTTP 200 to Meta/Telegram is returned **only after** `api-gateway` successfully publishes the stage-1 `WebhookIngressEnvelope` to JetStream. Meta/Telegram still require a fast response, so publish backpressure is surfaced as an HTTP error instead of acknowledging before durability.
 - `api-gateway` does **not** verify the HMAC signature; it only packages and publishes. Verification happens in the `channel-service` durable consumer.
-- If NATS JetStream has backpressure, `api-gateway` returns 503 with `Retry-After`. Meta retries the webhook automatically.
-- Payloads > 256 KB are stored in Object Store `PAYLOAD-<TENANT>` (claim-check) and the envelope carries a `payload_ref` reference.
+- If NATS JetStream has backpressure or publish fails, `api-gateway` returns 503 with `Retry-After`. Providers retry the webhook automatically.
+- Stage-1 `WebhookIngressEnvelope` payloads are published inline (`payload_inline: true`); the claim-check path is implemented in `channel-service` when it publishes canonical `ChannelEnvelope` events.
 
 #### Relevant files
 
@@ -465,8 +466,8 @@ sequenceDiagram
 ```
 t=0ms     User sends "ping" in WhatsApp
 t~200ms   Meta delivers webhook to api-gateway
-t~201ms   api-gateway responds 200 OK to Meta
-t~202ms   api-gateway publishes WebhookIngressEnvelope → INGRESS-ACME
+t~201ms   api-gateway publishes WebhookIngressEnvelope → INGRESS-ACME
+t~202ms   JetStream publish ack received; api-gateway responds 200 OK to Meta
 t~205ms   channel-service (webhook-ingress-consumer) receives envelope
 t~210ms   HMAC verification + ChannelAccount resolution
 t~215ms   Payload parse → InboundMessage
@@ -485,7 +486,7 @@ t~1-3s    Meta delivers "pong" to user in WhatsApp
 - **No loop**: `auto-reply` filters on `received.v1`. The `sent.v1` event published by `EgressService` does not match the filter.
 - **Durable = at-least-once**: if `channel-service` crashes between stage 2 and the auto-reply, NATS redelivers the canonical envelope on reconnect.
 - **Circuit breaker**: if Meta returns repeated errors, the `EgressService` circuit breaker opens and messages go to the DLQ instead of retrying.
-- **Claim-check**: if the Meta payload exceeds 256 KB, the `WebhookIngressEnvelope` carries a reference to Object Store `PAYLOAD-ACME`. The consumer middleware in `packages/database/src/claim-check.ts` resolves the payload transparently before delivering the message to the handler.
+- **Claim-check**: stage-1 `WebhookIngressEnvelope` payloads are inline. If a canonical `ChannelEnvelope` published by `channel-service` exceeds 256 KB, `IngressService` stores the payload in Object Store `PAYLOAD-ACME` and publishes a slim envelope; `MultiTenantConsumerManager` resolves that reference before handler delivery.
 
 ---
 

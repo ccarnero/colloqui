@@ -1,14 +1,11 @@
 # Message trace
 
-A role-gated debug view that follows a single message across services by its `correlation_id` —
+An authenticated debug view that follows a single message across services by its `correlation_id` —
 forward (origin → reply) and reverse (any event → origin). It answers "what happened to this
 message, end to end, and why?" without hand-crafting `curl` calls or grepping pod logs.
 
-- **Where:** admin-console → **Diagnostics › Message trace** (`/processes/trace`, deep-link
-  `/processes/trace/:correlationId`).
-- **Who:** gated by the `diagnostics:read` permission (tenant admins bypass). It surfaces raw
-  `correlation_id` / `causation_id`, internal NATS subjects and cross-service IDs — elevated/ops
-  territory, not for regular tenant users.
+- **Where:** direct authenticated route `/processes/trace`, with deep-link `/processes/trace/:correlationId`. It is under the Processes section URL space but is not currently listed in the Processes sub-nav.
+- **Who:** authenticated console users with the `diagnostics:read` permission. The route itself is only under the shell `authGuard`; the trace component gates the view/data load with `auth.hasPermission("diagnostics:read")`. It is not currently listed in the Processes sub-nav.
 - **Spec:** `.sdd/changes/processes-message-trace/` (design, ADRs, tasks).
 
 ## The two traces
@@ -74,7 +71,7 @@ sent.v1     → audit-service/channel-events-audit (sink, terminal)   [channel-e
 
 ### Forward — by correlation (origin → reply)
 
-1. Open **Diagnostics › Message trace**.
+1. Open `/processes/trace` directly, or follow a deep link to `/processes/trace/:correlationId`.
 2. Pick from the **Recent traces** combo (last 10 — each option shows the business `correlation_id`
    *and* its tech `traceid`), or paste a `correlation_id` (mode `correlation`) and **Trace**.
 3. Read top → bottom: `received → workflow run → reply queued → reply delivered`.
@@ -122,7 +119,7 @@ addition (already shipped).
 | `tempoBaseUrl` | `""` | Tempo/Grafana explore base for the `traceid` link. Empty → link hidden. |
 | `temporalNamespace` | `default` | Temporal namespace for the deep link. |
 
-Permission: `diagnostics:read` (route + nav gated; admins bypass).
+Access: authenticated shell route (`authGuard`) plus component-level `diagnostics:read` gate. No route-level permission guard is currently implemented.
 
 ## Limitations (honest)
 
@@ -169,7 +166,7 @@ Frontend (`services/admin-console/src/app/`):
   verdict, unit-tested), `transport-topology.ts` (static pub/sub registry).
 - `core/services/message-trace.service.ts` — recent list, `getTrace`, `resolveCorrelation`.
 - `features/processes/trace/message-trace.component.ts` — the view (forward/reverse, search modes).
-- routes in `app.routes.ts`; nav in `layout/sidebar/sidebar.component.ts`; config in `environments/`.
+- routes in `app.routes.ts`; top sections/sub-nav in `layout/nav/nav.config.ts` and `layout/sub-nav/`; config in `environments/`.
 
 Backend (Option A — run keyed by correlation):
 - `packages/shared/src/workflow-schema.ts` — `correlation_id` column + index (idempotent).

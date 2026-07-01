@@ -1,3 +1,4 @@
+import "@angular/compiler";
 import { type ComponentFixture, TestBed } from "@angular/core/testing";
 import { provideNoopAnimations } from "@angular/platform-browser/animations";
 import {
@@ -6,9 +7,12 @@ import {
   provideRouter,
 } from "@angular/router";
 import { BehaviorSubject, of, throwError } from "rxjs";
-import { vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthService } from "../../../../core/services/auth.service";
-import { ConnectorCallService } from "../../../../core/services/connector-call.service";
+import {
+  ConnectorCallService,
+  type IConnectorCall,
+} from "../../../../core/services/connector-call.service";
 import type { IAdapterDto } from "../../../../core/services/http-adapter.service";
 import { HttpAdapterService } from "../../../../core/services/http-adapter.service";
 import { ConnectorDetailComponent } from "./connector-detail.component";
@@ -45,10 +49,14 @@ describe("ConnectorDetailComponent", () => {
   let hasPermission: ReturnType<typeof vi.fn>;
   let paramMap$: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
 
-  async function setup(adapterObs = of(makeAdapter()), permissionValue = true) {
+  async function setup(
+    adapterObs = of(makeAdapter()),
+    permissionValue = true,
+    callsObs = of<IConnectorCall[]>([])
+  ) {
     paramMap$ = new BehaviorSubject(convertToParamMap({ id: "adp-1" }));
     adapters = { get: vi.fn().mockReturnValue(adapterObs) };
-    calls = { recentCalls: vi.fn().mockReturnValue(of([])) };
+    calls = { recentCalls: vi.fn().mockReturnValue(callsObs) };
     hasPermission = vi.fn().mockReturnValue(permissionValue);
 
     await TestBed.configureTestingModule({
@@ -123,5 +131,28 @@ describe("ConnectorDetailComponent", () => {
     await setup(of(makeAdapter()), false);
     expect(fixture.componentInstance.canViewCalls()).toBe(false);
     expect(calls.recentCalls).not.toHaveBeenCalled();
+  });
+
+  it("shows cache hit calls even when current cache config is absent", async () => {
+    await setup(
+      of(makeAdapter({ defaultCache: undefined, endpoints: [] })),
+      true,
+      of([
+        {
+          adapterId: "adp-1",
+          endpointId: "ep-1",
+          method: "GET",
+          resolvedUrl: "https://api.example.com/data",
+          status: 200,
+          durationMs: 20,
+          cacheResult: "hit",
+          timestamp: "2026-06-01T12:00:00.000Z",
+        },
+      ])
+    );
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+    expect(text).toContain("Cache hits (1h)");
+    expect(text).toContain("hit");
   });
 });

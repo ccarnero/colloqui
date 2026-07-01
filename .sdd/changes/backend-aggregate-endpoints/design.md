@@ -8,7 +8,7 @@ Three new read-only aggregate endpoints to support the admin-console dashboard:
 |---|---|---|
 | `GET /channels/usage/summary` | channel-service | 24 h totals and per-channel breakdown |
 | `GET /workflows/summary` | workflow-service | Definitions, failing counts, execution stats, top runners |
-| `GET /adapters/usage?window=7d` | connector-admin | Top adapters by call count from TimescaleDB |
+| `GET /connectors/usage?window=7d` | connector-admin | Top adapters by call count from TimescaleDB |
 
 The adapter endpoint requires a new event pipeline in `usage-aggregator-service` (NATS → TimescaleDB) before the query layer in connector-admin can exist.
 
@@ -244,7 +244,7 @@ New methods added to `IExecutionsRepository`.
 
 ---
 
-## 4. Endpoint 3 — `GET /adapters/usage` (connector-admin + usage-aggregator-service)
+## 4. Endpoint 3 — `GET /connectors/usage` (connector-admin + usage-aggregator-service)
 
 ### 4.1 Architecture
 
@@ -535,7 +535,7 @@ After the query, the service loads adapter names via the existing `IAdaptersRepo
 
 ## 8. ADR-003: connector-admin as read-only consumer of usage DB
 
-**Context**: `GET /adapters/usage` lives in connector-admin. The raw usage data lives in the usage TimescaleDB owned by `usage-aggregator-service`. Two access patterns were available: (a) connector-admin queries the usage DB directly, (b) connector-admin calls an internal HTTP endpoint on usage-aggregator-service.
+**Context**: `GET /connectors/usage` lives in connector-admin. The raw usage data lives in the usage TimescaleDB owned by `usage-aggregator-service`. Two access patterns were available: (a) connector-admin queries the usage DB directly, (b) connector-admin calls an internal HTTP endpoint on usage-aggregator-service.
 
 **Decision**: connector-admin connects directly to the shared usage TimescaleDB as a read-only consumer. DDL ownership remains with `usage-aggregator-service`.
 

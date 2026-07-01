@@ -110,7 +110,7 @@ canary_deployments (
 | Kubernetes CustomObjects API | HTTPS | Create/update/delete Knative services, read revisions, apply traffic splits |
 | Kubernetes Core API | HTTPS | List namespaces (health check) |
 | MongoDB | TCP | Persist service registrations, routes, canary state |
-| NATS JetStream | NATS | Outbound publish of `service.{upserted,deleted}.v1` envelopes consumed by `adapter-service` internal-sync (best-effort, post-commit) |
+| NATS JetStream | NATS | Outbound publish of `service.{upserted,deleted}.v1` envelopes consumed by `connector-admin` internal-sync (best-effort, post-commit) |
 
 ### DI Tokens
 
@@ -189,7 +189,7 @@ Requires local MongoDB and Kubernetes cluster access.
 | **NATS JetStream** | Publish-only — emits `service.{upserted,deleted}.v1` envelopes after every register/update/remove on the per-tenant `INGRESS-<TENANT>` stream |
 | **api-gateway** | Polls `GET /routes` every 15s for dynamic tenant routing |
 | **tenant-service** | Provisions tenant namespaces where registered services are deployed |
-| **adapter-service** (consumer) | Materializes `service.upserted.v1` / `service.deleted.v1` events into per-tenant `http_adapters` mirrors via its `adapter-internal-sync` JetStream durable |
+| **connector-admin** (consumer) | Materializes `service.upserted.v1` / `service.deleted.v1` events into per-tenant `http_adapters` mirrors via its `adapter-internal-sync` JetStream durable |
 | **`@yoizen/shared`** | Knative API constants, `TENANT_HEADER`, `SERVICE_UPSERTED_EVENT_TYPE`, `SERVICE_DELETED_EVENT_TYPE`, `buildRegistryPlatformSubject` |
 | **`@yoizen/database`** | `JETSTREAM` / `JETSTREAM_MANAGER` providers, `ensureTenantIngressStream` helper |
 
@@ -227,7 +227,7 @@ ServicesService.{register|update|remove}
 - `false` (default): publisher short-circuits. No `streams.add`, no `js.publish`, no metric increment except an audit-friendly debug log. Use for safe rollout AND for emergency rollback without redeploying.
 - `true`: publisher emits to JetStream after the DB commit.
 
-Rollout order is interlocked: deploy `adapter-service-worker` → run `scripts/backfill-internal-mirrors.ts` once → flip flag to `true`.
+Rollout order is interlocked: deploy `connector-admin-worker` → run `scripts/backfill-internal-mirrors.ts` once → flip flag to `true`.
 
 ### Metrics
 

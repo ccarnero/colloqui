@@ -37,7 +37,7 @@ Legend: `[ ]` pending · `[x]` done · `[~]` deferred to a later slice/change.
   links (conditional on configured base URLs + resolved IDs).
 - [ ] Routes `processes/trace` and `processes/trace/:correlationId` (lazy), guarded with
   `diagnostics:read`.
-- [ ] Nav entry under Processes, hidden unless `hasPermission('diagnostics:read')`.
+- [ ] No Processes sub-nav entry is currently wired; if one is added, hide it unless `hasPermission('diagnostics:read')`.
 
 ### T5 — Executions entry point
 - [ ] Add "View chain" to the Workflow → Executions row → `routerLink` to

@@ -9,6 +9,14 @@
   "retryBackoffMs": 300,
   "healthCheckPath": "/fact",
   "tags": ["sample", "public", "no-auth"],
+  "defaultCache": {
+    "enabled": true,
+    "ttlSeconds": 300,
+    "methods": ["GET", "HEAD"],
+    "keyHeaders": [],
+    "keyQueryParams": "all",
+    "keyBody": false
+  },
   "endpoints": [
     { "label": "Get a random cat fact", "method": "GET", "path": "/fact" },
     { "label": "List cat facts (paginated)", "method": "GET", "path": "/facts" },

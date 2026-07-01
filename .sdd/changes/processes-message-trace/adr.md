@@ -47,7 +47,7 @@ delivery not confirmed" until health/tier-3 data exists).
 
 ## ADR-5: Role-gated, links conditional on config
 
-**Decision.** Gate the route + nav with `diagnostics:read`; render Temporal/Tempo links only when
+**Decision.** Gate the component view/data load with `diagnostics:read`; render Temporal/Tempo links only when
 their base URLs are configured.
 
 **Rationale.** The view exposes raw `correlation_id`/`causation_id`, internal NATS subjects, and

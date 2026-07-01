@@ -113,7 +113,7 @@ The **`EventEnvelope`** is CloudEvents-inspired and is the heart of the system: 
 5. Downstream consumers (audit, workflow, agent) re-inflate via `wrapHandler` and verify the SHA-256 checksum. Individual handlers never see `payload_inline: false`.
 
 ### b) Workflow execution
-`POST /workflows` → gateway → workflow-API → `workflow.start(runWorkflow)` in Temporal → 202 `{workflowId, runId}`. The Worker iterates actions: HTTP actions dispatch to the **connector-runtime** task queue; `jsFunction`/`serviceBusCall`/`channelSend`/`agentCall` run as local activities; `branch`/`conditional` are workflow-level control flow.
+`POST /workflows/:id/execute` → gateway → workflow-API → `workflow.start(runWorkflow)` in Temporal → 202 execution metadata. `POST /workflows` creates or updates the saved workflow definition; it does not start a run. The Worker iterates actions: HTTP actions dispatch to the **connector-runtime** task queue; `jsFunction`/`serviceBusCall`/`channelSend`/`agentCall` run as local activities; `branch`/`conditional` are workflow-level control flow.
 
 ### c) Tenant provisioning (async, durable)
 `POST /tenants` inserts a `pending` row, publishes `platform.tenant.provision.requested` (Nats-Msg-Id = tenant id for idempotency), returns 202. A durable consumer then runs phases wrapped in `runPhase(...)` so a hang shows as `phase=X status=started` with no matching `status=ok`. `INGRESS-<TENANT>` is created **before** the tenant is marked ready, guaranteeing downstream consumers can attach.

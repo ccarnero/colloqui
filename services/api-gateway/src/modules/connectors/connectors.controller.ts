@@ -53,6 +53,19 @@ export class ConnectorsController {
     });
   }
 
+  @Get("usage")
+  async usage(
+    @Req() req: ITenantScopedRequest,
+    @Query("window") window?: string,
+  ) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/connectors/usage",
+      tenantId: req[REQUEST_TENANT_KEY],
+      query: { window },
+    });
+  }
+
   @Get(":id")
   async get(@Req() req: ITenantScopedRequest, @Param("id") id: string) {
     return this.proxy.proxy({

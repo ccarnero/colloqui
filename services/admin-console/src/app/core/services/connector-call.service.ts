@@ -8,7 +8,15 @@ const EVENT_TYPE = "connector.endpoint_call.completed.v1";
 /** Fetch more than we need so client-side filter by adapterId doesn't under-deliver. */
 const FETCH_LIMIT = 200;
 
-export type ConnectorCacheResult = "hit" | "miss" | "bypass" | null;
+const CONNECTOR_CACHE_RESULT = {
+  HIT: "hit",
+  MISS: "miss",
+  BYPASS: "bypass",
+} as const;
+
+export type ConnectorCacheResult =
+  | (typeof CONNECTOR_CACHE_RESULT)[keyof typeof CONNECTOR_CACHE_RESULT]
+  | null;
 
 export interface IConnectorCall {
   readonly adapterId: string;
@@ -73,10 +81,7 @@ export class ConnectorCallService {
 
 function toCall(row: AuditRow): IConnectorCall | null {
   const rawPayload = row["payload"];
-  const payload =
-    typeof rawPayload === "string"
-      ? (JSON.parse(rawPayload) as Record<string, unknown>)
-      : ((rawPayload ?? {}) as Record<string, unknown>);
+  const payload = parsePayload(rawPayload);
   const adapterId = str(payload["adapterId"]);
   if (!adapterId) {
     return null;
@@ -88,7 +93,7 @@ function toCall(row: AuditRow): IConnectorCall | null {
     resolvedUrl: str(payload["resolvedUrl"]),
     status: num(payload["status"]),
     durationMs: num(payload["durationMs"]),
-    cacheResult: (str(payload["cacheResult"]) || null) as ConnectorCacheResult,
+    cacheResult: normalizeCacheResult(payload["cacheResult"]),
     timestamp: str(row["created_at"]) || str(row["createdAt"]),
     correlationId:
       str(row["correlation_id"]) || str(row["correlationId"]) || undefined,
@@ -102,6 +107,30 @@ function toCall(row: AuditRow): IConnectorCall | null {
         ? payload["cacheTtlSeconds"]
         : undefined,
   };
+}
+
+function parsePayload(rawPayload: unknown): Record<string, unknown> {
+  if (typeof rawPayload === "string") {
+    try {
+      const parsed = JSON.parse(rawPayload) as unknown;
+      return recordFieldUnknown(parsed) ?? {};
+    } catch {
+      return {};
+    }
+  }
+  return recordFieldUnknown(rawPayload) ?? {};
+}
+
+function normalizeCacheResult(v: unknown): ConnectorCacheResult {
+  const value = str(v).toLowerCase();
+  if (
+    value === CONNECTOR_CACHE_RESULT.HIT ||
+    value === CONNECTOR_CACHE_RESULT.MISS ||
+    value === CONNECTOR_CACHE_RESULT.BYPASS
+  ) {
+    return value;
+  }
+  return null;
 }
 
 function str(v: unknown): string {
@@ -126,5 +155,11 @@ function parseBodyField(v: unknown): unknown {
 function recordField(v: unknown): Record<string, string> | undefined {
   return v !== null && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, string>)
+    : undefined;
+}
+
+function recordFieldUnknown(v: unknown): Record<string, unknown> | undefined {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
     : undefined;
 }

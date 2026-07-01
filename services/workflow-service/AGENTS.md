@@ -29,12 +29,12 @@ src/
 ├── providers/
 │   ├── providers.module.ts                     # @Global() exporting TEMPORAL_CLIENT, NATS_CONNECTION, WorkflowTenantConnectionManager
 │   ├── temporal.provider.ts                    # TEMPORAL_CLIENT token, TenantId search attribute registration
-│   └── tenant-connection-manager.ts            # Per-tenant MongoDB pool manager (subclass of @yoizen/database TenantConnectionManager)
+│   └── tenant-connection-manager.ts            # Per-tenant Postgres pool manager (subclass of @yoizen/database TenantConnectionManager)
 ├── modules/
 │   ├── workflows/
 │   │   ├── workflows.module.ts
-│   │   ├── workflows.controller.ts             # POST /workflows (202), GET /workflows, GET /workflows/:id
-│   │   ├── workflows.service.ts                # Start workflow via Temporal, query status, list by tenant
+│   │   ├── workflows.controller.ts             # definition CRUD, POST /:id/execute, execution queries
+│   │   ├── workflows.service.ts                # Persist definitions, start executions via Temporal, query execution rows/status
 │   │   └── dto/
 │   │       ├── create-workflow.dto.ts          # CreateWorkflowDto (name, application, request, actions)
 │   │       ├── execute-workflow.dto.ts         # Execute workflow request shape
@@ -75,10 +75,14 @@ src/
 
 | Activity | Task Queue | Description |
 |----------|-----------|-------------|
-| `endpointCall` | `http-adapter` (remote) | HTTP call via `http-adapter` |
+| `endpointCall` | `connector-runtime` (remote) | External HTTP call via connector-runtime |
+| `serviceCall` | `connector-runtime` (remote) | Internal service HTTP call via connector-runtime |
+| `agentCall` | `workflow-orchestrator` (local proxy) | YoizenClaw agent execution with workflow variables |
 | `jsFunction` | `workflow-orchestrator` (local) | Inline JS evaluation via `new Function()` |
 | `serviceBusCall` | `workflow-orchestrator` (local) | NATS publish with tenant header |
-| `branch` | — (workflow-level) | Parallel execution of multiple action branches |
+| `channelSend` | `workflow-orchestrator` (local) | Channel delivery command publish |
+| `branch` | — (workflow-level) | Parallel execution of named action lists |
+| `conditional` | — (workflow-level) | First matching conditional branch or default |
 
 ### Template Resolution
 
@@ -89,9 +93,9 @@ Actions support `{{path.to.value}}` templates resolved against the `WorkflowExec
 
 The same resolution applies to `serviceCall` `path` and to string values inside `serviceCall` `args.data` (JSON body) before the HTTP worker runs.
 
-### Per-tenant MongoDB storage
+### Per-tenant Postgres storage
 
-`workflow_definitions` and `workflow_executions` are stored in **each tenant's own MongoDB instance** (one per Kubernetes namespace: `mongo.{tenant}-{env}-ns.svc.cluster.local`), not in the platform MongoDB. The DB itself is the tenant boundary, so neither table carries a `tenant_id` column.
+`workflow_definitions` and `workflow_executions` are stored in **each tenant's own Postgres instance** (one per Kubernetes namespace: `postgres.{tenant}-{env}-ns.svc.cluster.local`), not in the platform Postgres. The DB itself is the tenant boundary, so neither table carries a `tenant_id` column.
 
 - The canonical DDL lives in `@yoizen/shared` as `WORKFLOW_SCHEMA_SQL` (single source of truth).
 - `tenant-service` bakes `WORKFLOW_SCHEMA_SQL` into each tenant's `init.sql` ConfigMap at provisioning time.
@@ -101,10 +105,10 @@ The same resolution applies to `serviceCall` `path` and to string values inside 
 
 ### Data Flow
 
-1. **Start workflow**: `POST /workflows` -> validate DTO -> `temporal.workflow.start('runWorkflow', ...)` with `TenantId` search attribute -> 202 Accepted
-2. **Workflow execution**: `runWorkflow()` iterates actions sequentially, resolves templates, dispatches to activities
-3. **Query status**: `GET /workflows/:id` -> `temporal.workflow.getHandle(id).describe()` -> return status/result
-4. **List workflows**: `GET /workflows` -> Temporal `workflow.list()` with `TenantId` filter
+1. **Create definition**: `POST /workflows` -> validate DTO -> persist workflow definition -> 201 Created
+2. **Start execution**: `POST /workflows/:id/execute` -> load definition -> `temporal.workflow.start('runWorkflow', ...)` with `TenantId` search attribute -> 202 Accepted
+3. **Query execution**: `GET /workflows/:id/executions/:executionId` -> read execution row, `workflow.getHandle(...).describe()`, return status/result
+4. **List definitions/executions**: `GET /workflows` lists definitions; `GET /workflows/:id/executions` lists runs for one definition
 
 ### Activity Idempotency Contract
 
@@ -140,7 +144,7 @@ NATS is not registered in `ProvidersModule`. The service-bus activity (`service-
 
 | Target | Protocol | Direction | Purpose |
 |--------|----------|-----------|---------|
-| Temporal Server | gRPC | Outbound | Start/query/list workflows |
+| Temporal Server | gRPC | Outbound | Start/query workflow executions |
 | NATS | TCP | Outbound | Service bus activity publishes to NATS subjects |
 
 ### DI Tokens
@@ -148,7 +152,7 @@ NATS is not registered in `ProvidersModule`. The service-bus activity (`service-
 | Token | Type | Source |
 |-------|------|--------|
 | `TEMPORAL_CLIENT` | `Client` (@temporalio/client) | `temporal.provider.ts` |
-| `WorkflowTenantConnectionManager` | per-tenant `MongoClient` pool manager | `tenant-connection-manager.ts` |
+| `WorkflowTenantConnectionManager` | per-tenant `Sql` pool manager | `tenant-connection-manager.ts` |
 | `NATS_CONNECTION` | `NatsConnection` | `@yoizen/database` (via `providers.module.ts`) |
 
 ## Configuration
@@ -187,9 +191,9 @@ Readiness probe: `GET /health` on port 3000
 - **Workflow ID format**: `{tenantId}:{name}:{nanoid()}` for tenant-scoped uniqueness
 - **Search attributes**: `TenantId` indexed keyword for tenant-scoped workflow queries
 - **Template resolution**: `{{path.to.value}}` syntax in action args, resolved at execution time
-- **Activity retry**: 3 attempts with 30s start-to-close timeout for all activities
+- **Activity retry**: local activities 3 attempts/30s; endpointCall/serviceCall 5 attempts on connector-runtime; agentCall 3 attempts/15m
 - **Parallel branches**: `branch` action type executes sub-action lists concurrently via `Promise.all`
-- **Worker concurrency**: max 100 activity tasks, 50 workflow tasks, 30s shutdown grace
+- **Worker concurrency**: max 200 activity tasks, 150 workflow tasks, 30s shutdown grace
 
 ## Common Tasks
 
@@ -219,6 +223,6 @@ Requires local Temporal server (`localhost:7233`) and NATS (`nats://localhost:42
 |---------|-------------|
 | **Temporal Server** | Workflow execution engine (gRPC) |
 | **NATS** | Service bus activity publishes to NATS subjects |
-| **http-adapter** | Executes generic HTTP activities for `endpointCall` / `serviceCall` on the `http-adapter` task queue |
+| **connector-runtime** | Executes `endpointCall` and `serviceCall` activities on the `connector-runtime` task queue |
 | **api-gateway** | Upstream proxy (workflow endpoints proxied through the gateway) |
 | **`@yoizen/shared`** | Workflow types, task queue names, `TENANT_HEADER` |

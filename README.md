@@ -56,7 +56,11 @@ ADMIN_EMAIL=admin@yoizen.test ADMIN_PASSWORD=admin bash scripts/smoke-test.sh
 E2E_CLIENT_ID=... E2E_CLIENT_SECRET=... bash scripts/smoke-test.sh
 ```
 
-Runs the e2e workflow suite (`tests/e2e/workflow.e2e.spec.ts` + `auth.setup.ts`) against the dev cluster.
+Runs a Kubernetes readiness preflight against the dev cluster: every configured
+Knative Service and plain worker Deployment must be Ready. It does **not** run
+the workflow/browser e2e suites. Use `scripts/e2e-http-workflow.sh` for the
+HTTP workflow smoke path, and the Playwright specs under `e2e/` for browser
+flows.
 
 ### Optional: MongoDB storage engine
 

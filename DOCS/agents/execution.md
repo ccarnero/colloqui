@@ -78,8 +78,10 @@ evt.*.ai-agent-gateway.automation.platform.internal.execution_requested.v1
 
 - `agent-ai-service` consumes `execution_requested` and routes to `ExecutionHandler`.
 - On start it emits `execution_started`.
-- On success it emits `execution_completed` with `result.reply` and optional tool call data.
-- On exception it emits `execution_failed` with `result.errorCode` and `result.errorMessage`.
+- On success it emits `execution_completed` with top-level result fields:
+  `response`, `usage`, `costUsd`, `toolCalls`, `toolResults`, `model`, and
+  `provider`.
+- On exception it emits `execution_failed` with a top-level `error` string.
 
 ## Failure Modes
 

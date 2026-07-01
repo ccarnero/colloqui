@@ -32,7 +32,7 @@ Requires: PostgreSQL, Redis, `JWT_SECRET` env var.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/auth/tenant-users` | Platform scope | Create a tenant user |
+| `POST` | `/auth/tenant-users` | Platform or matching tenant_admin via gateway; internal controller requires request body only | Create a tenant user |
 | `GET` | `/auth/tenant-users` | Platform or matching tenant scope | List users for tenant (via `x-yoizen-tenant`) |
 | `GET` | `/auth/tenant-users/:id` | Platform or matching tenant scope | Get a single tenant user |
 | `PATCH` | `/auth/tenant-users/:id` | Platform scope or tenant_admin | Update role, display name, or active status |

@@ -38,6 +38,21 @@ Knowledge bases are standalone admin resources, but current runtime consumption 
 agents via `knowledge_base_ids`. Runtime KB search also needs OpenAI embeddings available in
 `agent-ai-service`.
 
+## hosted-services-api
+
+A shell sample for the Hosted Services API: it registers a Knative-backed service through
+`/api/registry/services`, creates a dynamic route, and invokes it through `api-gateway`.
+
+```bash
+cd sdk/samples/hosted-services-api
+cp .env.example .env
+./setup.sh
+./run.sh
+```
+
+The sample uses the same idempotent setup style as `http-fanout-telegram`: reruns reuse/update the
+service and route; `RECREATE=1 ./setup.sh` rebuilds them.
+
 ## http-bridge
 
 A tiny `node:http` server that **receives a message over HTTP and forwards it into the

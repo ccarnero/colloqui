@@ -463,7 +463,7 @@ Actions support `{{path.to.value}}` template resolution against the execution co
 | **Task Queue** | `CONNECTOR_RUNTIME_TASK_QUEUE` (`connector-runtime`) |
 | **Config Source** | `connector-admin` REST API via `AdapterClient` (Redis SWR cache) |
 
-Executes `endpointCall` and `serviceCall` via `tracedFetch` with automatic `x-yoizen-tenant` header injection, connector resolution, response caching, and internal service mirror lookup. Max 200 concurrent activity tasks.
+Executes `endpointCall` and `serviceCall` via `tracedFetch` with automatic `x-yoizen-tenant` header injection, connector resolution, response caching, and internal service mirror lookup. Max 400 concurrent activity tasks per worker pod.
 
 ---
 

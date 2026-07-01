@@ -113,7 +113,10 @@ Controller: `services/agent-admin-service/src/modules/jobs/jobs.controller.ts`.
 
 ### `agent-scheduler-service` — Read-only (`/admin`)
 
-Protected by `AdminApiKeyGuard` (requires `X-Admin-Api-Key` header matching `ADMIN_API_KEY` env var).
+Protected by `AdminApiKeyGuard` when `ADMIN_API_KEY` is configured. Requests
+must send `x-internal-api-key` with the same value. If `ADMIN_API_KEY` is unset,
+the admin endpoints are disabled and return forbidden instead of allowing
+unauthenticated access.
 
 | Method | Path | Description |
 |---|---|---|

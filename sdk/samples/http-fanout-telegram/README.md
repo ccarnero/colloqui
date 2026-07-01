@@ -38,8 +38,8 @@ Verified against `services/workflow-service/src/temporal/workflows.ts`:
 | # | From | Transport | Subject / URL | To |
 |---|------|-----------|---------------|----|
 | 1 | HTTP client | HTTPS POST · `x-http-channel-token: <appSecret>` | `/api/webhooks/http/acme/http-fanout-telegram` | api-gateway |
-| 2 | api-gateway | NATS JetStream · stream `INGRESS-acme` | `evt.acme.api-gateway.messaging.http.webhook.webhook_received.v1` | channel-service-worker |
-| 3 | channel-service-worker (ingress) | NATS JetStream · stream `INGRESS-acme` | `evt.acme.channel-service.messaging.http.http.received.v1` | workflow-service |
+| 2 | api-gateway | NATS JetStream · stream `INGRESS-ACME` | `evt.acme.api-gateway.messaging.http.webhook.webhook_received.v1` | channel-service-worker |
+| 3 | channel-service-worker (ingress) | NATS JetStream · stream `INGRESS-ACME` | `evt.acme.channel-service.messaging.http.http.received.v1` | workflow-service |
 | 4 | workflow-service | Temporal gRPC | task queue `workflow-orchestrator` · workflow `runWorkflow` | workflow-service worker |
 | 5 | workflow-service worker · `branch` (parallel) | Temporal task dispatch | task queue `connector-runtime` | connector-runtime (×3 concurrent) |
 | 5a | connector-runtime | HTTPS GET | `https://jsonplaceholder.typicode.com/posts/1` | JSONPlaceholder |
@@ -48,7 +48,7 @@ Verified against `services/workflow-service/src/temporal/workflows.ts`:
 | 6 | workflow-service worker · `jsFunction` activity | local (in-process) | task queue `workflow-orchestrator` | workflow-service worker |
 | 7 | workflow-service worker · `endpointCall` (postToHttpbin) | Temporal task dispatch | task queue `connector-runtime` | connector-runtime |
 | 7a | connector-runtime | HTTPS POST | `https://httpbin.org/post` | httpbin |
-| 8 | workflow-service worker · `channelSend` activity | NATS core publish · captured by `INGRESS-acme` | `evt.acme.channel-service.messaging.telegram.telegram.send.v1` | channel-service-worker |
+| 8 | workflow-service worker · `channelSend` activity | NATS core publish · captured by `INGRESS-ACME` | `evt.acme.channel-service.messaging.telegram.telegram.send.v1` | channel-service-worker |
 | 9 | channel-service-worker (egress) | HTTPS POST | `https://api.telegram.org/bot<token>/sendMessage` | Telegram |
 
 > Steps 5a–5c run concurrently via `Promise.all` inside a `branch` action. `endpointCall` activities (hops 5 and 7) are dispatched to `connector-runtime` — a separate service with its own Temporal task queue. `jsFunction` and `channelSend` run in-process on the `workflow-orchestrator` worker.

@@ -51,8 +51,6 @@ this.totalCount.set(null);
 
 Add import: `forkJoin` from `rxjs`, `UsageDirection`, `IUsageTotalsRow` from the model.
 
-Add a private `usageTotalsLoaded = false` guard field.
-
 Add a private helper before the class closing brace (or as a module-level function):
 ```ts
 function sumEvents(rows: IUsageTotalsRow[], direction: UsageDirection): number {
@@ -63,8 +61,6 @@ function sumEvents(rows: IUsageTotalsRow[], direction: UsageDirection): number {
 Add method `loadUsageTotals()`:
 ```ts
 loadUsageTotals(): void {
-  if (this.usageTotalsLoaded) return;
-  this.usageTotalsLoaded = true;
   const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const to   = new Date().toISOString();
   forkJoin({
@@ -87,9 +83,9 @@ loadUsageTotals(): void {
 }
 ```
 
-Also add `this.usageTotalsLoaded = false; this.loadUsageTotals();` inside `reload()`.
+Also call `this.loadUsageTotals();` inside `reload()`. Current code re-fetches usage totals on every `loadUsageTotals()`/`reload()` call; there is no idempotency guard.
 
-**Acceptance**: Calling `loadUsageTotals()` twice only fires 4 HTTP requests (guard works). On success, `messagesIn24h()` is a non-null number. On error, all 5 signals remain `null`.
+**Acceptance**: Each `loadUsageTotals()` call fires the 4 usage-total HTTP requests. On success, `messagesIn24h()` is a non-null number. On error, all 5 signals remain `null`.
 
 ---
 
@@ -288,9 +284,11 @@ d. Remove `workflowsActive` and `workflowsFailing` KPI card (the second card tha
 
    Alternatively: if the layout requires 3 KPI cards, the third "Services" card already exists. Just remove the now-null "Workflows active" card and leave "Executions today" + "Services". Confirm count of KPI cards before removing.
 
-e. Replace hardcoded `topWorkflows()`:
+e. Wire `topWorkflows()` to `metrics.topWorkflows()` so the landing renders workflow execution counts from `/workflows/executions/counts` joined with `/workflows` definitions:
 ```ts
-protected readonly topWorkflows = computed<ITopWorkflow[]>(() => []);
+protected readonly topWorkflows = computed<ITopWorkflow[]>(() =>
+  this.metrics.topWorkflows()
+);
 ```
 
 f. Add `@empty` block to the `@for` loop:
@@ -316,7 +314,7 @@ i. Pass `emptyText` to `ActivityFeedComponent`:
 
 j. Remove `failingSub()` computed if it is no longer referenced in the template.
 
-**Acceptance**: Processes landing shows `workflowsTotal` real count. Execution KPI shows `—` when signals are null. "Top workflows" shows "No data yet". "Recent executions" shows "No recent executions".
+**Acceptance**: Processes landing shows `workflowsTotal` real count. Execution KPI shows `—` when signals are null. "Top workflows" shows fetched workflow counts when available and "No data yet" only when the metrics service has no rows. "Recent executions" shows "No recent executions".
 
 ---
 

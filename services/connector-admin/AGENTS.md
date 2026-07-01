@@ -1,10 +1,10 @@
-# AGENTS.md - Adapter Service
+# AGENTS.md - Connector Admin
 
 ## Project Overview
 
-The Adapter Service manages multi-tenant HTTP adapter configurations and their endpoints. An adapter encapsulates connection details for an external (or internal) HTTP service: base URL, authentication (none, API key, bearer, basic, OAuth2 client credentials), custom headers, timeout, retry policy, and health check path. Each adapter can have multiple endpoints (label + method + path). Other services consume adapter configs at runtime through the shared `AdapterClient` class, which fetches from this service's REST API and caches in Redis with stale-while-revalidate semantics.
+Connector Admin manages multi-tenant HTTP connector configurations and their endpoints. An adapter encapsulates connection details for an external (or internal) HTTP service: base URL, authentication (none, API key, bearer, basic, OAuth2 client credentials), custom headers, timeout, retry policy, and health check path. Each adapter can have multiple endpoints (label + method + path). Other services consume connector configs at runtime through the shared `AdapterClient` class, which fetches from this service's REST API and caches in Redis with stale-while-revalidate semantics.
 
-Adapter state lives **inside each tenant's own MongoDB instance** (provisioned by `tenant-service`), so the database itself is the tenant boundary — there is no `tenant_id` column, no cross-tenant fan-in, and no shared platform MongoDB. An internal-sync consumer ingests registry-service NATS events and materializes internal-adapter mirrors in the target tenant's DB.
+Connector state lives in the selected per-tenant storage engine. Postgres is the default; Mongo is optional. The tenant database is the tenant boundary — there is no cross-tenant fan-in in connector queries. An internal-sync consumer ingests registry-service NATS events and materializes internal-adapter mirrors in the target tenant's DB.
 
 ## Storage engines
 
@@ -17,7 +17,7 @@ Supports **Postgres** (default) and **Mongo** per-tenant via `IAdaptersRepositor
 | Runtime | Bun 1.3 |
 | Framework | NestJS 11 + Fastify |
 | Language | TypeScript 5.7 (strict) |
-| Database | MongoDB 7 via official `mongodb` driver — one instance per tenant |
+| Database | Postgres by default; MongoDB optional via `DB_ENGINE=mongo` |
 | Messaging | NATS (`nats` package, used by internal-sync consumer) |
 | Validation | `class-validator` + `class-transformer` |
 | Observability | `@yoizen/observability` (Pino, OpenTelemetry, HTTP metrics) |
@@ -32,7 +32,7 @@ src/
 ├── app.module.ts                    # Root module: ObservabilityModule, ProvidersModule, AdaptersModule, InternalSyncModule, HealthModule
 ├── providers/
 │   ├── providers.module.ts          # @Global() exporting AdapterTenantConnectionManager + NATS providers
-│   ├── tenant-connection-manager.ts # Per-tenant MongoDB pool manager (subclass of @yoizen/database TenantConnectionManager)
+│   ├── tenant-connection-manager.ts # Per-tenant storage connection manager (subclass of @yoizen/database TenantConnectionManager)
 │   └── nats.provider.ts             # NATS_CONNECTION, JETSTREAM_MANAGER, JETSTREAM factories
 ├── modules/
 │   ├── adapters/
@@ -87,7 +87,7 @@ Client (via API Gateway proxy)
   -> AdaptersController: validate DTO, extract tenantId
   -> AdaptersService: managed-by guard, endpoint aggregation
   -> AdaptersRepository.sqlFor(tenantId) -> AdapterTenantConnectionManager.ensureSchema(tenantId)
-  -> MongoDB (per-tenant pool at mongo.<tenantId>-<env>-ns.svc.cluster.local)
+  -> configured per-tenant storage engine (Postgres by default; Mongo optional)
   -> JSON response (AdapterConfig + nested endpoints; tenantId populated from the request)
 ```
 
@@ -95,25 +95,25 @@ Client (via API Gateway proxy)
 
 ```
 registry-service.service.upserted.v1 / service.deleted.v1 (cross-tenant stream)
-  -> JetStream durable consumer (queue: adapter-service)
+  -> JetStream durable consumer (connector-admin worker; durable `adapter-internal-sync`)
   -> InternalSyncService: extract envelope.data.tenantId
   -> AdaptersRepository.upsertMirror / deleteMirrorByServiceName
-  -> per-tenant MongoDB (context=internal, managed_by=registry-service)
+  -> per-tenant connector table/collection (context=internal, managed_by=registry-service)
 ```
 
 ### HTTP Endpoints
 
 | Method | Path | Handler | Description |
 |--------|------|---------|-------------|
-| `POST` | `/adapters` | `create` | Insert adapter (+ optional inline endpoints) |
-| `GET` | `/adapters` | `list` | List adapters for tenant, optional `?context=`, `?tag=`, `?name=` filters |
-| `GET` | `/adapters/:id` | `get` | Fetch adapter with endpoints |
-| `PATCH` | `/adapters/:id` | `update` | Dynamic partial update (managed adapters: rejects registry-owned fields only) |
-| `DELETE` | `/adapters/:id` | `remove` | Delete adapter (FK cascade deletes endpoints) |
-| `POST` | `/adapters/:id/endpoints` | `addEndpoint` | Add endpoint to adapter |
-| `PATCH` | `/adapters/:id/endpoints/:epId` | `updateEndpoint` | Partial endpoint update |
-| `DELETE` | `/adapters/:id/endpoints/:epId` | `removeEndpoint` | Remove endpoint |
-| `GET` | `/health` | `check` | `{ status, nats, mongo }` |
+| `POST` | `/connectors` | `create` | Insert connector (+ optional inline endpoints) |
+| `GET` | `/connectors` | `list` | List connectors for tenant, optional `?context=`, `?tag=`, `?name=`, `?limit=`, `?offset=` filters |
+| `GET` | `/connectors/:id` | `get` | Fetch connector with endpoints |
+| `PATCH` | `/connectors/:id` | `update` | Dynamic partial update (managed connectors: rejects registry-owned fields only) |
+| `DELETE` | `/connectors/:id` | `remove` | Delete connector (FK cascade deletes endpoints) |
+| `POST` | `/connectors/:id/endpoints` | `addEndpoint` | Add endpoint to connector |
+| `PATCH` | `/connectors/:id/endpoints/:epId` | `updateEndpoint` | Partial endpoint update |
+| `DELETE` | `/connectors/:id/endpoints/:epId` | `removeEndpoint` | Remove endpoint |
+| `GET` | `/health` | `check` | `{ status, nats, postgres }` or `{ status, nats, mongo }` depending on storage engine |
 
 ### DI Tokens
 
@@ -201,7 +201,7 @@ Auth resolution is performed by `AdapterClient` in consuming services, not by th
 
 ### Knative
 
-- Image: `dev.local/adapter-service:local`
+- Image: `dev.local/connector-admin:local`
 - Autoscaling: min 1, max 5
 - Readiness probe: `GET /health` on port 3000
 
@@ -260,7 +260,7 @@ Requires at least one per-tenant Postgres instance reachable at `mongo.<tenantId
 | **tenant-service** | Provisions per-tenant Postgres and bakes `ADAPTER_SCHEMA_SQL` into each tenant's `init.sql` |
 | **registry-service** | Publishes `service.upserted.v1` / `service.deleted.v1` NATS events consumed by internal-sync |
 | **NATS JetStream** | Event bus for internal-sync (per-tenant `INGRESS-<TENANT>` streams) |
-| **api-gateway** | Upstream proxy (adapter endpoints proxied through the gateway at `/adapters`) |
+| **api-gateway** | Upstream proxy (connector endpoints proxied through the gateway at `/api/connectors`) |
 | **`@yoizen/shared`** | `TENANT_HEADER`, `AdapterConfig` interface, `ADAPTER_SCHEMA_SQL`, `ADAPTER_MANAGED_BY_REGISTRY` |
 | **`@yoizen/database`** | `TenantConnectionManager`, `NATS_CONNECTION`, `JETSTREAM` / `JETSTREAM_MANAGER`, `MultiTenantConsumerManager`, `ensureTenantIngressStream`, `getNatsTenantPostgresHealthStatus` |
 | **`@yoizen/observability`** | Pino logger, OpenTelemetry tracing, HTTP metrics hooks, `bootstrapSplitService`, `isWorkerMode` |
@@ -281,14 +281,14 @@ Requires at least one per-tenant Postgres instance reachable at `mongo.<tenantId
 
 ## Topology (api / worker split)
 
-`adapter-service` ships as **two workloads** with the same image, selected at runtime via `SERVICE_MODE`:
+`connector-admin` ships as **two workloads** with the same image, selected at runtime via `SERVICE_MODE`:
 
 | Workload | Kind | `SERVICE_MODE` | Purpose | Scaling |
 |----------|------|-----------------|---------|---------|
-| `adapter-service-api` | `serving.knative.dev/v1.Service` | `api` | HTTP CRUD endpoints (`/adapters`, `/health`, `/healthz`, `/readyz`) | KPA. `min-scale: "1"` in prod, `"0"` in non-prod overlays. |
-| `adapter-service-worker` | `apps/v1.Deployment` | `worker` | Pull-based JetStream consumer (`adapter-internal-sync`). No HTTP CRUD. | Fixed 1 replica in developer mode (no autoscaling). |
+| `connector-admin-api` | `serving.knative.dev/v1.Service` | `api` | HTTP CRUD endpoints (`/connectors`, `/health`, `/healthz`, `/readyz`) | KPA. `min-scale: "1"` in prod, `"0"` in non-prod overlays. |
+| `connector-admin-worker` | `apps/v1.Deployment` | `worker` | Pull-based JetStream consumer (`adapter-internal-sync`). No HTTP CRUD. | Fixed 1 replica in developer mode (no autoscaling). |
 
-Bootstrap is unified through `bootstrapSplitService({ baseServiceName: "adapter-service", module: AppModule, … })` from `@yoizen/observability`. Missing or unknown `SERVICE_MODE` (anything outside `["api", "worker"]`) is a fatal startup error.
+Bootstrap is unified through `bootstrapSplitService({ baseServiceName: "connector-admin", module: AppModule, … })` from `@yoizen/observability`. Missing or unknown `SERVICE_MODE` (anything outside `["api", "worker"]`) is a fatal startup error.
 
 ### Internal sync durable contract
 
@@ -329,8 +329,8 @@ The `MultiTenantConsumerManager` is constructed with `ensureOnly: !isWorkerMode(
 The migration is reversible without redeploying source code:
 
 1. Set `REGISTRY_EMIT_ADAPTER_SYNC=false` on `registry-service` env. Publisher short-circuits; no broker contact.
-2. Scale `adapter-service-worker` Deployment to `replicas: 0`.
-3. `adapter-service-api` keeps serving HTTP CRUD throughout — its `/readyz` does not depend on NATS.
+2. Scale `connector-admin-worker` Deployment to `replicas: 0`.
+3. `connector-admin-api` keeps serving HTTP CRUD throughout — its `/readyz` does not depend on NATS.
 
 To re-enable: deploy registry first, run `scripts/backfill-internal-mirrors.ts` once to catch drift, then flip `REGISTRY_EMIT_ADAPTER_SYNC=true` and scale the worker Deployment back up.
 

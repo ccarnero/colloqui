@@ -64,12 +64,13 @@ This is a **separate platform service** (not tenant-scoped) that:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `3010` | HTTP server port |
+| `PORT` | `3000` | HTTP server port |
 | `NATS_URL` | `nats://localhost:4222` | NATS server URL |
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
 | `PLATFORM_ENVIRONMENT` | `dev` | Environment name |
 | `RECONCILE_INTERVAL_MS` | `30000` | Job reconciliation interval |
-| `POSTGRES_PASSWORD` | (required) | Platform DB password for leader election |
+| `ADMIN_API_KEY` | unset | Enables `/admin/*` endpoints when set; clients must send `x-internal-api-key` |
+| `LEADER_ELECTION_POSTGRES_URL` | unset | PostgreSQL connection URL used for leader-election advisory locks |
 
 ## API Endpoints
 
@@ -79,6 +80,9 @@ This is a **separate platform service** (not tenant-scoped) that:
 | GET | `/admin/jobs` | List all active schedules across tenants |
 | GET | `/admin/executions` | Recent execution history |
 | GET | `/admin/tenants` | List connected tenants |
+
+`/admin/*` endpoints require `x-internal-api-key: <ADMIN_API_KEY>`. If
+`ADMIN_API_KEY` is unset, admin endpoints are disabled.
 
 ## Running Locally
 

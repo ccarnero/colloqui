@@ -15,7 +15,7 @@ Supports **Postgres** (default) and **Mongo** for agents, jobs, job-executions, 
 | Runtime | Bun 1.3 |
 | Framework | NestJS 11 + Fastify |
 | Language | TypeScript 5.7 (strict) |
-| Database | Per-tenant MongoDB via official `mongodb` driver |
+| Database | Per-tenant PostgreSQL by default; MongoDB optional with `DB_ENGINE=mongo` |
 | Messaging | NATS JetStream (publisher only) |
 | Validation | `class-validator` + `class-transformer` |
 | Shared | `@yoizen/shared` (workspace: `packages/shared/`) |
@@ -30,7 +30,7 @@ src/
 ├── guards/
 │   └── tenant.guard.ts                         # Re-exports TenantGuard from @yoizen/database
 ├── providers/
-│   ├── tenant-connection-manager.ts            # Per-tenant MongoDB pools (Map<string, MongoClient>)
+│   ├── tenant-connection-manager.ts            # Per-tenant DB pools via @yoizen/database
 │   └── nats.provider.ts                        # NATS_CONNECTION, JETSTREAM_MANAGER, NatsPublisher
 └── modules/
     ├── agents/
@@ -53,13 +53,14 @@ src/
     │   └── jobs.dto.ts                         # CreateJobDto, UpdateJobDto, TriggerJobDto
     ├── config-files/
     │   ├── config-files.module.ts
-    │   ├── config-files.controller.ts          # GET/PUT + deploy endpoint
+    │   ├── config-files.controller.ts          # path-based GET/PUT + deploy endpoint
     │   ├── config-files.service.ts             # Business logic, version increment
-    │   ├── config-files.repository.ts          # SQL queries
-    │   └── config-files.dto.ts                 # UpdateConfigFileDto, DeployConfigFilesDto
+    │   ├── config-files.postgres.repository.ts # Postgres implementation
+    │   ├── config-files.mongo.repository.ts    # Optional Mongo implementation
+    │   └── config-files.dto.ts                 # CreateConfigFileDto, DeployConfigFilesDto
     ├── adapters/
     │   ├── adapters.controller.ts              # GET /admin/adapters, GET /admin/adapters/:id
-    │   └── adapters.service.ts                 # Proxy to adapter-service
+    │   └── adapters.service.ts                 # Proxy to connector-admin; ADAPTER_SERVICE_URL is legacy fallback
     ├── runtime/
     │   ├── runtime.module.ts
     │   ├── runtime.controller.ts               # GET /runtime/status
@@ -78,14 +79,14 @@ test/
 | File | Purpose |
 |------|---------|
 | `src/app.module.ts` | @Global() module exporting all providers (TenantConnectionManager, NatsPublisher) |
-| `src/providers/tenant-connection-manager.ts` | Lazy pool creation per tenant; connects to `mongo.{tenantId}-{env}-ns.svc.cluster.local` |
+| `src/providers/tenant-connection-manager.ts` | Lazy per-tenant DB pool creation through `@yoizen/database` |
 | `src/providers/nats.provider.ts` | NATS connection, JetStream manager, NatsPublisher with event methods |
 | `src/modules/agents/agents.service.ts` | Agent CRUD + publish/unpublish logic with NATS events |
 | `src/modules/credentials/credentials.service.ts` | Credential CRUD with placeholder encryption |
 | `src/modules/jobs/jobs.service.ts` | Job CRUD + scheduling + manual trigger |
 | `src/modules/config-files/config-files.service.ts` | Config file management + deploy sync |
 | `src/modules/runtime/runtime.service.ts` | Runtime status and metrics |
-| `src/modules/health/health.controller.ts` | Health checks for MongoDB connectivity |
+| `src/modules/health/health.controller.ts` | Health checks for configured storage engine and service dependencies |
 
 ## API Endpoints
 
@@ -139,9 +140,9 @@ test/
 
 | Method | Endpoint | Description | Request Headers | Request Body | Query Params |
 |--------|----------|-------------|-----------------|--------------|--------------|
-| GET | `/admin/config-files` | List all config files | `x-yoizen-tenant` | - | `format`, `is_active`, `limit`, `offset` |
-| GET | `/admin/config-files/:id` | Get config file by ID | `x-yoizen-tenant` | - | - |
-| PUT | `/admin/config-files/:id` | Update config file | `x-yoizen-tenant` | `UpdateConfigFileDto` | - |
+| GET | `/admin/config-files` | List all config files | `x-yoizen-tenant` | - | `limit`, `offset` |
+| GET | `/admin/config-files/file` | Get config file by `path` | `x-yoizen-tenant` | - | `path` |
+| PUT | `/admin/config-files` | Create or update by `path`; bumps version on update | `x-yoizen-tenant` | `CreateConfigFileDto` | - |
 | POST | `/admin/config-files/deploy` | Deploy config files to runtime | `x-yoizen-tenant` | `DeployConfigFilesDto` | - |
 
 ### Runtime Module (`/admin/runtime`)
@@ -166,7 +167,10 @@ test/
 | GET | `/admin/adapters` | List all adapters | `x-yoizen-tenant` | - | - |
 | GET | `/admin/adapters/:id` | Get adapter by ID | `x-yoizen-tenant` | - | - |
 
-Proxy endpoints that forward requests to the adapter-service. Used by the admin console UI to populate adapter/endpoint dropdowns in the tool configuration form.
+Proxy endpoints that forward requests to connector-admin. Used by the admin
+console UI to populate adapter/endpoint dropdowns in the tool configuration
+form. `ADAPTER_SERVICE_URL` remains a legacy fallback, but
+`CONNECTOR_ADMIN_URL` is preferred.
 
 ### Health Module (`/health`)
 
@@ -355,7 +359,7 @@ interface EventEnvelope {
 
 ```
 AppModule (@Global)
-├── TenantConnectionManager (Map<string, MongoClient>)
+├── TenantConnectionManager (per-tenant Postgres or Mongo pools)
 ├── NatsPublisher (publishes to EVENTS stream)
 ├── AgentsModule
 │   ├── AgentsController (HTTP endpoints)
@@ -370,8 +374,8 @@ AppModule (@Global)
 
 ### Data Flow
 
-1. **Create Agent**: `POST /admin/agents` → AgentsController → AgentsService → AgentsRepository → MongoDB → NatsPublisher emits `agent.published` (when published)
-2. **Multi-tenancy**: Each request includes `x-yoizen-tenant` header → TenantConnectionManager routes to tenant's MongoDB instance
+1. **Create Agent**: `POST /admin/agents` → AgentsController → AgentsService → repository for configured storage engine → NatsPublisher emits `agent.published` (when published)
+2. **Multi-tenancy**: Each request includes `x-yoizen-tenant` header → TenantConnectionManager routes to the tenant's configured database
 3. **Events**: Configuration changes trigger NATS events for runtime sync (agent.published, credential.rotated, runtime.config.sync, job.trigger)
 4. **Lazy Connection**: First request to a tenant creates connection pool; subsequent requests reuse pool
 5. **Schema Initialization**: `ensureSchema()` creates tables on first tenant access
@@ -379,16 +383,17 @@ AppModule (@Global)
 ### Multi-Tenancy
 
 - **Tenant Header**: `x-yoizen-tenant` (from `@yoizen/shared`)
-- **Connection Pool**: `Map<string, MongoClient>` keyed by tenant ID
-- **MongoDB Host**: `mongo.{tenantId}-{env}-ns.svc.cluster.local`
-- **Database**: `yoizen` per tenant
+- **Connection Pool**: per-tenant pools keyed by tenant ID
+- **Default storage**: Postgres (`DB_ENGINE` / `STORAGE_ENGINE` default to `postgres`)
+- **Optional storage**: MongoDB when `DB_ENGINE=mongo`
+- **Database**: per-tenant database/schema managed by `@yoizen/database`
 - **Schema**: Auto-created on first access via `ensureSchema()`
 
 ### Communication
 
 | Target | Protocol | Direction | Purpose |
 |--------|----------|-----------|---------|
-| Per-tenant MongoDB | TCP | Outbound | Persist agents, credentials, channels, jobs, config files |
+| Per-tenant database | TCP | Outbound | Persist agents, credentials, channels, jobs, config files |
 | NATS JetStream (INGRESS per tenant) | NATS | Outbound | Publish configuration change events |
 
 ### DI Tokens
@@ -408,6 +413,7 @@ AppModule (@Global)
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP server port |
+| `DB_ENGINE` / `STORAGE_ENGINE` | `postgres` | Storage engine; set to `mongo` to use Mongo repositories |
 | `MONGO_PORT` | `27017` | MongoDB port (per-tenant) |
 | `MONGO_USER` | `yoizen` | MongoDB username |
 | `MONGO_PASSWORD` | `yoizen-dev-password` | MongoDB password |
@@ -432,10 +438,10 @@ AppModule (@Global)
 ## Code Style and Conventions
 
 - **Global providers**: `AppModule` is `@Global()`, exporting `TenantConnectionManager` and `NatsPublisher`
-- **Per-tenant pools**: `Map<string, MongoClient>` keyed by tenant ID, lazy creation on first request
+- **Per-tenant pools**: lazy creation on first request for the configured storage engine
 - **Schema lazy init**: `ensureSchema()` runs once per tenant, creates tables and indexes
 - **DTOs in same folder**: `agents.dto.ts` next to `agents.controller.ts` (no subfolders)
-- **MongoDB queries**: mongodb driver with tagged templates (no ORM)
+- **Repository split**: Postgres is the default implementation; Mongo repositories are optional compatibility paths
 - **Validation**: global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, `transform`
 - **NATS only publisher**: No consumers in this service (only publishes to tenant-scoped `evt.*` subjects)
 - **Security**: Never return credential `value` field in API responses (⚠️ TEMPORAL: stored in plaintext)
@@ -457,16 +463,17 @@ pnpm install
 bun run start:dev
 ```
 
-Requires local NATS and MongoDB per tenant.
+Requires local NATS and the configured per-tenant database. Postgres is the
+default; MongoDB is optional with `DB_ENGINE=mongo`.
 
 ## Dependencies on Other Services
 
 | Service | Relationship |
 |---------|-------------|
 | **NATS JetStream** | Publishes configuration change events to tenant-scoped ingress streams |
-| **Per-tenant MongoDB** | Persists agents, credentials, jobs, and config files |
+| **Per-tenant database** | Persists agents, credentials, jobs, and config files |
 | **api-gateway** | Upstream proxy (all admin endpoints proxied through gateway) |
-| **tenant-service** | Provisions the per-tenant MongoDB instances |
+| **tenant-service** | Provisions tenant database access |
 | **YoizenClaw runtime** | Consumes NATS events for configuration sync |
 | **`@yoizen/shared`** | Stream config, `EventEnvelope`, `TENANT_HEADER` |
 | **`@yoizen/observability`** | Pino logging, OpenTelemetry tracing |

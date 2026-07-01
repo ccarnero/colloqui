@@ -86,7 +86,7 @@ The original design contemplates cryptographic isolation via NATS accounts and A
 │              partner-xyz     ✓ (limited) │
 │              globex-service  ✗           │
 │                                          │
-│  Stream:     INGRESS-acme    (isolated)  │
+│  Stream:     INGRESS-ACME    (isolated)  │
 │  Bucket:     PAYLOAD-acme    (isolated)  │
 └──────────────────────────────────────────┘
 ```

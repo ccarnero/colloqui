@@ -146,10 +146,21 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 
 | Service | Purpose | Type |
 |---------|---------|------|
+| [API Gateway](../services/api-gateway/README.md) | External HTTP entry point and proxy layer | Core service |
+| [Auth Service](../services/auth-service/README.md) | JWT issuance, platform users, tenant users, clients, and public routes | Core service |
+| [Tenant Service](../services/tenant-service/README.md) | Tenant lifecycle, namespace/data provisioning, and per-tenant stream setup | Core service |
 | [Connector Runtime](../services/connector-runtime/README.md) | Standalone Temporal worker for high-concurrency HTTP execution with connector-driven config | Core service |
 | [Connector Admin](../services/connector-admin/README.md) | Multi-tenant HTTP connector configuration API (base URL, auth, headers, timeouts, retries) | Core service |
 | [Workflow Service](../services/workflow-service/README.md) | REST API + Temporal orchestrator for multi-step workflows with state management | Core service |
+| Agent Memory Service | Long-term agent memory and retrieval backend | AI service |
+| Agent Scheduler Service | Cron/interval scheduler for agent jobs | AI service |
+| Agent AI Service | AI agent runtime and LLM/tool execution | AI service |
+| AI Agent Gateway | Async execution gateway for agent runtime requests | AI service |
 | [@yoizen/shared Package](../packages/shared/src/index.ts) | Cross-service types, interfaces, constants, and `AdapterClient` | Shared library |
+
+For the build/rollout inventory, treat [`../services.conf`](../services.conf)
+as the source of truth. It includes `agent-memory-service` and
+`agent-scheduler-service` in addition to the core platform services.
 
 ## Architecture Overview
 
@@ -172,7 +183,8 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 │  │  │  cache-service · channel-service · tenant-service          │  │  │
 │  │  │  registry-service · workflow-service · workflow-worker     │  │  │
 │  │  │  connector-runtime · connector-admin                       │  │  │
-│  │  │  agent-admin-service · ai-agent-gateway     │  │  │
+│  │  │  agent-admin-service · agent-ai-service · ai-agent-gateway │  │  │
+│  │  │  agent-memory-service · agent-scheduler-service            │  │  │
 │  │  │  usage-aggregator-service · proxy-service · admin-console  │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
@@ -407,7 +419,7 @@ Arch/
 │   ├── admin-console/                 # Angular admin UI
 │   ├── agent-admin-service/           # NestJS + Fastify — Agent authoring API
 │   ├── ai-agent-gateway/              # NestJS + Fastify — Stateless inbound bridge to agent-ai-service
-│   └── agent-ai-service/              # Python — Platform-tier agent execution runtime (Knative Service)
+│   └── agent-ai-service/              # NestJS + Fastify — Platform-tier agent execution runtime (Knative Service)
 └── setup-tenant.sh                    # Create tenant + admin user (named flags, idempotent)
 ```
 
@@ -431,7 +443,7 @@ kubectl apply -k knative/services/overlays/local/dev
 OrbStack >= 1.6 shares the local Docker daemon with the cluster — just build normally:
 
 ```bash
-for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service usage-aggregator-service proxy-service agent-admin-service ai-agent-gateway agent-ai-service; do
+for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service usage-aggregator-service proxy-service agent-admin-service agent-memory-service agent-scheduler-service ai-agent-gateway agent-ai-service; do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```

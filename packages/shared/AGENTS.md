@@ -139,7 +139,7 @@ src/
 
 | Constant | Value | Used By |
 |----------|-------|---------|
-| `DEFAULT_ADAPTER_SERVICE_URL` | `http://adapter-service.platform-services-dev.svc.cluster.local` | HTTP Adapter, Event Processor, Webhook Service |
+| `DEFAULT_CONNECTOR_ADMIN_URL` | `http://connector-admin-api.platform-services-dev.svc.cluster.local` | HTTP Adapter, Event Processor, Webhook Service |
 
 ### Adapter Interfaces (`adapter.interfaces.ts`)
 
@@ -155,7 +155,7 @@ src/
 
 | Export | Description | Used By |
 |--------|-------------|---------|
-| `AdapterClient` | Runtime class: fetches adapter config from adapter-service REST API, caches in Redis with stale-while-revalidate (TTL 300s, stale 60s), manages OAuth2 client credentials tokens, resolves full request config (URL + auth headers + timeout + retries) | HTTP Adapter, Event Processor, Webhook Service |
+| `AdapterClient` | Runtime class: fetches connector config from connector-admin REST API, caches in Redis with stale-while-revalidate (TTL 300s, stale 60s), manages OAuth2 client credentials tokens, resolves full request config (URL + auth headers + timeout + retries) | HTTP Adapter, Event Processor, Webhook Service |
 
 ## Consumer Services
 
@@ -168,8 +168,8 @@ src/
 | registry-service | Knative constants, `TENANT_HEADER` |
 | tenant-service | `TENANT_HEADER` |
 | workflow-service | Workflow types, task queues, `TENANT_HEADER` |
-| connector-runtime | `CONNECTOR_RUNTIME_TASK_QUEUE`, `HttpEndpointRequest`, `HttpServiceRequest`, `TENANT_HEADER`, `AdapterClient`, `DEFAULT_ADAPTER_SERVICE_URL` |
-| adapter-service | `TENANT_HEADER`, `AdapterConfig` interface |
+| connector-runtime | `CONNECTOR_RUNTIME_TASK_QUEUE`, `HttpEndpointRequest`, `HttpServiceRequest`, `TENANT_HEADER`, `AdapterClient`, `DEFAULT_CONNECTOR_ADMIN_URL` |
+| connector-admin | `TENANT_HEADER`, `AdapterConfig` interface |
 
 **Not a consumer**: `cache-service` (standalone, no shared package dependency).
 

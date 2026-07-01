@@ -128,6 +128,11 @@ Workflow: processOrder
 
 **Usage Pattern**:
 - **Called by**: External HTTP client via workflow-service REST API
+> Current API split: `POST /workflows` creates or stores the definition only. Run it with
+> `POST /workflows/:id/execute`, then query one execution with
+> `GET /workflows/:id/executions/:executionId` or list executions with
+> `GET /workflows/:id/executions`.
+
 - **State management**: All results stored in execution context
 - **Pseudocode**:
 
@@ -137,10 +142,9 @@ POST http://workflow-service/workflows
 {
   name: "processOrder",
   application: "order-service",
-  request: { orderId: "ORD-123" },
   actions: [
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "fetchOrder",
       args: {
         method: "GET",
@@ -150,7 +154,7 @@ POST http://workflow-service/workflows
       }
     },
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "validatePayment",
       args: {
         method: "POST",
@@ -162,43 +166,39 @@ POST http://workflow-service/workflows
       }
     },
     {
-      type: "branch",
+      activity: "branch",
       name: "parallelNotifications",
-      args: {
-        branches: [
-          [
-            {
-              type: "serviceBusCall",
-              name: "notifyCustomer",
-              args: {
-                subject: "events.notifications",
-                payload: {
-                  customerId: "{{results.fetchOrder.data.customerId}}",
-                  orderId: "{{request.orderId}}",
-                  status: "confirmed"
-                }
-              }
+      notifyCustomerBranch: [
+        {
+          activity: "serviceBusCall",
+          name: "notifyCustomer",
+          args: {
+            subject: "events.notifications",
+            payload: {
+              customerId: "{{results.fetchOrder.data.customerId}}",
+              orderId: "{{request.orderId}}",
+              status: "confirmed"
             }
-          ],
-          [
-            {
-              type: "serviceCall",
-              name: "updateInventory",
-              args: {
-                service: "inventory-service",
-                path: "/items/update",
-                method: "POST",
-                data: {
-                  items: "{{results.fetchOrder.data.items}}"
-                }
-              }
+          }
+        }
+      ],
+      updateInventoryBranch: [
+        {
+          activity: "serviceCall",
+          name: "updateInventory",
+          args: {
+            service: "inventory-service",
+            path: "/items/update",
+            method: "POST",
+            data: {
+              items: "{{results.fetchOrder.data.items}}"
             }
-          ]
-        ]
-      }
+          }
+        }
+      ]
     },
     {
-      type: "jsFunction",
+      activity: "jsFunction",
       name: "generateReceipt",
       args: {
         code: `
@@ -213,25 +213,37 @@ POST http://workflow-service/workflows
   ]
 }
 
-// Response (202 Accepted)
+// Response (201 Created): workflow definition persisted
 {
-  workflowId: "acme:processOrder:abc123",
-  status: "RUNNING"
+  id: "wf_def_123",
+  name: "processOrder",
+  application: "order-service",
+  tenantId: "acme",
+  actions: [ ... ],
+  createdAt: "2026-05-11T10:30:00Z"
 }
 
-// Query result
-GET http://workflow-service/workflows/acme:processOrder:abc123
+// Start an execution from the saved definition
+POST http://workflow-service/workflows/wf_def_123/execute
 {
-  workflowId: "acme:processOrder:abc123",
+  request: { orderId: "ORD-123" }
+}
+
+// Response (202 Accepted): execution started
+{
+  executionId: "exec_456",
+  definitionId: "wf_def_123",
+  temporalWorkflowId: "acme:processOrder:abc123",
+  runId: "..."
+}
+
+// Query execution status/result
+GET http://workflow-service/workflows/wf_def_123/executions/exec_456
+{
+  executionId: "exec_456",
+  definitionId: "wf_def_123",
   status: "COMPLETED",
-  result: {
-    status: 200,
-    data: {
-      orderId: "ORD-123",
-      transactionId: "txn_xyz",
-      timestamp: "2026-05-11T10:30:00Z"
-    }
-  }
+  result: { ... }
 }
 ```
 
@@ -293,7 +305,7 @@ Workflow: classifyAndRoute Incident
 ```
 // In workflow definition
 {
-  type: "agentCall",
+  activity: "agentCall",
   name: "classifyIncident",
   args: {
     agentId: "incident-classifier-v2",
@@ -320,13 +332,19 @@ Workflow: classifyAndRoute Incident
 
 // Next action can branch on result
 {
-  type: "branch",
+  activity: "conditional",
   name: "routeByClassification",
-  args: {
-    branches: [
-      [
+  branches: [
+    {
+      label: "urgent",
+      condition: {
+        variable: "results.classifyIncident.data.classification",
+        comparator: "eq",
+        value: "URGENT"
+      },
+      actions: [
         {
-          type: "serviceBusCall",
+          activity: "serviceBusCall",
           name: "escalateUrgent",
           args: {
             subject: "events.escalations",
@@ -337,8 +355,8 @@ Workflow: classifyAndRoute Incident
           }
         }
       ]
-    ]
-  }
+    }
+  ]
 }
 ```
 
@@ -432,7 +450,7 @@ Use case: Real-time CRM enrichment
 | Component | Concurrency (configured) | Notes |
 |-----------|--------------------------|-------|
 | **Connector Runtime** | 400 activities/replica (`maxConcurrentActivityTaskExecutions`) | Pure I/O worker; Knative KPA auto-scales horizontally |
-| **Workflow Worker** | 100 activity tasks, 50 workflow tasks per replica | Orchestration overhead adds latency relative to direct dispatch |
+| **Workflow Worker** | 200 activity tasks, 150 workflow tasks per replica | Orchestration overhead adds latency relative to direct dispatch |
 | **Workflow API** | Knative KPA (min 1, max 5) | Stateless REST endpoint |
 
 **Recommendation**:
@@ -504,9 +522,10 @@ Before choosing a service, consider:
 POST /workflows
 {
   name: "enrichUserData",
+  application: "crm",
   actions: [
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "fetchUserCRM",
       args: {
         adapterId: "crm-connector",
@@ -515,7 +534,7 @@ POST /workflows
       }
     },
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "fetchUserHistory",
       args: {
         adapterId: "analytics-connector",
@@ -524,7 +543,7 @@ POST /workflows
       }
     },
     {
-      type: "jsFunction",
+      activity: "jsFunction",
       name: "mergeData",
       args: {
         code: `
@@ -540,6 +559,40 @@ POST /workflows
 ```
 
 **Benefit**: State management + connector integration
+
+
+### Pattern 1b: Conditional Workflow Branch
+
+Use `activity: "conditional"` when one of several action lists should run based on runtime
+context. Comparators are `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `contains`, `exists`, and
+`notExists`.
+
+```
+{
+  activity: "conditional",
+  name: "routeByAmount",
+  branches: [
+    {
+      label: "highValue",
+      condition: { variable: "request.amount", comparator: "gte", value: "1000" },
+      actions: [
+        {
+          activity: "agentCall",
+          name: "reviewOrder",
+          args: { agentId: "risk-reviewer", input: "{{request.orderId}}" }
+        }
+      ]
+    }
+  ],
+  default: [
+    {
+      activity: "serviceBusCall",
+      name: "autoApprove",
+      args: { subject: "orders.approved", payload: { orderId: "{{request.orderId}}" } }
+    }
+  ]
+}
+```
 
 ### Pattern 2: Connector Runtime with Retry Logic
 
@@ -562,7 +615,7 @@ const result = await client.activity.executeEndpointCall({
 
 ```
 {
-  type: "agentCall",
+  activity: "agentCall",
   name: "classifyRequest",
   args: {
     agentId: "request-classifier",

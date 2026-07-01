@@ -29,8 +29,8 @@ at the infrastructure layer. NATS runs as a **single account with no ACLs per te
                 ┌───────────────────────────────────────────┐
                 │            api-gateway                    │
                 │                                           │
-acme.dev.local ──▶ │   TenantGuard extracts "acme"         │
-beta.dev.local ──▶ │   x-yoizen-tenant: beta               │
+dev.acme.yplatform.com ─▶ │ TenantGuard extracts "acme"    │
+x-yoizen-tenant: beta ───▶ │ or falls back to header/query  │
                 │          ▼                                │
                 │   req.tenant = "acme" | "beta"            │
                 │          ▼                                │
@@ -100,17 +100,20 @@ JWT tokens:                            JWT tokens:
 
 ### 5.1 Resolution Chain (normal requests)
 
-`TenantGuard` in `api-gateway` resolves the tenant before any route handler runs. It uses two
+`TenantGuard` in `api-gateway` resolves the tenant before any route handler runs. It uses three
 sources in priority order:
 
 ```
 Incoming request (with JWT)
      │
      ▼
-  1. Hostname?   acme.dev.local → tenant = "acme"
+  1. Hostname?   dev.acme.yplatform.com → tenant = "acme"
      │ (not found — e.g. localhost)
      ▼
   2. Header?     x-yoizen-tenant: acme → tenant = "acme"
+     │ (not found)
+     ▼
+  3. Query?      ?tenant=acme → tenant = "acme"
      │ (not found)
      ▼
   ❌ 400 Bad Request — tenant not resolved
@@ -120,16 +123,17 @@ Source file: `services/api-gateway/src/guards/tenant.guard.ts`
 
 ### 5.2 Source 1: Hostname
 
-**Format:** `<tenant>.dev.local` (OrbStack / dev.local DNS)
+**Format:** `<env>.<tenant>.yplatform.com`
 
 ```
-Host: acme.dev.local
-  → parts split on "."
+Host: dev.acme.yplatform.com
+  → HOST_PATTERN captures the second label
   → tenant = "acme"
 ```
 
-In production the format is `<env>.<tenant>.yplatform.com`. In local developer mode with
-OrbStack, `dev.local` DNS is used, configured in the Knative `config-domain` ConfigMap.
+Local developer hostnames such as `api-gateway.platform-services-dev.dev.local`
+route to the gateway but do not encode a tenant in the pattern the guard
+recognizes. For local curl/scripts, pass `x-yoizen-tenant` or `?tenant=`.
 
 ### 5.3 Source 2: Header
 
@@ -142,21 +146,30 @@ Constant: `TENANT_HEADER` in `packages/shared/src/constants.ts`.
 Used in:
 - Internal service-to-service communication
 - CLI tool calls or `kubectl port-forward`
-- Local development when no hostname is configured
+- Local development when no tenant-aware `yplatform.com` hostname is configured
 
-### 5.4 Special Case: Webhooks
+### 5.4 Source 3: Query parameter
+
+```
+?tenant=acme
+```
+
+This is a fallback for local scripts and debugging. Prefer the header for
+tenant-scoped API calls because it matches downstream propagation.
+
+### 5.5 Special Case: Webhooks
 
 Webhook endpoints are public (`@Public()`, `@SkipTenant()`): they bypass `TenantGuard`. The
 tenant is extracted directly from the path parameter:
 
 ```
-POST /webhooks/:channel/:tenantId
-GET  /webhooks/:channel/:tenantId   ← hub.challenge verification
+POST /api/webhooks/:channel/:tenantId
+GET  /api/webhooks/:channel/:tenantId   ← hub.challenge verification
 ```
 
 Example:
 ```
-POST /webhooks/whatsapp/acme
+POST /api/webhooks/whatsapp/acme
   → channel  = "whatsapp"
   → tenantId = "acme"
 ```
@@ -166,7 +179,7 @@ placed in the path.
 
 Source file: `services/api-gateway/src/modules/channels/webhooks.controller.ts`
 
-### 5.5 JWT Scope Table
+### 5.6 JWT Scope Table
 
 The `AuthGuard` (also in `api-gateway`) validates the JWT scope:
 
@@ -177,12 +190,12 @@ The `AuthGuard` (also in `api-gateway`) validates the JWT scope:
 
 If the resolved tenant does not match the `tenant:<name>` scope in the JWT → 403 Forbidden.
 
-### 5.6 Downstream Propagation
+### 5.7 Downstream Propagation
 
 Once resolved in `api-gateway`, the tenant propagates to downstream services via the
 `x-yoizen-tenant` header in every HTTP proxy call.
 
-### 5.7 Development / Curl Examples
+### 5.8 Development / Curl Examples
 
 Without a hostname configured, pass the header directly:
 
@@ -190,11 +203,11 @@ Without a hostname configured, pass the header directly:
 # Direct API call with port-forward
 curl -H "x-yoizen-tenant: acme" \
      -H "Authorization: Bearer $TOKEN" \
-     http://localhost:3000/health
+     http://localhost:3000/api/workflows
 
 # With kubectl port-forward
 kubectl port-forward svc/api-gateway 3000:3000 -n platform-services-dev
-curl -H "x-yoizen-tenant: acme" http://localhost:3000/health
+curl -H "x-yoizen-tenant: acme" http://localhost:3000/api/workflows
 ```
 
 ---

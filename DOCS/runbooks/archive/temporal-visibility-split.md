@@ -13,6 +13,13 @@ hot `executions` write path on the shared `postgres-temporal` CNPG cluster.
 Splitting `temporal_visibility` onto its own CNPG cluster (`postgres-temporal-visibility`)
 removes that contention.
 
+> **Do not run this as a current developer-mode procedure.** The helper script
+> referenced below (`infrastructure/scripts/ensure-temporal-visibility-schema.sh`)
+> was deleted from the repo, and current developer-mode Temporal points both
+> `POSTGRES_SEEDS` and `VISIBILITY_POSTGRES_SEEDS` at `postgres-temporal-rw`.
+> Keep this file only as historical context for why the visibility manifests
+> exist.
+
 ## What changed in code
 
 | File | Change |
@@ -24,7 +31,7 @@ removes that contention.
 | `infrastructure/overlays/local/local-base/patches/postgres-temporal-visibility-resources.yaml` | Dev-sized overlay for local. |
 | `infrastructure/overlays/orbstack/orbstack-base/patches/postgres-temporal-visibility.yaml` | Dev-sized overlay for orbstack. |
 | `infrastructure/scripts/ensure-temporal-visibility-schema.sh` (deleted from repo) | Idempotent helper that runs `temporal-sql-tool setup-schema` + `update-schema` directly against `postgres-temporal-visibility-rw`, working around an `auto-setup` bug (see "Known issue" below). |
-| [`bootstrap-orbstack-osx.sh`](../../bootstrap-orbstack-osx.sh) | Wait for the new CNPG cluster in parallel with the others, then invoke `ensure-temporal-visibility-schema.sh` **before** the Temporal rollout. Means a fresh `./bootstrap-*.sh dev support-services` Just Works — no manual step. |
+| [`bootstrap-orbstack-osx.sh`](../../bootstrap-orbstack-osx.sh) | Historical note only: the bootstrap used to wait for the visibility cluster and invoke `ensure-temporal-visibility-schema.sh`. Current developer-mode bootstrap no longer relies on that deleted helper. |
 
 ## Known issue — `temporalio/auto-setup` ignores `VISIBILITY_POSTGRES_SEEDS`
 
@@ -38,9 +45,11 @@ error: pq: relation "schema_version" does not exist
 
 Auto-setup happily reports `Schema setup complete` because it wrote the visibility schema to `postgres-temporal-rw`; then the server boots, connects to `postgres-temporal-visibility-rw` (correct host), finds an empty DB, and crashloops.
 
-### Automatic fix (preferred)
+### Historical automatic fix (no longer runnable in this repo)
 
-Both bootstrap scripts now invoke `infrastructure/scripts/ensure-temporal-visibility-schema.sh` (deleted from repo) automatically. It:
+Older bootstrap scripts invoked `infrastructure/scripts/ensure-temporal-visibility-schema.sh`
+automatically. That helper is no longer present, so this section is retained
+only to explain the old workaround. It used to:
 
 1. Waits for `cluster/postgres-temporal-visibility` to be Ready.
 2. Probes `schema_version.curr_version` on `postgres-temporal-visibility-rw/temporal_visibility`. If populated, exits in ~1 s.
@@ -52,9 +61,9 @@ Both bootstrap scripts now invoke `infrastructure/scripts/ensure-temporal-visibi
    ```
 4. Drops the orphan `temporal_visibility` from the *default* cluster (best-effort) so disk + `\l` stay clean.
 
-### Manual fix (one-off / non-bootstrap environments)
+### Historical manual fix (requires restoring the deleted helper or recreating it)
 
-Run the same script directly (idempotent — safe to re-run):
+The old procedure ran the same script directly (idempotent — safe to re-run):
 
 ```bash
 ./infrastructure/scripts/ensure-temporal-visibility-schema.sh support-services-<env>

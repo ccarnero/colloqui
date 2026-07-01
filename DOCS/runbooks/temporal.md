@@ -80,8 +80,11 @@ to `postgres-temporal-rw` (see §4.3).
 ### 3.1 Kubernetes resources
 
 ```bash
-kubectl -n $NS get -l app.kubernetes.io/name=temporal \
-  deploy,svc,job,cm
+kubectl -n $NS get \
+  deploy/temporal deploy/temporal-ui \
+  svc/temporal svc/temporal-ui svc/temporal-metrics \
+  job/temporal-namespace-bootstrap-1-28-4 \
+  cm/temporal-dynamic-config
 ```
 
 Expected resources (after bootstrap + healthy steady-state):
@@ -92,8 +95,13 @@ Expected resources (after bootstrap + healthy steady-state):
 | Deployment | `temporal-ui` | 1 (Web UI only) |
 | Service | `temporal` | ClusterIP (selector: `temporal.io/role=frontend`) |
 | Service | `temporal-ui` | ClusterIP for the Web UI |
+| Service | `temporal-metrics` | Headless metrics Service on `:9090` for the `temporal` pod |
 | ConfigMap | `temporal-dynamic-config` | `production-sql.yaml` (runtime dynamic config, 60s polling) |
 | Job | `temporal-namespace-bootstrap-1-28-4` | One-shot: registers `default` ns + `TenantId` search attribute |
+
+`temporal-ui` uses `app.kubernetes.io/name=temporal-ui`, not
+`app.kubernetes.io/name=temporal`, so a single label selector for
+`app.kubernetes.io/name=temporal` will not show the UI resources.
 
 > **Not present in developer mode**: `temporal-frontend/history/matching/worker`
 > Deployments, `temporal-internode` headless Service, role-metrics Services,

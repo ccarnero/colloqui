@@ -146,21 +146,13 @@ the builder no longer shows a blank, unselectable account dropdown for these rep
 specific account instead only for cross-account / cross-channel sends. Implementation:
 `SOURCE_ACCOUNT_TEMPLATE` in `workflow-node-defaults.ts`, surfaced by `workflow-node-config.component.ts`.
 
-## Message trace (Processes › Diagnostics, admin-console)
+## Message trace (direct Processes route, admin-console)
 
-A role-gated (`diagnostics:read`) debug view that follows a single message across services by its
-`correlation_id`. It renders the **business trace** natively — the causal chain
-(`correlation_id`/`causation_id`/`depth`) plus the pub/sub fan-out (which durable consumers each
-event reaches, including the silent `audit-service` sink) — and hands off to the **tech trace**:
-`Open in Tempo` (OTel `traceid` span waterfall) and `Open in Temporal` (workflow run history). It
-also preloads recent correlations from the last 5 minutes.
+A direct debug view at `/processes/trace` and `/processes/trace/:correlationId` follows a single message across services by its `correlation_id`. It is under the shell `authGuard`; the component itself requires `diagnostics:read` before loading data, but there is no route-level permission guard and it is not listed as a Processes sub-nav item.
 
-Slice 1 (route `/processes/trace[/:correlationId]`) is frontend-only and assembles the chain
-client-side from the existing audit list endpoints (`/audit/channel-events`, `/audit/events`); the
-chain-tree endpoint isn't exposed through the gateway. Live consumer health and per-message
-delivery are later slices. Temporal/Tempo links render only when `temporalUiBaseUrl` / `tempoBaseUrl`
-are configured. Entry points: direct lookup, the recent list, and a "View chain" link on the
-Workflow → Executions row. Spec: `.sdd/changes/processes-message-trace/`.
+It renders the **business trace** natively — the causal chain (`correlation_id`/`causation_id`/`depth`) plus pub/sub fan-out — and hands off to the **tech trace** through `Open in Tempo` (OTel `traceid`) and `Open in Temporal` (workflow run history).
+
+The frontend assembles the chain client-side from existing audit list endpoints (`/audit/channel-events`, `/audit/events`) plus workflow executions (`/workflows/executions?correlation_id=...`). The gateway does not expose an audit chain-tree endpoint. Temporal/Tempo links render only when `temporalUiBaseUrl` / `tempoBaseUrl` are configured. Entry points are direct lookup, recent traces, and deep links with a correlation id. Spec: `.sdd/changes/processes-message-trace/`.
 
 ## References
 

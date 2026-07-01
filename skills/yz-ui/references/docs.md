@@ -58,7 +58,7 @@ Path: `src/app/features/connections/`
 | Page | File | Backend |
 |---|---|---|
 | Connections landing | `connections-landing.component.ts` | n/a (aggregates) |
-| HTTP (flat — internal/external sub-tabs deferred) | routed to `ConnectorsComponent` (legacy at `data-integrations/connectors/`) | adapter-service `/adapters` |
+| HTTP (flat — internal/external sub-tabs deferred) | routed to `ConnectorsComponent` (legacy at `data-integrations/connectors/`) | connector-admin `/connectors` |
 | Internal HTTP (orphan, kept for v2) | `internal-http.component.ts` | registry-service routes (fan-out) |
 | MCP placeholder | `mcp-placeholder.component.ts` | none yet |
 | Hosted services | routed to legacy `automation/hosted-services/hosted-services.component.ts` | registry-service `/services` |

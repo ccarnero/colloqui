@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-The API Gateway is the HTTP entry point for the platform. It proxies requests to auth-service, audit-service, tenant-service, registry-service, workflow-service, adapter-service, channel-service, agent-admin-service, and proxy-service over HTTP, and performs health checks against all downstream services. A Fastify `onRequest` hook intercepts non-platform paths and proxies them to tenant-registered Knative services via a dynamic route cache that polls the registry-service every 15s. Global guards enforce JWT authentication (`AuthGuard`) and tenant resolution (`TenantGuard`) on every request.
+The API Gateway is the HTTP entry point for the platform. It proxies requests to auth-service, audit-service, tenant-service, registry-service, workflow-service, connector-admin, channel-service, agent-admin-service, and proxy-service over HTTP, and performs health checks against all downstream services. A Fastify `onRequest` hook intercepts non-platform paths and proxies them to tenant-registered Knative services via a dynamic route cache that polls the registry-service every 15s. Global guards enforce JWT authentication (`AuthGuard`) and tenant resolution (`TenantGuard`) on every request.
 
 ## Tech Stack
 
@@ -105,7 +105,7 @@ AppModule
 
 ### Dynamic Routing
 
-The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching platform prefixes (`/audit`, `/tenants`, `/registry`, `/workflows`, `/adapters`, `/channels`, `/health`, `/auth`):
+The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching platform prefixes (`/api/audit`, `/api/tenants`, `/api/registry`, `/api/workflows`, `/api/connectors`, `/api/channels`, `/api/health`, `/api/auth`):
 
 1. Resolve tenant from request
 2. Match path against `DynamicRouteCacheService` (longest prefix first)
@@ -118,7 +118,7 @@ The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching p
 1. **Publish**: `POST /events` -> validate DTO -> UUID -> JetStream publish + Redis pipeline -> 202 Accepted
 2. **Results**: `GET /results/:id` -> L1 `Map` lookup -> Redis fallback -> FIFO eviction at 1024
 3. **SSE**: `GET /events/stream?types=...` -> core NATS subscriptions -> RxJS Observable
-4. **Proxies**: auth, audit, tenant, registry, workflow, adapter, channel -> HTTP `fetch` to downstream service
+4. **Proxies**: auth, audit, tenant, registry, workflow, connector-admin, channel -> HTTP `fetch` to downstream service
 5. **Dynamic routes**: non-platform paths -> `DynamicRouteCacheService.match()` -> HTTP proxy to tenant Knative service
 6. **Health**: parallel checks on NATS, Redis, and all downstream `/health` endpoints (3s timeout)
 
@@ -134,7 +134,7 @@ The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching p
 | tenant-service | HTTP | Proxy tenant CRUD |
 | registry-service | HTTP | Proxy registry operations; poll `GET /routes` for dynamic routing |
 | workflow-api | HTTP | Proxy workflow operations |
-| adapter-service | HTTP | Proxy `/adapters` CRUD and endpoint management |
+| connector-admin | HTTP | Proxy `/api/connectors` CRUD and endpoint management |
 | Tenant Knative services | HTTP | Dynamic route proxy to registered services |
 
 ### DI Tokens
@@ -169,7 +169,7 @@ The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching p
 | `TENANT_SERVICE_URL` | `http://tenant-service.platform-services-dev.svc.cluster.local` | Tenant proxy + health |
 | `REGISTRY_SERVICE_URL` | `http://registry-service.platform-services.svc.cluster.local` | Registry proxy + route discovery |
 | `WORKFLOW_SERVICE_URL` | `http://workflow-api.platform-services.svc.cluster.local` | Workflow proxy |
-| `ADAPTER_SERVICE_URL` | `http://adapter-service.platform-services-dev.svc.cluster.local` | Adapter proxy |
+| `CONNECTOR_ADMIN_URL` | `http://connector-admin-api.platform-services-dev.svc.cluster.local` | Connector-admin proxy |
 | `CACHE_SERVICE_URL` | `http://cache-service.platform-services-dev.svc.cluster.local` | Health check target |
 
 ### Knative
@@ -231,6 +231,6 @@ Requires local NATS (`nats://localhost:4222`), Redis (`localhost:6379`), and `JW
 | **tenant-service** | HTTP proxy target for `/tenants` CRUD |
 | **registry-service** | HTTP proxy target for `/registry/*` endpoints; polls `GET /routes` for dynamic routing |
 | **workflow-api** | HTTP proxy target for `/workflows` endpoints |
-| **adapter-service** | HTTP proxy target for `/adapters/*` endpoints |
+| **connector-admin** | HTTP proxy target for `/api/connectors/*` endpoints |
 | **cache-service** | No data dependency (health check only) |
 | **`@yoizen/shared`** | Subject prefixes, auth types |

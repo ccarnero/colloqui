@@ -161,8 +161,15 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
                   <span class="call-status" [class]="statusClass(c.status)">{{ c.status }}</span>
                   <span class="call-dur">{{ c.durationMs }}ms</span>
                   <span class="call-url" [title]="c.resolvedUrl">{{ shortUrl(c.resolvedUrl) }}</span>
-                  @if (hasCacheConfig() && c.cacheResult) {
-                    <span class="call-cache" [class]="'cache-' + c.cacheResult">{{ c.cacheResult }}</span>
+                  @if (c.cacheResult) {
+                    <span
+                      class="call-cache"
+                      [class.cache-hit]="c.cacheResult === 'hit'"
+                      [class.cache-miss]="c.cacheResult === 'miss'"
+                      [class.cache-bypass]="c.cacheResult === 'bypass'"
+                    >
+                      {{ c.cacheResult }}
+                    </span>
                   }
 
                   @if (expandedIdx() === idx) {
@@ -206,12 +213,19 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
                       </div>
 
                       <!-- Cache -->
-                      @if (hasCacheConfig() && c.cacheResult) {
+                      @if (c.cacheResult) {
                         <div class="detail-section">
                           <div class="detail-label">Cache</div>
                           <div class="detail-row">
                             <span class="detail-sub">Result</span>
-                            <span class="call-cache" [class]="'cache-' + c.cacheResult">{{ c.cacheResult }}</span>
+                            <span
+                              class="call-cache"
+                              [class.cache-hit]="c.cacheResult === 'hit'"
+                              [class.cache-miss]="c.cacheResult === 'miss'"
+                              [class.cache-bypass]="c.cacheResult === 'bypass'"
+                            >
+                              {{ c.cacheResult }}
+                            </span>
                           </div>
                           @if (c.cacheKey) {
                             <div class="detail-row">
@@ -585,6 +599,17 @@ export class ConnectorDetailComponent implements OnInit {
         value: String(a.endpoints.length),
         badgeClass: "badge-purple",
       },
+      ...(this.canViewCalls()
+        ? [
+            {
+              label: "Cache hits (1h)",
+              value: String(
+                this.recentCalls().filter((c) => c.cacheResult === "hit").length
+              ),
+              badgeClass: "badge-green",
+            },
+          ]
+        : []),
     ];
   });
 

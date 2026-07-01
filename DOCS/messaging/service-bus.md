@@ -122,11 +122,11 @@ Actual values come from `packages/shared/src/channel.constants.ts`:
 | `duplicate_window` | Not explicitly set | Server default (2 min) |
 | `num_replicas` | Not explicitly set | Server default (1) |
 
-### Tenant tiers (pending — NOT wired)
+### Tenant tiers (partially wired)
 
-> **Status: pending — not implemented in provisioning**
+> **Status: partial implementation**
 >
-> `TENANT_TIER_LIMITS` is defined in `packages/shared/src/tenant-stream.constants.ts` with values for `free`, `pro`, and `enterprise`. Current stream provisioning uses the `CHANNEL_STREAM_MAX_AGE_NS` / `CHANNEL_STREAM_MAX_BYTES` defaults for all tenants. The tier selection is not connected to the stream creation flow.
+> `TENANT_TIER_LIMITS` is defined in `packages/shared/src/tenant-stream.constants.ts` with values for `free`, `pro`, and `enterprise`, and some provisioning paths call `buildTenantStreamConfig(..., "free")`. Other ensure/reconcile paths still use legacy default limits (`CHANNEL_STREAM_MAX_AGE_NS` / `CHANNEL_STREAM_MAX_BYTES`) or only ensure stream existence. Treat tenant tiers as partially wired until all stream creation and reconciliation paths share the same tier source.
 
 Objective design (pending):
 
@@ -186,11 +186,11 @@ Tenant streams are pre-provisioned by `tenant-service` during tenant creation, w
 
 Provisioning happens at three layers, in priority order:
 
-1. **Primary (eager, during tenant creation)** — `tenant-service`'s `TenantProvisioningExecutor` invokes `ensureTenantIngressStream(jsm, tenantId)` as a dedicated `nats.ensure-ingress-stream` phase, executed **after** OLTP + usage Postgres readiness and **before** `agent-ai-service` (the platform-tier Knative Service) is ready to attach JetStream consumers. This closes the race where the runtime pod would otherwise boot, attempt to attach durable JetStream consumers for `evt.<tenant>.agent-admin-service.…>` and `evt.<tenant>.ai-agent-gateway.…>`, and crash its FastAPI lifespan with `NotFoundError: stream not found` (NATS `err_code=10059`).
+1. **Primary (eager, during tenant creation)** — `tenant-service`'s `TenantProvisioningExecutor` invokes `ensureTenantIngressStream(jsm, tenantId)` as a dedicated `nats.ensure-ingress-stream` phase, executed **after** OLTP + usage Postgres readiness and **before** runtime consumers such as `agent-ai-service` attach JetStream durables. This closes the race where a consumer pod would otherwise boot before the tenant stream exists and fail to bind its durable consumer.
 2. **Safety net (lazy, before first publish)** — Producers (`api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway`) call `ensureTenantIngressStream(jsm, tenantId)` before publishing to `evt.<tenant>.>`. This guards against tenants that pre-date the primary path or whose stream was pruned externally.
-3. **Self-healing (lazy, at runtime startup)** — `agent-ai-service`'s `RuntimeNatsBridge._ensure_tenant_ingress_stream` performs the same idempotent ensure when the bridge connects. If the broker still rejects the JetStream subscribe (e.g. transient permissions error), each subscription falls back to a core NATS subscription on the same wildcard via `_subscribe_via_jetstream_with_fallback`, so the runtime stays online and converges to JetStream delivery once the stream becomes available.
+3. **Consumer reconciliation (lazy, at runtime startup and interval)** — TypeScript consumers such as `agent-ai-service` use `MultiTenantConsumerManager` to list existing `INGRESS-*` streams, bind the durable consumer, and periodically reconcile newly-created tenant streams. This layer binds consumers; it does not create missing tenant streams.
 
-Common contract across all three layers:
+Common contract across provisioning and consumer-binding layers:
 
 - Stream naming comes from `getTenantStreamName(tenantId)` -> `INGRESS-${tenantId.toUpperCase()}`.
 - Subject pattern comes from `getTenantSubjectPattern(tenantId)` -> `evt.${tenantId}.>`.
@@ -200,7 +200,8 @@ Common contract across all three layers:
 Code references:
 
 - `services/tenant-service/src/modules/provisioning/tenant-provisioning-executor.service.ts` (eager pre-provisioning phase)
-- `services/agent-ai-service/src/messaging/bridge.py` (`_ensure_tenant_ingress_stream`, `_subscribe_via_jetstream_with_fallback`)
+- `services/agent-ai-service/src/modules/nats-consumer/multi-tenant-consumer.service.ts` (durable config)
+- `packages/database/src/multi-tenant-consumer-manager.ts` (stream discovery, durable binding, reconciliation)
 - `packages/database/src/nats-provider.ts` (`ensureTenantIngressStream` shared helper)
 - `packages/shared/src/tenant-stream.constants.ts`
 - `packages/shared/src/channel.constants.ts`
@@ -210,7 +211,7 @@ Code references:
 - Consumers use `MultiTenantConsumerManager` with `streamPattern: /^INGRESS-/`.
 - The manager discovers existing tenant streams and ensures a durable consumer per tenant stream.
 - Consumers do not create ingress streams; they reconcile against discovered streams.
-- Typical durable names: `audit-service`, `channel-service`, `connector-admin`, `usage-aggregator-service`, `workflow-triggers`, `agent-ai-service`, `skb-ingestion-worker`.
+- Typical durable names: `audit-service`, `channel-service`, `connector-admin`, `usage-aggregator-service`, `workflow-triggers`, `agent-ai-service-consumer`, `skb-ingestion-worker`.
 
 ### DLQ Lifecycle
 
@@ -280,9 +281,9 @@ When a tenant is deactivated, the objective design is:
 3. After the retention period, data expires automatically by TTL.
 4. No immediate data deletion — this allows reactivation within the retention window.
 
-### Tier scaling (pending — not implemented)
+### Tier scaling (partially wired)
 
-JetStream supports live stream limit updates without downtime. The connection between tenant tier and stream provisioning (using `buildTenantStreamConfig` from `packages/shared/src/tenant-stream.constants.ts`) is pending implementation.
+JetStream supports live stream limit updates without downtime. The connection between tenant tier and stream provisioning is partial: `buildTenantStreamConfig` exists and is used by some providers with a hardcoded `free` tier, but reconciliation/default paths are not yet consistently tier-aware.
 
 ## Publish Semantics
 

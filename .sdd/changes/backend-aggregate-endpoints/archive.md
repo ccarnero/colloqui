@@ -23,7 +23,7 @@ Added three backend aggregate endpoints across five services to support the admi
    - Execution stats: today + 7d windows, top 10 definitions by run count
    - 8-way parallel query fetch
 
-3. **`GET /adapters/usage?window=1d|7d|30d`** (connector-admin)
+3. **`GET /connectors/usage?window=1d|7d|30d`** (connector-admin)
    - Top adapters by call count with error rate
    - Backed by new TimescaleDB hypertable ingesting NATS events
 
@@ -49,13 +49,13 @@ Added three backend aggregate endpoints across five services to support the admi
 |----|-------|--------|-----------|
 | **W1** | `GET /workflows/summary` response is flat (8 top-level fields) vs nested spec shape | No frontend consumer yet — contract shape needs settling with UI before integration | Documented in spec; defer to UI PR |
 | **W4** | Mongo `topDefinitionsByExecutionCount` returns empty `name`/`application` (no cross-collection JOIN) | Postgres path complete; Mongo path incomplete | Recommend Postgres-first for this feature; backlog Mongo enhancement |
-| **Env Vars** | `connector-admin` needs `TENANT_POSTGRES_SHARED_USAGE_*` env vars in Knative service definition | `GET /adapters/usage` returns 500 without them | Update Knative service manifest before deploying connector-admin |
+| **Env Vars** | `connector-admin` needs `TENANT_POSTGRES_SHARED_USAGE_*` env vars in Knative service definition | `GET /connectors/usage` returns 500 without them | Update Knative service manifest before deploying connector-admin |
 
 ## Post-Verify Fixes Applied
 
 Two defects were found during verification and fixed:
 
-1. **CRITICAL — C1**: `GET /adapters/usage` response wrapper
+1. **CRITICAL — C1**: `GET /connectors/usage` response wrapper
    - Issue: Response was returning raw array instead of `{ windowDays, topByCallCount }`
    - Fix: Updated `AdaptersService.getUsage()` to wrap result in correct DTO shape
 

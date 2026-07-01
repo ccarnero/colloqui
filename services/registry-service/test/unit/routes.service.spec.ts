@@ -114,6 +114,7 @@ describe("RoutesService", () => {
       const first = await service.discover();
       const second = await service.discover();
       expect(first).toHaveLength(1);
+      expect(first[0]?.port).toBe(80);
       expect(second).toEqual(first);
     });
   });

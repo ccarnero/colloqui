@@ -274,13 +274,20 @@ Handled by `SKBContainersController` (`@Controller("admin/structured-kb/containe
 
 ### 3.2 File Endpoints
 
-File ingest is routed through the api-gateway (`AdminStructuredKBController`) which proxies to `agent-admin-service`. There is no dedicated files controller in `agent-admin-service` — file metadata is managed by `SKBContainersService` and the ingestion worker.
+File ingest is partially routed through the api-gateway
+(`AdminStructuredKBController`) which proxies `POST` to `agent-admin-service`.
+There is currently no dedicated files controller in `agent-admin-service`, so
+the gateway `POST` target is pending/broken until that handler exists. File
+metadata is managed by `SKBContainersService` and the ingestion worker behind
+the missing controller surface.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/admin/structured-kb/containers/:id/files` | Upload + queue CSV/Excel for ingestion |
+| `POST` | `/admin/structured-kb/containers/:id/files` | Gateway route exists, but target agent-admin route is missing |
 
-> **Note**: List files, delete file, and get file schema endpoints are proxied via api-gateway but the corresponding handler routes in `agent-admin-service` are not yet implemented in the controllers layer. File status is queryable via `skb_files` directly.
+> **Note**: File upload, list files, delete file, and get file schema endpoints
+> do not have corresponding handler routes in the `agent-admin-service`
+> controllers layer. File status is queryable via `skb_files` directly.
 
 ### 3.3 Query Endpoint
 
@@ -366,7 +373,7 @@ Admin Console / api-gateway
     │ POST /admin/structured-kb/containers/:id/files
     │ (file_base64 + filename)
     ▼
-AdminStructuredKBController (api-gateway) → proxy to agent-admin-service
+AdminStructuredKBController (api-gateway) → proxy to missing agent-admin route
     │ 1. Decode base64 → Buffer
     │ 2. Create skb_files row (status=pending)
     │ 3. Publish NATS event: skb_file_ingestion.v1
@@ -400,7 +407,9 @@ On failure:
 evt.{tenant}.agent-admin-service.automation.platform.internal.skb_file_ingestion.v1
 ```
 
-Payload (as consumed by `SKBIngestionWorkerService.handleMessage` — fields ride in `data.payload` of the canonical envelope; a bare payload object is also tolerated):
+Payload (as consumed by `SKBIngestionWorkerService.handleMessage` — fields ride
+in `data.payload` of the canonical envelope; a bare payload object is also
+tolerated):
 
 ```typescript
 {
@@ -412,7 +421,12 @@ Payload (as consumed by `SKBIngestionWorkerService.handleMessage` — fields rid
 }
 ```
 
-Missing `containerId`/`fileId`/`tenantId` → `PermanentError` → term + per-tenant DLQ. Note: file content is fetched via `fileUrl` — it is NOT carried inline as base64 in the event. The event publisher is not present in the current tree (only the worker-side consumer exists); treat the publish step in the flow diagram above as the intended contract, verified on the consumer side only.
+Missing `containerId`/`fileId`/`tenantId` → `PermanentError` → term +
+per-tenant DLQ. Note: file content is fetched via `fileUrl` — it is NOT carried
+inline as base64 in the event. The event publisher is not present in the
+current tree and the public upload route is not wired end-to-end; treat the
+publish step in the flow diagram above as the intended contract, verified on
+the consumer side only.
 
 ### 4.3 Death Checks + Cleanup
 
@@ -1260,7 +1274,7 @@ See [skb/api.md](./api.md) for the full API reference with request/response exam
 | `GET` | `/admin/structured-kb/containers/:id` | `SKBContainersController` | Implemented |
 | `PATCH` | `/admin/structured-kb/containers/:id` | `SKBContainersController` | Implemented |
 | `DELETE` | `/admin/structured-kb/containers/:id` | `SKBContainersController` | Implemented (204) |
-| `POST` | `/admin/structured-kb/containers/:id/files` | api-gateway proxy | Implemented |
+| `POST` | `/admin/structured-kb/containers/:id/files` | api-gateway proxy | Pending/broken: target agent-admin route missing |
 | `GET` | `/admin/structured-kb/containers/:id/files` | api-gateway proxy | Pending |
 | `DELETE` | `/admin/structured-kb/containers/:id/files/:fileId` | api-gateway proxy | Pending |
 | `GET` | `/admin/structured-kb/containers/:id/files/:fileId/schema` | api-gateway proxy | Pending |
@@ -1270,20 +1284,22 @@ See [skb/api.md](./api.md) for the full API reference with request/response exam
 
 ## 12. Configuration Reference
 
-### Environment Variables
+### Implemented constants
 
-| Variable | Default | Description |
+These values are hardcoded in the current `agent-admin-service` implementation;
+they are not runtime environment variable knobs unless code is added to read
+them from config.
+
+| Constant / behavior | Value | Description |
 |----------|---------|-------------|
-| `SKB_MAX_COLUMNS` | `100` | Maximum columns per file |
-| `SKB_MAX_ROWS` | `500000` | Maximum rows per file |
-| `SKB_BATCH_SIZE` | `5000` | Rows per INSERT batch |
-| `SKB_INGEST_TIMEOUT_MS` | `300000` | Worker ack timeout (5 min — as implemented) |
-| `SKB_DEFAULT_INGEST_MODEL` | `gpt-4.1-mini` | Default LLM for schema analysis |
-| `SKB_DEFAULT_QUERY_MODEL` | `gpt-4.1-mini` | Default LLM for NL→SQL |
-| `SKB_QUERY_MAX_LIMIT` | `1000` | Maximum query result limit |
-| `SKB_LLM_MAX_RETRIES` | `2` | AI SDK retry count |
-| `SKB_RATE_LIMIT_QUERY` | `60` | Query requests per minute per tenant |
-| `SKB_RATE_LIMIT_INGEST` | `10` | Ingest requests per minute per tenant |
+| File parser max columns | `100` | Maximum columns per file |
+| Row insert batch size | `5000` | Rows per INSERT batch |
+| Worker ack timeout | `300000 ms` | Worker ack wait for SKB ingestion messages |
+| Default ingest model | `gpt-4.1-mini` | Default LLM for schema analysis |
+| Default query model | `gpt-4.1-mini` | Default LLM for NL→SQL |
+| Query max limit | `1000` | Maximum query result limit |
+| Query rate limit | `30/min` | Per tenant per process; in-memory `SKBRateLimitGuard`, no rate-limit headers |
+| Ingest rate limit | — | Not implemented in `agent-admin-service` |
 
 ### Container `provider_config`
 

@@ -151,7 +151,10 @@ export class RoutesService {
       serviceName: String(r.service_name ?? ""),
       knativeName: String(r.knative_name ?? ""),
       namespace: String(r.namespace ?? ""),
-      port: Number(r.port ?? 0),
+      // Dynamic routes target the Knative Service DNS name, not the user
+      // container directly. Knative exposes that cluster service on HTTP :80
+      // even when the user container listens on a different port.
+      port: 80,
       pathPrefix: String(r.path_prefix ?? ""),
       methods: r.methods as string[],
       isPublic: Boolean(r.is_public),

@@ -1,9 +1,11 @@
+import "@angular/compiler";
 import { provideHttpClient } from "@angular/common/http";
 import {
   HttpTestingController,
   provideHttpClientTesting,
 } from "@angular/common/http/testing";
 import { TestBed } from "@angular/core/testing";
+import { describe, expect, it, afterEach, beforeEach } from "vitest";
 import { environment } from "../../../environments/environment";
 import { ConnectorCallService } from "./connector-call.service";
 
@@ -46,7 +48,10 @@ describe("ConnectorCallService", () => {
     httpMock = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => httpMock.verify());
+  afterEach(() => {
+    httpMock?.verify();
+    TestBed.resetTestingModule();
+  });
 
   it("requests the correct URL with required query params", () => {
     service.recentCalls("adp-1").subscribe();
@@ -105,6 +110,29 @@ describe("ConnectorCallService", () => {
     });
 
     expect(result.length).toBe(1);
+  });
+
+  it("normalizes uppercase cache results from older audit rows", () => {
+    let result: Array<{ cacheResult: string | null }> = [];
+    service.recentCalls("adp-1").subscribe((rows) => (result = rows));
+
+    const req = httpMock.expectOne((r) => r.url === AUDIT_URL);
+    req.flush({
+      events: [
+        makeRow("adp-1", {
+          payload: JSON.stringify({
+            adapterId: "adp-1",
+            method: "GET",
+            resolvedUrl: "https://api.example.com/data",
+            status: 200,
+            durationMs: 50,
+            cacheResult: "HIT",
+          }),
+        }),
+      ],
+    });
+
+    expect(result[0]?.cacheResult).toBe("hit");
   });
 
   it("accepts createdAt (camelCase) as timestamp key", () => {

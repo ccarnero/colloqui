@@ -272,10 +272,9 @@ curl -X POST http://localhost:3000/workflows \
 {
   "name": "testWorkflow",
   "application": "test",
-  "request": { "data": "test" },
   "actions": [
     {
-      "type": "jsFunction",
+      "activity": "jsFunction",
       "name": "hello",
       "args": {
         "code": "return { message: 'Hello World' }"
@@ -298,7 +297,7 @@ Workflow Service supports 8 action types (`endpointCall`, `serviceCall`, `jsFunc
 1. **Define interface** in `packages/shared/src/workflow.interfaces.ts`:
    ```typescript
    interface MyActionAction {
-     type: "myAction"
+     activity: "myAction"
      name: string
      args: {
        param1: string
@@ -358,7 +357,7 @@ Connectors are managed by `connector-admin` and consumed by `connector-runtime`:
 2. **Call from workflow** with the connector ID:
    ```typescript
    {
-     type: "endpointCall",
+     activity: "endpointCall",
      name: "fetchData",
      args: {
        adapterId: "my-api-connector",
@@ -372,7 +371,7 @@ Connectors are managed by `connector-admin` and consumed by `connector-runtime`:
    ```bash
    curl -X POST http://localhost:3000/workflows \
      -H "x-yoizen-tenant: local-test" \
-     -d '{ "actions": [{ "type": "endpointCall", "adapterId": "my-api-connector", ... }] }'
+     -d '{ "name": "connector-smoke", "application": "onboarding", "actions": [{ "activity": "endpointCall", "name": "fetchData", "args": { "adapterId": "my-api-connector", "endpointId": "getUser" } }] }'
    ```
 
 ### Task 5: Query Workflows in Temporal Web UI

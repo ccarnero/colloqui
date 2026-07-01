@@ -6,6 +6,8 @@ Practical pseudocode examples for common use cases with `connector-runtime` and 
 
 > **Available action kinds** (verified in `services/workflow-service/src/temporal/workflows.ts`): `endpointCall`, `serviceCall`, `jsFunction`, `serviceBusCall`, `channelSend`, `agentCall`, `branch`, `conditional`.
 
+> **Lifecycle note**: workflow definitions are created with `POST /workflows` and contain `name`, `application`, and `actions`. Executions are started separately with `POST /workflows/:id/execute` and the body is only `{ "request": { ... } }`; the actions below reference that execution request via `{{request.*}}`.
+
 ## Pattern 1: Simple HTTP Call via Connector Runtime
 
 **Use case**: Single HTTP request, no orchestration needed.
@@ -101,16 +103,15 @@ result = {
 **Recipe**:
 
 ```
-// Client initiates workflow
+// Client creates or updates a workflow definition
 POST /workflows
 {
   name: "processOrder",
   application: "ecommerce",
-  request: { orderId: "ORD-123" },
   actions: [
     // Step 1: Fetch order details
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "fetchOrder",
       args: {
         method: "GET",
@@ -122,7 +123,7 @@ POST /workflows
     
     // Step 2: Validate payment (uses Step 1 result)
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "validatePayment",
       args: {
         method: "POST",
@@ -137,7 +138,7 @@ POST /workflows
     
     // Step 3: Process charge (uses Step 2 result)
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "processCharge",
       args: {
         method: "POST",
@@ -151,7 +152,7 @@ POST /workflows
     
     // Step 4: Send confirmation (uses all previous results)
     {
-      type: "serviceBusCall",
+      activity: "serviceBusCall",
       name: "sendConfirmation",
       args: {
         subject: "events.orders.confirmed",
@@ -185,6 +186,12 @@ POST /workflows
 
 // All steps executed sequentially
 // Each step's results available to downstream steps via {{results.stepName.data}}
+
+// Then execute the saved definition
+POST /workflows/:id/execute
+{
+  request: { orderId: "ORD-123" }
+}
 ```
 
 ---
@@ -204,10 +211,11 @@ POST /workflows
 POST /workflows
 {
   name: "enrichUserProfile",
+  application: "crm",
   actions: [
     // Fetch base user data
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "fetchUser",
       args: {
         adapterId: "user-service",
@@ -218,14 +226,14 @@ POST /workflows
     
     // Branch: Execute 3 parallel enrichments
     {
-      type: "branch",
+      activity: "branch",
       name: "enrichParallel",
       args: {
         branches: [
           // Branch 1: Fetch purchase history
           [
             {
-              type: "endpointCall",
+              activity: "endpointCall",
               name: "fetchHistory",
               args: {
                 adapterId: "ecommerce",
@@ -238,7 +246,7 @@ POST /workflows
           // Branch 2: Fetch preferences
           [
             {
-              type: "endpointCall",
+              activity: "endpointCall",
               name: "fetchPreferences",
               args: {
                 adapterId: "preferences-service",
@@ -251,7 +259,7 @@ POST /workflows
           // Branch 3: Fetch loyalty points
           [
             {
-              type: "endpointCall",
+              activity: "endpointCall",
               name: "fetchLoyalty",
               args: {
                 adapterId: "loyalty-service",
@@ -266,7 +274,7 @@ POST /workflows
     
     // Merge enriched data
     {
-      type: "jsFunction",
+      activity: "jsFunction",
       name: "mergeEnrichment",
       args: {
         code: `
@@ -312,10 +320,11 @@ POST /workflows
 POST /workflows
 {
   name: "conditionalApproval",
+  application: "approvals",
   actions: [
     // Check request amount
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "validateRequest",
       args: {
         method: "POST",
@@ -326,7 +335,7 @@ POST /workflows
     
     // Conditional branch: approve or escalate
     {
-      type: "jsFunction",
+      activity: "jsFunction",
       name: "shouldApprove",
       args: {
         code: `
@@ -344,14 +353,14 @@ POST /workflows
     
     // Branch on decision
     {
-      type: "branch",
+      activity: "branch",
       name: "approvalRoute",
       args: {
         branches: [
           // Branch A: Auto-approve (low amount, passed validation)
           [
             {
-              type: "serviceBusCall",
+              activity: "serviceBusCall",
               name: "publishApproved",
               args: {
                 subject: "events.approvals.approved",
@@ -367,7 +376,7 @@ POST /workflows
           // Branch B: Escalate to manager (high amount or validation failed)
           [
             {
-              type: "channelSend",
+              activity: "channelSend",
               name: "notifyManager",
               args: {
                 channel: "email",
@@ -404,14 +413,11 @@ POST /workflows
 POST /workflows
 {
   name: "dynamicRequest",
-  request: {
-    userId: "user_123",
-    templateId: "email_template_456"
-  },
+  application: "notifications",
   actions: [
     // Step 1: Fetch user data
     {
-      type: "serviceCall",
+      activity: "serviceCall",
       name: "getUser",
       args: {
         service: "user-service",
@@ -422,7 +428,7 @@ POST /workflows
     
     // Step 2: Fetch email template
     {
-      type: "serviceCall",
+      activity: "serviceCall",
       name: "getTemplate",
       args: {
         service: "template-service",
@@ -433,7 +439,7 @@ POST /workflows
     
     // Step 3: Send email with templated content
     {
-      type: "channelSend",
+      activity: "channelSend",
       name: "sendEmail",
       args: {
         channel: "email",
@@ -445,7 +451,7 @@ POST /workflows
     
     // Step 4: Log event with context
     {
-      type: "serviceBusCall",
+      activity: "serviceBusCall",
       name: "logSent",
       args: {
         subject: "events.emails.sent",
@@ -485,10 +491,11 @@ POST /workflows
 POST /workflows
 {
   name: "resilientAPICall",
+  application: "integrations",
   actions: [
     // Attempt 1: Call primary API
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "callPrimaryAPI",
       args: {
         method: "GET",
@@ -500,7 +507,7 @@ POST /workflows
     
     // Evaluate result
     {
-      type: "jsFunction",
+      activity: "jsFunction",
       name: "checkSuccess",
       args: {
         code: `
@@ -518,14 +525,14 @@ POST /workflows
     
     // Conditional fallback
     {
-      type: "branch",
+      activity: "branch",
       name: "fallbackStrategy",
       args: {
         branches: [
           // If success: publish result
           [
             {
-              type: "serviceBusCall",
+              activity: "serviceBusCall",
               name: "publishSuccess",
               args: {
                 subject: "events.data.retrieved",
@@ -539,7 +546,7 @@ POST /workflows
           // If failed: try backup API
           [
             {
-              type: "endpointCall",
+              activity: "endpointCall",
               name: "callBackupAPI",
               args: {
                 method: "GET",
@@ -589,10 +596,11 @@ POST /workflows
 POST /workflows
 {
   name: "classifyAndRoute",
+  application: "support",
   actions: [
     // Parse incoming request
     {
-      type: "jsFunction",
+      activity: "jsFunction",
       name: "parseRequest",
       args: {
         code: `
@@ -608,7 +616,7 @@ POST /workflows
     
     // Invoke AI agent for classification
     {
-      type: "agentCall",
+      activity: "agentCall",
       name: "classifyMessage",
       args: {
         agentId: "message-classifier-v2",
@@ -623,14 +631,14 @@ POST /workflows
     
     // Route based on classification
     {
-      type: "branch",
+      activity: "branch",
       name: "routeByPriority",
       args: {
         branches: [
           // High confidence urgent: escalate immediately
           [
             {
-              type: "channelSend",
+              activity: "channelSend",
               name: "escalateUrgent",
               args: {
                 channel: "sms",
@@ -643,7 +651,7 @@ POST /workflows
           // Normal priority: queue for processing
           [
             {
-              type: "serviceBusCall",
+              activity: "serviceBusCall",
               name: "queueForProcessing",
               args: {
                 subject: "events.messages.queued",
@@ -682,10 +690,11 @@ POST /workflows
 POST /workflows
 {
   name: "auditedTransaction",
+  application: "compliance",
   actions: [
     // Step 1: Log transaction start
     {
-      type: "serviceBusCall",
+      activity: "serviceBusCall",
       name: "logStart",
       args: {
         subject: "events.transactions.started",
@@ -701,7 +710,7 @@ POST /workflows
     
     // Step 2: Execute transaction
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "executeTransaction",
       args: {
         method: "POST",
@@ -715,7 +724,7 @@ POST /workflows
     
     // Step 3: Log success
     {
-      type: "serviceBusCall",
+      activity: "serviceBusCall",
       name: "logSuccess",
       args: {
         subject: "events.transactions.completed",
@@ -757,16 +766,13 @@ POST /workflows
 POST /workflows
 {
   name: "primaryWorkflow",
-  request: {
-    orderId: "ORD-123",
-    callbackUrl: "https://callback-service/webhook"
-  },
+  application: "orders",
   actions: [
     // Execute primary steps...
     
     // Trigger secondary workflow and subscribe to result
     {
-      type: "serviceBusCall",
+      activity: "serviceBusCall",
       name: "triggerSecondaryWorkflow",
       args: {
         subject: "events.workflows.trigger",
@@ -786,10 +792,7 @@ POST /workflows
 POST /workflows
 {
   name: "secondaryWorkflow",
-  request: {
-    orderId: "ORD-123",
-    callbackUrl: "https://callback-service/webhook"
-  },
+  application: "orders",
   actions: [
     // Execute async operations (e.g., generate report, process in background)
     // Note: there is no built-in `sleep` action. Use jsFunction with a
@@ -797,7 +800,7 @@ POST /workflows
     
     // Notify completion
     {
-      type: "endpointCall",
+      activity: "endpointCall",
       name: "notifyCompletion",
       args: {
         method: "POST",

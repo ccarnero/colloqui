@@ -39,6 +39,16 @@ describe("ConnectorsController", () => {
     });
   });
 
+  it("usage delegates before id routes", async () => {
+    await controller.usage(req as never, "7");
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/connectors/usage",
+      tenantId: "t1",
+      query: { window: "7" },
+    });
+  });
+
   it("create forwards nested cache config unchanged", async () => {
     const body = {
       name: "json",

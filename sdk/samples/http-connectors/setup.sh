@@ -179,6 +179,32 @@ reconcile_endpoints() {
   fi
 }
 
+reconcile_adapter_config() {
+  local id="$1" name="$2" body="$3"
+  local update
+
+  update="$(echo "$body" | jq -c '
+    if has("defaultCache") then
+      { defaultCache: .defaultCache }
+    else
+      {}
+    end
+  ')"
+
+  if [[ "$update" == "{}" ]]; then
+    return 0
+  fi
+
+  local resp
+  resp="$(api PATCH "/api/connectors/${id}" "$update")"
+  if echo "$resp" | jq -e '.id // empty' >/dev/null 2>&1; then
+    log "    config reconciled for '${name}'"
+  else
+    warn "    ! config reconcile failed for '${name}': ${resp}"
+    FAILED=$((FAILED + 1))
+  fi
+}
+
 # upsert_connector <file> — ensure the connector exists, then reconcile its
 # endpoints. Idempotent end to end.
 upsert_connector() {
@@ -220,6 +246,7 @@ upsert_connector() {
     err "could not resolve id for '${name}' — skipping endpoint reconcile"
     FAILED=$((FAILED + 1)); return 0
   fi
+  reconcile_adapter_config "$id" "$name" "$body"
   reconcile_endpoints "$id" "$name" "$body"
 }
 

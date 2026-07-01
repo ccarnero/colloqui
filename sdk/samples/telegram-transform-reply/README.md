@@ -43,11 +43,11 @@ the workflow (matched by name). `RECREATE=1` rebuilds both from scratch.
 | # | From | Transport | Subject / URL | To |
 |---|------|-----------|---------------|----|
 | 1 | Telegram | HTTPS POST | `/api/webhooks/telegram/acme/<externalId>` | api-gateway |
-| 2 | api-gateway | NATS JetStream · stream `INGRESS-acme` | `evt.acme.api-gateway.messaging.telegram.webhook.webhook_received.v1` | channel-service-worker |
-| 3 | channel-service-worker (ingress) | NATS JetStream · stream `INGRESS-acme` | `evt.acme.channel-service.messaging.telegram.telegram.received.v1` | workflow-service |
+| 2 | api-gateway | NATS JetStream · stream `INGRESS-ACME` | `evt.acme.api-gateway.messaging.telegram.webhook.webhook_received.v1` | channel-service-worker |
+| 3 | channel-service-worker (ingress) | NATS JetStream · stream `INGRESS-ACME` | `evt.acme.channel-service.messaging.telegram.telegram.received.v1` | workflow-service |
 | 4 | workflow-service | Temporal gRPC | task queue `workflow-orchestrator` · workflow `runWorkflow` | workflow-service worker |
 | 5 | workflow-service worker · `jsFunction` activity | local (in-process) | task queue `workflow-orchestrator` | workflow-service worker |
-| 6 | workflow-service worker · `channelSend` activity | NATS core publish · captured by `INGRESS-acme` | `evt.acme.channel-service.messaging.telegram.telegram.send.v1` | channel-service-worker |
+| 6 | workflow-service worker · `channelSend` activity | NATS core publish · captured by `INGRESS-ACME` | `evt.acme.channel-service.messaging.telegram.telegram.send.v1` | channel-service-worker |
 | 7 | channel-service-worker (egress) | HTTPS POST | `https://api.telegram.org/bot<token>/sendMessage` | Telegram |
 
 > `channel-service-worker` handles both ingress (hops 2–3) and egress (hops 6–7) — the API pod (`channel-service-api`) only manages accounts and configuration. The `jsFunction` activity (hop 5) runs in-process on the same worker; no extra service hop.

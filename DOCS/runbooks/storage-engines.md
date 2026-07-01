@@ -28,7 +28,7 @@ Services resolve the active engine once in `src/config.ts` via `resolveStorageEn
 | Infra (local) | `infrastructure/overlays/local/<env>` → `local-base` → `overlays/postgres` (no Mongo) | `infrastructure/overlays/local/mongo-<env>` → `mongo-local-base` → `overlays/mongo` (no OLTP Postgres) |
 | Infra (orbstack) | `infrastructure/overlays/orbstack/<env>` | `infrastructure/overlays/orbstack/mongo-<env>` |
 | Knative (dev) | `knative/services/overlays/local/postgres-dev` | `knative/services/overlays/local/mongo-dev` |
-| Per-tenant DB | StatefulSets `postgres` + `postgres-usage` | StatefulSet `mongo` (platform + usage DBs) |
+| Per-tenant DB | Default `shared` tier: logical DB on `postgres-shared` exposed in the tenant namespace by a `postgres` ExternalName Service. `dedicated` tier: per-tenant PostgreSQL StatefulSet. | Default `shared` tier: logical DB on shared Mongo; `dedicated` tier: per-tenant Mongo StatefulSet. |
 | Shared platform DB | CNPG `postgres-shared` / legacy `postgres` SS | Replica set `mongo-platform` |
 | Usage time-series | Timescale `postgres-usage-shared` | Replica set `mongo-usage` (time-series collections) |
 | **Temporal** | `postgres-temporal*` (unchanged) | `postgres-temporal*` (unchanged) |
@@ -48,7 +48,7 @@ Each migrated NestJS service uses:
 
 | Capability | Postgres | Mongo |
 |------------|----------|-------|
-| Multi-tenant isolation | DB per tenant | DB per tenant |
+| Multi-tenant isolation | Logical DB per tenant on the shared tier; physical StatefulSet per tenant on the dedicated tier | Logical DB per tenant on the shared tier; physical StatefulSet per tenant on the dedicated tier |
 | Idempotent inserts | `ON CONFLICT DO NOTHING` | `insertMany` + E11000 / upsert |
 | Batch projection | `UPDATE … FROM unnest` | `bulkWrite` |
 | Usage aggregates | Timescale `time_bucket`, continuous aggregates | `$dateTrunc` aggregation pipelines |

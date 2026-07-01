@@ -1,6 +1,6 @@
 # Admin Console
 
-Tenant-scoped administration dashboard for the Yoizen platform. Built with Angular 21 and Angular Material. Each logged-in user sees only their tenant's resources, with sidebar sections filtered by role.
+Tenant-scoped administration dashboard for the Yoizen platform. Built with Angular 21, standalone components, signals, Angular Material, and the Yoizen UI shell. Each authenticated user sees data for the tenant encoded in their JWT.
 
 ## Quick Start
 
@@ -9,53 +9,43 @@ npm install
 ng serve
 ```
 
-Open `http://localhost:4200/`. The app redirects unauthenticated users to `/login`.
+Open `http://localhost:4200/`. Unauthenticated users are redirected to `/login`.
 
-## Authentication
+## Authentication and tenant scope
 
-The admin console authenticates via `POST /auth/login` (email + password). On successful login, the API returns a JWT containing:
+The console authenticates via `POST /auth/login` (email + password). The JWT payload provides:
 
-- `scope` -- `tenant:<id>` identifying which tenant the user belongs to
-- `role` -- one of `tenant_admin`, `tenant_editor`, or `tenant_viewer`
-- `tenant_id` -- the tenant identifier
-- `email` -- the user's email
+- `scope` — tenant scope, for example `tenant:<id>`
+- `role` — `tenant_admin`, `tenant_editor`, or `tenant_viewer`
+- `tenant_id` — tenant identifier
+- `email` — user email
 
-The JWT is decoded client-side (base64 payload parse) to derive the user profile, tenant context, and role. The `x-yoizen-tenant` header is automatically set on every API request via an HTTP interceptor using the tenant ID from the JWT.
+The client decodes the JWT to derive the user profile and tenant context. HTTP interceptors attach the bearer token and `x-yoizen-tenant` header to API requests. The app has no tenant switcher; tenant selection comes from the token.
 
-## Tenant-Scoped Design
+## Current navigation model
 
-This is **not** a multi-tenant platform admin tool. It is scoped to a single tenant determined by the logged-in user's JWT:
+The shell uses top header sections plus a left sub-nav, not the older role-filtered sidebar. Current top sections come from `src/app/layout/nav/nav.config.ts`:
 
-- No tenant selector or tenant switching UI
-- Tenant ID derived from JWT, not user selection
-- All API calls automatically include `x-yoizen-tenant` header
-- Auth guard protects all routes (redirects to `/login` if unauthenticated)
-- Tenant details are fetched on shell init from `GET /tenants/:name`
+| Top section | Landing | Sub-nav pages |
+| --- | --- | --- |
+| Overview | `/dashboard` | Dashboard, Analytics |
+| Channels | `/channels` | WhatsApp, Telegram, HTTP |
+| Connections | `/connections` | Overview, HTTP, MCP, Hosted services |
+| AI | `/ai` | Agents, Playground, Memories, Skills, Knowledge Bases, System Variables |
+| Processes | `/processes` | Workflows, Schedules |
+| Settings | `/settings` | Users, Roles, API keys, Billing |
 
-## Role-Based Access
+Route access is protected by `authGuard` at the shell level. Individual feature pages should not be documented as permission-gated unless the route actually has a guard.
 
-Sidebar sections are filtered based on the user's role:
+## User management
 
-| Section | tenant_admin | tenant_editor | tenant_viewer |
-|---------|:---:|:---:|:---:|
-| Overview (Dashboard, Analytics) | Yes | Yes | Yes |
-| Identity & Access (Users, Roles, Groups, SSO, MFA, API Keys) | Yes | No | No |
-| Automation (Workflows, Webhooks, Scheduler, Rules) | Yes | Yes | No |
-| Data & Integrations | Yes | Yes | Yes |
-| Security & Compliance | Yes | No | No |
-| Notifications | Yes | Yes | No |
+Tenant admins can manage tenant users from **Settings › Users** (`/users`):
 
-The **Platform** section (Feature Flags, Environments, System Health) is hidden for all tenant users -- it is for platform administrators only.
-
-## User Management
-
-Tenant admins (`tenant_admin` role) can manage users for their tenant from the **Identity & Access > Users** page:
-
-- View all tenant users with email, display name, role, and creation date
-- Create new tenant users via a dialog (email, password, display name, role)
+- View tenant users with email, display name, role, and creation date
+- Create tenant users via the API gateway
 - Deactivate tenant users
 
-These operations go through `GET/POST/DELETE /auth/tenant-users` on the API gateway.
+These operations use the API gateway auth tenant-user routes.
 
 ## Project Structure
 
@@ -63,36 +53,35 @@ These operations go through `GET/POST/DELETE /auth/tenant-users` on the API gate
 src/
 ├── app/
 │   ├── core/
-│   │   ├── guards/           # authGuard (route protection)
-│   │   ├── interceptors/     # authInterceptor (Bearer token), tenantInterceptor (x-yoizen-tenant)
-│   │   ├── models/           # IUser, ITenant, IActivity
-│   │   └── services/         # AuthService, TenantService, ThemeService, NotificationService
+│   │   ├── guards/           # authGuard route protection
+│   │   ├── interceptors/     # auth + tenant headers
+│   │   ├── models/
+│   │   └── services/
 │   ├── features/
-│   │   ├── auth/             # Login page (email + password)
+│   │   ├── auth/             # Login
 │   │   ├── overview/         # Dashboard, Analytics
-│   │   ├── identity/         # Users, Roles, Groups, SSO, MFA, API Keys
-│   │   ├── automation/       # Workflows, Webhooks, Scheduler, Rules
-│   │   ├── data-integrations/# Data Sources, Network Sources, Export, Schema Manager
-│   │   ├── security/         # Audit Log, Security Center, Compliance, IP Allowlist, Data Retention
-│   │   ├── notifications/    # Notification Rules, Email Templates
-│   │   └── tenant-management/# Billing, Quotas, Customization
+│   │   ├── channels/         # Channel landing and channel account detail
+│   │   ├── connections/      # Connections landing, MCP placeholder/page
+│   │   ├── automation/       # Workflows, schedules, hosted services, AI feature pages
+│   │   ├── processes/        # Processes landing and direct message trace route
+│   │   ├── identity/         # Users, Roles, API keys
+│   │   └── settings-hub/     # Settings landing hub
 │   ├── layout/
-│   │   ├── shell/            # Main layout (header + sidebar + content + right panel)
-│   │   ├── header/           # Logo, tenant badge, notifications, theme toggle, user menu
-│   │   ├── sidebar/          # Role-filtered navigation sections
-│   │   └── right-panel/      # Tenant health, quota usage, recent activity
-│   └── shared/
-│       └── components/       # DataTable, StatusBadge, MetricCard, Sparkline, ProgressBar, HttpAdapterDialog
-├── environments/             # environment.ts, environment.prod.ts
-├── styles.scss               # Global styles and CSS variables
-└── main.ts                   # Angular bootstrap
+│   │   ├── shell/            # Header + sub-nav + main outlet
+│   │   ├── header/           # Top section tabs
+│   │   ├── nav/              # NAV_SECTIONS source of truth
+│   │   └── sub-nav/          # Left section sub-nav
+│   └── shared/components/    # PageHeader, KPI, ActivityFeed, SubTabs, status primitives
+├── environments/
+├── styles.scss
+└── main.ts
 ```
 
 ## Building
 
 ```bash
-ng build                          # Development build
-ng build --configuration=production  # Production build (output in dist/)
+ng build
+ng build --configuration=production
 ```
 
 The production build is packaged into an nginx container via the Dockerfile.
@@ -106,4 +95,4 @@ The production build is packaged into an nginx container via the Dockerfile.
 
 ## Component testing strategy
 
-See **Angular consoles** under *Testing* in the repo root `AGENTS.md`. Summary: use Angular `TestBed`, `HttpClientTestingModule` for API calls, stub heavy Material/dialog children, and prioritize auth, interceptors, and services before large feature components.
+See **Angular consoles** under *Testing* in the repo root `AGENTS.md`. Use Angular `TestBed`, HTTP testing utilities for services, and focused component tests around routing, guards, interceptors, and metrics services before broad feature snapshots.

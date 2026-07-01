@@ -93,7 +93,20 @@ cd sdk/samples/ai-knowledge-base-agent
 ./setup.sh
 cd ../../..
 
-# 11) HTTP bridge sample - long-running, keep terminal open
+# 11) Hosted services API sample
+cat > sdk/samples/hosted-services-api/.env <<'ENV'
+HOSTED_SERVICE_NAME=sample-echo
+HOSTED_ROUTE_PREFIX=/samples/hosted-echo
+HOSTED_SERVICE_IMAGE=ealen/echo-server:latest
+HOSTED_SERVICE_PORT=8080
+RECREATE=0
+ENV
+cd sdk/samples/hosted-services-api
+./setup.sh
+./run.sh
+cd ../../..
+
+# 12) HTTP bridge sample - long-running, keep terminal open
 # No .env required.
 cd sdk/samples/http-bridge
 ./run.sh

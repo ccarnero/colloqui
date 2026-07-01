@@ -27,7 +27,7 @@ the bulk of the value and uses only endpoints that already exist.
 
 | Slice | What | New backend? |
 |---|---|---|
-| **1 — View (this change's primary slice)** | Route, `diagnostics:read` gate, component, recent-traces list, causal chain assembled client-side, static pub/sub topology, Temporal/Tempo links (conditional), Executions-row entry link | No — reuses existing audit + executions endpoints |
+| **1 — View (this change's primary slice)** | Route, component-level `diagnostics:read` gate, recent-traces list, causal chain assembled client-side, static pub/sub topology, Temporal/Tempo links (conditional), Executions-row entry link | No — reuses existing audit + executions endpoints |
 | 2 — Live consumer health | `pending`/`ack`/`redelivered` per durable from JetStream + channel-service circuit-breaker status | Yes (2 small read endpoints) |
 | 3 — Per-message delivery (tier 3) | Stamp delivery attempt metadata at consume time for strict per-message verdicts | Yes (write-path) |
 
@@ -88,7 +88,7 @@ tech `traceid` + Open in Tempo), the causal chain with per-node pub/sub fan-out,
 per-execution Open in Temporal link. Links render only when their base URL is configured.
 
 Routing: `processes/trace` and `processes/trace/:correlationId`, lazy, guarded by the existing
-permission mechanism with `diagnostics:read`. Nav entry hidden unless the user holds the
+permission mechanism with `diagnostics:read`. No nav entry is currently wired; if added, it should be hidden unless the user holds the
 permission.
 
 ### 4. Entry point — Executions row
@@ -104,7 +104,7 @@ When `temporalUiBaseUrl` / `tempoBaseUrl` are empty the respective links are hid
 ## Data Flow (Slice 1)
 
 ```
-Operator → Processes › Message trace  (route guarded by diagnostics:read)
+Operator → direct `/processes/trace` URL  (component gated by diagnostics:read)
   │
   ├─ recent list:  GET /audit/channel-events?from=now-5m&limit=200
   │                  → group by correlation_id → newest per group → IRecentTrace[]
@@ -125,7 +125,7 @@ Operator → Processes › Message trace  (route guarded by diagnostics:read)
 
 ## Acceptance Criteria
 
-- `/processes/trace` is reachable only with `diagnostics:read`; without it the route is blocked and
+- `/processes/trace` is under the shell auth guard; without `diagnostics:read` the component shows access restricted and
   the nav item is hidden.
 - Pasting (or deep-linking) a `correlation_id` renders the causal chain in `created_at` order with
   `received` as root and `send` as a descendant under the same `correlation_id`.

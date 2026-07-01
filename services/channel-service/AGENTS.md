@@ -15,7 +15,7 @@ Repository interfaces + dual adapters for accounts, auto-reply, and usage. See [
 | Runtime | Bun 1.3 |
 | Framework | NestJS 11 + Fastify |
 | Language | TypeScript 5.7 (strict) |
-| Database | MongoDB 7 via official `mongodb` driver (platform + per-tenant usage) |
+| Database | Selected by `DB_ENGINE` / `STORAGE_ENGINE`: Postgres by default, Mongo optional |
 | Messaging | NATS JetStream |
 | Shared | `@yoizen/shared`, `@yoizen/database` |
 
@@ -23,15 +23,15 @@ Repository interfaces + dual adapters for accounts, auto-reply, and usage. See [
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MONGO_HOST` | `mongo-platform.support-services-<env>.svc.cluster.local` | Platform MongoDB host |
-| `MONGO_USAGE_HOST` | per-tenant / shared usage cluster | Usage metrics MongoDB host |
-| `MONGO_PORT` | `27017` | MongoDB port |
-| `MONGO_DB` | `yoizen` | Platform database name |
-| `MONGO_USER` / `MONGO_PASSWORD` | from `mongo-credentials` Secret | Credentials |
+| `DB_ENGINE` / `STORAGE_ENGINE` | `postgres` | Storage engine selector: `postgres` or `mongo` |
+| `POSTGRES_HOST` / `POSTGRES_PORT` / `POSTGRES_DB` | environment-specific | Postgres connection when using the default engine |
+| `MONGO_HOST` / `MONGO_PORT` / `MONGO_DB` | environment-specific | Mongo connection when `DB_ENGINE=mongo` |
+| `MONGO_USAGE_HOST` | per-tenant / shared usage cluster | Usage metrics MongoDB host when using Mongo |
+| credentials | from namespace Secrets | Engine-specific database credentials |
 
 ## Health
 
-`GET /health` returns `{ status, mongo, nats }` with `mongo: connected | disconnected`.
+`GET /health` returns `{ status, nats, postgres }` for the Postgres engine or `{ status, nats, mongo }` for the Mongo engine.
 
 ## Testing
 

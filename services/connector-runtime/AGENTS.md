@@ -48,7 +48,7 @@ Temporal Server
   -> worker picks up task
   -> if adapterId + endpointId:
        AdapterClient.resolveRequest(tenantId, adapterId, endpointId)
-       -> fetch adapter config from adapter-service (Redis SWR cache)
+       -> fetch connector config from connector-admin (Redis SWR cache)
        -> resolve URL, auth headers, timeout, retries
        -> tracedFetch with adapter config + exponential backoff retry
   -> else:
@@ -76,7 +76,7 @@ When `adapterId` and `endpointId` are present, the activity resolves the full re
 |--------|----------|-----------|---------|
 | Temporal Server | gRPC | Bidirectional | Receive activity tasks, report results |
 | Arbitrary endpoints | HTTP | Outbound | Execute endpoint calls as workflow activities |
-| adapter-service | HTTP | Outbound | Fetch adapter config via `AdapterClient` (cached in Redis) |
+| connector-admin | HTTP | Outbound | Fetch connector config via `AdapterClient` (cached in Redis) |
 | Redis | TCP | Outbound | Stale-while-revalidate cache for adapter configs and OAuth2 tokens |
 
 ### Worker Configuration
@@ -84,7 +84,7 @@ When `adapterId` and `endpointId` are present, the activity resolves the full re
 | Setting | Value |
 |---------|-------|
 | Task queue | `connector-runtime` |
-| Max concurrent activities | 200 |
+| Max concurrent activities | 400 |
 | Shutdown grace time | 30s |
 | Activity timeout | Adapter `timeoutMs` or 30s default |
 | DNS | IPv4-first (via `dns.setDefaultResultOrder`) |
@@ -96,7 +96,7 @@ When `adapterId` and `endpointId` are present, the activity resolves the full re
 | `PORT` | `3000` | Health server port |
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace |
-| `ADAPTER_SERVICE_URL` | `http://adapter-service.platform-services-dev.svc.cluster.local` | Adapter service URL |
+| `CONNECTOR_ADMIN_URL` | `platformServiceUrl("connector-admin-api", env)` | Connector admin API URL |
 | `REDIS_HOST` | `localhost` | Redis host (adapter cache) |
 | `REDIS_PORT` | `6379` | Redis port |
 
@@ -140,7 +140,7 @@ Requires local Temporal server (`localhost:7233`).
 |---------|-------------|
 | **Temporal Server** | Receives activity tasks from the `connector-runtime` task queue |
 | **workflow-service** | Dispatches `endpointCall` and `serviceCall` activities to this worker via Temporal |
-| **adapter-service** | Provides adapter config via REST API (fetched through `AdapterClient`) |
+| **connector-admin** | Provides connector config via REST API (fetched through `AdapterClient`) |
 | **Redis** | Stale-while-revalidate cache for adapter configs and OAuth2 tokens |
-| **`@yoizen/shared`** | `CONNECTOR_RUNTIME_TASK_QUEUE`, `HttpEndpointRequest`, `HttpServiceRequest`, `TENANT_HEADER`, `AdapterClient`, `DEFAULT_ADAPTER_SERVICE_URL` |
+| **`@yoizen/shared`** | `CONNECTOR_RUNTIME_TASK_QUEUE`, `HttpEndpointRequest`, `HttpServiceRequest`, `TENANT_HEADER`, `AdapterClient`, `DEFAULT_CONNECTOR_ADMIN_URL` |
 | **`@yoizen/observability`** | `tracedFetch` for instrumented HTTP calls |

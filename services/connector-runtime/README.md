@@ -1,15 +1,15 @@
 # Connector Runtime
 
-A standalone Temporal worker service that executes generic HTTP requests with optional adapter-driven configuration. This service is the execution engine for all HTTP-based activities in the platform — whether called from workflows, event processors, webhooks, or direct external callers. It operates independently from workflow orchestration and scales based on Temporal task queue depth.
+A standalone Temporal worker service that executes generic HTTP requests with optional connector-driven configuration. This service is the execution engine for all HTTP-based activities in the platform — whether called from workflows, event processors, webhooks, or direct external callers. It operates independently from workflow orchestration and scales based on Temporal task queue depth.
 
 ## What is connector-runtime?
 
 connector-runtime listens on the `connector-runtime` Temporal task queue for activity tasks. Each activity represents a single HTTP request that may be configured in one of two ways:
 
 1. **Raw HTTP**: Caller provides complete URL, method, headers, and body
-2. **Adapter-driven**: Caller provides `adapterId` and `endpointId`; the service resolves full configuration (base URL, auth, custom headers, timeout, retries) from adapter-service and applies it
+2. **Connector-driven**: Caller provides `adapterId`/connector ID and `endpointId`; the service resolves full configuration (base URL, auth, custom headers, timeout, retries) from connector-admin and applies it
 
-All HTTP calls are instrumented with OpenTelemetry for observability. The service maintains a Redis stale-while-revalidate cache for adapter configurations to minimize dependency on adapter-service.
+All HTTP calls are instrumented with OpenTelemetry for observability. The service maintains a Redis stale-while-revalidate cache for connector configurations to minimize dependency on connector-admin.
 
 ## Quick Start
 
@@ -21,7 +21,7 @@ pnpm install
 bun run start:dev
 ```
 
-**Prerequisites**: Temporal server running (`localhost:7233`), Redis (`localhost:6379`), adapter-service reachable.
+**Prerequisites**: Temporal server running (`localhost:7233`), Redis (`localhost:6379`), connector-admin reachable.
 
 ## Local Development
 
@@ -61,7 +61,7 @@ bun test test/unit
 
 **Activity: `executeEndpointCall`** (`src/activities/endpoint-call.activity.ts`)
 - Entry point for HTTP requests
-- Routes to adapter-driven path (if `adapterId`/`endpointId` provided) or raw path
+- Routes to connector-driven path (if `adapterId`/connector ID and `endpointId` are provided) or raw path
 - Uses `tracedFetch` from `@yoizen/observability` for instrumentation
 - Implements exponential backoff retry with circuit breaker
 - Returns `{ status, body, headers }` to caller
@@ -71,10 +71,10 @@ bun test test/unit
 - Falls back to registry-service DNS lookup
 - Delegates to `executeEndpointCall` for HTTP execution
 
-**Adapter Resolution** (`src/activities/_shared/adapter-client.provider.ts`)
-- `AdapterClient` class wraps adapter-service REST API calls
+**Connector Resolution** (`src/activities/_shared/adapter-client.provider.ts`)
+- `AdapterClient` class wraps connector-admin REST API calls
 - Redis stale-while-revalidate cache (TTL 300s, stale window 60s)
-- Lazy cache misses: fetch from adapter-service while serving stale data if cache is fresh
+- Lazy cache misses: fetch from connector-admin while serving stale data if cache is fresh
 - OAuth2 client credentials token management for secured adapters
 
 ### Data Flow
@@ -84,11 +84,11 @@ Temporal Server receives activity task for connector-runtime queue
          ↓
 Worker picks up executeEndpointCall activity
          ↓
-         ├─ [Adapter-driven path]
+         ├─ [Connector-driven path]
          │   AdapterClient.resolveRequest(tenantId, adapterId, endpointId)
          │   ├─ Check Redis cache (hit → return config)
          │   └─ [Cache miss]
-         │       ├─ Fetch from adapter-service REST API
+         │       ├─ Fetch from connector-admin REST API
          │       ├─ Cache in Redis
          │       └─ Return resolved config (URL, auth headers, timeout, retries)
          │
@@ -174,7 +174,7 @@ activity = executeEndpointCall({
 }
 ```
 
-**Example 2: Adapter-driven call**
+**Example 2: Connector-driven call**
 
 ```
 // Caller provides minimal info; adapter resolves the rest
@@ -186,7 +186,7 @@ activity = executeEndpointCall({
   timeout: 30000
 })
 
-// AdapterClient resolves from adapter-service:
+// AdapterClient resolves from connector-admin:
 // - Base URL: https://crm.example.com/api
 // - Auth: Bearer token (OAuth2 client credentials)
 // - Custom headers: { "X-API-Key": "..." }
@@ -227,8 +227,8 @@ activity = executeServiceCall({
 })
 
 // Service resolution:
-// 1. Check if audit-adapter configured in adapter-service
-// 2. If yes, use adapter config (URL, auth, headers)
+// 1. Check if an audit connector is configured in connector-admin
+// 2. If yes, use connector config (URL, auth, headers)
 // 3. If no, resolve via Kubernetes DNS: audit-service.default.svc.cluster.local
 
 // Request sent to: http://audit-service.default.svc.cluster.local/events/log
@@ -248,7 +248,7 @@ activity = executeServiceCall({
 
 ### Circuit Breaker
 
-If a remote endpoint fails repeatedly, the service activates a circuit breaker to fail fast without attempting additional calls. Thresholds are adapter-configurable.
+If a remote endpoint fails repeatedly, the service activates a circuit breaker to fail fast without attempting additional calls. Thresholds are connector-configurable.
 
 ```
 Attempt 1: Failure (timeout)
@@ -262,13 +262,13 @@ If test succeeds → circuit closes, normal operation resumes
 ### Retries & Backoff
 
 - **Strategy**: Exponential backoff (1s, 2s, 4s)
-- **Max retries**: 3 (configurable per adapter)
+- **Max retries**: 3 (configurable per connector)
 - **Retryable errors**: Network timeouts, 5xx status codes, connection refused
 - **Non-retryable errors**: 4xx status codes (immediate failure)
 
 ### Timeout Strategy
 
-1. Use adapter-configured timeout if adapter-driven request
+1. Use connector-configured timeout if connector-driven request
 2. Use caller-provided timeout override if present
 3. Fall back to 30s default
 4. Maximum: 300s (circuit breaker prevents infinite hangs)
@@ -277,9 +277,9 @@ If test succeeds → circuit closes, normal operation resumes
 
 ### Concurrency
 
-- **Max concurrent activities**: 200 per replica
+- **Max concurrent activities**: 400 per replica
 - **Task dequeue**: Pull-based from Temporal (prevents overload)
-- **Activity timeout**: 30s default, configurable per adapter
+- **Activity timeout**: 30s default, configurable per connector
 
 ### Scaling
 
@@ -296,19 +296,19 @@ In developer mode it runs at a fixed **1 replica** with no autoscaling. Each rep
 | `PORT` | `3000` | Health server port |
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address:port |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace |
-| `ADAPTER_SERVICE_URL` | `http://adapter-service.platform-services-dev.svc.cluster.local` | Adapter service URL |
-| `REDIS_HOST` | `localhost` | Redis host for adapter config cache |
+| `CONNECTOR_ADMIN_URL` | `platformServiceUrl("connector-admin-api", env)` | Connector admin API URL |
+| `REDIS_HOST` | `localhost` | Redis host for connector config cache |
 | `REDIS_PORT` | `6379` | Redis port |
 | `REDIS_DB` | `0` | Redis database number |
 | `REDIS_PASSWORD` | *(unset)* | Redis password (if required) |
 | `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
 
-### Adapter Configuration
+### Connector Configuration
 
-Adapters are managed by adapter-service. connector-runtime queries adapter-service for runtime configuration:
+Connectors are managed by connector-admin. connector-runtime queries connector-admin for runtime configuration:
 
 ```
-GET /adapters/{adapterId}
+GET /connectors/{adapterId}
 → {
     id: string,
     baseUrl: string,
@@ -346,7 +346,7 @@ LOG_LEVEL=debug bun run start:dev
 ```
 
 Watch for:
-- `[adapter-client] cache hit/miss` — adapter config resolution
+- `[adapter-client] cache hit/miss` — connector config resolution
 - `[http-call] retrying after` — retry attempts
 - `[circuit-breaker] state changed` — circuit breaker state transitions
 
@@ -362,24 +362,24 @@ High pending count → consider raising the replica count manually.
 ### Common Issues
 
 **Issue**: Activity hangs or times out  
-**Solution**: Check adapter-service connectivity and Redis. Enable debug logging to see where time is spent.
+**Solution**: Check connector-admin connectivity and Redis. Enable debug logging to see where time is spent.
 
-**Issue**: Adapter config not resolving  
-**Solution**: Verify adapter-service is running and returning configs. Check Redis cache by:
+**Issue**: Connector config not resolving
+**Solution**: Verify connector-admin is running and returning configs. Check Redis cache by:
 ```bash
 redis-cli KEYS "*adapter*"
 ```
 
 **Issue**: Circuit breaker keeps opening  
-**Solution**: Check if the target endpoint is responding. Examine response times — if consistently > timeout, increase timeout in adapter config.
+**Solution**: Check if the target endpoint is responding. Examine response times — if consistently > timeout, increase timeout in connector config.
 
 ## Dependencies
 
 | Service | Protocol | Purpose |
 |---------|----------|---------|
 | **Temporal Server** | gRPC | Receive activity tasks, report results |
-| **adapter-service** | HTTP | Fetch adapter configs |
-| **Redis** | TCP | Cache adapter configs and OAuth2 tokens |
+| **connector-admin** | HTTP | Fetch connector configs |
+| **Redis** | TCP | Cache connector configs and OAuth2 tokens |
 | **Target endpoints** | HTTP(S) | Execute user-requested HTTP calls |
 
 ## Integration Points

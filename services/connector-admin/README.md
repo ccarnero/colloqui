@@ -1,6 +1,6 @@
-# Adapter Service
+# Connector Admin
 
-Multi-tenant HTTP adapter configuration service. Manages adapters (base URL, auth type, custom headers, timeouts, retries) and their endpoints per tenant. Stores configuration in PostgreSQL via `postgres.js` (raw SQL, no ORM). Consumed by `AdapterClient` in http-adapter, event-processor, and webhook-service.
+Multi-tenant connector configuration service. It manages connector definitions (base URL, auth type, custom headers, timeouts, retries) and their endpoints per tenant. Internally some modules still use legacy `adapter` names, but the public HTTP surface is `/connectors`.
 
 ## Quick Start
 
@@ -9,29 +9,33 @@ pnpm install
 bun run start:dev
 ```
 
-Requires: PostgreSQL (`localhost:5432`).
+Requires the configured storage engine. `DB_ENGINE` / `STORAGE_ENGINE` defaults to `postgres`; `mongo` is optional.
 
 ## Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/adapters` | Create adapter (+ optional inline endpoints) |
-| `GET` | `/adapters` | List adapters for tenant (optional `?context=` filter) |
-| `GET` | `/adapters/:id` | Get adapter with endpoints |
-| `PATCH` | `/adapters/:id` | Partial update adapter |
-| `DELETE` | `/adapters/:id` | Delete adapter (cascades endpoints) |
-| `POST` | `/adapters/:id/endpoints` | Add endpoint to adapter |
-| `DELETE` | `/adapters/:id/endpoints/:epId` | Remove endpoint |
-| `GET` | `/health` | Health check (PostgreSQL connectivity) |
+| `POST` | `/connectors` | Create connector (+ optional inline endpoints) |
+| `GET` | `/connectors` | List connectors for tenant (optional `?context=`, `?tag=`, `?name=`, `?limit=`, `?offset=` filters) |
+| `GET` | `/connectors/usage` | Connector call usage stats |
+| `GET` | `/connectors/:id` | Get connector with endpoints |
+| `PATCH` | `/connectors/:id` | Partial update connector |
+| `DELETE` | `/connectors/:id` | Delete connector (cascades endpoints) |
+| `POST` | `/connectors/:id/endpoints` | Add endpoint to connector |
+| `PATCH` | `/connectors/:id/endpoints/:epId` | Partial update endpoint |
+| `DELETE` | `/connectors/:id/endpoints/:epId` | Remove endpoint |
+| `GET` | `/health` | Health check |
 
-All adapter routes require `x-yoizen-tenant` header for tenant scoping.
+All connector routes require `x-yoizen-tenant` for tenant scoping.
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP server port |
-| `POSTGRES_HOST` | `postgres.support-services-dev.svc.cluster.local` | PostgreSQL host |
+| `SERVICE_MODE` | `api` when unset | Split-service mode: `api` or `worker` |
+| `DB_ENGINE` / `STORAGE_ENGINE` | `postgres` | Storage engine selector: `postgres` or `mongo` |
+| `POSTGRES_HOST` | `postgres.support-services-dev.svc.cluster.local` | PostgreSQL host when using Postgres |
 | `POSTGRES_PORT` | `5432` | PostgreSQL port |
 | `POSTGRES_DB` | `yoizen` | Database name |
 | `POSTGRES_USER` | `yoizen` | Database user |

@@ -56,7 +56,7 @@ export class AdapterUsagePostgresRepository {
         COUNT(*) FILTER (WHERE status < 400)::int            AS success_calls,
         COUNT(*) FILTER (WHERE status >= 400)::int           AS error_calls,
         COALESCE(AVG(duration_ms), 0)::int                   AS avg_duration_ms,
-        COUNT(*) FILTER (WHERE cache_result = 'HIT')::int    AS cache_hits
+        COUNT(*) FILTER (WHERE LOWER(cache_result) = 'hit')::int AS cache_hits
       FROM connector_call_events
       WHERE tenant_id = $1
         AND ts >= NOW() - ($2 * INTERVAL '1 day')

@@ -42,8 +42,8 @@ Every message published to the bus **must** be serialized as the following envel
   "resource": "tenant/acme/account/69bea8cd/channel/whatsapp/provider/meta",
   "time": "2026-04-17T15:40:11.382Z",
   "traceid": "4bf92f3577b34da6a3ce929d0e0e4736",
-  "causation_id": null,
-  "correlation_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "causation_id": "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
+  "correlation_id": "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
   "tenant": "acme",
   "producer": "channel-service",
   "domain": "messaging",
@@ -54,7 +54,7 @@ Every message published to the bus **must** be serialized as the following envel
   "transport": {
     "method": "webhook",
     "protocol": "https",
-    "depth": 0
+    "depth": 1
   },
   "data": {
     "received_at": "2026-04-17T15:40:11.382Z",
@@ -79,7 +79,7 @@ Every message published to the bus **must** be serialized as the following envel
 | `time` | string | ISO 8601 UTC timestamp — when the producer created the envelope. |
 | `traceid` | string | OpenTelemetry trace ID (32 hex chars). Extracted from the active span via `activeOrRandomTraceId()` from `@yoizen/observability`. See D9 caveat in §8. |
 | `causation_id` | string \| null | ID of the event that caused this one. `null` only for root events. |
-| `correlation_id` | string | Groups the entire chain end-to-end. Defaults to the envelope's own `id` when not propagated explicitly; copied unchanged by `deriveEnvelope`. |
+| `correlation_id` | string | Groups the entire chain end-to-end. Defaults are producer-specific: `api-gateway` and `createChannelEnvelope()` self-correlate when no value is passed, while shared `buildEventEnvelope()` currently falls back to a fresh UUID unless `correlationId` is passed explicitly. `deriveEnvelope()` copies it unchanged. |
 | `tenant` | string | Tenant ID. |
 | `producer` | string | Service that publishes. Active producers: `api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway`. |
 | `domain` | string | Business domain. Examples: `messaging`, `automation`, `platform`. |
@@ -210,7 +210,7 @@ interface EventData {
 
 ### 5.1 Claim-check trigger (payloads > 256 KB)
 
-When the serialized envelope exceeds `CLAIM_CHECK_THRESHOLD_BYTES` (256 KB, `packages/shared/src/channel.constants.ts`), the producer stores the payload in the Object Store and publishes a slim envelope with `payload_inline: false`. Consumers resolve the reference transparently via `MultiTenantConsumerManager.wrapHandler`. See [`claim-check.md`](claim-check.md) for the full protocol.
+When a canonical channel envelope serialized by `channel-service` exceeds `CLAIM_CHECK_THRESHOLD_BYTES` (256 KB, `packages/shared/src/channel.constants.ts`), the producer stores the payload in the Object Store and publishes a slim envelope with `payload_inline: false`. Consumers resolve the reference transparently via `MultiTenantConsumerManager.wrapHandler`. Stage-1 `WebhookIngressEnvelope` messages from `api-gateway` do not use claim-check and are published inline. See [`claim-check.md`](claim-check.md) for the full protocol.
 
 **Important:** the threshold is measured on the full serialized envelope, not on `data.payload_bytes` alone. These are two distinct measurements.
 
@@ -227,11 +227,13 @@ When a consumer generates a derived event (`deriveEnvelope`, `packages/shared/sr
 - `traceid` — copied from the incoming envelope; the caller should overwrite with the active OTel trace ID when available.
 - `transport.depth` — incremented: `new.depth = incoming.depth + 1`.
 
-For root events (`buildEventEnvelope`):
+For root events, defaults depend on the producer helper:
 
-- `correlation_id` defaults to the envelope's own `id` if not passed explicitly.
+- `api-gateway` stage-1 webhook publish creates an `id` first and sets `correlation_id` to that same `id`.
+- `createChannelEnvelope()` self-correlates (`correlation_id = id`) when no `correlationId` is passed, but stage-2 webhook processing passes the incoming correlation instead.
+- Shared `buildEventEnvelope()` currently uses a fresh `randomUUID()` when `correlationId` is omitted; callers that need self-correlation must pass it explicitly.
 - `causation_id` defaults to `null`.
-- `traceid` defaults to `randomUUID()` if not passed (see D9 caveat in §8).
+- `traceid` defaults to `randomUUID()` in `buildEventEnvelope()` if not passed (see D9 caveat in §8).
 
 ### 6.2 Example
 
@@ -239,7 +241,7 @@ For root events (`buildEventEnvelope`):
 Event A  (webhook ingress — api-gateway)
   id             = evt_A
   causation_id   = null
-  correlation_id = evt_A   (defaults to own id)
+  correlation_id = evt_A   (api-gateway self-correlates)
   transport.depth = 0
     ↓  (channel-service publishes canonical envelope)
 Event B  (channel-service — canonical)
@@ -359,7 +361,7 @@ source:   //api-gateway/webhooks
 subject:  evt.<tenant>.api-gateway.messaging.<channel>.webhook.webhook_received.v1
 ```
 
-This envelope contains `raw_body_b64` and filtered `headers`, but **does not** include `accountid` — the account is not yet resolved.
+This envelope contains `raw_body_b64` and filtered `headers`, is published inline, and **does not** include `accountid` — the account is not yet resolved.
 
 **Stage 2 — channel-service:**
 
@@ -371,7 +373,7 @@ source:   //channel-service/accounts/<accountId>
 subject:  evt.<tenant>.channel-service.messaging.<channel>.<provider>.<kind>.v1
 ```
 
-This envelope includes `accountid` and is what downstream consumers (workflow-service, audit-service, agent-ai-service, etc.) process.
+This envelope includes `accountid`, carries `causation_id` from the stage-1 webhook envelope, propagates the original `correlation_id`, increments `transport.depth`, and is what downstream consumers (workflow-service, audit-service, agent-ai-service, etc.) process.
 
 ---
 
@@ -411,6 +413,8 @@ Note: `accountid` is absent — `WebhookIngressEnvelope` is typed as `Omit<Event
   "channel": "telegram",
   "provider": "telegram",
   "accountid": "69bea8cd868e860918359cc7",
+  "causation_id": "<stage-1-webhook-envelope-id>",
+  "correlation_id": "<stage-1-webhook-correlation-id>",
   "transport": {
     "method": "webhook",
     "protocol": "https",
@@ -478,7 +482,7 @@ Before publishing any message to the bus:
 - [ ] Subject follows the 8-token format from §3.
 - [ ] Publish sets `Nats-Msg-Id` with `idempotencykey`.
 - [ ] Publish injects `traceparent` via `injectTraceContext(headers)`.
-- [ ] If `payload_bytes > 256 KB`: payload stored in Object Store and `payload_inline = false`.
+- [ ] If the canonical channel envelope serializes above 256 KB: payload stored in Object Store and `payload_inline = false`; stage-1 webhook envelopes stay inline.
 - [ ] `source` follows format `//channel-service/accounts/<id>` or `//api-gateway/webhooks` — do not invent new formats.
 - [ ] `accountid` is set for all events except the initial `WebhookIngressEnvelope`.
 - [ ] Any new extension field was reviewed and added to `packages/shared/src/interfaces.ts` and this document.
