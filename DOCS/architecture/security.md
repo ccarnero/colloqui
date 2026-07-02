@@ -120,7 +120,7 @@ reaches the main bus without a verified signature.
 > is low in the current single-account configuration, but this should be revisited when
 > per-tenant account isolation is implemented (§3.2).
 
-**Forwarded signature headers** (`packages/shared/src/channel.constants.ts:55-62`):
+**Forwarded signature headers** (`packages/shared/src/channel.constants.ts:55-63`):
 
 ```
 WEBHOOK_FORWARDED_HEADERS = [
@@ -128,6 +128,7 @@ WEBHOOK_FORWARDED_HEADERS = [
   "x-hub-signature-256",
   "x-hub-signature",
   "x-telegram-bot-api-secret-token",
+  "x-http-channel-token",
   "x-request-id",
   "user-agent"
 ]
@@ -139,6 +140,7 @@ WEBHOOK_FORWARDED_HEADERS = [
 |---|---|---|---|
 | Meta (WhatsApp, Instagram) | HMAC-SHA256 with `timingSafeEqual` | `x-hub-signature-256` | `services/channel-service/src/providers/meta/meta-base.ts` |
 | Telegram | `timingSafeEqual` against secret token | `x-telegram-bot-api-secret-token` | `services/channel-service/src/providers/telegram/telegram.provider.ts:62-65` |
+| Generic HTTP channel | `timingSafeEqual` against a shared token | `x-http-channel-token` | `services/channel-service/src/providers/http/http.provider.ts` |
 
 For Telegram, an absent or empty header is rejected directly as `signature_mismatch` (no
 fallback to the first active account) because the token is the sole mechanism for identifying

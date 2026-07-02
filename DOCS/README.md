@@ -215,7 +215,7 @@ Manual kustomize apply (use the bootstrap scripts instead for day-to-day work):
 ```bash
 # OrbStack
 kubectl apply -k infrastructure/overlays/orbstack/dev
-kubectl apply -k knative/services/overlays/local/dev
+kubectl apply -k knative/services/overlays/local/postgres-dev   # or mongo-dev with STORAGE_ENGINE=mongo
 ```
 
 ### Components

@@ -132,10 +132,14 @@ api() {
   local method="$1" path="$2" body="${3:-}"
   local args=(-s -X "$method" "${YOIZEN_BASE_URL}${path}"
     -H "Host: ${YOIZEN_HOST_HEADER}"
-    -H "Content-Type: application/json"
     -H "x-yoizen-tenant: ${YOIZEN_TENANT}")
   [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer ${TOKEN}")
-  [[ -n "$body" ]] && args+=(-d "$body")
+  # Content-Type is only set when there's a body: Fastify's JSON body parser
+  # 400s on "Body cannot be empty when content-type is set to
+  # 'application/json'" for bodyless DELETE/GET calls sent with that header.
+  if [[ -n "$body" ]]; then
+    args+=(-H "Content-Type: application/json" -d "$body")
+  fi
   curl "${args[@]}"
 }
 
@@ -393,8 +397,6 @@ main() {
     log "      -H 'x-http-channel-token: <app-secret>' \\   # run with RECREATE/admin to mint one"
   fi
   log "      -d '{\"text\":\"hola\"}'"
-  log "Or via the http-bridge SDK, targeting this instance:"
-  log "    (cd ../http-bridge && YOIZEN_HTTP_CHANNEL_INSTANCE=${HTTP_EXTERNAL_ID} … pnpm start)"
   log "Then check Telegram — the bot DMs you the joined summary."
 }
 

@@ -34,6 +34,17 @@ flowchart LR
 
 Incoming large payloads (>256 KB) are transparently inflated before the handler runs via the claim-check middleware in `MultiTenantConsumerManager.wrapHandler` (`packages/database/src/multi-tenant-consumer-manager.ts`). The consumer itself is unaware of the claim-check; it always sees a fully inflated envelope.
 
+### Trigger account filters vs outbound sends
+
+The trigger's `accountIds` filter only controls which inbound messages fire the workflow. It does **not** restrict which accounts outbound `channelSend` actions may use — the engine sends on any account the tenant owns.
+
+The workflow builder (admin-console) surfaces a non-blocking **warning** when an outbound `channelSend` pins a fixed `accountId` that is not in the trigger's `accountIds` selection (`workflow.validator.ts`, code `INVALID_VALUE` on `args.accountId`). The user must acknowledge it ("Save anyway") but the save proceeds. It is a warning rather than an error because both readings are valid:
+
+- **Stale config** — the user narrowed the trigger after configuring the outbound node. The warning is the safety net for this case.
+- **Cross-account notify** — a deliberate pattern where the workflow listens on one account and notifies through a dedicated output account (e.g. an `output-*` Telegram bot) that the trigger intentionally does not listen on. Adding the output account to the trigger would wrongly fire the workflow on messages sent *to* the notify bot.
+
+Outbound nodes using the "Same as incoming message" sentinel (`{{request.envelope.accountId}}`) never warn: they resolve at runtime to the account that received the triggering message. An empty trigger `accountIds` selection means "listen on any account" and also skips the check.
+
 ## Action Types
 
 Current supported actions in `runWorkflow`:

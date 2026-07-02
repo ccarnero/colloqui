@@ -143,19 +143,17 @@ Returns a single container with file summary.
 PATCH /admin/structured-kb/containers/:id
 ```
 
-Updates container configuration. Only provided fields are updated.
+Updates container metadata. Only provided fields are updated. `UpdateSKBDto`
+accepts only `name` and `description` — `query_model`, `ingest_model`, and
+`provider_config` cannot be updated via this endpoint (the repository only ever
+writes `name`, `description`, and `status`).
 
 **Request Body:**
 
 ```json
 {
   "name": "Sales Q1-Q2 2026",
-  "query_model": "gpt-4.1",
-  "provider_config": {
-    "provider": "anthropic",
-    "apiKey": "sk-ant-...",
-    "model": "claude-sonnet-4-20250514"
-  }
+  "description": "Quarterly sales data for analysis (Q1 + Q2)"
 }
 ```
 
@@ -169,7 +167,9 @@ Updates container configuration. Only provided fields are updated.
 DELETE /admin/structured-kb/containers/:id
 ```
 
-Soft-deletes a container (sets `is_active = false`). Cascades to all files, schemas, and rows.
+Soft-deletes a container (sets `is_active = false` on the `skb_containers` row
+only). Files, schemas, and rows are NOT touched — the `ON DELETE CASCADE`
+foreign keys only fire on a hard `DELETE`, which never happens here.
 
 **Response `204 No Content`** (no body).
 
@@ -399,7 +399,7 @@ Translates a natural language query to SQL, executes it against the container's 
 |-------|------|----------|---------|-------------|
 | `query` | string | Yes | — | Natural language query |
 | `categories` | string[] | No | `[]` | Filter by category tags |
-| `limit` | number | No | `10` | Max results (1–1000) |
+| `limit` | number | No | `100` | Max results (1–1000, validated by `QuerySKBDto`) |
 | `offset` | number | No | `0` | Pagination offset |
 
 **Response `200 OK`:**
@@ -463,7 +463,9 @@ All endpoints return errors in a consistent format:
 | Negative offset | `400` | `"Offset must be non-negative"` |
 | SQL safety violation | `500` | `"SQL safety violation: potentially dangerous pattern detected"` |
 | LLM translation failure | `500` | `"Failed to translate query"` |
-| Container not ready | `400` | `"Container is not in ready state"` |
+
+> Note: there is NO container-status check on the query path — querying a
+> `pending` or `failed` container is not rejected.
 
 ---
 
@@ -518,10 +520,21 @@ POST /files → NATS publish → Worker picks up → Parse file → LLM schema a
 
 **Current implementation note:** the worker-side ingestion consumer exists, but
 the public file upload route is not wired end-to-end because the
-`agent-admin-service` file upload controller route is missing.
+`agent-admin-service` file upload controller route is missing. The worker
+pipeline itself also has unresolved gaps: file-status updates target a
+`skb_container_files` table that the schema initializer never creates, and the
+worker calls `insertRows()` through an `as any` cast with a signature that does
+not match `SKBRowsRepository.insertRows()` (which in turn inserts `row_data` /
+`file_index` columns that do not exist in the `skb_rows` DDL).
 
-**Timeout**: 15 minutes per file. Stuck files are reset by the ingestion watchdog service.
+**Timeout**: NATS ack wait is 5 minutes (`ackWaitMs: 300_000`). The ingestion
+watchdog resets files stuck in `processing` for more than 10 minutes — but its
+stuck-file lookup (`findProcessingFilesOlderThan`) is currently stubbed to
+return an empty list, so automatic resets do not happen in practice.
 
 **Batch size**: 5,000 rows per INSERT batch.
 
-**Row sampling for LLM**: First 5 + middle 10 + last 5 rows (up to 20 total).
+**Row sampling for LLM**: the schema analyzer currently sends only the first 5
+rows (`parsed.rows.slice(0, 5)`). A `getSampleRows()` helper implementing
+first 5 + middle 10 + last 5 sampling exists in `skb-file-parser.ts` but is not
+called by the analyzer.

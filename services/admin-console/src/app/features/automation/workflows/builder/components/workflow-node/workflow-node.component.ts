@@ -167,6 +167,31 @@ export class WorkflowNodeComponent {
       branch: "Parallel Branch",
       conditional: "Conditional",
     };
-    return labels[this.node().type] ?? this.node().type;
+    const label = labels[this.node().type] ?? this.node().type;
+    if (this.node().type === this.channelType) {
+      const channel = this.channelSubtitle();
+      if (channel) {
+        return `${label} · ${channel}`;
+      }
+    }
+    return label;
+  }
+
+  /**
+   * Concrete channel type shown alongside the generic "Channel" label.
+   * Outbound channelSend nodes store a single channel string; inbound
+   * trigger nodes store a list of listened channels.
+   */
+  private channelSubtitle(): string | null {
+    const configuration = this.node().configuration;
+    const outbound = configuration?.["channel"];
+    if (typeof outbound === "string" && outbound) {
+      return outbound;
+    }
+    const inbound = configuration?.["channels"];
+    if (Array.isArray(inbound) && inbound.length > 0) {
+      return inbound.filter((c) => typeof c === "string" && c).join(", ");
+    }
+    return null;
   }
 }

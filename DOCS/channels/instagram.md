@@ -153,8 +153,8 @@ Uses the same HMAC-SHA256 mechanism as WhatsApp: header `x-hub-signature-256` wi
 
 | File | Responsibility |
 |------|---------------|
-| `services/channel-service/src/providers/meta/instagram/instagram.provider.ts` | Main provider: `parseWebhook`, `sendMessage` |
-| `services/channel-service/src/providers/meta/meta-channel-provider.base.ts` | Shared Meta base: `verifySignature`, `buildSendPayload` |
+| `services/channel-service/src/providers/meta/instagram/instagram.provider.ts` | Main provider: `parseWebhook`, `sendMessage`, `buildSendPayload` |
+| `services/channel-service/src/providers/meta/meta-channel-provider.base.ts` | Shared Meta base: `signatureHeader`, `verifySignature` |
 | `services/channel-service/src/providers/meta/meta-base.ts` | `verifyWebhookSignature` (HMAC-SHA256), `sendMetaMessage` |
 | `services/channel-service/src/providers/channel-router.ts` | Provider registry by channel |
 
@@ -179,7 +179,7 @@ parseWebhook(rawBody: Record<string, unknown>): InboundMessage[] {
 
 ### Account lookup
 
-The account is identified by `ig_user_id`, extracted from `entry[].messaging[].recipient.id`:
+The primary account-resolution mechanism is HMAC signature verification against every active account for the tenant (`WebhookIngressService.resolveAccount`). When more than one account passes verification, the `ig_user_id` hint — extracted from `entry[].messaging[].recipient.id` — disambiguates:
 
 ```typescript
 // webhook-ingress.service.ts
@@ -193,7 +193,7 @@ function extractInstagramBusinessIdHint(body) {
 }
 ```
 
-`channel-service` looks up the active `ChannelAccount` whose `igUserId === recipient.id` for the tenant.
+Among the accounts whose `appSecret` verified the signature, `channel-service` picks the one whose `igUserId === recipient.id` for the tenant.
 
 ### Signature verification
 

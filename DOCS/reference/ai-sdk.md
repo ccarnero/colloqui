@@ -1286,13 +1286,13 @@ export class RagMiddleware {
 | v5 (old) | v6 (new / preferred) | Project status |
 |---|---|---|
 | `generateObject({ model, schema, prompt })` | `generateText({ model, output: Output.object({ schema }), prompt })` | **Still using v5 form** in `agent-ai-service` and `agent-admin-service` (SKB). Migration pending. |
-| `streamObject({ model, schema, prompt })` | `streamText({ model, output: Output.object({ schema }), prompt })` | Not used — migrate when needed |
+| `streamObject({ model, schema, prompt })` | `streamText({ model, output: Output.object({ schema }), prompt })` | **Still using v5 form** in `agent-ai-service` (`llm-executor.service.ts` `streamStructuredOutput`). Migration pending, same as `generateObject`. |
 | `maxSteps: 5` | `stopWhen: stepCountIs(5)` | `agent-ai-service` uses `stopWhen` correctly |
 | `tools: { name: { description, parameters, execute } }` | `tools: { name: tool({ description, inputSchema, execute }) }` | `agent-ai-service` uses `tool()` correctly |
 | `parameters` (JSON schema) | `inputSchema` (Zod schema) | Migrated |
 | `maxTokens` | `maxOutputTokens` | Migrated (see comment in `llm-executor.service.ts`) |
 | `system` remains `system` | No change | — |
-| Provider instances only | Gateway string syntax: `"anthropic/claude-sonnet-4.5"` | Both forms in use |
+| Provider instances only | Gateway string syntax: `"anthropic/claude-sonnet-4.5"` | Project uses provider-instance factories only (`createOpenAI`, `createAnthropic`, `createGoogleGenerativeAI` in `provider-registry.service.ts`) — no gateway string usage found in `agent-ai-service`/`agent-admin-service` |
 | `jsonSchema()` helper | Still available for JSON schema input | — |
 | Telemetry span: `ai.generateObject` | Telemetry span: `ai.generateText` (with output) | N/A until generateObject migrated |
 

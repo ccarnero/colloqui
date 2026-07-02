@@ -679,7 +679,13 @@ cmd_on() {
       wait_for_deployment "$name"
     fi
 
-    log "${kind}/${name} is in dev mode. Logs: kubectl logs -f -n ${NS} -l app.kubernetes.io/name=${name}"
+    # Knative pods are labelled serving.knative.dev/service, not
+    # app.kubernetes.io/name; worker Deployments use the latter.
+    if [[ "$kind" == "ksvc" ]]; then
+      log "${kind}/${name} is in dev mode. Logs: kubectl logs -f -n ${NS} -l serving.knative.dev/service=${name} -c user-container"
+    else
+      log "${kind}/${name} is in dev mode. Logs: kubectl logs -f -n ${NS} deploy/${name}"
+    fi
   done <<< "$targets"
 
   echo ""
@@ -688,7 +694,8 @@ cmd_on() {
   log "==============================="
   echo ""
   echo "  Edit source files under services/${svc} — bun --watch reloads automatically."
-  echo "  Logs: kubectl logs -f -n ${NS} -l app.kubernetes.io/name=<target-name>"
+  echo "  Logs: ksvc:   kubectl logs -f -n ${NS} -l serving.knative.dev/service=<ksvc-name> -c user-container"
+  echo "        worker: kubectl logs -f -n ${NS} deploy/<deployment-name>"
   echo "  To restore: ./dev-mode.sh ${svc} off"
   echo ""
 }
@@ -913,12 +920,16 @@ cmd_status() {
   echo ""
 
   # Collect all objects in dev mode from the cluster
+  # NOTE: dots in the annotation key must be escaped for kubectl's JSONPath
+  # filter-script bracket notation ([?(...)]), or the filter silently never
+  # matches (unlike simple jsonpath field access, which tolerates the dot).
+  local ann_key_escaped="${DEV_ANNOTATION//./\\.}"
   local dev_ksvcs dev_deploys
   dev_ksvcs="$(kubectl get ksvc --namespace "$NS" \
-    -o jsonpath="{range .items[?(@.metadata.annotations['${DEV_ANNOTATION}']=='true')]}{.metadata.name}{'\n'}{end}" \
+    -o jsonpath="{range .items[?(@.metadata.annotations['${ann_key_escaped}']=='true')]}{.metadata.name}{'\n'}{end}" \
     2>/dev/null || true)"
   dev_deploys="$(kubectl get deployment --namespace "$NS" \
-    -o jsonpath="{range .items[?(@.metadata.annotations['${DEV_ANNOTATION}']=='true')]}{.metadata.name}{'\n'}{end}" \
+    -o jsonpath="{range .items[?(@.metadata.annotations['${ann_key_escaped}']=='true')]}{.metadata.name}{'\n'}{end}" \
     2>/dev/null || true)"
 
   if [[ -z "$dev_ksvcs" && -z "$dev_deploys" ]]; then

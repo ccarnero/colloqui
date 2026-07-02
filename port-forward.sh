@@ -23,7 +23,7 @@ container_port_for() {
 local_port_for() {
   case "$1" in
     api-gateway)       echo "${API_GATEWAY_PORT:-8080}" ;;
-    admin-console)     echo "${ADMIN_CONSOLE_PORT:-4200}" ;;
+    admin-console)     echo "${ADMIN_CONSOLE_PORT:-4300}" ;;
     *) return 1 ;;
   esac
 }
@@ -111,7 +111,7 @@ usage() {
     "" \
     "Environment variables:" \
     "  API_GATEWAY_PORT          Local port for api-gateway       (default: 8080)" \
-    "  ADMIN_CONSOLE_PORT        Local port for admin-console     (default: 4200)" \
+    "  ADMIN_CONSOLE_PORT        Local port for admin-console     (default: 4300)" \
     "  NATS_PORT                 Local port for NATS client       (default: 4222)" \
     "  TEMPORAL_UI_PORT          Local port for Temporal Web UI   (default: 8233)" \
     "  STORAGE_ENGINE            postgres (default) or mongo" \

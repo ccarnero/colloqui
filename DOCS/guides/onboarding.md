@@ -68,6 +68,52 @@ Access:
 - Temporal UI: `kubectl port-forward -n support-services-dev svc/temporal-ui 8233:80`
 - Grafana: `kubectl port-forward -n support-services-dev svc/grafana 3001:3000`
 
+### Accessing the dev gateway from other devices (phones, LAN)
+
+The `*.dev.local` hostnames only resolve on your own machine (`/etc/hosts` -> `127.0.0.1`),
+so a phone or any other LAN device cannot reach the gateway by that name. Sending the
+request to your machine's LAN IP with a manual `Host:` header does not work from iOS
+either — CFNetwork (used by Shortcuts and most apps) silently drops custom `Host` headers.
+
+The supported pattern is a Knative `DomainMapping` on an `sslip.io` name, which resolves
+to your LAN IP from any device with no client configuration:
+
+```bash
+LAN_IP=$(ipconfig getifaddr en0)
+
+# This cluster sets autocreate-cluster-domain-claims=false, so the claim is manual:
+kubectl apply -f - <<EOF
+apiVersion: networking.internal.knative.dev/v1alpha1
+kind: ClusterDomainClaim
+metadata:
+  name: api-gateway.${LAN_IP}.sslip.io
+spec:
+  namespace: platform-services-dev
+EOF
+
+kubectl apply -f - <<EOF
+apiVersion: serving.knative.dev/v1beta1
+kind: DomainMapping
+metadata:
+  name: api-gateway.${LAN_IP}.sslip.io
+  namespace: platform-services-dev
+spec:
+  ref:
+    name: api-gateway
+    kind: Service
+    apiVersion: serving.knative.dev/v1
+EOF
+
+curl http://api-gateway.${LAN_IP}.sslip.io/health   # from any LAN device
+```
+
+Caveats:
+- Without the `ClusterDomainClaim`, the mapping stays `Ready=False` with the misleading
+  reason `DomainAlreadyClaimed`.
+- The mapping is pinned to the LAN IP at creation time — recreate it if DHCP hands your
+  machine a new address (or give it a static lease).
+- OrbStack binds port 80 on all interfaces, so no extra port exposure is needed.
+
 ---
 
 ## Core Concepts

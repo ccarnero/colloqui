@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it, expect, beforeEach, mock, beforeAll } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 let SystemVariablesProvider: typeof import("../../src/modules/workflows/system-variables.provider").SystemVariablesProvider;
 
@@ -25,18 +25,15 @@ beforeAll(async () => {
 function createProvider() {
   let rows: Array<{ name: string; value: unknown }> = [];
 
-  const sqlFn = mock(
-    (_strings: TemplateStringsArray, ..._values: unknown[]) =>
-      Promise.resolve(rows),
+  const sqlFn = mock((_strings: TemplateStringsArray, ..._values: unknown[]) =>
+    Promise.resolve(rows)
   );
 
   const ensureSchema = mock(() => Promise.resolve(sqlFn));
 
   const mockPg = { ensureSchema };
 
-  const provider = new SystemVariablesProvider(
-    mockPg as unknown as never,
-  );
+  const provider = new SystemVariablesProvider(mockPg as unknown as never);
 
   return {
     provider,
@@ -72,6 +69,26 @@ describe("SystemVariablesProvider", () => {
       companyName: "Yoizen Corp",
       region: "LATAM",
       maxRetries: 3,
+    });
+  });
+
+  it("parses jsonb values returned as raw JSON text by the pg driver", async () => {
+    // agent-admin-service writes values via JSON.stringify(...)::jsonb; some
+    // driver configurations return the jsonb column as its raw JSON text.
+    ctx.setRows([
+      { name: "companyName", value: '"Acme Telco"' },
+      { name: "maxRetries", value: "3" },
+      { name: "flag", value: "true" },
+      { name: "settings", value: '{"tier":"gold"}' },
+      { name: "plainText", value: "not json at all" },
+    ]);
+    const result = await ctx.provider.loadForTenant("tenant-1");
+    expect(result).toEqual({
+      companyName: "Acme Telco",
+      maxRetries: 3,
+      flag: true,
+      settings: { tier: "gold" },
+      plainText: "not json at all",
     });
   });
 
@@ -147,10 +164,10 @@ describe("SystemVariablesProvider", () => {
 
   it("throws when DB query fails", async () => {
     ctx.mocks.ensureSchema.mockImplementation(() =>
-      Promise.reject(new Error("connection refused")),
+      Promise.reject(new Error("connection refused"))
     );
-    await expect(
-      ctx.provider.loadForTenant("tenant-1"),
-    ).rejects.toThrow("connection refused");
+    await expect(ctx.provider.loadForTenant("tenant-1")).rejects.toThrow(
+      "connection refused"
+    );
   });
 });

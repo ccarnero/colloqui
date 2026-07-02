@@ -7,7 +7,9 @@ code) and call a single primitive — `send`. The SDK hides the whole chain:
 1. **Authenticate** — `POST /api/auth/login` with your email + password → access token.
 2. **Authorize** — resolve the http channel's `appSecret` from your session
    (`GET /api/channels/accounts?channel=http`).
-3. **Send (ingest)** — `POST /api/webhooks/http/{tenant}` with the message body.
+3. **Send (ingest)** — `POST /api/webhooks/http/{tenant}` with the message body, or
+   `POST /api/webhooks/http/{tenant}/{instance}` when an `instance` (account `externalId`) is
+   configured or resolved from the directory lookup.
 
 Login and secret resolution happen lazily on the first `send`, then the token (with refresh)
 and secret are cached and reused.
@@ -61,11 +63,13 @@ export YOIZEN_PASSWORD=•••
 | `password` | ✅ | `YOIZEN_PASSWORD` | — |
 | `baseUrl` | | `YOIZEN_BASE_URL` | `http://api-gateway.platform-services-dev.dev.local` |
 | `defaultFrom` | | `YOIZEN_DEFAULT_FROM` | the login `email` |
-| `channelSelector` | | — | first active http account |
+| `channelSelector` | | — | first active http account; pass `{ externalId }` or `{ name }` to pin a specific one |
 | `appSecret` | | `YOIZEN_HTTP_CHANNEL_TOKEN` | auto-resolved (skips the directory lookup) |
+| `instance` | | `YOIZEN_HTTP_CHANNEL_INSTANCE` | targets a dedicated HTTP channel instance's ingress URL (`/api/webhooks/http/{tenant}/{instance}`); falls back to `channelSelector.externalId`, then to the resolved account's `externalId` |
 | `timeoutMs` | | — | `10000` |
 | `tokenExpiryBufferMs` | | — | `60000` |
 | `fetch`, `clock` | | — | native `fetch` / system clock (injectable for tests) |
+| `onWarn` | | — | callback invoked with a warning message if the token's tenant scope differs from the configured tenant |
 
 Args take precedence over environment variables.
 

@@ -7,9 +7,11 @@ action instead of hard-coding URLs and credentials. This is the outbound counter
 
 A single idempotent [`setup.sh`](./setup.sh) reads the JSON files in [`connectors/`](./connectors)
 and **upserts** each one through the platform API: it creates the connector if it's missing (or
-reuses the existing one), then reconciles its endpoints — adding any `(method, path)` declared in
-the config that isn't registered yet, leaving the rest untouched. So you can enrich a config with
-new endpoints, re-run, and only the new ones get added.
+reuses the existing one), `PATCH`es its declarative config (currently just `defaultCache`, when the
+config file declares one) so an existing connector picks up config changes on re-run, then
+reconciles its endpoints — adding any `(method, path)` declared in the config that isn't registered
+yet, leaving the rest untouched. So you can enrich a config with new endpoints or cache settings,
+re-run, and only the drift gets applied.
 
 ## What gets created
 
@@ -31,6 +33,12 @@ descriptive `label`, `method`, and `path`), plus timeouts and retries. Endpoint 
 `(method, path)` per connector, so `GET /post` and `POST /post` are distinct. To add another
 connector, drop a new JSON file in `connectors/` — `setup.sh` picks it up automatically; to add an
 endpoint, add it to the relevant file and re-run.
+
+`catfacts` also declares a `defaultCache` block: `enabled: true`, `ttlSeconds: 300`, `methods:
+["GET", "HEAD"]`, `keyQueryParams: "all"` — so `GET /fact` / `/facts` / `/breeds` responses are
+cached for 300 seconds. `setup.sh` `PATCH`es `defaultCache` onto the connector on every run
+(including re-runs against an already-provisioned connector), so editing the cache settings in
+`catfacts.json` and re-running `./setup.sh` is enough to apply the change — no `RECREATE=1` needed.
 
 ## Run
 

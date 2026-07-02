@@ -15,21 +15,21 @@
 
 import { serializeFlow } from "../flow-serializer";
 import {
+  type ConditionComparator,
   EWorkflowNodeType,
+  type IConditionalBranchConfig,
   type IWorkflowFlow,
   type IWorkflowNode,
-  type IConditionalBranchConfig,
-  type ConditionComparator,
 } from "../workflow-node.types";
+import { SOURCE_ACCOUNT_TEMPLATE } from "../workflow-node-defaults";
 import { validateAction } from "./action-validators";
 import { validateGraph } from "./graph.validator";
 import { validateTrigger } from "./trigger.validator";
-import { SOURCE_ACCOUNT_TEMPLATE } from "../workflow-node-defaults";
 import {
-  WORKFLOW_APPLICATION_MAX,
-  WORKFLOW_NAME_MAX,
   type ValidationError,
   type ValidationResult,
+  WORKFLOW_APPLICATION_MAX,
+  WORKFLOW_NAME_MAX,
 } from "./validation.types";
 
 interface SingleAction {
@@ -40,6 +40,7 @@ interface SingleAction {
 
 export function validateWorkflow(flow: IWorkflowFlow): ValidationResult {
   const errors: ValidationError[] = [];
+  const warnings: ValidationError[] = [];
 
   errors.push(...validateTopLevel(flow));
   errors.push(...validateGraph(flow));
@@ -55,26 +56,23 @@ export function validateWorkflow(flow: IWorkflowFlow): ValidationResult {
       ...validateTrigger(trigger, {
         nodeKey: inbound.key,
         nodeName: inbound.name,
-      }),
+      })
     );
     errors.push(...validateInboundDirectExtras(inbound));
   }
 
-  const triggerAccountIds = inbound
-    ? extractTriggerAccountIds(inbound)
-    : [];
+  const triggerAccountIds = inbound ? extractTriggerAccountIds(inbound) : [];
 
   for (const node of Object.values(flow.nodes)) {
-    if (isInboundChannel(node)) continue;
+    if (isInboundChannel(node)) {
+      continue;
+    }
     errors.push(...validateNode(node, outgoingCounts));
     if (node.type === EWorkflowNodeType.CHANNEL) {
       errors.push(...validateChannelDirection(node));
       if (node.configuration["direction"] === "outbound") {
-        errors.push(
-          ...validateOutboundAccountAgainstTrigger(
-            node,
-            triggerAccountIds,
-          ),
+        warnings.push(
+          ...validateOutboundAccountAgainstTrigger(node, triggerAccountIds)
         );
       }
     }
@@ -89,7 +87,7 @@ export function validateWorkflow(flow: IWorkflowFlow): ValidationResult {
     });
   }
 
-  return { valid: errors.length === 0, errors };
+  return { valid: errors.length === 0, errors, warnings };
 }
 
 /**
@@ -103,20 +101,19 @@ export function validateWorkflow(flow: IWorkflowFlow): ValidationResult {
 function validateTriggerPresence(
   flow: IWorkflowFlow,
   inbound: IWorkflowNode | undefined,
-  outgoingCounts: Map<string, number>,
+  outgoingCounts: Map<string, number>
 ): ValidationError[] {
   const errors: ValidationError[] = [];
 
   if (!inbound) {
     const hasAnyNonTriggerNode = Object.values(flow.nodes).some(
-      (n) => !isInboundChannel(n),
+      (n) => !isInboundChannel(n)
     );
     if (hasAnyNonTriggerNode) {
       errors.push({
         code: "NO_TRIGGER",
         field: "trigger",
-        message:
-          "Workflow must start with a Channel In trigger node.",
+        message: "Workflow must start with a Channel In trigger node.",
       });
     }
     return errors;
@@ -124,15 +121,14 @@ function validateTriggerPresence(
 
   if ((outgoingCounts.get(inbound.key) ?? 0) === 0) {
     const hasOtherNodes = Object.values(flow.nodes).some(
-      (n) => n.key !== inbound.key,
+      (n) => n.key !== inbound.key
     );
     if (hasOtherNodes) {
       errors.push({
         nodeKey: inbound.key,
         nodeName: inbound.name,
         code: "TRIGGER_DISCONNECTED",
-        message:
-          "Trigger must connect to the first action of the workflow.",
+        message: "Trigger must connect to the first action of the workflow.",
       });
     }
   }
@@ -145,9 +141,7 @@ function validateTriggerPresence(
  * `mode` must be present in configuration, since the runtime treats
  * "shared" as a default but the user should choose one explicitly.
  */
-function validateInboundDirectExtras(
-  node: IWorkflowNode,
-): ValidationError[] {
+function validateInboundDirectExtras(node: IWorkflowNode): ValidationError[] {
   const errors: ValidationError[] = [];
   const mode = node.configuration["mode"];
   if (mode === undefined || mode === null || mode === "") {
@@ -169,19 +163,24 @@ function validateInboundDirectExtras(
  */
 function extractTriggerAccountIds(node: IWorkflowNode): string[] {
   const ids = node.configuration["accountIds"];
-  if (!Array.isArray(ids)) return [];
+  if (!Array.isArray(ids)) {
+    return [];
+  }
   return ids.filter((id): id is string => typeof id === "string");
 }
 
 /**
  * If the workflow is triggered by `message_received` with a non-empty
- * accountIds list, every outbound `channelSend` must target one of
- * those accounts. Catches the case where the user picks an account
- * and later narrows the trigger, leaving stale outbound config.
+ * accountIds list, an outbound `channelSend` targeting an account
+ * outside that list gets a WARNING (never an error): it usually means
+ * stale config after the user narrowed the trigger, but it is also a
+ * legitimate notify pattern — sending on a dedicated output account
+ * the trigger deliberately does not listen on. The backend imposes no
+ * such restriction, so the save must not be blocked.
  */
 function validateOutboundAccountAgainstTrigger(
   node: IWorkflowNode,
-  triggerAccountIds: string[],
+  triggerAccountIds: string[]
 ): ValidationError[] {
   const accountId = node.configuration["accountId"];
   if (typeof accountId !== "string" || accountId.length === 0) {
@@ -190,9 +189,15 @@ function validateOutboundAccountAgainstTrigger(
   }
   // "Same as incoming message" resolves at runtime to the account that
   // received the message — by definition one the trigger listens on.
-  if (accountId === SOURCE_ACCOUNT_TEMPLATE) return [];
-  if (triggerAccountIds.length === 0) return [];
-  if (triggerAccountIds.includes(accountId)) return [];
+  if (accountId === SOURCE_ACCOUNT_TEMPLATE) {
+    return [];
+  }
+  if (triggerAccountIds.length === 0) {
+    return [];
+  }
+  if (triggerAccountIds.includes(accountId)) {
+    return [];
+  }
   return [
     {
       nodeKey: node.key,
@@ -200,7 +205,9 @@ function validateOutboundAccountAgainstTrigger(
       field: "args.accountId",
       code: "INVALID_VALUE",
       message:
-        "Channel account must be one of the accounts selected on the trigger.",
+        "Channel account is not among the accounts selected on the trigger. " +
+        "The send will still run on it — make sure this cross-account " +
+        "notify is intentional and not stale configuration.",
     },
   ];
 }
@@ -210,9 +217,7 @@ function validateOutboundAccountAgainstTrigger(
  * Without it the serializer can't decide between trigger and
  * channelSend, leading to malformed payloads.
  */
-function validateChannelDirection(
-  node: IWorkflowNode,
-): ValidationError[] {
+function validateChannelDirection(node: IWorkflowNode): ValidationError[] {
   const direction = node.configuration["direction"];
   if (direction === "inbound" || direction === "outbound") {
     return [];
@@ -223,8 +228,7 @@ function validateChannelDirection(
       nodeName: node.name,
       field: "configuration.direction",
       code: "REQUIRED",
-      message:
-        "Channel direction is required (inbound or outbound).",
+      message: "Channel direction is required (inbound or outbound).",
     },
   ];
 }
@@ -273,14 +277,12 @@ function isInboundChannel(node: IWorkflowNode): boolean {
 }
 
 function findInboundChannelNode(
-  nodes: Record<string, IWorkflowNode>,
+  nodes: Record<string, IWorkflowNode>
 ): IWorkflowNode | undefined {
   return Object.values(nodes).find(isInboundChannel);
 }
 
-function buildTriggerFromNode(
-  node: IWorkflowNode,
-): Record<string, unknown> {
+function buildTriggerFromNode(node: IWorkflowNode): Record<string, unknown> {
   return {
     type: "message_received",
     mode: (node.configuration["mode"] as string) ?? "shared",
@@ -296,7 +298,9 @@ function buildTriggerFromNode(
 function buildOutgoingCounts(flow: IWorkflowFlow): Map<string, number> {
   const counts = new Map<string, number>();
   for (const conn of Object.values(flow.connections)) {
-    if (!flow.nodes[conn.source] || !flow.nodes[conn.target]) continue;
+    if (!flow.nodes[conn.source] || !flow.nodes[conn.target]) {
+      continue;
+    }
     counts.set(conn.source, (counts.get(conn.source) ?? 0) + 1);
   }
   return counts;
@@ -304,7 +308,7 @@ function buildOutgoingCounts(flow: IWorkflowFlow): Map<string, number> {
 
 function validateNode(
   node: IWorkflowNode,
-  outgoingCounts: Map<string, number>,
+  outgoingCounts: Map<string, number>
 ): ValidationError[] {
   const ctx = { nodeKey: node.key, nodeName: node.name };
 
@@ -360,7 +364,7 @@ const VALID_VARIABLE_PREFIXES = [
 
 function validateConditionalNode(
   node: IWorkflowNode,
-  outgoingCounts: Map<string, number>,
+  outgoingCounts: Map<string, number>
 ): ValidationError[] {
   const ctx = { nodeKey: node.key, nodeName: node.name };
   const errors: ValidationError[] = [];
@@ -372,8 +376,7 @@ function validateConditionalNode(
       {
         ...ctx,
         code: "CONDITIONAL_NO_BRANCHES",
-        message:
-          "Conditional must have at least one outgoing connection.",
+        message: "Conditional must have at least one outgoing connection.",
       },
     ];
   }

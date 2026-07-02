@@ -70,8 +70,9 @@ flowchart TD
 ```
 
 > Note: `knative/services/overlays/cloud/` and multi-env overlays (qa/staging/production)
-> were deleted. The `_components/` directory retains the scale-to-zero component files
-> for reference but they are not included by any active overlay.
+> were deleted. The scale-to-zero component directories under `_components/` were removed
+> too — only a `README.md` documenting their prior existence remains, and no active overlay
+> references them.
 
 ## Add a New Service (Checklist)
 

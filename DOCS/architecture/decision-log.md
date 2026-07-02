@@ -22,7 +22,7 @@ These decisions are final and apply across all bus/messaging documents.
 | D5 | One stream per tenant with explicit limits | messaging/service-bus | Implemented |
 | D6 | Full raw + per-tenant ACL for PII | security | Implemented (ACLs pending) |
 | D7 | Initial shadow publish — replaced by primary path | messaging/service-bus | Superseded: NATS is the primary path |
-| D8 | Explicit allowlist of HTTP headers | messaging/envelope | Implemented (6 headers; see `WEBHOOK_FORWARDED_HEADERS`) |
+| D8 | Explicit allowlist of HTTP headers | messaging/envelope | Implemented (7 headers; see `WEBHOOK_FORWARDED_HEADERS`) |
 | D9 | `traceid` in the envelope | messaging/envelope | Implemented (`activeOrRandomTraceId` via `@yoizen/observability`) |
 | D10 | Rename field `subject` to `resource` in the envelope | messaging/envelope | Implemented |
 | D11 | `causation_id` and `correlation_id` in the envelope | messaging/envelope | Implemented |
@@ -43,7 +43,7 @@ Points marked **Resolved** are closed in code. All others remain pending.
 |---|---|---|---|---|
 | O1 | Define NATS accounts structure (1 per tenant vs 1 per env with ACLs) | Infra | messaging/service-bus | Pending |
 | O2 | Automate tenant provisioning | Infra + Dev | messaging/service-bus | **Resolved** (3 layers: tenant-service, lazy publishers, agent-ai-service self-healing) |
-| O3 | Header allowlist by provider | Dev | messaging/envelope | **Resolved** (6 headers in `WEBHOOK_FORWARDED_HEADERS`, `channel.constants.ts:55`) |
+| O3 | Header allowlist by provider | Dev | messaging/envelope | **Resolved** (7 headers in `WEBHOOK_FORWARDED_HEADERS`, `channel.constants.ts:55`) |
 | O4 | `correlation_id` scheme (format, generator, propagation) | Dev | messaging/envelope | **Resolved** (`correlation_id` defaults to the envelope's own `id`; propagated unchanged in `deriveEnvelope`) |
 | O5 | Evaluate whether `provider` should be optional for single-provider channels | Dev | messaging/envelope | Pending |
 | O6 | Define transport contract for polling-based providers | Dev | messaging/envelope | Pending |

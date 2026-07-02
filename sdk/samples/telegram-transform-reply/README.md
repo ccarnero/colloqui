@@ -74,6 +74,7 @@ Place secrets in `.env` next to `setup.sh` (loaded automatically):
 ```bash
 # sdk/samples/telegram-transform-reply/.env
 TELEGRAM_BOT_TOKEN=123456:ABC-your-bot-token
+# Base URL only. Do not include /api/webhooks/telegram/... here.
 TG_PUBLIC_URL=https://api.devmachina.net
 ```
 
@@ -92,6 +93,10 @@ Drive the chain without a real message (injects a synthetic inbound update strai
 SIMULATE_INBOUND=1 TELEGRAM_TEST_CHAT_ID="<your-numeric-chat-id>" ./setup.sh
 ```
 
+`TELEGRAM_TEST_CHAT_ID` must be a real chat that has already `/start`-ed the bot. The script fails
+fast without it because a fake id makes the workflow run but Telegram rejects the reply with
+`Bad Request: chat not found`.
+
 ## Configuration (env)
 
 | Var | Default | Notes |
@@ -101,7 +106,7 @@ Gateway coordinates (`YOIZEN_BASE_URL`, `YOIZEN_HOST_HEADER`, `YOIZEN_TENANT`, `
 | Var | Default | Notes |
 | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | placeholder | Bot token from @BotFather. **Required for sending** — the account stores it. |
-| `TG_PUBLIC_URL` | — | Public HTTPS base (your tunnel). When set + real token, stage 4 registers the webhook. |
+| `TG_PUBLIC_URL` | — | Public HTTPS **base URL** for your tunnel, e.g. `https://api.devmachina.net`. Do not include `/api/webhooks/telegram/...`; the script appends the webhook path. If you accidentally pass a full webhook path, the script normalizes it and warns. |
 | `TG_WORKFLOW_NAME` | `telegram-transform-reply` | Workflow name. |
 | `TG_EXTERNAL_ID` | `telegram-sample-bot` | Account externalId **prefix** (each create appends a unique suffix). |
 | `RECREATE` | `0` | `1` rebuilds the account **and** the workflow from scratch. |
@@ -155,7 +160,13 @@ Telegram error codes you'll see there:
 The gateway has a global prefix `api`, so the webhook path is **`/api/webhooks/telegram/<tenant>/<externalId>`**.
 The platform's auto-registration omits `/api`; if your bot points at `/webhooks/...` (no `/api`),
 Telegram 404s and nothing is ingested. Fix by passing `TG_PUBLIC_URL` (the script registers the
-correct path), or manually:
+correct path). `TG_PUBLIC_URL` should be the base URL only:
+
+```bash
+TG_PUBLIC_URL=https://api.devmachina.net ./setup.sh
+```
+
+Manual equivalent:
 
 ```bash
 # replace <externalId> with the value logged during setup (e.g. telegram-sample-bot-1700000000-12345)

@@ -34,9 +34,11 @@ The Knative feature flags required for dev mode (`kubernetes.podspec-volumes-hos
 # 3. Edit source files — bun --watch reloads automatically
 #    e.g. services/channel-service/src/modules/accounts/accounts.service.ts
 
-# 4. Watch logs
+# 4. Watch logs (Knative pods are labelled serving.knative.dev/service;
+#    worker Deployment pods use app.kubernetes.io/name)
 kubectl logs -f -n platform-services-dev \
-  -l app.kubernetes.io/name=channel-service-api
+  -l serving.knative.dev/service=channel-service-api -c user-container
+# worker: kubectl logs -f -n platform-services-dev deploy/channel-service-worker
 
 # 5. Restore the service to image mode when done
 ./dev-mode.sh channel-service off
@@ -130,7 +132,7 @@ The `on` command also warns you if it detects a sha mismatch before patching:
 
 - Confirm OrbStack VirtioFS is the filesystem. This has been tested on OrbStack — other VM providers (Minikube, kind) may not propagate inotify events.
 - Check that the file path you're editing is under `services/` or `packages/`. The hostPath mounts the repo root at `/app`; files outside the repo are not visible.
-- Look at pod events: `kubectl describe pod -n platform-services-dev -l app.kubernetes.io/name=<target>`.
+- Look at pod events: `kubectl describe pod -n platform-services-dev -l serving.knative.dev/service=<ksvc>` (Knative targets) or `-l app.kubernetes.io/name=<deployment>` (worker Deployments).
 
 ### Stale deps / module not found
 
@@ -157,7 +159,7 @@ This error means a glibc-linked native `.node` addon was loaded inside a musl (A
 
 ### `off` restores the last-built image
 
-`./dev-mode.sh <svc> off` uses `kubectl replace` to restore the service from the kustomize overlay. This restores `image: dev.local/<svc>:local`, which is whatever image was last built by `./rebuild-redeploy.sh` or `./bootstrap-orbstack-osx.sh`. It does **not** trigger a fresh build. If you need an up-to-date image: `./rebuild-redeploy.sh <svc>`.
+`./dev-mode.sh <svc> off [--overlay postgres-dev|mongo-dev]` restores the service from the kustomize overlay (default `postgres-dev`) using an RFC 6902 JSON patch — `kubectl replace` and `kubectl apply` are both avoided (the former rejects Knative's immutable creator annotation, the latter's strategic merge leaves orphaned volumes that fail Knative validation). This restores `image: dev.local/<svc>:local`, which is whatever image was last built by `./rebuild-redeploy.sh` or `./bootstrap-orbstack-osx.sh`. It does **not** trigger a fresh build. If you need an up-to-date image: `./rebuild-redeploy.sh <svc>`.
 
 ### Multiple services in dev mode
 
@@ -177,6 +179,7 @@ This prevents `rebuild-changed.sh` from overwriting your live patch with an imag
 ## Limitations
 
 - **OrbStack only.** The hostPath mount relies on OrbStack's VirtioFS and the single-node cluster topology. Minikube and remote clusters require a different approach (e.g. Tilt sync, or `livenessPatch` with a cloud volume).
+- **Hardcoded repo path.** `REPO_PATH` in `dev-mode.sh` is an absolute host path to this repo checkout. On a different machine or checkout location, update that constant before using `on`.
 - **admin-console excluded.** The Angular SPA is compiled at build time to static assets. It has no TypeScript runtime to watch; `bun --watch` does not apply. Use `./rebuild-redeploy.sh admin-console` as usual.
 - **Root node_modules layout.** Only the three workspace packages with the most cross-service usage (`shared`, `database`, `observability`) get dedicated PVC subPath mounts. If a service imports directly from another package not on this list, you may see a module-not-found error — open an issue to add the subPath.
 - **Single active PVC.** The `dev-mode-deps` PVC is `ReadWriteOnce`. Only one Job can write to it at a time. The `deps` command creates a new Job with `generateName` each time; concurrent runs will queue on the PVC.

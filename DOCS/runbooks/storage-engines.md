@@ -5,19 +5,21 @@ Platform OLTP data can run on **PostgreSQL** (default) or **MongoDB**, selected 
 ## Choosing an engine
 
 ```bash
-# Default — Postgres OLTP + Temporal Postgres
-./bootstrap-orbstack-osx.sh dev support-services platform-services
+# Default — Postgres OLTP + Temporal Postgres (full dev bring-up)
+./bootstrap-orbstack-osx.sh
 
 # Mongo OLTP + Temporal Postgres (hybrid)
-./bootstrap-orbstack-osx.sh --storage-engine=mongo dev support-services platform-services
+./bootstrap-orbstack-osx.sh --storage-engine=mongo
 ```
+
+The script always targets the single dev environment — there is no `dev` positional argument or per-environment overlay to select. An optional `[GROUP]` (`support-services` or `platform-services`) restricts the run to one group; omitting it runs both.
 
 Environment variables (same semantics):
 
 | Variable | Values | Default |
 |----------|--------|---------|
 | `STORAGE_ENGINE` | `postgres`, `mongo` | `postgres` |
-| `DB_ENGINE` | `postgres`, `mongo` | `postgres` (alias, used in Knative patches) |
+| `DB_ENGINE` | `postgres`, `mongo` | `postgres` (alias, takes precedence over `STORAGE_ENGINE` in app code; Knative patches set `STORAGE_ENGINE`) |
 
 Services resolve the active engine once in `src/config.ts` via `resolveStorageEngine()` from `@yoizen/database`.
 
@@ -42,7 +44,7 @@ Each migrated NestJS service uses:
 3. **Mongo adapter** — `mongodb` driver (current implementation)
 4. **`createRepositoryProvider`** — binds the interface to the adapter for `config.dbEngine`
 
-`agent-ai-service` uses `IMemoryStore` / `IVectorIndex` / `ILeaderElection` with the same `DB_ENGINE` switch.
+`agent-ai-service` follows the same repository-port pattern for agent config (`IAgentConfigRepository`, switched by `DB_ENGINE`). Memory retrieval goes through `MemoryClientService`, an HTTP client to `agent-memory-service`, which is Postgres-only (no Mongo adapter, no engine switch). The scheduler's `LeaderElectionService` is also Postgres-only — it always uses `pg_try_advisory_lock` regardless of `DB_ENGINE`.
 
 ## Feature matrix (dev/local)
 
@@ -52,8 +54,8 @@ Each migrated NestJS service uses:
 | Idempotent inserts | `ON CONFLICT DO NOTHING` | `insertMany` + E11000 / upsert |
 | Batch projection | `UPDATE … FROM unnest` | `bulkWrite` |
 | Usage aggregates | Timescale `time_bucket`, continuous aggregates | `$dateTrunc` aggregation pipelines |
-| Vector search (runtime) | pgvector | Atlas Local / cosine fallback |
-| Scheduler leader lock | `pg_advisory_lock` | TTL heartbeat document |
+| Vector search (runtime) | pgvector (`agent-admin-service` knowledge-base embeddings, always Postgres regardless of `DB_ENGINE`) | Not implemented; `agent-ai-service`'s in-memory `cosineSimilarity` fallback is engine-independent, not a Mongo-backed vector store |
+| Scheduler leader lock | `pg_advisory_lock` | Not implemented; `LeaderElectionService` always uses `pg_try_advisory_lock` regardless of `DB_ENGINE` |
 | Transactions (auth roles) | `sql.begin` | multi-doc sessions (where needed) |
 
 ## Port-forward
@@ -81,10 +83,11 @@ Temporal Postgres ports are forwarded in **both** modes.
 
 ## Switching engines on an existing cluster
 
-Dev data is disposable. Changing `--storage-engine` without a full reset leaves tenants provisioned for the previous engine. Prefer:
+Dev data is disposable. Changing `--storage-engine` without a full reset leaves tenants provisioned for the previous engine. `bootstrap-orbstack-osx.sh` has no `--reset` flag — clean up manually before switching:
 
 ```bash
-./bootstrap-orbstack-osx.sh --reset --storage-engine=mongo dev support-services platform-services
+kubectl delete namespace support-services-dev platform-services-dev
+./bootstrap-orbstack-osx.sh --storage-engine=mongo
 ```
 
 ## Out of scope

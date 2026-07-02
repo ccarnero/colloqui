@@ -6,7 +6,23 @@ Practical pseudocode examples for common use cases with `connector-runtime` and 
 
 > **Available action kinds** (verified in `services/workflow-service/src/temporal/workflows.ts`): `endpointCall`, `serviceCall`, `jsFunction`, `serviceBusCall`, `channelSend`, `agentCall`, `branch`, `conditional`.
 
+> **`serviceCall` args note**: `args.serviceId` is the UUID of a row in `registered_services`
+> (never a service name/slug). `workflow-service` pre-resolves it to `args.serviceSlug` at
+> workflow start so the `connector-runtime` activity can hit the internal-adapter mirror
+> directly; on a mirror miss it falls back to a legacy `registry-service` lookup. See
+> `packages/shared/src/workflow.interfaces.ts` (`ServiceCallArgs`).
+
 > **Lifecycle note**: workflow definitions are created with `POST /workflows` and contain `name`, `application`, and `actions`. Executions are started separately with `POST /workflows/:id/execute` and the body is only `{ "request": { ... } }`; the actions below reference that execution request via `{{request.*}}`.
+
+> **`endpointCall`/`serviceCall` result shape note**: the real activity result is
+> `{ status: number, data: unknown, headers: Record<string, string> }`
+> (`IHttpCallResult` in `services/connector-runtime/src/activities/_shared/http-call-with-retry.ts`).
+> There is no `body`/`duration`/`retriesUsed` field, and `EndpointCallArgs`/`ServiceCallArgs`
+> have no `timeout`/`retries` fields — per-attempt timeout and retry count are fixed by the
+> Temporal activity policy (30s, 5 attempts), not settable per-action. Some recipes below
+> use `body`/`timeout`/`retries` as illustrative pseudocode for direct Temporal-client
+> dispatch outside the workflow JSON API — do not copy those field names into a real
+> `POST /workflows` action.
 
 ## Pattern 1: Simple HTTP Call via Connector Runtime
 
@@ -225,51 +241,49 @@ POST /workflows
     },
     
     // Branch: Execute 3 parallel enrichments
+    // Note: `branch` does NOT take `args.branches`. Every key on the action
+    // other than `activity`/`name` is treated as a branch name mapped to
+    // an action array (see `BranchAction` in `packages/shared/src/workflow.interfaces.ts`
+    // and the `case "branch"` handler in `services/workflow-service/src/temporal/workflows.ts`).
     {
       activity: "branch",
       name: "enrichParallel",
-      args: {
-        branches: [
-          // Branch 1: Fetch purchase history
-          [
-            {
-              activity: "endpointCall",
-              name: "fetchHistory",
-              args: {
-                adapterId: "ecommerce",
-                endpointId: "getUserPurchases",
-                params: { userId: "{{results.fetchUser.data.id}}" }
-              }
-            }
-          ],
-          
-          // Branch 2: Fetch preferences
-          [
-            {
-              activity: "endpointCall",
-              name: "fetchPreferences",
-              args: {
-                adapterId: "preferences-service",
-                endpointId: "getUserPrefs",
-                params: { userId: "{{results.fetchUser.data.id}}" }
-              }
-            }
-          ],
-          
-          // Branch 3: Fetch loyalty points
-          [
-            {
-              activity: "endpointCall",
-              name: "fetchLoyalty",
-              args: {
-                adapterId: "loyalty-service",
-                endpointId: "getUserPoints",
-                params: { userId: "{{results.fetchUser.data.id}}" }
-              }
-            }
-          ]
-        ]
-      }
+      // Branch 1: Fetch purchase history
+      purchaseHistoryBranch: [
+        {
+          activity: "endpointCall",
+          name: "fetchHistory",
+          args: {
+            adapterId: "ecommerce",
+            endpointId: "getUserPurchases",
+            params: { userId: "{{results.fetchUser.data.id}}" }
+          }
+        }
+      ],
+      // Branch 2: Fetch preferences
+      preferencesBranch: [
+        {
+          activity: "endpointCall",
+          name: "fetchPreferences",
+          args: {
+            adapterId: "preferences-service",
+            endpointId: "getUserPrefs",
+            params: { userId: "{{results.fetchUser.data.id}}" }
+          }
+        }
+      ],
+      // Branch 3: Fetch loyalty points
+      loyaltyBranch: [
+        {
+          activity: "endpointCall",
+          name: "fetchLoyalty",
+          args: {
+            adapterId: "loyalty-service",
+            endpointId: "getUserPoints",
+            params: { userId: "{{results.fetchUser.data.id}}" }
+          }
+        }
+      ]
     },
     
     // Merge enriched data
@@ -352,42 +366,41 @@ POST /workflows
     },
     
     // Branch on decision
+    // Note: `branch` does NOT take `args.branches` — every key other than
+    // `activity`/`name` is a branch name mapped to an action array.
     {
       activity: "branch",
       name: "approvalRoute",
-      args: {
-        branches: [
-          // Branch A: Auto-approve (low amount, passed validation)
-          [
-            {
-              activity: "serviceBusCall",
-              name: "publishApproved",
-              args: {
-                subject: "events.approvals.approved",
-                payload: {
-                  requestId: "{{request.requestId}}",
-                  decision: "auto_approved",
-                  timestamp: "{{workflow.startTime}}"
-                }
-              }
+      // Branch A: Auto-approve (low amount, passed validation)
+      autoApproveBranch: [
+        {
+          activity: "serviceBusCall",
+          name: "publishApproved",
+          args: {
+            subject: "events.approvals.approved",
+            payload: {
+              requestId: "{{request.requestId}}",
+              decision: "auto_approved",
+              timestamp: "{{workflow.startTime}}"
             }
-          ],
-          
-          // Branch B: Escalate to manager (high amount or validation failed)
-          [
-            {
-              activity: "channelSend",
-              name: "notifyManager",
-              args: {
-                channel: "email",
-                recipient: "manager@example.com",
-                subject: "Approval Request: {{request.requestId}}",
-                body: "Request for {{request.amount}} requires manager approval.\nReason: {{results.shouldApprove.data.reason}}"
-              }
-            }
-          ]
-        ]
-      }
+          }
+        }
+      ],
+      // Branch B: Escalate to manager (high amount or validation failed)
+      escalateBranch: [
+        {
+          activity: "channelSend",
+          name: "notifyManager",
+          args: {
+            accountId: "{{workflow.channelAccountId}}",
+            channel: "telegram",
+            provider: "telegram",
+            to: "{{request.managerChatId}}",
+            type: "text",
+            text: "Approval Request: {{request.requestId}}\nRequest for {{request.amount}} requires manager approval.\nReason: {{results.shouldApprove.data.reason}}"
+          }
+        }
+      ]
     }
   ]
 }
@@ -420,7 +433,7 @@ POST /workflows
       activity: "serviceCall",
       name: "getUser",
       args: {
-        service: "user-service",
+        serviceId: "a1b2c3d4-...-registered-service-uuid",  // registered_services.id, not a name
         path: "/users/{{request.userId}}",  // {{request.X}} from initial request
         method: "GET"
       }
@@ -431,21 +444,27 @@ POST /workflows
       activity: "serviceCall",
       name: "getTemplate",
       args: {
-        service: "template-service",
+        serviceId: "e5f6a7b8-...-registered-service-uuid",
         path: "/templates/{{request.templateId}}",  // {{request.X}} from initial request
         method: "GET"
       }
     },
     
-    // Step 3: Send email with templated content
+    // Step 3: Send message with templated content
+    // Note: `Channel` is one of `whatsapp` | `instagram` | `telegram` | `http`
+    // (see `packages/shared/src/channel.interfaces.ts`) — there is no `email`/`sms`
+    // channel. `channelSend.args` requires `accountId`, `channel`, `provider`,
+    // `to`, `type` (there is no `recipient`/`subject`/`body`).
     {
       activity: "channelSend",
-      name: "sendEmail",
+      name: "sendMessage",
       args: {
-        channel: "email",
-        recipient: "{{results.getUser.data.email}}",  // {{results.X.data.Y}} from step 1
-        subject: "{{results.getTemplate.data.subject}}",  // {{results.X.data.Y}} from step 2
-        body: "Hello {{results.getUser.data.firstName}},\n\n{{results.getTemplate.data.body}}"  // Nested template
+        accountId: "{{request.channelAccountId}}",
+        channel: "telegram",
+        provider: "telegram",
+        to: "{{results.getUser.data.chatId}}",  // {{results.X.data.Y}} from step 1
+        type: "text",
+        text: "Hello {{results.getUser.data.firstName}},\n\n{{results.getTemplate.data.body}}"  // Nested template
       }
     },
     
@@ -494,14 +513,16 @@ POST /workflows
   application: "integrations",
   actions: [
     // Attempt 1: Call primary API
+    // Note: `EndpointCallArgs` has no `timeout`/`retries` fields — those are
+    // ignored if sent. Retry/timeout behavior is fixed by the Temporal activity
+    // policy for `endpointCall`/`serviceCall` (30s per attempt, 5 attempts,
+    // 1s->30s exponential backoff), not configurable per-action.
     {
       activity: "endpointCall",
       name: "callPrimaryAPI",
       args: {
         method: "GET",
-        url: "https://primary-api.example.com/data",
-        timeout: 30000,
-        retries: 3  // Automatic retries with exponential backoff
+        url: "https://primary-api.example.com/data"
       }
     },
     
@@ -524,59 +545,53 @@ POST /workflows
     },
     
     // Conditional fallback
+    // Note: `branch` does NOT take `args.branches` — every key other than
+    // `activity`/`name` is a branch name mapped to an action array.
     {
       activity: "branch",
       name: "fallbackStrategy",
-      args: {
-        branches: [
-          // If success: publish result
-          [
-            {
-              activity: "serviceBusCall",
-              name: "publishSuccess",
-              args: {
-                subject: "events.data.retrieved",
-                payload: {
-                  data: "{{results.callPrimaryAPI.data}}"
-                }
-              }
+      // If success: publish result
+      publishBranch: [
+        {
+          activity: "serviceBusCall",
+          name: "publishSuccess",
+          args: {
+            subject: "events.data.retrieved",
+            payload: {
+              data: "{{results.callPrimaryAPI.data}}"
             }
-          ],
-          
-          // If failed: try backup API
-          [
-            {
-              activity: "endpointCall",
-              name: "callBackupAPI",
-              args: {
-                method: "GET",
-                url: "https://backup-api.example.com/data",
-                timeout: 30000,
-                retries: 3
-              }
-            }
-          ]
-        ]
-      }
+          }
+        }
+      ],
+      // If failed: try backup API
+      backupBranch: [
+        {
+          activity: "endpointCall",
+          name: "callBackupAPI",
+          args: {
+            method: "GET",
+            url: "https://backup-api.example.com/data"
+          }
+        }
+      ]
     }
   ]
 }
 
-// Retry strategy:
-// - Connector Runtime automatically retries on:
-//   - Network timeouts
-//   - 5xx status codes
-// - Does NOT retry:
-//   - 4xx status codes (client error)
-//   - Circuit breaker open
-// - Backoff: 1s, 2s, 4s (exponential)
-// - Max: 3 retries (configurable)
+// Retry strategy (Temporal activity retry policy, fixed for endpointCall/serviceCall
+// in services/workflow-service/src/temporal/workflows.ts — not configurable per-action):
+// - 5 attempts max
+// - 1s initial interval, 2x backoff coefficient, 30s maximum interval
+// - Rides out one full circuit-breaker cooldown window (30s in connector-runtime)
+// - A raw call with no `adapterId` gets a fixed 30s per-attempt timeout and no
+//   connector-runtime-level retry of its own — retries happen at the Temporal layer
+// - Circuit breaker OPEN is retried too (it's a transient signal, not a hard stop)
 
 // Timeout behavior:
-// - Default: 30s per attempt
-// - If adapter configured: use adapter timeout
-// - Activity timeout: 60s (3 attempts * 20s default)
-// - Workflow timeout: 24 hours
+// - Per-attempt: 30s (startToCloseTimeout)
+// - If adapter configured: adapter-level timeout/retries also apply (see Pattern 2)
+// - Workflow execution timeout: 10 minutes (`WORKFLOW_DEFAULT_TIMEOUT_MS` in
+//   `packages/shared/src/constants.ts`), not 24 hours
 ```
 
 ---
@@ -615,57 +630,60 @@ POST /workflows
     },
     
     // Invoke AI agent for classification
+    // Note: `AgentCallArgs` requires `agentId` + `message` (not `input`); there is
+    // no `timeout`/`systemPrompt` field — the agent's system prompt is configured
+    // in agent-admin-service. Free-form data goes in `variables`, not `context`
+    // (which is reserved for prior chat turns: `{ sender, content }[]`).
     {
       activity: "agentCall",
       name: "classifyMessage",
       args: {
         agentId: "message-classifier-v2",
-        input: "{{request.text}}",
-        context: {
+        message: "{{request.text}}",
+        variables: {
           messageLength: "{{results.parseRequest.data.length}}",
           timestamp: "{{results.parseRequest.data.receivedAt}}"
-        },
-        systemPrompt: "Classify messages as: URGENT, NORMAL, or LOW_PRIORITY. Respond with JSON: {classification, confidence, reason}"
+        }
       }
     },
     
     // Route based on classification
+    // Note: `branch` does NOT take `args.branches` — every key other than
+    // `activity`/`name` is a branch name mapped to an action array.
     {
       activity: "branch",
       name: "routeByPriority",
-      args: {
-        branches: [
-          // High confidence urgent: escalate immediately
-          [
-            {
-              activity: "channelSend",
-              name: "escalateUrgent",
-              args: {
-                channel: "sms",
-                recipient: "+1-555-0100",
-                message: "URGENT: {{request.text}} [Confidence: {{results.classifyMessage.data.confidence}}%]"
-              }
+      // High confidence urgent: escalate immediately
+      urgentBranch: [
+        {
+          activity: "channelSend",
+          name: "escalateUrgent",
+          args: {
+            accountId: "{{request.channelAccountId}}",
+            channel: "telegram",
+            provider: "telegram",
+            to: "{{request.escalationChatId}}",
+            type: "text",
+            text: "URGENT: {{request.text}} [Confidence: {{results.classifyMessage.data.confidence}}%]"
+          }
+        }
+      ],
+      // Normal priority: queue for processing
+      normalBranch: [
+        {
+          activity: "serviceBusCall",
+          name: "queueForProcessing",
+          args: {
+            subject: "events.messages.queued",
+            payload: {
+              text: "{{request.text}}",
+              classification: "{{results.classifyMessage.data.classification}}",
+              confidence: "{{results.classifyMessage.data.confidence}}",
+              reason: "{{results.classifyMessage.data.reason}}"
             }
-          ],
-          
-          // Normal priority: queue for processing
-          [
-            {
-              activity: "serviceBusCall",
-              name: "queueForProcessing",
-              args: {
-                subject: "events.messages.queued",
-                payload: {
-                  text: "{{request.text}}",
-                  classification: "{{results.classifyMessage.data.classification}}",
-                  confidence: "{{results.classifyMessage.data.confidence}}",
-                  reason: "{{results.classifyMessage.data.reason}}"
-                }
-              }
-            }
-          ]
-        ]
-      }
+          }
+        }
+      ]
     }
   ]
 }

@@ -3,49 +3,48 @@ import {
   Component,
   computed,
   inject,
+  type OnInit,
   signal,
   viewChild,
-  type OnInit,
 } from "@angular/core";
-import { ActivatedRoute, Router } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
-import { MatSnackBarModule, MatSnackBar } from "@angular/material/snack-bar";
+import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
+import { ActivatedRoute, Router } from "@angular/router";
 import {
-  FFlowModule,
   FCanvasComponent,
-  type FCreateNodeEvent,
   type FCreateConnectionEvent,
+  type FCreateNodeEvent,
+  FFlowModule,
   type FReassignConnectionEvent,
 } from "@foblex/flow";
-
+import { deserializeFlow } from "../domain/flow-deserializer";
+import { serializeFlow } from "../domain/flow-serializer";
+import type { ValidationError } from "../domain/validation/validation.types";
+import { validateWorkflow } from "../domain/validation/workflow.validator";
 import {
-  type IWorkflowFlow,
-  type IWorkflowNode,
-  type IWorkflowConnection,
   EWorkflowConnectionType,
   EWorkflowNodeType,
+  type IWorkflowConnection,
+  type IWorkflowFlow,
+  type IWorkflowNode,
 } from "../domain/workflow-node.types";
 import { createNodeFromDefault } from "../domain/workflow-node-defaults";
-import { serializeFlow } from "../domain/flow-serializer";
-import { validateWorkflow } from "../domain/validation/workflow.validator";
-import type { ValidationError } from "../domain/validation/validation.types";
 import { WorkflowApiService } from "../services/workflow-api.service";
 import type {
-  IVariableGroup,
   IVariableEntry,
+  IVariableGroup,
 } from "./components/template-autocomplete/template-autocomplete.component";
-
+import { VariablesReferenceComponent } from "./components/variables-reference/variables-reference.component";
 import { WorkflowNodeComponent } from "./components/workflow-node/workflow-node.component";
-import { WorkflowPaletteComponent } from "./components/workflow-palette/workflow-palette.component";
 import { WorkflowNodeConfigComponent } from "./components/workflow-node-config/workflow-node-config.component";
+import { WorkflowPaletteComponent } from "./components/workflow-palette/workflow-palette.component";
 import { WorkflowTestPanelComponent } from "./components/workflow-test-panel/workflow-test-panel.component";
 import {
-  WorkflowValidationDialogComponent,
   type IWorkflowValidationDialogData,
+  WorkflowValidationDialogComponent,
 } from "./components/workflow-validation-dialog/workflow-validation-dialog.component";
-import { VariablesReferenceComponent } from "./components/variables-reference/variables-reference.component";
 
 const CONNECTOR_OUTPUT_SUFFIX = "-out";
 const CONNECTOR_INPUT_SUFFIX = "-in";
@@ -76,7 +75,7 @@ function pruneConflictingConnections(
   all: Record<string, IWorkflowConnection>,
   winner: IWorkflowConnection,
   winnerKey: string,
-  nodes: Record<string, IWorkflowNode>,
+  nodes: Record<string, IWorkflowNode>
 ): Record<string, IWorkflowConnection> {
   const sourceAllowsMany =
     nodes[winner.source]?.type === EWorkflowNodeType.BRANCH ||
@@ -360,17 +359,13 @@ export class WorkflowBuilderComponent implements OnInit {
       new Set(
         this.validationErrors()
           .map((e) => e.nodeKey)
-          .filter((k): k is string => typeof k === "string"),
-      ),
+          .filter((k): k is string => typeof k === "string")
+      )
   );
 
-  readonly nodes = computed(() =>
-    Object.values(this.flow().nodes),
-  );
+  readonly nodes = computed(() => Object.values(this.flow().nodes));
 
-  readonly connections = computed(() =>
-    Object.values(this.flow().connections),
-  );
+  readonly connections = computed(() => Object.values(this.flow().connections));
 
   readonly selectedNode = computed<IWorkflowNode | null>(() => {
     const key = this.selectedNodeKey();
@@ -378,7 +373,9 @@ export class WorkflowBuilderComponent implements OnInit {
   });
 
   /** Serialized actions used by the test panel to extract request variables. */
-  readonly serializedActions = computed(() => serializeFlow(this.flow()).actions);
+  readonly serializedActions = computed(
+    () => serializeFlow(this.flow()).actions
+  );
 
   /**
    * Variable groups derived from the current workflow nodes, consumed by
@@ -410,10 +407,26 @@ export class WorkflowBuilderComponent implements OnInit {
     }
     // Always include common request vars even if not yet used
     for (const fallback of [
-      { path: "request.from", label: "from", description: "Sender identifier (phone/JID)" },
-      { path: "request.text", label: "text", description: "Inbound message text" },
-      { path: "request.conversationId", label: "conversationId", description: "Current conversation ID" },
-      { path: "request.channel", label: "channel", description: "Channel type (whatsapp, telegram…)" },
+      {
+        path: "request.from",
+        label: "from",
+        description: "Sender identifier (phone/JID)",
+      },
+      {
+        path: "request.text",
+        label: "text",
+        description: "Inbound message text",
+      },
+      {
+        path: "request.conversationId",
+        label: "conversationId",
+        description: "Current conversation ID",
+      },
+      {
+        path: "request.channel",
+        label: "channel",
+        description: "Channel type (whatsapp, telegram…)",
+      },
     ]) {
       if (!requestSeen.has(fallback.label)) {
         requestVars.push({
@@ -431,7 +444,9 @@ export class WorkflowBuilderComponent implements OnInit {
     // Results from previous steps
     const resultVars: IVariableEntry[] = [];
     for (const node of nodes) {
-      if (!node.name) continue;
+      if (!node.name) {
+        continue;
+      }
       resultVars.push({
         path: `results["${node.name}"].data`,
         label: `${node.name} data`,
@@ -446,7 +461,11 @@ export class WorkflowBuilderComponent implements OnInit {
       });
     }
     if (resultVars.length > 0) {
-      groups.push({ namespace: "Results", icon: "\uD83D\uDCCA", variables: resultVars });
+      groups.push({
+        namespace: "Results",
+        icon: "\uD83D\uDCCA",
+        variables: resultVars,
+      });
     }
 
     // Built-in variables
@@ -454,9 +473,24 @@ export class WorkflowBuilderComponent implements OnInit {
       namespace: "Built-in",
       icon: "\u2699\uFE0F",
       variables: [
-        { path: "workflow.tenant", label: "tenant", description: "Current tenant ID", example: "{{workflow.tenant}}" },
-        { path: "workflow.name", label: "name", description: "Workflow name", example: "{{workflow.name}}" },
-        { path: "variables.previous", label: "previous", description: "Previous step result", example: "{{variables.previous}}" },
+        {
+          path: "workflow.tenant",
+          label: "tenant",
+          description: "Current tenant ID",
+          example: "{{workflow.tenant}}",
+        },
+        {
+          path: "workflow.name",
+          label: "name",
+          description: "Workflow name",
+          example: "{{workflow.name}}",
+        },
+        {
+          path: "variables.previous",
+          label: "previous",
+          description: "Previous step result",
+          example: "{{variables.previous}}",
+        },
       ],
     });
 
@@ -472,9 +506,11 @@ export class WorkflowBuilderComponent implements OnInit {
     const inbound = Object.values(this.flow().nodes).find(
       (n) =>
         n.type === EWorkflowNodeType.CHANNEL &&
-        n.configuration["direction"] === "inbound",
+        n.configuration["direction"] === "inbound"
     );
-    if (!inbound) return [];
+    if (!inbound) {
+      return [];
+    }
     const ids = inbound.configuration["accountIds"];
     return Array.isArray(ids)
       ? ids.filter((id): id is string => typeof id === "string")
@@ -493,8 +529,7 @@ export class WorkflowBuilderComponent implements OnInit {
     if (id) {
       this.api.get(id).subscribe({
         next: (dto) => {
-          const { nodes, connections } =
-            this.deserializeFlow(dto);
+          const { nodes, connections } = deserializeFlow(dto);
           this.flow.set({
             key: dto.id,
             name: dto.name,
@@ -523,7 +558,9 @@ export class WorkflowBuilderComponent implements OnInit {
 
   onCreateNode(event: FCreateNodeEvent): void {
     const type = event.data as EWorkflowNodeType;
-    if (!type) return;
+    if (!type) {
+      return;
+    }
 
     const node = createNodeFromDefault(type, event.rect);
 
@@ -534,7 +571,9 @@ export class WorkflowBuilderComponent implements OnInit {
   }
 
   onCreateConnection(event: FCreateConnectionEvent): void {
-    if (!event.fInputId) return;
+    if (!event.fInputId) {
+      return;
+    }
 
     const sourceNode = connectorOutputToNodeKey(event.fOutputId);
     const targetNode = connectorInputToNodeKey(event.fInputId);
@@ -552,7 +591,7 @@ export class WorkflowBuilderComponent implements OnInit {
         merged,
         conn,
         conn.key,
-        f.nodes,
+        f.nodes
       );
       return { ...f, connections };
     });
@@ -596,7 +635,7 @@ export class WorkflowBuilderComponent implements OnInit {
         merged,
         updated,
         event.connectionId,
-        f.nodes,
+        f.nodes
       );
 
       return { ...f, connections };
@@ -639,7 +678,9 @@ export class WorkflowBuilderComponent implements OnInit {
   }): void {
     this.flow.update((f) => {
       const node = f.nodes[event.key];
-      if (!node) return f;
+      if (!node) {
+        return f;
+      }
       return {
         ...f,
         nodes: {
@@ -659,7 +700,9 @@ export class WorkflowBuilderComponent implements OnInit {
   onNodeNameChange(event: { key: string; name: string }): void {
     this.flow.update((f) => {
       const node = f.nodes[event.key];
-      if (!node) return f;
+      if (!node) {
+        return f;
+      }
       return {
         ...f,
         nodes: {
@@ -674,11 +717,31 @@ export class WorkflowBuilderComponent implements OnInit {
     const result = validateWorkflow(this.flow());
     if (!result.valid) {
       this.validationErrors.set(result.errors);
-      this.openValidationDialog(result.errors);
+      this.openValidationDialog(result.errors, result.warnings);
       return;
     }
     this.validationErrors.set([]);
 
+    if (result.warnings.length > 0) {
+      // Warnings never block the save, but the user must acknowledge
+      // them ("Save anyway") before we proceed.
+      const ref = this.dialog.open(WorkflowValidationDialogComponent, {
+        data: { errors: [], warnings: result.warnings },
+        autoFocus: false,
+        restoreFocus: true,
+      });
+      ref.afterClosed().subscribe((saveAnyway) => {
+        if (saveAnyway === true) {
+          this.performSave();
+        }
+      });
+      return;
+    }
+
+    this.performSave();
+  }
+
+  private performSave(): void {
     this.saving.set(true);
     const serialized = serializeFlow(this.flow());
 
@@ -702,10 +765,9 @@ export class WorkflowBuilderComponent implements OnInit {
           // After first save we route into the new detail mini-app's
           // Builder sub-tab. The legacy `:id/edit` URL still redirects
           // but going direct avoids a redirect flash.
-          this.router.navigate(
-            ["/workflows", saved.id, "builder"],
-            { replaceUrl: true },
-          );
+          this.router.navigate(["/workflows", saved.id, "builder"], {
+            replaceUrl: true,
+          });
         }
         this.snackBar.open("Workflow saved", "OK", {
           duration: 3000,
@@ -720,8 +782,11 @@ export class WorkflowBuilderComponent implements OnInit {
     });
   }
 
-  private openValidationDialog(errors: ValidationError[]): void {
-    const data: IWorkflowValidationDialogData = { errors };
+  private openValidationDialog(
+    errors: ValidationError[],
+    warnings: ValidationError[] = []
+  ): void {
+    const data: IWorkflowValidationDialogData = { errors, warnings };
     this.dialog.open(WorkflowValidationDialogComponent, {
       data,
       autoFocus: false,
@@ -735,8 +800,7 @@ export class WorkflowBuilderComponent implements OnInit {
   }
 
   onNameBlur(event: Event): void {
-    const value =
-      (event.target as HTMLInputElement).value.trim();
+    const value = (event.target as HTMLInputElement).value.trim();
     if (!value) {
       this.flow.update((f) => ({ ...f, name: "New Workflow" }));
       (event.target as HTMLInputElement).value = "New Workflow";
@@ -745,374 +809,5 @@ export class WorkflowBuilderComponent implements OnInit {
 
   goBack(): void {
     this.router.navigate(["/workflows"]);
-  }
-
-  /**
-   * Reconstructs the visual flow graph from a saved definition.
-   * Handles linear actions and recursively expands branch paths
-   * into child nodes with fan-out connections.
-   */
-  private deserializeFlow(dto: {
-    actions: unknown[];
-    trigger: unknown | null;
-  }): {
-    nodes: Record<string, IWorkflowNode>;
-    connections: Record<string, IWorkflowConnection>;
-  } {
-    const nodes: Record<string, IWorkflowNode> = {};
-    const connections: Record<string, IWorkflowConnection> = {};
-    const trunk: string[] = [];
-    let connSeq = 0;
-
-    const X_START = 50;
-    const X_GAP = 280;
-    const Y_BASE = 100;
-    const Y_BRANCH_GAP = 140;
-    let col = 0;
-
-    const link = (src: string, tgt: string): void => {
-      const key = `conn-r-${connSeq++}`;
-      connections[key] = {
-        key,
-        source: src,
-        target: tgt,
-        type: EWorkflowConnectionType.DEFAULT,
-      };
-    };
-
-    if (dto.trigger) {
-      const tn = createNodeFromDefault(
-        EWorkflowNodeType.CHANNEL,
-        { x: X_START, y: Y_BASE },
-      );
-      const raw = dto.trigger as Record<string, unknown>;
-      const cfg = raw["config"];
-      if (cfg && typeof cfg === "object") {
-        tn.configuration = {
-          ...tn.configuration,
-          ...(cfg as Record<string, unknown>),
-        };
-      }
-      tn.configuration["direction"] = "inbound";
-      tn.configuration["mode"] =
-        (raw["mode"] as string) ?? "shared";
-      nodes[tn.key] = tn;
-      trunk.push(tn.key);
-      col++;
-    }
-
-    if (Array.isArray(dto.actions)) {
-      for (const raw of dto.actions) {
-        const a = raw as Record<string, unknown>;
-        const activity = a["activity"] as string;
-        const type = this.activityToNodeType(activity);
-        if (!type) continue;
-
-        const node = createNodeFromDefault(type, {
-          x: X_START + col * X_GAP,
-          y: Y_BASE,
-        });
-        node.name = (a["name"] as string) ?? node.name;
-        nodes[node.key] = node;
-        trunk.push(node.key);
-        col++;
-
-        if (activity === "branch") {
-          const paths = this.extractBranchPaths(a);
-          node.configuration["branches"] =
-            paths.map(([name]) => name);
-          const mid = (paths.length - 1) / 2;
-
-          for (let pi = 0; pi < paths.length; pi++) {
-            const pathY =
-              Y_BASE + (pi - mid) * Y_BRANCH_GAP;
-            const keys = this.deserializeChain(
-              paths[pi][1],
-              nodes,
-              link,
-              X_START + col * X_GAP,
-              pathY,
-              X_GAP,
-              Y_BRANCH_GAP,
-            );
-            if (keys.length === 0) continue;
-            link(node.key, keys[0]);
-          }
-        } else if (
-          activity === "conditional"
-        ) {
-          const condBranches =
-            (a["branches"] as Array<{
-              label: string;
-              condition: Record<string, unknown>;
-              actions: unknown[];
-            }>) ?? [];
-          const defaultActions = a["default"] as
-            | unknown[]
-            | undefined;
-
-          node.configuration["branches"] =
-            condBranches.map((b) => ({
-              label: b.label,
-              condition: b.condition,
-            }));
-
-          const totalPaths = condBranches.length +
-            (Array.isArray(defaultActions) &&
-            defaultActions.length > 0
-              ? 1
-              : 0);
-          const mid = (totalPaths - 1) / 2;
-
-          for (let bi = 0; bi < condBranches.length; bi++) {
-            const pathY =
-              Y_BASE + (bi - mid) * Y_BRANCH_GAP;
-            const keys = this.deserializeChain(
-              condBranches[bi].actions ?? [],
-              nodes,
-              link,
-              X_START + col * X_GAP,
-              pathY,
-              X_GAP,
-              Y_BRANCH_GAP,
-            );
-            if (keys.length === 0) continue;
-            link(node.key, keys[0]);
-          }
-
-          if (
-            Array.isArray(defaultActions) &&
-            defaultActions.length > 0
-          ) {
-            const defaultY =
-              Y_BASE +
-              (condBranches.length - mid) *
-                Y_BRANCH_GAP;
-            const keys = this.deserializeChain(
-              defaultActions,
-              nodes,
-              link,
-              X_START + col * X_GAP,
-              defaultY,
-              X_GAP,
-              Y_BRANCH_GAP,
-            );
-            if (keys.length > 0) {
-              link(node.key, keys[0]);
-              node.configuration["default"] = {
-                targetKey: keys[0],
-              };
-            }
-          }
-        } else if (
-          a["args"] &&
-          typeof a["args"] === "object"
-        ) {
-          node.configuration = {
-            ...node.configuration,
-            ...(a["args"] as Record<string, unknown>),
-          };
-        }
-
-        if (activity === "channelSend") {
-          node.configuration["direction"] = "outbound";
-          const args = a["args"] as
-            | Record<string, unknown>
-            | undefined;
-          if (args) {
-            node.configuration["messageType"] =
-              args["type"] ?? "text";
-          }
-          const to =
-            node.configuration["to"] as string | undefined;
-          node.configuration["recipientMode"] =
-            to === "{{request.from}}" ? "sender" : "custom";
-        }
-      }
-    }
-
-    for (let i = 0; i < trunk.length - 1; i++) {
-      link(trunk[i], trunk[i + 1]);
-    }
-
-    return { nodes, connections };
-  }
-
-  /** Extracts dynamic branch path keys from a branch action. */
-  private extractBranchPaths(
-    action: Record<string, unknown>,
-  ): Array<[string, unknown[]]> {
-    const skip = new Set(["activity", "name", "args"]);
-    const paths: Array<[string, unknown[]]> = [];
-    for (const [k, v] of Object.entries(action)) {
-      if (!skip.has(k) && Array.isArray(v)) {
-        paths.push([k, v]);
-      }
-    }
-    return paths;
-  }
-
-  /**
-   * Deserializes a chain of actions into nodes, handling nested branches
-   * recursively. Internal sequential links (and branch -> path links) are
-   * created here, so callers only need to link the previous node to the
-   * first key returned. Runs in O(N) over the total action tree.
-   */
-  private deserializeChain(
-    actions: unknown[],
-    nodes: Record<string, IWorkflowNode>,
-    link: (src: string, tgt: string) => void,
-    startX: number,
-    y: number,
-    xGap: number,
-    yBranchGap: number,
-  ): string[] {
-    const keys: string[] = [];
-    let offset = 0;
-    let prevKey: string | null = null;
-    for (const raw of actions) {
-      const a = raw as Record<string, unknown>;
-      const activity = a["activity"] as string;
-      const type = this.activityToNodeType(activity);
-      if (!type) continue;
-
-      const node = createNodeFromDefault(type, {
-        x: startX + offset * xGap,
-        y,
-      });
-      node.name = (a["name"] as string) ?? node.name;
-      nodes[node.key] = node;
-      keys.push(node.key);
-      if (prevKey !== null) {
-        link(prevKey, node.key);
-      }
-
-      if (activity === "branch") {
-        const paths = this.extractBranchPaths(a);
-        node.configuration["branches"] = paths.map(
-          ([name]) => name,
-        );
-        const mid = (paths.length - 1) / 2;
-        const childOffset = offset + 1;
-
-        for (let pi = 0; pi < paths.length; pi++) {
-          const pathY = y + (pi - mid) * yBranchGap;
-          const childKeys = this.deserializeChain(
-            paths[pi][1],
-            nodes,
-            link,
-            startX + childOffset * xGap,
-            pathY,
-            xGap,
-            yBranchGap,
-          );
-          if (childKeys.length === 0) continue;
-          link(node.key, childKeys[0]);
-        }
-      } else if (activity === "conditional") {
-        const condBranches =
-          (a["branches"] as Array<{
-            label: string;
-            condition: Record<string, unknown>;
-            actions: unknown[];
-          }>) ?? [];
-        const defaultActions = a["default"] as
-          | unknown[]
-          | undefined;
-
-        node.configuration["branches"] =
-          condBranches.map((b) => ({
-            label: b.label,
-            condition: b.condition,
-          }));
-
-        const totalPaths = condBranches.length +
-          (Array.isArray(defaultActions) &&
-          defaultActions.length > 0
-            ? 1
-            : 0);
-        const mid = (totalPaths - 1) / 2;
-        const childOffset = offset + 1;
-
-        for (let bi = 0; bi < condBranches.length; bi++) {
-          const pathY = y + (bi - mid) * yBranchGap;
-          const childKeys = this.deserializeChain(
-            condBranches[bi].actions ?? [],
-            nodes,
-            link,
-            startX + childOffset * xGap,
-            pathY,
-            xGap,
-            yBranchGap,
-          );
-          if (childKeys.length === 0) continue;
-          link(node.key, childKeys[0]);
-        }
-
-        if (
-          Array.isArray(defaultActions) &&
-          defaultActions.length > 0
-        ) {
-          const defaultY =
-            y +
-            (condBranches.length - mid) * yBranchGap;
-          const childKeys = this.deserializeChain(
-            defaultActions,
-            nodes,
-            link,
-            startX + childOffset * xGap,
-            defaultY,
-            xGap,
-            yBranchGap,
-          );
-          if (childKeys.length > 0) {
-            link(node.key, childKeys[0]);
-            node.configuration["default"] = {
-              targetKey: childKeys[0],
-            };
-          }
-        }
-      } else if (a["args"] && typeof a["args"] === "object") {
-        node.configuration = {
-          ...node.configuration,
-          ...(a["args"] as Record<string, unknown>),
-        };
-      }
-
-      if (activity === "channelSend") {
-        node.configuration["direction"] = "outbound";
-        const args = a["args"] as
-          | Record<string, unknown>
-          | undefined;
-        if (args) {
-          node.configuration["messageType"] =
-            args["type"] ?? "text";
-        }
-        const to =
-          node.configuration["to"] as string | undefined;
-        node.configuration["recipientMode"] =
-          to === "{{request.from}}" ? "sender" : "custom";
-      }
-
-      prevKey = node.key;
-      offset++;
-    }
-    return keys;
-  }
-
-  private activityToNodeType(
-    activity: string,
-  ): EWorkflowNodeType | null {
-    const map: Record<string, EWorkflowNodeType> = {
-      jsFunction: EWorkflowNodeType.JS_FUNCTION,
-      endpointCall: EWorkflowNodeType.ENDPOINT_CALL,
-      serviceCall: EWorkflowNodeType.SERVICE_CALL,
-      serviceBusCall: EWorkflowNodeType.SERVICE_BUS_CALL,
-      agentCall: EWorkflowNodeType.AGENT_CALL,
-      channelSend: EWorkflowNodeType.CHANNEL,
-      branch: EWorkflowNodeType.BRANCH,
-      conditional: EWorkflowNodeType.CONDITIONAL,
-    };
-    return map[activity] ?? null;
   }
 }

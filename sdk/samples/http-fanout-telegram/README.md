@@ -104,15 +104,6 @@ curl -X POST 'http://localhost:8080/api/webhooks/http/acme/http-fanout-telegram'
   -d '{"text":"hola"}'
 ```
 
-Or use the `http-bridge` SDK targeting this instance with `YOIZEN_HTTP_CHANNEL_INSTANCE`:
-
-```bash
-(cd ../http-bridge && pnpm install && \
-  YOIZEN_TENANT=acme YOIZEN_EMAIL=yclawd@demo.io YOIZEN_PASSWORD=admin123 \
-  YOIZEN_HTTP_CHANNEL_INSTANCE=http-fanout-telegram pnpm start)
-curl -X POST localhost:4000/messages -H 'content-type: application/json' -d '{"text":"hola"}'
-```
-
 The message hits **this instance** → the workflow fires (and no other) → three calls run in parallel
 → the join builds the summary → it's POSTed to httpbin → and the bot DMs you:
 

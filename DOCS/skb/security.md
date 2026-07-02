@@ -21,7 +21,7 @@ User NL query
     → validateWhereClause() (regex blocklist)
     → isSafe() (keyword + pattern check)
     → Fixed SELECT template (user never controls FROM)
-    → enforceLimit() (hard cap)
+    → LIMIT bounded by QuerySKBDto validation (@Max 1000, default 100)
     → PostgreSQL execution
 ```
 
@@ -100,10 +100,15 @@ positions. It can never control:
 
 **File:** `skb-sql-safety.ts` — `enforceLimit()`
 
-- Hard maximum: `LIMIT 1000` (can never be exceeded)
-- Default: `LIMIT 100` (reasonable for UI pagination)
-- Applied after all other validations
-- Caps both new and existing LIMIT values
+> **Implementation status**: `enforceLimit()` exists but is NOT called from the
+> live query path (`SKBQueryService.buildSql()` interpolates the limit
+> directly). Actual limit enforcement happens earlier, at input validation:
+> `QuerySKBDto` applies `@Min(1) @Max(1000)`, and `SKBQueryService` defaults to
+> `100` when `limit` is omitted. The result is equivalent (max 1000, default
+> 100) but relies on DTO validation, not a SQL-layer cap.
+
+- Hard maximum: `LIMIT 1000` (enforced by `QuerySKBDto` `@Max(1000)`)
+- Default: `LIMIT 100` (applied in `SKBQueryService`)
 
 ---
 
@@ -203,7 +208,7 @@ non-SELECT), but they should remain as defense-in-depth.
 | UNION blocked | Layer 3 — `validateWhereClause()` |
 | Comments blocked (--, /*) | Layer 3 — `validateWhereClause()` |
 | System tables blocked (pg_catalog, information_schema) | Layer 3 |
-| LIMIT hard-capped at 1000 | Layer 5 — `enforceLimit()` |
+| LIMIT hard-capped at 1000 | `QuerySKBDto` `@Max(1000)` + default 100 in `SKBQueryService` (`enforceLimit()` exists but is not wired) |
 | Multi-tenant isolation (container_id + tenant_id) | Always injected server-side |
 | Semicolons blocked (stacked queries) | Layer 3 |
 | Identifier sanitization | `sanitizeIdentifier()` |

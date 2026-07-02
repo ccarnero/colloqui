@@ -153,7 +153,7 @@ export interface ContextMetrics {
   - Do NOT add synchronous metric recording in the hot path — always `await` async writes
 
 * **Dependencies**:
-  - No new packages required — reuses existing `ai@6.x`, `@ai-sdk/openai@1.x`, `@nestjs/common@10.x`
+  - No new packages required — reuses existing `ai@6.x`, `@ai-sdk/openai@3.x`, `@nestjs/common@11.x`
   - `EmbeddingService` already exists at `services/agent-ai-service/src/modules/llm/embedding.service.ts` — reuse for skill embeddings
   - `LlmExecutorService.generateText()` already exists — reuse for memory summarization
 
@@ -294,8 +294,8 @@ export interface ContextMetrics {
 
 ### Related ADRs
 
-- `docs/adr/rag-system.md` — KB and RAG system design (Phase 1-2 already implemented)
-- `docs/adr/variable-system.md` — Variable system for agent I/O (complements context pipeline)
+- `DOCS/adr/rag-system.md` — KB and RAG system design (Phase 1-2 already implemented)
+- `DOCS/adr/variable-system.md` — Variable system for agent I/O (complements context pipeline)
 
 ### Revisit Triggers
 

@@ -77,7 +77,7 @@ flowchart LR
 | Service | Layer | Role |
 |---|---|---|
 | `api-gateway` | Platform | External HTTP entry, auth enforcement, service proxying, webhook ingress entry |
-| `channel-service` | Platform | Channel ingress/egress orchestration (Telegram/WhatsApp), normalized message events |
+| `channel-service` | Platform | Channel ingress/egress orchestration (WhatsApp, Instagram, Telegram, generic HTTP), normalized message events |
 | `audit-service` | Platform | Durable event audit persistence to tenant PostgreSQL |
 | `usage-aggregator-service` | Platform | Cross-stream usage aggregation for tenant analytics |
 | `workflow-service-api` | Platform | Workflow management API and Temporal client entry |
@@ -270,6 +270,9 @@ The database phase is storage-engine aware (`postgres.provider.ts` / `mongo.prov
 | `POST/PATCH/GET` | `/registry/services/:id/canary` | Canary deployments | Required |
 | `POST/GET` | `/workflows` | Workflow management | Required |
 | `POST/GET/PATCH/DELETE` | `/api/connectors` | Connector configuration (proxied to `connector-admin`) | Required |
+| `GET` | `/api/connectors/usage` | Aggregated connector call usage (proxied to `connector-admin`) | Required |
+| `POST/GET/PATCH/DELETE` | `/api/channels/accounts` | Channel account management (proxied to `channel-service`) | Required |
+| `GET` | `/api/channels/usage` / `/api/channels/usage/totals` | Channel usage metrics (proxied to `channel-service`) | Required |
 | `GET` | `/health` | Aggregated health | Public |
 
 ```mermaid
@@ -335,7 +338,7 @@ graph LR
 |--------|--------|
 | **Role** | Persist all events to per-tenant PostgreSQL for auditing and queries |
 | **Port** | 3000 |
-| **Scale** | 1 -- 5 replicas (concurrency target: 50) |
+| **Scale** | 1 -- 10 replicas (concurrency target: 100) |
 
 **Database Schema (per-tenant):**
 
@@ -358,7 +361,7 @@ CREATE TABLE events (
 |--------|--------|
 | **Role** | HTTP key-value cache with L1 (memory) + L2 (Redis) |
 | **Port** | 3000 |
-| **Scale** | 0 -- 5 replicas (concurrency target: 100, **scale-to-zero enabled**) |
+| **Scale** | 1 -- 5 replicas (concurrency target: 100) |
 
 ```mermaid
 graph LR
@@ -395,8 +398,8 @@ graph LR
     GW -->|HTTP Proxy| TS["Tenant Service"]
     TS -->|enqueue / consume| NATSQ[("NATS JetStream<br/>PLATFORM_TENANTS")]
     TS -->|ensureTenantIngressStream| NATSI[("NATS JetStream<br/>INGRESS-&lt;tenant&gt;")]
-    TS -->|Create NS + PG + ksvc| K8sAPI[Kubernetes API]
-    K8sAPI -->|creates| NS["acme-dev-ns<br/>(namespace + PostgreSQL OLTP + Usage<br/>+ agent-ai-service ksvc)"]
+    TS -->|Create NS + PG| K8sAPI[Kubernetes API]
+    K8sAPI -->|creates| NS["acme-dev-ns<br/>(namespace + postgres ExternalName/StatefulSet)"]
 ```
 
 ---
@@ -407,7 +410,7 @@ graph LR
 |--------|--------|
 | **Role** | Knative service registry with route management and canary deployments |
 | **Port** | 3000 |
-| **Scale** | 1 -- 5 replicas (concurrency target: 50) |
+| **Scale** | 1 -- 3 replicas (concurrency target: 50) |
 
 **Database Schema:**
 
@@ -436,7 +439,7 @@ graph LR
 |--------|--------|
 | **Role** | REST API for Temporal workflows + orchestrator worker |
 | **Port** | 3000 |
-| **Scale** | API: 1--5, Worker: 1--3 |
+| **Scale** | API: 1--15 Knative replicas (concurrency target: 100); Worker: plain Deployment, fixed `replicas: 1` in developer mode |
 
 **Action Types:**
 
@@ -522,18 +525,26 @@ graph TB
 |---------|-----------|-----------|-------------------|
 | API Gateway | 1 | 10 | 100 |
 | Auth Service | 1 | 3 | 50 |
-| Audit Service | 1 | 5 | 50 |
-| Cache Service | **0** | 5 | 100 |
-| Channel Service | 1 | 5 | 50 |
+| Audit Service (API) | 1 | 10 | 100 |
+| Cache Service | 1 | 5 | 100 |
+| Channel Service (API) | 1 | 20 | 100 |
 | Tenant Service | 1 | 3 | 50 |
-| Registry Service | 1 | 5 | 50 |
-| Workflow API | 1 | 5 | 50 |
-| Workflow Worker | 1 | 3 | 50 |
-| Connector Admin (API + worker) | 1 | 5 | 50 |
+| Registry Service | 1 | 3 | 50 |
+| Workflow API | 1 | 15 | 100 |
+| Workflow Worker | — | — | Plain Deployment, fixed `replicas: 1` (not Knative) |
+| Connector Admin (API) | 1 | 3 | 50 |
+| Connector Admin (worker) | — | — | Plain Deployment, fixed `replicas: 1` (not Knative) |
 | Connector Runtime | — | — | Plain Deployment (not Knative; KEDA removed) |
-| Agent Admin Service | 1 | 5 | 50 |
-| AI Agent Gateway | 1 | 5 | 50 |
-| Agent AI / Memory / Scheduler Services | 1 | 5 | 50 |
+| Agent Admin Service | 1 | 3 | 50 |
+| AI Agent Gateway | 1 | 3 | 50 |
+| Agent AI / Memory / Scheduler Services | 1 | 3 | 50 |
+| Usage Aggregator (API) | 1 | 3 | 100 |
+| Proxy Service | 1 | 5 | 50 |
+| Admin Console | 1 | 3 | 200 |
+
+Note: `audit-service`, `channel-service`, `connector-admin`, and `usage-aggregator-service` each
+split into a Knative-scaled API and a plain-Deployment worker (fixed `replicas: 1`); the table
+above shows the API autoscaling values.
 
 ### Container Build
 
@@ -553,10 +564,11 @@ Images are built against the shared OrbStack Docker daemon as `dev.local/<servic
 
 | Component | CPU (req/limit) | Memory (req/limit) | Storage |
 |-----------|----------------|---------------------|---------|
-| NATS | 100m / 500m | 128Mi / 256Mi | 1Gi PVC |
-| Redis | 50m / 200m | 64Mi / 128Mi | -- |
-| PostgreSQL | 100m / 500m | 128Mi / 256Mi | 2Gi PVC |
-| Temporal | 100m / 500m | 128Mi / 256Mi | -- (uses PG) |
+| NATS | 250m / 1 | 256Mi / 512Mi | 50Gi PVC |
+| Redis | 250m / 1 | 256Mi / 512Mi | 256Mi PVC |
+| PostgreSQL (shared CNPG cluster) | 250m / 1 | 512Mi / 1Gi | 20Gi |
+| PostgreSQL (per-tenant `dedicated`-tier StatefulSet) | 250m / 1 | 256Mi / 512Mi | 10Gi PVC |
+| Temporal | 500m / 2 | 512Mi / 1Gi | -- (uses PG) |
 
 ---
 
@@ -789,7 +801,7 @@ graph TB
 
 **Key points:**
 - `workflow-service` splits into API (REST) and Worker (Temporal orchestration)
-- `connector-runtime` is a separate Temporal worker for HTTP execution; max 200 concurrent activities
+- `connector-runtime` is a separate Temporal worker for HTTP execution; max 400 concurrent activities
 - `connector-admin` provides config; `connector-runtime` caches it in Redis via `AdapterClient` (SWR)
 - Per-tenant Postgres isolates workflow data (shared CNPG logical DB for `shared` tier, per-tenant StatefulSet for `dedicated` tier)
 - NATS handles event publishing from `serviceBusCall` workflow actions
@@ -928,7 +940,7 @@ graph TB
 
 - **workflow-orchestrator**: coordinates multi-step execution; `jsFunction`, `serviceBusCall`,
   `channelSend` run as local activities; `agentCall` dispatches remotely to `agent-ai-service`
-- **connector-runtime**: specialized for HTTP; high concurrency (200) to handle network latency
+- **connector-runtime**: specialized for HTTP; high concurrency (400) to handle network latency
 - **Temporal dispatch**: remote activities (endpointCall, serviceCall) dispatch back via Temporal for load balancing
 
 ---
@@ -1079,6 +1091,7 @@ sequenceDiagram
 **Key invariants:**
 - `api-gateway` publishes `WebhookIngressEnvelope` (no `accountid`; signature not yet verified)
 - `channel-service` is the only service that verifies signatures and re-publishes the canonical `ChannelEnvelope` with `accountid` set
+- The canonical `ChannelEnvelope` inherits `correlation_id`, `causation_id`, and `depth` from the pre-ingress `WebhookIngressEnvelope` instead of resetting them, so the causal chain is unbroken across the webhook → canonical hop (threaded through `processInbound` → `createChannelEnvelope`)
 - All downstream consumers MUST use the canonical envelope, not the pre-ingress one
 - `wrapHandler` in `MultiTenantConsumerManager` is the single resolution point for claim-check envelopes; individual handlers never deal with `payload_inline: false`
 | **IaC** | Kustomize (base + overlays) |

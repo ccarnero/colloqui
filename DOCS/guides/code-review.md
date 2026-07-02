@@ -37,7 +37,7 @@ Any violation of points marked as 🛑 **BLOCKING** requires immediate changes.
 
 ## 4. 🧪 Testing
 - [ ] **Unit Tests**: New business logic is covered (per-service `bun test`).
-- [ ] **Integration**: If an endpoint changed, manually verify via the local bootstrapped cluster. There is no automated E2E suite — `tests/e2e` was removed.
+- [ ] **Integration**: If an endpoint changed, manually verify via the local bootstrapped cluster. A Playwright E2E suite exists at `e2e/` (config: `playwright.config.ts`, run with `npx playwright test`) — extend it when UI flows change.
 - [ ] **Coverage**: Overall project coverage does not decrease significantly.
 
 ## 5. 📝 Maintainability

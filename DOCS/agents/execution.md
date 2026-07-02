@@ -89,7 +89,7 @@ evt.*.ai-agent-gateway.automation.platform.internal.execution_requested.v1
 - **Runtime failure:** `agent-ai-service` emits `execution_failed`; the activity raises an error with the runtime message.
 - **Circuit breaker open:** `executeAgentCall` fails non-retryably with `CIRCUIT_OPEN` when the `DistributedCircuitBreaker` (Redis-backed) denies calls for a `<tenant>:<agentId>` key. Breaker config: 10 failures / 120 s window, 60 s cooldown, 3 probe successes to close.
 - **Redis unavailable:** `executeAgentCall` fails non-retryably with `REDIS_UNAVAILABLE` after ioredis exhausts `maxRetriesPerRequest: 3`, surfacing the configuration error to the operator instead of burning activity retries.
-- **Cold-start config gap (`waiting_for_config`):** runtime health reports `runtime_config=waiting_for_config` until config is loaded. In this state agent execution may not complete in time and manifests as timeout upstream.
+- **Cold-start config gap:** until `agent-ai-service` has loaded agent config for the tenant, an execution may not complete in time and manifests as a timeout upstream.
 
 ## References
 

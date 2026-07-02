@@ -44,11 +44,18 @@ export interface ValidationError {
 export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
+  /**
+   * Non-blocking issues. Surfaced to the user before saving but they
+   * never prevent the save (e.g. an outbound account outside the
+   * trigger's selection — legitimate for notify-style workflows).
+   */
+  warnings: ValidationError[];
 }
 
 export const EMPTY_VALIDATION_RESULT: ValidationResult = {
   valid: true,
   errors: [],
+  warnings: [],
 };
 
 /** Backend caps used here for parity. */

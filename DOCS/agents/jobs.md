@@ -51,16 +51,18 @@ sequenceDiagram
 
 ## Schedule Formats
 
-`agent-scheduler-service` determines schedule type at reconcile time in `JobReaderService.resolveScheduleType` (`services/agent-scheduler-service/src/modules/scheduler/job-reader.service.ts`):
+Schedule type is determined by the shared `parseSchedule` function (`packages/shared/src/schedule.utils.ts`), used at reconcile time by `agent-scheduler-service` (`services/agent-scheduler-service/src/modules/scheduler/job-reader.service.ts`) and by `agent-admin-service` for `next_run` calculation:
 
 | Format | Detected as | Example | Toad-scheduler type |
 |---|---|---|---|
-| All-digit string | `interval` | `"3600"` = 3 600 s | `SimpleIntervalJob` |
+| `"once"` | `once` (one-shot, no recurring schedule) | `"once"` | — |
+| All-digit string | `interval` in **seconds** | `"3600"` = 3 600 s | `SimpleIntervalJob` |
+| `interval:<digits>` | `interval` in **minutes** | `"interval:60"` = 60 min | `SimpleIntervalJob` |
 | Anything else | `cron` | `"0 9 * * 1-5"` | `CronJob` |
 
-The `agent-admin-service` `calculateNextRun` helper (`jobs.postgres.repository.ts`) additionally recognises `"once"` (no next run computed) and `"interval:<minutes>"` format, though the scheduler itself only checks for the all-digit rule above. **Important:** `interval:<minutes>` is accepted by the admin service for `next_run` calculation but would be treated as a cron expression by the scheduler — keep interval values as bare integers in the `schedule` field.
+Malformed forms (`interval:abc`, `interval:0`, `"0"`, intervals over the ~24.85-day `setInterval` limit) are classified as `invalid` rather than falling through to cron.
 
-The cron `next_run` calculation in the admin repo is a stub: it adds 1 hour for any cron string instead of parsing the expression. This is cosmetic (used for display only); the scheduler computes real fire times from toad-scheduler's cron engine.
+The `agent-admin-service` `calculateNextRun` helper (`services/agent-admin-service/src/modules/jobs/schedule.utils.ts`, called from `jobs.postgres.repository.ts`) computes `next_run` for display: no next run for `once`, `now + intervalMs` for intervals, and real cron parsing via the `cron-parser` library for cron expressions. The scheduler computes actual fire times from toad-scheduler's cron engine.
 
 ## Job Object
 
@@ -69,7 +71,7 @@ interface IJob {
   id: string;            // UUID
   name: string;          // display name (max 255 chars)
   agent_id: string;      // UUID of the target agent
-  schedule: string;      // cron expression or bare-integer seconds
+  schedule: string;      // "once", bare-integer seconds, "interval:<minutes>", or cron expression
   payload: Record<string, unknown>; // forwarded as eventPayload
   is_active: boolean;
   last_run: Date | null;
@@ -211,7 +213,9 @@ curl -X POST http://agent-admin-service/admin/jobs/550e.../trigger \
 | `services/agent-admin-service/src/modules/jobs/jobs.controller.ts` | CRUD + enable/disable/run/trigger endpoints |
 | `services/agent-admin-service/src/modules/jobs/jobs.dto.ts` | CreateJobDto, UpdateJobDto, TriggerJobDto |
 | `services/agent-admin-service/src/modules/jobs/jobs.repository.interface.ts` | IJob shape |
-| `services/agent-admin-service/src/modules/jobs/jobs.postgres.repository.ts` | PostgreSQL implementation; `calculateNextRun` stub |
+| `services/agent-admin-service/src/modules/jobs/jobs.postgres.repository.ts` | PostgreSQL implementation |
+| `services/agent-admin-service/src/modules/jobs/schedule.utils.ts` | `calculateNextRun` (uses `cron-parser`) |
+| `packages/shared/src/schedule.utils.ts` | Shared `parseSchedule` (once / interval / cron classification) |
 | `services/agent-admin-service/data/jobs.yaml` | Reference seed jobs (not auto-applied) |
 | `services/agent-scheduler-service/src/modules/scheduler/scheduler.service.ts` | Reconcile loop, toad-scheduler management, leader election |
 | `services/agent-scheduler-service/src/modules/scheduler/job-reader.service.ts` | Reads active jobs from each tenant DB |

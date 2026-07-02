@@ -28,13 +28,13 @@ services/channel-service/src/providers/
 ├── channel-router.ts                  ← IChannelProvider registry
 ├── meta/
 │   ├── meta-base.ts                   ← verifyWebhookSignature (shared HMAC-SHA256)
-│   ├── meta-channel-provider.base.ts  ← base: signatureHeader, verifySignature, buildSendPayload
+│   ├── meta-channel-provider.base.ts  ← base: signatureHeader, verifySignature
 │   ├── meta-token.ts                  ← Meta OAuth token exchange / refresh
 │   ├── provider-registry.ts
 │   ├── whatsapp/
-│   │   └── whatsapp.provider.ts       ← parseWebhook, sendMessage
+│   │   └── whatsapp.provider.ts       ← parseWebhook, sendMessage, buildSendPayload
 │   └── instagram/
-│       └── instagram.provider.ts      ← parseWebhook, sendMessage
+│       └── instagram.provider.ts      ← parseWebhook, sendMessage, buildSendPayload
 └── telegram/
     └── telegram.provider.ts           ← signatureHeader, verifySignature, parseWebhook, sendMessage
 ```
@@ -57,15 +57,17 @@ Generator function: `buildChannelSubject(tenant, channel, provider, kind)` in `p
 
 ## Account lookup in webhooks
 
-`channel-service` identifies the tenant's `ChannelAccount` from the raw webhook body. The lookup strategy differs per channel:
+`channel-service` resolves the tenant's `ChannelAccount` in `WebhookIngressService.resolveAccount`. The primary mechanism is **signature/token verification against every active account** for the tenant: each candidate account's secret is tried, and the account whose secret verifies the webhook wins. If the URL carries an instance segment (`/api/webhooks/:channel/:tenantId/:instance`), the candidate set is first narrowed to the account whose `externalId` matches.
 
-| Channel | Lookup field | Extracted from |
-|---------|-------------|----------------|
+When more than one account passes verification, a payload hint disambiguates:
+
+| Channel | Disambiguation hint | Extracted from |
+|---------|--------------------|----------------|
 | **WhatsApp** | `phone_number_id` | `entry[].changes[].value.metadata.phone_number_id` |
 | **Instagram** | `ig_user_id` | `entry[].messaging[].recipient.id` |
-| **Telegram** | secret-token comparison | `x-telegram-bot-api-secret-token` header matched against all active accounts for the tenant |
+| **Telegram** | — (secret token is unique per account) | `x-telegram-bot-api-secret-token` header |
 
-Signature/token verification uses `timingSafeEqual` in all cases.
+For Telegram, a missing or non-matching secret token is an immediate `signature_mismatch`. For WhatsApp/Instagram, if no signature header is present at all, the first active account is used as a fallback. Signature/token comparison uses `timingSafeEqual` in all cases.
 
 ---
 
@@ -81,7 +83,7 @@ Webhook delivery uses a two-stage bridge to separate HTTP acknowledgement from v
 |-------|---------------------|
 | **WA/IG/TG User** | Person sending a message |
 | **Meta Cloud API / Telegram** | Delivers webhooks |
-| **api-gateway** | `POST /webhooks/:channel/:tenantId` — receives webhook, publishes `WebhookIngressEnvelope` |
+| **api-gateway** | `POST /api/webhooks/:channel/:tenantId` — receives webhook, publishes `WebhookIngressEnvelope` |
 | **channel-service** | Durable consumer — verifies signature, parses, publishes `ChannelEnvelope` |
 | **NATS JetStream** | Stream `INGRESS-<TENANT>` |
 | **Downstream consumers** | agent-ai-service, workflow-service, etc. |
@@ -92,15 +94,15 @@ Webhook delivery uses a two-stage bridge to separate HTTP acknowledgement from v
 sequenceDiagram
     participant WA as User (WA/IG/TG)
     participant Meta as Meta Cloud API / Telegram
-    participant GW as api-gateway<br/>POST /webhooks/:channel/:tenantId
+    participant GW as api-gateway<br/>POST /api/webhooks/:channel/:tenantId
     participant JS as NATS JetStream<br/>INGRESS-<TENANT>
     participant CS as channel-service<br/>webhook-ingress-consumer
     participant Down as Downstream consumers<br/>(agents, workflows...)
 
     WA->>Meta: Sends message
-    Meta->>GW: POST /webhooks/whatsapp/acme<br/>Header: x-hub-signature-256
+    Meta->>GW: POST /api/webhooks/whatsapp/acme<br/>Header: x-hub-signature-256
 
-    Note over GW: 1. Extract rawBody (Buffer)<br/>2. Filter headers (6-item allowlist)<br/>3. Build WebhookIngressEnvelope<br/>   (kind=webhook_received, no accountid)<br/>4. Publish to INGRESS-ACME
+    Note over GW: 1. Extract rawBody (Buffer)<br/>2. Filter headers (7-item allowlist)<br/>3. Build WebhookIngressEnvelope<br/>   (kind=webhook_received, no accountid)<br/>4. Publish to INGRESS-ACME
 
     GW->>JS: WebhookIngressEnvelope<br/>subject: evt.acme.api-gateway.messaging<br/>.whatsapp.webhook.webhook_received.v1
     JS-->>GW: publish ack
@@ -176,7 +178,7 @@ sequenceDiagram
 
 See [../messaging/envelope.md](../messaging/envelope.md) for the full field reference.
 
-#### Forwarded headers (6-item allowlist)
+#### Forwarded headers (7-item allowlist)
 
 Only these headers from the original HTTP request are included in the envelope:
 
@@ -186,6 +188,7 @@ Only these headers from the original HTTP request are included in the envelope:
 | `x-hub-signature-256` | Meta HMAC-SHA256 signature |
 | `x-hub-signature` | Meta legacy signature |
 | `x-telegram-bot-api-secret-token` | Telegram signature |
+| `x-http-channel-token` | HTTP channel shared token |
 | `x-request-id` | Request traceability |
 | `user-agent` | Provider identification |
 
@@ -298,7 +301,7 @@ interface AutoReplyRule {
 }
 ```
 
-Defined in `packages/shared/src/channel.interfaces.ts`. Rules are managed via `POST /auto-reply/rules`.
+Defined in `packages/shared/src/channel.interfaces.ts`. Rules are managed via `POST /channels/auto-reply` on `channel-service` (proxied as `POST /api/channels/auto-reply` by `api-gateway`).
 
 ### Design notes
 
@@ -317,23 +320,24 @@ Defined in `packages/shared/src/channel.interfaces.ts`. Rules are managed via `P
 ### API endpoint
 
 ```
-POST /channels/:accountId/messages
+POST /api/channels/:accountId/messages   (api-gateway)
+POST /channels/:accountId/messages       (channel-service)
 ```
 
-**api-gateway** (proxy with JWT auth + tenant resolution) → **channel-service** (execution).
+**api-gateway** (proxy with JWT auth + tenant resolution, global `api` prefix) → **channel-service** (execution).
 
 ### Sequence diagram
 
 ```mermaid
 sequenceDiagram
     participant Op as Operator (browser)
-    participant GW as api-gateway<br/>POST /channels/:accountId/messages
+    participant GW as api-gateway<br/>POST /api/channels/:accountId/messages
     participant CS as channel-service<br/>POST /channels/:accountId/messages
     participant Provider as Provider API<br/>(Meta / Telegram)
     participant JS as NATS JetStream<br/>INGRESS-<TENANT>
     participant Down as Downstream consumers
 
-    Op->>GW: POST /channels/:accountId/messages<br/>{ to, type, text }<br/>Headers: Authorization + x-yoizen-tenant
+    Op->>GW: POST /api/channels/:accountId/messages<br/>{ to, type, text }<br/>Headers: Authorization + x-yoizen-tenant
 
     Note over GW: TenantGuard + AuthGuard<br/>proxy to channel-service
 
@@ -396,7 +400,7 @@ The NATS publish is fire-and-forget — **it does not block the response to the 
 
 | File | Role |
 |------|------|
-| `services/api-gateway/src/modules/channels/channels.controller.ts` | `POST /channels/:accountId/messages` (proxy) |
+| `services/api-gateway/src/modules/channels/channels.controller.ts` | `POST /api/channels/:accountId/messages` (proxy) |
 | `services/channel-service/src/modules/egress/egress.controller.ts` | `POST /channels/:accountId/messages` |
 | `services/channel-service/src/modules/egress/egress.service.ts` | `send()` — provider selection + shadow publish |
 | `services/channel-service/src/providers/meta/whatsapp/whatsapp.provider.ts` | `sendMessage` for WhatsApp |
@@ -424,7 +428,7 @@ sequenceDiagram
     rect rgb(230, 245, 255)
         Note right of WA: PHASE 1 — Ingress stage 1 (api-gateway)
         WA->>Meta: Sends "ping"
-        Meta->>GW: POST /webhooks/whatsapp/acme
+        Meta->>GW: POST /api/webhooks/whatsapp/acme
         GW-->>Meta: 200 OK
         GW->>JS: WebhookIngressEnvelope<br/>evt.acme.api-gateway.messaging<br/>.whatsapp.webhook.webhook_received.v1
     end

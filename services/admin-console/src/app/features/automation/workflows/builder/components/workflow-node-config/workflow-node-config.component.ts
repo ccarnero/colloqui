@@ -5,42 +5,39 @@ import {
   effect,
   inject,
   input,
+  type OnInit,
   output,
   signal,
-  type OnInit,
 } from "@angular/core";
 import { FormsModule } from "@angular/forms";
+import { MatButtonModule } from "@angular/material/button";
 import { MatFormFieldModule } from "@angular/material/form-field";
+import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
-import { MatButtonModule } from "@angular/material/button";
-import { MatIconModule } from "@angular/material/icon";
-import {
-  EWorkflowNodeType,
-  type IWorkflowNode,
-  type IConditionalBranchConfig,
-  type ConditionComparator,
-} from "../../../domain/workflow-node.types";
-import {
-  SOURCE_ACCOUNT_TEMPLATE,
-  SOURCE_CHANNEL_TEMPLATE,
-  SOURCE_PROVIDER_TEMPLATE,
-} from "../../../domain/workflow-node-defaults";
-import { ChannelAdminService } from "../../../../../../core/services/channel-admin.service";
+import type { IAgent } from "../../../../../../core/models/agent.model";
 import type { IChannelAccount } from "../../../../../../core/models/channel-account.model";
+import { AgentAdminService } from "../../../../../../core/services/agent-admin.service";
+import { ChannelAdminService } from "../../../../../../core/services/channel-admin.service";
 import {
   HttpAdapterService,
   type IAdapterDto,
   type IAdapterEndpointDto,
 } from "../../../../../../core/services/http-adapter.service";
 import { RegistryService } from "../../../../../../core/services/registry.service";
-import { AgentAdminService } from "../../../../../../core/services/agent-admin.service";
-import type { IAgent } from "../../../../../../core/models/agent.model";
+import {
+  type ConditionComparator,
+  EWorkflowNodeType,
+  type IConditionalBranchConfig,
+  type IWorkflowNode,
+} from "../../../domain/workflow-node.types";
+import {
+  SOURCE_ACCOUNT_TEMPLATE,
+  SOURCE_CHANNEL_TEMPLATE,
+  SOURCE_PROVIDER_TEMPLATE,
+} from "../../../domain/workflow-node-defaults";
+import type { IVariableGroup } from "../template-autocomplete/template-autocomplete.component";
 import { TemplateAutocompleteComponent } from "../template-autocomplete/template-autocomplete.component";
-import type {
-  IVariableGroup,
-  IVariableEntry,
-} from "../template-autocomplete/template-autocomplete.component";
 
 @Component({
   selector: "app-workflow-node-config",
@@ -816,14 +813,33 @@ export class WorkflowNodeConfigComponent implements OnInit {
    * Filtered by the trigger's accountIds so the user can only pick
    * accounts the workflow is actually listening on. Falls back to
    * the full list when the trigger hasn't picked any (transient
-   * state during construction).
+   * state during construction). The currently selected account is
+   * always included even if it falls outside the trigger's accounts,
+   * since a workflow can legitimately send on an account the trigger
+   * doesn't listen on (e.g. notify via a different channel than the
+   * one that triggered the workflow) — otherwise the select would
+   * render blank despite having a valid configured value.
    */
   readonly outboundAccounts = computed<IChannelAccount[]>(() => {
     const all = this.channelAccounts();
     const allowed = this.triggerAccountIds();
-    if (allowed.length === 0) return all;
-    const set = new Set(allowed);
-    return all.filter((a) => set.has(a.id));
+    const allowedSet = new Set(allowed);
+    const filtered =
+      allowed.length === 0 ? all : all.filter((a) => allowedSet.has(a.id));
+
+    const selectedAccountId = this.node()?.configuration["accountId"];
+    if (
+      typeof selectedAccountId !== "string" ||
+      !selectedAccountId ||
+      selectedAccountId === this.SOURCE_ACCOUNT
+    ) {
+      return filtered;
+    }
+    if (filtered.some((a) => a.id === selectedAccountId)) {
+      return filtered;
+    }
+    const selectedAccount = all.find((a) => a.id === selectedAccountId);
+    return selectedAccount ? [...filtered, selectedAccount] : filtered;
   });
 
   /** Draft JSON for Service Call body; synced when the selected node key changes. */
@@ -841,7 +857,7 @@ export class WorkflowNodeConfigComponent implements OnInit {
       if (this.lastServiceCallSyncKey !== n.key) {
         this.lastServiceCallSyncKey = n.key;
         this.serviceCallBodyDraft.set(
-          this.formatServiceCallData(n.configuration["data"]),
+          this.formatServiceCallData(n.configuration["data"])
         );
         this.serviceCallBodyError.set(null);
       }
@@ -863,10 +879,10 @@ export class WorkflowNodeConfigComponent implements OnInit {
   }
 
   endpointsForAdapter(adapterId: unknown): IAdapterEndpointDto[] {
-    if (!adapterId) return [];
-    const adapter = this.adapters().find(
-      (a) => a.id === adapterId,
-    );
+    if (!adapterId) {
+      return [];
+    }
+    const adapter = this.adapters().find((a) => a.id === adapterId);
     return adapter?.endpoints ?? [];
   }
 
@@ -904,7 +920,7 @@ export class WorkflowNodeConfigComponent implements OnInit {
     }
     const adapterId = this.node()?.configuration["adapterId"];
     const endpoint = this.endpointsForAdapter(adapterId).find(
-      (e) => e.id === next,
+      (e) => e.id === next
     );
     if (endpoint) {
       this.updateConfig("method", endpoint.method);
@@ -914,13 +930,17 @@ export class WorkflowNodeConfigComponent implements OnInit {
 
   updateConfig(field: string, value: unknown): void {
     const n = this.node();
-    if (!n) return;
+    if (!n) {
+      return;
+    }
     this.configChange.emit({ key: n.key, field, value });
   }
 
   updateField(field: string, value: unknown): void {
     const n = this.node();
-    if (!n) return;
+    if (!n) {
+      return;
+    }
     if (field === "name") {
       this.nameChange.emit({ key: n.key, name: value as string });
     }
@@ -931,7 +951,9 @@ export class WorkflowNodeConfigComponent implements OnInit {
   }
 
   joinPatterns(raw: unknown): string {
-    if (!Array.isArray(raw)) return "";
+    if (!Array.isArray(raw)) {
+      return "";
+    }
     return (raw as string[]).join(", ");
   }
 
@@ -969,9 +991,7 @@ export class WorkflowNodeConfigComponent implements OnInit {
       this.updateConfig("provider", SOURCE_PROVIDER_TEMPLATE);
       return;
     }
-    const acc = this.channelAccounts().find(
-      (a) => a.id === accountId,
-    );
+    const acc = this.channelAccounts().find((a) => a.id === accountId);
     if (acc) {
       this.updateConfig("channel", acc.channel);
       this.updateConfig("provider", acc.provider);
@@ -1002,9 +1022,7 @@ export class WorkflowNodeConfigComponent implements OnInit {
     { value: "notExists", label: "Not exists" },
   ];
 
-  getConditionalBranches(
-    node: IWorkflowNode,
-  ): IConditionalBranchConfig[] {
+  getConditionalBranches(node: IWorkflowNode): IConditionalBranchConfig[] {
     const branches = node.configuration["branches"];
     return Array.isArray(branches)
       ? (branches as IConditionalBranchConfig[])
@@ -1013,10 +1031,10 @@ export class WorkflowNodeConfigComponent implements OnInit {
 
   addConditionalBranch(): void {
     const n = this.node();
-    if (!n) return;
-    const branches = [
-      ...this.getConditionalBranches(n),
-    ];
+    if (!n) {
+      return;
+    }
+    const branches = [...this.getConditionalBranches(n)];
     branches.push({
       label: `Branch ${branches.length + 1}`,
       condition: {
@@ -1030,20 +1048,23 @@ export class WorkflowNodeConfigComponent implements OnInit {
 
   removeConditionalBranch(index: number): void {
     const n = this.node();
-    if (!n) return;
+    if (!n) {
+      return;
+    }
     const branches = [...this.getConditionalBranches(n)];
     branches.splice(index, 1);
     this.updateConfig("branches", branches);
   }
 
-  updateConditionalBranchLabel(
-    index: number,
-    label: string,
-  ): void {
+  updateConditionalBranchLabel(index: number, label: string): void {
     const n = this.node();
-    if (!n) return;
+    if (!n) {
+      return;
+    }
     const branches = [...this.getConditionalBranches(n)];
-    if (!branches[index]) return;
+    if (!branches[index]) {
+      return;
+    }
     branches[index] = { ...branches[index], label };
     this.updateConfig("branches", branches);
   }
@@ -1051,12 +1072,16 @@ export class WorkflowNodeConfigComponent implements OnInit {
   updateConditionalBranchCondition(
     index: number,
     field: string,
-    value: string,
+    value: string
   ): void {
     const n = this.node();
-    if (!n) return;
+    if (!n) {
+      return;
+    }
     const branches = [...this.getConditionalBranches(n)];
-    if (!branches[index]) return;
+    if (!branches[index]) {
+      return;
+    }
     branches[index] = {
       ...branches[index],
       condition: {
@@ -1114,9 +1139,7 @@ export class WorkflowNodeConfigComponent implements OnInit {
     try {
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed !== "object" || parsed === null) {
-        this.serviceCallBodyError.set(
-          "Body must be a JSON object or array.",
-        );
+        this.serviceCallBodyError.set("Body must be a JSON object or array.");
         return;
       }
       this.serviceCallBodyError.set(null);

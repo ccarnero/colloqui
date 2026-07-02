@@ -160,13 +160,14 @@ interface EventTransport {
 
 ### 4.1 Webhook header allowlist (D8)
 
-Six headers may be copied to `transport.headers`. Defined in `WEBHOOK_FORWARDED_HEADERS`, `packages/shared/src/channel.constants.ts` (line ~55):
+Seven headers may be copied to `transport.headers`. Defined in `WEBHOOK_FORWARDED_HEADERS`, `packages/shared/src/channel.constants.ts` (line ~55):
 
 ```
 content-type
 x-hub-signature-256
 x-hub-signature
 x-telegram-bot-api-secret-token
+x-http-channel-token
 x-request-id
 user-agent
 ```

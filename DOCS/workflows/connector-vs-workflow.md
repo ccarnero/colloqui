@@ -2,6 +2,14 @@
 
 A practical guide for developers choosing between `connector-runtime` and `workflow-service` for their use cases, with decision matrices, scenario walkthroughs, and example implementations.
 
+> **Schema note**: the JSON action payloads below use the canonical `activity`/`args` shapes
+> from `packages/shared/src/workflow.interfaces.ts` (`EndpointCallArgs`, `ServiceCallArgs`,
+> `AgentCallArgs`, `ChannelSendArgs`, `BranchAction`, `ConditionalAction`). A few pseudocode
+> snippets illustrate direct Temporal-client activity dispatch (`client.activity.executeEndpointCall(...)`)
+> outside the `workflow-service` JSON API and may show illustrative fields like `retries`/`timeout`
+> that the real `EndpointCallArgs`/`ServiceCallArgs` do not have — the actual per-attempt timeout
+> and retry count are fixed by the Temporal activity policy (30s, 5 attempts), not settable per-call.
+
 ## Quick Decision Matrix
 
 | Need | Use Connector Runtime | Use Workflow Service | Use Agent Call |
@@ -79,7 +87,7 @@ console.log(result.body.email)
 
 **Benefits**:
 - ✅ Low latency (direct activity dispatch)
-- ✅ High concurrency (200 concurrent activities per replica)
+- ✅ High concurrency (400 concurrent activities per replica, `maxConcurrentActivityTaskExecutions`)
 - ✅ Automatic retries and circuit breaker
 - ✅ Connector config caching in Redis (SWR via `AdapterClient`)
 - ✅ Built-in OpenTelemetry instrumentation
@@ -131,7 +139,8 @@ Workflow: processOrder
 > Current API split: `POST /workflows` creates or stores the definition only. Run it with
 > `POST /workflows/:id/execute`, then query one execution with
 > `GET /workflows/:id/executions/:executionId` or list executions with
-> `GET /workflows/:id/executions`.
+> `GET /workflows/:id/executions` (paginated: `{ items, total, page }`, query params
+> `page`/`pageSize`/`sort`).
 
 - **State management**: All results stored in execution context
 - **Pseudocode**:
@@ -187,9 +196,9 @@ POST http://workflow-service/workflows
           activity: "serviceCall",
           name: "updateInventory",
           args: {
-            service: "inventory-service",
-            path: "/items/update",
+            serviceId: "3f9b6c2e-...-registered-service-uuid",
             method: "POST",
+            path: "/items/update",
             data: {
               items: "{{results.fetchOrder.data.items}}"
             }
@@ -212,6 +221,12 @@ POST http://workflow-service/workflows
     }
   ]
 }
+
+// `serviceCall.args.serviceId` is the UUID of a row in `registered_services`
+// (never the slug). `workflow-service` pre-resolves it to `args.serviceSlug`
+// at start time so the connector-runtime activity can hit the internal-adapter
+// mirror in O(1); when the mirror misses (or `serviceSlug` is absent), it
+// falls back to a legacy `registry-service` lookup + Knative in-cluster DNS.
 
 // Response (201 Created): workflow definition persisted
 {
@@ -304,19 +319,23 @@ Workflow: classifyAndRoute Incident
 
 ```
 // In workflow definition
+// Note: `AgentCallArgs` (packages/shared/src/workflow.interfaces.ts) requires
+// `agentId` + `message` (not `input`); there is no `timeout` or `systemPrompt`
+// field — the system prompt is configured on the agent itself in agent-admin-service.
+// Optional `context` is prior chat turns: `{ sender: "customer" | "agent", content }[]`.
 {
   activity: "agentCall",
   name: "classifyIncident",
   args: {
     agentId: "incident-classifier-v2",
-    input: "{{results.parseTicket.data.description}}",
-    context: {
-      previousTickets: "{{results.fetchHistory.data}}",
+    message: "{{results.parseTicket.data.description}}",
+    context: [
+      { sender: "customer", content: "{{results.fetchHistory.data.lastMessage}}" }
+    ],
+    variables: {
       customerId: "{{request.customerId}}",
       timestamp: "{{workflow.startTime}}"
-    },
-    timeout: 60000,
-    systemPrompt: "You are an expert incident classifier. Respond with JSON: {classification, confidence, reason}"
+    }
   }
 }
 
@@ -407,7 +426,7 @@ const result = await executeEndpointCall({
 // Circuit breaker prevents hammering
 // On repeated failures:
 // 1. Fail fast (503)
-// 2. After cooldown (60s): try one test request
+// 2. After cooldown (30s, HTTP_BREAKER_COOLDOWN_MS): try one test request
 // 3. If test succeeds: circuit closes
 // 4. If test fails: circuit reopens
 ```
@@ -579,7 +598,7 @@ context. Comparators are `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `contains`, `exi
         {
           activity: "agentCall",
           name: "reviewOrder",
-          args: { agentId: "risk-reviewer", input: "{{request.orderId}}" }
+          args: { agentId: "risk-reviewer", message: "{{request.orderId}}" }
         }
       ]
     }
@@ -619,8 +638,8 @@ const result = await client.activity.executeEndpointCall({
   name: "classifyRequest",
   args: {
     agentId: "request-classifier",
-    input: "{{results.parseRequest.data.content}}",
-    context: {
+    message: "{{results.parseRequest.data.content}}",
+    variables: {
       metadata: "{{results.fetchMetadata.data}}"
     }
   }

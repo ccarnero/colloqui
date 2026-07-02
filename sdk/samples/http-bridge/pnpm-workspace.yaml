@@ -1,4 +1,0 @@
-# Isolate this sample as its own pnpm workspace root, so `pnpm install` here installs
-# only the sample and links @yoizen/http-sdk from ../.. — instead of walking up to the
-# parent monorepo workspace (which does not include sdk/ or its samples).
-packages: []

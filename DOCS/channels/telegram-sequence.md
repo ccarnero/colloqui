@@ -13,7 +13,7 @@ This document intentionally omits the channel-service auto-reply shortcut.
 
 Telegram webhooks enter through a two-stage bridge before the workflow engine sees them:
 
-1. **api-gateway** receives the raw HTTP POST, wraps it in a `WebhookIngressEnvelope`, publishes it inline to `INGRESS-<tenant>` (`evt.<tenant>.api-gateway.messaging.telegram.webhook.webhook_received.v1`), and returns HTTP 200 only after the JetStream publish succeeds. No signature verification happens here.
+1. **api-gateway** receives the raw HTTP POST at `POST /api/webhooks/telegram/:tenantId` (or the instance-addressed variant `POST /api/webhooks/telegram/:tenantId/:externalId`, which Telegram bot registration uses so `channel-service` can narrow account resolution by `externalId`), wraps it in a `WebhookIngressEnvelope`, publishes it inline to `INGRESS-<tenant>` (`evt.<tenant>.api-gateway.messaging.telegram.webhook.webhook_received.v1`), and returns HTTP 200 only after the JetStream publish succeeds. No signature verification happens here.
 2. **channel-service** (`WebhookIngressConsumerService`, durable `channel-webhook-ingress`) consumes that event, verifies the Telegram secret token against each active account, parses the payload into normalized `InboundMessage` objects, and calls `IngressService.processInbound()`, which emits the canonical `ChannelEnvelope` (`evt.<tenant>.channel-service.messaging.telegram.telegram.received.v1`) to `INGRESS-<tenant>`.
 
 Only after stage 2 does `TriggerConsumerService` in `workflow-service-worker` see the event and match trigger definitions.
@@ -48,7 +48,7 @@ sequenceDiagram
     participant WFT as workflow-service-worker
     participant TEMP as Temporal
 
-    TG->>GW: POST /webhooks/telegram/:tenantId
+    TG->>GW: POST /api/webhooks/telegram/:tenantId/:externalId
     GW->>NATS: publish WebhookIngressEnvelope (webhook_received.v1)
     NATS->>CH: durable delivery (channel-webhook-ingress)
     CH->>CH: verify Telegram secret token + parse payload

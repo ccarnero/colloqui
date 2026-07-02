@@ -179,6 +179,14 @@ CREATE INDEX IF NOT EXISTS idx_skb_query_history_container
   ON skb_query_history(container_id, executed_at DESC);
 ```
 
+> **Drift warning**: the DDL above matches `schema-initializer.ts`, but
+> `SKBQueryHistoryRepository.recordQuery()` inserts into different columns
+> (`nl_query`, `generated_sql`, `duration_ms`, `error`, `error_message`,
+> `user_id`, `created_at`) that do not exist in this table — the insert would
+> fail at runtime. In practice this never surfaces because
+> `SKBQueryHistoryService.recordQuery()` is registered as a provider but has no
+> call sites: `skb_query_history` is never populated.
+
 ### 2.2 TypeScript Interfaces
 
 ```typescript
@@ -269,8 +277,8 @@ Handled by `SKBContainersController` (`@Controller("admin/structured-kb/containe
 | `POST` | `/admin/structured-kb/containers` | Create empty container |
 | `GET` | `/admin/structured-kb/containers` | List containers |
 | `GET` | `/admin/structured-kb/containers/:id` | Get container detail |
-| `PATCH` | `/admin/structured-kb/containers/:id` | Update container config |
-| `DELETE` | `/admin/structured-kb/containers/:id` | Soft-delete container (returns 204 No Content) |
+| `PATCH` | `/admin/structured-kb/containers/:id` | Update container `name`/`description` only (`UpdateSKBDto`) |
+| `DELETE` | `/admin/structured-kb/containers/:id` | Soft-delete container row only (returns 204 No Content; files/schemas/rows are not cascaded) |
 
 ### 3.2 File Endpoints
 
@@ -433,9 +441,9 @@ the consumer side only.
 Following the Python reference pattern (`_skb_version_exists`, `_skb_job_is_active`):
 
 1. **Container deleted check**: Before each pipeline stage, verify `skb_containers` row still exists and `is_active = true`.
-2. **Timeout**: Worker ack timeout 15 minutes (matching Python's `SKB_INGEST_FILE_TIMEOUT_SECONDS`).
+2. **Timeout**: Worker ack timeout 5 minutes (`ackWaitMs: 300_000` in `skb-ingestion-worker.service.ts`).
 3. **Partial cleanup on failure**: `DELETE FROM skb_rows WHERE file_id = $1`, `DELETE FROM skb_schemas WHERE file_id = $1`.
-4. **Watchdog**: Extend existing `IngestionWatchdogService` to also reset stuck SKB files.
+4. **Watchdog**: `SKBIngestionWatchdogService` runs with a 10-minute stuck threshold, but its stuck-file lookup (`SKBContainersRepository.findProcessingFilesOlderThan`) is stubbed to always return `[]` (cross-tenant iteration not implemented), so the watchdog is currently a no-op.
 
 ### 4.4 Worker Pattern
 
@@ -521,6 +529,13 @@ function createModel(config: ProviderConfig) {
   }
 }
 ```
+
+> **Implementation status**: container-level provider resolution is NOT wired.
+> `SKBQueryService.query()` hardcodes `{ provider: "openai", modelId: "gpt-4o" }`,
+> and while `SKBSchemaAnalyzerService.buildModel()` accepts an optional
+> `providerConfig`/`modelName`, the ingestion worker calls `analyze(parsed)`
+> without them — the container's stored `provider_config` / `ingest_model` /
+> `query_model` values are never used.
 
 ### 5.3 Prompt Construction
 
@@ -712,6 +727,13 @@ async function executeSKBQuery(
 }
 ```
 
+> **Implementation status**: the code above is the design sketch. The real
+> query path (`SKBQueryService.buildSql()` + `SKBRowsRepository.executeQuery()`)
+> interpolates `limit` directly with no `Math.min` cap; the only enforcement is
+> `QuerySKBDto`'s `@Min(1) @Max(1000)` validators, with a default of `100` when
+> omitted. `enforceLimit()` in `skb-sql-safety.ts` exists but is never called
+> from the live query path.
+
 ### 6.4 SQL Injection Safety
 
 ```typescript
@@ -831,6 +853,17 @@ structured-kb/
 > `SKBFilesService`, `SKBFilesRepository`, and `ingest-skb-file.dto.ts` were NOT created as
 > standalone files. File ingestion state is managed within `SKBContainersService/Repository`.
 > The `prompts/` subdirectory was not created — prompts are inline in service files.
+>
+> **Known wiring defects in the current tree**:
+> - `SKBContainersRepository.findFile()` / `updateFileStatus()` query a
+>   `skb_container_files` table that `schema-initializer.ts` never creates
+>   (only `skb_files` exists) — worker file-status updates would fail.
+> - `skb-ingestion-worker.service.ts` calls `(this.rowStore as any).insertRows(...)`
+>   with 4 arguments, while `SKBRowsRepository.insertRows()` expects 6 (led by a
+>   `sql` handle); the `any` cast hides the mismatch.
+> - `SKBRowsRepository.insertRows()` / `getRows()` reference `row_data` and
+>   `file_index` columns that do not exist in the `skb_rows` DDL (which has
+>   `data` and no `file_index`).
 
 ### 8.2 Files to Modify
 
@@ -1233,13 +1266,18 @@ CREATE INDEX IF NOT EXISTS idx_skb_query_history_container ON skb_query_history(
 - [x] Add `SKBIngestionWatchdogService` for stuck processing
 - [x] Integration tests for full ingestion pipeline
 
+> **Reality check**: the classes exist, but the pipeline is not functional
+> end-to-end — see "Known wiring defects" in §8.1 (missing `skb_container_files`
+> table, `insertRows` signature/column mismatches) and §4.3 (watchdog stuck-file
+> lookup stubbed to return `[]`).
+
 ### Phase 3: Query Pipeline + UI (Week 5-6) — COMPLETED
 
 **Goal**: NL→SQL query + Admin Console views
 
 - [x] Implement `SKBQueryService` (NL→SQL via `generateObject`)
 - [x] Implement `skb-sql-safety.ts` validation
-- [x] Implement query history recording
+- [x] Implement query history recording (service/repository exist, but `recordQuery` has no call sites — history is never written; see §2.1 drift warning)
 - [x] Add schema merging for multi-file containers
 - [x] Admin Console: SKB list + detail components
 - [x] Admin Console: file upload component
@@ -1295,8 +1333,8 @@ them from config.
 | File parser max columns | `100` | Maximum columns per file |
 | Row insert batch size | `5000` | Rows per INSERT batch |
 | Worker ack timeout | `300000 ms` | Worker ack wait for SKB ingestion messages |
-| Default ingest model | `gpt-4.1-mini` | Default LLM for schema analysis |
-| Default query model | `gpt-4.1-mini` | Default LLM for NL→SQL |
+| Default ingest model | `gpt-4.1-mini` (DB column default) | Not used at runtime — the schema analyzer hardcodes `gpt-4o` (openai) |
+| Default query model | `gpt-4.1-mini` (DB column default) | Not used at runtime — `SKBQueryService` hardcodes `gpt-4o` (openai) |
 | Query max limit | `1000` | Maximum query result limit |
 | Query rate limit | `30/min` | Per tenant per process; in-memory `SKBRateLimitGuard`, no rate-limit headers |
 | Ingest rate limit | — | Not implemented in `agent-admin-service` |
@@ -1346,7 +1384,7 @@ pending → processing → completed
    # Check consumer on a specific tenant stream
    kubectl exec -it nats-box -- nats consumer info INGRESS-<TENANT> skb-ingestion-worker
    ```
-3. The `SKBIngestionWatchdogService` auto-resets stuck files after 10 minutes. If not:
+3. The `SKBIngestionWatchdogService` is designed to auto-reset stuck files after 10 minutes, but its stuck-file lookup is currently stubbed (returns no files), so reset manually:
    ```sql
    UPDATE skb_files SET status = 'failed', error_message = 'Manual reset'
    WHERE status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes';
@@ -1361,7 +1399,7 @@ pending → processing → completed
 
 **Resolution**:
 
-1. Check `skb_query_history` for the generated `sql_where` clause.
+1. Check service logs for the generated SQL (`skb_query_history` is never populated — query history recording is not wired; see §2.1 drift warning).
 2. Verify column names match the schema (lowercase, underscore-normalized).
 3. Test the WHERE clause directly against `skb_rows`:
    ```sql
@@ -1378,7 +1416,7 @@ pending → processing → completed
 
 **Resolution**:
 
-1. Review the generated SQL in `skb_query_history.sql_where`.
+1. Review the generated SQL in the service logs (query history is not persisted).
 2. If the pattern is a false positive (e.g., a column name containing `pg_`), add an exemption to `skb-sql-safety.ts`.
 3. Improve the query prompt with more specific rules for the data domain.
 
@@ -1494,7 +1532,10 @@ function castRow(
 
 ## Appendix B: Sample Row Sampling
 
-Port of `get_sample_rows` from `file_parser.py`:
+Port of `get_sample_rows` from `file_parser.py`. Implemented as
+`SKBFileParser.getSampleRows()`, but NOT currently used —
+`SKBSchemaAnalyzerService` builds its prompt from `parsed.rows.slice(0, 5)`
+(first 5 rows only):
 
 ```typescript
 function getSampleRows(

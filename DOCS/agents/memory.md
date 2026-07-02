@@ -35,7 +35,7 @@ Defined in `services/agent-memory-service/src/modules/memory/domain/enums.ts`.
 | `REJECTED` | Terminal |
 | `ARCHIVED` | Set manually |
 
-Note: the SQL schema also defines `PUBLISHED` and `EXPIRED`; these are not referenced in the current TypeScript enums and may be placeholders for future use.
+Note: the SQL schema's status check constraint allows exactly these four values. `PUBLISHED` and `EXPIRED` are legacy statuses that `schema-initializer.ts` migrates to `ACTIVE`/`ARCHIVED` on startup; they still appear as filter options in the LLM memory tool's input schema (`memory.tool.ts`) but are no longer valid stored statuses.
 
 ## Tenant Schema
 

@@ -98,10 +98,14 @@ api() {
   local method="$1" path="$2" body="${3:-}"
   local args=(-s -X "$method" "${YOIZEN_BASE_URL}${path}"
     -H "Host: ${YOIZEN_HOST_HEADER}"
-    -H "Content-Type: application/json"
     -H "x-yoizen-tenant: ${YOIZEN_TENANT}")
   [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer ${TOKEN}")
-  [[ -n "$body" ]] && args+=(-d "$body")
+  # Content-Type is only set when there's a body: Fastify's JSON body parser
+  # 400s on "Body cannot be empty when content-type is set to
+  # 'application/json'" for bodyless DELETE/GET calls sent with that header.
+  if [[ -n "$body" ]]; then
+    args+=(-H "Content-Type: application/json" -d "$body")
+  fi
   curl "${args[@]}"
 }
 
@@ -114,6 +118,11 @@ stage_preflight() {
     TELEGRAM_BOT_TOKEN="PLACEHOLDER:set-TELEGRAM_BOT_TOKEN-for-real-delivery"
     warn "TELEGRAM_BOT_TOKEN not set — using a placeholder."
     warn "Artifacts will provision, but the SEND path will 404 until you use a real token."
+  fi
+  if [[ "$SIMULATE_INBOUND" == "1" && -z "$TELEGRAM_TEST_CHAT_ID" ]]; then
+    err "SIMULATE_INBOUND=1 requires TELEGRAM_TEST_CHAT_ID with your real numeric chat id."
+    err "Using a fake chat id makes Telegram reject the reply with: Bad Request: chat not found."
+    exit 1
   fi
   log "YOIZEN_BASE_URL=${YOIZEN_BASE_URL}  tenant=${YOIZEN_TENANT}  workflow=${WORKFLOW_NAME}  recreate=${RECREATE:-0}"
 }
@@ -290,7 +299,20 @@ stage_register_webhook() {
     return 0
   fi
 
-  local url="${TG_PUBLIC_URL%/}${path}"
+  local public_url="${TG_PUBLIC_URL%/}"
+  local url
+  if [[ "$public_url" == *"/api/webhooks/telegram"* ]]; then
+    if [[ "$public_url" == *"$path" ]]; then
+      warn "TG_PUBLIC_URL includes the full webhook path; using it as-is."
+      url="$public_url"
+    else
+      local origin="${public_url%%/api/webhooks/telegram*}"
+      warn "TG_PUBLIC_URL includes a webhook path; treating '${origin}' as the public base URL."
+      url="${origin}${path}"
+    fi
+  else
+    url="${public_url}${path}"
+  fi
   log "setWebhook -> ${url}"
   local resp
   resp="$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
@@ -317,10 +339,8 @@ stage_simulate_inbound() {
     return 0
   fi
 
-  local chat_id="${TELEGRAM_TEST_CHAT_ID:-987654321}"
+  local chat_id="$TELEGRAM_TEST_CHAT_ID"
   local nonce="tg-$(date +%s)-$RANDOM"
-  [[ -n "$TELEGRAM_TEST_CHAT_ID" ]] || \
-    warn "TELEGRAM_TEST_CHAT_ID not set — using fake chat ${chat_id}; the send will reach Telegram but that chat won't exist (expect a 400 'chat not found' downstream)."
 
   local update
   update="$(jq -n \
@@ -357,10 +377,17 @@ stage_simulate_inbound() {
   while (( $(date +%s) < deadline )); do
     local execs count
     execs="$(api GET "/api/workflows/${WORKFLOW_ID}/executions" 2>/dev/null || echo '[]')"
-    count="$(echo "$execs" | jq -r 'if type=="array" then length else 0 end' 2>/dev/null || echo 0)"
+    count="$(echo "$execs" | jq -r '
+      if type=="array" then length
+      elif type=="object" and (.items | type)=="array" then (.items | length)
+      else 0 end
+    ' 2>/dev/null || echo 0)"
     if [[ "${count:-0}" -gt 0 ]]; then
       log "workflow execution observed:"
-      echo "$execs" | jq -r '.[0] | {id, status, startedAt, completedAt}' 2>/dev/null || echo "$execs"
+      echo "$execs" | jq -r '
+        (if type=="array" then .[0] else .items[0] end)
+        | {id, status, startedAt, completedAt}
+      ' 2>/dev/null || echo "$execs"
       return 0
     fi
     sleep 3

@@ -35,10 +35,13 @@ Downstream consumers (agent-ai-service, workflow-service, audit-service, etc.)
 
 ```
 POST /webhooks/:channel/:tenantId
-GET  /webhooks/:channel/:tenantId   ← hub.challenge verification (Meta)
+POST /webhooks/:channel/:tenantId/:instance   ← instance-addressed ingress
+GET  /webhooks/:channel/:tenantId             ← hub.challenge verification (Meta)
 ```
 
-Both endpoints are public (`@Public()`, `@SkipTenant()`). The tenant is resolved only from the path parameter — no JWT and no tenant guard.
+All three endpoints are public (`@Public()`, `@SkipTenant()`). The tenant is resolved only from the path parameter — no JWT and no tenant guard.
+
+The instance-addressed route lets a tenant expose one URL per configured channel account: `<instance>` is the account's `externalId`, forwarded verbatim in `data.instance` so `channel-service` can resolve the account by `(channel, externalId)`. The URL selects *which* account; a token header (e.g. `x-http-channel-token`) still authenticates downstream — the URL itself is not the credential.
 
 File: `services/api-gateway/src/modules/channels/webhooks.controller.ts`
 
@@ -62,7 +65,7 @@ Successful response: HTTP 200 with body `{ "status": "accepted" }`, returned onl
 
 The envelope ID is a UUID v4 (`crypto.randomUUID()`).
 
-The `accountid` field is deliberately absent: at this point the request has not passed signature verification, and the provider account (WhatsApp Business ID, Telegram bot, etc.) has not been resolved. Including a placeholder would corrupt per-account billing aggregations. See the comment in `webhook-ingress-publisher.service.ts:85`.
+The `accountid` field is deliberately absent: at this point the request has not passed signature verification, and the provider account (WhatsApp Business ID, Telegram bot, etc.) has not been resolved. Including a placeholder would corrupt per-account billing aggregations. See the comment in `webhook-ingress-publisher.service.ts:102`.
 
 Type: `WebhookIngressEnvelope = Omit<EventEnvelope, "accountid"> & { ... }`.
 
@@ -109,12 +112,13 @@ File: `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.se
 
 1. Validates the channel (must have a registered `IChannelProvider` in `ChannelRouter`).
 2. Queries the tenant/channel's active accounts through the configured repository/storage engine (`postgres` by default, `mongo` when selected).
-3. Verifies the provider's HMAC signature against each active account.
-4. Resolves the concrete `accountid` (disambiguation by `phone_number_id` for WhatsApp or `ig_user_id` for Instagram when multiple accounts verify).
-5. Parses the webhook body using the corresponding provider → `InboundMessage[]`.
-6. Calls `IngressService.processInbound` via `setImmediate` (non-blocking).
+3. If the request came through the instance-addressed route (`/api/webhooks/:channel/:tenantId/:instance`), narrows the active-account set to the one whose `externalId` matches `instance`. An unknown instance is rejected with `unknown_instance` — there is no fallback to token-only matching.
+4. Verifies the provider's HMAC signature against each (possibly narrowed) active account.
+5. Resolves the concrete `accountid` (disambiguation by `phone_number_id` for WhatsApp or `ig_user_id` for Instagram when multiple accounts verify).
+6. Parses the webhook body using the corresponding provider → `InboundMessage[]`.
+7. Calls `IngressService.processInbound` via `setImmediate` (non-blocking), forwarding the causal chain (`correlationId`, `causationId`, `depth`) inherited from the stage-1 `WebhookIngressEnvelope`.
 
-**Telegram signature handling:** if the `X-Telegram-Bot-Api-Secret-Token` header is absent or empty, the request is immediately rejected with `signature_mismatch`. There is no fallback to the first account.
+**Telegram/generic-HTTP signature handling:** for `channel === "telegram"` or `channel === "http"`, the corresponding signature header (`X-Telegram-Bot-Api-Secret-Token` or `x-http-channel-token`) is the only signal that identifies the account — the payload carries no account id. If that header is absent or empty, the request is immediately rejected with `signature_mismatch`. There is no fallback to the first active account. WhatsApp and Instagram keep the legacy fallback (first active account when no signature header is present) because they can disambiguate via `phone_number_id` / `ig_user_id`.
 
 ### 3.3 ChannelEnvelope publication
 
@@ -153,6 +157,7 @@ transport.protocol = "internal"
 |----------|-----------|------|
 | Meta | whatsapp, instagram | `services/channel-service/src/providers/meta/` |
 | Telegram | telegram | `services/channel-service/src/providers/telegram/` |
+| HTTP (generic) | http | `services/channel-service/src/providers/http/` — authenticates via the `x-http-channel-token` header, same account-resolution rules as Telegram |
 
 TikTok, Twitter/X, and other channels mentioned in the original design: **not implemented**.
 

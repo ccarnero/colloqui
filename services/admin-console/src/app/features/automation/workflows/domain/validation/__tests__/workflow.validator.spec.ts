@@ -5,14 +5,14 @@ import {
   type IWorkflowFlow,
   type IWorkflowNode,
 } from "../../workflow-node.types";
-import { validateWorkflow } from "../workflow.validator";
 import { SOURCE_ACCOUNT_TEMPLATE } from "../../workflow-node-defaults";
+import { validateWorkflow } from "../workflow.validator";
 
 function makeNode(
   key: string,
   type: EWorkflowNodeType,
   configuration: Record<string, unknown> = {},
-  name = key,
+  name = key
 ): IWorkflowNode {
   return {
     key,
@@ -27,7 +27,7 @@ function makeNode(
 function makeConn(
   key: string,
   source: string,
-  target: string,
+  target: string
 ): IWorkflowConnection {
   return {
     key,
@@ -40,7 +40,7 @@ function makeConn(
 function makeFlow(
   nodes: IWorkflowNode[],
   conns: IWorkflowConnection[] = [],
-  overrides: Partial<IWorkflowFlow> = {},
+  overrides: Partial<IWorkflowFlow> = {}
 ): IWorkflowFlow {
   return {
     key: "wf",
@@ -57,12 +57,12 @@ describe("validateWorkflow — top-level", () => {
     const flow = makeFlow(
       [makeNode("a", EWorkflowNodeType.JS_FUNCTION, { code: "1" })],
       [],
-      { name: "" },
+      { name: "" }
     );
     const result = validateWorkflow(flow);
     expect(result.valid).toBe(false);
     expect(
-      result.errors.some((e) => e.field === "name" && e.code === "REQUIRED"),
+      result.errors.some((e) => e.field === "name" && e.code === "REQUIRED")
     ).toBe(true);
   });
 
@@ -70,13 +70,13 @@ describe("validateWorkflow — top-level", () => {
     const flow = makeFlow(
       [makeNode("a", EWorkflowNodeType.JS_FUNCTION, { code: "1" })],
       [],
-      { application: "" },
+      { application: "" }
     );
     const result = validateWorkflow(flow);
     expect(
       result.errors.some(
-        (e) => e.field === "application" && e.code === "REQUIRED",
-      ),
+        (e) => e.field === "application" && e.code === "REQUIRED"
+      )
     ).toBe(true);
   });
 
@@ -84,10 +84,10 @@ describe("validateWorkflow — top-level", () => {
     const flow = makeFlow(
       [makeNode("a", EWorkflowNodeType.JS_FUNCTION, { code: "1" })],
       [],
-      { name: "x".repeat(200) },
+      { name: "x".repeat(200) }
     );
     expect(
-      validateWorkflow(flow).errors.some((e) => e.code === "TOO_LONG"),
+      validateWorkflow(flow).errors.some((e) => e.code === "TOO_LONG")
     ).toBe(true);
   });
 });
@@ -144,9 +144,7 @@ describe("validateWorkflow — endpointCall modes", () => {
     ]);
     const result = validateWorkflow(flow);
     expect(
-      result.errors.some(
-        (e) => e.nodeKey === "ep" && e.code === "REQUIRED",
-      ),
+      result.errors.some((e) => e.nodeKey === "ep" && e.code === "REQUIRED")
     ).toBe(false);
   });
 });
@@ -158,9 +156,7 @@ describe("validateWorkflow — branch", () => {
     ]);
     const result = validateWorkflow(flow);
     expect(
-      result.errors.some(
-        (e) => e.nodeKey === "br" && e.code === "BRANCH_EMPTY",
-      ),
+      result.errors.some((e) => e.nodeKey === "br" && e.code === "BRANCH_EMPTY")
     ).toBe(true);
   });
 
@@ -170,13 +166,11 @@ describe("validateWorkflow — branch", () => {
         makeNode("br", EWorkflowNodeType.BRANCH, { branches: ["yes"] }),
         makeNode("step", EWorkflowNodeType.JS_FUNCTION, { code: "1" }),
       ],
-      [makeConn("c1", "br", "step")],
+      [makeConn("c1", "br", "step")]
     );
     const result = validateWorkflow(flow);
     expect(
-      result.errors.some(
-        (e) => e.nodeKey === "br" && e.code === "BRANCH_EMPTY",
-      ),
+      result.errors.some((e) => e.nodeKey === "br" && e.code === "BRANCH_EMPTY")
     ).toBe(false);
   });
 });
@@ -194,7 +188,7 @@ describe("validateWorkflow — happy path", () => {
           code: "return 1;",
         }),
       ],
-      [makeConn("c1", "t", "step")],
+      [makeConn("c1", "t", "step")]
     );
     const result = validateWorkflow(flow);
     expect(result.valid).toBe(true);
@@ -210,7 +204,7 @@ describe("validateWorkflow — happy path", () => {
         }),
         makeNode("step", EWorkflowNodeType.JS_FUNCTION, { code: "1" }),
       ],
-      [makeConn("c1", "t", "step")],
+      [makeConn("c1", "t", "step")]
     );
     const result = validateWorkflow(flow);
     expect(
@@ -218,8 +212,8 @@ describe("validateWorkflow — happy path", () => {
         (e) =>
           e.nodeKey === "t" &&
           e.field === "trigger.config.accountIds" &&
-          e.code === "REQUIRED",
-      ),
+          e.code === "REQUIRED"
+      )
     ).toBe(true);
   });
 });
@@ -234,13 +228,11 @@ describe("validateWorkflow — trigger forwarding", () => {
         }),
         makeNode("step", EWorkflowNodeType.JS_FUNCTION, { code: "1" }),
       ],
-      [makeConn("c1", "t", "step")],
+      [makeConn("c1", "t", "step")]
     );
     const result = validateWorkflow(flow);
     expect(
-      result.errors.some(
-        (e) => e.nodeKey === "t" && e.field === "trigger.mode",
-      ),
+      result.errors.some((e) => e.nodeKey === "t" && e.field === "trigger.mode")
     ).toBe(true);
   });
 });
@@ -273,8 +265,8 @@ describe("validateWorkflow — trigger presence", () => {
     const result = validateWorkflow(flow);
     expect(
       result.errors.some(
-        (e) => e.nodeKey === "t" && e.code === "TRIGGER_DISCONNECTED",
-      ),
+        (e) => e.nodeKey === "t" && e.code === "TRIGGER_DISCONNECTED"
+      )
     ).toBe(true);
   });
 
@@ -286,9 +278,9 @@ describe("validateWorkflow — trigger presence", () => {
       }),
     ]);
     const result = validateWorkflow(flow);
-    expect(
-      result.errors.some((e) => e.code === "TRIGGER_DISCONNECTED"),
-    ).toBe(false);
+    expect(result.errors.some((e) => e.code === "TRIGGER_DISCONNECTED")).toBe(
+      false
+    );
   });
 
   it("requires the inbound trigger to declare a mode", () => {
@@ -297,7 +289,7 @@ describe("validateWorkflow — trigger presence", () => {
         makeNode("t", EWorkflowNodeType.CHANNEL, { direction: "inbound" }),
         makeNode("step", EWorkflowNodeType.JS_FUNCTION, { code: "1" }),
       ],
-      [makeConn("c1", "t", "step")],
+      [makeConn("c1", "t", "step")]
     );
     const result = validateWorkflow(flow);
     expect(
@@ -305,14 +297,14 @@ describe("validateWorkflow — trigger presence", () => {
         (e) =>
           e.nodeKey === "t" &&
           e.field === "trigger.mode" &&
-          e.code === "REQUIRED",
-      ),
+          e.code === "REQUIRED"
+      )
     ).toBe(true);
   });
 });
 
 describe("validateWorkflow — outbound account vs trigger", () => {
-  it("flags outbound channel using an account not present on the trigger", () => {
+  it("warns (without blocking) on an outbound account not present on the trigger", () => {
     const flow = makeFlow(
       [
         makeNode("t", EWorkflowNodeType.CHANNEL, {
@@ -327,18 +319,27 @@ describe("validateWorkflow — outbound account vs trigger", () => {
           provider: "meta",
           to: "+1",
           messageType: "text",
+          text: "hi",
         }),
       ],
-      [makeConn("c1", "t", "out")],
+      [makeConn("c1", "t", "out")]
     );
     const result = validateWorkflow(flow);
+    // Cross-account sends are a legitimate notify pattern (and the
+    // backend allows them), so this is a warning — not a save blocker.
+    expect(result.valid).toBe(true);
     expect(
       result.errors.some(
+        (e) => e.nodeKey === "out" && e.field === "args.accountId"
+      )
+    ).toBe(false);
+    expect(
+      result.warnings.some(
         (e) =>
           e.nodeKey === "out" &&
           e.field === "args.accountId" &&
-          e.code === "INVALID_VALUE",
-      ),
+          e.code === "INVALID_VALUE"
+      )
     ).toBe(true);
   });
 
@@ -359,13 +360,13 @@ describe("validateWorkflow — outbound account vs trigger", () => {
           messageType: "text",
         }),
       ],
-      [makeConn("c1", "t", "out")],
+      [makeConn("c1", "t", "out")]
     );
     const result = validateWorkflow(flow);
     expect(
-      result.errors.some(
-        (e) => e.nodeKey === "out" && e.field === "args.accountId",
-      ),
+      result.warnings.some(
+        (e) => e.nodeKey === "out" && e.field === "args.accountId"
+      )
     ).toBe(false);
   });
 
@@ -387,13 +388,13 @@ describe("validateWorkflow — outbound account vs trigger", () => {
           text: "hi",
         }),
       ],
-      [makeConn("c1", "t", "out")],
+      [makeConn("c1", "t", "out")]
     );
     const result = validateWorkflow(flow);
     expect(
-      result.errors.some(
-        (e) => e.nodeKey === "out" && e.field === "args.accountId",
-      ),
+      result.warnings.some(
+        (e) => e.nodeKey === "out" && e.field === "args.accountId"
+      )
     ).toBe(false);
   });
 
@@ -409,16 +410,21 @@ describe("validateWorkflow — outbound account vs trigger", () => {
           direction: "outbound",
         }),
       ],
-      [makeConn("c1", "t", "out")],
+      [makeConn("c1", "t", "out")]
     );
     const result = validateWorkflow(flow);
     const outAccount = result.errors.filter(
-      (e) => e.nodeKey === "out" && e.field === "args.accountId",
+      (e) => e.nodeKey === "out" && e.field === "args.accountId"
     );
     // Only the REQUIRED error from validateChannelSend, not the
-    // mismatch error on top of it.
+    // mismatch warning on top of it.
     expect(outAccount.length).toBe(1);
     expect(outAccount[0].code).toBe("REQUIRED");
+    expect(
+      result.warnings.some(
+        (e) => e.nodeKey === "out" && e.field === "args.accountId"
+      )
+    ).toBe(false);
   });
 });
 
@@ -432,7 +438,7 @@ describe("validateWorkflow — channel direction", () => {
         }),
         makeNode("ch", EWorkflowNodeType.CHANNEL, {}),
       ],
-      [makeConn("c1", "t", "ch")],
+      [makeConn("c1", "t", "ch")]
     );
     const result = validateWorkflow(flow);
     expect(
@@ -440,8 +446,8 @@ describe("validateWorkflow — channel direction", () => {
         (e) =>
           e.nodeKey === "ch" &&
           e.field === "configuration.direction" &&
-          e.code === "REQUIRED",
-      ),
+          e.code === "REQUIRED"
+      )
     ).toBe(true);
   });
 
@@ -461,13 +467,11 @@ describe("validateWorkflow — channel direction", () => {
           messageType: "text",
         }),
       ],
-      [makeConn("c1", "t", "ch")],
+      [makeConn("c1", "t", "ch")]
     );
     const result = validateWorkflow(flow);
     expect(
-      result.errors.some(
-        (e) => e.field === "configuration.direction",
-      ),
+      result.errors.some((e) => e.field === "configuration.direction")
     ).toBe(false);
   });
 });

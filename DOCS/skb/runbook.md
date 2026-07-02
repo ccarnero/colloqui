@@ -38,6 +38,13 @@ Admin Console → api-gateway (AdminStructuredKBController)
 - `SERVICE_MODE=worker` — NATS consumer (ingestion pipeline + watchdog)
 - Both can run simultaneously on different pods.
 
+> **Known limitations in the current tree**: the file upload route is not
+> implemented in `agent-admin-service`, the worker's file-status updates target
+> a `skb_container_files` table that is never created, its `insertRows` call
+> does not match the repository signature, the watchdog stuck-file lookup is
+> stubbed, and query history is never recorded. See
+> `DOCS/skb/architecture.md` §8.1 "Known wiring defects" for details.
+
 **Key tables:**
 - `skb_containers` — Container metadata and status
 - `skb_files` — Per-file status tracking
@@ -101,8 +108,11 @@ nats consumer info INGRESS-<TENANT> skb-ingestion-worker | grep Redelivered
 
 ## 3. Checking Stuck Files
 
-Files stuck in `processing` status are automatically detected by the
-`SKBIngestionWatchdogService` (runs every 5 minutes, threshold: 10 minutes).
+The `SKBIngestionWatchdogService` is meant to detect files stuck in
+`processing` (threshold: 10 minutes), but its stuck-file lookup
+(`SKBContainersRepository.findProcessingFilesOlderThan`) is currently stubbed
+to return an empty list — automatic detection/reset does NOT happen. Use the
+manual checks below.
 
 ### Manual check
 
@@ -188,8 +198,14 @@ curl -X POST "https://<host>/admin/structured-kb/containers/<container-id>/files
 
 ### Check query history
 
+> **Not currently usable**: query history recording is not wired —
+> `SKBQueryHistoryService.recordQuery()` has no call sites, so
+> `skb_query_history` is always empty (and the repository's insert targets
+> columns that don't exist in the DDL). Use service logs to inspect generated
+> SQL instead.
+
 ```sql
--- Recent queries with results
+-- Recent queries with results (will return no rows until recording is wired)
 SELECT id, natural_query, sql_where, sql_sort, result_count, executed_at
 FROM skb_query_history
 WHERE container_id = '<container-id>'
@@ -285,15 +301,14 @@ status stays `processing`.
 
 **Fix:**
 1. Check worker logs: `kubectl logs <pod> -n <ns> | grep <file-id>`
-2. The watchdog should auto-reset after 10 minutes
-3. If not, manually reset:
+2. The watchdog does NOT auto-reset today (stuck-file lookup is stubbed), so reset manually:
    ```sql
    UPDATE skb_files SET status = 'failed',
      error_message = 'Manual reset by ops',
      updated_at = NOW()
    WHERE id = '<file-id>';
    ```
-4. Re-trigger ingestion via API
+3. Re-trigger ingestion via API
 
 ### OOM on large file (>100k rows)
 
@@ -309,7 +324,7 @@ status stays `processing`.
 **Symptoms:** User query returns 0 results for a container with data.
 
 **Diagnosis:**
-1. Check `skb_query_history` for the generated SQL
+1. Check service logs for the generated SQL (`skb_query_history` is never populated — see Section 5)
 2. Verify the schema has the expected columns: `SELECT columns FROM skb_schemas WHERE container_id = '...'`
 3. Run the generated SQL directly against the DB to verify
 4. Check if column names match (normalization issues)
@@ -320,7 +335,7 @@ status stays `processing`.
 
 **Fix:**
 1. Check AI provider status (OpenAI, Anthropic, etc.)
-2. Verify API key in container's `provider_config`
+2. Verify the OpenAI credentials available to the service (the container's `provider_config` is NOT used at runtime — the query service hardcodes openai/`gpt-4o`)
 3. Check rate limiting on the AI provider
 4. Retry the query
 

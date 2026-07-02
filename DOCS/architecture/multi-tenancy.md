@@ -285,8 +285,8 @@ Defined in `packages/shared/src/channel.interfaces.ts`:
 interface ChannelAccount {
   id: string;
   tenantId: string;
-  channel: Channel;           // "whatsapp" | "instagram" | "telegram"
-  provider: ChannelProvider;  // "meta" | "telegram"
+  channel: Channel;           // "whatsapp" | "instagram" | "telegram" | "http"
+  provider: ChannelProvider;  // "meta" | "telegram" | "http"
   name: string;
   externalId: string;
   phoneNumberId?: string;     // WhatsApp: phone_number_id from Meta

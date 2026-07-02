@@ -50,10 +50,14 @@ api() {
   local method="$1" path="$2" body="${3:-}"
   local args=(-s -X "$method" "${YOIZEN_BASE_URL}${path}"
     -H "Host: ${YOIZEN_HOST_HEADER}"
-    -H "Content-Type: application/json"
     -H "x-yoizen-tenant: ${YOIZEN_TENANT}")
   [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer ${TOKEN}")
-  [[ -n "$body" ]] && args+=(-d "$body")
+  # Content-Type is only set when there's a body: Fastify's JSON body parser
+  # 400s on "Body cannot be empty when content-type is set to
+  # 'application/json'" for bodyless DELETE/GET calls sent with that header.
+  if [[ -n "$body" ]]; then
+    args+=(-H "Content-Type: application/json" -d "$body")
+  fi
   curl "${args[@]}"
 }
 

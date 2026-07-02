@@ -400,7 +400,7 @@ All alerts live in
 | `TemporalActivityScheduleToStartHigh` | Activity tasks p95 schedule_to_start >5s for 2m | Check connector-runtime / workflow-worker health |
 | `TemporalWorkflowTimeoutsSpike` | Workflow timeouts >0.5/s for 2m | Check `TemporalScheduleToStartHigh` and postgres-temporal status |
 | `TemporalPersistenceLatencyHigh` | Persistence operation p99 >100ms for 2m | Check postgres IO, connections, autovacuum lag |
-| `TemporalStickyCacheHitLow` | Sticky cache hit ratio <70% for 10m | Worker pods too few or being scaled-down. Bump `minReplicaCount`. |
+| `TemporalStickyCacheHitLow` | Sticky cache hit ratio <70% for 10m | Worker pods too few. `workflow-worker` / `connector-runtime` run as plain fixed-replica Deployments in developer mode (KEDA autoscaling was removed) — bump `spec.replicas` directly. |
 
 > `TemporalHistoryShardImbalance` was removed from alerts — shard imbalance
 > between separate history pods is not applicable in the single auto-setup topology.
