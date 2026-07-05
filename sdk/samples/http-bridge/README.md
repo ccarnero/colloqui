@@ -1,11 +1,12 @@
 # http-bridge
 
-> **Now SDK-powered.** `./run.sh` resolves the dev environment (same as before) and then execs
-> a small Node/TypeScript app (`src/index.ts`) that drives the platform through
+> **Now SDK-powered.** Both `./run.sh` and `./setup.sh` resolve the dev environment (same as
+> before) and then exec a small Node/TypeScript app that drives the platform through
 > `@yoizen/platform-sdk` (see [`sdk/README.md`](../../README.md)) — `client.workflows.list()`,
-> `client.channels.listAccounts()`, and `client.webhooks.ingest()` replace the old inline
-> `curl`+`jq` calls. `./setup.sh` remains plain bash — it does Telegram bot discovery and
-> provisioning, which isn't covered by the SDK yet — and is out of scope for this migration.
+> `client.channels.listAccounts()`, `client.workflows.create()`, and `client.webhooks.ingest()`
+> replace the old inline `curl`+`jq` calls. `./setup.sh` (`src/setup.ts`) still talks directly to
+> `api.telegram.org` for bot chat_id discovery (`getWebhookInfo`/`deleteWebhook`/`getUpdates`/
+> `setWebhook`) — that's the raw Telegram Bot API, not our platform SDK's concern.
 > Other samples migrate as follow-ups per [`sdk/GROWTH-PLAN.md`](../../GROWTH-PLAN.md) Phase 3
 > (P3.1).
 
@@ -199,11 +200,13 @@ next to `setup.sh` — no manual sourcing needed.
   workflow. Set `BRIDGE_PIN=0` to remove the pin and let any HTTP message on the tenant trigger it
   (the stale-pin trap described in the Telegram sample's troubleshooting still applies if the
   account is recreated while the workflow retains the old id).
-- **`setup.sh` stays shell-based**, like `http-fanout-telegram` and `telegram-transform-reply` —
-  it does Telegram bot token/chat_id discovery and provisioning, which has no SDK coverage yet.
-  It supersedes the old vendored `@yoizen/http-sdk` Node bridge (`server.js`) and the old
-  `artifacts/create-workflow.sh` provisioning script, and also fixes the old sample's biggest
-  gap: the previous workflow had no `channelSend` step, so its result went nowhere.
+- **`setup.sh` is SDK-powered** (`src/setup.ts`, `@yoizen/platform-sdk`): `client.channels.*` and
+  `client.workflows.*` replace the old inline `curl`+`jq` provisioning calls. Telegram bot
+  token/chat_id discovery still talks directly to `api.telegram.org` — that's the raw Telegram Bot
+  API, which isn't part of the platform SDK's surface. It supersedes the old vendored
+  `@yoizen/http-sdk` Node bridge (`server.js`) and the old `artifacts/create-workflow.sh`
+  provisioning script, and also fixes the old sample's biggest gap: the previous workflow had no
+  `channelSend` step, so its result went nowhere.
 - **`run.sh` is SDK-powered** (`src/index.ts`, `@yoizen/platform-sdk`): `client.webhooks.ingest()`
   is the generic escape hatch (`POST /webhooks/:channel/:tenantId/:instance`) that accepts
   arbitrary caller headers, so it can pass the http channel's `x-http-channel-token` exactly like

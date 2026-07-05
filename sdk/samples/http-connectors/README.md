@@ -46,7 +46,6 @@ cached for 300 seconds. `setup.sh` `PATCH`es `defaultCache` onto the connector o
 cd sdk/samples/http-connectors
 ./setup.sh
 # [STEP]  0/3 preflight
-# [STEP]  1/3 login as yclawd@demo.io (tenant acme)
 # [STEP]  2/3 upsert connectors from .../connectors
 # [INFO]  create 'jsonplaceholder' (auth=none) -> id=...
 # [INFO]      + GET /posts  (List all posts)
@@ -55,7 +54,10 @@ cd sdk/samples/http-connectors
 # [INFO]  connectors: created=5  reused=0   endpoints added=31   failed=0
 ```
 
-Requires `curl` and `jq`, and a reachable platform (defaults to the dev cluster). The script is a
+Requires Node >=18 and a reachable platform (defaults to the dev cluster) — provisioning is driven by
+`@yoizen/platform-sdk` via `src/setup.ts` (`setup.sh` resolves the dev environment and execs it with
+`npx tsx`); login itself is handled transparently by the SDK client on first request, which is why
+the stage numbering skips straight from `0/3` to `2/3`. The script is a
 **true upsert** — a second run prints `reuse '<name>' — exists` and `endpoints already up to date`,
 creating nothing; but if you've added endpoints to a config since the last run, only those new
 `(method, path)` pairs are added (`+ <METHOD> <path>`).

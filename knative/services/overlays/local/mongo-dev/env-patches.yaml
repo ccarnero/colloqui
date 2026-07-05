@@ -632,6 +632,10 @@ spec:
               value: "postgres.support-services-dev.svc.cluster.local"
             - name: POSTGRES_PORT
               value: "5432"
+            # Dev-only: enables the credential-free mock echo provider used by the
+            # runtime streaming e2e (DOCS/architecture/runtime-streaming.md).
+            - name: RUNTIME_ALLOW_MOCK_PROVIDER
+              value: "true"
             - name: MEMORY_SERVICE_URL
               value: "http://agent-memory-service.platform-services-dev.svc.cluster.local"
             - name: CONNECTOR_ADMIN_URL

@@ -26,11 +26,15 @@ export {
 } from "./retry.js";
 export type { Session, SessionConfig, SessionDeps } from "./session.js";
 export { createSession } from "./session.js";
+export type { SseFrame } from "./sse.js";
+export { parseSseStream } from "./sse.js";
 export type {
   ApiVersion,
   CreateTransportDeps,
   Transport,
   TransportRequestOptions,
   TransportResponse,
+  TransportStreamRequestOptions,
+  TransportStreamResponse,
 } from "./transport.js";
 export { createTransport } from "./transport.js";

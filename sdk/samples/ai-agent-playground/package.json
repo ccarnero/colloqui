@@ -1,0 +1,19 @@
+{
+  "name": "ai-agent-playground-sample",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ai-agent-playground sample — provisions an AI agent and drives one runtime execution through @yoizen/platform-sdk.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "setup": "tsx src/setup.ts"
+  },
+  "dependencies": {
+    "@yoizen/platform-sdk": "file:../.."
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.23.0",
+    "typescript": "^5.7.2"
+  }
+}

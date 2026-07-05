@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-defaults
+  namespace: knative-serving
+  labels:
+    app.kubernetes.io/part-of: knative-serving
+data:
+  # Cluster ceiling for per-revision `spec.template.spec.timeoutSeconds`.
+  # Knative's own default is 600s, which is below the 3600s timeoutSeconds
+  # set on api-gateway and ai-agent-gateway for long-lived SSE runtime token
+  # streaming (DOCS/architecture/runtime-streaming.md §6). Any ksvc
+  # requesting a timeoutSeconds above this ceiling is rejected at admission,
+  # so this must be raised in lockstep with those revisions.
+  revision-timeout-seconds: "3600"
+  max-revision-timeout-seconds: "3600"

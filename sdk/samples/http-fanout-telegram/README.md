@@ -1,5 +1,13 @@
 # http-fanout-telegram
 
+> **Now SDK-powered.** Both `./run.sh` and `./setup.sh` resolve the dev environment (same as
+> before) and then exec a small Node/TypeScript app that drives the platform through
+> `@yoizen/platform-sdk` (see [`sdk/README.md`](../../README.md)) — `client.connectors.list()`,
+> `client.channels.listAccounts()`, `client.workflows.create()`, and `client.webhooks.ingest()`
+> replace the old inline `curl`+`jq` calls. `./run.sh` (`src/index.ts`) still shells out to
+> `../http-connectors/setup.sh` (and, if `TELEGRAM_BOT_TOKEN` is set, `../telegram-transform-reply/setup.sh`)
+> since those sibling samples aren't SDK-ported yet.
+
 A workflow that, on **any message arriving over the HTTP channel**, fans out **three connector
 calls in parallel**, **joins** their responses, **POSTs** the result to the httpbin connector, and
 **DMs you a summary over Telegram**. It stitches together the two other samples —

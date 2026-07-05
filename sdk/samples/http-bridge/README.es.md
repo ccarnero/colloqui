@@ -28,14 +28,18 @@ Telegram: "Echo: stock bajo SKU-42 (from=erp, metadata={}) — processed at 2026
 
 ## Cómo funciona por dentro
 
-### Lo que provisiona setup.sh (3 etapas + preflight)
+### Lo que provisiona setup.sh (SDK-powered, `src/setup.ts`)
+
+`setup.sh` es un wrapper delgado (resuelve el entorno vía `../lib/resolve-env.sh` e invoca
+`npx tsx src/setup.ts`); la lógica real usa `@yoizen/platform-sdk` (`client.channels.*`,
+`client.workflows.*`) en vez de `curl`+`jq`. El login queda a cargo de `createClient()` — no es
+una etapa separada.
 
 | Etapa | Qué hace |
 | --- | --- |
-| 0 preflight | Verifica `jq`/`curl` y reporta la configuración efectiva |
-| 1 login | `POST /api/auth/login` con el usuario semilla del tenant; obtiene el bearer token |
-| 2 resolve | Resuelve la cuenta Telegram activa (o la fijada por `TG_ACCOUNT_ID`), auto-descubre los `chat_id` vía `getUpdates`, y crea/reutiliza la instancia HTTP dedicada (capturando su `appSecret`) |
-| 3 workflow | Crea el workflow `http-bridge` con el trigger fijado (pinning) a la instancia recién creada |
+| 0 preflight | Reporta la configuración efectiva (base URL, tenant, workflow, `RECREATE`) |
+| 2 resolve | Resuelve la cuenta Telegram activa (o la fijada por `TG_ACCOUNT_ID`), auto-descubre los `chat_id` llamando directamente a `api.telegram.org` (`getUpdates`, fuera del SDK de la plataforma), y crea/reutiliza la instancia HTTP dedicada vía `client.channels.*` (capturando su `appSecret`) |
+| 3 workflow | Crea el workflow `http-bridge` vía `client.workflows.create()` con el trigger fijado (pinning) a la instancia recién creada |
 
 Con `RECREATE=1` (el valor por defecto en este sample) cada corrida borra y reconstruye la
 instancia HTTP y el workflow, para que siempre incorporen los `chat_id` recién resueltos.

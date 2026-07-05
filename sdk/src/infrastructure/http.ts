@@ -14,6 +14,12 @@ export interface FetchResponseLike {
    * callers that need a header (e.g. `Retry-After`) get `undefined` instead of a throw.
    */
   headers?: { get(name: string): string | null };
+  /**
+   * Optional: real `fetch` Responses always have this. Only read by
+   * `Transport.requestStream()` (see `core/transport.ts`) — `request()`/`httpJson`
+   * never touch it. Test fakes for JSON-only flows can omit it.
+   */
+  body?: ReadableStream<Uint8Array> | null;
 }
 
 /** Minimal shape actually used from a fetch implementation (see {@link FetchResponseLike}). */

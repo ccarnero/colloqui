@@ -1,6 +1,6 @@
 # AI agent playground sample
 
-Create a real AI agent, wire it to an online LLM, publish it, then execute one runtime chat request through the same API surface used by the admin-console AI pages.
+Create a real AI agent, wire it to an online LLM, publish it, then execute one runtime chat request through the same API surface used by the admin-console AI pages. Provisioning (`setup.sh`) and driving (`run.sh`) are SDK-powered TypeScript apps (`src/setup.ts` / `src/index.ts`, via `@yoizen/platform-sdk`) — the shell scripts only resolve the dev environment and exec `tsx`.
 
 ## Quick path
 
@@ -8,10 +8,11 @@ Create a real AI agent, wire it to an online LLM, publish it, then execute one r
 cd sdk/samples/ai-agent-playground
 cp .env.example .env
 # edit .env and set the API key for your provider, for example OPENAI_API_KEY
-./run.sh
+./setup.sh   # creates/updates the LLM connector + agent, then publishes it
+./run.sh     # submits one runtime execution and polls the result
 ```
 
-Expected result: the script prints a completed execution with the model reply, token usage, provider, model, and cost estimate when available.
+Expected result: `./run.sh` prints a completed execution with the model reply, token usage, provider, model, and cost estimate when available.
 
 ## What gets created
 

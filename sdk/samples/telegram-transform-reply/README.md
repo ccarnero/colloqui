@@ -18,10 +18,10 @@ Telegram msg ──► api-gateway (/api/webhooks/telegram/<tenant>/<externalId>
               channel-service-worker (egress) ──► Telegram reply
 ```
 
-Unlike `http-bridge`, this sample is **shell-based** and does not use `@yoizen/platform-sdk` — the
-Telegram path is driven entirely by the platform's built-in `TelegramProvider`. You don't write
-an adapter; you **configure an account** that activates it, plus the workflow. One script does
-it all.
+Like `http-bridge`, this sample is powered by `@yoizen/platform-sdk` (`setup.sh`/`run.sh` are thin
+wrappers around `src/setup.ts`/`src/index.ts`) — but the Telegram path itself is driven entirely
+by the platform's built-in `TelegramProvider`. You don't write an adapter; you **configure an
+account** that activates it, plus the workflow. One script does it all.
 
 ## What `setup.sh` creates
 

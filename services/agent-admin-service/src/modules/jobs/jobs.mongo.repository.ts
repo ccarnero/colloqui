@@ -1,9 +1,12 @@
-import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { Inject, Injectable } from "@nestjs/common";
+import type {
+  IStringIdDoc,
+  TenantMongoConnectionManager,
+} from "@yoizen/database";
 import type { Document, Filter, WithId } from "mongodb";
-import type { IStringIdDoc, TenantMongoConnectionManager } from "@yoizen/database";
-import { TenantScopedMongoRepository } from "../../providers/tenant-scoped.repository";
 import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
+import { TenantScopedMongoRepository } from "../../providers/tenant-scoped.repository";
 import type {
   ICreateJobData,
   IFindAllJobsOptions,
@@ -45,7 +48,10 @@ function docToJob(doc: WithId<IStringIdDoc>): IJob {
 }
 
 @Injectable()
-export class JobsMongoRepository extends TenantScopedMongoRepository implements IJobsRepository {
+export class JobsMongoRepository
+  extends TenantScopedMongoRepository
+  implements IJobsRepository
+{
   constructor(
     @Inject(YoizenclawTenantConnectionManager)
     connectionManager: TenantMongoConnectionManager,
@@ -55,14 +61,18 @@ export class JobsMongoRepository extends TenantScopedMongoRepository implements 
 
   async findAll(
     tenantId: string,
-    options: IFindAllJobsOptions = {},
+    options: IFindAllJobsOptions = {}
   ): Promise<{ jobs: IJob[]; total: number }> {
     const db = await this.getDb(tenantId);
     const col = db.collection<IStringIdDoc>("jobs");
     const { agent_id, is_active, limit = 20, offset = 0 } = options;
     const filter: Filter<IStringIdDoc> = {};
-    if (agent_id) filter.agent_id = agent_id;
-    if (is_active !== undefined) filter.is_active = is_active;
+    if (agent_id) {
+      filter.agent_id = agent_id;
+    }
+    if (is_active !== undefined) {
+      filter.is_active = is_active;
+    }
 
     const total = await col.countDocuments(filter);
     const docs = await col
@@ -103,30 +113,54 @@ export class JobsMongoRepository extends TenantScopedMongoRepository implements 
   async update(
     tenantId: string,
     id: string,
-    data: IUpdateJobData,
+    data: IUpdateJobData
   ): Promise<IJob | null> {
     const db = await this.getDb(tenantId);
     const setFields: Document = { updated_at: new Date() };
-    if (data.name !== undefined) setFields.name = data.name;
-    if (data.agent_id !== undefined) setFields.agent_id = data.agent_id;
+    if (data.name !== undefined) {
+      setFields.name = data.name;
+    }
+    if (data.agent_id !== undefined) {
+      setFields.agent_id = data.agent_id;
+    }
     if (data.schedule !== undefined) {
       setFields.schedule = data.schedule;
       setFields.next_run = calculateNextRun(data.schedule);
     }
-    if (data.payload !== undefined) setFields.payload = data.payload;
-    if (data.is_active !== undefined) setFields.is_active = data.is_active;
+    if (data.payload !== undefined) {
+      setFields.payload = data.payload;
+    }
+    if (data.is_active !== undefined) {
+      setFields.is_active = data.is_active;
+    }
 
-    const result = await db.collection<IStringIdDoc>("jobs").findOneAndUpdate(
-      { _id: id },
-      { $set: setFields },
-      { returnDocument: "after" },
-    );
+    const result = await db
+      .collection<IStringIdDoc>("jobs")
+      .findOneAndUpdate(
+        { _id: id },
+        { $set: setFields },
+        { returnDocument: "after" }
+      );
     return result ? docToJob(result) : null;
   }
 
+  /**
+   * Deletes a job along with all of its executions.
+   *
+   * Mongo has no FK constraint to violate, but leaving orphaned
+   * job_executions documents behind would be inconsistent with the
+   * Postgres backend (which cascade-deletes them in a transaction to avoid
+   * a foreign_key_violation). Executions are operational history with no
+   * meaning once their parent job is gone.
+   */
   async delete(tenantId: string, id: string): Promise<boolean> {
     const db = await this.getDb(tenantId);
-    const result = await db.collection<IStringIdDoc>("jobs").deleteOne({ _id: id });
+    await db
+      .collection<IStringIdDoc>("job_executions")
+      .deleteMany({ job_id: id });
+    const result = await db
+      .collection<IStringIdDoc>("jobs")
+      .deleteOne({ _id: id });
     return result.deletedCount > 0;
   }
 
@@ -141,7 +175,7 @@ export class JobsMongoRepository extends TenantScopedMongoRepository implements 
   async updateLastRun(
     tenantId: string,
     id: string,
-    schedule: string,
+    schedule: string
   ): Promise<IJob | null> {
     const db = await this.getDb(tenantId);
     const result = await db.collection<IStringIdDoc>("jobs").findOneAndUpdate(
@@ -153,7 +187,7 @@ export class JobsMongoRepository extends TenantScopedMongoRepository implements 
           updated_at: new Date(),
         },
       },
-      { returnDocument: "after" },
+      { returnDocument: "after" }
     );
     return result ? docToJob(result) : null;
   }
@@ -161,15 +195,16 @@ export class JobsMongoRepository extends TenantScopedMongoRepository implements 
   private async setActive(
     tenantId: string,
     id: string,
-    isActive: boolean,
+    isActive: boolean
   ): Promise<IJob | null> {
     const db = await this.getDb(tenantId);
-    const result = await db.collection<IStringIdDoc>("jobs").findOneAndUpdate(
-      { _id: id },
-      { $set: { is_active: isActive, updated_at: new Date() } },
-      { returnDocument: "after" },
-    );
+    const result = await db
+      .collection<IStringIdDoc>("jobs")
+      .findOneAndUpdate(
+        { _id: id },
+        { $set: { is_active: isActive, updated_at: new Date() } },
+        { returnDocument: "after" }
+      );
     return result ? docToJob(result) : null;
   }
-
 }

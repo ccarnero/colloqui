@@ -1,19 +1,24 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import type { Agent } from "../agents/agent.model";
+// biome-ignore-start lint/style/useImportType: constructor-injected by NestJS DI (no explicit @Inject token) — must be value imports so `design:paramtypes` metadata resolves the real class at runtime, not `type`.
 import { AgentManagerService } from "../agents/agent-manager.service";
-import { ContextBuilderService } from "./context-builder.service";
-import { SessionChatService } from "./session-chat.service";
-import { LlmExecutorService, type StreamTextResult } from "../llm/llm-executor.service";
-import { TemplateRendererService } from "../template-renderer/template-renderer.service";
-import { SkillRouterService } from "../skills/skill-router.service";
-import { SkillExecutorService } from "../skills/skill-executor.service";
-import { ToolBridgeService } from "../tools/tool-bridge.service";
-import { McpConnectionService } from "../tools/mcp-connection.service";
-import type { ToolExecutionContext } from "../tools/tool-definition";
+import {
+  LlmExecutorService,
+  type StreamTextResult,
+} from "../llm/llm-executor.service";
 import { parsePromptReferences } from "../prompt-references/prompt-references.parser";
 import type { SkillDefinition } from "../skills/skill-definition";
+import { SkillExecutorService } from "../skills/skill-executor.service";
 import { catalogSkillToSkillDefinition } from "../skills/skill-mapper";
-import type { Agent } from "../agents/agent.model";
+import { SkillRouterService } from "../skills/skill-router.service";
+import { TemplateRendererService } from "../template-renderer/template-renderer.service";
+import { McpConnectionService } from "../tools/mcp-connection.service";
+import { ToolBridgeService } from "../tools/tool-bridge.service";
+import type { ToolExecutionContext } from "../tools/tool-definition";
 import type { ChatRequest, ChatResponse, RuntimeState } from "./chat.dto";
+import { ContextBuilderService } from "./context-builder.service";
+import { SessionChatService } from "./session-chat.service";
+// biome-ignore-end lint/style/useImportType
 
 @Injectable()
 export class ChatService {
@@ -28,66 +33,73 @@ export class ChatService {
     private readonly skillRouter: SkillRouterService,
     private readonly skillExecutor: SkillExecutorService,
     private readonly toolBridge: ToolBridgeService,
-    private readonly mcpConnection: McpConnectionService,
+    private readonly mcpConnection: McpConnectionService
   ) {}
 
   async generateReply(
     tenantId: string,
-    request: ChatRequest,
+    request: ChatRequest
   ): Promise<ChatResponse> {
     this.logger.debug(
-      `generateReply: tenant=${tenantId} agent=${request.agentId} session=${request.sessionId ?? "none"}`,
+      `generateReply: tenant=${tenantId} agent=${request.agentId} session=${request.sessionId ?? "none"}`
     );
 
     const agent = await this.agentManager.getAgent(tenantId, request.agentId);
     if (!agent) {
       throw new NotFoundException(
-        `Agent '${request.agentId}' not found for tenant '${tenantId}'`,
+        `Agent '${request.agentId}' not found for tenant '${tenantId}'`
       );
     }
 
     const extra: Record<string, unknown> = {};
-    if (request.conversationId) extra.conversationId = request.conversationId;
-    if (request.chatId) extra.chatId = request.chatId;
-    if (request.userId) extra.userId = request.userId;
-    if (request.customerName) extra.customerName = request.customerName;
-    if (request.channel) extra.channel = request.channel;
-    if (request.variables) extra.variables = request.variables;
+    if (request.conversationId) {
+      extra.conversationId = request.conversationId;
+    }
+    if (request.chatId) {
+      extra.chatId = request.chatId;
+    }
+    if (request.userId) {
+      extra.userId = request.userId;
+    }
+    if (request.customerName) {
+      extra.customerName = request.customerName;
+    }
+    if (request.channel) {
+      extra.channel = request.channel;
+    }
+    if (request.variables) {
+      extra.variables = request.variables;
+    }
 
     let state = await this.contextBuilder.buildRuntimeState(
       tenantId,
       agent,
       request.message,
       request.context,
-      extra,
+      extra
     );
 
     state = await this.preparePrompt(agent, state);
 
     // Always use session-based chat for proper conversation context and prompt caching
     const sessionId = request.sessionId ?? `chat-${agent.id}-${Date.now()}`;
-    return this.sessionChat.generateReply(
-      tenantId,
-      sessionId,
-      agent,
-      state,
-    );
+    return this.sessionChat.generateReply(tenantId, sessionId, agent, state);
   }
 
   async generateStreamReply(
     tenantId: string,
-    request: ChatRequest,
+    request: ChatRequest
   ): Promise<ChatResponse> {
     const sessionId = request.sessionId ?? `stream-${Date.now()}`;
 
     this.logger.debug(
-      `generateStreamReply: tenant=${tenantId} agent=${request.agentId} session=${sessionId}`,
+      `generateStreamReply: tenant=${tenantId} agent=${request.agentId} session=${sessionId}`
     );
 
     const agent = await this.agentManager.getAgent(tenantId, request.agentId);
     if (!agent) {
       throw new NotFoundException(
-        `Agent '${request.agentId}' not found for tenant '${tenantId}'`,
+        `Agent '${request.agentId}' not found for tenant '${tenantId}'`
       );
     }
 
@@ -95,7 +107,7 @@ export class ChatService {
       tenantId,
       agent,
       request.message,
-      request.context,
+      request.context
     );
 
     state = await this.preparePrompt(agent, state);
@@ -104,22 +116,23 @@ export class ChatService {
       tenantId,
       sessionId,
       agent,
-      state,
+      state
     );
   }
 
   async generateStream(
     tenantId: string,
     request: ChatRequest,
+    options?: { executionId?: string; abortSignal?: AbortSignal }
   ): Promise<StreamTextResult & { agentId: string }> {
     this.logger.debug(
-      `generateStream: tenant=${tenantId} agent=${request.agentId}`,
+      `generateStream: tenant=${tenantId} agent=${request.agentId}`
     );
 
     const agent = await this.agentManager.getAgent(tenantId, request.agentId);
     if (!agent) {
       throw new NotFoundException(
-        `Agent '${request.agentId}' not found for tenant '${tenantId}'`,
+        `Agent '${request.agentId}' not found for tenant '${tenantId}'`
       );
     }
 
@@ -127,15 +140,17 @@ export class ChatService {
       tenantId,
       agent,
       request.message,
-      request.context,
+      request.context
     );
 
     state = await this.preparePrompt(agent, state);
 
     const modelConfig = agent.modelConfig ?? {};
     const llm = (modelConfig.llm as Record<string, unknown>) ?? {};
-    const provider = (modelConfig.provider as string) ?? (llm.provider as string) ?? "openai";
-    const model = (modelConfig.model as string) ?? (llm.model as string) ?? "gpt-4o";
+    const provider =
+      (modelConfig.provider as string) ?? (llm.provider as string) ?? "openai";
+    const model =
+      (modelConfig.model as string) ?? (llm.model as string) ?? "gpt-4o";
     const connectorId =
       (modelConfig.connectorId as string) ??
       (llm.connectorId as string) ??
@@ -143,7 +158,7 @@ export class ChatService {
 
     if (!modelConfig.provider || !modelConfig.model) {
       this.logger.warn(
-        `Agent '${agent.id}' has no modelConfig.provider/model — using defaults: ${provider}/${model}`,
+        `Agent '${agent.id}' has no modelConfig.provider/model — using defaults: ${provider}/${model}`
       );
     }
 
@@ -162,7 +177,7 @@ export class ChatService {
     const streamResult = await this.llmExecutor.streamTextRaw({
       tenantId,
       agentId: agent.id,
-      executionId: `stream-${Date.now()}`,
+      executionId: options?.executionId ?? `stream-${Date.now()}`,
       provider,
       model,
       messages,
@@ -172,6 +187,7 @@ export class ChatService {
       credentialMode: modelConfig.credentialMode as string | undefined,
       connectorId,
       knowledgeBaseIds: agent.knowledgeBaseIds,
+      abortSignal: options?.abortSignal,
     });
 
     return {
@@ -182,7 +198,7 @@ export class ChatService {
 
   private async preparePrompt(
     agent: Agent,
-    state: RuntimeState,
+    state: RuntimeState
   ): Promise<RuntimeState> {
     const warnings: string[] = [];
 
@@ -190,11 +206,12 @@ export class ChatService {
     const renderedPrompt = this.templateRenderer.renderPromptText(
       agent.systemPrompt,
       state.runtimeContext as Record<string, unknown>,
-      warnings,
+      warnings
     );
 
     // 2. Parse @skill: and @tool: references from prompt
-    const { cleanedText, skillReferences } = parsePromptReferences(renderedPrompt);
+    const { cleanedText, skillReferences } =
+      parsePromptReferences(renderedPrompt);
 
     // 3. Resolve skill
     let resolvedSkill: SkillDefinition | null = null;
@@ -280,11 +297,11 @@ export class ChatService {
           toolState,
           agent.enabledTools,
           agent.enabledMcpServers,
-          agent.toolDescriptionOverrides,
+          agent.toolDescriptionOverrides
         );
       } catch (error) {
         this.logger.warn(
-          `Failed to resolve tools for agent '${agent.id}': ${error}. Proceeding without tools.`,
+          `Failed to resolve tools for agent '${agent.id}': ${error}. Proceeding without tools.`
         );
       }
     }

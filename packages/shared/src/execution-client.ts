@@ -1,33 +1,41 @@
 import { randomUUID } from "node:crypto";
 import {
-  headers as natsHeaders,
   type JetStreamClient,
   type Msg,
   type NatsConnection,
+  headers as natsHeaders,
   type Subscription,
 } from "nats";
 import {
+  AI_AGENT_GATEWAY_PRODUCER,
+  buildPlatformSubject,
+  buildRuntimeStreamSubject,
   PENDING_KEY_PREFIX,
   PENDING_TTL,
-  RESULT_KEY_PREFIX,
-  RESULT_TTL,
-  AI_AGENT_GATEWAY_PRODUCER,
-  PLATFORM_DOMAIN,
   PLATFORM_CHANNEL,
-  PLATFORM_PROVIDER,
+  PLATFORM_DOMAIN,
   PLATFORM_EXECUTION_COMPLETED,
   PLATFORM_EXECUTION_FAILED,
   PLATFORM_EXECUTION_REQUESTED,
   PLATFORM_EXECUTION_STARTED,
-  buildPlatformSubject,
+  PLATFORM_PROVIDER,
+  RESULT_KEY_PREFIX,
+  RESULT_TTL,
+  RUNTIME_CANCEL,
+  RUNTIME_CANCEL_EVENT_TYPE,
 } from "./constants";
-import { buildEventEnvelope, canonicalJson, computeIdempotencyKey } from "./envelope.utils";
+import {
+  buildEventEnvelope,
+  canonicalJson,
+  computeIdempotencyKey,
+} from "./envelope.utils";
 import type {
   YoizenClawChatExecutionInput,
   YoizenClawExecutionRequest,
   YoizenClawExecutionStatus,
   YoizenClawExecutionSubmitted,
 } from "./execution.interfaces";
+import type { RuntimeCancelPayload } from "./runtime-stream.interfaces";
 
 const EXECUTION_RESULT_EVENT_SUBJECTS = [
   PLATFORM_EXECUTION_STARTED,
@@ -70,7 +78,7 @@ export class YoizenClawExecutionClient {
   async submitExecution(
     tenantId: string,
     input: YoizenClawChatExecutionInput,
-    submitOptions: SubmitExecutionOptions = {},
+    submitOptions: SubmitExecutionOptions = {}
   ): Promise<YoizenClawExecutionSubmitted> {
     const executionId = submitOptions.executionId ?? randomUUID();
     const requestedAt = new Date().toISOString();
@@ -102,17 +110,17 @@ export class YoizenClawExecutionClient {
     await this.options.cache.setex(
       buildPendingKey(tenantId, executionId),
       PENDING_TTL,
-      JSON.stringify({ executionId, status: "pending" }),
+      JSON.stringify({ executionId, status: "pending" })
     );
     await this.options.cache.setex(
       buildStatusKey(tenantId, executionId),
       RESULT_TTL,
-      JSON.stringify(pending),
+      JSON.stringify(pending)
     );
 
     const subject = buildPlatformSubject(
       PLATFORM_EXECUTION_REQUESTED,
-      tenantId,
+      tenantId
     );
 
     const envelope = buildEventEnvelope({
@@ -154,25 +162,32 @@ export class YoizenClawExecutionClient {
 
   async getExecutionResult(
     tenantId: string,
-    executionId: string,
+    executionId: string
   ): Promise<YoizenClawExecutionStatus | null> {
-    const raw = await this.options.cache.get(buildStatusKey(tenantId, executionId));
-    if (!raw) return null;
+    const raw = await this.options.cache.get(
+      buildStatusKey(tenantId, executionId)
+    );
+    if (!raw) {
+      return null;
+    }
     return JSON.parse(raw) as YoizenClawExecutionStatus;
   }
 
   async waitForExecutionResult(
     tenantId: string,
     executionId: string,
-    timeoutMs: number,
+    timeoutMs: number
   ): Promise<YoizenClawExecutionStatus> {
     const existing = await this.getExecutionResult(tenantId, executionId);
-    if (existing && (existing.state === "completed" || existing.state === "failed")) {
+    if (
+      existing &&
+      (existing.state === "completed" || existing.state === "failed")
+    ) {
       return existing;
     }
 
     const subjects = EXECUTION_RESULT_EVENT_SUBJECTS.map((template) =>
-      buildPlatformSubject(template, tenantId),
+      buildPlatformSubject(template, tenantId)
     );
 
     return new Promise<YoizenClawExecutionStatus>((resolve, reject) => {
@@ -185,28 +200,43 @@ export class YoizenClawExecutionClient {
       };
 
       const timeoutRef = setTimeout(async () => {
-        if (settled) return;
+        if (settled) {
+          return;
+        }
         settled = true;
         closeAll();
         const latest = await this.getExecutionResult(tenantId, executionId);
-        if (latest && (latest.state === "completed" || latest.state === "failed")) {
+        if (
+          latest &&
+          (latest.state === "completed" || latest.state === "failed")
+        ) {
           resolve(latest);
           return;
         }
-        reject(new Error(`Timeout waiting for YoizenClaw execution '${executionId}'`));
+        reject(
+          new Error(`Timeout waiting for YoizenClaw execution '${executionId}'`)
+        );
       }, timeoutMs);
 
       const onMessage = async (data: Uint8Array) => {
-        if (settled) return;
+        if (settled) {
+          return;
+        }
         try {
           const parsed = JSON.parse(new TextDecoder().decode(data)) as {
             data?: { payload?: YoizenClawExecutionStatus };
             executionId?: string;
             state?: string;
           };
-          const payload = parsed.data?.payload ?? (parsed as unknown as YoizenClawExecutionStatus);
-          if (!payload || payload.executionId !== executionId) return;
-          if (payload.state !== "completed" && payload.state !== "failed") return;
+          const payload =
+            parsed.data?.payload ??
+            (parsed as unknown as YoizenClawExecutionStatus);
+          if (!payload || payload.executionId !== executionId) {
+            return;
+          }
+          if (payload.state !== "completed" && payload.state !== "failed") {
+            return;
+          }
           settled = true;
           clearTimeout(timeoutRef);
           closeAll();
@@ -220,10 +250,12 @@ export class YoizenClawExecutionClient {
         subscriptions.push(
           this.options.nc.subscribe(subjects[i]!, {
             callback: (error: Error | null, message: Msg) => {
-              if (error || !message) return;
+              if (error || !message) {
+                return;
+              }
               void onMessage(message.data);
             },
-          }),
+          })
         );
       }
     });
@@ -233,20 +265,63 @@ export class YoizenClawExecutionClient {
     tenantId: string,
     input: YoizenClawChatExecutionInput,
     timeoutMs: number,
-    submitOptions: SubmitExecutionOptions = {},
+    submitOptions: SubmitExecutionOptions = {}
   ): Promise<YoizenClawExecutionStatus> {
-    const submitted = await this.submitExecution(tenantId, input, submitOptions);
-    return this.waitForExecutionResult(tenantId, submitted.executionId, timeoutMs);
+    const submitted = await this.submitExecution(
+      tenantId,
+      input,
+      submitOptions
+    );
+    return this.waitForExecutionResult(
+      tenantId,
+      submitted.executionId,
+      timeoutMs
+    );
   }
 
-  async persistExecutionStatus(status: YoizenClawExecutionStatus): Promise<void> {
+  /**
+   * Publishes the `cancel` control message for a streaming execution on the
+   * ephemeral `rt.<tenant>.exec.<executionId>.cancel` subject (core NATS —
+   * never persisted, never falls under the `evt.` JetStream namespace).
+   * Consumed by `agent-ai-service` to abort the in-flight `streamText` call
+   * (DOCS/architecture/runtime-streaming.md §2.2).
+   */
+  async publishCancel(tenantId: string, executionId: string): Promise<void> {
+    const subject = buildRuntimeStreamSubject(
+      tenantId,
+      executionId,
+      RUNTIME_CANCEL
+    );
+    const payload: RuntimeCancelPayload = { executionId };
+    const envelope = buildEventEnvelope({
+      type: RUNTIME_CANCEL_EVENT_TYPE,
+      source: this.options.serviceName,
+      resource: `execution/${executionId}`,
+      tenant: tenantId,
+      producer: this.options.serviceName,
+      domain: PLATFORM_DOMAIN,
+      channel: PLATFORM_CHANNEL,
+      provider: PLATFORM_PROVIDER,
+      accountid: AI_AGENT_GATEWAY_PRODUCER,
+      payload: payload as unknown as Record<string, unknown>,
+      correlationId: executionId,
+      transport: { method: "stream", protocol: "internal" },
+    });
+    this.options.nc.publish(subject, canonicalJson(envelope));
+  }
+
+  async persistExecutionStatus(
+    status: YoizenClawExecutionStatus
+  ): Promise<void> {
     await this.options.cache.setex(
       buildStatusKey(status.tenantId, status.executionId),
       RESULT_TTL,
-      JSON.stringify(status),
+      JSON.stringify(status)
     );
     if (status.state === "completed" || status.state === "failed") {
-      await this.options.cache.del(buildPendingKey(status.tenantId, status.executionId));
+      await this.options.cache.del(
+        buildPendingKey(status.tenantId, status.executionId)
+      );
     }
   }
 }

@@ -23,16 +23,26 @@ describe("k8sApiErrorMessage", () => {
 });
 
 describe("isK8sNotFound", () => {
-  it("returns true when response statusCode is 404", () => {
+  it("returns true for legacy response.statusCode 404", () => {
     expect(isK8sNotFound({ response: { statusCode: 404 } })).toBe(true);
+  });
+
+  it("returns true for ApiException-style code 404", () => {
+    expect(isK8sNotFound({ code: 404 })).toBe(true);
+  });
+
+  it("returns true for a bare statusCode 404", () => {
+    expect(isK8sNotFound({ statusCode: 404 })).toBe(true);
   });
 
   it("returns false for other status codes", () => {
     expect(isK8sNotFound({ response: { statusCode: 500 } })).toBe(false);
+    expect(isK8sNotFound({ code: 409 })).toBe(false);
   });
 
   it("returns false for non-object errors", () => {
     expect(isK8sNotFound("x")).toBe(false);
+    expect(isK8sNotFound(null)).toBe(false);
   });
 });
 

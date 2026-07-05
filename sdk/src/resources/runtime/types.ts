@@ -16,29 +16,112 @@
  *   `GET /runtime/executions/:id` returns a normalized envelope built by
  *   `ExecutionsService.getExecution` (NOT the raw `YoizenClawExecutionStatus`).
  *
- * STREAMING GAP (verified, see sdk/README.md "Resource clients" and the
- * agents/runtime write-up): two distinct streaming endpoints exist
- * downstream and NEITHER is proxied by the gateway:
+ * STREAMING (resolved 2026-07-05, see DOCS/architecture/runtime-streaming.md
+ * and platform/runtime-streaming-design engram decision #591): the gateway
+ * now proxies the combined submit+stream endpoint end-to-end —
+ * `services/api-gateway/src/modules/runtime/runtime.controller.ts`
+ * (`POST runtime/executions/stream`) → `runtime-proxy.service.ts`
+ * `proxyStream()` (hijack + `pipeUpstreamSseToReply` — 15s `:hb` heartbeat,
+ * abort-on-client-disconnect) → `ai-agent-gateway`'s
+ * `executions.controller.ts` `submitAndStream()` (`@Post("stream") @Sse()`)
+ * → `executions.service.ts` `submitAndStream()`, which race-free-subscribes
+ * to NATS token/tool/lifecycle subjects before submitting the execution and
+ * relays them as `MessageEvent { type, data }` over SSE, bounded by a
+ * 256-event/256KB relay buffer (overflow → `failed{reason:"slow_consumer"}`).
  *
- * 1. `ai-agent-gateway`'s `ExecutionsController` exposes `@Sse("stream")` at
- *    `GET runtime/executions/stream` (NATS-backed execution status events:
- *    started/completed/failed). The gateway's `RuntimeController` has no
- *    matching route, and `RuntimeProxyService.proxy()` only does a single
- *    `tracedFetch()` + `res.json()` — it has no SSE/`ReadableStream`
- *    handling and would break on an `event-stream` response body anyway.
- * 2. `agent-ai-service`'s `ExecutionController` exposes `POST
- *    execution/stream` (raw LLM token streaming via `text/event-stream`).
- *    This is a DIFFERENT service than the one `runtime/executions` proxies
- *    to (`ai-agent-gateway`, not `agent-ai-service`), and per GROWTH-PLAN.md
- *    invariant 5 the SDK must talk only to the gateway — so even if this
- *    were proxied, the SDK would go through the gateway's proxy, not this
- *    service directly.
+ * The wire event `type` values (verified in `executions.service.ts`,
+ * `emit()`/`closeWithFailure()`): `"started"`, `"token"`, `"tool_call"`,
+ * `"tool_result"`, `"completed"`, `"failed"`. `data` shapes:
  *
- * Since neither streaming route is proxied, this resource intentionally has
- * NO `stream()` method. Add the missing gateway proxy route (forwarding the
- * `ai-agent-gateway` SSE stream, since that is the one that shares the
- * `runtime/executions` base path) before adding a client method here.
+ * - `started`/`completed`: the lifecycle status payload — same shape as
+ *   {@link ExecutionStatus} (verified: `executions.service.ts` emits the raw
+ *   NATS `YoizenClawExecutionStatus`-derived payload, not the GET-normalized
+ *   one, but the fields overlap for `executionId`/`agentId`/`state`/`result`).
+ * - `failed`: `{ executionId: string; reason: string }` ONLY — verified in
+ *   `executions.service.ts` `closeWithFailure()`
+ *   (`subscriber.next({ type: "failed", data: { executionId, reason } })`).
+ *   NOTE this deliberately omits the separate `error` field the design doc's
+ *   §4.1 sketch showed; the real code never sets one. `reason` carries
+ *   values like `"slow_consumer"`, `"cancelled"`, or an upstream error
+ *   message forwarded as a string.
+ * - `token`: `RuntimeTokenPayload` from
+ *   `packages/shared/src/runtime-stream.interfaces.ts`
+ *   (`{ executionId, agentId, seq, delta, done }`).
+ * - `tool_call` / `tool_result`: `RuntimeToolCallPayload` /
+ *   `RuntimeToolResultPayload` from the same file. The original design's v1
+ *   scope note said "token-only", but `executions.service.ts`'s
+ *   `tokenKindBySuffix` map already relays all three kinds today, so the SDK
+ *   types them now (forward-compatible, no cost to include).
+ *
+ * There is NO `capabilities.streaming` flag anywhere in the platform
+ * (verified: `runtime-health.controller.ts` just proxies raw `/health`) —
+ * the design doc's §4.4 "preferred: capability probe" auto-fallback was
+ * never built. `stream()` below degrades via 404/405 detection on the
+ * stream route itself instead: `Transport.requestStream()` throws
+ * `SdkError` with `code: "streaming_unsupported"` when opening the
+ * connection 404s/405s, and callers who want automatic degradation catch
+ * that code and fall back to `createExecution()` + poll `getExecution()`
+ * themselves (see the doc comment on `stream()` in `./client.ts`).
  */
+
+/**
+ * Discriminated union of `runtime.stream()` events, typed from the verified
+ * wire shapes above (`packages/shared/src/runtime-stream.interfaces.ts` +
+ * `services/ai-agent-gateway/src/modules/executions/executions.service.ts`).
+ * `failed` is a normal (non-throwing) terminal event — see `./client.ts`.
+ */
+export type RuntimeStreamEvent =
+  | { type: "started"; data: ExecutionStatus }
+  | { type: "token"; data: RuntimeTokenEventPayload }
+  | { type: "tool_call"; data: RuntimeToolCallEventPayload }
+  | { type: "tool_result"; data: RuntimeToolResultEventPayload }
+  | { type: "completed"; data: ExecutionStatus }
+  | { type: "failed"; data: RuntimeStreamFailedPayload };
+
+/** `packages/shared/src/runtime-stream.interfaces.ts` `RuntimeTokenPayload`. */
+export interface RuntimeTokenEventPayload {
+  executionId: string;
+  agentId: string;
+  seq: number;
+  delta: string;
+  done: boolean;
+}
+
+/** `packages/shared/src/runtime-stream.interfaces.ts` `RuntimeToolCallPayload`. */
+export interface RuntimeToolCallEventPayload {
+  executionId: string;
+  agentId: string;
+  seq: number;
+  toolName: string;
+  args: Record<string, unknown>;
+}
+
+/** `packages/shared/src/runtime-stream.interfaces.ts` `RuntimeToolResultPayload`. */
+export interface RuntimeToolResultEventPayload {
+  executionId: string;
+  agentId: string;
+  seq: number;
+  toolName: string;
+  result: unknown;
+  isError: boolean;
+}
+
+/**
+ * Verified shape of `failed` events' `data` field
+ * (`executions.service.ts` `closeWithFailure()`) — NOT the design doc's
+ * `§4.1` sketch, which additionally showed an `error` field the real code
+ * never sets. `reason` is e.g. `"slow_consumer"`, `"cancelled"`, or a
+ * forwarded upstream error message.
+ */
+export interface RuntimeStreamFailedPayload {
+  executionId: string;
+  reason: string;
+}
+
+export interface RuntimeStreamOptions {
+  /** Aborts the stream at any point; the async iterator ends cleanly (no throw) on abort. */
+  signal?: AbortSignal;
+}
 
 export interface ExecutionContextEntry {
   sender: "customer" | "agent";

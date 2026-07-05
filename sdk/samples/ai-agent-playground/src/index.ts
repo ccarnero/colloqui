@@ -1,0 +1,148 @@
+/**
+ * ai-agent-playground sample driver — SDK-powered replacement for the
+ * execute+poll tail of the old curl+jq `setup.sh` (see sdk/GROWTH-PLAN.md
+ * P3.1).
+ *
+ * Prerequisite: run ./setup.sh once first to provision the published agent
+ * (and its LLM connector, in connector credential mode). This script never
+ * creates or modifies platform objects — it only:
+ *   1. Resolves the agent id by name via `client.agents.list()`.
+ *   2. Submits one runtime execution via `client.runtime.createExecution()`.
+ *   3. Polls `client.runtime.getExecution()` until `completed`/`failed` or
+ *      POLL_TIMEOUT_S elapses, then prints the result.
+ *
+ * All configuration comes from environment variables, matching the names
+ * `../lib/resolve-env.sh` exports and `.env.example` documents — this file
+ * is invoked by `run.sh` after that resolution has already happened.
+ */
+import { createClient } from "@yoizen/platform-sdk";
+import type { ExecutionResultPayload } from "@yoizen/platform-sdk/runtime";
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`missing required env var: ${name}`);
+  }
+  return value;
+}
+
+function sleep(seconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+}
+
+async function main(): Promise<void> {
+  const tenant = requireEnv("YOIZEN_TENANT");
+  const email = requireEnv("YOIZEN_EMAIL");
+  const password = requireEnv("YOIZEN_PASSWORD");
+  const baseUrl = requireEnv("YOIZEN_BASE_URL");
+  const hostHeader = process.env.YOIZEN_HOST_HEADER;
+
+  const agentName = process.env.AI_AGENT_NAME ?? "ai-sample-playground";
+  const agentMessage =
+    process.env.AI_AGENT_MESSAGE ??
+    "Reply with one short sentence confirming the Yoizen AI sample is working.";
+  const pollTimeoutS = Number(process.env.POLL_TIMEOUT_S ?? "90");
+
+  // The gateway's dev ingress routes by Host header (see
+  // ../lib/resolve-env.sh); the SDK's fetch-based transport needs it passed
+  // as a regular header since we're talking to a bare IP/localhost port.
+  const fetchWithHostHeader: typeof fetch = (input, init) => {
+    const headers = new Headers(init?.headers);
+    if (hostHeader) {
+      headers.set("Host", hostHeader);
+    }
+    return fetch(input, { ...init, headers });
+  };
+
+  const client = createClient({
+    tenant,
+    email,
+    password,
+    baseUrl,
+    fetch: hostHeader ? fetchWithHostHeader : undefined,
+  });
+
+  console.log(
+    `[run] 1/3 resolving agent '${agentName}' (run ./setup.sh first if this fails)...`
+  );
+  let agentId: string | undefined;
+  for await (const agent of client.agents.list({ pageSize: 100 })) {
+    if (agent.name === agentName && agent.is_active !== false) {
+      agentId = agent.id;
+      break;
+    }
+  }
+  if (!agentId) {
+    console.error(
+      `[run] agent '${agentName}' not found — run ./setup.sh first`
+    );
+    process.exit(1);
+  }
+  console.log(`[run]     agent found (id=${agentId})`);
+
+  console.log("[run] 2/3 creating runtime execution...");
+  const { executionId } = await client.runtime.createExecution({
+    agentId,
+    message: agentMessage,
+    conversationId: "ai-sample-playground",
+    channel: "sample",
+    customerName: "SDK Sample",
+    userId: "sdk-sample",
+    context: [],
+  });
+  console.log(`[run]     execution id=${executionId}`);
+
+  console.log("[run] 3/3 polling execution result...");
+  const deadline = Date.now() + pollTimeoutS * 1000;
+
+  while (true) {
+    const status = await client.runtime.getExecution(executionId);
+    const state = status.state;
+
+    if (state === "completed") {
+      const result = status.result as ExecutionResultPayload & {
+        text?: string;
+      };
+      console.log("[run]     completed");
+      console.log(
+        JSON.stringify(
+          {
+            executionId: status.executionId,
+            state,
+            agentId: status.agentId,
+            reply: result.reply ?? result.response ?? result.text ?? null,
+            usage: result.usage,
+            provider: result.provider,
+            model: result.model,
+            costUsd: result.costUsd,
+            toolCalls: result.toolCalls ?? [],
+          },
+          null,
+          2
+        )
+      );
+      return;
+    }
+
+    if (state === "failed") {
+      console.error("[run] execution failed");
+      console.error(JSON.stringify(status, null, 2));
+      process.exit(1);
+    }
+
+    if (Date.now() >= deadline) {
+      console.error(
+        `[run] timed out waiting for execution ${executionId}; last state=${state || "unknown"}`
+      );
+      console.error(JSON.stringify(status, null, 2));
+      process.exit(1);
+    }
+
+    await sleep(2);
+  }
+}
+
+main().catch((err) => {
+  console.error("[run] failed:", err instanceof Error ? err.message : err);
+  process.exit(1);
+});

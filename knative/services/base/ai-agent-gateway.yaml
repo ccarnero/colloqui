@@ -16,6 +16,13 @@ spec:
         autoscaling.knative.dev/min-scale: "1"
         autoscaling.knative.dev/max-scale: "3"
     spec:
+      # Long-lived SSE relay (runtime token streaming — the @Sse relay held
+      # open by ai-agent-gateway for POST /runtime/executions/stream,
+      # DOCS/architecture/runtime-streaming.md §6) needs a request timeout
+      # well beyond Knative's 300s default. Cluster
+      # max-revision-timeout-seconds must also be >= this value (ops/infra
+      # prerequisite, not set here).
+      timeoutSeconds: 3600
       containerConcurrency: 0
       containers:
         - name: user-container

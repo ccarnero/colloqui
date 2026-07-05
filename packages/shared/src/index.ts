@@ -139,11 +139,14 @@ export {
   type ICircuitBreakerRedis,
 } from "./circuit-breaker";
 export { CONNECTOR_CALL_USAGE_SCHEMA_SQL } from "./connector-call-usage-schema";
+export type { RuntimeStreamKind } from "./constants";
 export {
   ADAPTER_MANAGED_BY_REGISTRY,
   AI_AGENT_GATEWAY_PRODUCER,
   AI_AGENT_GATEWAY_SUBJECT_PREFIX,
   buildPlatformSubject,
+  buildRuntimeStreamSubject,
+  buildRuntimeStreamWildcard,
   CALLBACK_KEY_PREFIX,
   CALLBACK_TTL,
   CONNECTOR_RUNTIME_TASK_QUEUE,
@@ -189,6 +192,15 @@ export {
   RESULT_CACHE_MAX,
   RESULT_KEY_PREFIX,
   RESULT_TTL,
+  RUNTIME_CANCEL,
+  RUNTIME_CANCEL_EVENT_TYPE,
+  RUNTIME_STREAM_SUBJECT_PREFIX,
+  RUNTIME_TOKEN,
+  RUNTIME_TOKEN_EVENT_TYPE,
+  RUNTIME_TOOL_CALL,
+  RUNTIME_TOOL_CALL_EVENT_TYPE,
+  RUNTIME_TOOL_RESULT,
+  RUNTIME_TOOL_RESULT_EVENT_TYPE,
   SCHEDULER_SUBJECT_PREFIX,
   STREAM_MAX_AGE_NS,
   TENANT_HEADER,
@@ -344,6 +356,13 @@ export type {
   RateLimitTenantConfig,
 } from "./rate-limit.interfaces";
 export { REGISTRY_MONGO_SCHEMA } from "./registry-mongo-schema";
+export type {
+  RuntimeCancelPayload,
+  RuntimeStreamEventPayload,
+  RuntimeTokenPayload,
+  RuntimeToolCallPayload,
+  RuntimeToolResultPayload,
+} from "./runtime-stream.interfaces";
 export type { ParsedSchedule } from "./schedule.utils";
 export { parseSchedule } from "./schedule.utils";
 export {

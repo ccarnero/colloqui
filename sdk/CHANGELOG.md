@@ -98,6 +98,63 @@ live-probed (destructive to test safely), so the SDK's client-side backoff worka
 (`withKnativeConflictRetry` in `test/e2e/connectors-registry.e2e.ts`) is kept in place
 rather than removed.
 
+### Added (2026-07-05 — runtime token streaming, DOCS/architecture/runtime-streaming.md)
+
+SDK-side implementation of `client.runtime.stream()` (design doc §4). The platform side
+(api-gateway `proxyStream()`, ai-agent-gateway `submitAndStream()`, agent-ai-service mock
+provider gated by `RUNTIME_ALLOW_MOCK_PROVIDER=true`) is done in the working tree but **not
+yet deployed** — see the "Pending deploy" note below.
+
+- `Transport.requestStream()` (`src/core/transport.ts`) — sibling to `request()` for
+  `text/event-stream` responses. No retry (streams aren't safely retryable mid-flight),
+  returns the raw `ReadableStream<Uint8Array>` body, and reuses the same header-building /
+  `mapStatusToError` machinery as `request()`. `timeoutMs` applies ONLY to opening the
+  connection (time to first response) — the internal open-timer is cleared the instant
+  headers arrive, so it can never abort an in-progress token stream; a separately-forwarded
+  `signal` stays live for the full stream lifetime for caller-initiated cancellation.
+- `parseSseStream()` (new `src/core/sse.ts`) — incremental, protocol-only SSE parser:
+  `event:`/`data:` fields, multi-line `data:` joined with `\n`, `:`-prefixed comment/heartbeat
+  lines dropped silently (the platform sends `:hb` every 15s), both CRLF and LF terminators,
+  and correct handling of lines (including the terminating blank line) split across
+  `ReadableStream` chunk boundaries.
+- `RuntimeStreamEvent` discriminated union (`src/resources/runtime/types.ts`) —
+  `started | token | tool_call | tool_result | completed | failed`, typed from the verified
+  wire shapes in `packages/shared/src/runtime-stream.interfaces.ts` and
+  `ai-agent-gateway`'s `executions.service.ts`. `failed`'s payload is `{ executionId, reason }`
+  only — the design doc's `§4.1` sketch additionally showed an `error` field the real code
+  never sets.
+- `client.runtime.stream(input, { signal })` — async iterable over `RuntimeStreamEvent`.
+  `failed` is a normal, non-throwing terminal event (design §2.3/§4.3); only connection-level
+  failures throw. Aborting `signal` ends the iterator cleanly (no throw) at any point.
+- **`streaming_unsupported` degradation** (deliberate deviation from design doc `§4.4`): the
+  platform has no `capabilities.streaming` flag to probe in advance (verified —
+  `runtime-health.controller.ts` just proxies raw `/health`), so `stream()` degrades via
+  404/405 detection on the stream route itself, throwing `SdkError` with
+  `code: "streaming_unsupported"` instead of silently falling back to polling. Callers that
+  want automatic degradation catch this code and fall back to `createExecution()` + poll
+  `getExecution()` themselves — see the doc comment on `RuntimeClient.stream()` and the
+  "Runtime streaming" section of README.md for the 3-line pattern.
+- Unit tests: `test/core/sse.test.ts` (9 tests — framing, heartbeats, CRLF/LF, chunk-boundary
+  splits including the terminating blank line, dangling partial events), 5 new
+  `requestStream()` tests in `test/core/transport.test.ts`, and 6 new tests in
+  `test/resources/runtime/stream.test.ts` (event ordering, `failed` ends iteration without
+  throwing, heartbeat filtering, abort-mid-stream, `streaming_unsupported` on 404). Unit suite
+  grew from 283 to 303, all green, all offline.
+- E2E: `test/e2e/runtime-stream.e2e.ts` (`SDK_E2E=1`) — provisions an agent with
+  `model_config.llm.provider: "mock"`, streams a prompt, and asserts `started → token* →
+  completed` ordering and that concatenated token deltas echo the prompt; a second run aborts
+  mid-stream and asserts clean client-side termination. **Probes the route first** and skips
+  its assertions gracefully (diagnostic-logged, not a failure) when the stream route isn't
+  live yet. Confirmed 2026-07-05: the dev cluster's `ai-agent-gateway`/`api-gateway` pods
+  don't yet run this code, so the probe correctly hit `streaming_unsupported` and skipped —
+  e2e suite total went from 57/57 to 58/58 (the new file's single top-level test passing via
+  its graceful early-return, not a hard skip).
+
+**Pending deploy**: this SDK code cannot be exercised against real token streams until the
+already-implemented platform side (api-gateway, ai-agent-gateway, agent-ai-service changes
+described in engram decision #591 / `platform/runtime-streaming-design`) is committed and
+deployed to the dev cluster.
+
 **Still open, unaddressed by this batch**: `runtime.stream()` (two downstream SSE
 endpoints, neither proxied — blocked on the ai-agent-gateway architecture, an explicit
 prior decision, not implemented here) and the `audit` chain-endpoint / missing-`total`

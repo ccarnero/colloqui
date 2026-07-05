@@ -2,7 +2,7 @@ import "../setup-env";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
 /**
- * Real-Postgres regression coverage for two live-cluster bugs:
+ * Real-Postgres regression coverage for live-cluster bugs:
  *
  *  BUG 1 — SkillsService.update() built its dynamic SET clause by pushing
  *  postgres.js tagged-template fragments into a plain string[] and joining
@@ -23,6 +23,15 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
  *  sql.json(value) (the same helper skills.service.ts and
  *  jobs.postgres.repository.ts already use for jsonb columns) so postgres.js
  *  serializes the value exactly once, for both create and update.
+ *
+ *  BUG 3 — JobsPostgresRepository.delete() ran a bare
+ *  `DELETE FROM jobs WHERE id = ...`. job_executions.job_id references
+ *  jobs(id) with no ON DELETE clause (default NO ACTION), so deleting a job
+ *  that has at least one execution raised a raw foreign_key_violation
+ *  (23503) that bubbled up as an unhandled 500. The fix wraps the delete in
+ *  a transaction (sql.begin) that removes the job's job_executions rows
+ *  first and then the job row, mirroring the fragment-composition style
+ *  already used elsewhere in this file.
  *
  * These bugs are invisible to the queue-based bun:test mocks used elsewhere
  * in this service (they never execute real SQL), so this suite talks to an
@@ -300,6 +309,123 @@ describe.skipIf(!TEST_POSTGRES_URL)(
         );
         expect(persisted!.value).toBe("changed");
       });
+    });
+  }
+);
+
+// ---------------------------------------------------------------------
+// BUG 3 — JobsPostgresRepository.delete() cascading job_executions
+// ---------------------------------------------------------------------
+describe.skipIf(!TEST_POSTGRES_URL)(
+  "JobsPostgresRepository.delete — cascade against real Postgres",
+  () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let sql: any;
+    let JobsPostgresRepository: typeof import("../../src/modules/jobs/jobs.postgres.repository").JobsPostgresRepository;
+    let repository: InstanceType<typeof JobsPostgresRepository>;
+
+    const TENANT = "job-delete-cascade-tenant";
+
+    beforeAll(async () => {
+      const postgres = (await import("postgres")).default;
+      sql = postgres(TEST_POSTGRES_URL as string);
+
+      await sql`
+        CREATE TABLE IF NOT EXISTS jobs (
+          id UUID PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          agent_id UUID NOT NULL,
+          schedule VARCHAR(255) NOT NULL,
+          payload JSONB DEFAULT '{}'::jsonb,
+          is_active BOOLEAN DEFAULT true,
+          last_run TIMESTAMPTZ,
+          next_run TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS job_executions (
+          id UUID PRIMARY KEY,
+          job_id UUID NOT NULL REFERENCES jobs(id),
+          status VARCHAR(20) NOT NULL,
+          event_payload JSONB DEFAULT '{}'::jsonb,
+          result JSONB,
+          logs TEXT[] DEFAULT '{}',
+          error_message TEXT,
+          retry_count INTEGER DEFAULT 0,
+          triggered_by VARCHAR(20),
+          started_at TIMESTAMPTZ,
+          finished_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`DELETE FROM job_executions`;
+      await sql`DELETE FROM jobs`;
+
+      ({ JobsPostgresRepository } = await import(
+        "../../src/modules/jobs/jobs.postgres.repository"
+      ));
+
+      const connectionManager = {
+        ensureSchema: async () => sql,
+        getConnection: () => sql,
+      };
+
+      repository = new JobsPostgresRepository(connectionManager as never);
+    });
+
+    afterAll(async () => {
+      await sql`DELETE FROM job_executions`;
+      await sql`DELETE FROM jobs`;
+      await sql.end();
+    });
+
+    it("deletes a job that has executions without raising a foreign_key_violation", async () => {
+      const job = await repository.create(TENANT, {
+        name: "job-with-executions",
+        agent_id: "11111111-1111-1111-1111-111111111111",
+        schedule: "interval:60",
+      });
+
+      await sql`
+        INSERT INTO job_executions (id, job_id, status)
+        VALUES
+          (gen_random_uuid(), ${job.id}, 'completed'),
+          (gen_random_uuid(), ${job.id}, 'failed')
+      `;
+
+      const deleted = await repository.delete(TENANT, job.id);
+      expect(deleted).toBe(true);
+
+      const [{ count: jobCount }] = await sql<{ count: string }[]>`
+        SELECT COUNT(*) AS count FROM jobs WHERE id = ${job.id}
+      `;
+      expect(Number(jobCount)).toBe(0);
+
+      const [{ count: execCount }] = await sql<{ count: string }[]>`
+        SELECT COUNT(*) AS count FROM job_executions WHERE job_id = ${job.id}
+      `;
+      expect(Number(execCount)).toBe(0);
+    });
+
+    it("still deletes a job that has no executions", async () => {
+      const job = await repository.create(TENANT, {
+        name: "job-without-executions",
+        agent_id: "11111111-1111-1111-1111-111111111111",
+        schedule: "interval:60",
+      });
+
+      const deleted = await repository.delete(TENANT, job.id);
+      expect(deleted).toBe(true);
+    });
+
+    it("returns false for a non-existent job", async () => {
+      const deleted = await repository.delete(
+        TENANT,
+        "00000000-0000-0000-0000-000000000000"
+      );
+      expect(deleted).toBe(false);
     });
   }
 );

@@ -1,9 +1,9 @@
-import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { Inject, Injectable } from "@nestjs/common";
+import type { Sql, TenantConnectionManager } from "@yoizen/database";
 import type { JsonValue } from "@yoizen/shared";
-import type { TenantConnectionManager } from "@yoizen/database";
-import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
 import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
+import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
 import type {
   ICreateJobData,
   IFindAllJobsOptions,
@@ -14,7 +14,10 @@ import type {
 import { calculateNextRun } from "./schedule.utils";
 
 @Injectable()
-export class JobsPostgresRepository extends TenantScopedPostgresRepository implements IJobsRepository {
+export class JobsPostgresRepository
+  extends TenantScopedPostgresRepository
+  implements IJobsRepository
+{
   constructor(
     @Inject(YoizenclawTenantConnectionManager)
     connectionManager: TenantConnectionManager,
@@ -27,7 +30,7 @@ export class JobsPostgresRepository extends TenantScopedPostgresRepository imple
    */
   async findAll(
     tenantId: string,
-    options: IFindAllJobsOptions = {},
+    options: IFindAllJobsOptions = {}
   ): Promise<{ jobs: IJob[]; total: number }> {
     const sql = await this.getSql(tenantId);
     const { agent_id, is_active, limit = 20, offset = 0 } = options;
@@ -164,7 +167,7 @@ export class JobsPostgresRepository extends TenantScopedPostgresRepository imple
   async update(
     tenantId: string,
     id: string,
-    data: IUpdateJobData,
+    data: IUpdateJobData
   ): Promise<IJob | null> {
     const sql = await this.getSql(tenantId);
 
@@ -212,18 +215,34 @@ export class JobsPostgresRepository extends TenantScopedPostgresRepository imple
   }
 
   /**
-   * Deletes a job.
+   * Deletes a job and all of its executions in a single transaction.
+   *
+   * job_executions.job_id references jobs(id) with no ON DELETE clause
+   * (default NO ACTION), so a bare DELETE FROM jobs would raise a
+   * foreign_key_violation (23503) whenever the job has recorded executions.
+   * Executions are operational history with no meaning once their parent
+   * job is gone, so they are cascade-deleted here rather than blocking the
+   * delete with a 409.
    */
   async delete(tenantId: string, id: string): Promise<boolean> {
     const sql = await this.getSql(tenantId);
 
-    const results = await sql<{ id: string }[]>`
-      DELETE FROM jobs
-      WHERE id = ${id}
-      RETURNING id
-    `;
+    return sql.begin(async (_tx) => {
+      const tx = _tx as unknown as Sql;
 
-    return results.length > 0;
+      await tx`
+        DELETE FROM job_executions
+        WHERE job_id = ${id}
+      `;
+
+      const results = await tx<{ id: string }[]>`
+        DELETE FROM jobs
+        WHERE id = ${id}
+        RETURNING id
+      `;
+
+      return results.length > 0;
+    });
   }
 
   /**
@@ -288,7 +307,7 @@ export class JobsPostgresRepository extends TenantScopedPostgresRepository imple
   async updateLastRun(
     tenantId: string,
     id: string,
-    schedule: string,
+    schedule: string
   ): Promise<IJob | null> {
     const sql = await this.getSql(tenantId);
     const nextRun = calculateNextRun(schedule);
@@ -315,5 +334,4 @@ export class JobsPostgresRepository extends TenantScopedPostgresRepository imple
 
     return results[0] ?? null;
   }
-
 }

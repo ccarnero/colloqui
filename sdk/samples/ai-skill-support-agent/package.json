@@ -1,0 +1,20 @@
+{
+  "name": "ai-skill-support-agent-sample",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ai-skill-support-agent sample provisioning + driver — SDK-powered via @yoizen/platform-sdk.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "run": "tsx src/index.ts",
+    "setup": "tsx src/setup.ts"
+  },
+  "dependencies": {
+    "@yoizen/platform-sdk": "file:../.."
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.23.0",
+    "typescript": "^5.7.2"
+  }
+}

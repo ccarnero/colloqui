@@ -20,6 +20,19 @@ Bootstrap writes a `/etc/hosts` managed block so the stable hostname resolves im
 127.0.0.1 admin-console.platform-services-dev.dev.local
 ```
 
+### Seed the tenant (required after every fresh bring-up)
+
+Bootstrap does **not** seed data. A cluster reset wipes the database PVCs, so the
+`acme` tenant and admin user must be re-created before running any e2e suite:
+
+```bash
+./port-forward.sh        # separate terminal (exposes the gateway on localhost:8080)
+./setup-tenant.sh        # idempotent: creates tenant 'acme' + admin yclawd@demo.io
+```
+
+Alternatively, `scripts/orbstack/startup.sh` chains the full path in one command:
+bootstrap → readiness gate → tenant seed → HTTP workflow e2e.
+
 ### Access
 
 ```
@@ -61,6 +74,21 @@ Knative Service and plain worker Deployment must be Ready. It does **not** run
 the workflow/browser e2e suites. Use `scripts/e2e-http-workflow.sh` for the
 HTTP workflow smoke path, and the Playwright specs under `e2e/` for browser
 flows.
+
+### Verify a fresh cluster (recommended order)
+
+```bash
+./scripts/smoke-test.sh                          # 1. all 25 workloads Ready
+E2E_API_URL=http://localhost:8080 \
+  ./scripts/e2e-http-workflow.sh                 # 2. HTTP → workflow → jsFunction chain
+cd sdk && SDK_E2E=1 npm run test:e2e             # 3. full API contract (57 assertions via @yoizen/platform-sdk)
+```
+
+Steps 2–3 require the tenant seed (above) and the port-forward on `localhost:8080`.
+The SDK e2e suite is gated behind `SDK_E2E=1` (plain `npm test` stays offline-safe)
+and runs serially by design — the gateway rate-limits per tenant. Environment
+overrides (`YOIZEN_BASE_URL`, `YOIZEN_TENANT`, credentials) are documented in
+[sdk/test/e2e/README.md](sdk/test/e2e/README.md).
 
 ### Optional: MongoDB storage engine
 

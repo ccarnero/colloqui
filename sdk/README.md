@@ -68,6 +68,111 @@ import { createWorkflowsClient } from "@yoizen/platform-sdk/workflows";
 import { paginate } from "@yoizen/platform-sdk/core";
 ```
 
+## Common recipes
+
+### 1. Create a client
+
+```ts
+import { createClient } from "@yoizen/platform-sdk";
+
+const client = createClient({
+  tenant: "acme",
+  email: "ops@acme.com",
+  password: "•••",
+  // baseUrl defaults to the dev-cluster gateway; override for anything else
+});
+```
+
+### 2. Push a message into a channel (trigger a workflow)
+
+```ts
+import { ChannelResolutionError, IngestError } from "@yoizen/platform-sdk";
+
+try {
+  const result = await client.webhooks.ingest({
+    tenant: "acme",
+    channel: "http", // or "whatsapp", "telegram", "instagram", ...
+    instance: "my-http-instance", // optional: pins to one channel account
+    headers: { "x-http-channel-token": appSecret }, // provider-specific auth, if any
+    body: { from: "customer@example.com", text: "hello" },
+  });
+  // result.status === "accepted" — the message was published; any workflow
+  // trigger listening on this channel fires asynchronously from here.
+} catch (err) {
+  if (err instanceof ChannelResolutionError) {
+    // no active account for this channel/instance — provision one first
+  } else if (err instanceof IngestError) {
+    // platform accepted the request but rejected the payload — see err.ingestStatus
+  } else {
+    throw err;
+  }
+}
+```
+
+### 3. Run an agent directly and wait for the reply
+
+```ts
+const { executionId } = await client.runtime.createExecution({
+  agentId: "agent-123",
+  message: "What's my order status?",
+  conversationId: "conv-1",
+  channel: "sample",
+});
+
+let status;
+do {
+  await new Promise((r) => setTimeout(r, 2000));
+  status = await client.runtime.getExecution(executionId);
+} while (status.state !== "completed" && status.state !== "failed");
+
+console.log(status.result.reply);
+```
+
+### 4. Monitor an execution live (streaming, no polling)
+
+```ts
+for await (const event of client.runtime.stream({
+  agentId: "agent-123",
+  message: "hello",
+})) {
+  if (event.type === "token") process.stdout.write(event.data.delta);
+  if (event.type === "completed" || event.type === "failed") break;
+}
+```
+
+### 5. Execute a workflow directly and monitor it
+
+```ts
+// idempotencyKey matters here: workflows.execute is a POST, and POSTs are NOT
+// retried by default (see "Retry & backoff" below). Without it, a retried or
+// duplicated call risks starting the same workflow twice. With it, a repeat
+// call is a safe no-op — check `alreadyStarted` to tell the two apart.
+const { executionId, alreadyStarted } = await client.workflows.execute(
+  workflowId,
+  { request: { text: "hello" } }, // becomes ctx.request in the workflow's actions
+  { idempotencyKey: "my-own-unique-id-for-this-request" }
+);
+
+let status;
+do {
+  await new Promise((r) => setTimeout(r, 2000));
+  status = await client.workflows.getExecution(workflowId, executionId);
+} while (status.status !== "completed" && status.status !== "failed");
+
+console.log(status.result ?? status.failure);
+```
+
+These three "run" paths are independent of each other:
+
+- **Channel message** (`webhooks.ingest`) — fire-and-forget; fires whatever workflow trigger
+  listens on that channel.
+- **Workflow, direct** (`workflows.execute` + `workflows.getExecution`) — skip the channel,
+  run one workflow definition by id, poll its own execution status.
+- **Agent, direct** (`runtime.createExecution`/`stream`) — skip workflows, run one agent turn.
+
+All three can throw a typed `SdkError` subclass — see "Error taxonomy" below before assuming a
+`catch` block only needs to handle the specific errors shown above.
+
 ## Configuration
 
 All options for `createClient(config)`, verified against `src/infrastructure/config.ts` and
@@ -134,8 +239,41 @@ source but 404/mis-route on the dev cluster's running pod — see `types.ts`.
 - `createExecution` — start an agent runtime execution (202 Accepted)
 - `getExecution` — fetch execution status/result
 - `health` — public health check
+- `stream` — combined submit+stream: `POST runtime/executions/stream`, yields
+  `started` → (`token` | `tool_call` | `tool_result`)* → (`completed` | `failed`)
+  as an async iterable (see "Runtime streaming" below)
 
-Gap: no `stream()` — two downstream SSE endpoints exist and the gateway proxies neither.
+#### Runtime streaming
+
+```ts
+for await (const event of client.runtime.stream({ agentId, message: "hi" })) {
+  if (event.type === "token") process.stdout.write(event.data.delta);
+  if (event.type === "completed" || event.type === "failed") break; // also the natural end
+}
+```
+
+`failed` is a normal terminal event, not a thrown error — the iterator just ends after
+yielding it. Pass `{ signal }` (an `AbortSignal`) to cancel a stream at any point; the
+iterator ends cleanly (no throw) on abort.
+
+There is no server-side `capabilities.streaming` flag to probe in advance, so `stream()`
+degrades via 404/405 detection on the stream route itself: if the platform (or an older
+gateway) doesn't support streaming, `stream()` throws `SdkError` with
+`code: "streaming_unsupported"`. Callers that want automatic degradation should catch it and
+fall back to `createExecution()` + poll `getExecution()`:
+
+```ts
+try {
+  for await (const event of client.runtime.stream(input)) { /* ... */ }
+} catch (err) {
+  if (err instanceof SdkError && err.code === "streaming_unsupported") {
+    const { executionId } = await client.runtime.createExecution(input);
+    // poll client.runtime.getExecution(executionId) until a terminal state
+  } else {
+    throw err;
+  }
+}
+```
 
 ### channels — [`src/resources/channels/types.ts`](./src/resources/channels/types.ts)
 
@@ -356,7 +494,11 @@ documents the affected surface rather than encoding broken behavior. Each resour
 `types.ts` carries the verified evidence (exact controllers/files read side by side); see also
 GROWTH-PLAN.md Phase 2 acceptance notes.
 
-1. **runtime** — two downstream SSE streaming endpoints exist; the gateway proxies neither → no `stream()`. Blocked on the ai-agent-gateway architecture; open by design, not a gap to fix.
+1. **runtime.stream()** — implemented SDK-side (2026-07-05); the platform side (api-gateway
+   `proxyStream()`, ai-agent-gateway `submitAndStream()`, agent-ai-service mock provider) is
+   done in the working tree but **not yet deployed**. `test/e2e/runtime-stream.e2e.ts` probes
+   the live route and gracefully skips its streaming assertions (`streaming_unsupported`)
+   until that lands — this is expected today, not a bug.
 2. **audit** — chain endpoints (`/audit/events/chain/:correlationId`) not proxied; list envelopes carry no `total`. Still open, not addressed by the 2026-07-05 hardening pass.
 3. **channels.usageSummary()** — `GET channels/usage/summary` is correctly routed by the
    gateway, but `channel-service`'s usage-summary SQL references a nonexistent `events`

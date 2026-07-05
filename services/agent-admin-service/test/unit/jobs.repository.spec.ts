@@ -1,14 +1,23 @@
-import { describe, it, expect, beforeEach, vi } from "bun:test";
-import { Test, TestingModule } from "@nestjs/testing";
+import { beforeEach, describe, expect, it, vi } from "bun:test";
+import { Test, type TestingModule } from "@nestjs/testing";
 import { JobsMongoRepository } from "../../src/modules/jobs/jobs.mongo.repository";
 import { YoizenclawTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
 import { createMockDb, createMockTenantManager } from "../mongo-mock";
 
 describe("JobsMongoRepository", () => {
   let repository: JobsMongoRepository;
+  let jobsCollection: { deleteOne: ReturnType<typeof vi.fn> };
+  let jobExecutionsCollection: { deleteMany: ReturnType<typeof vi.fn> };
   const TENANT_ID = "tenant-123";
 
   beforeEach(async () => {
+    jobsCollection = {
+      deleteOne: vi.fn(async () => ({ deletedCount: 1 })),
+    };
+    jobExecutionsCollection = {
+      deleteMany: vi.fn(async () => ({ deletedCount: 2 })),
+    };
+
     const db = createMockDb({
       jobs: {
         countDocuments: vi.fn(async () => 1),
@@ -37,7 +46,10 @@ describe("JobsMongoRepository", () => {
         findOne: vi.fn(async () => null),
         insertOne: vi.fn(async () => ({ acknowledged: true })),
         findOneAndUpdate: vi.fn(async () => null),
-        deleteOne: vi.fn(async () => ({ deletedCount: 1 })),
+        ...jobsCollection,
+      },
+      job_executions: {
+        ...jobExecutionsCollection,
       },
     });
 
@@ -67,5 +79,35 @@ describe("JobsMongoRepository", () => {
       schedule: "interval:30",
     });
     expect(job.name).toBe("job");
+  });
+
+  describe("delete", () => {
+    it("cascades: deletes job executions before deleting the job", async () => {
+      const result = await repository.delete(TENANT_ID, "job-1");
+
+      expect(result).toBe(true);
+      expect(jobExecutionsCollection.deleteMany).toHaveBeenCalledWith({
+        job_id: "job-1",
+      });
+      expect(jobsCollection.deleteOne).toHaveBeenCalledWith({ _id: "job-1" });
+    });
+
+    it("still succeeds when the job has no executions", async () => {
+      jobExecutionsCollection.deleteMany.mockResolvedValueOnce({
+        deletedCount: 0,
+      });
+
+      const result = await repository.delete(TENANT_ID, "job-1");
+
+      expect(result).toBe(true);
+    });
+
+    it("returns false for a non-existent job", async () => {
+      jobsCollection.deleteOne.mockResolvedValueOnce({ deletedCount: 0 });
+
+      const result = await repository.delete(TENANT_ID, "non-existent");
+
+      expect(result).toBe(false);
+    });
   });
 });

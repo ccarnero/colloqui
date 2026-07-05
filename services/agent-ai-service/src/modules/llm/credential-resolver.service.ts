@@ -13,7 +13,11 @@ export interface CredentialResolutionParams {
   readonly provider: string;
   readonly model: string;
   readonly credentialId?: string;
-  readonly credentialMode?: "profile" | "runtime-default" | "none" | "connector";
+  readonly credentialMode?:
+    | "profile"
+    | "runtime-default"
+    | "none"
+    | "connector";
   readonly connectorId?: string;
 }
 
@@ -52,14 +56,16 @@ export class CredentialResolverService {
    * 2. Environment variables (runtime-default mode)
    * 3. Connector-admin HTTP API (connector mode) — stub
    */
-  async resolve(params: CredentialResolutionParams): Promise<ResolvedCredentials> {
+  async resolve(
+    params: CredentialResolutionParams
+  ): Promise<ResolvedCredentials> {
     const { provider, model } = params;
     const normalizedProvider = provider.toLowerCase();
     const mode = params.credentialMode ?? this.inferMode(params);
 
     this.logger.debug(
       `Resolving credentials for provider=${normalizedProvider}, mode=${mode}, ` +
-        `tenantId=${params.tenantId}, agentId=${params.agentId}`,
+        `tenantId=${params.tenantId}, agentId=${params.agentId}`
     );
 
     let apiKey: string | undefined;
@@ -67,7 +73,10 @@ export class CredentialResolverService {
 
     switch (mode) {
       case "profile":
-        ({ apiKey, baseUrl } = this.resolveFromProfile(normalizedProvider, params.credentialId));
+        ({ apiKey, baseUrl } = this.resolveFromProfile(
+          normalizedProvider,
+          params.credentialId
+        ));
         break;
 
       case "connector":
@@ -84,10 +93,14 @@ export class CredentialResolverService {
         break;
     }
 
-    if (!apiKey && normalizedProvider !== "ollama") {
+    if (
+      !apiKey &&
+      normalizedProvider !== "ollama" &&
+      normalizedProvider !== "mock"
+    ) {
       this.logger.warn(
         `No API key resolved for provider='${normalizedProvider}'. ` +
-          `LLM calls will likely fail.`,
+          `LLM calls will likely fail.`
       );
     }
 
@@ -100,8 +113,12 @@ export class CredentialResolverService {
   }
 
   private inferMode(params: CredentialResolutionParams): string {
-    if (params.connectorId) return "connector";
-    if (params.credentialId) return "profile";
+    if (params.connectorId) {
+      return "connector";
+    }
+    if (params.credentialId) {
+      return "profile";
+    }
     return "runtime-default";
   }
 
@@ -111,17 +128,21 @@ export class CredentialResolverService {
    */
   private resolveFromProfile(
     provider: string,
-    credentialId?: string,
+    credentialId?: string
   ): { apiKey?: string; baseUrl?: string } {
     if (!credentialId) {
-      this.logger.warn("Profile mode requested but no credentialId provided, falling back to env");
+      this.logger.warn(
+        "Profile mode requested but no credentialId provided, falling back to env"
+      );
       return this.resolveFromEnv(provider);
     }
 
     const segment = this.toEnvSegment(credentialId);
     const apiKey = this.readEnv(`LLM_CREDENTIAL_${segment}_API_KEY`);
 
-    const providerDefaultKey = this.readEnv(`LLM_CREDENTIAL_${this.toEnvSegment(provider)}_DEFAULT_API_KEY`);
+    const providerDefaultKey = this.readEnv(
+      `LLM_CREDENTIAL_${this.toEnvSegment(provider)}_DEFAULT_API_KEY`
+    );
 
     const baseUrl = this.readEnv(`LLM_CREDENTIAL_${segment}_BASE_URL`);
 
@@ -131,7 +152,10 @@ export class CredentialResolverService {
   /**
    * Strategy 2: Runtime-default — read from standard env vars.
    */
-  private resolveFromEnv(provider: string): { apiKey?: string; baseUrl?: string } {
+  private resolveFromEnv(provider: string): {
+    apiKey?: string;
+    baseUrl?: string;
+  } {
     const apiKeyCandidates = API_KEY_ENV_BY_PROVIDER[provider] ?? [];
     const apiKey = this.readFirstEnv(...apiKeyCandidates);
 
@@ -145,13 +169,13 @@ export class CredentialResolverService {
    * Strategy 3: Connector mode — fetch from connector-admin HTTP API.
    */
   private async resolveFromConnector(
-    params: CredentialResolutionParams,
+    params: CredentialResolutionParams
   ): Promise<{ apiKey?: string; baseUrl?: string }> {
     const { tenantId, connectorId, provider, model } = params;
 
     if (!connectorId) {
       this.logger.warn(
-        `[CredentialResolver] connector mode requested but no connectorId provided, falling back to env`,
+        `[CredentialResolver] connector mode requested but no connectorId provided, falling back to env`
       );
       return this.resolveFromEnv(provider.toLowerCase());
     }
@@ -163,12 +187,12 @@ export class CredentialResolverService {
         `${connectorAdminUrl}/connectors/${connectorId}`,
         {
           headers: { "x-yoizen-tenant": tenantId },
-        },
+        }
       );
 
       if (!response.ok) {
         this.logger.warn(
-          `[CredentialResolver] Failed to fetch connector ${connectorId}: ${response.status}, falling back to env`,
+          `[CredentialResolver] Failed to fetch connector ${connectorId}: ${response.status}, falling back to env`
         );
         return this.resolveFromEnv(provider.toLowerCase());
       }
@@ -200,24 +224,24 @@ export class CredentialResolverService {
           break;
         default:
           this.logger.warn(
-            `[CredentialResolver] Unknown auth type '${authType}' for connector ${connectorId}`,
+            `[CredentialResolver] Unknown auth type '${authType}' for connector ${connectorId}`
           );
       }
 
       if (!apiKey) {
         this.logger.warn(
-          `[CredentialResolver] No API key found in connector ${connectorId} (authType: ${authType}), falling back to env`,
+          `[CredentialResolver] No API key found in connector ${connectorId} (authType: ${authType}), falling back to env`
         );
         return this.resolveFromEnv(provider.toLowerCase());
       }
 
       this.logger.log(
-        `[CredentialResolver] Resolved credentials from connector ${connectorId} for provider=${provider} model=${model}`,
+        `[CredentialResolver] Resolved credentials from connector ${connectorId} for provider=${provider} model=${model}`
       );
       return { apiKey, baseUrl };
     } catch (err) {
       this.logger.warn(
-        `[CredentialResolver] Error fetching connector ${connectorId}: ${(err as Error).message}, falling back to env`,
+        `[CredentialResolver] Error fetching connector ${connectorId}: ${(err as Error).message}, falling back to env`
       );
       return this.resolveFromEnv(provider.toLowerCase());
     }
@@ -225,21 +249,23 @@ export class CredentialResolverService {
 
   private readEnv(key: string): string | undefined {
     const value = process.env[key];
-    if (value && value.trim()) return value.trim();
+    if (value && value.trim()) {
+      return value.trim();
+    }
     return undefined;
   }
 
   private readFirstEnv(...keys: readonly string[]): string | undefined {
     for (const key of keys) {
       const value = this.readEnv(key);
-      if (value) return value;
+      if (value) {
+        return value;
+      }
     }
     return undefined;
   }
 
   private toEnvSegment(value: string): string {
-    return value
-      .replace(/[^a-zA-Z0-9]/g, "_")
-      .toUpperCase();
+    return value.replace(/[^a-zA-Z0-9]/g, "_").toUpperCase();
   }
 }

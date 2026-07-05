@@ -39,17 +39,16 @@ La frase `CONDOR-KB-READY` es la prueba objetiva de que la respuesta salió de l
 
 ## Cómo funciona por dentro
 
-`run.sh` carga `../lib/resolve-env.sh` y ejecuta `setup.sh`, que corre ocho etapas:
+`run.sh` carga `../lib/resolve-env.sh` y ejecuta `src/index.ts` (vía `npx tsx`), que a su vez corre el mismo pipeline de `src/setup.ts` — provisioning con `@yoizen/platform-sdk`, no bash/curl/jq. El pipeline tiene siete etapas (el login ya no es una etapa explícita: `createClient()` lo maneja de forma transparente en la primera request):
 
 ```
-0/7 preflight   → valida jq/curl, el archivo del documento, el modo de credenciales
-1/7 login       → POST /api/auth/login → token Bearer
-2/7 connector   → connector con tag "llm" (credenciales para el agente y la ingesta)
-3/7 kb          → POST /api/admin/knowledge-bases (chunking + modelo de embeddings)
-4/7 documento   → POST .../documents/upload (o reingest si ya existe)
-5/7 espera      → polling del documento hasta status "ready" (o "failed")
-6/7 agente      → upsert + publish del agente con knowledge_base_ids
-7/7 ejecución   → POST /api/runtime/executions + polling del resultado
+0/6 preflight   → valida el archivo del documento, el modo de credenciales
+1/6 connector   → connector con tag "llm" (credenciales para el agente y la ingesta)
+2/6 kb          → POST /api/admin/knowledge-bases (chunking + modelo de embeddings)
+3/6 documento   → POST .../documents/upload (o reingest si ya existe)
+4/6 espera      → polling del documento hasta status "ready" (o "failed")
+5/6 agente      → upsert + publish del agente con knowledge_base_ids
+6/6 ejecución   → POST /api/runtime/executions + polling del resultado
 ```
 
 Detalles relevantes:
@@ -74,7 +73,7 @@ No. Son recursos administrativos independientes bajo `/api/admin/knowledge-bases
 
 ## Cómo ejecutarlo y qué esperar
 
-Prerrequisitos: `jq`, `curl`, acceso al gateway de desarrollo y `OPENAI_API_KEY` (u otra key si cambia el proveedor del agente — pero vea la advertencia sobre embeddings más abajo).
+Prerrequisitos: Node >=18, acceso al gateway de desarrollo y `OPENAI_API_KEY` (u otra key si cambia el proveedor del agente — pero vea la advertencia sobre embeddings más abajo).
 
 ```bash
 cd sdk/samples/ai-knowledge-base-agent
@@ -86,14 +85,14 @@ cp .env.example .env
 Salida esperada (resumida):
 
 ```
-[STEP]  3/7 ensure knowledge base 'ai-sample-support-kb'
+[STEP]  2/6 ensure knowledge base 'ai-sample-support-kb'
 [INFO]  created knowledge base id=...
-[STEP]  4/7 upload/reingest document 'support-faq.md'
+[STEP]  3/6 upload/reingest document 'support-faq.md'
 [INFO]  uploaded document id=...
-[STEP]  5/7 wait for document ingestion
+[STEP]  4/6 wait for document ingestion
 [INFO]  document ready chunks=2
-[STEP]  6/7 upsert + publish KB-backed agent 'ai-sample-kb-agent'
-[STEP]  7/7 execute KB-backed question
+[STEP]  5/6 upsert + publish KB-backed agent 'ai-sample-kb-agent'
+[STEP]  6/6 execute KB-backed question
 [INFO]  completed
 { "reply": "... within 14 days ... CONDOR-KB-READY ...", "provider": "openai", "model": "gpt-4o-mini", ... }
 ```

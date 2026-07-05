@@ -114,13 +114,12 @@ cp .env.example .env   # set OPENAI_API_KEY; optionally pin TELEGRAM_CHAT_ID
 rebuilds them:
 
 ```
-0/7 preflight                 jq/curl/provider-key checks
-1/7 login
-2/7 ensure hosted CRM         POST/PATCH /api/registry/services + wait for Knative Ready
+0/7 preflight                 provider-key checks
+2/7 ensure hosted CRM         client.registry.services create/update + wait for Knative Ready
 3/7 ensure LLM connector      reuses 'sample-openai-llm' if ai-agent-playground already made it
 4/7 ensure + publish agent    'ai-sample-supervisor' (temperature 0.1, strict-JSON prompt)
 5/7 resolve telegram + chat   auto-discovers the supervisor chat_id; ensures the HTTP instance
-6/7 ensure workflow           assembled with jq -n, serviceId resolved to the registry UUID
+6/7 ensure workflow           assembled via client.workflows, serviceId resolved to the registry UUID
 7/7 summary                   prints the ingest URL + channel token
 ```
 

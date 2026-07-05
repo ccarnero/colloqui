@@ -1,8 +1,24 @@
-import { Injectable, Logger } from "@nestjs/common";
-import type { LanguageModel } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
+import { Injectable, Logger } from "@nestjs/common";
+import type { LanguageModel } from "ai";
+import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+
+// The precise `LanguageModelV3StreamPart` / prompt union types live in the
+// internal `@ai-sdk/provider` package, which is not a direct dependency of
+// this service (only a transitive one via "ai") and is not re-exported from
+// the top-level "ai" package either. Rather than add a fragile direct
+// dependency on an internal transitive package purely for type annotations,
+// the mock provider's stream chunks/prompt are typed loosely here; the
+// runtime shape is exercised end-to-end by this service's provider-registry
+// unit tests.
+type MockStreamPart = Record<string, unknown> & { type: string };
+type MockPromptMessage = {
+  role: string;
+  content: string | ReadonlyArray<{ type: string; text?: string }>;
+};
+type MockPrompt = ReadonlyArray<MockPromptMessage>;
 
 export interface ProviderConfig {
   readonly apiKey: string;
@@ -44,6 +60,13 @@ const SUPPORTED_PROVIDERS = [
 
 export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
+/**
+ * Env flag gating the dev-only `mock` (echo) provider. Must be truthy
+ * ("true") to resolve — never set in production. See
+ * DOCS/architecture/runtime-streaming.md §5.2.
+ */
+export const RUNTIME_ALLOW_MOCK_PROVIDER_ENV = "RUNTIME_ALLOW_MOCK_PROVIDER";
+
 @Injectable()
 export class ProviderRegistryService {
   private readonly logger = new Logger(ProviderRegistryService.name);
@@ -52,16 +75,20 @@ export class ProviderRegistryService {
     provider: string,
     model: string,
     apiKey: string,
-    baseUrl?: string,
+    baseUrl?: string
   ): LanguageModel {
     const normalizedProvider = provider.toLowerCase();
+
+    if (normalizedProvider === "mock") {
+      return this.createMockModel(model);
+    }
 
     if (OPENAI_COMPATIBLE_PROVIDERS.has(normalizedProvider)) {
       return this.createOpenAICompatibleModel(
         normalizedProvider,
         model,
         apiKey,
-        baseUrl,
+        baseUrl
       );
     }
 
@@ -72,11 +99,107 @@ export class ProviderRegistryService {
     return [...SUPPORTED_PROVIDERS];
   }
 
+  /**
+   * Dev-only echo provider — no credentials, no network calls. Streams the
+   * incoming prompt back word-by-word as `text-delta` chunks. Exists purely
+   * to exercise the full token-streaming path (agent-ai-service → NATS →
+   * ai-agent-gateway → api-gateway → SDK) in dev/CI without real LLM
+   * credentials (DOCS/architecture/runtime-streaming.md §5.2).
+   *
+   * Gated by `RUNTIME_ALLOW_MOCK_PROVIDER=true` — throws otherwise so it can
+   * never silently resolve in an environment where it wasn't explicitly
+   * opted into (e.g. production).
+   */
+  private createMockModel(model: string): LanguageModel {
+    if (process.env[RUNTIME_ALLOW_MOCK_PROVIDER_ENV] !== "true") {
+      throw new Error(
+        `The 'mock' LLM provider is disabled. Set ${RUNTIME_ALLOW_MOCK_PROVIDER_ENV}=true ` +
+          `to enable it (dev/CI only — never in production).`
+      );
+    }
+
+    const buildStream = (prompt: MockPrompt) => {
+      const promptText = this.extractPromptText(prompt);
+      const words =
+        promptText.length > 0 ? promptText.split(/(\s+)/) : ["(empty prompt)"];
+
+      const textId = crypto.randomUUID();
+      const inputTokenCount = promptText.split(/\s+/).filter(Boolean).length;
+      const outputTokenCount = words.filter((w) => w.trim().length > 0).length;
+
+      const chunks: MockStreamPart[] = [
+        { type: "stream-start", warnings: [] },
+        { type: "text-start", id: textId },
+        ...words.map(
+          (word): MockStreamPart => ({
+            type: "text-delta",
+            id: textId,
+            delta: word,
+          })
+        ),
+        { type: "text-end", id: textId },
+        {
+          type: "finish",
+          finishReason: "stop",
+          usage: {
+            inputTokens: {
+              total: inputTokenCount,
+              noCache: inputTokenCount,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: {
+              total: outputTokenCount,
+              text: outputTokenCount,
+              reasoning: 0,
+            },
+          },
+        },
+      ];
+
+      return simulateReadableStream({ chunks, chunkDelayInMs: 10 });
+    };
+
+    // Cast at the boundary: `MockLanguageModelV3`'s real constructor type
+    // requires the internal `LanguageModelV3StreamPart` union (see the file
+    // header comment) which isn't safely importable here without a fragile
+    // direct dependency on an internal transitive package. The runtime shape
+    // built above matches it exactly and is covered by unit tests.
+    return new MockLanguageModelV3({
+      provider: "mock",
+      modelId: model,
+      doStream: (async (options: { prompt: MockPrompt }) => ({
+        stream: buildStream(options.prompt),
+      })) as unknown as ConstructorParameters<
+        typeof MockLanguageModelV3
+      >[0] extends infer Opts
+        ? Opts extends { doStream?: infer D }
+          ? D
+          : never
+        : never,
+    }) as unknown as LanguageModel;
+  }
+
+  private extractPromptText(prompt: MockPrompt): string {
+    const lastUser = [...prompt].reverse().find((m) => m.role === "user");
+    const message = lastUser ?? prompt[prompt.length - 1];
+    if (!message) {
+      return "";
+    }
+    if (typeof message.content === "string") {
+      return message.content;
+    }
+    return message.content
+      .filter((part) => part.type === "text" && typeof part.text === "string")
+      .map((part) => part.text as string)
+      .join(" ");
+  }
+
   private createNativeModel(
     provider: string,
     model: string,
     apiKey: string,
-    baseUrl?: string,
+    baseUrl?: string
   ): LanguageModel {
     switch (provider) {
       case "openai": {
@@ -109,7 +232,7 @@ export class ProviderRegistryService {
       default:
         throw new Error(
           `Unsupported LLM provider: '${provider}'. ` +
-            `Supported: ${SUPPORTED_PROVIDERS.join(", ")}`,
+            `Supported: ${SUPPORTED_PROVIDERS.join(", ")}`
         );
     }
   }
@@ -118,7 +241,7 @@ export class ProviderRegistryService {
     provider: string,
     model: string,
     apiKey: string,
-    baseUrl?: string,
+    baseUrl?: string
   ): LanguageModel {
     const resolvedBase =
       baseUrl ?? OPENAI_COMPATIBLE_BASE_URLS[provider] ?? undefined;
@@ -129,7 +252,7 @@ export class ProviderRegistryService {
     });
 
     this.logger.debug(
-      `Creating ${provider} model '${model}' with baseURL: ${resolvedBase ?? "default"}`,
+      `Creating ${provider} model '${model}' with baseURL: ${resolvedBase ?? "default"}`
     );
 
     // AI SDK v6 defaults to the Responses API (path: /responses).
@@ -141,7 +264,7 @@ export class ProviderRegistryService {
   private createGroqModel(
     model: string,
     apiKey: string,
-    baseUrl?: string,
+    baseUrl?: string
   ): LanguageModel {
     const groq = createOpenAI({
       apiKey,
@@ -153,7 +276,7 @@ export class ProviderRegistryService {
   private createMistralModel(
     model: string,
     apiKey: string,
-    baseUrl?: string,
+    baseUrl?: string
   ): LanguageModel {
     const mistral = createOpenAI({
       apiKey,
@@ -162,10 +285,7 @@ export class ProviderRegistryService {
     return mistral.chat(model);
   }
 
-  private createCohereModel(
-    model: string,
-    apiKey: string,
-  ): LanguageModel {
+  private createCohereModel(model: string, apiKey: string): LanguageModel {
     const cohere = createOpenAI({
       apiKey,
       baseURL: "https://api.cohere.com/v2",

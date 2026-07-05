@@ -267,6 +267,156 @@ test("does not retry a POST by default, even on a 503", async () => {
   assert.equal(attempts, 1);
 });
 
+test("requestStream() POSTs with Accept: text/event-stream and injects tenant/request-id/auth headers", async () => {
+  let captured: any;
+  const fakeBody = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.close();
+    },
+  });
+  const fetchImpl = async (url: string, opts: any) => {
+    captured = { url, opts };
+    return {
+      status: 200,
+      ok: true,
+      async text() {
+        return "";
+      },
+      body: fakeBody,
+    };
+  };
+  const { session, calls } = fakeSession("tok-1");
+  const transport = createTransport({
+    fetchImpl,
+    baseUrl: "http://x",
+    tenant: "acme",
+    apiVersion: "v1",
+    session,
+  });
+
+  const res = await transport.requestStream({
+    path: "/runtime/executions/stream",
+    method: "POST",
+    body: { agentId: "a1" },
+  });
+
+  assert.equal(captured.url, "http://x/api/v1/runtime/executions/stream");
+  assert.equal(captured.opts.headers.Accept, "text/event-stream");
+  assert.equal(captured.opts.headers["x-yoizen-tenant"], "acme");
+  assert.equal(typeof captured.opts.headers["x-request-id"], "string");
+  assert.equal(captured.opts.headers.Authorization, "Bearer tok-1");
+  assert.equal(captured.opts.headers["Content-Type"], "application/json");
+  assert.equal(captured.opts.body, JSON.stringify({ agentId: "a1" }));
+  assert.equal(calls.ensureToken, 1);
+  assert.equal(res.status, 200);
+  assert.equal(res.body, fakeBody);
+});
+
+test("requestStream() throws SdkError(streaming_unsupported) on 404", async () => {
+  const fetchImpl = async () =>
+    fakeResponse({ status: 404, body: { error: "no route" } });
+  const transport = createTransport({
+    fetchImpl,
+    baseUrl: "http://x",
+    tenant: "acme",
+  });
+
+  await assert.rejects(
+    () =>
+      transport.requestStream({
+        path: "/runtime/executions/stream",
+        method: "POST",
+        auth: false,
+      }),
+    (err: unknown) =>
+      err instanceof SdkError && err.code === "streaming_unsupported"
+  );
+});
+
+test("requestStream() throws SdkError(streaming_unsupported) on 405", async () => {
+  const fetchImpl = async () => fakeResponse({ status: 405, body: {} });
+  const transport = createTransport({
+    fetchImpl,
+    baseUrl: "http://x",
+    tenant: "acme",
+  });
+
+  await assert.rejects(
+    () =>
+      transport.requestStream({
+        path: "/runtime/executions/stream",
+        method: "POST",
+        auth: false,
+      }),
+    (err: unknown) =>
+      err instanceof SdkError && err.code === "streaming_unsupported"
+  );
+});
+
+test("requestStream() maps a non-404/405 non-2xx status via the shared error taxonomy", async () => {
+  const fetchImpl = async () => fakeResponse({ status: 401, body: {} });
+  const transport = createTransport({
+    fetchImpl,
+    baseUrl: "http://x",
+    tenant: "acme",
+  });
+
+  await assert.rejects(
+    () =>
+      transport.requestStream({
+        path: "/runtime/executions/stream",
+        method: "POST",
+        auth: false,
+      }),
+    AuthError
+  );
+});
+
+test("requestStream()'s open timeout does not abort an already-open stream", async () => {
+  let sawAbortDuringRead = false;
+  const fetchImpl = async (_url: string, opts: any) => {
+    // Simulate headers arriving well within timeoutMs.
+    return {
+      status: 200,
+      ok: true,
+      async text() {
+        return "";
+      },
+      body: new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          // Wait past the connection-open timeoutMs, then check that the
+          // signal used to open the connection was NOT aborted by the timer.
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          if (opts.signal.aborted) {
+            sawAbortDuringRead = true;
+          }
+          controller.close();
+        },
+      }),
+    };
+  };
+  const transport = createTransport({
+    fetchImpl,
+    baseUrl: "http://x",
+    tenant: "acme",
+  });
+
+  const res = await transport.requestStream({
+    path: "/runtime/executions/stream",
+    method: "POST",
+    auth: false,
+    timeoutMs: 5,
+  });
+  const reader = res.body!.getReader();
+  await reader.read();
+
+  assert.equal(
+    sawAbortDuringRead,
+    false,
+    "the connection-open timeout must not fire once headers have arrived"
+  );
+});
+
 test("retries a POST when an idempotencyKey is passed", async () => {
   let attempts = 0;
   const fetchImpl = async () => {
