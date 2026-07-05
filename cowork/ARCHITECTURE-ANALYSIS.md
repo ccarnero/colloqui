@@ -96,7 +96,7 @@ Grouped by responsibility:
 | `@yoizen/database` | DB + messaging helpers: `ensureTenantIngressStream`, `ensureTenantDlqStream`, claim-check store, migrations. |
 | `@yoizen/observability` | `PinoLoggerService`, OpenTelemetry setup, NATS spans, split-service bootstrap (`SERVICE_MODE` lets one image run as API or Worker). |
 | `@yoizen/angular-shared` | Shared Angular building blocks for `admin-console`. |
-| `@yoizen/http-sdk` | Plain-Node ESM ingest SDK at repo-root `sdk/` (not a workspace member). The former TS `@yoizen/sdk` package was removed. |
+| `@yoizen/platform-sdk` | Plain-Node ESM ingest SDK at repo-root `sdk/` (not a workspace member). The former TS `@yoizen/sdk` package was removed. |
 | `@yoizen/testing` | Test utilities (auth/tenant services). |
 
 The **`EventEnvelope`** is CloudEvents-inspired and is the heart of the system: `specversion, id, source, type, resource, time, traceid, causation_id, correlation_id, tenant, producer, domain, channel, provider, accountid, idempotencykey, transport, data` (plus optional pipeline-extension fields `callback_url`, `adapter_id`, `enrich_adapter`, `forward_adapter`, confirmed in `interfaces.ts`). When payloads are large, `data` goes "slim" (claim-check) — `payload_inline: false` + a `payload_ref` pointing at the NATS object store. **Correction (source check):** the real `EventData` fields are `received_at, payload_inline, payload_ref, payload_bytes, payload_checksum, payload` (the overview doc's "checksum" is actually `payload_checksum`).

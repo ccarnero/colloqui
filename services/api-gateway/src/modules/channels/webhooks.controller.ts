@@ -18,11 +18,13 @@ import { SkipTenant } from "../../decorators/skip-tenant.decorator";
 import { WebhookVerificationQueryDto } from "./webhooks-gateway.dto";
 import { WebhookIngressPublisherService } from "./webhook-ingress-publisher.service";
 import { WebhookVerifyRpcClient } from "./webhook-verify-rpc.client";
+import { ApiTags } from "@nestjs/swagger";
 
 /**
  * Webhook endpoints are public (no JWT, no tenant guard).
  * Tenant is resolved from the URL path parameter.
  */
+@ApiTags("webhooks")
 @Controller("webhooks")
 export class WebhooksController {
   constructor(

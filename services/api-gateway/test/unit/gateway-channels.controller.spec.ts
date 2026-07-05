@@ -1,10 +1,10 @@
 import "reflect-metadata";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { of } from "rxjs";
+import { ChannelStreamService } from "../../src/modules/channels/channel-stream.service";
 import { ChannelsController } from "../../src/modules/channels/channels.controller";
 import { ChannelsProxyService } from "../../src/modules/channels/channels-proxy.service";
-import { ChannelStreamService } from "../../src/modules/channels/channel-stream.service";
 
 describe("ChannelsController", () => {
   let controller: ChannelsController;
@@ -14,7 +14,7 @@ describe("ChannelsController", () => {
   beforeEach(async () => {
     proxy = mock(() => Promise.resolve({ ok: true }));
     const streamChannelEvents = mock(() =>
-      of({ data: JSON.stringify({ type: "ping" }) }),
+      of({ data: JSON.stringify({ type: "ping" }) })
     );
     streamSvc = { streamChannelEvents };
     const moduleRef = await Test.createTestingModule({
@@ -27,7 +27,9 @@ describe("ChannelsController", () => {
     controller = moduleRef.get(ChannelsController);
   });
 
-  const req = { tenantId: "tenant-1" } as import("../../src/types/yoizen-request").ITenantScopedRequest;
+  const req = {
+    tenantId: "tenant-1",
+  } as import("../../src/types/yoizen-request").ITenantScopedRequest;
 
   it("createAccount forwards POST /channels/accounts", async () => {
     const body = { channel: "email" } as never;
@@ -69,6 +71,15 @@ describe("ChannelsController", () => {
         channel: "whatsapp",
         bucket: "hour",
       }),
+    });
+  });
+
+  it("usageSummary forwards GET /channels/usage/summary", async () => {
+    await controller.usageSummary(req);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/channels/usage/summary",
+      tenantId: "tenant-1",
     });
   });
 

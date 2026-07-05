@@ -102,7 +102,7 @@ In `get`, the L1 backfill calls `setL1(key, value, 0)`, and `get` treats `expiry
 - **Route cache of `api-gateway`** (`modules/dynamic-routes/dynamic-route-cache.service.ts`): route table refreshed from `registry-service` every ~15s.
 - **In-memory copy of public-routes** in the gateway (with its TTL, fallback to stale if Redis fails).
 - **`ensuredStreams` maps** in the `nats.provider.ts` files (to avoid re-asserting streams on every publish).
-- **Token + `appSecret`** cached in the `@yoizen/http-sdk` SDK.
+- **Token + `appSecret`** cached in the `@yoizen/platform-sdk` SDK.
 
 ---
 

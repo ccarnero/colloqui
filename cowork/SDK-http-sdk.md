@@ -1,4 +1,4 @@
-# `@yoizen/http-sdk` — Documentation
+# `@yoizen/platform-sdk` — Documentation
 
 > Plain-Node ESM SDK for **sending (ingesting) messages into the platform** via the http channel.
 > Location: repo-root `sdk/` (a standalone module — **not** a pnpm workspace member; imported by path / `file:` link).
@@ -71,7 +71,7 @@ sdk/src/
 ## 4. Public API
 
 ```js
-import { createClient, IngestError } from "@yoizen/http-sdk";
+import { createClient, IngestError } from "@yoizen/platform-sdk";
 
 const client = createClient({ tenant: "acme", email: "ops@acme.com", password: "•••" });
 

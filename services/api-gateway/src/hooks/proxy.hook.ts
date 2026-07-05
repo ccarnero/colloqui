@@ -1,19 +1,19 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { IYoizenRequest } from "../types/yoizen-request";
-import type { DynamicRouteCacheService } from "../modules/dynamic-routes/dynamic-route-cache.service";
-import type { JwtService } from "../modules/auth/jwt.service";
-import type { RateLimitService } from "../modules/rate-limit/rate-limit.service";
-import { PROXY_TIMEOUT_MS } from "../constants";
-import { resolveTenantIdFromHttpRequest } from "../utils/tenant-resolution.util";
-import { copyForwardableHeaders } from "../utils/copy-forwardable-headers";
-import { pipeUpstreamResponseToReply } from "../utils/pipe-upstream-to-reply.util";
 import {
-  tracedFetch,
-  trace,
   context,
   SpanKind,
   SpanStatusCode,
+  trace,
+  tracedFetch,
 } from "@yoizen/observability";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { PROXY_TIMEOUT_MS } from "../constants";
+import type { JwtService } from "../modules/auth/jwt.service";
+import type { DynamicRouteCacheService } from "../modules/dynamic-routes/dynamic-route-cache.service";
+import type { RateLimitService } from "../modules/rate-limit/rate-limit.service";
+import type { IYoizenRequest } from "../types/yoizen-request";
+import { copyForwardableHeaders } from "../utils/copy-forwardable-headers";
+import { pipeUpstreamResponseToReply } from "../utils/pipe-upstream-to-reply.util";
+import { resolveTenantIdFromHttpRequest } from "../utils/tenant-resolution.util";
 
 interface ILoggerLike {
   error(message: string): void;
@@ -47,10 +47,33 @@ interface IDynamicRouteHookContext {
   logger: ILoggerLike;
 }
 
+const VERSION_SEGMENT = "v1/";
+
+/**
+ * Strips a leading URI-version segment so `/api/v1/workflows` and
+ * `/v1/health` match the same prefixes as their unversioned form. Mirrors
+ * where Nest's `VersioningType.URI` inserts the segment: right after the
+ * global prefix for routes under it (`/api/v1/...`), or at the very start
+ * for routes excluded from the global prefix, like health checks
+ * (`/v1/health`) — see `enableVersioning` in `main.ts`.
+ */
+function stripVersionSegment(path: string): string {
+  if (path.startsWith(`/api/${VERSION_SEGMENT}`)) {
+    return `/api/${path.slice(`/api/${VERSION_SEGMENT}`.length)}`;
+  }
+  if (path.startsWith(`/${VERSION_SEGMENT}`)) {
+    return `/${path.slice(`/${VERSION_SEGMENT}`.length)}`;
+  }
+  return path;
+}
+
 /** True when the path is handled by the API gateway (not dynamic tenant routes). */
 export function isPlatformRoutePath(path: string): boolean {
+  const normalized = stripVersionSegment(path);
   for (let i = 0; i < PLATFORM_PREFIXES.length; i++) {
-    if (path.startsWith(PLATFORM_PREFIXES[i])) return true;
+    if (normalized.startsWith(PLATFORM_PREFIXES[i])) {
+      return true;
+    }
   }
   return false;
 }
@@ -76,10 +99,12 @@ interface IApplyTenantRateLimitOptions {
  * rejected (429). When tenantId is null, does nothing and returns true.
  */
 async function applyTenantRateLimit(
-  opts: IApplyTenantRateLimitOptions,
+  opts: IApplyTenantRateLimitOptions
 ): Promise<boolean> {
   const { tenantId, rateLimitService, req, reply } = opts;
-  if (!tenantId) return true;
+  if (!tenantId) {
+    return true;
+  }
 
   const rl = await rateLimitService.consume(tenantId);
   reply.header("X-RateLimit-Limit", rl.limit);
@@ -114,11 +139,13 @@ interface IVerifyBearerForPrivateRouteOptions {
  * was already sent (401/403).
  */
 export async function verifyBearerForPrivateRoute(
-  opts: IVerifyBearerForPrivateRouteOptions,
+  opts: IVerifyBearerForPrivateRouteOptions
 ): Promise<boolean> {
   const { req, reply, yReq, tenantId, matched, jwtService, tracer, span } =
     opts;
-  if (matched.isPublic) return true;
+  if (matched.isPublic) {
+    return true;
+  }
 
   const authSpan = tracer.startSpan("gateway.jwt_verify", {
     kind: SpanKind.INTERNAL,
@@ -226,10 +253,19 @@ interface IProxyToUpstreamClusterOptions {
 }
 
 async function proxyToUpstreamCluster(
-  opts: IProxyToUpstreamClusterOptions,
+  opts: IProxyToUpstreamClusterOptions
 ): Promise<void> {
-  const { req, reply, yReq, matched, tenantId, tracer, span, jwtService, logger } =
-    opts;
+  const {
+    req,
+    reply,
+    yReq,
+    matched,
+    tenantId,
+    tracer,
+    span,
+    jwtService,
+    logger,
+  } = opts;
   const ok = await verifyBearerForPrivateRoute({
     req,
     reply,
@@ -240,7 +276,9 @@ async function proxyToUpstreamCluster(
     tracer,
     span,
   });
-  if (!ok) return;
+  if (!ok) {
+    return;
+  }
 
   const queryString = req.url.includes("?")
     ? req.url.slice(req.url.indexOf("?"))
@@ -267,7 +305,7 @@ async function proxyToUpstreamCluster(
     };
   } catch (err) {
     logger.error(
-      `Dynamic route proxy error for ${req.method} ${upstreamUrl}: ${err}`,
+      `Dynamic route proxy error for ${req.method} ${upstreamUrl}: ${err}`
     );
     reply.status(502).send({ statusCode: 502, message: "Bad Gateway" });
     span.setStatus({ code: SpanStatusCode.ERROR, message: "502" });
@@ -287,7 +325,7 @@ async function proxyToUpstreamCluster(
  */
 export function configureDynamicRouteHook(
   fastify: FastifyInstance,
-  ctx: IDynamicRouteHookContext,
+  ctx: IDynamicRouteHookContext
 ): void {
   const { routeCache, jwtService, rateLimitService, tracer, logger } = ctx;
 
@@ -305,14 +343,22 @@ export function configureDynamicRouteHook(
         req: yReq,
         reply,
       });
-      if (!continueAfterRl) return;
+      if (!continueAfterRl) {
+        return;
+      }
 
       const path = req.url.split("?")[0];
-      if (isPlatformRoutePath(path)) return;
-      if (!tenantId) return;
+      if (isPlatformRoutePath(path)) {
+        return;
+      }
+      if (!tenantId) {
+        return;
+      }
 
       const matched = routeCache.match(tenantId, req.method, path);
-      if (!matched) return;
+      if (!matched) {
+        return;
+      }
 
       const span = tracer.startSpan("gateway.dynamic_route", {
         kind: SpanKind.SERVER,
@@ -341,6 +387,6 @@ export function configureDynamicRouteHook(
           logger,
         });
       });
-    },
+    }
   );
 }

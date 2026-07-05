@@ -11,9 +11,11 @@
     "test:integration": "bun test test/integration"
   },
   "dependencies": {
+    "@fastify/static": "^8.0.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-fastify": "^11.0.0",
+    "@nestjs/swagger": "^11.4.5",
     "@yoizen/database": "workspace:*",
     "@yoizen/observability": "workspace:*",
     "@yoizen/shared": "workspace:*",

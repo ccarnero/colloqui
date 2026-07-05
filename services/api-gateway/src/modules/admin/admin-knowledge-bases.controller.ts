@@ -12,7 +12,9 @@ import {
 } from "@nestjs/common";
 import { AdminProxyService } from "./admin-proxy.service";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { ApiTags } from "@nestjs/swagger";
 
+@ApiTags("knowledge-bases")
 @Controller("admin/knowledge-bases")
 export class AdminKnowledgeBasesController {
   constructor(private readonly adminProxy: AdminProxyService) {}
@@ -83,6 +85,7 @@ export class AdminKnowledgeBasesController {
   }
 }
 
+@ApiTags("knowledge-bases")
 @Controller("admin/knowledge-bases/:kbId/documents")
 export class AdminKnowledgeBaseDocumentsController {
   constructor(private readonly adminProxy: AdminProxyService) {}

@@ -1,28 +1,32 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Param,
   Body,
-  Query,
-  Req,
+  Controller,
+  Delete,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
   ParseUUIDPipe,
+  Post,
+  Put,
+  Query,
+  Req,
 } from "@nestjs/common";
-import { AdminProxyService } from "./admin-proxy.service";
-import {
-  CreateJobDto,
-  UpdateJobDto,
-  TriggerJobDto,
-  AdminJobsListQueryDto,
-  AdminJobExecutionsListQueryDto,
-} from "./admin.dto";
+import { ApiTags } from "@nestjs/swagger";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
 import { toOptionalStringQueryParam } from "../../utils/pagination-query.util";
+// biome-ignore lint/style/useImportType: used as @Body()/@Query() metatype — needed at runtime for ValidationPipe's class-validator/class-transformer reflection.
+import {
+  AdminJobExecutionsListQueryDto,
+  AdminJobsListQueryDto,
+  CreateJobDto,
+  TriggerJobDto,
+  UpdateJobDto,
+} from "./admin.dto";
+// biome-ignore lint/style/useImportType: constructor-injected — Nest DI needs the runtime class reference.
+import { AdminProxyService } from "./admin-proxy.service";
 
+@ApiTags("jobs")
 @Controller("admin/jobs")
 export class AdminJobsController {
   constructor(private readonly proxy: AdminProxyService) {}
@@ -30,7 +34,7 @@ export class AdminJobsController {
   @Get()
   async listJobs(
     @Req() req: ITenantScopedRequest,
-    @Query() query: AdminJobsListQueryDto,
+    @Query() query: AdminJobsListQueryDto
   ): Promise<object> {
     return this.proxy.proxy({
       method: "GET",
@@ -48,7 +52,7 @@ export class AdminJobsController {
   @Get("executions")
   async listExecutions(
     @Req() req: ITenantScopedRequest,
-    @Query() query: AdminJobExecutionsListQueryDto,
+    @Query() query: AdminJobExecutionsListQueryDto
   ): Promise<object> {
     return this.proxy.proxy({
       method: "GET",
@@ -66,7 +70,7 @@ export class AdminJobsController {
   @Get(":id")
   async getJob(
     @Req() req: ITenantScopedRequest,
-    @Param("id", ParseUUIDPipe) id: string,
+    @Param("id", ParseUUIDPipe) id: string
   ): Promise<object> {
     return this.proxy.proxy({
       method: "GET",
@@ -79,7 +83,7 @@ export class AdminJobsController {
   @HttpCode(HttpStatus.CREATED)
   async createJob(
     @Req() req: ITenantScopedRequest,
-    @Body() body: CreateJobDto,
+    @Body() body: CreateJobDto
   ): Promise<object> {
     return this.proxy.proxy({
       method: "POST",
@@ -93,7 +97,7 @@ export class AdminJobsController {
   async updateJob(
     @Req() req: ITenantScopedRequest,
     @Param("id", ParseUUIDPipe) id: string,
-    @Body() body: UpdateJobDto,
+    @Body() body: UpdateJobDto
   ): Promise<object> {
     return this.proxy.proxy({
       method: "PUT",
@@ -107,7 +111,7 @@ export class AdminJobsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteJob(
     @Req() req: ITenantScopedRequest,
-    @Param("id", ParseUUIDPipe) id: string,
+    @Param("id", ParseUUIDPipe) id: string
   ): Promise<void> {
     await this.proxy.proxy({
       method: "DELETE",
@@ -120,7 +124,7 @@ export class AdminJobsController {
   @HttpCode(HttpStatus.OK)
   async enableJob(
     @Req() req: ITenantScopedRequest,
-    @Param("id", ParseUUIDPipe) id: string,
+    @Param("id", ParseUUIDPipe) id: string
   ): Promise<object> {
     return this.proxy.proxy({
       method: "POST",
@@ -133,7 +137,7 @@ export class AdminJobsController {
   @HttpCode(HttpStatus.OK)
   async disableJob(
     @Req() req: ITenantScopedRequest,
-    @Param("id", ParseUUIDPipe) id: string,
+    @Param("id", ParseUUIDPipe) id: string
   ): Promise<object> {
     return this.proxy.proxy({
       method: "POST",
@@ -146,7 +150,7 @@ export class AdminJobsController {
   @HttpCode(HttpStatus.CREATED)
   async runJob(
     @Req() req: ITenantScopedRequest,
-    @Param("id", ParseUUIDPipe) id: string,
+    @Param("id", ParseUUIDPipe) id: string
   ): Promise<object> {
     return this.proxy.proxy({
       method: "POST",
@@ -155,18 +159,23 @@ export class AdminJobsController {
     });
   }
 
+  /**
+   * The external gateway field stays named `payload` for API stability,
+   * but agent-admin-service's trigger endpoint reads `event_payload` from
+   * the body — renaming it here avoids silently dropping the payload.
+   */
   @Post(":id/trigger")
   @HttpCode(HttpStatus.CREATED)
   async triggerJob(
     @Req() req: ITenantScopedRequest,
     @Param("id", ParseUUIDPipe) id: string,
-    @Body() body: TriggerJobDto,
+    @Body() body: TriggerJobDto
   ): Promise<object> {
     return this.proxy.proxy({
       method: "POST",
       path: `/admin/jobs/${id}/trigger`,
       tenantId: req.tenantId,
-      body,
+      body: { event_payload: body.payload },
     });
   }
 }

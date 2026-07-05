@@ -1,33 +1,39 @@
 import "./instrumentation";
 import "reflect-metadata";
+import {
+  RequestMethod,
+  ValidationPipe,
+  VERSION_NEUTRAL,
+  VersioningType,
+} from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import { RequestMethod, ValidationPipe } from "@nestjs/common";
 import {
   FastifyAdapter,
-  NestFastifyApplication,
+  type NestFastifyApplication,
 } from "@nestjs/platform-fastify";
+import {
+  createPinoLogger,
+  getActiveTraceId,
+  PinoLoggerService,
+  registerHttpMetricsHooks,
+  shutdownTelemetry,
+  trace,
+} from "@yoizen/observability";
+import type { GatewayAuditEvent } from "@yoizen/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { IYoizenRequest } from "./types/yoizen-request";
 import type { JetStreamClient } from "nats";
 import { AppModule } from "./app.module";
 import { gatewayConfig } from "./config";
-import { DynamicRouteCacheService } from "./modules/dynamic-routes/dynamic-route-cache.service";
-import { JwtService } from "./modules/auth/jwt.service";
-import { RateLimitService } from "./modules/rate-limit/rate-limit.service";
-import { JETSTREAM } from "./providers/nats.provider";
-import type { GatewayAuditEvent } from "@yoizen/shared";
-import {
-  PinoLoggerService,
-  createPinoLogger,
-  registerHttpMetricsHooks,
-  shutdownTelemetry,
-  getActiveTraceId,
-  trace,
-} from "@yoizen/observability";
 import {
   configureDynamicRouteHook,
   PLATFORM_PREFIXES,
 } from "./hooks/proxy.hook";
+import { JwtService } from "./modules/auth/jwt.service";
+import { DynamicRouteCacheService } from "./modules/dynamic-routes/dynamic-route-cache.service";
+import { RateLimitService } from "./modules/rate-limit/rate-limit.service";
+import { configureOpenApi } from "./openapi.config";
+import { JETSTREAM } from "./providers/nats.provider";
+import type { IYoizenRequest } from "./types/yoizen-request";
 import { publishGatewayAuditEvent } from "./utils/gateway-audit-publish.util";
 
 const REQUEST_ID_HEADER = "x-request-id";
@@ -36,8 +42,33 @@ const HEALTH_PATHS = new Set(["/health", "/readyz"]);
 const accessLogLogger = createPinoLogger("access-log");
 const gatewayAuditPublishLogger = new PinoLoggerService("api-gateway");
 
+/** Unversioned `/api/...` paths that are NOT deprecated aliases. */
+const VERSIONING_EXEMPT_PREFIXES = ["/api/docs"];
+const VERSIONED_API_PREFIX = "/api/v1/";
+const UNVERSIONED_API_PREFIX = "/api/";
+
 function isHealthPath(path: string): boolean {
   return HEALTH_PATHS.has(path.split("?")[0]);
+}
+
+/**
+ * True for legacy `/api/...` requests that should be flagged as deprecated
+ * (i.e. everything under `/api/` except the `/api/v1/...` routes themselves
+ * and the Swagger docs paths, which were never versioned in the first place).
+ */
+function isDeprecatedUnversionedApiPath(path: string): boolean {
+  if (!path.startsWith(UNVERSIONED_API_PREFIX)) {
+    return false;
+  }
+  if (path.startsWith(VERSIONED_API_PREFIX)) {
+    return false;
+  }
+  return !VERSIONING_EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+/** Same path with `v1/` inserted right after the `/api/` prefix. */
+function toSuccessorVersionPath(path: string): string {
+  return `${VERSIONED_API_PREFIX}${path.slice(UNVERSIONED_API_PREFIX.length)}`;
 }
 
 function configureGlobalMiddleware(app: NestFastifyApplication): void {
@@ -49,7 +80,7 @@ function configureGlobalMiddleware(app: NestFastifyApplication): void {
       transformOptions: {
         enableImplicitConversion: true,
       },
-    }),
+    })
   );
 
   app.enableCors({
@@ -71,6 +102,13 @@ function configureGlobalMiddleware(app: NestFastifyApplication): void {
     ],
   });
 
+  // Every route is exposed both unversioned (`/api/...`, deprecated) and as
+  // `/api/v1/...` without requiring per-controller `@Version()` decorators.
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: ["1", VERSION_NEUTRAL],
+  });
+
   const fastify = app.getHttpAdapter().getInstance();
   registerHttpMetricsHooks(fastify, TRACER_NAME);
 
@@ -80,7 +118,9 @@ function configureGlobalMiddleware(app: NestFastifyApplication): void {
       (req as IYoizenRequest).__startTime = performance.now();
       reply.header(REQUEST_ID_HEADER, req.id);
 
-      if (isHealthPath(req.url)) return;
+      if (isHealthPath(req.url)) {
+        return;
+      }
 
       accessLogLogger.info({
         msg: "request started",
@@ -88,25 +128,45 @@ function configureGlobalMiddleware(app: NestFastifyApplication): void {
         method: req.method,
         path: req.url.split("?")[0],
       });
-    },
+    }
+  );
+
+  fastify.addHook(
+    "onSend",
+    async (req: FastifyRequest, reply: FastifyReply, payload: unknown) => {
+      const path = req.url.split("?")[0];
+      if (isDeprecatedUnversionedApiPath(path)) {
+        reply.header("Deprecation", "true");
+        reply.header(
+          "Link",
+          `<${toSuccessorVersionPath(path)}>; rel="successor-version"`
+        );
+      }
+      return payload;
+    }
   );
 
   fastify.addHook(
     "onResponse",
     async (req: FastifyRequest, reply: FastifyReply) => {
-      if (isHealthPath(req.url)) return;
+      if (isHealthPath(req.url)) {
+        return;
+      }
 
       const yReq = req as IYoizenRequest;
       const startTime = yReq.__startTime;
-      if (startTime === undefined) return;
+      if (startTime === undefined) {
+        return;
+      }
 
       const durationMs =
         Math.round((performance.now() - startTime) * 100) / 100;
       const path = req.url.split("?")[0];
       const tenantId =
-        yReq.__tenantId ?? (yReq as unknown as Record<string, unknown>).tenantId as
+        yReq.__tenantId ??
+        ((yReq as unknown as Record<string, unknown>).tenantId as
           | string
-          | undefined;
+          | undefined);
 
       accessLogLogger.info({
         msg: "request completed",
@@ -117,28 +177,34 @@ function configureGlobalMiddleware(app: NestFastifyApplication): void {
         durationMs,
         ...(tenantId ? { tenantId } : {}),
       });
-    },
+    }
   );
 }
 
 function configureGatewayAuditHook(
   fastify: FastifyInstance,
-  js: JetStreamClient,
+  js: JetStreamClient
 ): void {
   fastify.addHook(
     "onResponse",
     async (req: FastifyRequest, reply: FastifyReply) => {
       const yReq = req as IYoizenRequest;
       const startTime = yReq.__startTime;
-      if (startTime === undefined) return;
+      if (startTime === undefined) {
+        return;
+      }
 
       const isPlatform = PLATFORM_PREFIXES.some((p) =>
-        req.url.split("?")[0].startsWith(p),
+        req.url.split("?")[0].startsWith(p)
       );
-      if (isPlatform) return;
+      if (isPlatform) {
+        return;
+      }
 
       const tenantId: string | null = yReq.__tenantId ?? null;
-      if (!tenantId && !yReq.__upstream) return;
+      if (!tenantId && !yReq.__upstream) {
+        return;
+      }
 
       const durationMs =
         Math.round((performance.now() - startTime) * 100) / 100;
@@ -168,11 +234,11 @@ function configureGatewayAuditHook(
         onError: (err: unknown) => {
           gatewayAuditPublishLogger.error(
             "Failed to publish gateway audit event",
-            err instanceof Error ? err.stack : String(err),
+            err instanceof Error ? err.stack : String(err)
           );
         },
       });
-    },
+    }
   );
 }
 
@@ -193,10 +259,11 @@ async function bootstrap(): Promise<void> {
     {
       logger: pinoLogger,
       rawBody: true,
-    },
+    }
   );
 
   configureGlobalMiddleware(app);
+  configureOpenApi(app);
 
   const routeCache = app.get(DynamicRouteCacheService);
   const jwtService = app.get(JwtService);
@@ -224,7 +291,7 @@ bootstrap().catch((err) => {
   const logger = new PinoLoggerService("api-gateway");
   logger.error(
     "Bootstrap failed",
-    err instanceof Error ? err.stack : String(err),
+    err instanceof Error ? err.stack : String(err)
   );
   process.exit(1);
 });

@@ -14,8 +14,10 @@ import { isPlatformTenantRowIdParam } from "@yoizen/shared";
 import { TenantProxyService } from "./tenant-proxy.service";
 import { SkipTenant } from "../../decorators/skip-tenant.decorator";
 import { CreateTenantBodyDto, UpdateTenantBodyDto } from "./tenants.dto";
+import { ApiTags } from "@nestjs/swagger";
 
 @SkipTenant()
+@ApiTags("tenants")
 @Controller("tenants")
 export class TenantsController {
   constructor(private readonly tenantProxy: TenantProxyService) {}

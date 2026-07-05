@@ -1,20 +1,24 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Param,
   Body,
-  Req,
-  Query,
+  Controller,
+  Delete,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
 } from "@nestjs/common";
-import { WorkflowProxyService } from "./workflow-proxy.service";
+import { ApiTags } from "@nestjs/swagger";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
+// biome-ignore lint/style/useImportType: constructor-injected — Nest DI needs the runtime class reference.
+import { WorkflowProxyService } from "./workflow-proxy.service";
+// biome-ignore lint/style/useImportType: used as @Body() metatype — needed at runtime for ValidationPipe's class-validator/class-transformer reflection.
 import { ExecuteWorkflowGatewayDto } from "./workflows-gateway.dto";
 
+@ApiTags("workflows")
 @Controller("workflows")
 export class WorkflowsController {
   constructor(private readonly proxy: WorkflowProxyService) {}
@@ -39,7 +43,7 @@ export class WorkflowsController {
   @Put(":id")
   async updateWorkflow(
     @Req() req: ITenantScopedRequest,
-    @Param("id") id: string,
+    @Param("id") id: string
   ) {
     return this.proxy.proxy({
       method: "PUT",
@@ -79,7 +83,7 @@ export class WorkflowsController {
   @Get("executions")
   async listExecutionsByCorrelation(
     @Req() req: ITenantScopedRequest,
-    @Query() query: Record<string, string>,
+    @Query() query: Record<string, string>
   ) {
     return this.proxy.proxy({
       method: "GET",
@@ -89,11 +93,23 @@ export class WorkflowsController {
     });
   }
 
+  /**
+   * Tenant-wide summary: active definitions, failing definitions,
+   * execution counts by status for 24h/7d windows, and top definitions
+   * by execution count. Declared before `@Get(":id")` so Nest does not
+   * match `summary` as a workflow id.
+   */
+  @Get("summary")
+  async getSummary(@Req() req: ITenantScopedRequest) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/workflows/summary",
+      tenantId: req.tenantId,
+    });
+  }
+
   @Get(":id")
-  async getWorkflow(
-    @Req() req: ITenantScopedRequest,
-    @Param("id") id: string,
-  ) {
+  async getWorkflow(@Req() req: ITenantScopedRequest, @Param("id") id: string) {
     return this.proxy.proxy({
       method: "GET",
       path: `/workflows/${encodeURIComponent(id)}`,
@@ -105,7 +121,7 @@ export class WorkflowsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteWorkflow(
     @Req() req: ITenantScopedRequest,
-    @Param("id") id: string,
+    @Param("id") id: string
   ) {
     return this.proxy.proxy({
       method: "DELETE",
@@ -119,7 +135,7 @@ export class WorkflowsController {
   async executeWorkflow(
     @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
-    @Body() body: ExecuteWorkflowGatewayDto,
+    @Body() body: ExecuteWorkflowGatewayDto
   ) {
     return this.proxy.proxy({
       method: "POST",
@@ -134,7 +150,7 @@ export class WorkflowsController {
   async listExecutions(
     @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
-    @Query() query: Record<string, string>,
+    @Query() query: Record<string, string>
   ) {
     return this.proxy.proxy({
       method: "GET",
@@ -148,7 +164,7 @@ export class WorkflowsController {
   async getExecutionStatus(
     @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
-    @Param("executionId") executionId: string,
+    @Param("executionId") executionId: string
   ) {
     return this.proxy.proxy({
       method: "GET",

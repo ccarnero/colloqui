@@ -1,9 +1,10 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { TenantConnectionManager } from "@yoizen/database";
 import type { JsonValue } from "@yoizen/shared";
-import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
+// biome-ignore lint/style/useImportType: constructor-injected — Nest DI needs the runtime class reference.
 import { NatsPublisher } from "../../providers/nats.provider";
+import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
 
 export interface ISkillFile {
   name: string;
@@ -71,7 +72,7 @@ export class SkillsService {
   ) {}
 
   async findAll(
-    tenantId: string,
+    tenantId: string
   ): Promise<{ skills: ISkill[]; total: number }> {
     const sql = await this.connectionManager.ensureSchema(tenantId);
     const skills = await sql<ISkill[]>`
@@ -133,7 +134,9 @@ export class SkillsService {
 
     this.natsPublisher
       .publishSkillChanged(tenantId, skill.id, "created", { name: skill.name })
-      .catch((err) => this.logger.warn("NATS publish failed on skill create", err));
+      .catch((err) =>
+        this.logger.warn("NATS publish failed on skill create", err)
+      );
 
     return skill;
   }
@@ -141,79 +144,71 @@ export class SkillsService {
   async update(
     tenantId: string,
     id: string,
-    data: IUpdateSkillData,
+    data: IUpdateSkillData
   ): Promise<ISkill | null> {
     const sql = await this.connectionManager.ensureSchema(tenantId);
 
-    // Build dynamic SET clauses using parameterized fragments
-    const setClauses: string[] = ["updated_at = NOW()"];
+    // Build dynamic SET clause by composing fragments (same convention as
+    // config-files.postgres.repository.ts and jobs.postgres.repository.ts).
+    // postgres.js fragments carry internal parameterization state; joining
+    // them with Array.prototype.join() stringifies each fragment via
+    // .toString() and loses that state, producing invalid/unparameterized
+    // SQL. Nesting fragments via `sql\`${setClause}, col = ${value}\`` keeps
+    // every parameter correctly bound.
+    let setClause = sql`updated_at = NOW()`;
 
     if (data.name !== undefined) {
-      setClauses.push(sql`name = ${data.name}` as unknown as string);
+      setClause = sql`${setClause}, name = ${data.name}`;
     }
     if (data.description !== undefined) {
-      setClauses.push(
-        sql`description = ${data.description}` as unknown as string,
-      );
+      setClause = sql`${setClause}, description = ${data.description}`;
     }
     if (data.system_prompt !== undefined) {
-      setClauses.push(
-        sql`system_prompt = ${data.system_prompt}` as unknown as string,
-      );
+      setClause = sql`${setClause}, system_prompt = ${data.system_prompt}`;
     }
     if (data.icon !== undefined) {
-      setClauses.push(sql`icon = ${data.icon}` as unknown as string);
+      setClause = sql`${setClause}, icon = ${data.icon}`;
     }
     if (data.color !== undefined) {
-      setClauses.push(sql`color = ${data.color}` as unknown as string);
+      setClause = sql`${setClause}, color = ${data.color}`;
     }
     if (data.trigger_commands !== undefined) {
-      setClauses.push(
-        sql`trigger_commands = ${sql.array(data.trigger_commands)}` as unknown as string,
-      );
+      setClause = sql`${setClause}, trigger_commands = ${sql.array(data.trigger_commands)}`;
     }
     if (data.when_to_use !== undefined) {
-      setClauses.push(
-        sql`when_to_use = ${data.when_to_use}` as unknown as string,
-      );
+      setClause = sql`${setClause}, when_to_use = ${data.when_to_use}`;
     }
     if (data.priority !== undefined) {
-      setClauses.push(
-        sql`priority = ${data.priority}` as unknown as string,
-      );
+      setClause = sql`${setClause}, priority = ${data.priority}`;
     }
     if (data.allowed_tools !== undefined) {
-      setClauses.push(
-        sql`allowed_tools = ${sql.array(data.allowed_tools)}` as unknown as string,
-      );
+      setClause = sql`${setClause}, allowed_tools = ${sql.array(data.allowed_tools)}`;
     }
     if (data.mode !== undefined) {
-      setClauses.push(sql`mode = ${data.mode}` as unknown as string);
+      setClause = sql`${setClause}, mode = ${data.mode}`;
     }
     if (data.files !== undefined) {
-      setClauses.push(
-        sql`files = ${sql.json((data.files ?? []) as unknown as JsonValue)}` as unknown as string,
-      );
+      setClause = sql`${setClause}, files = ${sql.json((data.files ?? []) as unknown as JsonValue)}`;
     }
     if (data.is_active !== undefined) {
-      setClauses.push(
-        sql`is_active = ${data.is_active}` as unknown as string,
-      );
+      setClause = sql`${setClause}, is_active = ${data.is_active}`;
     }
-
-    const setClause = setClauses.join(", ");
 
     const [skill] = await sql<ISkill[]>`
       UPDATE skills
-      SET ${sql.unsafe(setClause)}
+      SET ${setClause}
       WHERE id = ${id} AND tenant_id = ${tenantId}
       RETURNING *
     `;
 
     if (skill) {
       this.natsPublisher
-        .publishSkillChanged(tenantId, skill.id, "updated", { name: skill.name })
-        .catch((err) => this.logger.warn("NATS publish failed on skill update", err));
+        .publishSkillChanged(tenantId, skill.id, "updated", {
+          name: skill.name,
+        })
+        .catch((err) =>
+          this.logger.warn("NATS publish failed on skill update", err)
+        );
     }
 
     return skill ?? null;
@@ -230,7 +225,9 @@ export class SkillsService {
     if (result.length > 0) {
       this.natsPublisher
         .publishSkillChanged(tenantId, id, "deleted")
-        .catch((err) => this.logger.warn("NATS publish failed on skill delete", err));
+        .catch((err) =>
+          this.logger.warn("NATS publish failed on skill delete", err)
+        );
     }
 
     return result.length > 0;

@@ -20,7 +20,9 @@ import {
 } from "./connectors.dto";
 import { REQUEST_TENANT_KEY } from "../../guards/tenant.guard";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { ApiTags } from "@nestjs/swagger";
 
+@ApiTags("connectors")
 @Controller("connectors")
 export class ConnectorsController {
   constructor(private readonly proxy: ConnectorsProxyService) {}

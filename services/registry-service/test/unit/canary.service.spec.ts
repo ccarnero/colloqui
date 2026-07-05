@@ -1,15 +1,15 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { Test } from "@nestjs/testing";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import {
   BadRequestException,
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { MONGO_CLIENT } from "../../src/providers/mongo.provider";
+import { Test } from "@nestjs/testing";
 import { CanaryMongoRepository } from "../../src/modules/canary/canary.mongo.repository";
 import { CANARY_REPOSITORY } from "../../src/modules/canary/canary.repository.interface";
 import { CanaryService } from "../../src/modules/canary/canary.service";
 import { K8S_CUSTOM_OBJECTS_API } from "../../src/providers/kubernetes.provider";
+import { MONGO_CLIENT } from "../../src/providers/mongo.provider";
 import { makeRegistryMongoClient } from "../mongo-mock";
 
 function baseServiceRow(overrides: Record<string, unknown> = {}) {
@@ -35,11 +35,11 @@ function baseServiceRow(overrides: Record<string, unknown> = {}) {
 type CanaryPrivate = {
   getCurrentRevision: (
     namespace: string,
-    name: string,
+    name: string
   ) => Promise<string | null>;
   getLatestRevision: (
     namespace: string,
-    name: string,
+    name: string
   ) => Promise<string | null>;
   applyTrafficSplit: (params: {
     namespace: string;
@@ -71,7 +71,7 @@ describe("CanaryService", () => {
             latestReadyRevisionName: "rev-a",
             latestCreatedRevisionName: "rev-b",
           },
-        }),
+        })
       ),
       replaceNamespacedCustomObject: mock(() => Promise.resolve({})),
     };
@@ -104,7 +104,7 @@ describe("CanaryService", () => {
         },
       });
       await expect(priv.getCurrentRevision("ns", "ksvc")).resolves.toBe(
-        "rev-stable",
+        "rev-stable"
       );
     });
 
@@ -116,7 +116,7 @@ describe("CanaryService", () => {
         },
       });
       await expect(priv.getCurrentRevision("ns", "ksvc")).resolves.toBe(
-        "rev-first",
+        "rev-first"
       );
     });
 
@@ -126,14 +126,14 @@ describe("CanaryService", () => {
         status: { latestReadyRevisionName: "rev-ready" },
       });
       await expect(priv.getCurrentRevision("ns", "ksvc")).resolves.toBe(
-        "rev-ready",
+        "rev-ready"
       );
     });
 
     it("returns null when K8s get fails", async () => {
       const priv = service as unknown as CanaryPrivate;
       customApi.getNamespacedCustomObject.mockRejectedValueOnce(
-        new Error("apiserver"),
+        new Error("apiserver")
       );
       await expect(priv.getCurrentRevision("ns", "ksvc")).resolves.toBeNull();
     });
@@ -146,14 +146,14 @@ describe("CanaryService", () => {
         status: { latestCreatedRevisionName: "rev-new" },
       });
       await expect(priv.getLatestRevision("ns", "ksvc")).resolves.toBe(
-        "rev-new",
+        "rev-new"
       );
     });
 
     it("returns null when K8s get fails", async () => {
       const priv = service as unknown as CanaryPrivate;
       customApi.getNamespacedCustomObject.mockRejectedValueOnce(
-        new Error("timeout"),
+        new Error("timeout")
       );
       await expect(priv.getLatestRevision("ns", "ksvc")).resolves.toBeNull();
     });
@@ -186,7 +186,7 @@ describe("CanaryService", () => {
             created_at: "2020-01-01T00:00:00.000Z",
             updated_at: "2020-01-02T00:00:00.000Z",
           },
-        ],
+        ]
       );
 
       customApi.getNamespacedCustomObject.mockResolvedValue({
@@ -217,7 +217,7 @@ describe("CanaryService", () => {
             created_at: "2020-01-01T00:00:00.000Z",
             updated_at: "2020-01-01T00:00:00.000Z",
           },
-        ],
+        ]
       );
 
       customApi.getNamespacedCustomObject.mockResolvedValue({
@@ -233,7 +233,7 @@ describe("CanaryService", () => {
       });
 
       await expect(service.promote("tenant-a", "svc-1")).rejects.toBeInstanceOf(
-        InternalServerErrorException,
+        InternalServerErrorException
       );
     });
   });
@@ -265,7 +265,7 @@ describe("CanaryService", () => {
             created_at: "2020-01-01T00:00:00.000Z",
             updated_at: "2020-01-02T00:00:00.000Z",
           },
-        ],
+        ]
       );
 
       customApi.getNamespacedCustomObject.mockResolvedValue({
@@ -310,7 +310,7 @@ describe("CanaryService", () => {
             created_at: "2020-01-01T00:00:00.000Z",
             updated_at: "2020-01-02T00:00:00.000Z",
           },
-        ],
+        ]
       );
 
       customApi.getNamespacedCustomObject.mockResolvedValue({
@@ -355,7 +355,7 @@ describe("CanaryService", () => {
             created_at: "2020-01-01T00:00:00.000Z",
             updated_at: "2020-01-02T00:00:00.000Z",
           },
-        ],
+        ]
       );
 
       customApi.getNamespacedCustomObject.mockResolvedValue({
@@ -387,7 +387,7 @@ describe("CanaryService", () => {
         },
       });
       customApi.replaceNamespacedCustomObject.mockRejectedValueOnce(
-        new Error("network"),
+        new Error("network")
       );
 
       await expect(
@@ -398,8 +398,73 @@ describe("CanaryService", () => {
           primaryPercent: 100,
           secondaryRevision: null,
           secondaryPercent: 0,
-        }),
+        })
       ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+
+    it("applyTrafficSplit retries after a 409 conflict, re-applying traffic to the FRESH re-GET", async () => {
+      const priv = service as unknown as CanaryPrivate;
+
+      const staleKsvc = {
+        metadata: { resourceVersion: "1" },
+        spec: {
+          template: {
+            metadata: { annotations: {} },
+            spec: { containers: [{ image: "x" }] },
+          },
+          traffic: [],
+        },
+      };
+      const freshKsvc = {
+        metadata: { resourceVersion: "2" },
+        spec: {
+          template: {
+            metadata: { annotations: { "reconciler-touched": "true" } },
+            spec: { containers: [{ image: "x" }] },
+          },
+          traffic: [],
+        },
+      };
+
+      customApi.getNamespacedCustomObject.mockResolvedValueOnce(staleKsvc);
+      customApi.getNamespacedCustomObject.mockResolvedValueOnce(freshKsvc);
+      customApi.replaceNamespacedCustomObject.mockRejectedValueOnce({
+        response: { statusCode: 409, body: { message: "conflict" } },
+      });
+      customApi.replaceNamespacedCustomObject.mockResolvedValueOnce({});
+
+      await priv.applyTrafficSplit({
+        namespace: "ns",
+        name: "ksvc",
+        primaryRevision: "rev-stable",
+        primaryPercent: 100,
+        secondaryRevision: null,
+        secondaryPercent: 0,
+      });
+
+      expect(customApi.getNamespacedCustomObject).toHaveBeenCalledTimes(2);
+      expect(customApi.replaceNamespacedCustomObject).toHaveBeenCalledTimes(2);
+
+      const secondReplaceParams = customApi.replaceNamespacedCustomObject.mock
+        .calls[1][0] as {
+        body: {
+          metadata: { resourceVersion: string };
+          spec: {
+            template: { metadata: { annotations: Record<string, string> } };
+            traffic: Array<{ revisionName: string; percent: number }>;
+          };
+        };
+      };
+      const secondBody = secondReplaceParams.body;
+      // Proves the retry re-GETs and re-applies the traffic mutation onto
+      // the FRESH object (resourceVersion "2"), not the stale first read.
+      expect(secondBody.metadata.resourceVersion).toBe("2");
+      expect(
+        secondBody.spec.template.metadata.annotations["reconciler-touched"]
+      ).toBe("true");
+      expect(secondBody.spec.traffic).toEqual([
+        { revisionName: "rev-stable", percent: 100, tag: "stable" },
+      ]);
     });
   });
 
@@ -407,14 +472,14 @@ describe("CanaryService", () => {
     it("throws NotFoundException when service missing on promote", async () => {
       sqlQueue.push([]);
       await expect(
-        service.promote("tenant-a", "missing"),
+        service.promote("tenant-a", "missing")
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("throws NotFoundException when no active canary", async () => {
       sqlQueue.push([baseServiceRow()], []);
       await expect(service.promote("tenant-a", "svc-1")).rejects.toBeInstanceOf(
-        NotFoundException,
+        NotFoundException
       );
     });
   });
@@ -434,7 +499,7 @@ describe("CanaryService", () => {
             created_at: "2020-01-01T00:00:00.000Z",
             updated_at: "2020-01-01T00:00:00.000Z",
           },
-        ],
+        ]
       );
       const status = await service.getStatus("tenant-a", "svc-1");
       expect(status).not.toBeNull();
@@ -464,13 +529,13 @@ describe("CanaryService", () => {
             created_at: "2020-01-01T00:00:00.000Z",
             updated_at: "2020-01-01T00:00:00.000Z",
           },
-        ],
+        ]
       );
       await expect(
         service.start("tenant-a", "svc-1", {
           percent: 10,
           image: "img:v2",
-        }),
+        })
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });

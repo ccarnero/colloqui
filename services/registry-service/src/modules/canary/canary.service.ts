@@ -1,26 +1,26 @@
+import type * as k8s from "@kubernetes/client-node";
 import {
+  BadRequestException,
   Inject,
   Injectable,
-  NotFoundException,
-  BadRequestException,
   InternalServerErrorException,
+  NotFoundException,
 } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
-import type * as k8s from "@kubernetes/client-node";
+import { generateId } from "@yoizen/shared";
+import {
+  getNamespacedKnativeService,
+  type ICanaryStatus,
+  mapCanaryDeploymentRow,
+} from "../../common/registry-row-mappers";
 import { K8S_CUSTOM_OBJECTS_API } from "../../providers/kubernetes.provider";
+import { k8sApiErrorMessage } from "../../utils/k8s-error";
+import { replaceKnativeServiceWithConflictRetry } from "../../utils/k8s-retry";
+import type { StartCanaryDto, UpdateCanaryDto } from "./canary.dto";
 import {
   CANARY_REPOSITORY,
   type ICanaryRepository,
 } from "./canary.repository.interface";
-import type { StartCanaryDto, UpdateCanaryDto } from "./canary.dto";
-import { generateId } from "@yoizen/shared";
-import { k8sApiErrorMessage } from "../../utils/k8s-error";
-import {
-  type ICanaryStatus,
-  mapCanaryDeploymentRow,
-  getNamespacedKnativeService,
-  replaceNamespacedKnativeService,
-} from "../../common/registry-row-mappers";
 
 interface IKnativeTrafficTarget {
   percent?: number;
@@ -74,7 +74,7 @@ export class CanaryService {
   async start(
     tenantId: string,
     serviceId: string,
-    dto: StartCanaryDto,
+    dto: StartCanaryDto
   ): Promise<ICanaryStatus> {
     const svc = await this.getRegisteredService(tenantId, serviceId);
 
@@ -82,17 +82,17 @@ export class CanaryService {
       await this.canaryRepository.findProgressingCanary(serviceId);
     if (existingCanary.length > 0) {
       throw new BadRequestException(
-        "Active canary deployment already exists. Promote or rollback first.",
+        "Active canary deployment already exists. Promote or rollback first."
       );
     }
 
     const stableRevision = await this.getCurrentRevision(
       svc.namespace,
-      svc.knative_name,
+      svc.knative_name
     );
     if (!stableRevision) {
       throw new BadRequestException(
-        "No stable revision found for this service",
+        "No stable revision found for this service"
       );
     }
 
@@ -102,11 +102,11 @@ export class CanaryService {
       svc.namespace,
       svc.knative_name,
       stableRevision,
-      60_000,
+      60_000
     );
     if (!canaryRevision) {
       throw new InternalServerErrorException(
-        "Failed to create new revision for canary",
+        "Failed to create new revision for canary"
       );
     }
 
@@ -129,7 +129,7 @@ export class CanaryService {
     });
 
     this.logger.log(
-      `Started canary for ${svc.knative_name}: ${stableRevision} -> ${canaryRevision} at ${dto.percent}%`,
+      `Started canary for ${svc.knative_name}: ${stableRevision} -> ${canaryRevision} at ${dto.percent}%`
     );
     return mapCanaryDeploymentRow(row);
   }
@@ -137,7 +137,7 @@ export class CanaryService {
   async updatePercent(
     tenantId: string,
     serviceId: string,
-    dto: UpdateCanaryDto,
+    dto: UpdateCanaryDto
   ): Promise<ICanaryStatus> {
     const svc = await this.getRegisteredService(tenantId, serviceId);
     const canary = await this.getActiveCanary(serviceId);
@@ -153,11 +153,11 @@ export class CanaryService {
 
     const [updated] = await this.canaryRepository.updateCanaryPercent(
       String(canary.id),
-      dto,
+      dto
     );
 
     this.logger.log(
-      `Updated canary for ${svc.knative_name} to ${dto.percent}%`,
+      `Updated canary for ${svc.knative_name} to ${dto.percent}%`
     );
     return mapCanaryDeploymentRow(updated);
   }
@@ -176,7 +176,7 @@ export class CanaryService {
     });
 
     const [updated] = await this.canaryRepository.updateCanaryPromoted(
-      String(canary.id),
+      String(canary.id)
     );
 
     this.logger.log(`Promoted canary for ${svc.knative_name}`);
@@ -197,7 +197,7 @@ export class CanaryService {
     });
 
     const [updated] = await this.canaryRepository.updateCanaryRolledBack(
-      String(canary.id),
+      String(canary.id)
     );
 
     this.logger.log(`Rolled back canary for ${svc.knative_name}`);
@@ -206,23 +206,22 @@ export class CanaryService {
 
   async getStatus(
     tenantId: string,
-    serviceId: string,
+    serviceId: string
   ): Promise<ICanaryStatus | null> {
     await this.getRegisteredService(tenantId, serviceId);
 
-    const [row] = await this.canaryRepository.getLatestCanaryForService(
-      serviceId,
-    );
+    const [row] =
+      await this.canaryRepository.getLatestCanaryForService(serviceId);
     return row ? mapCanaryDeploymentRow(row) : null;
   }
 
   private async getRegisteredService(
     tenantId: string,
-    serviceId: string,
+    serviceId: string
   ): Promise<{ namespace: string; knative_name: string }> {
     const [svc] = await this.canaryRepository.findRegisteredService(
       serviceId,
-      tenantId,
+      tenantId
     );
     if (!svc) {
       throw new NotFoundException(`Service '${serviceId}' not found`);
@@ -258,7 +257,7 @@ export class CanaryService {
    */
   private async fetchKnativeRevisionInfo(
     namespace: string,
-    name: string,
+    name: string
   ): Promise<{
     stableTrafficOrFirst: string | null;
     latestReady: string | null;
@@ -268,7 +267,7 @@ export class CanaryService {
       const resp = await getNamespacedKnativeService(
         this.customApi,
         namespace,
-        name,
+        name
       );
       const obj = resp as Record<string, unknown>;
       const status = obj.status as Record<string, unknown> | undefined;
@@ -277,7 +276,7 @@ export class CanaryService {
       if (Array.isArray(traffic) && traffic.length > 0) {
         const targets = traffic as IKnativeTrafficTarget[];
         const stable = targets.find(
-          (t) => t.percent === 100 || t.tag === "stable",
+          (t) => t.percent === 100 || t.tag === "stable"
         );
         const first = targets[0];
         stableTrafficOrFirst =
@@ -293,7 +292,7 @@ export class CanaryService {
       };
     } catch (e: unknown) {
       this.logger.warn(
-        `fetchKnativeRevisionInfo failed for ${namespace}/${name}: ${k8sApiErrorMessage(e)}`,
+        `fetchKnativeRevisionInfo failed for ${namespace}/${name}: ${k8sApiErrorMessage(e)}`
       );
       return null;
     }
@@ -301,16 +300,18 @@ export class CanaryService {
 
   private async getCurrentRevision(
     namespace: string,
-    name: string,
+    name: string
   ): Promise<string | null> {
     const info = await this.fetchKnativeRevisionInfo(namespace, name);
-    if (!info) return null;
+    if (!info) {
+      return null;
+    }
     return info.stableTrafficOrFirst ?? info.latestReady;
   }
 
   private async getLatestRevision(
     namespace: string,
-    name: string,
+    name: string
   ): Promise<string | null> {
     const info = await this.fetchKnativeRevisionInfo(namespace, name);
     return info?.latestCreated ?? null;
@@ -320,14 +321,16 @@ export class CanaryService {
     namespace: string,
     name: string,
     previousRevision: string,
-    timeoutMs: number,
+    timeoutMs: number
   ): Promise<string | null> {
     const deadline = Date.now() + timeoutMs;
     const pollInterval = 2_000;
 
     while (Date.now() < deadline) {
       const rev = await this.getLatestRevision(namespace, name);
-      if (rev && rev !== previousRevision) return rev;
+      if (rev && rev !== previousRevision) {
+        return rev;
+      }
       await new Promise((r) => setTimeout(r, pollInterval));
     }
     return null;
@@ -336,44 +339,40 @@ export class CanaryService {
   private async updateKnativeImage(
     namespace: string,
     name: string,
-    image: string,
+    image: string
   ): Promise<void> {
-    const current = (await getNamespacedKnativeService(
-      this.customApi,
-      namespace,
-      name,
-    )) as unknown as IKnativeServiceBody;
-
-    const spec = structuredClone(current.spec);
-    if (!spec.template?.spec?.containers?.[0]) {
-      throw new InternalServerErrorException(
-        "Knative Service has no template or containers in spec",
-      );
-    }
-    spec.template.metadata ??= {};
-    spec.template.metadata.annotations = {
-      ...spec.template.metadata.annotations,
-      "client.knative.dev/updateTimestamp": String(Date.now()),
-    };
-    const containers = spec.template.spec.containers;
-    (containers[0] as { image: string }).image = image;
-
     try {
-      await replaceNamespacedKnativeService(
+      await replaceKnativeServiceWithConflictRetry(
         this.customApi,
         namespace,
         name,
-        { ...current, spec } as Record<string, unknown>,
+        (current) => {
+          const typedCurrent = current as unknown as IKnativeServiceBody;
+          const spec = structuredClone(typedCurrent.spec);
+          if (!spec.template?.spec?.containers?.[0]) {
+            throw new InternalServerErrorException(
+              "Knative Service has no template or containers in spec"
+            );
+          }
+          spec.template.metadata ??= {};
+          spec.template.metadata.annotations = {
+            ...spec.template.metadata.annotations,
+            "client.knative.dev/updateTimestamp": String(Date.now()),
+          };
+          const containers = spec.template.spec.containers;
+          (containers[0] as { image: string }).image = image;
+          return { ...current, spec } as Record<string, unknown>;
+        }
       );
     } catch (e: unknown) {
       throw new InternalServerErrorException(
-        `Failed to update Knative image: ${k8sApiErrorMessage(e)}`,
+        `Failed to update Knative image: ${k8sApiErrorMessage(e)}`
       );
     }
   }
 
   private async applyTrafficSplit(
-    params: IApplyTrafficSplitParams,
+    params: IApplyTrafficSplitParams
   ): Promise<void> {
     const {
       namespace,
@@ -399,25 +398,21 @@ export class CanaryService {
       });
     }
 
-    const current = (await getNamespacedKnativeService(
-      this.customApi,
-      namespace,
-      name,
-    )) as unknown as IKnativeServiceBody;
-
-    const spec = structuredClone(current.spec);
-    spec.traffic = traffic;
-
     try {
-      await replaceNamespacedKnativeService(
+      await replaceKnativeServiceWithConflictRetry(
         this.customApi,
         namespace,
         name,
-        { ...current, spec } as Record<string, unknown>,
+        (current) => {
+          const typedCurrent = current as unknown as IKnativeServiceBody;
+          const spec = structuredClone(typedCurrent.spec);
+          spec.traffic = traffic;
+          return { ...current, spec } as Record<string, unknown>;
+        }
       );
     } catch (e: unknown) {
       throw new InternalServerErrorException(
-        `Failed to apply traffic split: ${k8sApiErrorMessage(e)}`,
+        `Failed to apply traffic split: ${k8sApiErrorMessage(e)}`
       );
     }
   }

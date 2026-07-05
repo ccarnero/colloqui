@@ -1,8 +1,20 @@
 # Samples
 
-Runnable examples for `@yoizen/http-sdk`. Each sample is a self-contained app with its own
-`package.json` that depends on the SDK via a local `file:` link — so it consumes the SDK by
-name (`@yoizen/http-sdk`), exactly like an external project would.
+Runnable examples of platform features (AI agents, knowledge bases, workflows, channels,
+connectors, hosted services). Most samples are still self-contained **bash scripts** that
+drive the platform REST APIs directly via `curl`+`jq`, with no `package.json` and no
+dependency on `@yoizen/platform-sdk`. The SDK (`sdk/src/*.ts`) now covers 19 resource
+namespaces (workflows, channels, webhooks, agents, and more — see
+[`sdk/README.md`](../README.md)), and migration is underway: **`http-bridge`** is the first
+sample whose `run.sh` is SDK-powered (see [`sdk/GROWTH-PLAN.md`](../GROWTH-PLAN.md) Phase 3,
+P3.1) — its `package.json` depends on `@yoizen/platform-sdk` via `file:../..`, and `run.sh`
+execs a small TypeScript app (`src/index.ts`) that calls `client.workflows.list()`,
+`client.channels.listAccounts()`, and `client.webhooks.ingest()` instead of inline `curl`+`jq`.
+`setup.sh` (Telegram bot/chat_id discovery and provisioning) stays bash for now — that surface
+has no SDK coverage yet.
+
+The remaining samples below migrate the same way as follow-ups; until a sample's own README
+says otherwise, treat it as a shell script, not an SDK consumer.
 
 
 ## ai-agent-playground
@@ -137,17 +149,19 @@ service and route; `RECREATE=1 ./setup.sh` rebuilds them.
 
 ## http-bridge
 
-A workflow that, on any message arriving over a **dedicated HTTP channel instance**, **echoes**
-the received payload (text/from/metadata) plus an ISO timestamp/epoch ms, and DMs the result to
-you over Telegram (`channelSend`). It's the HTTP-channel counterpart to
-`telegram-transform-reply` — same echo-and-reply shape, different inbound transport — and follows
-the same idempotent, shell-based provisioning style as `http-fanout-telegram`.
+**SDK-powered** (`sdk/GROWTH-PLAN.md` P3.1) — a workflow that, on any message arriving over a
+**dedicated HTTP channel instance**, **echoes** the received payload (text/from/metadata) plus
+an ISO timestamp/epoch ms, and DMs the result to you over Telegram (`channelSend`). It's the
+HTTP-channel counterpart to `telegram-transform-reply` — same echo-and-reply shape, different
+inbound transport.
 
 ```bash
 cd sdk/samples/http-bridge
 cp .env.example .env   # fill in TELEGRAM_CHAT_ID
-./setup.sh
-./run.sh   # POSTs a test payload to this sample's own instance URL
+./setup.sh             # still bash — Telegram bot/chat_id discovery + provisioning
+./run.sh                # SDK-powered: npm-installs on first run, then drives
+                        # client.workflows.list() / client.channels.listAccounts() /
+                        # client.webhooks.ingest() to POST a test payload
 ```
 
 See [`http-bridge/README.md`](http-bridge/README.md) for the step-by-engine mapping, the full

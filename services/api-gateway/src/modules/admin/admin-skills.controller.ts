@@ -11,7 +11,9 @@ import {
 } from "@nestjs/common";
 import { AdminProxyService } from "./admin-proxy.service";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { ApiTags } from "@nestjs/swagger";
 
+@ApiTags("skills")
 @Controller("admin/skills")
 export class AdminSkillsController {
   constructor(private readonly adminProxy: AdminProxyService) {}

@@ -198,7 +198,7 @@ export class UsagePostgresRepository implements IUsageRepository {
       SELECT
         channel,
         direction,
-        SUM(events)::BIGINT AS events
+        count(*)::BIGINT AS events
       FROM channel_events
       WHERE ts >= NOW() - INTERVAL '24 hours'
       GROUP BY channel, direction
@@ -315,7 +315,7 @@ export class UsagePostgresRepository implements IUsageRepository {
       SELECT
         channel,
         direction,
-        SUM(events)::BIGINT AS events
+        count(*)::BIGINT AS events
       FROM channel_events
       WHERE tenant_id = $1
         AND ts >= NOW() - INTERVAL '24 hours'

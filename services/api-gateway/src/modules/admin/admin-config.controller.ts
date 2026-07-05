@@ -18,7 +18,9 @@ import {
 } from "./admin.dto";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
 import { toOptionalStringQueryParam } from "../../utils/pagination-query.util";
+import { ApiTags } from "@nestjs/swagger";
 
+@ApiTags("config-files", "templates", "runtime")
 @Controller("admin")
 export class AdminConfigController {
   constructor(private readonly proxy: AdminProxyService) {}

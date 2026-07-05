@@ -21,7 +21,9 @@ import {
 import { REQUEST_TENANT_KEY } from "../../guards/tenant.guard";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
 import { SkipTenant } from "../../decorators/skip-tenant.decorator";
+import { ApiTags } from "@nestjs/swagger";
 
+@ApiTags("registry")
 @Controller("registry")
 export class RegistryController {
   constructor(private readonly proxy: RegistryProxyService) {}

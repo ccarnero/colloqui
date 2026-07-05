@@ -1,14 +1,14 @@
 import "reflect-metadata";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { WorkflowsController } from "../../src/modules/workflows/workflows.controller";
 import { WorkflowProxyService } from "../../src/modules/workflows/workflow-proxy.service";
-import type { ITenantScopedRequest } from "../../src/types/yoizen-request";
+import { WorkflowsController } from "../../src/modules/workflows/workflows.controller";
 import type {
   CreateWorkflowGatewayDto,
-  UpdateWorkflowGatewayDto,
   ExecuteWorkflowGatewayDto,
+  UpdateWorkflowGatewayDto,
 } from "../../src/modules/workflows/workflows-gateway.dto";
+import type { ITenantScopedRequest } from "../../src/types/yoizen-request";
 
 describe("WorkflowsController", () => {
   let controller: WorkflowsController;
@@ -19,9 +19,7 @@ describe("WorkflowsController", () => {
 
     const moduleRef = await Test.createTestingModule({
       controllers: [WorkflowsController],
-      providers: [
-        { provide: WorkflowProxyService, useValue: { proxy } },
-      ],
+      providers: [{ provide: WorkflowProxyService, useValue: { proxy } }],
     }).compile();
 
     controller = moduleRef.get(WorkflowsController);
@@ -118,6 +116,15 @@ describe("WorkflowsController", () => {
     expect(proxy).toHaveBeenCalledWith({
       method: "GET",
       path: "/workflows/executions/counts",
+      tenantId: "tenant-x",
+    });
+  });
+
+  it("getSummary delegates to /workflows/summary", async () => {
+    await controller.getSummary(req);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/workflows/summary",
       tenantId: "tenant-x",
     });
   });

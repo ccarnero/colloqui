@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { AdminConfigController } from "../../src/modules/admin/admin-config.controller";
 import { AdminProxyService } from "../../src/modules/admin/admin-proxy.service";
@@ -41,6 +41,33 @@ describe("AdminConfigController", () => {
       path: "/admin/config-files/file",
       tenantId: "t1",
       query: { path: "/cfg.yaml" },
+    });
+  });
+
+  it("upsertConfigFile forwards the single-object contract agent-admin-service expects", async () => {
+    const body = {
+      name: "app config",
+      path: "/config/app.yaml",
+      content: "key: value",
+      format: "yaml",
+    } as never;
+    await controller.upsertConfigFile(req, body);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "PUT",
+      path: "/admin/config-files",
+      tenantId: "t1",
+      body,
+    });
+  });
+
+  it("deployConfigFiles forwards deletePaths", async () => {
+    const body = { deletePaths: ["/config/old.yaml"] } as never;
+    await controller.deployConfigFiles(req, body);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "POST",
+      path: "/admin/config-files/deploy",
+      tenantId: "t1",
+      body,
     });
   });
 });

@@ -1,52 +1,58 @@
-# @yoizen/http-sdk
+# @yoizen/platform-sdk
 
-A small, zero-dependency Node.js SDK for **sending messages into the platform** through the
-**http channel**. You log in with `tenant + email + password` (like the admin console, but in
-code) and call a single primitive — `send`. The SDK hides the whole chain:
+TypeScript (strict, ESM) SDK for the **full Yoizen platform API**. One `createClient()` gives
+you the original message-ingest primitives (`send` / `sendText`) plus **19 namespaced resource
+clients** (`client.workflows.*`, `client.agents.*`, `client.channels.*`, ...) covering every
+REST resource the api-gateway exposes. The SDK keeps the original hexagonal architecture
+(`domain` / `application` / `infrastructure`, plus a shared `core`), has zero runtime
+dependencies, and **talks exclusively to the api-gateway** — never to internal services.
 
-1. **Authenticate** — `POST /api/auth/login` with your email + password → access token.
-2. **Authorize** — resolve the http channel's `appSecret` from your session
-   (`GET /api/channels/accounts?channel=http`).
-3. **Send (ingest)** — `POST /api/webhooks/http/{tenant}` with the message body, or
-   `POST /api/webhooks/http/{tenant}/{instance}` when an `instance` (account `externalId`) is
-   configured or resolved from the directory lookup.
+> Requires **Node ≥ 18** (native `fetch`). ESM only. Package is currently `private: true`
+> (v0.1.0) — see [CHANGELOG.md](./CHANGELOG.md) for the release/publishing status.
 
-Login and secret resolution happen lazily on the first `send`, then the token (with refresh)
-and secret are cached and reused.
+## Quickstart
 
-> Requires **Node ≥ 18** (uses native `fetch`). ESM only.
+The package is private (not on any registry yet), so consume it via a local `file:` link:
 
-## Install
-
-It's a workspace-local, zero-dep module — import it by path:
-
-```js
-import { createClient } from "../sdk/src/index.js";
+```jsonc
+// your-app/package.json
+{
+  "dependencies": {
+    "@yoizen/platform-sdk": "file:../path/to/platform-cluster/sdk"
+  }
+}
 ```
 
-## Usage
-
-```js
-import { createClient, IngestError } from "@yoizen/http-sdk";
+```ts
+import { createClient, NotFoundError } from "@yoizen/platform-sdk";
 
 const client = createClient({
-  tenant: "acme",            // tenant id (a readable slug in dev, e.g. "t1"/"acme")
-  email: "ops@acme.com",     // your login email
+  tenant: "acme",
+  email: "ops@acme.com",
   password: "•••",
+  // baseUrl defaults to the dev-cluster gateway; override for anything else
 });
 
-// text-only — `from` defaults to your login email (you send as yourself)
+// Resource client: list workflows (async iterator — see Pagination below)
+for await (const wf of client.workflows.list()) {
+  console.log(wf.id, wf.name);
+}
+
+// Typed errors
+try {
+  await client.agents.get("nope");
+} catch (err) {
+  if (err instanceof NotFoundError) {
+    /* 404 */
+  }
+}
+
+// Original ingest primitive, unchanged since v0.1.0
 await client.sendText("hello world");
-
-// rich object — mirrors the platform message shape; only `from` is required
-await client.send({
-  from: "customer@example.com",
-  text: "order shipped",
-  raw: { ticketId: 42 },     // extra fields are preserved under `raw`
-});
+await client.send({ from: "customer@example.com", text: "order shipped" });
 ```
 
-Or rely entirely on the environment and call `createClient()` with no arguments:
+Or configure entirely from the environment and call `createClient()` with no arguments:
 
 ```bash
 export YOIZEN_TENANT=acme
@@ -54,55 +60,363 @@ export YOIZEN_EMAIL=ops@acme.com
 export YOIZEN_PASSWORD=•••
 ```
 
+Every resource is also importable as a sub-path, so consumers that only need one namespace
+don't pull in the rest:
+
+```ts
+import { createWorkflowsClient } from "@yoizen/platform-sdk/workflows";
+import { paginate } from "@yoizen/platform-sdk/core";
+```
+
 ## Configuration
 
-| Option | Required | Env var | Default |
+All options for `createClient(config)`, verified against `src/infrastructure/config.ts` and
+`src/core/*`. Explicit args take precedence over environment variables.
+
+| Option | Type | Env var | Default | Description |
+| --- | --- | --- | --- | --- |
+| `tenant` | `string` (required) | `YOIZEN_TENANT` | — | Tenant id; sent as `x-yoizen-tenant` on every request |
+| `email` | `string` (required) | `YOIZEN_EMAIL` | — | Login email (`POST /api/auth/login`) |
+| `password` | `string` (required) | `YOIZEN_PASSWORD` | — | Login password |
+| `baseUrl` | `string` | `YOIZEN_BASE_URL` | `http://api-gateway.platform-services-dev.dev.local` | api-gateway origin; trailing slashes stripped |
+| `apiVersion` | `"v1" \| null` | — | `"v1"` | Path-prefix selector: `"v1"` → `/api/v1/...` (live on every route family, verified 2026-07-05), `null` → `/api/...` (deprecated unversioned alias, see [Semver & compatibility](#semver--compatibility)) |
+| `timeoutMs` | `number` | — | `10000` | Per-request timeout (overridable per call) |
+| `retry` | `RetryConfig \| false` | — | method-based default | Client-level retry policy; `false` disables retries entirely (see [Retry & backoff](#retry--backoff)) |
+| `tokenExpiryBufferMs` | `number` | — | `60000` | Refresh the access token this many ms before its real expiry |
+| `onWarn` | `(msg: string) => void` | — | — | Called when the token's scoped tenant differs from the configured `tenant` |
+| `defaultFrom` | `string` | `YOIZEN_DEFAULT_FROM` | the login `email` | Fallback `from` for `send`/`sendText` |
+| `appSecret` | `string \| null` | `YOIZEN_HTTP_CHANNEL_TOKEN` | auto-resolved | http-channel ingest secret; when set, skips the channel-directory lookup |
+| `channelSelector` | `{ name?; externalId? }` | — | first active http account | Pins a specific http channel account for `send`/`sendText` |
+| `instance` | `string \| null` | `YOIZEN_HTTP_CHANNEL_INSTANCE` | resolved `externalId` | Targets a per-instance ingest URL (`/api/webhooks/http/{tenant}/{instance}`) |
+| `fetch` | `typeof fetch` | — | `globalThis.fetch` | Injectable for tests |
+| `clock` | `{ now(): number }` | — | system clock | Injectable for tests |
+
+Session behavior (`src/core/session.ts`): login is lazy (first authenticated call), the token
+is cached and refreshed with the expiry buffer, a rejected refresh falls back to a full
+relogin, and concurrent callers share a single in-flight token request.
+
+## Resource clients
+
+`createClient()` returns `{ send, sendText }` plus one namespace per resource. All resource
+clients share a single authenticated transport (`Authorization: Bearer`, `x-yoizen-tenant`,
+`x-request-id` injected automatically). Method one-liners below; **full request/response types
+live in each resource's `types.ts`** — the linked file is the source of truth, including
+verified notes on platform gaps.
+
+### workflows — [`src/resources/workflows/types.ts`](./src/resources/workflows/types.ts)
+
+- `create` — create a workflow definition
+- `update` — full-replace update (PUT)
+- `list` — list workflows (bare array today, single page)
+- `get` — fetch one workflow by id
+- `remove` — soft-delete a workflow
+- `execute` — start a Temporal-backed execution (202 Accepted)
+- `listExecutions` — list executions (real `page`/`pageSize` pagination)
+- `getExecution` — fetch one execution
+- `executionCounts` — tenant-wide execution counts grouped by definition
+- `executionsByCorrelation` — tenant-wide trace lookup by correlation id
+- `summary` — tenant-wide aggregate stats (active/failing definitions, 7d/24h execution counts, top definitions)
+
+### agents — [`src/resources/agents/types.ts`](./src/resources/agents/types.ts)
+
+- `create` / `update` / `list` / `get` / `remove` — agent CRUD (`list` uses `limit`/`offset`)
+- `publish` / `unpublish` — snapshot / revert published state
+- `listVersions` / `rollbackToVersion` / `deleteVersion` — version history management
+- `updateEnabledTools` / `updateEnabledMcpServers` / `updateToolDescriptionOverrides` — config patches
+- `revert` — discard the draft and restore the last published snapshot
+- `listMemoryProposals` / `approveMemoryProposal` / `rejectMemoryProposal` — memory-proposals sub-resource
+
+Pending deploy (2026-07-05): the gateway routes for `revert`/memory-proposals exist in
+source but 404/mis-route on the dev cluster's running pod — see `types.ts`.
+
+### runtime — [`src/resources/runtime/types.ts`](./src/resources/runtime/types.ts)
+
+- `createExecution` — start an agent runtime execution (202 Accepted)
+- `getExecution` — fetch execution status/result
+- `health` — public health check
+
+Gap: no `stream()` — two downstream SSE endpoints exist and the gateway proxies neither.
+
+### channels — [`src/resources/channels/types.ts`](./src/resources/channels/types.ts)
+
+- `createAccount` / `listAccounts` / `getAccount` / `updateAccount` / `removeAccount` — account CRUD
+- `refreshAccountToken` — exchange a Meta access token for a long-lived one
+- `sendMessage` — send an outbound (egress) message on an account
+- `createAutoReplyRule` / `listAutoReplyRules` / `removeAutoReplyRule` — auto-reply rules
+- `listStreams` / `streamMessages` — NATS stream inspection
+- `listUsage` / `listUsageTotals` — usage event buckets / totals over a time range
+- `usageSummary` — 24h rolling total + per-channel breakdown
+
+### webhooks — [`src/resources/webhooks/types.ts`](./src/resources/webhooks/types.ts)
+
+- `ingest` — publish a webhook ingress payload for any channel (`/api/webhooks/:channel/:tenant[/:instance]`; public route, caller supplies tenant + auth headers)
+
+### knowledgeBases — [`src/resources/knowledge-bases/types.ts`](./src/resources/knowledge-bases/types.ts)
+
+- `create` / `list` / `get` / `update` / `remove` — KB CRUD
+- `documents.list` / `documents.get` / `documents.remove` — document management
+- `documents.listChunks` / `documents.updateChunk` — chunk inspection/editing (real `page`/`limit` pagination)
+- `documents.upload` / `documents.uploadFile` — ingest content (`uploadFile` is base64-in-JSON, not multipart)
+- `documents.reingest` — reprocess a document
+
+Quirks: `list()` pagination params are ignored downstream; `get`/`update` return `null`
+instead of 404 for missing ids.
+
+### skills — [`src/resources/skills/types.ts`](./src/resources/skills/types.ts)
+
+- `create` / `list` / `get` / `update` / `remove` — skill CRUD
+
+Bug: `update()` currently returns HTTP 500 for every payload (downstream SQL-building bug).
+A fix exists in `agent-admin-service`'s working tree but is not confirmed live on the dev
+cluster as of 2026-07-05 (still 500s) — see the types file for the verified root cause.
+
+### systemVariables — [`src/resources/system-variables/types.ts`](./src/resources/system-variables/types.ts)
+
+- `create` / `list` / `get` / `update` / `remove` — system-variable CRUD
+
+Bug: scalar `value` round-trips double-JSON-encoded through `create()` but not `update()`
+(two different downstream code paths). A unifying fix exists in `agent-admin-service`'s
+working tree but is not confirmed live on the dev cluster as of 2026-07-05 (still
+double-encodes).
+
+### mcpServers — [`src/resources/mcp-servers/types.ts`](./src/resources/mcp-servers/types.ts)
+
+- `create` / `list` / `get` / `update` / `remove` — MCP server CRUD (normal REST 404 semantics; `update` is PUT, not PATCH)
+
+### connectors — [`src/resources/connectors/types.ts`](./src/resources/connectors/types.ts)
+
+- `create` / `list` / `get` / `update` / `remove` — connector CRUD (registry-managed field locks surface as `ConflictError`)
+- `usage` — per-connector call statistics
+- `addEndpoint` / `updateEndpoint` / `removeEndpoint` — endpoint sub-resource
+
+### registry — [`src/resources/registry/types.ts`](./src/resources/registry/types.ts)
+
+- `services.create` / `list` / `get` / `update` / `remove` / `listRevisions` — Knative service registry
+- `canary.start` / `update` / `promote` / `rollback` / `getStatus` — canary traffic management
+- `routes.create` / `list` / `remove` — per-service route management
+- `discoverRoutes` — read-only feed of all registered routes (the gateway's own routing source)
+
+**Caution**: routes and canary operations mutate live, cluster-wide gateway routing/traffic.
+Known race: `services.update()` right after `create()` can lose a K8s optimistic-concurrency
+409 and surface as a 500. A server-side retry fix exists in `registry-service`'s working
+tree but is not confirmed live as of 2026-07-05 — the SDK e2e suite keeps a client-side
+backoff workaround until it is.
+
+### authAdmin — [`src/resources/auth-admin/types.ts`](./src/resources/auth-admin/types.ts)
+
+- `users.create` / `users.list` — platform users
+- `clients.create` / `clients.list` / `clients.remove` — API clients (`create` returns a one-time `client_secret`)
+- `tenantUsers.create` / `list` / `get` / `update` / `remove` — tenant user membership
+- `tenantRoles.create` / `list` / `get` / `update` / `remove` — tenant roles + permissions
+- `publicRoutes.create` / `list` / `remove` — unauthenticated route bypass registry
+
+### tenants — [`src/resources/tenants/types.ts`](./src/resources/tenants/types.ts)
+
+- `create` — provision a tenant (202 Accepted, async — creates namespaces and DB hosts)
+- `list` / `get` — read tenants (`get` accepts name or id)
+- `update` / `remove` — resolve by **name only**; `update` takes a full configuration object
+
+### audit — [`src/resources/audit/types.ts`](./src/resources/audit/types.ts)
+
+- `events.list` / `events.get` — audit event query/read
+- `channelEvents.list` / `channelEvents.get` — channel event query/read
+
+Gap: the chain endpoints (`/audit/events/chain/:correlationId`) exist downstream but are not
+proxied. List envelopes carry no `total`, so `hasMore` is a heuristic.
+
+### jobs — [`src/resources/jobs/types.ts`](./src/resources/jobs/types.ts)
+
+- `create` / `list` / `get` / `update` / `remove` — scheduled job CRUD
+- `enable` / `disable` — toggle scheduling
+- `run` — manual run without payload
+- `trigger` — manual run with payload (the gateway now maps `payload` to the downstream `event_payload` field — pending deploy as of 2026-07-05, see `types.ts`)
+- `executions.list` — execution history
+
+### memories — [`src/resources/memories/types.ts`](./src/resources/memories/types.ts)
+
+- `create` — propose a memory
+- `list` / `listProposals` / `get` — read memories / pending proposals
+- `update` — patch a memory (`topicKey` is silently dropped downstream)
+- `approve` / `reject` — resolve a proposal (404 if not in PROPOSED state)
+- `remove` — delete a memory
+
+### structuredKb — [`src/resources/structured-kb/types.ts`](./src/resources/structured-kb/types.ts)
+
+- `containers.create` / `list` / `get` / `update` / `remove` — structured-KB container CRUD
+- `containers.query` — translate a natural-language query to SQL and run it (rate-limited: 30 req/min/tenant)
+
+Pending deploy (2026-07-05): the gateway route for `query` exists in source but 404s on
+the dev cluster's running pod — see `types.ts`.
+
+### configFiles — [`src/resources/config-files/types.ts`](./src/resources/config-files/types.ts)
+
+- `list` / `getByPath` — read config files
+- `upsert` — create-or-update a single config file keyed by `path` (`{name,path,content,format}`)
+- `deploy` — deploy config files (`deletePaths` removes files from the runtime config set)
+- `runtimeStatus` — connected runtime status
+- `templates` — list agent templates
+
+Pending deploy (2026-07-05): the gateway's DTOs for both routes were fixed to match the
+downstream contract, but the dev cluster's running pod still rejects the fixed shapes —
+see `types.ts`.
+
+### dashboard — [`src/resources/dashboard/types.ts`](./src/resources/dashboard/types.ts)
+
+- `getStats` — gateway-computed, Redis-cached dashboard stats aggregate (quota "limits" are hardcoded constants, not a real quota system)
+
+### send / sendText (message ingest, unchanged since v0.1.0)
+
+- `send(message)` — ingest a message via the http channel (`from`, `text?`, `media?`, `raw?`, ...); resolves only when the platform returns `"accepted"`
+- `sendText(text, opts?)` — text-only shorthand
+
+A `signature_mismatch` is retried once with a freshly resolved secret (handles secret
+rotation). `IngestError.ingestStatus` carries the platform status string.
+
+## Error taxonomy
+
+Every error extends `SdkError` (`.code`, `.details?`, `.cause?`) — defined in
+[`src/domain/errors.ts`](./src/domain/errors.ts). HTTP status mapping happens centrally in the
+transport (`src/core/transport.ts`).
+
+| Class | `code` | Triggered by | Notable fields |
 | --- | --- | --- | --- |
-| `tenant` | ✅ | `YOIZEN_TENANT` | — |
-| `email` | ✅ | `YOIZEN_EMAIL` | — |
-| `password` | ✅ | `YOIZEN_PASSWORD` | — |
-| `baseUrl` | | `YOIZEN_BASE_URL` | `http://api-gateway.platform-services-dev.dev.local` |
-| `defaultFrom` | | `YOIZEN_DEFAULT_FROM` | the login `email` |
-| `channelSelector` | | — | first active http account; pass `{ externalId }` or `{ name }` to pin a specific one |
-| `appSecret` | | `YOIZEN_HTTP_CHANNEL_TOKEN` | auto-resolved (skips the directory lookup) |
-| `instance` | | `YOIZEN_HTTP_CHANNEL_INSTANCE` | targets a dedicated HTTP channel instance's ingress URL (`/api/webhooks/http/{tenant}/{instance}`); falls back to `channelSelector.externalId`, then to the resolved account's `externalId` |
-| `timeoutMs` | | — | `10000` |
-| `tokenExpiryBufferMs` | | — | `60000` |
-| `fetch`, `clock` | | — | native `fetch` / system clock (injectable for tests) |
-| `onWarn` | | — | callback invoked with a warning message if the token's tenant scope differs from the configured tenant |
+| `SdkError` | `SDK` / `HTTP` / `NETWORK` | base class; unmapped HTTP statuses and network failures | `details.httpStatus`, `details.body` |
+| `ConfigError` | `CONFIG` | missing `tenant`/`email`/`password`, bad `baseUrl`, no `fetch` | `details.missing` |
+| `ValidationError` | `VALIDATION` | invalid message input (empty `from`, empty text) | — |
+| `AuthError` | `AUTH` | HTTP 401; login/refresh rejected | `details.httpStatus` |
+| `PermissionError` | `PERMISSION` | HTTP 403 — authenticated but not authorized | — |
+| `NotFoundError` | `NOT_FOUND` | HTTP 404 | — |
+| `ConflictError` | `CONFLICT` | HTTP 409 — state conflict (e.g. locked connector fields) | — |
+| `RateLimitError` | `RATE_LIMIT` | HTTP 429 | `retryAfterMs` (parsed from `Retry-After`) |
+| `ChannelResolutionError` | `CHANNEL_RESOLUTION` | no active http account / no `appSecret` (ingest flow) | — |
+| `IngestError` | `INGEST` | ingest failed or platform status ≠ `accepted` | `ingestStatus` |
 
-Args take precedence over environment variables.
+## Retry & backoff
 
-## API
+Implemented in [`src/core/retry.ts`](./src/core/retry.ts):
 
-- `createClient(config)` → `{ send, sendText }`
-- `send(message)` → `Promise<SendResult>`. `message` mirrors the platform `InboundMessage`
-  (`from`, `text?`, `type?`, `messageId?`, `timestamp?`, `media?`, `raw?`). `from` falls back to
-  `defaultFrom`. `media` and any unrecognized keys are folded into `raw`.
-- `sendText(text, { from?, type?, raw? })` → `Promise<SendResult>`.
-- `SendResult` = `{ status: "accepted", tenant, accountId?, messageId? }` — resolves only when the
-  platform accepts the message.
+- **Idempotent-by-default**: retries are ON for `GET`/`PUT`/`DELETE`, OFF for `POST` — unless
+  the call passes an `idempotencyKey` (also sent as the `Idempotency-Key` header), which makes
+  the POST retryable.
+- **What is retried**: network errors (`code: "NETWORK"`) and 5xx responses only. 4xx errors
+  (including 429) are never retried automatically.
+- **Backoff**: full-jitter exponential (AWS-style) — uniform random delay in
+  `[0, min(maxDelayMs, baseDelayMs * 2^attempt)]`.
+- **Defaults**: `maxAttempts: 3` (including the first try), `baseDelayMs: 200`,
+  `maxDelayMs: 5000`.
+- **Configurable at two levels**: `createClient({ retry })` sets the client default;
+  per-call `retry` options override it; `false` at either level disables retries.
 
-### Errors
+## Pagination
 
-All extend `SdkError` (`.code`, `.details?`):
+Implemented in [`src/core/pagination.ts`](./src/core/pagination.ts). Every `list`-style method
+returns a `Paginated<T>`:
 
-| Class | When |
-| --- | --- |
-| `ConfigError` | missing `tenant`/`email`/`password`, bad `baseUrl`, or no `fetch` |
-| `ValidationError` | empty/invalid `from`, empty text |
-| `AuthError` | login/refresh rejected (`.details.httpStatus`) |
-| `ChannelResolutionError` | no active http account / no `appSecret` |
-| `IngestError` | request failed or status ≠ `accepted` (`.ingestStatus`) |
+```ts
+// Walk every item across all pages
+for await (const wf of client.workflows.list()) { ... }
 
-A `signature_mismatch` is retried once with a freshly resolved secret before throwing
-(handles secret rotation).
+// Escape hatch: one page at a time, with total/hasMore
+const page = await client.agents.list().page({ limit: 20, offset: 40 });
+// -> { items, total?, hasMore, nextOffset? }
+```
 
-## Test
+There is no single pagination convention across the gateway today, so each resource adapts:
+endpoints with real `limit`/`offset` (agents, jobs) or `page`/`limit` (workflow executions, KB
+chunks) paginate for real; endpoints that return bare arrays today (workflows, channel
+accounts, connectors, registry services, ...) degrade to a single complete page — the calling
+shape is identical either way, so nothing breaks when the gateway adds real pagination later.
+
+## E2E testing
+
+Unit tests (`npm test`, 283 tests) are fully offline — mocked transport, no network. The e2e
+suite (`test/e2e/`, 57 tests across 8 files) runs against a **live dev cluster**:
+
+```bash
+# From the repo root: expose the gateway on localhost:8080
+./port-forward.sh dev
+
+cd sdk
+SDK_E2E=1 npm run test:e2e
+```
+
+- **`SDK_E2E=1` gates the suite** — without it every e2e test self-skips, so `npm test` and
+  CI stay offline-safe.
+- **`--test-concurrency=1` is required** (already baked into the `test:e2e` script): the
+  gateway enforces a per-tenant rate limit, and concurrent e2e files trip 429s.
+- Credentials default to the dev seed tenant (`acme` / `yclawd@demo.io`); base URL resolution
+  probes `localhost:8080` then the ingress hostname. Full variable table in
+  [`test/e2e/README.md`](./test/e2e/README.md).
+- Tests create uniquely-named resources and clean up in `finally` blocks.
+
+## Known platform gaps
+
+These are **gateway/downstream issues, not SDK bugs** — the SDK deliberately omits or
+documents the affected surface rather than encoding broken behavior. Each resource's
+`types.ts` carries the verified evidence (exact controllers/files read side by side); see also
+GROWTH-PLAN.md Phase 2 acceptance notes.
+
+1. **runtime** — two downstream SSE streaming endpoints exist; the gateway proxies neither → no `stream()`. Blocked on the ai-agent-gateway architecture; open by design, not a gap to fix.
+2. **audit** — chain endpoints (`/audit/events/chain/:correlationId`) not proxied; list envelopes carry no `total`. Still open, not addressed by the 2026-07-05 hardening pass.
+3. **channels.usageSummary()** — `GET channels/usage/summary` is correctly routed by the
+   gateway, but `channel-service`'s usage-summary SQL references a nonexistent `events`
+   column and 500s (task #17, tracked separately). The e2e suite keeps a tolerant
+   diagnostic-log branch for this one method until the downstream fix ships.
+
+All other previously-listed gaps (`workflows.summary()`, `agents.revert()` /
+`listMemoryProposals()` / `approveMemoryProposal()` / `rejectMemoryProposal()`,
+`structuredKb.containers.query()`, `configFiles.upsert()`/`deploy()`'s fixed contract,
+`jobs.trigger()`'s `payload` mapping, `skills.update()`, `systemVariables.create()`'s
+double-encoding, and `registry.services.update()`'s 409-vs-Knative-reconciler race) are
+**confirmed fixed and live** on the dev cluster as of the 2026-07-05 hardening pass — see
+CHANGELOG.md "Unreleased" and GROWTH-PLAN.md Phase 5 for the live-probe evidence. The
+corresponding e2e tests now assert the fixed behavior directly (hard assertions, no more
+tolerant try/catch), and the registry e2e suite's client-side `withKnativeConflictRetry`
+workaround was removed.
+
+## Semver & compatibility
+
+**The SDK's semver is independent of the platform API version.** SDK versions track the SDK's
+own public surface (methods, types, config); the API version the SDK targets is declared here
+and selected at runtime via the `apiVersion` config option.
+
+| SDK version | `/api` (unversioned) | `/api/v1` |
+| --- | --- | --- |
+| `0.1.x` (ingest-only) | ✅ supported | — |
+| Unreleased / next (full platform surface) | ✅ opt-in (`apiVersion: null`), deprecated alias | ✅ supported, **default** (`apiVersion: "v1"`) — see note below |
+
+**Current reality of `/api/v1`** (verified against `services/api-gateway/src/main.ts` and a
+live probe against the dev cluster on 2026-07-05): the gateway implements URI versioning
+(`enableVersioning` with `defaultVersion: ["1", VERSION_NEUTRAL]`), so every route is served
+both as `/api/...` (marked deprecated via `Deprecation: true` + `Link: ...;
+rel="successor-version"` response headers) and as `/api/v1/...`. OpenAPI is likewise
+implemented (Swagger UI at `/api/docs`, JSON at `/api/docs-json` — `src/openapi.config.ts`).
+**As of 2026-07-05 this build is confirmed deployed and live on the dev cluster** — every
+route family the SDK calls (`auth`, `webhooks`, `workflows`, `admin/agents`, `admin/skills`,
+`admin/system-variables`, `admin/config-files`, `admin/structured-kb`, `admin/jobs`,
+`channels`, `admin/memories`, `admin/knowledge-bases`, `admin/mcp-servers`, `audit`,
+`dashboard`, `tenants`, `registry`, `connectors`) was live-probed under `/api/v1` and
+returned success (or a legitimate non-versioning error, e.g. a platform-scope 403). No route
+family needed to stay on the unversioned alias, so the SDK's `apiVersion` default is now
+`"v1"` (see `src/core/transport.ts` and GROWTH-PLAN.md Phase 5).
+
+Breaking-change policy while `0.x`: minor bumps (`0.1` → `0.2`) may include breaking changes
+per semver spec item 4, but the project's own invariant (GROWTH-PLAN.md §2.1) keeps
+`createClient` → `{ send, sendText }` and the error classes stable until a major bump is
+explicitly decided.
+
+## Development
 
 ```bash
 cd sdk
-node --test
+npm install        # dev deps only (typescript, tsx, @types/node)
+npm run build      # tsc — strict typecheck + emit dist/ (ESM + .d.ts)
+npm test           # unit tests (offline, 283 tests)
+npm run test:e2e   # live-cluster e2e (requires SDK_E2E=1, see above)
 ```
 
-No install step — tests use the built-in `node:test` runner with fully stubbed ports/`fetch`.
+Layout: `src/domain` (pure value objects + errors), `src/application` (ingest use case +
+ports), `src/infrastructure` (fetch wrapper, adapters, config, composition root),
+`src/core` (session, transport, retry, pagination — shared by all resource clients),
+`src/resources/<name>/` (`types.ts` + `client.ts` + `index.ts` per resource). Tests mirror
+`src/` 1:1 under `test/`.

@@ -1,5 +1,6 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import {
+  isK8sConflict,
   isK8sNotFound,
   k8sApiErrorMessage,
 } from "../../src/utils/k8s-error";
@@ -32,5 +33,29 @@ describe("isK8sNotFound", () => {
 
   it("returns false for non-object errors", () => {
     expect(isK8sNotFound("x")).toBe(false);
+  });
+});
+
+describe("isK8sConflict", () => {
+  it("returns true for legacy response.statusCode 409", () => {
+    expect(isK8sConflict({ response: { statusCode: 409 } })).toBe(true);
+  });
+
+  it("returns true for ApiException-style code 409", () => {
+    expect(isK8sConflict({ code: 409 })).toBe(true);
+  });
+
+  it("returns true for a bare statusCode 409", () => {
+    expect(isK8sConflict({ statusCode: 409 })).toBe(true);
+  });
+
+  it("returns false for other status codes", () => {
+    expect(isK8sConflict({ response: { statusCode: 500 } })).toBe(false);
+    expect(isK8sConflict({ code: 404 })).toBe(false);
+  });
+
+  it("returns false for non-object errors", () => {
+    expect(isK8sConflict("x")).toBe(false);
+    expect(isK8sConflict(null)).toBe(false);
   });
 });

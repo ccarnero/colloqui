@@ -1,22 +1,22 @@
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { PaginatedQueryDto } from "@yoizen/shared/dto/pagination";
+import { Transform, Type } from "class-transformer";
 import {
+  IsArray,
+  IsBoolean,
   IsEnum,
   IsIn,
   IsInt,
-  IsString,
-  IsOptional,
-  IsBoolean,
-  IsObject,
-  IsArray,
   IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
   MaxLength,
-  ValidateNested,
-  ValidationOptions,
-  ValidationArguments,
   registerDecorator,
-  MinLength,
+  ValidateNested,
+  type ValidationArguments,
+  type ValidationOptions,
 } from "class-validator";
-import { Type, Transform } from "class-transformer";
-import { PaginatedQueryDto } from "@yoizen/shared/dto/pagination";
 
 const MAX_NAME_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -48,7 +48,7 @@ export enum MemoryStatus {
 }
 
 function AtLeastOneField(validationOptions?: ValidationOptions) {
-  return function (object: object, propertyName: string) {
+  return (object: object, propertyName: string) => {
     registerDecorator({
       name: "atLeastOneField",
       target: object.constructor,
@@ -68,77 +68,98 @@ function AtLeastOneField(validationOptions?: ValidationOptions) {
 }
 
 export class CreateAgentDto {
+  @ApiProperty({ maxLength: MAX_NAME_LENGTH })
   @IsString()
   @IsNotEmpty()
   @MaxLength(MAX_NAME_LENGTH)
   name!: string;
 
+  @ApiPropertyOptional({ maxLength: MAX_DESCRIPTION_LENGTH })
   @IsString()
   @IsOptional()
   @MaxLength(MAX_DESCRIPTION_LENGTH)
   description?: string;
 
+  @ApiProperty({ maxLength: MAX_SYSTEM_PROMPT_LENGTH })
   @IsString()
   @IsNotEmpty()
   @MaxLength(MAX_SYSTEM_PROMPT_LENGTH)
   system_prompt!: string;
 
+  @ApiPropertyOptional({ type: "object", additionalProperties: true })
   @IsObject()
   @IsOptional()
   model_config?: Record<string, unknown>;
 
+  @ApiPropertyOptional({ type: [Object] })
   @IsArray()
   @IsOptional()
   @Type(() => Object)
   tools?: unknown[];
 
+  @ApiPropertyOptional({ type: [Object] })
   @IsArray()
   @IsOptional()
   channels?: unknown[];
 
-  @IsArray() @IsOptional() @IsString({ each: true })
+  @ApiPropertyOptional({ type: [String] })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
   knowledge_base_ids?: string[];
-  @IsArray() @IsOptional()
+  @ApiPropertyOptional({ type: [Object] })
+  @IsArray()
+  @IsOptional()
   input_variables?: unknown[];
-  @IsArray() @IsOptional()
+  @ApiPropertyOptional({ type: [Object] })
+  @IsArray()
+  @IsOptional()
   output_variables?: unknown[];
 }
 
 export class UpdateAgentDto {
+  @ApiPropertyOptional({ maxLength: MAX_NAME_LENGTH })
   @IsString()
   @IsOptional()
   @MaxLength(MAX_NAME_LENGTH)
   name?: string;
 
+  @ApiPropertyOptional({ maxLength: MAX_DESCRIPTION_LENGTH })
   @IsString()
   @IsOptional()
   @MaxLength(MAX_DESCRIPTION_LENGTH)
   description?: string;
 
+  @ApiPropertyOptional({ maxLength: MAX_SYSTEM_PROMPT_LENGTH })
   @IsString()
   @IsOptional()
   @MaxLength(MAX_SYSTEM_PROMPT_LENGTH)
   system_prompt?: string;
 
+  @ApiPropertyOptional({ type: "object", additionalProperties: true })
   @IsObject()
   @IsOptional()
   model_config?: Record<string, unknown>;
 
+  @ApiPropertyOptional({ type: [Object] })
   @IsArray()
   @IsOptional()
   @Type(() => Object)
   tools?: unknown[];
 
+  @ApiPropertyOptional({ type: [Object] })
   @IsArray()
   @IsOptional()
   channels?: unknown[];
 
+  @ApiPropertyOptional()
   @IsBoolean()
   @IsOptional()
   is_active?: boolean;
 }
 
 export class UpdateEnabledToolsDto {
+  @ApiPropertyOptional({ type: [String], nullable: true })
   @IsArray()
   @IsOptional()
   @IsString({ each: true })
@@ -146,6 +167,7 @@ export class UpdateEnabledToolsDto {
 }
 
 export class UpdateEnabledMcpServersDto {
+  @ApiPropertyOptional({ type: [String], nullable: true })
   @IsArray()
   @IsOptional()
   @IsString({ each: true })
@@ -163,101 +185,134 @@ export class UpdateEnabledMcpServersDto {
  * Keys that don't match a declared tool are stored but ignored at runtime.
  */
 export class UpdateToolDescriptionOverridesDto {
+  @ApiPropertyOptional({
+    type: "object",
+    additionalProperties: { type: "string" },
+    nullable: true,
+  })
   @IsObject()
   @IsOptional()
   tool_description_overrides?: Record<string, string> | null;
 }
 
 export class CreateMcpServerDto {
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   name!: string;
 
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   description?: string;
 
+  @ApiProperty({ enum: ["http", "sse"] })
   @IsString()
   @IsIn(["http", "sse"])
   transport_type!: "http" | "sse";
 
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   url!: string;
 
+  @ApiPropertyOptional({
+    type: "object",
+    additionalProperties: { type: "string" },
+  })
   @IsObject()
   @IsOptional()
   headers?: Record<string, string>;
 
+  @ApiPropertyOptional()
   @IsBoolean()
   @IsOptional()
   enabled?: boolean;
 }
 
 export class UpdateMcpServerDto {
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   name?: string;
 
+  @ApiPropertyOptional({ nullable: true })
   @IsString()
   @IsOptional()
   description?: string | null;
 
+  @ApiPropertyOptional({ enum: ["http", "sse"] })
   @IsString()
   @IsOptional()
   @IsIn(["http", "sse"])
   transport_type?: "http" | "sse";
 
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   url?: string;
 
+  @ApiPropertyOptional({
+    type: "object",
+    additionalProperties: { type: "string" },
+    nullable: true,
+  })
   @IsObject()
   @IsOptional()
   headers?: Record<string, string> | null;
 
+  @ApiPropertyOptional()
   @IsBoolean()
   @IsOptional()
   enabled?: boolean;
 }
 
 export class McpServerIdParamDto {
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   id!: string;
 }
 
 export class ChatContextEntryDto {
+  @ApiProperty({ enum: ["customer", "agent"] })
   @IsString()
   @IsIn(["customer", "agent"])
   sender!: "customer" | "agent";
 
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   content!: string;
 }
 
 export class ChatRequestDto {
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   message!: string;
 
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   conversationId?: string;
 
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   customerName?: string;
 
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   userId?: string;
 
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   channel?: string;
 
+  @ApiPropertyOptional({ type: [ChatContextEntryDto] })
   @IsArray()
   @IsOptional()
   @ValidateNested({ each: true })
@@ -266,12 +321,14 @@ export class ChatRequestDto {
 }
 
 export class MemoryProposalParamDto {
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   id!: string;
 }
 
 export class MemoryDecisionDto {
+  @ApiPropertyOptional({ maxLength: MAX_DESCRIPTION_LENGTH })
   @IsString()
   @IsOptional()
   @MaxLength(MAX_DESCRIPTION_LENGTH)
@@ -279,99 +336,131 @@ export class MemoryDecisionDto {
 }
 
 export class CreateJobDto {
+  @ApiProperty({ maxLength: MAX_NAME_LENGTH })
   @IsString()
   @IsNotEmpty()
   @MaxLength(MAX_NAME_LENGTH)
   name!: string;
 
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   agent_id!: string;
 
+  @ApiProperty({ maxLength: 255, description: "Cron expression." })
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
   schedule!: string;
 
+  @ApiPropertyOptional({ type: "object", additionalProperties: true })
   @IsObject()
   @IsOptional()
   payload?: Record<string, unknown>;
 
+  @ApiPropertyOptional()
   @IsBoolean()
   @IsOptional()
   is_active?: boolean;
 }
 
 export class UpdateJobDto {
+  @ApiPropertyOptional({ maxLength: MAX_NAME_LENGTH })
   @IsString()
   @IsOptional()
   @MaxLength(MAX_NAME_LENGTH)
   name?: string;
 
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   agent_id?: string;
 
+  @ApiPropertyOptional({ maxLength: 255, description: "Cron expression." })
   @IsString()
   @IsOptional()
   @MaxLength(255)
   schedule?: string;
 
+  @ApiPropertyOptional({ type: "object", additionalProperties: true })
   @IsObject()
   @IsOptional()
   payload?: Record<string, unknown>;
 
+  @ApiPropertyOptional()
   @IsBoolean()
   @IsOptional()
   is_active?: boolean;
 }
 
 export class TriggerJobDto {
+  /**
+   * Kept as `payload` on the gateway's external API for stability, but
+   * forwarded to agent-admin-service as `event_payload` — the field name
+   * the downstream trigger endpoint actually reads. See
+   * `AdminJobsController.triggerJob` for the mapping.
+   */
+  @ApiPropertyOptional({
+    type: "object",
+    additionalProperties: true,
+    description:
+      "Forwarded downstream as `event_payload` (agent-admin-service's field name for this endpoint).",
+  })
   @IsObject()
   @IsOptional()
   payload?: Record<string, unknown>;
 }
 
-export class ConfigFileDto {
+/**
+ * Mirrors agent-admin-service's `CreateConfigFileDto`. The downstream
+ * `PUT /admin/config-files` endpoint accepts a single config file object
+ * (create-or-update semantics keyed by `path`), NOT an array wrapper.
+ */
+export class UpsertConfigFileDto {
+  @ApiProperty({ maxLength: MAX_NAME_LENGTH })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(MAX_NAME_LENGTH)
+  name!: string;
+
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   path!: string;
 
+  @ApiProperty({ maxLength: MAX_CONTENT_LENGTH })
   @IsString()
   @IsNotEmpty()
   @MaxLength(MAX_CONTENT_LENGTH)
   content!: string;
-}
 
-export class UpsertConfigFileDto {
-  @IsArray()
+  @ApiProperty({ enum: ["yaml", "json"] })
+  @IsIn(["yaml", "json"])
   @IsNotEmpty()
-  files!: ConfigFileDto[];
+  format!: "yaml" | "json";
 }
 
+/** Mirrors agent-admin-service's `DeployConfigFilesDto`. */
 export class DeployConfigFilesDto {
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      "Paths to remove from the runtime config set as part of this deploy.",
+  })
   @IsArray()
   @IsOptional()
-  file_paths?: string[];
-
-  @IsBoolean()
-  @IsOptional()
-  is_active?: boolean;
-
-  @IsArray() @IsOptional() @IsString({ each: true })
-  knowledge_base_ids?: string[];
-  @IsArray() @IsOptional()
-  input_variables?: unknown[];
-  @IsArray() @IsOptional()
-  output_variables?: unknown[];
+  @IsString({ each: true })
+  deletePaths?: string[];
 }
 
 /** Query for `GET /admin/agents`. */
 export class AdminAgentsListQueryDto extends PaginatedQueryDto {
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   status?: string;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   is_active?: string;
@@ -379,10 +468,12 @@ export class AdminAgentsListQueryDto extends PaginatedQueryDto {
 
 /** Query for `GET /admin/jobs`. */
 export class AdminJobsListQueryDto extends PaginatedQueryDto {
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   agent_id?: string;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   is_active?: string;
@@ -390,10 +481,12 @@ export class AdminJobsListQueryDto extends PaginatedQueryDto {
 
 /** Query for `GET /admin/jobs/executions`. */
 export class AdminJobExecutionsListQueryDto extends PaginatedQueryDto {
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   job_id?: string;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   status?: string;
@@ -404,102 +497,150 @@ export class AdminConfigFilesListQueryDto extends PaginatedQueryDto {}
 
 /** Query for `GET /admin/config-files/file`. */
 export class ConfigFilePathQueryDto {
+  @ApiProperty({ maxLength: 2048 })
   @IsString()
   @IsNotEmpty()
   @MaxLength(2048)
   path!: string;
 }
 
+/** Mirrors agent-admin-service's `QuerySKBDto`. */
+export class QueryStructuredKbDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  query!: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsArray()
+  @IsOptional()
+  categories?: string[];
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 1000 })
+  @IsInt()
+  @IsOptional()
+  limit?: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsInt()
+  @IsOptional()
+  offset?: number;
+}
+
 export class MemoryIdParamDto {
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   id!: string;
 }
 
 export class AdminMemoryListQueryDto {
+  @ApiPropertyOptional({ enum: MemoryScope })
   @IsEnum(MemoryScope)
   @IsOptional()
   scope?: MemoryScope;
 
+  @ApiPropertyOptional({ enum: MemoryKind })
   @IsEnum(MemoryKind)
   @IsOptional()
   kind?: MemoryKind;
 
+  @ApiPropertyOptional({ enum: MemoryStatus })
   @IsEnum(MemoryStatus)
   @IsOptional()
   status?: MemoryStatus;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   search?: string;
 
+  @ApiPropertyOptional({ type: Number })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   limit?: number;
 
+  @ApiPropertyOptional({ type: Number })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   offset?: number;
 
+  @ApiPropertyOptional({ type: Boolean })
   @IsOptional()
   @Transform(({ value }) => {
-    if (value === "true" || value === true) return true;
-    if (value === "false" || value === false) return false;
+    if (value === "true" || value === true) {
+      return true;
+    }
+    if (value === "false" || value === false) {
+      return false;
+    }
     return undefined;
   })
   @IsBoolean()
   includeExpired?: boolean;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   sessionId?: string;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   userId?: string;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   context?: string;
 }
 
 export class CreateMemoryDto {
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   scope!: string;
 
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   kind!: string;
 
+  @ApiPropertyOptional({ maxLength: MAX_NAME_LENGTH })
   @IsString()
   @IsOptional()
   @MaxLength(MAX_NAME_LENGTH)
   title?: string;
 
+  @ApiProperty({ maxLength: MAX_MEMORY_CONTENT_LENGTH })
   @IsString()
   @IsNotEmpty()
   @MaxLength(MAX_MEMORY_CONTENT_LENGTH)
   content!: string;
 
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   userId?: string;
 
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   sessionId?: string;
 
+  @ApiPropertyOptional({ type: "object", additionalProperties: true })
   @IsObject()
   @IsOptional()
   metadata?: Record<string, unknown>;
 
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   topicKey?: string;
 
+  @ApiPropertyOptional()
   @IsInt()
   @IsOptional()
   ttl?: number;
@@ -512,20 +653,24 @@ export class UpdateMemoryDto {
   })
   _atLeastOne?: never;
 
+  @ApiPropertyOptional({ maxLength: MAX_NAME_LENGTH })
   @IsString()
   @IsOptional()
   @MaxLength(MAX_NAME_LENGTH)
   title?: string;
 
+  @ApiPropertyOptional({ maxLength: MAX_MEMORY_CONTENT_LENGTH })
   @IsString()
   @IsOptional()
   @MaxLength(MAX_MEMORY_CONTENT_LENGTH)
   content?: string;
 
+  @ApiPropertyOptional({ type: "object", additionalProperties: true })
   @IsObject()
   @IsOptional()
   metadata?: Record<string, unknown>;
 
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   topicKey?: string;

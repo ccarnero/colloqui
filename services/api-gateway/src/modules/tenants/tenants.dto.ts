@@ -1,16 +1,17 @@
-import {
-  IsString,
-  IsNotEmpty,
-  MaxLength,
-  Matches,
-  IsOptional,
-  IsObject,
-  IsIn,
-} from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   TenantDatabaseTier,
   type TenantDatabaseTierValue,
 } from "@yoizen/shared";
+import {
+  IsIn,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from "class-validator";
 
 /**
  * Proxy body for POST /tenants — aligned with tenant-service CreateTenantDto.
@@ -21,6 +22,12 @@ import {
  * gateway with HTTP 400 before being proxied downstream.
  */
 export class CreateTenantBodyDto {
+  @ApiProperty({
+    description:
+      "Lowercase alphanumeric tenant slug, optional hyphens, cannot start/end with a hyphen.",
+    maxLength: 32,
+    example: "acme-corp",
+  })
   @IsString()
   @IsNotEmpty()
   @MaxLength(32)
@@ -30,10 +37,19 @@ export class CreateTenantBodyDto {
   })
   name!: string;
 
+  @ApiPropertyOptional({
+    enum: TenantDatabaseTier,
+    description: "Database tier for the tenant's provisioned database.",
+  })
   @IsOptional()
   @IsIn(Object.values(TenantDatabaseTier))
   tier?: TenantDatabaseTierValue;
 
+  @ApiPropertyOptional({
+    type: "object",
+    additionalProperties: true,
+    description: "Free-form tenant configuration overrides.",
+  })
   @IsOptional()
   @IsObject()
   configuration?: Record<string, unknown>;
@@ -43,6 +59,11 @@ export class CreateTenantBodyDto {
  * Proxy body for PATCH /tenants/:name — aligned with tenant-service UpdateTenantDto.
  */
 export class UpdateTenantBodyDto {
+  @ApiProperty({
+    type: "object",
+    additionalProperties: true,
+    description: "Tenant configuration to merge/replace.",
+  })
   @IsObject()
   @IsNotEmpty()
   configuration!: Record<string, unknown>;

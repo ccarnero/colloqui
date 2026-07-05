@@ -3,21 +3,24 @@ import {
   Inject,
   Injectable,
   Logger,
-} from '@nestjs/common';
-import { createInbox, headers, type NatsConnection } from 'nats';
+  NotFoundException,
+} from "@nestjs/common";
+import { tracedFetch } from "@yoizen/observability";
+import {
+  buildPlatformSubject,
+  PLATFORM_CHAT_RESPOND,
+  TENANT_HEADER,
+} from "@yoizen/shared";
+import { createInbox, headers, type NatsConnection } from "nats";
+import { agentAdminServiceConfig } from "../../config";
+import { LAZY_NATS } from "../../providers/nats.provider";
 import type {
   ChatRequestDto,
   ChatResponseDto,
   MemoryProposalActionResponseDto,
   MemoryProposalDto,
   MemoryProposalListResponseDto,
-} from './agents.dto';
-import { LAZY_NATS } from '../../providers/nats.provider';
-import {
-  buildPlatformSubject,
-  PLATFORM_CHAT_RESPOND,
-  PLATFORM_SUBJECT_PREFIX,
-} from '@yoizen/shared';
+} from "./agents.dto";
 
 interface LazyNats {
   getConnection(): Promise<NatsConnection>;
@@ -49,7 +52,7 @@ export class AgentsRuntimeService {
     tenantId: string,
     agentId: string,
     dto: ChatRequestDto,
-    userId?: string,
+    userId?: string
   ): Promise<ChatResponseDto> {
     const now = new Date().toISOString();
     const correlationId = dto.conversationId || `chat-${Date.now()}`;
@@ -63,9 +66,9 @@ export class AgentsRuntimeService {
         correlationId,
         this.generateTraceId(),
         now,
-        userId,
+        userId
       ),
-      `chat request for agent ${agentId}`,
+      `chat request for agent ${agentId}`
     );
 
     return this.parseChatResponse(responseData);
@@ -73,6 +76,15 @@ export class AgentsRuntimeService {
 
   /**
    * Lists pending memory proposals.
+   *
+   * NOTE: this used to be a NATS request/reply call to a
+   * `memory_proposals_list` action subject, but nothing in the platform
+   * ever subscribed to that subject (agent-ai-service's message router only
+   * handles `chat_respond`). That made every call hang until the 15 minute
+   * RUNTIME_RESPONSE_TIMEOUT_MS fired. Memory proposals are actually owned
+   * by agent-memory-service, which already exposes an HTTP endpoint for
+   * this (`GET /admin/memories/proposals`), so we call that directly with a
+   * bounded timeout instead of going through NATS.
    */
   async listMemoryProposals(
     tenantId: string,
@@ -80,73 +92,75 @@ export class AgentsRuntimeService {
       status?: string;
       kind?: string;
       limit?: number;
-    },
+    }
   ): Promise<MemoryProposalListResponseDto> {
-    const actionType = 'memory_proposals_list';
-    const correlationId = `memory-proposals-list-${Date.now()}`;
-    const now = new Date().toISOString();
-    const responseData = await this.requestRuntime(
+    const url = new URL(
+      `${agentAdminServiceConfig.memoryServiceUrl}/admin/memories/proposals`
+    );
+    if (query?.kind) {
+      url.searchParams.set("kind", query.kind);
+    }
+    if (query?.limit !== undefined) {
+      url.searchParams.set("limit", String(query.limit));
+    }
+
+    const response = await this.requestMemoryService(
+      url,
       tenantId,
-      this.buildRuntimeActionSubject(actionType),
-      this.buildRuntimeActionEnvelope(
-        tenantId,
-        actionType,
-        {
-          action_type: actionType,
-          ...(query?.status ? { status: query.status } : {}),
-          ...(query?.kind ? { kind: query.kind } : {}),
-          ...(query?.limit !== undefined ? { limit: query.limit } : {}),
-        },
-        correlationId,
-        now,
-        '//agent-admin-service/admin/agents/memory-proposals/list',
-      ),
-      'memory proposals list request',
+      { method: "GET" },
+      "memory proposals list request"
     );
 
+    const body = (await response.json()) as { items?: unknown[] };
+    const items = Array.isArray(body.items) ? body.items : [];
+
     return {
-      proposals: this.extractProposalList(responseData),
+      proposals: items
+        .map((item) => this.mapMemoryRecord(item))
+        .filter((item): item is MemoryProposalDto => item !== null),
     };
   }
 
   /**
    * Reviews a memory proposal by approving or rejecting it.
+   *
+   * Same root cause as {@link listMemoryProposals}: this now calls
+   * agent-memory-service's `PATCH /admin/memories/:id/approve|reject`
+   * endpoints directly instead of requesting a NATS subject nobody answers.
+   *
+   * agent-memory-service's approve/reject endpoints don't currently accept
+   * a reviewer id or reason, so those inputs are validated/trimmed but not
+   * forwarded downstream yet.
    */
   async reviewMemoryProposal(
     tenantId: string,
     proposalId: string,
-    actionType: 'memory_proposals_approve' | 'memory_proposals_reject',
+    actionType: "memory_proposals_approve" | "memory_proposals_reject",
     reviewerId?: string,
-    reason?: string,
+    reason?: string
   ): Promise<MemoryProposalActionResponseDto> {
-    const correlationId = `${actionType}-${proposalId}-${Date.now()}`;
-    const now = new Date().toISOString();
-    const responseData = await this.requestRuntime(
-      tenantId,
-      this.buildRuntimeActionSubject(actionType),
-      this.buildRuntimeActionEnvelope(
-        tenantId,
-        actionType,
-        {
-          action_type: actionType,
-          memory_id: proposalId,
-          ...(reviewerId?.trim() ? { actor: reviewerId.trim() } : {}),
-          ...(reason?.trim() ? { reason: reason.trim() } : {}),
-        },
-        correlationId,
-        now,
-        `//agent-admin-service/admin/agents/memory-proposals/${actionType}`,
-      ),
-      `${actionType} request for proposal ${proposalId}`,
+    const action =
+      actionType === "memory_proposals_approve" ? "approve" : "reject";
+    const url = new URL(
+      `${agentAdminServiceConfig.memoryServiceUrl}/admin/memories/${proposalId}/${action}`
     );
 
-    const payload = this.extractRuntimePayload(responseData);
-    const proposal = this.tryMapProposal(
-      payload.proposal,
-    ) ?? this.tryMapProposal(payload.memory_proposal) ?? this.tryMapProposal(payload.item);
+    this.logger.debug(
+      `Reviewing proposal ${proposalId} (${action}) requested by ${reviewerId ?? "unknown"}${reason ? ` - ${reason}` : ""}`
+    );
+
+    const response = await this.requestMemoryService(
+      url,
+      tenantId,
+      { method: "PATCH" },
+      `${actionType} request for proposal ${proposalId}`
+    );
+
+    const body = (await response.json()) as unknown;
+    const proposal = this.mapMemoryRecord(body);
 
     return {
-      success: this.readBoolean(payload.success) ?? this.readBoolean(payload.ok) ?? true,
+      success: true,
       ...(proposal ? { proposal } : {}),
     };
   }
@@ -158,39 +172,39 @@ export class AgentsRuntimeService {
     correlationId: string,
     traceId: string,
     now: string,
-    userId?: string,
+    userId?: string
   ): Record<string, unknown> {
     const payload = {
-      action_type: 'chat_respond',
+      action_type: "chat_respond",
       agent_id: agentId,
       message: dto.message,
       conversation_id: correlationId,
-      customer_name: dto.customerName || 'User',
+      customer_name: dto.customerName || "User",
       context: dto.context || [],
       ...(userId?.trim() ? { user_id: userId.trim() } : {}),
     };
 
     return {
-      specversion: '1.0',
+      specversion: "1.0",
       id: this.generateEventId(),
-      source: '//agent-admin-service/admin/agents/chat',
-      type: 'io.yoizen.platform.chat.request.v1',
+      source: "//agent-admin-service/admin/agents/chat",
+      type: "io.yoizen.platform.chat.request.v1",
       resource: `tenant/${tenantId}/agents/${agentId}`,
       time: now,
       traceid: traceId,
       causation_id: null,
       correlation_id: correlationId,
       tenant: tenantId,
-      producer: 'agent-admin-service',
-      domain: 'automation',
-      channel: 'platform',
-      provider: 'internal',
-      accountid: 'platform-admin',
+      producer: "agent-admin-service",
+      domain: "automation",
+      channel: "platform",
+      provider: "internal",
+      accountid: "platform-admin",
       idempotencykey: this.computeIdempotencyKey(payload),
       transport: {
-        method: 'agent',
-        protocol: 'internal',
-        agent_id: 'agent-admin-service',
+        method: "agent",
+        protocol: "internal",
+        agent_id: "agent-admin-service",
         depth: 0,
       },
       data: {
@@ -213,7 +227,7 @@ export class AgentsRuntimeService {
       throw new BadGatewayException(
         errorMessage
           ? `Runtime chat error: ${errorMessage}`
-          : 'Runtime chat request failed',
+          : "Runtime chat request failed"
       );
     }
 
@@ -223,7 +237,7 @@ export class AgentsRuntimeService {
       this.readOptionalString(chatPayload.reply);
 
     if (!reply) {
-      throw new BadGatewayException('Invalid response from agent');
+      throw new BadGatewayException("Invalid response from agent");
     }
 
     return {
@@ -238,7 +252,7 @@ export class AgentsRuntimeService {
     tenantId: string,
     subjectTemplate: string,
     envelope: Record<string, unknown>,
-    logContext: string,
+    logContext: string
   ): Promise<unknown> {
     const subject = buildPlatformSubject(subjectTemplate, tenantId);
 
@@ -246,7 +260,10 @@ export class AgentsRuntimeService {
 
     const nc = await this.lazyNats.getConnection();
 
-    if (typeof nc.subscribe === 'function' && typeof nc.publish === 'function') {
+    if (
+      typeof nc.subscribe === "function" &&
+      typeof nc.publish === "function"
+    ) {
       return this.requestRuntimeWithInbox(nc, subject, envelope);
     }
 
@@ -259,7 +276,7 @@ export class AgentsRuntimeService {
   private requestRuntimeWithInbox(
     nc: NatsConnection,
     subject: string,
-    envelope: Record<string, unknown>,
+    envelope: Record<string, unknown>
   ): Promise<unknown> {
     return new Promise<unknown>((resolve, reject) => {
       const inbox = createInbox();
@@ -272,7 +289,7 @@ export class AgentsRuntimeService {
 
         settled = true;
         subscription.unsubscribe();
-        reject(new BadGatewayException('Timeout waiting for runtime response'));
+        reject(new BadGatewayException("Timeout waiting for runtime response"));
       }, AgentsRuntimeService.RUNTIME_RESPONSE_TIMEOUT_MS);
 
       const subscription = nc.subscribe(inbox, {
@@ -311,7 +328,7 @@ export class AgentsRuntimeService {
 
       try {
         const replyHeaders = headers();
-        replyHeaders.set('x-reply-to', inbox);
+        replyHeaders.set("x-reply-to", inbox);
         nc.publish(subject, payload, { reply: inbox, headers: replyHeaders });
       } catch (publishError) {
         if (!settled) {
@@ -325,70 +342,78 @@ export class AgentsRuntimeService {
   }
 
   private isJetStreamPubAck(value: unknown): value is RuntimePubAck {
-    if (typeof value !== 'object' || value === null) {
+    if (typeof value !== "object" || value === null) {
       return false;
     }
 
     const candidate = value as Record<string, unknown>;
     return (
-      typeof candidate.stream === 'string' && typeof candidate.seq === 'number'
+      typeof candidate.stream === "string" && typeof candidate.seq === "number"
     );
   }
 
-  private buildRuntimeActionSubject(actionType: string): string {
-    return `${PLATFORM_SUBJECT_PREFIX}.${actionType}.v1`;
-  }
-
-  private buildRuntimeActionEnvelope(
+  /**
+   * Calls agent-memory-service over HTTP with a bounded timeout so a
+   * downstream outage or bug fails fast instead of hanging the caller.
+   */
+  private async requestMemoryService(
+    url: URL,
     tenantId: string,
-    actionType: string,
-    payload: Record<string, unknown>,
-    correlationId: string,
-    now: string,
-    source: string,
-  ): Record<string, unknown> {
-    return {
-      specversion: '1.0',
-      id: this.generateEventId(),
-      source,
-      type: `io.yoizen.platform.${actionType}.request.v1`,
-      resource: `tenant/${tenantId}`,
-      time: now,
-      traceid: this.generateTraceId(),
-      causation_id: null,
-      correlation_id: correlationId,
-      tenant: tenantId,
-      producer: 'agent-admin-service',
-      domain: 'automation',
-      channel: 'platform',
-      provider: 'internal',
-      accountid: 'platform-admin',
-      idempotencykey: this.computeIdempotencyKey(payload),
-      transport: {
-        method: 'agent',
-        protocol: 'internal',
-        agent_id: 'agent-admin-service',
-        depth: 0,
-      },
-      data: {
-        received_at: now,
-        payload_inline: true,
-        payload_ref: null,
-        payload_bytes: JSON.stringify(payload).length,
-        payload_checksum: this.computeChecksum(payload),
-        payload,
-      },
-    };
-  }
+    init: RequestInit,
+    logContext: string
+  ): Promise<Response> {
+    this.logger.debug(`Sending ${logContext} to ${url.toString()}`);
 
-  private extractRuntimePayload(responseData: unknown): Record<string, unknown> {
-    if (typeof responseData !== 'object' || responseData === null) {
-      throw new BadGatewayException('Invalid response from runtime');
+    const controller = new AbortController();
+    const timeoutRef = setTimeout(
+      () => controller.abort(),
+      agentAdminServiceConfig.memoryServiceTimeoutMs
+    );
+
+    let response: Response;
+    try {
+      response = await tracedFetch(url.toString(), {
+        ...init,
+        headers: { [TENANT_HEADER]: tenantId },
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new BadGatewayException(
+          `Timeout waiting for memory service response (${logContext})`
+        );
+      }
+      throw new BadGatewayException(
+        `Failed to reach memory service for ${logContext}`
+      );
+    } finally {
+      clearTimeout(timeoutRef);
     }
 
-    const envelopePayload = (responseData as RuntimeEnvelopeResponse).data?.payload;
+    if (response.status === 404) {
+      throw new NotFoundException(`Memory proposal not found`);
+    }
 
-    if (typeof envelopePayload === 'object' && envelopePayload !== null) {
+    if (!response.ok) {
+      throw new BadGatewayException(
+        `Memory service returned ${response.status} for ${logContext}`
+      );
+    }
+
+    return response;
+  }
+
+  private extractRuntimePayload(
+    responseData: unknown
+  ): Record<string, unknown> {
+    if (typeof responseData !== "object" || responseData === null) {
+      throw new BadGatewayException("Invalid response from runtime");
+    }
+
+    const envelopePayload = (responseData as RuntimeEnvelopeResponse).data
+      ?.payload;
+
+    if (typeof envelopePayload === "object" && envelopePayload !== null) {
       return envelopePayload as Record<string, unknown>;
     }
 
@@ -396,17 +421,17 @@ export class AgentsRuntimeService {
   }
 
   private extractRuntimeChatPayload(
-    payload: Record<string, unknown>,
+    payload: Record<string, unknown>
   ): Record<string, unknown> {
     if (
-      typeof payload.response === 'string' ||
-      typeof payload.reply === 'string'
+      typeof payload.response === "string" ||
+      typeof payload.reply === "string"
     ) {
       return payload;
     }
 
     const nestedData = payload.data;
-    if (typeof nestedData === 'object' && nestedData !== null) {
+    if (typeof nestedData === "object" && nestedData !== null) {
       return nestedData as Record<string, unknown>;
     }
 
@@ -414,7 +439,7 @@ export class AgentsRuntimeService {
   }
 
   private extractRuntimeErrorMessage(
-    payload: Record<string, unknown>,
+    payload: Record<string, unknown>
   ): string | undefined {
     const rootMessage = this.readOptionalString(payload.message);
     if (rootMessage) {
@@ -422,70 +447,68 @@ export class AgentsRuntimeService {
     }
 
     const error = payload.error;
-    if (typeof error !== 'object' || error === null) {
+    if (typeof error !== "object" || error === null) {
       return undefined;
     }
 
     return this.readOptionalString((error as Record<string, unknown>).message);
   }
 
-  private extractProposalList(responseData: unknown): MemoryProposalDto[] {
-    const payload = this.extractRuntimePayload(responseData);
-    const candidates = [payload.proposals, payload.items, payload.results];
-
-    for (const candidate of candidates) {
-      if (!Array.isArray(candidate)) {
-        continue;
-      }
-
-      return candidate
-        .map((item) => this.tryMapProposal(item))
-        .filter((item): item is MemoryProposalDto => item !== null);
-    }
-
-    return [];
-  }
-
-  private tryMapProposal(value: unknown): MemoryProposalDto | null {
-    if (typeof value !== 'object' || value === null) {
+  /**
+   * Maps an agent-memory-service memory record (camelCase `IMemory` shape,
+   * e.g. `createdAt`/`updatedAt`) into the admin API's snake_case
+   * MemoryProposalDto contract.
+   */
+  private mapMemoryRecord(value: unknown): MemoryProposalDto | null {
+    if (typeof value !== "object" || value === null) {
       return null;
     }
 
-    const proposal = value as Record<string, unknown>;
-    const id = proposal.id;
+    const record = value as Record<string, unknown>;
+    const id = record.id;
 
-    if (typeof id !== 'string' || id.length === 0) {
+    if (typeof id !== "string" || id.length === 0) {
       return null;
     }
 
     const rawExcerpt =
-      this.readOptionalString(proposal.content_excerpt) ??
-      this.readOptionalString(proposal.excerpt) ??
-      this.readOptionalString(proposal.content);
+      this.readOptionalString(record.content_excerpt) ??
+      this.readOptionalString(record.excerpt) ??
+      this.readOptionalString(record.content);
 
     return {
       id,
-      kind: this.readOptionalString(proposal.kind),
-      title: this.readOptionalString(proposal.title),
+      kind: this.readOptionalString(record.kind),
+      title: this.readOptionalString(record.title),
       content_excerpt: rawExcerpt?.slice(0, 240),
-      status: this.readOptionalString(proposal.status),
-      created_at: this.readOptionalString(proposal.created_at),
-      updated_at: this.readOptionalString(proposal.updated_at),
+      status: this.readOptionalString(record.status),
+      created_at: this.readDateString(record.created_at ?? record.createdAt),
+      updated_at: this.readDateString(record.updated_at ?? record.updatedAt),
     };
   }
 
+  private readDateString(value: unknown): string | undefined {
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    return undefined;
+  }
+
   private readOptionalString(value: unknown): string | undefined {
-    return typeof value === 'string' && value.length > 0 ? value : undefined;
+    return typeof value === "string" && value.length > 0 ? value : undefined;
   }
 
   private readBoolean(value: unknown): boolean | undefined {
-    return typeof value === 'boolean' ? value : undefined;
+    return typeof value === "boolean" ? value : undefined;
   }
 
   private generateTraceId(): string {
     return Array.from({ length: 32 }, () =>
-      Math.floor(Math.random() * 16).toString(16),
-    ).join('');
+      Math.floor(Math.random() * 16).toString(16)
+    ).join("");
   }
 
   private generateEventId(): string {
@@ -498,6 +521,6 @@ export class AgentsRuntimeService {
 
   private computeChecksum(payload: Record<string, unknown>): string {
     const canonical = JSON.stringify(payload, Object.keys(payload).sort());
-    return Buffer.from(canonical).toString('base64');
+    return Buffer.from(canonical).toString("base64");
   }
 }

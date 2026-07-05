@@ -1,7 +1,7 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { TenantConnectionManager } from "@yoizen/database";
-import type { VariableType } from "@yoizen/shared";
+import type { JsonValue, VariableType } from "@yoizen/shared";
 import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
 
 export interface ISystemVariable {
@@ -24,7 +24,9 @@ export class SystemVariablesService {
     private readonly connectionManager: TenantConnectionManager,
   ) {}
 
-  async findAll(tenantId: string): Promise<{ variables: ISystemVariable[]; total: number }> {
+  async findAll(
+    tenantId: string
+  ): Promise<{ variables: ISystemVariable[]; total: number }> {
     const sql = await this.connectionManager.ensureSchema(tenantId);
     const [countRow] = await sql`
       SELECT COUNT(*) as count FROM system_variables WHERE tenant_id = ${tenantId} AND is_active = true
@@ -39,7 +41,10 @@ export class SystemVariablesService {
     return { variables, total };
   }
 
-  async findById(tenantId: string, id: string): Promise<ISystemVariable | null> {
+  async findById(
+    tenantId: string,
+    id: string
+  ): Promise<ISystemVariable | null> {
     const sql = await this.connectionManager.ensureSchema(tenantId);
     const [row] = await sql<ISystemVariable[]>`
       SELECT id, name, type, value, label, description, created_at, updated_at
@@ -52,13 +57,26 @@ export class SystemVariablesService {
 
   async create(
     tenantId: string,
-    data: { name: string; type: VariableType; value: unknown; label?: string; description?: string },
+    data: {
+      name: string;
+      type: VariableType;
+      value: unknown;
+      label?: string;
+      description?: string;
+    }
   ): Promise<ISystemVariable> {
     const sql = await this.connectionManager.ensureSchema(tenantId);
     const id = randomUUID();
+    // Use sql.json() (same convention as skills.service.ts `files` column) so
+    // postgres.js serializes the value exactly once. Manually calling
+    // JSON.stringify() here and casting with `::jsonb` double-encodes: the
+    // `::jsonb` cast makes Postgres report the parameter's resolved type back
+    // to postgres.js via ParameterDescription, which then re-applies its own
+    // jsonb serializer (JSON.stringify) on top of the already-stringified
+    // value, storing a JSON string of JSON text instead of the real value.
     const [row] = await sql<ISystemVariable[]>`
       INSERT INTO system_variables (id, tenant_id, name, type, value, label, description)
-      VALUES (${id}, ${tenantId}, ${data.name}, ${data.type}, ${JSON.stringify(data.value)}::jsonb, ${data.label ?? null}, ${data.description ?? null})
+      VALUES (${id}, ${tenantId}, ${data.name}, ${data.type}, ${sql.json(data.value as JsonValue)}, ${data.label ?? null}, ${data.description ?? null})
       RETURNING id, name, type, value, label, description, created_at, updated_at
     `;
     return row;
@@ -67,7 +85,13 @@ export class SystemVariablesService {
   async update(
     tenantId: string,
     id: string,
-    data: { name?: string; type?: VariableType; value?: unknown; label?: string; description?: string },
+    data: {
+      name?: string;
+      type?: VariableType;
+      value?: unknown;
+      label?: string;
+      description?: string;
+    }
   ): Promise<ISystemVariable | null> {
     const sql = await this.connectionManager.ensureSchema(tenantId);
 
@@ -88,19 +112,26 @@ export class SystemVariablesService {
       setParts.push(`value = ${esc(JSON.stringify(data.value))}::jsonb`);
     }
     if (data.label !== undefined) {
-      setParts.push(data.label === null ? "label = NULL" : `label = ${esc(data.label)}`);
+      setParts.push(
+        data.label === null ? "label = NULL" : `label = ${esc(data.label)}`
+      );
     }
     if (data.description !== undefined) {
-      setParts.push(data.description === null ? "description = NULL" : `description = ${esc(data.description)}`);
+      setParts.push(
+        data.description === null
+          ? "description = NULL"
+          : `description = ${esc(data.description)}`
+      );
     }
 
     const setClause = setParts.join(", ");
 
     // sql.unsafe() exists in the real Postgres driver but NOT in the test mock.
     // Fall back to an identity function so the test mock can still be used.
-    const sqlUnsafe = typeof (sql as unknown as Record<string, unknown>).unsafe === "function"
-      ? (sql as unknown as { unsafe: (s: string) => any }).unsafe
-      : (s: string) => s;
+    const sqlUnsafe =
+      typeof (sql as unknown as Record<string, unknown>).unsafe === "function"
+        ? (sql as unknown as { unsafe: (s: string) => any }).unsafe
+        : (s: string) => s;
 
     const [row] = await sql<ISystemVariable[]>`
       UPDATE system_variables

@@ -13,7 +13,9 @@ import {
 import { AdminProxyService } from "./admin-proxy.service";
 import { CreateMcpServerDto, UpdateMcpServerDto, McpServerIdParamDto } from "./admin.dto";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { ApiTags } from "@nestjs/swagger";
 
+@ApiTags("mcp-servers")
 @Controller("admin/mcp-servers")
 export class AdminMcpServersController {
   constructor(private readonly proxy: AdminProxyService) {}

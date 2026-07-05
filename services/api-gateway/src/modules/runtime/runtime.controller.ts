@@ -11,7 +11,9 @@ import {
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
 import { RuntimeProxyService } from "./runtime-proxy.service";
 import { CreateExecutionDto } from "./runtime.dto";
+import { ApiTags } from "@nestjs/swagger";
 
+@ApiTags("runtime")
 @Controller("runtime/executions")
 export class RuntimeController {
   constructor(private readonly proxy: RuntimeProxyService) {}

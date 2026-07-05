@@ -2,42 +2,31 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Drives the http-bridge sample end-to-end.
+# Drives the http-bridge sample end-to-end — SDK-powered (sdk/GROWTH-PLAN.md
+# P3.1). The actual login/list/ingest logic lives in src/index.ts, run via
+# `@yoizen/platform-sdk`; this script only resolves the dev environment (via
+# ../lib/resolve-env.sh, same as every other sample's run.sh) and execs the
+# Node app with those env vars in scope.
+#
 # Prerequisite: run ./setup.sh once first to provision the workflow and its
-# dedicated HTTP account. This script never creates or modifies platform objects.
+# dedicated HTTP account. This script never creates or modifies platform
+# objects.
 . ../lib/resolve-env.sh
 
-WORKFLOW_NAME="${BRIDGE_WORKFLOW_NAME:-http-bridge}"
-INSTANCE="${BRIDGE_HTTP_EXTERNAL_ID:-http-bridge}"
+if ! command -v node >/dev/null 2>&1; then
+  echo "[run] 'node' was not found on PATH." >&2
+  echo "[run] Install Node >=18 (see sdk/samples/http-bridge/README.md) and re-run." >&2
+  exit 1
+fi
+if ! command -v npx >/dev/null 2>&1; then
+  echo "[run] 'npx' was not found on PATH (usually ships with npm)." >&2
+  echo "[run] Install Node >=18 / npm (see sdk/samples/http-bridge/README.md) and re-run." >&2
+  exit 1
+fi
 
-step() { echo "[run] $*"; }
-api() { curl -s -H "Host: ${YOIZEN_HOST_HEADER}" -H "x-yoizen-tenant: ${YOIZEN_TENANT}" "$@"; }
+if [ ! -d node_modules ]; then
+  echo "[run] node_modules missing — running npm install..."
+  npm install
+fi
 
-# ----- 1. Login + verify workflow exists -------------------------------------
-TOKEN="$(api -X POST "${YOIZEN_BASE_URL}/api/auth/login" -H 'Content-Type: application/json' \
-  -d "{\"email\":\"${YOIZEN_EMAIL}\",\"password\":\"${YOIZEN_PASSWORD}\",\"tenant_id\":\"${YOIZEN_TENANT}\"}" \
-  | jq -r '.access_token // empty')"
-[ -n "$TOKEN" ] || { echo "[run] login failed" >&2; exit 1; }
-
-step "1/2 verifying workflow '${WORKFLOW_NAME}' exists (run ./setup.sh first if this fails)..."
-WF_ID="$(api -H "Authorization: Bearer ${TOKEN}" "${YOIZEN_BASE_URL}/api/workflows" \
-  | jq -r --arg n "$WORKFLOW_NAME" \
-      '[.[] | select(.name==$n)] | if length==0 then empty else .[0].id end')"
-[ -n "$WF_ID" ] || {
-  echo "[run] workflow '${WORKFLOW_NAME}' not found — run ./setup.sh first" >&2; exit 1; }
-step "    workflow found (id=${WF_ID})"
-
-# ----- 2. Drive it ------------------------------------------------------------
-SECRET="$(api -H "Authorization: Bearer ${TOKEN}" "${YOIZEN_BASE_URL}/api/channels/accounts?channel=http" \
-  | jq -r --arg e "$INSTANCE" '[.[] | select(.externalId==$e) | .appSecret] | .[0] // empty')"
-[ -n "$SECRET" ] || { echo "[run] could not resolve the '${INSTANCE}' instance token — run ./setup.sh first" >&2; exit 1; }
-
-MSG_TEXT="${RUN_TEXT:-hola desde run.sh} [$(date +%s)]"
-INSTANCE_URL="${YOIZEN_BASE_URL}/api/webhooks/http/${YOIZEN_TENANT}/${INSTANCE}"
-
-step "2/2 posting test payload to the dedicated instance URL: ${INSTANCE_URL}"
-RESP="$(curl -s -X POST "$INSTANCE_URL" -H 'content-type: application/json' \
-  -H "x-http-channel-token: ${SECRET}" \
-  -d "{\"from\":\"run.sh\",\"text\":\"${MSG_TEXT}\",\"metadata\":{\"source\":\"http-bridge/run.sh\"}}")"
-echo "$RESP" | jq .
-step "sent — check Telegram for the echoed payload + timestamp."
+exec npx tsx src/index.ts

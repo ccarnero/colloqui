@@ -11,7 +11,9 @@ import { REQUEST_TENANT_KEY } from "../../guards/tenant.guard";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
 import { QueryAuditEventsProxyDto } from "./audit-proxy-query.dto";
 import { auditEventsToParams } from "./audit-query-params.util";
+import { ApiTags } from "@nestjs/swagger";
 
+@ApiTags("audit")
 @Controller("audit/events")
 export class AuditController {
   constructor(private readonly auditProxy: AuditProxyService) {}

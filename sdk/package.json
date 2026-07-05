@@ -1,20 +1,110 @@
 {
-  "name": "@yoizen/http-sdk",
+  "name": "@yoizen/platform-sdk",
   "version": "0.1.0",
   "private": true,
-  "description": "Plain-Node ESM SDK for sending (ingesting) messages into the platform via the http channel.",
+  "description": "Node.js/TypeScript SDK for the Yoizen platform. Message ingestion via the http channel is one capability; the SDK is growing to cover the full platform API surface.",
   "type": "module",
   "engines": {
     "node": ">=18"
   },
   "exports": {
-    ".": "./src/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./workflows": {
+      "types": "./dist/resources/workflows/index.d.ts",
+      "import": "./dist/resources/workflows/index.js"
+    },
+    "./agents": {
+      "types": "./dist/resources/agents/index.d.ts",
+      "import": "./dist/resources/agents/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/resources/runtime/index.d.ts",
+      "import": "./dist/resources/runtime/index.js"
+    },
+    "./channels": {
+      "types": "./dist/resources/channels/index.d.ts",
+      "import": "./dist/resources/channels/index.js"
+    },
+    "./webhooks": {
+      "types": "./dist/resources/webhooks/index.d.ts",
+      "import": "./dist/resources/webhooks/index.js"
+    },
+    "./knowledge-bases": {
+      "types": "./dist/resources/knowledge-bases/index.d.ts",
+      "import": "./dist/resources/knowledge-bases/index.js"
+    },
+    "./skills": {
+      "types": "./dist/resources/skills/index.d.ts",
+      "import": "./dist/resources/skills/index.js"
+    },
+    "./system-variables": {
+      "types": "./dist/resources/system-variables/index.d.ts",
+      "import": "./dist/resources/system-variables/index.js"
+    },
+    "./mcp-servers": {
+      "types": "./dist/resources/mcp-servers/index.d.ts",
+      "import": "./dist/resources/mcp-servers/index.js"
+    },
+    "./connectors": {
+      "types": "./dist/resources/connectors/index.d.ts",
+      "import": "./dist/resources/connectors/index.js"
+    },
+    "./registry": {
+      "types": "./dist/resources/registry/index.d.ts",
+      "import": "./dist/resources/registry/index.js"
+    },
+    "./auth-admin": {
+      "types": "./dist/resources/auth-admin/index.d.ts",
+      "import": "./dist/resources/auth-admin/index.js"
+    },
+    "./tenants": {
+      "types": "./dist/resources/tenants/index.d.ts",
+      "import": "./dist/resources/tenants/index.js"
+    },
+    "./audit": {
+      "types": "./dist/resources/audit/index.d.ts",
+      "import": "./dist/resources/audit/index.js"
+    },
+    "./jobs": {
+      "types": "./dist/resources/jobs/index.d.ts",
+      "import": "./dist/resources/jobs/index.js"
+    },
+    "./memories": {
+      "types": "./dist/resources/memories/index.d.ts",
+      "import": "./dist/resources/memories/index.js"
+    },
+    "./structured-kb": {
+      "types": "./dist/resources/structured-kb/index.d.ts",
+      "import": "./dist/resources/structured-kb/index.js"
+    },
+    "./config-files": {
+      "types": "./dist/resources/config-files/index.d.ts",
+      "import": "./dist/resources/config-files/index.js"
+    },
+    "./dashboard": {
+      "types": "./dist/resources/dashboard/index.d.ts",
+      "import": "./dist/resources/dashboard/index.js"
+    }
   },
   "files": [
-    "src"
+    "dist"
   ],
   "scripts": {
-    "test": "node --test",
-    "test:watch": "node --test --watch"
+    "build": "tsc",
+    "test": "tsx --test 'test/**/*.test.ts'",
+    "test:watch": "tsx --test --watch 'test/**/*.test.ts'",
+    "test:e2e": "tsx --test --test-concurrency=1 'test/e2e/**/*.e2e.ts'"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.23.0",
+    "typescript": "^5.7.2"
   }
 }

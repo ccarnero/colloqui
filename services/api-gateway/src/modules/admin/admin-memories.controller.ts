@@ -19,7 +19,9 @@ import {
   UpdateMemoryDto,
 } from "./admin.dto";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { ApiTags } from "@nestjs/swagger";
 
+@ApiTags("memories")
 @Controller("admin/memories")
 export class AdminMemoriesController {
   constructor(private readonly proxy: AgentMemoryProxyService) {}

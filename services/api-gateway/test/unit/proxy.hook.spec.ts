@@ -1,13 +1,13 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
+import { TENANT_HEADER } from "@yoizen/shared";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import {
-  resolveTenantFromRequest,
-  PLATFORM_PREFIXES,
   isPlatformRoutePath,
+  PLATFORM_PREFIXES,
+  resolveTenantFromRequest,
   verifyBearerForPrivateRoute,
 } from "../../src/hooks/proxy.hook";
 import type { IYoizenRequest } from "../../src/types/yoizen-request";
-import { TENANT_HEADER } from "@yoizen/shared";
 
 describe("proxy.hook helpers", () => {
   it("resolveTenantFromRequest returns header tenant", () => {
@@ -53,9 +53,16 @@ describe("proxy.hook helpers", () => {
     expect(isPlatformRoutePath("/tenant-app/foo")).toBe(false);
   });
 
+  it("isPlatformRoutePath treats /api/v1/... the same as /api/...", () => {
+    expect(isPlatformRoutePath("/api/v1/connectors")).toBe(true);
+    expect(isPlatformRoutePath("/api/v1/workflows")).toBe(true);
+    expect(isPlatformRoutePath("/v1/health")).toBe(true);
+    expect(isPlatformRoutePath("/api/v1/tenant-app/foo")).toBe(false);
+  });
+
   it("verifyBearerForPrivateRoute skips JWT when route is public", async () => {
     const jwtVerify = mock(() =>
-      Promise.resolve({ sub: "u1", scope: "tenant:t1" }),
+      Promise.resolve({ sub: "u1", scope: "tenant:t1" })
     );
     const out = await verifyBearerForPrivateRoute({
       req: { headers: {} } as FastifyRequest,
@@ -84,7 +91,10 @@ describe("proxy.hook helpers", () => {
 
   it("verifyBearerForPrivateRoute returns 401 when Authorization is missing", async () => {
     const send = mock();
-    const reply = { status: mock(() => reply), send } as unknown as FastifyReply;
+    const reply = {
+      status: mock(() => reply),
+      send,
+    } as unknown as FastifyReply;
     const out = await verifyBearerForPrivateRoute({
       req: { headers: {} } as FastifyRequest,
       reply,

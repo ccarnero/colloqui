@@ -1,5 +1,6 @@
-import { resolveStorageEngine, type StorageEngine } from "@yoizen/database";
 import path from "node:path";
+import { resolveStorageEngine, type StorageEngine } from "@yoizen/database";
+import { platformServiceUrl } from "@yoizen/shared";
 
 type AgentAdminServiceConfig = {
   readonly port: number;
@@ -7,6 +8,8 @@ type AgentAdminServiceConfig = {
   readonly platformEnvironment: string;
   readonly validateAdapterRefs: boolean;
   readonly adapterServiceUrl: string;
+  readonly memoryServiceUrl: string;
+  readonly memoryServiceTimeoutMs: number;
   readonly natsUrl: string;
   readonly templatesYamlPath: string;
   readonly chatRequestTimeoutMs: number;
@@ -34,6 +37,18 @@ export const agentAdminServiceConfig: AgentAdminServiceConfig = {
       "http://connector-admin-api:3000"
     );
   },
+  get memoryServiceUrl() {
+    return (
+      process.env.AGENT_MEMORY_SERVICE_URL ??
+      platformServiceUrl("agent-memory-service", this.platformEnvironment)
+    );
+  },
+  get memoryServiceTimeoutMs() {
+    return Number.parseInt(
+      process.env.AGENT_MEMORY_SERVICE_TIMEOUT_MS ?? "8000",
+      10
+    );
+  },
   get natsUrl() {
     return process.env.NATS_URL ?? "nats://localhost:4222";
   },
@@ -43,12 +58,10 @@ export const agentAdminServiceConfig: AgentAdminServiceConfig = {
   get chatRequestTimeoutMs() {
     return Number.parseInt(
       process.env.PLATFORM_CHAT_REQUEST_TIMEOUT_MS ?? "30000",
-      10,
+      10
     );
   },
   get toolDescriptionOverridesEnabled() {
-    return (
-      process.env.AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED === "true"
-    );
+    return process.env.AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED === "true";
   },
 };

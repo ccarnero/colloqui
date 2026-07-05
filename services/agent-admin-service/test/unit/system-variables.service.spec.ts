@@ -1,6 +1,5 @@
 import "../setup-env";
-import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { NotFoundException } from "@nestjs/common";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Mock the TenantConnectionManager → returns a tagged-template SQL function
@@ -10,7 +9,14 @@ const sqlQueue: unknown[][] = [];
 const sqlMock = mock(<T = unknown[]>() => {
   const res = sqlQueue.shift() ?? [];
   return Promise.resolve(res as unknown as T);
-});
+}) as unknown as {
+  (...args: unknown[]): Promise<unknown>;
+  json: ReturnType<typeof mock>;
+};
+// sql.json() is the postgres.js helper used by create() to serialize the
+// `value` column exactly once (see system-variables.service.ts). It is not
+// a queued tagged-template call, so it must not consume from sqlQueue.
+sqlMock.json = mock((obj: unknown) => JSON.stringify(obj));
 
 const mockConnectionManager = {
   ensureSchema: mock(() => Promise.resolve(sqlMock)),
@@ -57,7 +63,7 @@ describe("SystemVariablesService", () => {
     sqlQueue.length = 0;
 
     service = new SystemVariablesService(
-      mockConnectionManager as unknown as never,
+      mockConnectionManager as unknown as never
     );
   });
 
@@ -97,9 +103,7 @@ describe("SystemVariablesService", () => {
       const result = await service.findAll(TENANT);
 
       expect(result.variables).toHaveLength(2);
-      expect(
-        result.variables.every((v) => v.is_active === true),
-      ).toBe(true);
+      expect(result.variables.every((v) => v.is_active === true)).toBe(true);
     });
   });
 
@@ -146,7 +150,7 @@ describe("SystemVariablesService", () => {
       expect(result.name).toBe("newVar");
     });
 
-    it("sets value to \"hello\" for string type", async () => {
+    it('sets value to "hello" for string type', async () => {
       const dto = { name: "s", type: "string" as const, value: "hello" };
       const created = makeVar({
         id: "s1",
@@ -231,16 +235,20 @@ describe("SystemVariablesService", () => {
     });
 
     it("create rejects duplicate name", async () => {
-      const dto = { name: "duplicate", type: "string" as const, value: "hello" };
+      const dto = {
+        name: "duplicate",
+        type: "string" as const,
+        value: "hello",
+      };
 
       const dupError = new Error(
-        'duplicate key value violates unique constraint "idx_system_variables_tenant_id_name"',
+        'duplicate key value violates unique constraint "idx_system_variables_tenant_id_name"'
       );
       // Push a rejected promise so the INSERT throws
       sqlQueue.push(Promise.reject(dupError));
 
       await expect(service.create(TENANT, dto)).rejects.toThrow(
-        "duplicate key value violates unique constraint",
+        "duplicate key value violates unique constraint"
       );
     });
 

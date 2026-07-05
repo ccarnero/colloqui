@@ -1,5 +1,5 @@
 import "../setup-env";
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Mock the TenantConnectionManager → returns a tagged-template SQL function
@@ -97,7 +97,7 @@ describe("SkillsService — BUG-2 new fields", () => {
 
     service = new SkillsService(
       mockConnectionManager as unknown as never,
-      mockNatsPublisher as unknown as never,
+      mockNatsPublisher as unknown as never
     );
   });
 
@@ -154,10 +154,13 @@ describe("SkillsService — BUG-2 new fields", () => {
   // -------------------------------------------------------------------------
   describe("update", () => {
     it("updates individual new fields (T8)", async () => {
-      // The update() method builds dynamic SET clauses by calling
-      // sql`field = ${value}` for each defined field (4 calls) plus the
-      // full UPDATE query (1 call). Push dummy items for SET clause
-      // building, then the real data for the RETURNING *.
+      // The update() method builds a dynamic SET clause by composing
+      // postgres.js fragments: an initial `sql\`updated_at = NOW()\``
+      // fragment, then one nested `sql\`${setClause}, field = ${value}\``
+      // call per defined field (4 calls here), plus the full UPDATE query
+      // (1 call). Push dummy items for every fragment-building call, then
+      // the real data for the RETURNING *.
+      sqlQueue.push([]); // SET: base fragment (updated_at = NOW())
       sqlQueue.push([]); // SET: when_to_use
       sqlQueue.push([]); // SET: priority
       sqlQueue.push([]); // SET: allowed_tools
@@ -238,10 +241,12 @@ describe("SkillsService — BUG-2 new fields", () => {
     });
 
     it("emits skill.changed (updated) after successful update", async () => {
-      // update() calls sql`name = ${...}` as SET clause (1st dequeue)
-      // and then the full UPDATE query (2nd dequeue)
-      sqlQueue.push([]); // first: the `name = $name` tagged template call
-      sqlQueue.push([makeSkill({ id: "s1", name: "updated-name" })]); // second: the actual UPDATE
+      // update() calls the base `sql\`updated_at = NOW()\`` fragment (1st
+      // dequeue), then `sql\`${setClause}, name = ${...}\`` (2nd dequeue),
+      // then the full UPDATE query (3rd dequeue)
+      sqlQueue.push([]); // first: the base `updated_at = NOW()` fragment
+      sqlQueue.push([]); // second: the `name = $name` fragment
+      sqlQueue.push([makeSkill({ id: "s1", name: "updated-name" })]); // third: the actual UPDATE
 
       await service.update(TENANT, "s1", { name: "updated-name" });
 
@@ -291,7 +296,7 @@ describe("SkillsService — BUG-2 new fields", () => {
     it("does not throw when NATS publish fails (caught + logged)", async () => {
       sqlQueue.push([makeSkill({ id: "failing-nats" })]);
       mockNatsPublisher.publishSkillChanged.mockImplementation(() =>
-        Promise.reject(new Error("NATS unavailable")),
+        Promise.reject(new Error("NATS unavailable"))
       );
 
       const result = await service.create(TENANT, {

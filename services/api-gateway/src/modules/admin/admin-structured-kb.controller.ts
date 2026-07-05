@@ -1,16 +1,23 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Param,
   Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
   Req,
 } from "@nestjs/common";
-import { AdminProxyService } from "./admin-proxy.service";
+import { ApiTags } from "@nestjs/swagger";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
+// biome-ignore lint/style/useImportType: used as @Body() metatype — needed at runtime for ValidationPipe's class-validator/class-transformer reflection.
+import { QueryStructuredKbDto } from "./admin.dto";
+// biome-ignore lint/style/useImportType: constructor-injected — Nest DI needs the runtime class reference.
+import { AdminProxyService } from "./admin-proxy.service";
 
+@ApiTags("structured-kb")
 @Controller("admin/structured-kb")
 export class AdminStructuredKBController {
   constructor(private readonly adminProxy: AdminProxyService) {}
@@ -18,7 +25,7 @@ export class AdminStructuredKBController {
   @Post("containers")
   async createContainer(
     @Req() req: ITenantScopedRequest,
-    @Body() body: unknown,
+    @Body() body: unknown
   ): Promise<object> {
     return this.adminProxy.proxy({
       method: "POST",
@@ -42,7 +49,7 @@ export class AdminStructuredKBController {
   @Get("containers/:id")
   async getContainer(
     @Req() req: ITenantScopedRequest,
-    @Param("id") id: string,
+    @Param("id") id: string
   ): Promise<object> {
     return this.adminProxy.proxy({
       method: "GET",
@@ -55,7 +62,7 @@ export class AdminStructuredKBController {
   async updateContainer(
     @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
-    @Body() body: unknown,
+    @Body() body: unknown
   ): Promise<object> {
     return this.adminProxy.proxy({
       method: "PATCH",
@@ -68,7 +75,7 @@ export class AdminStructuredKBController {
   @Delete("containers/:id")
   async deleteContainer(
     @Req() req: ITenantScopedRequest,
-    @Param("id") id: string,
+    @Param("id") id: string
   ): Promise<object> {
     return this.adminProxy.proxy({
       method: "DELETE",
@@ -77,11 +84,26 @@ export class AdminStructuredKBController {
     });
   }
 
+  @Post("containers/:id/query")
+  @HttpCode(HttpStatus.OK)
+  async query(
+    @Req() req: ITenantScopedRequest,
+    @Param("id") id: string,
+    @Body() body: QueryStructuredKbDto
+  ): Promise<object> {
+    return this.adminProxy.proxy({
+      method: "POST",
+      path: `/admin/structured-kb/containers/${id}/query`,
+      tenantId: req.tenantId,
+      body,
+    });
+  }
+
   @Post("containers/:id/files")
   async uploadFile(
     @Req() req: ITenantScopedRequest,
     @Param("id") id: string,
-    @Body() body: unknown,
+    @Body() body: unknown
   ): Promise<object> {
     return this.adminProxy.proxy({
       method: "POST",
