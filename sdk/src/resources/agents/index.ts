@@ -21,6 +21,7 @@ export type {
   ListAgentsParams,
   UpdateAgentInput,
   UpdateEnabledMcpServersInput,
+  UpdateEnabledMcpToolsInput,
   UpdateEnabledToolsInput,
   UpdateToolDescriptionOverridesInput,
 } from "./types.js";

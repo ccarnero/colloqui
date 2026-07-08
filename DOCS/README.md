@@ -234,6 +234,8 @@ kubectl apply -k knative/services/overlays/local/postgres-dev   # or mongo-dev w
 | **Connector Admin** | Knative Service | Manages multi-tenant HTTP connector configurations (base URL, auth, headers, timeouts, retries) and their endpoints. Consumed via `AdapterClient` by `connector-runtime` |
 | **Connector Runtime** | Deployment (plain, fixed replicas) | Generic Temporal HTTP execution worker for `endpointCall` and `serviceCall`; uses `tracedFetch`, connector resolution, response caching, and internal service mirror lookup |
 | **Agent Admin Service** | Knative Service | Authoring API for AI agents/workflows (config-only persistence) |
+| **Agent Memory Service** | Knative Service | Per-agent conversation/long-term memory storage and retrieval |
+| **Agent Scheduler Service** | Knative Service | Schedules and dispatches recurring/one-off agent jobs |
 | **AI Agent Gateway** | Knative Service | Stateless inbound bridge that fans out execution requests to the platform-tier `agent-ai-service` Knative Service |
 | **Agent AI Service** | Knative Service | Platform-tier agent execution runtime (single deployment shared across all tenants) |
 | **Usage Aggregator Service** | Knative Service | Aggregates per-tenant usage events into the usage Postgres |
@@ -418,6 +420,8 @@ Arch/
 │   ├── proxy-service/                 # NestJS + Fastify — Tenant egress proxy
 │   ├── admin-console/                 # Angular admin UI
 │   ├── agent-admin-service/           # NestJS + Fastify — Agent authoring API
+│   ├── agent-memory-service/          # NestJS + Fastify — Per-agent conversation/long-term memory
+│   ├── agent-scheduler-service/       # NestJS + Fastify — Multi-tenant agent job scheduling
 │   ├── ai-agent-gateway/              # NestJS + Fastify — Stateless inbound bridge to agent-ai-service
 │   └── agent-ai-service/              # NestJS + Fastify — Platform-tier agent execution runtime (Knative Service)
 └── setup-tenant.sh                    # Create tenant + admin user (named flags, idempotent)

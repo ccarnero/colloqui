@@ -67,6 +67,7 @@ const SKB_TABLES_DDL = `
     container_id UUID NOT NULL REFERENCES skb_containers(id) ON DELETE CASCADE,
     file_id UUID NOT NULL REFERENCES skb_files(id) ON DELETE CASCADE,
     tenant_id VARCHAR(255) NOT NULL,
+    file_index INTEGER,
     categories JSONB DEFAULT '[]'::jsonb,
     data JSONB NOT NULL DEFAULT '{}'::jsonb,
     data_tsv TSVECTOR GENERATED ALWAYS AS (
@@ -74,6 +75,10 @@ const SKB_TABLES_DDL = `
     ) STORED,
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
+
+  -- Idempotent for tenants whose skb_rows predates the file_index column
+  -- (SKBRowsRepository.insertRows/getRows use it to preserve source-file order).
+  ALTER TABLE skb_rows ADD COLUMN IF NOT EXISTS file_index INTEGER;
 
   CREATE INDEX IF NOT EXISTS idx_skb_rows_container
     ON skb_rows(container_id);
@@ -90,19 +95,49 @@ const SKB_TABLES_DDL = `
   CREATE INDEX IF NOT EXISTS idx_skb_rows_container_tenant
     ON skb_rows(container_id, tenant_id);
 
+  -- Tenants provisioned before 2026-07-07 carry an incompatible legacy
+  -- skb_query_history shape (natural_query/sql_where/executed_at). Nothing
+  -- ever wrote to it (the history path was wired 2026-07-07), so the legacy
+  -- table is empty everywhere and can be dropped and recreated safely.
+  -- Postgres resolves index column references at parse-analysis time even
+  -- for CREATE INDEX IF NOT EXISTS, so the legacy shape must be gone before
+  -- the index statement below is parsed against it.
+  DO $$
+  BEGIN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'skb_query_history' AND column_name = 'executed_at'
+    ) THEN
+      DROP TABLE skb_query_history;
+    END IF;
+  END $$;
+
   CREATE TABLE IF NOT EXISTS skb_query_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     container_id UUID NOT NULL REFERENCES skb_containers(id),
     tenant_id VARCHAR(255) NOT NULL,
-    natural_query TEXT NOT NULL,
-    sql_where TEXT,
-    sql_sort TEXT,
+    nl_query TEXT NOT NULL,
+    generated_sql TEXT,
     result_count INTEGER DEFAULT 0,
-    executed_at TIMESTAMPTZ DEFAULT NOW()
+    duration_ms INTEGER DEFAULT 0,
+    error TEXT,
+    error_message TEXT,
+    user_id VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
+  -- Attribution ids (metering-foundation.md G5) -- nullable; today's only
+  -- caller is the admin API (StructuredKBController.query), which has none
+  -- of these, but SKBQueryService.query() accepts and threads them so a
+  -- future agent-tool caller with real execution context can populate them.
+  -- Must precede the index below (Postgres resolves CREATE INDEX column
+  -- references at parse-analysis time, even with IF NOT EXISTS).
+  ALTER TABLE skb_query_history ADD COLUMN IF NOT EXISTS correlation_id VARCHAR(255);
+  ALTER TABLE skb_query_history ADD COLUMN IF NOT EXISTS causation_id VARCHAR(255);
+  ALTER TABLE skb_query_history ADD COLUMN IF NOT EXISTS execution_id VARCHAR(255);
+
   CREATE INDEX IF NOT EXISTS idx_skb_query_history_container
-    ON skb_query_history(container_id, executed_at DESC);
+    ON skb_query_history(container_id, created_at DESC);
 `;
 
 const AGENT_ADMIN_SCHEMA_DDL = `
@@ -210,8 +245,12 @@ const AGENT_ADMIN_SCHEMA_DDL = `
           transport_type VARCHAR(10) NOT NULL CHECK (transport_type IN ('http', 'sse')),
           url TEXT NOT NULL,
           headers JSONB DEFAULT '{}'::jsonb,
+          auth_type VARCHAR(20) NOT NULL DEFAULT 'none' CHECK (auth_type IN ('none', 'api-key', 'bearer', 'basic')),
+          auth_config JSONB DEFAULT NULL,
           enabled BOOLEAN DEFAULT true,
           is_active BOOLEAN DEFAULT true,
+          managed_by VARCHAR(255) DEFAULT NULL,
+          managed_locked_fields JSONB DEFAULT NULL,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
@@ -302,6 +341,7 @@ const AGENT_ADMIN_SCHEMA_DDL = `
 const AGENT_ADMIN_MIGRATIONS = `
   ALTER TABLE agents ADD COLUMN IF NOT EXISTS enabled_tools JSONB DEFAULT NULL;
   ALTER TABLE agents ADD COLUMN IF NOT EXISTS enabled_mcp_servers JSONB DEFAULT NULL;
+  ALTER TABLE agents ADD COLUMN IF NOT EXISTS enabled_mcp_tools JSONB DEFAULT NULL;
   ALTER TABLE agents ADD COLUMN IF NOT EXISTS tool_description_overrides JSONB DEFAULT NULL;
   ALTER TABLE agents ADD COLUMN IF NOT EXISTS knowledge_base_ids JSONB DEFAULT '[]'::jsonb;
   ALTER TABLE agents ADD COLUMN IF NOT EXISTS input_variables JSONB DEFAULT '[]'::jsonb;
@@ -392,6 +432,52 @@ const AGENT_ADMIN_MIGRATIONS = `
   ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS diff JSONB;
   ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS published_by VARCHAR(255);
   ALTER TABLE agents ADD COLUMN IF NOT EXISTS published_by VARCHAR(255);
+
+  -- MCP server auth + managed/sync fields (mcp-connections.md §2.1, §2.3)
+  ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS auth_type VARCHAR(20) NOT NULL DEFAULT 'none';
+  ALTER TABLE mcp_servers DROP CONSTRAINT IF EXISTS mcp_servers_auth_type_check;
+  ALTER TABLE mcp_servers ADD CONSTRAINT mcp_servers_auth_type_check CHECK (auth_type IN ('none', 'api-key', 'bearer', 'basic'));
+  ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS auth_config JSONB DEFAULT NULL;
+  ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS managed_by VARCHAR(255) DEFAULT NULL;
+  ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS managed_locked_fields JSONB DEFAULT NULL;
+
+  -- MCP call usage logging (mcp-connections.md §3). Lives in the same
+  -- per-tenant database as mcp_servers -- unlike connector call usage
+  -- (connector_call_events, a shared cross-tenant TimescaleDB table owned
+  -- exclusively by usage-aggregator-service), MCP usage is written directly
+  -- by the producing services (agent-ai-service today, connector-runtime's
+  -- planned mcp-call.activity.ts later) via agent-admin-service's own
+  -- POST admin/mcp-servers/usage-events, so it belongs in agent-admin-service's
+  -- existing per-tenant schema rather than standing up a new NATS + aggregator
+  -- pipeline for what is, for now, a much lower-volume call path.
+  CREATE TABLE IF NOT EXISTS mcp_call_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id VARCHAR(255) NOT NULL,
+    mcp_server_id UUID REFERENCES mcp_servers(id) ON DELETE SET NULL,
+    server_name VARCHAR(255) NOT NULL,
+    tool_name VARCHAR(255) NOT NULL,
+    success BOOLEAN NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  -- Attribution ids (metering-foundation.md G5) -- nullable, threaded from
+  -- producers on a best-effort basis (tool-bridge.service.ts's chat path has
+  -- a conversationId/executionId; connector-runtime's Temporal mcpCall
+  -- activity only ever has workflow-level correlation/causation). ALTERs
+  -- must precede the index below that references execution_id -- Postgres
+  -- resolves index column references at parse-analysis time even for
+  -- CREATE INDEX IF NOT EXISTS (see the skb_query_history note below for the
+  -- same gotcha in this same DDL file).
+  ALTER TABLE mcp_call_events ADD COLUMN IF NOT EXISTS correlation_id VARCHAR(255);
+  ALTER TABLE mcp_call_events ADD COLUMN IF NOT EXISTS causation_id VARCHAR(255);
+  ALTER TABLE mcp_call_events ADD COLUMN IF NOT EXISTS execution_id VARCHAR(255);
+
+  CREATE INDEX IF NOT EXISTS idx_mcp_call_events_tenant_server_created
+    ON mcp_call_events(tenant_id, mcp_server_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_mcp_call_events_execution
+    ON mcp_call_events(execution_id) WHERE execution_id IS NOT NULL;
 `;
 
 /**
@@ -399,7 +485,7 @@ const AGENT_ADMIN_MIGRATIONS = `
  */
 export async function initAgentAdminTenantSchema(
   _tenantId: string,
-  sql: Sql,
+  sql: Sql
 ): Promise<void> {
   await sql.begin(async (tx) => {
     await tx.unsafe(`SET client_min_messages TO WARNING`);

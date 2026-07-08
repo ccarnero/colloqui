@@ -50,7 +50,20 @@ export interface IBuiltinTool {
   readOnly?: boolean;
 }
 
-/** MCP server configuration. */
+/** Supported auth types for MCP servers (mcp-connections.md §2.1). No `oauth2` — explicit non-goal. */
+export type McpServerAuthType = "none" | "api-key" | "bearer" | "basic";
+
+/**
+ * MCP server configuration.
+ *
+ * Field casing mirrors the raw wire shape returned by
+ * `agent-admin-service`'s `McpServersController` (proxied verbatim through
+ * `AdminMcpServersController` — no camelCase transform on the response):
+ * snake_case throughout, matching `IMcpServer` in
+ * `agent-admin-service/src/modules/mcp-servers/mcp-servers.repository.interface.ts`.
+ * The create/update request bodies use `authType`/`authConfig` (camelCase)
+ * instead — see `AgentAdminService.createMcpServer`/`updateMcpServer`.
+ */
 export interface IMcpServer {
   id: string;
   tenant_id: string;
@@ -59,10 +72,69 @@ export interface IMcpServer {
   transport_type: "http" | "sse";
   url: string;
   headers: Record<string, string> | null;
+  auth_type: McpServerAuthType;
+  auth_config: Record<string, unknown> | null;
   enabled: boolean;
   is_active: boolean;
+  managed_by: string | null;
+  managed_locked_fields: string[] | null;
   created_at: string;
   updated_at: string;
+}
+
+/** One tool exposed by a live MCP server (`GET admin/mcp-servers/:id/tools`). */
+export interface IMcpServerTool {
+  name: string;
+  description: string | null;
+  inputSchema: unknown;
+}
+
+/** Response body for `POST admin/mcp-servers/:id/test` (mcp-connections.md §2.2). */
+export interface IMcpTestConnectionResult {
+  success: boolean;
+  latencyMs: number;
+  toolCount?: number;
+  error?: string;
+}
+
+/**
+ * Structured 409 body for a managed (synced) MCP server rejecting an edit
+ * to a registry-owned field (mcp-connections.md §2.3). Mirrors the
+ * connector side's `IManagedAdapterConflict` shape.
+ */
+export interface IManagedMcpServerConflict {
+  statusCode: 409;
+  error: "Conflict";
+  reason: "MANAGED_MCP_SERVER";
+  message: string;
+  mcpServerId: string;
+  managedBy: string;
+  lockedFields: string[];
+  editableFields: string[];
+}
+
+/** One row of `GET admin/mcp-servers/:id/usage`'s "recent calls" list (mcp-connections.md §3, §6.3). */
+export interface IMcpUsageRecentCall {
+  toolName: string;
+  success: boolean;
+  durationMs: number;
+  error: string | null;
+  createdAt: string;
+}
+
+/** Aggregate summary over the requested window, mirroring the connector usage endpoint's per-adapter shape. */
+export interface IMcpUsageSummary {
+  totalCalls: number;
+  successCalls: number;
+  errorCalls: number;
+  avgDurationMs: number;
+}
+
+/** Response body for `GET admin/mcp-servers/:id/usage` (mcp-connections.md §3, §6.3). */
+export interface IMcpUsage {
+  windowDays: number;
+  summary: IMcpUsageSummary;
+  recentCalls: IMcpUsageRecentCall[];
 }
 
 /**
@@ -103,8 +175,7 @@ export const AGENT_STATUSES = {
   ARCHIVED: "archived",
 } as const;
 
-export type AgentStatus =
-  (typeof AGENT_STATUSES)[keyof typeof AGENT_STATUSES];
+export type AgentStatus = (typeof AGENT_STATUSES)[keyof typeof AGENT_STATUSES];
 
 export interface ISubagentConfig {
   name: string;
@@ -142,7 +213,14 @@ export interface IAgent {
   model_config: IAgentModelConfig;
   tools: unknown[];
   enabled_tools: string[] | null;
+  /** List of enabled MCP server NAMES (not ids); `null` = all servers enabled. */
   enabled_mcp_servers: string[] | null;
+  /**
+   * Per-tool MCP allowlist keyed by MCP server name (mcp-connections.md §4).
+   * `null` for a server (or a missing key) means "all tools from that server
+   * enabled"; an array is an explicit allowlist of tool names.
+   */
+  enabled_mcp_tools: Record<string, string[] | null> | null;
   tool_description_overrides: Record<string, string> | null;
   channels: unknown[];
   status: AgentStatus;
@@ -369,9 +447,7 @@ function normalizeRequiredText(value: string): string {
  * @param draft - Subagent form input.
  * @returns A backend-ready subagent configuration.
  */
-export function buildSubagentConfig(
-  draft: ISubagentDraft,
-): ISubagentConfig {
+export function buildSubagentConfig(draft: ISubagentDraft): ISubagentConfig {
   const description = normalizeOptionalText(draft.description);
 
   return {
@@ -407,9 +483,7 @@ export interface ITemplate {
  * @param draft - Agent form input.
  * @returns A normalized model_config payload.
  */
-export function buildAgentModelConfig(
-  draft: IAgentDraft,
-): IAgentModelConfig {
+export function buildAgentModelConfig(draft: IAgentDraft): IAgentModelConfig {
   return {
     llm: {
       provider: normalizeRequiredText(draft.provider),
@@ -418,9 +492,7 @@ export function buildAgentModelConfig(
       ...(draft.temperature !== undefined
         ? { temperature: draft.temperature }
         : {}),
-      ...(draft.maxTokens !== undefined
-        ? { maxTokens: draft.maxTokens }
-        : {}),
+      ...(draft.maxTokens !== undefined ? { maxTokens: draft.maxTokens } : {}),
     },
     rules: normalizeRequiredText(draft.rules),
     soul: normalizeRequiredText(draft.soul),
@@ -435,7 +507,7 @@ export function buildAgentModelConfig(
  * @returns A payload that matches POST /admin/agents.
  */
 export function buildCreateAgentPayload(
-  draft: IAgentDraft,
+  draft: IAgentDraft
 ): ICreateAgentPayload {
   const description = normalizeOptionalText(draft.description);
   const tools = draft.tools ?? [];
@@ -451,9 +523,7 @@ export function buildCreateAgentPayload(
     model_config: buildAgentModelConfig(draft),
     ...(tools.length > 0 ? { tools: [...tools] } : {}),
     ...(channels.length > 0 ? { channels: [...channels] } : {}),
-    ...(inputVariables.length > 0
-      ? { input_variables: inputVariables }
-      : {}),
+    ...(inputVariables.length > 0 ? { input_variables: inputVariables } : {}),
     ...(outputVariables.length > 0
       ? { output_variables: outputVariables }
       : {}),

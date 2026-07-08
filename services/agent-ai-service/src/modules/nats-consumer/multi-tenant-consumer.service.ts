@@ -1,11 +1,18 @@
-import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import type { JetStreamClient, JetStreamManager, JsMsg } from "nats";
 import {
-  MultiTenantConsumerManager,
+  Inject,
+  Injectable,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from "@nestjs/common";
+import {
   type IMultiTenantConsumerConfig,
+  MultiTenantConsumerManager,
 } from "@yoizen/database";
 import { PinoLoggerService } from "@yoizen/observability";
+import type { JetStreamClient, JetStreamManager, JsMsg } from "nats";
+import { agentAiServiceConfig } from "../../config";
 import { JETSTREAM, JETSTREAM_MANAGER } from "../../providers/nats.provider";
+// biome-ignore lint/style/useImportType: MessageRouterService is constructor-injected by NestJS DI — must be a value import so `design:paramtypes` metadata resolves the real class at runtime, not `type`.
 import { MessageRouterService } from "./message-router.service";
 
 const DURABLE_NAME = "agent-ai-service-consumer";
@@ -23,8 +30,12 @@ const FILTER_SUBJECTS = [
 ] as const;
 
 @Injectable()
-export class MultiTenantConsumerService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new PinoLoggerService(MultiTenantConsumerService.name);
+export class MultiTenantConsumerService
+  implements OnModuleInit, OnModuleDestroy
+{
+  private readonly logger = new PinoLoggerService(
+    MultiTenantConsumerService.name
+  );
   private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
@@ -39,6 +50,21 @@ export class MultiTenantConsumerService implements OnModuleInit, OnModuleDestroy
       durableName: DURABLE_NAME,
       filterSubjects: [...FILTER_SUBJECTS],
       description: "Agent AI service multi-tenant event consumer",
+      // Handlers run `generateReply` — LLM calls with tool/MCP chains that
+      // routinely take minutes. The default 60s ackWait would cause
+      // JetStream to redeliver an in-flight message and duplicate the LLM
+      // execution (double cost, racing writes). Anchor the first backoff
+      // step at `ackWaitMs` per `nats-durable-consumer.ts`'s documented
+      // invariant (backoff overrides ack_wait; backoff[0] doubles as the
+      // initial redelivery window).
+      ackWaitMs: agentAiServiceConfig.consumerAckWaitMs,
+      backoffMs: [900_000, 1_200_000, 1_800_000, 3_600_000],
+      // Periodic `msg.working()` while the handler is in flight, so a
+      // slower-than-usual LLM call doesn't need the full ackWait window to
+      // avoid redelivery.
+      runnerOptions: {
+        workingIntervalMs: agentAiServiceConfig.consumerWorkingIntervalMs,
+      },
     };
 
     this.manager = new MultiTenantConsumerManager(
@@ -46,7 +72,7 @@ export class MultiTenantConsumerService implements OnModuleInit, OnModuleDestroy
       this.js,
       config,
       (msg: JsMsg) => this.handleMessage(msg),
-      this.logger,
+      this.logger
     );
 
     await this.manager.start();

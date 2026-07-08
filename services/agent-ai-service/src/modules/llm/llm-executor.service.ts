@@ -39,17 +39,16 @@ export interface GenerateTextParams {
   readonly credentialMode?: string;
   readonly connectorId?: string;
   readonly knowledgeBaseIds?: readonly string[];
-}
-
-export interface StreamTextParams extends GenerateTextParams {
   /**
-   * Forwarded into the AI SDK `streamText({ abortSignal })` call so a
-   * client disconnect / explicit cancel (rt.<tenant>.exec.<id>.cancel)
-   * closes the upstream provider socket instead of burning tokens on an
-   * orphaned stream. See DOCS/architecture/runtime-streaming.md §2.2.
+   * Forwarded into the AI SDK's `abortSignal` option so a client
+   * disconnect / explicit cancel (rt.<tenant>.exec.<id>.cancel) closes
+   * the upstream provider socket instead of burning tokens on an
+   * orphaned request. See DOCS/architecture/runtime-streaming.md §2.2.
    */
   readonly abortSignal?: AbortSignal;
 }
+
+export interface StreamTextParams extends GenerateTextParams {}
 
 export interface LlmExecutionResult {
   readonly text: string;
@@ -145,6 +144,7 @@ export class LlmExecutorService {
       tools: params.tools,
       maxOutputTokens: params.maxTokens,
       temperature: params.temperature,
+      abortSignal: params.abortSignal,
     });
 
     const usage = {
@@ -371,6 +371,7 @@ export class LlmExecutorService {
       maxOutputTokens: params.maxTokens,
       temperature: params.temperature,
       onStepFinish: params.onStepFinish,
+      abortSignal: params.abortSignal,
     });
 
     // Aggregate usage across all steps

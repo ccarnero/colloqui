@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { generateObject } from "ai";
+import { createSkbLanguageModel } from "./skb-llm.config";
 import type { ParsedTable } from "./types/skb.types";
 
 export interface ColumnSchema {
@@ -42,7 +43,7 @@ export class SKBSchemaAnalyzerService {
   async analyze(
     parsed: ParsedTable,
     providerConfig?: SchemaProviderConfig,
-    modelName?: string,
+    modelName?: string
   ): Promise<SKBSchemaResult> {
     const heuristicHints = this.buildHeuristicHints(parsed);
     const typeSummary = [
@@ -66,7 +67,9 @@ Heuristic type hints per column:
 ${JSON.stringify(heuristicHints, null, 2)}
 
 Detected types summary: ${typeSummary.join(", ")}
-Cardinality report: ${Object.entries(heuristicHints).map(([col, h]) => `${col}=${h.cardinality}`).join(", ")}
+Cardinality report: ${Object.entries(heuristicHints)
+      .map(([col, h]) => `${col}=${h.cardinality}`)
+      .join(", ")}
 
 Column type candidates: boolean, numeric, categorical, text, date, unknown`;
 
@@ -102,12 +105,9 @@ Column type candidates: boolean, numeric, categorical, text, date, unknown`;
 
   private buildModel(
     providerConfig?: SchemaProviderConfig,
-    modelName?: string,
+    modelName?: string
   ): any {
-    return {
-      provider: providerConfig?.provider ?? "openai",
-      modelId: modelName ?? "gpt-4o",
-    };
+    return createSkbLanguageModel(providerConfig?.provider, modelName);
   }
 
   private buildOutputSchema(): any {
@@ -146,7 +146,7 @@ Column type candidates: boolean, numeric, categorical, text, date, unknown`;
   }
 
   private buildHeuristicHints(
-    parsed: ParsedTable,
+    parsed: ParsedTable
   ): Record<string, { detected_type: string; cardinality: number }> {
     const hints: Record<
       string,
@@ -164,22 +164,27 @@ Column type candidates: boolean, numeric, categorical, text, date, unknown`;
         const nonEmpty = values.filter((v) => v !== "");
         if (nonEmpty.length > 0) {
           const allNumeric = nonEmpty.every(
-            (v) => !isNaN(Number(v)) && v.trim() !== "",
+            (v) => !isNaN(Number(v)) && v.trim() !== ""
           );
           const allBoolean = nonEmpty.every(
-            (v) => v === "true" || v === "false",
+            (v) => v === "true" || v === "false"
           );
           const allDates = nonEmpty.every((v) => {
             const d = new Date(v);
             return !isNaN(d.getTime()) && /^\d{4}/.test(v);
           });
 
-          if (allBoolean) detectedType = "boolean";
-          else if (allNumeric) detectedType = "numeric";
-          else if (allDates) detectedType = "date";
-          else if (cardinality <= 10 && values.length > 10)
+          if (allBoolean) {
+            detectedType = "boolean";
+          } else if (allNumeric) {
+            detectedType = "numeric";
+          } else if (allDates) {
+            detectedType = "date";
+          } else if (cardinality <= 10 && values.length > 10) {
             detectedType = "categorical";
-          else detectedType = "text";
+          } else {
+            detectedType = "text";
+          }
         }
       }
 

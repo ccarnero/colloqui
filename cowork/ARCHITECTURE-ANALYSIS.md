@@ -1,5 +1,11 @@
 # Platform Cluster — Architecture Analysis
 
+> **Stale snapshot (as of 2026-07-07).** This document predates the SDK's
+> growth into a full 19-namespace platform SDK, the `/api/v1` global API
+> versioning rollout, live token streaming, and MCP connections. For the
+> current architecture, see `DOCS/architecture/overview.md` and the linked
+> `DOCS/architecture/runtime-streaming.md` / `DOCS/architecture/mcp-connections.md`.
+
 > Analysis of the `yoizen-platform` monorepo (a.k.a. the **YoizenClaw** platform).
 > Written from a full read of the repo's `DOCS/`, root config, and service layout.
 > Audience: Chris. Purpose: shared mental model before evaluating `codebase-memory-mcp`.
@@ -96,7 +102,7 @@ Grouped by responsibility:
 | `@yoizen/database` | DB + messaging helpers: `ensureTenantIngressStream`, `ensureTenantDlqStream`, claim-check store, migrations. |
 | `@yoizen/observability` | `PinoLoggerService`, OpenTelemetry setup, NATS spans, split-service bootstrap (`SERVICE_MODE` lets one image run as API or Worker). |
 | `@yoizen/angular-shared` | Shared Angular building blocks for `admin-console`. |
-| `@yoizen/platform-sdk` | Plain-Node ESM ingest SDK at repo-root `sdk/` (not a workspace member). The former TS `@yoizen/sdk` package was removed. |
+| `@yoizen/platform-sdk` | Full-surface platform SDK — 19 resource namespaces (agents, audit, auth-admin, channels, config-files, connectors, dashboard, jobs, knowledge-bases, mcp-servers, memories, registry, runtime, skills, structured-kb, system-variables, tenants, webhooks, workflows) — at repo-root `sdk/` (not a workspace member). Message ingest is one capability among many. The former TS `@yoizen/sdk` package was removed. |
 | `@yoizen/testing` | Test utilities (auth/tenant services). |
 
 The **`EventEnvelope`** is CloudEvents-inspired and is the heart of the system: `specversion, id, source, type, resource, time, traceid, causation_id, correlation_id, tenant, producer, domain, channel, provider, accountid, idempotencykey, transport, data` (plus optional pipeline-extension fields `callback_url`, `adapter_id`, `enrich_adapter`, `forward_adapter`, confirmed in `interfaces.ts`). When payloads are large, `data` goes "slim" (claim-check) — `payload_inline: false` + a `payload_ref` pointing at the NATS object store. **Correction (source check):** the real `EventData` fields are `received_at, payload_inline, payload_ref, payload_bytes, payload_checksum, payload` (the overview doc's "checksum" is actually `payload_checksum`).

@@ -1,5 +1,5 @@
-import { jsonSchema } from "ai";
 import type { Tool } from "ai";
+import { jsonSchema } from "ai";
 
 /**
  * Reference to an adapter + endpoint resolved via connector-admin.
@@ -7,6 +7,18 @@ import type { Tool } from "ai";
 export interface AdapterReference {
   readonly adapterId: string;
   readonly endpointId: string;
+}
+
+/**
+ * Reference to a tool exposed by a connected MCP server (mcp-connections.md §4).
+ * Parallel to {@link AdapterReference}. Used to give MCP tools a stable,
+ * addressable identity (`"<serverName>:<toolName>"`) for per-tool filtering
+ * and description overrides — execution still flows through the AI SDK's own
+ * `Tool.execute`, not through the tool executor.
+ */
+export interface McpReference {
+  readonly serverName: string;
+  readonly toolName: string;
 }
 
 /**
@@ -26,6 +38,12 @@ export interface ToolDef {
   readonly inputSchema: Record<string, unknown>;
   /** If this tool is backed by an adapter, the adapter reference */
   readonly adapterRef?: AdapterReference;
+  /**
+   * If this tool is exposed by a connected MCP server, the MCP reference
+   * (mcp-connections.md §4). Parallel to {@link adapterRef}. When set, the
+   * tool's `name` is namespaced as `"<serverName>:<toolName>"`.
+   */
+  readonly mcpRef?: McpReference;
   /**
    * If this is an adapter tool, the endpoint path within the adapter.
    * @deprecated Use adapterRef instead for new tools.
@@ -57,6 +75,12 @@ export interface ToolExecutionContext {
   readonly executionId: string;
   readonly sessionId?: string;
   readonly userId?: string;
+  /**
+   * Conversation id for this chat turn, when known (metering-foundation.md
+   * G5). Threaded into MCP call usage events as `correlationId` — nullable
+   * since not every caller (e.g. non-conversational chat requests) has one.
+   */
+  readonly conversationId?: string;
 }
 
 /**
@@ -73,7 +97,7 @@ export interface RegisteredTool {
  */
 export type ToolHandler = (
   params: Record<string, unknown>,
-  state: ToolExecutionContext,
+  state: ToolExecutionContext
 ) => Promise<ToolResult> | ToolResult;
 
 /**

@@ -5,6 +5,7 @@ import {
   type Signal,
   signal,
 } from "@angular/core";
+import { AgentAdminService } from "../agent-admin.service";
 import { HttpAdapterService } from "../http-adapter.service";
 import { RegistryService } from "../registry.service";
 
@@ -23,6 +24,7 @@ import { RegistryService } from "../registry.service";
 export class ConnectionsMetricsService {
   private readonly adapters = inject(HttpAdapterService);
   private readonly registry = inject(RegistryService);
+  private readonly agentAdmin = inject(AgentAdminService);
 
   /** Total HTTP connectors created (internal + external). */
   readonly httpConnectorsTotal = signal<number | null>(null);
@@ -43,6 +45,11 @@ export class ConnectionsMetricsService {
   readonly internalErrored = signal<number | null>(null);
   readonly mcpCount = signal<number | null>(null);
   readonly hostedCount = signal<number | null>(null);
+
+  /** Total MCP servers configured for the tenant. */
+  readonly mcpServersTotal = signal<number | null>(null);
+  /** Of those, how many are enabled + active. */
+  readonly mcpServersEnabled = signal<number | null>(null);
 
   /** Combined HTTP count (internal + external). */
   readonly httpCount = computed<number | null>(() => {
@@ -82,6 +89,18 @@ export class ConnectionsMetricsService {
       },
     });
     this.registry.loadServices();
+    this.agentAdmin.listMcpServers().subscribe({
+      next: (servers) => {
+        this.mcpServersTotal.set(servers.length);
+        this.mcpServersEnabled.set(
+          servers.filter((s) => s.enabled && s.is_active).length
+        );
+      },
+      error: () => {
+        this.mcpServersTotal.set(null);
+        this.mcpServersEnabled.set(null);
+      },
+    });
   }
 
   /** Forces a re-fetch of the counts (e.g. after a create/delete). */
@@ -107,6 +126,10 @@ export class ConnectionsMetricsService {
         return this.externalErrored;
       case "connections.hosted.count":
         return this.hostedCount;
+      case "connections.mcp.total":
+        return this.mcpServersTotal;
+      case "connections.mcp.enabled":
+        return this.mcpServersEnabled;
       default:
         return null;
     }

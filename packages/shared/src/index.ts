@@ -35,6 +35,8 @@ export {
   CHANNEL_AUDIT_EVENTS_MONGO_SCHEMA,
   CHANNEL_AUDIT_MONGO_NAMESPACE,
   EVENTS_AUDIT_MONGO_SCHEMA,
+  EXECUTION_AUDIT_EVENTS_MONGO_SCHEMA,
+  EXECUTION_AUDIT_MONGO_NAMESPACE,
   GATEWAY_AUDIT_MONGO_NAMESPACE,
   GATEWAY_AUDIT_MONGO_SCHEMA,
 } from "./audit-mongo-schema";
@@ -303,6 +305,8 @@ export type {
   IKbListResponse,
   IKnowledgeBase,
 } from "./knowledge-base.interfaces";
+export type { IMcpUsageEvent } from "./mcp-usage.interfaces";
+export { reportMcpUsageEvent } from "./mcp-usage-client";
 export type {
   IMongoCollectionSchema,
   IMongoIndexSpec,
@@ -444,6 +448,8 @@ export type {
   IConditionRule,
   JsFunctionAction,
   JsFunctionArgs,
+  McpCallAction,
+  McpCallArgs,
   MessageReceivedTrigger,
   MessageReceivedTriggerConfig,
   ServiceBusCallAction,

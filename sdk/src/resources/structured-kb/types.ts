@@ -22,12 +22,16 @@
  * .../query") — the fix is not yet hot-reloaded/deployed. See
  * `containers.query()`.
  *
+ * `POST /admin/structured-kb/containers/:id/files`
+ * (`SKBContainersController.uploadFile`, `UploadSKBFileDto`) creates the
+ * `skb_files` row (status `"pending"`) and publishes the ingestion event
+ * consumed by `SKBIngestionWorkerService` — fire-and-forget from the
+ * caller's perspective, same create-then-publish shape as
+ * `DocumentsController.uploadFile()`. Returns `202 Accepted` with
+ * `{ fileId, status }`, not the full container/file record. See
+ * `containers.uploadFile()`.
+ *
  * Other gaps:
- * - `POST /admin/structured-kb/containers/:id/files` exists at the gateway
- *   (body passthrough) but no matching synchronous route was found on
- *   `SKBContainersController` downstream — ingestion appears to be an
- *   async/NATS-driven pipeline instead. NOT implemented here pending
- *   confirmation of a real reachable downstream route.
  * - `DELETE /admin/structured-kb/containers/:id`: downstream returns 204,
  *   but `AdminProxyService.proxy()` converts a 204 into an HTTP 200 with an
  *   empty-object body at the gateway — `remove()` expects 200, not 204.
@@ -87,4 +91,27 @@ export interface QuerySKBContainerResult {
   results: Record<string, unknown>[];
   sql: string;
   totalCount: number;
+}
+
+/**
+ * `POST /admin/structured-kb/containers/:id/files` body (mirrors
+ * `UploadSKBFileDto`). `fileBase64` maps to the DTO's `file_base64` and
+ * `sheetName` to `sheet_name` — camelCase at the SDK boundary, same
+ * convention as the rest of this resource's types.
+ */
+export interface UploadSKBFileInput {
+  filename: string;
+  fileBase64: string;
+  categories?: string[];
+  sheetName?: string;
+}
+
+/**
+ * `POST /admin/structured-kb/containers/:id/files` response — `202
+ * Accepted`. Ingestion runs async (NATS-driven worker); this only confirms
+ * the file row was created and the ingestion event published.
+ */
+export interface UploadSKBFileResult {
+  fileId: string;
+  status: string;
 }

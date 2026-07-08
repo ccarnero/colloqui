@@ -1,5 +1,5 @@
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ExecutionContext } from "@nestjs/common";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { TenantGuard } from "@yoizen/database";
 import { WorkflowsController } from "../../src/modules/workflows/workflows.controller";
@@ -31,7 +31,7 @@ describe("WorkflowsController", () => {
     deleteWorkflow = mock(() => Promise.resolve());
     executeWorkflow = mock(() => Promise.resolve({ runId: "r1" }));
     listExecutions = mock(() =>
-      Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 }),
+      Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 })
     );
     getExecutionStatus = mock(() => Promise.resolve({ status: "RUNNING" }));
     getExecutionCountsByTenant = mock(() => Promise.resolve({}));
@@ -86,8 +86,24 @@ describe("WorkflowsController", () => {
   });
 
   it("executeWorkflow delegates", async () => {
-    await controller.executeWorkflow("t1", "wf-1", { request: { x: 1 } });
-    expect(executeWorkflow).toHaveBeenCalledWith("wf-1", "t1", { x: 1 });
+    const fakeReq = {
+      headers: {},
+    } as unknown as import("fastify").FastifyRequest;
+    await controller.executeWorkflow(
+      "t1",
+      "wf-1",
+      { request: { x: 1 } },
+      fakeReq
+    );
+    expect(executeWorkflow).toHaveBeenCalledWith(
+      "wf-1",
+      "t1",
+      { x: 1 },
+      {
+        requestId: null,
+        agentTimeoutMs: undefined,
+      }
+    );
   });
 
   it("listExecutions delegates with parsed query (defaults)", async () => {

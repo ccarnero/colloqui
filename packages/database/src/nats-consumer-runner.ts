@@ -1,5 +1,5 @@
-import type { Consumer, JsMsg } from "nats";
 import { PermanentError } from "@yoizen/shared";
+import type { Consumer, JsMsg } from "nats";
 
 export interface INatsConsumerRunnerOptions {
   /** Max messages per batch. @default 100 */
@@ -28,6 +28,15 @@ export interface INatsConsumerRunnerOptions {
   reattachInitialDelayMs?: number;
   /** Cap on the exponential reattach backoff (ms). @default 30_000 */
   reattachMaxDelayMs?: number;
+  /**
+   * When set, the runner calls `msg.working()` on this interval (ms)
+   * while a handler is in flight, extending the server-side ack-wait
+   * deadline without needing the full `ackWaitMs`/`backoffMs` window to
+   * elapse. Opt-in and `undefined` by default — no behavior change for
+   * consumers that don't set it. Useful for handlers whose runtime is
+   * unpredictable relative to `ackWaitMs` (e.g. multi-minute LLM calls).
+   */
+  workingIntervalMs?: number;
 }
 
 export interface INatsConsumerLogger {
@@ -109,7 +118,7 @@ export type NatsReattachReason = "error" | "closed";
  */
 export type NatsPermanentHandler = (
   msg: JsMsg,
-  err: PermanentError,
+  err: PermanentError
 ) => Promise<void>;
 
 export interface INatsConsumerRunnerHandlers {
@@ -181,9 +190,8 @@ export interface INatsConsumerRunnerState {
  * @param handlers  Optional DLQ / permanent-failure hook.
  */
 export class NatsConsumerRunner {
-  private consumeIterator: Awaited<
-    ReturnType<Consumer["consume"]>
-  > | null = null;
+  private consumeIterator: Awaited<ReturnType<Consumer["consume"]>> | null =
+    null;
 
   private running = false;
   private stopped = false;
@@ -213,11 +221,13 @@ export class NatsConsumerRunner {
      * Durable name label applied to every metric. Required when
      * `metrics` is provided; ignored otherwise.
      */
-    private readonly durableName?: string,
+    private readonly durableName?: string
   ) {}
 
   private emit(result: NatsMessageResult, durationMs: number): void {
-    if (!this.metrics || !this.durableName) return;
+    if (!this.metrics || !this.durableName) {
+      return;
+    }
     try {
       this.metrics.recordProcessed(this.durableName, result);
       this.metrics.recordDuration(this.durableName, durationMs);
@@ -227,7 +237,9 @@ export class NatsConsumerRunner {
   }
 
   private adjustInFlight(delta: number): void {
-    if (!this.metrics || !this.durableName) return;
+    if (!this.metrics || !this.durableName) {
+      return;
+    }
     try {
       this.metrics.adjustInFlight(this.durableName, delta);
     } catch {
@@ -236,8 +248,12 @@ export class NatsConsumerRunner {
   }
 
   private emitReattach(reason: NatsReattachReason): void {
-    if (!this.metrics || !this.durableName) return;
-    if (typeof this.metrics.recordReattach !== "function") return;
+    if (!this.metrics || !this.durableName) {
+      return;
+    }
+    if (typeof this.metrics.recordReattach !== "function") {
+      return;
+    }
     try {
       this.metrics.recordReattach(this.durableName, reason);
     } catch {
@@ -251,7 +267,9 @@ export class NatsConsumerRunner {
    * promise resolves as soon as the supervisor has been scheduled.
    */
   async start(): Promise<void> {
-    if (this.running || this.stopped) return;
+    if (this.running || this.stopped) {
+      return;
+    }
     this.running = true;
     this.supervisorPromise = this.supervise();
     // We deliberately do NOT await the supervisor — it runs for the
@@ -261,7 +279,7 @@ export class NatsConsumerRunner {
     // already try/finally'd end-to-end).
     this.supervisorPromise.catch((err) => {
       this.logger.error(
-        `NATS consumer supervisor exited with unhandled error (durable=${this.durableName ?? "<unnamed>"}): ${describeError(err)}`,
+        `NATS consumer supervisor exited with unhandled error (durable=${this.durableName ?? "<unnamed>"}): ${describeError(err)}`
       );
       this.running = false;
     });
@@ -316,8 +334,12 @@ export class NatsConsumerRunner {
   }
 
   private computeHealthy(): boolean {
-    if (this.stopped || !this.running) return false;
-    if (this.consumeIterator === null) return false;
+    if (this.stopped || !this.running) {
+      return false;
+    }
+    if (this.consumeIterator === null) {
+      return false;
+    }
     return !this.inErrorBackoff;
   }
 
@@ -353,7 +375,9 @@ export class NatsConsumerRunner {
       this.consumeIterator = null;
       this.generation++;
 
-      if (this.stopped) break;
+      if (this.stopped) {
+        break;
+      }
 
       const reason: NatsReattachReason = sessionError ? "error" : "closed";
       this.reattachCount++;
@@ -366,7 +390,7 @@ export class NatsConsumerRunner {
         attempt++;
         const delayMs = computeBackoffMs(attempt, initialDelay, maxDelay);
         this.logger.error(
-          `NATS consumer iterator failed (durable=${this.durableName ?? "<unnamed>"}, attempt=${attempt}, yielded=${yieldedAny}): ${describeError(sessionError)} — reattaching in ${delayMs}ms`,
+          `NATS consumer iterator failed (durable=${this.durableName ?? "<unnamed>"}, attempt=${attempt}, yielded=${yieldedAny}): ${describeError(sessionError)} — reattaching in ${delayMs}ms`
         );
         await sleep(delayMs);
       } else {
@@ -377,7 +401,7 @@ export class NatsConsumerRunner {
         this.inErrorBackoff = false;
         if (this.logger.warn) {
           this.logger.warn(
-            `NATS consumer iterator closed cleanly (durable=${this.durableName ?? "<unnamed>"}, yielded=${yieldedAny}) — rebinding`,
+            `NATS consumer iterator closed cleanly (durable=${this.durableName ?? "<unnamed>"}, yielded=${yieldedAny}) — rebinding`
           );
         }
         // Tiny pause to avoid a tight loop when consume() returns an
@@ -401,7 +425,9 @@ export class NatsConsumerRunner {
   private async runSession(generation: number): Promise<boolean> {
     this.generation = generation;
     const concurrency = Math.max(1, this.options.concurrency ?? 1);
-    if (concurrency === 1) return this.runSerial(generation);
+    if (concurrency === 1) {
+      return this.runSerial(generation);
+    }
     return this.runConcurrent(concurrency, generation);
   }
 
@@ -409,9 +435,13 @@ export class NatsConsumerRunner {
   private async runSerial(generation: number): Promise<boolean> {
     let yieldedAny = false;
     const iter = this.consumeIterator;
-    if (!iter) return false;
+    if (!iter) {
+      return false;
+    }
     for await (const msg of iter) {
-      if (this.stopped || this.generation !== generation) break;
+      if (this.stopped || this.generation !== generation) {
+        break;
+      }
       yieldedAny = true;
       await this.processOne(msg);
     }
@@ -426,15 +456,19 @@ export class NatsConsumerRunner {
    */
   private async runConcurrent(
     limit: number,
-    generation: number,
+    generation: number
   ): Promise<boolean> {
     const active = new Set<Promise<void>>();
     let yieldedAny = false;
     const iter = this.consumeIterator;
-    if (!iter) return false;
+    if (!iter) {
+      return false;
+    }
     try {
       for await (const msg of iter) {
-        if (this.stopped || this.generation !== generation) break;
+        if (this.stopped || this.generation !== generation) {
+          break;
+        }
         yieldedAny = true;
         const slot = this.processOne(msg).finally(() => active.delete(slot));
         active.add(slot);
@@ -457,6 +491,7 @@ export class NatsConsumerRunner {
   private async processOne(msg: JsMsg): Promise<void> {
     const started = performance.now();
     this.adjustInFlight(1);
+    const workingTimer = this.startWorkingTimer(msg);
     try {
       await this.handler(msg);
       msg.ack();
@@ -470,29 +505,58 @@ export class NatsConsumerRunner {
         return;
       }
       this.logger.error(
-        `Failed to process message: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to process message: ${err instanceof Error ? err.message : String(err)}`
       );
       msg.nak();
       this.emit("nak", performance.now() - started);
       this.lastMessageAt = Date.now();
     } finally {
       this.adjustInFlight(-1);
+      this.stopWorkingTimer(workingTimer);
+    }
+  }
+
+  /**
+   * Starts the optional in-progress ack extension for a single message.
+   * Returns `null` (no-op) when `workingIntervalMs` is not configured —
+   * zero overhead for every consumer that doesn't opt in.
+   */
+  private startWorkingTimer(msg: JsMsg): ReturnType<typeof setInterval> | null {
+    const intervalMs = this.options.workingIntervalMs;
+    if (!intervalMs || intervalMs <= 0) {
+      return null;
+    }
+    const timer = setInterval(() => {
+      try {
+        msg.working();
+      } catch {
+        // Best-effort — extending the ack deadline should never crash
+        // the handler or the consumer loop.
+      }
+    }, intervalMs);
+    (timer as unknown as { unref?: () => void }).unref?.();
+    return timer;
+  }
+
+  private stopWorkingTimer(timer: ReturnType<typeof setInterval> | null): void {
+    if (timer) {
+      clearInterval(timer);
     }
   }
 
   private async handlePermanent(
     msg: JsMsg,
-    err: PermanentError,
+    err: PermanentError
   ): Promise<void> {
     this.logger.error(
-      `Permanent failure [${err.stage}] on ${msg.subject}: ${err.reason}`,
+      `Permanent failure [${err.stage}] on ${msg.subject}: ${err.reason}`
     );
     if (this.handlers.onPermanent) {
       try {
         await this.handlers.onPermanent(msg, err);
       } catch (dlqErr) {
         this.logger.error(
-          `DLQ hook failed (still term-ing msg to avoid loop): ${dlqErr instanceof Error ? dlqErr.message : String(dlqErr)}`,
+          `DLQ hook failed (still term-ing msg to avoid loop): ${dlqErr instanceof Error ? dlqErr.message : String(dlqErr)}`
         );
       }
     }
@@ -508,7 +572,7 @@ export class NatsConsumerRunner {
 function computeBackoffMs(
   attempt: number,
   initialMs: number,
-  maxMs: number,
+  maxMs: number
 ): number {
   // attempt is 1-based after the first failure
   const exp = Math.min(attempt - 1, 20);
@@ -518,7 +582,9 @@ function computeBackoffMs(
 
 function describeError(err: unknown): string {
   if (err instanceof Error) {
-    return err.stack ? `${err.message} | ${err.stack.split("\n")[1] ?? ""}` : err.message;
+    return err.stack
+      ? `${err.message} | ${err.stack.split("\n")[1] ?? ""}`
+      : err.message;
   }
   return String(err);
 }

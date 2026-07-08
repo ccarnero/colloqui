@@ -162,6 +162,65 @@ describe("ExecutionsService.submitAndStream (DOCS/architecture/runtime-streaming
     sub.unsubscribe();
   });
 
+  it("does NOT kill a long token stream when the consumer keeps up (backpressure, not total length, §2.4)", async () => {
+    const events: Array<{ type: string; data: unknown }> = [];
+    const fastSocket = {
+      writableLength: 0,
+    } as unknown as import("node:net").Socket;
+    const sub = service
+      .submitAndStream("acme", dto, undefined, fastSocket)
+      .subscribe((e) => events.push(e as any));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const subjectsAfterSub = mockNc.subscribe.mock.calls.map(
+      (c) => c[0] as string
+    );
+    const executionId = extractExecutionId(subjectsAfterSub);
+    const tokenSubject = subjectsAfterSub.find((s) => s.endsWith(".token"))!;
+
+    // Far beyond the old 256-event total cap — a draining consumer must
+    // receive every token, however long the stream runs.
+    for (let seq = 0; seq < 1000; seq++) {
+      fire(tokenSubject, { executionId, seq, delta: `t${seq}` });
+    }
+
+    const tokens = events.filter((e) => e.type === "token");
+    expect(tokens.length).toBe(1000);
+    expect(events.some((e) => e.type === "failed")).toBe(false);
+    sub.unsubscribe();
+  });
+
+  it("closes with failed{reason:'slow_consumer'} when the socket buffer exceeds the bound (§2.4)", async () => {
+    const events: Array<{ type: string; data: unknown }> = [];
+    let completed = false;
+    const stalledSocket = {
+      writableLength: 256 * 1024 + 1,
+    } as unknown as import("node:net").Socket;
+    service.submitAndStream("acme", dto, undefined, stalledSocket).subscribe({
+      next: (e) => events.push(e as any),
+      complete: () => {
+        completed = true;
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const subjectsAfterSub = mockNc.subscribe.mock.calls.map(
+      (c) => c[0] as string
+    );
+    const executionId = extractExecutionId(subjectsAfterSub);
+    const tokenSubject = subjectsAfterSub.find((s) => s.endsWith(".token"))!;
+
+    fire(tokenSubject, { executionId, seq: 0, delta: "x" });
+
+    const failed = events.find((e) => e.type === "failed") as
+      | { type: string; data: { reason?: string } }
+      | undefined;
+    expect(failed?.data?.reason).toBe("slow_consumer");
+    expect(completed).toBe(true);
+  });
+
   it("completes the observable on a completed lifecycle event", async () => {
     const events: Array<{ type: string; data: unknown }> = [];
     let completed = false;

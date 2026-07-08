@@ -1,7 +1,8 @@
-import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { McpClientService } from "./mcp-client.service";
-import { AgentAiTenantConnectionManager } from "../../providers/tenant-connection.manager";
+import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { TenantConnectionManager } from "@yoizen/database";
+import { AgentAiTenantConnectionManager } from "../../providers/tenant-connection.manager";
+// biome-ignore lint/style/useImportType: NestJS DI requires runtime class reference for constructor injection
+import { McpClientService } from "./mcp-client.service";
 
 interface IMcpServerRow {
   id: string;
@@ -32,7 +33,9 @@ export class McpConnectionService implements OnModuleInit {
     try {
       // For now, tenant-specific MCP servers are connected lazily
       // on first request via connectForTenant().
-      this.logger.log("MCP connection service initialized (lazy connect per tenant)");
+      this.logger.log(
+        "MCP connection service initialized (lazy connect per tenant)"
+      );
     } catch (error) {
       this.logger.error("Failed to initialize MCP connections", error);
     }
@@ -45,14 +48,21 @@ export class McpConnectionService implements OnModuleInit {
         await this.connectServer(server);
       }
       if (servers.length > 0) {
-        this.logger.log(`Connected to ${servers.length} MCP server(s) for tenant ${tenantId}`);
+        this.logger.log(
+          `Connected to ${servers.length} MCP server(s) for tenant ${tenantId}`
+        );
       }
     } catch (error) {
-      this.logger.error(`Failed to connect MCP servers for tenant ${tenantId}`, error);
+      this.logger.error(
+        `Failed to connect MCP servers for tenant ${tenantId}`,
+        error
+      );
     }
   }
 
-  private async loadEnabledMcpServers(tenantId: string): Promise<IMcpServerRow[]> {
+  private async loadEnabledMcpServers(
+    tenantId: string
+  ): Promise<IMcpServerRow[]> {
     try {
       const sql = await (this.connectionManager as any).ensureSchema(tenantId);
 
@@ -85,7 +95,7 @@ export class McpConnectionService implements OnModuleInit {
       }
     } catch (error) {
       this.logger.warn(
-        `Could not load MCP servers for tenant ${tenantId}: ${error}`,
+        `Could not load MCP servers for tenant ${tenantId}: ${error}`
       );
     }
     return [];
@@ -94,6 +104,7 @@ export class McpConnectionService implements OnModuleInit {
   private async connectServer(server: IMcpServerRow): Promise<void> {
     await this.mcpClient.connect({
       name: server.name,
+      id: server.id,
       transport: {
         type: server.transport_type,
         url: server.url,

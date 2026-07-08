@@ -1,91 +1,109 @@
 # Doc-vs-Code Audit — Platform Cluster
 
 > Goal: compare project documentation against the actual codebase and treat code as the source of truth.
-> Date: 2026-07-01.
-> Method: split the audit by domain across focused fresh-context agents, using `codebase-memory-mcp` for code discovery plus direct doc/config reads for Markdown, scripts, manifests, and literals.
-> Repair status: findings below were fixed in the living docs during the 2026-07-01 repair pass. Keep this file as audit evidence, not as an open TODO list.
+> Date: 2026-07-07 (strict re-run; supersedes the 2026-07-01 audit).
+> Method: five parallel fresh-context audit agents — (1) async/long-running-execution resilience (see `cowork/ASYNC-RESILIENCE-AUDIT.md`), (2) architecture/runbooks, (3) messaging/channels/connectors, (4) agents/AI/SKB/SDK, (5) workflows/admin-console/gateway. Every claim required `file:line` evidence. Verified claims come with a proposed "lock" (guard/contract test) so regressions fail loudly.
 
 ## Executive summary
 
-The previous audit was too optimistic. The docs are useful, but several important areas drifted after code moved forward: workflow APIs, admin-console navigation, SKB endpoints, tenant provisioning, connector naming, webhook publish semantics, and agent scheduler config.
+**The 2026-07-01/02 repair pass held: zero regressions found in the areas it fixed.** Runbooks, observability, security, storage-engine, Temporal, envelope, claim-check, service-bus, ingress and channel docs all verified accurate against current code.
 
-**Repair decision:** fixed the docs to match code. If product wants any documented behavior instead, that should become a code change with tests.
+**All new drift comes from post-2026-07-02 work** that landed without a doc pass: SDK growth (`@yoizen/platform-sdk`, 19 namespaces), `/api/v1` global API versioning, live token streaming, and MCP connections.
+
+**Code defects (not doc drift):** the 5 SKB wiring defects found on 2026-07-02 are **all still present** in code; docs correctly flag them. The async-resilience audit found 1 CRITICAL + 1 HIGH + 2 MEDIUM code findings — see `cowork/ASYNC-RESILIENCE-AUDIT.md`.
 
 | Severity | Count | Main areas |
 | --- | ---: | --- |
-| High | 14 | Workflows, admin console, SKB, tenant provisioning, API gateway/auth, channel ingress, connector naming |
-| Medium | 18 | Config/env names, payload shapes, stream names, storage engine wording, historical runbooks |
-| Low | 4 | Inventory/table cleanup and examples |
+| High | 7 | Two "Status: Design (not implemented)" docs for shipped features (mcp-connections, runtime-streaming); gateway endpoint table without `/api/v1`; `mcpCall` absent from overview action tables; workflow-service README fabricated `channelSend` example + wrong 24h timeout |
+| Medium | 8 | SDK described as "ingest SDK"; DOCS/README omits agent-memory/agent-scheduler in two tables; SDK `getUsage` gap unrecorded; decision-log says "MCP pending"; streaming/MCP missing from `DOCS/agents/*`; gateway versioning undocumented |
+| Low | 7 | connector-runtime README concurrency 200→400 self-contradiction; cache TTL numbers reversed; utils file locations; PATCH endpoint caveat; stale ARCHITECTURE-ANALYSIS.md; missing healthz/readyz rows; admin-console MCP "placeholder" comment |
 
-## Repair order used
+## High-priority drift
 
-1. **Public/API docs first:** workflow-service, API gateway/auth, SKB, connector-admin/runtime.
-2. **Runtime architecture docs next:** tenant provisioning, channel ingress/claim-check, messaging envelope examples.
-3. **Operator docs after that:** README smoke test, storage/Temporal runbooks, service inventory.
-4. **Agent-local docs last:** AGENTS/CLAUDE/CURSOR/GEMINI files and historical SDD notes.
-
-## High-priority mismatches
-
-| Area | Docs | Doc claim | Code source of truth | Correction |
+| # | Doc file:line | Doc claims | Code reality | Fix |
 | --- | --- | --- | --- | --- |
-| Smoke tests | `README.md` | `scripts/smoke-test.sh` runs the e2e workflow suite. | `scripts/smoke-test.sh` checks Kubernetes service/deployment readiness only; Playwright uses `e2e/sales-agent-setup.spec.ts`; workflow HTTP smoke is `scripts/e2e-http-workflow.sh`. | Describe smoke test as readiness preflight; point workflow/browser e2e to the real commands. |
-| Tenant host resolution | `DOCS/architecture/multi-tenancy.md` | Local host tenant source is `<tenant>.dev.local`. | API gateway host pattern is `<env>.<tenant>.yplatform.com`; fallback is `x-yoizen-tenant`, then `?tenant=`. | Document local dev as header/query-based unless `dev.local` support is added. |
-| Tenant Postgres provisioning | `services/tenant-service/README.md`, `DOCS/runbooks/storage-engines.md` | Tenant creation deploys a dedicated PostgreSQL StatefulSet. | Shared tier creates logical DB + namespace Secret/ExternalName; dedicated tier creates StatefulSet; `POST /tenants` is async `202 Accepted`. | Document shared vs dedicated tiers explicitly. |
-| Tenant-user scope | `services/api-gateway/README.md`, `services/auth-service/README.md` | `POST /auth/tenant-users` is platform-only. | Gateway route allows `@Scopes("platform", "tenant")`; internal auth controller is not platform-only. | Document actual gateway scope behavior. |
-| Channel webhook response | `DOCS/channels/channel-service.md` | HTTP 200 is returned before NATS publish. | `WebhooksController.ingest()` awaits `publishWebhook()`; publish failures/backpressure can return 503. | Say 200 happens only after successful publish. |
-| Webhook claim-check | `DOCS/channels/channel-service.md`, `DOCS/channels/telegram-sequence.md` | Large `WebhookIngressEnvelope` payloads use claim-check. | API gateway publishes webhook envelopes directly; claim-check is in channel-service canonical publish path. | Scope claim-check to canonical channel envelopes, not stage-1 webhook ingress. |
-| Connector naming/API | `services/connector-admin/README.md`, `services/connector-runtime/README.md` | Uses `/adapters`, `adapter-service`, `ADAPTER_SERVICE_URL`. | Current surface is `/connectors` / `/api/connectors`; runtime uses `CONNECTOR_ADMIN_URL`. | Rename docs to connector-admin/connectors; keep adapter names only as legacy aliases where code still supports fallback. |
-| SKB file APIs | `DOCS/skb/api.md`, `DOCS/skb/architecture.md` | File upload/list/delete/schema endpoints are implemented. | Agent-admin has container CRUD + query controllers; gateway proxies `POST /containers/:id/files` to a missing agent-admin route. | Mark file APIs pending/broken, or implement missing agent-admin routes later. |
-| SKB rate limit | `DOCS/skb/api.md` | 60/min with rate-limit headers. | `SKBRateLimitGuard` is query-only, in-memory, `MAX_REQUESTS = 30`, no headers. | Document 30/min per tenant per process; no headers unless added. |
-| Scheduler admin auth | `DOCS/agents/jobs.md` | Admin endpoints require `X-Admin-Api-Key`. | Guard reads `x-internal-api-key`; disabled when `ADMIN_API_KEY` is unset. | Replace header name and mention unset behavior. |
-| Workflow lifecycle | `services/workflow-service/README.md`, workflow AGENTS/CLAUDE/CURSOR/GEMINI | `POST /workflows` starts a workflow; `GET /workflows/:id` reads execution status. | `POST /workflows` creates definition; execution is `POST /workflows/:id/execute`; status is `GET /workflows/:id/executions/:executionId`. | Document create/update definition separately from execute/query execution. |
-| Workflow action schema | `DOCS/workflows/connector-vs-workflow.md`, `services/workflow-service/README.md` | Examples use `type: "endpointCall"`; README lists `sleep`. | Canonical action field is `activity`; `conditional` exists; `sleep` is not supported. | Replace examples with `activity`, remove `sleep`, add `conditional`. |
-| Trace UI route/security | `services/admin-console/src/app/features/processes/trace/README.md`, `DOCS/guides/ui-flows.md` | Trace is under Diagnostics and gated by `diagnostics:read`. | Route is `/processes/trace` under `authGuard`; `MessageTraceComponent` gates data loading with `diagnostics:read`; not listed in Processes sub-nav. | Document direct route plus component-level permission gate, or add route/nav guard code. |
-| Admin-console navigation | `services/admin-console/README.md` | Old sidebar sections: Identity & Access, Automation, Data & Integrations, Security, Notifications, Platform. | Current shell has top sections: Overview, Channels, Connections, AI, Processes, Settings. | Rewrite around current header tabs + section sub-nav. |
+| H1 | `DOCS/architecture/mcp-connections.md:3` | "Status: Design (not implemented)" | Fully implemented (commit c4da71a, ~99 files): `mcp-servers` module w/ `:id/test`, `:id/tools`, `:id/usage`, tool bridge, `mcpCall` activity, admin-console list+detail, SDK resource | Flip to `Implemented`; add dated as-implemented delta (known gaps: SDK `getUsage`, delete confirm-dialog) |
+| H2 | `DOCS/architecture/runtime-streaming.md:2` | "Status: Design (not implemented)" | Fully implemented (commit 4d77d0a): `rt.<tenant>.exec.<id>.token` subjects, SSE relay w/ `reply.hijack()`, SDK `runtime.stream()`, 61/61 e2e | Flip to `Implemented` |
+| H3 | `DOCS/architecture/overview.md:254-276` | Gateway endpoints shown unversioned (`/auth/token`, `/events`, `/tenants`) | `api-gateway/src/main.ts:98-110` — global `api` prefix + URI versioning; canonical `/api/v1/*`; unversioned alias deprecated w/ `Deprecation`/`Sunset`/`Link` headers; `/api/docs` Swagger | Rewrite table; add "API Versioning" subsection |
+| H4 | `DOCS/architecture/overview.md:444-453,916-978` | Action-type table/diagrams omit `mcpCall` | `workflow-service/src/temporal/workflows.ts:314-319`, validator `:32,53-88`, `connector-runtime/src/activities/mcp-call.activity.ts` | Add `mcpCall` everywhere endpointCall/serviceCall appear |
+| H5 | `services/workflow-service/README.md:326-335` | `channelSend` example `{channel:"email", recipient, subject, body}` (fabricated) | `packages/shared/src/workflow.interfaces.ts:152-164` requires `accountId, channel(whatsapp\|instagram\|telegram\|http), provider, to, type` | Replace example with the shape `patterns.md:456` uses |
+| H6 | `services/workflow-service/README.md:619` | "Workflow timeout: 24 hours" | `WORKFLOW_DEFAULT_TIMEOUT_MS = 600_000` (10 min), `packages/shared/src/constants.ts:72`, applied `workflows.service.ts:338` | Change to 10 minutes, cite constant |
+| H7 | `services/api-gateway/README.md` + `CLAUDE.md` | Routes documented only as `/api/*`, no versioning mention | Same as H3 | Add "API versioning" section: `/api/v1/*` canonical, deprecated alias, `VERSIONING_EXEMPT_PREFIXES` |
 
-## Medium-priority mismatches
+## Medium-priority drift
 
-| Area | Docs | Doc claim | Code source of truth | Correction |
+| # | Doc file:line | Doc claims | Code reality | Fix |
 | --- | --- | --- | --- | --- |
-| Gateway route prefixes/env | `services/api-gateway/README.md` | Routes omit `/api`; env includes `ADAPTER_SERVICE_URL`. | Gateway has global `/api` prefix; config uses `CONNECTOR_ADMIN_URL`, `PROXY_SERVICE_URL`, `agentMemory`. | Prefix external routes with `/api/*`; replace env names. |
-| Connector-runtime concurrency | `DOCS/architecture/overview.md` | Connector runtime maximum activity concurrency is 200. | `services/connector-runtime/src/worker.ts` uses `maxConcurrentActivityTaskExecutions: 400`; workflow docs already say 400. | Update overview to 400. |
-| Service inventory | `DOCS/README.md` | Manual Docker loop is service inventory. | `services.conf` also includes `agent-memory-service` and `agent-scheduler-service`; smoke script checks both. | Use `services.conf` or add missing services. |
-| Temporal visibility archive | `DOCS/runbooks/archive/temporal-visibility-split.md` | Bootstrap invokes `ensure-temporal-visibility-schema.sh`. | Helper no longer exists; current Temporal config points visibility to `postgres-temporal-rw`; separate visibility cluster is unused in dev. | Mark as historical/non-runnable or update to current dev behavior. |
-| Envelope causality example | `DOCS/messaging/envelope.md` | Stage-2 `ChannelEnvelope` has `causation_id: null`, self-correlation, `depth: 0`. | Webhook consumer passes original correlation, sets causation to webhook envelope id, increments depth. | Update example to `causation_id=<webhook-id>`, `depth=1`. |
-| `correlation_id` default | `DOCS/messaging/envelope.md` | Broadly defaults to envelope id. | `createChannelEnvelope()` self-correlates; shared `buildEventEnvelope()` uses random UUID unless caller passes correlation id. | Make default producer-specific. |
-| Channel storage wording | `DOCS/messaging/ingress.md`, `services/channel-service/AGENTS.md` | Active accounts and health are Mongo-only. | Storage engine defaults to Postgres with Mongo optional; health returns either `{postgres, nats}` or `{mongo, nats}`. | Say configured storage engine/repository. |
-| Agent scheduler env | `services/agent-scheduler-service/README.md` | Default `PORT=3010`; leader election uses `POSTGRES_PASSWORD`. | Config defaults `PORT=3000`; leader election uses `LEADER_ELECTION_POSTGRES_URL`. | Fix env table. |
-| Execution result payload | `DOCS/agents/execution.md` | Success emits `result.reply`; failure emits `result.errorCode` / `result.errorMessage`. | Handler emits `response`, `usage`, `toolCalls`; failure uses top-level `error`. | Document actual payload shape. |
-| Agent-admin config-files routes | `services/agent-admin-service/AGENTS.md` | `GET/PUT /admin/config-files/:id`. | Actual routes: `GET /admin/config-files`, `GET /admin/config-files/file?path=...`, `PUT /admin/config-files`, `POST /deploy`. | Replace ID routes with path-based routes. |
-| Agent-admin DB wording | `services/agent-admin-service/AGENTS.md` | Mongo-only DB/connection architecture. | `resolveStorageEngine()` defaults to Postgres; Mongo is optional via `DB_ENGINE=mongo`. | Make Postgres default explicit. |
-| Agent-admin adapter wording | `services/agent-admin-service/AGENTS.md` | Proxies to `adapter-service`. | Config prefers `CONNECTOR_ADMIN_URL`, legacy `ADAPTER_SERVICE_URL` fallback. | Rename to connector-admin. |
-| Landing aggregation idempotency | `services/admin-console/.sdd/changes/landing-page-aggregation/tasks.md` | `loadUsageTotals()` is guarded/idempotent. | Current service reloads usage totals each time; no guard. | Document repeated fetch or implement guard later. |
-| Processes landing top workflows | `services/admin-console/.sdd/changes/landing-page-aggregation/tasks.md` | `topWorkflows()` returns empty/no data. | It now fetches workflow execution counts and renders top workflows. | Update historical/current-state note. |
-| Workflow local agent docs | workflow AGENTS/CLAUDE/CURSOR/GEMINI | Queue is `http-adapter`; worker concurrency is 100/50; all activities retry 3 times. | Queue is `connector-runtime`; workflow worker is 200 activity / 150 workflow; HTTP retries are 5 while local activities are 3. | Normalize generated agent docs to current queue/retry/concurrency. |
-| Claim-check config/consumer behavior | `DOCS/messaging/claim-check.md` | Per-tenant/per-agent threshold overrides, DLQ on store/resolve failure, and standard envelope reference behavior. | Code has hardcoded threshold copies; channel-service publishes custom claim-check reference object; no implemented per-tenant threshold config; consumer resolve path is not generally wired. | Rewrite claim-check doc around implemented behavior and mark planned behavior explicitly. |
-| Stream tier state | `DOCS/messaging/service-bus.md` | Tier selection is not connected. | Some providers call `buildTenantStreamConfig(..., "free")`; shared helper still uses default 256 MB and reconciles. | Say tiers are partially wired with hardcoded fallback and inconsistent reconciliation. |
-| Durable name | `DOCS/messaging/service-bus.md` | Agent AI durable shown as `agent-ai-service`. | Code uses `agent-ai-service-consumer`. | Correct durable name. |
+| M1 | `DOCS/architecture/overview.md:584`, `cowork/ARCHITECTURE-ANALYSIS.md:99` | SDK is a "Plain-Node ESM ingest SDK" | Full platform SDK, 19 namespaces (`sdk/src/infrastructure/create-client.ts:176-197`) | Rewrite: full-surface SDK; ingest is one capability |
+| M2 | `DOCS/README.md:223-246,406-423` | Components table + project tree omit `agent-memory-service`, `agent-scheduler-service` | Both in `services/` and `services.conf`; same file lists them elsewhere (internal inconsistency) | Add to both tables |
+| M3 | `DOCS/architecture/mcp-connections.md:329-332` | SDK plan includes `getUsage(id)` | `sdk/src/resources/mcp-servers/client.ts` has 7 methods, no `getUsage` (backend route exists) | Record as explicit known gap when flipping status |
+| M4 | `DOCS/architecture/decision-log.md:51,73` | Only MCP mention is "MCP server as publish interface — Pending" | Shipped feature is the inverse (consume external MCP servers as tools) | Add closed/implemented entry; keep O8/M2 as distinct pending idea |
+| M5 | `DOCS/agents/execution.md:12-29` | Only old async model; no streaming | Stream-mode + token pipeline shipped; documented only in `runtime-streaming.md` | Cross-link or merge |
+| M6 | `DOCS/agents/adapter-tools.md`, `DOCS/agents/execution.md`, `DOCS/skb/*` | Zero MCP mentions | MCP tool bridge + per-tool enablement (`enabled_mcp_tools`, flag `AGENT_MCP_TOOL_FILTERING_ENABLED`) shipped | Cross-link `mcp-connections.md` |
+| M7 | `sdk/samples/README.md` (committed HEAD) | "migration underway, only http-bridge SDK-powered" | All samples SDK-powered; accurate rewrite exists **uncommitted** in working tree | Commit the pending rewrite |
+| M8 | `DOCS/architecture/multi-tenancy.md:274-278` | `buildIngressStreamName`/`buildClaimCheckBucket` in `channel.constants.ts` | Both live in `packages/shared/src/channel.utils.ts` | Fix file column |
 
-## Low-priority mismatches
+## Low-priority drift
 
-| Area | Docs | Doc claim | Code source of truth | Correction |
+| # | Doc file:line | Doc claims | Code reality | Fix |
 | --- | --- | --- | --- | --- |
-| Temporal inventory | `DOCS/runbooks/temporal.md` | Inventory query/table implies `temporal-ui` is included and omits `temporal-metrics`. | `temporal-ui` has different selector; `temporal-metrics` Service exists. | Adjust query/table. |
-| Sample stream casing | `sdk/samples/http-fanout-telegram/README.md` | Stream is `INGRESS-acme`. | Stream names are `INGRESS-${tenant.toUpperCase()}`; subjects stay lowercase. | Use `INGRESS-ACME`. |
-| Claim-check threshold duplication | `DOCS/messaging/claim-check.md` context | One canonical shared threshold implied. | Shared package has `CLAIM_CHECK_THRESHOLD_BYTES`; agent-ai-service has a local copy with same numeric value. | Mention current duplication or refactor later. |
-| Archived/current-state SDD docs | `.sdd/**`, service-local `.sdd/**` | Some archived task docs describe intended current behavior. | Several are historical snapshots and drift from current code. | Add “historical change artifact” disclaimers or exclude them from current-state docs. |
+| L1 | `services/connector-runtime/README.md:60,288` | "Max 200 concurrent activity tasks" (self-contradicts :280) | `worker.ts:35` → 400 | Unify on 400 |
+| L2 | `services/connector-runtime/README.md:76` | Cache "TTL 300s, stale window 60s" | `packages/shared/src/adapter-client.ts:20-21`: soft TTL 60s, stale-serve window 300s (numbers reversed) | Swap the numbers |
+| L3 | `services/connector-admin/README.md` | Documents only `/health` | `/healthz` and `/readyz` also exist | Add rows |
+| L4 | `DOCS/adr/variable-system.md:3` | "system-variables controller has no update endpoint" | `system-variables.controller.ts:35-44` has `@Patch(":id")` | Update caveat |
+| L5 | `DOCS/architecture/overview.md:117-124` | Related Documents omits runtime-streaming.md, mcp-connections.md | Both describe shipped features | Add links |
+| L6 | `cowork/ARCHITECTURE-ANALYSIS.md` | Presents as current mental model | Predates SDK/versioning/streaming/MCP | Add stale banner or archive |
+| L7 | `services/admin-console/README.md:64` | "MCP placeholder/page" | Full list (mat-table) + detail page | Update comment |
 
-## Verified important claims
+## Code defects surfaced by the audit (NOT doc drift — docs are accurate about them)
 
-- KEDA/ScaledObject removal is consistent with manifests; active dev Knative overlays pin KServices to min/max scale `1`.
-- `DOCS/agents/adapter-tools.md` is mostly aligned: adapter execution calls connector-admin, injects `X-Yoizen-Tenant`, and has no cache layer.
-- `DOCS/reference/ai-sdk.md` version claims match package manifests for AI SDK/OpenAI/Anthropic packages.
-- `http-fanout-telegram` branch concurrency claim is correct: workflow branch arms run via `Promise.all`.
-- Admin console Angular version claim is current.
-- Message trace still assembles client-side from audit windows plus workflow executions.
+### SKB wiring defects — all 5 STILL PRESENT (unchanged since 2026-07-02)
 
-## Notes on scope
+| # | Defect | Evidence |
+| --- | --- | --- |
+| 1 | `skb_container_files` table never created but read/written | `schema-initializer.ts` creates 5 SKB tables, not this one; `skb-containers.repository.ts:135,156,164` uses it |
+| 2 | `insertRows` arity mismatch hidden by `as any` | Def 6 args (`skb-rows.repository.ts:93-99`); call passes 4 (`skb-ingestion-worker.service.ts:225-230`) |
+| 3 | Watchdog stubbed | `skb-containers.repository.ts:195-203` — `findProcessingFilesOlderThan` returns `[]` unconditionally |
+| 4 | `skb_query_history` never written | Service registered (`structured-kb.module.ts:13-14,32-33`) but never called from `skb-query.service.ts` |
+| 5 | Provider hardcoded openai/gpt-4o | `skb-query.service.ts:216-217`; duplicated default `skb-schema-analyzer.service.ts:108-109` |
 
-Included: `DOCS/**`, root docs, service READMEs/agent docs where they make runtime claims, SDK sample READMEs, selected cowork docs, and current-state SDD docs that are easy to confuse with living docs.
+### Async/long-running resilience — 1 CRITICAL, 1 HIGH, 2 MEDIUM
 
-Excluded: `node_modules`, installed skill reference libraries, and generated historical artifacts unless they make current-state claims.
+See `cowork/ASYNC-RESILIENCE-AUDIT.md` for full detail. Headline: `agent-ai-service`'s NATS consumer runs multi-minute LLM handlers under the default 60s `ackWait` with no `msg.working()` — JetStream redelivers and duplicates in-flight LLM executions.
+
+## Missing docs (new features with no doc home)
+
+1. **API versioning `/api/v1`** — no ADR/decision-log entry, no architecture section, no gateway README coverage. Highest-priority gap.
+2. **MCP security model** — new trust boundary (per-tenant outbound calls to external MCP servers; credentials as plaintext `headers` JSON on `mcp_servers`) absent from `security.md`.
+3. **Token-streaming observability** — no SSE lifetime metrics/spans; `rt.` prefix absent from overview Key Constants.
+4. **SDK capabilities** — DOCS/README.md (entry point) has zero mention of SDK, /api/v1, MCP, or streaming.
+5. **Mock LLM provider** (`RUNTIME_ALLOW_MOCK_PROVIDER`) — wired into provider registry, no doc home.
+6. **MCP design open questions (§8)** resolved silently by implementation; doc never records resolutions.
+7. **Admin API-key guard** (`x-internal-api-key`, disabled when `ADMIN_API_KEY` unset) documented in jobs.md but absent from `security.md`.
+8. **Gateway `VERSIONING_EXEMPT_PREFIXES`** — nothing tells a new-controller author whether/how to opt out of versioning.
+
+## Locks — doc/code invariants verified TODAY, worth a cheap guard
+
+The full VERIFIED tables (38 architecture/runbook rows + workflow/SDK/messaging rows) live in the audit agents' outputs; the highest-value locks to actually implement, in order:
+
+| # | Lock | Type | What it pins |
+| --- | --- | --- | --- |
+| K1 | SDK namespace census: `Object.keys(createClient(...))` = documented 19-name list | unit test in `sdk/` | SDK/docs surface parity |
+| K2 | `POST /workflows/:id/execute` → 202 in <200ms with a mocked slow activity | contract test | async workflow submit contract |
+| K3 | Transport builds `/api/v1/...` by default and `/api/...` with `apiVersion: null`; gateway answers both, unversioned carries `Deprecation` header | contract test (SDK + gateway e2e) | versioning contract |
+| K4 | Workflow action validator: accepted `activity` kinds == doc list; fabricated `channelSend` email shape rejected; `mcpCall` requires `serverId`/`toolName` | unit tests on `IsWorkflowActionArrayConstraint` | action schema truth |
+| K5 | Constant snapshots: `WORKFLOW_DEFAULT_TIMEOUT_MS=600000`, `CLAIM_CHECK_THRESHOLD_BYTES=256KB`, `TENANT_HEADER`, `WEBHOOK_FORWARDED_HEADERS` (7), `rt.` stream prefix | snapshot test on `packages/shared` constants | doc'd literals |
+| K6 | Doc-check script (CI): service inventory vs `services/*` dirs; Knative min/max-scale annotations vs overview table; alert names vs `alerts.yaml`; referenced script paths exist; archive runbooks keep historical banner; no `ScaledObject` anywhere | static doc guard (extends `DOCS/guides/doc-code-validation-tests.md`) | overview/runbook tables |
+| K7 | NATS consumer config census: every durable consumer whose handler can exceed 60s must declare an explicit `ackWaitMs` (assert via a table-driven test over consumer configs) | unit/arch test in `packages/database` consumers | THE critical async invariant |
+| K8 | Knative `timeoutSeconds` on ai-agent-gateway/api-gateway ≥ `AGENT_CALL_TIMEOUT_MS` (900s) with margin | CI yq assertion | streaming/long-call ceiling |
+| K9 | `resolveTenant()` precedence host → header → query; `dev.local` falls through to header/query | unit test | tenant resolution |
+| K10 | MCP DTO enums (`none/api-key/bearer/basic`; `http/sse`) match doc §0.4; tool namespacing `<serverName>:<toolName>` | unit tests | MCP contract |
+
+## Repair order
+
+1. **Flip the two "not implemented" design docs** (H1, H2) — worst reader damage per minute of fix.
+2. **Gateway versioning docs** (H3, H7, missing-doc #1) — public API surface.
+3. **Workflow docs** (H4, H5, H6) — the README fabrication survived one repair pass already.
+4. **Implement locks K1-K7** — before more drift accrues; K7 belongs with the async CRITICAL fix.
+5. Medium/low doc fixes in table order; commit the pending `sdk/samples/README.md`.
+6. Code fixes tracked separately: async findings (see ASYNC-RESILIENCE-AUDIT.md) and the 5 SKB defects.

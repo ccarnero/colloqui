@@ -1,5 +1,5 @@
 import "../../setup-env";
-import { describe, it, expect, beforeEach, vi } from "bun:test";
+import { beforeEach, describe, expect, it, vi } from "bun:test";
 
 const load = async () => {
   const { SKBRateLimitGuard } = await import(
@@ -51,12 +51,18 @@ describe("SKBRateLimitGuard", () => {
       guard.canActivate(ctx);
     }
 
-    vi.useFakeTimers();
-    vi.advanceTimersByTime(60_001);
+    // bun:test's `vi` shim has no fake-timer support (`vi.advanceTimersByTime`
+    // is undefined), and the guard reads `Date.now()` directly rather than
+    // taking an injectable clock — so mock `Date.now` itself instead.
+    const dateNowSpy = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(Date.now() + 60_001);
 
-    expect(guard.canActivate(ctx)).toBe(true);
-
-    vi.useRealTimers();
+    try {
+      expect(guard.canActivate(ctx)).toBe(true);
+    } finally {
+      dateNowSpy.mockRestore();
+    }
   });
 
   it("should track different tenants independently", () => {

@@ -7,6 +7,7 @@ export interface Agent {
   readonly tools: readonly unknown[];
   readonly enabledTools: readonly string[] | null;
   readonly enabledMcpServers: readonly string[] | null;
+  readonly enabledMcpTools: Record<string, string[] | null> | null;
   readonly toolDescriptionOverrides: Record<string, string> | null;
   readonly skills: readonly unknown[];
   readonly rules: readonly unknown[];
@@ -26,11 +27,18 @@ export class AgentInstance implements Agent {
     public readonly tools: readonly unknown[] = [],
     public readonly enabledTools: readonly string[] | null = null,
     enabledMcpServers: readonly string[] | null = null,
-    public readonly toolDescriptionOverrides: Record<string, string> | null = null,
+    public readonly enabledMcpTools: Record<
+      string,
+      string[] | null
+    > | null = null,
+    public readonly toolDescriptionOverrides: Record<
+      string,
+      string
+    > | null = null,
     public readonly skills: readonly unknown[] = [],
     public readonly rules: readonly unknown[] = [],
     public readonly channels: readonly unknown[] = [],
-    public readonly knowledgeBaseIds: readonly string[] = [],
+    public readonly knowledgeBaseIds: readonly string[] = []
   ) {
     this.#enabledMcpServers = enabledMcpServers;
   }

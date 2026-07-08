@@ -11,6 +11,30 @@ bun run start:dev
 
 Requires: NATS (`nats://localhost:4222`), Redis (`localhost:6379`), `JWT_SECRET` env var.
 
+## API Versioning
+
+All application routes are externally served under the global `/api` prefix
+plus NestJS URI versioning (`src/main.ts`), with no per-controller
+`@Version()` decorators needed:
+
+```ts
+app.setGlobalPrefix("api", { exclude: [...] });
+app.enableVersioning({
+  type: VersioningType.URI,
+  defaultVersion: ["1", VERSION_NEUTRAL],
+});
+```
+
+- Canonical routes are `/api/v1/...`.
+- The unversioned `/api/...` alias still resolves (`VERSION_NEUTRAL`) but is
+  treated as deprecated: responses get a `Deprecation: true` header and a
+  `Link: <.../api/v1/...>; rel="successor-version"` header pointing callers
+  at the versioned path.
+- `/api/docs` (Swagger) is listed in `VERSIONING_EXEMPT_PREFIXES` and is
+  never flagged as deprecated, since it was never a versioned route.
+- The tables below show the unversioned form for brevity; prefer
+  `/api/v1/...` in new clients.
+
 ## Endpoints
 
 All application routes are externally served under the global `/api` prefix.

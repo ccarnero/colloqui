@@ -26,6 +26,7 @@ mock.module("@yoizen/database", () => ({
   redisProvider: stubRedisProvider,
   ensureStream: mock(async () => {}),
   ensureConsumer: mock(async () => {}),
+  ensureTenantIngressStream: mock(async () => {}),
   /** Mirrors `packages/database/src/health-checks.ts` so gateway health tests stay accurate. */
   checkNats: (nc: { isClosed: () => boolean }): boolean => {
     try {

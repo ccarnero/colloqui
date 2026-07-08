@@ -1,7 +1,7 @@
 import "../../setup-env";
-import { describe, it, expect, beforeEach, afterEach, vi } from "bun:test";
-import type { JsMsg } from "nats";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { PermanentError } from "@yoizen/shared";
+import type { JsMsg } from "nats";
 import { SKBIngestionWorkerService } from "../../src/modules/structured-kb/skb-ingestion-worker.service";
 
 type MockFn = ReturnType<typeof vi.fn>;
@@ -32,7 +32,8 @@ function createMockMsg(overrides: Record<string, unknown> = {}): JsMsg {
     ack: vi.fn(),
     nak: vi.fn(),
     term: vi.fn(),
-    subject: "evt.tenant-123.agent-admin-service.automation.platform.internal.skb_file_ingestion.v1",
+    subject:
+      "evt.tenant-123.agent-admin-service.automation.platform.internal.skb_file_ingestion.v1",
     seq: 1,
     headers: null,
     ...overrides,
@@ -136,7 +137,9 @@ describe("SKBIngestionWorkerService", () => {
     };
 
     mockJobTrackingService = {
-      createJob: vi.fn().mockResolvedValue({ jobId: "job-1", status: "pending" }),
+      createJob: vi
+        .fn()
+        .mockResolvedValue({ jobId: "job-1", status: "pending" }),
       updateFileStatus: vi.fn().mockResolvedValue(undefined),
       completeJob: vi.fn().mockResolvedValue(undefined),
       failJob: vi.fn().mockResolvedValue(undefined),
@@ -157,7 +160,7 @@ describe("SKBIngestionWorkerService", () => {
       mockRowStore as never,
       mockContainerService as never,
       mockJobTrackingService as never,
-      mockConnectionManager as never,
+      mockConnectionManager as never
     );
   });
 
@@ -189,7 +192,9 @@ describe("SKBIngestionWorkerService", () => {
         }),
       });
 
-      await expect((service as any).handleMessage(msg)).rejects.toThrow(PermanentError);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(
+        PermanentError
+      );
     });
 
     it("should throw PermanentError when containerId is missing", async () => {
@@ -204,7 +209,9 @@ describe("SKBIngestionWorkerService", () => {
         }),
       });
 
-      await expect((service as any).handleMessage(msg)).rejects.toThrow(PermanentError);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(
+        PermanentError
+      );
     });
 
     it("should throw PermanentError when fileId is missing", async () => {
@@ -219,7 +226,9 @@ describe("SKBIngestionWorkerService", () => {
         }),
       });
 
-      await expect((service as any).handleMessage(msg)).rejects.toThrow(PermanentError);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(
+        PermanentError
+      );
     });
 
     it("should throw PermanentError when tenantId is missing", async () => {
@@ -234,7 +243,9 @@ describe("SKBIngestionWorkerService", () => {
         }),
       });
 
-      await expect((service as any).handleMessage(msg)).rejects.toThrow(PermanentError);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(
+        PermanentError
+      );
     });
   });
 
@@ -245,7 +256,7 @@ describe("SKBIngestionWorkerService", () => {
 
       expect(mockFileParser.parseFile).toHaveBeenCalledWith(
         expect.any(String),
-        expect.any(String),
+        expect.any(String)
       );
     });
 
@@ -257,7 +268,7 @@ describe("SKBIngestionWorkerService", () => {
         expect.objectContaining({
           headers: expect.any(Array),
           rows: expect.any(Array),
-        }),
+        })
       );
     });
 
@@ -265,11 +276,69 @@ describe("SKBIngestionWorkerService", () => {
       const msg = createMockMsg();
       await (service as any).handleMessage(msg);
 
+      expect(mockConnectionManager.ensureSchema).toHaveBeenCalledWith(
+        TENANT_ID
+      );
       expect(mockRowStore.insertRows).toHaveBeenCalledWith(
-        expect.any(String),
+        expect.any(Object),
+        TENANT_ID,
+        CONTAINER_ID,
         FILE_ID,
         expect.any(Array),
+        ["sales"]
+      );
+    });
+
+    it("should default categories to [] when the payload omits them (SKB defect 2)", async () => {
+      const msg = createMockMsg({
+        json: vi.fn().mockReturnValue({
+          data: {
+            payload: {
+              containerId: CONTAINER_ID,
+              fileId: FILE_ID,
+              tenantId: TENANT_ID,
+              fileUrl: "https://example.com/data.csv",
+            },
+          },
+        }),
+      });
+
+      await (service as any).handleMessage(msg);
+
+      expect(mockRowStore.insertRows).toHaveBeenCalledWith(
         expect.any(Object),
+        TENANT_ID,
+        CONTAINER_ID,
+        FILE_ID,
+        expect.any(Array),
+        []
+      );
+    });
+
+    it("should default categories to [] when the payload's categories field is not an array (SKB defect 2)", async () => {
+      const msg = createMockMsg({
+        json: vi.fn().mockReturnValue({
+          data: {
+            payload: {
+              containerId: CONTAINER_ID,
+              fileId: FILE_ID,
+              tenantId: TENANT_ID,
+              fileUrl: "https://example.com/data.csv",
+              categories: "sales", // not an array — must not be passed through
+            },
+          },
+        }),
+      });
+
+      await (service as any).handleMessage(msg);
+
+      expect(mockRowStore.insertRows).toHaveBeenCalledWith(
+        expect.any(Object),
+        TENANT_ID,
+        CONTAINER_ID,
+        FILE_ID,
+        expect.any(Array),
+        []
       );
     });
 
@@ -282,7 +351,7 @@ describe("SKBIngestionWorkerService", () => {
         CONTAINER_ID,
         FILE_ID,
         "completed",
-        expect.any(Object),
+        expect.any(Object)
       );
     });
 
@@ -293,7 +362,7 @@ describe("SKBIngestionWorkerService", () => {
       expect(mockContainerService.updateStatus).toHaveBeenCalledWith(
         TENANT_ID,
         CONTAINER_ID,
-        expect.any(String),
+        expect.any(String)
       );
     });
   });
@@ -305,7 +374,7 @@ describe("SKBIngestionWorkerService", () => {
 
       expect(mockContainerService.findById).toHaveBeenCalledWith(
         TENANT_ID,
-        CONTAINER_ID,
+        CONTAINER_ID
       );
     });
 
@@ -314,7 +383,7 @@ describe("SKBIngestionWorkerService", () => {
       const msg = createMockMsg();
 
       await expect((service as any).handleMessage(msg)).rejects.toThrow(
-        /deleted/i,
+        /deleted/i
       );
     });
 
@@ -330,7 +399,9 @@ describe("SKBIngestionWorkerService", () => {
       let callCount = 0;
       mockContainerService.findById.mockImplementation(() => {
         callCount++;
-        if (callCount >= 2) return Promise.resolve(null);
+        if (callCount >= 2) {
+          return Promise.resolve(null);
+        }
         return Promise.resolve({
           id: CONTAINER_ID,
           tenant_id: TENANT_ID,
@@ -343,7 +414,7 @@ describe("SKBIngestionWorkerService", () => {
 
       expect(mockRowStore.deleteRowsForFile).toHaveBeenCalledWith(
         expect.any(String),
-        FILE_ID,
+        FILE_ID
       );
     });
 
@@ -358,14 +429,16 @@ describe("SKBIngestionWorkerService", () => {
       mockJobTrackingService.getJob.mockResolvedValueOnce(null);
       const msg = createMockMsg();
 
-      await expect((service as any).handleMessage(msg)).rejects.toThrow(/cancelled/i);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(
+        /cancelled/i
+      );
     });
   });
 
   describe("handleMessage — error handling", () => {
     it("should throw PermanentError for unsupported file types", async () => {
       mockFileParser.parseFile.mockRejectedValueOnce(
-        new Error("Unsupported file type: .pdf"),
+        new Error("Unsupported file type: .pdf")
       );
 
       const msg = createMockMsg();
@@ -377,29 +450,33 @@ describe("SKBIngestionWorkerService", () => {
         json: vi.fn().mockReturnValue(null),
       });
 
-      await expect((service as any).handleMessage(msg)).rejects.toThrow(PermanentError);
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(
+        PermanentError
+      );
     });
 
     it("should mark file as failed on processing error", async () => {
       mockSchemaAnalyzer.analyze.mockRejectedValueOnce(
-        new Error("LLM timeout"),
+        new Error("LLM timeout")
       );
 
       const msg = createMockMsg();
-      await expect((service as any).handleMessage(msg)).rejects.toThrow("LLM timeout");
+      await expect((service as any).handleMessage(msg)).rejects.toThrow(
+        "LLM timeout"
+      );
 
       expect(mockContainerService.updateFileStatus).toHaveBeenCalledWith(
         TENANT_ID,
         CONTAINER_ID,
         FILE_ID,
         "failed",
-        expect.objectContaining({ error: expect.any(String) }),
+        expect.objectContaining({ error: expect.any(String) })
       );
     });
 
     it("should mark job as failed on processing error", async () => {
       mockSchemaAnalyzer.analyze.mockRejectedValueOnce(
-        new Error("LLM timeout"),
+        new Error("LLM timeout")
       );
 
       const msg = createMockMsg();
@@ -411,7 +488,7 @@ describe("SKBIngestionWorkerService", () => {
         TENANT_ID,
         expect.any(String),
         expect.any(String),
-        expect.any(String),
+        expect.any(String)
       );
     });
   });
@@ -446,9 +523,7 @@ describe("SKBIngestionWorkerService", () => {
     });
 
     it("should set container to 'failed' when all files failed", async () => {
-      mockSchemaAnalyzer.analyze.mockRejectedValueOnce(
-        new Error("LLM down"),
-      );
+      mockSchemaAnalyzer.analyze.mockRejectedValueOnce(new Error("LLM down"));
 
       const msg = createMockMsg();
       try {

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
-  isMongoDuplicateKeyError,
   type IStringIdDoc,
+  isMongoDuplicateKeyError,
   type TenantMongoConnectionManager,
 } from "@yoizen/database";
 import {
@@ -11,8 +11,8 @@ import {
 } from "@yoizen/shared";
 import type { Filter } from "mongodb";
 import {
-  mapChannelAuditDoc,
   type IStoredChannelEvent,
+  mapChannelAuditDoc,
 } from "../../common/channel-audit-projection";
 import { ensureTenantNamespaceOnce } from "../../common/ensure-tenant-schema";
 import { AuditTenantConnectionManager } from "../../providers/tenant-connection-manager";
@@ -33,17 +33,19 @@ export class ChannelAuditMongoRepository implements IChannelAuditRepository {
       this.tenantConnections,
       tenantId,
       CHANNEL_AUDIT_MONGO_NAMESPACE,
-      CHANNEL_AUDIT_EVENTS_MONGO_SCHEMA,
+      CHANNEL_AUDIT_EVENTS_MONGO_SCHEMA
     );
     return db.collection<IStringIdDoc>("channel_events");
   }
 
   async insertChannelEvent(
     envelope: ChannelEnvelope,
-    natsSubject: string,
+    natsSubject: string
   ): Promise<void> {
     const tenantId = envelope.tenant;
-    if (!tenantId) return;
+    if (!tenantId) {
+      return;
+    }
 
     const collection = await this.channelEventsCollection(tenantId);
 
@@ -62,6 +64,8 @@ export class ChannelAuditMongoRepository implements IChannelAuditRepository {
       (payload.messageId as string | undefined) ??
       (payload.providerMessageId as string | undefined) ??
       null;
+    const conversationId =
+      (payload.conversationId as string | undefined) ?? null;
 
     const doc = {
       _id: envelope.id,
@@ -75,6 +79,7 @@ export class ChannelAuditMongoRepository implements IChannelAuditRepository {
       message_type: messageType,
       message_text: messageText,
       provider_message_id: providerMessageId,
+      conversation_id: conversationId,
       correlation_id: envelope.correlation_id ?? null,
       causation_id: envelope.causation_id ?? null,
       depth: envelope.transport?.depth ?? 0,
@@ -95,9 +100,18 @@ export class ChannelAuditMongoRepository implements IChannelAuditRepository {
 
   async queryEvents(
     params: IChannelAuditQueryParams,
-    tenantId: string,
+    tenantId: string
   ): Promise<IStoredChannelEvent[]> {
-    const { channel, kind, accountId, from, to, limit, offset } = params;
+    const {
+      channel,
+      kind,
+      accountId,
+      conversationId,
+      from,
+      to,
+      limit,
+      offset,
+    } = params;
     const collection = await this.channelEventsCollection(tenantId);
 
     const filter: Filter<IStringIdDoc> = {};
@@ -109,6 +123,9 @@ export class ChannelAuditMongoRepository implements IChannelAuditRepository {
     }
     if (accountId) {
       filter.account_id = accountId;
+    }
+    if (conversationId) {
+      filter.conversation_id = conversationId;
     }
     if (from || to) {
       const createdAt: Record<string, Date> = {};
@@ -133,7 +150,7 @@ export class ChannelAuditMongoRepository implements IChannelAuditRepository {
 
   async getEventById(
     id: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IStoredChannelEvent | null> {
     const collection = await this.channelEventsCollection(tenantId);
     const doc = await collection.findOne({ _id: id });
@@ -142,7 +159,7 @@ export class ChannelAuditMongoRepository implements IChannelAuditRepository {
 
   async findByCorrelationId(
     correlationId: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IStoredChannelEvent[]> {
     const collection = await this.channelEventsCollection(tenantId);
     const docs = await collection

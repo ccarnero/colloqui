@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Mock @yoizen/observability to avoid pulling real pino / OTEL deps.
@@ -31,12 +31,15 @@ mock.module("ai", () => ({
 }));
 
 import { Test } from "@nestjs/testing";
-import { ToolBridgeService } from "../../src/modules/tools/tool-bridge.service";
-import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
-import { ToolExecutorService } from "../../src/modules/tools/tool-executor.service";
 import { AdapterExecutorService } from "../../src/modules/tools/adapter-executor.service";
 import { McpClientService } from "../../src/modules/tools/mcp-client.service";
-import type { ToolDef, RuntimeState } from "../../src/modules/tools/tool-definition";
+import { ToolBridgeService } from "../../src/modules/tools/tool-bridge.service";
+import type {
+  RuntimeState,
+  ToolDef,
+} from "../../src/modules/tools/tool-definition";
+import { ToolExecutorService } from "../../src/modules/tools/tool-executor.service";
+import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -103,6 +106,7 @@ describe("ToolBridgeService", () => {
     getTools: ReturnType<typeof mock>;
     getAllTools: ReturnType<typeof mock>;
     getConnectedServers: ReturnType<typeof mock>;
+    getServerId: ReturnType<typeof mock>;
     disconnect: ReturnType<typeof mock>;
     disconnectAll: ReturnType<typeof mock>;
   };
@@ -115,13 +119,11 @@ describe("ToolBridgeService", () => {
       getTool: mock(() => undefined),
     };
     mockExecutor = {
-      executeTool: mock(() =>
-        Promise.resolve({ success: true, output: "ok" }),
-      ),
+      executeTool: mock(() => Promise.resolve({ success: true, output: "ok" })),
     };
     mockAdapterExecutor = {
       execute: mock(() =>
-        Promise.resolve({ success: true, output: "adapter-ok" }),
+        Promise.resolve({ success: true, output: "adapter-ok" })
       ),
     };
     mockMcpClient = {
@@ -129,6 +131,7 @@ describe("ToolBridgeService", () => {
       getTools: mock(() => Promise.resolve({})),
       getAllTools: mock(() => Promise.resolve({})),
       getConnectedServers: mock(() => []),
+      getServerId: mock(() => undefined),
       disconnect: mock(() => Promise.resolve()),
       disconnectAll: mock(() => Promise.resolve()),
     };
@@ -166,8 +169,12 @@ describe("ToolBridgeService", () => {
 
       expect(Object.keys(tools)).toHaveLength(1);
       expect(tools["calculator"]).toBeDefined();
-      expect(tools["calculator"].description).toBe("Evaluate a math expression");
-      expect(tools["calculator"].inputSchema).toEqual(calculatorDef.inputSchema);
+      expect(tools["calculator"].description).toBe(
+        "Evaluate a math expression"
+      );
+      expect(tools["calculator"].inputSchema).toEqual(
+        calculatorDef.inputSchema
+      );
     });
 
     it("should convert multiple tools preserving all names", async () => {
@@ -201,8 +208,12 @@ describe("ToolBridgeService", () => {
   describe("toAiSdkToolsByName", () => {
     it("should return only the requested subset of tools", async () => {
       mockRegistry.getToolDefinition.mockImplementation((name: string) => {
-        if (name === "calculator") return calculatorDef;
-        if (name === "weather") return weatherDef;
+        if (name === "calculator") {
+          return calculatorDef;
+        }
+        if (name === "weather") {
+          return weatherDef;
+        }
         return undefined;
       });
 
@@ -218,7 +229,7 @@ describe("ToolBridgeService", () => {
 
       const tools = await bridge.toAiSdkToolsByName(
         ["nonexistent", "also-missing"],
-        state,
+        state
       );
 
       expect(Object.keys(tools)).toHaveLength(0);
@@ -226,13 +237,15 @@ describe("ToolBridgeService", () => {
 
     it("should mix known and unknown names, returning only known", async () => {
       mockRegistry.getToolDefinition.mockImplementation((name: string) => {
-        if (name === "calculator") return calculatorDef;
+        if (name === "calculator") {
+          return calculatorDef;
+        }
         return undefined;
       });
 
       const tools = await bridge.toAiSdkToolsByName(
         ["calculator", "ghost"],
-        state,
+        state
       );
 
       expect(Object.keys(tools)).toHaveLength(1);
@@ -255,19 +268,19 @@ describe("ToolBridgeService", () => {
     it("should delegate to executor.executeTool with correct args", async () => {
       mockRegistry.listTools.mockImplementationOnce(() => [calculatorDef]);
       mockExecutor.executeTool.mockImplementationOnce(() =>
-        Promise.resolve({ success: true, output: "42" }),
+        Promise.resolve({ success: true, output: "42" })
       );
 
       const tools = await bridge.toAiSdkTools(state);
       const result = await tools["calculator"].execute!(
         { expression: "6*7" },
-        { toolCallId: "tc-1", messages: [] },
+        { toolCallId: "tc-1", messages: [] }
       );
 
       expect(mockExecutor.executeTool).toHaveBeenCalledWith(
         "calculator",
         { expression: "6*7" },
-        state,
+        state
       );
       expect(result).toBe("42");
     });
@@ -275,13 +288,13 @@ describe("ToolBridgeService", () => {
     it("should return output when executor returns success=true", async () => {
       mockRegistry.listTools.mockImplementationOnce(() => [calculatorDef]);
       mockExecutor.executeTool.mockImplementationOnce(() =>
-        Promise.resolve({ success: true, output: { temp: 72, unit: "F" } }),
+        Promise.resolve({ success: true, output: { temp: 72, unit: "F" } })
       );
 
       const tools = await bridge.toAiSdkTools(state);
       const result = await tools["calculator"].execute!(
         { expression: "check" },
-        { toolCallId: "tc-2", messages: [] },
+        { toolCallId: "tc-2", messages: [] }
       );
 
       expect(result).toEqual({ temp: 72, unit: "F" });
@@ -294,7 +307,7 @@ describe("ToolBridgeService", () => {
           success: false,
           output: null,
           error: "Division by zero",
-        }),
+        })
       );
 
       const tools = await bridge.toAiSdkTools(state);
@@ -302,15 +315,15 @@ describe("ToolBridgeService", () => {
       await expect(
         tools["calculator"].execute!(
           { expression: "1/0" },
-          { toolCallId: "tc-3", messages: [] },
-        ),
+          { toolCallId: "tc-3", messages: [] }
+        )
       ).rejects.toThrow("Division by zero");
     });
 
     it("should throw default message when executor returns success=false without error", async () => {
       mockRegistry.listTools.mockImplementationOnce(() => [calculatorDef]);
       mockExecutor.executeTool.mockImplementationOnce(() =>
-        Promise.resolve({ success: false, output: null }),
+        Promise.resolve({ success: false, output: null })
       );
 
       const tools = await bridge.toAiSdkTools(state);
@@ -318,15 +331,15 @@ describe("ToolBridgeService", () => {
       await expect(
         tools["calculator"].execute!(
           { expression: "bad" },
-          { toolCallId: "tc-4", messages: [] },
-        ),
+          { toolCallId: "tc-4", messages: [] }
+        )
       ).rejects.toThrow("Tool 'calculator' failed");
     });
 
     it("should propagate executor exceptions", async () => {
       mockRegistry.listTools.mockImplementationOnce(() => [calculatorDef]);
       mockExecutor.executeTool.mockImplementationOnce(() =>
-        Promise.reject(new Error("Network timeout")),
+        Promise.reject(new Error("Network timeout"))
       );
 
       const tools = await bridge.toAiSdkTools(state);
@@ -334,8 +347,8 @@ describe("ToolBridgeService", () => {
       await expect(
         tools["calculator"].execute!(
           { expression: "test" },
-          { toolCallId: "tc-5", messages: [] },
-        ),
+          { toolCallId: "tc-5", messages: [] }
+        )
       ).rejects.toThrow("Network timeout");
     });
 
@@ -345,29 +358,29 @@ describe("ToolBridgeService", () => {
         weatherDef,
       ]);
       mockExecutor.executeTool.mockImplementation(() =>
-        Promise.resolve({ success: true, output: "ok" }),
+        Promise.resolve({ success: true, output: "ok" })
       );
 
       const tools = await bridge.toAiSdkTools(state);
       await tools["calculator"].execute!(
         { expression: "1+1" },
-        { toolCallId: "tc-6", messages: [] },
+        { toolCallId: "tc-6", messages: [] }
       );
       await tools["weather"].execute!(
         { city: "NYC" },
-        { toolCallId: "tc-7", messages: [] },
+        { toolCallId: "tc-7", messages: [] }
       );
 
       expect(mockExecutor.executeTool).toHaveBeenCalledTimes(2);
       expect(mockExecutor.executeTool).toHaveBeenCalledWith(
         "calculator",
         { expression: "1+1" },
-        state,
+        state
       );
       expect(mockExecutor.executeTool).toHaveBeenCalledWith(
         "weather",
         { city: "NYC" },
-        state,
+        state
       );
     });
   });
@@ -384,7 +397,7 @@ describe("ToolBridgeService", () => {
 
     it("should delegate builtin tools to registry", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "communicate",
+        (name: string) => name === "communicate"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
         if (name === "communicate") {
@@ -415,27 +428,27 @@ describe("ToolBridgeService", () => {
       expect(Object.keys(tools)).toHaveLength(1);
       expect(tools["search_tickets"]).toBeDefined();
       expect(tools["search_tickets"].description).toBe(
-        "Search support tickets",
+        "Search support tickets"
       );
     });
 
     it("should call adapterExecutor.execute when adapter tool is invoked", async () => {
       mockRegistry.hasTool.mockImplementation(() => false);
       mockAdapterExecutor.execute.mockImplementationOnce(() =>
-        Promise.resolve({ success: true, output: { tickets: [1, 2] } }),
+        Promise.resolve({ success: true, output: { tickets: [1, 2] } })
       );
 
       const tools = await bridge.toAiSdkToolsForAgent([adapterToolRaw], state);
       const result = await tools["search_tickets"].execute!(
         { query: "broken printer" },
-        { toolCallId: "tc-adapter-1", messages: [] },
+        { toolCallId: "tc-adapter-1", messages: [] }
       );
 
       expect(mockAdapterExecutor.execute).toHaveBeenCalledWith(
         "t-1",
         { adapterId: "zendesk-adapter", endpointId: "search" },
         { query: "broken printer" },
-        { tenantId: "t-1", agentId: "a-1", executionId: "e-1" },
+        { tenantId: "t-1", agentId: "a-1", executionId: "e-1" }
       );
       expect(result).toEqual({ tickets: [1, 2] });
     });
@@ -447,7 +460,7 @@ describe("ToolBridgeService", () => {
           success: false,
           output: null,
           error: "Adapter timeout",
-        }),
+        })
       );
 
       const tools = await bridge.toAiSdkToolsForAgent([adapterToolRaw], state);
@@ -455,8 +468,8 @@ describe("ToolBridgeService", () => {
       await expect(
         tools["search_tickets"].execute!(
           { query: "test" },
-          { toolCallId: "tc-adapter-2", messages: [] },
-        ),
+          { toolCallId: "tc-adapter-2", messages: [] }
+        )
       ).rejects.toThrow("Adapter timeout");
     });
 
@@ -471,7 +484,7 @@ describe("ToolBridgeService", () => {
 
     it("should handle mix of builtin + adapter tools", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "communicate",
+        (name: string) => name === "communicate"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
         if (name === "communicate") {
@@ -489,7 +502,7 @@ describe("ToolBridgeService", () => {
 
       const tools = await bridge.toAiSdkToolsForAgent(
         [builtinToolRaw, adapterToolRaw],
-        state,
+        state
       );
 
       expect(Object.keys(tools)).toHaveLength(2);
@@ -500,7 +513,7 @@ describe("ToolBridgeService", () => {
     it("should skip malformed tool entries gracefully", async () => {
       const tools = await bridge.toAiSdkToolsForAgent(
         [null, undefined, 42, "", { noName: true }, {}],
-        state,
+        state
       );
 
       expect(Object.keys(tools)).toHaveLength(0);
@@ -514,7 +527,10 @@ describe("ToolBridgeService", () => {
         description: "No params",
         adapterRef: { adapterId: "some-adapter", endpointId: "ep1" },
       };
-      const tools = await bridge.toAiSdkToolsForAgent([toolWithNoParams], state);
+      const tools = await bridge.toAiSdkToolsForAgent(
+        [toolWithNoParams],
+        state
+      );
 
       expect(tools["bare_tool"]).toBeDefined();
       expect(tools["bare_tool"].inputSchema).toEqual({
@@ -526,7 +542,7 @@ describe("ToolBridgeService", () => {
     it("parses snake_case adapter_ref correctly", async () => {
       mockRegistry.hasTool.mockImplementation(() => false);
       mockAdapterExecutor.execute.mockImplementationOnce(() =>
-        Promise.resolve({ success: true, output: "snake-ok" }),
+        Promise.resolve({ success: true, output: "snake-ok" })
       );
 
       const snakeTool = {
@@ -543,25 +559,26 @@ describe("ToolBridgeService", () => {
 
       expect(tools["snake_tool"]).toBeDefined();
       expect(tools["snake_tool"].description).toBe(
-        "Tool with snake_case adapter_ref",
+        "Tool with snake_case adapter_ref"
       );
 
       // Verify adapterRef was parsed with correct IDs
-      return tools["snake_tool"]
-        .execute!({ q: "test" }, { toolCallId: "tc-snake", messages: [] })
-        .then(() => {
-          expect(mockAdapterExecutor.execute).toHaveBeenCalledWith(
-            "t-1",
-            { adapterId: "a1", endpointId: "e1" },
-            { q: "test" },
-            { tenantId: "t-1", agentId: "a-1", executionId: "e-1" },
-          );
-        });
+      return tools["snake_tool"].execute!(
+        { q: "test" },
+        { toolCallId: "tc-snake", messages: [] }
+      ).then(() => {
+        expect(mockAdapterExecutor.execute).toHaveBeenCalledWith(
+          "t-1",
+          { adapterId: "a1", endpointId: "e1" },
+          { q: "test" },
+          { tenantId: "t-1", agentId: "a-1", executionId: "e-1" }
+        );
+      });
     });
 
     it("detects source_type builtin as builtin", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "communicate",
+        (name: string) => name === "communicate"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
         if (name === "communicate") {
@@ -582,7 +599,10 @@ describe("ToolBridgeService", () => {
         source_type: "builtin",
       };
 
-      const tools = await bridge.toAiSdkToolsForAgent([sourceTypeBuiltin], state);
+      const tools = await bridge.toAiSdkToolsForAgent(
+        [sourceTypeBuiltin],
+        state
+      );
 
       expect(Object.keys(tools)).toHaveLength(1);
       expect(tools["communicate"]).toBeDefined();
@@ -592,7 +612,7 @@ describe("ToolBridgeService", () => {
     it("handles mixed camelCase and snake_case", async () => {
       mockRegistry.hasTool.mockImplementation(() => false);
       mockAdapterExecutor.execute.mockImplementationOnce(() =>
-        Promise.resolve({ success: true, output: "mixed-ok" }),
+        Promise.resolve({ success: true, output: "mixed-ok" })
       );
 
       const mixedTool = {
@@ -606,16 +626,136 @@ describe("ToolBridgeService", () => {
 
       expect(tools["mixed_tool"]).toBeDefined();
 
-      return tools["mixed_tool"]
-        .execute!({}, { toolCallId: "tc-mixed", messages: [] })
-        .then(() => {
-          expect(mockAdapterExecutor.execute).toHaveBeenCalledWith(
-            "t-1",
-            { adapterId: "a-mixed", endpointId: "e-mixed" },
-            {},
-            { tenantId: "t-1", agentId: "a-1", executionId: "e-1" },
-          );
-        });
+      return tools["mixed_tool"].execute!(
+        {},
+        { toolCallId: "tc-mixed", messages: [] }
+      ).then(() => {
+        expect(mockAdapterExecutor.execute).toHaveBeenCalledWith(
+          "t-1",
+          { adapterId: "a-mixed", endpointId: "e-mixed" },
+          {},
+          { tenantId: "t-1", agentId: "a-1", executionId: "e-1" }
+        );
+      });
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // mergeMcpTools — enabledMcpServers must be keyed by server NAME, not id
+  // (regression test: enabled_mcp_servers was previously saved by id from
+  // admin-console but filtered by name here, via
+  // McpClientService.getConnectedServers(), silently dropping every MCP
+  // tool for agents with an explicit server allowlist).
+  // ────────────────────────────────────────────────────────────────────────
+
+  describe("toAiSdkToolsForAgent — MCP server allowlist filtering", () => {
+    const githubMcpToolRaw = {
+      list_issues: {
+        type: "function" as const,
+        description: "List GitHub issues",
+        inputSchema: { type: "object", properties: {} },
+        execute: mock(() => Promise.resolve("ok")),
+      },
+    };
+
+    it("merges MCP tools when the allowlist matches the connected server NAME", async () => {
+      mockMcpClient.getConnectedServers.mockImplementation(() => [
+        "github-mcp",
+      ]);
+      mockMcpClient.getTools.mockImplementation(() =>
+        Promise.resolve(githubMcpToolRaw)
+      );
+
+      const tools = await bridge.toAiSdkToolsForAgent(
+        [],
+        state,
+        null, // enabled tools
+        ["github-mcp"] // enabled MCP servers — server NAME, matching getConnectedServers()
+      );
+
+      expect(tools["list_issues"]).toBeDefined();
+    });
+
+    it("drops all MCP tools when the allowlist contains the server's id instead of its name", async () => {
+      // This reproduces the original bug: admin-console saved
+      // `enabled_mcp_servers` by server id (e.g. a UUID), but
+      // `getConnectedServers()` only ever returns names.
+      mockMcpClient.getConnectedServers.mockImplementation(() => [
+        "github-mcp",
+      ]);
+      mockMcpClient.getTools.mockImplementation(() =>
+        Promise.resolve(githubMcpToolRaw)
+      );
+
+      const tools = await bridge.toAiSdkToolsForAgent(
+        [],
+        state,
+        null,
+        ["11111111-2222-3333-4444-555555555555"] // server id, NOT its name
+      );
+
+      expect(tools["list_issues"]).toBeUndefined();
+      expect(Object.keys(tools)).toHaveLength(0);
+    });
+
+    it("merges all connected MCP servers' tools when the allowlist is null", async () => {
+      mockMcpClient.getConnectedServers.mockImplementation(() => [
+        "github-mcp",
+      ]);
+      mockMcpClient.getTools.mockImplementation(() =>
+        Promise.resolve(githubMcpToolRaw)
+      );
+
+      const tools = await bridge.toAiSdkToolsForAgent([], state, null, null);
+
+      expect(tools["list_issues"]).toBeDefined();
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // MCP tool execution timeout (ASYNC-RESILIENCE-AUDIT.md F2) — an
+  // unresponsive MCP server's execute() must surface a tool error, not hang
+  // the agent loop indefinitely. withMcpUsageLogging wraps every merged MCP
+  // tool's execute with withTimeout(mcpLiveCallTimeoutMs).
+  // ────────────────────────────────────────────────────────────────────────
+
+  describe("mergeMcpTools — execute timeout (F2)", () => {
+    const originalTimeoutEnv = process.env.MCP_LIVE_CALL_TIMEOUT_MS;
+
+    afterEach(() => {
+      if (originalTimeoutEnv === undefined) {
+        delete process.env.MCP_LIVE_CALL_TIMEOUT_MS;
+      } else {
+        process.env.MCP_LIVE_CALL_TIMEOUT_MS = originalTimeoutEnv;
+      }
+    });
+
+    it("rejects with a timeout error instead of hanging when the MCP tool's execute never resolves", async () => {
+      process.env.MCP_LIVE_CALL_TIMEOUT_MS = "10";
+
+      const hangingToolRaw = {
+        list_issues: {
+          type: "function" as const,
+          description: "List GitHub issues",
+          inputSchema: { type: "object", properties: {} },
+          execute: mock(() => new Promise(() => {})), // never resolves
+        },
+      };
+      mockMcpClient.getConnectedServers.mockImplementation(() => [
+        "github-mcp",
+      ]);
+      mockMcpClient.getTools.mockImplementation(() =>
+        Promise.resolve(hangingToolRaw)
+      );
+
+      const tools = await bridge.toAiSdkToolsForAgent([], state);
+
+      await expect(
+        tools["list_issues"].execute!(
+          {},
+          { toolCallId: "tc-hang", messages: [] }
+        )
+      ).rejects.toThrow(/timed out after 10ms/);
     });
   });
 });

@@ -1,5 +1,5 @@
 import "../setup-env";
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Mock @yoizen/database and @yoizen/observability
@@ -22,11 +22,18 @@ mock.module("@nestjs/common", () => ({
     log = mock(() => {});
     warn = mock(() => {});
     error = mock(() => {});
+    debug = mock(() => {});
+    verbose = mock(() => {});
+    fatal = mock(() => {});
+    static overrideLogger = mock(() => {});
     constructor(_context?: string) {}
   },
 }));
 
-import type { IUpdateAgentData, IAgent } from "../../src/modules/agents/agents.repository.interface";
+import type {
+  IAgent,
+  IUpdateAgentData,
+} from "../../src/modules/agents/agents.repository.interface";
 
 // ---------------------------------------------------------------------------
 // Postgres repository tests
@@ -47,10 +54,14 @@ describe("Agents Postgres Repository — tool_description_overrides", () => {
     //   await sql`UPDATE agents SET tool_description_overrides = ${sql.json(data.tool_description_overrides)} ...`
     // }
     expect(data.tool_description_overrides).toBeDefined();
-    expect(data.tool_description_overrides).toEqual({ memory: "Custom memory desc" });
+    expect(data.tool_description_overrides).toEqual({
+      memory: "Custom memory desc",
+    });
 
     // Verify it's treated as JSON-compatible
-    const jsonValue = JSON.parse(JSON.stringify(data.tool_description_overrides));
+    const jsonValue = JSON.parse(
+      JSON.stringify(data.tool_description_overrides)
+    );
     expect(jsonValue).toEqual({ memory: "Custom memory desc" });
   });
 
@@ -92,7 +103,9 @@ describe("Agents Postgres Repository — tool_description_overrides", () => {
 
     expect(Object.keys(data.tool_description_overrides!)).toHaveLength(3);
     expect(data.tool_description_overrides!.memory).toBe("Memory desc");
-    expect(data.tool_description_overrides!.communicate).toBe("Communicate desc");
+    expect(data.tool_description_overrides!.communicate).toBe(
+      "Communicate desc"
+    );
     expect(data.tool_description_overrides!.resource).toBe("Resource desc");
   });
 
@@ -133,7 +146,9 @@ describe("Agents Mongo Repository — tool_description_overrides", () => {
       setFields.tool_description_overrides = data.tool_description_overrides;
     }
 
-    expect(setFields.tool_description_overrides).toEqual({ memory: "Custom memory desc" });
+    expect(setFields.tool_description_overrides).toEqual({
+      memory: "Custom memory desc",
+    });
     expect(Object.keys(setFields)).toContain("tool_description_overrides");
     expect(Object.keys(setFields)).toContain("updated_at");
   });
@@ -179,7 +194,8 @@ describe("Agents Mongo Repository — tool_description_overrides", () => {
     };
 
     const result: Record<string, unknown> = {
-      tool_description_overrides: docWithOverrides.tool_description_overrides ?? null,
+      tool_description_overrides:
+        docWithOverrides.tool_description_overrides ?? null,
     };
 
     expect(result.tool_description_overrides).toEqual({
@@ -196,7 +212,8 @@ describe("Agents Mongo Repository — tool_description_overrides", () => {
     };
 
     const result = {
-      tool_description_overrides: (docWithoutOverrides as any).tool_description_overrides ?? null,
+      tool_description_overrides:
+        (docWithoutOverrides as any).tool_description_overrides ?? null,
     };
 
     expect(result.tool_description_overrides).toBeNull();
@@ -210,7 +227,8 @@ describe("Agents Mongo Repository — tool_description_overrides", () => {
     };
 
     const result = {
-      tool_description_overrides: docWithNullOverrides.tool_description_overrides ?? null,
+      tool_description_overrides:
+        docWithNullOverrides.tool_description_overrides ?? null,
     };
 
     expect(result.tool_description_overrides).toBeNull();

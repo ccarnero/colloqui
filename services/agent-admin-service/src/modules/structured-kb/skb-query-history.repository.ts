@@ -1,8 +1,8 @@
-import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { Inject, Injectable } from "@nestjs/common";
 import type { TenantConnectionManager } from "@yoizen/database";
-import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
 import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
+import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
 
 export interface SKBQueryHistoryRecord {
   id: string;
@@ -15,6 +15,9 @@ export interface SKBQueryHistoryRecord {
   error: string | null;
   user_id?: string | null;
   error_message?: string | null;
+  correlation_id?: string | null;
+  causation_id?: string | null;
+  execution_id?: string | null;
   created_at: Date;
 }
 
@@ -37,15 +40,20 @@ export class SKBQueryHistoryRepository extends TenantScopedPostgresRepository {
     error: string | null,
     userId?: string | null,
     errorMessage?: string | null,
+    correlationId?: string | null,
+    causationId?: string | null,
+    executionId?: string | null
   ): Promise<SKBQueryHistoryRecord> {
     const sql = await this.getSql(tenantId);
     const id = randomUUID();
 
     const [result] = await sql<SKBQueryHistoryRecord[]>`
       INSERT INTO skb_query_history
-        (id, tenant_id, container_id, nl_query, generated_sql, result_count, duration_ms, error, error_message, user_id, created_at)
+        (id, tenant_id, container_id, nl_query, generated_sql, result_count, duration_ms, error, error_message, user_id,
+         correlation_id, causation_id, execution_id, created_at)
       VALUES
-        (${id}, ${tenantId}, ${containerId}, ${nlQuery}, ${generatedSql}, ${resultCount}, ${durationMs}, ${error}, ${errorMessage ?? null}, ${userId ?? null}, NOW())
+        (${id}, ${tenantId}, ${containerId}, ${nlQuery}, ${generatedSql}, ${resultCount}, ${durationMs}, ${error}, ${errorMessage ?? null}, ${userId ?? null},
+         ${correlationId ?? null}, ${causationId ?? null}, ${executionId ?? null}, NOW())
       RETURNING *
     `;
     return result;
@@ -55,7 +63,7 @@ export class SKBQueryHistoryRepository extends TenantScopedPostgresRepository {
     tenantId: string,
     containerId: string,
     limit: number = 50,
-    offset: number = 0,
+    offset: number = 0
   ): Promise<SKBQueryHistoryRecord[]> {
     const sql = await this.getSql(tenantId);
 
@@ -70,7 +78,7 @@ export class SKBQueryHistoryRepository extends TenantScopedPostgresRepository {
   async getRecentQueries(
     tenantId: string,
     containerId: string,
-    hours: number = 24,
+    hours: number = 24
   ): Promise<SKBQueryHistoryRecord[]> {
     const sql = await this.getSql(tenantId);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
@@ -86,15 +94,21 @@ export class SKBQueryHistoryRepository extends TenantScopedPostgresRepository {
 
   async getStats(
     tenantId: string,
-    containerId: string,
-  ): Promise<{ total_queries: number; avg_duration_ms: number; error_rate: number }> {
+    containerId: string
+  ): Promise<{
+    total_queries: number;
+    avg_duration_ms: number;
+    error_rate: number;
+  }> {
     const sql = await this.getSql(tenantId);
 
-    const [result] = await sql<Array<{
-      total_queries: number;
-      avg_duration_ms: number;
-      error_rate: number;
-    }>>`
+    const [result] = await sql<
+      Array<{
+        total_queries: number;
+        avg_duration_ms: number;
+        error_rate: number;
+      }>
+    >`
       SELECT
         COUNT(*)::int AS total_queries,
         COALESCE(AVG(duration_ms)::numeric(10,2), 0) AS avg_duration_ms,
@@ -116,7 +130,7 @@ export class SKBQueryHistoryRepository extends TenantScopedPostgresRepository {
   async deleteOlderThan(
     tenantId: string,
     containerId: string,
-    olderThan?: Date,
+    olderThan?: Date
   ): Promise<number> {
     const sql = await this.getSql(tenantId);
 

@@ -288,6 +288,7 @@ function activityToNodeType(activity: string): EWorkflowNodeType | null {
   const map: Record<string, EWorkflowNodeType> = {
     jsFunction: EWorkflowNodeType.JS_FUNCTION,
     endpointCall: EWorkflowNodeType.ENDPOINT_CALL,
+    mcpCall: EWorkflowNodeType.MCP_CALL,
     serviceCall: EWorkflowNodeType.SERVICE_CALL,
     serviceBusCall: EWorkflowNodeType.SERVICE_BUS_CALL,
     agentCall: EWorkflowNodeType.AGENT_CALL,

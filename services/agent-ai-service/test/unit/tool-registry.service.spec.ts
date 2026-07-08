@@ -1,31 +1,35 @@
 import "reflect-metadata";
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Stable mock references shared by every Logger instance created inside
 // ToolRegistryService.  This lets us assert warn / error calls without
 // reaching into the private `logger` field.
 // ---------------------------------------------------------------------------
-const logSpy   = mock(() => {});
-const warnSpy  = mock(() => {});
+const logSpy = mock(() => {});
+const warnSpy = mock(() => {});
 const errorSpy = mock(() => {});
 
 mock.module("@nestjs/common", () => ({
   Injectable: () => (target: any) => target, // eslint-disable-line @typescript-eslint/no-explicit-any
   Logger: class MockLogger {
-    log   = logSpy;
-    warn  = warnSpy;
+    log = logSpy;
+    warn = warnSpy;
     error = errorSpy;
+    debug = mock(() => {});
+    verbose = mock(() => {});
+    fatal = mock(() => {});
+    static overrideLogger = mock(() => {});
     constructor(_context?: string) {}
   },
 }));
 
-import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
 import type {
+  RuntimeState,
   ToolDef,
   ToolHandler,
-  RuntimeState,
 } from "../../src/modules/tools/tool-definition";
+import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -105,9 +109,9 @@ describe("ToolRegistryService", () => {
 
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy.mock.calls[0][0]).toContain("test-tool");
-      expect(
-        service.getTool("test-tool")!.definition.description,
-      ).toBe("second");
+      expect(service.getTool("test-tool")!.definition.description).toBe(
+        "second"
+      );
     });
 
     it("should register multiple tools and retrieve each independently", () => {
@@ -205,9 +209,7 @@ describe("ToolRegistryService", () => {
 
       expect(result.success).toBe(false);
       expect(result.output).toBeNull();
-      expect(result.error).toBe(
-        "Tool 'test-tool' has no builtin handler",
-      );
+      expect(result.error).toBe("Tool 'test-tool' has no builtin handler");
     });
 
     it("should pass through a successful handler result", async () => {
@@ -228,11 +230,7 @@ describe("ToolRegistryService", () => {
       });
       service.registerTool(makeDefinition(), handler);
 
-      const result = await service.executeBuiltin(
-        "test-tool",
-        params,
-        state,
-      );
+      const result = await service.executeBuiltin("test-tool", params, state);
 
       expect(result.success).toBe(true);
       expect(result.output).toBe("sync");
@@ -309,9 +307,7 @@ describe("ToolRegistryService", () => {
       service.registerTool(newDef);
 
       expect(service.hasTool("test-tool")).toBe(true);
-      expect(service.getToolDefinition("test-tool")!.description).toBe(
-        "after",
-      );
+      expect(service.getToolDefinition("test-tool")!.description).toBe("after");
     });
   });
 
@@ -345,11 +341,7 @@ describe("ToolRegistryService", () => {
       service.registerTool(makeDefinition(), handler);
       service.clear();
 
-      const result = await service.executeBuiltin(
-        "test-tool",
-        {},
-        makeState(),
-      );
+      const result = await service.executeBuiltin("test-tool", {}, makeState());
 
       expect(result.success).toBe(false);
       expect(result.error).toBe("Tool 'test-tool' not found");

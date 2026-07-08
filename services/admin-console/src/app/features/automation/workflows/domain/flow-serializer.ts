@@ -488,6 +488,17 @@ function nodeToAction(node: IWorkflowNode): WorkflowAction | null {
         },
       };
 
+    case EWorkflowNodeType.MCP_CALL:
+      return {
+        activity: "mcpCall",
+        name: node.name,
+        args: {
+          serverId: (node.configuration["serverId"] as string) ?? "",
+          toolName: (node.configuration["toolName"] as string) ?? "",
+          params: node.configuration["params"] ?? undefined,
+        },
+      };
+
     case EWorkflowNodeType.SERVICE_CALL:
       return {
         activity: "serviceCall",

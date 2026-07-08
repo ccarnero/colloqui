@@ -1,20 +1,22 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Patch,
-  Delete,
+  BadRequestException,
   Body,
-  Param,
-  Query,
-  UseGuards,
+  Controller,
+  Delete,
+  Get,
+  Headers,
   HttpCode,
   HttpStatus,
-  Headers,
-  BadRequestException,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  UseGuards,
 } from "@nestjs/common";
-import { AgentsService } from "./agents.service";
+import { TenantGuard } from "../../guards/tenant.guard";
+import { TenantId } from "../../providers/tenant.decorator";
+// biome-ignore lint/style/useImportType: used as @Body()/@Query() metatypes — needed at runtime for ValidationPipe's class-validator/class-transformer reflection.
 import {
   CreateAgentDto,
   ListAgentsQueryDto,
@@ -22,13 +24,14 @@ import {
   MemoryProposalListResponseDto,
   MemoryProposalParamDto,
   UpdateAgentDto,
-  UpdateEnabledToolsDto,
   UpdateEnabledMcpServersDto,
+  UpdateEnabledMcpToolsDto,
+  UpdateEnabledToolsDto,
   UpdateToolDescriptionOverridesDto,
 } from "./agents.dto";
 import type { IAgent, IAgentVersion } from "./agents.repository.interface";
-import { TenantGuard } from "../../guards/tenant.guard";
-import { TenantId } from "../../providers/tenant.decorator";
+// biome-ignore lint/style/useImportType: constructor-injected — Nest DI needs the runtime class reference (emitDecoratorMetadata).
+import { AgentsService } from "./agents.service";
 
 const YOIZEN_USER_ID_HEADER = "x-yoizen-user-id";
 
@@ -40,7 +43,7 @@ export class AgentsController {
   @Get()
   async findAll(
     @TenantId() tenantId: string,
-    @Query() query: ListAgentsQueryDto,
+    @Query() query: ListAgentsQueryDto
   ): Promise<{ agents: IAgent[]; total: number }> {
     return this.service.findAll(tenantId, {
       status: query.status,
@@ -61,7 +64,7 @@ export class AgentsController {
   @Get(":id")
   async findById(
     @TenantId() tenantId: string,
-    @Param("id") id: string,
+    @Param("id") id: string
   ): Promise<IAgent> {
     return this.service.findById(tenantId, id);
   }
@@ -70,7 +73,7 @@ export class AgentsController {
   @HttpCode(HttpStatus.CREATED)
   async create(
     @TenantId() tenantId: string,
-    @Body() dto: CreateAgentDto,
+    @Body() dto: CreateAgentDto
   ): Promise<IAgent> {
     return this.service.create(tenantId, {
       name: dto.name,
@@ -89,7 +92,7 @@ export class AgentsController {
   async update(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-    @Body() dto: UpdateAgentDto,
+    @Body() dto: UpdateAgentDto
   ): Promise<IAgent> {
     return this.service.update(tenantId, id, dto);
   }
@@ -98,7 +101,7 @@ export class AgentsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(
     @TenantId() tenantId: string,
-    @Param("id") id: string,
+    @Param("id") id: string
   ): Promise<void> {
     await this.service.delete(tenantId, id);
   }
@@ -108,7 +111,7 @@ export class AgentsController {
   async publish(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-    @Headers(YOIZEN_USER_ID_HEADER) userId?: string,
+    @Headers(YOIZEN_USER_ID_HEADER) userId?: string
   ): Promise<IAgent> {
     return this.service.publish(tenantId, id, userId);
   }
@@ -117,7 +120,7 @@ export class AgentsController {
   @HttpCode(HttpStatus.OK)
   async unpublish(
     @TenantId() tenantId: string,
-    @Param("id") id: string,
+    @Param("id") id: string
   ): Promise<IAgent> {
     return this.service.unpublish(tenantId, id);
   }
@@ -126,7 +129,7 @@ export class AgentsController {
   @HttpCode(HttpStatus.OK)
   async revertToPublished(
     @TenantId() tenantId: string,
-    @Param("id") id: string,
+    @Param("id") id: string
   ): Promise<IAgent> {
     return this.service.revertToPublished(tenantId, id);
   }
@@ -134,7 +137,7 @@ export class AgentsController {
   @Get(":id/versions")
   async listVersions(
     @TenantId() tenantId: string,
-    @Param("id") id: string,
+    @Param("id") id: string
   ): Promise<IAgentVersion[]> {
     return this.service.listVersions(tenantId, id);
   }
@@ -144,7 +147,7 @@ export class AgentsController {
   async rollbackToVersion(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-    @Param("versionId") versionId: string,
+    @Param("versionId") versionId: string
   ): Promise<IAgent> {
     return this.service.rollbackToVersion(tenantId, id, versionId);
   }
@@ -154,7 +157,7 @@ export class AgentsController {
   async deleteVersion(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-    @Param("versionId") versionId: string,
+    @Param("versionId") versionId: string
   ): Promise<void> {
     await this.service.deleteVersion(tenantId, id, versionId);
   }
@@ -164,12 +167,12 @@ export class AgentsController {
   async updateEnabledTools(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-    @Body() dto: UpdateEnabledToolsDto,
+    @Body() dto: UpdateEnabledToolsDto
   ): Promise<IAgent> {
     const { enabled_tools } = dto;
     if (enabled_tools !== null && !Array.isArray(enabled_tools)) {
       throw new BadRequestException(
-        "enabled_tools must be an array of strings or null",
+        "enabled_tools must be an array of strings or null"
       );
     }
     return this.service.updateEnabledTools(tenantId, id, enabled_tools ?? null);
@@ -180,15 +183,44 @@ export class AgentsController {
   async updateEnabledMcpServers(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-    @Body() dto: UpdateEnabledMcpServersDto,
+    @Body() dto: UpdateEnabledMcpServersDto
   ): Promise<IAgent> {
     const { enabled_mcp_servers } = dto;
     if (enabled_mcp_servers !== null && !Array.isArray(enabled_mcp_servers)) {
       throw new BadRequestException(
-        "enabled_mcp_servers must be an array of strings or null",
+        "enabled_mcp_servers must be an array of strings or null"
       );
     }
-    return this.service.updateEnabledMcpServers(tenantId, id, enabled_mcp_servers ?? null);
+    return this.service.updateEnabledMcpServers(
+      tenantId,
+      id,
+      enabled_mcp_servers ?? null
+    );
+  }
+
+  @Patch(":id/mcp-tools")
+  @HttpCode(HttpStatus.OK)
+  async updateEnabledMcpTools(
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
+    @Body() dto: UpdateEnabledMcpToolsDto
+  ): Promise<IAgent> {
+    const { enabled_mcp_tools } = dto;
+    if (
+      enabled_mcp_tools !== null &&
+      enabled_mcp_tools !== undefined &&
+      (typeof enabled_mcp_tools !== "object" ||
+        Array.isArray(enabled_mcp_tools))
+    ) {
+      throw new BadRequestException(
+        "enabled_mcp_tools must be a Record<string, string[] | null> or null"
+      );
+    }
+    return this.service.updateEnabledMcpTools(
+      tenantId,
+      id,
+      enabled_mcp_tools ?? null
+    );
   }
 
   @Patch(":id/tool-descriptions")
@@ -196,7 +228,7 @@ export class AgentsController {
   async updateToolDescriptionOverrides(
     @TenantId() tenantId: string,
     @Param("id") id: string,
-    @Body() dto: UpdateToolDescriptionOverridesDto,
+    @Body() dto: UpdateToolDescriptionOverridesDto
   ): Promise<IAgent> {
     const { tool_description_overrides } = dto;
     if (
@@ -206,13 +238,13 @@ export class AgentsController {
         Array.isArray(tool_description_overrides))
     ) {
       throw new BadRequestException(
-        "tool_description_overrides must be a Record<string, string> or null",
+        "tool_description_overrides must be a Record<string, string> or null"
       );
     }
     return this.service.updateToolDescriptionOverrides(
       tenantId,
       id,
-      tool_description_overrides ?? null,
+      tool_description_overrides ?? null
     );
   }
 
@@ -221,13 +253,9 @@ export class AgentsController {
   async approveMemoryProposal(
     @TenantId() tenantId: string,
     @Param() params: MemoryProposalParamDto,
-    @Headers(YOIZEN_USER_ID_HEADER) reviewerId?: string,
+    @Headers(YOIZEN_USER_ID_HEADER) reviewerId?: string
   ): Promise<MemoryProposalActionResponseDto> {
-    return this.service.approveMemoryProposal(
-      tenantId,
-      params.id,
-      reviewerId,
-    );
+    return this.service.approveMemoryProposal(tenantId, params.id, reviewerId);
   }
 
   @Post("memory-proposals/:id/reject")
@@ -235,12 +263,8 @@ export class AgentsController {
   async rejectMemoryProposal(
     @TenantId() tenantId: string,
     @Param() params: MemoryProposalParamDto,
-    @Headers(YOIZEN_USER_ID_HEADER) reviewerId?: string,
+    @Headers(YOIZEN_USER_ID_HEADER) reviewerId?: string
   ): Promise<MemoryProposalActionResponseDto> {
-    return this.service.rejectMemoryProposal(
-      tenantId,
-      params.id,
-      reviewerId,
-    );
+    return this.service.rejectMemoryProposal(tenantId, params.id, reviewerId);
   }
 }

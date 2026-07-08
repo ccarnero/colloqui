@@ -68,6 +68,13 @@ export interface Agent {
   tools: unknown[];
   enabled_tools: string[] | null;
   enabled_mcp_servers: string[] | null;
+  /**
+   * Per-tool MCP allowlist, keyed by MCP server name (mcp-connections.md §4).
+   * `null` for a server (or a missing key) means "all tools from that server
+   * enabled" — the backward-compatible default; an array is an explicit
+   * allowlist of tool names within that server.
+   */
+  enabled_mcp_tools: Record<string, string[] | null> | null;
   tool_description_overrides: Record<string, string> | null;
   channels: unknown[];
   knowledge_base_ids: string[];
@@ -125,6 +132,10 @@ export interface UpdateEnabledToolsInput {
 
 export interface UpdateEnabledMcpServersInput {
   enabled_mcp_servers: string[] | null;
+}
+
+export interface UpdateEnabledMcpToolsInput {
+  enabled_mcp_tools: Record<string, string[] | null> | null;
 }
 
 export interface UpdateToolDescriptionOverridesInput {

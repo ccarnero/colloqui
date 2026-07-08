@@ -62,6 +62,7 @@ Points marked **Resolved** are closed in code. All others remain pending.
 | O19 | Define PII redaction strategy if compliance requirements change | Dev + Legal | security | Pending |
 | O20 | Define monitoring dashboard for streams | Infra | observability | Pending |
 | O21 | Define dead-letter strategy for failed validations | Dev | observability | Partially resolved (DLQ-<tenant> exists; see messaging/service-bus §5) |
+| O22 | Support MCP as an outbound tool source (agents/workflows consume external MCP servers) | Dev | architecture/mcp-connections | **Resolved** (commit c4da71a) — distinct from O8/M2 below, which is the *inverse* direction (an internal MCP server as a publish interface for other agents); that idea remains pending |
 
 ---
 

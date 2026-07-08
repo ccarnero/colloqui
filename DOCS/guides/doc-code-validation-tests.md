@@ -109,3 +109,69 @@ Run the focused validation suite when any of these paths change:
 - `DOCS/workflows/patterns.md`
 - `packages/shared/{AGENTS,CLAUDE,CURSOR,GEMINI}.md`
 - `services/*/{AGENTS,CLAUDE,CURSOR,GEMINI}.md`
+
+## Implemented: static doc/code guard script (K6, K7, K8)
+
+`scripts/checks/doc-code-guards.sh` implements locks K6, K7, K8 from
+`cowork/DOC-VS-CODE-AUDIT.md` (see that file's "Locks" section for the full
+rationale). It is a standalone bash script — this repo has no `lefthook.yml`
+or CI pipeline yaml yet, so there was no existing aggregate to wire it into.
+Run it manually or from a future CI job:
+
+```bash
+scripts/checks/doc-code-guards.sh       # quiet: only prints failures
+scripts/checks/doc-code-guards.sh -v    # verbose: also prints PASS lines
+```
+
+It exits non-zero the moment any guard fails, naming the failing guard ID.
+
+What it pins:
+
+- **K6a** — every service documented in `DOCS/architecture/overview.md`'s
+  Service Roles table has a matching `services/*` directory (and vice
+  versa). `workflow-service-api` / `workflow-service-worker` are normalized
+  to the single `workflow-service` directory.
+- **K6b** — no `kind: ScaledObject` resource exists anywhere under
+  `knative/` or `infrastructure/` (KEDA was removed).
+- **K6c** — the min-scale/max-scale annotations on each
+  `knative/services/base/*.yaml` match the "Knative Autoscaling" table in
+  `overview.md`. Rows marked `—` (plain Deployment, not Knative-scaled) are
+  skipped by design.
+- **K6d** — every `scripts/...` and `e2e/...`-shaped path referenced in
+  `README.md` / `DOCS/README.md` exists on disk.
+- **K6e** — every alert name in `observability.md` §4 ("Implemented
+  Alerts") has a matching `alert:` entry in
+  `infrastructure/base/observability/prometheus/alerts.yaml`, and
+  `TemporalHistoryShardImbalance` does NOT exist in that file (removed; see
+  §4.7's note — the guard is careful to only read table rows, not that
+  explanatory prose, when extracting "implemented" alert names).
+- **K6f** — every runbook under `DOCS/runbooks/archive/` carries a
+  "Status: Historical" banner in its first 10 lines.
+- **K7** — NATS durable-consumer ackWait census: every registration via
+  `MultiTenantConsumerManager`/`ensureDurableConsumer` under `services/`
+  must declare an explicit `ackWaitMs`, OR be on an explicit allowlist (with
+  a one-line justification) inside the script. A repo-wide scan also fails
+  the guard if a brand-new registration site appears that isn't in the
+  script's known-files census, forcing a conscious ackWait decision instead
+  of silently inheriting the 60s package default (see
+  `cowork/ASYNC-RESILIENCE-AUDIT.md` F1: long-running handlers under a
+  60s ackWait cause JetStream redelivery and duplicate execution).
+- **K8** — `knative/services/base/ai-agent-gateway.yaml` and
+  `api-gateway.yaml` both set `spec.template.spec.timeoutSeconds >= 960`
+  (900s `AGENT_CALL_TIMEOUT_MS` + margin), and
+  `knative/serving/config-defaults.yaml`'s `max-revision-timeout-seconds`
+  is at least the same.
+
+**Genuine finding while calibrating K7**: the audit's lock description
+assumed only `workflow-service`'s `trigger-consumer` needed allowlisting for
+the 60s default. A full repo census found 9 registrations that omit
+`ackWaitMs` entirely (auto-reply, both usage-aggregator managers,
+webhook-ingress-consumer, execution-projector, ai-agent-gateway's
+executions consumer, channel-egress, and both audit-service consumers).
+None of their handlers do LLM/embedding calls or large-file processing, so
+the implicit 60s default is safe for all 9 today — they are allowlisted
+explicitly in the script with a one-line justification each, rather than
+silently ignored, so a *future* consumer with a slow handler that forgets
+`ackWaitMs` still fails this guard. `workflow-service`'s `trigger-consumer`
+in fact already sets `ackWaitMs: 60_000` explicitly (it doesn't rely on the
+implicit default) and needs no allowlist entry at all.

@@ -175,6 +175,23 @@ export class UpdateEnabledMcpServersDto {
 }
 
 /**
+ * Per-tool MCP allowlist for an agent, keyed by MCP server name
+ * (mcp-connections.md §4). A `null` value for a server means "all tools from
+ * that server enabled" (backward-compatible default); an array is an explicit
+ * allowlist of tool names within that server.
+ */
+export class UpdateEnabledMcpToolsDto {
+  @ApiPropertyOptional({
+    type: "object",
+    additionalProperties: { type: "array", items: { type: "string" } },
+    nullable: true,
+  })
+  @IsObject()
+  @IsOptional()
+  enabled_mcp_tools?: Record<string, string[] | null> | null;
+}
+
+/**
  * Per-agent tool description overrides.
  * Feature flag: `agent.tool_description_overrides_enabled` (default off).
  * Each value ≤ 2000 chars; `\n` allowed; trimmed on save.
@@ -224,6 +241,17 @@ export class CreateMcpServerDto {
   @IsOptional()
   headers?: Record<string, string>;
 
+  @ApiPropertyOptional({ enum: ["none", "api-key", "bearer", "basic"] })
+  @IsString()
+  @IsOptional()
+  @IsIn(["none", "api-key", "bearer", "basic"])
+  authType?: "none" | "api-key" | "bearer" | "basic";
+
+  @ApiPropertyOptional({ type: "object", additionalProperties: true })
+  @IsObject()
+  @IsOptional()
+  authConfig?: Record<string, unknown>;
+
   @ApiPropertyOptional()
   @IsBoolean()
   @IsOptional()
@@ -260,6 +288,21 @@ export class UpdateMcpServerDto {
   @IsObject()
   @IsOptional()
   headers?: Record<string, string> | null;
+
+  @ApiPropertyOptional({ enum: ["none", "api-key", "bearer", "basic"] })
+  @IsString()
+  @IsOptional()
+  @IsIn(["none", "api-key", "bearer", "basic"])
+  authType?: "none" | "api-key" | "bearer" | "basic";
+
+  @ApiPropertyOptional({
+    type: "object",
+    additionalProperties: true,
+    nullable: true,
+  })
+  @IsObject()
+  @IsOptional()
+  authConfig?: Record<string, unknown> | null;
 
   @ApiPropertyOptional()
   @IsBoolean()

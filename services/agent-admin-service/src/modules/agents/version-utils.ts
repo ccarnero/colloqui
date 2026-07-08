@@ -24,7 +24,7 @@ export type BumpType = "major" | "minor" | "patch";
  */
 export function detectBumpType(
   previousSnapshot: Record<string, any>,
-  currentSnapshot: Record<string, any>,
+  currentSnapshot: Record<string, any>
 ): BumpType {
   // ---- MAJOR triggers (breaking changes) ----
 
@@ -46,72 +46,88 @@ export function detectBumpType(
 
   // 3. Any tool name removed
   const prevToolNames = new Set<string>(
-    (previousSnapshot.tools ?? []).map((t: any) => t.name),
+    (previousSnapshot.tools ?? []).map((t: any) => t.name)
   );
   const currToolNames = new Set<string>(
-    (currentSnapshot.tools ?? []).map((t: any) => t.name),
+    (currentSnapshot.tools ?? []).map((t: any) => t.name)
   );
   for (const name of prevToolNames) {
-    if (!currToolNames.has(name)) return "major";
+    if (!currToolNames.has(name)) {
+      return "major";
+    }
   }
 
   // 4. Any channel removed
   const prevChannelIds = new Set<string>(
-    (previousSnapshot.channels ?? []).map((c: any) => c.id),
+    (previousSnapshot.channels ?? []).map((c: any) => c.id)
   );
   const currChannelIds = new Set<string>(
-    (currentSnapshot.channels ?? []).map((c: any) => c.id),
+    (currentSnapshot.channels ?? []).map((c: any) => c.id)
   );
   for (const id of prevChannelIds) {
-    if (!currChannelIds.has(id)) return "major";
+    if (!currChannelIds.has(id)) {
+      return "major";
+    }
   }
 
   // ---- MINOR triggers (additive changes) ----
 
   // 1. New tool added
   for (const name of currToolNames) {
-    if (!prevToolNames.has(name)) return "minor";
+    if (!prevToolNames.has(name)) {
+      return "minor";
+    }
   }
 
   // 2. New channel added
   for (const id of currChannelIds) {
-    if (!prevChannelIds.has(id)) return "minor";
+    if (!prevChannelIds.has(id)) {
+      return "minor";
+    }
   }
 
   // 3. New knowledge_base_id added
   const prevKbIds = new Set<string>(previousSnapshot.knowledge_base_ids ?? []);
   const currKbIds = new Set<string>(currentSnapshot.knowledge_base_ids ?? []);
   for (const id of currKbIds) {
-    if (!prevKbIds.has(id)) return "minor";
+    if (!prevKbIds.has(id)) {
+      return "minor";
+    }
   }
 
   // 4. New MCP server in enabled_mcp_servers
   const prevMcp = new Set<string>(previousSnapshot.enabled_mcp_servers ?? []);
   const currMcp = new Set<string>(currentSnapshot.enabled_mcp_servers ?? []);
   for (const server of currMcp) {
-    if (!prevMcp.has(server)) return "minor";
+    if (!prevMcp.has(server)) {
+      return "minor";
+    }
   }
 
   // 5. New input variable
   const prevInputVars = new Set<string>(
-    (previousSnapshot.input_variables ?? []).map((v: any) => v.name),
+    (previousSnapshot.input_variables ?? []).map((v: any) => v.name)
   );
   const currInputVars = new Set<string>(
-    (currentSnapshot.input_variables ?? []).map((v: any) => v.name),
+    (currentSnapshot.input_variables ?? []).map((v: any) => v.name)
   );
   for (const name of currInputVars) {
-    if (!prevInputVars.has(name)) return "minor";
+    if (!prevInputVars.has(name)) {
+      return "minor";
+    }
   }
 
   // 6. New output variable
   const prevOutputVars = new Set<string>(
-    (previousSnapshot.output_variables ?? []).map((v: any) => v.name),
+    (previousSnapshot.output_variables ?? []).map((v: any) => v.name)
   );
   const currOutputVars = new Set<string>(
-    (currentSnapshot.output_variables ?? []).map((v: any) => v.name),
+    (currentSnapshot.output_variables ?? []).map((v: any) => v.name)
   );
   for (const name of currOutputVars) {
-    if (!prevOutputVars.has(name)) return "minor";
+    if (!prevOutputVars.has(name)) {
+      return "minor";
+    }
   }
 
   // ---- PATCH: fallback ----
@@ -125,7 +141,7 @@ export function detectBumpType(
 export function computeSemverLabel(
   major: number,
   minor: number,
-  patch: number,
+  patch: number
 ): string {
   return `${major}.${minor}.${patch}`;
 }
@@ -138,7 +154,7 @@ export function computeNextSemver(
   currentMajor: number,
   currentMinor: number,
   currentPatch: number,
-  bumpType: BumpType,
+  bumpType: BumpType
 ): { major: number; minor: number; patch: number; label: string } {
   let major = currentMajor;
   let minor = currentMinor;
@@ -177,7 +193,7 @@ export function computeNextSemver(
  */
 export function computeSnapshotDiff(
   previousSnapshot: Record<string, any> | null,
-  currentSnapshot: Record<string, any>,
+  currentSnapshot: Record<string, any>
 ): IVersionDiff {
   const result: IVersionDiff = { added: [], removed: [], modified: [] };
 
@@ -194,13 +210,13 @@ export function computeSnapshotDiff(
     previousSnapshot.system_prompt,
     currentSnapshot.system_prompt,
     "system_prompt",
-    result,
+    result
   );
   comparePrimitive(
     previousSnapshot.description,
     currentSnapshot.description,
     "description",
-    result,
+    result
   );
 
   // --- model_config (deep object comparison) ---
@@ -208,7 +224,7 @@ export function computeSnapshotDiff(
     previousSnapshot.model_config,
     currentSnapshot.model_config,
     "model_config",
-    result,
+    result
   );
 
   // --- tools (named object array) ---
@@ -216,7 +232,7 @@ export function computeSnapshotDiff(
     previousSnapshot.tools ?? [],
     currentSnapshot.tools ?? [],
     "tools",
-    result,
+    result
   );
 
   // --- channels (id-keyed object array) ---
@@ -224,7 +240,7 @@ export function computeSnapshotDiff(
     previousSnapshot.channels ?? [],
     currentSnapshot.channels ?? [],
     "channels",
-    result,
+    result
   );
 
   // --- String arrays ---
@@ -232,13 +248,13 @@ export function computeSnapshotDiff(
     previousSnapshot.knowledge_base_ids ?? [],
     currentSnapshot.knowledge_base_ids ?? [],
     "knowledge_base_ids",
-    result,
+    result
   );
   compareStringArray(
     previousSnapshot.enabled_mcp_servers ?? [],
     currentSnapshot.enabled_mcp_servers ?? [],
     "enabled_mcp_servers",
-    result,
+    result
   );
 
   // --- Named variable arrays ---
@@ -246,13 +262,13 @@ export function computeSnapshotDiff(
     previousSnapshot.input_variables ?? [],
     currentSnapshot.input_variables ?? [],
     "input_variables",
-    result,
+    result
   );
   compareNamedObjectArray(
     previousSnapshot.output_variables ?? [],
     currentSnapshot.output_variables ?? [],
     "output_variables",
-    result,
+    result
   );
 
   // --- tool_description_overrides ---
@@ -264,6 +280,18 @@ export function computeSnapshotDiff(
       field: "tool_description_overrides",
       before: previousSnapshot.tool_description_overrides,
       after: currentSnapshot.tool_description_overrides,
+    });
+  }
+
+  // --- enabled_mcp_tools (per-server tool allowlist map) ---
+  if (
+    JSON.stringify(previousSnapshot.enabled_mcp_tools) !==
+    JSON.stringify(currentSnapshot.enabled_mcp_tools)
+  ) {
+    result.modified.push({
+      field: "enabled_mcp_tools",
+      before: previousSnapshot.enabled_mcp_tools,
+      after: currentSnapshot.enabled_mcp_tools,
     });
   }
 
@@ -281,7 +309,7 @@ export function computeSnapshotDiff(
 export function computeVersionNumber(
   major: number,
   minor: number,
-  patch: number,
+  patch: number
 ): number {
   return major * 10000 + minor * 100 + patch;
 }
@@ -294,7 +322,7 @@ function comparePrimitive(
   prev: unknown,
   curr: unknown,
   field: string,
-  result: IVersionDiff,
+  result: IVersionDiff
 ): void {
   if (prev !== curr) {
     result.modified.push({ field, before: prev, after: curr });
@@ -305,9 +333,11 @@ function deepCompareObjects(
   prev: any,
   curr: any,
   prefix: string,
-  result: IVersionDiff,
+  result: IVersionDiff
 ): void {
-  if (prev === curr) return;
+  if (prev === curr) {
+    return;
+  }
 
   // Leaf values or type mismatch → single modified entry
   if (
@@ -344,13 +374,13 @@ function compareNamedObjectArray(
   prev: Array<Record<string, any>>,
   curr: Array<Record<string, any>>,
   fieldName: string,
-  result: IVersionDiff,
+  result: IVersionDiff
 ): void {
   const prevByName = new Map(
-    prev.map((item, i) => [item.name as string, { item, index: i }]),
+    prev.map((item, i) => [item.name as string, { item, index: i }])
   );
   const currByName = new Map(
-    curr.map((item, i) => [item.name as string, { item, index: i }]),
+    curr.map((item, i) => [item.name as string, { item, index: i }])
   );
 
   // Added — index in current array
@@ -370,7 +400,10 @@ function compareNamedObjectArray(
   // Modified — same name, different content
   for (const [name, { item: prevItem }] of prevByName) {
     const currEntry = currByName.get(name);
-    if (currEntry && JSON.stringify(prevItem) !== JSON.stringify(currEntry.item)) {
+    if (
+      currEntry &&
+      JSON.stringify(prevItem) !== JSON.stringify(currEntry.item)
+    ) {
       result.modified.push({
         field: `${fieldName}[${name}]`,
         before: prevItem,
@@ -388,13 +421,13 @@ function compareIdObjectArray(
   prev: Array<Record<string, any>>,
   curr: Array<Record<string, any>>,
   fieldName: string,
-  result: IVersionDiff,
+  result: IVersionDiff
 ): void {
   const prevById = new Map(
-    prev.map((item, i) => [item.id as string, { item, index: i }]),
+    prev.map((item, i) => [item.id as string, { item, index: i }])
   );
   const currById = new Map(
-    curr.map((item, i) => [item.id as string, { item, index: i }]),
+    curr.map((item, i) => [item.id as string, { item, index: i }])
   );
 
   for (const [id, { index }] of currById) {
@@ -411,7 +444,10 @@ function compareIdObjectArray(
 
   for (const [id, { item: prevItem }] of prevById) {
     const currEntry = currById.get(id);
-    if (currEntry && JSON.stringify(prevItem) !== JSON.stringify(currEntry.item)) {
+    if (
+      currEntry &&
+      JSON.stringify(prevItem) !== JSON.stringify(currEntry.item)
+    ) {
       result.modified.push({
         field: `${fieldName}[${id}]`,
         before: prevItem,
@@ -429,7 +465,7 @@ function compareStringArray(
   prev: string[],
   curr: string[],
   fieldName: string,
-  result: IVersionDiff,
+  result: IVersionDiff
 ): void {
   const prevSet = new Set(prev);
   const currSet = new Set(curr);

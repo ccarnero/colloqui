@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Mock @yoizen/observability to avoid pulling real pino / OTEL deps.
@@ -30,12 +30,15 @@ mock.module("ai", () => ({
 }));
 
 import { Test } from "@nestjs/testing";
-import { ToolBridgeService } from "../../src/modules/tools/tool-bridge.service";
-import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
-import { ToolExecutorService } from "../../src/modules/tools/tool-executor.service";
 import { AdapterExecutorService } from "../../src/modules/tools/adapter-executor.service";
 import { McpClientService } from "../../src/modules/tools/mcp-client.service";
-import type { ToolDef, RuntimeState } from "../../src/modules/tools/tool-definition";
+import { ToolBridgeService } from "../../src/modules/tools/tool-bridge.service";
+import type {
+  RuntimeState,
+  ToolDef,
+} from "../../src/modules/tools/tool-definition";
+import { ToolExecutorService } from "../../src/modules/tools/tool-executor.service";
+import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
 
 // ---------------------------------------------------------------------------
 // Feature flag key — mirroring the config key used by the bridge.
@@ -127,7 +130,18 @@ describe("ToolBridgeService — description overrides", () => {
     disconnectAll: ReturnType<typeof mock>;
   };
 
+  let origDescriptionOverridesEnabled: string | undefined;
+
   beforeEach(async () => {
+    // The description-overrides feature is gated behind
+    // AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED (config.ts), which defaults
+    // to disabled. Most tests in this file exercise the override behavior
+    // itself, so default the flag ON here; the dedicated "feature flag is
+    // OFF/ON" tests below explicitly set/restore their own value.
+    origDescriptionOverridesEnabled =
+      process.env.AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED;
+    process.env.AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED = "true";
+
     mockRegistry = {
       listTools: mock(() => []),
       getToolDefinition: mock(() => undefined),
@@ -135,13 +149,11 @@ describe("ToolBridgeService — description overrides", () => {
       getTool: mock(() => undefined),
     };
     mockExecutor = {
-      executeTool: mock(() =>
-        Promise.resolve({ success: true, output: "ok" }),
-      ),
+      executeTool: mock(() => Promise.resolve({ success: true, output: "ok" })),
     };
     mockAdapterExecutor = {
       execute: mock(() =>
-        Promise.resolve({ success: true, output: "adapter-ok" }),
+        Promise.resolve({ success: true, output: "adapter-ok" })
       ),
     };
     mockMcpClient = {
@@ -166,6 +178,11 @@ describe("ToolBridgeService — description overrides", () => {
     bridge = moduleRef.get(ToolBridgeService);
   });
 
+  afterEach(() => {
+    process.env.AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED =
+      origDescriptionOverridesEnabled;
+  });
+
   // ══════════════════════════════════════════════════════════════════════════
   //  Baseline: no overrides → registered description is used
   // ══════════════════════════════════════════════════════════════════════════
@@ -173,10 +190,12 @@ describe("ToolBridgeService — description overrides", () => {
   describe("when no description overrides are provided", () => {
     it("should use the registered description for builtin tools", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "memory",
+        (name: string) => name === "memory"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
         return undefined;
       });
 
@@ -186,19 +205,23 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null, // enabled tools
         null, // enabled MCP servers
-        null, // tool description overrides
+        null // tool description overrides
       );
 
       expect(tools["memory"]).toBeDefined();
-      expect(tools["memory"].description).toBe("Store and retrieve conversation data");
+      expect(tools["memory"].description).toBe(
+        "Store and retrieve conversation data"
+      );
     });
 
     it("should use the registered description when overrides map is undefined", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "memory",
+        (name: string) => name === "memory"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
         return undefined;
       });
 
@@ -207,19 +230,23 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        undefined, // tool description overrides undefined
+        undefined // tool description overrides undefined
       );
 
       expect(tools["memory"]).toBeDefined();
-      expect(tools["memory"].description).toBe("Store and retrieve conversation data");
+      expect(tools["memory"].description).toBe(
+        "Store and retrieve conversation data"
+      );
     });
 
     it("should use the registered description when overrides map is empty", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "memory",
+        (name: string) => name === "memory"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
         return undefined;
       });
 
@@ -228,11 +255,13 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        {}, // tool description overrides empty
+        {} // tool description overrides empty
       );
 
       expect(tools["memory"]).toBeDefined();
-      expect(tools["memory"].description).toBe("Store and retrieve conversation data");
+      expect(tools["memory"].description).toBe(
+        "Store and retrieve conversation data"
+      );
     });
   });
 
@@ -243,10 +272,12 @@ describe("ToolBridgeService — description overrides", () => {
   describe("when description overrides are provided for builtin tools", () => {
     it("should use the override description when agent has overrides for the tool", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "memory",
+        (name: string) => name === "memory"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
         return undefined;
       });
 
@@ -259,24 +290,30 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        overrides,
+        overrides
       );
 
       expect(tools["memory"]).toBeDefined();
       expect(tools["memory"].description).toBe(
-        "Store/retrieve conversation data (customized)",
+        "Store/retrieve conversation data (customized)"
       );
     });
 
     it("should use the override description for multiple builtin tools", async () => {
       mockRegistry.hasTool.mockImplementation(
         (name: string) =>
-          name === "memory" || name === "communicate" || name === "resource",
+          name === "memory" || name === "communicate" || name === "resource"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
-        if (name === "communicate") return { definition: communicateDef };
-        if (name === "resource") return { definition: resourceDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
+        if (name === "communicate") {
+          return { definition: communicateDef };
+        }
+        if (name === "resource") {
+          return { definition: resourceDef };
+        }
         return undefined;
       });
 
@@ -295,7 +332,7 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        overrides,
+        overrides
       );
 
       expect(tools["memory"].description).toBe("Memory override");
@@ -305,12 +342,15 @@ describe("ToolBridgeService — description overrides", () => {
 
     it("should not apply overrides for tools not named in the overrides map", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) =>
-          name === "memory" || name === "communicate",
+        (name: string) => name === "memory" || name === "communicate"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
-        if (name === "communicate") return { definition: communicateDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
+        if (name === "communicate") {
+          return { definition: communicateDef };
+        }
         return undefined;
       });
 
@@ -324,7 +364,7 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        overrides,
+        overrides
       );
 
       expect(tools["memory"].description).toBe("Only memory overridden");
@@ -349,16 +389,21 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        overrides,
+        overrides
       );
 
       expect(tools["search_tickets"]).toBeDefined();
       expect(tools["search_tickets"].description).toBe(
-        "Search support tickets (customized description)",
+        "Search support tickets (customized description)"
       );
     });
 
-    it("should apply the override for a custom tool (non-builtin, non-adapter) description", async () => {
+    it("should skip a tool with no execution path (non-builtin, non-adapter) even with an override", async () => {
+      // A tool that is neither builtin nor carries an adapterRef has no
+      // execution path (tool-bridge.service.ts `toAiSdkToolsForAgent`) and
+      // is skipped outright — a description override does not fabricate
+      // one. Matches the established "skip unknown tool with no execution
+      // path" behavior asserted in tool-bridge.service.spec.ts.
       mockRegistry.hasTool.mockImplementation(() => false);
 
       const overrides: Record<string, string> = {
@@ -370,13 +415,10 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        overrides,
+        overrides
       );
 
-      expect(tools["custom_calc"]).toBeDefined();
-      expect(tools["custom_calc"].description).toBe(
-        "Custom calculator (overridden description)",
-      );
+      expect(tools["custom_calc"]).toBeUndefined();
     });
   });
 
@@ -387,10 +429,12 @@ describe("ToolBridgeService — description overrides", () => {
   describe("when overrides contain names not matching agent tools", () => {
     it("should ignore overrides for unknown tool names", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "memory",
+        (name: string) => name === "memory"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
         return undefined;
       });
 
@@ -405,7 +449,7 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        overrides,
+        overrides
       );
 
       expect(tools["memory"]).toBeDefined();
@@ -422,10 +466,12 @@ describe("ToolBridgeService — description overrides", () => {
   describe("when feature flag is OFF", () => {
     it("should use the registered description even when overrides are present", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "memory",
+        (name: string) => name === "memory"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
         return undefined;
       });
 
@@ -438,11 +484,13 @@ describe("ToolBridgeService — description overrides", () => {
           state,
           null,
           null,
-          { memory: "Should be ignored" }, // real overrides, but flag is OFF
+          { memory: "Should be ignored" } // real overrides, but flag is OFF
         );
 
         expect(tools["memory"]).toBeDefined();
-        expect(tools["memory"].description).toBe("Store and retrieve conversation data");
+        expect(tools["memory"].description).toBe(
+          "Store and retrieve conversation data"
+        );
       } finally {
         process.env.AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED = origEnv;
       }
@@ -450,10 +498,12 @@ describe("ToolBridgeService — description overrides", () => {
 
     it("should use the override when feature flag is ON", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "memory",
+        (name: string) => name === "memory"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
         return undefined;
       });
 
@@ -465,7 +515,7 @@ describe("ToolBridgeService — description overrides", () => {
           state,
           null,
           null,
-          { memory: "Custom override when ON" },
+          { memory: "Custom override when ON" }
         );
 
         expect(tools["memory"]).toBeDefined();
@@ -483,12 +533,15 @@ describe("ToolBridgeService — description overrides", () => {
   describe("edge cases", () => {
     it("should handle null overrides map for all tool types", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) =>
-          name === "memory" || name === "communicate",
+        (name: string) => name === "memory" || name === "communicate"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
-        if (name === "communicate") return { definition: communicateDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
+        if (name === "communicate") {
+          return { definition: communicateDef };
+        }
         return undefined;
       });
 
@@ -497,21 +550,25 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        null,
+        null
       );
 
       expect(tools["memory"]).toBeDefined();
-      expect(tools["memory"].description).toBe("Store and retrieve conversation data");
+      expect(tools["memory"].description).toBe(
+        "Store and retrieve conversation data"
+      );
       expect(tools["communicate"]).toBeDefined();
       expect(tools["communicate"].description).toBe("Send a message");
     });
 
     it("should handle empty overrides map gracefully", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "memory",
+        (name: string) => name === "memory"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
         return undefined;
       });
 
@@ -520,19 +577,23 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        {},
+        {}
       );
 
       expect(tools["memory"]).toBeDefined();
-      expect(tools["memory"].description).toBe("Store and retrieve conversation data");
+      expect(tools["memory"].description).toBe(
+        "Store and retrieve conversation data"
+      );
     });
 
     it("should handle overrides with empty string values gracefully", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "memory",
+        (name: string) => name === "memory"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
         return undefined;
       });
 
@@ -545,7 +606,7 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        overrides,
+        overrides
       );
 
       expect(tools["memory"]).toBeDefined();
@@ -555,10 +616,12 @@ describe("ToolBridgeService — description overrides", () => {
 
     it("should not affect tools when overrides map has unrelated keys", async () => {
       mockRegistry.hasTool.mockImplementation(
-        (name: string) => name === "communicate",
+        (name: string) => name === "communicate"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "communicate") return { definition: communicateDef };
+        if (name === "communicate") {
+          return { definition: communicateDef };
+        }
         return undefined;
       });
 
@@ -571,7 +634,7 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        overrides,
+        overrides
       );
 
       expect(tools["communicate"]).toBeDefined();
@@ -587,12 +650,18 @@ describe("ToolBridgeService — description overrides", () => {
     it("should resolve each tool to its own override independently", async () => {
       mockRegistry.hasTool.mockImplementation(
         (name: string) =>
-          name === "memory" || name === "communicate" || name === "resource",
+          name === "memory" || name === "communicate" || name === "resource"
       );
       mockRegistry.getTool.mockImplementation((name: string) => {
-        if (name === "memory") return { definition: memoryDef };
-        if (name === "communicate") return { definition: communicateDef };
-        if (name === "resource") return { definition: resourceDef };
+        if (name === "memory") {
+          return { definition: memoryDef };
+        }
+        if (name === "communicate") {
+          return { definition: communicateDef };
+        }
+        if (name === "resource") {
+          return { definition: resourceDef };
+        }
         return undefined;
       });
 
@@ -611,7 +680,7 @@ describe("ToolBridgeService — description overrides", () => {
         state,
         null,
         null,
-        overrides,
+        overrides
       );
 
       // Each tool gets its own override independently
@@ -620,8 +689,12 @@ describe("ToolBridgeService — description overrides", () => {
       expect(tools["resource"].description).toBe("Custom resource desc");
 
       // Verify the descriptions are all different — no cross-contamination
-      expect(tools["memory"].description).not.toBe(tools["communicate"].description);
-      expect(tools["communicate"].description).not.toBe(tools["resource"].description);
+      expect(tools["memory"].description).not.toBe(
+        tools["communicate"].description
+      );
+      expect(tools["communicate"].description).not.toBe(
+        tools["resource"].description
+      );
     });
   });
 });

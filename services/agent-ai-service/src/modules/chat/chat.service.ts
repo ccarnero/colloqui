@@ -38,7 +38,8 @@ export class ChatService {
 
   async generateReply(
     tenantId: string,
-    request: ChatRequest
+    request: ChatRequest,
+    options?: { abortSignal?: AbortSignal }
   ): Promise<ChatResponse> {
     this.logger.debug(
       `generateReply: tenant=${tenantId} agent=${request.agentId} session=${request.sessionId ?? "none"}`
@@ -83,7 +84,13 @@ export class ChatService {
 
     // Always use session-based chat for proper conversation context and prompt caching
     const sessionId = request.sessionId ?? `chat-${agent.id}-${Date.now()}`;
-    return this.sessionChat.generateReply(tenantId, sessionId, agent, state);
+    return this.sessionChat.generateReply(
+      tenantId,
+      sessionId,
+      agent,
+      state,
+      options?.abortSignal
+    );
   }
 
   async generateStreamReply(
@@ -291,13 +298,17 @@ export class ChatService {
           executionId: `chat-${Date.now()}`,
           sessionId: state.runtimeContext.sessionId as string | undefined,
           userId: state.runtimeContext.userId as string | undefined,
+          conversationId: state.runtimeContext.conversationId as
+            | string
+            | undefined,
         };
         resolvedTools = await this.toolBridge.toAiSdkToolsForAgent(
           agent.tools ?? [],
           toolState,
           agent.enabledTools,
           agent.enabledMcpServers,
-          agent.toolDescriptionOverrides
+          agent.toolDescriptionOverrides,
+          agent.enabledMcpTools
         );
       } catch (error) {
         this.logger.warn(

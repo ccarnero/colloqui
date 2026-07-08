@@ -1,4 +1,13 @@
-import { describe, it, expect, mock, beforeAll, afterAll, beforeEach, afterEach } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from "bun:test";
 
 // ---------------------------------------------------------------------------
 // NOTE: The class-validator decorator chain issue (see below) is a pre-existing
@@ -81,7 +90,7 @@ describe("MemoryClientService", () => {
         expect(body.title).toBe("My Memory");
         expect(body.content).toBe("My content");
         return Promise.resolve(
-          new Response(JSON.stringify(makeMemoryItem()), { status: 200 }),
+          new Response(JSON.stringify(makeMemoryItem()), { status: 200 })
         );
       });
 
@@ -99,7 +108,7 @@ describe("MemoryClientService", () => {
 
     it("should throw on non-ok response", async () => {
       globalThis.fetch = mock(() =>
-        Promise.resolve(new Response("Bad Request", { status: 400 })),
+        Promise.resolve(new Response("Bad Request", { status: 400 }))
       );
 
       await expect(
@@ -108,7 +117,7 @@ describe("MemoryClientService", () => {
           kind: "FACT",
           title: "X",
           content: "Y",
-        }),
+        })
       ).rejects.toThrow("Memory create failed: 400");
     });
 
@@ -118,7 +127,7 @@ describe("MemoryClientService", () => {
         expect(body.sessionId).toBe("sess-1");
         expect(body.userId).toBe("user-1");
         return Promise.resolve(
-          new Response(JSON.stringify(makeMemoryItem()), { status: 200 }),
+          new Response(JSON.stringify(makeMemoryItem()), { status: 200 })
         );
       });
 
@@ -152,7 +161,10 @@ describe("MemoryClientService", () => {
         const headers = init?.headers as Record<string, string>;
         expect(headers["x-yoizen-tenant"]).toBe("t1");
         return Promise.resolve(
-          new Response(JSON.stringify({ items: [makeMemoryItem()], total: 1 }), { status: 200 }),
+          new Response(
+            JSON.stringify({ items: [makeMemoryItem()], total: 1 }),
+            { status: 200 }
+          )
         );
       });
 
@@ -175,9 +187,12 @@ describe("MemoryClientService", () => {
 
     it("should handle empty search gracefully", async () => {
       globalThis.fetch = mock((url: string) => {
-        expect(url).toContain("/admin/memories?");
+        // An empty string is falsy, so `list()` omits the `search` param
+        // entirely (see the `if (query.search)` guard) and the URL carries
+        // no query string at all.
+        expect(url).toBe("http://memory-service:3000/admin/memories");
         return Promise.resolve(
-          new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 }),
+          new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 })
         );
       });
 
@@ -187,9 +202,10 @@ describe("MemoryClientService", () => {
 
     it("should handle missing optional query fields", async () => {
       globalThis.fetch = mock((url: string) => {
-        expect(url).toContain("/admin/memories?");
+        // No query fields provided -> no params -> no query string.
+        expect(url).toBe("http://memory-service:3000/admin/memories");
         return Promise.resolve(
-          new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 }),
+          new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 })
         );
       });
 
@@ -214,7 +230,15 @@ describe("MemoryClientService", () => {
         expect(body.title).toBe("Updated Title");
         expect(body.content).toBe("Updated content");
         return Promise.resolve(
-          new Response(JSON.stringify(makeMemoryItem({ title: "Updated Title", content: "Updated content" })), { status: 200 }),
+          new Response(
+            JSON.stringify(
+              makeMemoryItem({
+                title: "Updated Title",
+                content: "Updated content",
+              })
+            ),
+            { status: 200 }
+          )
         );
       });
 
@@ -229,11 +253,11 @@ describe("MemoryClientService", () => {
 
     it("should throw on non-ok response", async () => {
       globalThis.fetch = mock(() =>
-        Promise.resolve(new Response("Not Found", { status: 404 })),
+        Promise.resolve(new Response("Not Found", { status: 404 }))
       );
 
       await expect(
-        client.update("t1", "mem-missing", { title: "New" }),
+        client.update("t1", "mem-missing", { title: "New" })
       ).rejects.toThrow("Memory update failed: 404");
     });
   });
@@ -250,7 +274,9 @@ describe("MemoryClientService", () => {
         const headers = init?.headers as Record<string, string>;
         expect(headers["x-yoizen-tenant"]).toBe("t1");
         return Promise.resolve(
-          new Response(JSON.stringify(makeMemoryItem({ status: "ACTIVE" })), { status: 200 }),
+          new Response(JSON.stringify(makeMemoryItem({ status: "ACTIVE" })), {
+            status: 200,
+          })
         );
       });
 
@@ -260,9 +286,11 @@ describe("MemoryClientService", () => {
 
     it("should throw on non-ok response", async () => {
       globalThis.fetch = mock(() =>
-        Promise.resolve(new Response("Not Found", { status: 404 })),
+        Promise.resolve(new Response("Not Found", { status: 404 }))
       );
-      await expect(client.approve("t1", "mem-missing")).rejects.toThrow("Memory approve failed: 404");
+      await expect(client.approve("t1", "mem-missing")).rejects.toThrow(
+        "Memory approve failed: 404"
+      );
     });
   });
 
@@ -274,7 +302,9 @@ describe("MemoryClientService", () => {
         const headers = init?.headers as Record<string, string>;
         expect(headers["x-yoizen-tenant"]).toBe("t1");
         return Promise.resolve(
-          new Response(JSON.stringify(makeMemoryItem({ status: "REJECTED" })), { status: 200 }),
+          new Response(JSON.stringify(makeMemoryItem({ status: "REJECTED" })), {
+            status: 200,
+          })
         );
       });
 
@@ -284,9 +314,11 @@ describe("MemoryClientService", () => {
 
     it("should throw on non-ok response", async () => {
       globalThis.fetch = mock(() =>
-        Promise.resolve(new Response("Internal Server Error", { status: 500 })),
+        Promise.resolve(new Response("Internal Server Error", { status: 500 }))
       );
-      await expect(client.reject("t1", "mem-1")).rejects.toThrow("Memory reject failed: 500");
+      await expect(client.reject("t1", "mem-1")).rejects.toThrow(
+        "Memory reject failed: 500"
+      );
     });
   });
 
@@ -301,7 +333,9 @@ describe("MemoryClientService", () => {
         expect(init?.method).toBe("GET");
         const headers = init?.headers as Record<string, string>;
         expect(headers["x-yoizen-tenant"]).toBe("t1");
-        return Promise.resolve(new Response(JSON.stringify(makeMemoryItem()), { status: 200 }));
+        return Promise.resolve(
+          new Response(JSON.stringify(makeMemoryItem()), { status: 200 })
+        );
       });
 
       const result = await client.load("t1", "mem-1");
@@ -310,14 +344,20 @@ describe("MemoryClientService", () => {
     });
 
     it("should return null on 404", async () => {
-      globalThis.fetch = mock(() => Promise.resolve(new Response("Not Found", { status: 404 })));
+      globalThis.fetch = mock(() =>
+        Promise.resolve(new Response("Not Found", { status: 404 }))
+      );
       const result = await client.load("t1", "mem-missing");
       expect(result).toBeNull();
     });
 
     it("should throw on 5xx", async () => {
-      globalThis.fetch = mock(() => Promise.resolve(new Response("Server Error", { status: 500 })));
-      await expect(client.load("t1", "mem-1")).rejects.toThrow("Memory load failed: 500");
+      globalThis.fetch = mock(() =>
+        Promise.resolve(new Response("Server Error", { status: 500 }))
+      );
+      await expect(client.load("t1", "mem-1")).rejects.toThrow(
+        "Memory load failed: 500"
+      );
     });
   });
 
@@ -352,7 +392,12 @@ describe("MemoryClientService", () => {
         expect(url).toContain("status=ACTIVE");
         const headers = init?.headers as Record<string, string>;
         expect(headers["x-yoizen-tenant"]).toBe("t1");
-        return Promise.resolve(new Response(JSON.stringify({ items: [makeMemoryItem()], total: 1 }), { status: 200 }));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ items: [makeMemoryItem()], total: 1 }),
+            { status: 200 }
+          )
+        );
       });
 
       const result = await client.search("t1", "test", 5);
@@ -367,7 +412,9 @@ describe("MemoryClientService", () => {
 
   describe("network errors", () => {
     it("should throw on network timeout", async () => {
-      globalThis.fetch = mock(() => Promise.reject(new Error("fetch failed: network timeout")));
+      globalThis.fetch = mock(() =>
+        Promise.reject(new Error("fetch failed: network timeout"))
+      );
       await expect(client.list("t1", {})).rejects.toThrow();
     });
   });
@@ -383,11 +430,18 @@ describe("MemoryClientService", () => {
         callCount++;
         const headers = init?.headers as Record<string, string>;
         expect(headers["x-yoizen-tenant"]).toBe("t1");
-        return Promise.resolve(new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 }));
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 })
+        );
       });
 
       await client.list("t1", {});
-      await client.create("t1", { scope: "SESSION", kind: "FACT", title: "X", content: "Y" });
+      await client.create("t1", {
+        scope: "SESSION",
+        kind: "FACT",
+        title: "X",
+        content: "Y",
+      });
       await client.load("t1", "mem-1");
       await client.update("t1", "mem-1", { title: "T" });
 
@@ -399,8 +453,11 @@ describe("MemoryClientService", () => {
       const clientWithSlash = new MemoryClientService();
 
       globalThis.fetch = mock((url: string) => {
-        expect(url).toBe("http://example.com/admin/memories?search=");
-        return Promise.resolve(new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 }));
+        // Empty `search` is falsy and omitted from the query string.
+        expect(url).toBe("http://example.com/admin/memories");
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 })
+        );
       });
 
       await clientWithSlash.list("t1", { search: "" });
@@ -408,7 +465,11 @@ describe("MemoryClientService", () => {
 
     it("should parse valid JSON response as MemoryItem", async () => {
       globalThis.fetch = mock(() =>
-        Promise.resolve(new Response(JSON.stringify(makeMemoryItem({ id: "mem-parse" })), { status: 200 })),
+        Promise.resolve(
+          new Response(JSON.stringify(makeMemoryItem({ id: "mem-parse" })), {
+            status: 200,
+          })
+        )
       );
 
       const result = await client.load("t1", "mem-parse");

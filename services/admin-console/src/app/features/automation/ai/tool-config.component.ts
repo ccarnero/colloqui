@@ -88,7 +88,7 @@ import { ToolAdapterFormComponent } from "./tool-adapter-form.component";
                     [class.active]="tool.sourceType === 'adapter'"
                     (click)="tool.sourceType = 'adapter'"
                   >
-                    <mat-icon>power</mat-icon> Adapter
+                    <mat-icon>power</mat-icon> Connector
                   </button>
                 </div>
               </div>
@@ -275,10 +275,10 @@ export class AiToolConfigComponent {
 
   onToolAdapterRefChange(
     index: number,
-    ref: { adapterId: string; endpointId: string } | null,
+    ref: { adapterId: string; endpointId: string } | null
   ): void {
     this.tools.update((items) =>
-      items.map((t, i) => (i === index ? { ...t, adapterRef: ref } : t)),
+      items.map((t, i) => (i === index ? { ...t, adapterRef: ref } : t))
     );
   }
 }

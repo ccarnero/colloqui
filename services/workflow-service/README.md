@@ -320,17 +320,23 @@ Publishes event to NATS subject with tenant header injection.
 
 ### channelSend
 
-Sends message via configured channel (email, SMS, Slack, etc.).
+Sends a message via a configured channel account. `channel` is one of
+`whatsapp` | `instagram` | `telegram` | `http` (see
+`packages/shared/src/channel.interfaces.ts`) — there is no `email`/`sms`
+channel. `args` requires `accountId`, `channel`, `provider`, `to`, `type`
+(there is no `recipient`/`subject`/`body`).
 
 ```
 {
   activity: "channelSend",
-  name: "emailNotification",
+  name: "sendMessage",
   args: {
-    channel: "email",
-    recipient: "{{results.fetchUser.data.email}}",
-    subject: "Your request has been processed",
-    body: "Status: {{results.processRequest.data.status}}\nReference: {{workflow.id}}"
+    accountId: "{{request.channelAccountId}}",
+    channel: "telegram",
+    provider: "telegram",
+    to: "{{results.fetchUser.data.phone}}",
+    type: "text",
+    text: "Status: {{results.processRequest.data.status}}\nReference: {{workflow.id}}"
   }
 }
 ```
@@ -616,7 +622,7 @@ Branch on failure: if results.processResource.status === FAILED
 
 | Timeout | Value | Applied To |
 |---------|-------|-----------|
-| Workflow timeout | 24 hours | Entire workflow execution |
+| Workflow timeout | 10 minutes (`WORKFLOW_DEFAULT_TIMEOUT_MS`, `packages/shared/src/constants.ts`) | Entire workflow execution, wall-clock from `workflow.start` including schedule-to-start queue wait |
 | Activity timeout | 30s | Local workflow-orchestrator activities |
 | HTTP retry max interval | 30s | endpointCall/serviceCall on connector-runtime |
 | Agent retry max interval | 60s | agentCall |

@@ -1,19 +1,22 @@
-import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import type { JsonValue } from "@yoizen/shared";
+import { Inject, Injectable } from "@nestjs/common";
 import type { TenantConnectionManager } from "@yoizen/database";
-import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
+import type { JsonValue } from "@yoizen/shared";
 import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
-import { MCP_SERVER_ROW_COLUMNS } from "./mcp-servers-sql.constants";
+import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
 import type {
+  ICreateMcpServerData,
   IMcpServer,
   IMcpServersRepository,
-  ICreateMcpServerData,
   IUpdateMcpServerData,
 } from "./mcp-servers.repository.interface";
+import { MCP_SERVER_ROW_COLUMNS } from "./mcp-servers-sql.constants";
 
 @Injectable()
-export class McpServersPostgresRepository extends TenantScopedPostgresRepository implements IMcpServersRepository {
+export class McpServersPostgresRepository
+  extends TenantScopedPostgresRepository
+  implements IMcpServersRepository
+{
   constructor(
     @Inject(YoizenclawTenantConnectionManager)
     connectionManager: TenantConnectionManager,
@@ -45,7 +48,10 @@ export class McpServersPostgresRepository extends TenantScopedPostgresRepository
     return results[0] ?? null;
   }
 
-  async create(tenantId: string, data: ICreateMcpServerData): Promise<IMcpServer> {
+  async create(
+    tenantId: string,
+    data: ICreateMcpServerData
+  ): Promise<IMcpServer> {
     const sql = await this.getSql(tenantId);
     const serverId = randomUUID();
 
@@ -58,6 +64,8 @@ export class McpServersPostgresRepository extends TenantScopedPostgresRepository
         transport_type,
         url,
         headers,
+        auth_type,
+        auth_config,
         enabled,
         is_active,
         created_at,
@@ -70,6 +78,8 @@ export class McpServersPostgresRepository extends TenantScopedPostgresRepository
         ${data.transport_type},
         ${data.url},
         ${sql.json((data.headers ?? {}) as JsonValue)},
+        ${data.auth_type ?? "none"},
+        ${data.auth_config === undefined ? null : sql.json(data.auth_config as JsonValue)},
         ${data.enabled ?? true},
         true,
         NOW(),
@@ -84,7 +94,7 @@ export class McpServersPostgresRepository extends TenantScopedPostgresRepository
   async update(
     tenantId: string,
     id: string,
-    data: IUpdateMcpServerData,
+    data: IUpdateMcpServerData
   ): Promise<IMcpServer | null> {
     const sql = await this.getSql(tenantId);
 
@@ -103,8 +113,20 @@ export class McpServersPostgresRepository extends TenantScopedPostgresRepository
     if (data.headers !== undefined) {
       await sql`UPDATE mcp_servers SET headers = ${sql.json(data.headers as JsonValue)}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId} AND is_active = true`;
     }
+    if (data.auth_type !== undefined) {
+      await sql`UPDATE mcp_servers SET auth_type = ${data.auth_type}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId} AND is_active = true`;
+    }
+    if (data.auth_config !== undefined) {
+      await sql`UPDATE mcp_servers SET auth_config = ${sql.json(data.auth_config as JsonValue)}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId} AND is_active = true`;
+    }
     if (data.enabled !== undefined) {
       await sql`UPDATE mcp_servers SET enabled = ${data.enabled}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId} AND is_active = true`;
+    }
+    if (data.managed_by !== undefined) {
+      await sql`UPDATE mcp_servers SET managed_by = ${data.managed_by}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId} AND is_active = true`;
+    }
+    if (data.managed_locked_fields !== undefined) {
+      await sql`UPDATE mcp_servers SET managed_locked_fields = ${data.managed_locked_fields === null ? null : sql.json(data.managed_locked_fields as JsonValue)}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId} AND is_active = true`;
     }
 
     const results = await sql<IMcpServer[]>`

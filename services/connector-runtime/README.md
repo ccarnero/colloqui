@@ -57,7 +57,7 @@ bun test test/unit
 - Registers activities on the `connector-runtime` task queue
 - Maintains health server on `PORT` (default 3000)
 - Gracefully shuts down on SIGTERM/SIGINT
-- Max 200 concurrent activity tasks
+- Max 400 concurrent activity tasks
 
 **Activity: `executeEndpointCall`** (`src/activities/endpoint-call.activity.ts`)
 - Entry point for HTTP requests
@@ -73,7 +73,7 @@ bun test test/unit
 
 **Connector Resolution** (`src/activities/_shared/adapter-client.provider.ts`)
 - `AdapterClient` class wraps connector-admin REST API calls
-- Redis stale-while-revalidate cache (TTL 300s, stale window 60s)
+- Redis stale-while-revalidate cache (soft TTL 60s, stale-serve window 300s)
 - Lazy cache misses: fetch from connector-admin while serving stale data if cache is fresh
 - OAuth2 client credentials token management for secured adapters
 
@@ -285,7 +285,7 @@ If test succeeds → circuit closes, normal operation resumes
 
 The service is deployed as a plain Kubernetes Deployment (not Knative Service) because Temporal uses pull-based task distribution — it pulls tasks over a long-lived gRPC connection and never receives inbound HTTP, so Knative's activator/KPA model adds nothing.
 
-In developer mode it runs at a fixed **1 replica** with no autoscaling. Each replica sustains up to 200 concurrent activities; horizontal capacity would come from raising the replica count.
+In developer mode it runs at a fixed **1 replica** with no autoscaling. Each replica sustains up to 400 concurrent activities; horizontal capacity would come from raising the replica count.
 
 ## Configuration
 
@@ -326,7 +326,7 @@ GET /connectors/{adapterId}
   }
 ```
 
-The service caches this for 300s and serves stale data while refreshing in the background.
+The service caches this for a soft TTL of 60s and serves stale data (up to a 300s stale window) while refreshing in the background.
 
 ## Debugging Tips
 

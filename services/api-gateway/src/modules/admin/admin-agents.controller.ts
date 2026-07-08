@@ -22,6 +22,7 @@ import {
   CreateAgentDto,
   UpdateAgentDto,
   UpdateEnabledMcpServersDto,
+  UpdateEnabledMcpToolsDto,
   UpdateEnabledToolsDto,
   UpdateToolDescriptionOverridesDto,
 } from "./admin.dto";
@@ -259,6 +260,21 @@ export class AdminAgentsController {
     return this.proxy.proxy({
       method: "PATCH",
       path: `/admin/agents/${id}/mcp-servers`,
+      tenantId: req.tenantId,
+      body,
+    });
+  }
+
+  @Patch(":id/mcp-tools")
+  @HttpCode(HttpStatus.OK)
+  async updateEnabledMcpTools(
+    @Req() req: ITenantScopedRequest,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body: UpdateEnabledMcpToolsDto
+  ): Promise<object> {
+    return this.proxy.proxy({
+      method: "PATCH",
+      path: `/admin/agents/${id}/mcp-tools`,
       tenantId: req.tenantId,
       body,
     });

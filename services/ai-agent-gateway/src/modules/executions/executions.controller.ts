@@ -8,9 +8,11 @@ import {
   HttpStatus,
   Param,
   Post,
+  Req,
   Sse,
 } from "@nestjs/common";
 import { TENANT_HEADER } from "@yoizen/shared";
+import type { FastifyRequest } from "fastify";
 import type { Observable } from "rxjs";
 // biome-ignore-start lint/style/useImportType: CreateExecutionDto is a @Body() metatype and ExecutionsService is constructor-injected by NestJS DI — both must be value imports so Nest's runtime metadata (ValidationPipe metatype / design:paramtypes) resolves the real class, not `type`.
 import { CreateExecutionDto } from "./executions.dto";
@@ -61,8 +63,16 @@ export class ExecutionsController {
   submitAndStream(
     @Headers(TENANT_HEADER) tenantId: string,
     @Headers(YOIZEN_USER_ID_HEADER) requestedBy: string | undefined,
-    @Body() dto: CreateExecutionDto
+    @Body() dto: CreateExecutionDto,
+    @Req() req: FastifyRequest
   ): Observable<MessageEvent> {
-    return this.executions.submitAndStream(tenantId, dto, requestedBy);
+    // The raw socket is shared between request and response; its
+    // writableLength is the true backpressure signal for the SSE relay.
+    return this.executions.submitAndStream(
+      tenantId,
+      dto,
+      requestedBy,
+      req.raw.socket
+    );
   }
 }

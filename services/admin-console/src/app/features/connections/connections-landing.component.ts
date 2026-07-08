@@ -55,7 +55,11 @@ interface ITopConnector {
           [value]="metrics.httpConnectorsTotal() ?? '—'"
           [sub]="httpSub()"
         />
-        <app-kpi-card label="MCP" value="—" sub="backend coming" />
+        <app-kpi-card
+          label="MCP"
+          [value]="metrics.mcpServersTotal() ?? '—'"
+          [sub]="mcpSub()"
+        />
         <app-kpi-card
           label="Hosted services"
           [value]="metrics.hostedTotal() ?? '—'"
@@ -163,6 +167,15 @@ export class ConnectionsLandingComponent implements OnInit {
   protected readonly httpSub = computed(() => {
     const errs = this.metrics.httpErrored() ?? 0;
     return errs > 0 ? `${errs} errored` : "all healthy";
+  });
+
+  protected readonly mcpSub = computed(() => {
+    const total = this.metrics.mcpServersTotal();
+    if (total === null) {
+      return "backend unavailable";
+    }
+    const enabled = this.metrics.mcpServersEnabled() ?? 0;
+    return `${enabled} enabled`;
   });
 
   protected readonly topConnectors = computed<ITopConnector[]>(() => []);

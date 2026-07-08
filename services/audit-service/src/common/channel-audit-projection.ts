@@ -17,6 +17,7 @@ export const CHANNEL_AUDIT_SELECT_PROJECTION = `
   message_type     AS "messageType",
   message_text     AS "messageText",
   provider_message_id AS "providerMessageId",
+  conversation_id  AS "conversationId",
   correlation_id   AS "correlationId",
   causation_id     AS "causationId",
   depth,
@@ -37,6 +38,7 @@ export interface IStoredChannelEvent {
   messageType: string | null;
   messageText: string | null;
   providerMessageId: string | null;
+  conversationId: string | null;
   correlationId: string | null;
   causationId: string | null;
   depth: number | null;
@@ -87,6 +89,7 @@ export function mapChannelAuditDoc(doc: Document): IStoredChannelEvent {
     messageText: (doc.message_text as string | null | undefined) ?? null,
     providerMessageId:
       (doc.provider_message_id as string | null | undefined) ?? null,
+    conversationId: (doc.conversation_id as string | null | undefined) ?? null,
     correlationId: (doc.correlation_id as string | null | undefined) ?? null,
     causationId: (doc.causation_id as string | null | undefined) ?? null,
     depth: typeof doc.depth === "number" ? doc.depth : null,

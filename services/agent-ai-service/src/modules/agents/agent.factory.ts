@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
-import type { IAgentConfig } from "./agent-config.repository.interface";
 import type { Agent } from "./agent.model";
 import { AgentInstance } from "./agent.model";
+import type { IAgentConfig } from "./agent-config.repository.interface";
 
 @Injectable()
 export class AgentFactory {
@@ -22,17 +22,18 @@ export class AgentFactory {
       Array.isArray(config.tools) ? config.tools : [],
       config.enabledTools ?? null,
       enabledMcpServers,
-      null, // toolDescriptionOverrides not exposed in IAgentConfig yet
+      config.enabledMcpTools ?? null,
+      config.toolDescriptionOverrides ?? null,
       skills,
       rules,
       Array.isArray(config.channels) ? config.channels : [],
-      config.knowledgeBaseIds ?? [],
+      config.knowledgeBaseIds ?? []
     );
   }
 
   private extractField(
     config: IAgentConfig,
-    field: string,
+    field: string
   ): readonly unknown[] {
     const value = (config as unknown as Record<string, unknown>)[field];
     return Array.isArray(value) ? value : [];

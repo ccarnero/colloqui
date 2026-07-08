@@ -415,7 +415,13 @@ const AUTOSAVE_INTERVAL_MS = 800;
                   <app-ai-mcp-servers-selector
                     [agentId]="editingAgentId()!"
                     [enabledMcpServers]="currentMcpServers()"
+                    [enabledMcpTools]="currentEnabledMcpTools()"
+                    [toolDescriptionOverrides]="
+                      currentToolDescriptionOverrides()
+                    "
                     (serversSaved)="onMcpServersSaved($event)"
+                    (mcpToolsSaved)="onEnabledMcpToolsSaved($event)"
+                    (toolDescriptionsSaved)="onToolDescriptionsSaved($event)"
                   />
                 } @else {
                   <div class="empty-focus">
@@ -540,6 +546,10 @@ export class AiComponent implements OnInit {
 
   // ---- MCP servers ----
   readonly currentMcpServers = signal<string[] | null>(null);
+  readonly currentEnabledMcpTools = signal<Record<
+    string,
+    string[] | null
+  > | null>(null);
 
   // ---- Reactivity helpers (bumped on structural mutations) ----
   private readonly version = signal(0);
@@ -901,6 +911,12 @@ export class AiComponent implements OnInit {
 
   onMcpServersSaved(enabledMcpServers: string[] | null): void {
     this.currentMcpServers.set(enabledMcpServers);
+  }
+
+  onEnabledMcpToolsSaved(
+    enabledMcpTools: Record<string, string[] | null> | null
+  ): void {
+    this.currentEnabledMcpTools.set(enabledMcpTools);
   }
 
   rollbackToVersion(versionId: string): void {
@@ -1289,6 +1305,7 @@ export class AiComponent implements OnInit {
       agent.tool_description_overrides ?? null
     );
     this.currentMcpServers.set(agent.enabled_mcp_servers ?? null);
+    this.currentEnabledMcpTools.set(agent.enabled_mcp_tools ?? null);
     this.inputVariables = agent.input_variables ?? [];
     this.outputVariables = agent.output_variables ?? [];
     this.selectedKbIds = agent.knowledge_base_ids ?? [];

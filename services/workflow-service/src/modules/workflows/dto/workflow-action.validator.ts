@@ -29,7 +29,7 @@ export class IsWorkflowActionArrayConstraint
   defaultMessage(): string {
     return (
       "actions must be a non-empty array of WorkflowAction objects " +
-      "(activity: endpointCall | jsFunction | serviceBusCall | serviceCall | channelSend | agentCall | branch | conditional)"
+      "(activity: endpointCall | mcpCall | jsFunction | serviceBusCall | serviceCall | channelSend | agentCall | branch | conditional)"
     );
   }
 
@@ -49,6 +49,9 @@ export class IsWorkflowActionArrayConstraint
 
     if (activity === "endpointCall") {
       return this.isEndpointArgs(o.args);
+    }
+    if (activity === "mcpCall") {
+      return this.isMcpCallArgs(o.args);
     }
     if (activity === "jsFunction") {
       return this.isJsArgs(o.args);
@@ -80,6 +83,19 @@ export class IsWorkflowActionArrayConstraint
     }
     const a = args as Record<string, unknown>;
     return typeof a.method === "string" && typeof a.url === "string";
+  }
+
+  private isMcpCallArgs(args: unknown): boolean {
+    if (typeof args !== "object" || args === null) {
+      return false;
+    }
+    const a = args as Record<string, unknown>;
+    return (
+      typeof a.serverId === "string" &&
+      a.serverId.length > 0 &&
+      typeof a.toolName === "string" &&
+      a.toolName.length > 0
+    );
   }
 
   private isJsArgs(args: unknown): boolean {
@@ -137,7 +153,10 @@ export class IsWorkflowActionArrayConstraint
     ) {
       return false;
     }
-    if (a.conversationId !== undefined && typeof a.conversationId !== "string") {
+    if (
+      a.conversationId !== undefined &&
+      typeof a.conversationId !== "string"
+    ) {
       return false;
     }
     if (a.customerName !== undefined && typeof a.customerName !== "string") {

@@ -25,6 +25,8 @@ Requires the configured storage engine. `DB_ENGINE` / `STORAGE_ENGINE` defaults 
 | `PATCH` | `/connectors/:id/endpoints/:epId` | Partial update endpoint |
 | `DELETE` | `/connectors/:id/endpoints/:epId` | Remove endpoint |
 | `GET` | `/health` | Health check |
+| `GET` | `/healthz` | Liveness probe — returns 200 unconditionally while the process is up |
+| `GET` | `/readyz` | Readiness probe — gates differ per `SERVICE_MODE`, surfaces discrete readiness checks in the JSON body |
 
 All connector routes require `x-yoizen-tenant` for tenant scoping.
 

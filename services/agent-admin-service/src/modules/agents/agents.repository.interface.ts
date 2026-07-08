@@ -1,4 +1,4 @@
-import type { IVersionDiff, BumpType } from "./version-utils";
+import type { BumpType, IVersionDiff } from "./version-utils";
 
 export const AGENTS_REPOSITORY = Symbol("AGENTS_REPOSITORY");
 
@@ -40,6 +40,13 @@ export interface IAgent {
   tools: unknown[];
   enabled_tools: string[] | null;
   enabled_mcp_servers: string[] | null;
+  /**
+   * Per-tool MCP allowlist, keyed by MCP server name. `null` (or a missing
+   * key) means "all tools from that server are enabled" — the backward-compatible
+   * default. An array is an explicit allowlist of tool names within that server.
+   * See mcp-connections.md §4.
+   */
+  enabled_mcp_tools: Record<string, string[] | null> | null;
   tool_description_overrides: Record<string, string> | null;
   channels: unknown[];
   knowledge_base_ids: string[];
@@ -74,6 +81,7 @@ export interface IUpdateAgentData {
   tools?: unknown[];
   enabled_tools?: string[] | null;
   enabled_mcp_servers?: string[] | null;
+  enabled_mcp_tools?: Record<string, string[] | null> | null;
   tool_description_overrides?: Record<string, string> | null;
   channels?: unknown[];
   knowledge_base_ids?: string[];
@@ -93,20 +101,32 @@ export interface IFindAllAgentsOptions {
 export interface IAgentsRepository {
   findAll(
     tenantId: string,
-    options?: IFindAllAgentsOptions,
+    options?: IFindAllAgentsOptions
   ): Promise<{ agents: IAgent[]; total: number }>;
   findById(tenantId: string, id: string): Promise<IAgent | null>;
   create(tenantId: string, data: ICreateAgentData): Promise<IAgent>;
   update(
     tenantId: string,
     id: string,
-    data: IUpdateAgentData,
+    data: IUpdateAgentData
   ): Promise<IAgent | null>;
   delete(tenantId: string, id: string): Promise<boolean>;
-  publish(tenantId: string, id: string, context?: ISemverPublishContext): Promise<IAgent | null>;
+  publish(
+    tenantId: string,
+    id: string,
+    context?: ISemverPublishContext
+  ): Promise<IAgent | null>;
   unpublish(tenantId: string, id: string): Promise<IAgent | null>;
   revertToPublished(tenantId: string, id: string): Promise<IAgent | null>;
   listVersions(tenantId: string, agentId: string): Promise<IAgentVersion[]>;
-  rollbackToVersion(tenantId: string, agentId: string, versionId: string): Promise<IAgent | null>;
-  deleteVersion(tenantId: string, agentId: string, versionId: string): Promise<boolean>;
+  rollbackToVersion(
+    tenantId: string,
+    agentId: string,
+    versionId: string
+  ): Promise<IAgent | null>;
+  deleteVersion(
+    tenantId: string,
+    agentId: string,
+    versionId: string
+  ): Promise<boolean>;
 }

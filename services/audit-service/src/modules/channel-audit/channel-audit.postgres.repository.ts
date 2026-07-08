@@ -5,9 +5,7 @@ import {
   CHANNEL_AUDIT_SELECT_PROJECTION,
   type IStoredChannelEvent,
 } from "../../common/channel-audit-projection";
-import {
-  ensurePostgresTenantNamespaceOnce,
-} from "../../common/ensure-tenant-schema.postgres";
+import { ensurePostgresTenantNamespaceOnce } from "../../common/ensure-tenant-schema.postgres";
 import { AuditTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import type {
   IChannelAuditQueryParams,
@@ -40,6 +38,7 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
             message_type        TEXT,
             message_text        TEXT,
             provider_message_id TEXT,
+            conversation_id     TEXT,
             data                JSONB       NOT NULL DEFAULT '{}',
             nats_subject        TEXT        NOT NULL DEFAULT '',
             created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -48,22 +47,32 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
             depth               INTEGER     NOT NULL DEFAULT 0
           )
         `;
+        // Idempotent column add for tenants provisioned before conversation_id
+        // existed (DOCS/cowork/METERING-FOUNDATION.md G3). MUST run before any
+        // CREATE INDEX referencing this column — Postgres resolves
+        // `CREATE INDEX IF NOT EXISTS` column references at parse-analysis
+        // time, so on a pre-existing table without the column the statement
+        // fails even though the index itself would be skipped.
+        await s`ALTER TABLE channel_events ADD COLUMN IF NOT EXISTS conversation_id TEXT`;
         await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_created ON channel_events (created_at DESC)`;
         await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_channel ON channel_events (channel, created_at DESC)`;
         await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_kind ON channel_events (kind, created_at DESC)`;
         await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_account ON channel_events (account_id, created_at DESC)`;
+        await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_conversation ON channel_events (tenant_id, conversation_id)`;
         await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_correlation ON channel_events (correlation_id, depth, created_at)`;
         await s`CREATE INDEX IF NOT EXISTS idx_ch_evt_causation   ON channel_events (causation_id)`;
-      },
+      }
     );
   }
 
   async insertChannelEvent(
     envelope: ChannelEnvelope,
-    natsSubject: string,
+    natsSubject: string
   ): Promise<void> {
     const tenantId = envelope.tenant;
-    if (!tenantId) return;
+    if (!tenantId) {
+      return;
+    }
 
     await this.ensureChannelEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
@@ -83,12 +92,14 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
       (payload.messageId as string | undefined) ??
       (payload.providerMessageId as string | undefined) ??
       null;
+    const conversationId =
+      (payload.conversationId as string | undefined) ?? null;
 
     await sql`
       INSERT INTO channel_events (
         id, tenant_id, channel, provider, kind,
         account_id, from_id, to_id,
-        message_type, message_text, provider_message_id,
+        message_type, message_text, provider_message_id, conversation_id,
         correlation_id, causation_id, depth,
         data, nats_subject, created_at
       ) VALUES (
@@ -103,6 +114,7 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
         ${messageType},
         ${messageText},
         ${providerMessageId},
+        ${conversationId},
         ${envelope.correlation_id ?? null},
         ${envelope.causation_id ?? null},
         ${envelope.transport?.depth ?? 0},
@@ -116,9 +128,18 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
 
   async queryEvents(
     params: IChannelAuditQueryParams,
-    tenantId: string,
+    tenantId: string
   ): Promise<IStoredChannelEvent[]> {
-    const { channel, kind, accountId, from, to, limit, offset } = params;
+    const {
+      channel,
+      kind,
+      accountId,
+      conversationId,
+      from,
+      to,
+      limit,
+      offset,
+    } = params;
     await this.ensureChannelEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
 
@@ -129,6 +150,7 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
         ${channel ? sql`AND channel = ${channel}` : sql``}
         ${kind ? sql`AND kind = ${kind}` : sql``}
         ${accountId ? sql`AND account_id = ${accountId}` : sql``}
+        ${conversationId ? sql`AND conversation_id = ${conversationId}` : sql``}
         ${from ? sql`AND created_at >= ${from}` : sql``}
         ${to ? sql`AND created_at <= ${to}` : sql``}
       ORDER BY created_at DESC
@@ -139,7 +161,7 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
 
   async getEventById(
     id: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IStoredChannelEvent | null> {
     await this.ensureChannelEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);
@@ -155,7 +177,7 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
 
   async findByCorrelationId(
     correlationId: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IStoredChannelEvent[]> {
     await this.ensureChannelEventsTable(tenantId);
     const sql = this.tenantConnections.getConnection(tenantId);

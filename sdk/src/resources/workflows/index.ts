@@ -17,6 +17,8 @@ export type {
   ExecuteWorkflowResult,
   ExecutionStatusResult,
   ListExecutionsParams,
+  McpCallAction,
+  McpCallArgs,
   UpdateWorkflowInput,
   Workflow,
   WorkflowAction,

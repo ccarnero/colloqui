@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 const fakeAdapterConfig = {
   id: "adp-1",
@@ -43,7 +43,9 @@ const cachedEntry = JSON.stringify({
 
 const mockRedisInstance = {
   get: mock((key: string) => {
-    if (key.startsWith("adapter:config:")) return Promise.resolve(cachedEntry);
+    if (key.startsWith("adapter:config:")) {
+      return Promise.resolve(cachedEntry);
+    }
     return Promise.resolve(null);
   }),
   setex: mock(() => Promise.resolve("OK")),
@@ -73,8 +75,8 @@ mock.module("@yoizen/observability", () => {
       new Response(JSON.stringify({ result: true }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
-      }),
-    ),
+      })
+    )
   );
   class FakeLogger {
     log() {}
@@ -115,15 +117,15 @@ describe("executeEndpointCall", () => {
         new Response(JSON.stringify({ result: true }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
-        }),
-      ),
+        })
+      )
     );
   });
 
   it("should use raw URL when no adapterId is provided", async () => {
     const result = await executeEndpointCall(
       { method: "GET", url: "https://raw.example.com/api" },
-      "t1",
+      "t1"
     );
 
     expect(result.status).toBe(200);
@@ -140,7 +142,7 @@ describe("executeEndpointCall", () => {
         adapterId: "adp-1",
         endpointId: "ep-1",
       },
-      "t1",
+      "t1"
     );
 
     expect(result.status).toBe(200);
@@ -162,7 +164,7 @@ describe("executeEndpointCall", () => {
         new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
-        }),
+        })
       );
     });
 
@@ -173,7 +175,7 @@ describe("executeEndpointCall", () => {
         adapterId: "adp-1",
         endpointId: "ep-1",
       },
-      "t1",
+      "t1"
     );
 
     expect(result.status).toBe(200);
@@ -186,8 +188,8 @@ describe("executeEndpointCall", () => {
         new Response(JSON.stringify({ error: "bad request" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
-        }),
-      ),
+        })
+      )
     );
 
     const result = await executeEndpointCall(
@@ -197,7 +199,7 @@ describe("executeEndpointCall", () => {
         adapterId: "adp-1",
         endpointId: "ep-1",
       },
-      "t1",
+      "t1"
     );
 
     expect(result.status).toBe(400);
@@ -209,14 +211,14 @@ describe("executeEndpointCall", () => {
     // interacted with the breaker immune, so we toggle only for this
     // single assertion and then reset.
     mockRedisInstance.evalsha.mockImplementationOnce(() =>
-      Promise.resolve(["deny", "open", "cooldown"]),
+      Promise.resolve(["deny", "open", "cooldown"])
     );
 
     let caught: unknown = null;
     try {
       await executeEndpointCall(
         { method: "GET", url: "https://cb-target.example.com/x" },
-        "t-cb",
+        "t-cb"
       );
     } catch (err) {
       caught = err;
@@ -224,7 +226,10 @@ describe("executeEndpointCall", () => {
 
     expect(caught).not.toBeNull();
     expect((caught as { type?: string }).type).toBe("CIRCUIT_OPEN");
-    expect((caught as { nonRetryable?: boolean }).nonRetryable).toBe(true);
+    expect((caught as { nonRetryable?: boolean }).nonRetryable).toBe(false);
+    expect(
+      (caught as { nextRetryDelay?: unknown }).nextRetryDelay
+    ).toBeDefined();
   });
 
   it("should append query params to URL", async () => {
@@ -234,7 +239,7 @@ describe("executeEndpointCall", () => {
         url: "https://raw.example.com/api",
         params: { page: 1, q: "test" },
       },
-      "t1",
+      "t1"
     );
 
     const [url] = tracedFetchMock.mock.calls[0];
@@ -251,7 +256,7 @@ describe("executeEndpointCall", () => {
         adapterId: "adp-1",
         endpointId: "",
       },
-      "t1",
+      "t1"
     );
 
     expect(result.status).toBe(200);
@@ -274,13 +279,13 @@ describe("executeEndpointCall", () => {
         new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
-        }),
+        })
       );
     });
 
     const result = await executeEndpointCall(
       { method: "GET", url: "/eventit", adapterId: "adp-1" },
-      "t1",
+      "t1"
     );
 
     expect(result.status).toBe(200);
@@ -297,7 +302,9 @@ describe("executeEndpointCall", () => {
     }
 
     expect(caught).not.toBeNull();
-    expect((caught as { type?: string }).type).toBe("INVALID_ENDPOINT_CALL_URL");
+    expect((caught as { type?: string }).type).toBe(
+      "INVALID_ENDPOINT_CALL_URL"
+    );
     expect((caught as { nonRetryable?: boolean }).nonRetryable).toBe(true);
     expect(tracedFetchMock).not.toHaveBeenCalled();
   });
@@ -307,7 +314,7 @@ describe("executeEndpointCall", () => {
     try {
       await executeEndpointCall(
         { method: "GET", url: "", adapterId: "adp-1" },
-        "t1",
+        "t1"
       );
     } catch (err) {
       caught = err;
@@ -315,7 +322,7 @@ describe("executeEndpointCall", () => {
 
     expect(caught).not.toBeNull();
     expect((caught as { type?: string }).type).toBe(
-      "INVALID_ENDPOINT_CALL_ARGS",
+      "INVALID_ENDPOINT_CALL_ARGS"
     );
     expect((caught as { nonRetryable?: boolean }).nonRetryable).toBe(true);
     expect(tracedFetchMock).not.toHaveBeenCalled();

@@ -2,12 +2,12 @@ import { CommonModule } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   EventEmitter,
   Input,
-  OnInit,
-  Output,
-  computed,
   inject,
+  type OnInit,
+  Output,
   signal,
 } from "@angular/core";
 import { FormsModule } from "@angular/forms";
@@ -15,12 +15,12 @@ import { MatChipsModule } from "@angular/material/chips";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatSelectModule } from "@angular/material/select";
-import { AdaptersService } from "../../../core/services/adapters.service";
+import type { IToolAdapterRef } from "../../../core/models/agent.model";
 import type {
   IAdapterEndpoint,
   IAdapterSummary,
 } from "../../../core/services/adapters.service";
-import type { IToolAdapterRef } from "../../../core/models/agent.model";
+import { AdaptersService } from "../../../core/services/adapters.service";
 
 type ToolSourceType = "http" | "adapter";
 
@@ -47,7 +47,7 @@ const AUTH_TYPE_LABELS: ReadonlyMap<string, string> = new Map([
   template: `
     <div class="adapter-form">
       @if (loading()) {
-        <div class="adapter-form-loading">Loading adapters...</div>
+        <div class="adapter-form-loading">Loading connectors...</div>
       }
 
       @if (error()) {
@@ -66,12 +66,12 @@ const AUTH_TYPE_LABELS: ReadonlyMap<string, string> = new Map([
 
       <div class="adapter-form-row">
         <mat-form-field appearance="outline" class="adapter-field">
-          <mat-label>Adapter</mat-label>
+          <mat-label>Connector</mat-label>
           <mat-select
             [value]="selectedAdapterId()"
             (selectionChange)="onAdapterChange($event.value)"
           >
-            <mat-option [value]="null">Select adapter...</mat-option>
+            <mat-option [value]="null">Select connector...</mat-option>
             @for (adapter of adapters(); track adapter.id) {
               <mat-option [value]="adapter.id">
                 {{ adapter.name }}
@@ -301,10 +301,10 @@ export class ToolAdapterFormComponent implements OnInit {
   readonly error = signal<string | null>(null);
 
   readonly selectedAdapterId = computed(
-    () => this.selectedAdapter()?.id ?? null,
+    () => this.selectedAdapter()?.id ?? null
   );
   readonly selectedEndpointId = computed(
-    () => this.selectedEndpoint()?.id ?? null,
+    () => this.selectedEndpoint()?.id ?? null
   );
 
   readonly currentEndpoints = computed(() => {
@@ -314,15 +314,19 @@ export class ToolAdapterFormComponent implements OnInit {
 
   readonly adapterInactive = computed(() => {
     const adapter = this.selectedAdapter();
-    if (!adapter) return false;
+    if (!adapter) {
+      return false;
+    }
     return adapter.status === "disabled";
   });
 
   readonly adapterWarning = computed<string | null>(() => {
     const adapter = this.selectedAdapter();
-    if (!adapter) return null;
+    if (!adapter) {
+      return null;
+    }
     if (adapter.status === "disabled") {
-      return `Adapter "${adapter.name}" is disabled.`;
+      return `Connector "${adapter.name}" is disabled.`;
     }
     return null;
   });
@@ -330,14 +334,18 @@ export class ToolAdapterFormComponent implements OnInit {
   readonly adapterRef = computed<IToolAdapterRef | null>(() => {
     const adapter = this.selectedAdapter();
     const endpoint = this.selectedEndpoint();
-    if (!adapter || !endpoint) return null;
+    if (!adapter || !endpoint) {
+      return null;
+    }
     return { adapterId: adapter.id, endpointId: endpoint.id };
   });
 
   readonly preview = computed(() => {
     const adapter = this.selectedAdapter();
     const endpoint = this.selectedEndpoint();
-    if (!adapter || !endpoint) return null;
+    if (!adapter || !endpoint) {
+      return null;
+    }
     return {
       url: `${adapter.baseUrl || "..."}${endpoint.path}`,
       method: endpoint.method,
@@ -348,7 +356,9 @@ export class ToolAdapterFormComponent implements OnInit {
 
   readonly authTypeLabel = computed(() => {
     const p = this.preview();
-    if (!p) return "None";
+    if (!p) {
+      return "None";
+    }
     return AUTH_TYPE_LABELS.get(p.authType) ?? p.authType;
   });
 
@@ -387,7 +397,9 @@ export class ToolAdapterFormComponent implements OnInit {
     }
 
     const adapter = this.selectedAdapter();
-    if (!adapter) return;
+    if (!adapter) {
+      return;
+    }
 
     const endpoint = adapter.endpoints.find((e) => e.id === endpointId) ?? null;
     this.selectedEndpoint.set(endpoint);
@@ -413,7 +425,7 @@ export class ToolAdapterFormComponent implements OnInit {
         this.restoreInitialSelection(response.adapters);
       },
       error: () => {
-        this.error.set("Failed to load adapters.");
+        this.error.set("Failed to load connectors.");
         this.loading.set(false);
       },
     });
@@ -421,12 +433,14 @@ export class ToolAdapterFormComponent implements OnInit {
 
   private restoreInitialSelection(loadedAdapters: IAdapterSummary[]): void {
     const ref = this.initialAdapterRef;
-    if (!ref) return;
+    if (!ref) {
+      return;
+    }
 
     const adapter = loadedAdapters.find((a) => a.id === ref.adapterId) ?? null;
     if (!adapter) {
       const name = this.initialAdapterName ?? ref.adapterId;
-      this.error.set(`Adapter "${name}" not found.`);
+      this.error.set(`Connector "${name}" not found.`);
       return;
     }
 

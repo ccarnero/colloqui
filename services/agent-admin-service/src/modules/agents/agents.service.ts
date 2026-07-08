@@ -1,36 +1,39 @@
 import {
-  Inject,
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
   Optional,
 } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
-import {
-  AGENTS_REPOSITORY,
-  type IAgent,
-  type IAgentVersion,
-  type IAgentsRepository,
-  type ICreateAgentData,
-  type IFindAllAgentsOptions,
-  type IUpdateAgentData,
-  type ISemverPublishContext,
-} from "./agents.repository.interface";
+import { agentAdminServiceConfig } from "../../config";
+// biome-ignore lint/style/useImportType: constructor-injected — Nest DI needs the runtime class reference (emitDecoratorMetadata).
 import { NatsPublisher } from "../../providers/nats.provider";
+// biome-ignore lint/style/useImportType: constructor-injected — Nest DI needs the runtime class reference (emitDecoratorMetadata).
+import { AdaptersService } from "../adapters/adapters.service";
 import type {
   MemoryProposalActionResponseDto,
   MemoryProposalListResponseDto,
 } from "./agents.dto";
-import { AdaptersService } from "../adapters/adapters.service";
-import { AgentsRuntimeService } from "./agents-runtime.service";
-import { agentAdminServiceConfig } from "../../config";
 import {
-  detectBumpType,
+  AGENTS_REPOSITORY,
+  type IAgent,
+  type IAgentsRepository,
+  type IAgentVersion,
+  type ICreateAgentData,
+  type IFindAllAgentsOptions,
+  type ISemverPublishContext,
+  type IUpdateAgentData,
+} from "./agents.repository.interface";
+// biome-ignore lint/style/useImportType: constructor-injected — Nest DI needs the runtime class reference (emitDecoratorMetadata).
+import { AgentsRuntimeService } from "./agents-runtime.service";
+import type { BumpType } from "./version-utils";
+import {
   computeNextSemver,
   computeSnapshotDiff,
   computeVersionNumber,
+  detectBumpType,
 } from "./version-utils";
-import type { BumpType } from "./version-utils";
 
 @Injectable()
 export class AgentsService {
@@ -46,7 +49,7 @@ export class AgentsService {
 
   async findAll(
     tenantId: string,
-    options: IFindAllAgentsOptions = {},
+    options: IFindAllAgentsOptions = {}
   ): Promise<{ agents: IAgent[]; total: number }> {
     return this.repository.findAll(tenantId, options);
   }
@@ -68,7 +71,7 @@ export class AgentsService {
   async update(
     tenantId: string,
     id: string,
-    data: IUpdateAgentData,
+    data: IUpdateAgentData
   ): Promise<IAgent> {
     await this.validateConnectorRef(tenantId, data.model_config);
     await this.validateAdapterRefs(tenantId, data.tools);
@@ -82,7 +85,7 @@ export class AgentsService {
   async updateEnabledTools(
     tenantId: string,
     id: string,
-    enabledTools: string[] | null,
+    enabledTools: string[] | null
   ): Promise<IAgent> {
     const agent = await this.repository.update(tenantId, id, {
       enabled_tools: enabledTools,
@@ -96,7 +99,7 @@ export class AgentsService {
   async updateEnabledMcpServers(
     tenantId: string,
     id: string,
-    enabledMcpServers: string[] | null,
+    enabledMcpServers: string[] | null
   ): Promise<IAgent> {
     const agent = await this.repository.update(tenantId, id, {
       enabled_mcp_servers: enabledMcpServers,
@@ -107,14 +110,28 @@ export class AgentsService {
     return agent;
   }
 
+  async updateEnabledMcpTools(
+    tenantId: string,
+    id: string,
+    enabledMcpTools: Record<string, string[] | null> | null
+  ): Promise<IAgent> {
+    const agent = await this.repository.update(tenantId, id, {
+      enabled_mcp_tools: enabledMcpTools,
+    });
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID '${id}' not found`);
+    }
+    return agent;
+  }
+
   async updateToolDescriptionOverrides(
     tenantId: string,
     id: string,
-    overrides: Record<string, string> | null,
+    overrides: Record<string, string> | null
   ): Promise<IAgent> {
     if (!agentAdminServiceConfig.toolDescriptionOverridesEnabled) {
       throw new BadRequestException(
-        "Tool description overrides are not enabled. Set AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED=true to use this feature.",
+        "Tool description overrides are not enabled. Set AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED=true to use this feature."
       );
     }
     const agent = await this.repository.update(tenantId, id, {
@@ -133,7 +150,11 @@ export class AgentsService {
     }
   }
 
-  async publish(tenantId: string, id: string, userId?: string): Promise<IAgent> {
+  async publish(
+    tenantId: string,
+    id: string,
+    userId?: string
+  ): Promise<IAgent> {
     let semverContext: ISemverPublishContext | undefined;
 
     if (userId) {
@@ -169,6 +190,7 @@ export class AgentsService {
             tools: agent.tools,
             enabled_tools: agent.enabled_tools,
             enabled_mcp_servers: agent.enabled_mcp_servers,
+            enabled_mcp_tools: agent.enabled_mcp_tools,
             tool_description_overrides: agent.tool_description_overrides,
             channels: agent.channels,
             knowledge_base_ids: agent.knowledge_base_ids,
@@ -183,7 +205,9 @@ export class AgentsService {
       if (previousSnapshot && agent) {
         const fullSnapshot = { ...currentSnapshot };
         const limitedSnapshot: Record<string, any> = {};
-        for (const key of Object.keys(previousSnapshot as Record<string, unknown>)) {
+        for (const key of Object.keys(
+          previousSnapshot as Record<string, unknown>
+        )) {
           if (key in fullSnapshot) {
             limitedSnapshot[key] = fullSnapshot[key];
           }
@@ -200,13 +224,23 @@ export class AgentsService {
         }
       }
 
-      const bumpType: BumpType = previousSnapshot === null
-        ? "major"
-        : detectBumpType(previousSnapshot, currentSnapshot);
+      const bumpType: BumpType =
+        previousSnapshot === null
+          ? "major"
+          : detectBumpType(previousSnapshot, currentSnapshot);
 
-      const nextSemver = computeNextSemver(currentMajor, currentMinor, currentPatch, bumpType);
+      const nextSemver = computeNextSemver(
+        currentMajor,
+        currentMinor,
+        currentPatch,
+        bumpType
+      );
       const diff = computeSnapshotDiff(previousSnapshot, currentSnapshot);
-      const versionNumber = computeVersionNumber(nextSemver.major, nextSemver.minor, nextSemver.patch);
+      const versionNumber = computeVersionNumber(
+        nextSemver.major,
+        nextSemver.minor,
+        nextSemver.patch
+      );
 
       semverContext = {
         semver: { ...nextSemver, bumpType },
@@ -232,13 +266,13 @@ export class AgentsService {
           tools: agent.tools,
           channels: agent.channels,
           description: agent.description ?? undefined,
-        },
+        }
       );
       this.logger.log(`Agent '${agent.name}' published and event emitted`);
     } catch (error) {
       this.logger.error(
         `Failed to emit agent.published event for agent '${agent.id}'`,
-        error,
+        error
       );
     }
 
@@ -255,13 +289,13 @@ export class AgentsService {
       await this.natsPublisher.publishAgentUnpublished(
         tenantId,
         agent.id,
-        agent.name,
+        agent.name
       );
       this.logger.log(`Agent '${agent.name}' unpublished and event emitted`);
     } catch (error) {
       this.logger.error(
         `Failed to emit agent.unpublished event for agent '${agent.id}'`,
-        error,
+        error
       );
     }
 
@@ -272,7 +306,7 @@ export class AgentsService {
     const agent = await this.repository.revertToPublished(tenantId, id);
     if (!agent) {
       throw new NotFoundException(
-        `Agent ${id} not found or has no published version`,
+        `Agent ${id} not found or has no published version`
       );
     }
 
@@ -287,42 +321,65 @@ export class AgentsService {
           tools: agent.tools,
           channels: agent.channels,
           description: agent.description ?? undefined,
-        },
+        }
       );
       this.logger.log(
-        `Agent '${agent.name}' reverted to published version and event emitted`,
+        `Agent '${agent.name}' reverted to published version and event emitted`
       );
     } catch (error) {
       this.logger.error(
         `Failed to emit agent.reverted event for agent '${agent.id}'`,
-        error,
+        error
       );
     }
 
     return agent;
   }
 
-  async listVersions(tenantId: string, agentId: string): Promise<IAgentVersion[]> {
+  async listVersions(
+    tenantId: string,
+    agentId: string
+  ): Promise<IAgentVersion[]> {
     return this.repository.listVersions(tenantId, agentId);
   }
 
-  async rollbackToVersion(tenantId: string, agentId: string, versionId: string): Promise<IAgent> {
-    const agent = await this.repository.rollbackToVersion(tenantId, agentId, versionId);
+  async rollbackToVersion(
+    tenantId: string,
+    agentId: string,
+    versionId: string
+  ): Promise<IAgent> {
+    const agent = await this.repository.rollbackToVersion(
+      tenantId,
+      agentId,
+      versionId
+    );
     if (!agent) {
-      throw new NotFoundException(`Version ${versionId} not found for agent ${agentId}`);
+      throw new NotFoundException(
+        `Version ${versionId} not found for agent ${agentId}`
+      );
     }
     return agent;
   }
 
-  async deleteVersion(tenantId: string, agentId: string, versionId: string): Promise<void> {
-    const deleted = await this.repository.deleteVersion(tenantId, agentId, versionId);
+  async deleteVersion(
+    tenantId: string,
+    agentId: string,
+    versionId: string
+  ): Promise<void> {
+    const deleted = await this.repository.deleteVersion(
+      tenantId,
+      agentId,
+      versionId
+    );
     if (!deleted) {
-      throw new NotFoundException(`Version ${versionId} not found for agent ${agentId}`);
+      throw new NotFoundException(
+        `Version ${versionId} not found for agent ${agentId}`
+      );
     }
   }
 
   async listMemoryProposals(
-    tenantId: string,
+    tenantId: string
   ): Promise<MemoryProposalListResponseDto> {
     return this.runtimeService.listMemoryProposals(tenantId);
   }
@@ -330,58 +387,57 @@ export class AgentsService {
   async approveMemoryProposal(
     tenantId: string,
     proposalId: string,
-    reviewerId?: string,
+    reviewerId?: string
   ): Promise<MemoryProposalActionResponseDto> {
     return this.runtimeService.reviewMemoryProposal(
       tenantId,
       proposalId,
       "memory_proposals_approve",
-      reviewerId,
+      reviewerId
     );
   }
 
   async rejectMemoryProposal(
     tenantId: string,
     proposalId: string,
-    reviewerId?: string,
+    reviewerId?: string
   ): Promise<MemoryProposalActionResponseDto> {
     return this.runtimeService.reviewMemoryProposal(
       tenantId,
       proposalId,
       "memory_proposals_reject",
-      reviewerId,
+      reviewerId
     );
   }
 
   private async validateConnectorRef(
     tenantId: string,
-    modelConfig?: Record<string, unknown>,
+    modelConfig?: Record<string, unknown>
   ): Promise<void> {
     const llm = modelConfig?.llm as Record<string, unknown> | undefined;
     const connectorId = llm?.connectorId as string | undefined;
-    if (!connectorId) return;
+    if (!connectorId) {
+      return;
+    }
 
-    const adapter = await this.adaptersService?.findOne(
-      tenantId,
-      connectorId,
-    );
+    const adapter = await this.adaptersService?.findOne(tenantId, connectorId);
 
     if (!adapter) {
       throw new BadRequestException(
-        `connectorId '${connectorId}' does not reference an existing adapter`,
+        `connectorId '${connectorId}' does not reference an existing adapter`
       );
     }
 
     const hasLlmTag = adapter.tags?.includes("llm") ?? false;
     if (!hasLlmTag) {
       throw new BadRequestException(
-        `Adapter '${connectorId}' is not tagged as 'llm'`,
+        `Adapter '${connectorId}' is not tagged as 'llm'`
       );
     }
 
     if (adapter.status !== "enabled") {
       throw new BadRequestException(
-        `Adapter '${connectorId}' is '${adapter.status}'; expected 'enabled'`,
+        `Adapter '${connectorId}' is '${adapter.status}'; expected 'enabled'`
       );
     }
   }
@@ -392,7 +448,7 @@ export class AgentsService {
    */
   private async validateAdapterRefs(
     tenantId: string,
-    tools?: unknown[],
+    tools?: unknown[]
   ): Promise<void> {
     if (!agentAdminServiceConfig.validateAdapterRefs || !tools?.length) {
       return;
@@ -403,16 +459,18 @@ export class AgentsService {
       const ref = t.adapterRef as
         | { adapterId?: string; endpointId?: string }
         | undefined;
-      if (!ref?.adapterId) continue;
+      if (!ref?.adapterId) {
+        continue;
+      }
 
       const adapterExists = await this.adaptersService?.adapterExists(
         tenantId,
-        ref.adapterId,
+        ref.adapterId
       );
       if (!adapterExists) {
         this.logger.warn(
           `Tool '${t.name ?? "unnamed"}' references adapter '${ref.adapterId}' which does not exist. ` +
-            "Config will be saved but tool execution may fail.",
+            "Config will be saved but tool execution may fail."
         );
         continue;
       }
@@ -421,12 +479,12 @@ export class AgentsService {
         const epExists = await this.adaptersService?.endpointExists(
           tenantId,
           ref.adapterId,
-          ref.endpointId,
+          ref.endpointId
         );
         if (!epExists) {
           this.logger.warn(
             `Tool '${t.name ?? "unnamed"}' references endpoint '${ref.endpointId}' on adapter '${ref.adapterId}' which does not exist. ` +
-              "Config will be saved but tool execution may fail.",
+              "Config will be saved but tool execution may fail."
           );
         }
       }

@@ -5,8 +5,16 @@ import type { Transport } from "../../core/transport.js";
 import type {
   CreateMcpServerInput,
   McpServer,
+  McpServerTestConnectionResult,
+  McpServerTool,
+  McpServerUsage,
+  McpServerUsageParams,
   UpdateMcpServerInput,
 } from "./types.js";
+
+function toUsageQuery(params: McpServerUsageParams): string {
+  return params.window === undefined ? "" : `?window=${params.window}`;
+}
 
 export interface McpServersClientDeps {
   transport: Transport;
@@ -27,7 +35,7 @@ export interface McpServersClient {
   list(): Paginated<McpServer>;
   /** `GET /admin/mcp-servers/:id`. */
   get(id: string, opts?: McpServerCallOptions): Promise<McpServer>;
-  /** `PUT /admin/mcp-servers/:id` — note: `PUT`, not `PATCH`; see types.ts. */
+  /** `PATCH /admin/mcp-servers/:id`; see types.ts. */
   update(
     id: string,
     input: UpdateMcpServerInput,
@@ -35,6 +43,24 @@ export interface McpServersClient {
   ): Promise<McpServer>;
   /** `DELETE /admin/mcp-servers/:id`; resolves on 204. */
   remove(id: string, opts?: McpServerCallOptions): Promise<void>;
+  /** `GET /admin/mcp-servers/:id/tools` — live `tools/list` probe against the MCP server. */
+  listTools(id: string, opts?: McpServerCallOptions): Promise<McpServerTool[]>;
+  /** `POST /admin/mcp-servers/:id/test` — live connectivity probe, no request body, no persistence side-effect. */
+  testConnection(
+    id: string,
+    opts?: McpServerCallOptions
+  ): Promise<McpServerTestConnectionResult>;
+  /**
+   * `GET /admin/mcp-servers/:id/usage` — usage summary + recent calls for the
+   * MCP detail page (mcp-connections.md §3, §6.3), mirroring
+   * `connectors.usage()`'s response shape. `window` is a day count; falls
+   * back to the service's default (7) when omitted.
+   */
+  getUsage(
+    id: string,
+    params?: McpServerUsageParams,
+    opts?: McpServerCallOptions
+  ): Promise<McpServerUsage>;
 }
 
 /**
@@ -91,7 +117,7 @@ export function createMcpServersClient({
   ): Promise<McpServer> {
     const { body } = await transport.request<McpServer>({
       path: `/admin/mcp-servers/${encodePath(id)}`,
-      method: "PUT",
+      method: "PATCH",
       body: input,
       retry: opts.retry,
     });
@@ -109,5 +135,51 @@ export function createMcpServersClient({
     });
   }
 
-  return { create, list, get, update, remove };
+  async function listTools(
+    id: string,
+    opts: McpServerCallOptions = {}
+  ): Promise<McpServerTool[]> {
+    const { body } = await transport.request<McpServerTool[]>({
+      path: `/admin/mcp-servers/${encodePath(id)}/tools`,
+      method: "GET",
+      retry: opts.retry,
+    });
+    return body;
+  }
+
+  async function testConnection(
+    id: string,
+    opts: McpServerCallOptions = {}
+  ): Promise<McpServerTestConnectionResult> {
+    const { body } = await transport.request<McpServerTestConnectionResult>({
+      path: `/admin/mcp-servers/${encodePath(id)}/test`,
+      method: "POST",
+      retry: opts.retry,
+    });
+    return body;
+  }
+
+  async function getUsage(
+    id: string,
+    params: McpServerUsageParams = {},
+    opts: McpServerCallOptions = {}
+  ): Promise<McpServerUsage> {
+    const { body } = await transport.request<McpServerUsage>({
+      path: `/admin/mcp-servers/${encodePath(id)}/usage${toUsageQuery(params)}`,
+      method: "GET",
+      retry: opts.retry,
+    });
+    return body;
+  }
+
+  return {
+    create,
+    list,
+    get,
+    update,
+    remove,
+    listTools,
+    testConnection,
+    getUsage,
+  };
 }

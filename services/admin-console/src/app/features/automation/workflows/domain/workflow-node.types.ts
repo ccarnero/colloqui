@@ -2,6 +2,7 @@ export enum EWorkflowNodeType {
   CHANNEL = "channel",
   JS_FUNCTION = "jsFunction",
   ENDPOINT_CALL = "endpointCall",
+  MCP_CALL = "mcpCall",
   SERVICE_CALL = "serviceCall",
   SERVICE_BUS_CALL = "serviceBusCall",
   AGENT_CALL = "agentCall",

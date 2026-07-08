@@ -1,9 +1,9 @@
-import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { Inject, Injectable } from "@nestjs/common";
 import type { TenantConnectionManager } from "@yoizen/database";
-import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
 import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
-import type { SKBContainerRow } from "./types/skb.types";
+import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
+import type { FileRow, SKBContainerRow } from "./types/skb.types";
 
 export interface SKBFileRow {
   file_id: string;
@@ -27,7 +27,7 @@ export class SKBContainersRepository extends TenantScopedPostgresRepository {
 
   async create(
     tenantId: string,
-    data: { name: string; description?: string },
+    data: { name: string; description?: string }
   ): Promise<SKBContainerRow> {
     const sql = await this.getSql(tenantId);
     const id = randomUUID();
@@ -42,7 +42,7 @@ export class SKBContainersRepository extends TenantScopedPostgresRepository {
 
   async findById(
     tenantId: string,
-    id: string,
+    id: string
   ): Promise<SKBContainerRow | null> {
     const sql = await this.getSql(tenantId);
 
@@ -68,7 +68,7 @@ export class SKBContainersRepository extends TenantScopedPostgresRepository {
   async update(
     tenantId: string,
     id: string,
-    data: { name?: string; description?: string; status?: string },
+    data: { name?: string; description?: string; status?: string }
   ): Promise<SKBContainerRow | null> {
     const sql = await this.getSql(tenantId);
 
@@ -124,18 +124,48 @@ export class SKBContainersRepository extends TenantScopedPostgresRepository {
     return Number(results[0].count) > 0;
   }
 
+  /**
+   * Creates the `skb_files` row for a newly-uploaded file. Status starts at
+   * 'pending' — the ingestion worker (skb-ingestion-worker.service.ts) flips
+   * it to 'processing'/'completed'/'failed' as it consumes the corresponding
+   * ingestion event.
+   */
+  async createFile(
+    tenantId: string,
+    containerId: string,
+    data: { fileId: string; originalName: string; categories: string[] }
+  ): Promise<FileRow> {
+    const sql = await this.getSql(tenantId);
+    const categoriesJson = JSON.stringify(data.categories ?? []);
+
+    const [result] = await sql<FileRow[]>`
+      INSERT INTO skb_files (container_id, tenant_id, file_id, original_name, categories, status)
+      VALUES (${containerId}, ${tenantId}, ${data.fileId}, ${data.originalName}, ${categoriesJson}::jsonb, 'pending')
+      RETURNING *
+    `;
+    return result;
+  }
+
+  // NOTE: file status tracking lives in `skb_files` (created by
+  // schema-initializer.ts), not a separate `skb_container_files` table.
+  // `skb_files` already carries file_id/container_id/tenant_id/status/
+  // error_message/updated_at plus file metadata (original_name, categories,
+  // row_count), so repointing these queries here is the smaller correct fix
+  // vs. standing up a near-duplicate table nothing else needs.
   async findFile(
     tenantId: string,
     containerId: string,
-    fileId: string,
+    fileId: string
   ): Promise<SKBFileRow | null> {
     const sql = await this.getSql(tenantId);
 
     const results = await sql<SKBFileRow[]>`
-      SELECT * FROM skb_container_files
+      SELECT file_id, container_id, tenant_id, status, error_message AS error, updated_at
+      FROM skb_files
       WHERE file_id = ${fileId}
         AND container_id = ${containerId}
         AND tenant_id = ${tenantId}
+        AND is_active = true
       LIMIT 1
     `;
 
@@ -147,21 +177,21 @@ export class SKBContainersRepository extends TenantScopedPostgresRepository {
     _containerId: string,
     fileId: string,
     status: string,
-    metadata?: Record<string, unknown>,
+    metadata?: Record<string, unknown>
   ): Promise<void> {
     const sql = await this.getSql(tenantId);
 
     if (metadata?.error) {
       await sql`
-        UPDATE skb_container_files
+        UPDATE skb_files
         SET status = ${status},
-            error = ${String(metadata.error)},
+            error_message = ${String(metadata.error)},
             updated_at = NOW()
         WHERE file_id = ${fileId} AND tenant_id = ${tenantId}
       `;
     } else {
       await sql`
-        UPDATE skb_container_files
+        UPDATE skb_files
         SET status = ${status},
             updated_at = NOW()
         WHERE file_id = ${fileId} AND tenant_id = ${tenantId}
@@ -172,7 +202,7 @@ export class SKBContainersRepository extends TenantScopedPostgresRepository {
   async updateContainerStatus(
     tenantId: string,
     containerId: string,
-    status?: string,
+    status?: string
   ): Promise<void> {
     const sql = await this.getSql(tenantId);
 
@@ -192,13 +222,45 @@ export class SKBContainersRepository extends TenantScopedPostgresRepository {
     }
   }
 
+  /**
+   * Finds files stuck in 'processing' for longer than `thresholdMinutes`,
+   * across every tenant this process has already opened a connection for.
+   *
+   * Mirrors `DocumentsService.resetStuckProcessingDocuments()`: there is no
+   * single cross-tenant database, so we fan out over
+   * `connectionManager.getKnownTenantIds()` and query each tenant schema
+   * individually. A lookup failure for one tenant is logged and skipped so
+   * it never blocks the watchdog check for the rest.
+   */
   async findProcessingFilesOlderThan(
-    thresholdMinutes: number,
+    thresholdMinutes: number
   ): Promise<SKBFileRow[]> {
-    // This query iterates all tenants — in production the caller
-    // should pass known tenants or this runs as a batch across tenants.
-    // For now, return an empty array since cross-tenant queries
-    // require a connection per tenant.
-    return [];
+    const tenantIds = this.connectionManager.getKnownTenantIds();
+    if (tenantIds.length === 0) {
+      return [];
+    }
+
+    const stuckFiles: SKBFileRow[] = [];
+    const intervalLiteral = `${thresholdMinutes} minutes`;
+
+    for (const tenantId of tenantIds) {
+      try {
+        const sql = await this.getSql(tenantId);
+        const rows = await sql<SKBFileRow[]>`
+          SELECT file_id, container_id, tenant_id, status, error_message AS error, updated_at
+          FROM skb_files
+          WHERE status = 'processing'
+            AND is_active = true
+            AND updated_at < NOW() - ${intervalLiteral}::INTERVAL
+        `;
+        stuckFiles.push(...rows);
+      } catch (err: unknown) {
+        console.error(
+          `SKB watchdog: failed to check stuck files for tenant ${tenantId}: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
+
+    return stuckFiles;
   }
 }

@@ -1,8 +1,9 @@
 import "../../setup-env";
-import { describe, it, expect, beforeEach, vi } from "bun:test";
+import { beforeEach, describe, expect, it, vi } from "bun:test";
 import { NotFoundException } from "@nestjs/common";
 import { SKBContainersService } from "../../src/modules/structured-kb/skb-containers.service";
 import type {
+  FileRow,
   SKBContainerRow,
   SKBContainerStatus,
 } from "../../src/modules/structured-kb/types/skb.types";
@@ -16,11 +17,12 @@ describe("SKBContainersService", () => {
     update: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
     exists: ReturnType<typeof vi.fn>;
+    createFile: ReturnType<typeof vi.fn>;
   };
   const TENANT_ID = "tenant-123";
 
   function buildContainer(
-    overrides: Partial<SKBContainerRow> = {},
+    overrides: Partial<SKBContainerRow> = {}
   ): SKBContainerRow {
     return {
       id: "container-1",
@@ -47,6 +49,7 @@ describe("SKBContainersService", () => {
       update: vi.fn(),
       delete: vi.fn(),
       exists: vi.fn(),
+      createFile: vi.fn(),
     };
 
     service = new SKBContainersService(mockRepository as any);
@@ -80,7 +83,7 @@ describe("SKBContainersService", () => {
       const result = await service.createContainer(
         TENANT_ID,
         "Test Container",
-        "My description",
+        "My description"
       );
 
       expect(result.description).toBe("My description");
@@ -116,30 +119,30 @@ describe("SKBContainersService", () => {
       expect(result).toEqual(expected);
       expect(mockRepository.findById).toHaveBeenCalledWith(
         TENANT_ID,
-        "container-1",
+        "container-1"
       );
     });
 
     it("should throw NotFoundException when container does not exist", async () => {
       mockRepository.findById.mockResolvedValue(null);
 
-      expect(
-        service.getContainer(TENANT_ID, "nonexistent"),
-      ).rejects.toThrow(NotFoundException);
+      expect(service.getContainer(TENANT_ID, "nonexistent")).rejects.toThrow(
+        NotFoundException
+      );
       expect(mockRepository.findById).toHaveBeenCalledWith(
         TENANT_ID,
-        "nonexistent",
+        "nonexistent"
       );
     });
 
     it("should pass through the repository error for other failures", async () => {
       mockRepository.findById.mockRejectedValue(
-        new Error("DB connection failed"),
+        new Error("DB connection failed")
       );
 
-      expect(
-        service.getContainer(TENANT_ID, "container-1"),
-      ).rejects.toThrow("DB connection failed");
+      expect(service.getContainer(TENANT_ID, "container-1")).rejects.toThrow(
+        "DB connection failed"
+      );
     });
   });
 
@@ -204,7 +207,7 @@ describe("SKBContainersService", () => {
         {
           name: "Updated Name",
           description: "New desc",
-        },
+        }
       );
     });
 
@@ -219,7 +222,7 @@ describe("SKBContainersService", () => {
       expect(mockRepository.update).toHaveBeenCalledWith(
         TENANT_ID,
         "container-1",
-        { name: "Only Name Changed" },
+        { name: "Only Name Changed" }
       );
     });
 
@@ -227,7 +230,7 @@ describe("SKBContainersService", () => {
       mockRepository.update.mockResolvedValue(null);
 
       expect(
-        service.updateContainer(TENANT_ID, "nonexistent", { name: "X" }),
+        service.updateContainer(TENANT_ID, "nonexistent", { name: "X" })
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -244,16 +247,16 @@ describe("SKBContainersService", () => {
 
       expect(mockRepository.delete).toHaveBeenCalledWith(
         TENANT_ID,
-        "container-1",
+        "container-1"
       );
     });
 
     it("should throw NotFoundException when deleting nonexistent container", async () => {
       mockRepository.delete.mockRejectedValue(new NotFoundException());
 
-      expect(
-        service.deleteContainer(TENANT_ID, "nonexistent"),
-      ).rejects.toThrow(NotFoundException);
+      expect(service.deleteContainer(TENANT_ID, "nonexistent")).rejects.toThrow(
+        NotFoundException
+      );
     });
 
     it("should not hard-delete the row", async () => {
@@ -280,7 +283,7 @@ describe("SKBContainersService", () => {
       expect(result).toBe(true);
       expect(mockRepository.exists).toHaveBeenCalledWith(
         TENANT_ID,
-        "container-1",
+        "container-1"
       );
     });
 
@@ -290,6 +293,47 @@ describe("SKBContainersService", () => {
       const result = await service.containerExists(TENANT_ID, "nonexistent");
 
       expect(result).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // createFile
+  // ---------------------------------------------------------------------------
+  describe("createFile", () => {
+    it("delegates to the repository and returns the created row", async () => {
+      const expected = {
+        id: "row-1",
+        container_id: "container-1",
+        tenant_id: TENANT_ID,
+        file_id: "file-1",
+        original_name: "sales.csv",
+        detected_encoding: null,
+        categories: ["cat-1"],
+        row_count: 0,
+        status: "pending",
+        error_message: null,
+        is_active: true,
+        created_at: new Date("2026-06-01T00:00:00Z"),
+        updated_at: new Date("2026-06-01T00:00:00Z"),
+      } as unknown as FileRow;
+      mockRepository.createFile.mockResolvedValue(expected);
+
+      const result = await service.createFile(TENANT_ID, "container-1", {
+        fileId: "file-1",
+        originalName: "sales.csv",
+        categories: ["cat-1"],
+      });
+
+      expect(result).toEqual(expected);
+      expect(mockRepository.createFile).toHaveBeenCalledWith(
+        TENANT_ID,
+        "container-1",
+        {
+          fileId: "file-1",
+          originalName: "sales.csv",
+          categories: ["cat-1"],
+        }
+      );
     });
   });
 });

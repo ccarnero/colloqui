@@ -95,12 +95,45 @@ export const AUDIT_MONGO_SCHEMA: IMongoCollectionSchema[] = [
         options: { name: "idx_ch_evt_account" },
       },
       {
+        keys: { tenant_id: 1, conversation_id: 1 },
+        options: { name: "idx_ch_evt_tenant_conversation" },
+      },
+      {
         keys: { correlation_id: 1, depth: 1, created_at: 1 },
         options: { name: "idx_ch_evt_correlation" },
       },
       {
         keys: { causation_id: 1 },
         options: { name: "idx_ch_evt_causation" },
+      },
+    ],
+  },
+  {
+    collection: "execution_events",
+    indexes: [
+      {
+        keys: { _id: 1 },
+        options: { name: "pk_execution_events" },
+      },
+      {
+        keys: { execution_id: 1, created_at: 1 },
+        options: { name: "idx_exec_evt_execution" },
+      },
+      {
+        keys: { conversation_id: 1, created_at: 1 },
+        options: { name: "idx_exec_evt_conversation" },
+      },
+      {
+        keys: { agent_id: 1, created_at: -1 },
+        options: { name: "idx_exec_evt_agent" },
+      },
+      {
+        keys: { correlation_id: 1, depth: 1, created_at: 1 },
+        options: { name: "idx_exec_evt_correlation" },
+      },
+      {
+        keys: { causation_id: 1 },
+        options: { name: "idx_exec_evt_causation" },
       },
     ],
   },
@@ -125,4 +158,17 @@ export const GATEWAY_AUDIT_MONGO_SCHEMA: IMongoCollectionSchema[] = [
 /** Subset for channel message audit ingestion. */
 export const CHANNEL_AUDIT_EVENTS_MONGO_SCHEMA: IMongoCollectionSchema[] = [
   AUDIT_MONGO_SCHEMA[2]!,
+];
+
+/** Namespace key for execution audit DDL deduplication. */
+export const EXECUTION_AUDIT_MONGO_NAMESPACE = "execution_audit";
+
+/**
+ * Subset for durable execution-lifecycle audit ingestion
+ * (DOCS/cowork/METERING-FOUNDATION.md G1/G2). One row per
+ * `execution_started/completed/failed` event, keyed by envelope id for
+ * idempotent redelivery.
+ */
+export const EXECUTION_AUDIT_EVENTS_MONGO_SCHEMA: IMongoCollectionSchema[] = [
+  AUDIT_MONGO_SCHEMA[3]!,
 ];

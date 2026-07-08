@@ -1,20 +1,40 @@
 # Samples
 
 Runnable examples of platform features (AI agents, knowledge bases, workflows, channels,
-connectors, hosted services). Most samples are still self-contained **bash scripts** that
-drive the platform REST APIs directly via `curl`+`jq`, with no `package.json` and no
-dependency on `@yoizen/platform-sdk`. The SDK (`sdk/src/*.ts`) now covers 19 resource
-namespaces (workflows, channels, webhooks, agents, and more — see
-[`sdk/README.md`](../README.md)), and migration is underway: **`http-bridge`** is the first
-sample whose `run.sh` is SDK-powered (see [`sdk/GROWTH-PLAN.md`](../GROWTH-PLAN.md) Phase 3,
-P3.1) — its `package.json` depends on `@yoizen/platform-sdk` via `file:../..`, and `run.sh`
-execs a small TypeScript app (`src/index.ts`) that calls `client.workflows.list()`,
-`client.channels.listAccounts()`, and `client.webhooks.ingest()` instead of inline `curl`+`jq`.
-`setup.sh` (Telegram bot/chat_id discovery and provisioning) stays bash for now — that surface
-has no SDK coverage yet.
+connectors, hosted services, MCP servers). All samples are **SDK-powered**: `setup.sh`/`run.sh`
+are thin launchers around TypeScript apps (`src/setup.ts`, `src/index.ts`) built on
+`@yoizen/platform-sdk` (`file:../..`), sharing the same logging/env helpers and idempotent
+upsert-by-name conventions. The SDK covers 19+ resource namespaces — see
+[`sdk/README.md`](../README.md).
 
-The remaining samples below migrate the same way as follow-ups; until a sample's own README
-says otherwise, treat it as a shell script, not an SDK consumer.
+## MCP: two ways to call a tool (read this before the MCP samples)
+
+The platform integrates MCP (Model Context Protocol) servers at **two distinct layers**, and
+the difference is *who chooses the tool*:
+
+| | Agent-side MCP | Workflow `mcpCall` action |
+|---|---|---|
+| Who picks the tool | **The LLM**, per turn, from the agent's merged tool set | **Nobody** — `toolName` is fixed in the action definition |
+| When it runs | Whenever the model decides mid-conversation | Exactly at that workflow step, every execution |
+| Determinism | Non-deterministic (model judgment) | Deterministic |
+| Execution path | In-process in `agent-ai-service`, inside the chat turn | Temporal activity on `connector-runtime` (durable, retried, circuit-broken) |
+| Scoping controls | Per-agent server allowlist + per-tool allowlist + description overrides (`enabled_mcp_servers`, `enabled_mcp_tools`, `tool_description_overrides`) | The action's `args` — nothing to scope, you already named the tool |
+| Cost | An LLM turn (tokens) per decision | No LLM involved in the call itself |
+
+**Rule of thumb**: if you know in advance *which* tool runs and with *what* parameters, use a
+workflow `mcpCall` step (cheap, predictable, durable). If the decision depends on the
+conversation, enable the MCP server on an agent and let the model choose — and use per-tool
+enablement plus description overrides to steer that choice. The two compose: in
+`mcp-repo-support-bot` below, an **agent decides the routing** (is this question about the
+repo?) while the **workflow executes the fixed MCP call** (ask DeepWiki) — each decision at
+the layer it belongs.
+
+Two practical notes for any MCP sample:
+- MCP tools are **discovered live** from the server (`tools/list`), never defined by hand —
+  unlike HTTP connector endpoints, there is no "+ Add Tool".
+- The platform's SSRF guard blocks localhost/RFC1918 URLs, so point at a **public** MCP
+  server (e.g. DeepWiki at `https://mcp.deepwiki.com/mcp` — no auth, real tools) rather than
+  one running on your machine.
 
 
 ## ai-agent-playground
@@ -199,6 +219,51 @@ cd sdk/samples/http-fanout-telegram
 
 See [`http-fanout-telegram/README.md`](http-fanout-telegram/README.md) for the step-by-engine
 mapping and the full message flow.
+
+## mcp-connections
+
+The **MCP configuration walkthrough** — every SDK surface of the MCP Connections feature in
+one idempotent setup: registers an MCP server (with typed `authType`/`authConfig`), runs
+`testConnection` (latency + tool count), discovers tools via `listTools`, enables a per-tool
+subset on a demo agent (`updateEnabledMcpTools`) with a description override, and creates a
+minimal workflow containing one typed `McpCallAction`. Defaults point at a fake endpoint so
+every call shape is demonstrated even offline; set `MCP_SERVER_URL=https://mcp.deepwiki.com/mcp`
+for a real run.
+
+```bash
+cd sdk/samples/mcp-connections
+cp env.example .env    # note: template ships as `env.example` (no leading dot)
+./setup.sh
+```
+
+The description-override step is gated server-side by
+`AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED=true` on `agent-admin-service` (skipped with a
+warning when off). Per-tool filtering takes runtime effect only with
+`AGENT_MCP_TOOL_FILTERING_ENABLED=true` on `agent-ai-service`. See
+[`mcp-connections/README.es.md`](mcp-connections/README.es.md).
+
+## mcp-repo-support-bot
+
+The **MCP capstone** — a Telegram repo-support bot combining both MCP layers (see "MCP: two
+ways to call a tool" above). An inbound Telegram question is classified by a triage agent
+(`agentCall`, strict JSON), parsed by a `jsFunction`, and gated by a `conditional`: repo
+questions flow to a fixed **`mcpCall`** against DeepWiki's `ask_question` (public MCP server,
+no auth), whose answer a summarizer agent rewrites in plain language before `channelSend`
+replies on Telegram; anything else gets a polite refusal. Target repo is configurable
+(`REPO_NAME`, default `vercel/next.js`).
+
+```bash
+cd sdk/samples/mcp-repo-support-bot
+cp env.example .env    # set OPENAI_API_KEY (+ TELEGRAM_BOT_TOKEN/TG_PUBLIC_URL for live mode)
+./setup.sh
+./run.sh               # SIMULATE_INBOUND=1 by default — no live bot needed
+```
+
+Tip: if you run several Telegram-triggered samples against the same tenant, set `TG_PIN=1`
+on each so every workflow pins to its own channel account (`trigger.config.accountIds`) —
+unpinned triggers match **all** inbound Telegram messages and the workflows will answer each
+other's traffic. Truly independent inbound channels need two bots (Telegram allows one
+webhook per bot). See [`mcp-repo-support-bot/README.es.md`](mcp-repo-support-bot/README.es.md).
 
 ## telegram-transform-reply
 

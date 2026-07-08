@@ -30,6 +30,32 @@ export interface WorkflowAction {
   [key: string]: unknown;
 }
 
+/**
+ * Arguments for an `mcpCall` action (mcp-connections.md §5). An MCP call
+ * targets a registered MCP server (`serverId`) and one of the tools it
+ * exposes (`toolName`), passing `params` through to the tool. Tools are
+ * discovered live from the server's own `tools/list` (see
+ * `mcpServers.listTools(id)`), never defined inline — so there is no
+ * server-less / ad-hoc mode analogous to an endpoint call's raw URL.
+ */
+export interface McpCallArgs {
+  serverId: string;
+  toolName: string;
+  params?: Record<string, unknown>;
+}
+
+/**
+ * Strongly-typed helper for constructing an `mcpCall` {@link WorkflowAction}.
+ * The base `WorkflowAction` stays intentionally loose (see the file header);
+ * this narrower shape is offered for callers that want compile-time checking
+ * when building an MCP step. Assignable to `WorkflowAction`.
+ */
+export interface McpCallAction {
+  name: string;
+  activity: "mcpCall";
+  args: McpCallArgs;
+}
+
 /** Loosely-typed workflow trigger (today the only variant is `message_received`). */
 export interface WorkflowTrigger {
   type: string;

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { TenantConnectionManager } from "@yoizen/database";
 import { PinoLoggerService } from "@yoizen/observability";
-import { type VariableDeclaration } from "@yoizen/shared";
+import type { VariableDeclaration } from "@yoizen/shared";
 import { AgentAiTenantConnectionManager } from "../../providers/tenant-connection.manager";
 import type {
   IAgentConfig,
@@ -9,7 +9,7 @@ import type {
 } from "./agent-config.repository.interface";
 
 const AGENT_COLUMNS =
-  "id, name, description, system_prompt, model_config, tools, enabled_tools, enabled_mcp_servers, channels, input_variables, output_variables, knowledge_base_ids, status, is_active, published_at, created_at, updated_at";
+  "id, name, description, system_prompt, model_config, tools, enabled_tools, enabled_mcp_servers, enabled_mcp_tools, tool_description_overrides, channels, input_variables, output_variables, knowledge_base_ids, status, is_active, published_at, created_at, updated_at";
 
 interface AgentRow {
   id: string;
@@ -20,6 +20,8 @@ interface AgentRow {
   tools: unknown[];
   enabled_tools: string[] | null;
   enabled_mcp_servers: string[] | null;
+  enabled_mcp_tools: Record<string, string[] | null> | null;
+  tool_description_overrides: Record<string, string> | null;
   channels: unknown[];
   input_variables: unknown[];
   output_variables: unknown[];
@@ -41,20 +43,48 @@ function rowToConfig(row: AgentRow): IAgentConfig {
     modelConfig,
     tools: Array.isArray(row.tools) ? row.tools : [],
     enabledTools: Array.isArray(row.enabled_tools) ? row.enabled_tools : null,
-    enabledMcpServers: Array.isArray(row.enabled_mcp_servers) ? row.enabled_mcp_servers : null,
+    enabledMcpServers: Array.isArray(row.enabled_mcp_servers)
+      ? row.enabled_mcp_servers
+      : null,
+    enabledMcpTools:
+      row.enabled_mcp_tools !== null &&
+      row.enabled_mcp_tools !== undefined &&
+      typeof row.enabled_mcp_tools === "object" &&
+      !Array.isArray(row.enabled_mcp_tools)
+        ? row.enabled_mcp_tools
+        : null,
+    toolDescriptionOverrides:
+      row.tool_description_overrides !== null &&
+      row.tool_description_overrides !== undefined &&
+      typeof row.tool_description_overrides === "object" &&
+      !Array.isArray(row.tool_description_overrides)
+        ? row.tool_description_overrides
+        : null,
     skills: (() => {
-      const skills = (modelConfig as Record<string, unknown>).skills as unknown[] | undefined;
-      const subagents = (modelConfig as Record<string, unknown>).subagents as unknown[] | undefined;
-      if (skills && skills.length > 0) return skills;
-      if (subagents && subagents.length > 0) return subagents;
+      const skills = (modelConfig as Record<string, unknown>).skills as
+        | unknown[]
+        | undefined;
+      const subagents = (modelConfig as Record<string, unknown>).subagents as
+        | unknown[]
+        | undefined;
+      if (skills && skills.length > 0) {
+        return skills;
+      }
+      if (subagents && subagents.length > 0) {
+        return subagents;
+      }
       return [];
     })(),
     rules: Array.isArray((modelConfig as Record<string, unknown>).rules)
       ? ((modelConfig as Record<string, unknown>).rules as unknown[])
       : [],
     channels: Array.isArray(row.channels) ? row.channels : [],
-    inputVariables: Array.isArray(row.input_variables) ? row.input_variables as VariableDeclaration[] : [],
-    outputVariables: Array.isArray(row.output_variables) ? row.output_variables as VariableDeclaration[] : [],
+    inputVariables: Array.isArray(row.input_variables)
+      ? (row.input_variables as VariableDeclaration[])
+      : [],
+    outputVariables: Array.isArray(row.output_variables)
+      ? (row.output_variables as VariableDeclaration[])
+      : [],
     knowledgeBaseIds: (row.knowledge_base_ids as string[]) ?? [],
     status: row.status,
     isActive: row.is_active,
@@ -67,7 +97,7 @@ function rowToConfig(row: AgentRow): IAgentConfig {
 @Injectable()
 export class AgentConfigPostgresRepository implements IAgentConfigRepository {
   private readonly logger = new PinoLoggerService(
-    AgentConfigPostgresRepository.name,
+    AgentConfigPostgresRepository.name
   );
 
   constructor(
@@ -77,7 +107,7 @@ export class AgentConfigPostgresRepository implements IAgentConfigRepository {
 
   async findById(
     tenantId: string,
-    agentId: string,
+    agentId: string
   ): Promise<IAgentConfig | null> {
     const sql = await this.connectionManager.ensureSchema(tenantId);
     const results = await sql<AgentRow[]>`
@@ -106,7 +136,7 @@ export class AgentConfigPostgresRepository implements IAgentConfigRepository {
 
   async findByTenant(
     tenantId: string,
-    options?: { status?: string },
+    options?: { status?: string }
   ): Promise<IAgentConfig[]> {
     const sql = await this.connectionManager.ensureSchema(tenantId);
     const statusFilter = options?.status ?? "published";

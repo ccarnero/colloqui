@@ -121,6 +121,8 @@ See [multi-tenancy.md](multi-tenancy.md) for the full model.
 - `DOCS/channels/telegram-sequence.md` — concrete Telegram inbound execution path
 - `DOCS/workflows/engine.md` — trigger consumer and action execution model
 - `DOCS/architecture/infrastructure.md` — support services and deployment models
+- `DOCS/architecture/runtime-streaming.md` — live token streaming from `agent-ai-service` to SDK consumers
+- `DOCS/architecture/mcp-connections.md` — MCP outbound tool connections, screen-by-screen parity with connectors
 
 ---
 
@@ -242,7 +244,7 @@ The database phase is storage-engine aware (`postgres.provider.ts` / `mongo.prov
 |--------|--------|
 | **Role** | HTTP entry point, JWT auth, event ingestion, SSE streaming, dynamic tenant routing, proxies to all downstream services |
 | **Port** | 3000 |
-| **Scale** | 1 -- 10 replicas (concurrency target: 100) |
+| **Scale** | 1 -- 10 replicas (RPS target: 500) |
 
 **Authentication:** All routes require a valid JWT (Bearer token) except those marked as public. The global `AuthGuard` checks every request:
 
@@ -251,29 +253,53 @@ The database phase is storage-engine aware (`postgres.provider.ts` / `mongo.prov
 3. JWT verification (HS256 shared secret from `auth-secret` K8s Secret)
 4. Scope enforcement: platform tokens grant full access; tenant tokens are restricted
 
-**Endpoints:**
+**Endpoints (canonical `/api/v1/*` paths; see "API Versioning" below):**
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| `POST` | `/auth/token` | Client credentials grant | Public |
-| `POST` | `/auth/login` | User login | Public |
-| `POST` | `/auth/refresh` | Refresh access token | Public |
-| `GET/POST/DELETE` | `/auth/public-routes` | Dynamic public route management | Platform |
-| `POST/GET` | `/auth/users` | Platform user management | Platform |
-| `POST/GET/DELETE` | `/auth/clients` | API client management | Platform |
-| `POST` | `/events` | Ingest event (202 Accepted) | Required |
-| `GET` | `/results/:id` | Fetch processing result | Required |
-| `GET` | `/events/stream` | SSE real-time stream | Required |
-| `GET` | `/audit/events` | Query audit events | Required |
-| `POST/GET/DELETE` | `/tenants` | Tenant management | Platform (write) / Required (read) |
-| `POST/GET/PATCH/DELETE` | `/registry/services` | Service registry | Required |
-| `POST/PATCH/GET` | `/registry/services/:id/canary` | Canary deployments | Required |
-| `POST/GET` | `/workflows` | Workflow management | Required |
-| `POST/GET/PATCH/DELETE` | `/api/connectors` | Connector configuration (proxied to `connector-admin`) | Required |
-| `GET` | `/api/connectors/usage` | Aggregated connector call usage (proxied to `connector-admin`) | Required |
-| `POST/GET/PATCH/DELETE` | `/api/channels/accounts` | Channel account management (proxied to `channel-service`) | Required |
-| `GET` | `/api/channels/usage` / `/api/channels/usage/totals` | Channel usage metrics (proxied to `channel-service`) | Required |
-| `GET` | `/health` | Aggregated health | Public |
+| `POST` | `/api/v1/auth/token` | Client credentials grant | Public |
+| `POST` | `/api/v1/auth/login` | User login | Public |
+| `POST` | `/api/v1/auth/refresh` | Refresh access token | Public |
+| `GET/POST/DELETE` | `/api/v1/auth/public-routes` | Dynamic public route management | Platform |
+| `POST/GET` | `/api/v1/auth/users` | Platform user management | Platform |
+| `POST/GET/DELETE` | `/api/v1/auth/clients` | API client management | Platform |
+| `POST` | `/api/v1/events` | Ingest event (202 Accepted) | Required |
+| `GET` | `/api/v1/results/:id` | Fetch processing result | Required |
+| `GET` | `/api/v1/events/stream` | SSE real-time stream | Required |
+| `GET` | `/api/v1/audit/events` | Query audit events | Required |
+| `POST/GET/DELETE` | `/api/v1/tenants` | Tenant management | Platform (write) / Required (read) |
+| `POST/GET/PATCH/DELETE` | `/api/v1/registry/services` | Service registry | Required |
+| `POST/PATCH/GET` | `/api/v1/registry/services/:id/canary` | Canary deployments | Required |
+| `POST/GET` | `/api/v1/workflows` | Workflow management | Required |
+| `POST/GET/PATCH/DELETE` | `/api/v1/connectors` | Connector configuration (proxied to `connector-admin`) | Required |
+| `GET` | `/api/v1/connectors/usage` | Aggregated connector call usage (proxied to `connector-admin`) | Required |
+| `POST/GET/PATCH/DELETE` | `/api/v1/channels/accounts` | Channel account management (proxied to `channel-service`) | Required |
+| `GET` | `/api/v1/channels/usage` / `/api/v1/channels/usage/totals` | Channel usage metrics (proxied to `channel-service`) | Required |
+| `POST` | `/api/v1/runtime/executions` / `/api/v1/runtime/executions/stream` | Agent execution submit + SSE token streaming (proxied to `ai-agent-gateway`) | Required |
+| `GET` | `/health`, `/readyz` | Aggregated health | Public |
+
+#### API Versioning
+
+The gateway applies a global `api` prefix plus NestJS URI versioning
+(`services/api-gateway/src/main.ts:98-110`):
+
+```ts
+app.setGlobalPrefix("api", { exclude: [...] });
+app.enableVersioning({
+  type: VersioningType.URI,
+  defaultVersion: ["1", VERSION_NEUTRAL],
+});
+```
+
+Every route is exposed both as the canonical `/api/v1/...` and as the
+unversioned `/api/...` alias, without per-controller `@Version()`
+decorators. Unversioned requests are treated as a **deprecated legacy
+path**: an `onSend` hook flags any `/api/...` request that isn't already
+`/api/v1/...` and isn't in the exemption list, and adds `Deprecation: true`
+and a `Link: <.../api/v1/...>; rel="successor-version"` header pointing at
+the versioned successor. `/api/docs` (Swagger) is listed in
+`VERSIONING_EXEMPT_PREFIXES` and is never flagged, since it was never a
+versioned route to begin with.
 
 ```mermaid
 graph LR
@@ -447,6 +473,7 @@ graph LR
 |----------|-----------|-------------|
 | `endpointCall` | `connector-runtime` | HTTP request via connector-runtime |
 | `serviceCall` | `connector-runtime` | Internal/service-aware HTTP request via connector-runtime |
+| `mcpCall` | `connector-runtime` | Calls a tool on an external MCP server via connector-runtime |
 | `jsFunction` | `workflow-orchestrator` | Inline JS evaluation |
 | `agentCall` | `workflow-orchestrator` | YoizenClaw agent chat via workflow-service local activity |
 | `serviceBusCall` | `workflow-orchestrator` | NATS publish with tenant header |
@@ -466,7 +493,7 @@ Actions support `{{path.to.value}}` template resolution against the execution co
 | **Task Queue** | `CONNECTOR_RUNTIME_TASK_QUEUE` (`connector-runtime`) |
 | **Config Source** | `connector-admin` REST API via `AdapterClient` (Redis SWR cache) |
 
-Executes `endpointCall` and `serviceCall` via `tracedFetch` with automatic `x-yoizen-tenant` header injection, connector resolution, response caching, and internal service mirror lookup. Max 400 concurrent activity tasks per worker pod.
+Executes `endpointCall` and `serviceCall` via `tracedFetch` with automatic `x-yoizen-tenant` header injection, connector resolution, response caching, and internal service mirror lookup. Also executes `mcpCall`, which resolves the MCP server config from `agent-admin-service`, opens an ephemeral MCP connection, and calls the named tool. Max 400 concurrent activity tasks per worker pod.
 
 ---
 
@@ -581,7 +608,7 @@ Images are built against the shared OrbStack Docker daemon as `dev.local/<servic
 | `@yoizen/observability` | `PinoLoggerService`, OpenTelemetry setup, NATS spans, split-service bootstrap (`SERVICE_MODE`) |
 | `@yoizen/angular-shared` | Shared Angular building blocks for `admin-console` |
 | `@yoizen/testing` | Test utilities (consumed by auth/tenant services) |
-| `@yoizen/platform-sdk` | Plain-Node ESM ingest SDK (sends messages via the http channel). Lives at repo-root `sdk/` — **not** a workspace member (imported by path). |
+| `@yoizen/platform-sdk` | Full-surface platform SDK — 19 resource namespaces (agents, audit, auth-admin, channels, config-files, connectors, dashboard, jobs, knowledge-bases, mcp-servers, memories, registry, runtime, skills, structured-kb, system-variables, tenants, webhooks, workflows). Message ingest via the http channel is one capability among many. Lives at repo-root `sdk/` — **not** a workspace member (imported by path). |
 
 ## Shared Package: `@yoizen/shared`
 
@@ -917,6 +944,7 @@ graph TB
         HTTP["HTTP Execution"]
         EP["endpointCall<br/>Remote Activity"]
         SC["serviceCall<br/>Remote Activity"]
+        MCP["mcpCall<br/>Remote Activity"]
     end
 
     subgraph "Workers (Plain Deployments — KEDA removed)"
@@ -933,6 +961,7 @@ graph TB
     TEMPORAL -->|Dispatch| HTTP
     HTTP -->|Remote| EP
     HTTP -->|Remote| SC
+    HTTP -->|Remote| MCP
 
     COORD -->|Register| WFW
     HTTP -->|Register| HAW
@@ -940,8 +969,8 @@ graph TB
 
 - **workflow-orchestrator**: coordinates multi-step execution; `jsFunction`, `serviceBusCall`,
   `channelSend` run as local activities; `agentCall` dispatches remotely to `agent-ai-service`
-- **connector-runtime**: specialized for HTTP; high concurrency (400) to handle network latency
-- **Temporal dispatch**: remote activities (endpointCall, serviceCall) dispatch back via Temporal for load balancing
+- **connector-runtime**: specialized for HTTP (and MCP tool calls); high concurrency (400) to handle network latency
+- **Temporal dispatch**: remote activities (endpointCall, serviceCall, mcpCall) dispatch back via Temporal for load balancing
 
 ---
 
@@ -955,7 +984,7 @@ graph TB
 
     WF -->|Action Type?| SWITCH{Switch}
 
-    SWITCH -->|endpointCall<br/>serviceCall| HAQ["Dispatch to<br/>connector-runtime<br/>task queue"]
+    SWITCH -->|endpointCall<br/>serviceCall<br/>mcpCall| HAQ["Dispatch to<br/>connector-runtime<br/>task queue"]
     SWITCH -->|jsFunction| JS["Local Activity<br/>executeJsFunction"]
     SWITCH -->|serviceBusCall| SB["Local Activity<br/>executeServiceBusCall<br/>→ NATS"]
     SWITCH -->|channelSend| CH["Local Activity<br/>executeChannelSend<br/>→ channel-service"]
@@ -965,6 +994,7 @@ graph TB
 
     HAQ -->|Pull activity| HAW["connector-runtime<br/>Worker"]
     HAW -->|tracedFetch| EXT["External<br/>Endpoint"]
+    HAW -->|MCP tool call| MCPSRV["External<br/>MCP Server"]
 
     JS -->|Inline| EXEC["new Function()<br/>eval JS"]
 
@@ -977,7 +1007,7 @@ graph TB
     BR -->|Each branch| SUB["Sub-action<br/>sequence"]
 ```
 
-- Remote activities on `connector-runtime` queue (endpointCall, serviceCall): dispatched to Temporal, awaited
+- Remote activities on `connector-runtime` queue (endpointCall, serviceCall, mcpCall): dispatched to Temporal, awaited
 - Local activities (jsFunction, serviceBusCall, channelSend, agentCall): execute inline in the workflow-service worker process
 - Control flow (branch, conditional): Temporal workflow-level; no separate activity
 - No built-in `sleep` action — use `jsFunction` or an external scheduled trigger

@@ -1,10 +1,11 @@
 import { Controller, Get, Param, Query, UseGuards } from "@nestjs/common";
+import { TenantGuard, TenantId } from "@yoizen/database";
 import { assertFoundOrThrow } from "../../common/audit-http.util";
 import { auditPaginatedQuery } from "../../common/audit-list-helpers";
-import { TenantGuard, TenantId } from "@yoizen/database";
 import type { ChainTreeResult } from "../audit/build-chain-tree";
+import type { QueryChannelEventsDto } from "./channel-audit.dto";
+// biome-ignore lint/style/useImportType: ChannelAuditService is constructor-injected by NestJS DI — must be a value import so `design:paramtypes` metadata resolves the real class at runtime, not `type`.
 import { ChannelAuditService } from "./channel-audit.service";
-import { QueryChannelEventsDto } from "./channel-audit.dto";
 
 @Controller("audit/channel-events")
 @UseGuards(TenantGuard)
@@ -17,14 +18,14 @@ export class ChannelAuditController {
   @Get()
   async queryEvents(
     @TenantId() tenantId: string,
-    @Query() query: QueryChannelEventsDto,
+    @Query() query: QueryChannelEventsDto
   ) {
-    const { channel, kind, accountId, from, to } = query;
+    const { channel, kind, accountId, conversationId, from, to } = query;
     return auditPaginatedQuery(query.limit, query.offset, (limit, offset) =>
       this.channelAuditService.queryEvents(
-        { channel, kind, accountId, from, to, limit, offset },
-        tenantId,
-      ),
+        { channel, kind, accountId, conversationId, from, to, limit, offset },
+        tenantId
+      )
     );
   }
 
@@ -35,13 +36,16 @@ export class ChannelAuditController {
   @Get("chain/:correlationId")
   async getChannelChain(
     @TenantId() tenantId: string,
-    @Param("correlationId") correlationId: string,
+    @Param("correlationId") correlationId: string
   ): Promise<ChainTreeResult> {
     const chain = await this.channelAuditService.getChannelChain(
       correlationId,
-      tenantId,
+      tenantId
     );
-    return assertFoundOrThrow(chain, `Channel chain ${correlationId} not found`);
+    return assertFoundOrThrow(
+      chain,
+      `Channel chain ${correlationId} not found`
+    );
   }
 
   /**
@@ -50,9 +54,6 @@ export class ChannelAuditController {
   @Get(":id")
   async getEvent(@TenantId() tenantId: string, @Param("id") id: string) {
     const event = await this.channelAuditService.getEventById(id, tenantId);
-    return assertFoundOrThrow(
-      event,
-      `Channel event ${id} not found`,
-    );
+    return assertFoundOrThrow(event, `Channel event ${id} not found`);
   }
 }

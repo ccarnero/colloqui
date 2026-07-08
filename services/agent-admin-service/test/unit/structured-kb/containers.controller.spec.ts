@@ -1,5 +1,9 @@
 import "../../setup-env";
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 
 const load = async () => {
@@ -9,7 +13,8 @@ const load = async () => {
   const { SKBContainersService } = await import(
     "../../src/modules/structured-kb/containers.service"
   );
-  return { SKBContainersController, SKBContainersService };
+  const { NatsPublisher } = await import("../../src/providers/nats.provider");
+  return { SKBContainersController, SKBContainersService, NatsPublisher };
 };
 
 describe("SKBContainersController", () => {
@@ -23,6 +28,10 @@ describe("SKBContainersController", () => {
     updateContainer: ReturnType<typeof mock>;
     deleteContainer: ReturnType<typeof mock>;
     containerExists: ReturnType<typeof mock>;
+    createFile: ReturnType<typeof mock>;
+  };
+  let natsPublisher: {
+    publishSkbFileIngestion: ReturnType<typeof mock>;
   };
 
   beforeEach(async () => {
@@ -34,19 +43,29 @@ describe("SKBContainersController", () => {
           id: "c1",
           name: "Test Container",
           status: "pending",
-        }),
+        })
       ),
       listContainers: mock(() => Promise.resolve([])),
-      getContainer: mock(() => Promise.resolve(null)),
+      getContainer: mock(() =>
+        Promise.resolve({ id: "c1", name: "Test Container", status: "ready" })
+      ),
       updateContainer: mock(() => Promise.resolve({ id: "c1" })),
       deleteContainer: mock(() => Promise.resolve()),
       containerExists: mock(() => Promise.resolve(true)),
+      createFile: mock(() =>
+        Promise.resolve({ file_id: "file-1", status: "pending" })
+      ),
+    };
+
+    natsPublisher = {
+      publishSkbFileIngestion: mock(() => Promise.resolve(null)),
     };
 
     const moduleRef = await Test.createTestingModule({
       controllers: [mod.SKBContainersController],
       providers: [
         { provide: mod.SKBContainersService, useValue: containersService },
+        { provide: mod.NatsPublisher, useValue: natsPublisher },
       ],
     }).compile();
 
@@ -65,7 +84,7 @@ describe("SKBContainersController", () => {
       expect(containersService.createContainer).toHaveBeenCalledWith(
         "tenant-123",
         "Sales Data",
-        undefined,
+        undefined
       );
       expect(result.status).toBe("pending");
       expect(result.id).toBe("c1");
@@ -80,7 +99,7 @@ describe("SKBContainersController", () => {
       expect(containersService.createContainer).toHaveBeenCalledWith(
         "tenant-123",
         "Sales",
-        "Q1 2026 data",
+        "Q1 2026 data"
       );
     });
 
@@ -90,7 +109,7 @@ describe("SKBContainersController", () => {
       expect(containersService.createContainer).toHaveBeenCalledWith(
         "different-tenant",
         "X",
-        undefined,
+        undefined
       );
     });
   });
@@ -103,7 +122,7 @@ describe("SKBContainersController", () => {
       const result = await controller.list("tenant-123");
 
       expect(containersService.listContainers).toHaveBeenCalledWith(
-        "tenant-123",
+        "tenant-123"
       );
       expect(result).toEqual([]);
     });
@@ -113,7 +132,7 @@ describe("SKBContainersController", () => {
         Promise.resolve([
           { id: "c1", name: "A", status: "pending" },
           { id: "c2", name: "B", status: "ready" },
-        ]),
+        ])
       );
 
       // Rebuild module with updated mock
@@ -122,6 +141,7 @@ describe("SKBContainersController", () => {
         controllers: [mod.SKBContainersController],
         providers: [
           { provide: mod.SKBContainersService, useValue: containersService },
+          { provide: mod.NatsPublisher, useValue: natsPublisher },
         ],
       }).compile();
       controller = moduleRef.get(mod.SKBContainersController);
@@ -140,7 +160,7 @@ describe("SKBContainersController", () => {
     it("should get a container by its ID", async () => {
       const mockContainer = { id: "c1", name: "Test", status: "pending" };
       containersService.getContainer = mock(() =>
-        Promise.resolve(mockContainer),
+        Promise.resolve(mockContainer)
       );
 
       const mod = await load();
@@ -148,6 +168,7 @@ describe("SKBContainersController", () => {
         controllers: [mod.SKBContainersController],
         providers: [
           { provide: mod.SKBContainersService, useValue: containersService },
+          { provide: mod.NatsPublisher, useValue: natsPublisher },
         ],
       }).compile();
       controller = moduleRef.get(mod.SKBContainersController);
@@ -156,7 +177,7 @@ describe("SKBContainersController", () => {
 
       expect(containersService.getContainer).toHaveBeenCalledWith(
         "tenant-123",
-        "c1",
+        "c1"
       );
       expect(result.id).toBe("c1");
     });
@@ -166,7 +187,7 @@ describe("SKBContainersController", () => {
 
       expect(containersService.getContainer).toHaveBeenCalledWith(
         "tenant-123",
-        "specific-id",
+        "specific-id"
       );
     });
   });
@@ -181,7 +202,7 @@ describe("SKBContainersController", () => {
       expect(containersService.updateContainer).toHaveBeenCalledWith(
         "tenant-123",
         "c1",
-        { name: "Updated" },
+        { name: "Updated" }
       );
     });
 
@@ -194,7 +215,7 @@ describe("SKBContainersController", () => {
       expect(containersService.updateContainer).toHaveBeenCalledWith(
         "tenant-123",
         "c1",
-        { name: "New", description: "New desc" },
+        { name: "New", description: "New desc" }
       );
     });
   });
@@ -208,7 +229,7 @@ describe("SKBContainersController", () => {
 
       expect(containersService.deleteContainer).toHaveBeenCalledWith(
         "tenant-123",
-        "c1",
+        "c1"
       );
     });
 
@@ -222,6 +243,117 @@ describe("SKBContainersController", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // POST /admin/structured-kb/containers/:id/files
+  // ---------------------------------------------------------------------------
+  describe("POST /admin/structured-kb/containers/:id/files", () => {
+    const validCsvBody = {
+      filename: "sales.csv",
+      file_base64: Buffer.from("a,b\n1,2\n").toString("base64"),
+      categories: ["cat-1"],
+    };
+
+    it("should create the skb_files row with status 'pending'", async () => {
+      const result = await controller.uploadFile(
+        "tenant-123",
+        "container-1",
+        validCsvBody
+      );
+
+      expect(containersService.createFile).toHaveBeenCalledWith(
+        "tenant-123",
+        "container-1",
+        expect.objectContaining({
+          originalName: "sales.csv",
+          categories: ["cat-1"],
+        })
+      );
+      expect(result.status).toBe("pending");
+      expect(result.fileId).toBe("file-1");
+    });
+
+    it("should publish the ingestion event with the payload shape the worker expects", async () => {
+      await controller.uploadFile("tenant-123", "container-1", validCsvBody);
+
+      expect(natsPublisher.publishSkbFileIngestion).toHaveBeenCalledWith(
+        "tenant-123",
+        expect.objectContaining({
+          containerId: "container-1",
+          fileId: expect.any(String),
+          fileBase64: validCsvBody.file_base64,
+          categories: ["cat-1"],
+        })
+      );
+    });
+
+    it("should default categories to an empty array when omitted", async () => {
+      await controller.uploadFile("tenant-123", "container-1", {
+        filename: "sales.csv",
+        file_base64: validCsvBody.file_base64,
+      });
+
+      expect(containersService.createFile).toHaveBeenCalledWith(
+        "tenant-123",
+        "container-1",
+        expect.objectContaining({ categories: [] })
+      );
+    });
+
+    it("should 404 when the container does not exist", async () => {
+      containersService.getContainer = mock(() =>
+        Promise.reject(new Error("SKB container with ID 'missing' not found"))
+      );
+
+      await expect(
+        controller.uploadFile("tenant-123", "missing", validCsvBody)
+      ).rejects.toThrow("SKB container with ID 'missing' not found");
+      expect(containersService.createFile).not.toHaveBeenCalled();
+    });
+
+    it("should reject unsupported file extensions", async () => {
+      await expect(
+        controller.uploadFile("tenant-123", "container-1", {
+          filename: "sales.pdf",
+          file_base64: validCsvBody.file_base64,
+        })
+      ).rejects.toThrow(BadRequestException);
+      expect(containersService.createFile).not.toHaveBeenCalled();
+    });
+
+    it("should reject an empty file", async () => {
+      await expect(
+        controller.uploadFile("tenant-123", "container-1", {
+          filename: "sales.csv",
+          file_base64: "",
+        })
+      ).rejects.toThrow(BadRequestException);
+      expect(containersService.createFile).not.toHaveBeenCalled();
+    });
+
+    it("should accept .xlsx and .xls extensions", async () => {
+      await controller.uploadFile("tenant-123", "container-1", {
+        filename: "sales.xlsx",
+        file_base64: validCsvBody.file_base64,
+      });
+      await controller.uploadFile("tenant-123", "container-1", {
+        filename: "sales.xls",
+        file_base64: validCsvBody.file_base64,
+      });
+
+      expect(containersService.createFile).toHaveBeenCalledTimes(2);
+    });
+
+    it("should surface a 503 when publishing the ingestion event fails", async () => {
+      natsPublisher.publishSkbFileIngestion = mock(() =>
+        Promise.reject(new Error("NATS unavailable"))
+      );
+
+      await expect(
+        controller.uploadFile("tenant-123", "container-1", validCsvBody)
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Tenant header isolation
   // ---------------------------------------------------------------------------
   describe("tenant isolation", () => {
@@ -229,12 +361,8 @@ describe("SKBContainersController", () => {
       await controller.list("tenant-a");
       await controller.list("tenant-b");
 
-      expect(containersService.listContainers).toHaveBeenCalledWith(
-        "tenant-a",
-      );
-      expect(containersService.listContainers).toHaveBeenCalledWith(
-        "tenant-b",
-      );
+      expect(containersService.listContainers).toHaveBeenCalledWith("tenant-a");
+      expect(containersService.listContainers).toHaveBeenCalledWith("tenant-b");
     });
   });
 });

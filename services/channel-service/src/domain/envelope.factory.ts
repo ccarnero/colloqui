@@ -1,19 +1,19 @@
+import { activeOrRandomTraceId } from "@yoizen/observability";
 import type {
-  ChannelEnvelope,
   Channel,
+  ChannelEnvelope,
   ChannelProvider,
-  MessageKind,
   InboundMessage,
   JsonValue,
+  MessageKind,
 } from "@yoizen/shared";
 import {
+  CHANNEL_DOMAIN,
+  CHANNEL_PRODUCER,
   canonicalByteLength,
   computeIdempotencyKey,
   computePayloadChecksum,
-  CHANNEL_PRODUCER,
-  CHANNEL_DOMAIN,
 } from "@yoizen/shared";
-import { activeOrRandomTraceId } from "@yoizen/observability";
 
 interface ICreateChannelEnvelopeOptions {
   tenantId: string;
@@ -41,7 +41,7 @@ interface ICreateChannelEnvelopeOptions {
  * Pure function. No side effects.
  */
 export function createChannelEnvelope(
-  options: ICreateChannelEnvelopeOptions,
+  options: ICreateChannelEnvelopeOptions
 ): ChannelEnvelope {
   const {
     tenantId,
@@ -71,6 +71,9 @@ export function createChannelEnvelope(
     }),
     ...(message.raw !== undefined && {
       raw: message.raw as unknown as JsonValue,
+    }),
+    ...(message.conversationId !== undefined && {
+      conversationId: message.conversationId,
     }),
   };
 
@@ -116,6 +119,9 @@ export function createChannelEnvelope(
         ...(message.text !== undefined && { text: message.text }),
         ...(message.media !== undefined && {
           media: message.media as unknown as JsonValue,
+        }),
+        ...(message.conversationId !== undefined && {
+          conversationId: message.conversationId,
         }),
         accountId,
       },

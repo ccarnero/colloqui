@@ -269,13 +269,13 @@ auth/gateway public-route sync. The cache keys include the tenant ID where isola
 | `DLQ-<TENANT>` | `dlq.<tenant>.>` | 30 days / 512 MB | Permanently-failed messages |
 | `PAYLOAD-<TENANT>` | — (Object Store) | 7 days / 512 MB | Claim-check payload blobs |
 
-Name construction functions in `packages/shared/src/channel.constants.ts`:
+Name construction functions:
 
-| Function | Returns |
-|---|---|
-| `buildIngressStreamName(tenant)` | `INGRESS-<tenant>` |
-| `buildDlqStreamName(tenant)` | `DLQ-<tenant>` |
-| `buildClaimCheckBucket(tenant)` | `PAYLOAD-<tenant>` |
+| Function | Returns | File |
+|---|---|---|
+| `buildIngressStreamName(tenant)` | `INGRESS-<tenant>` | `packages/shared/src/channel.utils.ts` |
+| `buildDlqStreamName(tenant)` | `DLQ-<tenant>` | `packages/shared/src/channel.constants.ts` |
+| `buildClaimCheckBucket(tenant)` | `PAYLOAD-<tenant>` | `packages/shared/src/channel.utils.ts` |
 
 ### 6.4 ChannelAccount Interface
 
@@ -314,5 +314,6 @@ interface ChannelAccount {
 | `services/tenant-service/src/modules/provisioning/tenant-provisioning-executor.service.ts` | K8s + PostgreSQL provisioning |
 | `packages/shared/src/constants.ts` | `TENANT_HEADER = 'x-yoizen-tenant'` |
 | `packages/shared/src/channel.interfaces.ts` | `ChannelAccount`, `InboundMessage`, `OutboundMessage` |
-| `packages/shared/src/channel.constants.ts` | `buildIngressStreamName`, `buildDlqStreamName`, `buildClaimCheckBucket` |
+| `packages/shared/src/channel.constants.ts` | `buildDlqStreamName` |
+| `packages/shared/src/channel.utils.ts` | `buildIngressStreamName`, `buildClaimCheckBucket` |
 | `packages/database/src/` | `ensureTenantIngressStream`, `ensureTenantDlqStream` |

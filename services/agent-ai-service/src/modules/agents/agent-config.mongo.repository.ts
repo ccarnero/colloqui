@@ -1,19 +1,18 @@
 import { Injectable } from "@nestjs/common";
 import type {
-  TenantMongoConnectionManager,
   Db,
   IStringIdDoc,
+  TenantMongoConnectionManager,
 } from "@yoizen/database";
 import { PinoLoggerService } from "@yoizen/observability";
-import { type VariableDeclaration } from "@yoizen/shared";
+import type { VariableDeclaration } from "@yoizen/shared";
 import type {
   IAgentConfig,
   IAgentConfigRepository,
 } from "./agent-config.repository.interface";
 
 function docToConfig(doc: IStringIdDoc & { _id: unknown }): IAgentConfig {
-  const modelConfig =
-    (doc.model_config as Record<string, unknown>) ?? {};
+  const modelConfig = (doc.model_config as Record<string, unknown>) ?? {};
   return {
     id: String(doc._id),
     name: String(doc.name ?? ""),
@@ -25,7 +24,23 @@ function docToConfig(doc: IStringIdDoc & { _id: unknown }): IAgentConfig {
     modelConfig,
     tools: Array.isArray(doc.tools) ? doc.tools : [],
     enabledTools: Array.isArray(doc.enabled_tools) ? doc.enabled_tools : null,
-    enabledMcpServers: Array.isArray(doc.enabled_mcp_servers) ? (doc.enabled_mcp_servers as string[]) : null,
+    enabledMcpServers: Array.isArray(doc.enabled_mcp_servers)
+      ? (doc.enabled_mcp_servers as string[])
+      : null,
+    enabledMcpTools:
+      doc.enabled_mcp_tools !== null &&
+      doc.enabled_mcp_tools !== undefined &&
+      typeof doc.enabled_mcp_tools === "object" &&
+      !Array.isArray(doc.enabled_mcp_tools)
+        ? (doc.enabled_mcp_tools as Record<string, string[] | null>)
+        : null,
+    toolDescriptionOverrides:
+      doc.tool_description_overrides !== null &&
+      doc.tool_description_overrides !== undefined &&
+      typeof doc.tool_description_overrides === "object" &&
+      !Array.isArray(doc.tool_description_overrides)
+        ? (doc.tool_description_overrides as Record<string, string>)
+        : null,
     skills: Array.isArray((modelConfig as Record<string, unknown>).skills)
       ? ((modelConfig as Record<string, unknown>).skills as unknown[])
       : [],
@@ -33,9 +48,15 @@ function docToConfig(doc: IStringIdDoc & { _id: unknown }): IAgentConfig {
       ? ((modelConfig as Record<string, unknown>).rules as unknown[])
       : [],
     channels: Array.isArray(doc.channels) ? doc.channels : [],
-    inputVariables: Array.isArray(doc.input_variables) ? doc.input_variables as VariableDeclaration[] : [],
-    outputVariables: Array.isArray(doc.output_variables) ? doc.output_variables as VariableDeclaration[] : [],
-    knowledgeBaseIds: Array.isArray(doc.knowledge_base_ids) ? (doc.knowledge_base_ids as string[]) : [],
+    inputVariables: Array.isArray(doc.input_variables)
+      ? (doc.input_variables as VariableDeclaration[])
+      : [],
+    outputVariables: Array.isArray(doc.output_variables)
+      ? (doc.output_variables as VariableDeclaration[])
+      : [],
+    knowledgeBaseIds: Array.isArray(doc.knowledge_base_ids)
+      ? (doc.knowledge_base_ids as string[])
+      : [],
     status: String(doc.status ?? "draft") as IAgentConfig["status"],
     isActive: Boolean(doc.is_active ?? true),
     publishedAt:
@@ -58,11 +79,11 @@ function docToConfig(doc: IStringIdDoc & { _id: unknown }): IAgentConfig {
 @Injectable()
 export class AgentConfigMongoRepository implements IAgentConfigRepository {
   private readonly logger = new PinoLoggerService(
-    AgentConfigMongoRepository.name,
+    AgentConfigMongoRepository.name
   );
 
   constructor(
-    private readonly connectionManager: TenantMongoConnectionManager,
+    private readonly connectionManager: TenantMongoConnectionManager
   ) {}
 
   private async getCollection(tenantId: string) {
@@ -72,7 +93,7 @@ export class AgentConfigMongoRepository implements IAgentConfigRepository {
 
   async findById(
     tenantId: string,
-    agentId: string,
+    agentId: string
   ): Promise<IAgentConfig | null> {
     const col = await this.getCollection(tenantId);
     const doc = await col.findOne({
@@ -94,7 +115,7 @@ export class AgentConfigMongoRepository implements IAgentConfigRepository {
 
   async findByTenant(
     tenantId: string,
-    options?: { status?: string },
+    options?: { status?: string }
   ): Promise<IAgentConfig[]> {
     const col = await this.getCollection(tenantId);
     const filter: Record<string, unknown> = { is_active: true };
@@ -103,10 +124,7 @@ export class AgentConfigMongoRepository implements IAgentConfigRepository {
     } else {
       filter.status = "published";
     }
-    const docs = await col
-      .find(filter)
-      .sort({ created_at: -1 })
-      .toArray();
+    const docs = await col.find(filter).sort({ created_at: -1 }).toArray();
     return docs.map(docToConfig);
   }
 }

@@ -80,6 +80,23 @@ export interface EndpointCallArgs {
   headers?: Record<string, string>;
 }
 
+/**
+ * Arguments for the `mcpCall` activity (mcp-connections.md §5.1). Resolves
+ * the MCP server config by `serverId` from `agent-admin-service`, connects
+ * transiently via `@ai-sdk/mcp`, and invokes the named tool with `params`.
+ *
+ * Unlike {@link EndpointCallArgs}, there is a single valid shape: an MCP call
+ * always targets a registered server (`serverId`) and one of its exposed
+ * tools (`toolName`). MCP tools are discovered live from the server's own
+ * `tools/list` (never defined in the workflow), so there is no ad-hoc /
+ * server-less mode analogous to `endpointCall`'s raw-URL branch.
+ */
+export interface McpCallArgs {
+  serverId: string;
+  toolName: string;
+  params?: Record<string, unknown>;
+}
+
 export interface JsFunctionArgs {
   code: string;
 }
@@ -172,6 +189,12 @@ export interface EndpointCallAction {
   args: EndpointCallArgs;
 }
 
+export interface McpCallAction {
+  activity: "mcpCall";
+  name: string;
+  args: McpCallArgs;
+}
+
 export interface JsFunctionAction {
   activity: "jsFunction";
   name: string;
@@ -251,6 +274,7 @@ export interface ConditionalAction {
 
 export type WorkflowAction =
   | EndpointCallAction
+  | McpCallAction
   | JsFunctionAction
   | ServiceBusCallAction
   | ServiceCallAction

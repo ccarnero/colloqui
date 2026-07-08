@@ -373,3 +373,43 @@ configured secret in the system.
 | Internal agent | Rotate service token | Per token cache (< 5 min) |
 | Third-party agent | Revoke API key via admin | < 1 minute |
 | Platform agent | Revoke OAuth2 credentials | Per token expiry (configurable) |
+
+---
+
+## 10. MCP Outbound Connections (Implemented)
+
+Agents and workflows can call tools on external MCP servers configured per
+tenant (`mcp_servers`, `services/agent-admin-service/src/modules/mcp-servers/`).
+This is a **new, distinct trust boundary** from the producer types in
+section 2: instead of *receiving* data from an external actor, the platform
+*initiates* outbound calls, on the tenant's behalf, to a server the tenant
+configured. See [mcp-connections.md](mcp-connections.md) for the full
+design.
+
+- **Auth types**: `none` / `api-key` / `bearer` / `basic` (`auth_type` +
+  `auth_config` on the `mcp_servers` row). Credentials are injected into the
+  outbound request at call time (agent tool bridge, or the `mcpCall`
+  workflow activity on `connector-runtime`).
+- **Known risk — plaintext credentials at rest.** `auth_config` (and the
+  legacy raw `headers` field) is stored as JSON without field-level
+  encryption. Any principal with database read access to `mcp_servers` can
+  read configured MCP credentials in the clear. No compensating control
+  exists today (no envelope encryption, no secrets-manager indirection).
+  Treat this the same as the section 6.2 PII/encryption gap until closed.
+- **SSRF guard**: the `mcpCall` activity and the test-connection endpoint
+  validate the target URL (reject localhost, link-local, cloud metadata,
+  and RFC1918 addresses) before connecting — the same class of guard
+  `adapter-executor.service.ts` uses for adapter calls.
+- **Tenant scoping**: `mcp_servers` rows are tenant-scoped like connectors;
+  no cross-tenant reuse.
+
+## 11. Admin API-Key Guard (Implemented)
+
+`agent-scheduler-service` exposes read-only `/admin/*` job-execution
+endpoints (see [jobs.md](../agents/jobs.md)) protected by
+`AdminApiKeyGuard`. Requests must send `x-internal-api-key` matching the
+configured `ADMIN_API_KEY`. This guard **fails closed**: if `ADMIN_API_KEY`
+is not configured, the guard throws `ForbiddenException` on every request
+rather than allowing unauthenticated access — there is no bypass mode.
+`services/agent-scheduler-service/src/modules/admin/admin-api-key.guard.ts`
+is the reference implementation.

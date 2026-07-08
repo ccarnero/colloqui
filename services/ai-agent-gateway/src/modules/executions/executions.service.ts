@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Socket } from "node:net";
 import type { MessageEvent } from "@nestjs/common";
 import {
   Inject,
@@ -47,14 +48,15 @@ import type { CreateExecutionDto } from "./executions.dto";
 
 /**
  * Bounded per-connection relay buffer (DOCS/architecture/runtime-streaming.md
- * §2.4): once a single streaming connection has relayed more than this many
- * events, or this many bytes, the stream is closed with a terminal
- * `failed{reason:"slow_consumer"}` event rather than growing unbounded or
- * silently dropping tokens. The client can recover the final result via
- * `getExecution(id)` (Redis-backed).
+ * §2.4): if the client's socket accumulates more than this many unflushed
+ * bytes (true backpressure — the consumer is not draining), the stream is
+ * closed with a terminal `failed{reason:"slow_consumer"}` event rather than
+ * growing unbounded or silently dropping tokens. The client can recover the
+ * final result via `getExecution(id)` (Redis-backed). Measured against
+ * `socket.writableLength` on each emit; total stream length is intentionally
+ * unbounded — long token streams from fast consumers are legitimate.
  */
-const STREAM_RELAY_MAX_EVENTS = 256;
-const STREAM_RELAY_MAX_BYTES = 256 * 1024;
+const STREAM_RELAY_MAX_BUFFERED_BYTES = 256 * 1024;
 
 const DURABLE_NAME = "ai-agent-gateway-results";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
@@ -199,14 +201,13 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
   submitAndStream(
     tenantId: string,
     dto: CreateExecutionDto,
-    requestedBy?: string
+    requestedBy?: string,
+    socket?: Socket
   ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       const executionId = randomUUID();
       let terminal = false;
       let closed = false;
-      let relayedEvents = 0;
-      let relayedBytes = 0;
 
       const subscriptions: Subscription[] = [];
 
@@ -239,16 +240,11 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
         teardown(false);
       };
 
-      const emit = (type: string, data: unknown, rawBytes: number): void => {
+      const emit = (type: string, data: unknown, _rawBytes: number): void => {
         if (closed) {
           return;
         }
-        relayedEvents += 1;
-        relayedBytes += rawBytes;
-        if (
-          relayedEvents > STREAM_RELAY_MAX_EVENTS ||
-          relayedBytes > STREAM_RELAY_MAX_BYTES
-        ) {
+        if (socket && socket.writableLength > STREAM_RELAY_MAX_BUFFERED_BYTES) {
           closeWithFailure("slow_consumer");
           return;
         }

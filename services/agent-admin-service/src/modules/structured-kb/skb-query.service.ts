@@ -1,7 +1,9 @@
-import { Injectable, Inject } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
+import { PinoLoggerService } from "@yoizen/observability";
 import { generateObject } from "ai";
 import { z } from "zod";
-import { validateWhereClause, isSafe } from "./skb-sql-safety";
+import { createSkbLanguageModel } from "./skb-llm.config";
+import { isSafe, validateWhereClause } from "./skb-sql-safety";
 
 // ---------------------------------------------------------------------------
 // Zod schema for LLM output
@@ -46,7 +48,7 @@ function buildQueryPrompt(
       query_hints: string[];
     }>;
   }>,
-  categories: string[],
+  categories: string[]
 ): string {
   // Merge columns from all schemas (deduplicate by name)
   const columnMap = new Map<
@@ -72,7 +74,7 @@ function buildQueryPrompt(
   const columnsInfo = allColumns
     .map(
       (c) =>
-        `- ${c.name} (${c.type}): ${c.description}. Filterable: ${c.is_filterable}. Hints: ${c.query_hints.join(", ")}`,
+        `- ${c.name} (${c.type}): ${c.description}. Filterable: ${c.is_filterable}. Hints: ${c.query_hints.join(", ")}`
     )
     .join("\n");
 
@@ -89,7 +91,7 @@ function buildQueryPrompt(
   const tablesInfo = schemas
     .map(
       (s, i) =>
-        `Table ${i + 1}: ${s.table_description}${s.query_rules ? ` (Rules: ${s.query_rules})` : ""}`,
+        `Table ${i + 1}: ${s.table_description}${s.query_rules ? ` (Rules: ${s.query_rules})` : ""}`
     )
     .join("\n");
 
@@ -127,6 +129,18 @@ export interface QueryOptions {
   limit?: number;
   offset?: number;
   categories?: string[];
+  /**
+   * Attribution ids (metering-foundation.md G5), nullable. Threaded into
+   * `skb_query_history` when the caller has them — today's only caller
+   * (`StructuredKBController.query`, the admin API) has none, but an
+   * agent-tool caller with real execution context can pass them here
+   * without any other change to this service.
+   */
+  attribution?: {
+    correlationId?: string | null;
+    causationId?: string | null;
+    executionId?: string | null;
+  };
 }
 
 export interface QueryResult {
@@ -141,6 +155,8 @@ export interface QueryResult {
 
 @Injectable()
 export class SKBQueryService {
+  private readonly logger = new PinoLoggerService(SKBQueryService.name);
+
   constructor(
     @Inject("SKBSchemaRepository")
     private readonly schemaRepository: {
@@ -187,94 +203,187 @@ export class SKBQueryService {
     private readonly connectionManager: {
       ensureSchema(tenantId: string): Promise<void>;
     },
+    @Optional()
+    @Inject("SKBQueryHistoryService")
+    private readonly queryHistoryService?: {
+      recordQuery(
+        tenantId: string,
+        containerId: string,
+        nlQuery: string,
+        generatedSql: string,
+        resultCount: number,
+        durationMs: number,
+        error?: string | null,
+        userId?: string | null,
+        errorMessage?: string | null,
+        attribution?: {
+          correlationId?: string | null;
+          causationId?: string | null;
+          executionId?: string | null;
+        },
+      ): Promise<unknown>;
+    },
   ) {}
 
   async query(
     tenantId: string,
     containerId: string,
     nlQuery: string,
-    options?: QueryOptions,
+    options?: QueryOptions
   ): Promise<QueryResult> {
-    // 1. Load container schemas
-    const schemas = await this.schemaRepository.loadAllSchemas(
-      tenantId,
-      containerId,
-    );
+    const startedAt = Date.now();
 
-    // 2. Build prompt with schema context
-    const prompt = buildQueryPrompt(nlQuery, schemas, options?.categories ?? []);
-
-    // 3. Call generateObject to translate NL → SQL
-    let object: {
-      where_clause: string;
-      order_by?: string;
-      explanation?: string;
-    };
     try {
-      const result = await (generateObject as any)({
-        model: {
-          provider: "openai",
-          modelId: "gpt-4o",
-        },
-        schema: SQLTranslationZod,
-        system: QUERY_SYSTEM_PROMPT,
-        prompt,
-      });
-      object = result.object as {
+      // 1. Load container schemas
+      const schemas = await this.schemaRepository.loadAllSchemas(
+        tenantId,
+        containerId
+      );
+
+      // 2. Build prompt with schema context
+      const prompt = buildQueryPrompt(
+        nlQuery,
+        schemas,
+        options?.categories ?? []
+      );
+
+      // 3. Call generateObject to translate NL → SQL
+      let object: {
         where_clause: string;
         order_by?: string;
         explanation?: string;
       };
-    } catch (err) {
-      throw new Error(
-        `LLM translation failed: ${(err as Error).message}`,
-      );
-    }
-
-    // 4. Validate SQL safety
-    const whereClause = object.where_clause ?? "";
-    const orderBy = object.order_by;
-
-    if (!isSafe(whereClause)) {
-      throw new Error("SQL safety violation: potentially dangerous pattern detected");
-    }
-    validateWhereClause(whereClause);
-
-    if (orderBy) {
-      if (!isSafe(orderBy)) {
-        throw new Error("SQL safety violation: potentially dangerous pattern detected");
+      try {
+        const result = await (generateObject as any)({
+          model: createSkbLanguageModel(),
+          schema: SQLTranslationZod,
+          system: QUERY_SYSTEM_PROMPT,
+          prompt,
+        });
+        object = result.object as {
+          where_clause: string;
+          order_by?: string;
+          explanation?: string;
+        };
+      } catch (err) {
+        throw new Error(`LLM translation failed: ${(err as Error).message}`);
       }
-      validateWhereClause(orderBy);
+
+      // 4. Validate SQL safety
+      const whereClause = object.where_clause ?? "";
+      const orderBy = object.order_by;
+
+      if (!isSafe(whereClause)) {
+        throw new Error(
+          "SQL safety violation: potentially dangerous pattern detected"
+        );
+      }
+      validateWhereClause(whereClause);
+
+      if (orderBy) {
+        if (!isSafe(orderBy)) {
+          throw new Error(
+            "SQL safety violation: potentially dangerous pattern detected"
+          );
+        }
+        validateWhereClause(orderBy);
+      }
+
+      // 5. Execute query
+      const limit = options?.limit ?? 100;
+      const offset = options?.offset ?? 0;
+
+      const result = await this.rowsRepository.executeQuery(
+        tenantId,
+        containerId,
+        {
+          whereClause,
+          orderBy,
+          categories: options?.categories ?? [],
+          limit,
+          offset,
+        }
+      );
+
+      // 6. Build SQL representation for debugging
+      const sql = this.buildSql(
+        tenantId,
+        containerId,
+        whereClause,
+        orderBy,
+        options?.categories ?? [],
+        limit,
+        offset
+      );
+
+      this.recordQueryHistory(
+        tenantId,
+        containerId,
+        nlQuery,
+        sql,
+        result.totalCount,
+        Date.now() - startedAt,
+        null,
+        options?.attribution
+      );
+
+      return {
+        results: result.results,
+        sql,
+        totalCount: result.totalCount,
+      };
+    } catch (err) {
+      this.recordQueryHistory(
+        tenantId,
+        containerId,
+        nlQuery,
+        "",
+        0,
+        Date.now() - startedAt,
+        err instanceof Error ? err.message : String(err),
+        options?.attribution
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Records a query in `skb_query_history` for observability/debugging.
+   * Fire-and-forget: a history-write failure is logged as a warning and
+   * never propagates — recording history must never break a query.
+   */
+  private recordQueryHistory(
+    tenantId: string,
+    containerId: string,
+    nlQuery: string,
+    generatedSql: string,
+    resultCount: number,
+    durationMs: number,
+    error: string | null,
+    attribution?: QueryOptions["attribution"]
+  ): void {
+    if (!this.queryHistoryService) {
+      return;
     }
 
-    // 5. Execute query
-    const limit = options?.limit ?? 100;
-    const offset = options?.offset ?? 0;
-
-    const result = await this.rowsRepository.executeQuery(tenantId, containerId, {
-      whereClause,
-      orderBy,
-      categories: options?.categories ?? [],
-      limit,
-      offset,
-    });
-
-    // 6. Build SQL representation for debugging
-    const sql = this.buildSql(
-      tenantId,
-      containerId,
-      whereClause,
-      orderBy,
-      options?.categories ?? [],
-      limit,
-      offset,
-    );
-
-    return {
-      results: result.results,
-      sql,
-      totalCount: result.totalCount,
-    };
+    this.queryHistoryService
+      .recordQuery(
+        tenantId,
+        containerId,
+        nlQuery,
+        generatedSql,
+        resultCount,
+        durationMs,
+        error,
+        null,
+        null,
+        attribution
+      )
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `Failed to record SKB query history for container ${containerId}: ${err instanceof Error ? err.message : String(err)}`
+        );
+      });
   }
 
   private buildSql(
@@ -284,7 +393,7 @@ export class SKBQueryService {
     orderBy: string | undefined,
     categories: string[],
     limit: number,
-    offset: number,
+    offset: number
   ): string {
     const whereParts: string[] = [
       `container_id = '${containerId}'`,

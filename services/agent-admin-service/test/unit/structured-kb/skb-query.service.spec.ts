@@ -1,5 +1,5 @@
 import "../../setup-env";
-import { describe, it, expect, beforeEach, vi } from "bun:test";
+import { beforeEach, describe, expect, it, vi } from "bun:test";
 import { Test } from "@nestjs/testing";
 
 const load = async () => {
@@ -14,7 +14,12 @@ vi.mock("ai", () => ({
 }));
 
 import { generateObject } from "ai";
+
 const mockGenerateObject = vi.mocked(generateObject);
+
+// createSkbLanguageModel (real) requires an API key to build the model
+// instance; the actual LLM call (generateObject) is mocked above.
+process.env.OPENAI_API_KEY ??= "sk-test-not-a-real-key";
 
 describe("SKBQueryService", () => {
   let service: any;
@@ -128,7 +133,7 @@ describe("SKBQueryService", () => {
             { product: "Widget B", price: 29.99, region: "North" },
           ],
           totalCount: 42,
-        }),
+        })
       ),
       countByContainer: vi.fn(() => Promise.resolve(42)),
     };
@@ -155,7 +160,11 @@ describe("SKBQueryService", () => {
         object: LLM_TRANSLATION,
       } as any);
 
-      const result = await service.query(TENANT_ID, CONTAINER_ID, "show me sales in the North region");
+      const result = await service.query(
+        TENANT_ID,
+        CONTAINER_ID,
+        "show me sales in the North region"
+      );
 
       expect(result).toHaveProperty("results");
       expect(result).toHaveProperty("sql");
@@ -170,7 +179,11 @@ describe("SKBQueryService", () => {
         object: LLM_TRANSLATION,
       } as any);
 
-      await service.query(TENANT_ID, CONTAINER_ID, "show me sales in the North region");
+      await service.query(
+        TENANT_ID,
+        CONTAINER_ID,
+        "show me sales in the North region"
+      );
 
       expect(mockGenerateObject).toHaveBeenCalledTimes(1);
       const callArgs = mockGenerateObject.mock.calls[0][0] as any;
@@ -202,14 +215,20 @@ describe("SKBQueryService", () => {
       await service.query(TENANT_ID, CONTAINER_ID, "show me sales");
 
       const callArgs = mockGenerateObject.mock.calls[0][0] as any;
-      expect(callArgs.prompt).toContain("Always filter by region when asked about geography");
+      expect(callArgs.prompt).toContain(
+        "Always filter by region when asked about geography"
+      );
     });
   });
 
   describe("category filtering", () => {
     it("should pass categories to the query prompt", async () => {
       mockGenerateObject.mockResolvedValue({
-        object: { where_clause: "(data->>'region') = 'North'", order_by: undefined, explanation: "" },
+        object: {
+          where_clause: "(data->>'region') = 'North'",
+          order_by: undefined,
+          explanation: "",
+        },
       } as any);
 
       await service.query(TENANT_ID, CONTAINER_ID, "show sales", {
@@ -245,13 +264,18 @@ describe("SKBQueryService", () => {
         Promise.resolve({
           results: [{ product: "Widget A" }],
           totalCount: 100,
-        }),
+        })
       );
 
-      const result = await service.query(TENANT_ID, CONTAINER_ID, "show sales", {
-        limit: 10,
-        offset: 20,
-      });
+      const result = await service.query(
+        TENANT_ID,
+        CONTAINER_ID,
+        "show sales",
+        {
+          limit: 10,
+          offset: 20,
+        }
+      );
 
       expect(rowsRepository.executeQuery).toHaveBeenCalled();
       const execCall = rowsRepository.executeQuery.mock.calls[0];
@@ -273,14 +297,22 @@ describe("SKBQueryService", () => {
   describe("empty result set", () => {
     it("should return empty array when no rows match", async () => {
       mockGenerateObject.mockResolvedValue({
-        object: { where_clause: "(data->>'region') = 'Antarctica'", order_by: undefined, explanation: "" },
+        object: {
+          where_clause: "(data->>'region') = 'Antarctica'",
+          order_by: undefined,
+          explanation: "",
+        },
       } as any);
 
       rowsRepository.executeQuery.mockResolvedValue(
-        Promise.resolve({ results: [], totalCount: 0 }),
+        Promise.resolve({ results: [], totalCount: 0 })
       );
 
-      const result = await service.query(TENANT_ID, CONTAINER_ID, "show sales in Antarctica");
+      const result = await service.query(
+        TENANT_ID,
+        CONTAINER_ID,
+        "show sales in Antarctica"
+      );
 
       expect(result.results).toEqual([]);
       expect(result.totalCount).toBe(0);
@@ -292,7 +324,7 @@ describe("SKBQueryService", () => {
       mockGenerateObject.mockRejectedValue(new Error("Rate limit exceeded"));
 
       await expect(
-        service.query(TENANT_ID, CONTAINER_ID, "show sales"),
+        service.query(TENANT_ID, CONTAINER_ID, "show sales")
       ).rejects.toThrow();
     });
 
@@ -306,7 +338,7 @@ describe("SKBQueryService", () => {
       } as any);
 
       await expect(
-        service.query(TENANT_ID, CONTAINER_ID, "show sales"),
+        service.query(TENANT_ID, CONTAINER_ID, "show sales")
       ).rejects.toThrow();
     });
   });
@@ -322,7 +354,7 @@ describe("SKBQueryService", () => {
       } as any);
 
       await expect(
-        service.query(TENANT_ID, CONTAINER_ID, "show all data"),
+        service.query(TENANT_ID, CONTAINER_ID, "show all data")
       ).rejects.toThrow();
     });
 
@@ -336,7 +368,7 @@ describe("SKBQueryService", () => {
       } as any);
 
       await expect(
-        service.query(TENANT_ID, CONTAINER_ID, "show all data"),
+        service.query(TENANT_ID, CONTAINER_ID, "show all data")
       ).rejects.toThrow();
     });
 
@@ -350,7 +382,7 @@ describe("SKBQueryService", () => {
       } as any);
 
       await expect(
-        service.query(TENANT_ID, CONTAINER_ID, "show all data"),
+        service.query(TENANT_ID, CONTAINER_ID, "show all data")
       ).rejects.toThrow();
     });
   });
@@ -365,7 +397,7 @@ describe("SKBQueryService", () => {
 
       expect(schemaRepository.loadAllSchemas).toHaveBeenCalledWith(
         TENANT_ID,
-        CONTAINER_ID,
+        CONTAINER_ID
       );
     });
 
@@ -393,6 +425,141 @@ describe("SKBQueryService", () => {
 
       expect(result).toHaveProperty("sql");
       expect(result.sql).toBeTruthy();
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Query history recording (DOC-VS-CODE-AUDIT.md SKB defect 4) —
+  // `skb_query_history` was registered but never written to. `query()`
+  // now fire-and-forgets a `recordQuery` call on both success and failure,
+  // and a history-write failure must only log a warning: the query result
+  // (or the original query error) must still propagate untouched.
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe("query history recording (SKB defect 4)", () => {
+    let queryHistoryService: { recordQuery: ReturnType<typeof vi.fn> };
+
+    beforeEach(async () => {
+      vi.clearAllMocks();
+
+      const mod = await load();
+
+      schemaRepository = {
+        loadAllSchemas: vi.fn(() => Promise.resolve(MOCK_SCHEMAS)),
+      };
+      rowsRepository = {
+        executeQuery: vi.fn(() =>
+          Promise.resolve({
+            results: [{ product: "Widget A" }],
+            totalCount: 1,
+          })
+        ),
+        countByContainer: vi.fn(() => Promise.resolve(1)),
+      };
+      connectionManager = {
+        ensureSchema: vi.fn(() => Promise.resolve({})),
+      };
+      queryHistoryService = {
+        recordQuery: vi.fn(() => Promise.resolve({})),
+      };
+
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          mod.SKBQueryService,
+          { provide: "SKBSchemaRepository", useValue: schemaRepository },
+          { provide: "SKBRowsRepository", useValue: rowsRepository },
+          { provide: "TenantConnectionManager", useValue: connectionManager },
+          {
+            provide: "SKBQueryHistoryService",
+            useValue: queryHistoryService,
+          },
+        ],
+      }).compile();
+
+      service = moduleRef.get(mod.SKBQueryService);
+    });
+
+    it("records history on a successful query with the resolved SQL, result count, and no error", async () => {
+      mockGenerateObject.mockResolvedValue({ object: LLM_TRANSLATION } as any);
+
+      const result = await service.query(
+        TENANT_ID,
+        CONTAINER_ID,
+        "show sales in the North region"
+      );
+
+      // Fire-and-forget: give the microtask queue a tick to flush the call.
+      await Promise.resolve();
+
+      expect(queryHistoryService.recordQuery).toHaveBeenCalledTimes(1);
+      const [
+        tenantId,
+        containerId,
+        nlQuery,
+        generatedSql,
+        resultCount,
+        durationMs,
+        error,
+      ] = queryHistoryService.recordQuery.mock.calls[0];
+      expect(tenantId).toBe(TENANT_ID);
+      expect(containerId).toBe(CONTAINER_ID);
+      expect(nlQuery).toBe("show sales in the North region");
+      expect(generatedSql).toBe(result.sql);
+      expect(resultCount).toBe(1);
+      expect(typeof durationMs).toBe("number");
+      expect(error).toBeNull();
+    });
+
+    it("records history on a failed query with the error message and resultCount=0", async () => {
+      mockGenerateObject.mockRejectedValue(new Error("Rate limit exceeded"));
+
+      await expect(
+        service.query(TENANT_ID, CONTAINER_ID, "show sales")
+      ).rejects.toThrow("Rate limit exceeded");
+
+      await Promise.resolve();
+
+      expect(queryHistoryService.recordQuery).toHaveBeenCalledTimes(1);
+      const [, , , generatedSql, resultCount, , error] =
+        queryHistoryService.recordQuery.mock.calls[0];
+      expect(generatedSql).toBe("");
+      expect(resultCount).toBe(0);
+      expect(error).toContain("Rate limit exceeded");
+    });
+
+    it("still returns the query result when the history write itself fails (fire-and-forget)", async () => {
+      mockGenerateObject.mockResolvedValue({ object: LLM_TRANSLATION } as any);
+      queryHistoryService.recordQuery.mockRejectedValue(
+        new Error("history db unreachable")
+      );
+
+      const result = await service.query(TENANT_ID, CONTAINER_ID, "show sales");
+
+      expect(result.results).toEqual([{ product: "Widget A" }]);
+      expect(result.totalCount).toBe(1);
+
+      // Let the rejected fire-and-forget promise's .catch() run.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    it("does not throw when queryHistoryService is not provided (optional dependency)", async () => {
+      const mod = await load();
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          mod.SKBQueryService,
+          { provide: "SKBSchemaRepository", useValue: schemaRepository },
+          { provide: "SKBRowsRepository", useValue: rowsRepository },
+          { provide: "TenantConnectionManager", useValue: connectionManager },
+        ],
+      }).compile();
+      const serviceWithoutHistory = moduleRef.get(mod.SKBQueryService);
+
+      mockGenerateObject.mockResolvedValue({ object: LLM_TRANSLATION } as any);
+
+      await expect(
+        serviceWithoutHistory.query(TENANT_ID, CONTAINER_ID, "show sales")
+      ).resolves.toHaveProperty("results");
     });
   });
 });

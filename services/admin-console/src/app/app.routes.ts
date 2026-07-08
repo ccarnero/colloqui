@@ -101,6 +101,13 @@ export const routes: Routes = [
               ),
           },
           {
+            path: "mcp/:id",
+            loadComponent: () =>
+              import(
+                "./features/connections/mcp-detail/mcp-detail.component"
+              ).then((m) => m.McpDetailComponent),
+          },
+          {
             path: "hosted-services",
             loadComponent: () =>
               import(

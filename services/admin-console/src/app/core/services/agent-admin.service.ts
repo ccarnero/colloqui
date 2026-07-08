@@ -1,9 +1,8 @@
 import { HttpClient } from "@angular/common/http";
 import { Injectable, inject } from "@angular/core";
-import { environment } from "../../../environments/environment";
-import { Observable } from "rxjs";
+import type { Observable } from "rxjs";
 import { tap } from "rxjs/operators";
-import { ResourceMutationsService } from "./metrics/resource-mutations.service";
+import { environment } from "../../../environments/environment";
 import {
   buildCreateAgentPayload,
   type IAgent,
@@ -18,16 +17,19 @@ import {
   type IAgentVersion,
   type IBuiltinTool,
   type IMcpServer,
+  type IMcpServerTool,
+  type IMcpTestConnectionResult,
+  type IMcpUsage,
   type ITemplate,
+  type McpServerAuthType,
 } from "../models/agent.model";
+import { ResourceMutationsService } from "./metrics/resource-mutations.service";
 
 type QueryValue = string | number | boolean;
 
 const BASE_URL = `${environment.apiUrl}/admin`;
 
-function buildQueryParams(
-  query?: IAgentListQuery,
-): Record<string, QueryValue> {
+function buildQueryParams(query?: IAgentListQuery): Record<string, QueryValue> {
   const params: Record<string, QueryValue> = {};
 
   if (!query) {
@@ -54,7 +56,7 @@ function buildQueryParams(
 }
 
 function buildMemoryQueryParams(
-  query?: IAgentMemoryQuery,
+  query?: IAgentMemoryQuery
 ): Record<string, QueryValue> {
   const params: Record<string, QueryValue> = {};
 
@@ -62,16 +64,36 @@ function buildMemoryQueryParams(
     return params;
   }
 
-  if (query.scope !== undefined) params["scope"] = query.scope;
-  if (query.kind !== undefined) params["kind"] = query.kind;
-  if (query.status !== undefined) params["status"] = query.status;
-  if (query.search !== undefined) params["search"] = query.search;
-  if (query.limit !== undefined) params["limit"] = query.limit;
-  if (query.offset !== undefined) params["offset"] = query.offset;
-  if (query.includeExpired !== undefined) params["includeExpired"] = query.includeExpired;
-  if (query.sessionId !== undefined) params["sessionId"] = query.sessionId;
-  if (query.userId !== undefined) params["userId"] = query.userId;
-  if (query.context !== undefined) params["context"] = query.context;
+  if (query.scope !== undefined) {
+    params["scope"] = query.scope;
+  }
+  if (query.kind !== undefined) {
+    params["kind"] = query.kind;
+  }
+  if (query.status !== undefined) {
+    params["status"] = query.status;
+  }
+  if (query.search !== undefined) {
+    params["search"] = query.search;
+  }
+  if (query.limit !== undefined) {
+    params["limit"] = query.limit;
+  }
+  if (query.offset !== undefined) {
+    params["offset"] = query.offset;
+  }
+  if (query.includeExpired !== undefined) {
+    params["includeExpired"] = query.includeExpired;
+  }
+  if (query.sessionId !== undefined) {
+    params["sessionId"] = query.sessionId;
+  }
+  if (query.userId !== undefined) {
+    params["userId"] = query.userId;
+  }
+  if (query.context !== undefined) {
+    params["context"] = query.context;
+  }
 
   return params;
 }
@@ -87,9 +109,7 @@ export class AgentAdminService {
    * @param query - Optional filter and pagination parameters.
    * @returns A stream of paginated agent data.
    */
-  listAgents(
-    query?: IAgentListQuery,
-  ): Observable<IAgentListResponse> {
+  listAgents(query?: IAgentListQuery): Observable<IAgentListResponse> {
     return this.http.get<IAgentListResponse>(`${BASE_URL}/agents`, {
       params: buildQueryParams(query),
     });
@@ -123,7 +143,10 @@ export class AgentAdminService {
    * @returns A stream with the unpublished agent record.
    */
   unpublishAgent(agentId: string): Observable<IAgent> {
-    return this.http.post<IAgent>(`${BASE_URL}/agents/${agentId}/unpublish`, {});
+    return this.http.post<IAgent>(
+      `${BASE_URL}/agents/${agentId}/unpublish`,
+      {}
+    );
   }
 
   /**
@@ -153,10 +176,7 @@ export class AgentAdminService {
    * @param draft - UI form data with updates.
    * @returns A stream with the updated agent record.
    */
-  updateAgent(
-    agentId: string,
-    draft: IAgentDraft,
-  ): Observable<IAgent> {
+  updateAgent(agentId: string, draft: IAgentDraft): Observable<IAgent> {
     const payload = buildCreateAgentPayload(draft);
     return this.http.put<IAgent>(`${BASE_URL}/agents/${agentId}`, payload);
   }
@@ -179,9 +199,7 @@ export class AgentAdminService {
    * @returns A stream with the list of templates.
    */
   listTemplates(): Observable<{ templates: ITemplate[] }> {
-    return this.http.get<{ templates: ITemplate[] }>(
-      `${BASE_URL}/templates`,
-    );
+    return this.http.get<{ templates: ITemplate[] }>(`${BASE_URL}/templates`);
   }
 
   // ============================================================================
@@ -189,21 +207,18 @@ export class AgentAdminService {
   // ============================================================================
 
   listMemories(
-    query?: IAgentMemoryQuery,
+    query?: IAgentMemoryQuery
   ): Observable<IAgentMemoryListResponse> {
-    return this.http.get<IAgentMemoryListResponse>(
-      `${BASE_URL}/memories`,
-      { params: buildMemoryQueryParams(query) },
-    );
+    return this.http.get<IAgentMemoryListResponse>(`${BASE_URL}/memories`, {
+      params: buildMemoryQueryParams(query),
+    });
   }
 
   getMemory(id: string): Observable<IAgentMemory> {
     return this.http.get<IAgentMemory>(`${BASE_URL}/memories/${id}`);
   }
 
-  createMemory(
-    payload: IAgentMemoryCreatePayload,
-  ): Observable<IAgentMemory> {
+  createMemory(payload: IAgentMemoryCreatePayload): Observable<IAgentMemory> {
     return this.http
       .post<IAgentMemory>(`${BASE_URL}/memories`, payload)
       .pipe(tap(() => this.mutations.notify("ai")));
@@ -211,7 +226,7 @@ export class AgentAdminService {
 
   updateMemory(
     id: string,
-    payload: IAgentMemoryUpdatePayload,
+    payload: IAgentMemoryUpdatePayload
   ): Observable<IAgentMemory> {
     return this.http
       .patch<IAgentMemory>(`${BASE_URL}/memories/${id}`, payload)
@@ -259,7 +274,7 @@ export class AgentAdminService {
    */
   updateEnabledTools(
     agentId: string,
-    enabledTools: string[] | null,
+    enabledTools: string[] | null
   ): Observable<IAgent> {
     return this.http
       .patch<IAgent>(`${BASE_URL}/agents/${agentId}/tools`, {
@@ -278,7 +293,7 @@ export class AgentAdminService {
    */
   updateToolDescriptionOverrides(
     agentId: string,
-    overrides: Record<string, string> | null,
+    overrides: Record<string, string> | null
   ): Observable<IAgent> {
     return this.http
       .patch<IAgent>(`${BASE_URL}/agents/${agentId}/tool-descriptions`, {
@@ -307,6 +322,11 @@ export class AgentAdminService {
 
   /**
    * Creates a new MCP server.
+   *
+   * NOTE: `authType`/`authConfig` are camelCase here even though the
+   * response body (`IMcpServer`) uses snake_case `auth_type`/`auth_config`
+   * — this mirrors `CreateMcpServerDto` in `agent-admin-service`, which
+   * accepts camelCase auth fields but persists/returns the entity as-is.
    */
   createMcpServer(data: {
     name: string;
@@ -314,6 +334,8 @@ export class AgentAdminService {
     transport_type: "http" | "sse";
     url: string;
     headers?: Record<string, string>;
+    authType?: McpServerAuthType;
+    authConfig?: Record<string, unknown>;
     enabled?: boolean;
   }): Observable<IMcpServer> {
     return this.http
@@ -322,7 +344,8 @@ export class AgentAdminService {
   }
 
   /**
-   * Updates an existing MCP server.
+   * Updates an existing MCP server. Same camelCase auth-field note as
+   * {@link createMcpServer} applies here.
    */
   updateMcpServer(
     id: string,
@@ -332,11 +355,13 @@ export class AgentAdminService {
       transport_type?: "http" | "sse";
       url?: string;
       headers?: Record<string, string> | null;
+      authType?: McpServerAuthType;
+      authConfig?: Record<string, unknown> | null;
       enabled?: boolean;
-    },
+    }
   ): Observable<IMcpServer> {
     return this.http
-      .put<IMcpServer>(`${BASE_URL}/mcp-servers/${id}`, data)
+      .patch<IMcpServer>(`${BASE_URL}/mcp-servers/${id}`, data)
       .pipe(tap(() => this.mutations.notify("ai")));
   }
 
@@ -350,16 +375,72 @@ export class AgentAdminService {
   }
 
   /**
+   * Lists the tools exposed by a live MCP server
+   * (`GET admin/mcp-servers/:id/tools`, mcp-connections.md §2.4). This is a
+   * live probe against the MCP server itself — call on-demand (e.g. when a
+   * row expands), never for every row on page load.
+   */
+  listMcpServerTools(id: string): Observable<IMcpServerTool[]> {
+    return this.http.get<IMcpServerTool[]>(
+      `${BASE_URL}/mcp-servers/${id}/tools`
+    );
+  }
+
+  /**
+   * Runs a live connectivity probe against an MCP server
+   * (`POST admin/mcp-servers/:id/test`, mcp-connections.md §2.2). No
+   * persistence side-effect — `is_active` stays an explicit admin toggle.
+   */
+  testMcpServer(id: string): Observable<IMcpTestConnectionResult> {
+    return this.http.post<IMcpTestConnectionResult>(
+      `${BASE_URL}/mcp-servers/${id}/test`,
+      {}
+    );
+  }
+
+  /**
+   * Usage summary + recent calls for the MCP detail page's Overview cards
+   * and "Recent calls" section (`GET admin/mcp-servers/:id/usage`,
+   * mcp-connections.md §3, §6.3). `windowDays` mirrors the connector usage
+   * endpoint's `window` query param (days, default 7 server-side).
+   */
+  getMcpServerUsage(id: string, windowDays?: number): Observable<IMcpUsage> {
+    return this.http.get<IMcpUsage>(`${BASE_URL}/mcp-servers/${id}/usage`, {
+      params: windowDays ? { window: windowDays } : {},
+    });
+  }
+
+  /**
    * Updates the enabled_mcp_servers list for an agent.
+   * The list is keyed by MCP server NAME (not id) — `tool-bridge.service.ts`'s
+   * `mergeMcpTools()` filters the runtime's name-keyed connected-server map,
+   * matching `enabled_mcp_tools`'s server-name keying below.
    * Pass null to enable all MCP servers.
    */
   updateEnabledMcpServers(
     agentId: string,
-    enabledMcpServers: string[] | null,
+    enabledMcpServers: string[] | null
   ): Observable<IAgent> {
     return this.http
       .patch<IAgent>(`${BASE_URL}/agents/${agentId}/mcp-servers`, {
         enabled_mcp_servers: enabledMcpServers,
+      })
+      .pipe(tap(() => this.mutations.notify("ai")));
+  }
+
+  /**
+   * Updates the per-tool MCP allowlist for an agent
+   * (`PATCH admin/agents/:id/mcp-tools`, mcp-connections.md §4). The map is
+   * keyed by MCP server name; a `null` value for a server means "all tools
+   * from that server enabled". Pass `null` to clear all per-tool filtering.
+   */
+  updateEnabledMcpTools(
+    agentId: string,
+    enabledMcpTools: Record<string, string[] | null> | null
+  ): Observable<IAgent> {
+    return this.http
+      .patch<IAgent>(`${BASE_URL}/agents/${agentId}/mcp-tools`, {
+        enabled_mcp_tools: enabledMcpTools,
       })
       .pipe(tap(() => this.mutations.notify("ai")));
   }
@@ -375,7 +456,9 @@ export class AgentAdminService {
    * @returns A stream with the list of version snapshots.
    */
   listVersions(agentId: string): Observable<IAgentVersion[]> {
-    return this.http.get<IAgentVersion[]>(`${BASE_URL}/agents/${agentId}/versions`);
+    return this.http.get<IAgentVersion[]>(
+      `${BASE_URL}/agents/${agentId}/versions`
+    );
   }
 
   /**
@@ -386,7 +469,10 @@ export class AgentAdminService {
    * @returns A stream with the restored agent record.
    */
   rollbackToVersion(agentId: string, versionId: string): Observable<IAgent> {
-    return this.http.post<IAgent>(`${BASE_URL}/agents/${agentId}/versions/${versionId}/rollback`, {});
+    return this.http.post<IAgent>(
+      `${BASE_URL}/agents/${agentId}/versions/${versionId}/rollback`,
+      {}
+    );
   }
 
   /**
@@ -397,6 +483,8 @@ export class AgentAdminService {
    * @returns A completion stream (HTTP 204).
    */
   deleteVersion(agentId: string, versionId: string): Observable<void> {
-    return this.http.delete<void>(`${BASE_URL}/agents/${agentId}/versions/${versionId}`);
+    return this.http.delete<void>(
+      `${BASE_URL}/agents/${agentId}/versions/${versionId}`
+    );
   }
 }

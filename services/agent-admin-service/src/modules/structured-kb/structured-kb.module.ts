@@ -1,21 +1,21 @@
 import { Module } from "@nestjs/common";
+import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
+import { JobTrackingService } from "../knowledge-bases/job-tracking.service";
 import { SKBContainersController } from "./containers.controller";
-import { StructuredKBController } from "./structured-kb.controller";
-import { SKBContainersService } from "./skb-containers.service";
 import { SKBContainersRepository } from "./skb-containers.repository";
+import { SKBContainersService } from "./skb-containers.service";
 import { SKBFileParser } from "./skb-file-parser";
-import { SKBSchemaAnalyzerService } from "./skb-schema-analyzer.service";
+import { SKBIngestionWatchdogService } from "./skb-ingestion-watchdog.service";
+import { SKBIngestionWorkerService } from "./skb-ingestion-worker.service";
+import { SKBQueryService } from "./skb-query.service";
+import { SKBQueryHistoryRepository } from "./skb-query-history.repository";
+import { SKBQueryHistoryService } from "./skb-query-history.service";
+import { SKBRateLimitGuard } from "./skb-rate-limit.guard";
+import { SKBRowIndexService } from "./skb-row-index.service";
 import { SKBRowsRepository } from "./skb-rows.repository";
 import { SKBSchemaRepository } from "./skb-schema.repository";
-import { SKBQueryService } from "./skb-query.service";
-import { SKBIngestionWorkerService } from "./skb-ingestion-worker.service";
-import { SKBIngestionWatchdogService } from "./skb-ingestion-watchdog.service";
-import { SKBQueryHistoryService } from "./skb-query-history.service";
-import { SKBQueryHistoryRepository } from "./skb-query-history.repository";
-import { SKBRowIndexService } from "./skb-row-index.service";
-import { JobTrackingService } from "../knowledge-bases/job-tracking.service";
-import { SKBRateLimitGuard } from "./skb-rate-limit.guard";
-import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
+import { SKBSchemaAnalyzerService } from "./skb-schema-analyzer.service";
+import { StructuredKBController } from "./structured-kb.controller";
 
 @Module({
   controllers: [SKBContainersController, StructuredKBController],
@@ -37,6 +37,7 @@ import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connec
     // String-token providers for services that use @Inject("...")
     { provide: "SKBSchemaRepository", useExisting: SKBSchemaRepository },
     { provide: "SKBRowsRepository", useExisting: SKBRowsRepository },
+    { provide: "SKBQueryHistoryService", useExisting: SKBQueryHistoryService },
     {
       provide: "TenantConnectionManager",
       useExisting: YoizenclawTenantConnectionManager,

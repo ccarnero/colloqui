@@ -1,16 +1,49 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
+import type { ChannelEnvelope } from "@yoizen/shared";
 import { ChannelAuditMongoRepository } from "../../src/modules/channel-audit/channel-audit.mongo.repository";
 import { ChannelAuditPostgresRepository } from "../../src/modules/channel-audit/channel-audit.postgres.repository";
-import {
-  CHANNEL_AUDIT_REPOSITORY,
-} from "../../src/modules/channel-audit/channel-audit.repository.interface";
+import { CHANNEL_AUDIT_REPOSITORY } from "../../src/modules/channel-audit/channel-audit.repository.interface";
 import { AuditTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
 import {
   makeFakeTenantMongoConnections,
-  makeMongoCollectionMock,
   makeMockDb,
+  makeMongoCollectionMock,
 } from "../make-mongo-mock";
+
+function makeChannelEnvelope(
+  overrides: Partial<ChannelEnvelope> = {}
+): ChannelEnvelope {
+  return {
+    specversion: "1.0",
+    id: "env-ch-1",
+    source: "channel-service",
+    type: "io.yoizen.messaging.whatsapp.meta.received.v1",
+    resource: "tenant/tenant-a/account/acc-1/channel/whatsapp/provider/meta",
+    time: "2026-07-07T00:00:00.000Z",
+    traceid: "trace-1",
+    causation_id: null,
+    correlation_id: "corr-1",
+    tenant: "tenant-a",
+    producer: "channel-service",
+    domain: "messaging",
+    channel: "whatsapp",
+    provider: "meta",
+    accountid: "acc-1",
+    idempotencykey: "idem-1",
+    transport: { method: "webhook", protocol: "https", depth: 0 },
+    data: {
+      received_at: "2026-07-07T00:00:00.000Z",
+      payload_inline: true,
+      payload_ref: null,
+      payload_bytes: 0,
+      payload_checksum: "chk",
+      payload: { conversationId: "conv-xyz" },
+    },
+    kind: "received",
+    ...overrides,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Mongo repo tests
@@ -35,7 +68,7 @@ describe("ChannelAuditMongoRepository.findByCorrelationId", () => {
     const mockTenantMgr = makeFakeTenantMongoConnections(
       makeMockDb({
         channel_events: collection as unknown as Record<string, unknown>,
-      }),
+      })
     );
 
     const moduleRef = await Test.createTestingModule({
@@ -73,9 +106,10 @@ describe("ChannelAuditPostgresRepository.findByCorrelationId", () => {
     const capturedValues: unknown[] = [];
 
     // Create a mock sql tagged template function that also supports sql.unsafe()
-    const makeSqlTag = (): (
-      (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>
-    ) & { unsafe: (s: string) => string } => {
+    const makeSqlTag = (): ((
+      strings: TemplateStringsArray,
+      ...values: unknown[]
+    ) => Promise<unknown[]>) & { unsafe: (s: string) => string } => {
       const tag = async (
         strings: TemplateStringsArray,
         ...values: unknown[]
@@ -123,5 +157,146 @@ describe("ChannelAuditPostgresRepository.findByCorrelationId", () => {
     // Assert the query string contains the ORDER BY clause
     const fullQuery = capturedStrings.join(" ");
     expect(fullQuery).toMatch(/ORDER BY created_at ASC/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// conversationId projection (DOCS/cowork/METERING-FOUNDATION.md G3)
+// ---------------------------------------------------------------------------
+
+describe("ChannelAuditPostgresRepository.insertChannelEvent — conversationId", () => {
+  it("extracts payload.conversationId into the conversation_id column", async () => {
+    const capturedValues: unknown[] = [];
+    const makeSqlTag = (): ((
+      strings: TemplateStringsArray,
+      ...values: unknown[]
+    ) => Promise<unknown[]>) & { unsafe: (s: string) => string } => {
+      const tag = async (
+        _strings: TemplateStringsArray,
+        ...values: unknown[]
+      ): Promise<unknown[]> => {
+        capturedValues.push(...values);
+        return [];
+      };
+      tag.unsafe = (s: string) => s;
+      return tag as ReturnType<typeof makeSqlTag>;
+    };
+
+    const sqlTag = makeSqlTag();
+    const mockPostgresTenantMgr = {
+      getConnection: mock(() => sqlTag),
+      isInitialized: mock(() => true),
+      markInitialized: mock(),
+      isNamespaceInitialized: mock(() => true),
+      markNamespaceInitialized: mock(),
+    };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ChannelAuditPostgresRepository,
+        {
+          provide: CHANNEL_AUDIT_REPOSITORY,
+          useExisting: ChannelAuditPostgresRepository,
+        },
+        {
+          provide: AuditTenantConnectionManager,
+          useValue: mockPostgresTenantMgr,
+        },
+      ],
+    }).compile();
+
+    const repo = moduleRef.get(ChannelAuditPostgresRepository);
+    await repo.insertChannelEvent(makeChannelEnvelope(), "ingress.subject");
+
+    expect(capturedValues).toContain("conv-xyz");
+  });
+
+  it("leaves conversation_id null when payload has no conversationId", async () => {
+    const capturedValues: unknown[] = [];
+    const makeSqlTag = (): ((
+      strings: TemplateStringsArray,
+      ...values: unknown[]
+    ) => Promise<unknown[]>) & { unsafe: (s: string) => string } => {
+      const tag = async (
+        _strings: TemplateStringsArray,
+        ...values: unknown[]
+      ): Promise<unknown[]> => {
+        capturedValues.push(...values);
+        return [];
+      };
+      tag.unsafe = (s: string) => s;
+      return tag as ReturnType<typeof makeSqlTag>;
+    };
+
+    const sqlTag = makeSqlTag();
+    const mockPostgresTenantMgr = {
+      getConnection: mock(() => sqlTag),
+      isInitialized: mock(() => true),
+      markInitialized: mock(),
+      isNamespaceInitialized: mock(() => true),
+      markNamespaceInitialized: mock(),
+    };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ChannelAuditPostgresRepository,
+        {
+          provide: CHANNEL_AUDIT_REPOSITORY,
+          useExisting: ChannelAuditPostgresRepository,
+        },
+        {
+          provide: AuditTenantConnectionManager,
+          useValue: mockPostgresTenantMgr,
+        },
+      ],
+    }).compile();
+
+    const repo = moduleRef.get(ChannelAuditPostgresRepository);
+    const envelope = makeChannelEnvelope({
+      data: {
+        received_at: "2026-07-07T00:00:00.000Z",
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "chk",
+        payload: {},
+      },
+    });
+    await repo.insertChannelEvent(envelope, "ingress.subject");
+
+    expect(capturedValues).not.toContain("conv-xyz");
+  });
+});
+
+describe("ChannelAuditMongoRepository.insertChannelEvent — conversationId", () => {
+  it("extracts payload.conversationId into the conversation_id field", async () => {
+    let insertedDoc: Record<string, unknown> | undefined;
+    const insertMany = mock(async (docs: Array<Record<string, unknown>>) => {
+      insertedDoc = docs[0];
+      return { insertedCount: docs.length };
+    });
+    const collection = makeMongoCollectionMock({ insertMany });
+
+    const mockTenantMgr = makeFakeTenantMongoConnections(
+      makeMockDb({
+        channel_events: collection as unknown as Record<string, unknown>,
+      })
+    );
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ChannelAuditMongoRepository,
+        {
+          provide: CHANNEL_AUDIT_REPOSITORY,
+          useExisting: ChannelAuditMongoRepository,
+        },
+        { provide: AuditTenantConnectionManager, useValue: mockTenantMgr },
+      ],
+    }).compile();
+
+    const repo = moduleRef.get(ChannelAuditMongoRepository);
+    await repo.insertChannelEvent(makeChannelEnvelope(), "ingress.subject");
+
+    expect(insertedDoc?.conversation_id).toBe("conv-xyz");
   });
 });

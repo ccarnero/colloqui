@@ -2,6 +2,11 @@
 
 Adapter tools allow agents to invoke external APIs through centrally managed adapter configurations, instead of hardcoding HTTP endpoint details in each agent.
 
+> **Related:** agents can also use tools exposed by external **MCP servers**
+> (a third tool source alongside adapter/builtin), merged into the same
+> tool map and filtered per-agent/per-tool. See
+> [mcp-connections.md](../architecture/mcp-connections.md).
+
 ## Overview
 
 Traditional agent tools require explicit `endpoint` URLs and authentication credentials per tool. **Adapter tools** replace this with a reference (`adapterRef`) to a connector managed by the platform's `connector-admin` service. This provides:

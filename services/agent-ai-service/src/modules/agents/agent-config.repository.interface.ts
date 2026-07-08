@@ -1,7 +1,8 @@
 import type { InjectionToken } from "@nestjs/common";
 import type { VariableDeclaration } from "@yoizen/shared";
 
-export const AGENT_CONFIG_REPOSITORY: InjectionToken = "AGENT_CONFIG_REPOSITORY";
+export const AGENT_CONFIG_REPOSITORY: InjectionToken =
+  "AGENT_CONFIG_REPOSITORY";
 
 /**
  * Agent configuration read from per-tenant database.
@@ -16,6 +17,12 @@ export interface IAgentConfig {
   readonly tools: unknown[];
   readonly enabledTools: readonly string[] | null;
   readonly enabledMcpServers: readonly string[] | null;
+  /**
+   * Per-tool MCP allowlist keyed by server name (mcp-connections.md §4).
+   * `null` (or a missing server key) means "all tools from that server".
+   */
+  readonly enabledMcpTools: Record<string, string[] | null> | null;
+  readonly toolDescriptionOverrides: Record<string, string> | null;
   readonly skills: unknown[];
   readonly rules: unknown[];
   readonly channels: unknown[];
@@ -40,6 +47,6 @@ export interface IAgentConfigRepository {
   findAll(tenantId: string): Promise<IAgentConfig[]>;
   findByTenant(
     tenantId: string,
-    options?: { status?: string },
+    options?: { status?: string }
   ): Promise<IAgentConfig[]>;
 }

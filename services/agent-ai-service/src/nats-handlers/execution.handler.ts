@@ -12,6 +12,7 @@ import {
   type VariableResolutionContext,
 } from "@yoizen/shared";
 import type { JetStreamClient, Msg, NatsConnection } from "nats";
+import { agentAiServiceConfig } from "../config";
 import type { ChatRequest } from "../modules/chat/chat.dto";
 // biome-ignore lint/style/useImportType: ChatService is constructor-injected by NestJS DI — must be a value import so `design:paramtypes` metadata resolves the real class at runtime, not `type`.
 import { ChatService } from "../modules/chat/chat.service";
@@ -146,6 +147,19 @@ export class ExecutionHandler implements OnModuleInit {
       `[execution] Starting: tenant='${tenantId}' execution='${executionId ?? "n/a"}' agent='${agentId}'`
     );
 
+    // Mirrors handleStreaming's cancel plumbing: an AbortController keyed
+    // by executionId, aborted either by the shared `rt.*.exec.*.cancel`
+    // subscription (onModuleInit) or by a wall-clock ceiling, so a caller
+    // that gives up on `waitForExecutionResult` doesn't leave the LLM
+    // burning compute with no consumer.
+    const abortController = new AbortController();
+    if (executionId) {
+      this.abortControllers.set(executionId, abortController);
+    }
+    const timeoutHandle = setTimeout(() => {
+      abortController.abort();
+    }, agentAiServiceConfig.bufferedExecutionTimeoutMs);
+
     await this.publishStatus(
       tenantId,
       "execution_started",
@@ -154,7 +168,9 @@ export class ExecutionHandler implements OnModuleInit {
     );
 
     try {
-      const result = await this.chatService.generateReply(tenantId, request);
+      const result = await this.chatService.generateReply(tenantId, request, {
+        abortSignal: abortController.signal,
+      });
 
       await this.publishStatus(
         tenantId,
@@ -179,6 +195,7 @@ export class ExecutionHandler implements OnModuleInit {
         `[execution] Completed: execution='${executionId ?? "n/a"}' agent='${agentId}' tokens=${result.usage.totalTokens}`
       );
     } catch (error) {
+      const wasAborted = abortController.signal.aborted;
       await this.publishStatus(
         tenantId,
         "execution_failed",
@@ -187,6 +204,7 @@ export class ExecutionHandler implements OnModuleInit {
           agentId,
           tenantId,
           state: "failed",
+          reason: wasAborted ? "cancelled" : undefined,
           error: error instanceof Error ? error.message : String(error),
         },
         envelope
@@ -195,6 +213,11 @@ export class ExecutionHandler implements OnModuleInit {
       this.logger.error(
         `[execution] Failed: execution='${executionId ?? "n/a"}' agent='${agentId}': ${error}`
       );
+    } finally {
+      clearTimeout(timeoutHandle);
+      if (executionId) {
+        this.abortControllers.delete(executionId);
+      }
     }
   }
 

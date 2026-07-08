@@ -101,7 +101,8 @@ export function resolveConfig(
     timeoutMs: userConfig.timeoutMs ?? 10_000,
     tokenExpiryBufferMs: userConfig.tokenExpiryBufferMs ?? 60_000,
     onWarn: userConfig.onWarn,
-    apiVersion: userConfig.apiVersion ?? "v1",
+    apiVersion:
+      userConfig.apiVersion === undefined ? "v1" : userConfig.apiVersion,
     retry: userConfig.retry,
   });
 }

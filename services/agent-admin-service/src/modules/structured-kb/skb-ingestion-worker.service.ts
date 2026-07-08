@@ -4,21 +4,24 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
-import type { JetStreamClient, JetStreamManager, JsMsg } from "nats";
-import { PinoLoggerService } from "@yoizen/observability";
-import { PermanentError } from "@yoizen/shared";
 import {
-  MultiTenantConsumerManager,
   type IMultiTenantConsumerConfig,
+  MultiTenantConsumerManager,
   type TenantConnectionManager,
 } from "@yoizen/database";
+import { PinoLoggerService } from "@yoizen/observability";
+import { PermanentError } from "@yoizen/shared";
+import type { JetStreamClient, JetStreamManager, JsMsg } from "nats";
 import { JETSTREAM, JETSTREAM_MANAGER } from "../../providers/nats.provider";
 import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
-import { SKBFileParser } from "./skb-file-parser";
-import { SKBSchemaAnalyzerService } from "./skb-schema-analyzer.service";
-import { SKBRowsRepository } from "./skb-rows.repository";
-import { SKBContainersService } from "./skb-containers.service";
+// biome-ignore-start lint/style/useImportType: these classes are constructor-injected by NestJS DI — they must be value imports so `design:paramtypes` metadata resolves the real classes at runtime, not `type`.
 import { JobTrackingService } from "../knowledge-bases/job-tracking.service";
+import { SKBContainersService } from "./skb-containers.service";
+import { SKBFileParser } from "./skb-file-parser";
+import { SKBRowsRepository } from "./skb-rows.repository";
+import { SKBSchemaAnalyzerService } from "./skb-schema-analyzer.service";
+
+// biome-ignore-end lint/style/useImportType
 
 /**
  * Durable consumer name for the SKB ingestion worker.
@@ -60,7 +63,7 @@ export class SKBIngestionWorkerService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new PinoLoggerService(
-    SKBIngestionWorkerService.name,
+    SKBIngestionWorkerService.name
   );
   private manager: MultiTenantConsumerManager | null = null;
 
@@ -79,7 +82,7 @@ export class SKBIngestionWorkerService
   async onModuleInit(): Promise<void> {
     if (process.env.SERVICE_MODE !== "worker") {
       this.logger.log(
-        "SERVICE_MODE != worker — skipping SKB ingestion worker init",
+        "SERVICE_MODE != worker — skipping SKB ingestion worker init"
       );
       return;
     }
@@ -99,13 +102,13 @@ export class SKBIngestionWorkerService
       this.js,
       config,
       (msg: JsMsg) => this.handleMessage(msg),
-      this.logger,
+      this.logger
     );
 
     await this.manager.start();
 
     this.logger.log(
-      `SKB ingestion worker started, consuming '${FILTER_SUBJECT}' from all tenant streams`,
+      `SKB ingestion worker started, consuming '${FILTER_SUBJECT}' from all tenant streams`
     );
   }
 
@@ -140,14 +143,14 @@ export class SKBIngestionWorkerService
     } catch {
       throw new PermanentError(
         "Invalid JSON — cannot parse ingestion envelope",
-        PERMANENT_ERROR_STAGE,
+        PERMANENT_ERROR_STAGE
       );
     }
 
     if (!envelope || typeof envelope !== "object") {
       throw new PermanentError(
         "Malformed envelope — expected an object",
-        PERMANENT_ERROR_STAGE,
+        PERMANENT_ERROR_STAGE
       );
     }
 
@@ -162,16 +165,19 @@ export class SKBIngestionWorkerService
     const tenantId = payload.tenantId as string | undefined;
     const kbId = payload.kbId as string | undefined;
     const fileUrl = payload.fileUrl as string | undefined;
+    const categories = Array.isArray(payload.categories)
+      ? (payload.categories as string[])
+      : [];
 
     if (!containerId || !fileId || !tenantId) {
       throw new PermanentError(
         `Missing required fields: containerId=${containerId ?? "undefined"}, fileId=${fileId ?? "undefined"}, tenantId=${tenantId ?? "undefined"}`,
-        PERMANENT_ERROR_STAGE,
+        PERMANENT_ERROR_STAGE
       );
     }
 
     this.logger.log(
-      `Processing file ${fileId} for tenant ${tenantId} (container=${containerId})`,
+      `Processing file ${fileId} for tenant ${tenantId} (container=${containerId})`
     );
 
     // Step 1: Create job tracking entry
@@ -179,18 +185,18 @@ export class SKBIngestionWorkerService
     const job = await this.jobTrackingService.createJob(
       tenantId,
       trackingKbId,
-      [fileId],
+      [fileId]
     );
 
     try {
       // Step 2: Death check — verify container exists before processing
       const container = await this.containerService.findById(
         tenantId,
-        containerId,
+        containerId
       );
       if (!container) {
         throw new Error(
-          `Container ${containerId} was deleted during processing`,
+          `Container ${containerId} was deleted during processing`
         );
       }
 
@@ -198,47 +204,42 @@ export class SKBIngestionWorkerService
       const activeJob = await this.jobTrackingService.getJob(
         tenantId,
         trackingKbId,
-        job.jobId,
+        job.jobId
       );
       if (!activeJob) {
-        throw new Error(
-          `Job ${job.jobId} was cancelled during processing`,
-        );
+        throw new Error(`Job ${job.jobId} was cancelled during processing`);
       }
 
       // Step 4: Parse the file
-      const parsed = await this.fileParser.parseFile(
-        fileUrl ?? "",
-        tenantId,
-      );
+      const parsed = await this.fileParser.parseFile(fileUrl ?? "", tenantId);
 
-      // Step 5: Analyze schema
-      const analysis = await this.schemaAnalyzer.analyze(parsed);
+      // Step 5: Analyze schema (feeds the future schema-persistence step;
+      // see skb-schema.repository.ts — not part of this defect's scope)
+      await this.schemaAnalyzer.analyze(parsed);
 
-      // Step 6: Insert typed rows
-      const columnsMap: Record<string, string> = {};
-      for (const col of analysis.columns) {
-        columnsMap[col.name] = col.type;
-      }
-      // The row store mock in tests has its own insertRows signature;
-      // cast to any for compatibility with different test contracts
-      await (this.rowStore as any).insertRows(
+      // Step 6: Insert typed rows. `insertRows` needs a live sql handle for
+      // the tenant plus the container it belongs to — both honest,
+      // statically-typed arguments matching SKBRowsRepository.insertRows().
+      const sql = await this.connectionManager.ensureSchema(tenantId);
+      await this.rowStore.insertRows(
+        sql,
         tenantId,
+        containerId,
         fileId,
         parsed.rows as Record<string, unknown>[],
-        columnsMap,
+        categories
       );
 
       // Step 7: Death check after — verify container still exists
       const containerAfter = await this.containerService.findById(
         tenantId,
-        containerId,
+        containerId
       );
       if (!containerAfter) {
         // Clean up rows that were just inserted
-        await (this.rowStore as any).deleteRowsForFile(tenantId, fileId);
+        await this.rowStore.deleteRowsForFile(tenantId, fileId);
         throw new Error(
-          `Container ${containerId} was deleted during processing`,
+          `Container ${containerId} was deleted during processing`
         );
       }
 
@@ -248,22 +249,18 @@ export class SKBIngestionWorkerService
         containerId,
         fileId,
         "completed",
-        {},
+        {}
       );
 
       // Step 9: Complete the job
       await this.jobTrackingService.completeJob(
         tenantId,
         trackingKbId,
-        job.jobId,
+        job.jobId
       );
 
       // Step 10: Recompute container status
-      await this.containerService.updateStatus(
-        tenantId,
-        containerId,
-        "ready",
-      );
+      await this.containerService.updateStatus(tenantId, containerId, "ready");
 
       this.logger.log(`File ${fileId} ingested successfully`);
     } catch (error) {
@@ -277,7 +274,7 @@ export class SKBIngestionWorkerService
           containerId,
           fileId,
           "failed",
-          { error: message },
+          { error: message }
         );
       } catch {
         // Swallow — file status should not block error propagation
@@ -289,7 +286,7 @@ export class SKBIngestionWorkerService
           tenantId,
           trackingKbId,
           job.jobId,
-          message,
+          message
         );
       } catch {
         // Swallow
@@ -300,7 +297,7 @@ export class SKBIngestionWorkerService
         await this.containerService.updateStatus(
           tenantId,
           containerId,
-          "failed",
+          "failed"
         );
       } catch {
         // Swallow

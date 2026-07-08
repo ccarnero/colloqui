@@ -1,17 +1,20 @@
-import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { Inject, Injectable } from "@nestjs/common";
+import type {
+  IStringIdDoc,
+  TenantMongoConnectionManager,
+} from "@yoizen/database";
 import type { Document, Filter, WithId } from "mongodb";
-import type { IStringIdDoc, TenantMongoConnectionManager } from "@yoizen/database";
-import { TenantScopedMongoRepository } from "../../providers/tenant-scoped.repository";
 import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
+import { TenantScopedMongoRepository } from "../../providers/tenant-scoped.repository";
 import type {
   IAgent,
-  IAgentVersion,
   IAgentsRepository,
+  IAgentVersion,
   ICreateAgentData,
   IFindAllAgentsOptions,
-  IUpdateAgentData,
   ISemverPublishContext,
+  IUpdateAgentData,
 } from "./agents.repository.interface";
 
 function docToAgent(doc: WithId<IStringIdDoc>): IAgent {
@@ -26,7 +29,16 @@ function docToAgent(doc: WithId<IStringIdDoc>): IAgent {
     model_config: (doc.model_config as Record<string, unknown>) ?? {},
     tools: Array.isArray(doc.tools) ? doc.tools : [],
     enabled_tools: Array.isArray(doc.enabled_tools) ? doc.enabled_tools : null,
-    enabled_mcp_servers: Array.isArray(doc.enabled_mcp_servers) ? doc.enabled_mcp_servers : null,
+    enabled_mcp_servers: Array.isArray(doc.enabled_mcp_servers)
+      ? doc.enabled_mcp_servers
+      : null,
+    enabled_mcp_tools:
+      doc.enabled_mcp_tools !== null &&
+      doc.enabled_mcp_tools !== undefined &&
+      typeof doc.enabled_mcp_tools === "object" &&
+      !Array.isArray(doc.enabled_mcp_tools)
+        ? (doc.enabled_mcp_tools as Record<string, string[] | null>)
+        : null,
     tool_description_overrides:
       doc.tool_description_overrides !== null &&
       doc.tool_description_overrides !== undefined &&
@@ -35,9 +47,15 @@ function docToAgent(doc: WithId<IStringIdDoc>): IAgent {
         ? (doc.tool_description_overrides as Record<string, string>)
         : null,
     channels: Array.isArray(doc.channels) ? doc.channels : [],
-    knowledge_base_ids: Array.isArray(doc.knowledge_base_ids) ? doc.knowledge_base_ids.map(String) : [],
-    input_variables: Array.isArray(doc.input_variables) ? doc.input_variables : [],
-    output_variables: Array.isArray(doc.output_variables) ? doc.output_variables : [],
+    knowledge_base_ids: Array.isArray(doc.knowledge_base_ids)
+      ? doc.knowledge_base_ids.map(String)
+      : [],
+    input_variables: Array.isArray(doc.input_variables)
+      ? doc.input_variables
+      : [],
+    output_variables: Array.isArray(doc.output_variables)
+      ? doc.output_variables
+      : [],
     status: String(doc.status ?? "draft") as IAgent["status"],
     is_active: Boolean(doc.is_active ?? true),
     published_at:
@@ -69,7 +87,10 @@ function docToAgent(doc: WithId<IStringIdDoc>): IAgent {
 }
 
 @Injectable()
-export class AgentsMongoRepository extends TenantScopedMongoRepository implements IAgentsRepository {
+export class AgentsMongoRepository
+  extends TenantScopedMongoRepository
+  implements IAgentsRepository
+{
   constructor(
     @Inject(YoizenclawTenantConnectionManager)
     connectionManager: TenantMongoConnectionManager,
@@ -79,7 +100,7 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
 
   async findAll(
     tenantId: string,
-    options: IFindAllAgentsOptions = {},
+    options: IFindAllAgentsOptions = {}
   ): Promise<{ agents: IAgent[]; total: number }> {
     const db = await this.getDb(tenantId);
     const col = db.collection<IStringIdDoc>("agents");
@@ -91,7 +112,9 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
     } = options;
     const isActiveEq = isActiveFilter === undefined ? true : isActiveFilter;
     const filter: Filter<IStringIdDoc> = { is_active: isActiveEq };
-    if (status) filter.status = status;
+    if (status) {
+      filter.status = status;
+    }
 
     const total = await col.countDocuments(filter);
     const docs = await col
@@ -140,34 +163,60 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
   async update(
     tenantId: string,
     id: string,
-    data: IUpdateAgentData,
+    data: IUpdateAgentData
   ): Promise<IAgent | null> {
     const db = await this.getDb(tenantId);
     const setFields: Document = { updated_at: new Date() };
-    if (data.name !== undefined) setFields.name = data.name;
-    if (data.description !== undefined) setFields.description = data.description;
+    if (data.name !== undefined) {
+      setFields.name = data.name;
+    }
+    if (data.description !== undefined) {
+      setFields.description = data.description;
+    }
     if (data.system_prompt !== undefined) {
       setFields.system_prompt = data.system_prompt;
     }
     if (data.model_config !== undefined) {
       setFields.model_config = data.model_config;
     }
-    if (data.tools !== undefined) setFields.tools = data.tools;
-    if (data.enabled_tools !== undefined) setFields.enabled_tools = data.enabled_tools;
-  if (data.enabled_mcp_servers !== undefined) setFields.enabled_mcp_servers = data.enabled_mcp_servers;
-  if (data.tool_description_overrides !== undefined) setFields.tool_description_overrides = data.tool_description_overrides;
-  if (data.channels !== undefined) setFields.channels = data.channels;
-  if (data.knowledge_base_ids !== undefined) setFields.knowledge_base_ids = data.knowledge_base_ids;
-  if (data.input_variables !== undefined) setFields.input_variables = data.input_variables;
-  if (data.output_variables !== undefined) setFields.output_variables = data.output_variables;
-    if (data.status !== undefined) setFields.status = data.status;
-    if (data.is_active !== undefined) setFields.is_active = data.is_active;
+    if (data.tools !== undefined) {
+      setFields.tools = data.tools;
+    }
+    if (data.enabled_tools !== undefined) {
+      setFields.enabled_tools = data.enabled_tools;
+    }
+    if (data.enabled_mcp_servers !== undefined) {
+      setFields.enabled_mcp_servers = data.enabled_mcp_servers;
+    }
+    if (data.enabled_mcp_tools !== undefined) {
+      setFields.enabled_mcp_tools = data.enabled_mcp_tools;
+    }
+    if (data.tool_description_overrides !== undefined) {
+      setFields.tool_description_overrides = data.tool_description_overrides;
+    }
+    if (data.channels !== undefined) {
+      setFields.channels = data.channels;
+    }
+    if (data.knowledge_base_ids !== undefined) {
+      setFields.knowledge_base_ids = data.knowledge_base_ids;
+    }
+    if (data.input_variables !== undefined) {
+      setFields.input_variables = data.input_variables;
+    }
+    if (data.output_variables !== undefined) {
+      setFields.output_variables = data.output_variables;
+    }
+    if (data.status !== undefined) {
+      setFields.status = data.status;
+    }
+    if (data.is_active !== undefined) {
+      setFields.is_active = data.is_active;
+    }
 
     if (Object.keys(setFields).length > 1) {
-      await db.collection<IStringIdDoc>("agents").updateOne(
-        { _id: id, is_active: true },
-        { $set: setFields },
-      );
+      await db
+        .collection<IStringIdDoc>("agents")
+        .updateOne({ _id: id, is_active: true }, { $set: setFields });
     }
 
     return this.findById(tenantId, id);
@@ -175,16 +224,24 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
 
   async delete(tenantId: string, id: string): Promise<boolean> {
     const db = await this.getDb(tenantId);
-    const result = await db.collection<IStringIdDoc>("agents").updateOne(
-      { _id: id, is_active: true },
-      { $set: { is_active: false, updated_at: new Date() } },
-    );
+    const result = await db
+      .collection<IStringIdDoc>("agents")
+      .updateOne(
+        { _id: id, is_active: true },
+        { $set: { is_active: false, updated_at: new Date() } }
+      );
     return result.modifiedCount > 0;
   }
 
-  async publish(tenantId: string, id: string, context?: ISemverPublishContext): Promise<IAgent | null> {
+  async publish(
+    tenantId: string,
+    id: string,
+    context?: ISemverPublishContext
+  ): Promise<IAgent | null> {
     const current = await this.findById(tenantId, id);
-    if (!current) return null;
+    if (!current) {
+      return null;
+    }
 
     const snapshot = {
       name: current.name,
@@ -194,6 +251,7 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
       tools: current.tools,
       enabled_tools: current.enabled_tools,
       enabled_mcp_servers: current.enabled_mcp_servers,
+      enabled_mcp_tools: current.enabled_mcp_tools,
       tool_description_overrides: current.tool_description_overrides,
       channels: current.channels,
       knowledge_base_ids: current.knowledge_base_ids,
@@ -213,7 +271,7 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
           updated_at: new Date(),
         },
       },
-      { returnDocument: "after" },
+      { returnDocument: "after" }
     );
 
     if (result) {
@@ -223,7 +281,7 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
       await versionsCol.insertOne({
         _id: randomUUID(),
         agent_id: id,
-        version_number: context?.versionNumber ?? (versionCount + 1),
+        version_number: context?.versionNumber ?? versionCount + 1,
         snapshot,
         published_at: new Date(),
         created_at: new Date(),
@@ -253,14 +311,19 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
           updated_at: new Date(),
         },
       },
-      { returnDocument: "after" },
+      { returnDocument: "after" }
     );
     return result ? docToAgent(result) : null;
   }
 
-  async revertToPublished(tenantId: string, id: string): Promise<IAgent | null> {
+  async revertToPublished(
+    tenantId: string,
+    id: string
+  ): Promise<IAgent | null> {
     const current = await this.findById(tenantId, id);
-    if (!current || !current.published_config) return null;
+    if (!current || !current.published_config) {
+      return null;
+    }
 
     const snapshot = current.published_config;
 
@@ -276,7 +339,9 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
           tools: snapshot.tools ?? [],
           enabled_tools: snapshot.enabled_tools ?? null,
           enabled_mcp_servers: snapshot.enabled_mcp_servers ?? null,
-          tool_description_overrides: snapshot.tool_description_overrides ?? null,
+          enabled_mcp_tools: snapshot.enabled_mcp_tools ?? null,
+          tool_description_overrides:
+            snapshot.tool_description_overrides ?? null,
           channels: snapshot.channels ?? [],
           knowledge_base_ids: snapshot.knowledge_base_ids ?? [],
           input_variables: snapshot.input_variables ?? [],
@@ -284,12 +349,15 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
           updated_at: new Date(),
         },
       },
-      { returnDocument: "after" },
+      { returnDocument: "after" }
     );
     return result ? docToAgent(result) : null;
   }
 
-  async listVersions(tenantId: string, agentId: string): Promise<IAgentVersion[]> {
+  async listVersions(
+    tenantId: string,
+    agentId: string
+  ): Promise<IAgentVersion[]> {
     const db = await this.getDb(tenantId);
     const docs = await db
       .collection<IStringIdDoc>("agent_versions")
@@ -321,15 +389,23 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
     }));
   }
 
-  async rollbackToVersion(tenantId: string, agentId: string, versionId: string): Promise<IAgent | null> {
+  async rollbackToVersion(
+    tenantId: string,
+    agentId: string,
+    versionId: string
+  ): Promise<IAgent | null> {
     const db = await this.getDb(tenantId);
-    const versionDoc = await db.collection<IStringIdDoc>("agent_versions").findOne({
-      _id: versionId,
-      agent_id: agentId,
-    });
-    if (!versionDoc) return null;
+    const versionDoc = await db
+      .collection<IStringIdDoc>("agent_versions")
+      .findOne({
+        _id: versionId,
+        agent_id: agentId,
+      });
+    if (!versionDoc) {
+      return null;
+    }
 
-    const snapshot = versionDoc.snapshot as Record<string, unknown> ?? {};
+    const snapshot = (versionDoc.snapshot as Record<string, unknown>) ?? {};
 
     const result = await db.collection<IStringIdDoc>("agents").findOneAndUpdate(
       { _id: agentId, is_active: true },
@@ -338,11 +414,22 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
           name: (snapshot.name as string) ?? "",
           description: (snapshot.description as string | null) ?? null,
           system_prompt: (snapshot.system_prompt as string) ?? "",
-          model_config: (snapshot.model_config as Record<string, unknown>) ?? {},
+          model_config:
+            (snapshot.model_config as Record<string, unknown>) ?? {},
           tools: (snapshot.tools as unknown[]) ?? [],
           enabled_tools: (snapshot.enabled_tools as string[] | null) ?? null,
-          enabled_mcp_servers: (snapshot.enabled_mcp_servers as string[] | null) ?? null,
-          tool_description_overrides: (snapshot.tool_description_overrides as Record<string, string> | null) ?? null,
+          enabled_mcp_servers:
+            (snapshot.enabled_mcp_servers as string[] | null) ?? null,
+          enabled_mcp_tools:
+            (snapshot.enabled_mcp_tools as Record<
+              string,
+              string[] | null
+            > | null) ?? null,
+          tool_description_overrides:
+            (snapshot.tool_description_overrides as Record<
+              string,
+              string
+            > | null) ?? null,
           channels: (snapshot.channels as unknown[]) ?? [],
           knowledge_base_ids: (snapshot.knowledge_base_ids as string[]) ?? [],
           input_variables: (snapshot.input_variables as unknown[]) ?? [],
@@ -350,17 +437,23 @@ export class AgentsMongoRepository extends TenantScopedMongoRepository implement
           updated_at: new Date(),
         },
       },
-      { returnDocument: "after" },
+      { returnDocument: "after" }
     );
     return result ? docToAgent(result) : null;
   }
 
-  async deleteVersion(tenantId: string, agentId: string, versionId: string): Promise<boolean> {
+  async deleteVersion(
+    tenantId: string,
+    agentId: string,
+    versionId: string
+  ): Promise<boolean> {
     const db = await this.getDb(tenantId);
-    const result = await db.collection<IStringIdDoc>("agent_versions").deleteOne({
-      _id: versionId,
-      agent_id: agentId,
-    });
+    const result = await db
+      .collection<IStringIdDoc>("agent_versions")
+      .deleteOne({
+        _id: versionId,
+        agent_id: agentId,
+      });
     return result.deletedCount > 0;
   }
 }

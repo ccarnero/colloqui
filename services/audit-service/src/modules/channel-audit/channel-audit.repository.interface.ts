@@ -7,6 +7,7 @@ export interface IChannelAuditQueryParams {
   channel?: string;
   kind?: string;
   accountId?: string;
+  conversationId?: string;
   from?: string;
   to?: string;
   limit: number;
@@ -16,18 +17,18 @@ export interface IChannelAuditQueryParams {
 export interface IChannelAuditRepository {
   insertChannelEvent(
     envelope: ChannelEnvelope,
-    natsSubject: string,
+    natsSubject: string
   ): Promise<void>;
   queryEvents(
     params: IChannelAuditQueryParams,
-    tenantId: string,
+    tenantId: string
   ): Promise<IStoredChannelEvent[]>;
   getEventById(
     id: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IStoredChannelEvent | null>;
   findByCorrelationId(
     correlationId: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IStoredChannelEvent[]>;
 }

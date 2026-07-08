@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Mock @yoizen/observability
@@ -28,13 +28,17 @@ mock.module("@nestjs/common", () => ({
     log = mock(() => {});
     warn = mock(() => {});
     error = mock(() => {});
+    debug = mock(() => {});
+    verbose = mock(() => {});
+    fatal = mock(() => {});
+    static overrideLogger = mock(() => {});
     constructor(_context?: string) {}
   },
 }));
 
 import { Test } from "@nestjs/testing";
-import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
 import type { ToolDef } from "../../src/modules/tools/tool-definition";
+import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
 
 // ---------------------------------------------------------------------------
 // Fixture: builtin tool definitions
@@ -61,7 +65,10 @@ const RESOURCE_DEF: ToolDef = {
   inputSchema: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["read", "list", "create", "update", "delete"] },
+      action: {
+        type: "string",
+        enum: ["read", "list", "create", "update", "delete"],
+      },
       resource_type: { type: "string" },
     },
     required: ["action", "resource_type"],
@@ -94,9 +101,7 @@ describe("ToolsController — GET /tools/builtins", () => {
       );
       const moduleRef = await Test.createTestingModule({
         controllers: [ToolsController],
-        providers: [
-          { provide: ToolRegistryService, useValue: mockRegistry },
-        ],
+        providers: [{ provide: ToolRegistryService, useValue: mockRegistry }],
       }).compile();
       controller = moduleRef.get(ToolsController);
     } catch {

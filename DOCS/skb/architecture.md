@@ -168,24 +168,30 @@ CREATE TABLE IF NOT EXISTS skb_query_history (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   container_id    UUID NOT NULL REFERENCES skb_containers(id),
   tenant_id       VARCHAR(255) NOT NULL,
-  natural_query   TEXT NOT NULL,
-  sql_where       TEXT,
-  sql_sort        TEXT,
+  nl_query        TEXT NOT NULL,
+  generated_sql   TEXT,
   result_count    INTEGER DEFAULT 0,
-  executed_at     TIMESTAMPTZ DEFAULT NOW()
+  duration_ms     INTEGER DEFAULT 0,
+  error           TEXT,
+  error_message   TEXT,
+  user_id         VARCHAR(255),
+  created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_skb_query_history_container
-  ON skb_query_history(container_id, executed_at DESC);
+  ON skb_query_history(container_id, created_at DESC);
 ```
 
-> **Drift warning**: the DDL above matches `schema-initializer.ts`, but
-> `SKBQueryHistoryRepository.recordQuery()` inserts into different columns
-> (`nl_query`, `generated_sql`, `duration_ms`, `error`, `error_message`,
-> `user_id`, `created_at`) that do not exist in this table — the insert would
-> fail at runtime. In practice this never surfaces because
-> `SKBQueryHistoryService.recordQuery()` is registered as a provider but has no
-> call sites: `skb_query_history` is never populated.
+> **Fixed**: the DDL above now matches what
+> `SKBQueryHistoryRepository.recordQuery()` actually inserts (`nl_query`,
+> `generated_sql`, `duration_ms`, `error`, `error_message`, `user_id`,
+> `created_at`) — it previously used `natural_query`/`sql_where`/`sql_sort`/
+> `executed_at`, which would have made every insert fail at runtime.
+> `SKBQueryService.query()` now calls `SKBQueryHistoryService.recordQuery()`
+> fire-and-forget (success and failure paths, with duration) after each
+> query, so `skb_query_history` is populated in normal operation. A
+> history-write failure is caught and logged as a warning — it never fails
+> the query itself.
 
 ### 2.2 TypeScript Interfaces
 
@@ -443,7 +449,7 @@ Following the Python reference pattern (`_skb_version_exists`, `_skb_job_is_acti
 1. **Container deleted check**: Before each pipeline stage, verify `skb_containers` row still exists and `is_active = true`.
 2. **Timeout**: Worker ack timeout 5 minutes (`ackWaitMs: 300_000` in `skb-ingestion-worker.service.ts`).
 3. **Partial cleanup on failure**: `DELETE FROM skb_rows WHERE file_id = $1`, `DELETE FROM skb_schemas WHERE file_id = $1`.
-4. **Watchdog**: `SKBIngestionWatchdogService` runs with a 10-minute stuck threshold, but its stuck-file lookup (`SKBContainersRepository.findProcessingFilesOlderThan`) is stubbed to always return `[]` (cross-tenant iteration not implemented), so the watchdog is currently a no-op.
+4. **Watchdog**: `SKBIngestionWatchdogService` runs with a 10-minute stuck threshold. Its stuck-file lookup (`SKBContainersRepository.findProcessingFilesOlderThan`) fans out over `TenantConnectionManager.getKnownTenantIds()` (same pattern as `DocumentsService.resetStuckProcessingDocuments()`) and queries `skb_files` per tenant for `status = 'processing'` rows older than the threshold.
 
 ### 4.4 Worker Pattern
 
@@ -530,12 +536,14 @@ function createModel(config: ProviderConfig) {
 }
 ```
 
-> **Implementation status**: container-level provider resolution is NOT wired.
-> `SKBQueryService.query()` hardcodes `{ provider: "openai", modelId: "gpt-4o" }`,
-> and while `SKBSchemaAnalyzerService.buildModel()` accepts an optional
-> `providerConfig`/`modelName`, the ingestion worker calls `analyze(parsed)`
-> without them — the container's stored `provider_config` / `ingest_model` /
-> `query_model` values are never used.
+> **Implementation status**: container-level provider resolution (the
+> container's stored `provider_config` / `ingest_model` / `query_model`
+> columns) is still NOT wired — the ingestion worker calls `analyze(parsed)`
+> without a `providerConfig`/`modelName` override. The previously-hardcoded
+> `{ provider: "openai", modelId: "gpt-4o" }` default is now defined once in
+> `skb-llm.config.ts` and overridable via `SKB_LLM_PROVIDER` /
+> `SKB_LLM_MODEL_ID` env vars; both `SKBQueryService.query()` and
+> `SKBSchemaAnalyzerService.buildModel()`'s fallback read the same constant.
 
 ### 5.3 Prompt Construction
 
@@ -854,16 +862,24 @@ structured-kb/
 > standalone files. File ingestion state is managed within `SKBContainersService/Repository`.
 > The `prompts/` subdirectory was not created — prompts are inline in service files.
 >
-> **Known wiring defects in the current tree**:
-> - `SKBContainersRepository.findFile()` / `updateFileStatus()` query a
->   `skb_container_files` table that `schema-initializer.ts` never creates
->   (only `skb_files` exists) — worker file-status updates would fail.
-> - `skb-ingestion-worker.service.ts` calls `(this.rowStore as any).insertRows(...)`
->   with 4 arguments, while `SKBRowsRepository.insertRows()` expects 6 (led by a
->   `sql` handle); the `any` cast hides the mismatch.
-> - `SKBRowsRepository.insertRows()` / `getRows()` reference `row_data` and
->   `file_index` columns that do not exist in the `skb_rows` DDL (which has
->   `data` and no `file_index`).
+> **Wiring defects fixed** (were previously present in this tree, closed as part
+> of the 2026-07 SKB wiring pass):
+> - `SKBContainersRepository.findFile()` / `updateFileStatus()` used to query a
+>   `skb_container_files` table that `schema-initializer.ts` never created.
+>   Fixed by repointing both methods at `skb_files` (which already carries
+>   `file_id`/`container_id`/`tenant_id`/`status`/`error_message`/`updated_at`)
+>   rather than adding a near-duplicate table.
+> - `skb-ingestion-worker.service.ts` used to call
+>   `(this.rowStore as any).insertRows(...)` with 4 arguments while
+>   `SKBRowsRepository.insertRows()` expects 6 (led by a `sql` handle). Fixed:
+>   the worker now obtains `sql` via `TenantConnectionManager.ensureSchema()`
+>   and passes `containerId` + `categories` (sourced from the ingestion event
+>   payload) instead of a column-type map, with no `any` cast.
+> - `SKBRowsRepository.insertRows()` / `getRows()` referenced `row_data` and
+>   `file_index` columns that did not exist in the `skb_rows` DDL. Fixed:
+>   `insertRows` now writes the existing `data` column, and `file_index` was
+>   added to the DDL (table definition + idempotent `ALTER TABLE ADD COLUMN
+>   IF NOT EXISTS`) so the intended source-file row ordering works.
 
 ### 8.2 Files to Modify
 
@@ -1146,6 +1162,7 @@ CREATE TABLE IF NOT EXISTS skb_rows (
   container_id UUID NOT NULL REFERENCES skb_containers(id) ON DELETE CASCADE,
   file_id UUID NOT NULL REFERENCES skb_files(id) ON DELETE CASCADE,
   tenant_id VARCHAR(255) NOT NULL,
+  file_index INTEGER,
   categories JSONB DEFAULT '[]'::jsonb,
   data JSONB NOT NULL DEFAULT '{}'::jsonb,
   data_tsv TSVECTOR GENERATED ALWAYS AS (
@@ -1162,13 +1179,16 @@ CREATE TABLE IF NOT EXISTS skb_query_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   container_id UUID NOT NULL REFERENCES skb_containers(id),
   tenant_id VARCHAR(255) NOT NULL,
-  natural_query TEXT NOT NULL,
-  sql_where TEXT,
-  sql_sort TEXT,
+  nl_query TEXT NOT NULL,
+  generated_sql TEXT,
   result_count INTEGER DEFAULT 0,
-  executed_at TIMESTAMPTZ DEFAULT NOW()
+  duration_ms INTEGER DEFAULT 0,
+  error TEXT,
+  error_message TEXT,
+  user_id VARCHAR(255),
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_skb_query_history_container ON skb_query_history(container_id, executed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_skb_query_history_container ON skb_query_history(container_id, created_at DESC);
 ```
 
 ### 8.5 New npm Dependencies
@@ -1266,10 +1286,14 @@ CREATE INDEX IF NOT EXISTS idx_skb_query_history_container ON skb_query_history(
 - [x] Add `SKBIngestionWatchdogService` for stuck processing
 - [x] Integration tests for full ingestion pipeline
 
-> **Reality check**: the classes exist, but the pipeline is not functional
-> end-to-end — see "Known wiring defects" in §8.1 (missing `skb_container_files`
-> table, `insertRows` signature/column mismatches) and §4.3 (watchdog stuck-file
-> lookup stubbed to return `[]`).
+> **Reality check**: the classes exist, and the 5 wiring defects tracked in
+> §8.1 (`skb_container_files`/`skb_files` mismatch, `insertRows` signature +
+> column mismatches, watchdog stuck-file lookup, `skb_query_history` never
+> written, hardcoded LLM provider) and §4.3 are now fixed. The pipeline is
+> still not wired end-to-end for a separate, pre-existing reason: the public
+> file-upload route (`POST .../files`) has no `agent-admin-service` target,
+> so nothing publishes the `skb_file_ingestion.v1` event the worker consumes
+> (see §4.2).
 
 ### Phase 3: Query Pipeline + UI (Week 5-6) — COMPLETED
 
@@ -1333,11 +1357,13 @@ them from config.
 | File parser max columns | `100` | Maximum columns per file |
 | Row insert batch size | `5000` | Rows per INSERT batch |
 | Worker ack timeout | `300000 ms` | Worker ack wait for SKB ingestion messages |
-| Default ingest model | `gpt-4.1-mini` (DB column default) | Not used at runtime — the schema analyzer hardcodes `gpt-4o` (openai) |
-| Default query model | `gpt-4.1-mini` (DB column default) | Not used at runtime — `SKBQueryService` hardcodes `gpt-4o` (openai) |
+| Default ingest model | `gpt-4.1-mini` (DB column default) | Not used at runtime — the container's stored `ingest_model` is not read; the schema analyzer's fallback comes from `SKB_LLM_PROVIDER`/`SKB_LLM_MODEL_ID` (default `openai`/`gpt-4o`) |
+| Default query model | `gpt-4.1-mini` (DB column default) | Not used at runtime — the container's stored `query_model` is not read; `SKBQueryService` reads `SKB_LLM_PROVIDER`/`SKB_LLM_MODEL_ID` (default `openai`/`gpt-4o`) |
 | Query max limit | `1000` | Maximum query result limit |
 | Query rate limit | `30/min` | Per tenant per process; in-memory `SKBRateLimitGuard`, no rate-limit headers |
 | Ingest rate limit | — | Not implemented in `agent-admin-service` |
+| `SKB_LLM_PROVIDER` (env) | `openai` (default) | Shared LLM provider default for schema analysis + NL→SQL translation, defined once in `skb-llm.config.ts` |
+| `SKB_LLM_MODEL_ID` (env) | `gpt-4o` (default) | Shared LLM model id default for schema analysis + NL→SQL translation, defined once in `skb-llm.config.ts` |
 
 ### Container `provider_config`
 
@@ -1384,7 +1410,7 @@ pending → processing → completed
    # Check consumer on a specific tenant stream
    kubectl exec -it nats-box -- nats consumer info INGRESS-<TENANT> skb-ingestion-worker
    ```
-3. The `SKBIngestionWatchdogService` is designed to auto-reset stuck files after 10 minutes, but its stuck-file lookup is currently stubbed (returns no files), so reset manually:
+3. The `SKBIngestionWatchdogService` auto-resets files stuck in `processing` for more than 10 minutes on its own periodic check; if it hasn't run yet (or the worker pod just restarted) you can force the same reset manually:
    ```sql
    UPDATE skb_files SET status = 'failed', error_message = 'Manual reset'
    WHERE status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes';
@@ -1399,7 +1425,7 @@ pending → processing → completed
 
 **Resolution**:
 
-1. Check service logs for the generated SQL (`skb_query_history` is never populated — query history recording is not wired; see §2.1 drift warning).
+1. Check the generated SQL — either in service logs or via `skb_query_history` (`generated_sql` column), which `SKBQueryService` now records for every query (see §2.1).
 2. Verify column names match the schema (lowercase, underscore-normalized).
 3. Test the WHERE clause directly against `skb_rows`:
    ```sql

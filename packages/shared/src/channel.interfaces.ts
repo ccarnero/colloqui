@@ -53,6 +53,16 @@ export interface InboundMessage {
   text?: string;
   media?: MessageMedia;
   raw: Record<string, unknown>;
+  /**
+   * Foundation for metering/attribution (DOCS/cowork/METERING-FOUNDATION.md G3):
+   * conversation identifier, when the producer already has one available at
+   * publish time (e.g. an upstream chat session id). Optional — most channel
+   * providers key messages by from/to, not by conversation, so this is left
+   * unset unless a producer can populate it cheaply. Flows into
+   * `ChannelEnvelope.data.payload.conversationId` and from there into the
+   * `channel_events.conversation_id` audit column.
+   */
+  conversationId?: string;
 }
 
 export interface OutboundMessage {
@@ -86,19 +96,17 @@ export interface IChannelProvider {
   /** HTTP header that carries the webhook signature for this provider. */
   readonly signatureHeader?: string;
 
-  parseWebhook(
-    rawBody: Record<string, unknown>,
-  ): InboundMessage[];
+  parseWebhook(rawBody: Record<string, unknown>): InboundMessage[];
 
   sendMessage(
     account: ChannelAccount,
-    message: OutboundMessage,
+    message: OutboundMessage
   ): Promise<SendMessageResult>;
 
   verifySignature(
     rawBody: Uint8Array,
     signature: string,
-    secret: string,
+    secret: string
   ): boolean;
 }
 

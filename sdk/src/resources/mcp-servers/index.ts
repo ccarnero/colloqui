@@ -13,5 +13,11 @@ export { createMcpServersClient } from "./client.js";
 export type {
   CreateMcpServerInput,
   McpServer,
+  McpServerTestConnectionResult,
+  McpServerTool,
+  McpServerUsage,
+  McpServerUsageParams,
+  McpServerUsageRecentCall,
+  McpServerUsageSummary,
   UpdateMcpServerInput,
 } from "./types.js";

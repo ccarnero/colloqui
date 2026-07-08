@@ -1,26 +1,30 @@
 import "reflect-metadata";
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Stable mock references shared by every Logger instance created inside
 // ToolRegistryService.
 // ---------------------------------------------------------------------------
-const logSpy   = mock(() => {});
-const warnSpy  = mock(() => {});
+const logSpy = mock(() => {});
+const warnSpy = mock(() => {});
 const errorSpy = mock(() => {});
 
 mock.module("@nestjs/common", () => ({
   Injectable: () => (target: any) => target, // eslint-disable-line @typescript-eslint/no-explicit-any
   Logger: class MockLogger {
-    log   = logSpy;
-    warn  = warnSpy;
+    log = logSpy;
+    warn = warnSpy;
     error = errorSpy;
+    debug = mock(() => {});
+    verbose = mock(() => {});
+    fatal = mock(() => {});
+    static overrideLogger = mock(() => {});
     constructor(_context?: string) {}
   },
 }));
 
-import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
 import type { ToolDef } from "../../src/modules/tools/tool-definition";
+import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -51,15 +55,22 @@ describe("ToolRegistryService.listBuiltinTools()", () => {
   //  Happy path
   // =========================================================================
   it("should return only tools with builtin: true", () => {
-    service.registerTool(makeDefinition({ name: "communicate", builtin: true }));
+    service.registerTool(
+      makeDefinition({ name: "communicate", builtin: true })
+    );
     service.registerTool(makeDefinition({ name: "resource", builtin: true }));
-    service.registerTool(makeDefinition({ name: "custom-adapter", builtin: false }));
+    service.registerTool(
+      makeDefinition({ name: "custom-adapter", builtin: false })
+    );
     service.registerTool(makeDefinition({ name: "no-flag" })); // builtin undefined
 
     const builtins = service.listBuiltinTools();
 
     expect(builtins).toHaveLength(2);
-    expect(builtins.map((d) => d.name).sort()).toEqual(["communicate", "resource"]);
+    expect(builtins.map((d) => d.name).sort()).toEqual([
+      "communicate",
+      "resource",
+    ]);
   });
 
   it("should return an empty array when no builtin tools are registered", () => {
@@ -88,7 +99,7 @@ describe("ToolRegistryService.listBuiltinTools()", () => {
     expect(builtins).toHaveLength(1);
     // ToolDef has no `handler` property
     expect(builtins[0]).toEqual(
-      makeDefinition({ name: "my-builtin", builtin: true }),
+      makeDefinition({ name: "my-builtin", builtin: true })
     );
     expect((builtins[0] as any).handler).toBeUndefined();
   });
@@ -113,11 +124,23 @@ describe("ToolRegistryService.listBuiltinTools()", () => {
   // =========================================================================
   it("should correctly filter a mixed set of builtin and non-builtin tools", () => {
     const builtins = [
-      makeDefinition({ name: "communicate", builtin: true, description: "Send messages" }),
-      makeDefinition({ name: "resource", builtin: true, description: "Manage resources" }),
+      makeDefinition({
+        name: "communicate",
+        builtin: true,
+        description: "Send messages",
+      }),
+      makeDefinition({
+        name: "resource",
+        builtin: true,
+        description: "Manage resources",
+      }),
     ];
     const adapters = [
-      makeDefinition({ name: "search_tickets", builtin: false, description: "Search tickets" }),
+      makeDefinition({
+        name: "search_tickets",
+        builtin: false,
+        description: "Search tickets",
+      }),
       makeDefinition({ name: "book_calendar", description: "Book calendar" }),
     ];
 
@@ -152,10 +175,10 @@ describe("ToolRegistryService.listBuiltinTools()", () => {
   // =========================================================================
   it("should reflect the latest definition after overwriting a builtin tool", () => {
     service.registerTool(
-      makeDefinition({ name: "communicate", builtin: true, description: "v1" }),
+      makeDefinition({ name: "communicate", builtin: true, description: "v1" })
     );
     service.registerTool(
-      makeDefinition({ name: "communicate", builtin: true, description: "v2" }),
+      makeDefinition({ name: "communicate", builtin: true, description: "v2" })
     );
 
     const builtins = service.listBuiltinTools();

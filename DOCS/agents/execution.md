@@ -83,6 +83,29 @@ evt.*.ai-agent-gateway.automation.platform.internal.execution_requested.v1
   `provider`.
 - On exception it emits `execution_failed` with a top-level `error` string.
 
+## Streaming (SDK `runtime.stream()`)
+
+The flow above is the **buffered** path (`workflow-service` `agentCall`,
+`chat.service.generateReply()`) — it waits for the full reply before
+returning. A separate, additive **streaming** path exists for direct SDK
+callers: `agent-ai-service` can publish per-token deltas to an ephemeral,
+non-`evt.` NATS subject (`rt.<tenant>.exec.<executionId>.token`), relayed
+through `ai-agent-gateway` and `api-gateway` as SSE and exposed by the SDK
+as `runtime.stream()` (`AsyncIterable<RuntimeStreamEvent>`). It reuses the
+same JetStream submission/lifecycle events described above for terminal
+state — streaming only adds the live token side-channel. See
+[runtime-streaming.md](../architecture/runtime-streaming.md) for the full
+design (subjects, envelope shape, cancellation, and SDK semantics).
+
+## MCP tool calls
+
+Agents can also invoke tools exposed by external MCP servers (not just
+adapter/builtin tools) via `agent-ai-service`'s MCP tool bridge, filtered
+per-agent by `enabled_mcp_tools`. See
+[mcp-connections.md](../architecture/mcp-connections.md) for the full
+design and [adapter-tools.md](adapter-tools.md) for how MCP tools compare
+to adapter/builtin tools in the agent tool-resolution path.
+
 ## Failure Modes
 
 - **Execution timeout (activity-side):** the Temporal activity has `startToCloseTimeout: "15m"`. `executeAndWait` uses the configurable `AGENT_CALL_TIMEOUT_MS` (default 15 minutes). The activity heartbeats every 15 s so Temporal detects hangs via the 30 s `heartbeatTimeout`.

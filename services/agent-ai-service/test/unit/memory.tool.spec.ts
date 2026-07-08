@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it, expect, mock, beforeAll, beforeEach } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Mock @yoizen/observability
@@ -24,6 +24,10 @@ mock.module("@nestjs/common", () => ({
     log = mock(() => {});
     warn = mock(() => {});
     error = mock(() => {});
+    debug = mock(() => {});
+    verbose = mock(() => {});
+    fatal = mock(() => {});
+    static overrideLogger = mock(() => {});
     constructor(_context?: string) {}
   },
 }));
@@ -35,26 +39,72 @@ mock.module("ai", () => ({
   jsonSchema: mock((schema: any) => schema),
 }));
 
-import { Test } from "@nestjs/testing";
-import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
 import type {
+  RuntimeState,
   ToolDef,
   ToolHandler,
-  ToolResult,
-  RuntimeState,
 } from "../../src/modules/tools/tool-definition";
+import { ToolRegistryService } from "../../src/modules/tools/tool-registry.service";
 
 // ---------------------------------------------------------------------------
 // MemoryClientService mock
 // ---------------------------------------------------------------------------
 const mockMemoryClient = {
-  create: mock(() => Promise.resolve({ id: "mem-1", title: "Test", content: "Test content", scope: "SESSION", kind: "FACT", status: "ACTIVE", metadata: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" })),
+  create: mock(() =>
+    Promise.resolve({
+      id: "mem-1",
+      title: "Test",
+      content: "Test content",
+      scope: "SESSION",
+      kind: "FACT",
+      status: "ACTIVE",
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    })
+  ),
   list: mock(() => Promise.resolve({ items: [], total: 0 })),
   search: mock(() => Promise.resolve({ items: [], total: 0 })),
   load: mock(() => Promise.resolve(null)),
-  update: mock(() => Promise.resolve({ id: "mem-1", title: "Updated", content: "Updated content", scope: "SESSION", kind: "FACT", status: "ACTIVE", metadata: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" })),
-  approve: mock(() => Promise.resolve({ id: "mem-1", title: "Test", content: "Test", scope: "SESSION", kind: "FACT", status: "ACTIVE", metadata: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" })),
-  reject: mock(() => Promise.resolve({ id: "mem-1", title: "Test", content: "Test", scope: "SESSION", kind: "FACT", status: "REJECTED", metadata: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" })),
+  update: mock(() =>
+    Promise.resolve({
+      id: "mem-1",
+      title: "Updated",
+      content: "Updated content",
+      scope: "SESSION",
+      kind: "FACT",
+      status: "ACTIVE",
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    })
+  ),
+  approve: mock(() =>
+    Promise.resolve({
+      id: "mem-1",
+      title: "Test",
+      content: "Test",
+      scope: "SESSION",
+      kind: "FACT",
+      status: "ACTIVE",
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    })
+  ),
+  reject: mock(() =>
+    Promise.resolve({
+      id: "mem-1",
+      title: "Test",
+      content: "Test",
+      scope: "SESSION",
+      kind: "FACT",
+      status: "REJECTED",
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    })
+  ),
   delete: mock(() => Promise.resolve()),
 };
 
@@ -86,7 +136,16 @@ const EXPECTED_MEMORY_TOOL_DEF: ToolDef = {
     properties: {
       action: {
         type: "string",
-        enum: ["list", "search", "create", "get", "update", "approve", "reject", "delete"],
+        enum: [
+          "list",
+          "search",
+          "create",
+          "get",
+          "update",
+          "approve",
+          "reject",
+          "delete",
+        ],
         description: "Memory action to perform",
       },
     },
@@ -100,7 +159,9 @@ let memoryHandler: ToolHandler | null = null;
 
 async function loadMemoryTool() {
   try {
-    const mod = await import("../../src/modules/tools/builtin-tools/memory.tool");
+    const mod = await import(
+      "../../src/modules/tools/builtin-tools/memory.tool"
+    );
     MEMORY_TOOL_DEF = mod.createMemoryToolDef();
     memoryHandler = mod.createMemoryHandler(mockMemoryClient);
   } catch {
@@ -202,7 +263,7 @@ describe("Memory builtin tool", () => {
           title: "New Memory",
           content: "Memory content",
         },
-        state,
+        state
       );
 
       expect(result.success).toBe(true);
@@ -217,7 +278,19 @@ describe("Memory builtin tool", () => {
     it('should call memoryClient.list for action "list" with query fields', async () => {
       expect(memoryHandler).not.toBeNull();
       mockMemoryClient.list.mockResolvedValueOnce({
-        items: [{ id: "mem-1", title: "T1", content: "C1", scope: "SESSION", kind: "FACT", status: "ACTIVE", metadata: {}, createdAt: "", updatedAt: "" }],
+        items: [
+          {
+            id: "mem-1",
+            title: "T1",
+            content: "C1",
+            scope: "SESSION",
+            kind: "FACT",
+            status: "ACTIVE",
+            metadata: {},
+            createdAt: "",
+            updatedAt: "",
+          },
+        ],
         total: 1,
       });
 
@@ -229,7 +302,7 @@ describe("Memory builtin tool", () => {
           status: "ACTIVE",
           limit: 20,
         },
-        state,
+        state
       );
 
       expect(result.success).toBe(true);
@@ -244,7 +317,19 @@ describe("Memory builtin tool", () => {
     it('should call memoryClient.search for action "search" with search text', async () => {
       expect(memoryHandler).not.toBeNull();
       mockMemoryClient.search.mockResolvedValueOnce({
-        items: [{ id: "mem-1", title: "Found", content: "Result", scope: "SESSION", kind: "FACT", status: "ACTIVE", metadata: {}, createdAt: "", updatedAt: "" }],
+        items: [
+          {
+            id: "mem-1",
+            title: "Found",
+            content: "Result",
+            scope: "SESSION",
+            kind: "FACT",
+            status: "ACTIVE",
+            metadata: {},
+            createdAt: "",
+            updatedAt: "",
+          },
+        ],
         total: 1,
       });
 
@@ -254,11 +339,15 @@ describe("Memory builtin tool", () => {
           search: "test query",
           limit: 5,
         },
-        state,
+        state
       );
 
       expect(result.success).toBe(true);
-      expect(mockMemoryClient.search).toHaveBeenCalledWith("t-1", "test query", 5);
+      expect(mockMemoryClient.search).toHaveBeenCalledWith(
+        "t-1",
+        "test query",
+        5
+      );
     });
 
     it('should call memoryClient.load for action "get" with the correct id', async () => {
@@ -277,7 +366,7 @@ describe("Memory builtin tool", () => {
 
       const result = await memoryHandler!(
         { action: "get", id: "mem-123" },
-        state,
+        state
       );
 
       expect(result.success).toBe(true);
@@ -305,7 +394,7 @@ describe("Memory builtin tool", () => {
           title: "Updated Title",
           content: "Updated content",
         },
-        state,
+        state
       );
 
       expect(result.success).toBe(true);
@@ -318,14 +407,20 @@ describe("Memory builtin tool", () => {
     it('should call memoryClient.approve for action "approve" with id', async () => {
       expect(memoryHandler).not.toBeNull();
       mockMemoryClient.approve.mockResolvedValueOnce({
-        id: "mem-1", title: "T", content: "C",
-        scope: "SESSION", kind: "FACT", status: "ACTIVE",
-        metadata: {}, createdAt: "", updatedAt: "",
+        id: "mem-1",
+        title: "T",
+        content: "C",
+        scope: "SESSION",
+        kind: "FACT",
+        status: "ACTIVE",
+        metadata: {},
+        createdAt: "",
+        updatedAt: "",
       });
 
       const result = await memoryHandler!(
         { action: "approve", id: "mem-1" },
-        state,
+        state
       );
 
       expect(result.success).toBe(true);
@@ -335,14 +430,20 @@ describe("Memory builtin tool", () => {
     it('should call memoryClient.reject for action "reject" with id', async () => {
       expect(memoryHandler).not.toBeNull();
       mockMemoryClient.reject.mockResolvedValueOnce({
-        id: "mem-1", title: "T", content: "C",
-        scope: "SESSION", kind: "FACT", status: "REJECTED",
-        metadata: {}, createdAt: "", updatedAt: "",
+        id: "mem-1",
+        title: "T",
+        content: "C",
+        scope: "SESSION",
+        kind: "FACT",
+        status: "REJECTED",
+        metadata: {},
+        createdAt: "",
+        updatedAt: "",
       });
 
       const result = await memoryHandler!(
         { action: "reject", id: "mem-1" },
-        state,
+        state
       );
 
       expect(result.success).toBe(true);
@@ -355,7 +456,7 @@ describe("Memory builtin tool", () => {
 
       const result = await memoryHandler!(
         { action: "delete", id: "mem-1" },
-        state,
+        state
       );
 
       expect(result.success).toBe(true);
@@ -368,7 +469,7 @@ describe("Memory builtin tool", () => {
   // ══════════════════════════════════════════════════════════════════════════
 
   describe("error handling", () => {
-    it('should return error when action is missing', async () => {
+    it("should return error when action is missing", async () => {
       expect(memoryHandler).not.toBeNull();
       const result = await memoryHandler!({}, state);
 
@@ -376,12 +477,9 @@ describe("Memory builtin tool", () => {
       expect(result.error).toBeDefined();
     });
 
-    it('should return error for unknown action', async () => {
+    it("should return error for unknown action", async () => {
       expect(memoryHandler).not.toBeNull();
-      const result = await memoryHandler!(
-        { action: "fly" },
-        state,
-      );
+      const result = await memoryHandler!({ action: "fly" }, state);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("Unknown action");
@@ -389,10 +487,7 @@ describe("Memory builtin tool", () => {
 
     it('should return error when required params are missing for action "create"', async () => {
       expect(memoryHandler).not.toBeNull();
-      const result = await memoryHandler!(
-        { action: "create" },
-        state,
-      );
+      const result = await memoryHandler!({ action: "create" }, state);
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
@@ -400,10 +495,7 @@ describe("Memory builtin tool", () => {
 
     it('should return error when id is missing for action "get"', async () => {
       expect(memoryHandler).not.toBeNull();
-      const result = await memoryHandler!(
-        { action: "get" },
-        state,
-      );
+      const result = await memoryHandler!({ action: "get" }, state);
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
@@ -413,33 +505,40 @@ describe("Memory builtin tool", () => {
       expect(memoryHandler).not.toBeNull();
       const result = await memoryHandler!(
         { action: "update", title: "New" },
-        state,
+        state
       );
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
     });
 
-    it('should propagate upstream 4xx errors from MemoryClientService', async () => {
+    it("should propagate upstream 4xx errors from MemoryClientService", async () => {
       expect(memoryHandler).not.toBeNull();
-      mockMemoryClient.list.mockRejectedValueOnce(new Error("Memory list failed: 400"));
-
-      const result = await memoryHandler!(
-        { action: "list" },
-        state,
+      mockMemoryClient.list.mockRejectedValueOnce(
+        new Error("Memory list failed: 400")
       );
+
+      const result = await memoryHandler!({ action: "list" }, state);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("Memory list failed");
     });
 
-    it('should propagate upstream 5xx errors from MemoryClientService', async () => {
+    it("should propagate upstream 5xx errors from MemoryClientService", async () => {
       expect(memoryHandler).not.toBeNull();
-      mockMemoryClient.create.mockRejectedValueOnce(new Error("Memory create failed: 503"));
+      mockMemoryClient.create.mockRejectedValueOnce(
+        new Error("Memory create failed: 503")
+      );
 
       const result = await memoryHandler!(
-        { action: "create", scope: "SESSION", kind: "FACT", title: "X", content: "Y" },
-        state,
+        {
+          action: "create",
+          scope: "SESSION",
+          kind: "FACT",
+          title: "X",
+          content: "Y",
+        },
+        state
       );
 
       expect(result.success).toBe(false);
@@ -465,47 +564,76 @@ describe("Memory builtin tool", () => {
 
       await memoryHandler!(
         { action: "get", id: "mem-1" },
-        { ...state, tenantId: "custom-tenant" },
+        { ...state, tenantId: "custom-tenant" }
       );
 
-      expect(mockMemoryClient.load).toHaveBeenCalledWith("custom-tenant", "mem-1");
+      expect(mockMemoryClient.load).toHaveBeenCalledWith(
+        "custom-tenant",
+        "mem-1"
+      );
     });
 
     it("should pass sessionId when available in RuntimeState", async () => {
       expect(memoryHandler).not.toBeNull();
       mockMemoryClient.create.mockResolvedValueOnce({
-        id: "mem-1", title: "T", content: "C",
-        scope: "SESSION", kind: "FACT", status: "ACTIVE",
-        metadata: {}, createdAt: "", updatedAt: "",
+        id: "mem-1",
+        title: "T",
+        content: "C",
+        scope: "SESSION",
+        kind: "FACT",
+        status: "ACTIVE",
+        metadata: {},
+        createdAt: "",
+        updatedAt: "",
       });
 
       await memoryHandler!(
-        { action: "create", scope: "SESSION", kind: "FACT", title: "T", content: "C", sessionId: "sess-1" },
-        { ...state, sessionId: "sess-1" },
+        {
+          action: "create",
+          scope: "SESSION",
+          kind: "FACT",
+          title: "T",
+          content: "C",
+          sessionId: "sess-1",
+        },
+        { ...state, sessionId: "sess-1" }
       );
 
       expect(mockMemoryClient.create).toHaveBeenCalledWith(
         "t-1",
-        expect.objectContaining({ sessionId: "sess-1" }),
+        expect.objectContaining({ sessionId: "sess-1" })
       );
     });
 
     it("should pass userId when available in RuntimeState", async () => {
       expect(memoryHandler).not.toBeNull();
       mockMemoryClient.create.mockResolvedValueOnce({
-        id: "mem-1", title: "T", content: "C",
-        scope: "SESSION", kind: "FACT", status: "ACTIVE",
-        metadata: {}, createdAt: "", updatedAt: "",
+        id: "mem-1",
+        title: "T",
+        content: "C",
+        scope: "SESSION",
+        kind: "FACT",
+        status: "ACTIVE",
+        metadata: {},
+        createdAt: "",
+        updatedAt: "",
       });
 
       await memoryHandler!(
-        { action: "create", scope: "SESSION", kind: "FACT", title: "T", content: "C", userId: "user-1" },
-        { ...state, userId: "user-1" },
+        {
+          action: "create",
+          scope: "SESSION",
+          kind: "FACT",
+          title: "T",
+          content: "C",
+          userId: "user-1",
+        },
+        { ...state, userId: "user-1" }
       );
 
       expect(mockMemoryClient.create).toHaveBeenCalledWith(
         "t-1",
-        expect.objectContaining({ userId: "user-1" }),
+        expect.objectContaining({ userId: "user-1" })
       );
     });
   });
@@ -521,25 +649,28 @@ describe("Memory builtin tool", () => {
       mockMemoryClient.list.mockResolvedValueOnce({
         items: [
           {
-            id: "mem-1", title: "Long memory",
+            id: "mem-1",
+            title: "Long memory",
             content: longContent,
-            scope: "SESSION", kind: "FACT", status: "ACTIVE",
-            metadata: {}, createdAt: "", updatedAt: "",
+            scope: "SESSION",
+            kind: "FACT",
+            status: "ACTIVE",
+            metadata: {},
+            createdAt: "",
+            updatedAt: "",
           },
         ],
         total: 1,
       });
 
-      const result = await memoryHandler!(
-        { action: "list" },
-        state,
-      );
+      const result = await memoryHandler!({ action: "list" }, state);
 
       expect(result.success).toBe(true);
       const output = result.output as any;
       expect(output).toBeDefined();
       // The handler should truncate the output
-      const outputStr = typeof output === "string" ? output : JSON.stringify(output);
+      const outputStr =
+        typeof output === "string" ? output : JSON.stringify(output);
       expect(outputStr.length).toBeLessThanOrEqual(16384 + 2000); // allow some overhead
     });
   });

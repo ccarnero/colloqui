@@ -1,18 +1,19 @@
 import { Global, Module } from "@nestjs/common";
 import { ObservabilityModule, resolveServiceName } from "@yoizen/observability";
 import { AuditModule } from "./modules/audit/audit.module";
-import { GatewayAuditModule } from "./modules/gateway-audit/gateway-audit.module";
 import { ChannelAuditModule } from "./modules/channel-audit/channel-audit.module";
+import { ExecutionAuditModule } from "./modules/execution-audit/execution-audit.module";
+import { GatewayAuditModule } from "./modules/gateway-audit/gateway-audit.module";
 import { HealthModule } from "./modules/health/health.module";
 import {
-  NATS_CONNECTION,
+  GATEWAY_AUDIT_CONSUMER,
+  gatewayAuditConsumerProvider,
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
-  GATEWAY_AUDIT_CONSUMER,
-  natsProvider,
   jetStreamManagerProvider,
   jetStreamPublisherProvider,
-  gatewayAuditConsumerProvider,
+  NATS_CONNECTION,
+  natsProvider,
 } from "./providers/nats.provider";
 import { ProvidersModule } from "./providers/providers.module";
 
@@ -27,6 +28,7 @@ import { ProvidersModule } from "./providers/providers.module";
     AuditModule,
     GatewayAuditModule,
     ChannelAuditModule,
+    ExecutionAuditModule,
     HealthModule,
   ],
   providers: [

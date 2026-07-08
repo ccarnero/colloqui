@@ -1,6 +1,7 @@
 # Runtime Execution Token Streaming — Design
 
-Status: Design (not implemented). Decision: **Option A** — `agent-ai-service`
+Status: Implemented (commit 4d77d0a; SDK e2e 61/61 passing, including
+mid-flight abort). Decision: **Option A** — `agent-ai-service`
 publishes model output tokens to a per-tenant NATS subject; `ai-agent-gateway`
 subscribes and relays through SSE; `api-gateway` adds a streaming passthrough;
 the SDK exposes `runtime.stream()` as a typed async iterator.
@@ -56,10 +57,10 @@ Traced from source (verified 2026-07-05):
   - `chat.service.generateStream()` → `llm-executor.service.streamTextRaw()`
     returns `{ textStream: AsyncIterable<string>, usage, provider, model }`
     (AI SDK `streamText().textStream`). **This is the token source.**
-  - `execution.controller.ts` `POST execution/stream` already writes raw SSE
-    tokens over HTTP (`res.raw.write("data: …")`). It is a **direct HTTP** path,
-    not NATS, and not reachable through the gateway. We keep its shape as a
-    reference but the new path publishes tokens to NATS instead.
+  - The legacy `execution.controller.ts` `POST execution/stream` (direct HTTP
+    SSE, not NATS, not reachable through the gateway) served as the shape
+    reference for this design; it was removed on 2026-07-07 after the NATS
+    pipeline superseded it (zero callers, no client-disconnect abort).
 - **Envelope contract** — `skills/envelope-messages/SKILL.md` +
   `packages/shared/src/{interfaces,envelope.utils,constants,execution-client}.ts`.
   Helpers: `buildEventEnvelope`, `deriveEnvelope`, `buildPlatformSubject`,
@@ -254,9 +255,14 @@ hostile ergonomics.
 
 Token text integrity forbids dropping deltas (a dropped token corrupts the
 rendered text). Policy, in order:
-1. **Bounded per-connection buffer** at the gateway relay (e.g. 256 events or
-   256 KB, whichever first). Normal consumers never hit it.
-2. On overflow → **close the stream** with a terminal `failed` event
+1. **Bounded per-connection buffer** at the gateway relay: on each emit the
+   relay checks the client socket's unflushed backlog
+   (`socket.writableLength`) against `STREAM_RELAY_MAX_BUFFERED_BYTES`
+   (256 KB). This measures true backpressure — a draining consumer never hits
+   it, however long the stream runs. (The first implementation wrongly capped
+   the *total* stream at 256 events/256 KB, killing any reply longer than
+   ~250 tokens; fixed 2026-07-07.)
+2. On sustained backlog → **close the stream** with a terminal `failed` event
    `{ reason: "slow_consumer" }` (do **not** drop tokens). The client can fall
    back to `getExecution(id)` for the final buffered result (Redis).
 3. Set NATS core subscription slow-consumer limits so a stuck relay is detected
@@ -328,8 +334,9 @@ by `executionId` + `seq` as the resume cursor — designed for later, not built 
   so tool events can be published — the existing `generateStream` only wires
   `textStream` (tool wiring is a `TODO` in `chat.service.ts:152`; token-only is an
   acceptable first slice, tools second).
-- The existing HTTP `execution.controller.ts POST execution/stream` stays as-is
-  (internal/debug); it is not part of the SDK path.
+- The legacy HTTP `execution.controller.ts POST execution/stream` was removed
+  on 2026-07-07 (superseded by this pipeline; it had zero callers and no
+  client-disconnect abort). This NATS/SSE path is the only streaming surface.
 
 ### 3.3 `ai-agent-gateway` (relay)
 

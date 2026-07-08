@@ -8,6 +8,8 @@ import type {
   QuerySKBContainerResult,
   SKBContainer,
   UpdateSKBContainerInput,
+  UploadSKBFileInput,
+  UploadSKBFileResult,
 } from "./types.js";
 
 export interface StructuredKbClientDeps {
@@ -53,6 +55,17 @@ export interface StructuredKbContainersClient {
     input: QuerySKBContainerInput,
     opts?: StructuredKbCallOptions
   ): Promise<QuerySKBContainerResult>;
+  /**
+   * `POST /admin/structured-kb/containers/:id/files` — uploads a structured
+   * file (CSV/XLSX/XLS) for async ingestion; resolves once the file row is
+   * created and the ingestion event is published (`202 Accepted`), not once
+   * ingestion completes. See `types.ts`.
+   */
+  uploadFile(
+    containerId: string,
+    input: UploadSKBFileInput,
+    opts?: StructuredKbCallOptions
+  ): Promise<UploadSKBFileResult>;
 }
 
 export interface StructuredKbClient {
@@ -145,7 +158,26 @@ export function createStructuredKbClient({
     return body;
   }
 
+  async function uploadFile(
+    containerId: string,
+    input: UploadSKBFileInput,
+    opts: StructuredKbCallOptions = {}
+  ): Promise<UploadSKBFileResult> {
+    const { body } = await transport.request<UploadSKBFileResult>({
+      path: `/admin/structured-kb/containers/${encodePath(containerId)}/files`,
+      method: "POST",
+      body: {
+        filename: input.filename,
+        file_base64: input.fileBase64,
+        categories: input.categories,
+        sheet_name: input.sheetName,
+      },
+      retry: opts.retry,
+    });
+    return body;
+  }
+
   return {
-    containers: { create, list, get, update, remove, query },
+    containers: { create, list, get, update, remove, query, uploadFile },
   };
 }

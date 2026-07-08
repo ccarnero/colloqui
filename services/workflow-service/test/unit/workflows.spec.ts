@@ -1,36 +1,36 @@
 import "reflect-metadata";
-import { describe, it, expect, beforeAll, mock } from "bun:test";
+import { beforeAll, describe, expect, it, mock } from "bun:test";
 import type { WorkflowDefinition } from "@yoizen/shared";
 
 const executeEndpointCall = mock(() =>
-  Promise.resolve({ status: 200, data: { ok: true }, headers: {} }),
+  Promise.resolve({ status: 200, data: { ok: true }, headers: {} })
 );
 const executeJsFunction = mock(() => Promise.resolve({ computed: 1 }));
 const executeServiceBusCall = mock(() =>
-  Promise.resolve({ published: true as const, subject: "events.test" }),
+  Promise.resolve({ published: true as const, subject: "events.test" })
 );
 const executeChannelSend = mock(() =>
   Promise.resolve({
     published: true as const,
     subject: "evt.tenant-1.messaging.whatsapp.meta.send.v1",
-  }),
+  })
 );
 const executeServiceCall = mock(() =>
-  Promise.resolve({ status: 200, data: { result: "svc" }, headers: {} }),
+  Promise.resolve({ status: 200, data: { result: "svc" }, headers: {} })
 );
 const executeAgentCall = mock(() =>
   Promise.resolve({
     status: 200,
     data: { reply: "agent-said" },
     headers: {},
-  }),
+  })
 );
 const publishExecutionCompletedEvent = mock(() => Promise.resolve());
 
 let runWorkflow: (
   workflow: WorkflowDefinition,
   executionId?: string,
-  systemVariables?: Record<string, unknown>,
+  systemVariables?: Record<string, unknown>
 ) => Promise<import("@yoizen/shared").WorkflowExecutionContext>;
 
 beforeAll(async () => {
@@ -161,7 +161,7 @@ describe("runWorkflow (temporal/workflows)", () => {
         status: 200,
         data: { sku: "SKU1" },
         headers: {},
-      }),
+      })
     );
     executeServiceCall.mockClear();
     await runWorkflow({
@@ -196,9 +196,10 @@ describe("runWorkflow (temporal/workflows)", () => {
         },
       },
       "tenant-1",
+      undefined
     );
     executeJsFunction.mockImplementation(() =>
-      Promise.resolve({ computed: 1 }),
+      Promise.resolve({ computed: 1 })
     );
   });
 
@@ -273,8 +274,8 @@ describe("runWorkflow (temporal/workflows)", () => {
       ],
     });
     const call = executeChannelSend.mock.calls[0];
-    /* args, tenantId, causal */
-    expect(call).toHaveLength(3);
+    /* args, tenantId, causal, executionId */
+    expect(call).toHaveLength(4);
     expect(call[2]).toEqual({
       causation_id: "evt-root",
       correlation_id: "conv-1",
@@ -306,7 +307,7 @@ describe("runWorkflow (temporal/workflows)", () => {
 
   it("propagates activity errors", async () => {
     executeJsFunction.mockImplementationOnce(() =>
-      Promise.reject(new Error("activity failed")),
+      Promise.reject(new Error("activity failed"))
     );
     await expect(
       runWorkflow({
@@ -314,7 +315,7 @@ describe("runWorkflow (temporal/workflows)", () => {
         actions: [
           { activity: "jsFunction", name: "bad", args: { code: "throw" } },
         ],
-      }),
+      })
     ).rejects.toThrow("activity failed");
   });
 
@@ -331,20 +332,20 @@ describe("runWorkflow (temporal/workflows)", () => {
           },
         ],
       },
-      "exec-123",
+      "exec-123"
     );
     expect(publishExecutionCompletedEvent).toHaveBeenCalledWith(
       "exec-123",
       "COMPLETED",
       "tenant-1",
-      "wf",
+      "wf"
     );
   });
 
   it("calls publishExecutionCompletedEvent with FAILED on error", async () => {
     publishExecutionCompletedEvent.mockClear();
     executeJsFunction.mockImplementationOnce(() =>
-      Promise.reject(new Error("boom")),
+      Promise.reject(new Error("boom"))
     );
     await expect(
       runWorkflow(
@@ -358,14 +359,14 @@ describe("runWorkflow (temporal/workflows)", () => {
             },
           ],
         },
-        "exec-456",
-      ),
+        "exec-456"
+      )
     ).rejects.toThrow("boom");
     expect(publishExecutionCompletedEvent).toHaveBeenCalledWith(
       "exec-456",
       "FAILED",
       "tenant-1",
-      "wf",
+      "wf"
     );
   });
 
@@ -381,7 +382,7 @@ describe("runWorkflow (temporal/workflows)", () => {
   describe("conditional action", () => {
     it("executes the first matching branch", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ status: "aprobado" }),
+        Promise.resolve({ status: "aprobado" })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -433,13 +434,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.results.onRejected).toBeUndefined();
       expect(ctx.results.route).toEqual({ matchedBranch: "approved" });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("executes the second branch when first does not match", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ status: "rechazado" }),
+        Promise.resolve({ status: "rechazado" })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -491,13 +492,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.results.onRejected).toBeDefined();
       expect(ctx.results.route).toEqual({ matchedBranch: "rejected" });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("executes default when no branch matches", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ status: "pending" }),
+        Promise.resolve({ status: "pending" })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -541,13 +542,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.results.onDefault).toBeDefined();
       expect(ctx.results.route).toEqual({ matchedBranch: "default" });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("returns null matchedBranch when no match and no default", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ status: "unknown" }),
+        Promise.resolve({ status: "unknown" })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -576,13 +577,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       });
       expect(ctx.results.route).toEqual({ matchedBranch: null });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("resolves templates in condition value", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ status: "ok", threshold: "5" }),
+        Promise.resolve({ status: "ok", threshold: "5" })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -619,13 +620,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.results.matched).toBeDefined();
       expect(ctx.results.route).toEqual({ matchedBranch: "match" });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("supports gt comparator for numeric values", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ score: 85 }),
+        Promise.resolve({ score: 85 })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -660,13 +661,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       });
       expect(ctx.results.highScore).toBeDefined();
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("supports contains comparator", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ message: "hello world greeting" }),
+        Promise.resolve({ message: "hello world greeting" })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -701,13 +702,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       });
       expect(ctx.results.found).toBeDefined();
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("supports exists comparator", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ data: { name: "test" } }),
+        Promise.resolve({ data: { name: "test" } })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -742,14 +743,12 @@ describe("runWorkflow (temporal/workflows)", () => {
       });
       expect(ctx.results.exists).toBeDefined();
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("supports notExists comparator", async () => {
-      executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ data: {} }),
-      );
+      executeJsFunction.mockImplementation(() => Promise.resolve({ data: {} }));
       const ctx = await runWorkflow({
         ...base,
         actions: [
@@ -783,13 +782,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       });
       expect(ctx.results["notExists"]).toBeDefined();
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("supports neq comparator", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ status: "active" }),
+        Promise.resolve({ status: "active" })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -824,13 +823,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       });
       expect(ctx.results.different).toBeDefined();
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("supports gte comparator (greater than or equal)", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ score: 80 }),
+        Promise.resolve({ score: 80 })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -866,13 +865,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.results.gtePass).toBeDefined();
       expect(ctx.results.route).toEqual({ matchedBranch: "pass" });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("supports lte comparator (less than or equal)", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ score: 30 }),
+        Promise.resolve({ score: 30 })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -908,13 +907,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.results.ltePass).toBeDefined();
       expect(ctx.results.route).toEqual({ matchedBranch: "low" });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("handles numeric string comparison — '5' vs 5 works via Number coercion", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ count: "5" }),
+        Promise.resolve({ count: "5" })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -950,13 +949,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.results.numMatch).toBeDefined();
       expect(ctx.results.route).toEqual({ matchedBranch: "numericMatch" });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("empty string does NOT equal zero with eq comparator", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ value: "" }),
+        Promise.resolve({ value: "" })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -992,13 +991,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.results.zeroMatched).toBeUndefined();
       expect(ctx.results.route).toEqual({ matchedBranch: null });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("eq comparator is case-sensitive", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ status: "Approved" }),
+        Promise.resolve({ status: "Approved" })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -1034,13 +1033,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.results.lowerMatch).toBeUndefined();
       expect(ctx.results.route).toEqual({ matchedBranch: null });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("contains with empty substring returns true", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ message: "hello" }),
+        Promise.resolve({ message: "hello" })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -1076,13 +1075,13 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.results.found).toBeDefined();
       expect(ctx.results.route).toEqual({ matchedBranch: "emptyContains" });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("coerces object left value to [object Object] string for eq", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ data: { nested: true } }),
+        Promise.resolve({ data: { nested: true } })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -1118,7 +1117,7 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.results.objMatched).toBeDefined();
       expect(ctx.results.route).toEqual({ matchedBranch: "objMatch" });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
   });
@@ -1140,11 +1139,12 @@ describe("runWorkflow (temporal/workflows)", () => {
       // The context is passed to jsFunction — verify the variable was resolved
       // by checking the context passed as second arg
       const callArgs = executeJsFunction.mock.calls[0];
-      const ctx = callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
+      const ctx =
+        callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
       expect(ctx.variables.workflow.pais).toBe("Argentina");
       expect(ctx.variables.workflow.moneda).toBe("ARS");
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
@@ -1162,20 +1162,21 @@ describe("runWorkflow (temporal/workflows)", () => {
           ],
         },
         undefined,
-        { companyName: "Yoizen Corp", region: "LATAM" },
+        { companyName: "Yoizen Corp", region: "LATAM" }
       );
       const callArgs = executeJsFunction.mock.calls[0];
-      const ctx = callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
+      const ctx =
+        callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
       expect(ctx.variables.system.companyName).toBe("Yoizen Corp");
       expect(ctx.variables.system.region).toBe("LATAM");
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("resolves {{variables.previous.reply}} after a previous action", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ reply: "first" }),
+        Promise.resolve({ reply: "first" })
       );
       executeServiceCall.mockClear();
       await runWorkflow({
@@ -1202,16 +1203,16 @@ describe("runWorkflow (temporal/workflows)", () => {
           path: "/api?reply=first",
         }),
         "tenant-1",
-        undefined,
+        undefined
       );
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("resolves {{variables.node.stepName.field}} correctly", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ sku: "ABC123" }),
+        Promise.resolve({ sku: "ABC123" })
       );
       executeServiceCall.mockClear();
       await runWorkflow({
@@ -1238,10 +1239,10 @@ describe("runWorkflow (temporal/workflows)", () => {
           path: "/items/ABC123",
         }),
         "tenant-1",
-        undefined,
+        undefined
       );
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
@@ -1266,7 +1267,7 @@ describe("runWorkflow (temporal/workflows)", () => {
           path: "/items/",
         }),
         "tenant-1",
-        undefined,
+        undefined
       );
     });
 
@@ -1293,7 +1294,7 @@ describe("runWorkflow (temporal/workflows)", () => {
           path: "/orders/o1?env=production",
         }),
         "tenant-1",
-        undefined,
+        undefined
       );
     });
   });
@@ -1313,10 +1314,11 @@ describe("runWorkflow (temporal/workflows)", () => {
         ],
       });
       const callArgs = executeJsFunction.mock.calls[0];
-      const ctx = callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
+      const ctx =
+        callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
       expect(ctx.variables.workflow).toEqual({ foo: "bar", count: 42 });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
@@ -1334,13 +1336,14 @@ describe("runWorkflow (temporal/workflows)", () => {
           ],
         },
         undefined,
-        { apiVersion: "v2", debug: true },
+        { apiVersion: "v2", debug: true }
       );
       const callArgs = executeJsFunction.mock.calls[0];
-      const ctx = callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
+      const ctx =
+        callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
       expect(ctx.variables.system).toEqual({ apiVersion: "v2", debug: true });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
@@ -1358,19 +1361,25 @@ describe("runWorkflow (temporal/workflows)", () => {
         ],
       });
       const callArgs = executeJsFunction.mock.calls[0];
-      const ctx = callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
+      const ctx =
+        callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
       expect(ctx.variables.request).toEqual({ orderId: "o1", userId: "u99" });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("starts with empty variables.previous and populates after first action", async () => {
       const previousSnapshots: Record<string, unknown>[] = [];
-      executeJsFunction.mockImplementation((_args: unknown, ctx: import("@yoizen/shared").WorkflowExecutionContext) => {
-        previousSnapshots.push({ ...ctx.variables.previous });
-        return Promise.resolve({ status: "ok" });
-      });
+      executeJsFunction.mockImplementation(
+        (
+          _args: unknown,
+          ctx: import("@yoizen/shared").WorkflowExecutionContext
+        ) => {
+          previousSnapshots.push({ ...ctx.variables.previous });
+          return Promise.resolve({ status: "ok" });
+        }
+      );
       await runWorkflow({
         ...base,
         actions: [
@@ -1391,29 +1400,42 @@ describe("runWorkflow (temporal/workflows)", () => {
       // Second call: previous should be the first action's result
       expect(previousSnapshots[1]).toEqual({ status: "ok" });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("variables.node accumulates ALL action results keyed by action name", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ accumulated: true }),
+        Promise.resolve({ accumulated: true })
       );
       executeJsFunction.mockClear();
       await runWorkflow({
         ...base,
         actions: [
-          { activity: "jsFunction", name: "s1", args: { code: "return { a: 1 }" } },
-          { activity: "jsFunction", name: "s2", args: { code: "return { b: 2 }" } },
-          { activity: "jsFunction", name: "s3", args: { code: "return { c: 3 }" } },
+          {
+            activity: "jsFunction",
+            name: "s1",
+            args: { code: "return { a: 1 }" },
+          },
+          {
+            activity: "jsFunction",
+            name: "s2",
+            args: { code: "return { b: 2 }" },
+          },
+          {
+            activity: "jsFunction",
+            name: "s3",
+            args: { code: "return { c: 3 }" },
+          },
         ],
       });
       // Check context on third call — node should have s1 and s2
-      const thirdCtx = executeJsFunction.mock.calls[2][1] as import("@yoizen/shared").WorkflowExecutionContext;
+      const thirdCtx = executeJsFunction.mock
+        .calls[2][1] as import("@yoizen/shared").WorkflowExecutionContext;
       expect(thirdCtx.variables.node.s1).toEqual({ accumulated: true });
       expect(thirdCtx.variables.node.s2).toEqual({ accumulated: true });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
@@ -1432,10 +1454,11 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect((def as Record<string, unknown>).variables).toBeUndefined();
       await runWorkflow(def);
       const callArgs = executeJsFunction.mock.calls[0];
-      const ctx = callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
+      const ctx =
+        callArgs[1] as import("@yoizen/shared").WorkflowExecutionContext;
       expect(ctx.variables.workflow).toEqual({});
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
   });
@@ -1443,18 +1466,22 @@ describe("runWorkflow (temporal/workflows)", () => {
   describe("context variable updates after action execution", () => {
     it("updates variables.previous after a jsFunction action", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 42 }),
+        Promise.resolve({ computed: 42 })
       );
       const ctx = await runWorkflow({
         ...base,
         actions: [
-          { activity: "jsFunction", name: "calc", args: { code: "return { computed: 42 }" } },
+          {
+            activity: "jsFunction",
+            name: "calc",
+            args: { code: "return { computed: 42 }" },
+          },
         ],
       });
       expect(ctx.variables.previous).toEqual({ computed: 42 });
       expect(ctx.variables.node.calc).toEqual({ computed: 42 });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
@@ -1516,7 +1543,7 @@ describe("runWorkflow (temporal/workflows)", () => {
 
     it("merges branch node variables into parent context", async () => {
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ branchResult: true }),
+        Promise.resolve({ branchResult: true })
       );
       const ctx = await runWorkflow({
         ...base,
@@ -1544,20 +1571,30 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.variables.node.aStep).toEqual({ branchResult: true });
       expect(ctx.variables.node.bStep).toEqual({ branchResult: true });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
     it("updates variables.previous on each sequential action", async () => {
-      executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ step: 1 }),
-      );
+      executeJsFunction.mockImplementation(() => Promise.resolve({ step: 1 }));
       const ctx = await runWorkflow({
         ...base,
         actions: [
-          { activity: "jsFunction", name: "s1", args: { code: "return { step: 1 }" } },
-          { activity: "jsFunction", name: "s2", args: { code: "return { step: 2 }" } },
-          { activity: "jsFunction", name: "s3", args: { code: "return { step: 3 }" } },
+          {
+            activity: "jsFunction",
+            name: "s1",
+            args: { code: "return { step: 1 }" },
+          },
+          {
+            activity: "jsFunction",
+            name: "s2",
+            args: { code: "return { step: 2 }" },
+          },
+          {
+            activity: "jsFunction",
+            name: "s3",
+            args: { code: "return { step: 3 }" },
+          },
         ],
       });
       // After all actions, previous holds the last result
@@ -1567,7 +1604,7 @@ describe("runWorkflow (temporal/workflows)", () => {
       expect(ctx.variables.node.s2).toEqual({ step: 1 });
       expect(ctx.variables.node.s3).toEqual({ step: 1 });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
 
@@ -1577,7 +1614,11 @@ describe("runWorkflow (temporal/workflows)", () => {
       const ctx = await runWorkflow({
         ...base,
         actions: [
-          { activity: "jsFunction", name: "calc", args: { code: "return { val: 1 }" } },
+          {
+            activity: "jsFunction",
+            name: "calc",
+            args: { code: "return { val: 1 }" },
+          },
           {
             activity: "serviceBusCall",
             name: "pub",
@@ -1596,7 +1637,7 @@ describe("runWorkflow (temporal/workflows)", () => {
         subject: "events.test",
       });
       executeJsFunction.mockImplementation(() =>
-        Promise.resolve({ computed: 1 }),
+        Promise.resolve({ computed: 1 })
       );
     });
   });

@@ -1,5 +1,5 @@
 import "../../setup-env";
-import { describe, it, expect, beforeEach, vi } from "bun:test";
+import { beforeEach, describe, expect, it, vi } from "bun:test";
 import { SKBSchemaAnalyzerService } from "../../src/modules/structured-kb/skb-schema-analyzer.service";
 import type { ParsedTable } from "../../src/modules/structured-kb/types/skb.types";
 
@@ -8,7 +8,12 @@ vi.mock("ai", () => ({
 }));
 
 import { generateObject } from "ai";
+
 const mockGenerateObject = vi.mocked(generateObject);
+
+// createSkbLanguageModel (real) requires an API key to build the model
+// instance; the actual LLM call (generateObject) is mocked above.
+process.env.OPENAI_API_KEY ??= "sk-test-not-a-real-key";
 
 describe("SKBSchemaAnalyzerService", () => {
   let service: SKBSchemaAnalyzerService;
@@ -19,18 +24,46 @@ describe("SKBSchemaAnalyzerService", () => {
     apiBaseUrl: "https://api.openai.com/v1",
   };
 
-  function buildParsedTable(
-    overrides: Partial<ParsedTable> = {},
-  ): ParsedTable {
+  function buildParsedTable(overrides: Partial<ParsedTable> = {}): ParsedTable {
     return {
       headers: ["name", "age", "city", "active", "join_date"],
       originalHeaders: ["Name", "Age", "City", "Active", "Join Date"],
       rows: [
-        { name: "Alice", age: "30", city: "NYC", active: "true", join_date: "2024-01-15" },
-        { name: "Bob", age: "25", city: "LA", active: "false", join_date: "2024-02-20" },
-        { name: "Carol", age: "35", city: "NYC", active: "yes", join_date: "2024-03-10" },
-        { name: "Dave", age: "28", city: "Chicago", active: "no", join_date: "2024-04-05" },
-        { name: "Eve", age: "32", city: "NYC", active: "true", join_date: "2024-05-25" },
+        {
+          name: "Alice",
+          age: "30",
+          city: "NYC",
+          active: "true",
+          join_date: "2024-01-15",
+        },
+        {
+          name: "Bob",
+          age: "25",
+          city: "LA",
+          active: "false",
+          join_date: "2024-02-20",
+        },
+        {
+          name: "Carol",
+          age: "35",
+          city: "NYC",
+          active: "yes",
+          join_date: "2024-03-10",
+        },
+        {
+          name: "Dave",
+          age: "28",
+          city: "Chicago",
+          active: "no",
+          join_date: "2024-04-05",
+        },
+        {
+          name: "Eve",
+          age: "32",
+          city: "NYC",
+          active: "true",
+          join_date: "2024-05-25",
+        },
       ],
       rowCount: 5,
       detectedEncoding: "utf-8",
@@ -42,11 +75,51 @@ describe("SKBSchemaAnalyzerService", () => {
     table_description: "Employee directory",
     query_rules: "Filter by city or active status",
     columns: [
-      { name: "name", original_name: "Name", type: "text", description: "Employee name", sample_values: ["Alice", "Bob"], is_filterable: true, query_hints: [] },
-      { name: "age", original_name: "Age", type: "numeric", description: "Employee age", sample_values: ["30", "25"], is_filterable: true, query_hints: ["range queries supported"] },
-      { name: "city", original_name: "City", type: "categorical", description: "Office location", sample_values: ["NYC", "LA", "Chicago"], is_filterable: true, query_hints: [] },
-      { name: "active", original_name: "Active", type: "boolean", description: "Employment status", sample_values: ["true", "false"], is_filterable: true, query_hints: [] },
-      { name: "join_date", original_name: "Join Date", type: "date", description: "Date employee joined", sample_values: ["2024-01-15"], is_filterable: true, query_hints: ["ISO date format"] },
+      {
+        name: "name",
+        original_name: "Name",
+        type: "text",
+        description: "Employee name",
+        sample_values: ["Alice", "Bob"],
+        is_filterable: true,
+        query_hints: [],
+      },
+      {
+        name: "age",
+        original_name: "Age",
+        type: "numeric",
+        description: "Employee age",
+        sample_values: ["30", "25"],
+        is_filterable: true,
+        query_hints: ["range queries supported"],
+      },
+      {
+        name: "city",
+        original_name: "City",
+        type: "categorical",
+        description: "Office location",
+        sample_values: ["NYC", "LA", "Chicago"],
+        is_filterable: true,
+        query_hints: [],
+      },
+      {
+        name: "active",
+        original_name: "Active",
+        type: "boolean",
+        description: "Employment status",
+        sample_values: ["true", "false"],
+        is_filterable: true,
+        query_hints: [],
+      },
+      {
+        name: "join_date",
+        original_name: "Join Date",
+        type: "date",
+        description: "Date employee joined",
+        sample_values: ["2024-01-15"],
+        is_filterable: true,
+        query_hints: ["ISO date format"],
+      },
     ],
   };
 
@@ -62,7 +135,11 @@ describe("SKBSchemaAnalyzerService", () => {
       } as any);
 
       const parsed = buildParsedTable();
-      const result = await service.analyze(parsed, PROVIDER_CONFIG, "gpt-4.1-mini");
+      const result = await service.analyze(
+        parsed,
+        PROVIDER_CONFIG,
+        "gpt-4.1-mini"
+      );
 
       expect(result.columns).toHaveLength(5);
       expect(result.columns[0].name).toBe("name");
@@ -112,7 +189,15 @@ describe("SKBSchemaAnalyzerService", () => {
           table_description: "Numbers",
           query_rules: "",
           columns: [
-            { name: "price", original_name: "Price", type: "numeric", description: "Price", sample_values: ["10.5", "20"], is_filterable: true, query_hints: [] },
+            {
+              name: "price",
+              original_name: "Price",
+              type: "numeric",
+              description: "Price",
+              sample_values: ["10.5", "20"],
+              is_filterable: true,
+              query_hints: [],
+            },
           ],
         },
       } as any);
@@ -120,15 +205,15 @@ describe("SKBSchemaAnalyzerService", () => {
       const parsed = buildParsedTable({
         headers: ["price"],
         originalHeaders: ["Price"],
-        rows: [
-          { price: "10.5" },
-          { price: "20" },
-          { price: "0.99" },
-        ],
+        rows: [{ price: "10.5" }, { price: "20" }, { price: "0.99" }],
         rowCount: 3,
       });
 
-      const result = await service.analyze(parsed, PROVIDER_CONFIG, "gpt-4.1-mini");
+      const result = await service.analyze(
+        parsed,
+        PROVIDER_CONFIG,
+        "gpt-4.1-mini"
+      );
       expect(result.columns[0].type).toBe("numeric");
     });
 
@@ -138,7 +223,15 @@ describe("SKBSchemaAnalyzerService", () => {
           table_description: "Flags",
           query_rules: "",
           columns: [
-            { name: "flag", original_name: "Flag", type: "boolean", description: "Flag", sample_values: ["true", "false"], is_filterable: true, query_hints: [] },
+            {
+              name: "flag",
+              original_name: "Flag",
+              type: "boolean",
+              description: "Flag",
+              sample_values: ["true", "false"],
+              is_filterable: true,
+              query_hints: [],
+            },
           ],
         },
       } as any);
@@ -146,15 +239,15 @@ describe("SKBSchemaAnalyzerService", () => {
       const parsed = buildParsedTable({
         headers: ["flag"],
         originalHeaders: ["Flag"],
-        rows: [
-          { flag: "true" },
-          { flag: "false" },
-          { flag: "true" },
-        ],
+        rows: [{ flag: "true" }, { flag: "false" }, { flag: "true" }],
         rowCount: 3,
       });
 
-      const result = await service.analyze(parsed, PROVIDER_CONFIG, "gpt-4.1-mini");
+      const result = await service.analyze(
+        parsed,
+        PROVIDER_CONFIG,
+        "gpt-4.1-mini"
+      );
       expect(result.columns[0].type).toBe("boolean");
     });
 
@@ -164,7 +257,15 @@ describe("SKBSchemaAnalyzerService", () => {
           table_description: "Events",
           query_rules: "",
           columns: [
-            { name: "event_date", original_name: "Event Date", type: "date", description: "Event date", sample_values: ["2024-01-01"], is_filterable: true, query_hints: [] },
+            {
+              name: "event_date",
+              original_name: "Event Date",
+              type: "date",
+              description: "Event date",
+              sample_values: ["2024-01-01"],
+              is_filterable: true,
+              query_hints: [],
+            },
           ],
         },
       } as any);
@@ -173,14 +274,11 @@ describe("SKBSchemaAnalyzerService", () => {
         buildParsedTable({
           headers: ["event_date"],
           originalHeaders: ["Event Date"],
-          rows: [
-            { event_date: "2024-01-01" },
-            { event_date: "2024-06-15" },
-          ],
+          rows: [{ event_date: "2024-01-01" }, { event_date: "2024-06-15" }],
           rowCount: 2,
         }),
         PROVIDER_CONFIG,
-        "gpt-4.1-mini",
+        "gpt-4.1-mini"
       );
 
       expect(result.columns[0].type).toBe("date");
@@ -192,7 +290,15 @@ describe("SKBSchemaAnalyzerService", () => {
           table_description: "Categories",
           query_rules: "",
           columns: [
-            { name: "status", original_name: "Status", type: "categorical", description: "Status", sample_values: ["active", "inactive"], is_filterable: true, query_hints: [] },
+            {
+              name: "status",
+              original_name: "Status",
+              type: "categorical",
+              description: "Status",
+              sample_values: ["active", "inactive"],
+              is_filterable: true,
+              query_hints: [],
+            },
           ],
         },
       } as any);
@@ -209,7 +315,7 @@ describe("SKBSchemaAnalyzerService", () => {
           rowCount: 20,
         }),
         PROVIDER_CONFIG,
-        "gpt-4.1-mini",
+        "gpt-4.1-mini"
       );
 
       expect(result.columns[0].type).toBe("categorical");
@@ -221,7 +327,15 @@ describe("SKBSchemaAnalyzerService", () => {
           table_description: "Notes",
           query_rules: "",
           columns: [
-            { name: "description", original_name: "Description", type: "text", description: "Description", sample_values: ["some long text"], is_filterable: false, query_hints: [] },
+            {
+              name: "description",
+              original_name: "Description",
+              type: "text",
+              description: "Description",
+              sample_values: ["some long text"],
+              is_filterable: false,
+              query_hints: [],
+            },
           ],
         },
       } as any);
@@ -237,7 +351,7 @@ describe("SKBSchemaAnalyzerService", () => {
           rowCount: 2,
         }),
         PROVIDER_CONFIG,
-        "gpt-4.1-mini",
+        "gpt-4.1-mini"
       );
 
       expect(result.columns[0].type).toBe("text");
@@ -250,7 +364,15 @@ describe("SKBSchemaAnalyzerService", () => {
           table_description: "Sparse",
           query_rules: "",
           columns: [
-            { name: "empty_col", original_name: "Empty Col", type: "unknown", description: "Empty column", sample_values: [], is_filterable: false, query_hints: [] },
+            {
+              name: "empty_col",
+              original_name: "Empty Col",
+              type: "unknown",
+              description: "Empty column",
+              sample_values: [],
+              is_filterable: false,
+              query_hints: [],
+            },
           ],
         },
       } as any);
@@ -259,14 +381,11 @@ describe("SKBSchemaAnalyzerService", () => {
         buildParsedTable({
           headers: ["empty_col"],
           originalHeaders: ["Empty Col"],
-          rows: [
-            { empty_col: "" },
-            { empty_col: "" },
-          ],
+          rows: [{ empty_col: "" }, { empty_col: "" }],
           rowCount: 2,
         }),
         PROVIDER_CONFIG,
-        "gpt-4.1-mini",
+        "gpt-4.1-mini"
       );
 
       expect(result.columns[0].type).toBe("unknown");
@@ -279,7 +398,15 @@ describe("SKBSchemaAnalyzerService", () => {
           table_description: "Mixed",
           query_rules: "",
           columns: [
-            { name: "value", original_name: "Value", type: "text", description: "Mixed values", sample_values: ["hello", "123", "true"], is_filterable: true, query_hints: [] },
+            {
+              name: "value",
+              original_name: "Value",
+              type: "text",
+              description: "Mixed values",
+              sample_values: ["hello", "123", "true"],
+              is_filterable: true,
+              query_hints: [],
+            },
           ],
         },
       } as any);
@@ -298,7 +425,7 @@ describe("SKBSchemaAnalyzerService", () => {
           rowCount: 5,
         }),
         PROVIDER_CONFIG,
-        "gpt-4.1-mini",
+        "gpt-4.1-mini"
       );
 
       expect(result.columns[0].type).toBe("text");
@@ -308,7 +435,7 @@ describe("SKBSchemaAnalyzerService", () => {
       mockGenerateObject.mockRejectedValue(new Error("API error"));
 
       await expect(
-        service.analyze(buildParsedTable(), PROVIDER_CONFIG, "gpt-4.1-mini"),
+        service.analyze(buildParsedTable(), PROVIDER_CONFIG, "gpt-4.1-mini")
       ).rejects.toThrow("API error");
     });
 
@@ -320,7 +447,7 @@ describe("SKBSchemaAnalyzerService", () => {
       const result = await service.analyze(
         buildParsedTable(),
         PROVIDER_CONFIG,
-        "gpt-4.1-mini",
+        "gpt-4.1-mini"
       );
 
       expect(result.analyzed_at).toBeTruthy();
@@ -335,7 +462,7 @@ describe("SKBSchemaAnalyzerService", () => {
       const result = await service.analyze(
         buildParsedTable(),
         PROVIDER_CONFIG,
-        "gpt-4.1-mini",
+        "gpt-4.1-mini"
       );
 
       for (const col of result.columns) {
@@ -351,7 +478,7 @@ describe("SKBSchemaAnalyzerService", () => {
       const result = await service.analyze(
         buildParsedTable(),
         PROVIDER_CONFIG,
-        "gpt-4.1-mini",
+        "gpt-4.1-mini"
       );
 
       for (const col of result.columns) {

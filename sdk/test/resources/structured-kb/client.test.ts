@@ -130,3 +130,30 @@ test("containers.query() POSTs /admin/structured-kb/containers/:id/query with th
   assert.deepEqual(calls[0]!.body, { query: "show me all rows", limit: 10 });
   assert.deepEqual(result, queryResult);
 });
+
+test("containers.uploadFile() POSTs /admin/structured-kb/containers/:id/files with a snake_case body", async () => {
+  const uploadResult = { fileId: "file-1", status: "pending" };
+  const { transport, calls } = fakeTransport(() => ({
+    status: 202,
+    body: uploadResult,
+  }));
+  const client = createStructuredKbClient({ transport });
+
+  const result = await client.containers.uploadFile("skb-1", {
+    filename: "customers.csv",
+    fileBase64: "Y3N2LWNvbnRlbnQ=",
+    categories: ["finance"],
+    sheetName: "Sheet1",
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.path, "/admin/structured-kb/containers/skb-1/files");
+  assert.equal(calls[0]!.method, "POST");
+  assert.deepEqual(calls[0]!.body, {
+    filename: "customers.csv",
+    file_base64: "Y3N2LWNvbnRlbnQ=",
+    categories: ["finance"],
+    sheet_name: "Sheet1",
+  });
+  assert.deepEqual(result, uploadResult);
+});

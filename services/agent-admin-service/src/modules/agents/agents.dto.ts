@@ -1,17 +1,16 @@
+import { PaginatedQueryDto } from "@yoizen/shared/dto/pagination";
+import { Type } from "class-transformer";
 import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  IsObject,
   IsArray,
   IsBoolean,
   IsIn,
-  IsUUID,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
   Length,
   ValidateNested,
 } from "class-validator";
-import { Type } from "class-transformer";
-import { PaginatedQueryDto } from "@yoizen/shared/dto/pagination";
 
 export class CreateAgentDto {
   @IsString()
@@ -118,11 +117,29 @@ export class UpdateEnabledToolsDto {
   enabled_tools?: string[] | null;
 }
 
+/**
+ * List of enabled MCP server NAMES (not ids) for an agent, `null` = all
+ * servers enabled. Must be name-keyed to match `tool-bridge.service.ts`'s
+ * `mergeMcpTools()`, which filters the runtime's name-keyed connected-server
+ * map (and `enabled_mcp_tools`'s server-name keying below).
+ */
 export class UpdateEnabledMcpServersDto {
   @IsArray()
   @IsOptional()
   @IsString({ each: true })
   enabled_mcp_servers?: string[] | null;
+}
+
+/**
+ * Per-tool MCP allowlist for an agent, keyed by MCP server name
+ * (mcp-connections.md §4). A value of `null` for a server means "all tools
+ * from that server enabled" (backward-compatible default); an array is an
+ * explicit allowlist of tool names within that server.
+ */
+export class UpdateEnabledMcpToolsDto {
+  @IsObject()
+  @IsOptional()
+  enabled_mcp_tools?: Record<string, string[] | null> | null;
 }
 
 /**

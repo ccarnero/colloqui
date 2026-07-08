@@ -1,9 +1,20 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
-import type { JetStreamClient, JetStreamManager } from "nats";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { ensureTenantIngressStream } from "@yoizen/database";
 import { TENANT_HEADER } from "@yoizen/shared";
+import type { JetStreamClient, JetStreamManager } from "nats";
+import { gatewayConfig } from "../../src/config";
 import { WebhookIngressPublisherService } from "../../src/modules/channels/webhook-ingress-publisher.service";
 import { WebhookPublishUnavailableError } from "../../src/modules/channels/webhook-publish-unavailable.error";
-import { gatewayConfig } from "../../src/config";
+
+/**
+ * `ensureTenantIngressStream` (mocked via `preload-database-mock.ts`) owns
+ * the per-tenant "ensure once" caching in `@yoizen/database` now — see
+ * `packages/database/test/unit/nats-provider.spec.ts` for that contract.
+ * This suite only verifies `WebhookIngressPublisherService` delegates to it
+ * with the right arguments on every publish.
+ */
+const ensureTenantIngressStreamMock =
+  ensureTenantIngressStream as unknown as ReturnType<typeof mock>;
 
 describe("WebhookIngressPublisherService", () => {
   const publish = mock(() => Promise.resolve({ seq: 1 }));
@@ -17,13 +28,14 @@ describe("WebhookIngressPublisherService", () => {
   beforeEach(() => {
     publish.mockClear();
     add.mockClear();
+    ensureTenantIngressStreamMock.mockClear();
   });
 
   it("publishes canonical webhook ingress envelope with filtered headers", async () => {
     const service = new WebhookIngressPublisherService(js, jsm);
     const rawBody = Buffer.from(
       JSON.stringify({ object: "whatsapp_business_account", entry: [] }),
-      "utf8",
+      "utf8"
     );
 
     await service.publishWebhook({
@@ -41,7 +53,7 @@ describe("WebhookIngressPublisherService", () => {
     expect(publish).toHaveBeenCalledTimes(1);
     const [subject, bytes, options] = publish.mock.calls[0];
     expect(subject).toBe(
-      "evt.tenant-a.api-gateway.messaging.whatsapp.webhook.webhook_received.v1",
+      "evt.tenant-a.api-gateway.messaging.whatsapp.webhook.webhook_received.v1"
     );
 
     const envelope = JSON.parse(new TextDecoder().decode(bytes));
@@ -60,26 +72,42 @@ describe("WebhookIngressPublisherService", () => {
     expect(options.headers.get("Nats-Msg-Id")).toBe(envelope.idempotencykey);
   });
 
-  it("ensures tenant stream once per tenant (Set cache O(1) hit)", async () => {
+  it("delegates tenant stream ensure to @yoizen/database on every publish", async () => {
     const service = new WebhookIngressPublisherService(js, jsm);
     const tenantId = `tenant-${Date.now()}`;
 
     await service.publishWebhook({
       tenantId,
       channel: "telegram",
-      rawBody: Buffer.from("{\"update_id\":1}"),
+      rawBody: Buffer.from('{"update_id":1}'),
       parsedBody: { update_id: 1 },
       headers: {},
     });
     await service.publishWebhook({
       tenantId,
       channel: "telegram",
-      rawBody: Buffer.from("{\"update_id\":2}"),
+      rawBody: Buffer.from('{"update_id":2}'),
       parsedBody: { update_id: 2 },
       headers: {},
     });
 
-    expect(add).toHaveBeenCalledTimes(1);
+    // The service no longer owns the per-tenant "ensure once" cache itself
+    // (see WebhookIngressPublisherService — it calls ensureTenantIngressStream
+    // unconditionally); the O(1) Set-cache short-circuit now lives inside
+    // ensureTenantIngressStream in @yoizen/database, so it is called once
+    // per publish here, always with the same (jsm, tenantId) pair.
+    expect(ensureTenantIngressStreamMock).toHaveBeenCalledTimes(2);
+    expect(ensureTenantIngressStreamMock).toHaveBeenNthCalledWith(
+      1,
+      jsm,
+      tenantId
+    );
+    expect(ensureTenantIngressStreamMock).toHaveBeenNthCalledWith(
+      2,
+      jsm,
+      tenantId
+    );
+    expect(add).not.toHaveBeenCalled();
   });
 
   /**
@@ -101,7 +129,8 @@ describe("WebhookIngressPublisherService", () => {
     it("throws WebhookPublishUnavailableError when js.publish never resolves", async () => {
       // Override the timeout to keep the test fast (50ms).
       const originalTimeout = gatewayConfig.webhook.publishTimeoutMs;
-      (gatewayConfig.webhook as { publishTimeoutMs: number }).publishTimeoutMs = 50;
+      (gatewayConfig.webhook as { publishTimeoutMs: number }).publishTimeoutMs =
+        50;
       try {
         const service = new WebhookIngressPublisherService(stalledJs, jsm);
         const promise = service.publishWebhook({
@@ -113,17 +142,19 @@ describe("WebhookIngressPublisherService", () => {
         });
 
         await expect(promise).rejects.toBeInstanceOf(
-          WebhookPublishUnavailableError,
+          WebhookPublishUnavailableError
         );
       } finally {
-        (gatewayConfig.webhook as { publishTimeoutMs: number }).publishTimeoutMs =
-          originalTimeout;
+        (
+          gatewayConfig.webhook as { publishTimeoutMs: number }
+        ).publishTimeoutMs = originalTimeout;
       }
     });
 
     it("releases the in-flight slot after a timeout failure", async () => {
       const originalTimeout = gatewayConfig.webhook.publishTimeoutMs;
-      (gatewayConfig.webhook as { publishTimeoutMs: number }).publishTimeoutMs = 25;
+      (gatewayConfig.webhook as { publishTimeoutMs: number }).publishTimeoutMs =
+        25;
       try {
         const service = new WebhookIngressPublisherService(stalledJs, jsm);
         await expect(
@@ -133,7 +164,7 @@ describe("WebhookIngressPublisherService", () => {
             rawBody: Buffer.from("{}"),
             parsedBody: {},
             headers: {},
-          }),
+          })
         ).rejects.toBeInstanceOf(WebhookPublishUnavailableError);
 
         // Second call must NOT trip the in-flight cap (slot released).
@@ -144,11 +175,12 @@ describe("WebhookIngressPublisherService", () => {
             rawBody: Buffer.from("{}"),
             parsedBody: {},
             headers: {},
-          }),
+          })
         ).rejects.toBeInstanceOf(WebhookPublishUnavailableError);
       } finally {
-        (gatewayConfig.webhook as { publishTimeoutMs: number }).publishTimeoutMs =
-          originalTimeout;
+        (
+          gatewayConfig.webhook as { publishTimeoutMs: number }
+        ).publishTimeoutMs = originalTimeout;
       }
     });
   });
@@ -164,25 +196,31 @@ describe("WebhookIngressPublisherService", () => {
 
     it("rejects with WebhookPublishUnavailableError once the per-pod cap is exhausted", async () => {
       const original = gatewayConfig.webhook.publishInflightCap;
-      (gatewayConfig.webhook as { publishInflightCap: number }).publishInflightCap = 2;
+      (
+        gatewayConfig.webhook as { publishInflightCap: number }
+      ).publishInflightCap = 2;
       try {
         const service = new WebhookIngressPublisherService(blockedJs, jsm);
 
         // Saturate the cap with two never-resolving publishes.
-        void service.publishWebhook({
-          tenantId: "tenant-cap",
-          channel: "whatsapp",
-          rawBody: Buffer.from("{}"),
-          parsedBody: {},
-          headers: {},
-        }).catch(() => undefined);
-        void service.publishWebhook({
-          tenantId: "tenant-cap",
-          channel: "whatsapp",
-          rawBody: Buffer.from("{}"),
-          parsedBody: {},
-          headers: {},
-        }).catch(() => undefined);
+        void service
+          .publishWebhook({
+            tenantId: "tenant-cap",
+            channel: "whatsapp",
+            rawBody: Buffer.from("{}"),
+            parsedBody: {},
+            headers: {},
+          })
+          .catch(() => undefined);
+        void service
+          .publishWebhook({
+            tenantId: "tenant-cap",
+            channel: "whatsapp",
+            rawBody: Buffer.from("{}"),
+            parsedBody: {},
+            headers: {},
+          })
+          .catch(() => undefined);
 
         // Yield once so the in-flight counter is observably 2.
         await new Promise((r) => setImmediate(r));
@@ -194,11 +232,12 @@ describe("WebhookIngressPublisherService", () => {
             rawBody: Buffer.from("{}"),
             parsedBody: {},
             headers: {},
-          }),
+          })
         ).rejects.toBeInstanceOf(WebhookPublishUnavailableError);
       } finally {
-        (gatewayConfig.webhook as { publishInflightCap: number }).publishInflightCap =
-          original;
+        (
+          gatewayConfig.webhook as { publishInflightCap: number }
+        ).publishInflightCap = original;
       }
     });
   });

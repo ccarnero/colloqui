@@ -518,19 +518,23 @@ POST /files → NATS publish → Worker picks up → Parse file → LLM schema a
   → Type-cast rows → Batch INSERT (5000/batch) → Mark completed
 ```
 
-**Current implementation note:** the worker-side ingestion consumer exists, but
-the public file upload route is not wired end-to-end because the
-`agent-admin-service` file upload controller route is missing. The worker
-pipeline itself also has unresolved gaps: file-status updates target a
-`skb_container_files` table that the schema initializer never creates, and the
-worker calls `insertRows()` through an `as any` cast with a signature that does
-not match `SKBRowsRepository.insertRows()` (which in turn inserts `row_data` /
-`file_index` columns that do not exist in the `skb_rows` DDL).
+**Current implementation note:** the worker-side ingestion consumer exists,
+but the public file upload route is not wired end-to-end because the
+`agent-admin-service` file upload controller route is missing (nothing
+publishes the `skb_file_ingestion.v1` event the worker consumes). The
+worker pipeline's own wiring gaps — file-status updates targeting a
+non-existent `skb_container_files` table, the `insertRows()` `as any` arity
+mismatch, and the `row_data`/`file_index` column mismatch — have been fixed:
+file-status updates now target `skb_files` (created by the schema
+initializer), `insertRows()` is called with an honest 6-argument signature
+(no cast), and `skb_rows` now has a `file_index` column that `insertRows()`/
+`getRows()` actually use.
 
 **Timeout**: NATS ack wait is 5 minutes (`ackWaitMs: 300_000`). The ingestion
-watchdog resets files stuck in `processing` for more than 10 minutes — but its
-stuck-file lookup (`findProcessingFilesOlderThan`) is currently stubbed to
-return an empty list, so automatic resets do not happen in practice.
+watchdog resets files stuck in `processing` for more than 10 minutes; its
+stuck-file lookup (`findProcessingFilesOlderThan`) now queries `skb_files`
+across every tenant the process has a connection open for, so automatic
+resets happen in practice.
 
 **Batch size**: 5,000 rows per INSERT batch.
 

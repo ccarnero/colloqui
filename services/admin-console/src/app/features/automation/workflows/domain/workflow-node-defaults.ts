@@ -1,5 +1,5 @@
-import { EWorkflowNodeType } from "./workflow-node.types";
 import type { IWorkflowNode } from "./workflow-node.types";
+import { EWorkflowNodeType } from "./workflow-node.types";
 
 /**
  * "Reply on the same channel account that received the inbound message."
@@ -58,6 +58,15 @@ export const DEFAULT_NODE_MAP: Record<EWorkflowNodeType, INodeDefault> = {
       endpointId: "",
     },
   },
+  [EWorkflowNodeType.MCP_CALL]: {
+    name: "MCP Tool",
+    icon: "extension",
+    group: "Integrations",
+    configuration: {
+      serverId: "",
+      toolName: "",
+    },
+  },
   // Optional `data` (JSON body) is edited in the builder for POST/PUT/PATCH; GET/DELETE ignore it.
   [EWorkflowNodeType.SERVICE_CALL]: {
     name: "Service Call",
@@ -105,7 +114,7 @@ let nextId = 1;
 
 export function createNodeFromDefault(
   type: EWorkflowNodeType,
-  position: { x: number; y: number },
+  position: { x: number; y: number }
 ): IWorkflowNode {
   const defaults = DEFAULT_NODE_MAP[type];
   return {

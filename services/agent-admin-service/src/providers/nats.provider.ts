@@ -1,20 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
-  connect,
-  RetentionPolicy,
-  StorageType,
-  headers as natsHeaders,
-  type JetStreamClient,
-  type JetStreamManager,
-  type NatsConnection,
-  type PubAck,
-} from "nats";
-import {
+  type FactoryProvider,
   Inject,
   Injectable,
-  OnModuleDestroy,
+  type OnModuleDestroy,
   ServiceUnavailableException,
-  type FactoryProvider,
 } from "@nestjs/common";
 import {
   activeOrRandomTraceId,
@@ -23,7 +13,11 @@ import {
   PinoLoggerService,
   startNatsProducerSpan,
 } from "@yoizen/observability";
+import type { EventData, EventEnvelope, EventTransport } from "@yoizen/shared";
 import {
+  buildPlatformSubject,
+  buildTenantStreamConfig,
+  checkJetStreamCapacity,
   DepthExceededError,
   MAX_DEPTH_BY_CATEGORY,
   PLATFORM_ACCOUNT_ID,
@@ -36,20 +30,25 @@ import {
   PLATFORM_JOB_TRIGGER,
   PLATFORM_PRODUCER,
   PLATFORM_PROVIDER,
+  PLATFORM_SKB_FILE_INGESTION,
   PLATFORM_SUBJECT_PREFIX,
-  buildPlatformSubject,
+  type TenantTier,
 } from "@yoizen/shared";
-import type { EventData, EventEnvelope, EventTransport } from "@yoizen/shared";
+import {
+  connect,
+  type JetStreamClient,
+  type JetStreamManager,
+  type NatsConnection,
+  headers as natsHeaders,
+  type PubAck,
+  RetentionPolicy,
+  StorageType,
+} from "nats";
+import { agentAdminServiceConfig } from "../config";
 import {
   calculateChecksum,
   serializeCanonicalPayload,
 } from "../utils/payload-utils";
-import {
-  type TenantTier,
-  buildTenantStreamConfig,
-  checkJetStreamCapacity,
-} from "@yoizen/shared";
-import { agentAdminServiceConfig } from "../config";
 
 const DEFAULT_TRANSPORT: EventTransport = {
   method: "agent",
@@ -65,6 +64,7 @@ const EVENT_TYPES = {
   JOB_TRIGGER: "io.yoizen.platform.admin.job.triggered.v1",
   DOCUMENT_INGESTION: "io.yoizen.platform.admin.document.ingestion.v1",
   SKILL_CHANGED: "io.yoizen.platform.admin.skill_changed.v1",
+  SKB_FILE_INGESTION: "io.yoizen.platform.admin.skb_file_ingestion.v1",
 } as const;
 
 const PLATFORM_SKILL_CHANGED = `${PLATFORM_SUBJECT_PREFIX}.skill_changed.v1`;
@@ -100,7 +100,7 @@ export class LazyNatsConnection {
   constructor(
     private readonly servers: string,
     private readonly timeoutMs = NATS_CONNECT_TIMEOUT_MS,
-    private readonly maxReconnectAttempts = NATS_MAX_RECONNECT_ATTEMPTS,
+    private readonly maxReconnectAttempts = NATS_MAX_RECONNECT_ATTEMPTS
   ) {}
 
   async getConnection(): Promise<NatsConnection> {
@@ -131,14 +131,18 @@ export class LazyNatsConnection {
   }
 
   async jetstreamManager(): Promise<JetStreamManager> {
-    if (this.jsm) return this.jsm;
+    if (this.jsm) {
+      return this.jsm;
+    }
     const nc = await this.getConnection();
     this.jsm = await nc.jetstreamManager();
     return this.jsm;
   }
 
   async jetstream(): Promise<JetStreamClient> {
-    if (this.jsc) return this.jsc;
+    if (this.jsc) {
+      return this.jsc;
+    }
     const nc = await this.getConnection();
     // Ensure JSM is initialized first
     await this.jetstreamManager();
@@ -152,7 +156,9 @@ export class LazyNatsConnection {
     this.connectionPromise = undefined;
     this.jsm = undefined;
     this.jsc = undefined;
-    if (nc) await nc.close();
+    if (nc) {
+      await nc.close();
+    }
   }
 }
 
@@ -182,7 +188,7 @@ export const jetStreamClientProvider = {
 
 function buildEventData(
   payload: Record<string, unknown>,
-  occurredAt: string,
+  occurredAt: string
 ): EventData {
   const serializedPayload = serializeCanonicalPayload(payload);
 
@@ -198,7 +204,7 @@ function buildEventData(
 
 function buildEventEnvelope(
   tenantId: string,
-  options: IBuildEventOptions,
+  options: IBuildEventOptions
 ): EventEnvelope {
   const depth = options.depth ?? 0;
   const maxDepth = MAX_DEPTH_BY_CATEGORY.internal_service;
@@ -211,7 +217,7 @@ function buildEventEnvelope(
         newDepth: depth,
         maxDepth,
         category: "internal_service",
-      },
+      }
     );
   }
 
@@ -277,7 +283,7 @@ export class NatsPublisher implements OnModuleDestroy {
       `No tier registered for tenant '${tenantId}'; ` +
         `using fallback tier '${tier}'. ` +
         "Stream should be pre-provisioned via " +
-        "TenantProvisioningService.",
+        "TenantProvisioningService."
     );
 
     const config = buildTenantStreamConfig(tenantId, tier);
@@ -294,20 +300,20 @@ export class NatsPublisher implements OnModuleDestroy {
     try {
       await jsm.streams.info(config.name);
       this.logger.log(
-        `Stream '${config.name}' already exists ` + `for tenant '${tenantId}'`,
+        `Stream '${config.name}' already exists ` + `for tenant '${tenantId}'`
       );
     } catch {
       this.logger.log(
         `Stream '${config.name}' not found, creating ` +
           `with subjects: ` +
-          `${JSON.stringify(config.subjects)}`,
+          `${JSON.stringify(config.subjects)}`
       );
 
       const info = await jsm.getAccountInfo();
       const check = checkJetStreamCapacity(
         config.limits.max_bytes,
         info.storage,
-        info.limits.max_storage,
+        info.limits.max_storage
       );
       if (!check.ok) {
         this.logger.error(check.message);
@@ -326,13 +332,13 @@ export class NatsPublisher implements OnModuleDestroy {
           storage: StorageType.File,
         });
         this.logger.log(
-          `Auto-created stream '${config.name}' ` + `for tenant '${tenantId}'`,
+          `Auto-created stream '${config.name}' ` + `for tenant '${tenantId}'`
         );
       } catch (createErr: unknown) {
         const msg =
           createErr instanceof Error ? createErr.message : String(createErr);
         this.logger.error(
-          `Failed to create stream ` + `'${config.name}': ${msg}`,
+          `Failed to create stream ` + `'${config.name}': ${msg}`
         );
         throw createErr;
       }
@@ -344,7 +350,7 @@ export class NatsPublisher implements OnModuleDestroy {
   private async publishEvent(
     tenantId: string,
     subjectTemplate: string,
-    event: EventEnvelope,
+    event: EventEnvelope
   ): Promise<PubAck | null> {
     const subject = buildPlatformSubject(subjectTemplate, tenantId);
 
@@ -355,13 +361,15 @@ export class NatsPublisher implements OnModuleDestroy {
       const hdrs = natsHeaders();
       hdrs.set("Nats-Msg-Id", event.idempotencykey);
       hdrs.set("X-Correlation-Id", event.correlation_id);
-      if (event.causation_id) hdrs.set("X-Causation-Id", event.causation_id);
+      if (event.causation_id) {
+        hdrs.set("X-Causation-Id", event.causation_id);
+      }
       injectTraceContext(hdrs);
 
       const { span } = startNatsProducerSpan(
         "agent-admin-service",
         subject,
-        hdrs,
+        hdrs
       );
 
       try {
@@ -374,7 +382,7 @@ export class NatsPublisher implements OnModuleDestroy {
           event,
           "platform.publish.ok",
           `Published event to ${subject}`,
-          "debug",
+          "debug"
         );
         return ack;
       } finally {
@@ -385,9 +393,9 @@ export class NatsPublisher implements OnModuleDestroy {
       logWithEnvelope(
         this.logger,
         event,
-          "platform.publish.error",
+        "platform.publish.error",
         `Failed to publish event to ${subject}: ${msg}`,
-        "error",
+        "error"
       );
       throw error;
     }
@@ -404,7 +412,7 @@ export class NatsPublisher implements OnModuleDestroy {
       channels: unknown[];
       description?: string;
     },
-    causal?: ICausalContext,
+    causal?: ICausalContext
   ): Promise<PubAck | null> {
     const publishedAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
@@ -437,7 +445,7 @@ export class NatsPublisher implements OnModuleDestroy {
     tenantId: string,
     agentId: string,
     name: string,
-    causal?: ICausalContext,
+    causal?: ICausalContext
   ): Promise<PubAck | null> {
     const unpublishedAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
@@ -463,7 +471,7 @@ export class NatsPublisher implements OnModuleDestroy {
     tenantId: string,
     files: Array<{ content: string; format: string; path: string }>,
     deletePaths: string[] = [],
-    causal?: ICausalContext,
+    causal?: ICausalContext
   ): Promise<PubAck | null> {
     const syncedAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
@@ -523,7 +531,7 @@ export class NatsPublisher implements OnModuleDestroy {
       filename: string;
       contentType: string;
       fileBase64?: string;
-    },
+    }
   ): Promise<PubAck | null> {
     const occurredAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
@@ -539,10 +547,49 @@ export class NatsPublisher implements OnModuleDestroy {
         ...(payload.fileBase64 ? { fileBase64: payload.fileBase64 } : {}),
       },
       resource: `tenant/${tenantId}/knowledge-bases/${kbId}/documents/${payload.documentId}`,
-      source: "//agent-admin-service/admin/knowledge-bases/documents/upload-file",
+      source:
+        "//agent-admin-service/admin/knowledge-bases/documents/upload-file",
     });
 
     return this.publishEvent(tenantId, PLATFORM_DOCUMENT_INGESTION, event);
+  }
+
+  /**
+   * Publishes the event consumed by SKBIngestionWorkerService
+   * (structured-kb/skb-ingestion-worker.service.ts). `fileUrl` carries the
+   * base64-encoded file content directly — the worker's SKBFileParser
+   * decodes it with `Buffer.from(fileUrl, "base64")`, there is no separate
+   * blob store to fetch from.
+   */
+  async publishSkbFileIngestion(
+    tenantId: string,
+    payload: {
+      containerId: string;
+      fileId: string;
+      fileBase64: string;
+      categories: string[];
+      sheetName?: string | null;
+    }
+  ): Promise<PubAck | null> {
+    const occurredAt = new Date().toISOString();
+    const event = buildEventEnvelope(tenantId, {
+      correlationId: `skb-file:${payload.fileId}`,
+      eventType: EVENT_TYPES.SKB_FILE_INGESTION,
+      occurredAt,
+      payload: {
+        containerId: payload.containerId,
+        fileId: payload.fileId,
+        tenantId,
+        fileUrl: payload.fileBase64,
+        categories: payload.categories,
+        sheetName: payload.sheetName ?? null,
+      },
+      resource: `tenant/${tenantId}/structured-kb/containers/${payload.containerId}/files/${payload.fileId}`,
+      source:
+        "//agent-admin-service/admin/structured-kb/containers/files/upload",
+    });
+
+    return this.publishEvent(tenantId, PLATFORM_SKB_FILE_INGESTION, event);
   }
 
   async publishSkillChanged(
@@ -550,11 +597,12 @@ export class NatsPublisher implements OnModuleDestroy {
     skillId: string,
     action: "created" | "updated" | "deleted",
     skill?: Record<string, unknown>,
-    causal?: ICausalContext,
+    causal?: ICausalContext
   ): Promise<PubAck | null> {
     const occurredAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
-      correlationId: causal?.correlationId ?? `skill:${skillId}:${action}:${occurredAt}`,
+      correlationId:
+        causal?.correlationId ?? `skill:${skillId}:${action}:${occurredAt}`,
       causationId: causal?.causationId ?? null,
       depth: causal ? (causal.incomingDepth ?? 0) + 1 : 0,
       eventType: EVENT_TYPES.SKILL_CHANGED,

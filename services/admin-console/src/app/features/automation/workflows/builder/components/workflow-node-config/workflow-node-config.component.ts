@@ -15,7 +15,11 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
-import type { IAgent } from "../../../../../../core/models/agent.model";
+import type {
+  IAgent,
+  IMcpServer,
+  IMcpServerTool,
+} from "../../../../../../core/models/agent.model";
 import type { IChannelAccount } from "../../../../../../core/models/channel-account.model";
 import { AgentAdminService } from "../../../../../../core/services/agent-admin.service";
 import { ChannelAdminService } from "../../../../../../core/services/channel-admin.service";
@@ -445,6 +449,51 @@ import { TemplateAutocompleteComponent } from "../template-autocomplete/template
               }
             }
 
+            @case (types.MCP_CALL) {
+              <mat-form-field appearance="outline" class="config-field">
+                <mat-label>MCP Server *</mat-label>
+                <mat-select
+                  [ngModel]="n.configuration['serverId']"
+                  (ngModelChange)="onMcpServerChange($event)"
+                >
+                  <mat-option [value]="''">Select a server</mat-option>
+                  @for (s of mcpServers(); track s.id) {
+                    <mat-option [value]="s.id">
+                      {{ s.name }}
+                    </mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              @if (n.configuration['serverId']) {
+                <mat-form-field
+                  appearance="outline"
+                  class="config-field"
+                >
+                  <mat-label>Tool *</mat-label>
+                  <mat-select
+                    [ngModel]="n.configuration['toolName']"
+                    (ngModelChange)="updateConfig('toolName', $event)"
+                    [disabled]="mcpToolsLoading()"
+                  >
+                    <mat-option [value]="''">Select a tool</mat-option>
+                    @for (t of mcpTools(); track t.name) {
+                      <mat-option [value]="t.name">
+                        {{ t.name }}
+                      </mat-option>
+                    }
+                  </mat-select>
+                  @if (mcpToolsLoading()) {
+                    <mat-hint>Loading tools…</mat-hint>
+                  } @else if (mcpToolsError()) {
+                    <mat-hint>{{ mcpToolsError() }}</mat-hint>
+                  } @else {
+                    <mat-hint>Tools discovered live from the server</mat-hint>
+                  }
+                </mat-form-field>
+              }
+            }
+
             @case (types.SERVICE_CALL) {
               <mat-form-field appearance="outline" class="config-field">
                 <mat-label>Service</mat-label>
@@ -807,6 +856,13 @@ export class WorkflowNodeConfigComponent implements OnInit {
   readonly channelAccounts = signal<IChannelAccount[]>([]);
   readonly adapters = signal<IAdapterDto[]>([]);
   readonly aiAgents = signal<IAgent[]>([]);
+  readonly mcpServers = signal<IMcpServer[]>([]);
+  /** Tools of the currently-selected MCP server (fetched live per §2.4). */
+  readonly mcpTools = signal<IMcpServerTool[]>([]);
+  readonly mcpToolsLoading = signal(false);
+  readonly mcpToolsError = signal<string | null>(null);
+  /** Server id whose tools are currently loaded, to avoid redundant refetches. */
+  private lastMcpToolsServerId: string | null = null;
 
   /**
    * Channel accounts allowed in the outbound `channelSend` dropdown.
@@ -862,6 +918,27 @@ export class WorkflowNodeConfigComponent implements OnInit {
         this.serviceCallBodyError.set(null);
       }
     });
+
+    // Load the selected MCP server's tools when an mcpCall node is opened or
+    // its server changes. Tools are discovered live from the server's own
+    // tools/list (mcp-connections.md §2.4), so they can only be fetched once a
+    // server is picked.
+    effect(() => {
+      const n = this.node();
+      if (n?.type !== EWorkflowNodeType.MCP_CALL) {
+        this.lastMcpToolsServerId = null;
+        return;
+      }
+      const serverId = n.configuration["serverId"];
+      if (typeof serverId !== "string" || serverId.length === 0) {
+        this.lastMcpToolsServerId = null;
+        this.mcpTools.set([]);
+        return;
+      }
+      if (this.lastMcpToolsServerId !== serverId) {
+        this.loadMcpTools(serverId);
+      }
+    });
   }
 
   ngOnInit(): void {
@@ -875,6 +952,46 @@ export class WorkflowNodeConfigComponent implements OnInit {
     this.agentAdmin.listAgents({ status: "published", limit: 100 }).subscribe({
       next: (res) => this.aiAgents.set(res.agents),
       error: () => this.aiAgents.set([]),
+    });
+    this.agentAdmin.listMcpServers().subscribe({
+      next: (list) => this.mcpServers.set(list),
+      error: () => this.mcpServers.set([]),
+    });
+  }
+
+  /**
+   * Switches the selected MCP server: clears the dependent tool selection
+   * (a tool from the previous server is meaningless on the new one) and
+   * triggers a live tools/list fetch for the new server (mcp-connections.md
+   * §5.3 — same two-dropdown dependent UX as adapter/endpoint).
+   */
+  onMcpServerChange(serverId: unknown): void {
+    const next = typeof serverId === "string" ? serverId : "";
+    this.updateConfig("serverId", next);
+    this.updateConfig("toolName", "");
+    if (next) {
+      this.loadMcpTools(next);
+    } else {
+      this.lastMcpToolsServerId = null;
+      this.mcpTools.set([]);
+      this.mcpToolsError.set(null);
+    }
+  }
+
+  private loadMcpTools(serverId: string): void {
+    this.lastMcpToolsServerId = serverId;
+    this.mcpToolsLoading.set(true);
+    this.mcpToolsError.set(null);
+    this.mcpTools.set([]);
+    this.agentAdmin.listMcpServerTools(serverId).subscribe({
+      next: (tools) => {
+        this.mcpTools.set(tools);
+        this.mcpToolsLoading.set(false);
+      },
+      error: () => {
+        this.mcpToolsError.set("Could not load tools from this server.");
+        this.mcpToolsLoading.set(false);
+      },
     });
   }
 

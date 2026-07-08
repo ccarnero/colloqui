@@ -1,11 +1,12 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { ModelMessage } from "ai";
 import type { Agent } from "../agents/agent.model";
-import type { ChatMessage, ChatResponse } from "./chat.dto";
-import type { RuntimeState } from "./chat.dto";
 import type { LlmExecutionResult } from "../llm/llm-executor.service";
+// biome-ignore-start lint/style/useImportType: constructor-injected by NestJS DI (no explicit @Inject token) — must be value imports so `design:paramtypes` metadata resolves the real class at runtime, not `type`.
 import { LlmExecutorService } from "../llm/llm-executor.service";
 import { MemoryClientService } from "../memory/memory-client.service";
+// biome-ignore-end lint/style/useImportType
+import type { ChatMessage, ChatResponse, RuntimeState } from "./chat.dto";
 
 const MAX_HISTORY_TURNS = 20;
 const MAX_SESSION_AGE_MS = 60 * 60 * 1000;
@@ -26,7 +27,7 @@ export class SessionChatService {
 
   constructor(
     private readonly llmExecutor: LlmExecutorService,
-    private readonly memoryClient: MemoryClientService,
+    private readonly memoryClient: MemoryClientService
   ) {}
 
   async generateReply(
@@ -34,11 +35,14 @@ export class SessionChatService {
     sessionId: string,
     agent: Agent,
     state: RuntimeState,
+    abortSignal?: AbortSignal
   ): Promise<ChatResponse> {
     const modelConfig = agent.modelConfig ?? {};
     const llm = (modelConfig.llm as Record<string, unknown>) ?? {};
-    const provider = (modelConfig.provider as string) ?? (llm.provider as string) ?? "openai";
-    const model = (modelConfig.model as string) ?? (llm.model as string) ?? "gpt-4o";
+    const provider =
+      (modelConfig.provider as string) ?? (llm.provider as string) ?? "openai";
+    const model =
+      (modelConfig.model as string) ?? (llm.model as string) ?? "gpt-4o";
     const connectorId =
       (modelConfig.connectorId as string) ??
       (llm.connectorId as string) ??
@@ -46,7 +50,7 @@ export class SessionChatService {
 
     if (!modelConfig.provider || !modelConfig.model) {
       this.logger.warn(
-        `Agent '${agent.id}' has no modelConfig.provider/model — using defaults: ${provider}/${model}`,
+        `Agent '${agent.id}' has no modelConfig.provider/model — using defaults: ${provider}/${model}`
       );
     }
 
@@ -54,10 +58,11 @@ export class SessionChatService {
     const messages = this.buildMessages(sessionId, state);
 
     this.logger.debug(
-      `Session chat: session=${sessionId} agent=${agent.id} provider=${provider} model=${model} history=${messages.length - 1}`,
+      `Session chat: session=${sessionId} agent=${agent.id} provider=${provider} model=${model} history=${messages.length - 1}`
     );
 
-    const hasTools = state.resolvedTools && Object.keys(state.resolvedTools).length > 0;
+    const hasTools =
+      state.resolvedTools && Object.keys(state.resolvedTools).length > 0;
 
     const result: LlmExecutionResult = hasTools
       ? await this.llmExecutor.generateTextWithTools({
@@ -76,6 +81,7 @@ export class SessionChatService {
           credentialMode: modelConfig.credentialMode as string | undefined,
           connectorId,
           knowledgeBaseIds: agent.knowledgeBaseIds,
+          abortSignal,
         })
       : await this.llmExecutor.generateText({
           tenantId,
@@ -91,6 +97,7 @@ export class SessionChatService {
           credentialMode: modelConfig.credentialMode as string | undefined,
           connectorId,
           knowledgeBaseIds: agent.knowledgeBaseIds,
+          abortSignal,
         });
 
     this.appendTurn(sessionId, agent.id, "user", state.userMessage);
@@ -114,12 +121,14 @@ export class SessionChatService {
     tenantId: string,
     sessionId: string,
     agent: Agent,
-    state: RuntimeState,
+    state: RuntimeState
   ): Promise<ChatResponse> {
     const modelConfig = agent.modelConfig ?? {};
     const llm = (modelConfig.llm as Record<string, unknown>) ?? {};
-    const provider = (modelConfig.provider as string) ?? (llm.provider as string) ?? "openai";
-    const model = (modelConfig.model as string) ?? (llm.model as string) ?? "gpt-4o";
+    const provider =
+      (modelConfig.provider as string) ?? (llm.provider as string) ?? "openai";
+    const model =
+      (modelConfig.model as string) ?? (llm.model as string) ?? "gpt-4o";
     const connectorId =
       (modelConfig.connectorId as string) ??
       (llm.connectorId as string) ??
@@ -127,7 +136,7 @@ export class SessionChatService {
 
     if (!modelConfig.provider || !modelConfig.model) {
       this.logger.warn(
-        `Agent '${agent.id}' has no modelConfig.provider/model — using defaults: ${provider}/${model}`,
+        `Agent '${agent.id}' has no modelConfig.provider/model — using defaults: ${provider}/${model}`
       );
     }
 
@@ -135,10 +144,11 @@ export class SessionChatService {
     const messages = this.buildMessages(sessionId, state);
 
     this.logger.debug(
-      `Session stream: session=${sessionId} agent=${agent.id} provider=${provider} model=${model}`,
+      `Session stream: session=${sessionId} agent=${agent.id} provider=${provider} model=${model}`
     );
 
-    const hasTools = state.resolvedTools && Object.keys(state.resolvedTools).length > 0;
+    const hasTools =
+      state.resolvedTools && Object.keys(state.resolvedTools).length > 0;
 
     // When tools are available, use generateTextWithTools for multi-step tool execution
     // since streamText doesn't support maxSteps for tool loops.
@@ -193,7 +203,9 @@ export class SessionChatService {
 
   getSessionHistory(sessionId: string): ChatMessage[] {
     const session = this.sessions.get(sessionId);
-    if (!session) return [];
+    if (!session) {
+      return [];
+    }
     return [...session.turns];
   }
 
@@ -203,13 +215,11 @@ export class SessionChatService {
 
   private buildMessages(
     sessionId: string,
-    state: RuntimeState,
+    state: RuntimeState
   ): ModelMessage[] {
     const messages: ModelMessage[] = [];
     const session = this.sessions.get(sessionId);
-    const history = session
-      ? session.turns.slice(-MAX_HISTORY_TURNS)
-      : [];
+    const history = session ? session.turns.slice(-MAX_HISTORY_TURNS) : [];
 
     for (const turn of history) {
       messages.push({
@@ -234,7 +244,7 @@ export class SessionChatService {
     sessionId: string,
     agentId: string,
     role: "user" | "assistant",
-    content: string,
+    content: string
   ): void {
     this.evictExpiredSessions();
 
@@ -262,33 +272,34 @@ export class SessionChatService {
         }
       }
       if (evicted > 0) {
-        this.logger.debug(`Evicted ${evicted} expired sessions (${this.sessions.size} remaining)`);
+        this.logger.debug(
+          `Evicted ${evicted} expired sessions (${this.sessions.size} remaining)`
+        );
       }
     }
 
     if (this.sessions.size > MAX_SESSIONS) {
       const entries = [...this.sessions.entries()].sort(
-        (a, b) => a[1].lastAccessed - b[1].lastAccessed,
+        (a, b) => a[1].lastAccessed - b[1].lastAccessed
       );
       const excess = this.sessions.size - MAX_SESSIONS;
       for (let i = 0; i < excess; i++) {
         this.sessions.delete(entries[i][0]);
       }
-      this.logger.warn(`Evicted ${excess} LRU sessions (exceeded MAX_SESSIONS=${MAX_SESSIONS})`);
+      this.logger.warn(
+        `Evicted ${excess} LRU sessions (exceeded MAX_SESSIONS=${MAX_SESSIONS})`
+      );
     }
   }
 
-  private buildSystemPrompt(
-    agent: Agent,
-    state: RuntimeState,
-  ): string {
+  private buildSystemPrompt(agent: Agent, state: RuntimeState): string {
     const parts: string[] = [state.renderedSystemPrompt ?? agent.systemPrompt];
 
     if (agent.rules && agent.rules.length > 0) {
       const ruleTexts = agent.rules
         .filter(
           (r): r is Record<string, unknown> =>
-            typeof r === "object" && r !== null,
+            typeof r === "object" && r !== null
         )
         .map((r) => {
           const text = r.text ?? r.content ?? r.rule ?? "";
@@ -297,9 +308,7 @@ export class SessionChatService {
         .filter((t) => t.length > 0);
 
       if (ruleTexts.length > 0) {
-        parts.push(
-          `\nRules:\n${ruleTexts.map((t) => `- ${t}`).join("\n")}`,
-        );
+        parts.push(`\nRules:\n${ruleTexts.map((t) => `- ${t}`).join("\n")}`);
       }
     }
 
@@ -314,7 +323,7 @@ export class SessionChatService {
     tenantId: string,
     sessionId: string,
     agentId: string,
-    assistantText: string,
+    assistantText: string
   ): Promise<void> {
     try {
       await this.memoryClient.create(tenantId, {
@@ -327,7 +336,7 @@ export class SessionChatService {
       });
     } catch (error) {
       this.logger.warn(
-        `Failed to persist turn to memory: session=${sessionId} error=${error}`,
+        `Failed to persist turn to memory: session=${sessionId} error=${error}`
       );
     }
   }

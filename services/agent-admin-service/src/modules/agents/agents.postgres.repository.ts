@@ -1,22 +1,25 @@
-import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import type { JsonValue } from "@yoizen/shared";
+import { Inject, Injectable } from "@nestjs/common";
 import type { TenantConnectionManager } from "@yoizen/database";
-import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
+import type { JsonValue } from "@yoizen/shared";
 import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
-import { AGENT_ROW_COLUMNS } from "./agents-sql.constants";
+import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
 import type {
   IAgent,
-  IAgentVersion,
   IAgentsRepository,
+  IAgentVersion,
   ICreateAgentData,
   IFindAllAgentsOptions,
-  IUpdateAgentData,
   ISemverPublishContext,
+  IUpdateAgentData,
 } from "./agents.repository.interface";
+import { AGENT_ROW_COLUMNS } from "./agents-sql.constants";
 
 @Injectable()
-export class AgentsPostgresRepository extends TenantScopedPostgresRepository implements IAgentsRepository {
+export class AgentsPostgresRepository
+  extends TenantScopedPostgresRepository
+  implements IAgentsRepository
+{
   constructor(
     @Inject(YoizenclawTenantConnectionManager)
     connectionManager: TenantConnectionManager,
@@ -29,7 +32,7 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
    */
   async findAll(
     tenantId: string,
-    options: IFindAllAgentsOptions = {},
+    options: IFindAllAgentsOptions = {}
   ): Promise<{ agents: IAgent[]; total: number }> {
     const sql = await this.getSql(tenantId);
     const {
@@ -143,7 +146,7 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
   async update(
     tenantId: string,
     id: string,
-    data: IUpdateAgentData,
+    data: IUpdateAgentData
   ): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
 
@@ -167,6 +170,9 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
     }
     if (data.enabled_mcp_servers !== undefined) {
       await sql`UPDATE agents SET enabled_mcp_servers = ${sql.json(data.enabled_mcp_servers as JsonValue)}, updated_at = NOW() WHERE id = ${id} AND is_active = true`;
+    }
+    if (data.enabled_mcp_tools !== undefined) {
+      await sql`UPDATE agents SET enabled_mcp_tools = ${sql.json(data.enabled_mcp_tools as JsonValue)}, updated_at = NOW() WHERE id = ${id} AND is_active = true`;
     }
     if (data.tool_description_overrides !== undefined) {
       await sql`UPDATE agents SET tool_description_overrides = ${sql.json(data.tool_description_overrides as JsonValue)}, updated_at = NOW() WHERE id = ${id} AND is_active = true`;
@@ -221,12 +227,18 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
    * and snapshots current state into `published_config`).
    * Also creates a version history entry in `agent_versions`.
    */
-  async publish(tenantId: string, id: string, context?: ISemverPublishContext): Promise<IAgent | null> {
+  async publish(
+    tenantId: string,
+    id: string,
+    context?: ISemverPublishContext
+  ): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
 
     // Read current state to build the snapshot
     const current = await this.findById(tenantId, id);
-    if (!current) return null;
+    if (!current) {
+      return null;
+    }
 
     const snapshot = {
       name: current.name,
@@ -236,6 +248,7 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
       tools: current.tools,
       enabled_tools: current.enabled_tools,
       enabled_mcp_servers: current.enabled_mcp_servers,
+      enabled_mcp_tools: current.enabled_mcp_tools,
       tool_description_overrides: current.tool_description_overrides,
       channels: current.channels,
       knowledge_base_ids: current.knowledge_base_ids,
@@ -306,12 +319,17 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
    * Reverts the draft row to the last published snapshot.
    * Restores all configurable fields from `published_config`.
    */
-  async revertToPublished(tenantId: string, id: string): Promise<IAgent | null> {
+  async revertToPublished(
+    tenantId: string,
+    id: string
+  ): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
 
     // Read current agent to get the published snapshot
     const current = await this.findById(tenantId, id);
-    if (!current || !current.published_config) return null;
+    if (!current || !current.published_config) {
+      return null;
+    }
 
     const s = current.published_config;
 
@@ -322,8 +340,12 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
     const modelConfig = (s.model_config as Record<string, unknown>) ?? {};
     const tools = (s.tools as unknown[]) ?? [];
     const enabledTools = (s.enabled_tools as string[] | null) ?? null;
-    const enabledMcpServers = (s.enabled_mcp_servers as string[] | null) ?? null;
-    const toolDescriptionOverrides = (s.tool_description_overrides as Record<string, string> | null) ?? null;
+    const enabledMcpServers =
+      (s.enabled_mcp_servers as string[] | null) ?? null;
+    const enabledMcpTools =
+      (s.enabled_mcp_tools as Record<string, string[] | null> | null) ?? null;
+    const toolDescriptionOverrides =
+      (s.tool_description_overrides as Record<string, string> | null) ?? null;
     const channels = (s.channels as unknown[]) ?? [];
     const knowledgeBaseIds = (s.knowledge_base_ids as string[]) ?? [];
     const inputVariables = (s.input_variables as unknown[]) ?? [];
@@ -339,6 +361,7 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
         tools = ${sql.json(tools as JsonValue)},
         enabled_tools = ${sql.json(enabledTools as JsonValue)},
         enabled_mcp_servers = ${sql.json(enabledMcpServers as JsonValue)},
+        enabled_mcp_tools = ${sql.json(enabledMcpTools as JsonValue)},
         tool_description_overrides = ${sql.json(toolDescriptionOverrides as JsonValue)},
         channels = ${sql.json(channels as JsonValue)},
         knowledge_base_ids = ${sql.json(knowledgeBaseIds as JsonValue)},
@@ -355,7 +378,10 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
   /**
    * Lists all version history entries for an agent.
    */
-  async listVersions(tenantId: string, agentId: string): Promise<IAgentVersion[]> {
+  async listVersions(
+    tenantId: string,
+    agentId: string
+  ): Promise<IAgentVersion[]> {
     const sql = await this.getSql(tenantId);
     return sql<IAgentVersion[]>`
       SELECT id, agent_id, version_number, snapshot, published_at, created_at,
@@ -370,7 +396,11 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
   /**
    * Rolls back an agent to a specific version by restoring fields from the version snapshot.
    */
-  async rollbackToVersion(tenantId: string, agentId: string, versionId: string): Promise<IAgent | null> {
+  async rollbackToVersion(
+    tenantId: string,
+    agentId: string,
+    versionId: string
+  ): Promise<IAgent | null> {
     const sql = await this.getSql(tenantId);
 
     // Get the version snapshot
@@ -379,7 +409,9 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
       WHERE id = ${versionId} AND agent_id = ${agentId}
       LIMIT 1
     `;
-    if (!versions[0]) return null;
+    if (!versions[0]) {
+      return null;
+    }
 
     const snapshot = versions[0].snapshot;
 
@@ -387,11 +419,18 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
     const name = (snapshot.name as string) ?? "";
     const description = (snapshot.description as string | null) ?? null;
     const systemPrompt = (snapshot.system_prompt as string) ?? "";
-    const modelConfig = (snapshot.model_config as Record<string, unknown>) ?? {};
+    const modelConfig =
+      (snapshot.model_config as Record<string, unknown>) ?? {};
     const tools = (snapshot.tools as unknown[]) ?? [];
     const enabledTools = (snapshot.enabled_tools as string[] | null) ?? null;
-    const enabledMcpServers = (snapshot.enabled_mcp_servers as string[] | null) ?? null;
-    const toolDescriptionOverrides = (snapshot.tool_description_overrides as Record<string, string> | null) ?? null;
+    const enabledMcpServers =
+      (snapshot.enabled_mcp_servers as string[] | null) ?? null;
+    const enabledMcpTools =
+      (snapshot.enabled_mcp_tools as Record<string, string[] | null> | null) ??
+      null;
+    const toolDescriptionOverrides =
+      (snapshot.tool_description_overrides as Record<string, string> | null) ??
+      null;
     const channels = (snapshot.channels as unknown[]) ?? [];
     const knowledgeBaseIds = (snapshot.knowledge_base_ids as string[]) ?? [];
     const inputVariables = (snapshot.input_variables as unknown[]) ?? [];
@@ -407,6 +446,7 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
         tools = ${sql.json(tools as JsonValue)},
         enabled_tools = ${sql.json(enabledTools as JsonValue)},
         enabled_mcp_servers = ${sql.json(enabledMcpServers as JsonValue)},
+        enabled_mcp_tools = ${sql.json(enabledMcpTools as JsonValue)},
         tool_description_overrides = ${sql.json(toolDescriptionOverrides as JsonValue)},
         channels = ${sql.json(channels as JsonValue)},
         knowledge_base_ids = ${sql.json(knowledgeBaseIds as JsonValue)},
@@ -422,7 +462,11 @@ export class AgentsPostgresRepository extends TenantScopedPostgresRepository imp
   /**
    * Deletes a specific version history entry.
    */
-  async deleteVersion(tenantId: string, agentId: string, versionId: string): Promise<boolean> {
+  async deleteVersion(
+    tenantId: string,
+    agentId: string,
+    versionId: string
+  ): Promise<boolean> {
     const sql = await this.getSql(tenantId);
     const results = await sql`
       DELETE FROM agent_versions

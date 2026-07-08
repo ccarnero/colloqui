@@ -92,7 +92,7 @@ import { ToolAdapterFormComponent } from "./tool-adapter-form.component";
               [class.active]="tool().sourceType === 'adapter'"
               (click)="onSourceTypeChange('adapter')"
             >
-              <mat-icon>power</mat-icon> Adapter
+              <mat-icon>power</mat-icon> Connector
             </button>
             <button
               type="button"
@@ -475,7 +475,7 @@ export class AiAgentEditorToolFormComponent {
 
   protected onChange<K extends keyof IAgentToolDraft>(
     field: K,
-    value: IAgentToolDraft[K],
+    value: IAgentToolDraft[K]
   ): void {
     this.toolChange.emit({ ...this.tool(), [field]: value });
   }
@@ -485,7 +485,7 @@ export class AiAgentEditorToolFormComponent {
   }
 
   protected onAdapterRefChange(
-    ref: { adapterId: string; endpointId: string } | null,
+    ref: { adapterId: string; endpointId: string } | null
   ): void {
     this.toolChange.emit({ ...this.tool(), adapterRef: ref });
   }
@@ -512,7 +512,7 @@ export class AiAgentEditorToolFormComponent {
   onParamChange<K extends keyof IToolParameter>(
     index: number,
     field: K,
-    value: IToolParameter[K],
+    value: IToolParameter[K]
   ): void {
     const current = this.tool();
     const params = [...(current.parameters ?? [])];

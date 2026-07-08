@@ -12,6 +12,7 @@ import type {
   ListAgentsParams,
   UpdateAgentInput,
   UpdateEnabledMcpServersInput,
+  UpdateEnabledMcpToolsInput,
   UpdateEnabledToolsInput,
   UpdateToolDescriptionOverridesInput,
 } from "./types.js";
@@ -71,6 +72,16 @@ export interface AgentsClient {
   updateEnabledMcpServers(
     id: string,
     input: UpdateEnabledMcpServersInput,
+    opts?: AgentCallOptions
+  ): Promise<Agent>;
+  /**
+   * `PATCH /admin/agents/:id/mcp-tools` — per-tool MCP allowlist keyed by
+   * server name (mcp-connections.md §4). A `null` value for a server means
+   * "all tools from that server enabled" (backward-compatible default).
+   */
+  updateEnabledMcpTools(
+    id: string,
+    input: UpdateEnabledMcpToolsInput,
     opts?: AgentCallOptions
   ): Promise<Agent>;
   /** `PATCH /admin/agents/:id/tool-descriptions`. */
@@ -277,6 +288,20 @@ export function createAgentsClient({
     return body;
   }
 
+  async function updateEnabledMcpTools(
+    id: string,
+    input: UpdateEnabledMcpToolsInput,
+    opts: AgentCallOptions = {}
+  ): Promise<Agent> {
+    const { body } = await transport.request<Agent>({
+      path: `/admin/agents/${encodePath(id)}/mcp-tools`,
+      method: "PATCH",
+      body: input,
+      retry: opts.retry,
+    });
+    return body;
+  }
+
   async function updateToolDescriptionOverrides(
     id: string,
     input: UpdateToolDescriptionOverridesInput,
@@ -351,6 +376,7 @@ export function createAgentsClient({
     deleteVersion,
     updateEnabledTools,
     updateEnabledMcpServers,
+    updateEnabledMcpTools,
     updateToolDescriptionOverrides,
     revert,
     listMemoryProposals,

@@ -103,6 +103,19 @@ AppModule
    - Validate tenant scope: `platform` tokens pass; `tenant:<name>` tokens must match request tenant
    - Enforce `@Scopes('platform')` if present on handler
 
+### API Versioning
+
+`src/main.ts` sets a global `api` prefix and enables NestJS URI versioning
+with `defaultVersion: ["1", VERSION_NEUTRAL]`, so every route resolves both
+as the canonical `/api/v1/...` and as the unversioned `/api/...` alias,
+with no per-controller `@Version()` decorators. An `onSend` Fastify hook
+flags unversioned requests (any `/api/...` path that isn't `/api/v1/...`
+and isn't in `VERSIONING_EXEMPT_PREFIXES`, e.g. `/api/docs`) as deprecated:
+`Deprecation: true` + `Link: <.../api/v1/...>; rel="successor-version"`.
+New controllers get versioning automatically; add a route to
+`VERSIONING_EXEMPT_PREFIXES` only if it must never be versioned (Swagger is
+the only current case).
+
 ### Dynamic Routing
 
 The Fastify `onRequest` hook in `main.ts` intercepts all requests not matching platform prefixes (`/api/audit`, `/api/tenants`, `/api/registry`, `/api/workflows`, `/api/connectors`, `/api/channels`, `/api/health`, `/api/auth`):

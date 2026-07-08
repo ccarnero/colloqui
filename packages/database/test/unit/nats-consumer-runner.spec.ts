@@ -1,8 +1,8 @@
 import "reflect-metadata";
-import { afterEach, describe, it, expect, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
+import { PermanentError } from "@yoizen/shared";
 import type { Consumer, JsMsg } from "nats";
 import { NatsConsumerRunner } from "../../src/nats-consumer-runner";
-import { PermanentError } from "@yoizen/shared";
 
 /**
  * Bun.sleep is available but jittery under load; prefer explicit
@@ -36,7 +36,10 @@ interface IFakeMsg {
   readonly terms: { count: number };
 }
 
-function makeFakeMsg(id: number): IFakeMsg {
+function makeFakeMsg(
+  id: number,
+  extra: { working?: () => void } = {}
+): IFakeMsg {
   const acks = { count: 0 };
   const naks = { count: 0 };
   const terms = { count: 0 };
@@ -52,6 +55,7 @@ function makeFakeMsg(id: number): IFakeMsg {
     term: () => {
       terms.count++;
     },
+    working: extra.working ?? (() => {}),
     seq: id,
     info: { deliveryCount: 1 },
     headers: undefined,
@@ -89,7 +93,7 @@ function makeIterator(msgs: IFakeMsg[]): {
 }
 
 function makeConsumer(
-  iter: AsyncIterable<JsMsg> & { stop: () => void },
+  iter: AsyncIterable<JsMsg> & { stop: () => void }
 ): Consumer {
   return {
     consume: async () => iter,
@@ -135,7 +139,7 @@ describe("NatsConsumerRunner", () => {
       };
 
       const runner = track(
-        new NatsConsumerRunner(makeConsumer(iter), handler, noopLogger),
+        new NatsConsumerRunner(makeConsumer(iter), handler, noopLogger)
       );
       await runner.start();
       await Bun.sleep(20); // let the `run` task drain
@@ -154,8 +158,8 @@ describe("NatsConsumerRunner", () => {
           async () => {
             throw new Error("boom");
           },
-          noopLogger,
-        ),
+          noopLogger
+        )
       );
       await runner.start();
       await Bun.sleep(10);
@@ -177,8 +181,8 @@ describe("NatsConsumerRunner", () => {
           },
           noopLogger,
           undefined,
-          { onPermanent },
-        ),
+          { onPermanent }
+        )
       );
       await runner.start();
       await Bun.sleep(10);
@@ -200,7 +204,9 @@ describe("NatsConsumerRunner", () => {
 
       const handler = async (m: JsMsg): Promise<void> => {
         inFlight++;
-        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        if (inFlight > maxInFlight) {
+          maxInFlight = inFlight;
+        }
         const seq = (m as unknown as { seq: number }).seq;
         await gates[seq - 1]!.promise;
         inFlight--;
@@ -209,7 +215,7 @@ describe("NatsConsumerRunner", () => {
       const runner = track(
         new NatsConsumerRunner(makeConsumer(iter), handler, noopLogger, {
           concurrency: 4,
-        }),
+        })
       );
       await runner.start();
       await Bun.sleep(20); // give the runner time to saturate the slot window
@@ -240,7 +246,7 @@ describe("NatsConsumerRunner", () => {
       const runner = track(
         new NatsConsumerRunner(makeConsumer(iter), handler, noopLogger, {
           concurrency: 8,
-        }),
+        })
       );
       await runner.start();
       await Bun.sleep(10);
@@ -264,7 +270,9 @@ describe("NatsConsumerRunner", () => {
 
       const handler = async (): Promise<void> => {
         inFlight++;
-        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        if (inFlight > maxInFlight) {
+          maxInFlight = inFlight;
+        }
         await Bun.sleep(2);
         inFlight--;
       };
@@ -272,7 +280,7 @@ describe("NatsConsumerRunner", () => {
       const runner = track(
         new NatsConsumerRunner(makeConsumer(iter), handler, noopLogger, {
           concurrency: 5,
-        }),
+        })
       );
       await runner.start();
       await Bun.sleep(200); // all 50 should drain
@@ -286,12 +294,14 @@ describe("NatsConsumerRunner", () => {
       const { iter } = makeIterator(msgs);
       const handler = async (m: JsMsg): Promise<void> => {
         const seq = (m as unknown as { seq: number }).seq;
-        if (seq === 2) throw new Error("only #2 fails");
+        if (seq === 2) {
+          throw new Error("only #2 fails");
+        }
       };
       const runner = track(
         new NatsConsumerRunner(makeConsumer(iter), handler, noopLogger, {
           concurrency: 4,
-        }),
+        })
       );
       await runner.start();
       await Bun.sleep(20);
@@ -344,7 +354,7 @@ describe("NatsConsumerRunner", () => {
       const runner = new NatsConsumerRunner(
         makeConsumer(blockingIter),
         async () => undefined,
-        noopLogger,
+        noopLogger
       );
       await runner.start();
       await Bun.sleep(20); // let the runner pull the first msg and park
@@ -371,7 +381,7 @@ describe("NatsConsumerRunner", () => {
         noopLogger,
         // Tight timing keeps the test fast — supervisor would otherwise
         // wait `reattachInitialDelayMs` between cycles.
-        { reattachInitialDelayMs: 1, reattachMaxDelayMs: 5 },
+        { reattachInitialDelayMs: 1, reattachMaxDelayMs: 5 }
       );
       await runner.start();
       await Bun.sleep(30); // let the supervisor cycle a few times
@@ -407,12 +417,10 @@ describe("NatsConsumerRunner", () => {
       } as unknown as Consumer;
 
       const runner = track(
-        new NatsConsumerRunner(
-          consumer,
-          async () => undefined,
-          noopLogger,
-          { reattachInitialDelayMs: 5, reattachMaxDelayMs: 20 },
-        ),
+        new NatsConsumerRunner(consumer, async () => undefined, noopLogger, {
+          reattachInitialDelayMs: 5,
+          reattachMaxDelayMs: 20,
+        })
       );
       await runner.start();
       await Bun.sleep(80); // allow first failure → backoff → second success
@@ -442,12 +450,10 @@ describe("NatsConsumerRunner", () => {
       } as unknown as Consumer;
 
       const runner = track(
-        new NatsConsumerRunner(
-          consumer,
-          async () => undefined,
-          noopLogger,
-          { reattachInitialDelayMs: 30, reattachMaxDelayMs: 30 },
-        ),
+        new NatsConsumerRunner(consumer, async () => undefined, noopLogger, {
+          reattachInitialDelayMs: 30,
+          reattachMaxDelayMs: 30,
+        })
       );
       await runner.start();
       // After the first throw, supervisor enters error backoff.
@@ -475,11 +481,7 @@ describe("NatsConsumerRunner", () => {
       } as unknown as Consumer;
 
       const runner = track(
-        new NatsConsumerRunner(
-          consumer,
-          async () => undefined,
-          noopLogger,
-        ),
+        new NatsConsumerRunner(consumer, async () => undefined, noopLogger)
       );
       // Before start: unhealthy
       expect(runner.isHealthy()).toBe(false);
@@ -494,6 +496,115 @@ describe("NatsConsumerRunner", () => {
       // bound state at least once (lastMessageAt set + reattachCount>=0).
       const state = runner.getState();
       expect(state.lastMessageAt).not.toBeNull();
+    });
+  });
+
+  describe("workingIntervalMs (in-progress ack extension — ASYNC-RESILIENCE-AUDIT.md F1)", () => {
+    it("calls msg.working() periodically while a slow handler is in flight, and stops once it resolves", async () => {
+      const workingCalls = { count: 0 };
+      const m = makeFakeMsg(1, {
+        working: () => {
+          workingCalls.count++;
+        },
+      });
+      const { iter } = makeIterator([m]);
+      const gate = defer<void>();
+
+      const runner = track(
+        new NatsConsumerRunner(
+          makeConsumer(iter),
+          async () => {
+            await gate.promise;
+          },
+          noopLogger,
+          { workingIntervalMs: 5 }
+        )
+      );
+      await runner.start();
+
+      // Let several 5ms working-ticks elapse while the handler is still
+      // pending — the timer should have fired more than once.
+      await Bun.sleep(40);
+      expect(workingCalls.count).toBeGreaterThan(1);
+
+      gate.resolve();
+      await Bun.sleep(10);
+
+      expect(m.acks.count).toBe(1);
+      const countAtAck = workingCalls.count;
+
+      // Timer must be cleared on resolve — no further working() calls.
+      await Bun.sleep(30);
+      expect(workingCalls.count).toBe(countAtAck);
+    });
+
+    it("calls msg.working() periodically and stops when the handler rejects", async () => {
+      const workingCalls = { count: 0 };
+      const m = makeFakeMsg(1, {
+        working: () => {
+          workingCalls.count++;
+        },
+      });
+      const { iter } = makeIterator([m]);
+      const gate = defer<void>();
+
+      const runner = track(
+        new NatsConsumerRunner(
+          makeConsumer(iter),
+          async () => {
+            await gate.promise;
+            throw new Error("handler failed after working");
+          },
+          noopLogger,
+          { workingIntervalMs: 5 }
+        )
+      );
+      await runner.start();
+
+      await Bun.sleep(40);
+      expect(workingCalls.count).toBeGreaterThan(1);
+
+      gate.resolve();
+      await Bun.sleep(10);
+
+      expect(m.naks.count).toBe(1);
+      const countAtNak = workingCalls.count;
+
+      // Timer must be cleared on rejection too — no further working() calls.
+      await Bun.sleep(30);
+      expect(workingCalls.count).toBe(countAtNak);
+    });
+
+    it("never calls msg.working() when workingIntervalMs is not configured", async () => {
+      const workingCalls = { count: 0 };
+      const m = makeFakeMsg(1, {
+        working: () => {
+          workingCalls.count++;
+        },
+      });
+      const { iter } = makeIterator([m]);
+      const gate = defer<void>();
+
+      const runner = track(
+        new NatsConsumerRunner(
+          makeConsumer(iter),
+          async () => {
+            await gate.promise;
+          },
+          noopLogger
+          // No workingIntervalMs — zero-overhead default behavior.
+        )
+      );
+      await runner.start();
+
+      await Bun.sleep(40);
+      expect(workingCalls.count).toBe(0);
+
+      gate.resolve();
+      await Bun.sleep(10);
+
+      expect(m.acks.count).toBe(1);
+      expect(workingCalls.count).toBe(0);
     });
   });
 });

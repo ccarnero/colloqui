@@ -18,4 +18,6 @@ export type {
   SKBContainer,
   SKBContainerStatus,
   UpdateSKBContainerInput,
+  UploadSKBFileInput,
+  UploadSKBFileResult,
 } from "./types.js";

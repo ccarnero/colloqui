@@ -1,17 +1,15 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { Test } from "@nestjs/testing";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
 import type { WorkflowAction } from "@yoizen/shared";
-import { WorkflowsService } from "../../src/modules/workflows/workflows.service";
-import {
-  EXECUTIONS_REPOSITORY,
-} from "../../src/modules/workflows/executions.repository.interface";
-import {
-  WORKFLOWS_REPOSITORY,
-  type IWorkflowDefinitionRow,
-} from "../../src/modules/workflows/workflows.repository.interface";
-
+import { EXECUTIONS_REPOSITORY } from "../../src/modules/workflows/executions.repository.interface";
 import { RegisteredServicesResolver } from "../../src/modules/workflows/registered-services.resolver";
+import { SystemVariablesProvider } from "../../src/modules/workflows/system-variables.provider";
+import {
+  type IWorkflowDefinitionRow,
+  WORKFLOWS_REPOSITORY,
+} from "../../src/modules/workflows/workflows.repository.interface";
+import { WorkflowsService } from "../../src/modules/workflows/workflows.service";
 import { TEMPORAL_CLIENT } from "../../src/providers/temporal.provider";
 
 describe("WorkflowsService", () => {
@@ -51,9 +49,7 @@ describe("WorkflowsService", () => {
 
   beforeEach(async () => {
     const mockHandle = {
-      describe: mock(() =>
-        Promise.resolve({ status: { name: "COMPLETED" } }),
-      ),
+      describe: mock(() => Promise.resolve({ status: { name: "COMPLETED" } })),
       result: mock(() => Promise.resolve({ ok: true })),
     };
     mockTemporal = {
@@ -64,20 +60,21 @@ describe("WorkflowsService", () => {
     };
 
     mockDefinitions = {
-      createDefinition: mock((params: {
-        id: string;
-        tenantId: string;
-        name: string;
-        application: string;
-        actions: unknown[];
-      }) =>
-        Promise.resolve({
-          ...baseRow,
-          id: params.id,
-          name: params.name,
-          application: params.application,
-          actions: params.actions,
-        }),
+      createDefinition: mock(
+        (params: {
+          id: string;
+          tenantId: string;
+          name: string;
+          application: string;
+          actions: unknown[];
+        }) =>
+          Promise.resolve({
+            ...baseRow,
+            id: params.id,
+            name: params.name,
+            application: params.application,
+            actions: params.actions,
+          })
       ),
       findDefinitionById: mock(() => Promise.resolve(baseRow)),
       findDefinitionsByTenant: mock(() => Promise.resolve([baseRow])),
@@ -102,7 +99,7 @@ describe("WorkflowsService", () => {
             status: "RUNNING",
             created_at: new Date(),
             updated_at: new Date(),
-          }),
+          })
       ),
       findExecutionsByDefinition: mock(() =>
         Promise.resolve([
@@ -116,11 +113,11 @@ describe("WorkflowsService", () => {
             created_at: new Date(),
             updated_at: new Date(),
           },
-        ]),
+        ])
       ),
       countExecutionsByDefinition: mock(() => Promise.resolve(1)),
       countExecutionsGroupedByDefinition: mock(() =>
-        Promise.resolve([{ definition_id: "def-1", count: 3 }]),
+        Promise.resolve([{ definition_id: "def-1", count: 3 }])
       ),
       findExecutionById: mock(() =>
         Promise.resolve({
@@ -132,7 +129,7 @@ describe("WorkflowsService", () => {
           status: "RUNNING",
           created_at: new Date(),
           updated_at: new Date(),
-        }),
+        })
       ),
       updateExecutionStatus: mock(() => Promise.resolve()),
     };
@@ -146,6 +143,10 @@ describe("WorkflowsService", () => {
         {
           provide: RegisteredServicesResolver,
           useValue: { resolveSlugs: mock(() => Promise.resolve(new Map())) },
+        },
+        {
+          provide: SystemVariablesProvider,
+          useValue: { loadForTenant: mock(() => Promise.resolve({})) },
         },
       ],
     }).compile();
@@ -174,7 +175,7 @@ describe("WorkflowsService", () => {
   it("getWorkflow throws when missing", async () => {
     mockDefinitions.findDefinitionById.mockResolvedValueOnce(undefined);
     await expect(service.getWorkflow("missing", "t1")).rejects.toBeInstanceOf(
-      NotFoundException,
+      NotFoundException
     );
   });
 
@@ -199,8 +200,49 @@ describe("WorkflowsService", () => {
 
     const startCall = mockTemporal.workflow.start.mock.calls[0];
     const startArgs = startCall[1].args as unknown[];
-    expect(startArgs).toHaveLength(2);
+    expect(startArgs).toHaveLength(3);
     expect(startArgs[1]).toBe(result.executionId);
+  });
+
+  it("executeWorkflow (K2) resolves without awaiting workflow completion", async () => {
+    // Simulates the real Temporal contract: `client.workflow.start()` resolves
+    // once the workflow is scheduled, independent of when it finishes running.
+    // A never-resolving `handle.result()` here stands in for a slow/long-running
+    // activity — if the controller/service ever switched to awaiting
+    // completion (e.g. via `handle.result()` or `workflow.execute()`),
+    // this test would hang and fail on the outer timeout.
+    mockDefinitions.findDefinitionById.mockResolvedValueOnce({
+      ...baseRow,
+      actions,
+    });
+
+    let resultCalled = false;
+    const neverResolvingResult = new Promise(() => {
+      /* intentionally never resolves — stands in for a slow activity */
+    });
+    mockTemporal.workflow.start.mockImplementationOnce(() =>
+      Promise.resolve({
+        firstExecutionRunId: "run-slow",
+        result: () => {
+          resultCalled = true;
+          return neverResolvingResult;
+        },
+      })
+    );
+
+    const settleMarker = Symbol("settled");
+    const timeout = new Promise((resolve) =>
+      setTimeout(() => resolve(settleMarker), 200)
+    );
+
+    const outcome = await Promise.race([
+      service.executeWorkflow("def-1", "t1", { orderId: "o1" }),
+      timeout,
+    ]);
+
+    expect(outcome).not.toBe(settleMarker);
+    expect((outcome as { runId: string }).runId).toBe("run-slow");
+    expect(resultCalled).toBe(false);
   });
 
   it("executeWorkflow forwards causal context into the WorkflowDefinition", async () => {
@@ -215,12 +257,7 @@ describe("WorkflowsService", () => {
       depth: 0,
     };
 
-    await service.executeWorkflow(
-      "def-1",
-      "t1",
-      { orderId: "o1" },
-      { causal },
-    );
+    await service.executeWorkflow("def-1", "t1", { orderId: "o1" }, { causal });
 
     const startCall = mockTemporal.workflow.start.mock.calls[0];
     const startArgs = startCall[1].args as unknown[];
@@ -246,14 +283,14 @@ describe("WorkflowsService", () => {
     await service.deleteWorkflow("def-1", "t1");
     expect(mockDefinitions.softDeleteDefinition).toHaveBeenCalledWith(
       "def-1",
-      "t1",
+      "t1"
     );
   });
 
   it("deleteWorkflow throws when nothing deleted", async () => {
     mockDefinitions.softDeleteDefinition.mockResolvedValueOnce(false);
     await expect(service.deleteWorkflow("x", "t1")).rejects.toBeInstanceOf(
-      NotFoundException,
+      NotFoundException
     );
   });
 
@@ -295,7 +332,7 @@ describe("WorkflowsService", () => {
         page: 1,
         pageSize: 20,
         sort: "desc",
-      }),
+      })
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -324,13 +361,13 @@ describe("WorkflowsService", () => {
   it("getExecutionStatus throws when execution missing", async () => {
     mockExecutions.findExecutionById.mockResolvedValueOnce(undefined);
     await expect(
-      service.getExecutionStatus("def-1", "missing", "t1"),
+      service.getExecutionStatus("def-1", "missing", "t1")
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("getExecutionStatus throws when definition id does not match execution", async () => {
     await expect(
-      service.getExecutionStatus("wrong-def", "ex-1", "t1"),
+      service.getExecutionStatus("wrong-def", "ex-1", "t1")
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

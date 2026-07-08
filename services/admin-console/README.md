@@ -61,7 +61,7 @@ src/
 │   │   ├── auth/             # Login
 │   │   ├── overview/         # Dashboard, Analytics
 │   │   ├── channels/         # Channel landing and channel account detail
-│   │   ├── connections/      # Connections landing, MCP placeholder/page
+│   │   ├── connections/      # Connections landing, MCP list/detail
 │   │   ├── automation/       # Workflows, schedules, hosted services, AI feature pages
 │   │   ├── processes/        # Processes landing and direct message trace route
 │   │   ├── identity/         # Users, Roles, API keys

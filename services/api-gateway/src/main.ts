@@ -34,6 +34,10 @@ import { RateLimitService } from "./modules/rate-limit/rate-limit.service";
 import { configureOpenApi } from "./openapi.config";
 import { JETSTREAM } from "./providers/nats.provider";
 import type { IYoizenRequest } from "./types/yoizen-request";
+import {
+  isDeprecatedUnversionedApiPath,
+  toSuccessorVersionPath,
+} from "./utils/api-versioning.util";
 import { publishGatewayAuditEvent } from "./utils/gateway-audit-publish.util";
 
 const REQUEST_ID_HEADER = "x-request-id";
@@ -42,33 +46,8 @@ const HEALTH_PATHS = new Set(["/health", "/readyz"]);
 const accessLogLogger = createPinoLogger("access-log");
 const gatewayAuditPublishLogger = new PinoLoggerService("api-gateway");
 
-/** Unversioned `/api/...` paths that are NOT deprecated aliases. */
-const VERSIONING_EXEMPT_PREFIXES = ["/api/docs"];
-const VERSIONED_API_PREFIX = "/api/v1/";
-const UNVERSIONED_API_PREFIX = "/api/";
-
 function isHealthPath(path: string): boolean {
   return HEALTH_PATHS.has(path.split("?")[0]);
-}
-
-/**
- * True for legacy `/api/...` requests that should be flagged as deprecated
- * (i.e. everything under `/api/` except the `/api/v1/...` routes themselves
- * and the Swagger docs paths, which were never versioned in the first place).
- */
-function isDeprecatedUnversionedApiPath(path: string): boolean {
-  if (!path.startsWith(UNVERSIONED_API_PREFIX)) {
-    return false;
-  }
-  if (path.startsWith(VERSIONED_API_PREFIX)) {
-    return false;
-  }
-  return !VERSIONING_EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix));
-}
-
-/** Same path with `v1/` inserted right after the `/api/` prefix. */
-function toSuccessorVersionPath(path: string): string {
-  return `${VERSIONED_API_PREFIX}${path.slice(UNVERSIONED_API_PREFIX.length)}`;
 }
 
 function configureGlobalMiddleware(app: NestFastifyApplication): void {
