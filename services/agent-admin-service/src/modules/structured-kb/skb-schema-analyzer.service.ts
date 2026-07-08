@@ -1,5 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { generateObject } from "ai";
+import { z } from "zod";
+import type { SkbLlmCredentials } from "./skb-llm.config";
 import { createSkbLanguageModel } from "./skb-llm.config";
 import type { ParsedTable } from "./types/skb.types";
 
@@ -27,6 +29,34 @@ export interface SchemaProviderConfig {
   apiBaseUrl: string;
 }
 
+// Zod schema for the LLM's structured output. Must be Zod (not a plain
+// JSON-schema object literal): the AI SDK derives an OpenAI strict-mode
+// response_format from it, which requires `additionalProperties: false`
+// on every object — a hand-written schema without it is rejected by the
+// OpenAI API before the model runs.
+const SchemaAnalysisZod = z.object({
+  table_description: z.string(),
+  query_rules: z.string(),
+  columns: z.array(
+    z.object({
+      name: z.string(),
+      original_name: z.string(),
+      type: z.enum([
+        "text",
+        "numeric",
+        "categorical",
+        "boolean",
+        "date",
+        "unknown",
+      ]),
+      description: z.string(),
+      sample_values: z.array(z.string()),
+      is_filterable: z.boolean(),
+      query_hints: z.array(z.string()),
+    })
+  ),
+});
+
 const SCHEMA_SYSTEM_PROMPT = `You are a data schema analyst. Given a parsed CSV/Excel table with headers, sample rows, and heuristic type hints, produce a structured schema that describes each column's semantic type and purpose.
 
 Rules:
@@ -43,7 +73,8 @@ export class SKBSchemaAnalyzerService {
   async analyze(
     parsed: ParsedTable,
     providerConfig?: SchemaProviderConfig,
-    modelName?: string
+    modelName?: string,
+    credentials?: SkbLlmCredentials
   ): Promise<SKBSchemaResult> {
     const heuristicHints = this.buildHeuristicHints(parsed);
     const typeSummary = [
@@ -74,10 +105,10 @@ Cardinality report: ${Object.entries(heuristicHints)
 Column type candidates: boolean, numeric, categorical, text, date, unknown`;
 
     const { object } = await (generateObject as any)({
-      model: this.buildModel(providerConfig, modelName),
+      model: this.buildModel(providerConfig, modelName, credentials),
       system: SCHEMA_SYSTEM_PROMPT,
       prompt: userPrompt,
-      schema: this.buildOutputSchema(),
+      schema: SchemaAnalysisZod,
     });
 
     const result = object as {
@@ -105,44 +136,19 @@ Column type candidates: boolean, numeric, categorical, text, date, unknown`;
 
   private buildModel(
     providerConfig?: SchemaProviderConfig,
-    modelName?: string
+    modelName?: string,
+    credentials?: SkbLlmCredentials
   ): any {
-    return createSkbLanguageModel(providerConfig?.provider, modelName);
-  }
-
-  private buildOutputSchema(): any {
-    return {
-      type: "object",
-      properties: {
-        table_description: { type: "string" },
-        query_rules: { type: "string" },
-        columns: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              name: { type: "string" },
-              original_name: { type: "string" },
-              type: { type: "string" },
-              description: { type: "string" },
-              sample_values: { type: "array", items: { type: "string" } },
-              is_filterable: { type: "boolean" },
-              query_hints: { type: "array", items: { type: "string" } },
-            },
-            required: [
-              "name",
-              "original_name",
-              "type",
-              "description",
-              "sample_values",
-              "is_filterable",
-              "query_hints",
-            ],
-          },
-        },
-      },
-      required: ["table_description", "query_rules", "columns"],
-    };
+    const resolved =
+      credentials ??
+      (providerConfig?.apiKey
+        ? { apiKey: providerConfig.apiKey, baseUrl: providerConfig.apiBaseUrl }
+        : undefined);
+    return createSkbLanguageModel(
+      providerConfig?.provider,
+      modelName,
+      resolved
+    );
   }
 
   private buildHeuristicHints(

@@ -49,6 +49,17 @@ spec:
               value: "27017"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
+            # Fallback API key for the Structured KB LLM path (NL->SQL).
+            # The secret is created out-of-band (kubectl create secret) and
+            # never committed; optional so the service starts without it.
+            # Per-container connector credentials (provider_config.
+            # provider_connector_id) take precedence over this env var.
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-credentials
+                  key: OPENAI_API_KEY
+                  optional: true
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

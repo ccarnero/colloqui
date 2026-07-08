@@ -50,6 +50,17 @@ spec:
               value: "worker"
             - name: OTEL_SERVICE_NAME
               value: "agent-admin-service-worker"
+            # Fallback API key for the Structured KB LLM path (schema
+            # analysis during ingestion). The secret is created out-of-band
+            # (kubectl create secret) and never committed; optional so the
+            # worker starts without it. Per-container connector credentials
+            # (provider_config.provider_connector_id) take precedence.
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-credentials
+                  key: OPENAI_API_KEY
+                  optional: true
           resources:
             requests:
               cpu: 100m

@@ -9,6 +9,8 @@ import type {
 } from "./types/skb.types";
 
 export interface SKBContainerFileInfo {
+  /** skb_files primary key — the value skb_rows.file_id references. */
+  id: string;
   file_id: string;
   container_id: string;
   tenant_id: string;

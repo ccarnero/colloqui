@@ -1051,6 +1051,19 @@ spec:
           value: agent-admin-service
         - name: CONNECTOR_ADMIN_URL
           value: http://connector-admin-api.platform-services-dev.svc.cluster.local
+        # Knative Service is a CRD, so this patch replaces the base env list
+        # wholesale (no strategic merge by name) — the OPENAI_API_KEY entry
+        # from base must be repeated here or it is dropped.
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-credentials
+              key: OPENAI_API_KEY
+              optional: true
+        # Dev-only: allow admins to mark MCP servers as scope=internal so
+        # the SSRF guard permits in-cluster/private-IP targets.
+        - name: MCP_INTERNAL_SCOPE_ENABLED
+          value: "true"
         securityContext:
           runAsNonRoot: true
           allowPrivilegeEscalation: false

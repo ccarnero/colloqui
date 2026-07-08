@@ -38,6 +38,7 @@ import { StructuredKBController } from "./structured-kb.controller";
     { provide: "SKBSchemaRepository", useExisting: SKBSchemaRepository },
     { provide: "SKBRowsRepository", useExisting: SKBRowsRepository },
     { provide: "SKBQueryHistoryService", useExisting: SKBQueryHistoryService },
+    { provide: "SKBContainersService", useExisting: SKBContainersService },
     {
       provide: "TenantConnectionManager",
       useExisting: YoizenclawTenantConnectionManager,

@@ -2,17 +2,23 @@ import { Inject, Injectable, Optional } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 import { generateObject } from "ai";
 import { z } from "zod";
-import { createSkbLanguageModel } from "./skb-llm.config";
+import {
+  createSkbLanguageModel,
+  resolveSkbLlmCredentials,
+} from "./skb-llm.config";
 import { isSafe, validateWhereClause } from "./skb-sql-safety";
 
 // ---------------------------------------------------------------------------
 // Zod schema for LLM output
 // ---------------------------------------------------------------------------
 
+// OpenAI strict-mode structured outputs require every property to be
+// listed in `required`, so optional fields must be modeled as nullable
+// (present but null) rather than absent.
 const SQLTranslationZod = z.object({
   where_clause: z.string(),
-  order_by: z.string().optional(),
-  explanation: z.string().optional(),
+  order_by: z.string().nullable(),
+  explanation: z.string().nullable(),
 });
 
 // ---------------------------------------------------------------------------
@@ -223,6 +229,17 @@ export class SKBQueryService {
         },
       ): Promise<unknown>;
     },
+    @Optional()
+    @Inject("SKBContainersService")
+    private readonly containersService?: {
+      findById(
+        tenantId: string,
+        id: string,
+      ): Promise<{
+        provider_config: Record<string, unknown>;
+        query_model: string;
+      } | null>;
+    },
   ) {}
 
   async query(
@@ -247,7 +264,18 @@ export class SKBQueryService {
         options?.categories ?? []
       );
 
-      // 3. Call generateObject to translate NL → SQL
+      // 3. Call generateObject to translate NL → SQL. Credentials resolve
+      // from the container's provider_config connector when set, else from
+      // the OPENAI_API_KEY env fallback.
+      const container = await this.containersService?.findById(
+        tenantId,
+        containerId
+      );
+      const llmCredentials = await resolveSkbLlmCredentials(
+        tenantId,
+        container?.provider_config,
+        this.logger
+      );
       let object: {
         where_clause: string;
         order_by?: string;
@@ -255,7 +283,11 @@ export class SKBQueryService {
       };
       try {
         const result = await (generateObject as any)({
-          model: createSkbLanguageModel(),
+          model: createSkbLanguageModel(
+            undefined,
+            container?.query_model,
+            llmCredentials
+          ),
           schema: SQLTranslationZod,
           system: QUERY_SYSTEM_PROMPT,
           prompt,

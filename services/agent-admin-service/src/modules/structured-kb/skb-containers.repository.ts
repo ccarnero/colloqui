@@ -6,6 +6,8 @@ import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.re
 import type { FileRow, SKBContainerRow } from "./types/skb.types";
 
 export interface SKBFileRow {
+  /** skb_files primary key — the value skb_rows.file_id references. */
+  id: string;
   file_id: string;
   container_id: string;
   tenant_id: string;
@@ -136,11 +138,13 @@ export class SKBContainersRepository extends TenantScopedPostgresRepository {
     data: { fileId: string; originalName: string; categories: string[] }
   ): Promise<FileRow> {
     const sql = await this.getSql(tenantId);
-    const categoriesJson = JSON.stringify(data.categories ?? []);
 
+    // Raw array, NOT pre-stringified: the ::jsonb cast makes the driver's
+    // jsonb serializer stringify the parameter, so stringifying here
+    // double-encodes and stores a JSON string instead of an array.
     const [result] = await sql<FileRow[]>`
       INSERT INTO skb_files (container_id, tenant_id, file_id, original_name, categories, status)
-      VALUES (${containerId}, ${tenantId}, ${data.fileId}, ${data.originalName}, ${categoriesJson}::jsonb, 'pending')
+      VALUES (${containerId}, ${tenantId}, ${data.fileId}, ${data.originalName}, ${data.categories ?? []}::jsonb, 'pending')
       RETURNING *
     `;
     return result;
@@ -160,7 +164,7 @@ export class SKBContainersRepository extends TenantScopedPostgresRepository {
     const sql = await this.getSql(tenantId);
 
     const results = await sql<SKBFileRow[]>`
-      SELECT file_id, container_id, tenant_id, status, error_message AS error, updated_at
+      SELECT id, file_id, container_id, tenant_id, status, error_message AS error, updated_at
       FROM skb_files
       WHERE file_id = ${fileId}
         AND container_id = ${containerId}
@@ -247,7 +251,7 @@ export class SKBContainersRepository extends TenantScopedPostgresRepository {
       try {
         const sql = await this.getSql(tenantId);
         const rows = await sql<SKBFileRow[]>`
-          SELECT file_id, container_id, tenant_id, status, error_message AS error, updated_at
+          SELECT id, file_id, container_id, tenant_id, status, error_message AS error, updated_at
           FROM skb_files
           WHERE status = 'processing'
             AND is_active = true

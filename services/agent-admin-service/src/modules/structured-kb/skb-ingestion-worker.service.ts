@@ -18,6 +18,7 @@ import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connec
 import { JobTrackingService } from "../knowledge-bases/job-tracking.service";
 import { SKBContainersService } from "./skb-containers.service";
 import { SKBFileParser } from "./skb-file-parser";
+import { resolveSkbLlmCredentials } from "./skb-llm.config";
 import { SKBRowsRepository } from "./skb-rows.repository";
 import { SKBSchemaAnalyzerService } from "./skb-schema-analyzer.service";
 
@@ -200,6 +201,20 @@ export class SKBIngestionWorkerService
         );
       }
 
+      // Resolve the skb_files row: the event carries the logical file_id,
+      // but skb_rows.file_id references the skb_files PRIMARY KEY (id) —
+      // inserting the logical id violates skb_rows_file_id_fkey.
+      const fileRow = await this.containerService.findFile(
+        tenantId,
+        containerId,
+        fileId
+      );
+      if (!fileRow) {
+        throw new Error(
+          `File ${fileId} has no skb_files row in container ${containerId}`
+        );
+      }
+
       // Step 3: Death check — verify job is still active
       const activeJob = await this.jobTrackingService.getJob(
         tenantId,
@@ -214,8 +229,20 @@ export class SKBIngestionWorkerService
       const parsed = await this.fileParser.parseFile(fileUrl ?? "", tenantId);
 
       // Step 5: Analyze schema (feeds the future schema-persistence step;
-      // see skb-schema.repository.ts — not part of this defect's scope)
-      await this.schemaAnalyzer.analyze(parsed);
+      // see skb-schema.repository.ts — not part of this defect's scope).
+      // Credentials resolve from the container's provider_config connector
+      // when set, else from the OPENAI_API_KEY env fallback.
+      const llmCredentials = await resolveSkbLlmCredentials(
+        tenantId,
+        container.provider_config,
+        this.logger
+      );
+      await this.schemaAnalyzer.analyze(
+        parsed,
+        undefined,
+        container.ingest_model,
+        llmCredentials
+      );
 
       // Step 6: Insert typed rows. `insertRows` needs a live sql handle for
       // the tenant plus the container it belongs to — both honest,
@@ -225,7 +252,7 @@ export class SKBIngestionWorkerService
         sql,
         tenantId,
         containerId,
-        fileId,
+        fileRow.id,
         parsed.rows as Record<string, unknown>[],
         categories
       );
@@ -237,7 +264,7 @@ export class SKBIngestionWorkerService
       );
       if (!containerAfter) {
         // Clean up rows that were just inserted
-        await this.rowStore.deleteRowsForFile(tenantId, fileId);
+        await this.rowStore.deleteRowsForFile(tenantId, fileRow.id);
         throw new Error(
           `Container ${containerId} was deleted during processing`
         );

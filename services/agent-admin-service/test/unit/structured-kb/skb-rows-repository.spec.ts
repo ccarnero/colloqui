@@ -1,5 +1,5 @@
 import "../../setup-env";
-import { describe, it, expect, beforeEach, vi } from "bun:test";
+import { beforeEach, describe, expect, it, vi } from "bun:test";
 import { SKBRowsRepository } from "../../src/modules/structured-kb/skb-rows.repository";
 
 describe("SKBRowsRepository", () => {
@@ -42,7 +42,7 @@ describe("SKBRowsRepository", () => {
         CONTAINER_ID,
         FILE_ID,
         rows,
-        [],
+        []
       );
 
       expect(mockSql.unsafe).toHaveBeenCalled();
@@ -64,15 +64,15 @@ describe("SKBRowsRepository", () => {
         CONTAINER_ID,
         FILE_ID,
         rows,
-        categories,
+        categories
       );
 
       expect(mockSql.unsafe).toHaveBeenCalled();
       const params = mockSql.unsafe.mock.calls[0][1] as any[];
-      const categoriesParam = params.find(
-        (p) => typeof p === "string" && p.includes("sales"),
-      );
-      expect(categoriesParam).toBeTruthy();
+      // Raw array (not pre-stringified): the $n::jsonb cast has the driver
+      // serialize it — a string param here would double-encode in Postgres.
+      const categoriesParam = params.find((p) => Array.isArray(p));
+      expect(categoriesParam).toEqual(categories);
     });
 
     it("should batch inserts in groups of 5000", async () => {
@@ -84,7 +84,7 @@ describe("SKBRowsRepository", () => {
         CONTAINER_ID,
         FILE_ID,
         rows,
-        [],
+        []
       );
 
       expect(mockSql.unsafe).toHaveBeenCalledTimes(3);
@@ -99,7 +99,7 @@ describe("SKBRowsRepository", () => {
         CONTAINER_ID,
         FILE_ID,
         rows,
-        [],
+        []
       );
 
       expect(count).toBe(100);
@@ -114,7 +114,7 @@ describe("SKBRowsRepository", () => {
         CONTAINER_ID,
         FILE_ID,
         rows,
-        [],
+        []
       );
 
       expect(count).toBe(1);
@@ -128,7 +128,7 @@ describe("SKBRowsRepository", () => {
         CONTAINER_ID,
         FILE_ID,
         [],
-        [],
+        []
       );
 
       expect(count).toBe(0);
@@ -144,7 +144,7 @@ describe("SKBRowsRepository", () => {
         CONTAINER_ID,
         FILE_ID,
         rows,
-        [],
+        []
       );
 
       expect(mockSql.unsafe).toHaveBeenCalledTimes(1);
@@ -159,7 +159,7 @@ describe("SKBRowsRepository", () => {
         CONTAINER_ID,
         FILE_ID,
         rows,
-        [],
+        []
       );
 
       expect(mockSql.unsafe).toHaveBeenCalledTimes(2);
@@ -177,7 +177,7 @@ describe("SKBRowsRepository", () => {
         mockSql,
         TENANT_ID,
         CONTAINER_ID,
-        FILE_ID,
+        FILE_ID
       );
 
       expect(mockSql.unsafe).toHaveBeenCalled();
@@ -198,7 +198,7 @@ describe("SKBRowsRepository", () => {
         mockSql,
         TENANT_ID,
         CONTAINER_ID,
-        FILE_ID,
+        FILE_ID
       );
 
       expect(rows).toEqual([
@@ -214,7 +214,7 @@ describe("SKBRowsRepository", () => {
         mockSql,
         TENANT_ID,
         CONTAINER_ID,
-        FILE_ID,
+        FILE_ID
       );
 
       expect(rows).toEqual([]);
@@ -225,11 +225,7 @@ describe("SKBRowsRepository", () => {
     it("should delete rows matching file_id and tenant_id", async () => {
       mockSql.unsafe.mockResolvedValue({ count: 42 });
 
-      await repository.deleteRowsByFileId(
-        mockSql,
-        TENANT_ID,
-        FILE_ID,
-      );
+      await repository.deleteRowsByFileId(mockSql, TENANT_ID, FILE_ID);
 
       expect(mockSql.unsafe).toHaveBeenCalled();
       const sql = mockSql.unsafe.mock.calls[0][0] as string;
@@ -244,7 +240,7 @@ describe("SKBRowsRepository", () => {
       const deleted = await repository.deleteRowsByFileId(
         mockSql,
         TENANT_ID,
-        FILE_ID,
+        FILE_ID
       );
 
       expect(deleted).toBe(100);
@@ -256,7 +252,7 @@ describe("SKBRowsRepository", () => {
       const deleted = await repository.deleteRowsByFileId(
         mockSql,
         TENANT_ID,
-        FILE_ID,
+        FILE_ID
       );
 
       expect(deleted).toBe(0);
@@ -270,7 +266,7 @@ describe("SKBRowsRepository", () => {
       const count = await repository.getRowCount(
         mockSql,
         TENANT_ID,
-        CONTAINER_ID,
+        CONTAINER_ID
       );
 
       expect(count).toBe(5000);
@@ -282,7 +278,7 @@ describe("SKBRowsRepository", () => {
       const count = await repository.getRowCount(
         mockSql,
         TENANT_ID,
-        CONTAINER_ID,
+        CONTAINER_ID
       );
 
       expect(count).toBe(0);
@@ -304,7 +300,7 @@ describe("SKBRowsRepository", () => {
   describe("death check", () => {
     it("should throw if container was deleted mid-insert", async () => {
       mockSql.unsafe.mockRejectedValue(
-        new Error("container not found or deleted"),
+        new Error("container not found or deleted")
       );
 
       await expect(
@@ -314,8 +310,8 @@ describe("SKBRowsRepository", () => {
           CONTAINER_ID,
           FILE_ID,
           [{ name: "test" }],
-          [],
-        ),
+          []
+        )
       ).rejects.toThrow("container not found or deleted");
     });
   });

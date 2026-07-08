@@ -4,6 +4,10 @@ import { PermanentError } from "@yoizen/shared";
 import type { JsMsg } from "nats";
 import { SKBIngestionWorkerService } from "../../src/modules/structured-kb/skb-ingestion-worker.service";
 
+// The worker resolves SKB LLM credentials before schema analysis; give the
+// env fallback a dummy key so handleMessage tests don't fail on config.
+process.env.OPENAI_API_KEY ??= "sk-test-not-a-real-key";
+
 type MockFn = ReturnType<typeof vi.fn>;
 
 function createMockMsg(overrides: Record<string, unknown> = {}): JsMsg {
@@ -75,6 +79,9 @@ describe("SKBIngestionWorkerService", () => {
   const TENANT_ID = "tenant-123";
   const CONTAINER_ID = "container-1";
   const FILE_ID = "file-1";
+  // skb_files PRIMARY KEY — what skb_rows.file_id actually references
+  // (distinct from the logical FILE_ID carried in the event payload).
+  const FILE_ROW_PK = "file-row-pk-1";
 
   beforeEach(() => {
     originalServiceMode = process.env.SERVICE_MODE;
@@ -130,6 +137,7 @@ describe("SKBIngestionWorkerService", () => {
       }),
       updateStatus: vi.fn().mockResolvedValue(undefined),
       findFile: vi.fn().mockResolvedValue({
+        id: FILE_ROW_PK,
         file_id: FILE_ID,
         status: "pending",
       }),
@@ -268,7 +276,10 @@ describe("SKBIngestionWorkerService", () => {
         expect.objectContaining({
           headers: expect.any(Array),
           rows: expect.any(Array),
-        })
+        }),
+        undefined,
+        undefined,
+        expect.objectContaining({ apiKey: expect.any(String) })
       );
     });
 
@@ -283,7 +294,7 @@ describe("SKBIngestionWorkerService", () => {
         expect.any(Object),
         TENANT_ID,
         CONTAINER_ID,
-        FILE_ID,
+        FILE_ROW_PK,
         expect.any(Array),
         ["sales"]
       );
@@ -309,7 +320,7 @@ describe("SKBIngestionWorkerService", () => {
         expect.any(Object),
         TENANT_ID,
         CONTAINER_ID,
-        FILE_ID,
+        FILE_ROW_PK,
         expect.any(Array),
         []
       );
@@ -336,7 +347,7 @@ describe("SKBIngestionWorkerService", () => {
         expect.any(Object),
         TENANT_ID,
         CONTAINER_ID,
-        FILE_ID,
+        FILE_ROW_PK,
         expect.any(Array),
         []
       );
@@ -414,7 +425,7 @@ describe("SKBIngestionWorkerService", () => {
 
       expect(mockRowStore.deleteRowsForFile).toHaveBeenCalledWith(
         expect.any(String),
-        FILE_ID
+        FILE_ROW_PK
       );
     });
 
