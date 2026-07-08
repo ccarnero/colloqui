@@ -21,6 +21,10 @@ import {
   type ICreateAdapterPayload,
   type IUpdateAdapterPayload,
 } from "../../../core/services/http-adapter.service";
+import {
+  ConfirmDialogComponent,
+  type IConfirmDialogData,
+} from "../../../shared/components/confirm-dialog/confirm-dialog.component";
 import { HttpAdapterDialogComponent } from "../../../shared/components/http-adapter-dialog/http-adapter-dialog.component";
 import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
@@ -588,6 +592,27 @@ export class ConnectorsComponent implements OnInit {
       return;
     }
 
+    const data: IConfirmDialogData = {
+      title: "Delete connector",
+      message: `Delete “${row.adapter.name}”? This action cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "danger",
+      icon: "warning_amber",
+    };
+    this.dialog
+      .open<ConfirmDialogComponent, IConfirmDialogData, boolean>(
+        ConfirmDialogComponent,
+        { data, autoFocus: false, restoreFocus: true }
+      )
+      .afterClosed()
+      .subscribe((confirmed) => {
+        if (confirmed === true) {
+          this.deleteConnector(row);
+        }
+      });
+  }
+
+  private deleteConnector(row: IConnectorRow): void {
     this.dismissError();
     this.adapterService.remove(row.id).subscribe({
       next: () => {
