@@ -17,6 +17,12 @@ export interface McpServerConfig {
     | { type: "http"; url: string; headers?: Record<string, string> }
     | { type: "sse"; url: string; headers?: Record<string, string> };
   enabled?: boolean;
+  /**
+   * SSRF-relevant scope (mcp-connections.md SSRF-scope follow-up). `"internal"`
+   * is an explicit admin opt-in — see `validateUrl` below. Defaults to
+   * `"external"` when omitted (e.g. an mcp_servers row predating this field).
+   */
+  scope?: "external" | "internal";
 }
 
 @Injectable()
@@ -32,6 +38,8 @@ export class McpClientService {
     }
 
     try {
+      validateUrl(config.transport.url, config.scope);
+
       const client = await withTimeout(
         createMCPClient({
           transport: config.transport,
@@ -114,6 +122,71 @@ export class McpClientService {
 
   getConnectedServers(): string[] {
     return Array.from(this.clients.keys());
+  }
+}
+
+/**
+ * SSRF guard — ported from `connector-runtime`'s `mcp-call.activity.ts`
+ * (itself ported from `agent-admin-service`'s `mcp-tools-probe.service.ts`
+ * / `adapter-executor.service.ts`). Rejects non-http(s) schemes, localhost,
+ * cloud-metadata, link-local and RFC1918 targets. Throws a plain `Error`
+ * (not `ApplicationFailure`) since this service does not use Temporal.
+ *
+ * `scope: "internal"` is an explicit admin opt-in (gated by
+ * `MCP_INTERNAL_SCOPE_ENABLED` at write time, agent-admin-service's
+ * `mcp-servers.service.ts`) that skips the localhost/RFC1918 checks so
+ * private-IP/in-cluster MCP servers can be reached — cloud-metadata and
+ * link-local targets stay blocked regardless of scope.
+ */
+export function validateUrl(
+  url: string,
+  scope?: "external" | "internal"
+): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid MCP server URL: '${url}'`);
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`MCP server URL must use http or https protocol: '${url}'`);
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  const isInternal = scope === "internal";
+
+  if (
+    !isInternal &&
+    (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1")
+  ) {
+    throw new Error("MCP server URL must not target localhost");
+  }
+
+  if (hostname === "169.254.169.254") {
+    throw new Error("MCP server URL must not target cloud metadata endpoint");
+  }
+
+  if (hostname.startsWith("169.254.") || hostname.startsWith("fe80:")) {
+    throw new Error("MCP server URL must not target link-local addresses");
+  }
+
+  if (isInternal) {
+    return;
+  }
+
+  const parts = hostname.split(".");
+  if (parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p))) {
+    const octets = parts.map(Number);
+    if (
+      octets[0] === 10 ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 192 && octets[1] === 168)
+    ) {
+      throw new Error(
+        "MCP server URL must not target private/RFC1918 addresses"
+      );
+    }
   }
 }
 

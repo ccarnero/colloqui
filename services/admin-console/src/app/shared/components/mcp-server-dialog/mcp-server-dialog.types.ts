@@ -1,7 +1,24 @@
 import type {
   IMcpServer,
   McpServerAuthType,
+  McpServerScope,
 } from "../../../core/models/agent.model";
+
+/** Scope options for the MCP server dialog — external (default) vs internal (in-cluster). */
+export const MCP_SCOPE_LABELS: ReadonlyMap<McpServerScope, string> = new Map([
+  ["external", "External"],
+  ["internal", "Internal (in-cluster)"],
+]);
+
+export function mcpScopeOptions(): {
+  value: McpServerScope;
+  label: string;
+}[] {
+  return [...MCP_SCOPE_LABELS.entries()].map(([value, label]) => ({
+    value,
+    label,
+  }));
+}
 
 /** Auth type options for the MCP server dialog — none/api-key/bearer/basic only (no oauth2, mcp-connections.md §0.4). */
 export const MCP_AUTH_TYPE_LABELS: ReadonlyMap<McpServerAuthType, string> =
@@ -37,4 +54,5 @@ export interface IMcpServerDialogResult {
   authType: McpServerAuthType;
   authConfig?: Record<string, unknown>;
   enabled: boolean;
+  scope: McpServerScope;
 }

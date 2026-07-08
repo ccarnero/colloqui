@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
+import { agentAdminServiceConfig } from "../../config";
 import type {
   CreateMcpServerDto,
   RecordMcpUsageEventDto,
@@ -102,6 +104,7 @@ export class McpServersService {
 
   async create(tenantId: string, dto: CreateMcpServerDto): Promise<IMcpServer> {
     await this.assertNameAvailable(tenantId, dto.name);
+    this.assertScopeAllowed(dto.scope);
     return this.repository.create(tenantId, {
       name: dto.name,
       description: dto.description,
@@ -111,6 +114,7 @@ export class McpServersService {
       auth_type: dto.authType,
       auth_config: dto.authConfig,
       enabled: dto.enabled,
+      scope: dto.scope ?? "external",
     });
   }
 
@@ -121,6 +125,7 @@ export class McpServersService {
   ): Promise<IMcpServer> {
     const existing = await this.findById(tenantId, id);
     this.assertManagedFieldsEditable(id, existing.managed_by, dto);
+    this.assertScopeAllowed(dto.scope);
     if (dto.name !== undefined && dto.name !== existing.name) {
       await this.assertNameAvailable(tenantId, dto.name, id);
     }
@@ -134,6 +139,7 @@ export class McpServersService {
       auth_type: dto.authType,
       auth_config: dto.authConfig,
       enabled: dto.enabled,
+      scope: dto.scope,
     };
 
     const server = await this.repository.update(tenantId, id, data);
@@ -259,6 +265,24 @@ export class McpServersService {
       throw new ConflictException(
         `An MCP server named '${name}' already exists for this tenant. ` +
           "Server names must be unique per tenant."
+      );
+    }
+  }
+
+  /**
+   * Guards `scope: "internal"` behind `MCP_INTERNAL_SCOPE_ENABLED`. Internal
+   * scope relaxes the SSRF guard's localhost/RFC1918 checks for this server
+   * (mcp-tools-probe.service.ts, connector-runtime's mcp-call.activity.ts,
+   * agent-ai-service's mcp-client.service.ts), so it must be an explicit,
+   * deployment-level opt-in rather than always available.
+   */
+  private assertScopeAllowed(scope: "external" | "internal" | undefined): void {
+    if (scope !== "internal") {
+      return;
+    }
+    if (!agentAdminServiceConfig.mcpInternalScopeEnabled) {
+      throw new BadRequestException(
+        "internal scope is disabled on this deployment; set MCP_INTERNAL_SCOPE_ENABLED=true to enable it."
       );
     }
   }

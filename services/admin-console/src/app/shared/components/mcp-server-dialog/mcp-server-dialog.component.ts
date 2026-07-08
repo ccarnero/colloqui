@@ -25,6 +25,7 @@ import { MatSelectModule } from "@angular/material/select";
 import type {
   IMcpTestConnectionResult,
   McpServerAuthType,
+  McpServerScope,
 } from "../../../core/models/agent.model";
 import { AgentAdminService } from "../../../core/services/agent-admin.service";
 import { McpAuthConfigComponent } from "./mcp-auth-config.component";
@@ -33,6 +34,7 @@ import type {
   IMcpServerDialogData,
   IMcpServerDialogResult,
 } from "./mcp-server-dialog.types";
+import { mcpScopeOptions } from "./mcp-server-dialog.types";
 
 /**
  * Create/Edit dialog for MCP servers — real `MatDialog`, replacing the old
@@ -130,6 +132,16 @@ import type {
                 placeholder="Optional description"
               />
             </mat-form-field>
+            <mat-form-field appearance="outline" class="form-field-half">
+              <mat-label>Scope</mat-label>
+              <mat-select formControlName="scope">
+                @for (option of scopeOptions; track option.value) {
+                  <mat-option [value]="option.value">{{
+                    option.label
+                  }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
             <label class="form-check">
               <input type="checkbox" formControlName="enabled" />
               <span>Enable this server</span>
@@ -219,6 +231,8 @@ export class McpServerDialogComponent {
 
   readonly form = this.buildForm();
 
+  readonly scopeOptions = mcpScopeOptions();
+
   /** Owner of a synced server, or null for operator-owned ones. */
   readonly managedBy = this.data.server?.managed_by ?? null;
   readonly isManaged = this.managedBy !== null;
@@ -302,6 +316,7 @@ export class McpServerDialogComponent {
       authType: authTypeVal,
       authConfig,
       enabled: v.enabled ?? true,
+      scope: (v.scope as McpServerScope) ?? "external",
     };
 
     this.dialogRef.close(result);
@@ -333,6 +348,7 @@ export class McpServerDialogComponent {
         password: [(authConfig["password"] as string) ?? ""],
       }),
       enabled: [s?.enabled ?? true],
+      scope: [s?.scope ?? ("external" as McpServerScope)],
     });
 
     form.get("auth.type")?.valueChanges.subscribe((type) => {

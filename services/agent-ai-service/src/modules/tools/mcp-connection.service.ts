@@ -13,6 +13,12 @@ interface IMcpServerRow {
   headers: Record<string, string> | null;
   enabled: boolean;
   is_active: boolean;
+  /**
+   * SSRF-relevant scope (mcp-connections.md SSRF-scope follow-up), threaded
+   * into `McpClientService.connect()`'s `validateUrl` call. Defaults to
+   * `"external"` when the row predates this column.
+   */
+  scope?: "external" | "internal";
 }
 
 @Injectable()
@@ -69,7 +75,7 @@ export class McpConnectionService implements OnModuleInit {
       if (sql?.raw) {
         // Postgres
         const rows = await sql<IMcpServerRow[]>`
-          SELECT id, tenant_id, name, transport_type, url, headers, enabled, is_active
+          SELECT id, tenant_id, name, transport_type, url, headers, enabled, is_active, scope
           FROM mcp_servers
           WHERE enabled = true AND is_active = true
         `;
@@ -91,6 +97,7 @@ export class McpConnectionService implements OnModuleInit {
           headers: doc.headers ?? null,
           enabled: doc.enabled,
           is_active: doc.is_active,
+          scope: doc.scope ?? "external",
         }));
       }
     } catch (error) {
@@ -111,6 +118,7 @@ export class McpConnectionService implements OnModuleInit {
         ...(server.headers ? { headers: server.headers } : {}),
       },
       enabled: true,
+      scope: server.scope,
     });
   }
 }

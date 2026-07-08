@@ -36,6 +36,7 @@ function docToMcpServer(doc: WithId<IStringIdDoc>): IMcpServer {
         : String(doc.managed_by),
     managed_locked_fields:
       (doc.managed_locked_fields as string[] | null) ?? null,
+    scope: (doc.scope as IMcpServer["scope"]) ?? "external",
     created_at:
       doc.created_at instanceof Date
         ? doc.created_at
@@ -101,6 +102,7 @@ export class McpServersMongoRepository
       is_active: true,
       managed_by: null,
       managed_locked_fields: null,
+      scope: data.scope ?? "external",
       created_at: now,
       updated_at: now,
     };
@@ -146,6 +148,9 @@ export class McpServersMongoRepository
     }
     if (data.managed_locked_fields !== undefined) {
       setFields.managed_locked_fields = data.managed_locked_fields;
+    }
+    if (data.scope !== undefined) {
+      setFields.scope = data.scope;
     }
 
     if (Object.keys(setFields).length > 1) {

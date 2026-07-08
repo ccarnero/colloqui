@@ -22,6 +22,7 @@ import {
   type IMcpUsage,
   type ITemplate,
   type McpServerAuthType,
+  type McpServerScope,
 } from "../models/agent.model";
 import { ResourceMutationsService } from "./metrics/resource-mutations.service";
 
@@ -337,6 +338,7 @@ export class AgentAdminService {
     authType?: McpServerAuthType;
     authConfig?: Record<string, unknown>;
     enabled?: boolean;
+    scope?: McpServerScope;
   }): Observable<IMcpServer> {
     return this.http
       .post<IMcpServer>(`${BASE_URL}/mcp-servers`, data)
@@ -358,6 +360,7 @@ export class AgentAdminService {
       authType?: McpServerAuthType;
       authConfig?: Record<string, unknown> | null;
       enabled?: boolean;
+      scope?: McpServerScope;
     }
   ): Observable<IMcpServer> {
     return this.http

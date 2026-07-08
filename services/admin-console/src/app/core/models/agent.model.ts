@@ -54,6 +54,14 @@ export interface IBuiltinTool {
 export type McpServerAuthType = "none" | "api-key" | "bearer" | "basic";
 
 /**
+ * SSRF-relevant scope. `"external"` (default) keeps the SSRF guard's
+ * localhost/RFC1918 checks; `"internal"` is an explicit admin opt-in that
+ * relaxes them for private-IP/in-cluster MCP servers — gated by
+ * `MCP_INTERNAL_SCOPE_ENABLED` on the deployment.
+ */
+export type McpServerScope = "external" | "internal";
+
+/**
  * MCP server configuration.
  *
  * Field casing mirrors the raw wire shape returned by
@@ -78,6 +86,7 @@ export interface IMcpServer {
   is_active: boolean;
   managed_by: string | null;
   managed_locked_fields: string[] | null;
+  scope: McpServerScope;
   created_at: string;
   updated_at: string;
 }

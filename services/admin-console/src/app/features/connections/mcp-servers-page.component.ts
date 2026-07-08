@@ -424,6 +424,7 @@ export class McpServersPageComponent implements OnInit {
             authType: result.authType,
             authConfig: result.authConfig,
             enabled: result.enabled,
+            scope: result.scope,
           })
           .subscribe({
             next: (server) => {
@@ -464,6 +465,7 @@ export class McpServersPageComponent implements OnInit {
           authType: result.authType,
           authConfig: result.authConfig ?? null,
           enabled: result.enabled,
+          scope: result.scope,
         };
         const payload = server.managed_by
           ? editable

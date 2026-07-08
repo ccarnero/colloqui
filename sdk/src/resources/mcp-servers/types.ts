@@ -55,6 +55,12 @@ export interface McpServer {
   is_active: boolean;
   managedBy: string | null;
   managedLockedFields: string[] | null;
+  /**
+   * SSRF-relevant scope. `"external"` (default) keeps the SSRF guard's
+   * localhost/RFC1918 checks; `"internal"` is an explicit admin opt-in that
+   * relaxes them — gated by `MCP_INTERNAL_SCOPE_ENABLED` on the deployment.
+   */
+  scope: "external" | "internal";
   /** ISO-8601 timestamp (serialized `Date`). */
   created_at: string;
   /** ISO-8601 timestamp (serialized `Date`). */
@@ -71,6 +77,8 @@ export interface CreateMcpServerInput {
   authType?: "none" | "api-key" | "bearer" | "basic";
   authConfig?: Record<string, unknown>;
   enabled?: boolean;
+  /** Defaults to `"external"` on create when omitted. */
+  scope?: "external" | "internal";
 }
 
 /** `PATCH /admin/mcp-servers/:id` body (mirrors `UpdateMcpServerDto`). */
@@ -83,6 +91,7 @@ export interface UpdateMcpServerInput {
   authType?: "none" | "api-key" | "bearer" | "basic";
   authConfig?: Record<string, unknown> | null;
   enabled?: boolean;
+  scope?: "external" | "internal";
 }
 
 /** `GET /admin/mcp-servers/:id/tools` entry — one MCP tool as returned by the server's own `tools/list`. */

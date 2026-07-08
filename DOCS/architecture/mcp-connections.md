@@ -50,6 +50,21 @@ Known gaps against the original design (closed 2026-07-08 unless noted):
   `fileBase64`/`sheetName` mapped to the DTO's `file_base64`/`sheet_name`).
   Resolves once the file row is created and the ingestion event is
   published (`202 Accepted`), not once ingestion completes.
+- **SSRF `scope` opt-in — added 2026-07-08.** `IMcpServer` (and the
+  Postgres/Mongo schema, `providers/schema-initializer.ts`) now carry a
+  `scope: "external" | "internal"` field, default `"external"`. `"internal"`
+  is an explicit admin opt-in that relaxes the SSRF guard's
+  localhost/RFC1918 checks (used by `mcp-tools-probe.service.ts`,
+  `connector-runtime`'s `mcp-call.activity.ts`, and `agent-ai-service`'s
+  `mcp-client.service.ts` — the last of which previously had no SSRF guard
+  at all and now has one) — cloud-metadata and link-local targets stay
+  blocked regardless of scope. Setting `scope: "internal"` on create/update
+  is gated behind `MCP_INTERNAL_SCOPE_ENABLED=true` on
+  `agent-admin-service`; otherwise the request is rejected with a 400.
+  `CreateMcpServerDto`/`UpdateMcpServerDto` validate `scope` via
+  `IsIn(["external","internal"])`. The admin-console MCP server dialog
+  exposes this as a "Scope" select (External / Internal (in-cluster)),
+  defaulting to External.
 - **§8 open questions — resolved by implementation:**
   - `@ai-sdk/mcp` probe granularity: the test endpoint
     (`POST admin/mcp-servers/:id/test`) does a full connect, matching the

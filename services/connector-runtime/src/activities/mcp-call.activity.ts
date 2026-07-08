@@ -33,6 +33,13 @@ interface IMcpServerConfig {
   headers: Record<string, string> | null;
   auth_type: McpServerAuthType;
   auth_config: Record<string, unknown> | null;
+  /**
+   * SSRF-relevant scope (mcp-connections.md SSRF-scope follow-up).
+   * `"internal"` is an explicit admin opt-in — see `validateUrl` below.
+   * Defaults to `"external"` when the admin-service response omits it (e.g.
+   * an older row created before this field existed).
+   */
+  scope?: "external" | "internal";
 }
 
 /**
@@ -142,7 +149,7 @@ export async function executeMcpCall(
   }
 
   const server = await resolveServer(args.serverId, tenantId);
-  validateUrl(server.url);
+  validateUrl(server.url, server.scope);
   const headers = buildAuthHeaders(server);
 
   const start = Date.now();
@@ -337,8 +344,18 @@ function buildAuthHeaders(server: IMcpServerConfig): Record<string, string> {
  * SSRF guard — ported from `mcp-tools-probe.service.ts`'s `validateUrl`
  * (itself ported from `adapter-executor.service.ts`). Rejects non-http(s)
  * schemes, localhost, cloud-metadata, link-local and RFC1918 targets.
+ *
+ * `scope: "internal"` is an explicit admin opt-in (gated by
+ * `MCP_INTERNAL_SCOPE_ENABLED` at write time, agent-admin-service's
+ * `mcp-servers.service.ts`) that skips the localhost/RFC1918 checks so
+ * private-IP/in-cluster MCP servers can be reached — cloud-metadata and
+ * link-local targets stay blocked regardless of scope. Exported for unit
+ * testing.
  */
-function validateUrl(url: string): void {
+export function validateUrl(
+  url: string,
+  scope?: "external" | "internal"
+): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -359,11 +376,11 @@ function validateUrl(url: string): void {
   }
 
   const hostname = parsed.hostname.toLowerCase();
+  const isInternal = scope === "internal";
 
   if (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "::1"
+    !isInternal &&
+    (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1")
   ) {
     throw ApplicationFailure.nonRetryable(
       "mcpCall: MCP server URL must not target localhost",
@@ -386,6 +403,10 @@ function validateUrl(url: string): void {
       "BLOCKED_MCP_SERVER_URL",
       { url }
     );
+  }
+
+  if (isInternal) {
+    return;
   }
 
   const parts = hostname.split(".");

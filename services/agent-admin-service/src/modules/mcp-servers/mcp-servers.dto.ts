@@ -19,6 +19,13 @@ import {
  */
 const MCP_SERVER_AUTH_TYPES = ["none", "api-key", "bearer", "basic"] as const;
 
+/**
+ * SSRF-relevant scope (see `mcp-servers.repository.interface.ts`'s
+ * `McpServerScope`). `internal` is gated behind `MCP_INTERNAL_SCOPE_ENABLED`
+ * at the service layer, not here — the DTO only validates shape.
+ */
+const MCP_SERVER_SCOPES = ["external", "internal"] as const;
+
 export class CreateMcpServerDto {
   @IsString()
   @IsNotEmpty()
@@ -55,6 +62,12 @@ export class CreateMcpServerDto {
   @IsBoolean()
   @IsOptional()
   enabled?: boolean;
+
+  /** Defaults to 'external' on create when omitted (mcp-servers.service.ts). */
+  @IsString()
+  @IsOptional()
+  @IsIn([...MCP_SERVER_SCOPES])
+  scope?: "external" | "internal";
 
   // NOTE: `managed_by` is intentionally NOT exposed here — it is settable
   // only via the internal repository/service path (mcp-connections.md
@@ -97,6 +110,11 @@ export class UpdateMcpServerDto {
   @IsBoolean()
   @IsOptional()
   enabled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  @IsIn([...MCP_SERVER_SCOPES])
+  scope?: "external" | "internal";
 }
 
 /**

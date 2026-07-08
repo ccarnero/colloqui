@@ -251,6 +251,7 @@ const AGENT_ADMIN_SCHEMA_DDL = `
           is_active BOOLEAN DEFAULT true,
           managed_by VARCHAR(255) DEFAULT NULL,
           managed_locked_fields JSONB DEFAULT NULL,
+          scope VARCHAR(10) NOT NULL DEFAULT 'external' CHECK (scope IN ('external', 'internal')),
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
@@ -440,6 +441,12 @@ const AGENT_ADMIN_MIGRATIONS = `
   ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS auth_config JSONB DEFAULT NULL;
   ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS managed_by VARCHAR(255) DEFAULT NULL;
   ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS managed_locked_fields JSONB DEFAULT NULL;
+
+  -- MCP server scope — explicit opt-in for private-IP/in-cluster targets
+  -- (SSRF guard relaxation), gated by MCP_INTERNAL_SCOPE_ENABLED at write time.
+  ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS scope VARCHAR(10) NOT NULL DEFAULT 'external';
+  ALTER TABLE mcp_servers DROP CONSTRAINT IF EXISTS mcp_servers_scope_check;
+  ALTER TABLE mcp_servers ADD CONSTRAINT mcp_servers_scope_check CHECK (scope IN ('external', 'internal'));
 
   -- MCP call usage logging (mcp-connections.md §3). Lives in the same
   -- per-tenant database as mcp_servers -- unlike connector call usage

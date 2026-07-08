@@ -99,7 +99,7 @@ export class McpToolsProbeService {
     server: IMcpServer,
     timeoutMs: number
   ): Promise<Awaited<ReturnType<typeof createMCPClient>>> {
-    this.validateUrl(server.url);
+    this.validateUrl(server.url, server.scope);
     const headers = this.buildHeaders(server);
     return this.withTimeout(
       createMCPClient({
@@ -200,8 +200,16 @@ export class McpToolsProbeService {
     return headers;
   }
 
-  /** SSRF guard — ported verbatim from `adapter-executor.service.ts`'s `validateUrl`. */
-  private validateUrl(url: string): void {
+  /**
+   * SSRF guard — ported verbatim from `adapter-executor.service.ts`'s
+   * `validateUrl`, extended with a `scope` parameter (mcp-connections.md
+   * SSRF-scope follow-up). `scope: "internal"` is an explicit admin opt-in
+   * (gated by `MCP_INTERNAL_SCOPE_ENABLED` at write time,
+   * mcp-servers.service.ts) that skips the localhost/RFC1918 checks so
+   * private-IP/in-cluster MCP servers can be reached — cloud-metadata and
+   * link-local targets stay blocked regardless of scope.
+   */
+  private validateUrl(url: string, scope?: "external" | "internal"): void {
     let parsed: URL;
     try {
       parsed = new URL(url);
@@ -216,11 +224,13 @@ export class McpToolsProbeService {
     }
 
     const hostname = parsed.hostname.toLowerCase();
+    const isInternal = scope === "internal";
 
     if (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "::1"
+      !isInternal &&
+      (hostname === "localhost" ||
+        hostname === "127.0.0.1" ||
+        hostname === "::1")
     ) {
       throw new Error("MCP server URL must not target localhost");
     }
@@ -231,6 +241,10 @@ export class McpToolsProbeService {
 
     if (hostname.startsWith("169.254.") || hostname.startsWith("fe80:")) {
       throw new Error("MCP server URL must not target link-local addresses");
+    }
+
+    if (isInternal) {
+      return;
     }
 
     const parts = hostname.split(".");

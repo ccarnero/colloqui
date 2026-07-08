@@ -14,6 +14,7 @@ type AgentAdminServiceConfig = {
   readonly templatesYamlPath: string;
   readonly chatRequestTimeoutMs: number;
   readonly toolDescriptionOverridesEnabled: boolean;
+  readonly mcpInternalScopeEnabled: boolean;
 };
 
 /** Lazy getters so tests can set `process.env` before first consumer reads config. */
@@ -63,5 +64,14 @@ export const agentAdminServiceConfig: AgentAdminServiceConfig = {
   },
   get toolDescriptionOverridesEnabled() {
     return process.env.AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED === "true";
+  },
+  /**
+   * Gates registering/updating an MCP server with `scope: "internal"` — an
+   * explicit admin opt-in that relaxes the SSRF guard's localhost/RFC1918
+   * checks for that server (mcp-tools-probe.service.ts, connector-runtime's
+   * mcp-call.activity.ts, agent-ai-service's mcp-client.service.ts).
+   */
+  get mcpInternalScopeEnabled() {
+    return process.env.MCP_INTERNAL_SCOPE_ENABLED === "true";
   },
 };

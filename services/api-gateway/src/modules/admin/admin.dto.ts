@@ -256,6 +256,12 @@ export class CreateMcpServerDto {
   @IsBoolean()
   @IsOptional()
   enabled?: boolean;
+
+  @ApiPropertyOptional({ enum: ["external", "internal"] })
+  @IsString()
+  @IsOptional()
+  @IsIn(["external", "internal"])
+  scope?: "external" | "internal";
 }
 
 export class UpdateMcpServerDto {
@@ -308,6 +314,12 @@ export class UpdateMcpServerDto {
   @IsBoolean()
   @IsOptional()
   enabled?: boolean;
+
+  @ApiPropertyOptional({ enum: ["external", "internal"] })
+  @IsString()
+  @IsOptional()
+  @IsIn(["external", "internal"])
+  scope?: "external" | "internal";
 }
 
 export class McpServerIdParamDto {

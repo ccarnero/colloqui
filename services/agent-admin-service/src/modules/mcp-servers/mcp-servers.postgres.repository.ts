@@ -68,6 +68,7 @@ export class McpServersPostgresRepository
         auth_config,
         enabled,
         is_active,
+        scope,
         created_at,
         updated_at
       ) VALUES (
@@ -82,6 +83,7 @@ export class McpServersPostgresRepository
         ${data.auth_config === undefined ? null : sql.json(data.auth_config as JsonValue)},
         ${data.enabled ?? true},
         true,
+        ${data.scope ?? "external"},
         NOW(),
         NOW()
       )
@@ -127,6 +129,9 @@ export class McpServersPostgresRepository
     }
     if (data.managed_locked_fields !== undefined) {
       await sql`UPDATE mcp_servers SET managed_locked_fields = ${data.managed_locked_fields === null ? null : sql.json(data.managed_locked_fields as JsonValue)}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId} AND is_active = true`;
+    }
+    if (data.scope !== undefined) {
+      await sql`UPDATE mcp_servers SET scope = ${data.scope}, updated_at = NOW() WHERE id = ${id} AND tenant_id = ${tenantId} AND is_active = true`;
     }
 
     const results = await sql<IMcpServer[]>`
