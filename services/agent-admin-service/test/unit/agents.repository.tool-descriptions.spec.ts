@@ -1,34 +1,16 @@
 import "../setup-env";
-import { describe, expect, it, mock } from "bun:test";
+import { describe, expect, it } from "bun:test";
 
-// ---------------------------------------------------------------------------
-// Mock @yoizen/database and @yoizen/observability
-// ---------------------------------------------------------------------------
-mock.module("@yoizen/observability", () => ({
-  PinoLoggerService: class MockPinoLoggerService {
-    debug = mock(() => {});
-    error = mock(() => {});
-    warn = mock(() => {});
-    log = mock(() => {});
-    verbose = mock(() => {});
-    fatal = mock(() => {});
-  },
-}));
-
-mock.module("@nestjs/common", () => ({
-  Inject: () => () => {},
-  Injectable: () => (target: any) => target,
-  Logger: class MockLogger {
-    log = mock(() => {});
-    warn = mock(() => {});
-    error = mock(() => {});
-    debug = mock(() => {});
-    verbose = mock(() => {});
-    fatal = mock(() => {});
-    static overrideLogger = mock(() => {});
-    constructor(_context?: string) {}
-  },
-}));
+// NOTE: this spec only exercises plain data/SQL-fragment assertions against
+// IUpdateAgentData — it imports no NestJS providers and instantiates no
+// repository. It used to `mock.module("@nestjs/common")` and
+// `@yoizen/observability`, but nothing here referenced them; worse, the
+// process-global "@nestjs/common" mock stubbed `Inject` to a no-op and
+// leaked into the full-suite run, stripping DI metadata from every service
+// loaded afterwards (SKBQueryService, JobExecutionsMongoRepository), which
+// then failed "can't resolve dependencies ... index [0]" only in the full
+// suite. Removed — bun's mock.module has no per-file scope and mock.restore()
+// does not undo it.
 
 import type {
   IAgent,
