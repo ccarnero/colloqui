@@ -398,6 +398,21 @@ export class LlmExecutorService {
       `Tool usage: executed ${executedCalls.length} / limited to ${totalLimit}`
     );
 
+    // Collect the tool calls the model requested across all steps. This is
+    // the authoritative record (mirroring how toolResults is aggregated
+    // below); `executedCalls` above only drives the global throttle limit
+    // and misses tools without an execute fn, so it is not what we report.
+    const allToolCalls = (result.steps ?? []).flatMap((step) =>
+      (step.toolCalls ?? []).map((tc) => ({
+        type: (tc as any).type ?? "tool-call",
+        toolName: (tc as any).toolName,
+        args: ((tc as any).args ?? (tc as any).input) as Record<
+          string,
+          unknown
+        >,
+      }))
+    );
+
     // Collect tool results across all steps
     const allToolResults = (result.steps ?? []).flatMap((step) =>
       (step.toolResults ?? []).map((tr) => ({
@@ -411,7 +426,7 @@ export class LlmExecutorService {
 
     return {
       text: result.text ?? "",
-      toolCalls: executedCalls,
+      toolCalls: allToolCalls,
       toolResults: allToolResults.length > 0 ? allToolResults : undefined,
       usage,
       provider: params.provider,

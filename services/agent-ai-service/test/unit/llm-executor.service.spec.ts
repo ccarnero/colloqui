@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it, expect, mock, beforeEach, afterAll } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Mock @nestjs/common to provide a Logger with ALL methods (including debug).
@@ -30,7 +30,7 @@ const mockGenerateText = mock(() =>
     usage: { inputTokens: 100, outputTokens: 50 },
     toolCalls: [],
     steps: [{ toolCalls: [] }],
-  }),
+  })
 );
 
 const mockStreamText = mock(() => ({
@@ -45,7 +45,7 @@ const mockGenerateObject = mock(() =>
   Promise.resolve({
     object: { name: "test-object", value: 42 },
     usage: { inputTokens: 60, outputTokens: 30 },
-  }),
+  })
 );
 
 const mockStreamObject = mock(() => ({
@@ -78,14 +78,14 @@ const originalEstimateCost = CostTrackerService.estimateCost;
 (CostTrackerService as any).estimateCost = mock(() => 0.001);
 
 import { Test } from "@nestjs/testing";
+import type { z } from "zod";
+import { CredentialResolverService } from "../../src/modules/llm/credential-resolver.service";
 import {
-  LlmExecutorService,
-  type GenerateTextWithToolsParams,
   type GenerateStructuredOutputParams,
+  type GenerateTextWithToolsParams,
+  LlmExecutorService,
 } from "../../src/modules/llm/llm-executor.service";
 import { ProviderRegistryService } from "../../src/modules/llm/provider-registry.service";
-import { CredentialResolverService } from "../../src/modules/llm/credential-resolver.service";
-import type { z } from "zod";
 
 // Restore after all tests
 afterAll(() => {
@@ -131,7 +131,7 @@ describe("LlmExecutorService — new AI SDK v4 methods", () => {
           provider: "openai",
           model: "gpt-4o",
           apiKey: "sk-test",
-        }),
+        })
       ),
     };
 
@@ -148,7 +148,7 @@ describe("LlmExecutorService — new AI SDK v4 methods", () => {
         usage: { inputTokens: 100, outputTokens: 50 },
         toolCalls: [],
         steps: [{ toolCalls: [] }],
-      }),
+      })
     );
 
     mockGenerateObject.mockClear();
@@ -156,7 +156,7 @@ describe("LlmExecutorService — new AI SDK v4 methods", () => {
       Promise.resolve({
         object: { name: "test-object", value: 42 },
         usage: { inputTokens: 60, outputTokens: 30 },
-      }),
+      })
     );
 
     mockStreamObject.mockClear();
@@ -248,7 +248,7 @@ describe("LlmExecutorService — new AI SDK v4 methods", () => {
               ],
             },
           ],
-        }),
+        })
       );
 
       const result = await executor.generateTextWithTools({
@@ -326,8 +326,14 @@ describe("LlmExecutorService — new AI SDK v4 methods", () => {
 
       await executor.generateTextWithTools({ ...baseParams, tools });
 
+      // The executor wraps each tool's execute to enforce a global tool-call
+      // limit, so the passed object is a throttled copy — not the same
+      // reference — but the definition passes through and execute stays
+      // callable.
       const callArg = mockGenerateText.mock.calls[0][0] as any;
-      expect(callArg.tools).toBe(tools);
+      expect(callArg.tools.calculator.description).toBe("Calculate");
+      expect(callArg.tools.calculator.parameters).toEqual({});
+      expect(typeof callArg.tools.calculator.execute).toBe("function");
     });
 
     it("should resolve credentials before calling generateText", async () => {
@@ -339,13 +345,13 @@ describe("LlmExecutorService — new AI SDK v4 methods", () => {
           agentId: "a-1",
           provider: "openai",
           model: "gpt-4o",
-        }),
+        })
       );
       expect(mockProviderRegistry.createModel).toHaveBeenCalledWith(
         "openai",
         "gpt-4o",
         "sk-test",
-        undefined,
+        undefined
       );
     });
 
@@ -387,10 +393,10 @@ describe("LlmExecutorService — new AI SDK v4 methods", () => {
     });
 
     it("should return typed object from generateObject", async () => {
-      const result =
-        await executor.generateStructuredOutput<{ name: string; value: number }>(
-          structuredParams,
-        );
+      const result = await executor.generateStructuredOutput<{
+        name: string;
+        value: number;
+      }>(structuredParams);
 
       expect(result.object).toEqual({ name: "test-object", value: 42 });
     });
@@ -534,9 +540,7 @@ describe("LlmExecutorService — new AI SDK v4 methods", () => {
     });
 
     it("should pass messages when provided", async () => {
-      const messages = [
-        { role: "user" as const, content: "Hello" },
-      ];
+      const messages = [{ role: "user" as const, content: "Hello" }];
 
       await executor.streamStructuredOutput({
         ...streamParams,

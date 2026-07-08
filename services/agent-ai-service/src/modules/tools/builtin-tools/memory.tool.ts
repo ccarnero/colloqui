@@ -1,7 +1,58 @@
-import type { ToolDef, ToolHandler, ToolResult, ToolExecutionContext } from "../tool-definition";
 import type { MemoryClientService } from "../../memory/memory-client.service";
+import type {
+  ToolDef,
+  ToolExecutionContext,
+  ToolHandler,
+  ToolResult,
+} from "../tool-definition";
 
 const MAX_OUTPUT_CHARS = 16_384;
+
+/**
+ * Builds a truncated list/search envelope whose JSON stays within
+ * `MAX_OUTPUT_CHARS`. Capping the item COUNT alone is not enough — a single
+ * memory can hold more content than the whole budget — so each surfaced
+ * item's `content` is also clamped, and items are dropped until the
+ * serialized envelope fits. The LLM is told the results were truncated.
+ */
+function buildTruncatedListOutput(result: {
+  total: number;
+  items: readonly unknown[];
+}): { total: number; items: unknown[]; truncated: true; message: string } {
+  const MAX_ITEMS = 5;
+  const PER_ITEM_CONTENT = 500;
+
+  const clampItem = (item: unknown): unknown => {
+    if (item && typeof item === "object" && "content" in item) {
+      const content = (item as { content?: unknown }).content;
+      if (typeof content === "string" && content.length > PER_ITEM_CONTENT) {
+        return {
+          ...(item as object),
+          content: `${content.slice(0, PER_ITEM_CONTENT)}…[truncated]`,
+        };
+      }
+    }
+    return item;
+  };
+
+  const envelope = (items: unknown[]) => ({
+    total: result.total,
+    items,
+    truncated: true as const,
+    message: `Results truncated. ${result.total} total memories found.`,
+  });
+
+  const clamped = result.items.slice(0, MAX_ITEMS).map(clampItem);
+
+  // Drop clamped items until the serialized envelope fits the budget.
+  for (let count = clamped.length; count >= 0; count--) {
+    const candidate = envelope(clamped.slice(0, count));
+    if (JSON.stringify(candidate).length <= MAX_OUTPUT_CHARS) {
+      return candidate;
+    }
+  }
+  return envelope([]);
+}
 
 export function createMemoryToolDef(): ToolDef {
   return {
@@ -17,13 +68,23 @@ export function createMemoryToolDef(): ToolDef {
       properties: {
         action: {
           type: "string",
-          enum: ["list", "search", "get", "create", "update", "delete", "approve", "reject"],
+          enum: [
+            "list",
+            "search",
+            "get",
+            "create",
+            "update",
+            "delete",
+            "approve",
+            "reject",
+          ],
           description: "Action to perform on memory",
         },
         // Fields common to multiple actions
         id: {
           type: "string",
-          description: "Memory ID (required for get, update, delete, approve, reject)",
+          description:
+            "Memory ID (required for get, update, delete, approve, reject)",
         },
         scope: {
           type: "string",
@@ -45,11 +106,19 @@ export function createMemoryToolDef(): ToolDef {
         },
         search: {
           type: "string",
-          description: "Full-text search query (used for list and search actions)",
+          description:
+            "Full-text search query (used for list and search actions)",
         },
         status: {
           type: "string",
-          enum: ["PROPOSED", "ACTIVE", "PUBLISHED", "REJECTED", "EXPIRED", "ARCHIVED"],
+          enum: [
+            "PROPOSED",
+            "ACTIVE",
+            "PUBLISHED",
+            "REJECTED",
+            "EXPIRED",
+            "ARCHIVED",
+          ],
           description: "Filter by status (used for list)",
         },
         topicKey: {
@@ -75,13 +144,15 @@ export function createMemoryToolDef(): ToolDef {
 }
 
 export function createMemoryHandler(
-  memoryClient: MemoryClientService,
+  memoryClient: MemoryClientService
 ): ToolHandler {
   return async (
     params: Record<string, unknown>,
-    state: ToolExecutionContext,
+    state: ToolExecutionContext
   ): Promise<ToolResult> => {
-    const action = String(params.action ?? "").trim().toLowerCase();
+    const action = String(params.action ?? "")
+      .trim()
+      .toLowerCase();
 
     try {
       switch (action) {
@@ -91,47 +162,32 @@ export function createMemoryHandler(
             kind: String(params.kind ?? "").trim() || undefined,
             status: String(params.status ?? "").trim() || undefined,
             search: String(params.search ?? "").trim() || undefined,
-            limit: params.limit !== undefined ? Number(params.limit) : undefined,
-            offset: params.offset !== undefined ? Number(params.offset) : undefined,
+            limit:
+              params.limit !== undefined ? Number(params.limit) : undefined,
+            offset:
+              params.offset !== undefined ? Number(params.offset) : undefined,
             sessionId: state.sessionId,
             userId: state.userId,
           });
           // Truncate output to avoid exceeding maxOutputChars
-          const output = JSON.stringify(result);
-          if (output.length > MAX_OUTPUT_CHARS) {
-            return {
-              success: true,
-              output: {
-                total: result.total,
-                items: result.items.slice(0, 5),
-                truncated: true,
-                message: `Results truncated. ${result.total} total memories found.`,
-              },
-            };
+          if (JSON.stringify(result).length > MAX_OUTPUT_CHARS) {
+            return { success: true, output: buildTruncatedListOutput(result) };
           }
           return { success: true, output: result };
         }
 
         case "search": {
           const searchText = String(params.search ?? "").trim();
-          const searchLimit = params.limit !== undefined ? Number(params.limit) : 10;
+          const searchLimit =
+            params.limit !== undefined ? Number(params.limit) : 10;
           const result = await memoryClient.search(
             state.tenantId,
             searchText,
-            searchLimit,
+            searchLimit
           );
           // Truncate output to avoid exceeding maxOutputChars
-          const output = JSON.stringify(result);
-          if (output.length > MAX_OUTPUT_CHARS) {
-            return {
-              success: true,
-              output: {
-                total: result.total,
-                items: result.items.slice(0, 5),
-                truncated: true,
-                message: `Results truncated. ${result.total} total memories found.`,
-              },
-            };
+          if (JSON.stringify(result).length > MAX_OUTPUT_CHARS) {
+            return { success: true, output: buildTruncatedListOutput(result) };
           }
           return { success: true, output: result };
         }
@@ -139,11 +195,19 @@ export function createMemoryHandler(
         case "get": {
           const id = String(params.id ?? "").trim();
           if (!id) {
-            return { success: false, output: null, error: "id is required for get action" };
+            return {
+              success: false,
+              output: null,
+              error: "id is required for get action",
+            };
           }
           const item = await memoryClient.load(state.tenantId, id);
           if (!item) {
-            return { success: false, output: null, error: `Memory '${id}' not found` };
+            return {
+              success: false,
+              output: null,
+              error: `Memory '${id}' not found`,
+            };
           }
           return { success: true, output: item };
         }
@@ -178,22 +242,47 @@ export function createMemoryHandler(
         case "update": {
           const updateId = String(params.id ?? "").trim();
           if (!updateId) {
-            return { success: false, output: null, error: "id is required for update action" };
+            return {
+              success: false,
+              output: null,
+              error: "id is required for update action",
+            };
           }
-          const patch: { title?: string; content?: string; metadata?: Record<string, unknown>; topicKey?: string } = {};
-          if (params.title !== undefined) patch.title = String(params.title).trim();
-          if (params.content !== undefined) patch.content = String(params.content).trim();
-          if (params.metadata !== undefined) patch.metadata = params.metadata as Record<string, unknown>;
-          if (params.topicKey !== undefined) patch.topicKey = String(params.topicKey).trim();
+          const patch: {
+            title?: string;
+            content?: string;
+            metadata?: Record<string, unknown>;
+            topicKey?: string;
+          } = {};
+          if (params.title !== undefined) {
+            patch.title = String(params.title).trim();
+          }
+          if (params.content !== undefined) {
+            patch.content = String(params.content).trim();
+          }
+          if (params.metadata !== undefined) {
+            patch.metadata = params.metadata as Record<string, unknown>;
+          }
+          if (params.topicKey !== undefined) {
+            patch.topicKey = String(params.topicKey).trim();
+          }
 
-          const updated = await memoryClient.update(state.tenantId, updateId, patch);
+          const updated = await memoryClient.update(
+            state.tenantId,
+            updateId,
+            patch
+          );
           return { success: true, output: updated };
         }
 
         case "delete": {
           const deleteId = String(params.id ?? "").trim();
           if (!deleteId) {
-            return { success: false, output: null, error: "id is required for delete action" };
+            return {
+              success: false,
+              output: null,
+              error: "id is required for delete action",
+            };
           }
           await memoryClient.delete(state.tenantId, deleteId);
           return { success: true, output: { deleted: true, id: deleteId } };
@@ -202,16 +291,27 @@ export function createMemoryHandler(
         case "approve": {
           const approveId = String(params.id ?? "").trim();
           if (!approveId) {
-            return { success: false, output: null, error: "id is required for approve action" };
+            return {
+              success: false,
+              output: null,
+              error: "id is required for approve action",
+            };
           }
-          const approved = await memoryClient.approve(state.tenantId, approveId);
+          const approved = await memoryClient.approve(
+            state.tenantId,
+            approveId
+          );
           return { success: true, output: approved };
         }
 
         case "reject": {
           const rejectId = String(params.id ?? "").trim();
           if (!rejectId) {
-            return { success: false, output: null, error: "id is required for reject action" };
+            return {
+              success: false,
+              output: null,
+              error: "id is required for reject action",
+            };
           }
           const rejected = await memoryClient.reject(state.tenantId, rejectId);
           return { success: true, output: rejected };

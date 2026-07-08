@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { parsePromptReferences } from "../../src/modules/prompt-references/prompt-references.parser";
 
 describe("PromptReferencesParser", () => {
@@ -12,7 +12,9 @@ describe("PromptReferencesParser", () => {
   });
 
   it("should ignore @-mentions that are not skill or tool references", () => {
-    const result = parsePromptReferences("Hello @user, check @channel for updates");
+    const result = parsePromptReferences(
+      "Hello @user, check @channel for updates"
+    );
     expect(result.cleanedText).toBe("Hello @user, check @channel for updates");
     expect(result.skillReferences).toEqual([]);
     expect(result.toolReferences).toEqual([]);
@@ -28,43 +30,49 @@ describe("PromptReferencesParser", () => {
   // ─── Single reference ────────────────────────────────────────────────────
 
   it("should extract a single @skill reference and remove it from cleaned text", () => {
-    const result = parsePromptReferences("You can use @skill:deploy_skill to deploy");
+    const result = parsePromptReferences(
+      "You can use @skill:deploy_skill to deploy"
+    );
     expect(result.skillReferences).toEqual(["deploy_skill"]);
     expect(result.toolReferences).toEqual([]);
-    expect(result.cleanedText).toBe("You can use deploy");
+    // Only the reference token is removed; "to deploy" stays as prose.
+    expect(result.cleanedText).toBe("You can use to deploy");
   });
 
   it("should extract a single @tool reference and remove it from cleaned text", () => {
     const result = parsePromptReferences("Use @tool:communicate to message");
     expect(result.toolReferences).toEqual(["communicate"]);
     expect(result.skillReferences).toEqual([]);
-    expect(result.cleanedText).toBe("Use message");
+    expect(result.cleanedText).toBe("Use to message");
   });
 
   // ─── Multiple references ─────────────────────────────────────────────────
 
   it("should extract multiple references of the same kind", () => {
-    const result = parsePromptReferences("Run @skill:deploy and @skill:analyze");
+    const result = parsePromptReferences(
+      "Run @skill:deploy and @skill:analyze"
+    );
     expect(result.skillReferences).toEqual(["deploy", "analyze"]);
     expect(result.toolReferences).toEqual([]);
-    // " and " is consumed as the stop‑word boundary after "deploy"
-    expect(result.cleanedText).toBe("Run");
+    // Both tokens are removed; the connecting "and" survives as prose.
+    expect(result.cleanedText).toBe("Run and");
   });
 
   it("should extract multiple references of different kinds", () => {
-    const result = parsePromptReferences("Use @skill:deploy and @tool:chat and @skill:analyze");
+    const result = parsePromptReferences(
+      "Use @skill:deploy and @tool:chat and @skill:analyze"
+    );
     expect(result.skillReferences).toEqual(["deploy", "analyze"]);
     expect(result.toolReferences).toEqual(["chat"]);
-    expect(result.cleanedText).toBe("Use");
+    expect(result.cleanedText).toBe("Use and and");
   });
 
-  it("should extract trailing reference when adjacent to an unmatched reference", () => {
-    // @skill:a is not followed by a stop‑word / punctuation / EOS, so it is
-    // not matched. @tool:b sits at EOS so it is matched.
+  it("should extract adjacent references regardless of what follows them", () => {
+    // Every valid reference is recognised, even back-to-back ones.
     const result = parsePromptReferences("@skill:a @tool:b");
-    expect(result.skillReferences).toEqual([]);
+    expect(result.skillReferences).toEqual(["a"]);
     expect(result.toolReferences).toEqual(["b"]);
-    expect(result.cleanedText).toBe("@skill:a");
+    expect(result.cleanedText).toBe("");
   });
 
   // ─── Names with special characters ───────────────────────────────────────
@@ -115,22 +123,20 @@ describe("PromptReferencesParser", () => {
     expect(result.toolReferences).toEqual([]);
   });
 
-  it("should handle input with multiple adjacent references leaving only whitespace after removal", () => {
-    // @skill:a is followed by three spaces then @skill:b — no stop‑word,
-    // no punctuation, not EOS → unmatched. @skill:b at EOS is matched.
+  it("should handle multiple space-separated references leaving only whitespace after removal", () => {
     const result = parsePromptReferences("@skill:a   @skill:b");
-    expect(result.skillReferences).toEqual(["b"]);
+    expect(result.skillReferences).toEqual(["a", "b"]);
     expect(result.toolReferences).toEqual([]);
-    expect(result.cleanedText).toBe("@skill:a");
+    expect(result.cleanedText).toBe("");
   });
 
-  it("should handle input with references and no surrounding text", () => {
-    // @skill:a is immediately followed by @ — no stop‑word, punctuation, or
-    // EOS → unmatched. @tool:b at EOS is matched.
+  it("should handle back-to-back references with no separating text", () => {
+    // Adjacent references are both recognised: the first name stops at the
+    // next `@`, and the second is a valid reference on its own.
     const result = parsePromptReferences("@skill:a@tool:b");
-    expect(result.skillReferences).toEqual([]);
+    expect(result.skillReferences).toEqual(["a"]);
     expect(result.toolReferences).toEqual(["b"]);
-    expect(result.cleanedText).toBe("@skill:a");
+    expect(result.cleanedText).toBe("");
   });
 
   // ─── Reference positions ─────────────────────────────────────────────────
@@ -138,7 +144,7 @@ describe("PromptReferencesParser", () => {
   it("should handle reference at the start of text", () => {
     const result = parsePromptReferences("@skill:start and then middle");
     expect(result.skillReferences).toEqual(["start"]);
-    expect(result.cleanedText).toBe("then middle");
+    expect(result.cleanedText).toBe("and then middle");
   });
 
   it("should handle reference at the end of text", () => {
@@ -151,21 +157,20 @@ describe("PromptReferencesParser", () => {
     const result = parsePromptReferences("@skill:start and @tool:end");
     expect(result.skillReferences).toEqual(["start"]);
     expect(result.toolReferences).toEqual(["end"]);
-    expect(result.cleanedText).toBe("");
+    expect(result.cleanedText).toBe("and");
   });
 
   // ─── Whitespace normalization ────────────────────────────────────────────
 
   it("should collapse multiple spaces into a single space in cleaned text", () => {
-    // @skill:foo is followed by "   and   now" — " and " is a stop‑word
-    // boundary, so the reference is matched and the surrounding whitespace
-    // gets collapsed.
+    // Only "@skill:foo" is removed; the surrounding runs of whitespace and
+    // the words "and now" collapse to single spaces.
     const result = parsePromptReferences("Use   @skill:foo   and   now");
     expect(result.skillReferences).toEqual(["foo"]);
     expect(result.toolReferences).toEqual([]);
-    // After removing "@skill:foo   and ": "Use     now" (3+2 spaces)
-    // → collapsed to: "Use now"
-    expect(result.cleanedText).toBe("Use now");
+    // After removing "@skill:foo": "Use      and   now" → collapsed to
+    // "Use and now".
+    expect(result.cleanedText).toBe("Use and now");
   });
 
   it("should handle multiple spaces and newlines", () => {
@@ -198,7 +203,7 @@ describe("PromptReferencesParser", () => {
 
   it("should extract references separated by newlines and collapse whitespace correctly", () => {
     const result = parsePromptReferences(
-      "First\n\n@skill:analyze\n\n@tool:report\n\nLast",
+      "First\n\n@skill:analyze\n\n@tool:report\n\nLast"
     );
     expect(result.skillReferences).toEqual(["analyze"]);
     expect(result.toolReferences).toEqual(["report"]);
@@ -258,7 +263,9 @@ describe("PromptReferencesParser", () => {
   });
 
   it("should not match partial words like notification or toolkit", () => {
-    const result = parsePromptReferences("Send a notification with the toolkit");
+    const result = parsePromptReferences(
+      "Send a notification with the toolkit"
+    );
     expect(result.skillReferences).toEqual([]);
     expect(result.toolReferences).toEqual([]);
     expect(result.cleanedText).toBe("Send a notification with the toolkit");
@@ -274,17 +281,20 @@ describe("PromptReferencesParser", () => {
   // ─── Preservation of non-reference content ──────────────────────────────
 
   it("should preserve urls and other special characters in cleaned text", () => {
-    const text = "Check https://example.com?q=1 or email test@example.com @skill:validate";
+    const text =
+      "Check https://example.com?q=1 or email test@example.com @skill:validate";
     const result = parsePromptReferences(text);
     expect(result.skillReferences).toEqual(["validate"]);
-    expect(result.cleanedText).toBe("Check https://example.com?q=1 or email test@example.com");
+    expect(result.cleanedText).toBe(
+      "Check https://example.com?q=1 or email test@example.com"
+    );
   });
 
   it("should preserve punctuation around removed references", () => {
-    // @skill:deploy is followed by ") now!" — `)` is not a recognised boundary
-    // character in [,.!?;:\n], so the reference stays unmatched.
+    // The reference is recognised even inside parentheses; only the token is
+    // removed, so the surrounding punctuation is preserved.
     const result = parsePromptReferences("Run (@skill:deploy) now!");
-    expect(result.skillReferences).toEqual([]);
-    expect(result.cleanedText).toBe("Run (@skill:deploy) now!");
+    expect(result.skillReferences).toEqual(["deploy"]);
+    expect(result.cleanedText).toBe("Run () now!");
   });
 });

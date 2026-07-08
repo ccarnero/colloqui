@@ -267,12 +267,18 @@ describe("Memory builtin tool", () => {
       );
 
       expect(result.success).toBe(true);
-      expect(mockMemoryClient.create).toHaveBeenCalledWith("t-1", {
-        scope: "SESSION",
-        kind: "FACT",
-        title: "New Memory",
-        content: "Memory content",
-      });
+      // objectContaining: the handler also threads userId/sessionId and
+      // optional topicKey/metadata from execution context, which this test
+      // doesn't set — assert the meaningful fields without over-constraining.
+      expect(mockMemoryClient.create).toHaveBeenCalledWith(
+        "t-1",
+        expect.objectContaining({
+          scope: "SESSION",
+          kind: "FACT",
+          title: "New Memory",
+          content: "Memory content",
+        })
+      );
     });
 
     it('should call memoryClient.list for action "list" with query fields', async () => {
@@ -306,12 +312,17 @@ describe("Memory builtin tool", () => {
       );
 
       expect(result.success).toBe(true);
-      expect(mockMemoryClient.list).toHaveBeenCalledWith("t-1", {
-        scope: "SESSION",
-        kind: "FACT",
-        status: "ACTIVE",
-        limit: 20,
-      });
+      // objectContaining: the handler also passes search/offset/sessionId/
+      // userId context, which this test doesn't set.
+      expect(mockMemoryClient.list).toHaveBeenCalledWith(
+        "t-1",
+        expect.objectContaining({
+          scope: "SESSION",
+          kind: "FACT",
+          status: "ACTIVE",
+          limit: 20,
+        })
+      );
     });
 
     it('should call memoryClient.search for action "search" with search text', async () => {

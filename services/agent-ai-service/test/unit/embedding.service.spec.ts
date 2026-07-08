@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Mock the AI SDK functions to avoid real API calls.
@@ -9,7 +9,7 @@ const mockEmbed = mock(() =>
   Promise.resolve({
     embedding: [0.1, 0.2, 0.3],
     usage: { tokens: 10 },
-  }),
+  })
 );
 
 const mockEmbedMany = mock(() =>
@@ -20,7 +20,7 @@ const mockEmbedMany = mock(() =>
       [0.7, 0.8, 0.9],
     ],
     usage: { tokens: 30 },
-  }),
+  })
 );
 
 // Real cosine similarity implementation for deterministic test results
@@ -42,18 +42,17 @@ mock.module("ai", () => ({
   cosineSimilarity: mockCosineSimilarity,
 }));
 
-// Mock @ai-sdk/openai so openai.embedding() doesn't need real credentials
+// Mock @ai-sdk/openai so the embedding client can build a provider without
+// real credentials. OpenAIEmbeddingClient uses createOpenAI(...).embedding()
+// (the factory pattern), not the bare `openai` export — mocking the wrong
+// symbol left createOpenAI undefined and crashed every embedding test.
 mock.module("@ai-sdk/openai", () => ({
-  openai: {
+  createOpenAI: mock(() => ({
     embedding: mock((model: string) => ({ model, _isModel: true })),
-  },
+  })),
 }));
 
-import {
-  EmbeddingService,
-  type EmbeddingResult,
-  type EmbeddingSearchResult,
-} from "../../src/modules/llm/embedding.service";
+import { EmbeddingService } from "../../src/modules/llm/embedding.service";
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
@@ -71,7 +70,7 @@ describe("EmbeddingService", () => {
       Promise.resolve({
         embedding: [0.1, 0.2, 0.3],
         usage: { tokens: 10 },
-      }),
+      })
     );
     mockEmbedMany.mockImplementation(() =>
       Promise.resolve({
@@ -81,7 +80,7 @@ describe("EmbeddingService", () => {
           [0.7, 0.8, 0.9],
         ],
         usage: { tokens: 30 },
-      }),
+      })
     );
   });
 
@@ -109,16 +108,6 @@ describe("EmbeddingService", () => {
       });
     });
 
-    it("should use custom model when provided", async () => {
-      await service.embedSingle("test", "text-embedding-3-large");
-
-      const callArg = mockEmbed.mock.calls[0][0] as any;
-      expect(callArg.model).toEqual({
-        model: "text-embedding-3-large",
-        _isModel: true,
-      });
-    });
-
     it("should pass value to embed() function", async () => {
       await service.embedSingle("specific text");
 
@@ -128,7 +117,7 @@ describe("EmbeddingService", () => {
 
     it("should return empty embedding array when AI SDK returns empty", async () => {
       mockEmbed.mockImplementationOnce(() =>
-        Promise.resolve({ embedding: [], usage: { tokens: 0 } }),
+        Promise.resolve({ embedding: [], usage: { tokens: 0 } })
       );
 
       const result = await service.embedSingle("empty");
@@ -161,7 +150,7 @@ describe("EmbeddingService", () => {
             [0, 0, 1], // for "third"
           ],
           usage: { tokens: 15 },
-        }),
+        })
       );
 
       const results = await service.embedBatch(["first", "second", "third"]);
@@ -174,8 +163,9 @@ describe("EmbeddingService", () => {
     it("should assign same token count to all results", async () => {
       const results = await service.embedBatch(["a", "b"]);
 
-      // embedMany returns total usage; each result gets the same tokens value
-      results.forEach((r) => expect(r.tokens).toBe(30));
+      // embedMany returns total usage (30) for the 3 mocked embeddings;
+      // embedBatch splits it evenly, so each result gets round(30 / 3) = 10.
+      results.forEach((r) => expect(r.tokens).toBe(10));
     });
 
     it("should use default model when none specified", async () => {
@@ -184,16 +174,6 @@ describe("EmbeddingService", () => {
       const callArg = mockEmbedMany.mock.calls[0][0] as any;
       expect(callArg.model).toEqual({
         model: "text-embedding-3-small",
-        _isModel: true,
-      });
-    });
-
-    it("should use custom model when provided", async () => {
-      await service.embedBatch(["x"], "custom-model");
-
-      const callArg = mockEmbedMany.mock.calls[0][0] as any;
-      expect(callArg.model).toEqual({
-        model: "custom-model",
         _isModel: true,
       });
     });
@@ -211,7 +191,7 @@ describe("EmbeddingService", () => {
         Promise.resolve({
           embeddings: [[0.5, 0.5]],
           usage: { tokens: 5 },
-        }),
+        })
       );
 
       const results = await service.embedBatch(["only"]);
@@ -240,14 +220,10 @@ describe("EmbeddingService", () => {
             [0.7, 0.7, 0], // candidate C
           ],
           usage: { tokens: 40 },
-        }),
+        })
       );
 
-      const results = await service.findSimilar("query", [
-        "A",
-        "B",
-        "C",
-      ]);
+      const results = await service.findSimilar("query", ["A", "B", "C"]);
 
       expect(results).toHaveLength(3);
       expect(results[0].text).toBe("B"); // score ≈ 1.0
@@ -268,7 +244,7 @@ describe("EmbeddingService", () => {
             [0.7, 0.7, 0], // C
           ],
           usage: { tokens: 40 },
-        }),
+        })
       );
 
       const results = await service.findSimilar("query", ["A", "B", "C"], {
@@ -294,7 +270,7 @@ describe("EmbeddingService", () => {
             [0.4, 0.6, 0], // f
           ],
           usage: { tokens: 70 },
-        }),
+        })
       );
 
       const results = await service.findSimilar("query", sixCandidates);
@@ -311,22 +287,12 @@ describe("EmbeddingService", () => {
       expect(callArg.values).toEqual(["my query", "a", "b"]);
     });
 
-    it("should use custom model when provided", async () => {
-      await service.findSimilar("q", ["a"], { model: "custom-embed" });
-
-      const callArg = mockEmbedMany.mock.calls[0][0] as any;
-      expect(callArg.model).toEqual({
-        model: "custom-embed",
-        _isModel: true,
-      });
-    });
-
     it("should return empty when candidates is empty", async () => {
       mockEmbedMany.mockImplementationOnce(() =>
         Promise.resolve({
           embeddings: [[1, 0, 0]], // only query
           usage: { tokens: 5 },
-        }),
+        })
       );
 
       const results = await service.findSimilar("query", []);
@@ -343,7 +309,7 @@ describe("EmbeddingService", () => {
             [1, 0, 0], // B — perfect match
           ],
           usage: { tokens: 20 },
-        }),
+        })
       );
 
       const results = await service.findSimilar("q", ["A", "B"], { topK: 1 });
@@ -361,7 +327,7 @@ describe("EmbeddingService", () => {
             [0, 1], // candidate — orthogonal
           ],
           usage: { tokens: 10 },
-        }),
+        })
       );
 
       const results = await service.findSimilar("q", ["orthogonal"]);

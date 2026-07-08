@@ -5,7 +5,15 @@
  * the cleaned text with those references stripped.
  */
 
-const PROMPT_REFERENCE_PATTERN = /@(?<kind>skill|tool):(?<name>[A-Za-z0-9_ -]+?)(?:\s+(?:skill|tool|and|or|the|for|when|while|using|with|to)\s|[,.!?;:\n]|\s*$)/g;
+// A reference name is a SINGLE token: letters, digits, underscore or hyphen,
+// never a space. The name stops at the first character that can't be part of
+// it, so `@skill:deploy now to deploy` yields the name `deploy` (not
+// `deploy now`) and leaves the rest of the sentence intact. A reference is
+// always recognised regardless of what follows it, and ONLY the reference
+// token itself is removed — surrounding words (including connectives like
+// `to`/`and`) are preserved; runs of whitespace are collapsed afterwards.
+const PROMPT_REFERENCE_PATTERN =
+  /@(?<kind>skill|tool):(?<name>[A-Za-z0-9_-]+)/g;
 
 export interface PromptReferenceResult {
   readonly cleanedText: string;
@@ -29,7 +37,7 @@ export function parsePromptReferences(text: string): PromptReferenceResult {
         toolReferences.push(name);
       }
       return "";
-    },
+    }
   );
 
   const collapsed = cleanedText
