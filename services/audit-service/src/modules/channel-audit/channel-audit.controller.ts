@@ -3,7 +3,8 @@ import { TenantGuard, TenantId } from "@yoizen/database";
 import { assertFoundOrThrow } from "../../common/audit-http.util";
 import { auditPaginatedQuery } from "../../common/audit-list-helpers";
 import type { ChainTreeResult } from "../audit/build-chain-tree";
-import type { QueryChannelEventsDto } from "./channel-audit.dto";
+// biome-ignore lint/style/useImportType: QueryChannelEventsDto is a @Query() metatype — must be a value import so ValidationPipe receives the real class at runtime, not Object.
+import { QueryChannelEventsDto } from "./channel-audit.dto";
 // biome-ignore lint/style/useImportType: ChannelAuditService is constructor-injected by NestJS DI — must be a value import so `design:paramtypes` metadata resolves the real class at runtime, not `type`.
 import { ChannelAuditService } from "./channel-audit.service";
 

@@ -50,6 +50,11 @@ async function sendWithRetry(
 ): Promise<void> {
   let lastError: unknown;
 
+  // The tenant travels only in the header: agent-admin-service's global
+  // ValidationPipe runs with forbidNonWhitelisted, and its DTO does not
+  // declare tenantId — sending it in the body gets the whole event 400'd.
+  const { tenantId, ...body } = event;
+
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       const response = await fetch(
@@ -58,9 +63,9 @@ async function sendWithRetry(
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            [TENANT_HEADER]: event.tenantId,
+            [TENANT_HEADER]: tenantId,
           },
-          body: JSON.stringify(event),
+          body: JSON.stringify(body),
         }
       );
       if (!response.ok) {

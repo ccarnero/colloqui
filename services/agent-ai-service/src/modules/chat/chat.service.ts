@@ -288,9 +288,11 @@ export class ChatService {
     // 7. Resolve agent tools to AI SDK format
     let resolvedTools: Record<string, any> | undefined;
     const hasAgentTools = (agent.tools?.length ?? 0) > 0;
-    const hasMcpServers = (agent.enabledMcpServers?.length ?? 0) > 0;
+    // enabledMcpServers: null/undefined = all connected MCP servers; [] = explicitly none
+    const mcpEnabled =
+      agent.enabledMcpServers == null || agent.enabledMcpServers.length > 0;
 
-    if (hasAgentTools || hasMcpServers) {
+    if (hasAgentTools || mcpEnabled) {
       try {
         const toolState: ToolExecutionContext = {
           tenantId,

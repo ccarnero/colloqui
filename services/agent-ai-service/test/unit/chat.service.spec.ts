@@ -1,24 +1,26 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { ChatService } from "../../src/modules/chat/chat.service";
+import type { Agent } from "../../src/modules/agents/agent.model";
 import { AgentManagerService } from "../../src/modules/agents/agent-manager.service";
+import type {
+  ChatRequest,
+  ChatResponse,
+  RuntimeState,
+} from "../../src/modules/chat/chat.dto";
+import { ChatService } from "../../src/modules/chat/chat.service";
 import { ContextBuilderService } from "../../src/modules/chat/context-builder.service";
 import { SessionChatService } from "../../src/modules/chat/session-chat.service";
 import { LlmExecutorService } from "../../src/modules/llm/llm-executor.service";
-import { TemplateRendererService } from "../../src/modules/template-renderer/template-renderer.service";
-import { SkillRouterService } from "../../src/modules/skills/skill-router.service";
-import { SkillExecutorService } from "../../src/modules/skills/skill-executor.service";
-import { ToolBridgeService } from "../../src/modules/tools/tool-bridge.service";
-import { McpConnectionService } from "../../src/modules/tools/mcp-connection.service";
-import type { Agent } from "../../src/modules/agents/agent.model";
 import type {
-  RuntimeState,
-  ChatRequest,
-  ChatResponse,
-  ChatMessage,
-} from "../../src/modules/chat/chat.dto";
-import type { SkillDefinition, SkillResult } from "../../src/modules/skills/skill-definition";
+  SkillDefinition,
+  SkillResult,
+} from "../../src/modules/skills/skill-definition";
 import type { SkillExecutionParams } from "../../src/modules/skills/skill-executor.service";
+import { SkillExecutorService } from "../../src/modules/skills/skill-executor.service";
+import { SkillRouterService } from "../../src/modules/skills/skill-router.service";
+import { TemplateRendererService } from "../../src/modules/template-renderer/template-renderer.service";
+import { McpConnectionService } from "../../src/modules/tools/mcp-connection.service";
+import { ToolBridgeService } from "../../src/modules/tools/tool-bridge.service";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -74,7 +76,9 @@ const disabledSkill: SkillDefinition = {
   allowedTools: [],
 };
 
-const createMockState = (overrides: Partial<RuntimeState> = {}): RuntimeState => ({
+const createMockState = (
+  overrides: Partial<RuntimeState> = {}
+): RuntimeState => ({
   systemPrompt: "Hello {{agent.name}}",
   rules: [],
   memoryContext: "",
@@ -144,7 +148,7 @@ const setupTestingModule = async (): Promise<void> => {
       Promise.resolve({
         text: "streamed response",
         usage: { inputTokens: 5, outputTokens: 15, totalTokens: 20 },
-      }),
+      })
     ),
   };
   // Default: renderPromptText passes through the template unchanged
@@ -166,7 +170,7 @@ const setupTestingModule = async (): Promise<void> => {
         processedInstructions: "Skill instructions here",
         output: undefined,
         warnings: [],
-      } satisfies SkillResult),
+      } satisfies SkillResult)
     ),
   };
   mockToolBridge = {
@@ -222,7 +226,7 @@ describe("ChatService", () => {
   describe("generateReply", () => {
     it("should throw NotFoundException when agent is not found", async () => {
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(null),
+        Promise.resolve(null)
       );
 
       const request: ChatRequest = { agentId: "missing-agent", message: "hi" };
@@ -232,7 +236,7 @@ describe("ChatService", () => {
         expect(true).toBe(false); // should not reach here
       } catch (error: unknown) {
         expect((error as { message: string }).message).toContain(
-          "Agent 'missing-agent' not found",
+          "Agent 'missing-agent' not found"
         );
         expect((error as { status?: number }).status).toBe(404);
       }
@@ -240,7 +244,7 @@ describe("ChatService", () => {
 
     it("should throw NotFoundException with tenant info when agent is missing", async () => {
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(null),
+        Promise.resolve(null)
       );
 
       const request: ChatRequest = { agentId: "x", message: "hi" };
@@ -250,7 +254,7 @@ describe("ChatService", () => {
         expect(true).toBe(false);
       } catch (error: unknown) {
         expect((error as { message: string }).message).toContain(
-          "tenant 'tenant-acme'",
+          "tenant 'tenant-acme'"
         );
       }
     });
@@ -265,15 +269,17 @@ describe("ChatService", () => {
         skills: [],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
-      const state = createMockState({ systemPrompt: "You are a helpful assistant." });
+      const state = createMockState({
+        systemPrompt: "You are a helpful assistant.",
+      });
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(state),
+        Promise.resolve(state)
       );
       // renderPromptText returns the same text (no placeholders)
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -283,17 +289,17 @@ describe("ChatService", () => {
       const callArgs = mockSessionChat.generateReply.mock.calls[0];
       const passedState = callArgs[3] as RuntimeState;
       expect(passedState.renderedSystemPrompt).toBe(
-        "You are a helpful assistant.",
+        "You are a helpful assistant."
       );
     });
 
     it("should not call skillRouter.setSkills when agent has no skills", async () => {
       const agent = createMockAgent({ skills: [] });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState()),
+        Promise.resolve(createMockState())
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -321,11 +327,11 @@ describe("ChatService", () => {
     it("should pass tenantId, sessionId, agent, and state to sessionChat", async () => {
       const agent = createMockAgent();
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       const state = createMockState();
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(state),
+        Promise.resolve(state)
       );
 
       const request: ChatRequest = {
@@ -406,7 +412,7 @@ describe("ChatService", () => {
   describe("generateStreamReply", () => {
     it("should throw NotFoundException when agent is not found", async () => {
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(null),
+        Promise.resolve(null)
       );
 
       try {
@@ -425,16 +431,16 @@ describe("ChatService", () => {
         systemPrompt: "Hello {{agent.name}}",
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       const state = createMockState({
         systemPrompt: "Hello {{agent.name}}",
       });
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(state),
+        Promise.resolve(state)
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        () => "Hello TestAgent",
+        () => "Hello TestAgent"
       );
 
       await service.generateStreamReply("tenant-1", {
@@ -452,10 +458,10 @@ describe("ChatService", () => {
     it("should use a generated sessionId when none provided", async () => {
       const agent = createMockAgent();
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState()),
+        Promise.resolve(createMockState())
       );
 
       await service.generateStreamReply("tenant-1", {
@@ -477,7 +483,7 @@ describe("ChatService", () => {
   describe("generateStream", () => {
     it("should throw NotFoundException when agent is not found", async () => {
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(null),
+        Promise.resolve(null)
       );
 
       try {
@@ -496,16 +502,16 @@ describe("ChatService", () => {
         systemPrompt: "System: {{agent.name}}",
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       const state = createMockState({
         systemPrompt: "System: {{agent.name}}",
       });
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(state),
+        Promise.resolve(state)
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        () => "System: TestAgent rendered",
+        () => "System: TestAgent rendered"
       );
 
       await service.generateStream("tenant-1", {
@@ -514,7 +520,9 @@ describe("ChatService", () => {
       });
 
       const call = mockLlmExecutor.streamTextRaw.mock.calls[0];
-      const params = call[0] as { messages: Array<{ role: string; content: string }> };
+      const params = call[0] as {
+        messages: Array<{ role: string; content: string }>;
+      };
       const systemMessage = params.messages[0];
       expect(systemMessage.role).toBe("system");
       expect(systemMessage.content).toBe("System: TestAgent rendered");
@@ -530,10 +538,10 @@ describe("ChatService", () => {
         },
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState()),
+        Promise.resolve(createMockState())
       );
 
       await service.generateStream("tenant-1", {
@@ -552,10 +560,10 @@ describe("ChatService", () => {
     it("should default to openai/gpt-4o when modelConfig is missing", async () => {
       const agent = createMockAgent({ modelConfig: {} });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState()),
+        Promise.resolve(createMockState())
       );
 
       await service.generateStream("tenant-1", {
@@ -572,7 +580,7 @@ describe("ChatService", () => {
     it("should include userMessage in the messages array sent to llmExecutor", async () => {
       const agent = createMockAgent();
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       const state = createMockState({
         conversationHistory: [
@@ -590,7 +598,7 @@ describe("ChatService", () => {
         userMessage: "new message",
       });
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(state),
+        Promise.resolve(state)
       );
 
       await service.generateStream("tenant-1", {
@@ -599,7 +607,9 @@ describe("ChatService", () => {
       });
 
       const call = mockLlmExecutor.streamTextRaw.mock.calls[0];
-      const params = call[0] as { messages: Array<{ role: string; content: string }> };
+      const params = call[0] as {
+        messages: Array<{ role: string; content: string }>;
+      };
       const lastMessage = params.messages[params.messages.length - 1];
       expect(lastMessage.role).toBe("user");
       expect(lastMessage.content).toBe("new message");
@@ -610,10 +620,10 @@ describe("ChatService", () => {
     it("should return agentId in the result", async () => {
       const agent = createMockAgent({ id: "agent-42" });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState()),
+        Promise.resolve(createMockState())
       );
 
       const result = await service.generateStream("tenant-1", {
@@ -639,7 +649,7 @@ describe("ChatService", () => {
         systemPrompt: "Hello {{agent.name}}, welcome!",
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       const state = createMockState({
         systemPrompt: "Hello {{agent.name}}, welcome!",
@@ -651,10 +661,10 @@ describe("ChatService", () => {
         },
       });
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(state),
+        Promise.resolve(state)
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        () => "Hello Bot, welcome!",
+        () => "Hello Bot, welcome!"
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -671,13 +681,15 @@ describe("ChatService", () => {
         systemPrompt: "Hello {{agent.name}}",
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState({ systemPrompt: "Hello {{agent.name}}" })),
+        Promise.resolve(
+          createMockState({ systemPrompt: "Hello {{agent.name}}" })
+        )
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        () => "Hello TestAgent Rendered",
+        () => "Hello TestAgent Rendered"
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -689,7 +701,7 @@ describe("ChatService", () => {
 
     it("should pass a warnings array as third argument to renderPromptText", async () => {
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState()),
+        Promise.resolve(createMockState())
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -708,16 +720,18 @@ describe("ChatService", () => {
         skills: [deploySkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
         Promise.resolve(
-          createMockState({ systemPrompt: "Use @skill:deploy to deploy the app" }),
-        ),
+          createMockState({
+            systemPrompt: "Use @skill:deploy to deploy the app",
+          })
+        )
       );
       // renderPromptText passes through so @skill: survives for parsePromptReferences
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -732,18 +746,18 @@ describe("ChatService", () => {
         skills: [deploySkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
         Promise.resolve(
           createMockState({
             systemPrompt: "Please use @skill:deploy now",
             userMessage: "deploy to prod",
-          }),
-        ),
+          })
+        )
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -766,15 +780,15 @@ describe("ChatService", () => {
         skills: [deploySkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
         Promise.resolve(
-          createMockState({ systemPrompt: "Use @skill:deploy to deploy" }),
-        ),
+          createMockState({ systemPrompt: "Use @skill:deploy to deploy" })
+        )
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       // Router returns null → no skill resolved
       mockSkillRouter.findSkill.mockImplementationOnce(() => null);
@@ -800,18 +814,18 @@ describe("ChatService", () => {
         skills: [deploySkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
         Promise.resolve(
           createMockState({
             systemPrompt: "Use @skill:deploy for deployments",
             userMessage: "deploy to production",
-          }),
-        ),
+          })
+        )
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => deploySkill);
       mockSkillExecutor.executeInline.mockImplementationOnce(() =>
@@ -823,7 +837,7 @@ describe("ChatService", () => {
           processedInstructions: "Deploy instructions: step 1, step 2",
           output: undefined,
           warnings: [],
-        } satisfies SkillResult),
+        } satisfies SkillResult)
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -842,15 +856,13 @@ describe("ChatService", () => {
         skills: [deploySkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(
-          createMockState({ systemPrompt: "Use @skill:deploy" }),
-        ),
+        Promise.resolve(createMockState({ systemPrompt: "Use @skill:deploy" }))
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => deploySkill);
       mockSkillExecutor.executeInline.mockImplementationOnce(() =>
@@ -862,7 +874,7 @@ describe("ChatService", () => {
           processedInstructions: "Deploy step-by-step guide",
           output: undefined,
           warnings: [],
-        } satisfies SkillResult),
+        } satisfies SkillResult)
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -879,15 +891,15 @@ describe("ChatService", () => {
         skills: [deploySkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
         Promise.resolve(
-          createMockState({ systemPrompt: "Use @skill:deploy now" }),
-        ),
+          createMockState({ systemPrompt: "Use @skill:deploy now" })
+        )
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => deploySkill);
       mockSkillExecutor.executeInline.mockImplementationOnce(() =>
@@ -899,7 +911,7 @@ describe("ChatService", () => {
           processedInstructions: "Deploy the application",
           output: undefined,
           warnings: [],
-        } satisfies SkillResult),
+        } satisfies SkillResult)
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -907,10 +919,10 @@ describe("ChatService", () => {
       const callArgs = mockSessionChat.generateReply.mock.calls[0];
       const passedState = callArgs[3] as RuntimeState;
       expect(passedState.renderedSystemPrompt).toContain(
-        "## Active Skill: deploy",
+        "## Active Skill: deploy"
       );
       expect(passedState.renderedSystemPrompt).toContain(
-        "Deploy the application",
+        "Deploy the application"
       );
     });
 
@@ -920,15 +932,13 @@ describe("ChatService", () => {
         skills: [deploySkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(
-          createMockState({ systemPrompt: "Use @skill:deploy" }),
-        ),
+        Promise.resolve(createMockState({ systemPrompt: "Use @skill:deploy" }))
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => deploySkill);
       mockSkillExecutor.executeInline.mockImplementationOnce(() =>
@@ -940,7 +950,7 @@ describe("ChatService", () => {
           processedInstructions: undefined,
           output: undefined,
           warnings: [],
-        } satisfies SkillResult),
+        } satisfies SkillResult)
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -948,9 +958,7 @@ describe("ChatService", () => {
       const callArgs = mockSessionChat.generateReply.mock.calls[0];
       const passedState = callArgs[3] as RuntimeState;
       // Should NOT contain Active Skill header when processedInstructions is undefined
-      expect(passedState.renderedSystemPrompt).not.toContain(
-        "## Active Skill",
-      );
+      expect(passedState.renderedSystemPrompt).not.toContain("## Active Skill");
       expect(passedState.skillInstructions).toBeUndefined();
     });
 
@@ -964,30 +972,32 @@ describe("ChatService", () => {
         skills: [deploySkill, pricingSkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
         Promise.resolve(
-          createMockState({ systemPrompt: "You are a helpful assistant" }),
-        ),
+          createMockState({ systemPrompt: "You are a helpful assistant" })
+        )
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => null);
       mockSkillRouter.getSkillSummariesForLlm.mockImplementationOnce(
-        () => "- deploy: Deploy apps\n- pricing: Pricing info",
+        () => "- deploy: Deploy apps\n- pricing: Pricing info"
       );
 
       await service.generateReply("tenant-1", baseRequest);
 
       const callArgs = mockSessionChat.generateReply.mock.calls[0];
       const passedState = callArgs[3] as RuntimeState;
+      expect(passedState.renderedSystemPrompt).toContain("## Available Skills");
       expect(passedState.renderedSystemPrompt).toContain(
-        "## Available Skills",
+        "- deploy: Deploy apps"
       );
-      expect(passedState.renderedSystemPrompt).toContain("- deploy: Deploy apps");
-      expect(passedState.renderedSystemPrompt).toContain("- pricing: Pricing info");
+      expect(passedState.renderedSystemPrompt).toContain(
+        "- pricing: Pricing info"
+      );
     });
 
     it("should set activeSkillName to undefined when no skill resolved", async () => {
@@ -996,13 +1006,13 @@ describe("ChatService", () => {
         skills: [deploySkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState({ systemPrompt: "You are helpful" })),
+        Promise.resolve(createMockState({ systemPrompt: "You are helpful" }))
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => null);
 
@@ -1023,17 +1033,17 @@ describe("ChatService", () => {
         skills: [disabledSkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState({ systemPrompt: "You are a bot" })),
+        Promise.resolve(createMockState({ systemPrompt: "You are a bot" }))
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => null);
       mockSkillRouter.getSkillSummariesForLlm.mockImplementationOnce(
-        () => "No skills available.",
+        () => "No skills available."
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -1041,7 +1051,7 @@ describe("ChatService", () => {
       const callArgs = mockSessionChat.generateReply.mock.calls[0];
       const passedState = callArgs[3] as RuntimeState;
       expect(passedState.renderedSystemPrompt).not.toContain(
-        "## Available Skills",
+        "## Available Skills"
       );
     });
 
@@ -1051,25 +1061,23 @@ describe("ChatService", () => {
         skills: [deploySkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState({ systemPrompt: "You are a bot" })),
+        Promise.resolve(createMockState({ systemPrompt: "You are a bot" }))
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => null);
-      mockSkillRouter.getSkillSummariesForLlm.mockImplementationOnce(
-        () => "",
-      );
+      mockSkillRouter.getSkillSummariesForLlm.mockImplementationOnce(() => "");
 
       await service.generateReply("tenant-1", baseRequest);
 
       const callArgs = mockSessionChat.generateReply.mock.calls[0];
       const passedState = callArgs[3] as RuntimeState;
       expect(passedState.renderedSystemPrompt).not.toContain(
-        "## Available Skills",
+        "## Available Skills"
       );
     });
 
@@ -1083,18 +1091,18 @@ describe("ChatService", () => {
         skills: [disabledSkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState({ systemPrompt: "You help users" })),
+        Promise.resolve(createMockState({ systemPrompt: "You help users" }))
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => null);
       // Router returns "No skills available." because all disabled
       mockSkillRouter.getSkillSummariesForLlm.mockImplementationOnce(
-        () => "No skills available.",
+        () => "No skills available."
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -1105,7 +1113,7 @@ describe("ChatService", () => {
       const passedState = callArgs[3] as RuntimeState;
       // No summaries appended because router said "No skills available."
       expect(passedState.renderedSystemPrompt).not.toContain(
-        "## Available Skills",
+        "## Available Skills"
       );
     });
 
@@ -1119,17 +1127,17 @@ describe("ChatService", () => {
         skills: [deploySkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
         Promise.resolve(
           createMockState({
             systemPrompt: "Use @tool:calculator and @skill:deploy for this",
-          }),
-        ),
+          })
+        )
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => deploySkill);
       mockSkillExecutor.executeInline.mockImplementationOnce(() =>
@@ -1141,7 +1149,7 @@ describe("ChatService", () => {
           processedInstructions: "Deploy instructions",
           output: undefined,
           warnings: [],
-        } satisfies SkillResult),
+        } satisfies SkillResult)
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -1167,17 +1175,17 @@ describe("ChatService", () => {
         skills: [deploySkill, pricingSkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
         Promise.resolve(
           createMockState({
             systemPrompt: "Use @skill:deploy then @skill:pricing",
-          }),
-        ),
+          })
+        )
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => deploySkill);
       mockSkillExecutor.executeInline.mockImplementationOnce(() =>
@@ -1189,7 +1197,7 @@ describe("ChatService", () => {
           processedInstructions: "Deploy instructions",
           output: undefined,
           warnings: [],
-        } satisfies SkillResult),
+        } satisfies SkillResult)
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -1219,10 +1227,10 @@ describe("ChatService", () => {
         userMessage: "Help me with Python",
       });
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(originalState),
+        Promise.resolve(originalState)
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        () => "Hello rendered",
+        () => "Hello rendered"
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -1248,15 +1256,13 @@ describe("ChatService", () => {
         modelConfig: { provider: "anthropic", model: "claude-3-opus" },
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(
-          createMockState({ systemPrompt: "Use @skill:deploy" }),
-        ),
+        Promise.resolve(createMockState({ systemPrompt: "Use @skill:deploy" }))
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => deploySkill);
 
@@ -1275,15 +1281,13 @@ describe("ChatService", () => {
         modelConfig: {},
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(
-          createMockState({ systemPrompt: "Use @skill:deploy" }),
-        ),
+        Promise.resolve(createMockState({ systemPrompt: "Use @skill:deploy" }))
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => deploySkill);
 
@@ -1301,7 +1305,7 @@ describe("ChatService", () => {
         skills: [deploySkill],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       const state = createMockState({
         systemPrompt: "Use @skill:deploy",
@@ -1313,10 +1317,10 @@ describe("ChatService", () => {
         },
       });
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(state),
+        Promise.resolve(state)
       );
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
-        (t: string) => t,
+        (t: string) => t
       );
       mockSkillRouter.findSkill.mockImplementationOnce(() => deploySkill);
 
@@ -1342,7 +1346,7 @@ describe("ChatService", () => {
         modelConfig: { provider: "openai", model: "gpt-4o" },
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
 
       const state = createMockState({
@@ -1356,13 +1360,13 @@ describe("ChatService", () => {
         },
       });
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(state),
+        Promise.resolve(state)
       );
 
       // Step 1: Template rendering replaces {{agent.name}}
       mockTemplateRenderer.renderPromptText.mockImplementationOnce(
         (template: string) =>
-          template.replace("{{agent.name}}", "FullPipelineAgent"),
+          template.replace("{{agent.name}}", "FullPipelineAgent")
       );
 
       // Step 3: Skill resolution
@@ -1378,7 +1382,7 @@ describe("ChatService", () => {
           processedInstructions: "Follow these deployment steps carefully.",
           output: undefined,
           warnings: [],
-        } satisfies SkillResult),
+        } satisfies SkillResult)
       );
 
       const request: ChatRequest = {
@@ -1401,7 +1405,7 @@ describe("ChatService", () => {
       expect(mockTemplateRenderer.renderPromptText).toHaveBeenCalledWith(
         agent.systemPrompt,
         state.runtimeContext,
-        expect.any(Array),
+        expect.any(Array)
       );
 
       // Skills were set
@@ -1412,7 +1416,7 @@ describe("ChatService", () => {
         expect.objectContaining({
           userMessage: "Deploy to staging",
           explicitSkillName: "deploy",
-        }),
+        })
       );
 
       // Skill was executed
@@ -1422,19 +1426,23 @@ describe("ChatService", () => {
           userMessage: "Deploy to staging",
           tenantId: "tenant-full",
           agentId: "agent-full",
-        }),
+        })
       );
 
       // Final state has everything
-      expect(finalState.renderedSystemPrompt).toContain("You are FullPipelineAgent");
-      expect(finalState.renderedSystemPrompt).not.toContain("@skill:");
-      expect(finalState.renderedSystemPrompt).toContain("## Active Skill: deploy");
       expect(finalState.renderedSystemPrompt).toContain(
-        "Follow these deployment steps carefully.",
+        "You are FullPipelineAgent"
+      );
+      expect(finalState.renderedSystemPrompt).not.toContain("@skill:");
+      expect(finalState.renderedSystemPrompt).toContain(
+        "## Active Skill: deploy"
+      );
+      expect(finalState.renderedSystemPrompt).toContain(
+        "Follow these deployment steps carefully."
       );
       expect(finalState.activeSkillName).toBe("deploy");
       expect(finalState.skillInstructions).toBe(
-        "Follow these deployment steps carefully.",
+        "Follow these deployment steps carefully."
       );
     });
 
@@ -1448,10 +1456,12 @@ describe("ChatService", () => {
         tools: [{ name: "calculator" }],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState({ systemPrompt: "You are a helpful assistant." })),
+        Promise.resolve(
+          createMockState({ systemPrompt: "You are a helpful assistant." })
+        )
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -1472,10 +1482,10 @@ describe("ChatService", () => {
         tools: [{ name: "search" }],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState({ systemPrompt: "You are a helper." })),
+        Promise.resolve(createMockState({ systemPrompt: "You are a helper." }))
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -1486,16 +1496,39 @@ describe("ChatService", () => {
       expect(Object.keys(passedState.resolvedTools!).length).toBeGreaterThan(0);
     });
 
-    it("should NOT call toolBridge.toAiSdkToolsForAgent when agent has no tools", async () => {
+    it("should call toolBridge.toAiSdkToolsForAgent when agent has no explicit tools but MCP is unrestricted (enabledMcpServers null)", async () => {
       const agent = createMockAgent({
         systemPrompt: "You are a helpful assistant.",
         tools: [],
+        enabledMcpServers: null,
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState({ systemPrompt: "You are a helpful assistant." })),
+        Promise.resolve(
+          createMockState({ systemPrompt: "You are a helpful assistant." })
+        )
+      );
+
+      await service.generateReply("tenant-1", baseRequest);
+
+      expect(mockToolBridge.toAiSdkToolsForAgent).toHaveBeenCalled();
+    });
+
+    it("should NOT call toolBridge.toAiSdkToolsForAgent when agent has no tools and MCP is explicitly disabled", async () => {
+      const agent = createMockAgent({
+        systemPrompt: "You are a helpful assistant.",
+        tools: [],
+        enabledMcpServers: [],
+      });
+      mockAgentManager.getAgent.mockImplementationOnce(() =>
+        Promise.resolve(agent)
+      );
+      mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
+        Promise.resolve(
+          createMockState({ systemPrompt: "You are a helpful assistant." })
+        )
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -1503,16 +1536,17 @@ describe("ChatService", () => {
       expect(mockToolBridge.toAiSdkToolsForAgent).not.toHaveBeenCalled();
     });
 
-    it("should set resolvedTools to undefined when agent has no tools", async () => {
+    it("should set resolvedTools to undefined when agent has no tools and MCP is explicitly disabled", async () => {
       const agent = createMockAgent({
         systemPrompt: "You are helpful.",
         tools: [],
+        enabledMcpServers: [],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState({ systemPrompt: "You are helpful." })),
+        Promise.resolve(createMockState({ systemPrompt: "You are helpful." }))
       );
 
       await service.generateReply("tenant-1", baseRequest);
@@ -1528,10 +1562,10 @@ describe("ChatService", () => {
         tools: [{ name: "broken-tool" }],
       });
       mockAgentManager.getAgent.mockImplementationOnce(() =>
-        Promise.resolve(agent),
+        Promise.resolve(agent)
       );
       mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
-        Promise.resolve(createMockState({ systemPrompt: "You are a helper." })),
+        Promise.resolve(createMockState({ systemPrompt: "You are a helper." }))
       );
       mockToolBridge.toAiSdkToolsForAgent.mockImplementationOnce(() => {
         throw new Error("Tool resolution failed");

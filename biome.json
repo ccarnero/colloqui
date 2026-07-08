@@ -92,6 +92,18 @@
       "trailingCommas": "es5"
     }
   },
+  "overrides": [
+    {
+      "includes": ["services/*/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useImportType": "off"
+          }
+        }
+      }
+    }
+  ],
   "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "vcs": {
     "enabled": true,

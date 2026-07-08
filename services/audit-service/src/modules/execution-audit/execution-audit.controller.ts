@@ -2,7 +2,8 @@ import { Controller, Get, Param, Query, UseGuards } from "@nestjs/common";
 import { TenantGuard, TenantId } from "@yoizen/database";
 import { assertFoundOrThrow } from "../../common/audit-http.util";
 import { auditPaginatedQuery } from "../../common/audit-list-helpers";
-import type { QueryExecutionEventsDto } from "./execution-audit.dto";
+// biome-ignore lint/style/useImportType: QueryExecutionEventsDto is a @Query() metatype — must be a value import so ValidationPipe receives the real class at runtime, not Object.
+import { QueryExecutionEventsDto } from "./execution-audit.dto";
 // biome-ignore lint/style/useImportType: ExecutionAuditService is constructor-injected by NestJS DI — must be a value import so `design:paramtypes` metadata resolves the real class at runtime, not `type`.
 import { ExecutionAuditService } from "./execution-audit.service";
 

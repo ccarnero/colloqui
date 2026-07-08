@@ -72,7 +72,11 @@ export class McpConnectionService implements OnModuleInit {
     try {
       const sql = await (this.connectionManager as any).ensureSchema(tenantId);
 
-      if (sql?.raw) {
+      // A postgres.js client is a callable tagged-template function; `.raw`
+      // does not exist on it, so probing `sql?.raw` silently classified every
+      // Postgres tenant as "neither" and returned [] — no MCP servers were
+      // ever loaded on the Postgres path.
+      if (typeof sql === "function") {
         // Postgres
         const rows = await sql<IMcpServerRow[]>`
           SELECT id, tenant_id, name, transport_type, url, headers, enabled, is_active, scope

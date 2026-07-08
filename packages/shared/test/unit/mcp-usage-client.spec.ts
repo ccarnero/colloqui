@@ -40,10 +40,12 @@ describe("reportMcpUsageEvent", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(`${AGENT_ADMIN_URL}/admin/mcp-servers/usage-events`);
     expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body as string)).toMatchObject({
-      eventId: "event-1",
-      tenantId: "tenant-1",
-    });
+    const body = JSON.parse(init.body as string);
+    expect(body).toMatchObject({ eventId: "event-1" });
+    // tenantId travels only in the header — the write endpoint's DTO
+    // rejects unknown body properties (forbidNonWhitelisted).
+    expect(body).not.toHaveProperty("tenantId");
+    expect(new Headers(init.headers).get("x-yoizen-tenant")).toBe("tenant-1");
   });
 
   it("retries on failure and succeeds without calling onError once a later attempt succeeds", async () => {
