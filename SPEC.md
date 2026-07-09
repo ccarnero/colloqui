@@ -236,7 +236,7 @@ closed chain (>= 4 stages, `unknown` count = 0); dashboard panels show the traff
 
 - [x] T01 scaffold
 - [x] T02 classifier (golden >= 90%)
-- [ ] T03 facets
+- [x] T03 facets
 - [ ] T04 row mapper
 - [ ] T05 DDL
 - [ ] T06 insert
