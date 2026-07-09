@@ -1,0 +1,54 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1263,
+  "received": "2026-07-09 21:06:36.290750682",
+  "subject": "evt.acme.ai-agent-gateway.automation.platform.internal.execution_completed.v1",
+  "headers": {},
+  "envelope": {
+    "specversion": "1.0",
+    "id": "35ec17bd-b240-4354-b043-86e50684068c",
+    "source": "agent-ai-service",
+    "type": "io.yoizen.platform.runtime.execution_completed.v1",
+    "resource": "execution/019f48b4-28a7-7817-9559-36109854643d:1",
+    "time": "2026-07-09T21:06:36.289Z",
+    "traceid": "b6d6fbe4-2683-4d6d-b382-6fec7ca3efd4",
+    "causation_id": "75279ab1-0fdd-4560-ba92-210ddcb4e97c",
+    "correlation_id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
+    "tenant": "acme",
+    "producer": "ai-agent-gateway",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "ai-agent-gateway",
+    "idempotencykey": "sha256:6b55117e96c51b04947ba1bf765ece92ee5a577de8d3505a54b10fb5a8a2fb97",
+    "transport": {
+      "method": "agent",
+      "protocol": "internal",
+      "agent_id": "ai-agent-gateway",
+      "depth": 3
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:36.289Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 495,
+      "payload_checksum": "sha256:6b55117e96c51b04947ba1bf765ece92ee5a577de8d3505a54b10fb5a8a2fb97",
+      "payload": {
+        "executionId": "019f48b4-28a7-7817-9559-36109854643d:1",
+        "agentId": "34661bc0-f86b-4153-a979-5bd7328d93c8",
+        "tenantId": "acme",
+        "state": "completed",
+        "response": "{\"intent\":\"refund\",\"sentiment\":\"negative\",\"priority\":\"high\",\"summary\":\"Customer demands an immediate refund due to repeated broken orders and lack of response.\"}",
+        "usage": {
+          "inputTokens": 363,
+          "outputTokens": 34,
+          "totalTokens": 397,
+          "cachedInputTokens": 0
+        },
+        "costUsd": 7.484999999999999e-05,
+        "model": "gpt-4o-mini",
+        "provider": "openai"
+      }
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1242,
+  "received": "2026-07-09 21:05:52.106130211",
+  "subject": "evt.acme.api-gateway.messaging.telegram.webhook.webhook_received.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:104bc1f0da86ef258a8f65610f249b592bc39d3425c73672f525abb586020b70",
+    "X-Correlation-Id": "07102a98-5185-40b7-85e8-3a60d23fd096",
+    "traceparent": "00-829809fa85e4d535058d950c22b451eb-933d840655609d36-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "07102a98-5185-40b7-85e8-3a60d23fd096",
+    "source": "//api-gateway/webhooks",
+    "type": "io.yoizen.messaging.webhook.received.v1",
+    "resource": "tenant/acme/channel/telegram/provider/webhook",
+    "time": "2026-07-09T21:05:52.100Z",
+    "traceid": "829809fa85e4d535058d950c22b451eb",
+    "causation_id": null,
+    "correlation_id": "07102a98-5185-40b7-85e8-3a60d23fd096",
+    "tenant": "acme",
+    "producer": "api-gateway",
+    "domain": "messaging",
+    "channel": "telegram",
+    "provider": "webhook",
+    "kind": "webhook_received",
+    "idempotencykey": "sha256:104bc1f0da86ef258a8f65610f249b592bc39d3425c73672f525abb586020b70",
+    "transport": {
+      "method": "webhook",
+      "protocol": "https",
+      "depth": 0
+    },
+    "data": {
+      "received_at": "2026-07-09T21:05:52.100Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 235,
+      "payload_checksum": "sha256:104bc1f0da86ef258a8f65610f249b592bc39d3425c73672f525abb586020b70",
+      "payload": {
+        "update_id": 926080045,
+        "message": {
+          "message_id": 706,
+          "from": {
+            "id": 517998951,
+            "is_bot": false,
+            "first_name": "Christian",
+            "language_code": "en"
+          },
+          "chat": {
+            "id": 517998951,
+            "first_name": "Christian",
+            "type": "private"
+          },
+          "date": 1783631151,
+          "text": "ping"
+        }
+      },
+      "raw_body_b64": "eyJ1cGRhdGVfaWQiOjkyNjA4MDA0NSwKIm1lc3NhZ2UiOnsibWVzc2FnZV9pZCI6NzA2LCJmcm9tIjp7ImlkIjo1MTc5OTg5NTEsImlzX2JvdCI6ZmFsc2UsImZpcnN0X25hbWUiOiJDaHJpc3RpYW4iLCJsYW5ndWFnZV9jb2RlIjoiZW4ifSwiY2hhdCI6eyJpZCI6NTE3OTk4OTUxLCJmaXJzdF9uYW1lIjoiQ2hyaXN0aWFuIiwidHlwZSI6InByaXZhdGUifSwiZGF0ZSI6MTc4MzYzMTE1MSwidGV4dCI6InBpbmcifX0=",
+      "headers": {
+        "content-type": "application/json",
+        "x-telegram-bot-api-secret-token": "a134b8dc28724a6eb64d75d1c6c86a2e"
+      },
+      "instance": "telegram-sample-bot-1782328333-1783360841-24047"
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1308,
+  "received": "2026-07-09 21:19:13.690738772",
+  "subject": "evt.acme.agent-memory-service.agent-memory.platform.internal.memory_proposed.v1",
+  "headers": {
+    "X-Correlation-Id": "memory:bb0135b3-a749-4241-aad5-95897396b3d7",
+    "traceparent": "00-371878f689b0dc35bcb4cf88156f17ef-14f5c41ff49e93d2-01",
+    "Nats-Msg-Id": "sha256:e14337cdc76c8620a1b8480ec5dc0172f7ce1ead892704d9f467dd80ffdcdcb6"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "332d969f-ca08-4f6d-8a8a-dbd773e5c7c5",
+    "source": "//agent-memory-service/memory/propose",
+    "type": "io.yoizen.agent-memory.memory.proposed.v1",
+    "resource": "tenant/acme/memories/bb0135b3-a749-4241-aad5-95897396b3d7",
+    "time": "2026-07-09T21:19:13.688Z",
+    "traceid": "371878f689b0dc35bcb4cf88156f17ef",
+    "causation_id": null,
+    "correlation_id": "memory:bb0135b3-a749-4241-aad5-95897396b3d7",
+    "tenant": "acme",
+    "producer": "agent-admin-service",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "platform-admin",
+    "idempotencykey": "sha256:e14337cdc76c8620a1b8480ec5dc0172f7ce1ead892704d9f467dd80ffdcdcb6",
+    "transport": {
+      "method": "agent",
+      "protocol": "internal",
+      "agent_id": "agent-memory-service",
+      "depth": 0
+    },
+    "data": {
+      "received_at": "2026-07-09T21:19:13.688Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 208,
+      "payload_checksum": "sha256:e14337cdc76c8620a1b8480ec5dc0172f7ce1ead892704d9f467dd80ffdcdcb6",
+      "payload": {
+        "memoryId": "bb0135b3-a749-4241-aad5-95897396b3d7",
+        "content": "Temporary test memory to validate causation anchoring. Safe to delete.",
+        "metadata": {},
+        "proposedAt": "2026-07-09T21:19:13.688Z",
+        "status": "PROPOSED"
+      }
+    }
+  }
+}

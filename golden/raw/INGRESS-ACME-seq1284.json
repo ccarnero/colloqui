@@ -1,0 +1,54 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1284,
+  "received": "2026-07-09 21:06:46.962051549",
+  "subject": "evt.acme.ai-agent-gateway.automation.platform.internal.execution_completed.v1",
+  "headers": {},
+  "envelope": {
+    "specversion": "1.0",
+    "id": "b0f4f426-54d3-48a1-977c-88c51422334b",
+    "source": "agent-ai-service",
+    "type": "io.yoizen.platform.runtime.execution_completed.v1",
+    "resource": "execution/019f48b4-4bd9-7a10-9bc4-5f4a6e02d5c8:1",
+    "time": "2026-07-09T21:06:46.960Z",
+    "traceid": "a2406fea-4a97-47b1-80ff-c6631e9bc88e",
+    "causation_id": "881c3d46-8573-43fc-9680-b08d7f9c1839",
+    "correlation_id": "8c0576be-f9d1-48c7-a3e9-1e5c72b48ac2",
+    "tenant": "acme",
+    "producer": "ai-agent-gateway",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "ai-agent-gateway",
+    "idempotencykey": "sha256:34e8ed37bf09b6dbb5582c16195b867951bcc1f0c72628ac583a81e2f8ced1bd",
+    "transport": {
+      "method": "agent",
+      "protocol": "internal",
+      "agent_id": "ai-agent-gateway",
+      "depth": 3
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:46.960Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 460,
+      "payload_checksum": "sha256:34e8ed37bf09b6dbb5582c16195b867951bcc1f0c72628ac583a81e2f8ced1bd",
+      "payload": {
+        "executionId": "019f48b4-4bd9-7a10-9bc4-5f4a6e02d5c8:1",
+        "agentId": "34661bc0-f86b-4153-a979-5bd7328d93c8",
+        "tenantId": "acme",
+        "state": "completed",
+        "response": "{\"intent\":\"compliment\",\"sentiment\":\"positive\",\"priority\":\"low\",\"summary\":\"Customer is pleased with the replacement and support received.\"}",
+        "usage": {
+          "inputTokens": 359,
+          "outputTokens": 30,
+          "totalTokens": 389,
+          "cachedInputTokens": 0
+        },
+        "costUsd": 7.185e-05,
+        "model": "gpt-4o-mini",
+        "provider": "openai"
+      }
+    }
+  }
+}

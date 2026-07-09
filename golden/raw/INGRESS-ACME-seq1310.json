@@ -1,0 +1,49 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1310,
+  "received": "2026-07-09 21:19:22.931559649",
+  "subject": "evt.acme.agent-memory-service.agent-memory.platform.internal.memory_published.v1",
+  "headers": {
+    "X-Correlation-Id": "memory:bb0135b3-a749-4241-aad5-95897396b3d7",
+    "X-Causation-Id": "332d969f-ca08-4f6d-8a8a-dbd773e5c7c5",
+    "traceparent": "00-d9835aea65cb2809156a426b87aa67d7-292837e3dcff4fe7-01",
+    "Nats-Msg-Id": "sha256:7f6cb4ede081cf3f187c8813382045153c47841ecb7ac4e758e0084847c43344"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "5835af80-fc60-4d3c-9111-3a1ea571612d",
+    "source": "//agent-memory-service/memory/publish",
+    "type": "io.yoizen.agent-memory.memory.published.v1",
+    "resource": "tenant/acme/memories/bb0135b3-a749-4241-aad5-95897396b3d7",
+    "time": "2026-07-09T21:19:22.926Z",
+    "traceid": "d9835aea65cb2809156a426b87aa67d7",
+    "causation_id": "332d969f-ca08-4f6d-8a8a-dbd773e5c7c5",
+    "correlation_id": "memory:bb0135b3-a749-4241-aad5-95897396b3d7",
+    "tenant": "acme",
+    "producer": "agent-admin-service",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "platform-admin",
+    "idempotencykey": "sha256:7f6cb4ede081cf3f187c8813382045153c47841ecb7ac4e758e0084847c43344",
+    "transport": {
+      "method": "agent",
+      "protocol": "internal",
+      "agent_id": "agent-memory-service",
+      "depth": 1
+    },
+    "data": {
+      "received_at": "2026-07-09T21:19:22.926Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 193,
+      "payload_checksum": "sha256:7f6cb4ede081cf3f187c8813382045153c47841ecb7ac4e758e0084847c43344",
+      "payload": {
+        "memoryId": "bb0135b3-a749-4241-aad5-95897396b3d7",
+        "content": "Temporary test memory to validate causation anchoring. Safe to delete.",
+        "publishedAt": "2026-07-09T21:19:22.926Z",
+        "status": "ACTIVE"
+      }
+    }
+  }
+}

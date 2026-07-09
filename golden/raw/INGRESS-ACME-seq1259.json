@@ -1,0 +1,84 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1259,
+  "received": "2026-07-09 21:06:34.348629125",
+  "subject": "evt.acme.ai-agent-gateway.automation.platform.internal.execution_requested.v1",
+  "headers": {
+    "X-Execution-Id": "019f48b4-28a7-7817-9559-36109854643d:1",
+    "X-Execution-Type": "chat",
+    "X-Producer-Service": "workflow-service",
+    "X-Correlation-Id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
+    "X-Causation-Id": "2f5c191f-7749-4fda-84aa-b816b2669624",
+    "Nats-Msg-Id": "sha256:182cb88081a8fde0d6672b50a827a14c394378ac10145cab6d2e3109fca0c244"
+  },
+  "envelope": {
+    "accountid": "ai-agent-gateway",
+    "causation_id": "2f5c191f-7749-4fda-84aa-b816b2669624",
+    "channel": "platform",
+    "correlation_id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
+    "data": {
+      "payload": {
+        "causationId": "2f5c191f-7749-4fda-84aa-b816b2669624",
+        "correlationId": "583625a7-8eb0-4189-a68b-b597eaff69c4",
+        "depth": 2,
+        "executionId": "019f48b4-28a7-7817-9559-36109854643d:1",
+        "input": {
+          "agentId": "34661bc0-f86b-4153-a979-5bd7328d93c8",
+          "channel": "http",
+          "conversationId": "ai-agent-triage",
+          "message": "I want my money back RIGHT NOW. This is the THIRD time my order arrived broken and nobody answers my emails!",
+          "userId": "angry-customer",
+          "variables": {
+            "node": {},
+            "previous": {},
+            "request": {
+              "channel": "http",
+              "envelope": {
+                "accountId": "953c1f5d-c22b-4d1d-adb4-f5bef8e58cb2",
+                "from": "angry-customer",
+                "messageId": "7a91dc9c279f22f1",
+                "text": "I want my money back RIGHT NOW. This is the THIRD time my order arrived broken and nobody answers my emails!",
+                "timestamp": "1783631194236",
+                "type": "text"
+              },
+              "from": "angry-customer",
+              "messageId": "2f5c191f-7749-4fda-84aa-b816b2669624",
+              "provider": "http",
+              "tenantId": "acme",
+              "text": "I want my money back RIGHT NOW. This is the THIRD time my order arrived broken and nobody answers my emails!"
+            },
+            "system": {},
+            "workflow": {}
+          }
+        },
+        "requestedAt": "2026-07-09T21:06:34.347Z",
+        "requestedBy": "angry-customer",
+        "tenantId": "acme",
+        "type": "chat"
+      },
+      "payload_bytes": 1137,
+      "payload_checksum": "sha256:182cb88081a8fde0d6672b50a827a14c394378ac10145cab6d2e3109fca0c244",
+      "payload_inline": true,
+      "payload_ref": null,
+      "received_at": "2026-07-09T21:06:34.347Z"
+    },
+    "domain": "automation",
+    "id": "75279ab1-0fdd-4560-ba92-210ddcb4e97c",
+    "idempotencykey": "sha256:182cb88081a8fde0d6672b50a827a14c394378ac10145cab6d2e3109fca0c244",
+    "producer": "ai-agent-gateway",
+    "provider": "internal",
+    "resource": "execution/019f48b4-28a7-7817-9559-36109854643d:1",
+    "source": "workflow-service",
+    "specversion": "1.0",
+    "tenant": "acme",
+    "time": "2026-07-09T21:06:34.347Z",
+    "traceid": "b6d6fbe4-2683-4d6d-b382-6fec7ca3efd4",
+    "transport": {
+      "agent_id": "ai-agent-gateway",
+      "depth": 2,
+      "method": "agent",
+      "protocol": "internal"
+    },
+    "type": "io.yoizen.platform.runtime.execution_requested.v1"
+  }
+}

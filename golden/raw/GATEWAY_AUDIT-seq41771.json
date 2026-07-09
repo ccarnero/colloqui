@@ -1,0 +1,25 @@
+{
+  "stream": "GATEWAY_AUDIT",
+  "seq": 41771,
+  "received": "2026-07-09 21:04:58.469648346",
+  "subject": "audit.gateway.request",
+  "headers": {},
+  "envelope": {
+    "requestId": "b8cbf12c-d27d-46de-aad4-29af90b80478",
+    "traceId": "c7e85fb94e2f61f551659689e834a8ea",
+    "timestamp": "2026-07-09T21:04:58.468Z",
+    "tenantId": null,
+    "method": "GET",
+    "path": "/readyz",
+    "statusCode": 200,
+    "durationMs": 0.27,
+    "clientIp": "127.0.0.1",
+    "userAgent": "kube-probe//",
+    "jwtSubject": null,
+    "routeType": "platform",
+    "rateLimitApplied": false,
+    "correlationId": null,
+    "causationId": null,
+    "depth": null
+  }
+}

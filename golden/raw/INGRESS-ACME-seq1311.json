@@ -1,0 +1,49 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1311,
+  "received": "2026-07-09 21:19:22.967120369",
+  "subject": "evt.acme.agent-memory-service.agent-memory.platform.internal.memory_rejected.v1",
+  "headers": {
+    "traceparent": "00-ddbe2c4e122459170d29c3a689982268-97f8c4344c806363-01",
+    "Nats-Msg-Id": "sha256:4f68f8d1fda4a80cdc2be046b4bd597be08d106c3f4bc019a9520e70458505a4",
+    "X-Correlation-Id": "memory:da052291-0b9f-4398-8841-23c06b0ab1cb",
+    "X-Causation-Id": "5c491be7-ff9d-4dc4-a080-32bfe1b7b99b"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "b0372a56-0054-4095-83dc-cba0ac1060c0",
+    "source": "//agent-memory-service/memory/reject",
+    "type": "io.yoizen.agent-memory.memory.rejected.v1",
+    "resource": "tenant/acme/memories/da052291-0b9f-4398-8841-23c06b0ab1cb",
+    "time": "2026-07-09T21:19:22.966Z",
+    "traceid": "ddbe2c4e122459170d29c3a689982268",
+    "causation_id": "5c491be7-ff9d-4dc4-a080-32bfe1b7b99b",
+    "correlation_id": "memory:da052291-0b9f-4398-8841-23c06b0ab1cb",
+    "tenant": "acme",
+    "producer": "agent-admin-service",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "platform-admin",
+    "idempotencykey": "sha256:4f68f8d1fda4a80cdc2be046b4bd597be08d106c3f4bc019a9520e70458505a4",
+    "transport": {
+      "method": "agent",
+      "protocol": "internal",
+      "agent_id": "agent-memory-service",
+      "depth": 1
+    },
+    "data": {
+      "received_at": "2026-07-09T21:19:22.966Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 193,
+      "payload_checksum": "sha256:4f68f8d1fda4a80cdc2be046b4bd597be08d106c3f4bc019a9520e70458505a4",
+      "payload": {
+        "memoryId": "da052291-0b9f-4398-8841-23c06b0ab1cb",
+        "reason": "Temporary test memory to validate causation anchoring. Safe to delete.",
+        "rejectedAt": "2026-07-09T21:19:22.966Z",
+        "status": "REJECTED"
+      }
+    }
+  }
+}

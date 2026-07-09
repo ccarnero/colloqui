@@ -1,0 +1,9 @@
+{
+  "idempotencykey": "abc-1",
+  "accountid": "acct-1",
+  "channel": "whatsapp",
+  "producer": "channel-service",
+  "time": "2026-04-23T10:00:00.000Z",
+  "kind": "received",
+  "data": { "payload": { "type": "text" } }
+}

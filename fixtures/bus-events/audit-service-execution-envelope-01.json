@@ -1,0 +1,14 @@
+{
+  "id": "env-1",
+  "tenant": "tenant-a",
+  "correlation_id": "conv-1",
+  "causation_id": null,
+  "transport": { "depth": 0 },
+  "data": {
+    "payload": {
+      "executionId": "exec-1",
+      "agentId": "agent-1",
+      "state": "completed"
+    }
+  }
+}

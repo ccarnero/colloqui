@@ -1,0 +1,50 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1282,
+  "received": "2026-07-09 21:06:44.483981213",
+  "subject": "evt.acme.channel-service.messaging.telegram.telegram.sent.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:bef6b60b1f8dac14b5480853341b53a6adac809d746bdf10e8555c1a84cbc091",
+    "X-Correlation-Id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "X-Causation-Id": "7fe85e26-c783-4ad8-b53b-e33608538f23",
+    "traceparent": "00-0a0f2b66c02884f482ec3814449e6696-0e864b9acb680a90-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "3ca5d18a-b8b9-4646-814f-87437b7f8dbe",
+    "source": "//channel-service/accounts/0805f09d-bbb6-4f89-9bd6-6ab7f9643b78",
+    "type": "io.yoizen.messaging.telegram.telegram.sent.v1",
+    "resource": "tenant/acme/account/0805f09d-bbb6-4f89-9bd6-6ab7f9643b78/channel/telegram/provider/telegram",
+    "time": "2026-07-09T21:06:44.483Z",
+    "traceid": "0a0f2b66c02884f482ec3814449e6696",
+    "causation_id": "7fe85e26-c783-4ad8-b53b-e33608538f23",
+    "correlation_id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "tenant": "acme",
+    "producer": "channel-service",
+    "domain": "messaging",
+    "channel": "telegram",
+    "provider": "telegram",
+    "accountid": "0805f09d-bbb6-4f89-9bd6-6ab7f9643b78",
+    "idempotencykey": "sha256:bef6b60b1f8dac14b5480853341b53a6adac809d746bdf10e8555c1a84cbc091",
+    "transport": {
+      "method": "stream",
+      "protocol": "internal",
+      "depth": 3
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:44.483Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 109,
+      "payload_checksum": "sha256:bef6b60b1f8dac14b5480853341b53a6adac809d746bdf10e8555c1a84cbc091",
+      "payload": {
+        "to": "517998951",
+        "type": "text",
+        "accountId": "0805f09d-bbb6-4f89-9bd6-6ab7f9643b78",
+        "providerMessageId": "710"
+      }
+    },
+    "kind": "sent"
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1251,
+  "received": "2026-07-09 21:06:01.288800712",
+  "subject": "evt.acme.ai-agent-gateway.automation.platform.internal.execution_completed.v1",
+  "headers": {},
+  "envelope": {
+    "specversion": "1.0",
+    "id": "f4dee42f-a20f-4586-81c3-556d36f2f8e4",
+    "source": "agent-ai-service",
+    "type": "io.yoizen.platform.runtime.execution_completed.v1",
+    "resource": "execution/019f48b3-8571-7ad4-932e-513459cc1aa2:1",
+    "time": "2026-07-09T21:06:01.286Z",
+    "traceid": "2e5715f2-9937-40d6-a35b-7c5fc6d19e67",
+    "causation_id": "e231584a-0d09-487e-a74b-d031edd582c8",
+    "correlation_id": "07102a98-5185-40b7-85e8-3a60d23fd096",
+    "tenant": "acme",
+    "producer": "ai-agent-gateway",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "ai-agent-gateway",
+    "idempotencykey": "sha256:ce988cf64e1d2ac0c5cff555247ccf9aab852eea6b20cfe73437e046589e2122",
+    "transport": {
+      "method": "agent",
+      "protocol": "internal",
+      "agent_id": "ai-agent-gateway",
+      "depth": 3
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:01.286Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 328,
+      "payload_checksum": "sha256:ce988cf64e1d2ac0c5cff555247ccf9aab852eea6b20cfe73437e046589e2122",
+      "payload": {
+        "executionId": "019f48b3-8571-7ad4-932e-513459cc1aa2:1",
+        "agentId": "eb0db541-8cd8-4cd8-aaaf-c3532be3e508",
+        "tenantId": "acme",
+        "state": "completed",
+        "response": "{\"about_repo\": false}",
+        "usage": {
+          "inputTokens": 335,
+          "outputTokens": 8,
+          "totalTokens": 343,
+          "cachedInputTokens": 0
+        },
+        "costUsd": 5.505e-05,
+        "model": "gpt-4o-mini",
+        "provider": "openai"
+      }
+    }
+  }
+}

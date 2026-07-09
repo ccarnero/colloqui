@@ -1,0 +1,57 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1257,
+  "received": "2026-07-09 21:06:34.232172007",
+  "subject": "evt.acme.api-gateway.messaging.http.webhook.webhook_received.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:5d7bb669281436ea01e4aca8c09473c423e8103eb0220e1a2afb9bf9f188bcb6",
+    "X-Correlation-Id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
+    "traceparent": "00-27af2c7c8a5b0039215cb30f3d17c6bf-a16d0276c9da58f3-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
+    "source": "//api-gateway/webhooks",
+    "type": "io.yoizen.messaging.webhook.received.v1",
+    "resource": "tenant/acme/channel/http/provider/webhook",
+    "time": "2026-07-09T21:06:34.231Z",
+    "traceid": "27af2c7c8a5b0039215cb30f3d17c6bf",
+    "causation_id": null,
+    "correlation_id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
+    "tenant": "acme",
+    "producer": "api-gateway",
+    "domain": "messaging",
+    "channel": "http",
+    "provider": "webhook",
+    "kind": "webhook_received",
+    "idempotencykey": "sha256:5d7bb669281436ea01e4aca8c09473c423e8103eb0220e1a2afb9bf9f188bcb6",
+    "transport": {
+      "method": "webhook",
+      "protocol": "https",
+      "depth": 0
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:34.231Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 190,
+      "payload_checksum": "sha256:5d7bb669281436ea01e4aca8c09473c423e8103eb0220e1a2afb9bf9f188bcb6",
+      "payload": {
+        "from": "angry-customer",
+        "text": "I want my money back RIGHT NOW. This is the THIRD time my order arrived broken and nobody answers my emails!",
+        "metadata": {
+          "source": "ai-agent-triage/run.sh"
+        }
+      },
+      "raw_body_b64": "eyJmcm9tIjoiYW5ncnktY3VzdG9tZXIiLCJ0ZXh0IjoiSSB3YW50IG15IG1vbmV5IGJhY2sgUklHSFQgTk9XLiBUaGlzIGlzIHRoZSBUSElSRCB0aW1lIG15IG9yZGVyIGFycml2ZWQgYnJva2VuIGFuZCBub2JvZHkgYW5zd2VycyBteSBlbWFpbHMhIiwibWV0YWRhdGEiOnsic291cmNlIjoiYWktYWdlbnQtdHJpYWdlL3J1bi5zaCJ9fQ==",
+      "headers": {
+        "user-agent": "node",
+        "content-type": "application/json",
+        "x-http-channel-token": "65a6705c992540518007a088f6416129",
+        "x-request-id": "a4a35968-02ff-4329-ac30-72affd3d6620"
+      },
+      "instance": "ai-agent-triage"
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1273,
+  "received": "2026-07-09 21:06:43.257533439",
+  "subject": "evt.acme.api-gateway.messaging.http.webhook.webhook_received.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:2923045ebd56f85f78e5ae7e804944814a3af29b1e63f356ae68f698210940e3",
+    "X-Correlation-Id": "8c0576be-f9d1-48c7-a3e9-1e5c72b48ac2",
+    "traceparent": "00-3923a63b8f3e089276d73dd5ac07733e-1148bb3cc6fcf2a3-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "8c0576be-f9d1-48c7-a3e9-1e5c72b48ac2",
+    "source": "//api-gateway/webhooks",
+    "type": "io.yoizen.messaging.webhook.received.v1",
+    "resource": "tenant/acme/channel/http/provider/webhook",
+    "time": "2026-07-09T21:06:43.256Z",
+    "traceid": "3923a63b8f3e089276d73dd5ac07733e",
+    "causation_id": null,
+    "correlation_id": "8c0576be-f9d1-48c7-a3e9-1e5c72b48ac2",
+    "tenant": "acme",
+    "producer": "api-gateway",
+    "domain": "messaging",
+    "channel": "http",
+    "provider": "webhook",
+    "kind": "webhook_received",
+    "idempotencykey": "sha256:2923045ebd56f85f78e5ae7e804944814a3af29b1e63f356ae68f698210940e3",
+    "transport": {
+      "method": "webhook",
+      "protocol": "https",
+      "depth": 0
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:43.256Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 184,
+      "payload_checksum": "sha256:2923045ebd56f85f78e5ae7e804944814a3af29b1e63f356ae68f698210940e3",
+      "payload": {
+        "from": "happy-customer",
+        "text": "Just wanted to say the replacement arrived today and it works perfectly. Thanks for the great support!",
+        "metadata": {
+          "source": "ai-agent-triage/run.sh"
+        }
+      },
+      "raw_body_b64": "eyJmcm9tIjoiaGFwcHktY3VzdG9tZXIiLCJ0ZXh0IjoiSnVzdCB3YW50ZWQgdG8gc2F5IHRoZSByZXBsYWNlbWVudCBhcnJpdmVkIHRvZGF5IGFuZCBpdCB3b3JrcyBwZXJmZWN0bHkuIFRoYW5rcyBmb3IgdGhlIGdyZWF0IHN1cHBvcnQhIiwibWV0YWRhdGEiOnsic291cmNlIjoiYWktYWdlbnQtdHJpYWdlL3J1bi5zaCJ9fQ==",
+      "headers": {
+        "user-agent": "node",
+        "content-type": "application/json",
+        "x-http-channel-token": "65a6705c992540518007a088f6416129",
+        "x-request-id": "515429ff-8e3d-47c5-9a44-40ea47614525"
+      },
+      "instance": "ai-agent-triage"
+    }
+  }
+}

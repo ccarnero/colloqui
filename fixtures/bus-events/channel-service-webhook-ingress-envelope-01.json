@@ -1,0 +1,30 @@
+{
+  "specversion": "1.0",
+  "id": "evt-1",
+  "source": "//api-gateway/webhooks",
+  "type": "io.yoizen.messaging.webhook.received.v1",
+  "resource": "tenant/t1/channel/whatsapp/provider/webhook",
+  "time": "<Date.now() ISO string at test run time>",
+  "traceid": "trace-1",
+  "causation_id": null,
+  "correlation_id": "corr-1",
+  "tenant": "t1",
+  "producer": "api-gateway",
+  "domain": "messaging",
+  "channel": "whatsapp",
+  "provider": "webhook",
+  "kind": "webhook_received",
+  "idempotencykey": "sha256:test",
+  "transport": { "method": "webhook", "protocol": "https", "depth": 0 },
+  "data": {
+    "received_at": "<Date.now() ISO string at test run time>",
+    "payload_inline": true,
+    "payload_ref": null,
+    "payload_bytes": 2,
+    "payload_checksum": "sha256:test",
+    "payload": { "object": "whatsapp_business_account" },
+    "raw_body_b64": "eyJvYmplY3QiOiJvayJ9",
+    "headers": { "x-hub-signature-256": "sha256=abc" },
+    "instance": "my-instance"
+  }
+}

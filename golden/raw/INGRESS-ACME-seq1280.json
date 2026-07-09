@@ -1,0 +1,50 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1280,
+  "received": "2026-07-09 21:06:44.058166791",
+  "subject": "evt.acme.channel-service.messaging.telegram.telegram.send.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:973b3c09704a9959dcb71b2aa57181dfea4a956a55a7fa10f27f76b7a02b85b7",
+    "X-Correlation-Id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "X-Causation-Id": "c29961e5-d7f5-45ab-b323-99fc6b405bd7",
+    "traceparent": "00-0a0f2b66c02884f482ec3814449e6696-4669ca9816bc329a-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "7fe85e26-c783-4ad8-b53b-e33608538f23",
+    "source": "//workflow-service/channel-send",
+    "type": "io.yoizen.messaging.telegram.telegram.send.v1",
+    "resource": "tenant/acme/account/0805f09d-bbb6-4f89-9bd6-6ab7f9643b78/channel/telegram/provider/telegram",
+    "time": "2026-07-09T21:06:44.057Z",
+    "traceid": "0a0f2b66c02884f482ec3814449e6696",
+    "causation_id": "c29961e5-d7f5-45ab-b323-99fc6b405bd7",
+    "correlation_id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "tenant": "acme",
+    "producer": "channel-service",
+    "domain": "messaging",
+    "channel": "telegram",
+    "provider": "telegram",
+    "accountid": "0805f09d-bbb6-4f89-9bd6-6ab7f9643b78",
+    "idempotencykey": "sha256:973b3c09704a9959dcb71b2aa57181dfea4a956a55a7fa10f27f76b7a02b85b7",
+    "transport": {
+      "method": "stream",
+      "protocol": "internal",
+      "depth": 2
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:44.057Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 350,
+      "payload_checksum": "sha256:fb99510b279157d024c309b7758f70d538c6854857e925a49defd4f276049342",
+      "payload": {
+        "accountId": "0805f09d-bbb6-4f89-9bd6-6ab7f9643b78",
+        "to": "517998951",
+        "type": "text",
+        "text": "\u2705 Triage \u2014 priority: normal | sentiment: neutral | intent: question\nCustomer inquires about the expected arrival time of their order in Rosario.\nOriginal: Hi! Quick question \u2014 my order shipped on Monday, when should I expect it to arrive in Rosario?"
+      }
+    },
+    "kind": "send"
+  }
+}

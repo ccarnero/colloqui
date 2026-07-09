@@ -1,0 +1,50 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1258,
+  "received": "2026-07-09 21:06:34.237351939",
+  "subject": "evt.acme.channel-service.messaging.http.http.received.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:edd179d2d0d398736ccfe5f1a59877ab549f64b5135f55f2f0f4920464ce0641",
+    "traceparent": "00-27af2c7c8a5b0039215cb30f3d17c6bf-73dc919af57335ea-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "2f5c191f-7749-4fda-84aa-b816b2669624",
+    "source": "//channel-service/accounts/953c1f5d-c22b-4d1d-adb4-f5bef8e58cb2",
+    "type": "io.yoizen.messaging.http.http.received.v1",
+    "resource": "tenant/acme/account/953c1f5d-c22b-4d1d-adb4-f5bef8e58cb2/channel/http/provider/http",
+    "time": "2026-07-09T21:06:34.236Z",
+    "traceid": "27af2c7c8a5b0039215cb30f3d17c6bf",
+    "causation_id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
+    "correlation_id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
+    "tenant": "acme",
+    "producer": "channel-service",
+    "domain": "messaging",
+    "channel": "http",
+    "provider": "http",
+    "accountid": "953c1f5d-c22b-4d1d-adb4-f5bef8e58cb2",
+    "idempotencykey": "sha256:edd179d2d0d398736ccfe5f1a59877ab549f64b5135f55f2f0f4920464ce0641",
+    "transport": {
+      "method": "webhook",
+      "protocol": "https",
+      "depth": 1
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:34.236Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 413,
+      "payload_checksum": "sha256:edd179d2d0d398736ccfe5f1a59877ab549f64b5135f55f2f0f4920464ce0641",
+      "payload": {
+        "messageId": "7a91dc9c279f22f1",
+        "from": "angry-customer",
+        "timestamp": "1783631194236",
+        "type": "text",
+        "text": "I want my money back RIGHT NOW. This is the THIRD time my order arrived broken and nobody answers my emails!",
+        "accountId": "953c1f5d-c22b-4d1d-adb4-f5bef8e58cb2"
+      }
+    },
+    "kind": "received"
+  }
+}

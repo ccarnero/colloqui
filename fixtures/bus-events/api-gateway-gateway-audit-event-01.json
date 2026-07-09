@@ -1,0 +1,15 @@
+{
+  "requestId": "r1",
+  "traceId": "t1",
+  "timestamp": "<new Date().toISOString() at test run time>",
+  "tenantId": "tenant-a",
+  "method": "GET",
+  "path": "/x",
+  "statusCode": 200,
+  "durationMs": 1,
+  "clientIp": "127.0.0.1",
+  "userAgent": "test",
+  "jwtSubject": null,
+  "routeType": "platform",
+  "rateLimitApplied": false
+}

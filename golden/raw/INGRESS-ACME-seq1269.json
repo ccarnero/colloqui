@@ -1,0 +1,50 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1269,
+  "received": "2026-07-09 21:06:41.249163635",
+  "subject": "evt.acme.channel-service.messaging.http.http.received.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:04897f2ec15872d491406a312542a28aa677cc92b74404d66be02daa0beec5a5",
+    "traceparent": "00-0a0f2b66c02884f482ec3814449e6696-ebdfcba0ec04c54e-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "c29961e5-d7f5-45ab-b323-99fc6b405bd7",
+    "source": "//channel-service/accounts/953c1f5d-c22b-4d1d-adb4-f5bef8e58cb2",
+    "type": "io.yoizen.messaging.http.http.received.v1",
+    "resource": "tenant/acme/account/953c1f5d-c22b-4d1d-adb4-f5bef8e58cb2/channel/http/provider/http",
+    "time": "2026-07-09T21:06:41.248Z",
+    "traceid": "0a0f2b66c02884f482ec3814449e6696",
+    "causation_id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "correlation_id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "tenant": "acme",
+    "producer": "channel-service",
+    "domain": "messaging",
+    "channel": "http",
+    "provider": "http",
+    "accountid": "953c1f5d-c22b-4d1d-adb4-f5bef8e58cb2",
+    "idempotencykey": "sha256:04897f2ec15872d491406a312542a28aa677cc92b74404d66be02daa0beec5a5",
+    "transport": {
+      "method": "webhook",
+      "protocol": "https",
+      "depth": 1
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:41.248Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 393,
+      "payload_checksum": "sha256:04897f2ec15872d491406a312542a28aa677cc92b74404d66be02daa0beec5a5",
+      "payload": {
+        "messageId": "1828d8729f4fc2fd",
+        "from": "curious-customer",
+        "timestamp": "1783631201248",
+        "type": "text",
+        "text": "Hi! Quick question \u2014 my order shipped on Monday, when should I expect it to arrive in Rosario?",
+        "accountId": "953c1f5d-c22b-4d1d-adb4-f5bef8e58cb2"
+      }
+    },
+    "kind": "received"
+  }
+}

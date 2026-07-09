@@ -1,0 +1,84 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1245,
+  "received": "2026-07-09 21:05:52.795470204",
+  "subject": "evt.acme.ai-agent-gateway.automation.platform.internal.execution_requested.v1",
+  "headers": {
+    "X-Producer-Service": "workflow-service",
+    "X-Correlation-Id": "07102a98-5185-40b7-85e8-3a60d23fd096",
+    "X-Causation-Id": "208e49bf-9938-4809-b90e-6eb027cb3e87",
+    "Nats-Msg-Id": "sha256:d212157a98b8e5cfd6dde60b68297b439d6e95ab1ac924da2ab0a81442ebc7ce",
+    "X-Execution-Id": "019f48b3-8571-7ad4-932e-513459cc1aa2:1",
+    "X-Execution-Type": "chat"
+  },
+  "envelope": {
+    "accountid": "ai-agent-gateway",
+    "causation_id": "208e49bf-9938-4809-b90e-6eb027cb3e87",
+    "channel": "platform",
+    "correlation_id": "07102a98-5185-40b7-85e8-3a60d23fd096",
+    "data": {
+      "payload": {
+        "causationId": "208e49bf-9938-4809-b90e-6eb027cb3e87",
+        "correlationId": "07102a98-5185-40b7-85e8-3a60d23fd096",
+        "depth": 2,
+        "executionId": "019f48b3-8571-7ad4-932e-513459cc1aa2:1",
+        "input": {
+          "agentId": "eb0db541-8cd8-4cd8-aaaf-c3532be3e508",
+          "channel": "telegram",
+          "conversationId": "mcp-repo-support-bot",
+          "message": "ping",
+          "userId": "517998951",
+          "variables": {
+            "node": {},
+            "previous": {},
+            "request": {
+              "channel": "telegram",
+              "envelope": {
+                "accountId": "0805f09d-bbb6-4f89-9bd6-6ab7f9643b78",
+                "from": "517998951",
+                "messageId": "706",
+                "text": "ping",
+                "timestamp": "1783631151",
+                "type": "text"
+              },
+              "from": "517998951",
+              "messageId": "208e49bf-9938-4809-b90e-6eb027cb3e87",
+              "provider": "telegram",
+              "tenantId": "acme",
+              "text": "ping"
+            },
+            "system": {},
+            "workflow": {}
+          }
+        },
+        "requestedAt": "2026-07-09T21:05:52.782Z",
+        "requestedBy": "517998951",
+        "tenantId": "acme",
+        "type": "chat"
+      },
+      "payload_bytes": 806,
+      "payload_checksum": "sha256:d212157a98b8e5cfd6dde60b68297b439d6e95ab1ac924da2ab0a81442ebc7ce",
+      "payload_inline": true,
+      "payload_ref": null,
+      "received_at": "2026-07-09T21:05:52.782Z"
+    },
+    "domain": "automation",
+    "id": "e231584a-0d09-487e-a74b-d031edd582c8",
+    "idempotencykey": "sha256:d212157a98b8e5cfd6dde60b68297b439d6e95ab1ac924da2ab0a81442ebc7ce",
+    "producer": "ai-agent-gateway",
+    "provider": "internal",
+    "resource": "execution/019f48b3-8571-7ad4-932e-513459cc1aa2:1",
+    "source": "workflow-service",
+    "specversion": "1.0",
+    "tenant": "acme",
+    "time": "2026-07-09T21:05:52.782Z",
+    "traceid": "2e5715f2-9937-40d6-a35b-7c5fc6d19e67",
+    "transport": {
+      "agent_id": "ai-agent-gateway",
+      "depth": 2,
+      "method": "agent",
+      "protocol": "internal"
+    },
+    "type": "io.yoizen.platform.runtime.execution_requested.v1"
+  }
+}

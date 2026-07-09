@@ -1,0 +1,52 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1283,
+  "received": "2026-07-09 21:06:46.952508014",
+  "subject": "evt.acme.agent-memory-service.agent-memory.platform.internal.memory_proposed.v1",
+  "headers": {
+    "X-Correlation-Id": "memory:5366c0d3-3752-410b-9b49-7c2021c41554",
+    "traceparent": "00-9a66017adde39c15904b77b688a20ce5-0d852cb8f78b6736-01",
+    "Nats-Msg-Id": "sha256:2af5bf2317f50ab30fdaa670ebd9e27190eae204310d8fc50f2c3dda1a30906f"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "56617f24-c5e2-4aa1-bddd-7c81e8e13075",
+    "source": "//agent-memory-service/memory/propose",
+    "type": "io.yoizen.agent-memory.memory.proposed.v1",
+    "resource": "tenant/acme/memories/5366c0d3-3752-410b-9b49-7c2021c41554",
+    "time": "2026-07-09T21:06:46.951Z",
+    "traceid": "9a66017adde39c15904b77b688a20ce5",
+    "causation_id": null,
+    "correlation_id": "memory:5366c0d3-3752-410b-9b49-7c2021c41554",
+    "tenant": "acme",
+    "producer": "agent-admin-service",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "platform-admin",
+    "idempotencykey": "sha256:2af5bf2317f50ab30fdaa670ebd9e27190eae204310d8fc50f2c3dda1a30906f",
+    "transport": {
+      "method": "agent",
+      "protocol": "internal",
+      "agent_id": "agent-memory-service",
+      "depth": 0
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:46.951Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 408,
+      "payload_checksum": "sha256:2af5bf2317f50ab30fdaa670ebd9e27190eae204310d8fc50f2c3dda1a30906f",
+      "payload": {
+        "memoryId": "5366c0d3-3752-410b-9b49-7c2021c41554",
+        "content": "{\"intent\":\"compliment\",\"sentiment\":\"positive\",\"priority\":\"low\",\"summary\":\"Customer is pleased with the replacement and support received.\"}",
+        "metadata": {
+          "agentId": "34661bc0-f86b-4153-a979-5bd7328d93c8",
+          "sessionId": "chat-34661bc0-f86b-4153-a979-5bd7328d93c8-1783631204229"
+        },
+        "proposedAt": "2026-07-09T21:06:46.951Z",
+        "status": "ACTIVE"
+      }
+    }
+  }
+}

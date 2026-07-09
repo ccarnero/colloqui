@@ -1,0 +1,54 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1278,
+  "received": "2026-07-09 21:06:43.975732501",
+  "subject": "evt.acme.ai-agent-gateway.automation.platform.internal.execution_completed.v1",
+  "headers": {},
+  "envelope": {
+    "specversion": "1.0",
+    "id": "f0506450-ac97-4be0-9b67-859bd62ca71b",
+    "source": "agent-ai-service",
+    "type": "io.yoizen.platform.runtime.execution_completed.v1",
+    "resource": "execution/019f48b4-43f1-7792-b9d3-cee6517de75e:1",
+    "time": "2026-07-09T21:06:43.975Z",
+    "traceid": "a589d371-5329-4845-b942-dc12aba70d0b",
+    "causation_id": "30a4f92d-3612-4e84-93c5-834f1a1bf151",
+    "correlation_id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "tenant": "acme",
+    "producer": "ai-agent-gateway",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "ai-agent-gateway",
+    "idempotencykey": "sha256:ecabac346f096772925290a8016a4c78b1686bf4b8c60d25eb1efcd60da3d105",
+    "transport": {
+      "method": "agent",
+      "protocol": "internal",
+      "agent_id": "ai-agent-gateway",
+      "depth": 3
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:43.975Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 474,
+      "payload_checksum": "sha256:ecabac346f096772925290a8016a4c78b1686bf4b8c60d25eb1efcd60da3d105",
+      "payload": {
+        "executionId": "019f48b4-43f1-7792-b9d3-cee6517de75e:1",
+        "agentId": "34661bc0-f86b-4153-a979-5bd7328d93c8",
+        "tenantId": "acme",
+        "state": "completed",
+        "response": "{\"intent\":\"question\",\"sentiment\":\"neutral\",\"priority\":\"normal\",\"summary\":\"Customer inquires about the expected arrival time of their order in Rosario.\"}",
+        "usage": {
+          "inputTokens": 361,
+          "outputTokens": 33,
+          "totalTokens": 394,
+          "cachedInputTokens": 0
+        },
+        "costUsd": 7.395e-05,
+        "model": "gpt-4o-mini",
+        "provider": "openai"
+      }
+    }
+  }
+}

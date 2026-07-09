@@ -1,0 +1,57 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1268,
+  "received": "2026-07-09 21:06:41.245788319",
+  "subject": "evt.acme.api-gateway.messaging.http.webhook.webhook_received.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:36ef27ab11b3d385f587bf9165ed4208b4c87fb59233e6dba924f463282daf0b",
+    "X-Correlation-Id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "traceparent": "00-0a0f2b66c02884f482ec3814449e6696-2ec36cfc4068dfad-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "source": "//api-gateway/webhooks",
+    "type": "io.yoizen.messaging.webhook.received.v1",
+    "resource": "tenant/acme/channel/http/provider/webhook",
+    "time": "2026-07-09T21:06:41.245Z",
+    "traceid": "0a0f2b66c02884f482ec3814449e6696",
+    "causation_id": null,
+    "correlation_id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "tenant": "acme",
+    "producer": "api-gateway",
+    "domain": "messaging",
+    "channel": "http",
+    "provider": "webhook",
+    "kind": "webhook_received",
+    "idempotencykey": "sha256:36ef27ab11b3d385f587bf9165ed4208b4c87fb59233e6dba924f463282daf0b",
+    "transport": {
+      "method": "webhook",
+      "protocol": "https",
+      "depth": 0
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:41.245Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 180,
+      "payload_checksum": "sha256:36ef27ab11b3d385f587bf9165ed4208b4c87fb59233e6dba924f463282daf0b",
+      "payload": {
+        "from": "curious-customer",
+        "text": "Hi! Quick question \u2014 my order shipped on Monday, when should I expect it to arrive in Rosario?",
+        "metadata": {
+          "source": "ai-agent-triage/run.sh"
+        }
+      },
+      "raw_body_b64": "eyJmcm9tIjoiY3VyaW91cy1jdXN0b21lciIsInRleHQiOiJIaSEgUXVpY2sgcXVlc3Rpb24g4oCUIG15IG9yZGVyIHNoaXBwZWQgb24gTW9uZGF5LCB3aGVuIHNob3VsZCBJIGV4cGVjdCBpdCB0byBhcnJpdmUgaW4gUm9zYXJpbz8iLCJtZXRhZGF0YSI6eyJzb3VyY2UiOiJhaS1hZ2VudC10cmlhZ2UvcnVuLnNoIn19",
+      "headers": {
+        "user-agent": "node",
+        "content-type": "application/json",
+        "x-http-channel-token": "65a6705c992540518007a088f6416129",
+        "x-request-id": "2e40cbfa-ded9-4c18-bc5d-be6045a99f8d"
+      },
+      "instance": "ai-agent-triage"
+    }
+  }
+}

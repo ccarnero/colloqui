@@ -1,0 +1,84 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1270,
+  "received": "2026-07-09 21:06:41.319993025",
+  "subject": "evt.acme.ai-agent-gateway.automation.platform.internal.execution_requested.v1",
+  "headers": {
+    "X-Execution-Id": "019f48b4-43f1-7792-b9d3-cee6517de75e:1",
+    "X-Execution-Type": "chat",
+    "X-Producer-Service": "workflow-service",
+    "X-Correlation-Id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "X-Causation-Id": "c29961e5-d7f5-45ab-b323-99fc6b405bd7",
+    "Nats-Msg-Id": "sha256:011d48451151551990b412a0a37876f2d262f6db834c7b1278e3ab940a6d3091"
+  },
+  "envelope": {
+    "accountid": "ai-agent-gateway",
+    "causation_id": "c29961e5-d7f5-45ab-b323-99fc6b405bd7",
+    "channel": "platform",
+    "correlation_id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "data": {
+      "payload": {
+        "causationId": "c29961e5-d7f5-45ab-b323-99fc6b405bd7",
+        "correlationId": "049662ce-1986-4894-b8bd-71565252dde3",
+        "depth": 2,
+        "executionId": "019f48b4-43f1-7792-b9d3-cee6517de75e:1",
+        "input": {
+          "agentId": "34661bc0-f86b-4153-a979-5bd7328d93c8",
+          "channel": "http",
+          "conversationId": "ai-agent-triage",
+          "message": "Hi! Quick question \u2014 my order shipped on Monday, when should I expect it to arrive in Rosario?",
+          "userId": "curious-customer",
+          "variables": {
+            "node": {},
+            "previous": {},
+            "request": {
+              "channel": "http",
+              "envelope": {
+                "accountId": "953c1f5d-c22b-4d1d-adb4-f5bef8e58cb2",
+                "from": "curious-customer",
+                "messageId": "1828d8729f4fc2fd",
+                "text": "Hi! Quick question \u2014 my order shipped on Monday, when should I expect it to arrive in Rosario?",
+                "timestamp": "1783631201248",
+                "type": "text"
+              },
+              "from": "curious-customer",
+              "messageId": "c29961e5-d7f5-45ab-b323-99fc6b405bd7",
+              "provider": "http",
+              "tenantId": "acme",
+              "text": "Hi! Quick question \u2014 my order shipped on Monday, when should I expect it to arrive in Rosario?"
+            },
+            "system": {},
+            "workflow": {}
+          }
+        },
+        "requestedAt": "2026-07-09T21:06:41.318Z",
+        "requestedBy": "curious-customer",
+        "tenantId": "acme",
+        "type": "chat"
+      },
+      "payload_bytes": 1109,
+      "payload_checksum": "sha256:011d48451151551990b412a0a37876f2d262f6db834c7b1278e3ab940a6d3091",
+      "payload_inline": true,
+      "payload_ref": null,
+      "received_at": "2026-07-09T21:06:41.318Z"
+    },
+    "domain": "automation",
+    "id": "30a4f92d-3612-4e84-93c5-834f1a1bf151",
+    "idempotencykey": "sha256:011d48451151551990b412a0a37876f2d262f6db834c7b1278e3ab940a6d3091",
+    "producer": "ai-agent-gateway",
+    "provider": "internal",
+    "resource": "execution/019f48b4-43f1-7792-b9d3-cee6517de75e:1",
+    "source": "workflow-service",
+    "specversion": "1.0",
+    "tenant": "acme",
+    "time": "2026-07-09T21:06:41.318Z",
+    "traceid": "a589d371-5329-4845-b942-dc12aba70d0b",
+    "transport": {
+      "agent_id": "ai-agent-gateway",
+      "depth": 2,
+      "method": "agent",
+      "protocol": "internal"
+    },
+    "type": "io.yoizen.platform.runtime.execution_requested.v1"
+  }
+}

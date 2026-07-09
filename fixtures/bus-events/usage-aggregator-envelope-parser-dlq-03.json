@@ -1,0 +1,10 @@
+{
+  "idempotencykey": "abc-1",
+  "accountid": "acct-1",
+  "channel": "whatsapp",
+  "producer": "channel-service",
+  "time": "2026-04-23T10:00:00.000Z",
+  "kind": "received",
+  "data": { "payload": { "type": "text" } },
+  "_note_stream": "Same envelope body as ingress-01, but consumed from stream 'DLQ-tenant-1' instead of 'INGRESS-tenant-1' in the test. parseEnvelope() derives direction='dlq' from the stream name, not from an envelope field — the '_note_stream' key here is a fixture-transcription annotation, not part of the wire envelope."
+}

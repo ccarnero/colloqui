@@ -1,0 +1,50 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1264,
+  "received": "2026-07-09 21:06:36.371365439",
+  "subject": "evt.acme.channel-service.messaging.telegram.telegram.send.v1",
+  "headers": {
+    "Nats-Msg-Id": "sha256:bf09b2dcf010db957cfa29be502c008bcdb137b185d939397268232fac90b257",
+    "X-Correlation-Id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
+    "X-Causation-Id": "2f5c191f-7749-4fda-84aa-b816b2669624",
+    "traceparent": "00-27af2c7c8a5b0039215cb30f3d17c6bf-16b460916d817b45-01",
+    "x-yoizen-tenant": "acme"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "2d76b484-ab78-4f67-89ae-febff6356710",
+    "source": "//workflow-service/channel-send",
+    "type": "io.yoizen.messaging.telegram.telegram.send.v1",
+    "resource": "tenant/acme/account/0805f09d-bbb6-4f89-9bd6-6ab7f9643b78/channel/telegram/provider/telegram",
+    "time": "2026-07-09T21:06:36.370Z",
+    "traceid": "27af2c7c8a5b0039215cb30f3d17c6bf",
+    "causation_id": "2f5c191f-7749-4fda-84aa-b816b2669624",
+    "correlation_id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
+    "tenant": "acme",
+    "producer": "channel-service",
+    "domain": "messaging",
+    "channel": "telegram",
+    "provider": "telegram",
+    "accountid": "0805f09d-bbb6-4f89-9bd6-6ab7f9643b78",
+    "idempotencykey": "sha256:bf09b2dcf010db957cfa29be502c008bcdb137b185d939397268232fac90b257",
+    "transport": {
+      "method": "stream",
+      "protocol": "internal",
+      "depth": 2
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:36.370Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 376,
+      "payload_checksum": "sha256:4681494ad167d36c80684e977e51f5eed66475892192275a9dbf26359059221a",
+      "payload": {
+        "accountId": "0805f09d-bbb6-4f89-9bd6-6ab7f9643b78",
+        "to": "517998951",
+        "type": "text",
+        "text": "\ud83d\udea8 ESCALATION \u2014 priority: high | sentiment: negative | intent: refund\nCustomer demands an immediate refund due to repeated broken orders and lack of response.\nOriginal: I want my money back RIGHT NOW. This is the THIRD time my order arrived broken and nobody answers my emails!"
+      }
+    },
+    "kind": "send"
+  }
+}

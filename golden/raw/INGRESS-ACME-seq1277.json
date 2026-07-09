@@ -1,0 +1,52 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1277,
+  "received": "2026-07-09 21:06:43.970272362",
+  "subject": "evt.acme.agent-memory-service.agent-memory.platform.internal.memory_proposed.v1",
+  "headers": {
+    "Nats-Msg-Id": "sha256:c99197d941fac7c762e2b23f2549412f11c5f2302fce816ef287f1792a6e67b5",
+    "X-Correlation-Id": "memory:32eab64d-f49d-4298-a052-15f8cd42148b",
+    "traceparent": "00-f894cdc9e8fa4d56593781b6d7e3f765-5aae20016fbb6fb0-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "879fcca3-4b79-4c72-8f9f-35aa31977484",
+    "source": "//agent-memory-service/memory/propose",
+    "type": "io.yoizen.agent-memory.memory.proposed.v1",
+    "resource": "tenant/acme/memories/32eab64d-f49d-4298-a052-15f8cd42148b",
+    "time": "2026-07-09T21:06:43.969Z",
+    "traceid": "f894cdc9e8fa4d56593781b6d7e3f765",
+    "causation_id": null,
+    "correlation_id": "memory:32eab64d-f49d-4298-a052-15f8cd42148b",
+    "tenant": "acme",
+    "producer": "agent-admin-service",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "platform-admin",
+    "idempotencykey": "sha256:c99197d941fac7c762e2b23f2549412f11c5f2302fce816ef287f1792a6e67b5",
+    "transport": {
+      "method": "agent",
+      "protocol": "internal",
+      "agent_id": "agent-memory-service",
+      "depth": 0
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:43.969Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 422,
+      "payload_checksum": "sha256:c99197d941fac7c762e2b23f2549412f11c5f2302fce816ef287f1792a6e67b5",
+      "payload": {
+        "memoryId": "32eab64d-f49d-4298-a052-15f8cd42148b",
+        "content": "{\"intent\":\"question\",\"sentiment\":\"neutral\",\"priority\":\"normal\",\"summary\":\"Customer inquires about the expected arrival time of their order in Rosario.\"}",
+        "metadata": {
+          "agentId": "34661bc0-f86b-4153-a979-5bd7328d93c8",
+          "sessionId": "chat-34661bc0-f86b-4153-a979-5bd7328d93c8-1783631201551"
+        },
+        "proposedAt": "2026-07-09T21:06:43.969Z",
+        "status": "ACTIVE"
+      }
+    }
+  }
+}

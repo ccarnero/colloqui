@@ -1,0 +1,37 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1298,
+  "received": "2026-07-09 21:09:25.845876133",
+  "subject": "evt.acme.ai-agent-gateway.automation.platform.internal.online.v1",
+  "headers": {},
+  "envelope": {
+    "specversion": "1.0",
+    "id": "5eae53fa-7e44-4756-8b3d-3d1c92444ef0",
+    "source": "agent-ai-service",
+    "type": "io.yoizen.platform.runtime.online.v1",
+    "resource": "agent-ai-service/heartbeat",
+    "time": "2026-07-09T21:09:25.844Z",
+    "traceid": "",
+    "causation_id": null,
+    "correlation_id": "410ff859-5337-4dfd-867a-066920e007e1",
+    "tenant": "acme",
+    "producer": "agent-ai-service",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "",
+    "idempotencykey": "0167607b-6adf-414a-ad8b-2b0e7228be06",
+    "transport": {
+      "name": "nats",
+      "version": "1.0"
+    },
+    "data": {
+      "payload": {
+        "status": "online",
+        "service": "agent-ai-service",
+        "timestamp": "2026-07-09T21:09:25.844Z",
+        "activeTenants": 1
+      }
+    }
+  }
+}

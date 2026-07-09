@@ -1,0 +1,44 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1271,
+  "received": "2026-07-09 21:06:41.321944724",
+  "subject": "evt.acme.ai-agent-gateway.automation.platform.internal.execution_started.v1",
+  "headers": {},
+  "envelope": {
+    "specversion": "1.0",
+    "id": "16e0c5d3-9dc8-4f1a-a3e8-87b890768f48",
+    "source": "agent-ai-service",
+    "type": "io.yoizen.platform.runtime.execution_started.v1",
+    "resource": "execution/019f48b4-43f1-7792-b9d3-cee6517de75e:1",
+    "time": "2026-07-09T21:06:41.321Z",
+    "traceid": "a589d371-5329-4845-b942-dc12aba70d0b",
+    "causation_id": "30a4f92d-3612-4e84-93c5-834f1a1bf151",
+    "correlation_id": "049662ce-1986-4894-b8bd-71565252dde3",
+    "tenant": "acme",
+    "producer": "ai-agent-gateway",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "ai-agent-gateway",
+    "idempotencykey": "sha256:277a772cf5b643334114277b4453b051232512582ee167dc94c2a78242d49943",
+    "transport": {
+      "method": "agent",
+      "protocol": "internal",
+      "agent_id": "ai-agent-gateway",
+      "depth": 3
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:41.321Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 141,
+      "payload_checksum": "sha256:277a772cf5b643334114277b4453b051232512582ee167dc94c2a78242d49943",
+      "payload": {
+        "executionId": "019f48b4-43f1-7792-b9d3-cee6517de75e:1",
+        "agentId": "34661bc0-f86b-4153-a979-5bd7328d93c8",
+        "tenantId": "acme",
+        "state": "started"
+      }
+    }
+  }
+}

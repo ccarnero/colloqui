@@ -1,0 +1,50 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1285,
+  "received": "2026-07-09 21:06:47.106528316",
+  "subject": "evt.acme.channel-service.messaging.telegram.telegram.send.v1",
+  "headers": {
+    "traceparent": "00-3923a63b8f3e089276d73dd5ac07733e-70344db868e8744b-01",
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:c53dcb423d59c38d9384c4dde6eb370c38be9ffec65dfcfd5cde22c7407ecf3b",
+    "X-Correlation-Id": "8c0576be-f9d1-48c7-a3e9-1e5c72b48ac2",
+    "X-Causation-Id": "92e34779-bb62-46d7-ba46-64db09192b07"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "5e624a90-dd45-4959-857b-bef4700f12c0",
+    "source": "//workflow-service/channel-send",
+    "type": "io.yoizen.messaging.telegram.telegram.send.v1",
+    "resource": "tenant/acme/account/0805f09d-bbb6-4f89-9bd6-6ab7f9643b78/channel/telegram/provider/telegram",
+    "time": "2026-07-09T21:06:47.105Z",
+    "traceid": "3923a63b8f3e089276d73dd5ac07733e",
+    "causation_id": "92e34779-bb62-46d7-ba46-64db09192b07",
+    "correlation_id": "8c0576be-f9d1-48c7-a3e9-1e5c72b48ac2",
+    "tenant": "acme",
+    "producer": "channel-service",
+    "domain": "messaging",
+    "channel": "telegram",
+    "provider": "telegram",
+    "accountid": "0805f09d-bbb6-4f89-9bd6-6ab7f9643b78",
+    "idempotencykey": "sha256:c53dcb423d59c38d9384c4dde6eb370c38be9ffec65dfcfd5cde22c7407ecf3b",
+    "transport": {
+      "method": "stream",
+      "protocol": "internal",
+      "depth": 2
+    },
+    "data": {
+      "received_at": "2026-07-09T21:06:47.105Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 342,
+      "payload_checksum": "sha256:9dc34e14b9f6b2641438b286b1bef106640b2f39aa235150a25b76333848141b",
+      "payload": {
+        "accountId": "0805f09d-bbb6-4f89-9bd6-6ab7f9643b78",
+        "to": "517998951",
+        "type": "text",
+        "text": "\u2705 Triage \u2014 priority: low | sentiment: positive | intent: compliment\nCustomer is pleased with the replacement and support received.\nOriginal: Just wanted to say the replacement arrived today and it works perfectly. Thanks for the great support!"
+      }
+    },
+    "kind": "send"
+  }
+}
