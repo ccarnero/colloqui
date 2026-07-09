@@ -1,14 +1,14 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
-import { MEMORY_REPOSITORY } from "../domain/memory.repository.interface";
-import type { IMemoryRepository } from "../domain/memory.repository.interface";
 import {
-  MemoryScope,
   MemoryKind,
+  MemoryScope,
   MemoryStatus,
   MergeStrategy,
 } from "../domain/enums";
 import type { IMemory } from "../domain/memory.entity";
+import type { IMemoryRepository } from "../domain/memory.repository.interface";
+import { MEMORY_REPOSITORY } from "../domain/memory.repository.interface";
 import type { MemoryQueryDto } from "../dto/memory-query.dto";
 import type { UpdateMemoryDto } from "../dto/update-memory.dto";
 
@@ -20,10 +20,31 @@ const MERGE_STRATEGY_BY_KIND: Record<MemoryKind, MergeStrategy> = {
   [MemoryKind.PROMO]: MergeStrategy.KEEP_BOTH,
 };
 
+/**
+ * Causal-chain context for lifecycle events derived from a
+ * memory_proposed event (DOCS/messaging/envelope.md §6). Structurally
+ * compatible with the provider-side ICausalContext; declared here to
+ * avoid a module cycle (nats.provider imports INatsPublisher from this
+ * file).
+ */
+export interface IMemoryCausalContext {
+  readonly causationId?: string | null;
+  readonly correlationId?: string;
+}
+
 export interface INatsPublisher {
-  publishMemoryProposed(tenantId: string, memory: IMemory): Promise<void>;
-  publishMemoryApproved(tenantId: string, memory: IMemory): Promise<void>;
-  publishMemoryRejected(tenantId: string, memory: IMemory): Promise<void>;
+  /** Returns the published memory_proposed envelope id (causation anchor). */
+  publishMemoryProposed(tenantId: string, memory: IMemory): Promise<string>;
+  publishMemoryApproved(
+    tenantId: string,
+    memory: IMemory,
+    causal?: IMemoryCausalContext
+  ): Promise<void>;
+  publishMemoryRejected(
+    tenantId: string,
+    memory: IMemory,
+    causal?: IMemoryCausalContext
+  ): Promise<void>;
 }
 
 @Injectable()
@@ -37,11 +58,55 @@ export class MemoryService {
 
   private resolveInitialStatus(
     scope: MemoryScope,
-    skipApproval = false,
+    skipApproval = false
   ): MemoryStatus {
-    if (skipApproval) return MemoryStatus.ACTIVE;
-    if (scope === MemoryScope.TENANT) return MemoryStatus.PROPOSED;
+    if (skipApproval) {
+      return MemoryStatus.ACTIVE;
+    }
+    if (scope === MemoryScope.TENANT) {
+      return MemoryStatus.PROPOSED;
+    }
     return MemoryStatus.ACTIVE;
+  }
+
+  /**
+   * Publishes memory_proposed and persists the returned envelope id in
+   * `metadata.proposedEventId` — the causation anchor for the later
+   * memory_published/memory_rejected events (DOCS/messaging/envelope.md
+   * §6). Publish failures keep the memory unchanged (best-effort, as
+   * before the correlation-chain fix).
+   */
+  private async publishProposedAndPersist(
+    tenantId: string,
+    memory: IMemory,
+    natsPublisher: INatsPublisher
+  ): Promise<IMemory> {
+    const proposedEventId = await natsPublisher
+      .publishMemoryProposed(tenantId, memory)
+      .catch((err: unknown) => {
+        this.logger.log(`Failed to publish memory.proposed event: ${err}`);
+        return undefined;
+      });
+    if (!proposedEventId) {
+      return memory;
+    }
+
+    const enriched = await this.repo.update(tenantId, memory.id, {
+      metadata: { ...memory.metadata, proposedEventId },
+    });
+    return enriched ?? memory;
+  }
+
+  private causalFrom(memory: IMemory): IMemoryCausalContext {
+    const proposedEventId = (
+      memory.metadata as Record<string, unknown> | undefined
+    )?.proposedEventId;
+    return {
+      // Memories proposed before proposedEventId existed have no
+      // causation anchor: fall back to null (root) instead of failing.
+      causationId: typeof proposedEventId === "string" ? proposedEventId : null,
+      correlationId: `memory:${memory.id}`,
+    };
   }
 
   async proposeMemory(
@@ -58,21 +123,21 @@ export class MemoryService {
       ttl?: number;
     },
     natsPublisher?: INatsPublisher,
-    skipApproval = false,
+    skipApproval = false
   ): Promise<IMemory> {
     const initialStatus = this.resolveInitialStatus(data.scope, skipApproval);
     const mergeStrategy = MERGE_STRATEGY_BY_KIND[data.kind];
 
     this.logger.log(
       `Proposing memory: scope=${data.scope}, kind=${data.kind}, ` +
-        `status=${initialStatus}, merge=${mergeStrategy}`,
+        `status=${initialStatus}, merge=${mergeStrategy}`
     );
 
     if (mergeStrategy === MergeStrategy.REPLACE && data.topicKey) {
       const existing = await this.repo.findByTopicKey(
         tenantId,
         data.topicKey,
-        data.scope,
+        data.scope
       );
       if (existing) {
         const updated = await this.repo.update(tenantId, existing.id, {
@@ -82,18 +147,17 @@ export class MemoryService {
             ...existing.metadata,
             ...data.metadata,
             revisionCount:
-              ((existing.metadata as Record<string, number>)?.revisionCount || 0) + 1,
+              ((existing.metadata as Record<string, number>)?.revisionCount ||
+                0) + 1,
           },
         });
         if (updated) {
           if (natsPublisher) {
-            await natsPublisher
-              .publishMemoryProposed(tenantId, updated)
-              .catch((err: unknown) =>
-                this.logger.log(
-                  `Failed to publish memory.proposed event: ${err}`,
-                ),
-              );
+            return this.publishProposedAndPersist(
+              tenantId,
+              updated,
+              natsPublisher
+            );
           }
           return updated;
         }
@@ -114,13 +178,7 @@ export class MemoryService {
     });
 
     if (natsPublisher) {
-      await natsPublisher
-        .publishMemoryProposed(tenantId, memory)
-        .catch((err: unknown) =>
-          this.logger.log(
-            `Failed to publish memory.proposed event: ${err}`,
-          ),
-        );
+      return this.publishProposedAndPersist(tenantId, memory, natsPublisher);
     }
 
     return memory;
@@ -128,7 +186,7 @@ export class MemoryService {
 
   async getMemories(
     tenantId: string,
-    query: MemoryQueryDto,
+    query: MemoryQueryDto
   ): Promise<{ items: IMemory[]; total: number }> {
     return this.repo.findAll(tenantId, {
       scope: query.scope,
@@ -146,7 +204,7 @@ export class MemoryService {
   async approveMemory(
     tenantId: string,
     id: string,
-    natsPublisher?: INatsPublisher,
+    natsPublisher?: INatsPublisher
   ): Promise<IMemory> {
     const memory = await this.repo.findById(tenantId, id);
     if (!memory) {
@@ -155,7 +213,7 @@ export class MemoryService {
 
     if (memory.status !== MemoryStatus.PROPOSED) {
       throw new NotFoundException(
-        `Memory ${id} is not in PROPOSED status (current: ${memory.status})`,
+        `Memory ${id} is not in PROPOSED status (current: ${memory.status})`
       );
     }
 
@@ -169,11 +227,9 @@ export class MemoryService {
 
     if (natsPublisher) {
       await natsPublisher
-        .publishMemoryApproved(tenantId, updated)
+        .publishMemoryApproved(tenantId, updated, this.causalFrom(updated))
         .catch((err: unknown) =>
-          this.logger.log(
-            `Failed to publish memory.approved event: ${err}`,
-          ),
+          this.logger.log(`Failed to publish memory.approved event: ${err}`)
         );
     }
 
@@ -183,7 +239,7 @@ export class MemoryService {
   async rejectMemory(
     tenantId: string,
     id: string,
-    natsPublisher?: INatsPublisher,
+    natsPublisher?: INatsPublisher
   ): Promise<IMemory> {
     const memory = await this.repo.findById(tenantId, id);
     if (!memory) {
@@ -192,7 +248,7 @@ export class MemoryService {
 
     if (memory.status !== MemoryStatus.PROPOSED) {
       throw new NotFoundException(
-        `Memory ${id} is not in PROPOSED status (current: ${memory.status})`,
+        `Memory ${id} is not in PROPOSED status (current: ${memory.status})`
       );
     }
 
@@ -206,11 +262,9 @@ export class MemoryService {
 
     if (natsPublisher) {
       await natsPublisher
-        .publishMemoryRejected(tenantId, updated)
+        .publishMemoryRejected(tenantId, updated, this.causalFrom(updated))
         .catch((err: unknown) =>
-          this.logger.log(
-            `Failed to publish memory.rejected event: ${err}`,
-          ),
+          this.logger.log(`Failed to publish memory.rejected event: ${err}`)
         );
     }
 
@@ -228,7 +282,7 @@ export class MemoryService {
   async updateMemory(
     tenantId: string,
     id: string,
-    dto: UpdateMemoryDto,
+    dto: UpdateMemoryDto
   ): Promise<IMemory> {
     const existing = await this.repo.findById(tenantId, id);
     if (!existing) {
@@ -262,7 +316,7 @@ export class MemoryService {
       userId?: string;
       limit?: number;
       offset?: number;
-    },
+    }
   ): Promise<IMemory[]> {
     return this.repo.findTimeline(tenantId, filters);
   }

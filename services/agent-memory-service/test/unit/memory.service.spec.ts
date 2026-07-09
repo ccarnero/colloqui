@@ -1,15 +1,19 @@
 import "../setup-env";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { Test } from "@nestjs/testing";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
 import {
-  MemoryService,
-  type INatsPublisher,
-} from "../../src/modules/memory/services/memory.service";
-import { MEMORY_REPOSITORY } from "../../src/modules/memory/domain/memory.repository.interface";
-import type { IMemoryRepository } from "../../src/modules/memory/domain/memory.repository.interface";
+  MemoryKind,
+  MemoryScope,
+  MemoryStatus,
+} from "../../src/modules/memory/domain/enums";
 import type { IMemory } from "../../src/modules/memory/domain/memory.entity";
-import { MemoryScope, MemoryKind, MemoryStatus } from "../../src/modules/memory/domain/enums";
+import type { IMemoryRepository } from "../../src/modules/memory/domain/memory.repository.interface";
+import { MEMORY_REPOSITORY } from "../../src/modules/memory/domain/memory.repository.interface";
+import {
+  type INatsPublisher,
+  MemoryService,
+} from "../../src/modules/memory/services/memory.service";
 
 function createMockMemory(overrides?: Partial<IMemory>): IMemory {
   return {
@@ -48,7 +52,7 @@ describe("MemoryService", () => {
     };
 
     mockNatsPublisher = {
-      publishMemoryProposed: mock(() => Promise.resolve()),
+      publishMemoryProposed: mock(() => Promise.resolve("evt-prop-1")),
       publishMemoryApproved: mock(() => Promise.resolve()),
       publishMemoryRejected: mock(() => Promise.resolve()),
     };
@@ -65,8 +69,13 @@ describe("MemoryService", () => {
 
   describe("proposeMemory", () => {
     it("should set status to ACTIVE when scope is SESSION", async () => {
-      const created = createMockMemory({ scope: MemoryScope.SESSION, status: MemoryStatus.ACTIVE });
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
+      const created = createMockMemory({
+        scope: MemoryScope.SESSION,
+        status: MemoryStatus.ACTIVE,
+      });
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
       const result = await service.proposeMemory(TENANT_ID, {
         scope: MemoryScope.SESSION,
@@ -78,13 +87,18 @@ describe("MemoryService", () => {
       expect(result.status).toBe(MemoryStatus.ACTIVE);
       expect(mockRepository.create).toHaveBeenCalledWith(
         TENANT_ID,
-        expect.objectContaining({ status: MemoryStatus.ACTIVE }),
+        expect.objectContaining({ status: MemoryStatus.ACTIVE })
       );
     });
 
     it("should set status to ACTIVE when scope is USER", async () => {
-      const created = createMockMemory({ scope: MemoryScope.USER, status: MemoryStatus.ACTIVE });
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
+      const created = createMockMemory({
+        scope: MemoryScope.USER,
+        status: MemoryStatus.ACTIVE,
+      });
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
       const result = await service.proposeMemory(TENANT_ID, {
         scope: MemoryScope.USER,
@@ -97,8 +111,13 @@ describe("MemoryService", () => {
     });
 
     it("should set status to PROPOSED when scope is TENANT", async () => {
-      const created = createMockMemory({ scope: MemoryScope.TENANT, status: MemoryStatus.PROPOSED });
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
+      const created = createMockMemory({
+        scope: MemoryScope.TENANT,
+        status: MemoryStatus.PROPOSED,
+      });
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
       const result = await service.proposeMemory(TENANT_ID, {
         scope: MemoryScope.TENANT,
@@ -117,7 +136,9 @@ describe("MemoryService", () => {
         metadata: { source: "agent" },
         topicKey: "preferences",
       });
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
       const result = await service.proposeMemory(TENANT_ID, {
         scope: MemoryScope.USER,
@@ -136,6 +157,68 @@ describe("MemoryService", () => {
       expect(result.metadata).toEqual({ source: "agent" });
       expect(result.topicKey).toBe("preferences");
     });
+
+    /**
+     * Correlation-chain fix: the memory_proposed envelope id is the
+     * causation anchor for the later memory_published/memory_rejected
+     * events, so it must be persisted on the memory row.
+     */
+    it("persists the proposed event id into metadata after publishing", async () => {
+      const created = createMockMemory({ metadata: { source: "agent" } });
+      const enriched = createMockMemory({
+        metadata: { source: "agent", proposedEventId: "evt-prop-1" },
+      });
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(enriched)
+      );
+
+      const result = await service.proposeMemory(
+        TENANT_ID,
+        {
+          scope: MemoryScope.SESSION,
+          kind: MemoryKind.FACT,
+          title: "T",
+          content: "c",
+        },
+        mockNatsPublisher
+      );
+
+      expect(mockNatsPublisher.publishMemoryProposed).toHaveBeenCalledWith(
+        TENANT_ID,
+        created
+      );
+      expect(mockRepository.update).toHaveBeenCalledWith(TENANT_ID, "mem-1", {
+        metadata: { source: "agent", proposedEventId: "evt-prop-1" },
+      });
+      expect(result.metadata.proposedEventId).toBe("evt-prop-1");
+    });
+
+    it("returns the created memory unchanged when the proposed publish fails", async () => {
+      const created = createMockMemory();
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
+      (
+        mockNatsPublisher.publishMemoryProposed as ReturnType<typeof mock>
+      ).mockImplementation(() => Promise.reject(new Error("NATS down")));
+
+      const result = await service.proposeMemory(
+        TENANT_ID,
+        {
+          scope: MemoryScope.SESSION,
+          kind: MemoryKind.FACT,
+          title: "T",
+          content: "c",
+        },
+        mockNatsPublisher
+      );
+
+      expect(result).toBe(created);
+      expect(mockRepository.update).not.toHaveBeenCalled();
+    });
   });
 
   describe("approveMemory", () => {
@@ -143,49 +226,111 @@ describe("MemoryService", () => {
       const memory = createMockMemory({ status: MemoryStatus.PROPOSED });
       const approved = createMockMemory({ status: MemoryStatus.ACTIVE });
 
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(memory));
-      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(approved));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(memory)
+      );
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(approved)
+      );
 
-      const result = await service.approveMemory(TENANT_ID, "mem-1", mockNatsPublisher);
+      const result = await service.approveMemory(
+        TENANT_ID,
+        "mem-1",
+        mockNatsPublisher
+      );
 
       expect(result.status).toBe(MemoryStatus.ACTIVE);
-      expect(mockRepository.update).toHaveBeenCalledWith(TENANT_ID, "mem-1", { status: MemoryStatus.ACTIVE });
+      expect(mockRepository.update).toHaveBeenCalledWith(TENANT_ID, "mem-1", {
+        status: MemoryStatus.ACTIVE,
+      });
     });
 
     it("should throw NotFoundException when memory is not in PROPOSED status", async () => {
       const memory = createMockMemory({ status: MemoryStatus.ACTIVE });
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(memory));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(memory)
+      );
 
-      await expect(service.approveMemory(TENANT_ID, "mem-1")).rejects.toThrow(NotFoundException);
+      await expect(service.approveMemory(TENANT_ID, "mem-1")).rejects.toThrow(
+        NotFoundException
+      );
     });
 
     it("should throw NotFoundException when memory does not exist", async () => {
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(null));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(null)
+      );
 
-      await expect(service.approveMemory(TENANT_ID, "non-existent")).rejects.toThrow(NotFoundException);
+      await expect(
+        service.approveMemory(TENANT_ID, "non-existent")
+      ).rejects.toThrow(NotFoundException);
     });
 
-    it("should publish memory.approved NATS event", async () => {
-      const memory = createMockMemory({ status: MemoryStatus.PROPOSED });
-      const approved = createMockMemory({ status: MemoryStatus.ACTIVE });
+    it("links memory.approved to the proposed event via causation", async () => {
+      const memory = createMockMemory({
+        status: MemoryStatus.PROPOSED,
+        metadata: { proposedEventId: "evt-prop-1" },
+      });
+      const approved = createMockMemory({
+        status: MemoryStatus.ACTIVE,
+        metadata: { proposedEventId: "evt-prop-1" },
+      });
 
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(memory));
-      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(approved));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(memory)
+      );
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(approved)
+      );
 
       await service.approveMemory(TENANT_ID, "mem-1", mockNatsPublisher);
 
-      expect(mockNatsPublisher.publishMemoryApproved).toHaveBeenCalledWith(TENANT_ID, approved);
+      expect(mockNatsPublisher.publishMemoryApproved).toHaveBeenCalledWith(
+        TENANT_ID,
+        approved,
+        { causationId: "evt-prop-1", correlationId: "memory:mem-1" }
+      );
+    });
+
+    it("passes null causation for legacy memories without proposedEventId", async () => {
+      const memory = createMockMemory({ status: MemoryStatus.PROPOSED });
+      const approved = createMockMemory({ status: MemoryStatus.ACTIVE });
+
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(memory)
+      );
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(approved)
+      );
+
+      await service.approveMemory(TENANT_ID, "mem-1", mockNatsPublisher);
+
+      expect(mockNatsPublisher.publishMemoryApproved).toHaveBeenCalledWith(
+        TENANT_ID,
+        approved,
+        { causationId: null, correlationId: "memory:mem-1" }
+      );
     });
 
     it("should not fail if NATS publish fails on approve", async () => {
       const memory = createMockMemory({ status: MemoryStatus.PROPOSED });
       const approved = createMockMemory({ status: MemoryStatus.ACTIVE });
 
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(memory));
-      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(approved));
-      (mockNatsPublisher.publishMemoryApproved as ReturnType<typeof mock>).mockImplementation(() => Promise.reject(new Error("NATS down")));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(memory)
+      );
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(approved)
+      );
+      (
+        mockNatsPublisher.publishMemoryApproved as ReturnType<typeof mock>
+      ).mockImplementation(() => Promise.reject(new Error("NATS down")));
 
-      const result = await service.approveMemory(TENANT_ID, "mem-1", mockNatsPublisher);
+      const result = await service.approveMemory(
+        TENANT_ID,
+        "mem-1",
+        mockNatsPublisher
+      );
       expect(result.status).toBe(MemoryStatus.ACTIVE);
     });
   });
@@ -195,57 +340,124 @@ describe("MemoryService", () => {
       const memory = createMockMemory({ status: MemoryStatus.PROPOSED });
       const rejected = createMockMemory({ status: MemoryStatus.REJECTED });
 
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(memory));
-      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(rejected));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(memory)
+      );
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(rejected)
+      );
 
-      const result = await service.rejectMemory(TENANT_ID, "mem-1", mockNatsPublisher);
+      const result = await service.rejectMemory(
+        TENANT_ID,
+        "mem-1",
+        mockNatsPublisher
+      );
 
       expect(result.status).toBe(MemoryStatus.REJECTED);
-      expect(mockRepository.update).toHaveBeenCalledWith(TENANT_ID, "mem-1", { status: MemoryStatus.REJECTED });
+      expect(mockRepository.update).toHaveBeenCalledWith(TENANT_ID, "mem-1", {
+        status: MemoryStatus.REJECTED,
+      });
     });
 
     it("should throw NotFoundException when memory is not in PROPOSED status", async () => {
       const memory = createMockMemory({ status: MemoryStatus.ACTIVE });
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(memory));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(memory)
+      );
 
-      await expect(service.rejectMemory(TENANT_ID, "mem-1")).rejects.toThrow(NotFoundException);
+      await expect(service.rejectMemory(TENANT_ID, "mem-1")).rejects.toThrow(
+        NotFoundException
+      );
     });
 
     it("should throw NotFoundException when memory does not exist", async () => {
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(null));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(null)
+      );
 
-      await expect(service.rejectMemory(TENANT_ID, "non-existent")).rejects.toThrow(NotFoundException);
+      await expect(
+        service.rejectMemory(TENANT_ID, "non-existent")
+      ).rejects.toThrow(NotFoundException);
     });
 
-    it("should publish memory.rejected NATS event", async () => {
-      const memory = createMockMemory({ status: MemoryStatus.PROPOSED });
-      const rejected = createMockMemory({ status: MemoryStatus.REJECTED });
+    it("links memory.rejected to the proposed event via causation", async () => {
+      const memory = createMockMemory({
+        status: MemoryStatus.PROPOSED,
+        metadata: { proposedEventId: "evt-prop-1" },
+      });
+      const rejected = createMockMemory({
+        status: MemoryStatus.REJECTED,
+        metadata: { proposedEventId: "evt-prop-1" },
+      });
 
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(memory));
-      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(rejected));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(memory)
+      );
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(rejected)
+      );
 
       await service.rejectMemory(TENANT_ID, "mem-1", mockNatsPublisher);
 
-      expect(mockNatsPublisher.publishMemoryRejected).toHaveBeenCalledWith(TENANT_ID, rejected);
+      expect(mockNatsPublisher.publishMemoryRejected).toHaveBeenCalledWith(
+        TENANT_ID,
+        rejected,
+        { causationId: "evt-prop-1", correlationId: "memory:mem-1" }
+      );
+    });
+
+    it("should publish memory.rejected NATS event with null causation for legacy memories", async () => {
+      const memory = createMockMemory({ status: MemoryStatus.PROPOSED });
+      const rejected = createMockMemory({ status: MemoryStatus.REJECTED });
+
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(memory)
+      );
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(rejected)
+      );
+
+      await service.rejectMemory(TENANT_ID, "mem-1", mockNatsPublisher);
+
+      expect(mockNatsPublisher.publishMemoryRejected).toHaveBeenCalledWith(
+        TENANT_ID,
+        rejected,
+        { causationId: null, correlationId: "memory:mem-1" }
+      );
     });
 
     it("should not fail if NATS publish fails on reject", async () => {
       const memory = createMockMemory({ status: MemoryStatus.PROPOSED });
       const rejected = createMockMemory({ status: MemoryStatus.REJECTED });
 
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(memory));
-      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(rejected));
-      (mockNatsPublisher.publishMemoryRejected as ReturnType<typeof mock>).mockImplementation(() => Promise.reject(new Error("NATS down")));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(memory)
+      );
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(rejected)
+      );
+      (
+        mockNatsPublisher.publishMemoryRejected as ReturnType<typeof mock>
+      ).mockImplementation(() => Promise.reject(new Error("NATS down")));
 
-      const result = await service.rejectMemory(TENANT_ID, "mem-1", mockNatsPublisher);
+      const result = await service.rejectMemory(
+        TENANT_ID,
+        "mem-1",
+        mockNatsPublisher
+      );
       expect(result.status).toBe(MemoryStatus.REJECTED);
     });
   });
 
   describe("merge strategies", () => {
     it("should log REPLACE strategy for PREFERENCE kind", async () => {
-      const created = createMockMemory({ kind: MemoryKind.PREFERENCE, scope: MemoryScope.USER });
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
+      const created = createMockMemory({
+        kind: MemoryKind.PREFERENCE,
+        scope: MemoryScope.USER,
+      });
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
       await service.proposeMemory(TENANT_ID, {
         scope: MemoryScope.USER,
@@ -259,7 +471,9 @@ describe("MemoryService", () => {
 
     it("should log REPLACE strategy for FACT kind", async () => {
       const created = createMockMemory({ kind: MemoryKind.FACT });
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
       await service.proposeMemory(TENANT_ID, {
         scope: MemoryScope.USER,
@@ -273,7 +487,9 @@ describe("MemoryService", () => {
 
     it("should log REPLACE strategy for NOTICE kind", async () => {
       const created = createMockMemory({ kind: MemoryKind.NOTICE });
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
       await service.proposeMemory(TENANT_ID, {
         scope: MemoryScope.USER,
@@ -287,7 +503,9 @@ describe("MemoryService", () => {
 
     it("should log KEEP_BOTH strategy for INCIDENT kind", async () => {
       const created = createMockMemory({ kind: MemoryKind.INCIDENT });
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
       await service.proposeMemory(TENANT_ID, {
         scope: MemoryScope.USER,
@@ -301,7 +519,9 @@ describe("MemoryService", () => {
 
     it("should log KEEP_BOTH strategy for PROMO kind", async () => {
       const created = createMockMemory({ kind: MemoryKind.PROMO });
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
       await service.proposeMemory(TENANT_ID, {
         scope: MemoryScope.USER,
@@ -316,44 +536,76 @@ describe("MemoryService", () => {
 
   describe("NATS events on proposeMemory", () => {
     it("should publish memory.proposed for TENANT scope", async () => {
-      const created = createMockMemory({ scope: MemoryScope.TENANT, status: MemoryStatus.PROPOSED });
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
-
-      await service.proposeMemory(TENANT_ID, {
+      const created = createMockMemory({
         scope: MemoryScope.TENANT,
-        kind: MemoryKind.FACT,
-        title: "Tenant Memory",
-        content: "content",
-      }, mockNatsPublisher);
+        status: MemoryStatus.PROPOSED,
+      });
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
-      expect(mockNatsPublisher.publishMemoryProposed).toHaveBeenCalledWith(TENANT_ID, created);
+      await service.proposeMemory(
+        TENANT_ID,
+        {
+          scope: MemoryScope.TENANT,
+          kind: MemoryKind.FACT,
+          title: "Tenant Memory",
+          content: "content",
+        },
+        mockNatsPublisher
+      );
+
+      expect(mockNatsPublisher.publishMemoryProposed).toHaveBeenCalledWith(
+        TENANT_ID,
+        created
+      );
     });
 
     it("should publish memory.proposed for non-TENANT scope", async () => {
-      const created = createMockMemory({ scope: MemoryScope.SESSION, status: MemoryStatus.ACTIVE });
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
-
-      await service.proposeMemory(TENANT_ID, {
+      const created = createMockMemory({
         scope: MemoryScope.SESSION,
-        kind: MemoryKind.FACT,
-        title: "Session Memory",
-        content: "content",
-      }, mockNatsPublisher);
+        status: MemoryStatus.ACTIVE,
+      });
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
-      expect(mockNatsPublisher.publishMemoryProposed).toHaveBeenCalledWith(TENANT_ID, created);
+      await service.proposeMemory(
+        TENANT_ID,
+        {
+          scope: MemoryScope.SESSION,
+          kind: MemoryKind.FACT,
+          title: "Session Memory",
+          content: "content",
+        },
+        mockNatsPublisher
+      );
+
+      expect(mockNatsPublisher.publishMemoryProposed).toHaveBeenCalledWith(
+        TENANT_ID,
+        created
+      );
     });
 
     it("should not fail if NATS publish fails on propose", async () => {
       const created = createMockMemory();
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
-      (mockNatsPublisher.publishMemoryProposed as ReturnType<typeof mock>).mockImplementation(() => Promise.reject(new Error("NATS down")));
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
+      (
+        mockNatsPublisher.publishMemoryProposed as ReturnType<typeof mock>
+      ).mockImplementation(() => Promise.reject(new Error("NATS down")));
 
-      const result = await service.proposeMemory(TENANT_ID, {
-        scope: MemoryScope.SESSION,
-        kind: MemoryKind.FACT,
-        title: "Test",
-        content: "content",
-      }, mockNatsPublisher);
+      const result = await service.proposeMemory(
+        TENANT_ID,
+        {
+          scope: MemoryScope.SESSION,
+          kind: MemoryKind.FACT,
+          title: "Test",
+          content: "content",
+        },
+        mockNatsPublisher
+      );
 
       expect(result.id).toBe("mem-1");
     });
@@ -372,17 +624,27 @@ describe("MemoryService", () => {
         metadata: { revisionCount: 3 },
       });
 
-      (mockRepository.findByTopicKey as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(existing));
-      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(updated));
-      (mockNatsPublisher.publishMemoryProposed as ReturnType<typeof mock>).mockImplementation(() => Promise.reject(new Error("NATS down")));
+      (
+        mockRepository.findByTopicKey as ReturnType<typeof mock>
+      ).mockImplementation(() => Promise.resolve(existing));
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(updated)
+      );
+      (
+        mockNatsPublisher.publishMemoryProposed as ReturnType<typeof mock>
+      ).mockImplementation(() => Promise.reject(new Error("NATS down")));
 
-      const result = await service.proposeMemory(TENANT_ID, {
-        scope: MemoryScope.USER,
-        kind: MemoryKind.PREFERENCE,
-        title: "Updated Preference",
-        content: "updated content",
-        topicKey: "prefs",
-      }, mockNatsPublisher);
+      const result = await service.proposeMemory(
+        TENANT_ID,
+        {
+          scope: MemoryScope.USER,
+          kind: MemoryKind.PREFERENCE,
+          title: "Updated Preference",
+          content: "updated content",
+          topicKey: "prefs",
+        },
+        mockNatsPublisher
+      );
 
       expect(result.id).toBe("mem-1");
       expect(mockRepository.update).toHaveBeenCalled();
@@ -390,7 +652,9 @@ describe("MemoryService", () => {
 
     it("should not publish event when natsPublisher is undefined", async () => {
       const created = createMockMemory();
-      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(created));
+      (mockRepository.create as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(created)
+      );
 
       await service.proposeMemory(TENANT_ID, {
         scope: MemoryScope.SESSION,
@@ -406,7 +670,9 @@ describe("MemoryService", () => {
   describe("getMemory", () => {
     it("should return memory when found", async () => {
       const memory = createMockMemory();
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(memory));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(memory)
+      );
 
       const result = await service.getMemory(TENANT_ID, "mem-1");
 
@@ -415,19 +681,30 @@ describe("MemoryService", () => {
     });
 
     it("should throw NotFoundException when memory not found", async () => {
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(null));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(null)
+      );
 
-      await expect(service.getMemory(TENANT_ID, "non-existent")).rejects.toThrow(NotFoundException);
+      await expect(
+        service.getMemory(TENANT_ID, "non-existent")
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
   describe("updateMemory", () => {
     it("should update memory fields", async () => {
       const existing = createMockMemory();
-      const updated = createMockMemory({ title: "Updated Title", content: "Updated Content" });
+      const updated = createMockMemory({
+        title: "Updated Title",
+        content: "Updated Content",
+      });
 
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(existing));
-      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(updated));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(existing)
+      );
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(updated)
+      );
 
       const result = await service.updateMemory(TENANT_ID, "mem-1", {
         title: "Updated Title",
@@ -444,23 +721,35 @@ describe("MemoryService", () => {
     });
 
     it("should throw NotFoundException when memory not found", async () => {
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(null));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(null)
+      );
 
-      await expect(service.updateMemory(TENANT_ID, "non-existent", { title: "New" })).rejects.toThrow(NotFoundException);
+      await expect(
+        service.updateMemory(TENANT_ID, "non-existent", { title: "New" })
+      ).rejects.toThrow(NotFoundException);
     });
 
     it("should throw NotFoundException when update returns null", async () => {
       const existing = createMockMemory();
-      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(existing));
-      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(null));
+      (mockRepository.findById as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(existing)
+      );
+      (mockRepository.update as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(null)
+      );
 
-      await expect(service.updateMemory(TENANT_ID, "mem-1", { title: "New" })).rejects.toThrow(NotFoundException);
+      await expect(
+        service.updateMemory(TENANT_ID, "mem-1", { title: "New" })
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
   describe("deleteMemory", () => {
     it("should delete memory successfully", async () => {
-      (mockRepository.delete as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(true));
+      (mockRepository.delete as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(true)
+      );
 
       await service.deleteMemory(TENANT_ID, "mem-1");
 
@@ -468,17 +757,21 @@ describe("MemoryService", () => {
     });
 
     it("should throw NotFoundException when memory not found", async () => {
-      (mockRepository.delete as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(false));
+      (mockRepository.delete as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve(false)
+      );
 
-      await expect(service.deleteMemory(TENANT_ID, "non-existent")).rejects.toThrow(NotFoundException);
+      await expect(
+        service.deleteMemory(TENANT_ID, "non-existent")
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
   describe("getMemories", () => {
     it("should return memories with default filters", async () => {
       const memories = [createMockMemory(), createMockMemory({ id: "mem-2" })];
-      (mockRepository.findAll as ReturnType<typeof mock>).mockImplementation(() =>
-        Promise.resolve({ items: memories, total: 2 }),
+      (mockRepository.findAll as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve({ items: memories, total: 2 })
       );
 
       const result = await service.getMemories(TENANT_ID, {} as any);
@@ -488,8 +781,8 @@ describe("MemoryService", () => {
     });
 
     it("should pass all query filters to repository", async () => {
-      (mockRepository.findAll as ReturnType<typeof mock>).mockImplementation(() =>
-        Promise.resolve({ items: [], total: 0 }),
+      (mockRepository.findAll as ReturnType<typeof mock>).mockImplementation(
+        () => Promise.resolve({ items: [], total: 0 })
       );
 
       await service.getMemories(TENANT_ID, {
@@ -525,16 +818,26 @@ describe("MemoryService", () => {
         createMockMemory({ id: "mem-1" }),
         createMockMemory({ id: "mem-2" }),
       ];
-      (mockRepository.findTimeline as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve(memories));
+      (
+        mockRepository.findTimeline as ReturnType<typeof mock>
+      ).mockImplementation(() => Promise.resolve(memories));
 
-      const result = await service.getTimeline(TENANT_ID, { sessionId: "session-1", limit: 10 });
+      const result = await service.getTimeline(TENANT_ID, {
+        sessionId: "session-1",
+        limit: 10,
+      });
 
       expect(result).toHaveLength(2);
-      expect(mockRepository.findTimeline).toHaveBeenCalledWith(TENANT_ID, { sessionId: "session-1", limit: 10 });
+      expect(mockRepository.findTimeline).toHaveBeenCalledWith(TENANT_ID, {
+        sessionId: "session-1",
+        limit: 10,
+      });
     });
 
     it("should pass empty filters when none provided", async () => {
-      (mockRepository.findTimeline as ReturnType<typeof mock>).mockImplementation(() => Promise.resolve([]));
+      (
+        mockRepository.findTimeline as ReturnType<typeof mock>
+      ).mockImplementation(() => Promise.resolve([]));
 
       await service.getTimeline(TENANT_ID, {});
 

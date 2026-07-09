@@ -1,20 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
-  connect,
-  RetentionPolicy,
-  StorageType,
-  headers as natsHeaders,
-  type JetStreamClient,
-  type JetStreamManager,
-  type NatsConnection,
-  type PubAck,
-} from "nats";
-import {
+  type FactoryProvider,
   Inject,
   Injectable,
   OnModuleDestroy,
   ServiceUnavailableException,
-  type FactoryProvider,
 } from "@nestjs/common";
 import {
   activeOrRandomTraceId,
@@ -23,7 +13,11 @@ import {
   PinoLoggerService,
   startNatsProducerSpan,
 } from "@yoizen/observability";
+import type { EventData, EventEnvelope, EventTransport } from "@yoizen/shared";
 import {
+  buildPlatformSubject,
+  buildTenantStreamConfig,
+  checkJetStreamCapacity,
   DepthExceededError,
   MAX_DEPTH_BY_CATEGORY,
   PLATFORM_ACCOUNT_ID,
@@ -31,21 +25,25 @@ import {
   PLATFORM_DOMAIN,
   PLATFORM_PRODUCER,
   PLATFORM_PROVIDER,
-  buildPlatformSubject,
+  type TenantTier,
 } from "@yoizen/shared";
-import type { EventData, EventEnvelope, EventTransport } from "@yoizen/shared";
+import {
+  connect,
+  type JetStreamClient,
+  type JetStreamManager,
+  type NatsConnection,
+  headers as natsHeaders,
+  type PubAck,
+  RetentionPolicy,
+  StorageType,
+} from "nats";
+import { agentMemoryServiceConfig } from "../config";
+import type { IMemory } from "../modules/memory/domain/memory.entity";
+import type { INatsPublisher } from "../modules/memory/services/memory.service";
 import {
   calculateChecksum,
   serializeCanonicalPayload,
 } from "../utils/payload-utils";
-import {
-  type TenantTier,
-  buildTenantStreamConfig,
-  checkJetStreamCapacity,
-} from "@yoizen/shared";
-import { agentMemoryServiceConfig } from "../config";
-import type { IMemory } from "../modules/memory/domain/memory.entity";
-import type { INatsPublisher } from "../modules/memory/services/memory.service";
 
 const DEFAULT_TRANSPORT: EventTransport = {
   method: "agent",
@@ -64,14 +62,10 @@ const EVENT_TYPES = {
 export const AGENT_MEMORY_SUBJECT_PREFIX =
   "evt.{tenant}.agent-memory-service.agent-memory.platform.internal";
 
-export const AGENT_MEMORY_PROPOSED =
-  `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_proposed.v1`;
-export const AGENT_MEMORY_PUBLISHED =
-  `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_published.v1`;
-export const AGENT_MEMORY_REJECTED =
-  `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_rejected.v1`;
-export const AGENT_MEMORY_EXPIRED =
-  `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_expired.v1`;
+export const AGENT_MEMORY_PROPOSED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_proposed.v1`;
+export const AGENT_MEMORY_PUBLISHED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_published.v1`;
+export const AGENT_MEMORY_REJECTED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_rejected.v1`;
+export const AGENT_MEMORY_EXPIRED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_expired.v1`;
 
 interface IBuildEventOptions {
   eventType: string;
@@ -97,7 +91,7 @@ class LazyNatsConnection {
   constructor(
     private readonly servers: string,
     private readonly timeoutMs = NATS_CONNECT_TIMEOUT_MS,
-    private readonly maxReconnectAttempts = NATS_MAX_RECONNECT_ATTEMPTS,
+    private readonly maxReconnectAttempts = NATS_MAX_RECONNECT_ATTEMPTS
   ) {}
 
   async getConnection(): Promise<NatsConnection> {
@@ -128,14 +122,18 @@ class LazyNatsConnection {
   }
 
   async jetstreamManager(): Promise<JetStreamManager> {
-    if (this.jsm) return this.jsm;
+    if (this.jsm) {
+      return this.jsm;
+    }
     const nc = await this.getConnection();
     this.jsm = await nc.jetstreamManager();
     return this.jsm;
   }
 
   async jetstream(): Promise<JetStreamClient> {
-    if (this.jsc) return this.jsc;
+    if (this.jsc) {
+      return this.jsc;
+    }
     const nc = await this.getConnection();
     await this.jetstreamManager();
     this.jsc = nc.jetstream();
@@ -148,7 +146,9 @@ class LazyNatsConnection {
     this.connectionPromise = undefined;
     this.jsm = undefined;
     this.jsc = undefined;
-    if (nc) await nc.close();
+    if (nc) {
+      await nc.close();
+    }
   }
 }
 
@@ -163,7 +163,7 @@ export const lazyNatsProvider: FactoryProvider<LazyNatsConnection> = {
 
 function buildEventData(
   payload: Record<string, unknown>,
-  occurredAt: string,
+  occurredAt: string
 ): EventData {
   const serializedPayload = serializeCanonicalPayload(payload);
 
@@ -179,7 +179,7 @@ function buildEventData(
 
 function buildEventEnvelope(
   tenantId: string,
-  options: IBuildEventOptions,
+  options: IBuildEventOptions
 ): EventEnvelope {
   const depth = options.depth ?? 0;
   const maxDepth = MAX_DEPTH_BY_CATEGORY.internal_service;
@@ -192,7 +192,7 @@ function buildEventEnvelope(
         newDepth: depth,
         maxDepth,
         category: "internal_service",
-      },
+      }
     );
   }
 
@@ -253,7 +253,7 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
       `No tier registered for tenant '${tenantId}'; ` +
         `using fallback tier '${tier}'. ` +
         "Stream should be pre-provisioned via " +
-        "TenantProvisioningService.",
+        "TenantProvisioningService."
     );
 
     const config = buildTenantStreamConfig(tenantId, tier);
@@ -270,19 +270,19 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
     try {
       await jsm.streams.info(config.name);
       this.logger.log(
-        `Stream '${config.name}' already exists for tenant '${tenantId}'`,
+        `Stream '${config.name}' already exists for tenant '${tenantId}'`
       );
     } catch {
       this.logger.log(
         `Stream '${config.name}' not found, creating ` +
-          `with subjects: ${JSON.stringify(config.subjects)}`,
+          `with subjects: ${JSON.stringify(config.subjects)}`
       );
 
       const info = await jsm.getAccountInfo();
       const check = checkJetStreamCapacity(
         config.limits.max_bytes,
         info.storage,
-        info.limits.max_storage,
+        info.limits.max_storage
       );
       if (!check.ok) {
         this.logger.error(check.message);
@@ -301,14 +301,12 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
           storage: StorageType.File,
         });
         this.logger.log(
-          `Auto-created stream '${config.name}' for tenant '${tenantId}'`,
+          `Auto-created stream '${config.name}' for tenant '${tenantId}'`
         );
       } catch (createErr: unknown) {
         const msg =
           createErr instanceof Error ? createErr.message : String(createErr);
-        this.logger.error(
-          `Failed to create stream '${config.name}': ${msg}`,
-        );
+        this.logger.error(`Failed to create stream '${config.name}': ${msg}`);
         throw createErr;
       }
     }
@@ -319,7 +317,7 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
   private async publishEvent(
     tenantId: string,
     subjectTemplate: string,
-    event: EventEnvelope,
+    event: EventEnvelope
   ): Promise<PubAck | null> {
     const subject = buildPlatformSubject(subjectTemplate, tenantId);
 
@@ -330,13 +328,15 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
       const hdrs = natsHeaders();
       hdrs.set("Nats-Msg-Id", event.idempotencykey);
       hdrs.set("X-Correlation-Id", event.correlation_id);
-      if (event.causation_id) hdrs.set("X-Causation-Id", event.causation_id);
+      if (event.causation_id) {
+        hdrs.set("X-Causation-Id", event.causation_id);
+      }
       injectTraceContext(hdrs);
 
       const { span } = startNatsProducerSpan(
         "agent-memory-service",
         subject,
-        hdrs,
+        hdrs
       );
 
       try {
@@ -349,7 +349,7 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
           event,
           "agent-memory.publish.ok",
           `Published event to ${subject}`,
-          "debug",
+          "debug"
         );
         return ack;
       } finally {
@@ -362,13 +362,16 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
         event,
         "agent-memory.publish.error",
         `Failed to publish event to ${subject}: ${msg}`,
-        "error",
+        "error"
       );
       throw error;
     }
   }
 
-  async publishMemoryProposed(tenantId: string, memory: IMemory): Promise<void> {
+  async publishMemoryProposed(
+    tenantId: string,
+    memory: IMemory
+  ): Promise<string> {
     const proposedAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
       correlationId: `memory:${memory.id}`,
@@ -388,14 +391,22 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
     });
 
     await this.publishEvent(tenantId, AGENT_MEMORY_PROPOSED, event);
+    // Returned so the service layer can persist it as the causation
+    // anchor for memory_published/memory_rejected (envelope.md §6).
+    return event.id;
   }
 
-  async publishMemoryApproved(tenantId: string, memory: IMemory): Promise<void> {
+  async publishMemoryApproved(
+    tenantId: string,
+    memory: IMemory,
+    causal?: ICausalContext
+  ): Promise<void> {
     const publishedAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
-      correlationId: `memory:${memory.id}`,
-      causationId: null,
-      depth: 0,
+      correlationId: causal?.correlationId ?? `memory:${memory.id}`,
+      causationId: causal?.causationId ?? null,
+      // Legacy memories without a proposed-event anchor stay roots.
+      depth: causal?.causationId ? (causal.incomingDepth ?? 0) + 1 : 0,
       eventType: EVENT_TYPES.MEMORY_PUBLISHED,
       occurredAt: publishedAt,
       payload: {
@@ -411,12 +422,16 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
     await this.publishEvent(tenantId, AGENT_MEMORY_PUBLISHED, event);
   }
 
-  async publishMemoryRejected(tenantId: string, memory: IMemory): Promise<void> {
+  async publishMemoryRejected(
+    tenantId: string,
+    memory: IMemory,
+    causal?: ICausalContext
+  ): Promise<void> {
     const rejectedAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
-      correlationId: `memory:${memory.id}`,
-      causationId: null,
-      depth: 0,
+      correlationId: causal?.correlationId ?? `memory:${memory.id}`,
+      causationId: causal?.causationId ?? null,
+      depth: causal?.causationId ? (causal.incomingDepth ?? 0) + 1 : 0,
       eventType: EVENT_TYPES.MEMORY_REJECTED,
       occurredAt: rejectedAt,
       payload: {
@@ -435,7 +450,7 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
   async publishMemoryExpired(
     tenantId: string,
     memoryId: string,
-    causal?: ICausalContext,
+    causal?: ICausalContext
   ): Promise<PubAck | null> {
     const expiredAt = new Date().toISOString();
     const event = buildEventEnvelope(tenantId, {
