@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 const executeAndWaitMock = mock(() =>
   Promise.resolve({
@@ -11,7 +11,7 @@ const executeAndWaitMock = mock(() =>
     completedAt: new Date().toISOString(),
     agentId: "agent-uuid-1",
     result: { reply: "hello", tool_calls: [] },
-  }),
+  })
 );
 
 /**
@@ -22,14 +22,12 @@ const executeAndWaitMock = mock(() =>
  * assert the stable `runId:activityId` executionId is forwarded —
  * post-mortem §P1.3 fix 2.
  */
-let mockActivityContext:
-  | {
-      info: {
-        workflowExecution: { runId: string; workflowId: string };
-        activityId: string;
-      };
-    }
-  | null = null;
+let mockActivityContext: {
+  info: {
+    workflowExecution: { runId: string; workflowId: string };
+    activityId: string;
+  };
+} | null = null;
 
 mock.module("@temporalio/activity", () => ({
   ApplicationFailure: {
@@ -97,14 +95,23 @@ mock.module("@yoizen/shared", async () => {
         return Promise.resolve();
       }
       canProceed() {
-        return Promise.resolve({ action: "allow", status: "closed", reason: "" });
+        return Promise.resolve({
+          action: "allow",
+          status: "closed",
+          reason: "",
+        });
       }
       recordSuccess() {}
       recordFailure() {}
     },
     YoizenClawExecutionClient: FakeExecutionClient,
-    computeBreakerKey: ({ tenantId, agentId }: { tenantId: string; agentId: string }) =>
-      `${tenantId}:${agentId}`,
+    computeBreakerKey: ({
+      tenantId,
+      agentId,
+    }: {
+      tenantId: string;
+      agentId: string;
+    }) => `${tenantId}:${agentId}`,
   };
 });
 
@@ -149,7 +156,7 @@ describe("executeAgentCall", () => {
   it("waits for a durable YoizenClaw execution result", async () => {
     const result = await executeAgentCall(
       { agentId: "agent-uuid-1", message: "Hi" },
-      "tenant-a",
+      "tenant-a"
     );
 
     expect(result.status).toBe(200);
@@ -160,7 +167,7 @@ describe("executeAgentCall", () => {
       "tenant-a",
       { agentId: "agent-uuid-1", message: "Hi" },
       900000,
-      { requestedBy: undefined, correlationId: undefined },
+      { requestedBy: undefined, correlationId: undefined }
     );
   });
 
@@ -172,7 +179,7 @@ describe("executeAgentCall", () => {
         conversationId: "conv-1",
         userId: "user-42",
       },
-      "t1",
+      "t1"
     );
 
     expect(executeAndWaitMock).toHaveBeenCalledWith(
@@ -184,7 +191,7 @@ describe("executeAgentCall", () => {
         userId: "user-42",
       },
       900000,
-      { requestedBy: "user-42", correlationId: "conv-1" },
+      { requestedBy: "user-42", correlationId: "conv-1" }
     );
   });
 
@@ -208,7 +215,7 @@ describe("executeAgentCall", () => {
 
     await executeAgentCall(
       { agentId: "agent-uuid-1", message: "Hi" },
-      "tenant-a",
+      "tenant-a"
     );
 
     expect(executeAndWaitMock).toHaveBeenCalledWith(
@@ -219,7 +226,7 @@ describe("executeAgentCall", () => {
         requestedBy: undefined,
         correlationId: undefined,
         executionId: "run-abc-123:act-7",
-      },
+      }
     );
   });
 
@@ -253,5 +260,61 @@ describe("executeAgentCall", () => {
       executionId?: string;
     };
     expect(opts.executionId).toBeUndefined();
+  });
+
+  /**
+   * Correlation-chain fix (DOCS/messaging/envelope.md §6): when the
+   * workflow carries the triggering event's causal context, the agent
+   * execution must inherit its correlation_id end-to-end and link via
+   * causation_id + depth+1 — never fall back to the static
+   * conversationId literal.
+   */
+  it("inherits the upstream causal context (correlation, causation, depth+1)", async () => {
+    await executeAgentCall(
+      {
+        agentId: "a1",
+        message: "m",
+        conversationId: "conv-static",
+        userId: "user-42",
+      },
+      "t1",
+      undefined,
+      undefined,
+      { causation_id: "recv-evt-1", correlation_id: "corr-root-1", depth: 1 }
+    );
+
+    expect(executeAndWaitMock).toHaveBeenCalledWith(
+      "t1",
+      {
+        agentId: "a1",
+        message: "m",
+        conversationId: "conv-static",
+        userId: "user-42",
+      },
+      900000,
+      {
+        requestedBy: "user-42",
+        correlationId: "corr-root-1",
+        causationId: "recv-evt-1",
+        depth: 2,
+      }
+    );
+  });
+
+  it("falls back to conversationId as correlation when no causal context exists (chain root)", async () => {
+    await executeAgentCall(
+      { agentId: "a1", message: "m", conversationId: "conv-1" },
+      "t1",
+      undefined,
+      undefined,
+      undefined
+    );
+
+    expect(executeAndWaitMock).toHaveBeenCalledWith(
+      "t1",
+      { agentId: "a1", message: "m", conversationId: "conv-1" },
+      900000,
+      { requestedBy: undefined, correlationId: "conv-1" }
+    );
   });
 });

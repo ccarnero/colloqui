@@ -36,12 +36,15 @@ interface IOrchestratorActivities {
 }
 
 interface IExecutionPublisherActivities {
-  publishExecutionCompletedEvent(
-    executionId: string,
-    status: string,
-    tenantId?: string,
-    workflowName?: string
-  ): Promise<void>;
+  publishExecutionCompletedEvent(args: {
+    executionId: string;
+    status: string;
+    tenantId: string;
+    workflowName?: string;
+    correlationId?: string;
+    causationId?: string | null;
+    depth?: number;
+  }): Promise<void>;
 }
 
 interface IHttpActivities {
@@ -82,7 +85,8 @@ interface IAgentHttpActivities {
     args: AgentCallArgs,
     tenantId: string,
     executionId?: string,
-    agentTimeoutMs?: number
+    agentTimeoutMs?: number,
+    causal?: EventCausalContext
   ): Promise<{
     status: number;
     data: unknown;
@@ -326,7 +330,8 @@ async function executeAction(
         { ...resolvedArgs, variables: context.variables },
         tenant,
         context.executionId,
-        context.workflow.agentTimeoutMs
+        context.workflow.agentTimeoutMs,
+        context.causal
       );
     }
 
@@ -449,12 +454,17 @@ export async function runWorkflow(
   } finally {
     if (executionId) {
       try {
-        await publisher.publishExecutionCompletedEvent(
+        await publisher.publishExecutionCompletedEvent({
           executionId,
           status,
-          workflow.tenant,
-          workflow.name
-        );
+          tenantId: workflow.tenant,
+          workflowName: workflow.name,
+          ...(workflow.causal && {
+            correlationId: workflow.causal.correlation_id,
+            causationId: workflow.causal.causation_id,
+            depth: workflow.causal.depth + 1,
+          }),
+        });
       } catch (_) {
         /* best-effort: don't mask the original outcome */
       }

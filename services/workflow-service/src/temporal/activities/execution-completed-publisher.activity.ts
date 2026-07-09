@@ -1,21 +1,17 @@
 import {
-  connect,
-  headers as natsHeaders,
-  type NatsConnection,
-} from "nats";
-import {
-  TENANT_HEADER,
-  computeIdempotencyKey,
-  computePayloadChecksum,
-  canonicalByteLength,
-  type EventEnvelope,
-  type JsonValue,
-} from "@yoizen/shared";
-import {
   activeOrRandomTraceId,
   injectTraceContext,
   startNatsProducerSpan,
 } from "@yoizen/observability";
+import {
+  canonicalByteLength,
+  computeIdempotencyKey,
+  computePayloadChecksum,
+  type EventEnvelope,
+  type JsonValue,
+  TENANT_HEADER,
+} from "@yoizen/shared";
+import { connect, type NatsConnection, headers as natsHeaders } from "nats";
 import { workflowServiceConfig } from "../../config";
 
 /**
@@ -27,7 +23,9 @@ let nc: NatsConnection | null = null;
 const encoder = new TextEncoder();
 
 async function getConnection(): Promise<NatsConnection> {
-  if (nc && !nc.isClosed()) return nc;
+  if (nc && !nc.isClosed()) {
+    return nc;
+  }
   nc = await connect({
     servers: workflowServiceConfig.natsUrl,
     name: "workflow-service-execution-publisher",
@@ -56,6 +54,8 @@ export interface IPublishExecutionCompletedArgs {
   workflowName?: string;
   correlationId?: string;
   causationId?: string | null;
+  /** Causal depth for the emitted envelope (triggering event's depth + 1). */
+  depth?: number;
 }
 
 /**
@@ -84,25 +84,25 @@ export async function publishExecutionCompletedEvent(
   executionId: string,
   status: string,
   tenantId?: string,
-  workflowName?: string,
+  workflowName?: string
 ): Promise<void>;
 export async function publishExecutionCompletedEvent(
-  args: IPublishExecutionCompletedArgs,
+  args: IPublishExecutionCompletedArgs
 ): Promise<void>;
 export async function publishExecutionCompletedEvent(
   executionIdOrArgs: string | IPublishExecutionCompletedArgs,
   status?: string,
   tenantId?: string,
-  workflowName?: string,
+  workflowName?: string
 ): Promise<void> {
   const args: IPublishExecutionCompletedArgs =
     typeof executionIdOrArgs === "string"
-      ? {
+      ? ({
           executionId: executionIdOrArgs,
           status: status ?? "UNKNOWN",
           ...(tenantId !== undefined && { tenantId }),
           ...(workflowName !== undefined && { workflowName }),
-        } as IPublishExecutionCompletedArgs
+        } as IPublishExecutionCompletedArgs)
       : executionIdOrArgs;
 
   if (!args.tenantId) {
@@ -114,7 +114,7 @@ export async function publishExecutionCompletedEvent(
      */
     console.warn(
       `[publishExecutionCompletedEvent] no tenantId for execution=${args.executionId}; ` +
-        `skipping event emit`,
+        `skipping event emit`
     );
     return;
   }
@@ -154,7 +154,11 @@ export async function publishExecutionCompletedEvent(
     provider: "native",
     accountid: "system",
     idempotencykey,
-    transport: { method: "stream", protocol: "internal", depth: 0 },
+    transport: {
+      method: "stream",
+      protocol: "internal",
+      depth: args.depth ?? 0,
+    },
     data: {
       received_at: now,
       payload_inline: true,
@@ -169,14 +173,12 @@ export async function publishExecutionCompletedEvent(
   hdrs.set(TENANT_HEADER, args.tenantId);
   hdrs.set("Nats-Msg-Id", idempotencykey);
   hdrs.set("X-Correlation-Id", correlationId);
-  if (causationId) hdrs.set("X-Causation-Id", causationId);
+  if (causationId) {
+    hdrs.set("X-Causation-Id", causationId);
+  }
   injectTraceContext(hdrs);
 
-  const { span } = startNatsProducerSpan(
-    "workflow-service",
-    subject,
-    hdrs,
-  );
+  const { span } = startNatsProducerSpan("workflow-service", subject, hdrs);
   try {
     conn.publish(subject, encoder.encode(JSON.stringify(envelope)), {
       headers: hdrs,

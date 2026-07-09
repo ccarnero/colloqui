@@ -283,6 +283,55 @@ describe("runWorkflow (temporal/workflows)", () => {
     });
   });
 
+  it("threads workflow.causal into agentCall activity", async () => {
+    executeAgentCall.mockClear();
+    await runWorkflow({
+      ...base,
+      causal: {
+        causation_id: "evt-root",
+        correlation_id: "conv-1",
+        depth: 0,
+      },
+      actions: [
+        {
+          activity: "agentCall",
+          name: "yc",
+          args: {
+            agentId: "550e8400-e29b-41d4-a716-446655440000",
+            message: "Hello",
+          },
+        },
+      ],
+    });
+    const call = executeAgentCall.mock.calls[0];
+    /* args, tenantId, executionId, agentTimeoutMs, causal */
+    expect(call).toHaveLength(5);
+    expect(call[4]).toEqual({
+      causation_id: "evt-root",
+      correlation_id: "conv-1",
+      depth: 0,
+    });
+  });
+
+  it("passes undefined causal to agentCall when workflow is a causal root", async () => {
+    executeAgentCall.mockClear();
+    await runWorkflow({
+      ...base,
+      actions: [
+        {
+          activity: "agentCall",
+          name: "yc",
+          args: {
+            agentId: "550e8400-e29b-41d4-a716-446655440000",
+            message: "Hello",
+          },
+        },
+      ],
+    });
+    const call = executeAgentCall.mock.calls[0];
+    expect(call[4]).toBeUndefined();
+  });
+
   it("passes undefined causal to channelSend when workflow is a causal root", async () => {
     executeChannelSend.mockClear();
     await runWorkflow({
@@ -334,12 +383,43 @@ describe("runWorkflow (temporal/workflows)", () => {
       },
       "exec-123"
     );
-    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith(
-      "exec-123",
-      "COMPLETED",
-      "tenant-1",
-      "wf"
+    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith({
+      executionId: "exec-123",
+      status: "COMPLETED",
+      tenantId: "tenant-1",
+      workflowName: "wf",
+    });
+  });
+
+  it("forwards workflow.causal to publishExecutionCompletedEvent", async () => {
+    publishExecutionCompletedEvent.mockClear();
+    await runWorkflow(
+      {
+        ...base,
+        causal: {
+          causation_id: "evt-root",
+          correlation_id: "conv-1",
+          depth: 1,
+        },
+        actions: [
+          {
+            activity: "jsFunction",
+            name: "step",
+            args: { code: "return 1" },
+          },
+        ],
+      },
+      "exec-caused"
     );
+    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith({
+      executionId: "exec-caused",
+      status: "COMPLETED",
+      tenantId: "tenant-1",
+      workflowName: "wf",
+      correlationId: "conv-1",
+      causationId: "evt-root",
+      depth: 2,
+    });
   });
 
   it("calls publishExecutionCompletedEvent with FAILED on error", async () => {
@@ -362,12 +442,12 @@ describe("runWorkflow (temporal/workflows)", () => {
         "exec-456"
       )
     ).rejects.toThrow("boom");
-    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith(
-      "exec-456",
-      "FAILED",
-      "tenant-1",
-      "wf"
-    );
+    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith({
+      executionId: "exec-456",
+      status: "FAILED",
+      tenantId: "tenant-1",
+      workflowName: "wf",
+    });
   });
 
   it("skips publish when executionId is not provided", async () => {

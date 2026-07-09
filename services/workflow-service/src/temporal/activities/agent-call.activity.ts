@@ -1,24 +1,25 @@
-import { connect, type JetStreamClient, type NatsConnection } from "nats";
 import { ApplicationFailure, Context } from "@temporalio/activity";
+import { createRedisClient, type RedisLike } from "@yoizen/database";
 import {
-  DistributedCircuitBreaker,
-  YoizenClawExecutionClient,
-  computeBreakerKey,
+  createCircuitBreakerMetrics,
+  PinoLoggerService,
+} from "@yoizen/observability";
+import {
   type AgentChatRequest,
+  computeBreakerKey,
+  DistributedCircuitBreaker,
+  type EventCausalContext,
   type HttpExecutionResult,
   type IBreakerConfig,
   type ICircuitBreakerRedis,
+  YoizenClawExecutionClient,
 } from "@yoizen/shared";
-import { createRedisClient, type RedisLike } from "@yoizen/database";
-import {
-  PinoLoggerService,
-  createCircuitBreakerMetrics,
-} from "@yoizen/observability";
+import { connect, type JetStreamClient, type NatsConnection } from "nats";
 import { workflowServiceConfig } from "../../config";
 
 const AGENT_CALL_TIMEOUT_MS = Number.parseInt(
   process.env.AGENT_CALL_TIMEOUT_MS ?? String(15 * 60 * 1000),
-  10,
+  10
 );
 
 /**
@@ -48,12 +49,14 @@ if (!workflowServiceConfig.redisHostExplicit) {
     `REDIS_HOST is not set — defaulting to ${workflowServiceConfig.redisHost}:${workflowServiceConfig.redisPort}. ` +
       "Outside local development this almost always means the workflow-worker " +
       "deployment is missing REDIS_HOST/REDIS_PORT and every agentCall will " +
-      "fail with MaxRetriesPerRequestError.",
+      "fail with MaxRetriesPerRequestError."
   );
 }
 
 function getRedis(): RedisLike {
-  if (redisInstance) return redisInstance;
+  if (redisInstance) {
+    return redisInstance;
+  }
   redisInstance = createRedisClient({
     defaultHost: workflowServiceConfig.redisHost,
     defaultPort: workflowServiceConfig.redisPort,
@@ -63,7 +66,9 @@ function getRedis(): RedisLike {
 }
 
 async function getNatsConnection(): Promise<NatsConnection> {
-  if (ncInstance && !ncInstance.isClosed()) return ncInstance;
+  if (ncInstance && !ncInstance.isClosed()) {
+    return ncInstance;
+  }
   ncInstance = await connect({
     servers: workflowServiceConfig.natsUrl,
     name: "workflow-service",
@@ -72,14 +77,18 @@ async function getNatsConnection(): Promise<NatsConnection> {
 }
 
 async function getJetStream(): Promise<JetStreamClient> {
-  if (jsInstance) return jsInstance;
+  if (jsInstance) {
+    return jsInstance;
+  }
   const nc = await getNatsConnection();
   jsInstance = nc.jetstream();
   return jsInstance;
 }
 
 async function getExecutionClient(): Promise<YoizenClawExecutionClient> {
-  if (executionClient) return executionClient;
+  if (executionClient) {
+    return executionClient;
+  }
   executionClient = new YoizenClawExecutionClient({
     nc: await getNatsConnection(),
     js: await getJetStream(),
@@ -112,16 +121,22 @@ const AGENT_BREAKER_CONFIG: IBreakerConfig = {
 };
 
 function getAgentBreaker(): DistributedCircuitBreaker {
-  if (agentBreakerInstance) return agentBreakerInstance;
+  if (agentBreakerInstance) {
+    return agentBreakerInstance;
+  }
   agentBreakerInstance = new DistributedCircuitBreaker(
     adaptIoredis(getRedis()),
     AGENT_BREAKER_CONFIG,
     logger,
-    createCircuitBreakerMetrics("workflow-service"),
+    createCircuitBreakerMetrics("workflow-service")
   );
-  void agentBreakerInstance.scriptLoad().catch((err) =>
-    logger.warn(`agent breaker scriptLoad failed (will retry on use): ${String(err)}`),
-  );
+  void agentBreakerInstance
+    .scriptLoad()
+    .catch((err) =>
+      logger.warn(
+        `agent breaker scriptLoad failed (will retry on use): ${String(err)}`
+      )
+    );
   return agentBreakerInstance;
 }
 
@@ -137,8 +152,12 @@ function getAgentBreaker(): DistributedCircuitBreaker {
  * opaque ioredis stack trace.
  */
 function isRedisUnavailableError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  if (err.name === "MaxRetriesPerRequestError") return true;
+  if (!(err instanceof Error)) {
+    return false;
+  }
+  if (err.name === "MaxRetriesPerRequestError") {
+    return true;
+  }
   const msg = err.message ?? "";
   return (
     msg.includes("ECONNREFUSED") ||
@@ -153,6 +172,7 @@ export async function executeAgentCall(
   tenantId: string,
   executionId?: string,
   agentTimeoutMs?: number,
+  causal?: EventCausalContext
 ): Promise<HttpExecutionResult> {
   if (executionId) {
     logger.log(`agentCall executionId=${executionId} tenant=${tenantId}`);
@@ -166,12 +186,17 @@ export async function executeAgentCall(
     throw ApplicationFailure.nonRetryable(
       `Circuit breaker ${decision.status} for agent '${args.agentId}' (${decision.reason})`,
       "CIRCUIT_OPEN",
-      { key, status: decision.status, reason: decision.reason },
+      { key, status: decision.status, reason: decision.reason }
     );
   }
 
   try {
-    const result = await executeAgentCallInner(args, tenantId, agentTimeoutMs);
+    const result = await executeAgentCallInner(
+      args,
+      tenantId,
+      agentTimeoutMs,
+      causal
+    );
     breaker.recordSuccess(key);
     return result;
   } catch (err) {
@@ -192,7 +217,7 @@ export async function executeAgentCall(
           port: workflowServiceConfig.redisPort,
           original: (err as Error).message,
           redisHostExplicit: workflowServiceConfig.redisHostExplicit,
-        },
+        }
       );
     }
     throw err;
@@ -220,7 +245,9 @@ function deriveStableExecutionId(): string | undefined {
       return undefined;
     }
     const runId = info.workflowExecution?.runId;
-    if (!runId) return undefined;
+    if (!runId) {
+      return undefined;
+    }
     return `${runId}:${info.activityId}`;
   } catch {
     return undefined;
@@ -231,6 +258,7 @@ async function executeAgentCallInner(
   args: AgentChatRequest,
   tenantId: string,
   agentTimeoutMs?: number,
+  causal?: EventCausalContext
 ): Promise<HttpExecutionResult> {
   const client = await getExecutionClient();
   const stableExecutionId = deriveStableExecutionId();
@@ -250,7 +278,19 @@ async function executeAgentCallInner(
   try {
     const status = await client.executeAndWait(tenantId, args, timeout, {
       requestedBy: args.userId,
-      correlationId: args.conversationId,
+      /**
+       * Correlation contract (DOCS/messaging/envelope.md §6): inherit
+       * the triggering event's correlation_id so the agent execution
+       * joins the same end-to-end trace, and link it via causation_id
+       * + depth+1. The static `conversationId` is only a fallback for
+       * causal roots (direct API calls with no upstream event) —
+       * conversation grouping still travels in the payload.
+       */
+      correlationId: causal?.correlation_id ?? args.conversationId,
+      ...(causal && {
+        causationId: causal.causation_id,
+        depth: causal.depth + 1,
+      }),
       /**
        * NOTE: `submitExecution` still computes `requestedAt = new
        * Date().toISOString()` per call, so the `Nats-Msg-Id` hash drifts
@@ -262,20 +302,30 @@ async function executeAgentCallInner(
        * follow-up. The `executionId` alone collapses the LLM-trigger
        * duplicate in the common case.
        */
-      ...(stableExecutionId !== undefined && { executionId: stableExecutionId }),
+      ...(stableExecutionId !== undefined && {
+        executionId: stableExecutionId,
+      }),
     });
 
     if (status.state === "failed") {
       throw new Error(
-        status.result?.errorMessage ?? `YoizenClaw execution '${status.executionId}' failed`,
+        status.result?.errorMessage ??
+          `YoizenClaw execution '${status.executionId}' failed`
       );
     }
 
     return {
       status: 200,
       data: {
-        reply: (status as unknown as Record<string, unknown>).response as string ?? status.result?.reply ?? "",
-        tool_calls: (status as unknown as Record<string, unknown>).toolCalls as unknown[] ?? status.result?.tool_calls ?? [],
+        reply:
+          ((status as unknown as Record<string, unknown>).response as string) ??
+          status.result?.reply ??
+          "",
+        tool_calls:
+          ((status as unknown as Record<string, unknown>)
+            .toolCalls as unknown[]) ??
+          status.result?.tool_calls ??
+          [],
       },
       headers: {
         "x-yoizen-execution-id": status.executionId,

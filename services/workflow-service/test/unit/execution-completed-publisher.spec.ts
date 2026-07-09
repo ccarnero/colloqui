@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 /**
  * Ensures the async-projection emitter for workflow execution
@@ -29,11 +29,12 @@ mock.module("@yoizen/observability", () => ({
   activeOrRandomTraceId: () => "trace-test",
   injectTraceContext: () => undefined,
   startNatsProducerSpan: () => ({ span: { end() {} } }),
-  tracedFetch: mock(async () =>
-    new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
+  tracedFetch: mock(
+    async () =>
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
   ),
   PinoLoggerService: class FakeLogger {
     log() {}
@@ -65,7 +66,7 @@ describe("publishExecutionCompletedEvent (async projection emit)", () => {
 
   it("builds the canonical execution_completed subject for a tenant", () => {
     expect(buildExecutionCompletedSubject("tenant-a")).toBe(
-      "evt.tenant-a.workflow-service.workflow.internal.native.execution_completed.v1",
+      "evt.tenant-a.workflow-service.workflow.internal.native.execution_completed.v1"
     );
   });
 
@@ -80,11 +81,11 @@ describe("publishExecutionCompletedEvent (async projection emit)", () => {
     expect(mockPublish).toHaveBeenCalledTimes(1);
     const [subject, payloadBytes] = mockPublish.mock.calls[0];
     expect(subject).toBe(
-      "evt.tenant-a.workflow-service.workflow.internal.native.execution_completed.v1",
+      "evt.tenant-a.workflow-service.workflow.internal.native.execution_completed.v1"
     );
 
     const envelope = JSON.parse(
-      new TextDecoder().decode(payloadBytes as Uint8Array),
+      new TextDecoder().decode(payloadBytes as Uint8Array)
     );
     expect(envelope.specversion).toBe("1.0");
     expect(envelope.tenant).toBe("tenant-a");
@@ -94,9 +95,7 @@ describe("publishExecutionCompletedEvent (async projection emit)", () => {
     expect(envelope.data.payload.status).toBe("COMPLETED");
     expect(envelope.data.payload.workflowName).toBe("wf-1");
     expect(envelope.idempotencykey).toMatch(/^sha256:/);
-    expect(envelope.resource).toBe(
-      "tenant/tenant-a/workflow-execution/exec-1",
-    );
+    expect(envelope.resource).toBe("tenant/tenant-a/workflow-execution/exec-1");
 
     expect(mockFlush).toHaveBeenCalledTimes(1);
 
@@ -113,9 +112,7 @@ describe("publishExecutionCompletedEvent (async projection emit)", () => {
       tenantId: "t",
     });
     const first = JSON.parse(
-      new TextDecoder().decode(
-        mockPublish.mock.calls[0][1] as Uint8Array,
-      ),
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
     ).idempotencykey;
     mockPublish.mockClear();
 
@@ -125,9 +122,7 @@ describe("publishExecutionCompletedEvent (async projection emit)", () => {
       tenantId: "t",
     });
     const second = JSON.parse(
-      new TextDecoder().decode(
-        mockPublish.mock.calls[0][1] as Uint8Array,
-      ),
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
     ).idempotencykey;
 
     expect(first).toBe(second);
@@ -140,9 +135,7 @@ describe("publishExecutionCompletedEvent (async projection emit)", () => {
       tenantId: "t",
     });
     const completed = JSON.parse(
-      new TextDecoder().decode(
-        mockPublish.mock.calls[0][1] as Uint8Array,
-      ),
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
     ).idempotencykey;
     mockPublish.mockClear();
 
@@ -152,9 +145,7 @@ describe("publishExecutionCompletedEvent (async projection emit)", () => {
       tenantId: "t",
     });
     const failed = JSON.parse(
-      new TextDecoder().decode(
-        mockPublish.mock.calls[0][1] as Uint8Array,
-      ),
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
     ).idempotencykey;
 
     expect(completed).not.toBe(failed);
@@ -165,17 +156,67 @@ describe("publishExecutionCompletedEvent (async projection emit)", () => {
       "exec-legacy",
       "COMPLETED",
       "tenant-a",
-      "wf",
+      "wf"
     );
     expect(mockPublish).toHaveBeenCalledTimes(1);
     const envelope = JSON.parse(
-      new TextDecoder().decode(
-        mockPublish.mock.calls[0][1] as Uint8Array,
-      ),
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
     );
     expect(envelope.data.payload.executionId).toBe("exec-legacy");
     expect(envelope.data.payload.status).toBe("COMPLETED");
     expect(envelope.data.payload.workflowName).toBe("wf");
+  });
+
+  /**
+   * Correlation-chain fix (DOCS/messaging/envelope.md §6): when the
+   * caller forwards the workflow's causal context, the envelope must
+   * inherit correlation_id unchanged, point causation_id at the
+   * triggering event, and carry the forwarded depth.
+   */
+  it("inherits causal context (correlation, causation, depth) when provided", async () => {
+    await publishExecutionCompletedEvent({
+      executionId: "exec-causal",
+      status: "COMPLETED",
+      tenantId: "tenant-a",
+      workflowName: "wf-1",
+      correlationId: "corr-root-1",
+      causationId: "recv-evt-1",
+      depth: 2,
+    });
+
+    expect(mockPublish).toHaveBeenCalledTimes(1);
+    const envelope = JSON.parse(
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
+    );
+    expect(envelope.correlation_id).toBe("corr-root-1");
+    expect(envelope.causation_id).toBe("recv-evt-1");
+    expect(envelope.transport.depth).toBe(2);
+
+    const headerCalls = mockHeaderSet.mock.calls;
+    const corrHeader = headerCalls.find(([k]) => k === "X-Correlation-Id");
+    const causHeader = headerCalls.find(([k]) => k === "X-Causation-Id");
+    expect(corrHeader?.[1]).toBe("corr-root-1");
+    expect(causHeader?.[1]).toBe("recv-evt-1");
+  });
+
+  it("stays a self-correlated root (causation null, depth 0) when no causal context is provided", async () => {
+    await publishExecutionCompletedEvent({
+      executionId: "exec-root",
+      status: "COMPLETED",
+      tenantId: "tenant-a",
+    });
+
+    const envelope = JSON.parse(
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
+    );
+    expect(envelope.correlation_id).toBe(envelope.id);
+    expect(envelope.causation_id).toBeNull();
+    expect(envelope.transport.depth).toBe(0);
+
+    const causHeader = mockHeaderSet.mock.calls.find(
+      ([k]) => k === "X-Causation-Id"
+    );
+    expect(causHeader).toBeUndefined();
   });
 
   it("no-ops silently when tenantId is missing", async () => {
