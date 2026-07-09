@@ -121,3 +121,15 @@ Each data-verifiable item re-checked against this sample; deltas vs the previous
 - **agent-memory `memory_published`/`memory_rejected` causation null — NO LONGER OBSERVED (fix 4 verified).** `seq1310` (`memory_published`): `causation_id: "332d969f..."` = the `memory_proposed` envelope id of `seq1308`, `correlation_id: "memory:bb0135b3..."`, `transport.depth: 1`. `seq1311` (`memory_rejected`): `causation_id: "5c491be7..."` = `seq1309`'s proposed envelope id. The two anchoring memories are deliberate validation fixtures (`payload.content: "Temporary test memory to validate causation anchoring. Safe to delete."`). Fix: `services/agent-memory-service/src/modules/memory/services/memory.service.ts` + `providers/nats.provider.ts` (uncommitted).
 
 **Known residual (deferred fix 3 — expected, not a new finding):** `send.v1` and workflow `execution_completed.v1` `causation_id` still point at the `received` event, skipping over the agent execution that generated the reply content (e.g. `seq1252` send: `causation_id: "208e49bf..."` = the received event, not `"f4dee42f..."` = the `execution_completed` that produced the text). Correlation now unifies the whole trace regardless.
+
+**RESOLVED (fix 3 verified live, 2026-07-09 22:36 UTC, commit a182b67):** the agent's
+`execution_completed` envelope id now travels back through the execution status
+(gateway projector persists it to Redis; `waitForExecutionResult` enriches it on the
+NATS hot path), and the workflow rederives its causal context from it. Verified across
+4 live conversation chains (INGRESS-ACME seq 1441–1485): every post-agent `send` and
+workflow `execution_completed` cites the agent's completed event (e.g. seq1450 send:
+`causation_id: "fd18030d..."` = the agent `execution_completed` of seq1449, depth 4),
+while the no-agent echo workflow's `send` correctly keeps `received` as its cause
+(seq1443, depth 2 — legacy fallback intact). Depth chain closes 0→1→2→3→4→5.
+Note: the `golden/` 72-event sample predates fix 3, so its raw events still show the
+residual — the sample remains valid for classification labeling.
