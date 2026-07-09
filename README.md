@@ -206,4 +206,22 @@ automatically (`mount`/`unmount` for manual control).
   kubectl delete pod -n cnpg-system -l app.kubernetes.io/name=cloudnative-pg --force
   ```
 
+## Reset scripts (stuck timeouts / stale test-run residue)
+
+Between stress runs or after a failed integration-test run, leftover state
+can make the *next* run fail with what looks like a fresh timeout even
+though nothing is actually slow — a tripped circuit breaker's cooldown TTL,
+a Temporal workflow still `Running`, or old messages/rows still sitting in
+NATS/Postgres/Redis. These three scripts clear that residue without
+touching topology, schemas, or credentials:
+
+| Script | Clears | Notes |
+|---|---|---|
+| `scripts/purge-circuit-breakers.sh` | Redis `cb:*` breaker state (connector-runtime HTTP/agent, channel-service egress) | A tripped breaker's cooldown (~100s) otherwise fails every subsequent call with `Circuit breaker open ... (cooldown)` until it expires on its own. `--dry-run` / `count` subcommand available. |
+| `scripts/purge-temporal.sh` | Temporal workflow/history/task-queue tables (`postgres-temporal`, `postgres-temporal-visibility`) | Full DB recreate takes ~2-4min; this truncates in ~5-10s. Scales Temporal to 0 first to avoid lock contention. `--dry-run` / `counts` subcommand available. |
+| `scripts/reset-dev.ts` | JetStream stream contents + claim-check payloads, per-tenant Postgres/Mongo message & event tables, Redis caches/counters | See `RESET-INVENTORY.md` for the full DATA-vs-CONFIG classification this script implements. Dry-run by default; `--apply` (+ confirmation) actually deletes. Requires `pnpm install` at the repo root once. |
+
+Each script documents its own required flags/env vars in its header
+comment — read that before running it.
+
 Full documentation: [DOCS/README.md](DOCS/README.md)
