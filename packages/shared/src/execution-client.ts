@@ -224,6 +224,8 @@ export class YoizenClawExecutionClient {
         }
         try {
           const parsed = JSON.parse(new TextDecoder().decode(data)) as {
+            id?: string;
+            transport?: { depth?: number };
             data?: { payload?: YoizenClawExecutionStatus };
             executionId?: string;
             state?: string;
@@ -240,7 +242,26 @@ export class YoizenClawExecutionClient {
           settled = true;
           clearTimeout(timeoutRef);
           closeAll();
-          resolve(payload);
+          /**
+           * Correlation-chain fix 3, hot path: the envelope carrying a
+           * `completed` status IS the `execution_completed` bus event, so
+           * its id (and causal depth) is threaded into the resolved status
+           * — mirroring the enrichment ai-agent-gateway's projector
+           * persists to Redis, which this subscription path never reads on
+           * success. Failed states and legacy id-less envelopes resolve
+           * unchanged.
+           */
+          const enriched: YoizenClawExecutionStatus =
+            payload.state === "completed" && typeof parsed.id === "string"
+              ? {
+                  ...payload,
+                  completedEventId: parsed.id,
+                  ...(typeof parsed.transport?.depth === "number" && {
+                    completedEventDepth: parsed.transport.depth,
+                  }),
+                }
+              : payload;
+          resolve(enriched);
         } catch {
           // Ignore foreign/non-JSON messages on the subscribed subjects.
         }

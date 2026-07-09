@@ -66,5 +66,15 @@ export interface YoizenClawExecutionStatus {
   agentId: string;
   correlationId?: string;
   causationId?: string;
+  /**
+   * Bus envelope id of the `execution_completed` event that carried this
+   * terminal status. Threaded by ai-agent-gateway's result projector so
+   * workflow-service can cite the agent execution as `causation_id` in
+   * subsequent publications (correlation-chain fix 3). Absent on legacy
+   * statuses and non-completed states.
+   */
+  completedEventId?: string;
+  /** Causal depth (`transport.depth`) of that `execution_completed` event. */
+  completedEventDepth?: number;
   result?: YoizenClawExecutionResultPayload;
 }

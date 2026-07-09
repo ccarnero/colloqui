@@ -326,13 +326,38 @@ async function executeAction(
 
     case "agentCall": {
       const resolvedArgs = resolveTemplates(action.args, context);
-      return httpAgent.executeAgentCall(
+      const result = await httpAgent.executeAgentCall(
         { ...resolvedArgs, variables: context.variables },
         tenant,
         context.executionId,
         context.workflow.agentTimeoutMs,
         context.causal
       );
+      /**
+       * Correlation-chain fix 3: when the activity reports the id of the
+       * agent's `execution_completed` bus event, subsequent publications
+       * cite it as causation instead of the frozen trigger context. Only
+       * rederived when a causal context already exists — causal roots
+       * never claim a hop, and on rootless runs the completed event's
+       * correlation belongs to a different (fallback) group.
+       */
+      const completedEventId = result.headers["x-yoizen-completed-event-id"];
+      if (context.causal && typeof completedEventId === "string") {
+        const completedDepth = Number.parseInt(
+          result.headers["x-yoizen-completed-event-depth"] ?? "",
+          10
+        );
+        context.causal = {
+          causation_id: completedEventId,
+          correlation_id: context.causal.correlation_id,
+          // Fallback mirrors the publish path: requested = trigger depth
+          // + 1, completed = requested + 1.
+          depth: Number.isFinite(completedDepth)
+            ? completedDepth
+            : context.causal.depth + 2,
+        };
+      }
+      return result;
     }
 
     case "branch": {
@@ -459,10 +484,15 @@ export async function runWorkflow(
           status,
           tenantId: workflow.tenant,
           workflowName: workflow.name,
-          ...(workflow.causal && {
-            correlationId: workflow.causal.correlation_id,
-            causationId: workflow.causal.causation_id,
-            depth: workflow.causal.depth + 1,
+          /**
+           * Reads context.causal (not workflow.causal): an agentCall may
+           * have rederived the chain onto its execution_completed event
+           * (fix 3). Identical to the trigger causal when no agent ran.
+           */
+          ...(context.causal && {
+            correlationId: context.causal.correlation_id,
+            causationId: context.causal.causation_id,
+            depth: context.causal.depth + 1,
           }),
         });
       } catch (_) {

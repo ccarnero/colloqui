@@ -329,6 +329,18 @@ async function executeAgentCallInner(
       },
       headers: {
         "x-yoizen-execution-id": status.executionId,
+        /**
+         * Correlation-chain fix 3: surface the `execution_completed` bus
+         * event id (threaded into the status by ai-agent-gateway) so the
+         * workflow can rederive its causal context. Absent on legacy
+         * statuses — the workflow then keeps the frozen trigger causal.
+         */
+        ...(status.completedEventId !== undefined && {
+          "x-yoizen-completed-event-id": status.completedEventId,
+        }),
+        ...(status.completedEventDepth !== undefined && {
+          "x-yoizen-completed-event-depth": String(status.completedEventDepth),
+        }),
       },
     };
   } finally {

@@ -301,6 +301,48 @@ describe("executeAgentCall", () => {
     );
   });
 
+  /**
+   * Correlation-chain fix 3: when the execution status carries the
+   * `execution_completed` bus envelope id (threaded by ai-agent-gateway's
+   * result projector), the activity must expose it — with its causal
+   * depth — through the result headers so the workflow can rederive its
+   * causal context for subsequent publications.
+   */
+  it("exposes the completed event id and depth through result headers when present", async () => {
+    executeAndWaitMock.mockResolvedValue({
+      executionId: "exec-1",
+      tenantId: "tenant-a",
+      type: "chat",
+      state: "completed",
+      requestedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      agentId: "agent-uuid-1",
+      result: { reply: "hello", tool_calls: [] },
+      completedEventId: "evt-completed-1",
+      completedEventDepth: 3,
+    });
+
+    const result = await executeAgentCall(
+      { agentId: "agent-uuid-1", message: "Hi" },
+      "tenant-a"
+    );
+
+    expect(result.headers["x-yoizen-completed-event-id"]).toBe(
+      "evt-completed-1"
+    );
+    expect(result.headers["x-yoizen-completed-event-depth"]).toBe("3");
+  });
+
+  it("omits the completed-event headers when the status does not carry them (legacy)", async () => {
+    const result = await executeAgentCall(
+      { agentId: "agent-uuid-1", message: "Hi" },
+      "tenant-a"
+    );
+
+    expect(result.headers["x-yoizen-completed-event-id"]).toBeUndefined();
+    expect(result.headers["x-yoizen-completed-event-depth"]).toBeUndefined();
+  });
+
   it("falls back to conversationId as correlation when no causal context exists (chain root)", async () => {
     await executeAgentCall(
       { agentId: "a1", message: "m", conversationId: "conv-1" },

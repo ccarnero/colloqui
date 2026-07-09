@@ -332,6 +332,197 @@ describe("runWorkflow (temporal/workflows)", () => {
     expect(call[4]).toBeUndefined();
   });
 
+  /**
+   * Correlation-chain fix 3: when the agent call reports the id of its
+   * `execution_completed` bus event (via result headers), subsequent
+   * publications must cite it as causation instead of the frozen trigger
+   * context — with the depth threaded from the completed event.
+   */
+  it("rederives the causal context from the agent completed event for subsequent actions", async () => {
+    executeAgentCall.mockClear();
+    executeChannelSend.mockClear();
+    publishExecutionCompletedEvent.mockClear();
+    executeAgentCall.mockImplementationOnce(() =>
+      Promise.resolve({
+        status: 200,
+        data: { reply: "agent-said" },
+        headers: {
+          "x-yoizen-execution-id": "exec-1",
+          "x-yoizen-completed-event-id": "evt-agent-completed",
+          "x-yoizen-completed-event-depth": "3",
+        },
+      })
+    );
+
+    await runWorkflow(
+      {
+        ...base,
+        causal: {
+          causation_id: "evt-received",
+          correlation_id: "corr-root",
+          depth: 1,
+        },
+        actions: [
+          {
+            activity: "agentCall",
+            name: "yc",
+            args: {
+              agentId: "550e8400-e29b-41d4-a716-446655440000",
+              message: "Hello",
+            },
+          },
+          {
+            activity: "channelSend",
+            name: "send",
+            args: {
+              accountId: "acc-1",
+              channel: "telegram",
+              provider: "telegram",
+              to: "123",
+              type: "text",
+              text: "hi",
+            },
+          },
+        ],
+      },
+      "exec-wf-1"
+    );
+
+    const sendCall = executeChannelSend.mock.calls[0];
+    expect(sendCall[2]).toEqual({
+      causation_id: "evt-agent-completed",
+      correlation_id: "corr-root",
+      depth: 3,
+    });
+    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith({
+      executionId: "exec-wf-1",
+      status: "COMPLETED",
+      tenantId: "tenant-1",
+      workflowName: "wf",
+      correlationId: "corr-root",
+      causationId: "evt-agent-completed",
+      depth: 4,
+    });
+  });
+
+  it("keeps the trigger causal when the agent call reports no completed event id (legacy fallback)", async () => {
+    executeAgentCall.mockClear();
+    executeChannelSend.mockClear();
+    publishExecutionCompletedEvent.mockClear();
+    executeAgentCall.mockImplementationOnce(() =>
+      Promise.resolve({
+        status: 200,
+        data: { reply: "agent-said" },
+        headers: { "x-yoizen-execution-id": "exec-1" },
+      })
+    );
+
+    await runWorkflow(
+      {
+        ...base,
+        causal: {
+          causation_id: "evt-received",
+          correlation_id: "corr-root",
+          depth: 1,
+        },
+        actions: [
+          {
+            activity: "agentCall",
+            name: "yc",
+            args: {
+              agentId: "550e8400-e29b-41d4-a716-446655440000",
+              message: "Hello",
+            },
+          },
+          {
+            activity: "channelSend",
+            name: "send",
+            args: {
+              accountId: "acc-1",
+              channel: "telegram",
+              provider: "telegram",
+              to: "123",
+              type: "text",
+              text: "hi",
+            },
+          },
+        ],
+      },
+      "exec-wf-2"
+    );
+
+    const sendCall = executeChannelSend.mock.calls[0];
+    expect(sendCall[2]).toEqual({
+      causation_id: "evt-received",
+      correlation_id: "corr-root",
+      depth: 1,
+    });
+    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith({
+      executionId: "exec-wf-2",
+      status: "COMPLETED",
+      tenantId: "tenant-1",
+      workflowName: "wf",
+      correlationId: "corr-root",
+      causationId: "evt-received",
+      depth: 2,
+    });
+  });
+
+  it("never claims a hop on causal roots even when the agent reports a completed event id", async () => {
+    executeAgentCall.mockClear();
+    executeChannelSend.mockClear();
+    publishExecutionCompletedEvent.mockClear();
+    executeAgentCall.mockImplementationOnce(() =>
+      Promise.resolve({
+        status: 200,
+        data: { reply: "agent-said" },
+        headers: {
+          "x-yoizen-execution-id": "exec-1",
+          "x-yoizen-completed-event-id": "evt-agent-completed",
+          "x-yoizen-completed-event-depth": "1",
+        },
+      })
+    );
+
+    await runWorkflow(
+      {
+        ...base,
+        actions: [
+          {
+            activity: "agentCall",
+            name: "yc",
+            args: {
+              agentId: "550e8400-e29b-41d4-a716-446655440000",
+              message: "Hello",
+            },
+          },
+          {
+            activity: "channelSend",
+            name: "send",
+            args: {
+              accountId: "acc-1",
+              channel: "telegram",
+              provider: "telegram",
+              to: "123",
+              type: "text",
+              text: "hi",
+            },
+          },
+        ],
+      },
+      "exec-wf-3"
+    );
+
+    const sendCall = executeChannelSend.mock.calls[0];
+    expect(sendCall[2]).toBeUndefined();
+    expect(publishExecutionCompletedEvent).toHaveBeenCalledWith({
+      executionId: "exec-wf-3",
+      status: "COMPLETED",
+      tenantId: "tenant-1",
+      workflowName: "wf",
+    });
+  });
+
   it("passes undefined causal to channelSend when workflow is a causal root", async () => {
     executeChannelSend.mockClear();
     await runWorkflow({

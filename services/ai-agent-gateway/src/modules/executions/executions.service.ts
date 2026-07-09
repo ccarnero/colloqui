@@ -378,6 +378,8 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
 
   private async handleResultMessage(msg: JsMsg): Promise<void> {
     const payload = JSON.parse(new TextDecoder().decode(msg.data)) as {
+      id?: string;
+      transport?: { depth?: number };
       data?: { payload?: YoizenClawExecutionStatus };
       tenant?: string;
     };
@@ -387,6 +389,24 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
     if (!status || !tenantId) {
       return;
     }
-    await this.client.persistExecutionStatus(status);
+    /**
+     * Correlation-chain fix 3: the envelope carrying a `completed` status
+     * IS the `execution_completed` bus event, so its id (and causal depth)
+     * is threaded into the persisted status — workflow-service cites it as
+     * `causation_id` in the publications that follow the agent call.
+     * Non-completed states and legacy envelopes without an id persist
+     * unchanged.
+     */
+    const enriched: YoizenClawExecutionStatus =
+      status.state === "completed" && typeof payload.id === "string"
+        ? {
+            ...status,
+            completedEventId: payload.id,
+            ...(typeof payload.transport?.depth === "number" && {
+              completedEventDepth: payload.transport.depth,
+            }),
+          }
+        : status;
+    await this.client.persistExecutionStatus(enriched);
   }
 }
