@@ -9,7 +9,7 @@ function value(subject: string, streamName?: string) {
   return r.value;
 }
 
-describe("classify — TAXONOMY.md §4 rules 1-19", () => {
+describe("classify — TAXONOMY.md §4 rules 1-20", () => {
   it("rejects an empty subject", () => {
     const r = classify("");
     expect(r.ok).toBe(false);
@@ -211,8 +211,47 @@ describe("classify — TAXONOMY.md §4 rules 1-19", () => {
   });
 
   it("rule 16 — other automation/platform/internal producer → unknown flagged", () => {
+    // A genuinely unrecognized internal-agent producer (NOT the online.v1
+    // heartbeat, which is now rule 20) with the automation/platform/internal
+    // shape falls to the rule-16 catch-all and IS the alarm.
+    const c = value(
+      "evt.acme.some-new-agent.automation.platform.internal.some_event.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "unknown",
+      rule: 16,
+    });
+    expect(c.unknown).toBe(true);
+  });
+
+  it("rule 20 — ai-agent-gateway online.v1 runtime-presence heartbeat", () => {
     const c = value(
       "evt.acme.ai-agent-gateway.automation.platform.internal.online.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "runtime-presence",
+      rule: 20,
+    });
+    // counted-not-persisted disposition — recognized, so NOT the unknown alarm.
+    expect(c.unknown).toBe(false);
+  });
+
+  it("rule 20 — ordering: evaluated before the rule-16 catch-all", () => {
+    const c = value(
+      "evt.acme.ai-agent-gateway.automation.platform.internal.online.v1"
+    );
+    expect(c.rule).toBe(20);
+    expect(c.rule).not.toBe(16);
+  });
+
+  it("rule 20 — near-miss: same shape but kind != online falls through as before", () => {
+    // A different ai-agent-gateway automation/platform/internal kind (not in the
+    // rule-6 execution enum and not `online`) must NOT match rule 20; it falls to
+    // the rule-16 catch-all → unknown, exactly as before this rule existed.
+    const c = value(
+      "evt.acme.ai-agent-gateway.automation.platform.internal.offline.v1"
     );
     expect(c).toMatchObject({
       tech: "platform",

@@ -80,10 +80,12 @@ function makeMetrics(): {
   sink: ITrackingIngesterMetricsSink;
   processed: ProcessOutcome[];
   unknown: UnknownReason[];
+  skipped: { family: string; tenant: string | null }[];
   insertFailures: number;
 } {
   const processed: ProcessOutcome[] = [];
   const unknown: UnknownReason[] = [];
+  const skipped: { family: string; tenant: string | null }[] = [];
   let insertFailures = 0;
   const sink: ITrackingIngesterMetricsSink = {
     recordProcessed(outcome) {
@@ -91,6 +93,9 @@ function makeMetrics(): {
     },
     recordUnknown(reason) {
       unknown.push(reason);
+    },
+    recordSkipped(family, tenant) {
+      skipped.push({ family, tenant });
     },
     recordInsertFailure() {
       insertFailures += 1;
@@ -100,6 +105,7 @@ function makeMetrics(): {
     sink,
     processed,
     unknown,
+    skipped,
     get insertFailures() {
       return insertFailures;
     },
@@ -258,6 +264,33 @@ describe("makeTrackedEventHandler — per-message pipeline", () => {
     expect(row.business_fn).toBe("audit");
     expect(row.rule).toBe(14);
     expect(row.tenant).toBeNull();
+  });
+
+  it("skips a rule-20 runtime-presence heartbeat: counts skipped, no insert, acks, no unknown alarm", async () => {
+    const { buffer, inserted } = bufferWith(okInsert);
+    const metrics = makeMetrics();
+    const handler = makeTrackedEventHandler({ buffer, metrics: metrics.sink });
+
+    const { msg, calls } = makeMsg({
+      subject:
+        "evt.acme.ai-agent-gateway.automation.platform.internal.online.v1",
+      stream: "INGRESS-ACME",
+      seq: 1249,
+      // Non-canonical heartbeat body — must still be skipped, never persisted.
+      payload: { hb: true },
+    });
+
+    await handler(msg);
+
+    expect(metrics.processed).toEqual(["skipped"]);
+    expect(metrics.skipped).toEqual([
+      { family: "runtime-presence", tenant: "acme" },
+    ]);
+    expect(metrics.unknown).toEqual([]); // NOT an alarm
+    expect(calls.ack).toBe(1);
+    expect(calls.nak).toBe(0);
+    expect(calls.term).toBe(0);
+    expect(inserted).toHaveLength(0); // counted, NOT persisted
   });
 
   it("persists malformed drift as unknown and terms (not naks) after commit", async () => {

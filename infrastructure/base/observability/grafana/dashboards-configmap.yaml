@@ -1589,6 +1589,33 @@ data:
               }
             ]
           }
+        },
+        {
+          "title": "Heartbeats/min by tenant",
+          "description": "Runtime-presence heartbeats (TAXONOMY.md rule 20, business_fn=runtime-presence) are counted-not-persisted: NO tracking.tracked_events row exists, so this panel reads the OTel counter tracking_ingester_skipped_total{family=runtime-presence} from Prometheus (pushed via OTLP -> otel-collector:8889 -> scraped). A rate dropping to 0 while a tenant is active means the agent runtime is down.",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (tenant) (rate(tracking_ingester_skipped_total{family=\"runtime-presence\"}[5m])) * 60",
+              "legendFormat": "{{tenant}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cpm",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 0.1 }
+                ]
+              }
+            }
+          }
         }
       ],
       "schemaVersion": 39,

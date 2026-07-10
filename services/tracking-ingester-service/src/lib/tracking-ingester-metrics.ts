@@ -10,6 +10,7 @@
 // default for callers that have not wired telemetry.
 
 import { getMeter } from "@yoizen/observability";
+import type { BusinessFn } from "./classify.js";
 import type { ProcessOutcome } from "./process-tracked-message.js";
 
 /** Why an `unknown`-alarm counter tick was recorded. */
@@ -25,6 +26,14 @@ export interface ITrackingIngesterMetricsSink {
    * is actionable (TAXONOMY.md §3).
    */
   recordUnknown(reason: UnknownReason): void;
+  /**
+   * The `counted-not-persisted` signal (`tracking_ingester_skipped_total`).
+   * NOT an alarm — a message classified into a SKIP_PERSIST family (e.g. rule 20
+   * `runtime-presence` heartbeats) is counted but never persisted. Labeled by
+   * `family` (business_fn) and `tenant` so a heartbeat rate dropping to 0 while a
+   * tenant is active surfaces the agent runtime being down (TAXONOMY.md §4).
+   */
+  recordSkipped(family: BusinessFn, tenant: string | null): void;
   /** Transient insert failure that triggered a nak. */
   recordInsertFailure(): void;
 }
@@ -33,6 +42,7 @@ export interface ITrackingIngesterMetricsSink {
 export const noopTrackingIngesterMetrics: ITrackingIngesterMetricsSink = {
   recordProcessed() {},
   recordUnknown() {},
+  recordSkipped() {},
   recordInsertFailure() {},
 };
 
@@ -40,6 +50,7 @@ export const noopTrackingIngesterMetrics: ITrackingIngesterMetricsSink = {
  * OTEL-backed sink. Emits:
  *   - `tracking_ingester_processed_total{outcome}`
  *   - `tracking_ingester_unknown_total{reason}`  (the alarm)
+ *   - `tracking_ingester_skipped_total{family,tenant}`  (counted-not-persisted)
  *   - `tracking_ingester_insert_failures_total`
  */
 export function createTrackingIngesterMetrics(
@@ -60,6 +71,15 @@ export function createTrackingIngesterMetrics(
       "Any non-zero value is actionable (TAXONOMY.md §3).",
   });
 
+  const skipped = meter.createCounter("tracking_ingester.skipped", {
+    description:
+      "Messages classified into a `counted-not-persisted` family (TAXONOMY.md " +
+      "§4 disposition) — counted but never persisted. Labeled by family " +
+      "(business_fn) and tenant. NOT an alarm: a runtime-presence heartbeat " +
+      "rate dropping to 0 while a tenant is active means the agent runtime is " +
+      "down.",
+  });
+
   const insertFailures = meter.createCounter(
     "tracking_ingester.insert_failures",
     {
@@ -75,6 +95,9 @@ export function createTrackingIngesterMetrics(
     },
     recordUnknown(reason) {
       unknown.add(1, { reason });
+    },
+    recordSkipped(family, tenant) {
+      skipped.add(1, { family, ...(tenant !== null && { tenant }) });
     },
     recordInsertFailure() {
       insertFailures.add(1);

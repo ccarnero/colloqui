@@ -128,6 +128,25 @@ export function makeTrackedEventHandler(
     );
 
     metrics.recordProcessed(result.outcome);
+
+    // `counted-not-persisted` families (SKIP_PERSIST_RULES, e.g. rule 20
+    // runtime-presence heartbeats): count via the skipped metric, build/insert
+    // NO row, and ack so JetStream advances. NOT an alarm — logged at debug so it
+    // never pages (a heartbeat rate dropping to 0 is surfaced by the metric, not a
+    // log). TAXONOMY.md §4 disposition note.
+    if (result.outcome === "skipped") {
+      metrics.recordSkipped(result.family, result.tenant);
+      logWithEnvelope(
+        logger,
+        result.tenant !== null ? { tenant: result.tenant } : null,
+        "tracking.consume.skipped",
+        `skipped family=${result.family} tenant=${result.tenant ?? "?"} subject=${subject} — counted, not persisted`,
+        "debug"
+      );
+      msg.ack();
+      return;
+    }
+
     logOutcome(logger, metrics, subject, result);
 
     try {
@@ -179,12 +198,16 @@ function decodeBody(data: Uint8Array): { payload: unknown; decoded: boolean } {
   }
 }
 
-/** Emits the per-outcome stage log and fires the unknown alarm when relevant. */
+/**
+ * Emits the per-outcome stage log and fires the unknown alarm when relevant.
+ * Only ever called with a row-bearing outcome — `skipped` is handled inline in
+ * the handler (it carries no row), so the parameter excludes that member.
+ */
 function logOutcome(
   logger: TrackedEventLogger,
   metrics: ITrackingIngesterMetricsSink,
   subject: string,
-  result: ProcessResult
+  result: Extract<ProcessResult, { row: TrackedEventRow }>
 ): void {
   const ctx = rowLogContext(result.row);
   const { row, outcome } = result;

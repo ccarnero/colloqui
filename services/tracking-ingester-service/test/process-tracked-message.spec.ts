@@ -37,6 +37,33 @@ describe("processTrackedMessage — outcome derivation", () => {
     expect(result.outcome).toBe("canonical");
   });
 
+  // Rule 20 runtime-presence heartbeats are `counted-not-persisted`: the pipeline
+  // must return `skipped` with NO row and expose family + tenant for the metric —
+  // even though the live heartbeat body is a non-canonical envelope (it would
+  // otherwise be mis-persisted as rule-18 drift).
+  it("skips a rule-20 online.v1 heartbeat (no row, family + tenant exposed)", () => {
+    const result = processTrackedMessage({
+      subject:
+        "evt.acme.ai-agent-gateway.automation.platform.internal.online.v1",
+      streamName: "INGRESS-ACME",
+      streamSequence: 1249,
+      // Intentionally non-canonical body — heartbeats lack data.payload_inline.
+      payload: {
+        hb: true,
+        transport: { name: "agent-ai-service", version: "1" },
+      },
+      decoded: true,
+      receivedAt: "2026-07-10T00:00:00.000Z",
+    });
+
+    expect(result.outcome).toBe("skipped");
+    expect(result.row).toBeNull();
+    if (result.outcome === "skipped") {
+      expect(result.family).toBe("runtime-presence");
+      expect(result.tenant).toBe("acme");
+    }
+  });
+
   it("flags a rule-17 unrecognized 8-token envelope as unknown", () => {
     const result = processTrackedMessage({
       subject:

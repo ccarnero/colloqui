@@ -1,17 +1,25 @@
 // Pure per-message pipeline stage for the tracking ingester (T07).
 //
 // Input:  a decoded NATS/JetStream delivery (subject + stream metadata + body).
-// Output: exactly one `TrackedEventRow` to persist, tagged with a
-//         `ProcessOutcome` the I/O edge (consume-events.ts) routes on for
-//         logging / metrics / ack-vs-term. EVERY message produces a row —
-//         nothing is dropped (BINDING contract from to-tracked-event-row.ts).
+// Output: a `TrackedEventRow` to persist plus the `ProcessOutcome` the I/O edge
+//         (consume-events.ts) routes on for logging / metrics / ack-vs-term.
+//         Every message is tracked; the ONLY exception is the `skipped` outcome
+//         (SKIP_PERSIST_RULES, e.g. rule 20 runtime-presence heartbeats) which is
+//         counted-not-persisted — it carries no row.
 //
 // This stage re-implements NOTHING: classification + compliance verdict come
 // from `toTrackedEventRow` (T04), non-canonical rows from `buildNonEnvelopeRow`.
 // No side effects, never throws.
 
+import { parseSubject } from "@yoizen/shared";
 import { buildNonEnvelopeRow } from "./build-non-envelope-row.js";
-import { type ClassifyOptions, UNKNOWN_RULES } from "./classify.js";
+import {
+  type BusinessFn,
+  type ClassifyOptions,
+  classify,
+  SKIP_PERSIST_RULES,
+  UNKNOWN_RULES,
+} from "./classify.js";
 import {
   type MapError,
   type TrackedEventRow,
@@ -27,12 +35,16 @@ import {
  *                       ALARM (`unknown = alarm`, TAXONOMY.md §3). Row persisted.
  *   - `malformed`     — drift: body failed `isCompliantEnvelope` (or was not
  *                       JSON). ALARM + persisted as rule 18 unknown, then term.
+ *   - `skipped`       — a `counted-not-persisted` family (SKIP_PERSIST_RULES,
+ *                       e.g. rule 20 runtime-presence heartbeats). NOT an alarm.
+ *                       Counted via a metric, NO row built/inserted, then ack.
  */
 export type ProcessOutcome =
   | "canonical"
   | "non_envelope"
   | "unknown"
-  | "malformed";
+  | "malformed"
+  | "skipped";
 
 export interface RawTrackedMessage {
   readonly subject: string;
@@ -46,10 +58,22 @@ export interface RawTrackedMessage {
   readonly receivedAt: string;
 }
 
-export interface ProcessResult {
-  readonly row: TrackedEventRow;
-  readonly outcome: ProcessOutcome;
-}
+/**
+ * A `skipped` result carries NO row (nothing is persisted). It exposes just the
+ * `family` (business_fn) and `tenant` the consumer edge needs to label the
+ * `counted-not-persisted` metric. Every other outcome carries a row to insert.
+ */
+export type ProcessResult =
+  | {
+      readonly outcome: "skipped";
+      readonly row: null;
+      readonly family: BusinessFn;
+      readonly tenant: string | null;
+    }
+  | {
+      readonly outcome: "canonical" | "non_envelope" | "unknown" | "malformed";
+      readonly row: TrackedEventRow;
+    };
 
 /**
  * Maps a raw delivery to `{ row, outcome }`. Classification runs on the subject
@@ -60,6 +84,22 @@ export function processTrackedMessage(
   msg: RawTrackedMessage,
   options: ClassifyOptions = {}
 ): ProcessResult {
+  // `counted-not-persisted` families (SKIP_PERSIST_RULES, e.g. rule 20
+  // runtime-presence heartbeats) are recognized by the SUBJECT and counted, never
+  // persisted — regardless of envelope compliance. This runs FIRST because the
+  // heartbeats are intentionally non-canonical (no `data.payload_inline`, a
+  // `{name,version}` transport — DRIFT.md item 5), so without this short-circuit
+  // they would be mis-persisted as rule-18 drift instead of being cleanly skipped.
+  const skipClass = classify(msg.subject, options);
+  if (skipClass.ok && SKIP_PERSIST_RULES.has(skipClass.value.rule)) {
+    return {
+      outcome: "skipped",
+      row: null,
+      family: skipClass.value.businessFn,
+      tenant: parseSubject(msg.subject)?.tenant ?? null,
+    };
+  }
+
   // Undecodable body — cannot be a compliant envelope, so it is drift.
   if (!msg.decoded) {
     return {

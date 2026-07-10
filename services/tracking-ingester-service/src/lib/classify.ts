@@ -1,4 +1,4 @@
-// Bus-event classifier — implements TAXONOMY.md §4 rules 1-19, first-match-wins,
+// Bus-event classifier — implements TAXONOMY.md §4 rules 1-20, first-match-wins,
 // over the subject string. Pure function, no side effects. Every rule branch
 // cites the TAXONOMY.md rule number it implements.
 //
@@ -36,6 +36,7 @@ export type BusinessFn =
   | "agent-runtime-streaming"
   | "connector-invocation"
   | "workflow-execution"
+  | "runtime-presence"
   | "registry-sync"
   | "tenant-provisioning"
   | "audit"
@@ -46,7 +47,10 @@ export type BusinessFn =
 export interface Classification {
   tech: Tech;
   businessFn: BusinessFn;
-  /** TAXONOMY.md §4 rule that fired (first-match-wins). 1-18 plus 19 (workflow). */
+  /**
+   * TAXONOMY.md §4 rule that fired (first-match-wins). 1-18 plus 19 (workflow)
+   * and 20 (runtime-presence heartbeats — `counted-not-persisted` disposition).
+   */
   rule: number;
   /** Rules 16/17/18 produce unrecognized traffic the consumer must alarm on. */
   unknown: boolean;
@@ -115,6 +119,15 @@ function mapChannelToTech(channel: string): Tech {
 // consumer (classify + the T07 pipeline) tests membership here rather than
 // re-deriving with `rule >= 16` (which mis-flags rule 19).
 export const UNKNOWN_RULES: ReadonlySet<number> = new Set([16, 17, 18]);
+
+// Rules whose disposition is `counted-not-persisted` (TAXONOMY.md §4 note): the
+// message IS classified and counted (an OTel counter keeps it visible) but NO row
+// is inserted. Rule 20 (ai-agent-gateway `online.v1` runtime-presence heartbeats)
+// is the first such rule — a per-tenant liveness signal published every ~15s, not
+// business traffic worth persisting. Exported as the SINGLE SOURCE OF TRUTH for
+// the disposition so the T07 pipeline and consumer edge test membership here
+// rather than hard-coding rule numbers.
+export const SKIP_PERSIST_RULES: ReadonlySet<number> = new Set([20]);
 
 function classified(
   tech: Tech,
@@ -256,6 +269,29 @@ export function classify(
     // absent from the subject). TAXONOMY.md §4 rule 19.
     if (producer === "workflow-service" && domain === "workflow") {
       return ok(classified("platform", "workflow-execution", 19));
+    }
+
+    // Rule 20 — ai-agent-gateway `online.v1` runtime-presence heartbeat. A
+    // per-tenant liveness signal (published every ~15s by agent-ai-service's
+    // HeartbeatService, `services/agent-ai-service/src/modules/heartbeat/
+    // heartbeat.service.ts:91`), NOT business traffic. Disposition
+    // `counted-not-persisted` (TAXONOMY.md §4 note + SKIP_PERSIST_RULES): counted
+    // via an OTel metric, no row inserted. Evaluated BEFORE the rule-16 catch-all
+    // — which would otherwise tag it `unknown` and alarm — exactly like rule 19.
+    // The subject's producer token is `ai-agent-gateway` but the publisher is
+    // agent-ai-service — a producer-token drift with no numbered DRIFT.md entry,
+    // analogous to DRIFT.md item 9 (agent-memory envelope.producer drift). The
+    // heartbeat's other non-canonical traits (no `data.payload_inline`, a
+    // `{name,version}` transport) are DRIFT.md item 5.
+    // TAXONOMY.md §4 rule 20.
+    if (
+      producer === "ai-agent-gateway" &&
+      domain === "automation" &&
+      channel === "platform" &&
+      provider === "internal" &&
+      kind === "online"
+    ) {
+      return ok(classified("platform", "runtime-presence", 20));
     }
 
     // Rule 16 — any other internal-agent producer with the
