@@ -1,0 +1,20 @@
+# SDD model assignment per phase.
+# Read by the SDD orchestrator (see CLAUDE.md Part 6 — config resolution order:
+# .ywai/sdd-profiles.json > sdd/config.yaml > .ywai/config.json > agent default).
+# This file is the project-canonical, git-versioned source of truth.
+# Model IDs follow the Anthropic API standard (https://docs.claude.com).
+#
+# Philosophy: expensive intelligence where there is judgment
+# (explore / design / verify), cheap throughput where there is volume
+# (apply / spec / tasks).
+
+models:
+  sdd-explore: claude-fable-5              # broad reasoning over unknown territory
+  sdd-propose: claude-fable-5              # architectural decisions
+  sdd-spec: claude-opus-4-8                # structured writing, balanced cost
+  sdd-design: claude-fable-5               # architecture decisions
+  sdd-tasks: claude-opus-4-8               # breakdown, balanced cost
+  sdd-apply: claude-opus-4-8               # code generation throughput; adversarial review is the quality gate
+  sdd-verify: claude-fable-5               # bug detection — the reviewer must outsmart the implementer
+  sdd-archive: claude-haiku-4-5-20251001   # cheap text
+  default: claude-opus-4-8                 # fallback
