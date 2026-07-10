@@ -31,6 +31,21 @@ spec:
               value: Viewer
             - name: GF_INSTALL_PLUGINS
               value: "yesoreyeram-infinity-datasource"
+            # Tracking Postgres datasource credentials, expanded by Grafana's
+            # provisioning env interpolation ($PG_TRACKING_USER /
+            # $PG_TRACKING_PASSWORD in grafana-datasources). Sourced from the
+            # existing platform `postgres-credentials` Secret in this namespace
+            # (support-services-dev) so the password never lands in the ConfigMap.
+            - name: PG_TRACKING_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: PG_TRACKING_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
           resources:
             requests:
               cpu: 100m

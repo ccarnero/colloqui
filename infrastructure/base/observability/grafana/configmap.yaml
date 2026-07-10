@@ -43,3 +43,26 @@ data:
         editable: false
         jsonData:
           url: "http://nats:8222"
+
+      # Message-tracking Postgres (tracking.tracked_events). Grafana runs in the
+      # same namespace as the platform Postgres (support-services-dev), so the
+      # cross-namespace FQDN resolves and the existing `postgres-credentials`
+      # Secret is reachable without replication. Credentials are NOT inlined
+      # here: `$PG_TRACKING_USER` / `$PG_TRACKING_PASSWORD` are expanded by
+      # Grafana from env vars injected in the Deployment via secretKeyRef
+      # (see deployment.yaml). Single `$` triggers Grafana env interpolation,
+      # matching the `$$`-escaped literal used by the Loki derivedField above.
+      - name: Tracking Postgres
+        uid: tracking-postgres
+        type: postgres
+        access: proxy
+        url: postgres.support-services-dev.svc.cluster.local:5432
+        user: $PG_TRACKING_USER
+        editable: false
+        jsonData:
+          database: yoizen
+          sslmode: disable
+          postgresVersion: 1600
+          timescaledb: false
+        secureJsonData:
+          password: $PG_TRACKING_PASSWORD
