@@ -241,7 +241,7 @@ closed chain (>= 4 stages, `unknown` count = 0); dashboard panels show the traff
 - [x] T05 DDL
 - [x] T06 insert
 - [x] T07 consumer
-- [ ] T08 wiring
+- [x] T08 wiring
 - [ ] T09 deploy (Dockerfile + kustomize)
 - [ ] T10 script registration (bootstrap / rebuild / dev-mode)
 - [ ] T11 datasource

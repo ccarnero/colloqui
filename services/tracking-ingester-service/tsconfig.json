@@ -10,7 +10,8 @@
     "rootDir": "./src",
     "declaration": false,
     "skipLibCheck": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "types": ["node", "@types/bun"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
