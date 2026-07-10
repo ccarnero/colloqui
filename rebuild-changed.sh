@@ -104,6 +104,8 @@ is_dev_mode() {
   elif [[ "$svc" == "channel-service" ]];           then ksvc_name="channel-service-api"
   elif [[ "$svc" == "usage-aggregator-service" ]];  then ksvc_name="usage-aggregator-api"
   elif [[ "$svc" == "workflow-service" ]];          then ksvc_name="workflow-service-api"
+  # tracking-ingester-service is worker-only (no KSVC) — empty ksvc_name.
+  elif [[ "$svc" == "tracking-ingester-service" ]]; then ksvc_name=""
   else ksvc_name="$svc"; fi
 
   if   [[ "$svc" == "connector-admin" ]];          then deploy_names="connector-admin-worker"
@@ -112,6 +114,7 @@ is_dev_mode() {
   elif [[ "$svc" == "usage-aggregator-service" ]];  then deploy_names="usage-aggregator-worker"
   elif [[ "$svc" == "workflow-service" ]];          then deploy_names="workflow-service-worker workflow-worker"
   elif [[ "$svc" == "connector-runtime" ]];         then deploy_names="connector-runtime"
+  elif [[ "$svc" == "tracking-ingester-service" ]]; then deploy_names="tracking-ingester-worker"
   else deploy_names=""; fi
 
   # Check ksvc annotation

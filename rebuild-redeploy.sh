@@ -24,6 +24,7 @@ VALID_SERVICES=(
   proxy-service agent-admin-service admin-console
   usage-aggregator-service ai-agent-gateway
   agent-memory-service agent-ai-service agent-scheduler-service
+  tracking-ingester-service
 )
 
 VALID_ENVIRONMENTS=(dev qa staging production)
@@ -123,6 +124,10 @@ get_ksvc_names() {
     channel-service)          echo "channel-service-api" ;;
     usage-aggregator-service) echo "usage-aggregator-api" ;;
     workflow-service)         echo "workflow-service-api" ;;
+    # tracking-ingester-service is worker-only (no KSVC). An explicit empty
+    # case is REQUIRED: the default case echoes "$svc", which would make
+    # rollout_ksvc try to patch a nonexistent ksvc named after the service.
+    tracking-ingester-service) echo "" ;;
     *)                        echo "$svc" ;;
   esac
 }
@@ -140,6 +145,7 @@ get_deployment_names() {
     # and the Temporal worker Deployment (workflow-worker).
     workflow-service)         echo "workflow-service-worker workflow-worker" ;;
     connector-runtime)        echo "connector-runtime" ;;
+    tracking-ingester-service) echo "tracking-ingester-worker" ;;
     *)                        echo "" ;;
   esac
 }

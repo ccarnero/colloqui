@@ -210,6 +210,10 @@ get_targets() {
     connector-runtime)
       echo "deploy	connector-runtime	src/worker.ts	connector-runtime"
       ;;
+    # ── tracking-ingester-service: deployment only (worker, no KSVC) ───────
+    tracking-ingester-service)
+      echo "deploy	tracking-ingester-worker	src/main.ts	tracking-ingester-service"
+      ;;
     # ── Single-ksvc services ───────────────────────────────────────────────
     auth-service)           echo "ksvc	auth-service	src/main.ts	auth-service" ;;
     tenant-service)         echo "ksvc	tenant-service	src/main.ts	tenant-service" ;;
