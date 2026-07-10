@@ -1,0 +1,71 @@
+# tracking-ingester worker pod (message-tracking NATS ingester). Phase 1.5.
+#
+# Plain `apps/v1.Deployment` (NOT a Knative Service) because the worker
+# doesn't receive inbound HTTP — it only consumes NATS JetStream `trk-*`
+# durables and persists the tracked events to Postgres
+# (`services/tracking-ingester-service/src/main.ts`). Knative's activator/KPA
+# model is built around HTTP request traffic, so it has no signal to drive this
+# workload; a plain Deployment pinned to one replica is the correct fit.
+#
+# Unlike the other Phase 1.5 pairs, this service has NO api/worker split — it is
+# worker-only with no `*-api` KSVC — so there is deliberately NO `SERVICE_MODE`
+# env here (main.ts always bootstraps the consumer engine + `/health` server).
+#
+# Storage/queue credentials (NATS_URL and the composed POSTGRES_URL) are injected
+# by the active overlay (local/postgres-dev), never here — the base stays
+# engine-agnostic, mirroring how usage-aggregator-worker gets its env.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tracking-ingester-worker
+  labels:
+    app.kubernetes.io/name: tracking-ingester-worker
+    app.kubernetes.io/component: message-tracking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tracking-ingester-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tracking-ingester-worker
+        app.kubernetes.io/component: message-tracking
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: user-container
+          image: dev.local/tracking-ingester-service:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: "tracking-ingester-worker"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

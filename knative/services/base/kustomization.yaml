@@ -19,6 +19,9 @@ resources:
   - channel-service-worker.yaml
   - usage-aggregator-api.yaml
   - usage-aggregator-worker.yaml
+  # tracking-ingester is worker-only (no api KSVC): a NATS JetStream ingester
+  # that persists message-tracking events to Postgres. No SERVICE_MODE split.
+  - tracking-ingester-worker.yaml
   - workflow-service-api.yaml
   - workflow-service-worker.yaml
   # ----- Single-pod Knative-only services (HTTP-only or stateful) -----
