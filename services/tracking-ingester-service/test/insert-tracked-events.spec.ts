@@ -47,6 +47,10 @@ function sampleRow(overrides: Partial<TrackedEventRow> = {}): TrackedEventRow {
     is_claim_check: false,
     envelope: { id: "evt-1", nested: { a: 1 } },
     compliance: "full",
+    workflow_id: null,
+    run_id: null,
+    connector_id: null,
+    cache_status: null,
     ...overrides,
   };
 }
@@ -121,7 +125,7 @@ describe("insertTrackedEvents — SQL shape", () => {
     expect(sql).toContain("insert into tracking.tracked_events");
   });
 
-  it("inserts exactly the 18 mapped columns in order", async () => {
+  it("inserts exactly the 22 mapped columns in order (18 original + 4 T4 detail columns)", async () => {
     const { client, calls } = makeFakeClient();
     await insertTrackedEvents(client, [sampleRow()]);
     const sql = calls[0]!.sql;
@@ -151,6 +155,10 @@ describe("insertTrackedEvents — SQL shape", () => {
       "is_claim_check",
       "envelope",
       "compliance",
+      "workflow_id",
+      "run_id",
+      "connector_id",
+      "cache_status",
     ]);
     // ingested_at is a DB default and must NOT be inserted.
     expect(insertCols).not.toContain("ingested_at");
@@ -172,13 +180,13 @@ describe("insertTrackedEvents — SQL shape", () => {
     expect(sql).toContain("::boolean[]");
   });
 
-  it("passes 18 parallel arrays to the client", async () => {
+  it("passes 22 parallel arrays to the client (18 original + 4 T4 detail columns)", async () => {
     const { client, calls } = makeFakeClient();
     await insertTrackedEvents(client, [
       sampleRow(),
       sampleRow({ event_id: "evt-2" }),
     ]);
-    expect(calls[0]!.arrays).toHaveLength(18);
+    expect(calls[0]!.arrays).toHaveLength(22);
     for (const arr of calls[0]!.arrays) {
       expect(arr).toHaveLength(2);
     }
@@ -204,6 +212,33 @@ describe("insertTrackedEvents — value encoding", () => {
     const { client, calls } = makeFakeClient();
     await insertTrackedEvents(client, [sampleRow({ compliance: "partial" })]);
     expect(calls[0]!.arrays[17]).toEqual(["partial"]);
+  });
+
+  it("carries the T4 click-through detail columns at indices 18-21", async () => {
+    const { client, calls } = makeFakeClient();
+    await insertTrackedEvents(client, [
+      sampleRow({
+        workflow_id: "wf-1",
+        run_id: "run-1",
+        connector_id: "adapter-x",
+        cache_status: "hit",
+      }),
+    ]);
+    const arrays = calls[0]!.arrays;
+    expect(arrays[18]).toEqual(["wf-1"]);
+    expect(arrays[19]).toEqual(["run-1"]);
+    expect(arrays[20]).toEqual(["adapter-x"]);
+    expect(arrays[21]).toEqual(["hit"]);
+  });
+
+  it("defaults the T4 detail columns to null when absent", async () => {
+    const { client, calls } = makeFakeClient();
+    await insertTrackedEvents(client, [sampleRow()]);
+    const arrays = calls[0]!.arrays;
+    expect(arrays[18]).toEqual([null]);
+    expect(arrays[19]).toEqual([null]);
+    expect(arrays[20]).toEqual([null]);
+    expect(arrays[21]).toEqual([null]);
   });
 
   it("carries nulls verbatim for nullable columns", async () => {

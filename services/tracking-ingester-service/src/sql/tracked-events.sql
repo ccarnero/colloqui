@@ -79,6 +79,19 @@ UPDATE tracking.tracked_events
   SET compliance = 'none'
   WHERE correlation_id IS NULL AND compliance = 'full';
 
+-- T4 (trace-visualization) click-through detail columns — additive/nullable,
+-- no backfill (historical rows simply lack these; `extract-detail-columns.ts`
+-- documents field-name provenance and the known workflowId/runId gap).
+-- Idempotent retrofit, same pattern as the `compliance` column above.
+ALTER TABLE tracking.tracked_events
+  ADD COLUMN IF NOT EXISTS workflow_id  text;
+ALTER TABLE tracking.tracked_events
+  ADD COLUMN IF NOT EXISTS run_id       text;
+ALTER TABLE tracking.tracked_events
+  ADD COLUMN IF NOT EXISTS connector_id text;
+ALTER TABLE tracking.tracked_events
+  ADD COLUMN IF NOT EXISTS cache_status text;
+
 CREATE INDEX IF NOT EXISTS idx_tracked_events_correlation_id
   ON tracking.tracked_events (correlation_id);
 
@@ -87,3 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_tracked_events_occurred_at
 
 CREATE INDEX IF NOT EXISTS idx_tracked_events_business_fn
   ON tracking.tracked_events (business_fn);
+
+-- T6 (trace-visualization) connector-detail dashboard filters by $connector.
+CREATE INDEX IF NOT EXISTS idx_tracked_events_connector_id
+  ON tracking.tracked_events (connector_id);

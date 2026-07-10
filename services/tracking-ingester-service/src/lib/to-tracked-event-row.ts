@@ -31,6 +31,7 @@ import { isCompliantEnvelope, parseSubject } from "@yoizen/shared";
 import type { BusinessFn, Tech } from "./classify.js";
 import { type ClassifyOptions, classify } from "./classify.js";
 import { consumedBy } from "./consumed-by.js";
+import { extractDetailColumns } from "./extract-detail-columns.js";
 import { isClaimCheck } from "./is-claim-check.js";
 import { err, ok, type Result } from "./result.js";
 
@@ -128,6 +129,16 @@ export interface TrackedEventRow {
    * exception is `"partial"`; non-envelope/drift rows are `"none"`.
    */
   compliance: Compliance;
+  /**
+   * Click-through detail columns (T4 of trace-visualization). Nullable —
+   * populated ONLY for workflow-execution (rule 19) and connector-invocation
+   * (rule 11) events; every other family is null. See `extract-detail-columns.ts`
+   * for field-name provenance and the documented workflowId/runId gap.
+   */
+  workflow_id: string | null;
+  run_id: string | null;
+  connector_id: string | null;
+  cache_status: string | null;
 }
 
 /**
@@ -329,6 +340,9 @@ export function toTrackedEventRow(
 
   const parsed = parseSubject(subject);
   const { tech, businessFn, rule } = classification.value;
+  // T4 click-through columns — derived from the SAME rule the classifier
+  // already computed, over `source.data.payload` (never re-classifies).
+  const detailColumns = extractDetailColumns(rule, source.data?.payload);
 
   return ok({
     // Canonical branch: fully-populated row. `event_id` is the REAL envelope id
@@ -362,5 +376,6 @@ export function toTrackedEventRow(
     envelope,
     // "full" (compliant outright) or "partial" (stage-1 accountid-only drift).
     compliance,
+    ...detailColumns,
   });
 }

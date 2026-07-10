@@ -44,6 +44,7 @@ import {
   makeTrackedEventHandler,
   type TrackedConsumerSpec,
 } from "./lib/consume-events.js";
+import { emitOtelSpans } from "./lib/emit-otel-spans.js";
 import {
   buildHealthResponse,
   type ReadinessState,
@@ -54,6 +55,9 @@ import {
 } from "./lib/insert-tracked-events.js";
 import { loadTrackingIngesterConfig } from "./lib/load-config.js";
 import { loadSchemaStatements } from "./lib/load-schema-statements.js";
+import { toOtelSpan } from "./lib/to-otel-span.js";
+import { toSpanSourceRow } from "./lib/to-span-source-row.js";
+import type { TrackedEventRow } from "./lib/to-tracked-event-row.js";
 import { createTrackedEventBuffer } from "./lib/tracked-event-buffer.js";
 import { createTrackingIngesterMetrics } from "./lib/tracking-ingester-metrics.js";
 
@@ -137,11 +141,31 @@ async function bootstrap(): Promise<void> {
   // narrow wiring-boundary cast bridges the gap; the runtime object is exactly
   // what `insertTrackedEvents` expects.
   const insertClient = sql as unknown as InsertClient;
+
+  // OTel span export (T2 of trace-visualization) — opt-in, fire-and-forget.
+  // Disabled (config.otelExporterOtlpEndpoint undefined) → emitOtelSpans is a
+  // documented no-op that never touches the network.
+  if (config.otelExportEnabled) {
+    line(
+      `otel span export ENABLED — endpoint ${config.otelExporterOtlpEndpoint}`
+    );
+  } else {
+    line("otel span export disabled (OTEL_EXPORT_ENABLED=false)");
+  }
+  const emitSpans = (rows: readonly TrackedEventRow[]): Promise<unknown> =>
+    emitOtelSpans(
+      config.otelExporterOtlpEndpoint,
+      rows.map((row) => toOtelSpan(toSpanSourceRow(row))),
+      fetch,
+      line
+    );
+
   const buffer = createTrackedEventBuffer({
     insert: (rows) => insertTrackedEvents(insertClient, rows, line),
     batchSize: config.batchSize,
     batchFlushMs: config.batchFlushMs,
     log: line,
+    emitSpans,
   });
   const handler = makeTrackedEventHandler({ buffer, metrics, logger });
 

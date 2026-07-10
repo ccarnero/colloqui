@@ -17,3 +17,18 @@ data:
         options:
           path: /var/lib/grafana/dashboards
           foldersFromFilesStructure: false
+      # T7 (trace-visualization) — message-traces + connector-detail are grouped
+      # under a dedicated "Message tracking" folder so both are reachable in one
+      # click from the Grafana folder list, per DOCS/guides/trace-console.md.
+      # A separate provider (own ConfigMap-backed path) is required because the
+      # file provider assigns ONE folder per provider/path — it cannot split a
+      # single flat directory across folders.
+      - name: message-tracking
+        orgId: 1
+        folder: "Message tracking"
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards-message-tracking
+          foldersFromFilesStructure: false

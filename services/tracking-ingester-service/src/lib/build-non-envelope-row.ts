@@ -86,6 +86,13 @@ export function buildNonEnvelopeRow(
     // Neither a full nor a stage-1-partial EventEnvelope — the body is not an
     // envelope at all (subject-only family or drift). See `Compliance` docs.
     compliance: "none",
+    // T4 click-through columns are canonical-envelope-only (workflow-execution
+    // rule 19 / connector-invocation rule 11 both require a parsed `EventEnvelope`
+    // body to read `data.payload` from) — non-envelope rows never populate them.
+    workflow_id: null,
+    run_id: null,
+    connector_id: null,
+    cache_status: null,
   };
 
   return row;

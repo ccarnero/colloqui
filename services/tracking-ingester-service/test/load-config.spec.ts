@@ -249,3 +249,73 @@ describe("loadTrackingIngesterConfig — defaults and overrides", () => {
     expect(result.value.concurrency).toBe(100);
   });
 });
+
+describe("loadTrackingIngesterConfig — OTel export config (T2)", () => {
+  it("defaults otelExportEnabled to false and endpoint to undefined", () => {
+    const result = loadTrackingIngesterConfig({
+      NATS_URL: NATS,
+      POSTGRES_URL: PG,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected ok");
+    }
+    expect(result.value.otelExportEnabled).toBe(false);
+    expect(result.value.otelExporterOtlpEndpoint).toBeUndefined();
+  });
+
+  it("leaves the endpoint unset without error when export is disabled", () => {
+    const result = loadTrackingIngesterConfig({
+      NATS_URL: NATS,
+      POSTGRES_URL: PG,
+      OTEL_EXPORT_ENABLED: "false",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("errors when OTEL_EXPORT_ENABLED=true but the endpoint is unset", () => {
+    const result = loadTrackingIngesterConfig({
+      NATS_URL: NATS,
+      POSTGRES_URL: PG,
+      OTEL_EXPORT_ENABLED: "true",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("expected err");
+    }
+    expect(result.error.missing.join(" ")).toContain(
+      "OTEL_EXPORTER_OTLP_ENDPOINT"
+    );
+  });
+
+  it("accepts OTEL_EXPORT_ENABLED=true with an endpoint set", () => {
+    const result = loadTrackingIngesterConfig({
+      NATS_URL: NATS,
+      POSTGRES_URL: PG,
+      OTEL_EXPORT_ENABLED: "true",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.dev:4318/v1/traces",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected ok");
+    }
+    expect(result.value.otelExportEnabled).toBe(true);
+    expect(result.value.otelExporterOtlpEndpoint).toBe(
+      "http://otel-collector.dev:4318/v1/traces"
+    );
+  });
+
+  it("accepts '1' as a truthy value for OTEL_EXPORT_ENABLED", () => {
+    const result = loadTrackingIngesterConfig({
+      NATS_URL: NATS,
+      POSTGRES_URL: PG,
+      OTEL_EXPORT_ENABLED: "1",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.dev:4318/v1/traces",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected ok");
+    }
+    expect(result.value.otelExportEnabled).toBe(true);
+  });
+});

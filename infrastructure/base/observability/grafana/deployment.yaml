@@ -60,6 +60,8 @@ spec:
               mountPath: /etc/grafana/provisioning/dashboards
             - name: dashboards
               mountPath: /var/lib/grafana/dashboards
+            - name: dashboards-message-tracking
+              mountPath: /var/lib/grafana/dashboards-message-tracking
           readinessProbe:
             httpGet:
               path: /api/health
@@ -75,3 +77,6 @@ spec:
         - name: dashboards
           configMap:
             name: grafana-dashboards
+        - name: dashboards-message-tracking
+          configMap:
+            name: grafana-dashboards-message-tracking

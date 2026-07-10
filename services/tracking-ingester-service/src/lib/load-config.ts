@@ -56,6 +56,20 @@ export interface TrackingIngesterConfig {
    * messages get spuriously redelivered. @default [30s, 60s, 120s, 300s]
    */
   readonly backoffMs: readonly number[];
+  /**
+   * Whether OTel span export (T2 of trace-visualization) is on. @default false
+   * — export is opt-in so existing deployments are unaffected until the
+   * collector pipeline (T3) is provisioned.
+   */
+  readonly otelExportEnabled: boolean;
+  /**
+   * OTLP/HTTP JSON traces endpoint (the in-cluster otel-collector), e.g.
+   * `http://otel-collector.observability:4318/v1/traces`. `undefined` when
+   * export is disabled — `emit-otel-spans.ts` treats that as a no-op emitter.
+   * Required (hard error) when `otelExportEnabled` is true; never defaulted
+   * when required, matching the credential-like-knobs convention above.
+   */
+  readonly otelExporterOtlpEndpoint: string | undefined;
 }
 
 /** Structured validation failure listing every missing required env name. */
@@ -113,6 +127,15 @@ function readInt(
   return parsed;
 }
 
+/** Parses a boolean env var (`"true"`/`"1"` → true; anything else → `fallback`). */
+function readBool(env: EnvBag, name: string, fallback: boolean): boolean {
+  const raw = readTrimmed(env, name);
+  if (raw === undefined) {
+    return fallback;
+  }
+  return raw.toLowerCase() === "true" || raw === "1";
+}
+
 /**
  * Parses a comma-separated positive-integer ms list (e.g. `"5000,10000"`) for
  * the redelivery backoff schedule. Mirrors `readInt`'s fallback convention: on
@@ -168,6 +191,20 @@ export function loadTrackingIngesterConfig(
     );
   }
 
+  // OTel export is opt-in (default disabled). Only when explicitly enabled does
+  // the endpoint become required — an unset endpoint on a disabled emitter is
+  // NOT an error (matches T2: "disabled = no-op emitter").
+  const otelExportEnabled = readBool(env, "OTEL_EXPORT_ENABLED", false);
+  const otelExporterOtlpEndpoint = readTrimmed(
+    env,
+    "OTEL_EXPORTER_OTLP_ENDPOINT"
+  );
+  if (otelExportEnabled && !otelExporterOtlpEndpoint) {
+    missing.push(
+      "OTEL_EXPORTER_OTLP_ENDPOINT (required when OTEL_EXPORT_ENABLED=true)"
+    );
+  }
+
   if (missing.length > 0) {
     return err<ConfigError>({
       missing,
@@ -200,5 +237,7 @@ export function loadTrackingIngesterConfig(
     concurrency,
     maxDeliver: readInt(env, "TRK_MAX_DELIVER", -1),
     backoffMs: readIntList(env, "TRK_BACKOFF_MS", DEFAULT_BACKOFF_MS),
+    otelExportEnabled,
+    otelExporterOtlpEndpoint,
   });
 }

@@ -203,6 +203,150 @@ describe("toTrackedEventRow — full row projection (compliant fixture)", () => 
   });
 });
 
+// ---------------------------------------------------------------------------
+// T4 (trace-visualization) — click-through detail columns: workflow_id/run_id
+// for workflow-execution events (rule 19), connector_id/cache_status for
+// connector-invocation events (rule 11). One fixture per family, per tasks.md.
+// ---------------------------------------------------------------------------
+describe("toTrackedEventRow — T4 click-through detail columns", () => {
+  function compliantEnvelope(overrides: Record<string, unknown>): unknown {
+    return {
+      specversion: "1.0",
+      id: "evt-detail-1",
+      source: "//test/detail",
+      type: "io.yoizen.test.v1",
+      resource: "tenant/acme/x",
+      time: "2026-07-10T00:00:00.000Z",
+      traceid: "11111111-1111-1111-1111-111111111111",
+      causation_id: null,
+      correlation_id: "corr-detail-1",
+      tenant: "acme",
+      producer: "workflow-service",
+      domain: "workflow",
+      channel: "internal",
+      provider: "native",
+      accountid: "system",
+      idempotencykey: "idem-1",
+      transport: { method: "stream", protocol: "internal", depth: 0 },
+      data: {
+        received_at: "2026-07-10T00:00:00.000Z",
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "x",
+        payload: null,
+      },
+      ...overrides,
+    };
+  }
+
+  it("workflow event (rule 19) extracts workflow_id (from executionId fallback) and run_id null", () => {
+    const subject =
+      "evt.acme.workflow-service.workflow.internal.native.execution_completed.v1";
+    const envelope = compliantEnvelope({
+      data: {
+        received_at: "2026-07-10T00:00:00.000Z",
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "x",
+        payload: { executionId: "exec-42", status: "COMPLETED" },
+      },
+    });
+    const result = toTrackedEventRow(subject, envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.rule).toBe(19);
+    expect(result.value.workflow_id).toBe("exec-42");
+    expect(result.value.run_id).toBeNull();
+    expect(result.value.connector_id).toBeNull();
+    expect(result.value.cache_status).toBeNull();
+  });
+
+  it("connector event (rule 11) with a cache hit extracts connector_id + cache_status", () => {
+    const subject =
+      "evt.acme.connector-runtime.platform.endpoint.system.endpoint_call_completed.v1";
+    const envelope = compliantEnvelope({
+      producer: "connector-runtime",
+      domain: "platform",
+      channel: "endpoint",
+      provider: "system",
+      data: {
+        received_at: "2026-07-10T00:00:00.000Z",
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "x",
+        payload: {
+          adapterId: "adapter-x",
+          endpointId: "ep-1",
+          cacheResult: "hit",
+        },
+      },
+    });
+    const result = toTrackedEventRow(subject, envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.rule).toBe(11);
+    expect(result.value.connector_id).toBe("adapter-x");
+    expect(result.value.cache_status).toBe("hit");
+    expect(result.value.workflow_id).toBeNull();
+    expect(result.value.run_id).toBeNull();
+  });
+
+  it("connector event WITHOUT a cache result leaves cache_status null", () => {
+    const subject =
+      "evt.acme.connector-runtime.platform.endpoint.system.endpoint_call_completed.v1";
+    const envelope = compliantEnvelope({
+      producer: "connector-runtime",
+      domain: "platform",
+      channel: "endpoint",
+      provider: "system",
+      data: {
+        received_at: "2026-07-10T00:00:00.000Z",
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "x",
+        payload: {
+          adapterId: "adapter-x",
+          endpointId: "ep-1",
+          cacheResult: null,
+        },
+      },
+    });
+    const result = toTrackedEventRow(subject, envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.connector_id).toBe("adapter-x");
+    expect(result.value.cache_status).toBeNull();
+  });
+
+  it("an unrelated event family (channel-processing, rule 3) has all four columns null", () => {
+    const subject =
+      "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1";
+    const envelope = loadFixture(
+      "audit-service-channel-envelope-01.json"
+    ) as Record<string, unknown>;
+    const result = toTrackedEventRow(subject, envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.rule).toBe(3);
+    expect(result.value.workflow_id).toBeNull();
+    expect(result.value.run_id).toBeNull();
+    expect(result.value.connector_id).toBeNull();
+    expect(result.value.cache_status).toBeNull();
+  });
+});
+
 describe("toTrackedEventRow — malformed / expected failures", () => {
   const subject =
     "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1";

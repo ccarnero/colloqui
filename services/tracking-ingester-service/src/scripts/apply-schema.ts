@@ -56,11 +56,17 @@ async function main(): Promise<void> {
   const redacted = dsn.replace(/\/\/[^@]*@/, "//***@");
   log(`Connecting to ${redacted}`);
 
-  const sqlPath = fileURLToPath(
-    new URL("../sql/tracked-events.sql", import.meta.url)
-  );
-  log(`Loading DDL from ${sqlPath}`);
-  const statements = loadSchemaStatements(readFileSync(sqlPath, "utf8"));
+  // Applied in order: the base table first, then the span-pairing view that
+  // reads FROM tracking.tracked_events (T1 of trace-visualization) — the view
+  // definition would fail if the table did not exist yet.
+  const sqlPaths = [
+    fileURLToPath(new URL("../sql/tracked-events.sql", import.meta.url)),
+    fileURLToPath(new URL("../sql/span-pairs.sql", import.meta.url)),
+  ];
+  const statements = sqlPaths.flatMap((sqlPath) => {
+    log(`Loading DDL from ${sqlPath}`);
+    return loadSchemaStatements(readFileSync(sqlPath, "utf8"));
+  });
   log(`Parsed ${statements.length} statement(s)`);
 
   const sql = postgres(dsn, { max: 1, prepare: false });

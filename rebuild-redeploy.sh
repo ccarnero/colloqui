@@ -132,6 +132,22 @@ get_ksvc_names() {
   esac
 }
 
+# Deployment/pod names are accepted as aliases for their logical service so
+# callers can pass what they see in `kubectl get pods` (e.g.
+# tracking-ingester-worker) instead of the directory name under services/.
+normalize_service_name() {
+  local name="$1"
+  case "$name" in
+    tracking-ingester-worker)                    echo "tracking-ingester-service" ;;
+    connector-admin-api|connector-admin-worker)  echo "connector-admin" ;;
+    audit-service-api|audit-service-worker)      echo "audit-service" ;;
+    channel-service-api|channel-service-worker)  echo "channel-service" ;;
+    usage-aggregator-api|usage-aggregator-worker) echo "usage-aggregator-service" ;;
+    workflow-service-api|workflow-service-worker|workflow-worker) echo "workflow-service" ;;
+    *)                                           echo "$name" ;;
+  esac
+}
+
 # Plain Kubernetes Deployments associated with a logical service. Empty
 # string means "no Deployment, KSVC only" (which is the default case).
 get_deployment_names() {
@@ -250,6 +266,13 @@ main() {
     err "Service name is required"
     usage
     exit 1
+  fi
+
+  local normalized
+  normalized="$(normalize_service_name "$service_name")"
+  if [[ "$normalized" != "$service_name" ]]; then
+    log "Resolved alias '${service_name}' -> logical service '${normalized}'"
+    service_name="$normalized"
   fi
 
   local valid_svc=0

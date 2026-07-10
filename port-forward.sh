@@ -9,7 +9,10 @@ SUPPORT_NAMESPACE="support-services-${ENVIRONMENT}"
 KOURIER_NAMESPACE="kourier-system"
 
 SERVICES=(api-gateway admin-console)
-SUPPORT_SERVICES=(nats temporal-ui)
+# grafana + tempo added for T7 (trace-visualization) — the trace-console entry
+# points (DOCS/guides/trace-console.md) all resolve through these two plus the
+# already-forwarded temporal-ui.
+SUPPORT_SERVICES=(nats temporal-ui grafana tempo)
 
 # Bash 3.2 (macOS) lacks associative arrays; use case-based lookups.
 container_port_for() {
@@ -32,6 +35,8 @@ support_container_port_for() {
   case "$1" in
     nats)        echo 4222 ;;
     temporal-ui) echo 80 ;;
+    grafana)     echo 3000 ;;
+    tempo)       echo 3200 ;;
     *) return 1 ;;
   esac
 }
@@ -40,6 +45,8 @@ support_local_port_for() {
   case "$1" in
     nats)        echo "${NATS_PORT:-4222}" ;;
     temporal-ui) echo "${TEMPORAL_UI_PORT:-8233}" ;;
+    grafana)     echo "${GRAFANA_PORT:-3000}" ;;
+    tempo)       echo "${TEMPO_PORT:-3200}" ;;
     *) return 1 ;;
   esac
 }
@@ -114,6 +121,8 @@ usage() {
     "  ADMIN_CONSOLE_PORT        Local port for admin-console     (default: 4300)" \
     "  NATS_PORT                 Local port for NATS client       (default: 4222)" \
     "  TEMPORAL_UI_PORT          Local port for Temporal Web UI   (default: 8233)" \
+    "  GRAFANA_PORT              Local port for Grafana           (default: 3000)" \
+    "  TEMPO_PORT                Local port for Tempo query API   (default: 3200)" \
     "  STORAGE_ENGINE            postgres (default) or mongo" \
     "  MONGO_PLATFORM_PORT       Local port for mongo-platform    (default: 27017)" \
     "  MONGO_USAGE_PORT          Local port for mongo-usage       (default: 27018)" \
@@ -360,9 +369,38 @@ print_summary() {
   echo "    curl http://localhost:$(local_port_for api-gateway)/health"
   echo "    curl http://$(get_ns HOST_FOR_SVC api-gateway)/health"
 
+  print_trace_console_urls
+
   echo ""
   log "Press Ctrl+C to stop all port-forwards."
   echo ""
+}
+
+# T7 (trace-visualization) — echoes every entry URL from
+# DOCS/guides/trace-console.md so they are always one terminal-scroll away.
+# Only prints when grafana/temporal-ui forwards actually started (both are
+# best-effort SUPPORT_SERVICES entries — skip silently otherwise).
+print_trace_console_urls() {
+  if ! kubectl get namespace "$SUPPORT_NAMESPACE" &>/dev/null; then
+    return
+  fi
+  local grafana_port temporal_port
+  grafana_port="$(support_local_port_for grafana)"
+  temporal_port="$(support_local_port_for temporal-ui)"
+
+  echo ""
+  log "=============================="
+  log " Trace console entry points (DOCS/guides/trace-console.md)"
+  log "=============================="
+  # Grafana folder UIDs are server-generated (not deterministic across
+  # environments), so the tag-filtered dashboard search is the stable link —
+  # both dashboards ship with the "message-tracking" tag.
+  echo "  Grafana folder 'Message tracking' : http://localhost:${grafana_port}/dashboards?tag=message-tracking"
+  echo "  Message traces dashboard          : http://localhost:${grafana_port}/d/message-traces?var-correlation_id=<PASTE_HERE>"
+  echo "  Connector detail dashboard        : http://localhost:${grafana_port}/d/connector-detail?var-connector=<CONNECTOR_ID>"
+  echo "  Tempo Explore                     : http://localhost:${grafana_port}/explore?left=%7B%22datasource%22:%22tempo%22%7D"
+  echo "  Temporal UI                       : http://localhost:${temporal_port}"
+  echo "  admin-console trace page          : http://$(get_ns HOST_FOR_SVC admin-console 2>/dev/null || echo "localhost:$(local_port_for admin-console)")/processes/trace/<CORRELATION_ID>"
 }
 
 main() {

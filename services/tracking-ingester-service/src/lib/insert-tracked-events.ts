@@ -16,8 +16,10 @@
 // throws for an expected failure — a failing insert is returned as an `err`.
 //
 // Column layout is BINDING on `TrackedEventRow` (src/lib/to-tracked-event-row.ts)
-// and the DDL (src/sql/tracked-events.sql). Eighteen columns are inserted;
-// `ingested_at` is a DB-side `DEFAULT now()` and is intentionally omitted.
+// and the DDL (src/sql/tracked-events.sql). Twenty-two columns are inserted
+// (18 original + 4 T4 click-through detail columns: workflow_id, run_id,
+// connector_id, cache_status); `ingested_at` is a DB-side `DEFAULT now()` and
+// is intentionally omitted.
 //
 // UNNEST cast notes (the two non-scalar columns are the interesting ones):
 //   - `envelope` (jsonb): each row's envelope is JSON-serialized to a string and
@@ -113,6 +115,11 @@ export async function insertTrackedEvents(
   const isClaimCheck = new Array<boolean>(n);
   const envelope = new Array<string>(n);
   const compliance = new Array<string>(n);
+  // T4 (trace-visualization) click-through detail columns — nullable.
+  const workflowId = new Array<string | null>(n);
+  const runId = new Array<string | null>(n);
+  const connectorId = new Array<string | null>(n);
+  const cacheStatus = new Array<string | null>(n);
 
   for (let i = 0; i < n; i++) {
     const row = rows[i]!;
@@ -136,6 +143,10 @@ export async function insertTrackedEvents(
     // jsonb round-trips only via a JSON string cast to jsonb (see header note).
     envelope[i] = JSON.stringify(row.envelope);
     compliance[i] = row.compliance;
+    workflowId[i] = row.workflow_id;
+    runId[i] = row.run_id;
+    connectorId[i] = row.connector_id;
+    cacheStatus[i] = row.cache_status;
   }
 
   log(`insertTrackedEvents: inserting ${n} row(s) via UNNEST`);
@@ -160,7 +171,11 @@ export async function insertTrackedEvents(
         consumed_by,
         is_claim_check,
         envelope,
-        compliance
+        compliance,
+        workflow_id,
+        run_id,
+        connector_id,
+        cache_status
       )
       SELECT
         event_id,
@@ -180,7 +195,11 @@ export async function insertTrackedEvents(
         consumed_by::text[],
         is_claim_check,
         envelope,
-        compliance
+        compliance,
+        workflow_id,
+        run_id,
+        connector_id,
+        cache_status
       FROM UNNEST(
         ${client.array(eventId)}::text[],
         ${client.array(subject)}::text[],
@@ -199,7 +218,11 @@ export async function insertTrackedEvents(
         ${client.array(consumedBy)}::text[],
         ${client.array(isClaimCheck)}::boolean[],
         ${client.array(envelope)}::jsonb[],
-        ${client.array(compliance)}::text[]
+        ${client.array(compliance)}::text[],
+        ${client.array(workflowId)}::text[],
+        ${client.array(runId)}::text[],
+        ${client.array(connectorId)}::text[],
+        ${client.array(cacheStatus)}::text[]
       ) AS t(
         event_id,
         subject,
@@ -218,7 +241,11 @@ export async function insertTrackedEvents(
         consumed_by,
         is_claim_check,
         envelope,
-        compliance
+        compliance,
+        workflow_id,
+        run_id,
+        connector_id,
+        cache_status
       )
       ON CONFLICT (event_id) DO NOTHING
     `;

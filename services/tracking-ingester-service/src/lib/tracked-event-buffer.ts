@@ -30,6 +30,17 @@ export interface TrackedEventBufferOptions {
   readonly batchFlushMs?: number;
   /** Optional line logger for verbose flush progress. */
   readonly log?: (message: string) => void;
+  /**
+   * Optional OTel span emitter (T2 of trace-visualization), called with the
+   * flushed batch AFTER the Postgres insert commits. Fire-and-forget by
+   * contract: the buffer NEVER awaits this before resolving the enqueue
+   * waiters, and any rejection is caught + logged here — export failure MUST
+   * NOT fail (or even delay) ingestion. Absent in tests/deployments that don't
+   * wire span export (OTEL_EXPORT_ENABLED=false → `main.ts` passes a no-op).
+   */
+  readonly emitSpans?: (
+    rows: readonly TrackedEventRow[]
+  ) => Promise<unknown> | unknown;
 }
 
 interface Waiter {
@@ -68,6 +79,21 @@ export function createTrackedEventBuffer(
     const result = await options.insert(batch);
     if (result.ok) {
       log(`tracked-event-buffer: committed ${result.value.inserted} row(s)`);
+      // Span export is fire-and-forget: never awaited, never allowed to affect
+      // the resolve below. Errors are caught + logged here — a Tempo/collector
+      // outage must never surface as an ingestion failure.
+      if (options.emitSpans) {
+        try {
+          Promise.resolve(options.emitSpans(batch)).catch((error: unknown) => {
+            const reason =
+              error instanceof Error ? error.message : String(error);
+            log(`tracked-event-buffer: span emit FAILED (ignored) — ${reason}`);
+          });
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          log(`tracked-event-buffer: span emit FAILED (ignored) — ${reason}`);
+        }
+      }
       for (const w of batchWaiters) {
         w.resolve();
       }
