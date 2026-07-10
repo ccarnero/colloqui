@@ -9,7 +9,7 @@ function value(subject: string, streamName?: string) {
   return r.value;
 }
 
-describe("classify — TAXONOMY.md §4 rules 1-18", () => {
+describe("classify — TAXONOMY.md §4 rules 1-19", () => {
   it("rejects an empty subject", () => {
     const r = classify("");
     expect(r.ok).toBe(false);
@@ -224,10 +224,46 @@ describe("classify — TAXONOMY.md §4 rules 1-18", () => {
 
   it("rule 17 — generic 8-token, channel not whitelisted → unknown flagged", () => {
     const c = value(
-      "evt.acme.workflow-service.workflow.internal.native.execution_completed.v1"
+      "evt.acme.some-producer.some-domain.internal.native.some_kind.v1"
     );
     expect(c).toMatchObject({
       tech: "unknown",
+      businessFn: "unknown",
+      rule: 17,
+    });
+    expect(c.unknown).toBe(true);
+  });
+
+  it("rule 19 — workflow-service execution family → platform/workflow-execution", () => {
+    const c = value(
+      "evt.acme.workflow-service.workflow.internal.native.execution_completed.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "workflow-execution",
+      rule: 19,
+    });
+    // Recognized family — must NOT be flagged for the unknown alarm.
+    expect(c.unknown).toBe(false);
+  });
+
+  it("rule 19 — ordering: evaluated before the 16/17/18 catch-alls", () => {
+    const c = value(
+      "evt.acme.workflow-service.workflow.internal.native.execution_completed.v1"
+    );
+    expect(c.rule).toBe(19);
+    expect(c.rule).not.toBe(16);
+    expect(c.rule).not.toBe(17);
+  });
+
+  it("rule 19 — near-miss: producer workflow-service but domain != workflow falls through", () => {
+    // domain token is `messaging`, not `workflow` → rule 19 must NOT fire;
+    // it falls to the generic rule 17 (channel `whatsapp` is whitelisted).
+    const c = value(
+      "evt.acme.workflow-service.messaging.whatsapp.meta.some_kind.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "whatsapp",
       businessFn: "unknown",
       rule: 17,
     });

@@ -1,4 +1,4 @@
-// Bus-event classifier — implements TAXONOMY.md §4 rules 1-18, first-match-wins,
+// Bus-event classifier — implements TAXONOMY.md §4 rules 1-19, first-match-wins,
 // over the subject string. Pure function, no side effects. Every rule branch
 // cites the TAXONOMY.md rule number it implements.
 //
@@ -35,6 +35,7 @@ export type BusinessFn =
   | "agent-memory"
   | "agent-runtime-streaming"
   | "connector-invocation"
+  | "workflow-execution"
   | "registry-sync"
   | "tenant-provisioning"
   | "audit"
@@ -45,7 +46,7 @@ export type BusinessFn =
 export interface Classification {
   tech: Tech;
   businessFn: BusinessFn;
-  /** 1-18: the TAXONOMY.md §4 rule that fired (first-match-wins). */
+  /** TAXONOMY.md §4 rule that fired (first-match-wins). 1-18 plus 19 (workflow). */
   rule: number;
   /** Rules 16/17/18 produce unrecognized traffic the consumer must alarm on. */
   unknown: boolean;
@@ -107,12 +108,20 @@ function mapChannelToTech(channel: string): Tech {
   return (channel === "http" ? "http-generic" : channel) as Tech;
 }
 
+// Only the three catch-all rules mark traffic as unrecognized/alarm-worthy.
+// Rule 19 (workflow-service) is a recognized canonical family even though its
+// number is > 15, so `unknown` is an explicit set, not a `rule >= 16` test.
+// Exported as the SINGLE SOURCE OF TRUTH for "is this rule an alarm?" — every
+// consumer (classify + the T07 pipeline) tests membership here rather than
+// re-deriving with `rule >= 16` (which mis-flags rule 19).
+export const UNKNOWN_RULES: ReadonlySet<number> = new Set([16, 17, 18]);
+
 function classified(
   tech: Tech,
   businessFn: BusinessFn,
   rule: number
 ): Classification {
-  return { tech, businessFn, rule, unknown: rule >= 16 };
+  return { tech, businessFn, rule, unknown: UNKNOWN_RULES.has(rule) };
 }
 
 /**
@@ -235,6 +244,18 @@ export function classify(
     // Rule 11 — connector-runtime endpoint invocation. TAXONOMY.md §4 rule 11.
     if (subject.includes(".connector-runtime.platform.endpoint.")) {
       return ok(classified("connector", "connector-invocation", 11));
+    }
+
+    // Rule 19 — workflow-service execution lifecycle. Matches the canonical
+    // family `evt.*.workflow-service.workflow.*` (producer token `workflow-service`
+    // AND domain token `workflow`, e.g.
+    // `evt.acme.workflow-service.workflow.internal.native.execution_completed.v1`).
+    // Placed BEFORE the 16/17/18 catch-alls so it is reachable — its 5th token
+    // `internal` is not in the channel whitelist and would otherwise fall to
+    // rule 17 `unknown`. tech `platform` per §2 (Temporal is a runtime detail
+    // absent from the subject). TAXONOMY.md §4 rule 19.
+    if (producer === "workflow-service" && domain === "workflow") {
+      return ok(classified("platform", "workflow-execution", 19));
     }
 
     // Rule 16 — any other internal-agent producer with the

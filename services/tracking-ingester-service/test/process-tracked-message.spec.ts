@@ -1,0 +1,54 @@
+import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { processTrackedMessage } from "../src/lib/process-tracked-message.js";
+
+const FIXTURES_DIR = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "..",
+  "fixtures",
+  "bus-events"
+);
+
+function loadFixture(name: string): unknown {
+  return JSON.parse(readFileSync(join(FIXTURES_DIR, name), "utf8"));
+}
+
+describe("processTrackedMessage — outcome derivation", () => {
+  // Regression (T02b objection 1): a rule-19 workflow-service subject with a
+  // compliant envelope must be `canonical`, NOT `unknown`. The previous
+  // `rule >= 16` test mis-flagged rule 19 as unknown, firing a spurious alarm.
+  // Only the UNKNOWN_RULES set (16/17/18) is the alarm (TAXONOMY.md §3/§4).
+  it("classifies a rule-19 workflow-service envelope as canonical (not unknown)", () => {
+    const result = processTrackedMessage({
+      subject:
+        "evt.acme.workflow-service.workflow.internal.native.execution_completed.v1",
+      streamName: "INGRESS-ACME",
+      streamSequence: 5,
+      // Any compliant EventEnvelope body — classification is subject-driven.
+      payload: loadFixture("audit-service-channel-envelope-01.json"),
+      decoded: true,
+      receivedAt: "2026-07-09T00:00:00.000Z",
+    });
+
+    expect(result.row.rule).toBe(19);
+    expect(result.outcome).toBe("canonical");
+  });
+
+  it("flags a rule-17 unrecognized 8-token envelope as unknown", () => {
+    const result = processTrackedMessage({
+      subject:
+        "evt.tenant-a.mystery-producer.mystery.weirdchan.prov.mysterykind.v1",
+      streamName: "INGRESS-TENANT-A",
+      streamSequence: 9,
+      payload: loadFixture("audit-service-channel-envelope-01.json"),
+      decoded: true,
+      receivedAt: "2026-07-09T00:00:00.000Z",
+    });
+
+    expect(result.row.rule).toBe(17);
+    expect(result.outcome).toBe("unknown");
+  });
+});

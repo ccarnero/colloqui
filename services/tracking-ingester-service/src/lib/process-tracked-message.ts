@@ -11,7 +11,7 @@
 // No side effects, never throws.
 
 import { buildNonEnvelopeRow } from "./build-non-envelope-row.js";
-import type { ClassifyOptions } from "./classify.js";
+import { type ClassifyOptions, UNKNOWN_RULES } from "./classify.js";
 import {
   type MapError,
   type TrackedEventRow,
@@ -70,9 +70,13 @@ export function processTrackedMessage(
 
   const mapped = toTrackedEventRow(msg.subject, msg.payload, options);
   if (mapped.ok) {
-    // Rules 16/17/18 mark unrecognized traffic — the alarm (TAXONOMY.md §3).
-    const outcome: ProcessOutcome =
-      mapped.value.rule >= 16 ? "unknown" : "canonical";
+    // Only rules 16/17/18 mark unrecognized traffic — the alarm (TAXONOMY.md §3).
+    // Membership in `UNKNOWN_RULES` is the SINGLE SOURCE OF TRUTH shared with
+    // classify.ts; a `rule >= 16` test would wrongly flag rule 19 (workflow-
+    // service, a recognized canonical family) as unknown.
+    const outcome: ProcessOutcome = UNKNOWN_RULES.has(mapped.value.rule)
+      ? "unknown"
+      : "canonical";
     return { outcome, row: mapped.value };
   }
 

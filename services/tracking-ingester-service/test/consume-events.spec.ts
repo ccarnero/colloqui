@@ -184,13 +184,14 @@ describe("makeTrackedEventHandler — per-message pipeline", () => {
     expect(metrics.insertFailures).toBe(1);
   });
 
-  it("alarms on an unknown classification (rule >= 16) and still persists + acks", async () => {
+  it("alarms only on an UNKNOWN_RULES classification (16/17/18) and still persists + acks", async () => {
     const { buffer, inserted } = bufferWith(okInsert);
     const metrics = makeMetrics();
     const handler = makeTrackedEventHandler({ buffer, metrics: metrics.sink });
 
     // Compliant envelope, but an 8-token subject with a non-whitelisted channel
-    // token classifies to rule 17 (unknown business_fn) — the alarm.
+    // token classifies to rule 17 (unknown business_fn) — in UNKNOWN_RULES, so
+    // it is the alarm (TAXONOMY.md §3/§4).
     const { msg, calls } = makeMsg({
       subject:
         "evt.tenant-a.mystery-producer.mystery.weirdchan.prov.mysterykind.v1",
@@ -205,7 +206,31 @@ describe("makeTrackedEventHandler — per-message pipeline", () => {
     expect(metrics.unknown).toEqual(["classification"]);
     expect(calls.ack).toBe(1);
     expect(inserted).toHaveLength(1);
-    expect(inserted[0]!.rule).toBeGreaterThanOrEqual(16);
+    expect([16, 17, 18]).toContain(inserted[0]!.rule);
+  });
+
+  it("does NOT alarm on a rule-19 workflow-service envelope (recognized canonical, not in UNKNOWN_RULES)", async () => {
+    const { buffer, inserted } = bufferWith(okInsert);
+    const metrics = makeMetrics();
+    const handler = makeTrackedEventHandler({ buffer, metrics: metrics.sink });
+
+    // rule > 15 but NOT in UNKNOWN_RULES (16/17/18): a `rule >= 16` test would
+    // wrongly alarm here. Subject drives classification to rule 19.
+    const { msg, calls } = makeMsg({
+      subject:
+        "evt.acme.workflow-service.workflow.internal.native.execution_completed.v1",
+      stream: "INGRESS-ACME",
+      seq: 12,
+      payload: loadFixture("audit-service-channel-envelope-01.json"),
+    });
+
+    await handler(msg);
+
+    expect(metrics.processed).toEqual(["canonical"]);
+    expect(metrics.unknown).toEqual([]); // NOT an alarm
+    expect(calls.ack).toBe(1);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]!.rule).toBe(19);
   });
 
   it("tracks a non_envelope_family with a synthesized <stream>:<seq> event_id (no alarm)", async () => {
