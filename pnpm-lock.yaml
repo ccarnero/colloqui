@@ -1204,6 +1204,25 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  services/tracking-ingester-service:
+    dependencies:
+      '@yoizen/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
+      '@yoizen/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      postgres:
+        specifier: ^3.4.5
+        version: 3.4.9
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.1
+        version: 22.19.20
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   services/usage-aggregator-service:
     dependencies:
       '@nestjs/common':
@@ -8295,13 +8314,13 @@ snapshots:
 
   '@types/docker-modem@3.0.6':
     dependencies:
-      '@types/node': 22.19.20
+      '@types/node': 25.9.2
       '@types/ssh2': 1.15.5
 
   '@types/dockerode@4.0.1':
     dependencies:
       '@types/docker-modem': 3.0.6
-      '@types/node': 22.19.20
+      '@types/node': 25.9.2
       '@types/ssh2': 1.15.5
 
   '@types/estree@1.0.9': {}
@@ -8343,11 +8362,11 @@ snapshots:
 
   '@types/ssh2-streams@0.1.13':
     dependencies:
-      '@types/node': 22.19.20
+      '@types/node': 25.9.2
 
   '@types/ssh2@0.5.52':
     dependencies:
-      '@types/node': 22.19.20
+      '@types/node': 25.9.2
       '@types/ssh2-streams': 0.1.13
 
   '@types/ssh2@1.15.5':
@@ -8362,7 +8381,7 @@ snapshots:
     dependencies:
       '@types/cookiejar': 2.1.5
       '@types/methods': 1.1.4
-      '@types/node': 22.19.20
+      '@types/node': 25.9.2
       form-data: 4.0.5
 
   '@types/supertest@7.2.0':
@@ -9634,7 +9653,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 22.19.20
+      '@types/node': 25.9.2
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
@@ -10355,7 +10374,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.1
-      '@types/node': 22.19.20
+      '@types/node': 25.9.2
       long: 5.3.2
 
   protobufjs@7.6.3:
@@ -10370,7 +10389,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.1
-      '@types/node': 22.19.20
+      '@types/node': 25.9.2
       long: 5.3.2
 
   proxy-addr@2.0.7:
