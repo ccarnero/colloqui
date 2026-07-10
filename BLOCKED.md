@@ -1,6 +1,8 @@
 # Blocked tasks — message-tracking ingester build loop
 
-## T13 — End-to-end validation
+_No open blockers. History below._
+
+## T13 — End-to-end validation — RESOLVED 2026-07-10
 
 - **Date:** 2026-07-10
 - **Attempts:** 1 (validation-only task; no code changed, nothing reverted)
@@ -17,7 +19,7 @@ Fix sketch: treat stage-1 webhook_received as canonical-with-known-drift (subjec
 ### What was tried
 Single validation run. Flow simulation worked on the first attempt; both blockers are deterministic classification outcomes, not flaky infra, so retries were pointless.
 
-### Unblock path
-1. ~~User decides the workflow-service family rule~~ DONE — rule 19 shipped (T02b).
-2. Remaining: T04b — stage-1 ingress compliance fix (webhook_received without accountid must classify rule 2 `ingress` with correlation preserved) + regression test.
-3. Re-run T13: with rule 19 live and T04b fixed, the full-chain criterion (>= 4 stages, unknown = 0, ingress present) is reachable.
+### Unblock path — completed
+1. ~~User decides the workflow-service family rule~~ DONE — rule 19 shipped (T02b, f6080d1).
+2. ~~T04b stage-1 ingress fix~~ DONE — option A canonical-with-known-drift (afcd511): sole-failure probe on accountid, rule-2 subject gate, compliance column (full/partial/none) with convergent backfill correction, regression pair (positive + exact-width inverse).
+3. ~~Re-run T13~~ DONE — PASS: fresh telegram chain of 9 events, ingress present (rule 2, compliance partial, correlation preserved), unknown = 0, depth 0→4, terminal channel-egress. Found and fixed a latent dashboard bug in the process (T12b, 323e87e): "closed = last event terminal" was 0 fleet-wide because rule-19 workflow-execution completes ~28ms after egress; redefined closed = chain contains a terminal event (reviewed rationale: order-insensitive, dlq is already in the terminal set so error-terminated chains count by design).
