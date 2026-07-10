@@ -239,7 +239,7 @@ closed chain (>= 4 stages, `unknown` count = 0); dashboard panels show the traff
 - [x] T03 facets
 - [x] T04 row mapper
 - [x] T05 DDL
-- [ ] T06 insert
+- [x] T06 insert
 - [ ] T07 consumer
 - [ ] T08 wiring
 - [ ] T09 deploy (Dockerfile + kustomize)
