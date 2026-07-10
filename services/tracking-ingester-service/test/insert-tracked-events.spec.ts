@@ -46,6 +46,7 @@ function sampleRow(overrides: Partial<TrackedEventRow> = {}): TrackedEventRow {
     consumed_by: ["usage-aggregator", "audit-service"],
     is_claim_check: false,
     envelope: { id: "evt-1", nested: { a: 1 } },
+    compliance: "full",
     ...overrides,
   };
 }
@@ -120,7 +121,7 @@ describe("insertTrackedEvents — SQL shape", () => {
     expect(sql).toContain("insert into tracking.tracked_events");
   });
 
-  it("inserts exactly the 17 mapped columns in order", async () => {
+  it("inserts exactly the 18 mapped columns in order", async () => {
     const { client, calls } = makeFakeClient();
     await insertTrackedEvents(client, [sampleRow()]);
     const sql = calls[0]!.sql;
@@ -149,6 +150,7 @@ describe("insertTrackedEvents — SQL shape", () => {
       "consumed_by",
       "is_claim_check",
       "envelope",
+      "compliance",
     ]);
     // ingested_at is a DB default and must NOT be inserted.
     expect(insertCols).not.toContain("ingested_at");
@@ -170,13 +172,13 @@ describe("insertTrackedEvents — SQL shape", () => {
     expect(sql).toContain("::boolean[]");
   });
 
-  it("passes 17 parallel arrays to the client", async () => {
+  it("passes 18 parallel arrays to the client", async () => {
     const { client, calls } = makeFakeClient();
     await insertTrackedEvents(client, [
       sampleRow(),
       sampleRow({ event_id: "evt-2" }),
     ]);
-    expect(calls[0]!.arrays).toHaveLength(17);
+    expect(calls[0]!.arrays).toHaveLength(18);
     for (const arr of calls[0]!.arrays) {
       expect(arr).toHaveLength(2);
     }
@@ -194,6 +196,14 @@ describe("insertTrackedEvents — value encoding", () => {
     expect(arrays[16]).toEqual([
       JSON.stringify({ id: "evt-1", nested: { a: 1 } }),
     ]);
+    // compliance is UNNEST arg index 17 (the 18th, last column).
+    expect(arrays[17]).toEqual(["full"]);
+  });
+
+  it("carries the compliance verdict verbatim (partial)", async () => {
+    const { client, calls } = makeFakeClient();
+    await insertTrackedEvents(client, [sampleRow({ compliance: "partial" })]);
+    expect(calls[0]!.arrays[17]).toEqual(["partial"]);
   });
 
   it("carries nulls verbatim for nullable columns", async () => {

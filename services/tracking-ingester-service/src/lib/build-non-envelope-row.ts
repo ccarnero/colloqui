@@ -83,6 +83,9 @@ export function buildNonEnvelopeRow(
     // A non-compliant body is not a claim-check envelope by construction.
     is_claim_check: false,
     envelope: input.payload,
+    // Neither a full nor a stage-1-partial EventEnvelope — the body is not an
+    // envelope at all (subject-only family or drift). See `Compliance` docs.
+    compliance: "none",
   };
 
   return row;

@@ -16,7 +16,7 @@
 // throws for an expected failure — a failing insert is returned as an `err`.
 //
 // Column layout is BINDING on `TrackedEventRow` (src/lib/to-tracked-event-row.ts)
-// and the DDL (src/sql/tracked-events.sql). Seventeen columns are inserted;
+// and the DDL (src/sql/tracked-events.sql). Eighteen columns are inserted;
 // `ingested_at` is a DB-side `DEFAULT now()` and is intentionally omitted.
 //
 // UNNEST cast notes (the two non-scalar columns are the interesting ones):
@@ -112,6 +112,7 @@ export async function insertTrackedEvents(
   const consumedBy = new Array<string>(n);
   const isClaimCheck = new Array<boolean>(n);
   const envelope = new Array<string>(n);
+  const compliance = new Array<string>(n);
 
   for (let i = 0; i < n; i++) {
     const row = rows[i]!;
@@ -134,6 +135,7 @@ export async function insertTrackedEvents(
     isClaimCheck[i] = row.is_claim_check;
     // jsonb round-trips only via a JSON string cast to jsonb (see header note).
     envelope[i] = JSON.stringify(row.envelope);
+    compliance[i] = row.compliance;
   }
 
   log(`insertTrackedEvents: inserting ${n} row(s) via UNNEST`);
@@ -157,7 +159,8 @@ export async function insertTrackedEvents(
         rule,
         consumed_by,
         is_claim_check,
-        envelope
+        envelope,
+        compliance
       )
       SELECT
         event_id,
@@ -176,7 +179,8 @@ export async function insertTrackedEvents(
         rule,
         consumed_by::text[],
         is_claim_check,
-        envelope
+        envelope,
+        compliance
       FROM UNNEST(
         ${client.array(eventId)}::text[],
         ${client.array(subject)}::text[],
@@ -194,7 +198,8 @@ export async function insertTrackedEvents(
         ${client.array(rule)}::integer[],
         ${client.array(consumedBy)}::text[],
         ${client.array(isClaimCheck)}::boolean[],
-        ${client.array(envelope)}::jsonb[]
+        ${client.array(envelope)}::jsonb[],
+        ${client.array(compliance)}::text[]
       ) AS t(
         event_id,
         subject,
@@ -212,7 +217,8 @@ export async function insertTrackedEvents(
         rule,
         consumed_by,
         is_claim_check,
-        envelope
+        envelope,
+        compliance
       )
       ON CONFLICT (event_id) DO NOTHING
     `;

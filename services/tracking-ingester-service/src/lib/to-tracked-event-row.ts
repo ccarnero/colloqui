@@ -26,6 +26,7 @@
 //     copied VERBATIM from the envelope. The mapper derives NOTHING — no
 //     re-derivation of the causal chain (SPEC.md code-style contract).
 
+import type { EventEnvelope } from "@yoizen/shared";
 import { isCompliantEnvelope, parseSubject } from "@yoizen/shared";
 import type { BusinessFn, Tech } from "./classify.js";
 import { type ClassifyOptions, classify } from "./classify.js";
@@ -69,6 +70,32 @@ import { err, ok, type Result } from "./result.js";
  * `ingested_at` is a DB-side default (`now()`), so it is intentionally NOT part
  * of the mapper output.
  */
+/**
+ * Envelope-compliance level recorded on every row (DDL column, `NOT NULL`, so
+ * EVERY row-producing path MUST set it). Three coherent, ordered levels of how
+ * close the stored body is to a canonical `EventEnvelope`:
+ *
+ *   - `"full"`    — the body IS a compliant `EventEnvelope` (passed
+ *                   `isCompliantEnvelope` outright). The default canonical row.
+ *   - `"partial"` — STAGE-1 INGRESS EXCEPTION (user-approved decision
+ *                   "option A: canonical-with-known-drift"). The body is a
+ *                   stage-1 `webhook_received` envelope (TAXONOMY.md §4 rule 2)
+ *                   that is compliant in EVERY field EXCEPT the intentionally
+ *                   absent (or `null`) `accountid`. The api-gateway builds this
+ *                   stage-1 shape as `WebhookIngressEnvelope = Omit<EventEnvelope,
+ *                   "accountid">` — the documented, currently-shipping drift in
+ *                   DRIFT.md §"Discrepancies" rows 6 & 7 (`envelope-schema.json`
+ *                   models no `WebhookIngressEnvelope` and unconditionally
+ *                   `required`s `accountid`, contradicting the code that omits
+ *                   it). Such rows are treated as canonical: classified by
+ *                   subject, `correlation_id`/`tenant` preserved, real `event_id`
+ *                   (`envelope.id`), never synthesized.
+ *   - `"none"`    — the body is NOT an `EventEnvelope` at all: subject-only
+ *                   non-envelope families (rules 1/12/13/14/15) and malformed
+ *                   drift (rule 18). Set by `buildNonEnvelopeRow` (T07).
+ */
+export type Compliance = "full" | "partial" | "none";
+
 export interface TrackedEventRow {
   event_id: string;
   subject: string;
@@ -95,6 +122,12 @@ export interface TrackedEventRow {
    * branch can store a raw family body without a type cast.
    */
   envelope: unknown;
+  /**
+   * Envelope-compliance verdict (`"full"` | `"partial"` | `"none"`) — see the
+   * `Compliance` docs. Canonical rows are `"full"`; the stage-1 `webhook_received`
+   * exception is `"partial"`; non-envelope/drift rows are `"none"`.
+   */
+  compliance: Compliance;
 }
 
 /**
@@ -139,6 +172,60 @@ export type MapError =
 // families (rules 2-11) with a broken body ARE drift → `malformed_envelope`.
 const SUBJECT_ONLY_NON_ENVELOPE_RULES = new Set([1, 12, 13, 14, 15]);
 
+// Synthetic value used ONLY to probe whether `accountid` is the SOLE compliance
+// failure. Never stored — the original body is persisted verbatim.
+const STAGE1_ACCOUNTID_PROBE = "__stage1_accountid_probe__";
+
+/**
+ * STAGE-1 INGRESS EXCEPTION detector (user-approved "canonical-with-known-drift").
+ *
+ * Returns a compliant `EventEnvelope` view of `envelope` when — and ONLY when —
+ * the message is a genuine stage-1 `webhook_received` envelope whose ONLY
+ * compliance failure is the intentionally-absent `accountid` (DRIFT.md rows 6 &
+ * 7: api-gateway builds `WebhookIngressEnvelope = Omit<EventEnvelope,
+ * "accountid">`). Returns `null` for anything else, so any OTHER compliance
+ * failure keeps flowing to the drift path exactly as before.
+ *
+ * Exact-width guarantee (repo playbook: the exception is no wider than the known
+ * case), enforced by TWO independent gates:
+ *   1. Subject gate — the subject MUST classify as TAXONOMY.md §4 rule 2
+ *      (stage-1 `webhook_received`). A non-stage-1 subject never qualifies.
+ *   2. Sole-failure probe — `!isCompliantEnvelope(env) &&
+ *      isCompliantEnvelope({ ...env, accountid })`. The caller already
+ *      established the left conjunct (this runs on the non-compliant branch);
+ *      re-adding a synthetic `accountid` and re-testing proves `accountid` was
+ *      the ONLY thing missing. If ANY other field were also non-compliant, the
+ *      probed copy would still fail and we return `null`. The probe covers both
+ *      an absent key and an explicit `accountid: null` (both fail the
+ *      `typeof === "string"` check in `isCompliantEnvelope`).
+ */
+function stage1PartialEnvelope(
+  subject: string,
+  envelope: unknown,
+  options: ClassifyOptions
+): EventEnvelope | null {
+  // Gate 1: subject must be the stage-1 webhook_received family (rule 2).
+  const subjectClass = classify(subject, options);
+  if (!subjectClass.ok || subjectClass.value.rule !== 2) {
+    return null;
+  }
+  // Gate 2: sole-failure probe. Only objects can carry an envelope shape; a
+  // primitive/null body could never be "compliant except accountid".
+  if (envelope === null || typeof envelope !== "object") {
+    return null;
+  }
+  // The probe unconditionally OVERWRITES accountid, so a wrong-typed accountid
+  // (e.g. a number) also qualifies as the sole failure and maps to "partial" —
+  // theoretical, and the original body is still stored verbatim regardless.
+  const probed = {
+    ...(envelope as Record<string, unknown>),
+    accountid: STAGE1_ACCOUNTID_PROBE,
+  };
+  // If adding ONLY a synthetic accountid makes it compliant, then accountid was
+  // the sole failure — the provable "exact width" of this exception.
+  return isCompliantEnvelope(probed) ? probed : null;
+}
+
 /**
  * Maps `(subject, envelope)` onto a `TrackedEventRow`.
  *
@@ -165,30 +252,52 @@ export function toTrackedEventRow(
     });
   }
 
-  // SPEC.md T04: a non-compliant envelope is an expected failure, not an
-  // exception. Classify the SUBJECT FIRST — rules 1/12/13/14/15 are subject-only
-  // — so a well-formed non-envelope family stays routable instead of being
-  // collapsed into a single generic "not compliant" string.
-  if (!isCompliantEnvelope(envelope)) {
-    const subjectClass = classify(subject, options);
-    if (
-      subjectClass.ok &&
-      SUBJECT_ONLY_NON_ENVELOPE_RULES.has(subjectClass.value.rule)
-    ) {
-      // Routable: e.g. audit.gateway.request → rule 14 (TAXONOMY.md §4).
+  // Establish the compliance verdict + the `EventEnvelope` view we project from.
+  //   - `"full"`    → body is compliant outright.
+  //   - `"partial"` → STAGE-1 INGRESS EXCEPTION (accountid the sole failure).
+  //   - otherwise   → expected failure, routed as a `MapError` (unchanged).
+  let compliance: Compliance;
+  let source: EventEnvelope;
+  if (isCompliantEnvelope(envelope)) {
+    compliance = "full";
+    source = envelope;
+  } else {
+    // STAGE-1 INGRESS EXCEPTION (user-approved "canonical-with-known-drift").
+    // A stage-1 `webhook_received` envelope (TAXONOMY.md §4 rule 2) whose ONLY
+    // compliance failure is the intentionally-absent `accountid` is treated as
+    // canonical — DRIFT.md rows 6 & 7 document that api-gateway builds it as
+    // `WebhookIngressEnvelope = Omit<EventEnvelope, "accountid">`. The detector
+    // is width-provable (subject-rule gate + sole-failure probe); ANY other
+    // compliance failure returns `null` and falls through to the drift path.
+    const partial = stage1PartialEnvelope(subject, envelope, options);
+    if (partial) {
+      compliance = "partial";
+      source = partial;
+    } else {
+      // SPEC.md T04: a non-compliant envelope is an expected failure, not an
+      // exception. Classify the SUBJECT FIRST — rules 1/12/13/14/15 are
+      // subject-only — so a well-formed non-envelope family stays routable
+      // instead of being collapsed into a single generic "not compliant" string.
+      const subjectClass = classify(subject, options);
+      if (
+        subjectClass.ok &&
+        SUBJECT_ONLY_NON_ENVELOPE_RULES.has(subjectClass.value.rule)
+      ) {
+        // Routable: e.g. audit.gateway.request → rule 14 (TAXONOMY.md §4).
+        return err<MapError>({
+          kind: "non_envelope_family",
+          rule: subjectClass.value.rule,
+          tech: subjectClass.value.tech,
+          business_fn: subjectClass.value.businessFn,
+        });
+      }
+      // Canonical `evt.` family (or unclassifiable) with a broken body → drift.
       return err<MapError>({
-        kind: "non_envelope_family",
-        rule: subjectClass.value.rule,
-        tech: subjectClass.value.tech,
-        business_fn: subjectClass.value.businessFn,
+        kind: "malformed_envelope",
+        reason:
+          "envelope is not a compliant EventEnvelope (fails isCompliantEnvelope)",
       });
     }
-    // Canonical `evt.` family (or unclassifiable) with a broken body → drift.
-    return err<MapError>({
-      kind: "malformed_envelope",
-      reason:
-        "envelope is not a compliant EventEnvelope (fails isCompliantEnvelope)",
-    });
   }
 
   // Classification is derived exclusively from the subject (TAXONOMY.md §4 +
@@ -210,7 +319,7 @@ export function toTrackedEventRow(
     });
   }
 
-  const claimCheck = isClaimCheck(envelope);
+  const claimCheck = isClaimCheck(source);
   if (!claimCheck.ok) {
     return err<MapError>({
       kind: "malformed_envelope",
@@ -222,30 +331,36 @@ export function toTrackedEventRow(
   const { tech, businessFn, rule } = classification.value;
 
   return ok({
-    // Canonical branch: fully-populated row. `event_id` is the envelope id;
-    // the non-envelope branch (T07) synthesizes `"<stream>:<seq>"` instead.
-    event_id: envelope.id,
+    // Canonical branch: fully-populated row. `event_id` is the REAL envelope id
+    // (`source.id`), never synthesized — including the stage-1 `"partial"` case,
+    // per the user-approved decision. The non-envelope branch (T07) synthesizes
+    // `"<stream>:<seq>"` instead.
+    event_id: source.id,
     subject,
     // Descriptive dimensions prefer the envelope (SPEC.md T04); every field is
-    // guaranteed present as a string by isCompliantEnvelope.
-    tenant: envelope.tenant,
-    producer: envelope.producer,
-    domain: envelope.domain,
+    // guaranteed present as a string by isCompliantEnvelope (accountid excepted
+    // on the stage-1 `"partial"` branch, which is not a projected column).
+    tenant: source.tenant,
+    producer: source.producer,
+    domain: source.domain,
     // kind/version live only on the subject — EventEnvelope carries neither.
     kind: parsed?.kind ?? null,
     version: parsed?.version ?? null,
     // Correlation copied VERBATIM — the mapper derives nothing.
-    correlation_id: envelope.correlation_id,
-    causation_id: envelope.causation_id,
-    causation_depth: envelope.transport?.depth ?? null,
-    occurred_at: envelope.time,
+    correlation_id: source.correlation_id,
+    causation_id: source.causation_id,
+    causation_depth: source.transport?.depth ?? null,
+    occurred_at: source.time,
     tech,
     business_fn: businessFn,
     rule,
     consumed_by: [...consumers.value],
     is_claim_check: claimCheck.value,
-    // Guaranteed to be a compliant EventEnvelope on this branch (narrowed by
-    // isCompliantEnvelope above); stored verbatim into the `unknown` jsonb column.
+    // The ORIGINAL body is stored verbatim into the `unknown` jsonb column — on
+    // the stage-1 `"partial"` branch this is the real `Omit<..., "accountid">`
+    // envelope, NOT the internal accountid-probe copy used for field access.
     envelope,
+    // "full" (compliant outright) or "partial" (stage-1 accountid-only drift).
+    compliance,
   });
 }

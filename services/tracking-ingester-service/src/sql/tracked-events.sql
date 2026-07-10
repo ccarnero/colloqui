@@ -39,8 +39,45 @@ CREATE TABLE IF NOT EXISTS tracking.tracked_events (
   consumed_by     text[]      NOT NULL,
   is_claim_check  boolean     NOT NULL,
   envelope        jsonb       NOT NULL,
+  compliance      text        NOT NULL DEFAULT 'full',
   ingested_at     timestamptz NOT NULL DEFAULT now()
 );
+
+-- `compliance` was added after the table first shipped, so a bare
+-- `CREATE TABLE IF NOT EXISTS` above will NOT add the column to a live table
+-- that predates it. ALTER ... ADD COLUMN IF NOT EXISTS is the idempotent
+-- retrofit: a no-op when the column already exists. DEFAULT 'full' is only the
+-- CHEAP BULK BACKFILL that lets the NOT NULL constraint hold for pre-existing
+-- rows — it is NOT the true verdict for all of them. The live table already
+-- holds rows that are semantically 'none': non-envelope families (rules
+-- 1/12/13/14/15 via buildNonEnvelopeRow) and rule-18 drift rows (buildDriftRow),
+-- including every pre-fix stage-1 `webhook_received` event that was ingested as
+-- drift before this compliance work existed. See `Compliance` in
+-- src/lib/to-tracked-event-row.ts for the value set ('full'|'partial'|'none').
+ALTER TABLE tracking.tracked_events
+  ADD COLUMN IF NOT EXISTS compliance text NOT NULL DEFAULT 'full';
+
+-- CORRECTIVE, CONVERGENT backfill (pairs with the ALTER above). The DEFAULT
+-- 'full' over-labels the non-envelope subset; this UPDATE fixes it using the
+-- exact discriminator that separates the two body shapes:
+--   - canonical ('full') and stage-1 ('partial') rows ALWAYS carry a string
+--     correlation_id — guaranteed by isCompliantEnvelope (the stage-1 probe
+--     preserves the field; the mapper copies it VERBATIM);
+--   - buildNonEnvelopeRow / buildDriftRow ALWAYS set correlation_id NULL.
+-- So `correlation_id IS NULL` is precisely the non-envelope/drift subset, and
+-- flipping those from the bulk default 'full' to 'none' is historically
+-- accurate. This is convergent, NOT guarded by IF NOT EXISTS: a second apply
+-- matches 0 rows (they are already 'none'), so re-running the whole schema is a
+-- no-op. It keys on the correlation_id predicate, never on rule numbers.
+--
+-- Residual imprecision (stated, not hidden): pre-fix stage-1 `webhook_received`
+-- events are flipped to 'none' here. That is faithful to HOW THEY WERE INGESTED
+-- — before this work they were persisted as rule-18 drift rows with a NULL
+-- correlation_id, so 'none' reflects their actual stored shape, not the
+-- 'partial' verdict they WOULD earn if re-ingested through the current mapper.
+UPDATE tracking.tracked_events
+  SET compliance = 'none'
+  WHERE correlation_id IS NULL AND compliance = 'full';
 
 CREATE INDEX IF NOT EXISTS idx_tracked_events_correlation_id
   ON tracking.tracked_events (correlation_id);
