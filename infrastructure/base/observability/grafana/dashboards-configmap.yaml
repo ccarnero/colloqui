@@ -1525,7 +1525,8 @@ data:
           }
         },
         {
-          "title": "Open correlation chains (last event non-terminal)",
+          "title": "Open correlation chains (no terminal event)",
+          "description": "Chains (correlation_id groups within the time window, NULL correlation_id excluded) that contain NO terminal event (business_fn IN 'channel-egress','audit','dlq'). Membership-based, not last-event-based: rule-19 workflow-execution completion can land after the terminal channel-egress, so ordering is irrelevant.",
           "type": "stat",
           "gridPos": { "h": 6, "w": 6, "x": 0, "y": 14 },
           "datasource": { "type": "postgres", "uid": "tracking-postgres" },
@@ -1534,7 +1535,7 @@ data:
               "refId": "A",
               "format": "table",
               "rawQuery": true,
-              "rawSql": "WITH last_event AS (\n  SELECT DISTINCT ON (correlation_id) correlation_id, business_fn\n  FROM tracking.tracked_events\n  WHERE $__timeFilter(occurred_at) AND correlation_id IS NOT NULL\n  ORDER BY correlation_id, occurred_at DESC\n)\nSELECT count(*) AS open_chains\nFROM last_event\nWHERE business_fn IS NULL OR business_fn NOT IN ('channel-egress', 'audit', 'dlq')"
+              "rawSql": "WITH chain_terminal AS (\n  SELECT correlation_id,\n         bool_or(business_fn IN ('channel-egress', 'audit', 'dlq')) AS has_terminal\n  FROM tracking.tracked_events\n  WHERE $__timeFilter(occurred_at) AND correlation_id IS NOT NULL\n  GROUP BY correlation_id\n)\nSELECT count(*) AS open_chains\nFROM chain_terminal\nWHERE NOT has_terminal"
             }
           ],
           "fieldConfig": {
@@ -1546,7 +1547,8 @@ data:
           "options": { "colorMode": "value", "graphMode": "none", "textMode": "auto" }
         },
         {
-          "title": "Closed correlation chains (last event terminal)",
+          "title": "Closed correlation chains (contains terminal event)",
+          "description": "Chains (correlation_id groups within the time window, NULL correlation_id excluded) that CONTAIN at least one terminal event (business_fn IN 'channel-egress','audit','dlq'). Membership-based, not last-event-based: rule-19 workflow-execution completion can land after the terminal channel-egress, so ordering is irrelevant.",
           "type": "stat",
           "gridPos": { "h": 6, "w": 6, "x": 6, "y": 14 },
           "datasource": { "type": "postgres", "uid": "tracking-postgres" },
@@ -1555,7 +1557,7 @@ data:
               "refId": "A",
               "format": "table",
               "rawQuery": true,
-              "rawSql": "WITH last_event AS (\n  SELECT DISTINCT ON (correlation_id) correlation_id, business_fn\n  FROM tracking.tracked_events\n  WHERE $__timeFilter(occurred_at) AND correlation_id IS NOT NULL\n  ORDER BY correlation_id, occurred_at DESC\n)\nSELECT count(*) AS closed_chains\nFROM last_event\nWHERE business_fn IN ('channel-egress', 'audit', 'dlq')"
+              "rawSql": "WITH chain_terminal AS (\n  SELECT correlation_id,\n         bool_or(business_fn IN ('channel-egress', 'audit', 'dlq')) AS has_terminal\n  FROM tracking.tracked_events\n  WHERE $__timeFilter(occurred_at) AND correlation_id IS NOT NULL\n  GROUP BY correlation_id\n)\nSELECT count(*) AS closed_chains\nFROM chain_terminal\nWHERE has_terminal"
             }
           ],
           "fieldConfig": {
