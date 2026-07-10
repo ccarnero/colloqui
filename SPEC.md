@@ -245,5 +245,5 @@ closed chain (>= 4 stages, `unknown` count = 0); dashboard panels show the traff
 - [x] T09 deploy (Dockerfile + kustomize)
 - [x] T10 script registration (bootstrap / rebuild / dev-mode)
 - [x] T11 datasource
-- [ ] T12 dashboard
+- [x] T12 dashboard
 - [ ] T13 e2e

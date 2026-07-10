@@ -1398,3 +1398,204 @@ data:
       "uid": "temporal-server",
       "refresh": "10s"
     }
+  message-tracking.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "title": "Events/min by business_fn",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "datasource": { "type": "postgres", "uid": "tracking-postgres" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT $__timeGroupAlias(occurred_at, '1m'), business_fn AS metric, count(*) AS events FROM tracking.tracked_events WHERE $__timeFilter(occurred_at) GROUP BY 1, business_fn ORDER BY 1"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "cpm", "custom": { "drawStyle": "line", "fillOpacity": 10, "stacking": { "mode": "normal" } } }
+          }
+        },
+        {
+          "title": "Events/min by tech",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "datasource": { "type": "postgres", "uid": "tracking-postgres" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT $__timeGroupAlias(occurred_at, '1m'), tech AS metric, count(*) AS events FROM tracking.tracked_events WHERE $__timeFilter(occurred_at) GROUP BY 1, tech ORDER BY 1"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "cpm", "custom": { "drawStyle": "line", "fillOpacity": 10, "stacking": { "mode": "normal" } } }
+          }
+        },
+        {
+          "title": "Unknown-classification alarm (rule 16/17/18)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+          "datasource": { "type": "postgres", "uid": "tracking-postgres" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT count(*) AS unknown_classifications FROM tracking.tracked_events WHERE $__timeFilter(occurred_at) AND rule IN (16, 17, 18)"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          },
+          "options": { "colorMode": "background", "graphMode": "none", "textMode": "auto" }
+        },
+        {
+          "title": "Claim-check ratio",
+          "type": "gauge",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
+          "datasource": { "type": "postgres", "uid": "tracking-postgres" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT count(*) FILTER (WHERE is_claim_check)::float / NULLIF(count(*), 0) AS claim_check_ratio FROM tracking.tracked_events WHERE $__timeFilter(occurred_at)"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.25 },
+                  { "color": "red", "value": 0.5 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "DLQ volume (business_fn = 'dlq')",
+          "type": "timeseries",
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 8 },
+          "datasource": { "type": "postgres", "uid": "tracking-postgres" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT $__timeGroupAlias(occurred_at, '1m'), count(*) AS dlq_events FROM tracking.tracked_events WHERE $__timeFilter(occurred_at) AND business_fn = 'dlq' GROUP BY 1 ORDER BY 1"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cpm",
+              "custom": { "drawStyle": "bars", "fillOpacity": 40 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "Open correlation chains (last event non-terminal)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 14 },
+          "datasource": { "type": "postgres", "uid": "tracking-postgres" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "WITH last_event AS (\n  SELECT DISTINCT ON (correlation_id) correlation_id, business_fn\n  FROM tracking.tracked_events\n  WHERE $__timeFilter(occurred_at) AND correlation_id IS NOT NULL\n  ORDER BY correlation_id, occurred_at DESC\n)\nSELECT count(*) AS open_chains\nFROM last_event\nWHERE business_fn IS NULL OR business_fn NOT IN ('channel-egress', 'audit', 'dlq')"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+            }
+          },
+          "options": { "colorMode": "value", "graphMode": "none", "textMode": "auto" }
+        },
+        {
+          "title": "Closed correlation chains (last event terminal)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 14 },
+          "datasource": { "type": "postgres", "uid": "tracking-postgres" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "WITH last_event AS (\n  SELECT DISTINCT ON (correlation_id) correlation_id, business_fn\n  FROM tracking.tracked_events\n  WHERE $__timeFilter(occurred_at) AND correlation_id IS NOT NULL\n  ORDER BY correlation_id, occurred_at DESC\n)\nSELECT count(*) AS closed_chains\nFROM last_event\nWHERE business_fn IN ('channel-egress', 'audit', 'dlq')"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            }
+          },
+          "options": { "colorMode": "value", "graphMode": "none", "textMode": "auto" }
+        },
+        {
+          "title": "Top correlation chains by depth",
+          "type": "table",
+          "gridPos": { "h": 10, "w": 12, "x": 12, "y": 14 },
+          "datasource": { "type": "postgres", "uid": "tracking-postgres" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT\n  correlation_id,\n  max(causation_depth) AS max_depth,\n  count(*) AS event_count,\n  left((array_agg(subject ORDER BY occurred_at))[1], 40) AS first_subject,\n  left((array_agg(subject ORDER BY occurred_at DESC))[1], 40) AS last_subject,\n  extract(epoch FROM (max(occurred_at) - min(occurred_at))) AS duration_seconds\nFROM tracking.tracked_events\nWHERE $__timeFilter(occurred_at) AND correlation_id IS NOT NULL\nGROUP BY correlation_id\nORDER BY max(causation_depth) DESC NULLS LAST, count(*) DESC\nLIMIT 20"
+            }
+          ],
+          "fieldConfig": {
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "duration_seconds" },
+                "properties": [{ "id": "unit", "value": "s" }]
+              }
+            ]
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["message-tracking", "tracking", "observability"],
+      "templating": { "list": [] },
+      "time": { "from": "now-6h", "to": "now" },
+      "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+      "timezone": "browser",
+      "title": "Message Tracking",
+      "uid": "message-tracking",
+      "refresh": "30s"
+    }
