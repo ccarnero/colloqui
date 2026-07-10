@@ -279,7 +279,7 @@ export function classify(
     // via an OTel metric, no row inserted. Evaluated BEFORE the rule-16 catch-all
     // — which would otherwise tag it `unknown` and alarm — exactly like rule 19.
     // The subject's producer token is `ai-agent-gateway` but the publisher is
-    // agent-ai-service — a producer-token drift with no numbered DRIFT.md entry,
+    // agent-ai-service — a producer-token drift tracked as DRIFT.md item 10,
     // analogous to DRIFT.md item 9 (agent-memory envelope.producer drift). The
     // heartbeat's other non-canonical traits (no `data.payload_inline`, a
     // `{name,version}` transport) are DRIFT.md item 5.

@@ -13,7 +13,14 @@ recorded in `DRIFT.md`.
   `{ stream, seq, received, subject, headers, envelope }`. File name encodes
   provenance: `<STREAM>-seq<N>.json`.
 - `labeled.tsv` — pre-labels produced by applying the classification rules in
-  `TAXONOMY.md` §4 (18-rule table, first match wins) deterministically to every event.
+  `TAXONOMY.md` §4 (20-rule table, first match wins) deterministically to every event.
+
+  **Relabels (2026-07-10):** after the Phase-0 open decisions were resolved, 8
+  `workflow-service` rows (seq 1247, 1253, 1261, 1265, 1272, 1276, 1281, 1286) were
+  relabeled from rule 17 `unknown/unknown` to **rule 19** `platform/workflow-execution`,
+  and 24 `online.v1` heartbeat rows (seq 1249, 1255, 1256, 1267, 1288–1307) from rule 16
+  `platform/unknown` to **rule 20** `platform/runtime-presence` — per `TAXONOMY.md` §7
+  resolved decisions #1/#2. `labeled.tsv` remains the audited golden truth.
 - `REVIEW.md` — human-facing audit narrative (Spanish, per explicit request): every
   event mapped to its business story with cited evidence and confidence.
 

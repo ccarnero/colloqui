@@ -98,6 +98,36 @@ asset). No schema was created, copied, or modified as part of producing this doc
 | `envelope-builder.ts` | `skills/envelope-messages/assets/envelope-builder.ts` | Not a builder — a pointer/comment-only module (`export {}`) documenting where the real factories live (`envelope.factory.ts`, `envelope.utils.ts`) | None (no runtime exports) | Documentation stub |
 | `docs/messaging/envelope.md` | `docs/messaging/envelope.md` | Prose spec of the envelope contract, subject format, transport, causal chain, idempotency, and two-stage ingress — explicitly states the canonical source of truth is `packages/shared/src/interfaces.ts` | N/A (reference doc) | Documentation |
 
+## 11. Message-tracking store (`tracking.tracked_events`)
+
+Owner: **`tracking-ingester-service`** (bus→Postgres tracking ingester). Source of truth for the schema: `services/tracking-ingester-service/src/sql/tracked-events.sql` (raw idempotent DDL — no migration framework, mirroring `packages/database/src/postgres-provider.ts`). Row shape is binding on `TrackedEventRow` in `src/lib/to-tracked-event-row.ts`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `event_id` | `text PRIMARY KEY` | Canonical rows use `envelope.id`; non-envelope rows (rule 1/12/13/14/15) and rule-18 drift rows synthesize `"<stream>:<seq>"`. Upserts use `ON CONFLICT (event_id) DO NOTHING`. |
+| `subject` | `text NOT NULL` | NATS delivery subject (authoritative routing key). |
+| `tenant` | `text` | Nullable — null for cross-tenant families (e.g. `audit.gateway.>`). |
+| `producer` | `text NOT NULL` | Envelope `producer` field. |
+| `domain` | `text NOT NULL` | Envelope `domain` field. |
+| `kind` | `text` | From subject `<kind>` token; null when non-canonical. |
+| `version` | `text` | From subject `<version>` token; null when non-canonical. |
+| `correlation_id` | `text` | Copied verbatim; null on non-envelope/drift rows. |
+| `causation_id` | `text` | Copied verbatim; null on non-envelope/drift rows. |
+| `causation_depth` | `integer` | `transport.depth`; nullable. |
+| `occurred_at` | `timestamptz NOT NULL` | Envelope `time`. |
+| `tech` | `text NOT NULL` | Classification (`TAXONOMY.md` §2), pure function of subject. |
+| `business_fn` | `text NOT NULL` | Classification (`TAXONOMY.md` §3), producer intent. |
+| `rule` | `integer NOT NULL` | First-matching `TAXONOMY.md` §4 rule. Stored values are 1–19: rule 20 is counted-not-persisted, so it never lands in the table. |
+| `consumed_by` | `text[] NOT NULL` | Durable consumers of the subject family (`TAXONOMY.md` §5). |
+| `is_claim_check` | `boolean NOT NULL` | `data.payload_inline === false` transport flag (`TAXONOMY.md` §6). |
+| `envelope` | `jsonb NOT NULL` | Raw body stored verbatim. |
+| `compliance` | `text NOT NULL DEFAULT 'full'` | `full` \| `partial` \| `none` — see item 7 above / mapper docs. |
+| `ingested_at` | `timestamptz NOT NULL DEFAULT now()` | DB-side, never part of the mapper. |
+
+18 mapper-set columns + `ingested_at` (DB-side default). Indexes: `correlation_id`, `occurred_at`, `business_fn`.
+
+**Dispositions:** most rules are *counted-and-persisted* (one row per event). Rule 20 (`runtime-presence` heartbeats) is `counted-not-persisted` — classified and counted via the OTel counter `tracking_ingester_skipped_total{family,tenant}` but **no row is written** (`SKIP_PERSIST_RULES` in `src/lib/classify.ts` is the single source of truth). See `TAXONOMY.md` §4 disposition note.
+
 ---
 
 ## Coverage map
@@ -122,9 +152,9 @@ Per the envelope structure defined in `docs/messaging/envelope.md`:
 
 ---
 
-## Proposed extensions (REQUIRES USER APPROVAL — do not implement)
+## Proposed extensions (per-item status — see markers)
 
-The following gaps would need to be filled for a Bun-based message-tracking ingester to validate bus traffic at read time. None of these exist today; nothing below has been implemented.
+The following gaps would need to be filled for a Bun-based message-tracking ingester to validate bus traffic at read time. Items 1–6 are **UNIMPLEMENTED PROPOSALS (REQUIRES USER APPROVAL — do not implement)**. Item 7 is **IMPLEMENTED** (see its marker) and is retained here as the record of the decision that shipped.
 
 1. **Full runtime validator for `EventEnvelope`.**
    What: a Zod (or equivalent) schema mirroring `packages/shared/src/interfaces.ts` (`EventEnvelope`, `EventTransport`, `EventData`) — deep validation of every mandatory field (UUID format for `id`, ISO-8601 for `time`, `sha256:` prefix for `idempotencykey`/`payload_checksum`, enum membership for `transport.method`/`transport.protocol`), not just presence/typeof like `isCompliantEnvelope`.
@@ -156,8 +186,8 @@ The following gaps would need to be filled for a Bun-based message-tracking inge
    Where: `packages/shared/src/audit.schema.ts`.
    Why: currently typed only; a tracker that also watches `audit.gateway.>` traffic has nothing to validate against.
 
-7. **Ingester classification columns (DECIDED 2026-07-09 — see `TAXONOMY.md` §7).**
-   What: the ingester's events table carries `tech text` and `business_fn text` (producer-intent classification, pure function of subject/envelope), plus two orthogonal facets decided by the user: `consumed_by text[]` (multi-value — which durable consumers read the subject family; seed mapping in `TAXONOMY.md` §5) and `is_claim_check boolean` (transport flag for `data.payload_inline === false` slim envelopes; NOT a classification value).
-   Where: ingester schema (not yet implemented); classification rules in `TAXONOMY.md` §4.
+7. **Ingester classification columns — IMPLEMENTED 2026-07-10** (DECIDED 2026-07-09 — see `TAXONOMY.md` §7).
+   Status: **IMPLEMENTED.** Shipped as `tracking.tracked_events` (owner `tracking-ingester-service`, source of truth `services/tracking-ingester-service/src/sql/tracked-events.sql`; see the dedicated inventory section below). The events table carries `tech text` and `business_fn text` (producer-intent classification, pure function of subject/envelope), plus the two orthogonal facets decided by the user: `consumed_by text[]` (multi-value — which durable consumers read the subject family; seed mapping in `TAXONOMY.md` §5) and `is_claim_check boolean` (transport flag for `data.payload_inline === false` slim envelopes; NOT a classification value). An additional `compliance text` column (`full` | `partial` | `none`) was added during implementation to record how close each stored body is to a canonical `EventEnvelope`: `full` = compliant outright; `partial` = the user-approved stage-1 `webhook_received` canonical-with-known-drift exception (compliant except the intentionally-absent `accountid`); `none` = non-envelope/drift bodies. Rules and disposition per `TAXONOMY.md` §4/§5/§6/§7 (including rule 20 `runtime-presence` heartbeats, disposition `counted-not-persisted` → counted via an OTel metric but NO row persisted).
+   Where: `services/tracking-ingester-service/src/sql/tracked-events.sql` (DDL) + `src/lib/to-tracked-event-row.ts` (mapper); classification rules in `TAXONOMY.md` §4.
    Why: `business_fn` must stay a deterministic pure function ("what the event represents"), so consumer roles and transport details were split into separate columns instead of overloading the dimension.
    Related finding: `agent-memory-service` publishes `io.yoizen.agent-memory.memory.*.v1` events on subjects built from a **service-local** `AGENT_MEMORY_SUBJECT_PREFIX` (`services/agent-memory-service/src/providers/nats.provider.ts:64-74`) — not from `packages/shared/src/constants.ts` like every other internal producer — and the envelope's `domain` field (`"automation"`) disagrees with the subject's domain token (`agent-memory`). See `DRIFT.md` discrepancy #9; the tracker classifies these by SUBJECT (`TAXONOMY.md` rule 9).
