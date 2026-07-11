@@ -1,0 +1,7 @@
+# Global bun test config for this service. Without this, a bare `bun test`
+# invocation (as opposed to `bun run test:unit`) does not apply the
+# `@yoizen/database` preload stub, and any spec relying on it being a real
+# `bun:test` mock (e.g. calling `.mockClear()` on it) fails with
+# "not a function" because it silently falls back to the real module.
+[test]
+preload = ["./test/unit/preload-database-mock.ts"]
