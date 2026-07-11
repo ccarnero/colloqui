@@ -152,6 +152,123 @@ describe("emitOtelSpans — enabled emitter", () => {
     expect(logs.some((l) => l.includes("ECONNREFUSED"))).toBe(true);
   });
 
+  it("appends /v1/traces to a base endpoint with no trailing slash", async () => {
+    let capturedUrl: string | undefined;
+    const fakeFetch = async (url: string) => {
+      capturedUrl = url;
+      return new Response(null, { status: 200 });
+    };
+
+    const result = await emitOtelSpans(
+      "http://collector:4318",
+      [span()],
+      fakeFetch
+    );
+
+    expect(result.ok).toBe(true);
+    expect(capturedUrl).toBe("http://collector:4318/v1/traces");
+  });
+
+  it("appends /v1/traces to a base endpoint with a trailing slash without doubling it", async () => {
+    let capturedUrl: string | undefined;
+    const fakeFetch = async (url: string) => {
+      capturedUrl = url;
+      return new Response(null, { status: 200 });
+    };
+
+    const result = await emitOtelSpans(
+      "http://collector:4318/",
+      [span()],
+      fakeFetch
+    );
+
+    expect(result.ok).toBe(true);
+    expect(capturedUrl).toBe("http://collector:4318/v1/traces");
+  });
+
+  it("does not append /v1/traces again when the endpoint already ends with it", async () => {
+    let capturedUrl: string | undefined;
+    const fakeFetch = async (url: string) => {
+      capturedUrl = url;
+      return new Response(null, { status: 200 });
+    };
+
+    const result = await emitOtelSpans(
+      "http://collector:4318/v1/traces",
+      [span()],
+      fakeFetch
+    );
+
+    expect(result.ok).toBe(true);
+    expect(capturedUrl).toBe("http://collector:4318/v1/traces");
+  });
+
+  it("skips spans derived from non-UUID correlation_ids and still exports the rest of the batch (regression: 400 readSpan.traceId invalid length)", async () => {
+    let capturedBody: unknown;
+    const fakeFetch = async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body));
+      return new Response(null, { status: 200 });
+    };
+    const logs: string[] = [];
+
+    // "memory:057092b6-9699-4dc6-96db-13eeec1d8167" and "gateway_audit:58076"
+    // dashes-stripped are NOT valid 32-hex trace_ids.
+    const memorySpan = span({
+      trace_id: "memory057092b696994dc696db13eeec1d8167",
+    });
+    const gatewayAuditSpan = span({ trace_id: "gatewayaudit58076" });
+    const goodSpan = span({ span_id: "bbbbbbbbbbbbbbbb" });
+
+    const result = await emitOtelSpans(
+      "http://otel-collector.dev:4318/v1/traces",
+      [memorySpan, gatewayAuditSpan, goodSpan],
+      fakeFetch,
+      (msg) => logs.push(msg)
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.sent).toBe(1);
+    }
+
+    const body = capturedBody as {
+      resourceSpans: Array<{ scopeSpans: Array<{ spans: unknown[] }> }>;
+    };
+    const totalSpans = body.resourceSpans.reduce(
+      (sum, rs) =>
+        sum + rs.scopeSpans.reduce((s, scope) => s + scope.spans.length, 0),
+      0
+    );
+    expect(totalSpans).toBe(1);
+
+    expect(logs.some((l) => l.includes("skipped 2"))).toBe(true);
+    expect(
+      logs.some((l) => l.includes("memory057092b696994dc696db13eeec1d8167"))
+    ).toBe(true);
+    expect(logs.some((l) => l.includes("gatewayaudit58076"))).toBe(true);
+  });
+
+  it("all spans in the batch non-UUID-derived — no fetch call, sent=0", async () => {
+    let called = false;
+    const fakeFetch = async () => {
+      called = true;
+      return new Response(null, { status: 200 });
+    };
+    const bad = span({ trace_id: "gatewayaudit58076" });
+
+    const result = await emitOtelSpans(
+      "http://otel-collector.dev:4318/v1/traces",
+      [bad],
+      fakeFetch
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.sent).toBe(0);
+    }
+    expect(called).toBe(false);
+  });
+
   it("export failure (non-2xx HTTP status) is caught, logged, and returned as err", async () => {
     const logs: string[] = [];
     const badStatusFetch = async () =>

@@ -13,6 +13,7 @@
 // unset): a documented no-op that never touches `fetch`, matching
 // `load-config.ts`'s "disabled = no-op emitter" contract.
 
+import { filterExportableSpans } from "./filter-exportable-spans.js";
 import { err, ok, type Result } from "./result.js";
 import type { OtelSpan } from "./to-otel-span.js";
 
@@ -97,6 +98,25 @@ function toOtlpEnvelope(spans: readonly OtelSpan[]): Record<string, unknown> {
   return { resourceSpans };
 }
 
+const TRACES_PATH = "/v1/traces";
+
+/**
+ * Derives the OTLP/HTTP traces POST URL from a configured endpoint.
+ *
+ * `OTEL_EXPORTER_OTLP_ENDPOINT` is documented (OTel spec convention) as a
+ * BASE URL — the exporter is responsible for appending the per-signal path.
+ * A trailing slash on the base is tolerated (no double slash), and an
+ * endpoint that already ends with `/v1/traces` is left unchanged (no
+ * duplicate append) so both base-URL and full-URL configs work.
+ */
+function toTracesUrl(endpoint: string): string {
+  if (endpoint.endsWith(TRACES_PATH)) {
+    return endpoint;
+  }
+  const base = endpoint.endsWith("/") ? endpoint.slice(0, -1) : endpoint;
+  return `${base}${TRACES_PATH}`;
+}
+
 /**
  * Exports `spans` as OTLP/HTTP JSON to `endpoint` (POST, `/v1/traces` shape).
  *
@@ -121,13 +141,26 @@ export async function emitOtelSpans(
     return ok({ sent: 0 });
   }
 
-  log(`emitOtelSpans: exporting ${spans.length} span(s) to ${endpoint}`);
+  // Defect fix (trace-visualization): drop spans whose derived trace_id /
+  // span_id / parent_span_id are not valid OTLP hex ids (non-UUID
+  // correlation_id/event_id, e.g. "memory:...", "gateway_audit:...") BEFORE
+  // POSTing — a single bad id makes the collector reject the whole batch item.
+  const { valid: exportable } = filterExportableSpans(spans, log);
+  if (exportable.length === 0) {
+    log(
+      `emitOtelSpans: all ${spans.length} span(s) filtered out (non-UUID-derived ids) — nothing to export`
+    );
+    return ok({ sent: 0 });
+  }
+
+  const url = toTracesUrl(endpoint);
+  log(`emitOtelSpans: exporting ${exportable.length} span(s) to ${url}`);
 
   try {
-    const response = await fetchImpl(endpoint, {
+    const response = await fetchImpl(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(toOtlpEnvelope(spans)),
+      body: JSON.stringify(toOtlpEnvelope(exportable)),
     });
 
     if (!response.ok) {
@@ -137,8 +170,8 @@ export async function emitOtelSpans(
       return err<EmitError>({ reason });
     }
 
-    log(`emitOtelSpans: export OK — ${spans.length} span(s) sent`);
-    return ok({ sent: spans.length });
+    log(`emitOtelSpans: export OK — ${exportable.length} span(s) sent`);
+    return ok({ sent: exportable.length });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     log(`emitOtelSpans: export FAILED — ${reason}`);

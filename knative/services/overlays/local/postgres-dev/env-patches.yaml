@@ -1314,5 +1314,7 @@ spec:
           value: postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://otel-collector.support-services-dev.svc.cluster.local:4318
+        - name: OTEL_EXPORT_ENABLED
+          value: 'true'
         - name: OTEL_SERVICE_NAME
           value: tracking-ingester-worker
