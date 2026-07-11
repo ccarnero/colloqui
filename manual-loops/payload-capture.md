@@ -216,7 +216,7 @@ grep -n "payload-capture" cowork/INDEX.md
 - [x] T03 retention scrub + cronjob
 - [x] T04 payload endpoint + guard + audit
 - [x] T05 console payload viewer
-- [ ] T06 cluster e2e payload round-trip
+- [x] T06 cluster e2e payload round-trip
 - [ ] T07 docs + index
 
 ## Out of scope (explicit)

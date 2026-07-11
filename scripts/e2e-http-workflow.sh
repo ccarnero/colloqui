@@ -29,6 +29,11 @@ set -euo pipefail
 #      `execution_started`), so stages 3a/3b idempotently provision an echo
 #      agent + a second workflow with an `agentCall` action sharing the same
 #      http trigger, so its events land on the same correlation.
+#  11. GET /api/tracking/chains/:correlationId/events/:eventId/payload for
+#      the chain's webhook_received (ingress) event and assert HTTP 200 with
+#      the payload containing the happy-path nonce, then repeat for a
+#      fabricated unknown event id on the same correlation and assert 404 —
+#      proves durable payload capture end-to-end.
 #
 # Exit code 0 = full chain verified; 1 = any stage failed. The workflow is
 # always left ENABLED on exit (trap), even on failure, so a failed run never
@@ -544,6 +549,75 @@ stage_verify_chain() {
   return 1
 }
 
+stage_verify_payload() {
+  # stage_verify_payload <nonce>
+  #
+  # Proves the durable payload capture round-trip end-to-end:
+  #   1. Re-fetches the chain for CORRELATION_ID and picks the INGRESS event
+  #      (kind == "webhook_received", the chain root) robustly by kind rather
+  #      than assuming event_id == correlation_id.
+  #   2. GETs its payload via the gateway as the same tenant-admin token that
+  #      already passed the tracking:payload:read guard for stage 10's chain
+  #      read, and asserts HTTP 200 with the payload body containing the
+  #      happy-path nonce (the ingress payload carries the message text).
+  #   3. GETs the payload of a fabricated, never-issued event id on the same
+  #      correlation and asserts HTTP 404 (unknown event, not merely "no
+  #      payload").
+  local nonce="$1"
+  log "Stage 11: verify payload round-trip for correlation ${CORRELATION_ID} (nonce ${nonce}, timeout ${CHAIN_TIMEOUT_S}s)"
+  if [[ -z "$CORRELATION_ID" ]]; then
+    err "CORRELATION_ID is empty — cannot verify payload"
+    return 1
+  fi
+
+  local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
+  local ingress_event_id=""
+  while (( $(date +%s) < deadline )); do
+    ingress_event_id="$(api GET "/api/tracking/chains/${CORRELATION_ID}" \
+      | jq -r '.events[]? | select(.kind == "webhook_received") | .event_id' | head -1)"
+    [[ -n "$ingress_event_id" ]] && break
+    sleep 3
+  done
+  if [[ -z "$ingress_event_id" ]]; then
+    err "No webhook_received event found on chain ${CORRELATION_ID} within ${CHAIN_TIMEOUT_S}s"
+    return 1
+  fi
+  log "Resolved ingress event ${ingress_event_id} for correlation ${CORRELATION_ID}"
+
+  local combined body status
+  while (( $(date +%s) < deadline )); do
+    combined="$(api_status GET "/api/tracking/chains/${CORRELATION_ID}/events/${ingress_event_id}/payload")"
+    status="$(api_status_code "$combined")"
+    body="$(api_status_body "$combined")"
+    if [[ "$status" == "200" ]]; then
+      if echo "$body" | jq -e --arg nonce "$nonce" \
+          '(.payload // {} | tostring) | contains($nonce)' >/dev/null; then
+        log "Ingress payload fetched (status 200) and contains nonce ${nonce}"
+        break
+      fi
+      err "Ingress payload fetched but did not contain nonce ${nonce}: ${body}"
+      return 1
+    fi
+    log "Payload endpoint returned status ${status} for ingress event; retrying"
+    sleep 3
+  done
+  if [[ "$status" != "200" ]]; then
+    err "Ingress payload never returned status 200 within ${CHAIN_TIMEOUT_S}s (last status ${status}): ${body}"
+    return 1
+  fi
+
+  log "Fetching payload of fabricated unknown event id on correlation ${CORRELATION_ID} (expect 404)"
+  local unknown_combined unknown_status unknown_body
+  unknown_combined="$(api_status GET "/api/tracking/chains/${CORRELATION_ID}/events/00000000-0000-0000-0000-000000000000/payload")"
+  unknown_status="$(api_status_code "$unknown_combined")"
+  unknown_body="$(api_status_body "$unknown_combined")"
+  if [[ "$unknown_status" != "404" ]]; then
+    err "Expected 404 for fabricated unknown event id, got ${unknown_status}: ${unknown_body}"
+    return 1
+  fi
+  log "Confirmed 404 for fabricated unknown event id"
+}
+
 main() {
   command -v jq >/dev/null || { err "jq is required"; exit 1; }
   stage_login
@@ -563,7 +637,8 @@ main() {
   stage_verify_execution "$NONCE_REENABLED"
   stage_capture_correlation_id "$NONCE"
   stage_verify_chain
-  log "E2E http → workflow → jsFunction chain + toggle scenario + tracking chain verified (nonces ${NONCE}, ${NONCE_DISABLED}, ${NONCE_REENABLED}; correlation ${CORRELATION_ID})"
+  stage_verify_payload "$NONCE"
+  log "E2E http → workflow → jsFunction chain + toggle scenario + tracking chain + payload round-trip verified (nonces ${NONCE}, ${NONCE_DISABLED}, ${NONCE_REENABLED}; correlation ${CORRELATION_ID})"
 }
 
 main "$@"
