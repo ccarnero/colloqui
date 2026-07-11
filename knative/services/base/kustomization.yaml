@@ -22,6 +22,9 @@ resources:
   # tracking-ingester is worker-only (no api KSVC): a NATS JetStream ingester
   # that persists message-tracking events to Postgres. No SERVICE_MODE split.
   - tracking-ingester-worker.yaml
+  # ClusterIP Service (T02 trace-console) — exposes the worker's :3000 HTTP
+  # port (chains read endpoint) so the api-gateway proxy can reach it.
+  - tracking-ingester-worker-svc.yaml
   - workflow-service-api.yaml
   - workflow-service-worker.yaml
   # ----- Single-pod Knative-only services (HTTP-only or stateful) -----

@@ -45,6 +45,7 @@ import {
   type TrackedConsumerSpec,
 } from "./lib/consume-events.js";
 import { emitOtelSpans } from "./lib/emit-otel-spans.js";
+import { handleChainRequest } from "./lib/handle-chain-request.js";
 import {
   buildHealthResponse,
   type ReadinessState,
@@ -55,6 +56,15 @@ import {
 } from "./lib/insert-tracked-events.js";
 import { loadTrackingIngesterConfig } from "./lib/load-config.js";
 import { loadSchemaStatements } from "./lib/load-schema-statements.js";
+import { matchChainRoute } from "./lib/match-chain-route.js";
+import {
+  normalizeChainEventRow,
+  type RawChainEventRow,
+} from "./lib/normalize-chain-event-row.js";
+import {
+  normalizeChainSpanRow,
+  type RawChainSpanRow,
+} from "./lib/normalize-chain-span-row.js";
 import { toOtelSpan } from "./lib/to-otel-span.js";
 import { toSpanSourceRow } from "./lib/to-span-source-row.js";
 import type { TrackedEventRow } from "./lib/to-tracked-event-row.js";
@@ -108,10 +118,17 @@ async function bootstrap(): Promise<void> {
   state.postgresConnected = true;
   line("Postgres connected");
 
-  const sqlPath = fileURLToPath(
-    new URL("./sql/tracked-events.sql", import.meta.url)
+  // Applied in order: the base table first, then the span-pairing view (T01 of
+  // trace-console) that reads FROM tracking.tracked_events — the view
+  // definition would fail if the table did not exist yet. Mirrors
+  // src/scripts/apply-schema.ts.
+  const sqlPaths = [
+    fileURLToPath(new URL("./sql/tracked-events.sql", import.meta.url)),
+    fileURLToPath(new URL("./sql/span-pairs.sql", import.meta.url)),
+  ];
+  const statements = sqlPaths.flatMap((sqlPath) =>
+    loadSchemaStatements(readFileSync(sqlPath, "utf8"))
   );
-  const statements = loadSchemaStatements(readFileSync(sqlPath, "utf8"));
   const schema = await applySchema(sql, statements, line);
   if (!schema.ok) {
     logger.error(
@@ -229,15 +246,50 @@ async function bootstrap(): Promise<void> {
   state.consumersStarted = true;
   line("durable consumers started (trk-* durables reconciling tenant streams)");
 
-  // 7. Health endpoint (readiness semantics).
+  // 7. Health endpoint (readiness semantics) + chains read endpoint (T02 of
+  // trace-console). Query execution is the only I/O in this router — the
+  // route match (`matchChainRoute`) and the tenant/404 orchestration
+  // (`handleChainRequest`) are pure functions from src/lib.
   const server = Bun.serve({
     port: config.port,
-    fetch(request): Response {
+    fetch(request): Response | Promise<Response> {
       const url = new URL(request.url);
       if (url.pathname === "/health") {
         const health = buildHealthResponse(readiness);
         return Response.json(health.body, { status: health.status });
       }
+
+      const chainRoute =
+        request.method === "GET" ? matchChainRoute(url.pathname) : null;
+      if (chainRoute) {
+        const tenant = request.headers.get("x-yoizen-tenant");
+        line(
+          `GET /chains/${chainRoute.correlationId} — tenant=${tenant ?? "MISSING"}`
+        );
+        return handleChainRequest(chainRoute.correlationId, tenant, {
+          // Normalize driver rows before they reach the pure response
+          // shaping (`toChainResponse`): `postgres` returns `timestamptz`
+          // columns as `Date` objects and `duration_ms` (numeric/bigint) as
+          // a string — both get coerced here, at the I/O boundary, per
+          // T02 defects 1 and 2 (attempt 2 live smoke test).
+          queryEvents: async (query) => {
+            const rows = await sql.unsafe<RawChainEventRow[]>(query.text, [
+              ...query.params,
+            ]);
+            return rows.map(normalizeChainEventRow);
+          },
+          querySpans: async (query) => {
+            const rows = await sql.unsafe<RawChainSpanRow[]>(query.text, [
+              ...query.params,
+            ]);
+            return rows.map(normalizeChainSpanRow);
+          },
+          log: line,
+        }).then((result) =>
+          Response.json(result.body, { status: result.status })
+        );
+      }
+
       return new Response("not found", { status: 404 });
     },
   });

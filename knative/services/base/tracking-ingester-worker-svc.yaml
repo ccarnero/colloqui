@@ -1,0 +1,27 @@
+# ClusterIP Service for the tracking-ingester-worker Deployment (T02 of
+# manual-loops/trace-console.md). The worker was consume-only until now
+# (NATS JetStream ingestion, see tracking-ingester-worker.yaml) so it had no
+# Service; the T02 `GET /chains/:correlationId` read endpoint means the
+# api-gateway proxy (T03) now needs an in-cluster address to reach it.
+#
+# Plain `v1.Service` (NOT Knative networking — the Deployment above is a
+# plain apps/v1.Deployment, not a Knative Service), mirroring the
+# infrastructure/base/redis/service.yaml pattern: ClusterIP, selector matches
+# the Deployment's pod template labels, port 3000 (the same port main.ts
+# already serves /health on).
+apiVersion: v1
+kind: Service
+metadata:
+  name: tracking-ingester-worker
+  labels:
+    app.kubernetes.io/name: tracking-ingester-worker
+    app.kubernetes.io/component: message-tracking
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: tracking-ingester-worker
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP
