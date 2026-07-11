@@ -166,6 +166,102 @@ get_deployment_names() {
   esac
 }
 
+# Plain Kubernetes CronJobs associated with a logical service. Empty string
+# means "no CronJob" (the default case). Unlike ksvc/Deployments, a CronJob
+# is not created ahead of time by the base manifests being live in every
+# environment — ensure_cronjobs() below applies it on first sight.
+get_cronjob_names() {
+  local svc="$1"
+  case "$svc" in
+    tracking-ingester-service) echo "tracking-payload-scrub" ;;
+    *)                         echo "" ;;
+  esac
+}
+
+# Maps environment -> the local kustomize overlay that is actually deployed
+# for it. Today only `dev` has a local overlay wired up (see
+# dev-mode.sh/dev-mode-minikube.sh cmd_off, which defaults --overlay to
+# postgres-dev for the same reason). Other environments don't have a local
+# overlay equivalent yet, so callers must warn + skip rather than guess.
+get_overlay_path_for_env() {
+  local env="$1"
+  case "$env" in
+    dev) echo "${SCRIPT_DIR}/knative/services/overlays/local/postgres-dev" ;;
+    *)   echo "" ;;
+  esac
+}
+
+# CronJobs are not covered by rollout_ksvc/rollout_deployments (those only
+# patch/restart resources that already exist in the cluster). A CronJob
+# needs to be created via kustomize the first time it shows up for a
+# service; after that, a human takes over `spec.suspend` (see the
+# human-runs-first gate documented in
+# knative/services/base/tracking-payload-scrub-cronjob.yaml). Re-applying an
+# EXISTING CronJob would reset that human-managed suspend flag back to the
+# manifest's default (true) — the exact footgun this function must avoid —
+# so it only ever applies a CronJob that does not exist yet.
+ensure_cronjobs() {
+  local svc="$1"
+  local env="$2"
+  local ns="platform-services-${env}"
+
+  local cronjob_names
+  cronjob_names="$(get_cronjob_names "$svc")"
+
+  if [[ -z "$cronjob_names" ]]; then
+    return
+  fi
+
+  local overlay_path
+  overlay_path="$(get_overlay_path_for_env "$env")"
+
+  for cj in $cronjob_names; do
+    if kubectl get cronjob "$cj" -n "$ns" &>/dev/null; then
+      log "cronjob/${cj} already exists in ${ns} — leaving spec.suspend untouched (human-managed)"
+      log "cronjob/${cj} will pick up the rebuilt image automatically on its next scheduled run (same tag, fresh Job pods)"
+      continue
+    fi
+
+    if [[ -z "$overlay_path" ]]; then
+      warn "cronjob/${cj} not found in ${ns} and no local overlay is mapped for environment '${env}' — skipping. Apply it manually."
+      continue
+    fi
+
+    if [[ ! -d "$overlay_path" ]]; then
+      warn "Overlay path not found: ${overlay_path} — skipping cronjob/${cj}. Apply it manually."
+      continue
+    fi
+
+    step "cronjob/${cj} not found in ${ns} — applying it from overlay ${overlay_path##*/}"
+
+    local rendered
+    rendered="$(kubectl kustomize "$overlay_path")"
+
+    # Extract just this CronJob's document. yq/python3 aren't guaranteed to
+    # be installed, so we split the rendered multi-doc YAML on '---'
+    # boundaries and keep the block that declares both `kind: CronJob` and
+    # `name: <cj>` (see dev-mode.sh cmd_off for the equivalent yq-preferred,
+    # awk-fallback pattern used elsewhere in this repo — kept awk-only here
+    # for simplicity since no other tool is required by this script today).
+    local obj_yaml
+    obj_yaml="$(printf '%s' "$rendered" | awk -v name="$cj" '
+      /^---/ { if (block != "" && is_cronjob && found_name) { print block }; block=""; is_cronjob=0; found_name=0; next }
+      /^kind: CronJob[[:space:]]*$/ { is_cronjob=1 }
+      /^  name: / { if ($0 == "  name: " name) { found_name=1 } }
+      { block = block $0 "\n" }
+      END { if (block != "" && is_cronjob && found_name) { print block } }
+    ')"
+
+    if [[ -z "$obj_yaml" ]]; then
+      err "Could not find CronJob/${cj} in kustomize output for overlay ${overlay_path##*/} — skipping"
+      continue
+    fi
+
+    printf '%s' "$obj_yaml" | kubectl apply -n "$ns" -f -
+    log "cronjob/${cj} applied to ${ns} (suspended per manifest — see tracking-payload-scrub-cronjob.yaml for the unsuspend gate)"
+  done
+}
+
 rollout_ksvc() {
   local svc="$1"
   local env="$2"
@@ -311,13 +407,16 @@ main() {
   if [[ "$build_only" != "true" ]]; then
     rollout_ksvc "$service_name" "$environment"
     rollout_deployments "$service_name" "$environment"
+    ensure_cronjobs "$service_name" "$environment"
     echo ""
   fi
 
   local ksvc_names
   local deploy_names
+  local cronjob_names
   ksvc_names="$(get_ksvc_names "$service_name")"
   deploy_names="$(get_deployment_names "$service_name")"
+  cronjob_names="$(get_cronjob_names "$service_name")"
 
   log "=============================="
   log " Done!"
@@ -333,6 +432,9 @@ main() {
   done
   for deploy in $deploy_names; do
     echo "    kubectl get deployment ${deploy} -n platform-services-${environment}"
+  done
+  for cj in $cronjob_names; do
+    echo "    kubectl get cronjob ${cj} -n platform-services-${environment}"
   done
   echo "    kubectl get pods -n platform-services-${environment} -l app.kubernetes.io/name=${service_name}"
   echo ""
