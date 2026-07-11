@@ -1,6 +1,8 @@
 import "reflect-metadata";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
+import { PERMISSIONS_KEY } from "../../src/decorators/permissions.decorator";
+import { SCOPES_KEY } from "../../src/decorators/scopes.decorator";
 import { REQUEST_TENANT_KEY } from "../../src/guards/tenant.guard";
 import { TrackingController } from "../../src/modules/tracking/tracking.controller";
 import { TrackingProxyService } from "../../src/modules/tracking/tracking-proxy.service";
@@ -39,5 +41,53 @@ describe("TrackingController", () => {
       path: "/chains/corr%2F1%20x",
       tenantId: "t1",
     });
+  });
+
+  it("getPayload delegates to proxy with tenant, path and encoded ids", async () => {
+    const result = await controller.getPayload(req as never, "corr-1", "evt-1");
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/chains/corr-1/events/evt-1/payload",
+      tenantId: "t1",
+    });
+    expect(result).toEqual({ correlationId: "corr-1", events: [] });
+  });
+
+  it("getPayload encodes special characters in both ids", async () => {
+    await controller.getPayload(req as never, "corr/1 x", "evt/1 x");
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/chains/corr%2F1%20x/events/evt%2F1%20x/payload",
+      tenantId: "t1",
+    });
+  });
+
+  it("getPayload stamps req.__correlationId so the global AuditInterceptor picks it up", async () => {
+    const stampedReq = {
+      [REQUEST_TENANT_KEY]: "t1",
+    } as Record<string, unknown>;
+    await controller.getPayload(stampedReq as never, "corr-1", "evt-1");
+    expect(stampedReq.__correlationId).toBe("corr-1");
+  });
+
+  it("getPayload is guarded by @Scopes(platform, tenant) + @RequirePermission(tracking:payload:read) — the same admin-guard mechanism as AuthController's tenant-roles routes", () => {
+    const scopes = Reflect.getMetadata(
+      SCOPES_KEY,
+      TrackingController.prototype.getPayload
+    );
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      TrackingController.prototype.getPayload
+    );
+    expect(scopes).toEqual(["platform", "tenant"]);
+    expect(permissions).toEqual(["tracking:payload:read"]);
+  });
+
+  it("getChain carries no permission guard (unchanged from before T04)", () => {
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      TrackingController.prototype.getChain
+    );
+    expect(permissions).toBeUndefined();
   });
 });

@@ -41,6 +41,7 @@ import {
 } from "nats";
 import postgres from "postgres";
 import { applySchema } from "./lib/apply-schema.js";
+import type { PayloadRow } from "./lib/build-payload-query.js";
 import {
   consumeEvents,
   makeTrackedEventHandler,
@@ -48,6 +49,7 @@ import {
 } from "./lib/consume-events.js";
 import { emitOtelSpans } from "./lib/emit-otel-spans.js";
 import { handleChainRequest } from "./lib/handle-chain-request.js";
+import { handlePayloadRequest } from "./lib/handle-payload-request.js";
 import {
   buildHealthResponse,
   type ReadinessState,
@@ -59,6 +61,7 @@ import {
 import { loadTrackingIngesterConfig } from "./lib/load-config.js";
 import { loadSchemaStatements } from "./lib/load-schema-statements.js";
 import { matchChainRoute } from "./lib/match-chain-route.js";
+import { matchPayloadRoute } from "./lib/match-payload-route.js";
 import {
   normalizeChainEventRow,
   type RawChainEventRow,
@@ -326,6 +329,32 @@ async function bootstrap(): Promise<void> {
           },
           log: line,
         }).then((result) =>
+          Response.json(result.body, { status: result.status })
+        );
+      }
+
+      // T04 of manual-loops/payload-capture.md: payload read endpoint.
+      // Route match (`matchPayloadRoute`) and the tenant/status orchestration
+      // (`handlePayloadRequest`) are pure functions from src/lib; the
+      // `sql.unsafe(...)` round trip below is the only I/O.
+      const payloadRoute =
+        request.method === "GET" ? matchPayloadRoute(url.pathname) : null;
+      if (payloadRoute) {
+        const tenant = request.headers.get("x-yoizen-tenant");
+        line(
+          `GET /chains/${payloadRoute.correlationId}/events/${payloadRoute.eventId}/payload — tenant=${tenant ?? "MISSING"}`
+        );
+        return handlePayloadRequest(
+          payloadRoute.correlationId,
+          payloadRoute.eventId,
+          tenant,
+          {
+            queryPayload: async (query) => {
+              return sql.unsafe<PayloadRow[]>(query.text, [...query.params]);
+            },
+            log: line,
+          }
+        ).then((result) =>
           Response.json(result.body, { status: result.status })
         );
       }

@@ -214,7 +214,7 @@ grep -n "payload-capture" cowork/INDEX.md
 - [x] T01 schema payload lifecycle
 - [x] T02 claim-check resolution at ingest
 - [x] T03 retention scrub + cronjob
-- [ ] T04 payload endpoint + guard + audit
+- [x] T04 payload endpoint + guard + audit
 - [ ] T05 console payload viewer
 - [ ] T06 cluster e2e payload round-trip
 - [ ] T07 docs + index
