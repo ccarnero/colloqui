@@ -29,6 +29,93 @@ Per message (`src/lib/process-tracked-message.ts` → `to-tracked-event-row.ts`)
    metric, **no row written** (`SKIP_PERSIST_RULES`, `TAXONOMY.md` §4 note).
 4. **Insert** — batched, `ON CONFLICT (event_id) DO NOTHING` (idempotent).
 
+## Payload capture, retention & access
+
+`manual-loops/payload-capture.md` — every event payload is durably captured
+(claim-checked payloads resolved at ingest, not just inline ones) and access is
+tenant-admin-only with an audit trail. Storage stays bounded via a scheduled
+retention scrub.
+
+### Payload lifecycle (`tracked_events.payload_status`)
+
+Every row carries a `payload_status` state machine:
+
+| State | Meaning | Set by |
+|---|---|---|
+| `inline` | Envelope arrived with `data.payload` already present. | Insert (`to-tracked-event-row.ts`). |
+| `resolved` | Envelope was claim-checked (`data.payload_inline === false`); the ingester resolved `payload_ref` against cache-service at ingest time and persisted the full payload. | `resolve-payload.ts` success path. |
+| `unresolved` | Claim-check resolution failed (expired ref, cache unreachable, malformed ref, timeout). The slim envelope is persisted exactly as it arrived — no payload. | `resolve-payload.ts` failure path. |
+| `scrubbed` | Retention scrub emptied `envelope.data.payload` for a row past `PAYLOAD_RETENTION_DAYS`; `payload_scrubbed_at` records when. | `src/scripts/scrub-payloads.ts`. |
+| `none` | The event never carried a payload (non-envelope bodies, drift rows, heartbeats). | Insert. |
+
+Transitions: `inline`/`resolved` → `scrubbed` (one-way, by the scrub job).
+`unresolved` and `none` are terminal — a claim-check that failed to resolve is
+never retried, and an event with no payload shape never gains one.
+
+### Claim-check resolution at ingest
+
+`is_claim_check` (`data.payload_inline === false`) events are resolved BEFORE
+persisting, via `resolve-payload.ts` wrapping
+`resolveClaimCheckEnvelope` (`packages/database/src/claim-check.ts`):
+
+- **Timeout**: `CLAIM_CHECK_RESOLVE_TIMEOUT_MS` (default `2000`).
+- **Never blocks ingestion**: on any resolution failure the slim envelope is
+  persisted as-is with `payload_status = 'unresolved'` and a warn log carrying
+  the `payload_ref` and the failure reason. The consumer message is **never
+  nacked** for a resolution failure — ingestion latency is the priority, and
+  this service runs DLQ-disabled with unbounded `maxDeliver`, so a
+  resolve-then-nak retry loop on an expired ref would poison the stream
+  forever without ever persisting the row.
+- **Middleware opt-out**: the ingester's `MultiTenantConsumerManager` config
+  sets `resolveClaimChecks: false` (`main.ts`) so the shared consumer
+  middleware never resolves claim-checks itself. Resolution happens exactly
+  once, inside `makeTrackedEventHandler`, right before insert.
+
+### Retention
+
+`PAYLOAD_RETENTION_DAYS` (default `30`) is the single source of truth for how
+long payload *content* lives. Causal-chain metadata (everything except
+`envelope.data.payload`) is retained forever — the scrub only empties the
+payload field and flips `payload_status` to `scrubbed`.
+
+**Scrub runbook** (`src/scripts/scrub-payloads.ts`):
+
+1. **Dry-run by default** — running the script with no flags prints
+   per-tenant candidate counts (rows with `occurred_at` older than the
+   retention cutoff and `payload_status IN ('inline', 'resolved')`) and
+   changes nothing.
+2. **First `--apply`, run by a human**: a scheduled, unattended CronJob is not
+   allowed to be the first thing that ever scrubs production data. A human
+   runs the script once against the live cluster and verifies the result:
+   ```bash
+   kubectl exec -n platform-services-dev deploy/tracking-ingester-worker -- \
+     bun src/scripts/scrub-payloads.ts --apply
+   # or against the built image:
+   bun dist/scripts/scrub-payloads.js --apply
+   ```
+   The script is idempotent (a `scrubbed` row can never match the predicate
+   again) and batched (5000 rows per round trip, `FOR UPDATE SKIP LOCKED`,
+   looping until a batch affects zero rows).
+3. **Unsuspend the CronJob** (`tracking-payload-scrub`, daily at 04:00 UTC,
+   `knative/services/base/tracking-payload-scrub-cronjob.yaml`) once the
+   manual run is verified — it starts `suspend: true` for exactly this
+   human-runs-first gate:
+   ```bash
+   kubectl patch cronjob tracking-payload-scrub -n platform-services-dev \
+     -p '{"spec":{"suspend":false}}'
+   ```
+
+### Payload read endpoint
+
+`GET /chains/:correlationId/events/:eventId/payload` (tenant header
+required) → `{ payload, payload_status }` on success. `404` for an unknown
+event, `404` when `payload_status` is `none` or `unresolved` (body explains
+why), `410 Gone` when `payload_status` is `scrubbed`. The chain LIST endpoint
+still excludes payloads by design — this is a dedicated, separately-guarded
+route. The gateway proxies this route with a tenant-admin permission guard
+(`tracking:payload:read`) and audits every successful view; see
+`DOCS/guides/trace-console.md` for the console-facing contract.
+
 ## `compliance` column
 
 Every row records how close its stored body is to a canonical `EventEnvelope`:

@@ -75,6 +75,35 @@ Per `.sdd/changes/trace-visualization/design.md`'s complementarity note:
 Both key off the SAME `correlation_id` — copy-paste it between the two, no separate ID
 scheme.
 
+## Payload viewer (event detail)
+
+The causal-graph detail card in the admin-console trace page (`/processes/trace`)
+has a "View payload" action for the selected event — `manual-loops/payload-capture.md`.
+
+- **Admin-gated**: the action only renders when the session user has the
+  `tracking:payload:read` permission (tenant-admin, or a platform-scope
+  token). Non-admins never see the button.
+- **On-demand fetch**: the payload is never pre-fetched with the causal chain
+  — clicking "View payload" issues a dedicated request to
+  `GET /api/tracking/chains/:correlationId/events/:eventId/payload` (gateway
+  proxy of the ingester's own `/chains/:correlationId/events/:eventId/payload`
+  route). Result is rendered JSON, pretty-printed, collapsed by default.
+- **Audited**: every successful fetch is picked up by the gateway's global
+  audit interceptor and persisted to `gateway_audit_events` — actor
+  (`jwt_subject`), tenant, the audited path (which carries the event id), and
+  the `correlation_id` stamped onto the request. There is no separate opt-in;
+  viewing a payload is always audited.
+- **Status-specific messages** (mirroring `tracked_events.payload_status` from
+  the tracking-ingester-service README):
+  - `scrubbed` (HTTP `410`) → "Payload expired (30-day retention)".
+  - `unresolved`/`none` (HTTP `404`) → "Payload was not captured (claim-check
+    expired)" for `unresolved`, "Payload was not captured" for `none`.
+  - `inline`/`resolved` (HTTP `200`) → the payload renders normally, labeled
+    with its `payload_status`.
+
+The **Message traces** dashboard's `payload` column (below) is unrelated —
+that is a separate, still-unresolved decision for the Grafana detail table.
+
 ## Known limitation (as of this change)
 
 The **Open in Temporal** data link (`workflow_id`/`run_id` columns and node-graph

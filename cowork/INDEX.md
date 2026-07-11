@@ -80,6 +80,36 @@ Decision cuádruple:
   HTTP execute endpoint and the trigger-fired path go through it.
 - **Engram topic**: `workflows/tenant-toggle`.
 
+## Change: durable payload capture, retention & admin payload viewer (payload-capture)
+
+Spec-driven change closing the claim-check payload gap: the ingester now resolves
+claim-checked payloads at ingest time (not just inline ones), a scheduled scrub
+enforces a 30-day payload retention window while causal-chain metadata stays
+unlimited, and a tenant-admin-only endpoint exposes a single event's payload with a
+full audit trail. Full task queue, gates, and human decisions:
+`manual-loops/payload-capture.md`. Operational contract (payload lifecycle state
+machine, retention env var, scrub runbook, claim-check resolution semantics):
+`services/tracking-ingester-service/README.md`. Console-facing contract (permission,
+audit trail, status-specific UI messages): `DOCS/guides/trace-console.md`.
+
+Decision cuádruple:
+- **Rule**: capture ALL payloads (no per-flow opt-in), resolve claim-checks at
+  ingest; retention is 30 days for payload content only (event metadata is kept
+  forever); payload viewing is tenant-admin-only with an audit trail for every
+  view — `manual-loops/payload-capture.md` §User decisions.
+- **Why**: claim-checked payloads previously lived only in Redis until the claim-check
+  TTL expired, making the trace console's "did this message actually carry X?"
+  debugging scenario impossible once the cache entry was gone; unbounded payload
+  storage was rejected in favor of a single global retention window.
+- **Evidence**: the resolution choke point is `resolve-payload.ts` wrapping
+  `resolveClaimCheckEnvelope` (`packages/database/src/claim-check.ts`), invoked from
+  `makeTrackedEventHandler` before insert (`main.ts` sets
+  `resolveClaimChecks: false` on the consumer manager so the shared middleware never
+  resolves claim-checks itself, avoiding a resolve-then-nak poison loop on an expired
+  ref); the read endpoint is guarded by `tracking:payload:read`
+  (`services/api-gateway/src/modules/tracking/tracking.controller.ts`).
+- **Engram topic**: `tracking/payload-capture`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.
