@@ -67,6 +67,8 @@ paired AS (
     s.event_id,
     s.correlation_id,
     s.causation_id,
+    s.entity_id,
+    s.kind_prefix,
     s.occurred_at AS start_time,
     e.occurred_at AS end_time,
     s.producer,
@@ -95,6 +97,8 @@ unpaired AS (
     b.event_id,
     b.correlation_id,
     b.causation_id,
+    b.entity_id,
+    b.kind_prefix,
     b.occurred_at AS start_time,
     b.occurred_at AS end_time,
     b.producer,
@@ -119,6 +123,11 @@ unpaired AS (
       )
     )
 )
+-- entity_id and kind_prefix are appended at the END of the projection (not
+-- inserted alongside the other pairing columns) because `CREATE OR REPLACE
+-- VIEW` only allows adding columns after the existing ones — inserting them
+-- earlier renames/repositions existing columns and breaks idempotent
+-- re-apply against a live database (Postgres error 42P16).
 SELECT
   event_id,
   correlation_id,
@@ -133,7 +142,9 @@ SELECT
   compliance,
   tenant,
   connector_id,
-  cache_status
+  cache_status,
+  entity_id,
+  kind_prefix
 FROM paired
 UNION ALL
 SELECT
@@ -150,5 +161,7 @@ SELECT
   compliance,
   tenant,
   connector_id,
-  cache_status
+  cache_status,
+  entity_id,
+  kind_prefix
 FROM unpaired;

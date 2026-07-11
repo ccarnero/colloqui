@@ -249,7 +249,7 @@ grep -n "trace-console" cowork/INDEX.md
 
 ## Progress
 
-- [ ] T01 chain read functions
+- [x] T01 chain read functions
 - [ ] T02 http endpoint + k8s service
 - [ ] T03 gateway proxy
 - [ ] T04 console data service
