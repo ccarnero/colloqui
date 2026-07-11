@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { TenantMongoConnectionManager } from "@yoizen/database";
 import type { WorkflowStatusValue } from "@yoizen/shared";
 import { WorkflowStatus } from "@yoizen/shared";
@@ -10,6 +10,7 @@ import type {
   IWorkflowDefinitionRow,
   IWorkflowsRepository,
 } from "./workflows.repository.interface";
+import { WorkflowNotFoundError } from "./workflows.repository.interface";
 
 interface IWorkflowDefinitionDoc {
   _id: string;
@@ -61,6 +62,8 @@ function docToDefinitionRow(
 
 @Injectable()
 export class WorkflowsMongoRepository implements IWorkflowsRepository {
+  private readonly logger = new Logger(WorkflowsMongoRepository.name);
+
   constructor(
     @Inject(WorkflowTenantConnectionManager)
     private readonly connections: TenantMongoConnectionManager,
@@ -165,5 +168,29 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
   async countActiveDefinitions(tenantId: string): Promise<number> {
     const col = await this.definitions(tenantId);
     return col.countDocuments(ACTIVE_FILTER);
+  }
+
+  async setStatus(
+    tenantId: string,
+    workflowId: string,
+    status: WorkflowStatusValue
+  ): Promise<IWorkflowDefinitionRow> {
+    const now = new Date();
+    const col = await this.definitions(tenantId);
+    const result = await col.findOneAndUpdate(
+      { _id: workflowId, ...ACTIVE_FILTER },
+      { $set: { status, updated_at: now } },
+      { returnDocument: "after" }
+    );
+    if (!result) {
+      this.logger.warn(
+        `setStatus: no active workflow definition found for tenant='${tenantId}' id='${workflowId}' (status='${status}')`
+      );
+      throw new WorkflowNotFoundError(workflowId, tenantId);
+    }
+    this.logger.log(
+      `setStatus: workflow definition '${workflowId}' set to '${status}' for tenant '${tenantId}'`
+    );
+    return docToDefinitionRow(result);
   }
 }

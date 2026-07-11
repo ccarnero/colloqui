@@ -1,5 +1,6 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { Sql, TenantConnectionManager } from "@yoizen/database";
+import type { WorkflowStatusValue } from "@yoizen/shared";
 import { WorkflowTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import type {
   ICreateDefinitionParams,
@@ -7,9 +8,12 @@ import type {
   IWorkflowDefinitionRow,
   IWorkflowsRepository,
 } from "./workflows.repository.interface";
+import { WorkflowNotFoundError } from "./workflows.repository.interface";
 
 @Injectable()
 export class WorkflowsPostgresRepository implements IWorkflowsRepository {
+  private readonly logger = new Logger(WorkflowsPostgresRepository.name);
+
   constructor(
     @Inject(WorkflowTenantConnectionManager)
     private readonly connections: TenantConnectionManager,
@@ -126,5 +130,32 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
       WHERE deleted_at IS NULL
     `;
     return row?.total ?? 0;
+  }
+
+  async setStatus(
+    tenantId: string,
+    workflowId: string,
+    status: WorkflowStatusValue
+  ): Promise<IWorkflowDefinitionRow> {
+    const sql = await this.sqlFor(tenantId);
+    const [row] = await sql<IWorkflowDefinitionRow[]>`
+      UPDATE workflow_definitions
+      SET status = ${status},
+          updated_at = NOW()
+      WHERE id = ${workflowId}
+        AND deleted_at IS NULL
+      RETURNING id, name, application, actions, trigger, variables, status,
+                created_at, updated_at, deleted_at
+    `;
+    if (!row) {
+      this.logger.warn(
+        `setStatus: no active workflow definition found for tenant='${tenantId}' id='${workflowId}' (status='${status}')`
+      );
+      throw new WorkflowNotFoundError(workflowId, tenantId);
+    }
+    this.logger.log(
+      `setStatus: workflow definition '${workflowId}' set to '${status}' for tenant '${tenantId}'`
+    );
+    return row;
   }
 }
