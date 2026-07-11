@@ -5,6 +5,8 @@ import { tap } from "rxjs/operators";
 import { environment } from "../../../../../environments/environment";
 import { ResourceMutationsService } from "../../../../core/services/metrics/resource-mutations.service";
 
+export type WorkflowStatus = "enabled" | "disabled";
+
 export interface IWorkflowDefinitionDto {
   id: string;
   name: string;
@@ -13,7 +15,17 @@ export interface IWorkflowDefinitionDto {
   actions: unknown[];
   trigger: unknown | null;
   variables?: Record<string, unknown>;
+  status?: WorkflowStatus;
   createdAt: string;
+}
+
+/**
+ * Response from `PATCH /workflows/:id/status`: the updated workflow
+ * fields plus a count of executions terminated as a side effect of
+ * disabling the workflow.
+ */
+export interface IWorkflowStatusUpdateResponse extends IWorkflowDefinitionDto {
+  terminated: number;
 }
 
 export interface IWorkflowExecutionDto {
@@ -116,6 +128,21 @@ export class WorkflowApiService {
     payload: IUpdateWorkflowPayload
   ): Observable<IWorkflowDefinitionDto> {
     return this.http.put<IWorkflowDefinitionDto>(`${this.base}/${id}`, payload);
+  }
+
+  /**
+   * Toggles a workflow definition's enabled/disabled status. Disabling
+   * terminates in-flight executions server-side; the response reports
+   * how many were terminated.
+   */
+  setStatus(
+    id: string,
+    status: WorkflowStatus
+  ): Observable<IWorkflowStatusUpdateResponse> {
+    return this.http.patch<IWorkflowStatusUpdateResponse>(
+      `${this.base}/${id}/status`,
+      { status }
+    );
   }
 
   delete(id: string): Observable<void> {
