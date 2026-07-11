@@ -256,7 +256,7 @@ grep -n "trace-console" cowork/INDEX.md
 - [x] T05 waterfall view
 - [x] T06 causal graph view
 - [x] T07 wiring + view switcher
-- [ ] T08 grafana panel removal
+- [x] T08 grafana panel removal
 - [ ] T09 cluster e2e chain assertion
 - [ ] T10 docs + index
 

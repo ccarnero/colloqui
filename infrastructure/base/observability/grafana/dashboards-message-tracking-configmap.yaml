@@ -138,65 +138,10 @@ data:
           ]
         },
         {
-          "title": "Causal node graph",
-          "description": "Nodes = tracked_events rows for this correlation_id; edges link causation_id -> event_id. Events with no causation_id (root events, and drift with a lost causal parent) render as detached roots — this makes causal-chain drift visually obvious instead of hiding it.",
-          "type": "nodeGraph",
-          "gridPos": { "h": 12, "w": 24, "x": 0, "y": 20 },
-          "datasource": { "type": "postgres", "uid": "tracking-postgres" },
-          "targets": [
-            {
-              "refId": "nodes",
-              "format": "table",
-              "rawQuery": true,
-              "rawSql": "SELECT\n  event_id AS id,\n  coalesce(kind, subject) AS title,\n  producer AS \"subTitle\",\n  to_char(occurred_at, 'HH24:MI:SS.MS') AS \"mainStat\",\n  CASE business_fn\n    WHEN 'ingress' THEN '#3391FF'\n    WHEN 'channel-processing' THEN '#33CC99'\n    WHEN 'channel-egress' THEN '#FFB833'\n    WHEN 'workflow-execution' THEN '#B266FF'\n    WHEN 'connector-invocation' THEN '#FF6666'\n    WHEN 'agent-execution' THEN '#66CCFF'\n    WHEN 'dlq' THEN '#FF3333'\n    WHEN 'audit' THEN '#999999'\n    ELSE '#CCCCCC'\n  END AS color,\n  workflow_id AS \"detail__workflow_id\",\n  run_id AS \"detail__run_id\",\n  connector_id AS \"detail__connector_id\"\nFROM tracking.tracked_events\nWHERE correlation_id = '$correlation_id'\nORDER BY occurred_at"
-            },
-            {
-              "refId": "edges",
-              "format": "table",
-              "rawQuery": true,
-              "rawSql": "SELECT\n  e.event_id AS id,\n  s.event_id AS source,\n  e.event_id AS target\nFROM tracking.tracked_events e\nJOIN tracking.tracked_events s ON s.event_id = e.causation_id\nWHERE e.correlation_id = '$correlation_id'"
-            }
-          ],
-          "fieldConfig": {
-            "overrides": [
-              {
-                "matcher": { "id": "byName", "options": "detail__workflow_id" },
-                "properties": [
-                  {
-                    "id": "links",
-                    "value": [
-                      {
-                        "title": "Open in Temporal",
-                        "url": "${temporal_ui_base}/namespaces/default/workflows/${__data.fields.detail__workflow_id}/${__data.fields.detail__run_id}",
-                        "targetBlank": true
-                      }
-                    ]
-                  }
-                ]
-              },
-              {
-                "matcher": { "id": "byName", "options": "detail__connector_id" },
-                "properties": [
-                  {
-                    "id": "links",
-                    "value": [
-                      {
-                        "title": "Connector detail",
-                        "url": "/d/connector-detail?var-connector=${__data.fields.detail__connector_id}",
-                        "targetBlank": false
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        {
           "title": "Trace events (detail)",
           "description": "All events of this trace ordered by occurred_at. `payload` column is a PLACEHOLDER — see Open decision 1 in .sdd/changes/trace-visualization/tasks.md (payload display policy: as-is / truncated / masked; claim-check reference-vs-resolved). Connector endpoint-call events already ship redacted headers + truncated bodies via .sdd/changes/connector-call-detail; this decision covers the remaining event families.",
           "type": "table",
-          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 32 },
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
           "datasource": { "type": "postgres", "uid": "tracking-postgres" },
           "targets": [
             {
