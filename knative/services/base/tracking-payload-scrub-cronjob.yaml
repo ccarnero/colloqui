@@ -1,0 +1,87 @@
+# tracking-payload-scrub CronJob — T03 (payload-capture) retention scrub.
+#
+# Daily off-peak run of `src/scripts/scrub-payloads.ts` (compiled to
+# `dist/scripts/scrub-payloads.js`, see the tracking-ingester-service
+# Dockerfile) against the SAME image as tracking-ingester-worker. It empties
+# `envelope.data.payload` and flips `payload_status` to 'scrubbed' for every
+# `tracking.tracked_events` row older than `PAYLOAD_RETENTION_DAYS` (default
+# 30) whose payload is still present ('inline'/'resolved') — batched (5000
+# rows/round-trip), looping until a batch affects zero rows.
+#
+# Schedule: 04:00 UTC daily — off-peak, well clear of any daytime traffic
+# window and staggered from other scheduled maintenance in this cluster.
+#
+# `--apply`: this CronJob passes `--apply` because a SCHEDULED, UNATTENDED
+# job must actually do its job — there is no human to gate each individual
+# nightly run once the CronJob is live. The "Claude writes it, a human runs
+# the first `--apply`" rule (manual-loops/payload-capture.md T03) governs
+# the human-runs-first gate BEFORE this CronJob is ever enabled: `spec.suspend`
+# is `true` below, so the schedule will not fire on its own. A human must
+# first run the script manually (`bun dist/scripts/scrub-payloads.js --apply`)
+# against the live cluster, verify the result, and only then unsuspend the
+# CronJob with:
+#   kubectl patch cronjob tracking-payload-scrub -n platform-services-dev \
+#     -p '{"spec":{"suspend":false}}'
+# The script itself still defaults to dry-run when invoked without `--apply`
+# (e.g. an operator running it ad hoc to preview candidates).
+#
+# Idempotent: the scrub predicate is self-eliminating (a 'scrubbed' row can
+# never match again), so a missed/duplicate/retried run is always safe —
+# `restartPolicy: OnFailure` + `backoffLimit` can safely retry without risk
+# of double-scrubbing.
+#
+# Env wiring mirrors tracking-ingester-worker.yaml exactly: Postgres parts
+# from the `postgres-credentials` Secret (never hardcoded), composed into a
+# single `POSTGRES_URL` via `$(VAR)` dependent-env expansion. The concrete
+# host/port values are supplied by the active overlay
+# (knative/services/overlays/local/postgres-dev/env-patches.yaml), same as
+# the worker — this base manifest stays engine-agnostic.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tracking-payload-scrub
+  labels:
+    app.kubernetes.io/name: tracking-payload-scrub
+    app.kubernetes.io/component: message-tracking
+spec:
+  schedule: "0 4 * * *"
+  # Suspended by default — human-runs-first gate (see comment above). A human
+  # must run and verify the script's first `--apply` manually before
+  # unsuspending this CronJob.
+  suspend: true
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: tracking-payload-scrub
+            app.kubernetes.io/component: message-tracking
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: scrub
+              image: dev.local/tracking-ingester-service:local
+              imagePullPolicy: IfNotPresent
+              command: ["bun", "dist/scripts/scrub-payloads.js", "--apply"]
+              env:
+                - name: OTEL_SERVICE_NAME
+                  value: "tracking-payload-scrub"
+              securityContext:
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi

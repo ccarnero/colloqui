@@ -25,6 +25,9 @@ resources:
   # ClusterIP Service (T02 trace-console) — exposes the worker's :3000 HTTP
   # port (chains read endpoint) so the api-gateway proxy can reach it.
   - tracking-ingester-worker-svc.yaml
+  # Daily payload-retention scrub (T03 payload-capture) — same image, plain
+  # batch/v1.CronJob (no HTTP surface, so no Knative Service/KSVC here).
+  - tracking-payload-scrub-cronjob.yaml
   - workflow-service-api.yaml
   - workflow-service-worker.yaml
   # ----- Single-pod Knative-only services (HTTP-only or stateful) -----
