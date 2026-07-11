@@ -1,13 +1,13 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { provideMonacoEditor } from "ngx-monaco-editor-v2";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { of } from "rxjs";
 import { Router } from "@angular/router";
-import { AiComponent } from "./ai.component";
-import { AgentAdminService } from "../../../core/services/agent-admin.service";
-import { AdaptersService } from "../../../core/services/adapters.service";
-import { AgentRuntimeService } from "../../../core/services/agent-runtime.service";
+import { provideMonacoEditor } from "ngx-monaco-editor-v2";
+import { of } from "rxjs";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type IAgent } from "../../../core/models/agent.model";
+import { AdaptersService } from "../../../core/services/adapters.service";
+import { AgentAdminService } from "../../../core/services/agent-admin.service";
+import { AgentRuntimeService } from "../../../core/services/agent-runtime.service";
+import { AiComponent } from "./ai.component";
 
 describe("AiComponent", () => {
   let fixture: ComponentFixture<AiComponent>;
@@ -31,11 +31,13 @@ describe("AiComponent", () => {
         completedAt: new Date().toISOString(),
         agentId: "agent-1",
         result: { reply: "ok", tool_calls: [] },
-      }),
+      })
     ),
-    checkRuntimeHealth: vi.fn().mockReturnValue(
-      of({ status: "ok", nats: "connected", redis: "connected" }),
-    ),
+    checkRuntimeHealth: vi
+      .fn()
+      .mockReturnValue(
+        of({ status: "ok", nats: "connected", redis: "connected" })
+      ),
   };
 
   const sampleAgent: IAgent = {
@@ -52,6 +54,7 @@ describe("AiComponent", () => {
     tools: [],
     enabled_tools: null,
     enabled_mcp_servers: null,
+    enabled_mcp_tools: null,
     tool_description_overrides: null,
     channels: [],
     status: "draft",
@@ -130,6 +133,8 @@ describe("AiComponent", () => {
     await component.checkRuntimeSync(sampleAgent.id);
 
     expect(component.runtimeHealth()[sampleAgent.id]?.state).toBe("draft");
-    expect(component.runtimeHealth()[sampleAgent.id]?.detail).toBe("Agent not published");
+    expect(component.runtimeHealth()[sampleAgent.id]?.detail).toBe(
+      "Agent not published"
+    );
   });
 });

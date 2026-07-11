@@ -1,19 +1,18 @@
 import { Component } from "@angular/core";
 import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { MatDialog } from "@angular/material/dialog";
 import {
-  provideRouter,
-  type Routes,
   ActivatedRoute,
   convertToParamMap,
+  provideRouter,
+  type Routes,
 } from "@angular/router";
-import { BehaviorSubject } from "rxjs";
-import { of } from "rxjs";
+import { BehaviorSubject, of } from "rxjs";
 import { vi } from "vitest";
-import { MatDialog } from "@angular/material/dialog";
-import { ChannelsComponent } from "./channels.component";
-import { ChannelAdminService } from "../../core/services/channel-admin.service";
-import { AuthService } from "../../core/services/auth.service";
 import type { IChannelAccount } from "../../core/models/channel-account.model";
+import { AuthService } from "../../core/services/auth.service";
+import { ChannelAdminService } from "../../core/services/channel-admin.service";
+import { ChannelsComponent } from "./channels.component";
 
 const ACCOUNT_ID = "56ecde94-9789-4041-800d-7675ab54eb1e";
 
@@ -40,7 +39,9 @@ describe("ChannelsComponent", () => {
   let fixture: ComponentFixture<ChannelsComponent>;
 
   beforeEach(async () => {
-    const paramMap$ = new BehaviorSubject(convertToParamMap({ channel: "whatsapp" }));
+    const paramMap$ = new BehaviorSubject(
+      convertToParamMap({ channel: "whatsapp" })
+    );
     await TestBed.configureTestingModule({
       imports: [ChannelsComponent],
       providers: [
@@ -77,7 +78,8 @@ describe("ChannelsComponent", () => {
 
   it("renders channel management header", () => {
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toMatch(/Whatsapp|WhatsApp/i);
+    expect(el.textContent).toContain("Channels");
+    expect(el.textContent).toContain("Manage channel accounts");
   });
 
   it("links account name to channel account metrics route", () => {
@@ -86,7 +88,7 @@ describe("ChannelsComponent", () => {
     expect(link).toBeTruthy();
     expect(link.textContent?.trim()).toBe("Test Business");
     expect(link.getAttribute("href")).toBe(
-      `/channels/whatsapp/accounts/${ACCOUNT_ID}`,
+      `/channels/whatsapp/accounts/${ACCOUNT_ID}`
     );
   });
 });

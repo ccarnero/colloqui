@@ -1,18 +1,25 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { of } from "rxjs";
 import { vi } from "vitest";
-
-import { LoginComponent } from "./login.component";
 import { AuthService } from "../../core/services/auth.service";
+import { LoginComponent } from "./login.component";
 
 describe("LoginComponent", () => {
   let fixture: ComponentFixture<LoginComponent>;
-  let login: ReturnType<typeof vi.fn>;
+  let loginWithResult: ReturnType<typeof vi.fn>;
+  let handleLoginSuccess: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    login = vi.fn();
+    loginWithResult = vi.fn().mockReturnValue(of({}));
+    handleLoginSuccess = vi.fn();
     await TestBed.configureTestingModule({
       imports: [LoginComponent],
-      providers: [{ provide: AuthService, useValue: { login } }],
+      providers: [
+        {
+          provide: AuthService,
+          useValue: { loginWithResult, handleLoginSuccess },
+        },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(LoginComponent);
     fixture.detectChanges();
@@ -28,6 +35,6 @@ describe("LoginComponent", () => {
     c.email.set("u@x.com");
     c.password.set("pw");
     c.onLogin();
-    expect(login).toHaveBeenCalledWith("u@x.com", "pw");
+    expect(loginWithResult).toHaveBeenCalledWith("u@x.com", "pw", undefined);
   });
 });

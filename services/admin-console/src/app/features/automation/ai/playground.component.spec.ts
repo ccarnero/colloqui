@@ -1,11 +1,11 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { of } from "rxjs";
 import { ActivatedRoute, convertToParamMap } from "@angular/router";
-import { PlaygroundComponent } from "./playground.component";
+import { of } from "rxjs";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { type IAgent } from "../../../core/models/agent.model";
 import { AgentAdminService } from "../../../core/services/agent-admin.service";
 import { AgentRuntimeService } from "../../../core/services/agent-runtime.service";
-import { type IAgent } from "../../../core/models/agent.model";
+import { PlaygroundComponent } from "./playground.component";
 
 describe("PlaygroundComponent", () => {
   let fixture: ComponentFixture<PlaygroundComponent>;
@@ -26,7 +26,7 @@ describe("PlaygroundComponent", () => {
         completedAt: new Date().toISOString(),
         agentId: "agent-1",
         result: { reply: "ok", tool_calls: [] },
-      }),
+      })
     ),
   };
 
@@ -44,6 +44,7 @@ describe("PlaygroundComponent", () => {
     tools: [],
     enabled_tools: null,
     enabled_mcp_servers: null,
+    enabled_mcp_tools: null,
     tool_description_overrides: null,
     channels: [],
     status: "published",
@@ -109,7 +110,7 @@ describe("PlaygroundComponent", () => {
           errorCode: "EXECUTION_FAILED",
           errorMessage: "Failed to resolve agent 'agent-2'",
         },
-      }),
+      })
     );
 
     const component = fixture.componentInstance;

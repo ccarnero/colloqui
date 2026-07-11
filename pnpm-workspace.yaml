@@ -7,30 +7,23 @@ packages:
   - '!services/messaging-console'
   - '!services/yoizenclaw-runtime'
 
-allowBuilds:
-  '@parcel/watcher': set this to true or false
-  '@scarf/scarf': set this to true or false
-  '@swc/core': set this to true or false
-  cpu-features: set this to true or false
-  esbuild: set this to true or false
-  lmdb: set this to true or false
-  msgpackr-extract: set this to true or false
-  protobufjs: set this to true or false
-  ssh2: set this to true or false
-
-# Native deps whose install scripts we intentionally DON'T run (supply-chain
-# hardening). They all ship prebuilt binaries selected at runtime, so blocking
-# their build scripts is safe — matches the previous Bun behaviour.
+# Build-script policy (pnpm v11 `allowBuilds`, replaces the deprecated
+# `ignoredBuiltDependencies` list). Native deps whose install scripts we
+# intentionally DON'T run (supply-chain hardening) are set to false — they all
+# ship prebuilt binaries selected at runtime, so blocking their build scripts
+# is safe and matches the previous Bun behaviour. `@scarf/scarf` is telemetry.
 #
-# NOTE: esbuild is NOT ignored because its postinstall script is benign
-# (downloads platform-specific prebuilt binaries).
-ignoredBuiltDependencies:
-  - '@parcel/watcher'
-  - '@swc/core'
-  - cpu-features
-  - lmdb
-  - msgpackr-extract
-  - protobufjs
-  - ssh2
+# esbuild is allowed because its postinstall script is benign (downloads
+# platform-specific prebuilt binaries) and vitest/angular need the binary.
+allowBuilds:
+  '@parcel/watcher': false
+  '@scarf/scarf': false
+  '@swc/core': false
+  cpu-features: false
+  esbuild: true
+  lmdb: false
+  msgpackr-extract: false
+  protobufjs: false
+  ssh2: false
 
 minimumReleaseAge: 1440

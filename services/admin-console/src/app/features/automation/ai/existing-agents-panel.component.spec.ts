@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { type IAgent } from "../../../core/models/agent.model";
 import { vi } from "vitest";
+import { type IAgent } from "../../../core/models/agent.model";
 import { AiExistingAgentsPanelComponent } from "./existing-agents-panel.component";
 
 describe("AiExistingAgentsPanelComponent", () => {
@@ -35,6 +35,7 @@ describe("AiExistingAgentsPanelComponent", () => {
       tools: [],
       enabled_tools: null,
       enabled_mcp_servers: null,
+      enabled_mcp_tools: null,
       tool_description_overrides: null,
       channels: [],
       status: "draft",
@@ -51,13 +52,11 @@ describe("AiExistingAgentsPanelComponent", () => {
     fixture.detectChanges();
 
     const buttons = Array.from(
-      fixture.nativeElement.querySelectorAll("button"),
+      fixture.nativeElement.querySelectorAll("button")
     ) as Element[];
     const button = buttons.find((node) =>
-      node.textContent?.includes("Delete"),
-    ) as
-      | HTMLButtonElement
-      | undefined;
+      node.textContent?.includes("Delete")
+    ) as HTMLButtonElement | undefined;
 
     expect(button).toBeDefined();
     button?.click();
@@ -75,6 +74,7 @@ describe("AiExistingAgentsPanelComponent", () => {
       tools: [],
       enabled_tools: null,
       enabled_mcp_servers: null,
+      enabled_mcp_tools: null,
       tool_description_overrides: null,
       channels: [],
       status: "published",
@@ -91,10 +91,10 @@ describe("AiExistingAgentsPanelComponent", () => {
     fixture.detectChanges();
 
     const buttons = Array.from(
-      fixture.nativeElement.querySelectorAll("button"),
+      fixture.nativeElement.querySelectorAll("button")
     ) as Element[];
     const button = buttons.find((node) =>
-      node.textContent?.includes("Check Runtime"),
+      node.textContent?.includes("Check Runtime")
     ) as HTMLButtonElement | undefined;
 
     expect(button).toBeDefined();
