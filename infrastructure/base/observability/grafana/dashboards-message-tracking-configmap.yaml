@@ -49,10 +49,85 @@ data:
       ],
       "panels": [
         {
+          "title": "Recent traces",
+          "description": "One row per correlation_id active in the dashboard time window ($__timeFilter on occurred_at, producer time). Aggregates the WHOLE trace via a join-back CTE, so start/entry/count reflect events that began before the window too. Click a correlation_id to open the trace below (time window preserved). NOTE: rows with a NULL correlation_id (non-envelope + causal-drift events, rules 1/12/13/14/15/18) never appear here by design — see the 'Orphan events' stat for their count. 'recent' = occurred_at (producer time); replayed/backfilled rows sort by original producer time, not ingest time.",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 20, "x": 0, "y": 0 },
+          "datasource": { "type": "postgres", "uid": "tracking-postgres" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "WITH recent_ids AS (\n  SELECT DISTINCT correlation_id\n  FROM tracking.tracked_events\n  WHERE $__timeFilter(occurred_at)\n    AND correlation_id IS NOT NULL\n)\nSELECT\n  t.correlation_id,\n  min(t.occurred_at)                                            AS start_ts,\n  (array_agg(t.tenant ORDER BY t.occurred_at ASC)\n     FILTER (WHERE t.tenant IS NOT NULL))[1]                    AS tenant,\n  (array_agg(t.kind ORDER BY t.occurred_at ASC))[1]             AS entry_kind,\n  count(*)                                                      AS event_count,\n  round(\n    extract(epoch FROM (max(t.occurred_at) - min(t.occurred_at))) * 1000\n  )::bigint                                                     AS duration_ms,\n  (array_agg(t.kind ORDER BY t.occurred_at DESC))[1]            AS terminal_kind,\n  (array_agg(t.business_fn ORDER BY t.occurred_at DESC))[1]     AS terminal_business_fn\nFROM tracking.tracked_events t\nJOIN recent_ids r ON r.correlation_id = t.correlation_id\nGROUP BY t.correlation_id\nORDER BY start_ts DESC\nLIMIT 50"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "correlation_id" },
+                "properties": [
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "Open trace",
+                        "url": "/d/message-traces?var-correlation_id=${__data.fields.correlation_id}&${__url_time_range}",
+                        "targetBlank": false
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "duration_ms" },
+                "properties": [ { "id": "unit", "value": "ms" } ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "entry_kind" },
+                "properties": [
+                  { "id": "mappings", "value": [ { "type": "special", "options": { "match": "null", "result": { "text": "—" } } } ] }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "terminal_kind" },
+                "properties": [
+                  { "id": "mappings", "value": [ { "type": "special", "options": { "match": "null", "result": { "text": "—" } } } ] }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "title": "Orphan events (no correlation_id)",
+          "description": "Count of events in the window with correlation_id IS NULL (non-envelope + causal-drift rows). These are INVISIBLE to the Recent traces list by design; this stat keeps their volume visible. Cheap single aggregate over idx_tracked_events_occurred_at.",
+          "type": "stat",
+          "gridPos": { "h": 8, "w": 4, "x": 20, "y": 0 },
+          "datasource": { "type": "postgres", "uid": "tracking-postgres" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT count(*) AS orphan_events\nFROM tracking.tracked_events\nWHERE $__timeFilter(occurred_at)\n  AND correlation_id IS NULL"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 } ]
+              }
+            }
+          }
+        },
+        {
           "title": "Trace waterfall (Tempo)",
-          "description": "Native Tempo trace waterfall for the trace whose id equals $correlation_id with dashes stripped (see the $trace_id hidden variable). Paste a correlation_id (with or without dashes) into the $correlation_id variable above.",
+          "description": "Native Tempo trace waterfall for the trace whose id equals $correlation_id with dashes stripped (see the $trace_id hidden variable). Paste a correlation_id (with or without dashes) into the $correlation_id variable above. Non-UUID correlation ids (e.g. memory:..., gateway_audit:...) have no Tempo trace and this panel shows no data.",
           "type": "traces",
-          "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
+          "gridPos": { "h": 12, "w": 24, "x": 0, "y": 8 },
           "datasource": { "type": "tempo", "uid": "tempo" },
           "targets": [
             {
@@ -66,7 +141,7 @@ data:
           "title": "Causal node graph",
           "description": "Nodes = tracked_events rows for this correlation_id; edges link causation_id -> event_id. Events with no causation_id (root events, and drift with a lost causal parent) render as detached roots — this makes causal-chain drift visually obvious instead of hiding it.",
           "type": "nodeGraph",
-          "gridPos": { "h": 12, "w": 24, "x": 0, "y": 12 },
+          "gridPos": { "h": 12, "w": 24, "x": 0, "y": 20 },
           "datasource": { "type": "postgres", "uid": "tracking-postgres" },
           "targets": [
             {
@@ -121,7 +196,7 @@ data:
           "title": "Trace events (detail)",
           "description": "All events of this trace ordered by occurred_at. `payload` column is a PLACEHOLDER — see Open decision 1 in .sdd/changes/trace-visualization/tasks.md (payload display policy: as-is / truncated / masked; claim-check reference-vs-resolved). Connector endpoint-call events already ship redacted headers + truncated bodies via .sdd/changes/connector-call-detail; this decision covers the remaining event families.",
           "type": "table",
-          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 32 },
           "datasource": { "type": "postgres", "uid": "tracking-postgres" },
           "targets": [
             {
@@ -200,7 +275,7 @@ data:
             "label": "Trace ID (derived)",
             "hide": 2,
             "datasource": { "type": "postgres", "uid": "tracking-postgres" },
-            "query": "SELECT replace('$correlation_id', '-', '') AS trace_id",
+            "query": "SELECT CASE WHEN '$correlation_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN replace(lower('$correlation_id'), '-', '') ELSE '' END AS trace_id",
             "refresh": 2
           },
           {
