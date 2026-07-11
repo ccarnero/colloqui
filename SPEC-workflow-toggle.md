@@ -254,7 +254,7 @@ grep -n "workflow-toggle" cowork/INDEX.md
 - [x] T04 temporal termination wrapper
 - [x] T05 endpoint + gateway proxy
 - [x] T06 console api client
-- [ ] T07 console ui toggle + confirm
+- [x] T07 console ui toggle + confirm
 - [ ] T08 cluster e2e toggle scenario
 - [ ] T09 docs + index
 

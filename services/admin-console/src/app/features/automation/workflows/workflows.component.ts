@@ -8,6 +8,7 @@ import {
 import { MatButtonModule } from "@angular/material/button";
 import { MatDialog } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
+import { MatSlideToggleModule } from "@angular/material/slide-toggle";
 import { MatSnackBar } from "@angular/material/snack-bar";
 import { Router } from "@angular/router";
 import { forkJoin, of } from "rxjs";
@@ -31,6 +32,7 @@ import {
     UtcDatePipe,
     MatButtonModule,
     MatIconModule,
+    MatSlideToggleModule,
     PageHeaderComponent,
     StatusBadgeComponent,
   ],
@@ -55,7 +57,11 @@ import {
     }
 
     @for (wf of workflows(); track wf.id) {
-      <div class="section-card wf-card" (click)="openEditor(wf.id)">
+      <div
+        class="section-card wf-card"
+        [class.wf-card-disabled]="!isEnabled(wf)"
+        (click)="openEditor(wf.id)"
+      >
         <div class="section-card-header">
           <div>
             <div class="section-card-title">{{ wf.name }}</div>
@@ -63,9 +69,11 @@ import {
               {{ triggerLabel(wf) }} · {{ wf.application }}
             </div>
           </div>
-          <app-status-badge
-            [status]="wf.trigger ? 'active' : 'draft'"
-          />
+          @if (!isEnabled(wf)) {
+            <app-status-badge status="disabled" />
+          } @else {
+            <app-status-badge [status]="wf.trigger ? 'active' : 'draft'" />
+          }
         </div>
         <div class="section-card-body wf-meta">
           <span class="wf-meta-item">
@@ -81,6 +89,14 @@ import {
             {{ executionCount(wf) }} executions
           </span>
           <span class="wf-meta-spacer"></span>
+          <mat-slide-toggle
+            class="wf-status-toggle"
+            [checked]="isEnabled(wf)"
+            [disabled]="togglingId() === wf.id"
+            (click)="$event.stopPropagation()"
+            (change)="onStatusToggle($event.checked, wf)"
+          >
+          </mat-slide-toggle>
           <button
             mat-icon-button
             type="button"
@@ -119,6 +135,12 @@ import {
     }
     .wf-card:hover {
       border-color: var(--accent);
+    }
+    .wf-card-disabled {
+      opacity: 0.6;
+    }
+    .wf-status-toggle {
+      margin-right: 4px;
     }
     .wf-meta {
       display: flex;
@@ -188,6 +210,8 @@ export class WorkflowsComponent implements OnInit {
   readonly loading = signal(true);
   /** Tracks the workflow currently being deleted to disable its row. */
   readonly deletingId = signal<string | null>(null);
+  /** Tracks the workflow whose status toggle is mid-flight. */
+  readonly togglingId = signal<string | null>(null);
   /**
    * `definitionId -> executionsCount` lookup table. A `Map` is chosen
    * over a plain object so per-card lookups stay O(1) regardless of
@@ -249,6 +273,78 @@ export class WorkflowsComponent implements OnInit {
   /** O(1) lookup against the prefetched `executionCounts` map. */
   executionCount(wf: IWorkflowDefinitionDto): number {
     return this.executionCounts().get(wf.id) ?? 0;
+  }
+
+  /** Legacy rows have no persisted `status`; treat missing as enabled. */
+  isEnabled(wf: IWorkflowDefinitionDto): boolean {
+    return wf.status !== "disabled";
+  }
+
+  /**
+   * Slide toggle change handler. Turning a workflow ON is a direct call —
+   * no confirmation needed. Turning it OFF opens the shared confirm
+   * dialog because disabling terminates in-flight executions; cancelling
+   * reverts the toggle back to its previous (checked) visual state.
+   */
+  onStatusToggle(checked: boolean, wf: IWorkflowDefinitionDto): void {
+    if (checked) {
+      this.applyStatus(wf, "enabled");
+      return;
+    }
+
+    const data: IConfirmDialogData = {
+      title: "Disable workflow",
+      message: `Disabling "${wf.name}" will terminate any running executions of this workflow. Continue?`,
+      confirmLabel: "Disable",
+      variant: "danger",
+      icon: "warning_amber",
+    };
+    this.dialog
+      .open<ConfirmDialogComponent, IConfirmDialogData, boolean>(
+        ConfirmDialogComponent,
+        { data, autoFocus: false, restoreFocus: true }
+      )
+      .afterClosed()
+      .subscribe((confirmed) => {
+        if (confirmed === true) {
+          this.applyStatus(wf, "disabled");
+        } else {
+          // Cancelled: force a re-render so the toggle reverts to the
+          // workflow's actual (still enabled) status.
+          this.workflows.update((list) => [...list]);
+        }
+      });
+  }
+
+  private applyStatus(
+    wf: IWorkflowDefinitionDto,
+    status: "enabled" | "disabled"
+  ): void {
+    this.togglingId.set(wf.id);
+    this.api.setStatus(wf.id, status).subscribe({
+      next: (updated) => {
+        this.togglingId.set(null);
+        this.workflows.update((list) =>
+          list.map((w) =>
+            w.id === wf.id ? { ...w, status: updated.status } : w
+          )
+        );
+        const message =
+          status === "disabled"
+            ? `Workflow disabled. ${updated.terminated} execution(s) terminated.`
+            : "Workflow enabled";
+        this.snackBar.open(message, "OK", { duration: 3000 });
+      },
+      error: () => {
+        this.togglingId.set(null);
+        // Force a re-render so the toggle reverts to the workflow's
+        // last known (unchanged) status after the failed API call.
+        this.workflows.update((list) => [...list]);
+        this.snackBar.open("Failed to update workflow status", "OK", {
+          duration: 5000,
+        });
+      },
+    });
   }
 
   /**
