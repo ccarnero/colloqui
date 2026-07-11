@@ -1,50 +1,46 @@
 import {
+  ConflictException,
   Inject,
   Injectable,
-  OnModuleInit,
   OnModuleDestroy,
+  OnModuleInit,
 } from "@nestjs/common";
-import type {
-  JetStreamClient,
-  JetStreamManager,
-  JsMsg,
-  MsgHdrs,
-} from "nats";
-import { headers as natsHeaders } from "nats";
+import { context as otelContext } from "@opentelemetry/api";
 import {
-  MultiTenantConsumerManager,
   type IMultiTenantConsumerConfig,
+  MultiTenantConsumerManager,
 } from "@yoizen/database";
 import {
-  PinoLoggerService,
   createNatsConsumerMetrics,
   isWorkerMode,
+  PinoLoggerService,
   resolveServiceName,
   startNatsConsumerSpan,
 } from "@yoizen/observability";
-import { context as otelContext } from "@opentelemetry/api";
+import type {
+  Channel,
+  ChannelEnvelope,
+  ChannelProvider,
+  WorkflowTrigger,
+} from "@yoizen/shared";
 import {
-  CHANNEL_SUBJECT_PREFIX,
-  CHANNEL_PRODUCER,
   CHANNEL_DOMAIN,
+  CHANNEL_PRODUCER,
+  CHANNEL_SUBJECT_PREFIX,
   parseChannelSubject,
 } from "@yoizen/shared";
-import type {
-  ChannelEnvelope,
-  WorkflowTrigger,
-  Channel,
-  ChannelProvider,
-} from "@yoizen/shared";
+import type { JetStreamClient, JetStreamManager, JsMsg, MsgHdrs } from "nats";
+import { headers as natsHeaders } from "nats";
 import {
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
 } from "../../providers/providers.module";
-import { WorkflowsService } from "../workflows/workflows.service";
 import {
-  WORKFLOWS_REPOSITORY,
   type IWorkflowDefinitionRow,
   type IWorkflowsRepository,
+  WORKFLOWS_REPOSITORY,
 } from "../workflows/workflows.repository.interface";
+import { WorkflowsService } from "../workflows/workflows.service";
 
 const DURABLE_NAME = "workflow-triggers";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
@@ -55,7 +51,7 @@ const DEFAULT_TRIGGER_CONCURRENCY = 2;
 function resolveTriggerConcurrency(): number {
   const parsed = Number.parseInt(
     process.env.WORKFLOW_TRIGGER_CONCURRENCY ?? "",
-    10,
+    10
   );
   return Number.isFinite(parsed) && parsed > 0
     ? parsed
@@ -72,12 +68,8 @@ function resolveTriggerConcurrency(): number {
  * on every attempt after the first — which we silently acknowledge.
  */
 @Injectable()
-export class TriggerConsumerService
-  implements OnModuleInit, OnModuleDestroy
-{
-  private readonly logger = new PinoLoggerService(
-    TriggerConsumerService.name,
-  );
+export class TriggerConsumerService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new PinoLoggerService(TriggerConsumerService.name);
   private manager: MultiTenantConsumerManager | null = null;
 
   constructor(
@@ -96,7 +88,9 @@ export class TriggerConsumerService
       filterSubject: TRIGGER_SUBJECT,
       description:
         "Workflow triggers — message_received → Temporal workflow start",
-      metrics: createNatsConsumerMetrics(resolveServiceName("workflow-service")),
+      metrics: createNatsConsumerMetrics(
+        resolveServiceName("workflow-service")
+      ),
       runnerOptions: { concurrency: resolveTriggerConcurrency() },
       maxDeliver: 3,
       ackWaitMs: 60_000,
@@ -108,13 +102,13 @@ export class TriggerConsumerService
       this.js,
       config,
       (msg: JsMsg) => this.handleJsMessage(msg),
-      this.logger,
+      this.logger
     );
     await this.manager.start();
     this.logger.log(
       ensureOnly
         ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
-        : `Workflow triggers durable consumer ('${DURABLE_NAME}') started`,
+        : `Workflow triggers durable consumer ('${DURABLE_NAME}') started`
     );
   }
 
@@ -138,44 +132,49 @@ export class TriggerConsumerService
     const { span, context: spanCtx } = startNatsConsumerSpan(
       resolveServiceName("workflow-service"),
       msg.subject,
-      incomingHeaders,
+      incomingHeaders
     );
     try {
       await otelContext.with(spanCtx, () =>
-        this.handleMessage({ subject: msg.subject, data: msg.data }),
+        this.handleMessage({ subject: msg.subject, data: msg.data })
       );
     } finally {
       span.end();
     }
   }
 
-  private async handleMessage(
-    msg: { subject: string; data: Uint8Array },
-  ): Promise<void> {
+  private async handleMessage(msg: {
+    subject: string;
+    data: Uint8Array;
+  }): Promise<void> {
     const parsed = parseChannelSubject(msg.subject);
-    if (!parsed) return;
+    if (!parsed) {
+      return;
+    }
 
     const { tenant, channel, provider } = parsed;
 
     const decoder = new TextDecoder();
-    const envelope = JSON.parse(
-      decoder.decode(msg.data),
-    ) as ChannelEnvelope;
+    const envelope = JSON.parse(decoder.decode(msg.data)) as ChannelEnvelope;
 
     const definitions =
       await this.workflowsRepository.findDefinitionsByTriggerType(
         tenant,
-        "message_received",
+        "message_received"
       );
-    if (definitions.length === 0) return;
+    if (definitions.length === 0) {
+      return;
+    }
 
     const matching = this.filterMatching(
       definitions,
       channel,
       provider,
-      envelope,
+      envelope
     );
-    if (matching.length === 0) return;
+    if (matching.length === 0) {
+      return;
+    }
 
     const toExecute = this.applyExclusiveSharedLogic(matching);
 
@@ -233,26 +232,55 @@ export class TriggerConsumerService
           def.id,
           tenant,
           request,
-          options,
+          options
         );
         if (result.alreadyStarted) {
           this.logger.log(
-            `Duplicate trigger for workflow ${def.name} (${def.id}) — temporal=${result.temporalWorkflowId} already started`,
+            `Duplicate trigger for workflow ${def.name} (${def.id}) — temporal=${result.temporalWorkflowId} already started`
           );
         } else {
           this.logger.log(
-            `Triggered workflow ${def.name} (${def.id}) -> execution ${result.executionId}`,
+            `Triggered workflow ${def.name} (${def.id}) -> execution ${result.executionId}`
           );
         }
       } catch (err: unknown) {
+        if (this.isWorkflowDisabledConflict(err)) {
+          const triggerType =
+            (def.trigger as WorkflowTrigger | null)?.type ?? "unknown";
+          // Workflow was disabled after matching — ack the message instead
+          // of nacking/retrying, since retrying can never succeed while
+          // the workflow stays disabled.
+          this.logger.warn(
+            `Skipped trigger for disabled workflow ${def.name} (${def.id}) — tenant=${tenant}, trigger=${triggerType}`
+          );
+          continue;
+        }
         this.logger.warn(
-          `Failed to trigger workflow ${def.id}: ${err instanceof Error ? err.message : err}`,
+          `Failed to trigger workflow ${def.id}: ${err instanceof Error ? err.message : err}`
         );
         throw err instanceof Error
           ? err
           : new Error(`Failed to trigger workflow ${def.id}`);
       }
     }
+  }
+
+  /**
+   * True when `err` is the `ConflictException` thrown by
+   * `WorkflowsService.executeWorkflow` for a disabled workflow definition
+   * (`code: "WORKFLOW_DISABLED"`). Used to ack trigger-fired executions
+   * without retrying delivery, instead of nacking like other failures.
+   */
+  private isWorkflowDisabledConflict(err: unknown): boolean {
+    if (!(err instanceof ConflictException)) {
+      return false;
+    }
+    const body = err.getResponse();
+    return (
+      typeof body === "object" &&
+      body !== null &&
+      (body as { code?: string }).code === "WORKFLOW_DISABLED"
+    );
   }
 
   /**
@@ -263,27 +291,28 @@ export class TriggerConsumerService
     definitions: IWorkflowDefinitionRow[],
     channel: string,
     provider: string,
-    envelope: ChannelEnvelope,
+    envelope: ChannelEnvelope
   ): IWorkflowDefinitionRow[] {
     const result: IWorkflowDefinitionRow[] = [];
 
     for (const def of definitions) {
       const trigger = def.trigger as WorkflowTrigger | null;
-      if (!trigger || trigger.type !== "message_received") continue;
+      if (!trigger || trigger.type !== "message_received") {
+        continue;
+      }
 
       const payload: Record<string, unknown> =
-        (envelope.data?.payload as Record<string, unknown> | null | undefined) ??
-        (envelope.data as unknown as Record<string, unknown>);
+        (envelope.data?.payload as
+          | Record<string, unknown>
+          | null
+          | undefined) ?? (envelope.data as unknown as Record<string, unknown>);
 
       const cfg = trigger.config;
 
       if (cfg.accountIds && cfg.accountIds.length > 0) {
         const incomingAccountId = payload.accountId as string | undefined;
 
-        if (
-          !incomingAccountId ||
-          !cfg.accountIds.includes(incomingAccountId)
-        ) {
+        if (!incomingAccountId || !cfg.accountIds.includes(incomingAccountId)) {
           continue;
         }
       }
@@ -314,7 +343,9 @@ export class TriggerConsumerService
             return text.includes(pattern);
           }
         });
-        if (!matched) continue;
+        if (!matched) {
+          continue;
+        }
       }
 
       result.push(def);
@@ -328,14 +359,16 @@ export class TriggerConsumerService
    * first exclusive one fires. Otherwise all shared workflows fire.
    */
   private applyExclusiveSharedLogic(
-    matching: IWorkflowDefinitionRow[],
+    matching: IWorkflowDefinitionRow[]
   ): IWorkflowDefinitionRow[] {
     const exclusive = matching.find((def) => {
       const trigger = def.trigger as WorkflowTrigger;
       return trigger.mode === "exclusive";
     });
 
-    if (exclusive) return [exclusive];
+    if (exclusive) {
+      return [exclusive];
+    }
 
     return matching;
   }

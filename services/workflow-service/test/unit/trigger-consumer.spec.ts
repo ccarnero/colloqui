@@ -1,23 +1,25 @@
 import "reflect-metadata";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { ConflictException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { NATS_CONNECTION } from "@yoizen/database";
 import type { WorkflowTrigger } from "@yoizen/shared";
+import { WorkflowStatus } from "@yoizen/shared";
 import { TriggerConsumerService } from "../../src/modules/triggers/trigger-consumer.service";
+import {
+  type IWorkflowDefinitionRow,
+  WORKFLOWS_REPOSITORY,
+} from "../../src/modules/workflows/workflows.repository.interface";
+import { WorkflowsService } from "../../src/modules/workflows/workflows.service";
 import {
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
 } from "../../src/providers/providers.module";
-import { WorkflowsService } from "../../src/modules/workflows/workflows.service";
-import {
-  WORKFLOWS_REPOSITORY,
-  type IWorkflowDefinitionRow,
-} from "../../src/modules/workflows/workflows.repository.interface";
 
 function makeDefinition(
   overrides: Partial<IWorkflowDefinitionRow> & {
     trigger: WorkflowTrigger;
-  },
+  }
 ): IWorkflowDefinitionRow {
   return {
     id: overrides.id ?? "def-1",
@@ -25,6 +27,7 @@ function makeDefinition(
     application: overrides.application ?? "app",
     actions: [],
     trigger: overrides.trigger,
+    status: overrides.status ?? WorkflowStatus.ENABLED,
     created_at: new Date(),
     updated_at: new Date(),
     deleted_at: null,
@@ -69,14 +72,16 @@ const accountTriggerMiss: WorkflowTrigger = {
 
 describe("TriggerConsumerService", () => {
   let service: TriggerConsumerService;
-  const findByTriggerType = mock(() => Promise.resolve([] as IWorkflowDefinitionRow[]));
+  const findByTriggerType = mock(() =>
+    Promise.resolve([] as IWorkflowDefinitionRow[])
+  );
   const executeWorkflow = mock(() =>
     Promise.resolve({
       executionId: "exe-1",
       definitionId: "def-1",
       temporalWorkflowId: "tw-1",
       runId: "run-1",
-    }),
+    })
   );
 
   const ncMock = {
@@ -110,7 +115,7 @@ describe("TriggerConsumerService", () => {
 
   function buildMessage(
     subject: string,
-    data: Record<string, unknown>,
+    data: Record<string, unknown>
   ): { subject: string; data: Uint8Array } {
     return {
       subject,
@@ -132,10 +137,14 @@ describe("TriggerConsumerService", () => {
   it("does nothing when no definitions have triggers", async () => {
     findByTriggerType.mockResolvedValue([]);
 
-    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
-      .handleMessage(
-        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
-      );
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        baseEnvelope
+      )
+    );
 
     expect(executeWorkflow).not.toHaveBeenCalled();
   });
@@ -146,10 +155,14 @@ describe("TriggerConsumerService", () => {
       makeDefinition({ id: "def-2", trigger: sharedTrigger }),
     ]);
 
-    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
-      .handleMessage(
-        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
-      );
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        baseEnvelope
+      )
+    );
 
     expect(executeWorkflow).toHaveBeenCalledTimes(2);
   });
@@ -159,10 +172,14 @@ describe("TriggerConsumerService", () => {
       makeDefinition({ id: "def-1", trigger: telegramTrigger }),
     ]);
 
-    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
-      .handleMessage(
-        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
-      );
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        baseEnvelope
+      )
+    );
 
     expect(executeWorkflow).not.toHaveBeenCalled();
   });
@@ -173,10 +190,14 @@ describe("TriggerConsumerService", () => {
       makeDefinition({ id: "shared-1", trigger: sharedTrigger }),
     ]);
 
-    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
-      .handleMessage(
-        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
-      );
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        baseEnvelope
+      )
+    );
 
     expect(executeWorkflow).toHaveBeenCalledTimes(1);
   });
@@ -186,10 +207,14 @@ describe("TriggerConsumerService", () => {
       makeDefinition({ id: "pat-1", trigger: patternTrigger }),
     ]);
 
-    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
-      .handleMessage(
-        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
-      );
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        baseEnvelope
+      )
+    );
 
     expect(executeWorkflow).toHaveBeenCalledTimes(1);
   });
@@ -204,10 +229,14 @@ describe("TriggerConsumerService", () => {
       data: { ...baseEnvelope.data, text: "goodbye" },
     };
 
-    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
-      .handleMessage(
-        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", noMatchEnvelope),
-      );
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        noMatchEnvelope
+      )
+    );
 
     expect(executeWorkflow).not.toHaveBeenCalled();
   });
@@ -217,10 +246,14 @@ describe("TriggerConsumerService", () => {
       makeDefinition({ id: "acc-match", trigger: accountTriggerMatch }),
     ]);
 
-    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
-      .handleMessage(
-        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
-      );
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        baseEnvelope
+      )
+    );
 
     expect(executeWorkflow).toHaveBeenCalledTimes(1);
   });
@@ -230,10 +263,14 @@ describe("TriggerConsumerService", () => {
       makeDefinition({ id: "acc-miss", trigger: accountTriggerMiss }),
     ]);
 
-    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
-      .handleMessage(
-        buildMessage("evt.t1.channel-service.messaging.whatsapp.meta.received.v1", baseEnvelope),
-      );
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        baseEnvelope
+      )
+    );
 
     expect(executeWorkflow).not.toHaveBeenCalled();
   });
@@ -243,13 +280,14 @@ describe("TriggerConsumerService", () => {
       makeDefinition({ id: "def-1", trigger: sharedTrigger }),
     ]);
 
-    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
-      .handleMessage(
-        buildMessage(
-          "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
-          baseEnvelope,
-        ),
-      );
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        baseEnvelope
+      )
+    );
 
     expect(executeWorkflow).toHaveBeenCalledTimes(1);
     const [, , , options] = executeWorkflow.mock.calls[0];
@@ -269,13 +307,14 @@ describe("TriggerConsumerService", () => {
       transport: { method: "stream", protocol: "internal", depth: 2 },
     };
 
-    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
-      .handleMessage(
-        buildMessage(
-          "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
-          deepEnvelope,
-        ),
-      );
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        deepEnvelope
+      )
+    );
 
     const [, , , options] = executeWorkflow.mock.calls[0];
     expect(options?.causal?.depth).toBe(2);
@@ -293,16 +332,109 @@ describe("TriggerConsumerService", () => {
       data: { from: "+1234", text: "hello world", accountId: "acc-1" },
     };
 
-    await (service as unknown as { handleMessage: (m: unknown) => Promise<void> })
-      .handleMessage(
-        buildMessage(
-          "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
-          legacyEnvelope,
-        ),
-      );
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        legacyEnvelope
+      )
+    );
 
     expect(executeWorkflow).toHaveBeenCalledTimes(1);
     const [, , , options] = executeWorkflow.mock.calls[0];
     expect(options?.causal).toBeUndefined();
+  });
+
+  it("skips (does not throw/nack) a trigger when the matched workflow is disabled", async () => {
+    findByTriggerType.mockResolvedValue([
+      makeDefinition({
+        id: "def-1",
+        trigger: sharedTrigger,
+        status: WorkflowStatus.DISABLED,
+      }),
+    ]);
+    executeWorkflow.mockRejectedValueOnce(
+      new ConflictException({
+        statusCode: 409,
+        error: "Conflict",
+        code: "WORKFLOW_DISABLED",
+        message: "Workflow 'def-1' is disabled for tenant 't1'",
+        workflowId: "def-1",
+        tenantId: "t1",
+      })
+    );
+
+    // handleMessage must resolve (message acked), never reject/throw —
+    // a thrown error here would nack the JetStream message and retry.
+    await expect(
+      (
+        service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+      ).handleMessage(
+        buildMessage(
+          "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+          baseEnvelope
+        )
+      )
+    ).resolves.toBeUndefined();
+
+    expect(executeWorkflow).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues triggering remaining workflows after skipping a disabled one", async () => {
+    findByTriggerType.mockResolvedValue([
+      makeDefinition({
+        id: "def-disabled",
+        trigger: sharedTrigger,
+        status: WorkflowStatus.DISABLED,
+      }),
+      makeDefinition({
+        id: "def-enabled",
+        trigger: sharedTrigger,
+        status: WorkflowStatus.ENABLED,
+      }),
+    ]);
+    executeWorkflow.mockImplementationOnce(() =>
+      Promise.reject(
+        new ConflictException({
+          statusCode: 409,
+          error: "Conflict",
+          code: "WORKFLOW_DISABLED",
+          message: "Workflow 'def-disabled' is disabled for tenant 't1'",
+          workflowId: "def-disabled",
+          tenantId: "t1",
+        })
+      )
+    );
+
+    await (
+      service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+    ).handleMessage(
+      buildMessage(
+        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        baseEnvelope
+      )
+    );
+
+    expect(executeWorkflow).toHaveBeenCalledTimes(2);
+    expect(executeWorkflow.mock.calls[1]?.[0]).toBe("def-enabled");
+  });
+
+  it("re-throws (nacks) non-disabled errors from executeWorkflow", async () => {
+    findByTriggerType.mockResolvedValue([
+      makeDefinition({ id: "def-1", trigger: sharedTrigger }),
+    ]);
+    executeWorkflow.mockRejectedValueOnce(new Error("temporal unreachable"));
+
+    await expect(
+      (
+        service as unknown as { handleMessage: (m: unknown) => Promise<void> }
+      ).handleMessage(
+        buildMessage(
+          "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+          baseEnvelope
+        )
+      )
+    ).rejects.toThrow("temporal unreachable");
   });
 });

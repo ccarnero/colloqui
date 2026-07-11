@@ -1,4 +1,9 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import {
   type Client,
   WorkflowExecutionAlreadyStartedError,
@@ -22,6 +27,7 @@ import {
   WORKFLOW_DEFAULT_TIMEOUT_MS,
   WORKFLOW_ORCHESTRATOR_TASK_QUEUE,
   WORKFLOW_TASK_TIMEOUT_MS,
+  WorkflowStatus,
 } from "@yoizen/shared";
 import { nanoid } from "nanoid";
 import { TEMPORAL_CLIENT } from "../../providers/temporal.provider";
@@ -40,6 +46,21 @@ import {
   type IWorkflowsRepository,
   WORKFLOWS_REPOSITORY,
 } from "./workflows.repository.interface";
+
+/**
+ * 409 response body when `executeWorkflow` is blocked because the target
+ * definition's per-tenant `status` is `disabled` (`WorkflowStatus.DISABLED`,
+ * `@yoizen/shared` workflow.interfaces.ts:308-316). The trigger consumer
+ * pattern-matches on `code` to skip (ack) instead of nacking the message.
+ */
+export interface IWorkflowDisabledConflict {
+  statusCode: 409;
+  error: "Conflict";
+  code: "WORKFLOW_DISABLED";
+  message: string;
+  workflowId: string;
+  tenantId: string;
+}
 
 /** Execution row exposed over HTTP (camelCase). */
 export interface IWorkflowExecutionListItem {
@@ -293,6 +314,24 @@ export class WorkflowsService {
     );
     if (!definition) {
       throw new NotFoundException("Workflow definition not found");
+    }
+
+    // Rule: per-tenant WorkflowStatus.DISABLED blocks new executions at the
+    // choke point shared by the HTTP execute endpoint and the trigger
+    // consumer (workflow.interfaces.ts:308-316).
+    if (definition.status === WorkflowStatus.DISABLED) {
+      this.logger.warn(
+        `Blocked execution: workflow ${definitionId} is disabled for tenant ${tenantId}`
+      );
+      const body: IWorkflowDisabledConflict = {
+        statusCode: 409,
+        error: "Conflict",
+        code: "WORKFLOW_DISABLED",
+        message: `Workflow '${definitionId}' is disabled for tenant '${tenantId}' and cannot be executed`,
+        workflowId: definitionId,
+        tenantId,
+      };
+      throw new ConflictException(body);
     }
 
     const isIdempotent = options.idempotencyKey !== undefined;

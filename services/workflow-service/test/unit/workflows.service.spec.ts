@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { NotFoundException } from "@nestjs/common";
+import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { WorkflowAction } from "@yoizen/shared";
+import { WorkflowStatus } from "@yoizen/shared";
 import { EXECUTIONS_REPOSITORY } from "../../src/modules/workflows/executions.repository.interface";
 import { RegisteredServicesResolver } from "../../src/modules/workflows/registered-services.resolver";
 import { SystemVariablesProvider } from "../../src/modules/workflows/system-variables.provider";
@@ -23,6 +24,7 @@ describe("WorkflowsService", () => {
     application: "orders",
     actions,
     trigger: null,
+    status: WorkflowStatus.ENABLED,
     created_at: new Date("2024-06-01T00:00:00.000Z"),
     updated_at: new Date("2024-06-01T00:00:00.000Z"),
     deleted_at: null,
@@ -202,6 +204,57 @@ describe("WorkflowsService", () => {
     const startArgs = startCall[1].args as unknown[];
     expect(startArgs).toHaveLength(3);
     expect(startArgs[1]).toBe(result.executionId);
+  });
+
+  it("executeWorkflow throws ConflictException with WORKFLOW_DISABLED code when workflow is disabled", async () => {
+    mockDefinitions.findDefinitionById.mockResolvedValueOnce({
+      ...baseRow,
+      actions,
+      status: WorkflowStatus.DISABLED,
+    });
+
+    await expect(
+      service.executeWorkflow("def-1", "t1", { orderId: "o1" })
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(mockTemporal.workflow.start).not.toHaveBeenCalled();
+  });
+
+  it("executeWorkflow ConflictException body carries code, workflowId, and tenantId", async () => {
+    mockDefinitions.findDefinitionById.mockResolvedValueOnce({
+      ...baseRow,
+      actions,
+      status: WorkflowStatus.DISABLED,
+    });
+
+    try {
+      await service.executeWorkflow("def-1", "t1", { orderId: "o1" });
+      throw new Error("expected executeWorkflow to reject");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConflictException);
+      const body = (err as ConflictException).getResponse() as {
+        code: string;
+        workflowId: string;
+        tenantId: string;
+      };
+      expect(body.code).toBe("WORKFLOW_DISABLED");
+      expect(body.workflowId).toBe("def-1");
+      expect(body.tenantId).toBe("t1");
+    }
+  });
+
+  it("executeWorkflow proceeds when the workflow is explicitly enabled", async () => {
+    mockDefinitions.findDefinitionById.mockResolvedValueOnce({
+      ...baseRow,
+      actions,
+      status: WorkflowStatus.ENABLED,
+    });
+
+    const result = await service.executeWorkflow("def-1", "t1", {
+      orderId: "o1",
+    });
+
+    expect(result.runId).toBe("run-xyz");
+    expect(mockTemporal.workflow.start).toHaveBeenCalled();
   });
 
   it("executeWorkflow (K2) resolves without awaiting workflow completion", async () => {
