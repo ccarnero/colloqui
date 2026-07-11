@@ -460,7 +460,9 @@ export type {
   WorkflowAction,
   WorkflowDefinition,
   WorkflowExecutionContext,
+  WorkflowStatusValue,
   WorkflowTrigger,
 } from "./workflow.interfaces";
+export { WorkflowStatus } from "./workflow.interfaces";
 export { WORKFLOW_MONGO_SCHEMA } from "./workflow-mongo-schema";
 export { WORKFLOW_SCHEMA_SQL } from "./workflow-schema";

@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { TenantMongoConnectionManager } from "@yoizen/database";
+import type { WorkflowStatusValue } from "@yoizen/shared";
+import { WorkflowStatus } from "@yoizen/shared";
 import type { Filter, WithId } from "mongodb";
 import { WorkflowTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import type {
@@ -16,6 +18,12 @@ interface IWorkflowDefinitionDoc {
   actions: unknown[];
   trigger: unknown;
   variables: unknown;
+  /**
+   * Optional on the stored doc so pre-existing documents (written before
+   * this field existed) parse without a migration; `docToDefinitionRow`
+   * defaults missing values to 'enabled'.
+   */
+  status?: WorkflowStatusValue;
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;
@@ -40,6 +48,8 @@ function docToDefinitionRow(
     actions: doc.actions ?? [],
     trigger: doc.trigger ?? null,
     variables: doc.variables ?? null,
+    // Legacy docs written before this field existed default to 'enabled'.
+    status: doc.status ?? WorkflowStatus.ENABLED,
     created_at: toDate(doc.created_at),
     updated_at: toDate(doc.updated_at),
     deleted_at:
@@ -74,6 +84,7 @@ export class WorkflowsMongoRepository implements IWorkflowsRepository {
       actions,
       trigger: trigger ?? null,
       variables: variables ?? null,
+      status: WorkflowStatus.ENABLED,
       created_at: now,
       updated_at: now,
       deleted_at: null,

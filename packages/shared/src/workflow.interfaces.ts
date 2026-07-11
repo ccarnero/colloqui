@@ -304,6 +304,20 @@ export type WorkflowTrigger = MessageReceivedTrigger;
 
 // ── Workflow definition ────────────────────────────────────────────
 
+/**
+ * Per-tenant enable/disable toggle for a workflow definition. Mirrors
+ * `AdapterStatus` (`adapter.interfaces.ts:47-50`). `disabled` blocks new
+ * executions and terminates running Temporal executions; it is distinct
+ * from `deleted_at` (soft delete) -- both coexist.
+ */
+export const WorkflowStatus = {
+  ENABLED: "enabled",
+  DISABLED: "disabled",
+} as const;
+
+export type WorkflowStatusValue =
+  (typeof WorkflowStatus)[keyof typeof WorkflowStatus];
+
 export interface WorkflowDefinition {
   name: string;
   tenant: string;
@@ -316,6 +330,15 @@ export interface WorkflowDefinition {
    */
   variables?: Record<string, unknown>;
   trigger?: WorkflowTrigger;
+  /**
+   * Per-tenant enable/disable toggle carried through from the stored
+   * definition row. Optional here because this interface also models
+   * the transient Temporal execution input, which is constructed from
+   * request data that does not always include the persisted status.
+   * Defaults to `enabled` for existing workflows without a persisted
+   * value (see repository implementations).
+   */
+  status?: WorkflowStatusValue;
   /**
    * Optional causal chain inherited from the triggering envelope.
    * When present it is threaded into

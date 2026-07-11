@@ -1,3 +1,5 @@
+import type { WorkflowStatusValue } from "@yoizen/shared";
+
 export const WORKFLOWS_REPOSITORY = Symbol("WORKFLOWS_REPOSITORY");
 
 export interface IWorkflowDefinitionRow {
@@ -7,6 +9,8 @@ export interface IWorkflowDefinitionRow {
   actions: unknown;
   trigger: unknown;
   variables: unknown;
+  /** Per-tenant enable/disable toggle. Missing/legacy rows read as 'enabled'. */
+  status: WorkflowStatusValue;
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;

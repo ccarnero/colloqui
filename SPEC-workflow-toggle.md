@@ -248,7 +248,7 @@ grep -n "workflow-toggle" cowork/INDEX.md
 
 ## Progress
 
-- [ ] T01 schema + types
+- [x] T01 schema + types
 - [ ] T02 repository setStatus
 - [ ] T03 block new executions
 - [ ] T04 temporal termination wrapper

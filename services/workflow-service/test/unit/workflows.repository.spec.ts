@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { WorkflowsMongoRepository } from "../../src/modules/workflows/workflows.mongo.repository";
 import type { IWorkflowDefinitionRow } from "../../src/modules/workflows/workflows.repository.interface";
 import {
@@ -29,7 +29,9 @@ const definitionDoc = {
   deleted_at: null,
 };
 
-function buildRepo(definitionsCol: Record<string, unknown>): WorkflowsMongoRepository {
+function buildRepo(
+  definitionsCol: Record<string, unknown>
+): WorkflowsMongoRepository {
   const db = makeMockDb({ workflow_definitions: definitionsCol });
   return new WorkflowsMongoRepository(makeFakeTenantMongoConnections(db));
 }
@@ -51,6 +53,7 @@ describe("WorkflowsMongoRepository", () => {
       });
       expect(row.id).toBe("def-1");
       expect(row.actions).toEqual(definitionRow.actions);
+      expect(row.status).toBe("enabled");
     });
 
     it("propagates Mongo errors", async () => {
@@ -68,7 +71,7 @@ describe("WorkflowsMongoRepository", () => {
           name: "Flow",
           application: "app",
           actions: [],
-        }),
+        })
       ).rejects.toThrow("db unavailable");
     });
   });
@@ -82,6 +85,27 @@ describe("WorkflowsMongoRepository", () => {
 
       const row = await repo.findDefinitionById("def-1", "t1");
       expect(row?.id).toBe("def-1");
+    });
+
+    it("defaults status to 'enabled' for legacy docs missing the field", async () => {
+      // definitionDoc predates the `status` column/field entirely.
+      const col = makeMongoCollectionMock({
+        findOne: async () => definitionDoc,
+      });
+      const repo = buildRepo(col);
+
+      const row = await repo.findDefinitionById("def-1", "t1");
+      expect(row?.status).toBe("enabled");
+    });
+
+    it("preserves a persisted 'disabled' status", async () => {
+      const col = makeMongoCollectionMock({
+        findOne: async () => ({ ...definitionDoc, status: "disabled" }),
+      });
+      const repo = buildRepo(col);
+
+      const row = await repo.findDefinitionById("def-1", "t1");
+      expect(row?.status).toBe("disabled");
     });
 
     it("returns undefined when no row", async () => {

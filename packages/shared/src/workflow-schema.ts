@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS workflow_definitions (
   actions     JSONB        NOT NULL,
   trigger     JSONB        DEFAULT NULL,
   variables   JSONB        DEFAULT NULL,
+  status      TEXT         NOT NULL DEFAULT 'enabled' CHECK (status IN ('enabled', 'disabled')),
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   deleted_at  TIMESTAMPTZ
@@ -29,6 +30,9 @@ CREATE INDEX IF NOT EXISTS idx_workflow_definitions_trigger_type
 
 -- Migration: add variables column to existing tenants.
 ALTER TABLE workflow_definitions ADD COLUMN IF NOT EXISTS variables JSONB DEFAULT NULL;
+
+-- Migration: add status column to existing tenants (per-tenant enable/disable toggle).
+ALTER TABLE workflow_definitions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'enabled' CHECK (status IN ('enabled', 'disabled'));
 
 CREATE TABLE IF NOT EXISTS workflow_executions (
   id                    TEXT        PRIMARY KEY,

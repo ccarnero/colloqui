@@ -17,6 +17,12 @@ export const WORKFLOW_MONGO_SCHEMA: IMongoCollectionSchema[] = [
         options: { name: "pk_workflow_definitions" },
       },
       {
+        // Per-tenant enable/disable toggle lookups (block-new-executions
+        // checks and admin console list filtering).
+        keys: { status: 1 },
+        options: { name: "idx_workflow_definitions_status" },
+      },
+      {
         keys: { "trigger.type": 1 },
         options: {
           name: "idx_workflow_definitions_trigger_type",

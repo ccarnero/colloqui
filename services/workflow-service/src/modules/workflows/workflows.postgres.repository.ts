@@ -33,7 +33,7 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
       VALUES
         (${id}, ${name}, ${application},
          ${sql.json(actions as never)}, ${triggerJson}, ${variablesJson})
-      RETURNING id, name, application, actions, trigger, variables,
+      RETURNING id, name, application, actions, trigger, variables, status,
                 created_at, updated_at, deleted_at
     `;
     return row!;
@@ -57,7 +57,7 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
           updated_at = NOW()
       WHERE id = ${id}
         AND deleted_at IS NULL
-      RETURNING id, name, application, actions, trigger, variables,
+      RETURNING id, name, application, actions, trigger, variables, status,
                 created_at, updated_at, deleted_at
     `;
     return row;
@@ -69,7 +69,7 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
   ): Promise<IWorkflowDefinitionRow | undefined> {
     const sql = await this.sqlFor(tenantId);
     const [row] = await sql<IWorkflowDefinitionRow[]>`
-      SELECT id, name, application, actions, trigger, variables,
+      SELECT id, name, application, actions, trigger, variables, status,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
       WHERE id = ${id}
@@ -83,7 +83,7 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
   ): Promise<IWorkflowDefinitionRow[]> {
     const sql = await this.sqlFor(tenantId);
     return sql<IWorkflowDefinitionRow[]>`
-      SELECT id, name, application, actions, trigger, variables,
+      SELECT id, name, application, actions, trigger, variables, status,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
       WHERE deleted_at IS NULL
@@ -97,7 +97,7 @@ export class WorkflowsPostgresRepository implements IWorkflowsRepository {
   ): Promise<IWorkflowDefinitionRow[]> {
     const sql = await this.sqlFor(tenantId);
     return sql<IWorkflowDefinitionRow[]>`
-      SELECT id, name, application, actions, trigger, variables,
+      SELECT id, name, application, actions, trigger, variables, status,
              created_at, updated_at, deleted_at
       FROM workflow_definitions
       WHERE deleted_at IS NULL
