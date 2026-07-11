@@ -13,6 +13,14 @@ import {
 import { WorkflowsService } from "../../src/modules/workflows/workflows.service";
 import { TEMPORAL_CLIENT } from "../../src/providers/temporal.provider";
 
+/** Builds an `AsyncIterable` from a plain array, mirroring the shape of
+ * `Client.workflow.list()`'s `AsyncWorkflowListIterable`. */
+async function* asyncIterableOf<T>(items: T[]): AsyncIterable<T> {
+  for (const item of items) {
+    yield item;
+  }
+}
+
 describe("WorkflowsService", () => {
   const actions: WorkflowAction[] = [
     { activity: "jsFunction", name: "n1", args: { code: "return 1" } },
@@ -32,7 +40,11 @@ describe("WorkflowsService", () => {
 
   let service: WorkflowsService;
   let mockTemporal: {
-    workflow: { start: ReturnType<typeof mock> };
+    workflow: {
+      start: ReturnType<typeof mock>;
+      getHandle: ReturnType<typeof mock>;
+      list: ReturnType<typeof mock>;
+    };
   };
   let mockDefinitions: {
     createDefinition: ReturnType<typeof mock>;
@@ -53,11 +65,13 @@ describe("WorkflowsService", () => {
     const mockHandle = {
       describe: mock(() => Promise.resolve({ status: { name: "COMPLETED" } })),
       result: mock(() => Promise.resolve({ ok: true })),
+      terminate: mock(() => Promise.resolve()),
     };
     mockTemporal = {
       workflow: {
         start: mock(() => Promise.resolve({ firstExecutionRunId: "run-xyz" })),
         getHandle: mock(() => mockHandle),
+        list: mock(() => asyncIterableOf([])),
       },
     };
 
@@ -422,5 +436,112 @@ describe("WorkflowsService", () => {
     await expect(
       service.getExecutionStatus("wrong-def", "ex-1", "t1")
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  describe("terminateRunningExecutions", () => {
+    it("queries Temporal with the TenantId + Running visibility filter", async () => {
+      await service.terminateRunningExecutions("t1", "My workflow");
+
+      expect(mockTemporal.workflow.list).toHaveBeenCalledWith({
+        query: "TenantId='t1' AND ExecutionStatus='Running'",
+      });
+    });
+
+    it("terminates only executions whose workflowId matches the tenant:definitionName: prefix", async () => {
+      mockTemporal.workflow.list.mockImplementationOnce(() =>
+        asyncIterableOf([
+          { workflowId: "t1:My workflow:abc", runId: "run-a" },
+          { workflowId: "t1:Other workflow:def", runId: "run-b" },
+          { workflowId: "t2:My workflow:ghi", runId: "run-c" },
+        ])
+      );
+
+      const result = await service.terminateRunningExecutions(
+        "t1",
+        "My workflow"
+      );
+
+      expect(result).toEqual({ terminated: 1, failed: [] });
+      expect(mockTemporal.workflow.getHandle).toHaveBeenCalledTimes(1);
+      expect(mockTemporal.workflow.getHandle).toHaveBeenCalledWith(
+        "t1:My workflow:abc",
+        "run-a"
+      );
+    });
+
+    it("terminates every matching handle with the disabled reason", async () => {
+      mockTemporal.workflow.list.mockImplementationOnce(() =>
+        asyncIterableOf([
+          { workflowId: "t1:My workflow:abc", runId: "run-a" },
+          { workflowId: "t1:My workflow:def", runId: "run-b" },
+        ])
+      );
+
+      const terminateMock = mock(() => Promise.resolve());
+      mockTemporal.workflow.getHandle.mockImplementation(() => ({
+        terminate: terminateMock,
+      }));
+
+      const result = await service.terminateRunningExecutions(
+        "t1",
+        "My workflow"
+      );
+
+      expect(result.terminated).toBe(2);
+      expect(result.failed).toEqual([]);
+      expect(terminateMock).toHaveBeenCalledTimes(2);
+      expect(terminateMock).toHaveBeenCalledWith(
+        "workflow disabled by tenant admin"
+      );
+    });
+
+    it("collects failures without stopping the rest of the sweep", async () => {
+      mockTemporal.workflow.list.mockImplementationOnce(() =>
+        asyncIterableOf([
+          { workflowId: "t1:My workflow:abc", runId: "run-a" },
+          { workflowId: "t1:My workflow:def", runId: "run-b" },
+          { workflowId: "t1:My workflow:ghi", runId: "run-c" },
+        ])
+      );
+
+      let call = 0;
+      mockTemporal.workflow.getHandle.mockImplementation(() => {
+        call++;
+        if (call === 2) {
+          return {
+            terminate: mock(() => Promise.reject(new Error("temporal down"))),
+          };
+        }
+        return { terminate: mock(() => Promise.resolve()) };
+      });
+
+      const result = await service.terminateRunningExecutions(
+        "t1",
+        "My workflow"
+      );
+
+      expect(result.terminated).toBe(2);
+      expect(result.failed).toEqual([
+        {
+          workflowId: "t1:My workflow:def",
+          runId: "run-b",
+          error: "temporal down",
+        },
+      ]);
+    });
+
+    it("is a clean no-op when there are zero running executions", async () => {
+      mockTemporal.workflow.list.mockImplementationOnce(() =>
+        asyncIterableOf([])
+      );
+
+      const result = await service.terminateRunningExecutions(
+        "t1",
+        "My workflow"
+      );
+
+      expect(result).toEqual({ terminated: 0, failed: [] });
+      expect(mockTemporal.workflow.getHandle).not.toHaveBeenCalled();
+    });
   });
 });

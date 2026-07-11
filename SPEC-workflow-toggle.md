@@ -251,7 +251,7 @@ grep -n "workflow-toggle" cowork/INDEX.md
 - [x] T01 schema + types
 - [x] T02 repository setStatus
 - [x] T03 block new executions
-- [ ] T04 temporal termination wrapper
+- [x] T04 temporal termination wrapper
 - [ ] T05 endpoint + gateway proxy
 - [ ] T06 console api client
 - [ ] T07 console ui toggle + confirm

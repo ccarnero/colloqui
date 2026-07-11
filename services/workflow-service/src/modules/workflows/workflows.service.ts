@@ -176,6 +176,23 @@ export interface IExecutionStatusResult {
   createdAt: Date;
 }
 
+/** One failed termination attempt inside {@link ITerminateExecutionsResult}. */
+export interface ITerminateExecutionFailure {
+  workflowId: string;
+  runId: string;
+  error: string;
+}
+
+/**
+ * Result of {@link WorkflowsService.terminateRunningExecutions}: how many
+ * running Temporal executions were terminated, and which ones failed
+ * (a failure on one execution never stops the rest).
+ */
+export interface ITerminateExecutionsResult {
+  terminated: number;
+  failed: ITerminateExecutionFailure[];
+}
+
 export interface IWorkflowsSummary {
   readonly activeDefinitions: number;
   readonly definitionsFailingNow: number;
@@ -424,6 +441,70 @@ export class WorkflowsService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Terminates every currently running Temporal execution for the given
+   * tenant + definition name. Used when a tenant admin disables a workflow
+   * (`WorkflowStatus.DISABLED`, `@yoizen/shared` workflow.interfaces.ts:308-316)
+   * so already-running instances stop instead of finishing on their own.
+   *
+   * Workflow ids are minted as `${tenantId}:${definition.name}:${...}`
+   * (see {@link executeWorkflow}), so executions are matched by that prefix
+   * after narrowing the Temporal visibility query to the tenant's running
+   * executions via the `TenantId` search attribute.
+   *
+   * @param tenantId - Tenant scope (search attribute).
+   * @param definitionName - Workflow definition name (id prefix segment).
+   * @returns Count of terminated executions plus any per-execution failures.
+   */
+  async terminateRunningExecutions(
+    tenantId: string,
+    definitionName: string
+  ): Promise<ITerminateExecutionsResult> {
+    const idPrefix = `${tenantId}:${definitionName}:`;
+    const result: ITerminateExecutionsResult = { terminated: 0, failed: [] };
+
+    const executions = this.temporal.workflow.list({
+      query: `TenantId='${tenantId}' AND ExecutionStatus='Running'`,
+    });
+
+    for await (const info of executions) {
+      if (!info.workflowId.startsWith(idPrefix)) {
+        continue;
+      }
+
+      try {
+        const handle = this.temporal.workflow.getHandle(
+          info.workflowId,
+          info.runId
+        );
+        await handle.terminate("workflow disabled by tenant admin");
+        result.terminated++;
+        this.logger.log(
+          `Terminated running execution for tenant ${tenantId}: ` +
+            `workflowId=${info.workflowId}, runId=${info.runId}`
+        );
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err.message : String(err);
+        result.failed.push({
+          workflowId: info.workflowId,
+          runId: info.runId,
+          error,
+        });
+        this.logger.error(
+          `Failed to terminate running execution for tenant ${tenantId}: ` +
+            `workflowId=${info.workflowId}, runId=${info.runId}, error=${error}`
+        );
+      }
+    }
+
+    this.logger.log(
+      `Termination sweep for tenant ${tenantId}, definition ${definitionName}: ` +
+        `terminated=${result.terminated}, failed=${result.failed.length}`
+    );
+
+    return result;
   }
 
   /**
