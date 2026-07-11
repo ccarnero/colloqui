@@ -514,6 +514,83 @@ X-Yoizen-Tenant: acme
 Response (200 OK): an array of saved workflow definitions.
 ```
 
+## Per-Tenant Enable/Disable (`status`)
+
+Each workflow definition carries a per-tenant `status` column:
+
+```sql
+status TEXT NOT NULL DEFAULT 'enabled' CHECK (status IN ('enabled', 'disabled'))
+```
+
+Rows created before this column existed (or any row where the value is missing) are
+treated as `enabled` — the default preserves existing behavior. `status` is
+independent of `deleted_at`: a soft-deleted definition and a disabled definition are
+different states and both columns coexist on the row.
+
+### Toggle endpoint
+
+```
+PATCH /workflows/:id/status
+Content-Type: application/json
+X-Yoizen-Tenant: acme
+
+{ "status": "disabled" }
+
+Response (200 OK):
+{
+  "id": "wf_def_123",
+  "name": "processOrder",
+  "status": "disabled",
+  "terminated": 2
+}
+```
+
+- Setting `status: "disabled"` first persists the toggle, then terminates every
+  currently running Temporal execution of that definition for the tenant (via
+  `WorkflowsService.terminateRunningExecutions`, matched by the
+  `${tenantId}:${definitionName}:` workflow id prefix on the tenant's `TenantId`
+  search attribute). The response includes the `terminated` count. A per-execution
+  termination failure does not stop the rest of the sweep; failures are logged and do
+  not fail the request.
+- Setting `status: "enabled"` only flips the toggle — it never starts or touches
+  executions. The response omits `terminated`.
+- Both directions are idempotent (re-setting the same status is a no-op beyond the
+  write).
+- Unknown `id` returns `404 Not Found`.
+- Proxied 1:1 through `api-gateway` at the same path/shape.
+
+### Block point: new executions
+
+`WorkflowsService.executeWorkflow` is the single choke point checked by both entry
+points that can start a new execution. After the target definition is loaded, if
+`definition.status === WorkflowStatus.DISABLED` the call is rejected before any
+Temporal workflow is started:
+
+- **HTTP** (`POST /workflows/:id/execute`): responds `409 Conflict` with body:
+
+  ```json
+  {
+    "statusCode": 409,
+    "error": "Conflict",
+    "code": "WORKFLOW_DISABLED",
+    "message": "Workflow 'wf_def_123' is disabled for tenant 'acme' and cannot be executed",
+    "workflowId": "wf_def_123",
+    "tenantId": "acme"
+  }
+  ```
+
+  The block is logged at `warn` with the workflow id and tenant.
+
+- **Trigger path** (`TriggerConsumerService`): the same `executeWorkflow` call is
+  used to start trigger-fired runs. When it throws the `WORKFLOW_DISABLED` conflict,
+  the consumer recognizes the `code` on the error body and acks the message instead
+  of nacking it — a disabled workflow does not retry-loop the trigger event. This is
+  logged at `warn` with tenant, workflow, and trigger type.
+
+Already-running executions are unaffected by the block point; those are stopped by
+the termination sweep triggered from `updateWorkflowStatus`, not by
+`executeWorkflow`.
+
 ## Multi-Tenancy & Per-Tenant Databases
 
 ### Tenant Isolation

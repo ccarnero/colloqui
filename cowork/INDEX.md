@@ -62,6 +62,24 @@ Full setup, install, and verification steps: `codebase-memory-mcp-setup.md`.
 | `.mcp.json` | Connects `codebase-memory-mcp` to Claude Code. |
 | `services/tracking-ingester-service/` | **Message-tracking delivery** — bus→Postgres tracking ingester (classify + persist every bus event to `tracking.tracked_events`). Operational doc: `services/tracking-ingester-service/README.md`; classification rules: `TAXONOMY.md`; build-loop playbook: `cowork/LOOP-PLAYBOOK.md`. |
 
+## Change: per-tenant workflow enable/disable (workflow-toggle)
+
+Spec-driven change adding a per-tenant `status` (`enabled`/`disabled`) toggle to
+workflow definitions: disabling blocks new executions and terminates running Temporal
+executions; enabling restores normal behavior. Full task queue, gates, and human
+decisions: `SPEC-workflow-toggle.md`. Operational contract (schema, block point, 409
+`WORKFLOW_DISABLED` body, termination semantics): `services/workflow-service/README.md`.
+
+Decision cuádruple:
+- **Rule**: disable = block new executions + terminate running ones (not hide, not
+  drain) — `SPEC-workflow-toggle.md` §User decisions.
+- **Why**: per-tenant control of automation, so a tenant admin can stop a misbehaving
+  or unwanted workflow immediately without waiting for in-flight runs to finish.
+- **Evidence**: the single choke point is `WorkflowsService.executeWorkflow` in
+  `services/workflow-service/src/modules/workflows/workflows.service.ts` — both the
+  HTTP execute endpoint and the trigger-fired path go through it.
+- **Engram topic**: `workflows/tenant-toggle`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

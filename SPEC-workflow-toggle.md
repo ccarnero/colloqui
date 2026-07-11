@@ -256,7 +256,7 @@ grep -n "workflow-toggle" cowork/INDEX.md
 - [x] T06 console api client
 - [x] T07 console ui toggle + confirm
 - [x] T08 cluster e2e toggle scenario
-- [ ] T09 docs + index
+- [x] T09 docs + index
 
 ## Out of scope (explicit)
 
