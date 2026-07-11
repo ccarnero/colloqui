@@ -11,7 +11,7 @@ COPY services/admin-console/package.json services/admin-console/
 WORKDIR /app/services/admin-console
 
 RUN corepack enable pnpm && \
-    pnpm install --ignore-scripts && \
+    pnpm install --ignore-scripts --filter admin-console... && \
     pnpm --prefix /app/packages/angular-shared run build
 
 COPY services/admin-console/ /app/services/admin-console/
