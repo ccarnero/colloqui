@@ -8,7 +8,7 @@ fix code yourself. All code work goes through the `implementer` and `reviewer` a
 
 ## Inputs
 
-- `$ARGUMENTS`: first token is the SPEC file path (e.g. `SPEC-workflow-toggle.md`).
+- `$ARGUMENTS`: first token is the SPEC file path (e.g. `manual-loops/workflow-toggle.md`).
   Optional second token is a task id (e.g. `T03`) to run only that task.
 - The SPEC file provides EVERYTHING repo-specific:
   - **Gates** section: commands to run verbatim, in order, plus per-task **Accept** blocks.

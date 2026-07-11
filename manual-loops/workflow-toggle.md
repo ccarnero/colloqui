@@ -1,6 +1,7 @@
 # SPEC — Per-tenant workflow enable/disable (admin console)
 
-> Task queue for the `/build` loop. One task at a time, gated by tests and dual review.
+> Task queue for the `/manual-loop` command. One task at a time, gated by tests and
+> dual review. Queues for this loop live in `manual-loops/` (repo root).
 > Origin: user decision 2026-07-10 (Cowork session). Engram topic: `workflows/tenant-toggle`.
 
 ## Goal
@@ -35,7 +36,7 @@ Enabling restores normal behavior. Default for all existing workflows: `enabled`
   product), never in a later task.
 - Never modify existing tests to make them pass. Never stub Temporal in prod code.
 
-## Gates (the `/build` loop runs these verbatim, in order)
+## Gates (the `/manual-loop` command runs these verbatim, in order)
 
 ```
 G1  cd services/workflow-service && bun test     # FULL suite: unit + integration
@@ -267,6 +268,6 @@ grep -n "workflow-toggle" cowork/INDEX.md
 
 ## Human boundaries for this change
 
-- Approving this SPEC before the first `/build` run.
+- Approving this SPEC before the first `/manual-loop` run.
 - Any change to the termination semantics (e.g. drain instead of terminate).
-- Running the loop itself (`claude --model fable` → `/build SPEC-workflow-toggle.md`).
+- Running the loop itself (`claude --model fable` → `/manual-loop manual-loops/workflow-toggle.md`).

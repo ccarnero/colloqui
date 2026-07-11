@@ -67,12 +67,12 @@ Full setup, install, and verification steps: `codebase-memory-mcp-setup.md`.
 Spec-driven change adding a per-tenant `status` (`enabled`/`disabled`) toggle to
 workflow definitions: disabling blocks new executions and terminates running Temporal
 executions; enabling restores normal behavior. Full task queue, gates, and human
-decisions: `SPEC-workflow-toggle.md`. Operational contract (schema, block point, 409
+decisions: `manual-loops/workflow-toggle.md`. Operational contract (schema, block point, 409
 `WORKFLOW_DISABLED` body, termination semantics): `services/workflow-service/README.md`.
 
 Decision cuádruple:
 - **Rule**: disable = block new executions + terminate running ones (not hide, not
-  drain) — `SPEC-workflow-toggle.md` §User decisions.
+  drain) — `manual-loops/workflow-toggle.md` §User decisions.
 - **Why**: per-tenant control of automation, so a tenant admin can stop a misbehaving
   or unwanted workflow immediately without waiting for in-flight runs to finish.
 - **Evidence**: the single choke point is `WorkflowsService.executeWorkflow` in
