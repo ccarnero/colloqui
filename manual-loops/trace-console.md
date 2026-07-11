@@ -253,7 +253,7 @@ grep -n "trace-console" cowork/INDEX.md
 - [x] T02 http endpoint + k8s service
 - [x] T03 gateway proxy
 - [x] T04 console data service
-- [ ] T05 waterfall view
+- [x] T05 waterfall view
 - [ ] T06 causal graph view
 - [ ] T07 wiring + view switcher
 - [ ] T08 grafana panel removal
