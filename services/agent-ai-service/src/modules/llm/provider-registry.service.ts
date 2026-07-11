@@ -124,8 +124,7 @@ export class ProviderRegistryService {
         promptText.length > 0 ? promptText.split(/(\s+)/) : ["(empty prompt)"];
 
       const textId = crypto.randomUUID();
-      const inputTokenCount = promptText.split(/\s+/).filter(Boolean).length;
-      const outputTokenCount = words.filter((w) => w.trim().length > 0).length;
+      const usage = this.computeMockUsage(promptText, words);
 
       const chunks: MockStreamPart[] = [
         { type: "stream-start", warnings: [] },
@@ -141,30 +140,34 @@ export class ProviderRegistryService {
         {
           type: "finish",
           finishReason: "stop",
-          usage: {
-            inputTokens: {
-              total: inputTokenCount,
-              noCache: inputTokenCount,
-              cacheRead: 0,
-              cacheWrite: 0,
-            },
-            outputTokens: {
-              total: outputTokenCount,
-              text: outputTokenCount,
-              reasoning: 0,
-            },
-          },
+          usage,
         },
       ];
 
       return simulateReadableStream({ chunks, chunkDelayInMs: 10 });
     };
 
+    const buildGenerateResult = (prompt: MockPrompt) => {
+      const promptText = this.extractPromptText(prompt);
+      const words =
+        promptText.length > 0 ? promptText.split(/(\s+)/) : ["(empty prompt)"];
+      const echoedText = promptText.length > 0 ? promptText : "(empty prompt)";
+      const usage = this.computeMockUsage(promptText, words);
+
+      return {
+        content: [{ type: "text", text: echoedText }],
+        finishReason: "stop",
+        usage,
+        warnings: [],
+      };
+    };
+
     // Cast at the boundary: `MockLanguageModelV3`'s real constructor type
-    // requires the internal `LanguageModelV3StreamPart` union (see the file
-    // header comment) which isn't safely importable here without a fragile
-    // direct dependency on an internal transitive package. The runtime shape
-    // built above matches it exactly and is covered by unit tests.
+    // requires the internal `LanguageModelV3StreamPart` / `LanguageModelV3GenerateResult`
+    // shapes (see the file header comment) which aren't safely importable here
+    // without a fragile direct dependency on an internal transitive package.
+    // The runtime shapes built above match them exactly and are covered by
+    // unit tests.
     return new MockLanguageModelV3({
       provider: "mock",
       modelId: model,
@@ -177,7 +180,41 @@ export class ProviderRegistryService {
           ? D
           : never
         : never,
+      doGenerate: (async (options: { prompt: MockPrompt }) =>
+        buildGenerateResult(
+          options.prompt
+        )) as unknown as ConstructorParameters<
+        typeof MockLanguageModelV3
+      >[0] extends infer Opts
+        ? Opts extends { doGenerate?: infer D }
+          ? D
+          : never
+        : never,
     }) as unknown as LanguageModel;
+  }
+
+  /**
+   * Plausible input/output token counts for the mock provider's echoed
+   * response, shared by both the streaming (`doStream`) and non-streaming
+   * (`doGenerate`) code paths so usage reporting stays consistent between
+   * them.
+   */
+  private computeMockUsage(promptText: string, words: string[]) {
+    const inputTokenCount = promptText.split(/\s+/).filter(Boolean).length;
+    const outputTokenCount = words.filter((w) => w.trim().length > 0).length;
+    return {
+      inputTokens: {
+        total: inputTokenCount,
+        noCache: inputTokenCount,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+      outputTokens: {
+        total: outputTokenCount,
+        text: outputTokenCount,
+        reasoning: 0,
+      },
+    };
   }
 
   private extractPromptText(prompt: MockPrompt): string {

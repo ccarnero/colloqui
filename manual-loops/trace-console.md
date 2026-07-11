@@ -216,6 +216,13 @@ python3 -c "import sys,yaml,json; d=yaml.safe_load(open('infrastructure/base/obs
 
 ### T09 — Cluster e2e: chain endpoint over a real run
 
+> RETRY NOTE (2026-07-11, after 4-attempt block — see BLOCKED.md): the happy-path
+> workflow alone can NEVER satisfy the span assertion (workflow-service emits no
+> `execution_started`). Reuse attempt-3/4's approach — idempotent e2e agent +
+> agent workflow — but create the agent with `model_config.provider = "ln"`
+> (the dev echo provider; `"mock"` does not exist → execution_failed). The
+> `POST /api/admin/agents/:id/publish` call needs an explicit `'{}'` body.
+
 Extend `scripts/e2e-http-workflow.sh` (stage-per-function, exit-code contract):
 after the existing happy path, take the run's correlation_id and, via the gateway
 (same auth/tenant as stage 1): `GET /tracking/chains/<correlation_id>` — assert
@@ -257,7 +264,7 @@ grep -n "trace-console" cowork/INDEX.md
 - [x] T06 causal graph view
 - [x] T07 wiring + view switcher
 - [x] T08 grafana panel removal
-- [ ] T09 cluster e2e chain assertion
+- [x] T09 cluster e2e chain assertion
 - [ ] T10 docs + index
 
 ## Out of scope (explicit)

@@ -115,4 +115,69 @@ describe("ProviderRegistryService — mock echo provider", () => {
     }
     expect(deltas.join("")).toBe("(empty prompt)");
   });
+
+  it("throws on doGenerate when RUNTIME_ALLOW_MOCK_PROVIDER is not 'true'", () => {
+    // Regression test: `createModel("mock", ...)` itself already throws
+    // before a model is ever constructed, so `doGenerate` can never be
+    // reached while the flag is disabled. This locks in that guarantee.
+    delete process.env[RUNTIME_ALLOW_MOCK_PROVIDER_ENV];
+    expect(() => registry.createModel("mock", "echo-1", "")).toThrow(
+      /disabled/i
+    );
+
+    process.env[RUNTIME_ALLOW_MOCK_PROVIDER_ENV] = "false";
+    expect(() => registry.createModel("mock", "echo-1", "")).toThrow(
+      /disabled/i
+    );
+  });
+
+  it("echoes the prompt text via doGenerate and reports plausible token usage", async () => {
+    process.env[RUNTIME_ALLOW_MOCK_PROVIDER_ENV] = "true";
+    const model = registry.createModel("mock", "echo-1", "") as {
+      doGenerate: (options: {
+        prompt: Array<{ role: string; content: unknown }>;
+      }) => Promise<{
+        content: Array<{ type: string; text?: string }>;
+        finishReason: string;
+        usage: {
+          inputTokens: { total: number };
+          outputTokens: { total: number };
+        };
+      }>;
+    };
+
+    const result = await model.doGenerate({
+      prompt: [
+        { role: "system", content: "system prompt" },
+        { role: "user", content: "Hello world" },
+      ],
+    });
+
+    expect(result.content).toEqual([{ type: "text", text: "Hello world" }]);
+    expect(result.finishReason).toBe("stop");
+    expect(result.usage.inputTokens.total).toBe(2);
+    expect(result.usage.outputTokens.total).toBe(2);
+  });
+
+  it("echoes '(empty prompt)' via doGenerate when there is no usable prompt text", async () => {
+    process.env[RUNTIME_ALLOW_MOCK_PROVIDER_ENV] = "true";
+    const model = registry.createModel("mock", "echo-1", "") as {
+      doGenerate: (options: {
+        prompt: Array<{ role: string; content: unknown }>;
+      }) => Promise<{
+        content: Array<{ type: string; text?: string }>;
+        finishReason: string;
+        usage: {
+          inputTokens: { total: number };
+          outputTokens: { total: number };
+        };
+      }>;
+    };
+
+    const result = await model.doGenerate({ prompt: [] });
+
+    expect(result.content).toEqual([{ type: "text", text: "(empty prompt)" }]);
+    expect(result.usage.inputTokens.total).toBe(0);
+    expect(result.usage.outputTokens.total).toBe(1);
+  });
 });
