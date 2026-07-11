@@ -41,6 +41,14 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
  * `business_fn` group (SPEC.md `manual-loops/trace-console.md` T05).
  *
  * Data-agnostic: the chain is provided by the parent (T07 wires the fetch).
+ *
+ * No row-selection/detail-card affordance exists here (rows are static —
+ * no `(click)` handler, no selected-event state), unlike the causal graph's
+ * node click. SPEC.md `manual-loops/payload-capture.md` T05's "View payload"
+ * action is therefore wired only into the causal graph's detail card
+ * (`causal-graph.component.ts`); adding a first detail-card surface to the
+ * waterfall is out of scope for this task (T05 is additive to the existing
+ * event-detail card, not a new one).
  */
 @Component({
   selector: "app-trace-waterfall",

@@ -57,6 +57,25 @@ export interface ITrackingChainResponse {
   readonly summary: ITrackingChainSummary;
 }
 
+/**
+ * Payload lifecycle state assigned by the ingester (SPEC.md
+ * `manual-loops/payload-capture.md` T01/T02/T03): `inline`/`resolved` carry a
+ * usable payload, `unresolved` failed claim-check resolution at ingest,
+ * `scrubbed` was cleared by the 30-day retention job, `none` was never
+ * captured.
+ */
+export type PayloadStatus =
+  | "inline"
+  | "resolved"
+  | "unresolved"
+  | "scrubbed"
+  | "none";
+
+export interface IEventPayloadResponse {
+  readonly payload: unknown;
+  readonly payload_status: PayloadStatus;
+}
+
 @Injectable({ providedIn: "root" })
 export class TrackingChainService {
   private readonly http = inject(HttpClient);
@@ -69,6 +88,24 @@ export class TrackingChainService {
   getChain(correlationId: string): Observable<ITrackingChainResponse> {
     return this.http.get<ITrackingChainResponse>(
       `${TRACKING}/chains/${correlationId}`
+    );
+  }
+
+  /**
+   * Fetches a single event's payload on demand (never pre-fetched with the
+   * chain — SPEC.md `manual-loops/payload-capture.md` T05). Gated server-side
+   * by the `tracking:payload:read` tenant-admin permission
+   * (`api-gateway/modules/tracking/tracking.controller.ts`); the caller is
+   * responsible for gating the UI affordance with the same permission.
+   * @param correlationId  Correlation id owning the event.
+   * @param eventId        Event id to fetch the payload for.
+   */
+  getEventPayload(
+    correlationId: string,
+    eventId: string
+  ): Observable<IEventPayloadResponse> {
+    return this.http.get<IEventPayloadResponse>(
+      `${TRACKING}/chains/${correlationId}/events/${eventId}/payload`
     );
   }
 }

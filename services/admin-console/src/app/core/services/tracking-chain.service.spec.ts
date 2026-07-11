@@ -1,5 +1,5 @@
 import "@angular/compiler";
-import { provideHttpClient } from "@angular/common/http";
+import { HttpErrorResponse, provideHttpClient } from "@angular/common/http";
 import {
   HttpTestingController,
   provideHttpClientTesting,
@@ -8,6 +8,7 @@ import { TestBed } from "@angular/core/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { environment } from "../../../environments/environment";
 import {
+  type IEventPayloadResponse,
   type ITrackingChainResponse,
   TrackingChainService,
 } from "./tracking-chain.service";
@@ -140,5 +141,49 @@ describe("TrackingChainService", () => {
     );
     expect(req.request.method).toBe("GET");
     req.flush(makeResponse({ correlation_id: "corr with space" }));
+  });
+
+  it("requests the correct URL for an event payload", () => {
+    service.getEventPayload("corr-1", "evt-1").subscribe();
+
+    const req = httpMock.expectOne(
+      `${TRACKING_URL}/corr-1/events/evt-1/payload`
+    );
+    expect(req.request.method).toBe("GET");
+    req.flush({ payload: { hello: "world" }, payload_status: "inline" });
+  });
+
+  it("passes through the payload response shape unchanged", () => {
+    let result: IEventPayloadResponse | undefined;
+    service
+      .getEventPayload("corr-1", "evt-1")
+      .subscribe((res) => (result = res));
+
+    const req = httpMock.expectOne(
+      `${TRACKING_URL}/corr-1/events/evt-1/payload`
+    );
+    req.flush({ payload: { hello: "world" }, payload_status: "resolved" });
+
+    expect(result).toEqual({
+      payload: { hello: "world" },
+      payload_status: "resolved",
+    });
+  });
+
+  it("propagates HTTP errors (e.g. 410 scrubbed) to the caller", () => {
+    let error: HttpErrorResponse | undefined;
+    service.getEventPayload("corr-1", "evt-1").subscribe({
+      error: (err: HttpErrorResponse) => (error = err),
+    });
+
+    const req = httpMock.expectOne(
+      `${TRACKING_URL}/corr-1/events/evt-1/payload`
+    );
+    req.flush(
+      { error: "payload for event evt-1 was scrubbed per retention policy" },
+      { status: 410, statusText: "Gone" }
+    );
+
+    expect(error?.status).toBe(410);
   });
 });

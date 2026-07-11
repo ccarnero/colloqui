@@ -1,13 +1,18 @@
+import type { HttpErrorResponse } from "@angular/common/http";
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  inject,
   input,
   signal,
 } from "@angular/core";
-import type {
-  ITrackedEvent,
-  ITrackingChainResponse,
+import { AuthService } from "../../../../core/services/auth.service";
+import {
+  type IEventPayloadResponse,
+  type ITrackedEvent,
+  type ITrackingChainResponse,
+  TrackingChainService,
 } from "../../../../core/services/tracking-chain.service";
 import {
   computeChainCompleteness,
@@ -18,6 +23,22 @@ import {
   type IGraphEdgePoints,
   type IGraphNode,
 } from "./causal-graph-geometry";
+
+/** Tenant-admin permission gating the payload viewer (SPEC.md
+ * `manual-loops/payload-capture.md` T05 — reuses the console's existing
+ * `AuthService.hasPermission()` gate, same mechanism as
+ * `message-trace.component.ts`'s `diagnostics:read` gate). */
+const PAYLOAD_PERMISSION = "tracking:payload:read";
+
+/** Local view-state for the on-demand payload fetch, keyed to whichever
+ * event is currently selected — reset whenever the selection changes. */
+type PayloadViewState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "loading" }
+  | { readonly kind: "loaded"; readonly response: IEventPayloadResponse }
+  | { readonly kind: "expired" }
+  | { readonly kind: "not-captured"; readonly message: string }
+  | { readonly kind: "error" };
 
 const NODE_WIDTH = 200;
 const NODE_HEIGHT = 52;
@@ -36,7 +57,9 @@ interface IRenderedEdge {
  * events laid out on a causal spine by `causation_depth`, edges are drawn
  * `causation_id -> event_id` (solid) or as a dashed "missing parent" stub
  * for the solo-correlation case, and clicking a node opens a detail card
- * (SPEC.md `manual-loops/trace-console.md` T06).
+ * (SPEC.md `manual-loops/trace-console.md` T06). The detail card also hosts
+ * an admin-only "View payload" affordance that fetches the event's payload
+ * on demand (SPEC.md `manual-loops/payload-capture.md` T05).
  *
  * Data-agnostic: the chain is provided by the parent (T07 wires the fetch).
  */
@@ -161,6 +184,47 @@ interface IRenderedEdge {
                 }
               </dd>
             </dl>
+
+            @if (canViewPayload()) {
+              <div class="cg-payload">
+                <button
+                  type="button"
+                  class="cg-payload-btn"
+                  (click)="viewPayload(event.event_id)"
+                >
+                  View payload
+                </button>
+
+                @switch (payloadState().kind) {
+                  @case ("loading") {
+                    <p class="cg-payload-status">Loading payload…</p>
+                  }
+                  @case ("expired") {
+                    <p class="cg-payload-status">
+                      Payload expired (30-day retention)
+                    </p>
+                  }
+                  @case ("not-captured") {
+                    <p class="cg-payload-status">
+                      {{ notCapturedMessage() }}
+                    </p>
+                  }
+                  @case ("error") {
+                    <p class="cg-payload-status cg-payload-error">
+                      Failed to load payload.
+                    </p>
+                  }
+                  @case ("loaded") {
+                    <details class="cg-payload-details">
+                      <summary>
+                        Payload ({{ loadedResponse()?.payload_status }})
+                      </summary>
+                      <pre class="cg-payload-pre">{{ payloadJson() }}</pre>
+                    </details>
+                  }
+                }
+              </div>
+            }
           </aside>
         }
       </div>
@@ -275,9 +339,46 @@ interface IRenderedEdge {
       color: var(--red, #b3261e);
       font-size: 10px;
     }
+    .cg-payload {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-subtle, #ddd);
+    }
+    .cg-payload-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      border: 1px solid var(--border, #185fa5);
+      border-radius: 6px;
+      background: var(--bg, #fff);
+      color: #185fa5;
+      cursor: pointer;
+    }
+    .cg-payload-status {
+      margin: 8px 0 0;
+      color: var(--text3, #888);
+    }
+    .cg-payload-error {
+      color: var(--red, #b3261e);
+    }
+    .cg-payload-details {
+      margin-top: 8px;
+    }
+    .cg-payload-pre {
+      margin: 6px 0 0;
+      padding: 8px;
+      background: var(--bg2, #f8f9fa);
+      border-radius: 6px;
+      max-height: 240px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
   `,
 })
 export class CausalGraphComponent {
+  private readonly auth = inject(AuthService);
+  private readonly trackingChainService = inject(TrackingChainService);
+
   readonly chain = input.required<ITrackingChainResponse>();
 
   readonly NODE_WIDTH = NODE_WIDTH;
@@ -285,6 +386,30 @@ export class CausalGraphComponent {
 
   private readonly selected = signal<string | null>(null);
   readonly selectedEventId = computed(() => this.selected());
+
+  /** Gates the "View payload" action — SPEC.md `manual-loops/payload-capture.md`
+   * T05: "visible only when the session user has the admin permission". */
+  readonly canViewPayload = computed(() =>
+    this.auth.hasPermission(PAYLOAD_PERMISSION)
+  );
+
+  private readonly payload = signal<PayloadViewState>({ kind: "idle" });
+  readonly payloadState = computed(() => this.payload());
+
+  readonly loadedResponse = computed<IEventPayloadResponse | null>(() => {
+    const state = this.payload();
+    return state.kind === "loaded" ? state.response : null;
+  });
+
+  readonly payloadJson = computed(() => {
+    const response = this.loadedResponse();
+    return response ? JSON.stringify(response.payload, null, 2) : "";
+  });
+
+  readonly notCapturedMessage = computed(() => {
+    const state = this.payload();
+    return state.kind === "not-captured" ? state.message : "";
+  });
 
   readonly nodes = computed(() => computeGraphNodes(this.chain()));
   readonly edges = computed(() => computeGraphEdges(this.chain()));
@@ -338,6 +463,48 @@ export class CausalGraphComponent {
   });
 
   select(eventId: string): void {
-    this.selected.set(this.selected() === eventId ? null : eventId);
+    const next = this.selected() === eventId ? null : eventId;
+    this.selected.set(next);
+    // Selecting a different event (or closing the card) discards any
+    // in-flight/loaded payload state — the viewer never carries state across
+    // events (SPEC.md `manual-loops/payload-capture.md` T05: fetch on demand,
+    // never pre-fetched).
+    this.payload.set({ kind: "idle" });
+  }
+
+  /**
+   * Fetches the selected event's payload on demand via
+   * `TrackingChainService.getEventPayload` — never pre-fetched with the
+   * chain. Maps the gateway's `payload_status`-driven HTTP responses (T04:
+   * 200 body, 404 unresolved/none/unknown, 410 scrubbed) to view state.
+   */
+  viewPayload(eventId: string): void {
+    const correlationId = this.chain().correlation_id;
+    this.payload.set({ kind: "loading" });
+    this.trackingChainService
+      .getEventPayload(correlationId, eventId)
+      .subscribe({
+        next: (response) => this.payload.set({ kind: "loaded", response }),
+        error: (err: HttpErrorResponse) => {
+          if (err.status === 410) {
+            this.payload.set({ kind: "expired" });
+            return;
+          }
+          if (err.status === 404) {
+            // The gateway/ingester distinguish unresolved/none/unknown-event
+            // only via the `error` message text (handle-payload-request.ts) —
+            // surface the claim-check-specific message when detectable, else
+            // a generic not-captured message.
+            const reason =
+              typeof err.error?.error === "string" ? err.error.error : "";
+            const message = reason.includes("unresolved")
+              ? "Payload was not captured (claim-check expired)"
+              : "Payload was not captured";
+            this.payload.set({ kind: "not-captured", message });
+            return;
+          }
+          this.payload.set({ kind: "error" });
+        },
+      });
   }
 }
