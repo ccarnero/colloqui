@@ -93,6 +93,10 @@ export function buildNonEnvelopeRow(
     run_id: null,
     connector_id: null,
     cache_status: null,
+    // Non-envelope/drift bodies carry no `data.payload` shape at all — T01
+    // payload lifecycle: no payload ever existed for this row.
+    payload_status: "none",
+    payload_scrubbed_at: null,
   };
 
   return row;

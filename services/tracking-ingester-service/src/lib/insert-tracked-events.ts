@@ -16,10 +16,11 @@
 // throws for an expected failure — a failing insert is returned as an `err`.
 //
 // Column layout is BINDING on `TrackedEventRow` (src/lib/to-tracked-event-row.ts)
-// and the DDL (src/sql/tracked-events.sql). Twenty-two columns are inserted
+// and the DDL (src/sql/tracked-events.sql). Twenty-four columns are inserted
 // (18 original + 4 T4 click-through detail columns: workflow_id, run_id,
-// connector_id, cache_status); `ingested_at` is a DB-side `DEFAULT now()` and
-// is intentionally omitted.
+// connector_id, cache_status + 2 T01 payload-capture columns: payload_status,
+// payload_scrubbed_at); `ingested_at` is a DB-side `DEFAULT now()` and is
+// intentionally omitted.
 //
 // UNNEST cast notes (the two non-scalar columns are the interesting ones):
 //   - `envelope` (jsonb): each row's envelope is JSON-serialized to a string and
@@ -120,6 +121,9 @@ export async function insertTrackedEvents(
   const runId = new Array<string | null>(n);
   const connectorId = new Array<string | null>(n);
   const cacheStatus = new Array<string | null>(n);
+  // T01 (payload-capture) payload lifecycle columns.
+  const payloadStatus = new Array<string>(n);
+  const payloadScrubbedAt = new Array<string | null>(n);
 
   for (let i = 0; i < n; i++) {
     const row = rows[i]!;
@@ -147,6 +151,8 @@ export async function insertTrackedEvents(
     runId[i] = row.run_id;
     connectorId[i] = row.connector_id;
     cacheStatus[i] = row.cache_status;
+    payloadStatus[i] = row.payload_status;
+    payloadScrubbedAt[i] = row.payload_scrubbed_at;
   }
 
   log(`insertTrackedEvents: inserting ${n} row(s) via UNNEST`);
@@ -175,7 +181,9 @@ export async function insertTrackedEvents(
         workflow_id,
         run_id,
         connector_id,
-        cache_status
+        cache_status,
+        payload_status,
+        payload_scrubbed_at
       )
       SELECT
         event_id,
@@ -199,7 +207,9 @@ export async function insertTrackedEvents(
         workflow_id,
         run_id,
         connector_id,
-        cache_status
+        cache_status,
+        payload_status,
+        payload_scrubbed_at
       FROM UNNEST(
         ${client.array(eventId)}::text[],
         ${client.array(subject)}::text[],
@@ -222,7 +232,9 @@ export async function insertTrackedEvents(
         ${client.array(workflowId)}::text[],
         ${client.array(runId)}::text[],
         ${client.array(connectorId)}::text[],
-        ${client.array(cacheStatus)}::text[]
+        ${client.array(cacheStatus)}::text[],
+        ${client.array(payloadStatus)}::text[],
+        ${client.array(payloadScrubbedAt)}::timestamptz[]
       ) AS t(
         event_id,
         subject,
@@ -245,7 +257,9 @@ export async function insertTrackedEvents(
         workflow_id,
         run_id,
         connector_id,
-        cache_status
+        cache_status,
+        payload_status,
+        payload_scrubbed_at
       )
       ON CONFLICT (event_id) DO NOTHING
     `;

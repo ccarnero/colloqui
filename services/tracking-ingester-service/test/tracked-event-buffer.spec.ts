@@ -34,6 +34,8 @@ function sampleRow(id: string): TrackedEventRow {
     run_id: null,
     connector_id: null,
     cache_status: null,
+    payload_status: "inline",
+    payload_scrubbed_at: null,
   };
 }
 

@@ -104,3 +104,61 @@ CREATE INDEX IF NOT EXISTS idx_tracked_events_business_fn
 -- T6 (trace-visualization) connector-detail dashboard filters by $connector.
 CREATE INDEX IF NOT EXISTS idx_tracked_events_connector_id
   ON tracking.tracked_events (connector_id);
+
+-- T01 (payload-capture) payload lifecycle columns — additive, idempotent
+-- retrofit (same pattern as `compliance` above). `payload_status` tracks WHERE
+-- the payload for a row currently lives across its life:
+--   - 'inline'     — the payload is stored verbatim in `envelope.data.payload`
+--                    (the default/steady-state for non-claim-check rows).
+--   - 'resolved'   — T02: a claim-check ref was resolved at ingest and the
+--                    full payload was persisted into `envelope`.
+--   - 'unresolved' — T02: claim-check resolution FAILED (expired ref, cache
+--                    down, malformed); the slim envelope was persisted as-is.
+--   - 'scrubbed'   — T03: the retention scrub emptied `envelope.data.payload`
+--                    after PAYLOAD_RETENTION_DAYS; `payload_scrubbed_at` records
+--                    when.
+--   - 'none'       — no payload ever existed for this row (non-envelope
+--                    families / rows whose envelope carries no payload).
+-- T01 keeps status assignment simple and status-accurate: the mapper sets
+-- 'inline' when the envelope carries a non-null `data.payload`, else 'none'.
+-- T02 refines this for claim-check rows ('resolved'/'unresolved') and T03
+-- transitions rows to 'scrubbed' once payloads age out.
+ALTER TABLE tracking.tracked_events
+  ADD COLUMN IF NOT EXISTS payload_status text NOT NULL DEFAULT 'inline';
+
+-- Idempotent named-constraint retrofit: DROP IF EXISTS + unconditional ADD.
+-- No DO block (load-schema-statements.ts is a naive `;`-splitter with no
+-- dollar-quote awareness — a DO $$ ... $$; body containing internal `;`
+-- characters would be sliced into invalid fragments), so this two-statement
+-- drop-then-add is the idempotent shape that stays splitter-safe.
+ALTER TABLE tracking.tracked_events
+  DROP CONSTRAINT IF EXISTS tracked_events_payload_status_check;
+ALTER TABLE tracking.tracked_events
+  ADD CONSTRAINT tracked_events_payload_status_check
+  CHECK (payload_status IN ('inline', 'resolved', 'unresolved', 'scrubbed', 'none'));
+
+-- CORRECTIVE, CONVERGENT backfill (same shape as the compliance backfill
+-- above): the DEFAULT 'inline' over-labels every pre-existing row. Rows whose
+-- envelope carries no payload (missing `data`/`data.payload` key, OR an
+-- explicit JSON `null` — `->` returns a jsonb 'null' literal for the latter,
+-- NOT a SQL NULL, hence the second disjunct) are corrected to 'none'. Scoped
+-- to `payload_status = 'inline'` (the untouched bulk-default value), so a
+-- second apply matches 0 rows: convergent, not guarded by IF NOT EXISTS.
+UPDATE tracking.tracked_events
+  SET payload_status = 'none'
+  WHERE payload_status = 'inline'
+    AND (
+      envelope -> 'data' -> 'payload' IS NULL
+      OR envelope -> 'data' -> 'payload' = 'null'::jsonb
+    );
+
+ALTER TABLE tracking.tracked_events
+  ADD COLUMN IF NOT EXISTS payload_scrubbed_at timestamptz;
+
+-- Partial index: the T03 scrub scan only ever looks for rows still carrying a
+-- payload ('inline'/'resolved'), so indexing occurred_at UNDER that predicate
+-- keeps the periodic scan cheap without paying for 'unresolved'/'scrubbed'/
+-- 'none' rows that can never match the scrub's WHERE clause.
+CREATE INDEX IF NOT EXISTS idx_tracked_events_payload_scrub_scan
+  ON tracking.tracked_events (occurred_at)
+  WHERE payload_status IN ('inline', 'resolved');

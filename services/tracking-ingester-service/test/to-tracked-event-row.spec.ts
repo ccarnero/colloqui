@@ -172,6 +172,11 @@ describe("toTrackedEventRow — full row projection (compliant fixture)", () => 
 
     // A fully compliant envelope is tagged compliance "full".
     expect(row.compliance).toBe("full");
+
+    // T01 payload lifecycle: this fixture carries a non-null data.payload.
+    expect(row.payload_status).toBe("inline");
+    // Never set at insert time — only the T03 scrub job assigns this.
+    expect(row.payload_scrubbed_at).toBeNull();
   });
 
   it("copies correlation columns VERBATIM (derives nothing)", () => {
@@ -344,6 +349,120 @@ describe("toTrackedEventRow — T4 click-through detail columns", () => {
     expect(result.value.run_id).toBeNull();
     expect(result.value.connector_id).toBeNull();
     expect(result.value.cache_status).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T01 (payload-capture) — payload lifecycle status assignment. The mapper
+// assigns ONLY the two status-accurate terminal values at insert time:
+// "inline" (data.payload present) and "none" (absent, including explicit
+// JSON null and today's un-resolved claim-check rows). T02 refines the
+// claim-check subset ("resolved"/"unresolved"); this mapper never assigns
+// those, nor "scrubbed" (T03).
+// ---------------------------------------------------------------------------
+describe("toTrackedEventRow — T01 payload_status assignment", () => {
+  const subject =
+    "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1";
+
+  function envelopeWithPayload(payload: unknown): Record<string, unknown> {
+    return {
+      specversion: "1.0",
+      id: "evt-payload-1",
+      source: "//test/payload",
+      type: "io.yoizen.messaging.whatsapp.meta.received.v1",
+      resource: "tenant/tenant-a/x",
+      time: "2026-07-11T00:00:00.000Z",
+      traceid: "22222222-2222-2222-2222-222222222222",
+      causation_id: null,
+      correlation_id: "corr-payload-1",
+      tenant: "tenant-a",
+      producer: "channel-service",
+      domain: "messaging",
+      channel: "whatsapp",
+      provider: "meta",
+      accountid: "acc-1",
+      idempotencykey: "idem-payload-1",
+      transport: { method: "webhook", protocol: "https", depth: 0 },
+      data: {
+        received_at: "2026-07-11T00:00:00.000Z",
+        payload_inline: payload !== null,
+        payload_ref: null,
+        payload_bytes: 0,
+        payload_checksum: "chk",
+        payload,
+      },
+      kind: "received",
+    };
+  }
+
+  it("assigns 'inline' when data.payload is a non-null object", () => {
+    const envelope = envelopeWithPayload({ conversationId: "conv-1" });
+    const result = toTrackedEventRow(subject, envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.payload_status).toBe("inline");
+  });
+
+  it("assigns 'none' when data.payload is explicit JSON null (today's un-resolved claim-check shape)", () => {
+    const envelope = envelopeWithPayload(null);
+    const result = toTrackedEventRow(subject, envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.payload_status).toBe("none");
+  });
+
+  it("assigns 'none' when data.payload is absent from an otherwise-compliant data object", () => {
+    const envelope = envelopeWithPayload(null) as {
+      data: Record<string, unknown>;
+    };
+    // `isCompliantEnvelope` requires the `data` object but does not itself
+    // require the `payload` key to be present, so removing it (rather than
+    // just nulling it) still reaches the mapper's success branch.
+    delete envelope.data.payload;
+    const result = toTrackedEventRow(subject, envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.payload_status).toBe("none");
+  });
+
+  it("never assigns payload_scrubbed_at at insert time", () => {
+    const envelope = envelopeWithPayload({ conversationId: "conv-1" });
+    const result = toTrackedEventRow(subject, envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.payload_scrubbed_at).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T01 (payload-capture) — non-envelope rows (buildNonEnvelopeRow, T07) never
+// carry a payload: payload_status must be "none".
+// ---------------------------------------------------------------------------
+describe("buildNonEnvelopeRow — T01 payload_status", () => {
+  it("always assigns payload_status 'none' (non-envelope bodies carry no data.payload shape)", async () => {
+    const { buildNonEnvelopeRow } = await import(
+      "../src/lib/build-non-envelope-row.js"
+    );
+    const row = buildNonEnvelopeRow({
+      subject: "audit.gateway.request",
+      streamName: "GATEWAY_AUDIT",
+      streamSequence: 41771,
+      payload: { some: "raw-body" },
+      receivedAt: "2026-07-11T00:00:00.000Z",
+      tech: "gateway-audit",
+      businessFn: "audit",
+      rule: 14,
+    });
+    expect(row.payload_status).toBe("none");
+    expect(row.payload_scrubbed_at).toBeNull();
   });
 });
 

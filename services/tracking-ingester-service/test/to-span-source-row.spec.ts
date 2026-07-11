@@ -27,6 +27,8 @@ function sampleRow(overrides: Partial<TrackedEventRow> = {}): TrackedEventRow {
     run_id: null,
     connector_id: null,
     cache_status: null,
+    payload_status: "inline",
+    payload_scrubbed_at: null,
     ...overrides,
   };
 }

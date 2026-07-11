@@ -39,9 +39,28 @@ function readStatements(): string[] {
 const STRUCTURAL_GUARD = /IF NOT EXISTS|OR REPLACE|ON CONFLICT/i;
 const CONVERGENT_UPDATE =
   /^UPDATE\b[\s\S]*\bSET\b[\s\S]*compliance\s*=\s*'(?:none|partial)'[\s\S]*\bWHERE\b[\s\S]*compliance\s*=\s*'full'/i;
+// T01 (payload-capture) backfill: same convergent shape as the compliance
+// backfill above, but keyed on `payload_status`. Scoped to
+// `payload_status = 'inline'` (the untouched bulk-default), so a second apply
+// matches 0 rows.
+const CONVERGENT_PAYLOAD_STATUS_UPDATE =
+  /^UPDATE\b[\s\S]*\bSET\b[\s\S]*payload_status\s*=\s*'none'[\s\S]*\bWHERE\b[\s\S]*payload_status\s*=\s*'inline'/i;
+// T01 (payload-capture) named-constraint retrofit: DROP CONSTRAINT IF EXISTS
+// is unconditionally idempotent (a no-op when the constraint is already
+// absent); the following ADD CONSTRAINT is always reached in the SAME re-run
+// only after the drop, so the pair together is idempotent even though the
+// bare `ADD CONSTRAINT` statement itself carries no `IF NOT EXISTS` guard.
+const DROP_CONSTRAINT_IF_EXISTS =
+  /^ALTER TABLE\b[\s\S]*DROP CONSTRAINT IF EXISTS\b/i;
+const ADD_NAMED_CONSTRAINT_AFTER_DROP =
+  /^ALTER TABLE\b[\s\S]*ADD CONSTRAINT\s+tracked_events_payload_status_check\b/i;
 const IDEMPOTENT_GUARD = {
   test: (statement: string): boolean =>
-    STRUCTURAL_GUARD.test(statement) || CONVERGENT_UPDATE.test(statement),
+    STRUCTURAL_GUARD.test(statement) ||
+    CONVERGENT_UPDATE.test(statement) ||
+    CONVERGENT_PAYLOAD_STATUS_UPDATE.test(statement) ||
+    DROP_CONSTRAINT_IF_EXISTS.test(statement) ||
+    ADD_NAMED_CONSTRAINT_AFTER_DROP.test(statement),
 };
 
 describe("tracked-events.sql", () => {
@@ -205,6 +224,77 @@ describe("tracked-events.sql", () => {
     for (const column of notNull) {
       expect(columnLine(column)).toMatch(/NOT NULL/i);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T01 (payload-capture) — payload lifecycle columns retrofit.
+// ---------------------------------------------------------------------------
+describe("tracked-events.sql — T01 payload lifecycle columns", () => {
+  it("retrofits payload_status idempotently via ALTER ... ADD COLUMN IF NOT EXISTS with a DEFAULT", () => {
+    const statements = readStatements();
+    const alter = statements.find((s) =>
+      /add column if not exists\s+payload_status/i.test(s)
+    );
+    expect(alter).toBeDefined();
+    expect(alter!).toMatch(/not null/i);
+    expect(alter!).toMatch(/default\s+'inline'/i);
+  });
+
+  it("retrofits payload_scrubbed_at idempotently via ALTER ... ADD COLUMN IF NOT EXISTS (nullable)", () => {
+    const statements = readStatements();
+    const alter = statements.find((s) =>
+      /add column if not exists\s+payload_scrubbed_at/i.test(s)
+    );
+    expect(alter).toBeDefined();
+    expect(alter!).toMatch(/timestamptz/i);
+    expect(alter!).not.toMatch(/not null/i);
+  });
+
+  it("adds the payload_status CHECK constraint via an idempotent drop-then-add pair (no DO block)", () => {
+    const statements = readStatements();
+    const drop = statements.find((s) =>
+      /drop constraint if exists\s+tracked_events_payload_status_check/i.test(s)
+    );
+    const add = statements.find(
+      (s) =>
+        /add constraint\s+tracked_events_payload_status_check/i.test(s) &&
+        /check\s*\(/i.test(s)
+    );
+    expect(drop).toBeDefined();
+    expect(add).toBeDefined();
+    // Drop must come strictly before add so re-running is a clean replace.
+    expect(statements.indexOf(drop!)).toBeLessThan(statements.indexOf(add!));
+    expect(add!).toMatch(
+      /payload_status\s+IN\s*\(\s*'inline',\s*'resolved',\s*'unresolved',\s*'scrubbed',\s*'none'\s*\)/i
+    );
+    // No procedural DO block — the naive `;`-splitter (load-schema-statements.ts)
+    // cannot safely handle dollar-quoted bodies containing internal `;`.
+    expect(statements.some((s) => /do\s*\$\$/i.test(s))).toBe(false);
+  });
+
+  it("backfills payload_status = 'none' convergently, scoped to the untouched 'inline' default", () => {
+    const statements = readStatements();
+    const backfill = statements.find((s) =>
+      CONVERGENT_PAYLOAD_STATUS_UPDATE.test(s)
+    );
+    expect(backfill).toBeDefined();
+    expect(backfill!.toLowerCase()).toContain("data");
+    expect(backfill!.toLowerCase()).toContain("payload");
+  });
+
+  it("indexes occurred_at partially, scoped to inline/resolved payload_status", () => {
+    const statements = readStatements();
+    const index = statements.find((s) =>
+      /create index if not exists\s+idx_tracked_events_payload_scrub_scan/i.test(
+        s
+      )
+    );
+    expect(index).toBeDefined();
+    expect(index!).toMatch(/\(occurred_at\)/i);
+    expect(index!).toMatch(
+      /where\s+payload_status\s+in\s*\(\s*'inline',\s*'resolved'\s*\)/i
+    );
   });
 });
 

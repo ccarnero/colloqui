@@ -97,6 +97,32 @@ import { err, ok, type Result } from "./result.js";
  */
 export type Compliance = "full" | "partial" | "none";
 
+/**
+ * Payload lifecycle state recorded on every row (DDL column, `NOT NULL`, so
+ * EVERY row-producing path MUST set it — see `tracked-events.sql` T01 header
+ * for the full state machine). T01 (this mapper) only ever assigns the two
+ * terminal-simple values:
+ *
+ *   - `"inline"` — the envelope carries a non-null `data.payload`.
+ *   - `"none"`   — the envelope carries no payload at all (missing `data`,
+ *                  missing `data.payload`, or an explicit `null`). This
+ *                  INCLUDES today's claim-check rows (`payload_inline: false`,
+ *                  `data.payload: null`) — T02 introduces the `"resolved"` /
+ *                  `"unresolved"` split for those once claim-check resolution
+ *                  at ingest exists; until then "no payload persisted yet" is
+ *                  accurately `"none"`.
+ *
+ * `"resolved"` / `"unresolved"` (T02, claim-check resolution) and
+ * `"scrubbed"` (T03, retention scrub) are assigned by later pipeline stages,
+ * never by this mapper.
+ */
+export type PayloadStatus =
+  | "inline"
+  | "resolved"
+  | "unresolved"
+  | "scrubbed"
+  | "none";
+
 export interface TrackedEventRow {
   event_id: string;
   subject: string;
@@ -139,6 +165,14 @@ export interface TrackedEventRow {
   run_id: string | null;
   connector_id: string | null;
   cache_status: string | null;
+  /**
+   * Payload lifecycle state (`Compliance`-style `NOT NULL` column) — see the
+   * `PayloadStatus` docs. This mapper sets `"inline"` / `"none"`; T02/T03
+   * assign the remaining states downstream of insertion.
+   */
+  payload_status: PayloadStatus;
+  /** Set by the T03 retention scrub; always `null` at insert time. */
+  payload_scrubbed_at: string | null;
 }
 
 /**
@@ -344,6 +378,13 @@ export function toTrackedEventRow(
   // already computed, over `source.data.payload` (never re-classifies).
   const detailColumns = extractDetailColumns(rule, source.data?.payload);
 
+  // T01 payload lifecycle: status-accurate at insert time, nothing more.
+  // `data.payload` non-null → "inline"; absent/null (including today's
+  // un-resolved claim-check rows) → "none". T02 refines the claim-check
+  // subset into "resolved"/"unresolved".
+  const payloadStatus: PayloadStatus =
+    source.data?.payload != null ? "inline" : "none";
+
   return ok({
     // Canonical branch: fully-populated row. `event_id` is the REAL envelope id
     // (`source.id`), never synthesized — including the stage-1 `"partial"` case,
@@ -376,6 +417,9 @@ export function toTrackedEventRow(
     envelope,
     // "full" (compliant outright) or "partial" (stage-1 accountid-only drift).
     compliance,
+    payload_status: payloadStatus,
+    // Never set at insert time — only the T03 scrub job assigns this.
+    payload_scrubbed_at: null,
     ...detailColumns,
   });
 }

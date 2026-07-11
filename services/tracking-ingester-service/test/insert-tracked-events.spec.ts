@@ -51,6 +51,8 @@ function sampleRow(overrides: Partial<TrackedEventRow> = {}): TrackedEventRow {
     run_id: null,
     connector_id: null,
     cache_status: null,
+    payload_status: "inline",
+    payload_scrubbed_at: null,
     ...overrides,
   };
 }
@@ -125,7 +127,7 @@ describe("insertTrackedEvents — SQL shape", () => {
     expect(sql).toContain("insert into tracking.tracked_events");
   });
 
-  it("inserts exactly the 22 mapped columns in order (18 original + 4 T4 detail columns)", async () => {
+  it("inserts exactly the 24 mapped columns in order (18 original + 4 T4 detail + 2 T01 payload columns)", async () => {
     const { client, calls } = makeFakeClient();
     await insertTrackedEvents(client, [sampleRow()]);
     const sql = calls[0]!.sql;
@@ -159,6 +161,8 @@ describe("insertTrackedEvents — SQL shape", () => {
       "run_id",
       "connector_id",
       "cache_status",
+      "payload_status",
+      "payload_scrubbed_at",
     ]);
     // ingested_at is a DB default and must NOT be inserted.
     expect(insertCols).not.toContain("ingested_at");
@@ -180,13 +184,13 @@ describe("insertTrackedEvents — SQL shape", () => {
     expect(sql).toContain("::boolean[]");
   });
 
-  it("passes 22 parallel arrays to the client (18 original + 4 T4 detail columns)", async () => {
+  it("passes 24 parallel arrays to the client (18 original + 4 T4 detail + 2 T01 payload columns)", async () => {
     const { client, calls } = makeFakeClient();
     await insertTrackedEvents(client, [
       sampleRow(),
       sampleRow({ event_id: "evt-2" }),
     ]);
-    expect(calls[0]!.arrays).toHaveLength(22);
+    expect(calls[0]!.arrays).toHaveLength(24);
     for (const arr of calls[0]!.arrays) {
       expect(arr).toHaveLength(2);
     }
@@ -239,6 +243,27 @@ describe("insertTrackedEvents — value encoding", () => {
     expect(arrays[19]).toEqual([null]);
     expect(arrays[20]).toEqual([null]);
     expect(arrays[21]).toEqual([null]);
+  });
+
+  it("carries the T01 payload lifecycle columns at indices 22-23", async () => {
+    const { client, calls } = makeFakeClient();
+    await insertTrackedEvents(client, [
+      sampleRow({
+        payload_status: "resolved",
+        payload_scrubbed_at: "2026-08-10T00:00:00.000Z",
+      }),
+    ]);
+    const arrays = calls[0]!.arrays;
+    expect(arrays[22]).toEqual(["resolved"]);
+    expect(arrays[23]).toEqual(["2026-08-10T00:00:00.000Z"]);
+  });
+
+  it("defaults payload_scrubbed_at to null and carries the mapper's payload_status verbatim", async () => {
+    const { client, calls } = makeFakeClient();
+    await insertTrackedEvents(client, [sampleRow({ payload_status: "none" })]);
+    const arrays = calls[0]!.arrays;
+    expect(arrays[22]).toEqual(["none"]);
+    expect(arrays[23]).toEqual([null]);
   });
 
   it("carries nulls verbatim for nullable columns", async () => {
