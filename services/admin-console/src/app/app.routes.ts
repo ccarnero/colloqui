@@ -261,8 +261,8 @@ export const routes: Routes = [
       {
         path: "processes/trace/:correlationId",
         loadComponent: () =>
-          import("./features/processes/trace/message-trace.component").then(
-            (m) => m.MessageTraceComponent
+          import("./features/processes/trace/trace-detail.component").then(
+            (m) => m.TraceDetailComponent
           ),
       },
       { path: "automate", redirectTo: "processes", pathMatch: "full" },
