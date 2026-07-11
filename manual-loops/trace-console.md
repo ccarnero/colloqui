@@ -254,7 +254,7 @@ grep -n "trace-console" cowork/INDEX.md
 - [x] T03 gateway proxy
 - [x] T04 console data service
 - [x] T05 waterfall view
-- [ ] T06 causal graph view
+- [x] T06 causal graph view
 - [ ] T07 wiring + view switcher
 - [ ] T08 grafana panel removal
 - [ ] T09 cluster e2e chain assertion
