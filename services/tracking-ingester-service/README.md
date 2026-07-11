@@ -105,6 +105,20 @@ payload field and flips `payload_status` to `scrubbed`.
      -p '{"spec":{"suspend":false}}'
    ```
 
+**Current dev state**: the first manual `--apply` has already been run against
+`platform-services-dev` and `tracking-payload-scrub` is unsuspended, running
+daily at 04:00 UTC.
+
+**Re-creation via `rebuild-redeploy.sh`**: `./rebuild-redeploy.sh
+tracking-ingester-service dev` calls `ensure_cronjobs`, which re-creates
+`tracking-payload-scrub` automatically if it is ever missing from the
+namespace (e.g. a fresh cluster), applying it from the local kustomize
+overlay — suspended per the manifest, so the human-runs-first gate above
+applies again. If the CronJob already exists, the script leaves
+`spec.suspend` completely untouched; it never re-applies or patches an
+existing CronJob, so a human-managed unsuspend is never reverted by a
+rebuild.
+
 ### Payload read endpoint
 
 `GET /chains/:correlationId/events/:eventId/payload` (tenant header

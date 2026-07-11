@@ -176,6 +176,26 @@ Each service is independent. You can have several services in dev mode simultane
 
 This prevents `rebuild-changed.sh` from overwriting your live patch with an image-based rollout.
 
+## CronJob handling in `rebuild-redeploy.sh`
+
+`rebuild-redeploy.sh <service> <env>` (unless run with `--build-only`) also reconciles any plain Kubernetes CronJobs associated with the service, via `ensure_cronjobs`. This is separate from `rollout_ksvc`/`rollout_deployments`, which only patch/restart resources that already exist — a CronJob needs a first-time `kubectl apply` before it exists at all.
+
+`get_cronjob_names` maps a logical service to its CronJob names. Today only `tracking-ingester-service` maps to `tracking-payload-scrub`; every other service maps to an empty list (no-op).
+
+For each mapped CronJob name, `ensure_cronjobs` branches on whether it already exists in the target namespace:
+
+- **Missing** — the script renders the environment's kustomize overlay (`dev` → `knative/services/overlays/local/postgres-dev`; other environments have no overlay wired up yet and are skipped with a warning) and applies **only** that CronJob's document, extracted from the multi-doc kustomize output. The applied object still carries whatever `spec.suspend` value the manifest declares (e.g. `tracking-payload-scrub-cronjob.yaml` ships `suspend: true`), so any human-runs-first gate on that CronJob still applies after this auto-create.
+- **Existing** — the script leaves it completely untouched. It never re-applies or patches an existing CronJob, specifically so a human-managed `spec.suspend` flip (e.g. after the gate above is satisfied) is never clobbered back to the manifest's default.
+
+Either way, a rebuilt image is picked up automatically: the CronJob references the service's image tag, so the next scheduled run spins up fresh Job pods against the image `rebuild-redeploy.sh` just pushed. No CronJob-specific rollout step is needed after a rebuild.
+
+### Registering a new service CronJob
+
+1. Add the CronJob manifest under `knative/services/base/`, wire it into the base `kustomization.yaml`, and add any environment-specific patch (e.g. under `knative/services/overlays/local/postgres-dev`) the same way the other base resources are patched per environment.
+2. Add the service → CronJob-name mapping in `get_cronjob_names` in `rebuild-redeploy.sh`.
+
+Once both are in place, `rebuild-redeploy.sh <service> <env>` will apply the CronJob automatically the first time it runs against an environment where the CronJob doesn't exist yet, and leave it alone on every run after that.
+
 ## Limitations
 
 - **OrbStack only.** The hostPath mount relies on OrbStack's VirtioFS and the single-node cluster topology. Minikube and remote clusters require a different approach (e.g. Tilt sync, or `livenessPatch` with a cloud volume).
