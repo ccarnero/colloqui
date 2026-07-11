@@ -70,6 +70,14 @@ export interface TrackingIngesterConfig {
    * when required, matching the credential-like-knobs convention above.
    */
   readonly otelExporterOtlpEndpoint: string | undefined;
+  /**
+   * Claim-check resolution budget at ingest (SPEC.md payload-capture T02) —
+   * bounds how long `resolve-payload.ts` waits on the Object Store fetch
+   * before treating it as a failure (`payload_status = "unresolved"`).
+   * Ingestion latency is the priority, so this is deliberately bounded, never
+   * unlimited. @default 2000
+   */
+  readonly claimCheckResolveTimeoutMs: number;
 }
 
 /** Structured validation failure listing every missing required env name. */
@@ -239,5 +247,11 @@ export function loadTrackingIngesterConfig(
     backoffMs: readIntList(env, "TRK_BACKOFF_MS", DEFAULT_BACKOFF_MS),
     otelExportEnabled,
     otelExporterOtlpEndpoint,
+    claimCheckResolveTimeoutMs: readInt(
+      env,
+      "CLAIM_CHECK_RESOLVE_TIMEOUT_MS",
+      2_000,
+      true
+    ),
   });
 }

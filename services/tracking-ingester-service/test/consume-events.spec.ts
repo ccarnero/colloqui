@@ -343,6 +343,191 @@ describe("makeTrackedEventHandler — per-message pipeline", () => {
   });
 });
 
+// ---- claim-check resolution at ingest (T02 of payload-capture) ------------
+
+function slimClaimCheckEnvelope(): Record<string, unknown> {
+  return {
+    specversion: "1.0",
+    id: "evt-claim-ingest-1",
+    source: "//test/claim-check",
+    type: "io.yoizen.messaging.whatsapp.meta.received.v1",
+    resource: "tenant/tenant-a/x",
+    time: "2026-07-11T00:00:00.000Z",
+    traceid: "44444444-4444-4444-4444-444444444444",
+    causation_id: null,
+    correlation_id: "corr-claim-ingest-1",
+    tenant: "tenant-a",
+    producer: "channel-service",
+    domain: "messaging",
+    channel: "whatsapp",
+    provider: "meta",
+    accountid: "acc-1",
+    idempotencykey: "idem-claim-ingest-1",
+    transport: { method: "webhook", protocol: "https", depth: 0 },
+    data: {
+      received_at: "2026-07-11T00:00:00.000Z",
+      payload_inline: false,
+      payload_ref:
+        "nats://objstore/PAYLOAD-tenant-a/evt-claim-ingest-1-payload",
+      payload_bytes: 400_000,
+      payload_checksum: "sha256:deadbeef",
+      payload: null,
+    },
+    kind: "received",
+  };
+}
+
+describe("makeTrackedEventHandler — claim-check resolution at ingest (T02)", () => {
+  const CLAIM_CHECK_SUBJECT =
+    "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1";
+
+  it("resolves successfully: persists the envelope WITH payload, payload_status='resolved'", async () => {
+    const { buffer, inserted } = bufferWith(okInsert);
+    const metrics = makeMetrics();
+    const handler = makeTrackedEventHandler({
+      buffer,
+      metrics: metrics.sink,
+      claimCheck: {
+        resolve: async (envelope) => ({
+          ...envelope,
+          data: {
+            ...envelope.data,
+            payload_inline: true,
+            payload_ref: null,
+            payload: { conversationId: "conv-resolved" },
+          },
+        }),
+      },
+    });
+
+    const { msg, calls } = makeMsg({
+      subject: CLAIM_CHECK_SUBJECT,
+      stream: "INGRESS-TENANT-A",
+      seq: 100,
+      payload: slimClaimCheckEnvelope(),
+    });
+
+    await handler(msg);
+
+    expect(calls.ack).toBe(1);
+    expect(calls.nak).toBe(0);
+    expect(calls.term).toBe(0);
+    expect(inserted).toHaveLength(1);
+    const row = inserted[0]!;
+    expect(row.payload_status).toBe("resolved");
+    expect(
+      (row.envelope as { data: { payload: unknown } }).data.payload
+    ).toEqual({ conversationId: "conv-resolved" });
+  });
+
+  it("resolution failure (expired/blob missing): persists the SLIM envelope, payload_status='unresolved', acks — never naks/terms", async () => {
+    const { buffer, inserted } = bufferWith(okInsert);
+    const metrics = makeMetrics();
+    const handler = makeTrackedEventHandler({
+      buffer,
+      metrics: metrics.sink,
+      claimCheck: {
+        resolve: async () => {
+          throw new Error("blob_not_found: expired ref");
+        },
+      },
+    });
+
+    const { msg, calls } = makeMsg({
+      subject: CLAIM_CHECK_SUBJECT,
+      stream: "INGRESS-TENANT-A",
+      seq: 101,
+      payload: slimClaimCheckEnvelope(),
+    });
+
+    await handler(msg);
+
+    // NEVER nak/term for a resolution failure — ack after persisting slim.
+    expect(calls.nak).toBe(0);
+    expect(calls.term).toBe(0);
+    expect(calls.ack).toBe(1);
+    expect(inserted).toHaveLength(1);
+    const row = inserted[0]!;
+    expect(row.payload_status).toBe("unresolved");
+    expect(
+      (row.envelope as { data: { payload: unknown } }).data.payload
+    ).toBeNull();
+  });
+
+  it("resolution timeout: persists slim + 'unresolved', never naks", async () => {
+    const { buffer, inserted } = bufferWith(okInsert);
+    const metrics = makeMetrics();
+    const handler = makeTrackedEventHandler({
+      buffer,
+      metrics: metrics.sink,
+      claimCheck: {
+        resolve: () => new Promise(() => {}), // never settles
+        timeoutMs: 20,
+      },
+    });
+
+    const { msg, calls } = makeMsg({
+      subject: CLAIM_CHECK_SUBJECT,
+      stream: "INGRESS-TENANT-A",
+      seq: 102,
+      payload: slimClaimCheckEnvelope(),
+    });
+
+    await handler(msg);
+
+    expect(calls.nak).toBe(0);
+    expect(calls.ack).toBe(1);
+    expect(inserted[0]!.payload_status).toBe("unresolved");
+  }, 2_000);
+
+  it("does not attempt resolution when the message is not a claim check", async () => {
+    const { buffer, inserted } = bufferWith(okInsert);
+    const metrics = makeMetrics();
+    let resolveCalls = 0;
+    const handler = makeTrackedEventHandler({
+      buffer,
+      metrics: metrics.sink,
+      claimCheck: {
+        resolve: async (envelope) => {
+          resolveCalls += 1;
+          return envelope;
+        },
+      },
+    });
+
+    const { msg, calls } = makeMsg({
+      subject: CLAIM_CHECK_SUBJECT,
+      stream: "INGRESS-TENANT-A",
+      seq: 103,
+      payload: loadFixture("audit-service-channel-envelope-01.json"),
+    });
+
+    await handler(msg);
+
+    expect(calls.ack).toBe(1);
+    expect(resolveCalls).toBe(0);
+    expect(inserted[0]!.is_claim_check).toBe(false);
+  });
+
+  it("preserves today's behavior (payload_status='none') when no claimCheck dep is configured", async () => {
+    const { buffer, inserted } = bufferWith(okInsert);
+    const metrics = makeMetrics();
+    const handler = makeTrackedEventHandler({ buffer, metrics: metrics.sink });
+
+    const { msg, calls } = makeMsg({
+      subject: CLAIM_CHECK_SUBJECT,
+      stream: "INGRESS-TENANT-A",
+      seq: 104,
+      payload: slimClaimCheckEnvelope(),
+    });
+
+    await handler(msg);
+
+    expect(calls.ack).toBe(1);
+    expect(inserted[0]!.payload_status).toBe("none");
+  });
+});
+
 // ---- orchestrator / durable-naming tests ----------------------------------
 
 describe("consumeEvents — durable consumer groups", () => {

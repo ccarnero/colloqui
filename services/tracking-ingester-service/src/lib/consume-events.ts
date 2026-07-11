@@ -25,12 +25,14 @@
 
 import type { PinoLoggerService } from "@yoizen/observability";
 import { logWithEnvelope } from "@yoizen/observability";
+import type { EventEnvelope } from "@yoizen/shared";
 import type { JsMsg } from "nats";
 import type { ClassifyOptions } from "./classify.js";
 import {
   type ProcessResult,
   processTrackedMessage,
 } from "./process-tracked-message.js";
+import { resolvePayload } from "./resolve-payload.js";
 import type { TrackedEventRow } from "./to-tracked-event-row.js";
 import type { TrackedEventBuffer } from "./tracked-event-buffer.js";
 import {
@@ -79,6 +81,18 @@ export interface TrackedEventHandlerDeps {
   readonly logger?: TrackedEventLogger;
   /** Ingest clock for `occurred_at` on non-envelope/malformed rows. @default now */
   readonly now?: () => string;
+  /**
+   * Claim-check resolution (SPEC.md payload-capture T02). When set, a
+   * canonical row with `is_claim_check: true` is resolved via `resolve`
+   * (wrapping `resolveClaimCheckEnvelope`, `@yoizen/database`) BEFORE
+   * persisting. `undefined` preserves today's behavior (slim envelope,
+   * `payload_status` as `toTrackedEventRow` assigned it).
+   */
+  readonly claimCheck?: {
+    readonly resolve: (envelope: EventEnvelope) => Promise<EventEnvelope>;
+    /** @default DEFAULT_CLAIM_CHECK_RESOLVE_TIMEOUT_MS (resolve-payload.ts) */
+    readonly timeoutMs?: number;
+  };
 }
 
 /**
@@ -149,13 +163,51 @@ export function makeTrackedEventHandler(
 
     logOutcome(logger, metrics, subject, result);
 
+    // Claim-check resolution at ingest (SPEC.md payload-capture T02) — runs
+    // BEFORE persistence so the resolved payload lands in the same insert as
+    // the row. `row` starts as the mapper's output and is only ever replaced
+    // by an updated copy (`payload_status` + possibly `envelope`); it is
+    // NEVER mutated in place.
+    let row: TrackedEventRow = result.row;
+    if (row.is_claim_check && deps.claimCheck) {
+      const resolution = await resolvePayload(row.envelope as EventEnvelope, {
+        resolve: deps.claimCheck.resolve,
+        timeoutMs: deps.claimCheck.timeoutMs,
+        logger,
+      });
+      if (resolution.status === "resolved") {
+        row = {
+          ...row,
+          envelope: resolution.envelope,
+          payload_status: "resolved",
+        };
+        logWithEnvelope(
+          logger,
+          rowLogContext(row),
+          "tracking.consume.claim_check_resolved",
+          `claim-check resolved event_id=${row.event_id} — persisting WITH payload`
+        );
+      } else {
+        // NEVER nak/term for a resolution failure — persist the slim
+        // envelope exactly as today, flagged `unresolved`, and keep going.
+        row = { ...row, payload_status: "unresolved" };
+        logWithEnvelope(
+          logger,
+          rowLogContext(row),
+          "tracking.consume.claim_check_unresolved",
+          `claim-check UNRESOLVED event_id=${row.event_id} reason="${resolution.reason}" — persisting slim envelope`,
+          "warn"
+        );
+      }
+    }
+
     try {
-      await deps.buffer.enqueue(result.row);
+      await deps.buffer.enqueue(row);
     } catch (error) {
       metrics.recordInsertFailure();
       logWithEnvelope(
         logger,
-        rowLogContext(result.row),
+        rowLogContext(row),
         "tracking.consume.insert_failed",
         `insert failed subject=${subject}: ${errorMessage(error)} — nak`,
         "error"
@@ -169,9 +221,9 @@ export function makeTrackedEventHandler(
       // unknown alarm; redelivering it would only loop (TAXONOMY.md §3).
       logWithEnvelope(
         logger,
-        rowLogContext(result.row),
+        rowLogContext(row),
         "tracking.consume.term",
-        `terminated malformed subject=${subject} event_id=${result.row.event_id} after persist`,
+        `terminated malformed subject=${subject} event_id=${row.event_id} after persist`,
         "warn"
       );
       msg.term();
@@ -180,9 +232,9 @@ export function makeTrackedEventHandler(
 
     logWithEnvelope(
       logger,
-      rowLogContext(result.row),
+      rowLogContext(row),
       "tracking.consume.ack",
-      `ack event_id=${result.row.event_id} outcome=${result.outcome}`
+      `ack event_id=${row.event_id} outcome=${result.outcome}`
     );
     msg.ack();
   };

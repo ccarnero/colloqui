@@ -299,7 +299,9 @@ If the same event is retried (e.g., due to a publish failure), `putBlob` with th
 
 ### 10.4 Consumers that do not need the payload
 
-Some consumers only need envelope metadata (e.g., a metrics service counting message sizes). They can use `data.payload_bytes` for statistics without resolving the reference. However, `MultiTenantConsumerManager.wrapHandler` resolves it regardless. If this overhead is undesirable for a specific consumer, that consumer can opt out by using a direct handler that operates on the slim envelope.
+Some consumers only need envelope metadata (e.g., a metrics service counting message sizes). They can use `data.payload_bytes` for statistics without resolving the reference. By default `MultiTenantConsumerManager.wrapHandler` resolves the claim-check regardless — set `IMultiTenantConsumerConfig.resolveClaimChecks: false` to opt a consumer out entirely: `wrapHandler` then passes every message through untouched (slim envelope, no resolution attempt, no nak on what would have been a resolve failure). Every other consumer keeps the default (`true`) resolve-then-nak behavior unchanged.
+
+This flag is more than an optimization for consumers that run **DLQ-disabled with unbounded `maxDeliver`** (e.g. `tracking-ingester-service`): resolving in the middleware there would turn an expired `payload_ref` into an infinite poison-message loop, since a resolve failure re-throws → nak → redelivery forever, and the underlying event would never be persisted. Those consumers set `resolveClaimChecks: false` and perform their own best-effort resolution inside the inner handler, persisting a slim/`unresolved` record instead of nak-ing.
 
 ### 10.5 Store migration path
 

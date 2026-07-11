@@ -319,3 +319,43 @@ describe("loadTrackingIngesterConfig — OTel export config (T2)", () => {
     expect(result.value.otelExportEnabled).toBe(true);
   });
 });
+
+describe("loadTrackingIngesterConfig — claim-check resolution timeout (T02)", () => {
+  it("defaults CLAIM_CHECK_RESOLVE_TIMEOUT_MS to 2000", () => {
+    const result = loadTrackingIngesterConfig({
+      NATS_URL: NATS,
+      POSTGRES_URL: PG,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected ok");
+    }
+    expect(result.value.claimCheckResolveTimeoutMs).toBe(2000);
+  });
+
+  it("honors a CLAIM_CHECK_RESOLVE_TIMEOUT_MS override", () => {
+    const result = loadTrackingIngesterConfig({
+      NATS_URL: NATS,
+      POSTGRES_URL: PG,
+      CLAIM_CHECK_RESOLVE_TIMEOUT_MS: "5000",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected ok");
+    }
+    expect(result.value.claimCheckResolveTimeoutMs).toBe(5000);
+  });
+
+  it("falls back to the default for a non-positive override", () => {
+    const result = loadTrackingIngesterConfig({
+      NATS_URL: NATS,
+      POSTGRES_URL: PG,
+      CLAIM_CHECK_RESOLVE_TIMEOUT_MS: "0",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected ok");
+    }
+    expect(result.value.claimCheckResolveTimeoutMs).toBe(2000);
+  });
+});

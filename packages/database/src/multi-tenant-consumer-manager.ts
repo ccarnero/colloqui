@@ -1,3 +1,10 @@
+import type { EventEnvelope } from "@yoizen/shared";
+import {
+  buildDlqMessageSubject,
+  buildDlqStreamName,
+  isCompliantEnvelope,
+  type PermanentError,
+} from "@yoizen/shared";
 import type {
   Consumer,
   JetStreamClient,
@@ -7,29 +14,22 @@ import type {
 } from "nats";
 import { headers as natsHeaders } from "nats";
 import {
-  buildDlqMessageSubject,
-  buildDlqStreamName,
-  isCompliantEnvelope,
-  PermanentError,
-} from "@yoizen/shared";
-import {
-  NatsConsumerRunner,
-  type INatsConsumerLogger,
-  type INatsConsumerMetrics,
-  type INatsConsumerRunnerOptions,
-  type NatsPermanentHandler,
-} from "./nats-consumer-runner";
-import {
-  ensureDurableConsumer,
-  type IDurableConsumerOptions,
-} from "./nats-durable-consumer";
-import { ensureTenantDlqStream } from "./nats-dlq";
-import {
   looksLikeClaimCheck,
   resolveClaimCheckEnvelope,
   withInflatedData,
 } from "./claim-check";
-import type { EventEnvelope } from "@yoizen/shared";
+import {
+  type INatsConsumerLogger,
+  type INatsConsumerMetrics,
+  type INatsConsumerRunnerOptions,
+  NatsConsumerRunner,
+  type NatsPermanentHandler,
+} from "./nats-consumer-runner";
+import { ensureTenantDlqStream } from "./nats-dlq";
+import {
+  ensureDurableConsumer,
+  type IDurableConsumerOptions,
+} from "./nats-durable-consumer";
 
 /**
  * Configuration for a multi-tenant durable consumer — one durable
@@ -101,6 +101,27 @@ export interface IMultiTenantConsumerConfig {
    * @default false
    */
   readonly ensureOnly?: boolean;
+  /**
+   * Whether {@link wrapHandler} resolves claim-check envelopes before
+   * calling the inner handler.
+   *
+   * `true` (default) preserves the existing resolve-then-nak pipeline:
+   * slim envelopes are inflated up front and a resolve failure re-throws
+   * (→ nak → backoff → DLQ). Every existing consumer keeps this
+   * behavior unchanged.
+   *
+   * Set to `false` for consumers whose inner handler must NEVER block
+   * or nak on claim-check resolution (e.g. tracking-ingester, which
+   * runs with DLQ disabled and unbounded `maxDeliver` — resolving here
+   * would turn an expired `payload_ref` into an infinite poison-message
+   * loop and the event would never be persisted). When `false`,
+   * `wrapHandler` passes every message through untouched — the slim
+   * envelope reaches the inner handler, which is responsible for its
+   * own best-effort resolution and persistence.
+   *
+   * @default true
+   */
+  readonly resolveClaimChecks?: boolean;
 }
 
 /**
@@ -162,7 +183,7 @@ export class MultiTenantConsumerManager {
     private readonly logger: INatsConsumerLogger & {
       log?: (msg: string) => void;
       warn?: (msg: string) => void;
-    },
+    }
   ) {}
 
   /**
@@ -180,7 +201,7 @@ export class MultiTenantConsumerManager {
     this.reconcileHandle = setInterval(() => {
       this.reconcile().catch((err: unknown) => {
         this.logger.error(
-          `MultiTenantConsumerManager reconcile failed: ${err instanceof Error ? err.message : String(err)}`,
+          `MultiTenantConsumerManager reconcile failed: ${err instanceof Error ? err.message : String(err)}`
         );
       });
     }, interval);
@@ -237,14 +258,16 @@ export class MultiTenantConsumerManager {
   }
 
   private async reconcile(): Promise<void> {
-    if (this.stopped) return;
+    if (this.stopped) {
+      return;
+    }
 
     let streams: string[];
     try {
       streams = await this.listMatchingStreams();
     } catch (err: unknown) {
       this.logger.error(
-        `Failed to list streams during reconcile: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to list streams during reconcile: ${err instanceof Error ? err.message : String(err)}`
       );
       return;
     }
@@ -252,18 +275,22 @@ export class MultiTenantConsumerManager {
     const ensureOnly = this.config.ensureOnly === true;
     for (let i = 0; i < streams.length; i++) {
       const stream = streams[i]!;
-      if (this.runners.has(stream)) continue;
-      if (ensureOnly && this.ensuredStreams.has(stream)) continue;
+      if (this.runners.has(stream)) {
+        continue;
+      }
+      if (ensureOnly && this.ensuredStreams.has(stream)) {
+        continue;
+      }
       try {
         await this.bindStream(stream);
         this.logger.log?.(
           ensureOnly
             ? `Ensured durable '${this.config.durableName}' on stream '${stream}' (ensure-only)`
-            : `Bound durable '${this.config.durableName}' on stream '${stream}'`,
+            : `Bound durable '${this.config.durableName}' on stream '${stream}'`
         );
       } catch (err: unknown) {
         this.logger.error(
-          `Failed to bind durable '${this.config.durableName}' on '${stream}': ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to bind durable '${this.config.durableName}' on '${stream}': ${err instanceof Error ? err.message : String(err)}`
         );
       }
     }
@@ -289,7 +316,10 @@ export class MultiTenantConsumerManager {
       return;
     }
 
-    const consumer = await this.js.consumers.get(stream, this.config.durableName);
+    const consumer = await this.js.consumers.get(
+      stream,
+      this.config.durableName
+    );
     const onPermanent = this.resolvePermanentHandler(stream);
     const runner = new NatsConsumerRunner(
       consumer,
@@ -298,7 +328,7 @@ export class MultiTenantConsumerManager {
       this.config.runnerOptions,
       onPermanent ? { onPermanent } : {},
       this.config.metrics,
-      this.config.durableName,
+      this.config.durableName
     );
     await runner.start();
     this.runners.set(stream, { runner, consumer });
@@ -310,7 +340,9 @@ export class MultiTenantConsumerManager {
    */
   private async getClaimCheckStore(bucket: string): Promise<ObjectStore> {
     const cached = this.claimCheckStores.get(bucket);
-    if (cached) return cached;
+    if (cached) {
+      return cached;
+    }
     const store = await this.js.views.os(bucket);
     this.claimCheckStores.set(bucket, store);
     return store;
@@ -320,6 +352,10 @@ export class MultiTenantConsumerManager {
    * Wraps an inner handler with claim-check middleware.
    *
    * Flow:
+   *   0. `config.resolveClaimChecks === false` → call inner handler
+   *      untouched for every message (no resolution attempted, no nak
+   *      on failure). Used by consumers that must never block or nak
+   *      on claim-check resolution.
    *   1. `!looksLikeClaimCheck(msg.data)` → call inner handler untouched.
    *   2. Parse JSON; on parse failure → passthrough.
    *   3. Guard `isCompliantEnvelope && payload_inline === false`, else passthrough.
@@ -328,9 +364,13 @@ export class MultiTenantConsumerManager {
    *   5. On resolve error: record failed metric, re-throw (→ nak → backoff → DLQ).
    */
   private wrapHandler(
-    inner: (msg: JsMsg) => Promise<void>,
+    inner: (msg: JsMsg) => Promise<void>
   ): (msg: JsMsg) => Promise<void> {
     return async (msg: JsMsg): Promise<void> => {
+      if (this.config.resolveClaimChecks === false) {
+        return inner(msg);
+      }
+
       if (!looksLikeClaimCheck(msg.data)) {
         return inner(msg);
       }
@@ -353,9 +393,8 @@ export class MultiTenantConsumerManager {
 
       const envelope = parsed as EventEnvelope;
       try {
-        const inflated = await resolveClaimCheckEnvelope(
-          envelope,
-          (bucket) => this.getClaimCheckStore(bucket),
+        const inflated = await resolveClaimCheckEnvelope(envelope, (bucket) =>
+          this.getClaimCheckStore(bucket)
         );
         if (
           this.config.metrics?.recordClaimCheckResolved &&
@@ -363,14 +402,14 @@ export class MultiTenantConsumerManager {
         ) {
           try {
             this.config.metrics.recordClaimCheckResolved(
-              this.config.durableName,
+              this.config.durableName
             );
           } catch {
             // metrics are best-effort
           }
         }
         const inflatedBytes = new TextEncoder().encode(
-          JSON.stringify(inflated),
+          JSON.stringify(inflated)
         );
         return inner(withInflatedData(msg, inflatedBytes));
       } catch (err) {
@@ -387,7 +426,7 @@ export class MultiTenantConsumerManager {
           try {
             this.config.metrics.recordClaimCheckResolveFailed(
               this.config.durableName,
-              code,
+              code
             );
           } catch {
             // metrics are best-effort
@@ -406,18 +445,22 @@ export class MultiTenantConsumerManager {
    *   3. Returns `undefined` if DLQ is explicitly disabled.
    */
   private resolvePermanentHandler(
-    stream: string,
+    stream: string
   ): NatsPermanentHandler | undefined {
-    if (this.config.onPermanent) return this.config.onPermanent;
+    if (this.config.onPermanent) {
+      return this.config.onPermanent;
+    }
 
     const dlqEnabled = this.config.dlq?.enabled ?? true;
-    if (!dlqEnabled) return undefined;
+    if (!dlqEnabled) {
+      return undefined;
+    }
 
     const tenantId = this.extractTenantId(stream);
     if (!tenantId) {
       this.logger.warn?.(
         `DLQ disabled for '${stream}': could not derive tenantId. ` +
-          `Set config.dlq.tenantFromStream to override.`,
+          `Set config.dlq.tenantFromStream to override.`
       );
       return undefined;
     }
@@ -427,7 +470,9 @@ export class MultiTenantConsumerManager {
 
   private extractTenantId(stream: string): string | null {
     const custom = this.config.dlq?.tenantFromStream;
-    if (custom) return custom(stream);
+    if (custom) {
+      return custom(stream);
+    }
     const stripped = stream.replace(this.config.streamPattern, "");
     return stripped && stripped !== stream ? stripped : null;
   }
@@ -455,7 +500,9 @@ export class MultiTenantConsumerManager {
       hdrs.set("X-Dlq-Deliveries", String(msg.info.deliveryCount ?? 0));
 
       const origId = msg.headers?.get("Nats-Msg-Id");
-      if (origId) hdrs.set("X-Dlq-Original-Msg-Id", origId);
+      if (origId) {
+        hdrs.set("X-Dlq-Original-Msg-Id", origId);
+      }
 
       await publisher.publish(dlqSubject, msg.data, {
         headers: hdrs,

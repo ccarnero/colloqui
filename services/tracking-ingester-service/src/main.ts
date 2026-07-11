@@ -24,6 +24,7 @@ import type { IMultiTenantConsumerConfig } from "@yoizen/database";
 import {
   type INatsConsumerLogger,
   MultiTenantConsumerManager,
+  resolveClaimCheckEnvelope,
 } from "@yoizen/database";
 import {
   initServiceTelemetry,
@@ -36,6 +37,7 @@ import {
   type JetStreamClient,
   type JetStreamManager,
   type NatsConnection,
+  type ObjectStore,
 } from "nats";
 import postgres from "postgres";
 import { applySchema } from "./lib/apply-schema.js";
@@ -184,7 +186,35 @@ async function bootstrap(): Promise<void> {
     log: line,
     emitSpans,
   });
-  const handler = makeTrackedEventHandler({ buffer, metrics, logger });
+
+  // Claim-check resolution at ingest (SPEC.md payload-capture T02). Lazy
+  // per-bucket Object Store cache — mirrors
+  // `MultiTenantConsumerManager.getClaimCheckStore` (open-only, the producer
+  // owns bucket creation).
+  const claimCheckStores = new Map<string, ObjectStore>();
+  const getClaimCheckStore = async (bucket: string): Promise<ObjectStore> => {
+    const cached = claimCheckStores.get(bucket);
+    if (cached) {
+      return cached;
+    }
+    const store = await js.views.os(bucket);
+    claimCheckStores.set(bucket, store);
+    return store;
+  };
+  line(
+    `claim-check resolution at ingest ENABLED — timeout_ms=${config.claimCheckResolveTimeoutMs}`
+  );
+
+  const handler = makeTrackedEventHandler({
+    buffer,
+    metrics,
+    logger,
+    claimCheck: {
+      resolve: (envelope) =>
+        resolveClaimCheckEnvelope(envelope, getClaimCheckStore),
+      timeoutMs: config.claimCheckResolveTimeoutMs,
+    },
+  });
 
   // Runner logger the manager forwards to each per-tenant runner.
   const runnerLogger: INatsConsumerLogger & {
@@ -228,6 +258,16 @@ async function bootstrap(): Promise<void> {
       dlq: spec.dlq,
       ensureOnly: false,
       metrics: undefined,
+      // Never resolve claim-checks in the manager's middleware: this
+      // service runs DLQ-disabled with unbounded maxDeliver (see above), so
+      // a resolve-then-nak in `wrapHandler` would turn an expired
+      // `payload_ref` into an infinite poison-message loop and the event
+      // row would never be persisted (SPEC.md payload-capture binding
+      // constraint: claim-check resolution NEVER blocks ingestion). The
+      // slim envelope reaches `makeTrackedEventHandler` untouched, which
+      // does its own best-effort resolution via `claimCheck.resolve` above
+      // and persists slim + 'unresolved' on failure instead of nak-ing.
+      resolveClaimChecks: false,
     };
     return new MultiTenantConsumerManager(
       jsm,
