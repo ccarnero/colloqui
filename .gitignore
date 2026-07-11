@@ -130,7 +130,11 @@ scripts/.scale-backup/*.json
 GEMINI.md
 CURSOR.md
 CLAUDE.md
-.claude/
+# .claude: local state stays ignored, but the written loop (commands + agents)
+# governs the project and MUST be versioned (see cowork/LOOP-PLAYBOOK.md §6).
+.claude/*
+!.claude/commands/
+!.claude/agents/
 .ywai/
 
 # Build caches / compiled artifacts — never commit
