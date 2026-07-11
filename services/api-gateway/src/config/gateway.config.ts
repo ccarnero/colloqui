@@ -11,17 +11,25 @@ const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
  */
 function positiveIntEnv(name: string, fallback: number): number {
   const raw = process.env[name];
-  if (raw === undefined || raw === "") return fallback;
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function parseBoolEnv(name: string, fallback: boolean): boolean {
   const raw = process.env[name];
-  if (raw === undefined || raw === "") return fallback;
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
   const lowered = raw.trim().toLowerCase();
-  if (lowered === "true" || lowered === "1" || lowered === "yes") return true;
-  if (lowered === "false" || lowered === "0" || lowered === "no") return false;
+  if (lowered === "true" || lowered === "1" || lowered === "yes") {
+    return true;
+  }
+  if (lowered === "false" || lowered === "0" || lowered === "no") {
+    return false;
+  }
   return fallback;
 }
 
@@ -43,8 +51,7 @@ export const gatewayConfig = {
 
   services: {
     auth:
-      process.env.AUTH_SERVICE_URL ??
-      platformServiceUrl("auth-service", env),
+      process.env.AUTH_SERVICE_URL ?? platformServiceUrl("auth-service", env),
     // Phase 1.5: every service that was split into api ↔ worker now
     // resolves to the `*-api` Knative Service. Worker pods don't expose
     // an HTTP route. Override via the corresponding *_SERVICE_URL env var
@@ -65,11 +72,9 @@ export const gatewayConfig = {
       process.env.CONNECTOR_ADMIN_URL ??
       platformServiceUrl("connector-admin-api", env),
     cache:
-      process.env.CACHE_SERVICE_URL ??
-      platformServiceUrl("cache-service", env),
+      process.env.CACHE_SERVICE_URL ?? platformServiceUrl("cache-service", env),
     proxy:
-      process.env.PROXY_SERVICE_URL ??
-      platformServiceUrl("proxy-service", env),
+      process.env.PROXY_SERVICE_URL ?? platformServiceUrl("proxy-service", env),
     channel:
       process.env.CHANNEL_SERVICE_URL ??
       platformServiceUrl("channel-service-api", env),
@@ -82,6 +87,15 @@ export const gatewayConfig = {
     agentMemory:
       process.env.AGENT_MEMORY_SERVICE_URL ??
       platformServiceUrl("agent-memory-service", env),
+    // T02/T03 of manual-loops/trace-console.md: read-only correlation chain
+    // lookup, proxied to the tracking-ingester-worker's ClusterIP Service.
+    // Unlike the Knative ksvc targets above (which listen on port 80), the
+    // tracking-ingester-worker is a plain Deployment + ClusterIP Service that
+    // listens on port 3000 — the port must be appended explicitly or the
+    // proxy connects to port 80 and hangs until the 30s timeout.
+    tracking:
+      process.env.TRACKING_SERVICE_URL ??
+      `${platformServiceUrl("tracking-ingester-worker", env)}:3000`,
   },
 
   rateLimit: {

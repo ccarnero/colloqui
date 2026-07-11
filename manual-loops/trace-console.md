@@ -251,7 +251,7 @@ grep -n "trace-console" cowork/INDEX.md
 
 - [x] T01 chain read functions
 - [x] T02 http endpoint + k8s service
-- [ ] T03 gateway proxy
+- [x] T03 gateway proxy
 - [ ] T04 console data service
 - [ ] T05 waterfall view
 - [ ] T06 causal graph view
