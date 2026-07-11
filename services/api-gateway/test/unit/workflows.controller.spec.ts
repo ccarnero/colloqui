@@ -7,6 +7,7 @@ import type {
   CreateWorkflowGatewayDto,
   ExecuteWorkflowGatewayDto,
   UpdateWorkflowGatewayDto,
+  UpdateWorkflowStatusGatewayDto,
 } from "../../src/modules/workflows/workflows-gateway.dto";
 import type { ITenantScopedRequest } from "../../src/types/yoizen-request";
 
@@ -126,6 +127,17 @@ describe("WorkflowsController", () => {
       method: "GET",
       path: "/workflows/summary",
       tenantId: "tenant-x",
+    });
+  });
+
+  it("updateWorkflowStatus delegates to PATCH /workflows/:id/status", async () => {
+    const body = { status: "disabled" } as UpdateWorkflowStatusGatewayDto;
+    await controller.updateWorkflowStatus(req, "wf-1", body);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "PATCH",
+      path: "/workflows/wf-1/status",
+      tenantId: "tenant-x",
+      body: body as unknown as Record<string, unknown>,
     });
   });
 });

@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsNumber, IsObject, IsOptional } from "class-validator";
+import { WorkflowStatus, type WorkflowStatusValue } from "@yoizen/shared";
+import { IsEnum, IsNumber, IsObject, IsOptional } from "class-validator";
 
 /** Mirrors workflow-service execute body. */
 export class ExecuteWorkflowGatewayDto {
@@ -15,4 +16,11 @@ export class ExecuteWorkflowGatewayDto {
   @IsOptional()
   @IsNumber()
   agentTimeoutSec?: number;
+}
+
+/** Mirrors workflow-service PATCH /workflows/:id/status body. */
+export class UpdateWorkflowStatusGatewayDto {
+  @ApiProperty({ enum: Object.values(WorkflowStatus) })
+  @IsEnum(WorkflowStatus)
+  status!: WorkflowStatusValue;
 }

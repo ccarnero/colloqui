@@ -23,6 +23,7 @@ describe("WorkflowsController", () => {
   let listExecutions: ReturnType<typeof mock>;
   let getExecutionStatus: ReturnType<typeof mock>;
   let getExecutionCountsByTenant: ReturnType<typeof mock>;
+  let updateWorkflowStatus: ReturnType<typeof mock>;
 
   beforeEach(async () => {
     getWorkflow = mock(() => Promise.resolve(null));
@@ -35,6 +36,14 @@ describe("WorkflowsController", () => {
     );
     getExecutionStatus = mock(() => Promise.resolve({ status: "RUNNING" }));
     getExecutionCountsByTenant = mock(() => Promise.resolve({}));
+    updateWorkflowStatus = mock(() =>
+      Promise.resolve({
+        id: "wf-1",
+        name: "n",
+        status: "disabled",
+        terminated: 2,
+      })
+    );
     const workflowsService = {
       createWorkflow,
       listWorkflows,
@@ -44,6 +53,7 @@ describe("WorkflowsController", () => {
       listExecutions,
       getExecutionStatus,
       getExecutionCountsByTenant,
+      updateWorkflowStatus,
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -149,5 +159,15 @@ describe("WorkflowsController", () => {
   it("getExecutionCounts delegates to service", async () => {
     await controller.getExecutionCounts("t1");
     expect(getExecutionCountsByTenant).toHaveBeenCalledWith("t1");
+  });
+
+  it("updateWorkflowStatus delegates to WorkflowsService.updateWorkflowStatus", async () => {
+    await controller.updateWorkflowStatus("t1", "wf-1", { status: "disabled" });
+    expect(updateWorkflowStatus).toHaveBeenCalledWith("t1", "wf-1", "disabled");
+  });
+
+  it("updateWorkflowStatus delegates with 'enabled' status", async () => {
+    await controller.updateWorkflowStatus("t1", "wf-1", { status: "enabled" });
+    expect(updateWorkflowStatus).toHaveBeenCalledWith("t1", "wf-1", "enabled");
   });
 });

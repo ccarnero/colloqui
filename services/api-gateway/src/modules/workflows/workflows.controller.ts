@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -16,12 +17,29 @@ import type { ITenantScopedRequest } from "../../types/yoizen-request";
 // biome-ignore lint/style/useImportType: constructor-injected — Nest DI needs the runtime class reference.
 import { WorkflowProxyService } from "./workflow-proxy.service";
 // biome-ignore lint/style/useImportType: used as @Body() metatype — needed at runtime for ValidationPipe's class-validator/class-transformer reflection.
-import { ExecuteWorkflowGatewayDto } from "./workflows-gateway.dto";
+import {
+  ExecuteWorkflowGatewayDto,
+  UpdateWorkflowStatusGatewayDto,
+} from "./workflows-gateway.dto";
 
 @ApiTags("workflows")
 @Controller("workflows")
 export class WorkflowsController {
   constructor(private readonly proxy: WorkflowProxyService) {}
+
+  @Patch(":id/status")
+  async updateWorkflowStatus(
+    @Req() req: ITenantScopedRequest,
+    @Param("id") id: string,
+    @Body() body: UpdateWorkflowStatusGatewayDto
+  ) {
+    return this.proxy.proxy({
+      method: "PATCH",
+      path: `/workflows/${encodeURIComponent(id)}/status`,
+      tenantId: req.tenantId,
+      body: body as unknown as Record<string, unknown>,
+    });
+  }
 
   /**
    * Proxied as-is — workflow-service validates the full payload

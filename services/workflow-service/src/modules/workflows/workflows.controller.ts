@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -17,6 +18,7 @@ import type { FastifyRequest } from "fastify";
 import { CreateWorkflowDto } from "./dto/create-workflow.dto";
 import { parseListExecutionsQuery } from "./dto/list-executions-query.dto";
 import { UpdateWorkflowDto } from "./dto/update-workflow.dto";
+import { UpdateWorkflowStatusDto } from "./dto/update-workflow-status.dto";
 import { WorkflowsService } from "./workflows.service";
 
 @Controller("workflows")
@@ -55,6 +57,15 @@ export class WorkflowsController {
       trigger: dto.trigger,
       variables: dto.variables,
     });
+  }
+
+  @Patch(":id/status")
+  async updateWorkflowStatus(
+    @TenantId() tenantId: string,
+    @Param("id") id: string,
+    @Body() dto: UpdateWorkflowStatusDto
+  ) {
+    return this.workflowsService.updateWorkflowStatus(tenantId, id, dto.status);
   }
 
   @Get()

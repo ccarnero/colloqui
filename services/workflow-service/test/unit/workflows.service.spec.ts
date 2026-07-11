@@ -9,6 +9,7 @@ import { SystemVariablesProvider } from "../../src/modules/workflows/system-vari
 import {
   type IWorkflowDefinitionRow,
   WORKFLOWS_REPOSITORY,
+  WorkflowNotFoundError,
 } from "../../src/modules/workflows/workflows.repository.interface";
 import { WorkflowsService } from "../../src/modules/workflows/workflows.service";
 import { TEMPORAL_CLIENT } from "../../src/providers/temporal.provider";
@@ -51,6 +52,7 @@ describe("WorkflowsService", () => {
     findDefinitionById: ReturnType<typeof mock>;
     findDefinitionsByTenant: ReturnType<typeof mock>;
     softDeleteDefinition: ReturnType<typeof mock>;
+    setStatus: ReturnType<typeof mock>;
   };
   let mockExecutions: {
     createExecution: ReturnType<typeof mock>;
@@ -95,6 +97,9 @@ describe("WorkflowsService", () => {
       findDefinitionById: mock(() => Promise.resolve(baseRow)),
       findDefinitionsByTenant: mock(() => Promise.resolve([baseRow])),
       softDeleteDefinition: mock(() => Promise.resolve(true)),
+      setStatus: mock((_tenantId: string, _id: string, status: string) =>
+        Promise.resolve({ ...baseRow, status })
+      ),
     };
     mockExecutions = {
       createExecution: mock(
@@ -542,6 +547,116 @@ describe("WorkflowsService", () => {
 
       expect(result).toEqual({ terminated: 0, failed: [] });
       expect(mockTemporal.workflow.getHandle).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("updateWorkflowStatus", () => {
+    it("disabling sets status then terminates running executions and returns the count", async () => {
+      mockDefinitions.setStatus.mockImplementationOnce(() =>
+        Promise.resolve({ ...baseRow, status: WorkflowStatus.DISABLED })
+      );
+      mockTemporal.workflow.list.mockImplementationOnce(() =>
+        asyncIterableOf([
+          { workflowId: "t1:My workflow:abc", runId: "run-a" },
+          { workflowId: "t1:My workflow:def", runId: "run-b" },
+        ])
+      );
+
+      const result = await service.updateWorkflowStatus(
+        "t1",
+        "def-1",
+        WorkflowStatus.DISABLED
+      );
+
+      expect(mockDefinitions.setStatus).toHaveBeenCalledWith(
+        "t1",
+        "def-1",
+        WorkflowStatus.DISABLED
+      );
+      expect(mockTemporal.workflow.list).toHaveBeenCalledWith({
+        query: "TenantId='t1' AND ExecutionStatus='Running'",
+      });
+      expect(result).toEqual({
+        id: "def-1",
+        name: "My workflow",
+        status: WorkflowStatus.DISABLED,
+        terminated: 2,
+      });
+    });
+
+    it("enabling sets status without touching Temporal executions", async () => {
+      mockDefinitions.setStatus.mockImplementationOnce(() =>
+        Promise.resolve({ ...baseRow, status: WorkflowStatus.ENABLED })
+      );
+
+      const result = await service.updateWorkflowStatus(
+        "t1",
+        "def-1",
+        WorkflowStatus.ENABLED
+      );
+
+      expect(mockDefinitions.setStatus).toHaveBeenCalledWith(
+        "t1",
+        "def-1",
+        WorkflowStatus.ENABLED
+      );
+      expect(mockTemporal.workflow.list).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        id: "def-1",
+        name: "My workflow",
+        status: WorkflowStatus.ENABLED,
+      });
+    });
+
+    it("is idempotent when disabling an already-disabled workflow", async () => {
+      mockDefinitions.setStatus.mockImplementationOnce(() =>
+        Promise.resolve({ ...baseRow, status: WorkflowStatus.DISABLED })
+      );
+      mockTemporal.workflow.list.mockImplementationOnce(() =>
+        asyncIterableOf([])
+      );
+
+      const result = await service.updateWorkflowStatus(
+        "t1",
+        "def-1",
+        WorkflowStatus.DISABLED
+      );
+
+      expect(result).toEqual({
+        id: "def-1",
+        name: "My workflow",
+        status: WorkflowStatus.DISABLED,
+        terminated: 0,
+      });
+    });
+
+    it("is idempotent when enabling an already-enabled workflow", async () => {
+      mockDefinitions.setStatus.mockImplementationOnce(() =>
+        Promise.resolve({ ...baseRow, status: WorkflowStatus.ENABLED })
+      );
+
+      const result = await service.updateWorkflowStatus(
+        "t1",
+        "def-1",
+        WorkflowStatus.ENABLED
+      );
+
+      expect(result).toEqual({
+        id: "def-1",
+        name: "My workflow",
+        status: WorkflowStatus.ENABLED,
+      });
+      expect(mockTemporal.workflow.list).not.toHaveBeenCalled();
+    });
+
+    it("maps WorkflowNotFoundError to NotFoundException", async () => {
+      mockDefinitions.setStatus.mockImplementationOnce(() =>
+        Promise.reject(new WorkflowNotFoundError("missing", "t1"))
+      );
+
+      await expect(
+        service.updateWorkflowStatus("t1", "missing", WorkflowStatus.DISABLED)
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

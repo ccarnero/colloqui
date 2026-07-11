@@ -21,6 +21,7 @@ import type {
   WorkflowAction,
   WorkflowDefinition,
   WorkflowExecutionContext,
+  WorkflowStatusValue,
   WorkflowTrigger,
 } from "@yoizen/shared";
 import {
@@ -45,6 +46,7 @@ import {
   type IWorkflowDefinitionRow,
   type IWorkflowsRepository,
   WORKFLOWS_REPOSITORY,
+  WorkflowNotFoundError,
 } from "./workflows.repository.interface";
 
 /**
@@ -191,6 +193,19 @@ export interface ITerminateExecutionFailure {
 export interface ITerminateExecutionsResult {
   terminated: number;
   failed: ITerminateExecutionFailure[];
+}
+
+/**
+ * Result of {@link WorkflowsService.updateWorkflowStatus}. `terminated` is
+ * only populated when the status transitions to `WorkflowStatus.DISABLED`
+ * (see `@yoizen/shared` workflow.interfaces.ts:308-316); enabling a
+ * definition never touches running executions.
+ */
+export interface IUpdateWorkflowStatusResult {
+  id: string;
+  name: string;
+  status: WorkflowStatusValue;
+  terminated?: number;
 }
 
 export interface IWorkflowsSummary {
@@ -505,6 +520,58 @@ export class WorkflowsService {
     );
 
     return result;
+  }
+
+  /**
+   * Sets the per-tenant enable/disable toggle on a workflow definition
+   * (`WorkflowStatus.ENABLED` / `WorkflowStatus.DISABLED`, `@yoizen/shared`
+   * workflow.interfaces.ts:308-316). Idempotent in both directions.
+   *
+   * Disabling first persists the toggle, then terminates every currently
+   * running Temporal execution for the definition so already-started runs
+   * stop instead of finishing on their own (see
+   * {@link terminateRunningExecutions}). Enabling only flips the toggle —
+   * it never starts or touches executions.
+   *
+   * @param tenantId - Tenant scope.
+   * @param id - Definition id.
+   * @param status - Target status.
+   * @throws {NotFoundException} When no active definition matches (id, tenantId).
+   */
+  async updateWorkflowStatus(
+    tenantId: string,
+    id: string,
+    status: WorkflowStatusValue
+  ): Promise<IUpdateWorkflowStatusResult> {
+    let row: IWorkflowDefinitionRow;
+    try {
+      row = await this.definitions.setStatus(tenantId, id, status);
+    } catch (err: unknown) {
+      if (err instanceof WorkflowNotFoundError) {
+        throw new NotFoundException("Workflow definition not found");
+      }
+      throw err;
+    }
+
+    this.logger.log(
+      `Workflow definition ${row.id} (${row.name}) status set to '${status}' for tenant ${tenantId}`
+    );
+
+    if (status === WorkflowStatus.DISABLED) {
+      const { terminated, failed } = await this.terminateRunningExecutions(
+        tenantId,
+        row.name
+      );
+      if (failed.length > 0) {
+        this.logger.warn(
+          `Disabling workflow ${row.id} (${row.name}) for tenant ${tenantId} left ` +
+            `${failed.length} running execution(s) unterminated`
+        );
+      }
+      return { id: row.id, name: row.name, status: row.status, terminated };
+    }
+
+    return { id: row.id, name: row.name, status: row.status };
   }
 
   /**
