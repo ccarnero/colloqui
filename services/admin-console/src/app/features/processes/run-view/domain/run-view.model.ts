@@ -201,6 +201,22 @@ export interface ILayoutNode {
   readonly durationMs: number | null;
   /** `true` for a definition-only, not-executed step (dashed box). */
   readonly dashed: boolean;
+  /** Mirrors `IActionStep.instanceId` — `null` for conditional/fork/join
+   * pills and for action kinds that carry no artifact instance
+   * (`jsFunction`, `serviceBusCall`). T04 uses this to resolve the cast
+   * strip's click-to-highlight (DESIGN.md: "Click = highlight that
+   * artifact's steps in the flow") — the geometry stage is the only place
+   * that still has both the step tree AND the per-node id, so it is the
+   * natural carrier rather than re-deriving it from the rendered label. */
+  readonly instanceId: string | null;
+  /** Raw pass-through of `IConditionalStep.evaluatedValue`/`branchTaken`
+   * for `kind === "conditional"` nodes only (`null` otherwise, or for a
+   * not-executed conditional). T04's `run-view-render.ts` formats these
+   * into the DESIGN.md "evaluated: X → case Y" chip — same domain/display
+   * split as `instanceId` above: the semantics live here, the wording
+   * does not. */
+  readonly evaluatedValue: string | null;
+  readonly branchTaken: string | null;
 }
 
 export type LayoutEdgeKind =
@@ -224,7 +240,8 @@ export interface ILayoutEdge {
 
 /** Per-fork-node geometry summary — lane count/cap and the join's
  * critical-path selection (DESIGN.md: "slowest branch's edge is THICKER
- * and labeled `ruta crítica · <ms>`"). */
+ * and labeled `ruta crítica · <ms>`" — rendered in English per SPEC.md
+ * decision 5 as `critical path · <ms>`). */
 export interface IForkGeometry {
   readonly forkId: string;
   readonly joinId: string;

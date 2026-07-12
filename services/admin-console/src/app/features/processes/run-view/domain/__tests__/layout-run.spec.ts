@@ -234,7 +234,7 @@ describe("layoutRun", () => {
     expect(layout.forks[0]!.criticalMs).toBe(400);
     const joinEdges = layout.edges.filter((e) => e.kind === "join-in");
     const criticalEdge = joinEdges.find((e) => e.thick);
-    expect(criticalEdge?.label).toBe("ruta crítica · 400ms");
+    expect(criticalEdge?.label).toBe("critical path · 400ms");
     const nonCriticalEdge = joinEdges.find((e) => !e.thick);
     expect(nonCriticalEdge?.label).toBeNull();
   });

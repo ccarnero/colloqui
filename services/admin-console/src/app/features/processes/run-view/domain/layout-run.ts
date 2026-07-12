@@ -140,6 +140,9 @@ function layoutSequence(
         nestingDepth: step.nestingDepth,
         durationMs: step.durationMs,
         dashed: step.status === "not_executed",
+        instanceId: step.instanceId,
+        evaluatedValue: null,
+        branchTaken: null,
       });
       if (prevId) {
         pushEdge(collector, prevId, id, pendingEdgeKind, {
@@ -167,6 +170,9 @@ function layoutSequence(
         nestingDepth: step.nestingDepth,
         durationMs: null,
         dashed: !step.executed,
+        instanceId: null,
+        evaluatedValue: step.evaluatedValue,
+        branchTaken: step.branchTaken,
       });
       if (prevId) {
         pushEdge(collector, prevId, pillId, pendingEdgeKind, {
@@ -231,6 +237,9 @@ function layoutSequence(
       nestingDepth: step.nestingDepth,
       durationMs: step.durationMs,
       dashed: step.status === "not_executed",
+      instanceId: null,
+      evaluatedValue: null,
+      branchTaken: null,
     });
     if (prevId) {
       pushEdge(collector, prevId, forkId, pendingEdgeKind, {
@@ -288,6 +297,9 @@ function layoutSequence(
       nestingDepth: step.nestingDepth,
       durationMs: critical?.ms ?? null,
       dashed: step.status === "not_executed",
+      instanceId: null,
+      evaluatedValue: null,
+      branchTaken: null,
     });
     for (const l of laneTails) {
       if (!l.tailId) {
@@ -296,7 +308,9 @@ function layoutSequence(
       const isCritical = critical !== null && l.label === critical.label;
       pushEdge(collector, l.tailId, joinId, "join-in", {
         thick: isCritical,
-        label: isCritical ? `ruta crítica · ${critical.ms}ms` : null,
+        // Console UI strings in English (SPEC.md decision 5); DESIGN.md's
+        // Spanish mockup label ("ruta crítica") translates to "critical path".
+        label: isCritical ? `critical path · ${critical.ms}ms` : null,
       });
     }
     row += 1;
