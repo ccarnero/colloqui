@@ -283,8 +283,33 @@ export class WorkflowExecutionsComponent implements OnInit {
     }
   }
 
+  /**
+   * T06 of `manual-loops/run-view.md`: navigates to the new run-view
+   * route. The route's `:workflowId`/`:runId` params feed the ingester's
+   * `GET /runs/:workflowId/:runId` (T01), which is keyed by the run's own
+   * `workflow_id`/`run_id` columns — populated from the TEMPORAL
+   * `execution_started` payload (`workflowId`/`runId`,
+   * tracking-ingester-service/src/lib/extract-detail-columns.ts, rule 19),
+   * not the workflow DEFINITION id. `IWorkflowExecutionRow` carries these
+   * as `temporalWorkflowId`/`temporalRunId` (verified against
+   * workflow-service's `executeWorkflow`, which starts the Temporal
+   * workflow with `workflowId: temporalWorkflowId` where
+   * `temporalWorkflowId = "{tenantId}:{name}:{nanoid}"` — the row's own
+   * `id`/`definitionId` fields are NOT what the run endpoint expects).
+   *
+   * T06 finding fix: `RunViewComponent` ALSO needs the definition id (a
+   * separate nanoid, `workflow_definitions.id`) to fetch the definition for
+   * the header name — it must NOT be derived from `temporalWorkflowId`
+   * (unreliable, see that component's `definitionId` input doc). This list
+   * is always scoped to one definition (`this.id()`, the parent route's
+   * `:id`), so it's passed along as a `?definitionId=` query param that
+   * `RunViewPageComponent` binds straight onto `RunViewComponent`.
+   */
   protected openRun(r: IWorkflowExecutionRow): void {
-    void this.router.navigate(["/workflows", this.id(), "runs", r.id]);
+    void this.router.navigate(
+      ["/processes/runs", r.temporalWorkflowId, r.temporalRunId],
+      { queryParams: { definitionId: this.id() } }
+    );
   }
 
   protected statusClass(status: string): "ok" | "fail" | "running" | "other" {

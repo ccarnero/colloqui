@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   inject,
   type OnInit,
   signal,
@@ -10,12 +11,16 @@ import {
   type ITrackingChainResponse,
   TrackingChainService,
 } from "../../../core/services/tracking-chain.service";
+import { RunViewComponent } from "../run-view/run-view.component";
 import { CausalGraphComponent } from "./causal-graph/causal-graph.component";
+import { findWorkflowRuns } from "./domain/find-workflow-runs";
 import { MessageTraceComponent } from "./message-trace.component";
 import { TraceWaterfallComponent } from "./waterfall/trace-waterfall.component";
 
-/** The three ways to look at a correlation's tracked-event chain. */
-export type TraceViewTab = "waterfall" | "causal" | "legacy";
+/** The four ways to look at a correlation's tracked-event chain — "run"
+ * only appears when the chain contains a workflow run (T06 of
+ * `manual-loops/run-view.md`, entry (b)). */
+export type TraceViewTab = "waterfall" | "causal" | "legacy" | "run";
 
 const TABS: ReadonlyArray<{
   readonly id: TraceViewTab;
@@ -25,6 +30,8 @@ const TABS: ReadonlyArray<{
   { id: "causal", label: "Causal graph" },
   { id: "legacy", label: "Legacy" },
 ];
+
+const RUN_TAB = { id: "run" as const, label: "Run view" };
 
 /**
  * Container for `processes/trace/:correlationId` — fetches the tracking
@@ -40,6 +47,7 @@ const TABS: ReadonlyArray<{
     CausalGraphComponent,
     MessageTraceComponent,
     TraceWaterfallComponent,
+    RunViewComponent,
   ],
   template: `
     <header class="td-head">
@@ -50,7 +58,7 @@ const TABS: ReadonlyArray<{
     </header>
 
     <div class="td-tabs" role="tablist" aria-label="Trace view">
-      @for (t of tabs; track t.id) {
+      @for (t of visibleTabs(); track t.id) {
         <button
           type="button"
           role="tab"
@@ -66,6 +74,16 @@ const TABS: ReadonlyArray<{
 
     @if (activeTab() === "legacy") {
       <app-message-trace />
+    } @else if (activeTab() === "run") {
+      @if (workflowRun(); as run) {
+        <!-- T06 finding fix (manual-loops/run-view.md): no definitionId
+             input here — findWorkflowRuns only has the Temporal
+             workflow/run ids from the chain's events, not the workflow
+             DEFINITION id. RunViewComponent degrades gracefully: it skips
+             the definition fetch (no 404 against the Temporal id) and the
+             header falls back to the raw workflow id instead of the name. -->
+        <app-run-view [workflowId]="run.workflowId" [runId]="run.runId" />
+      }
     } @else {
       @if (loading()) {
         <p class="td-muted">Loading…</p>
@@ -126,6 +144,23 @@ export class TraceDetailComponent implements OnInit {
   readonly chain = signal<ITrackingChainResponse | null>(null);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+
+  /** T06 (entry b): distinct workflow runs found in the chain's events.
+   * `manual-loops/run-view.md` T06: "pick the FIRST workflow run" when a
+   * shared trigger fans out to more than one — DESIGN-run-view.md does not
+   * mandate a selector, so this stays the simple documented choice. */
+  private readonly workflowRuns = computed(() => {
+    const c = this.chain();
+    return c ? findWorkflowRuns(c.events) : [];
+  });
+
+  readonly workflowRun = computed(() => this.workflowRuns()[0] ?? null);
+
+  /** "Run view" only appears once the chain resolved and contains a
+   * workflow run (SPEC.md: tab appears WHEN the chain contains a run). */
+  readonly visibleTabs = computed(() =>
+    this.workflowRuns().length > 0 ? [...TABS, RUN_TAB] : TABS
+  );
 
   ngOnInit(): void {
     const cid = this.route.snapshot.paramMap.get("correlationId") ?? "";

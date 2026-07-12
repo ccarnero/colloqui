@@ -265,6 +265,23 @@ export const routes: Routes = [
             (m) => m.TraceDetailComponent
           ),
       },
+      // Run view (T06 of manual-loops/run-view.md): entry (a), a run row
+      // click from Workflows → detail → Executions. `workflowId` is the
+      // TEMPORAL workflow id (`{tenantId}:{name}:{nanoid}` — colon-bearing,
+      // see workflow-service's `executeWorkflow`), not the definition id;
+      // Angular's router matches path segments verbatim (unlike the
+      // gateway's find-my-way), so colons inside a `:workflowId` segment
+      // are captured as part of the param value with no special escaping
+      // needed. `withComponentInputBinding()` (provideCoreApp,
+      // packages/angular-shared/src/app-providers.ts) binds `:workflowId`/
+      // `:runId` directly onto `RunViewComponent`'s matching signal inputs.
+      {
+        path: "processes/runs/:workflowId/:runId",
+        loadComponent: () =>
+          import("./features/processes/run-view/run-view-page.component").then(
+            (m) => m.RunViewPageComponent
+          ),
+      },
       { path: "automate", redirectTo: "processes", pathMatch: "full" },
 
       // Workflows mini-app stays at /workflows (Phase 3 routes preserved)

@@ -118,7 +118,7 @@ describe("RunViewComponent", () => {
   let fixture: ComponentFixture<RunViewComponent>;
   let httpMock: HttpTestingController;
 
-  function setup(): void {
+  function setup(definitionId?: string): void {
     TestBed.configureTestingModule({
       imports: [RunViewComponent],
       providers: [
@@ -137,6 +137,13 @@ describe("RunViewComponent", () => {
     fixture = TestBed.createComponent(RunViewComponent);
     fixture.componentRef.setInput("workflowId", "wf-1");
     fixture.componentRef.setInput("runId", "run-1");
+    // T06 finding fix: `workflowId` is the TEMPORAL id — `getDefinition`
+    // must be called with the DEFINITION id instead, passed explicitly via
+    // this input (see RunViewComponent's `definitionId` doc). Tests default
+    // to the same string as `workflowId` purely to keep existing fixtures'
+    // `${WORKFLOWS_URL}/wf-1` expectation unchanged; a dedicated test below
+    // proves the two ids are NOT the same lookup.
+    fixture.componentRef.setInput("definitionId", definitionId ?? "wf-1");
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
   }
@@ -171,6 +178,77 @@ describe("RunViewComponent", () => {
   it("falls back workflowName() to the raw workflow id before the definition loads", () => {
     setup();
     expect(fixture.componentInstance.workflowName()).toBe("wf-1");
+  });
+
+  it("fetches the definition by the DEFINITION id, not the Temporal workflowId (T06 finding fix)", () => {
+    TestBed.configureTestingModule({
+      imports: [RunViewComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        WorkflowApiService,
+        RunViewService,
+        { provide: AuthService, useValue: { hasPermission: () => true } },
+      ],
+    });
+    fixture = TestBed.createComponent(RunViewComponent);
+    // A composite Temporal id distinct from the definition id — reproduces
+    // production ids like `{tenantId}:{name}:{nanoid}`.
+    fixture.componentRef.setInput("workflowId", "acme:order-workflow:abc123");
+    fixture.componentRef.setInput("runId", "run-1");
+    fixture.componentRef.setInput("definitionId", "def-42");
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+
+    httpMock
+      .expectOne(`${TRACKING_RUNS_URL}/acme%3Aorder-workflow%3Aabc123/run-1`)
+      .flush(runResponse({ workflow_id: "acme:order-workflow:abc123" }));
+    fixture.detectChanges();
+
+    // Only `def-42` should be requested — never the Temporal id.
+    httpMock.expectOne(`${WORKFLOWS_URL}/def-42`).flush(definition([]));
+    fixture.detectChanges();
+
+    expect(
+      httpMock.match(`${WORKFLOWS_URL}/acme%3Aorder-workflow%3Aabc123`)
+    ).toHaveLength(0);
+  });
+
+  it("skips the definition fetch entirely when no definitionId is provided, degrading gracefully", () => {
+    TestBed.configureTestingModule({
+      imports: [RunViewComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        WorkflowApiService,
+        RunViewService,
+        { provide: AuthService, useValue: { hasPermission: () => true } },
+      ],
+    });
+    fixture = TestBed.createComponent(RunViewComponent);
+    fixture.componentRef.setInput("workflowId", "wf-1");
+    fixture.componentRef.setInput("runId", "run-1");
+    // `definitionId` left unset — e.g. the trace "Run view" tab entry,
+    // which only has Temporal ids from the chain.
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+
+    httpMock.expectOne(`${TRACKING_RUNS_URL}/wf-1/run-1`).flush(runResponse());
+    fixture.detectChanges();
+
+    // No 404 spam: no request to WorkflowApiService at all.
+    httpMock.verify();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(fixture.componentInstance.workflowName()).toBe("wf-1");
+    // Loaded, not stuck loading/errored — the empty-events fixture still
+    // triggers the (unrelated) degraded-banner path since it has no
+    // executed step events, but no alert/error state from the skipped
+    // definition fetch.
+    expect(el.querySelector('[role="alert"]')).toBeFalsy();
+    expect(el.textContent).toContain("wf-1");
   });
 
   describe("linear run", () => {

@@ -131,20 +131,31 @@ export class RunViewService {
    * Fetches the workflow definition a run belongs to, for the plan-vs-
    * executed merge (T03) and the popup's "workflow definition" peek (T05).
    * Delegates to the existing `WorkflowApiService.get` — no duplicate HTTP
-   * call. `version` is accepted for API-shape parity with SPEC.md's
+   * call.
+   *
+   * IMPORTANT: `definitionId` must be the workflow DEFINITION id
+   * (`workflow_definitions.id`), NOT the Temporal `workflowId` a run's
+   * `workflow_id` column carries (`{tenantId}:{name}:{nanoid}` per
+   * `workflows.service.ts#executeWorkflow`) — those are separate ids minted
+   * independently. Callers own resolving the definition id (see
+   * `RunViewComponent`'s `definitionId` input for how each entry does or
+   * doesn't have it) — this method does not attempt to derive one from a
+   * Temporal id.
+   *
+   * `version` is accepted for API-shape parity with SPEC.md's
    * `getDefinition(workflowId, version)` but is currently unused: neither
    * `WorkflowApiService` nor workflow-service's `GET /workflows/:id` expose
    * version-scoped lookups today (definitions are mutated in place, not
    * versioned) — this is reported as a finding, not a workaround, should a
    * future task introduce definition versioning.
-   * @param workflowId  Workflow definition id.
-   * @param version     Reserved for future version-scoped lookups (unused).
+   * @param definitionId  Workflow definition id.
+   * @param version       Reserved for future version-scoped lookups (unused).
    */
   getDefinition(
-    workflowId: string,
+    definitionId: string,
     version?: string
   ): Observable<IWorkflowDefinitionDto> {
     void version;
-    return this.workflowApi.get(workflowId);
+    return this.workflowApi.get(definitionId);
   }
 }

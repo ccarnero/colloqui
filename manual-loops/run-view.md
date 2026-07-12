@@ -208,7 +208,7 @@ grep -n "run-view\|Run view" DOCS/guides/trace-console.md cowork/INDEX.md
 - [x] T03 domain layout model (pure core)
 - [x] T04 flow component + header + cast
 - [x] T05 anchored popup + peeks + deep links
-- [ ] T06 entries wiring
+- [x] T06 entries wiring
 - [ ] T07 cluster e2e
 - [ ] T08 docs + index
 

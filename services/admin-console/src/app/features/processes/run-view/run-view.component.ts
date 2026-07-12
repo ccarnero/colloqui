@@ -364,6 +364,23 @@ export class RunViewComponent {
   readonly workflowId = input.required<string>();
   readonly runId = input.required<string>();
 
+  /** T06 finding fix (`manual-loops/run-view.md`): `workflowId` is the
+   * TEMPORAL workflow id (`{tenantId}:{name}:{nanoid}}` per
+   * `workflows.service.ts#executeWorkflow`) — it is NOT the workflow
+   * DEFINITION id `WorkflowApiService.get`/`getDefinition` need (those are
+   * separate `nanoid()`s minted independently in `workflow_definitions.id`,
+   * confirmed via `workflows.postgres.repository.ts`). Passing `workflowId`
+   * to `getDefinition` 404s in production. There is no reliable way to
+   * derive the definition id from the Temporal id by parsing (the last
+   * colon segment is the per-execution nanoid/idempotency key, not the
+   * definition id) — so callers that KNOW the definition id (e.g. the
+   * Executions list, which is already scoped by it) pass it explicitly via
+   * this optional input. Callers that don't (e.g. the trace "Run view" tab,
+   * which only has the Temporal ids from the chain) leave it unset and the
+   * component degrades gracefully: no definition fetch, no 404, header
+   * shows the raw workflow id instead of the name. */
+  readonly definitionId = input<string | undefined>(undefined);
+
   /** T05 consumes the clicked node to open its anchored popup — this
    * component stays popup-free (SPEC.md T04: "leave a clean output, no
    * popup here"). */
@@ -404,6 +421,7 @@ export class RunViewComponent {
     effect(() => {
       const workflowId = this.workflowId();
       const runId = this.runId();
+      const definitionId = this.definitionId();
       this.state.set({ kind: "loading" });
       this.selected.set(null);
       this.definitionSignal.set(null);
@@ -411,7 +429,19 @@ export class RunViewComponent {
       this.anchorRectSignal.set(null);
       this.runViewService.getRun(workflowId, runId).subscribe({
         next: (run) => {
-          this.runViewService.getDefinition(workflowId).subscribe({
+          if (!definitionId) {
+            // No definition id known by this entry (T06 finding fix) —
+            // skip the fetch entirely rather than 404 against the
+            // TEMPORAL workflowId. Merge with an empty action list: the
+            // run still renders (executed steps only, no plan-vs-executed
+            // dashed overlay), and the header falls back to the raw id via
+            // `workflowName()`.
+            const merged = mergeRun(run.events, run.spans, { actions: [] });
+            const layout = layoutRun(merged);
+            this.state.set({ kind: "loaded", run, layout });
+            return;
+          }
+          this.runViewService.getDefinition(definitionId).subscribe({
             next: (definition) => {
               this.definitionSignal.set(definition);
               const merged = mergeRun(run.events, run.spans, definition);

@@ -1,9 +1,10 @@
 import "@angular/compiler";
 import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { ActivatedRoute, convertToParamMap } from "@angular/router";
-import { of, throwError } from "rxjs";
+import { NEVER, of, throwError } from "rxjs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthService } from "../../../core/services/auth.service";
+import { RunViewService } from "../../../core/services/run-view.service";
 import {
   type ITrackedEvent,
   type ITrackedEventSpan,
@@ -89,6 +90,14 @@ describe("TraceDetailComponent", () => {
         },
         { provide: TrackingChainService, useValue: { getChain } },
         { provide: AuthService, useValue: { hasPermission: () => false } },
+        // RunViewComponent (embedded by the "Run view" tab) fetches on its
+        // own — NEVER keeps it parked in "Loading…" so these tests assert
+        // only tab presence/embedding, not RunViewComponent's own behavior
+        // (covered by run-view.component.spec.ts).
+        {
+          provide: RunViewService,
+          useValue: { getRun: () => NEVER, getDefinition: () => NEVER },
+        },
       ],
     }).compileComponents();
   });
@@ -148,5 +157,88 @@ describe("TraceDetailComponent", () => {
     const el = fixture.nativeElement as HTMLElement;
 
     expect(el.textContent).toContain("Failed to load tracking chain.");
+  });
+
+  describe("Run view tab (T06, entry b)", () => {
+    it("does NOT show a Run view tab when the chain has no workflow run", () => {
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const tabs = Array.from(
+        el.querySelectorAll<HTMLButtonElement>(".td-tab")
+      );
+
+      expect(
+        tabs.find((b) => b.textContent?.trim() === "Run view")
+      ).toBeFalsy();
+    });
+
+    it("shows a Run view tab when the chain contains an execution_started event with both ids", () => {
+      getChain.mockReturnValue(
+        of({
+          ...fixtureChain,
+          events: [
+            ...fixtureChain.events,
+            event({
+              event_id: "evt-run",
+              producer: "workflow-service",
+              domain: "workflow",
+              kind: "execution_started",
+              rule: 19,
+              workflow_id: "acme:order-workflow:abc123",
+              run_id: "run-9",
+            }),
+          ],
+        })
+      );
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const tabs = Array.from(
+        el.querySelectorAll<HTMLButtonElement>(".td-tab")
+      );
+      const runTab = tabs.find((b) => b.textContent?.trim() === "Run view");
+
+      expect(runTab).toBeTruthy();
+
+      runTab?.click();
+      fixture.detectChanges();
+
+      const runView = el.querySelector("app-run-view");
+      expect(runView).toBeTruthy();
+    });
+
+    it("resolves the FIRST run when the chain fans out to multiple workflow runs", () => {
+      getChain.mockReturnValue(
+        of({
+          ...fixtureChain,
+          events: [
+            ...fixtureChain.events,
+            event({
+              event_id: "evt-run-a",
+              producer: "workflow-service",
+              domain: "workflow",
+              kind: "execution_started",
+              rule: 19,
+              workflow_id: "wf-a",
+              run_id: "run-a",
+            }),
+            event({
+              event_id: "evt-run-b",
+              producer: "workflow-service",
+              domain: "workflow",
+              kind: "execution_started",
+              rule: 19,
+              workflow_id: "wf-b",
+              run_id: "run-b",
+            }),
+          ],
+        })
+      );
+      setup();
+
+      expect(fixture.componentInstance.workflowRun()).toEqual({
+        workflowId: "wf-a",
+        runId: "run-a",
+      });
+    });
   });
 });
