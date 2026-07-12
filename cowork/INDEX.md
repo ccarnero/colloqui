@@ -78,6 +78,33 @@ Decision cuádruple:
 - **Evidence**: the single choke point is `WorkflowsService.executeWorkflow` in
   `services/workflow-service/src/modules/workflows/workflows.service.ts` — both the
   HTTP execute endpoint and the trigger-fired path go through it.
+
+## Change: workflow step-event telemetry (workflow-step-events)
+
+Spec-driven change making `workflow-service` observable at step level: every run now
+emits `execution_started` plus per-action `action_started`/`action_completed` and
+per-condition `condition_evaluated`, in addition to the pre-existing
+`execution_completed`. Full task queue, gates, and human decisions:
+`manual-loops/workflow-step-events.md`. Operational contract (kinds, payloads, causal
+contract, depth math, volume cap): `services/workflow-service/README.md` §"Step-Event
+Telemetry". Classification and golden set: `TAXONOMY.md` rule 19 (kind-agnostic,
+no new rule needed), golden rows seq1312-1319. Envelope inventory entry: `SCHEMAS.md`
+§12. Engram topic: `tracking/workflow-step-events`.
+
+Decision cuádruple:
+- **Rule**: step events are SIBLING hops off the run's `execution_started` event —
+  `causation_id` is always the run's `execution_started` id, never the preceding step
+  event; `transport.depth` stays CONSTANT (`execution_started.depth + 1`) regardless
+  of action count — `TAXONOMY.md` rule 19 note.
+- **Why**: a chained (step-to-step) causal design would grow depth per action and
+  risk exceeding `MAX_DEPTH_BY_CATEGORY.internal_service` (ceiling 5) on workflows
+  with many actions; the sibling design keeps depth bounded to 2-4 regardless of run
+  size, which is also what makes the 100-event volume cap safe.
+- **Evidence**: `reserveStepEmission` in
+  `services/workflow-service/src/temporal/workflows.ts` — atomic, race-safe reservation
+  of the 100-event-per-run cap across concurrent fork branches; past the cap exactly
+  one `action_completed` (`actionType: "truncated"`, `status: "skipped"`) marker fires.
+  Measured e2e multiplier: 13 events per run vs. baseline 3 (~4.3x).
 - **Engram topic**: `workflows/tenant-toggle`.
 
 ## Change: durable payload capture, retention & admin payload viewer (payload-capture)

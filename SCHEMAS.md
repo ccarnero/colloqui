@@ -128,6 +128,33 @@ Owner: **`tracking-ingester-service`** (bus→Postgres tracking ingester). Sourc
 
 **Dispositions:** most rules are *counted-and-persisted* (one row per event). Rule 20 (`runtime-presence` heartbeats) is `counted-not-persisted` — classified and counted via the OTel counter `tracking_ingester_skipped_total{family,tenant}` but **no row is written** (`SKIP_PERSIST_RULES` in `src/lib/classify.ts` is the single source of truth). See `TAXONOMY.md` §4 disposition note.
 
+## 12. Workflow-service step-event kinds (`services/workflow-service`)
+
+Owner: **`workflow-service`**. Ride the SAME canonical `EventEnvelope` shape
+and subject family as `execution_completed` (`evt.<tenant>.workflow-service.workflow.internal.native.<kind>.v1`,
+`producer: "workflow-service"`, `domain: "workflow"`) — classified by
+`TAXONOMY.md` rule 19, which is deliberately kind-agnostic (matches on
+producer+domain, not a kind enum), so no classifier change was required.
+Added by `manual-loops/workflow-step-events.md` T01-T05; golden rows
+seq1312-1319.
+
+| Symbol | File | Covers | Consumers | Kind |
+|---|---|---|---|---|
+| `publishExecutionStartedEvent` / `buildExecutionStartedSubject` | `services/workflow-service/src/temporal/activities/execution-completed-publisher.activity.ts:251/58` | `execution_started` — emitted once per run before actions execute, payload `executionId`, `workflowId`, `runId`, `workflowName?` | `runWorkflow` (`src/temporal/workflows.ts`) via Temporal activity | Factory function (construction + publish; NATS `EventEnvelope`) |
+| `publishActionStartedEvent` / `publishActionCompletedEvent` / `buildActionStartedSubject` / `buildActionCompletedSubject` | `execution-completed-publisher.activity.ts:523/534/357/362` | `action_started` / `action_completed` — payload `executionId`, `actionIndex`, `actionType` (real `WorkflowAction.activity` discriminant: `endpointCall\|mcpCall\|jsFunction\|serviceBusCall\|serviceCall\|channelSend\|agentCall\|branch\|conditional`), `actionName`, `branch?`, `connectorId?`, `agentId?`, and on completed: `status` (`ok\|failed\|skipped`) + `errorClass?` | `runWorkflow` (`src/temporal/workflows.ts`) via Temporal activities, guarded by `reserveStepEmission`'s 100-event cap | Factory function (construction + publish; NATS `EventEnvelope`) |
+| `publishConditionEvaluatedEvent` / `buildConditionEvaluatedSubject` | `execution-completed-publisher.activity.ts:589/551` | `condition_evaluated` — payload `{ expression, evaluatedValue, branchTaken, cases, truncated? }`; emitted once per `conditional` node exit, NOT for untaken branches | `runWorkflow` (`src/temporal/workflows.ts`) via Temporal activity | Factory function (construction + publish; NATS `EventEnvelope`) |
+| `reserveStepEmission` | `services/workflow-service/src/temporal/workflows.ts:446` | Atomic, race-safe (across fork branches) reservation of the 100-event-per-run cap (`STEP_EVENT_CAP`); returns `"emit" \| "truncated-marker" \| "skip"` | All three step-event emit call sites above | Pure function (in-workflow state mutation, no I/O) |
+
+Causal contract (authoritative home: `TAXONOMY.md` rule 19 note, mirrored in
+`services/workflow-service/README.md` "Step-Event Telemetry"): all three step
+kinds are SIBLING hops off the run's `execution_started` event id — constant
+`transport.depth = execution_started.depth + 1` (2-4 in practice), under
+`MAX_DEPTH_BY_CATEGORY.internal_service` ceiling 5. No compile-time payload
+type is exported for these kinds beyond the `IPublishActionStartedArgs` /
+`IPublishActionCompletedArgs` / `IPublishConditionEvaluatedArgs` activity
+argument interfaces (same file) — there is no shared runtime validator, same
+posture as every other row in this inventory.
+
 ---
 
 ## Coverage map

@@ -411,6 +411,69 @@ Runs the first matching conditional branch, or `default` when no branch matches.
 }
 ```
 
+## Step-Event Telemetry
+
+Beyond the run-level `execution_completed` event, every workflow run also emits
+`execution_started` and, per action/condition, step-level telemetry. All events
+in this family ride the same envelope/subject shape as `execution_completed`:
+`evt.<tenant>.workflow-service.workflow.internal.native.<kind>.v1`, `producer:
+"workflow-service"`, `domain: "workflow"` (`TAXONOMY.md` rule 19 — deliberately
+kind-agnostic: it matches on producer+domain only, so no new classifier rule
+was needed for these kinds; golden rows seq1312-1319). Publisher functions
+live alongside `publishExecutionCompletedEvent` in
+`src/temporal/activities/execution-completed-publisher.activity.ts`; there is
+NO second publish path.
+
+### Kinds
+
+| Kind | When | Payload |
+|------|------|---------|
+| `execution_started` | Emitted once from `runWorkflow` (via the `publishExecutionStartedEvent` activity) before the first action runs; also fires when a run later fails, since it is emitted unconditionally at start | `executionId`, `workflowId`, `runId`, `workflowName?` |
+| `action_started` / `action_completed` | Emitted around each executed action (via `publishActionStartedEvent`/`publishActionCompletedEvent`) | `executionId`, `actionIndex` (0-based position within its own action list — top-level, a `branch` sub-list, or a `conditional` branch/default list; NOT globally unique across nesting), `actionType`, `actionName`, `branch?` (nested labels compose, e.g. `"approved/pathA"`), `connectorId?`, `agentId?`, and on `action_completed` only: `status` (`ok\|failed\|skipped`) + `errorClass?` (class name only, never a stack trace) |
+| `condition_evaluated` | Emitted once per `conditional` node EXIT (via `publishConditionEvaluatedEvent`) | `{ expression, evaluatedValue, branchTaken, cases }` — `evaluatedValue` is truncated to 256 chars with `truncated: true` when clipped; `branchTaken` is the matched case label, `"default"` when the default branch ran, or `null` for an if-without-else evaluating false. Untaken branches emit NOTHING — a skipped branch's actions never execute, so they never publish `action_started`/`action_completed` either. |
+
+`actionType` is the REAL `WorkflowAction.activity` discriminant from
+`@yoizen/shared`: `endpointCall | mcpCall | jsFunction | serviceBusCall |
+serviceCall | channelSend | agentCall | branch | conditional`. There is no
+separate `fork`/`join`/`http_call` kind — `branch` doubles as the fork marker,
+and a fork's own `action_completed` (fired after its `Promise.all()` resolves)
+IS the join point; there is no explicit `join` step in the codebase.
+
+### Causal contract
+
+`action_started`, `action_completed`, and `condition_evaluated` are SIBLING
+hops off the run's `execution_started` event — `causation_id` is ALWAYS the
+run's `execution_started` envelope id, NEVER the preceding step event
+(`action_completed` does not chain off its own `action_started`;
+`condition_evaluated` does not chain off the preceding action). This keeps
+`transport.depth` CONSTANT across every step event of a run, equal to
+`execution_started.depth + 1`, regardless of `action_index` or nesting.
+
+Depth math (`MAX_DEPTH_BY_CATEGORY.internal_service = 5`,
+`packages/shared/src/envelope.utils.ts`): trigger depth 0-2 → `execution_started`
+= trigger + 1 = 1-3 → step events = `execution_started` + 1 = 2-4, comfortably
+under the ceiling. A chained (step-to-step) design was rejected because depth
+would grow per action instead of staying constant — see `TAXONOMY.md` rule 19
+note for the authoritative record of this decision.
+
+### Volume cap
+
+Step events are capped at 100 per run (`STEP_EVENT_CAP`), enforced by
+`reserveStepEmission` — a synchronous, race-safe reservation (read + mutate in
+one call) so concurrent fork branches cannot both observe budget and both emit
+past the cap. Once the cap would be exceeded, exactly ONE truncated marker
+fires instead of further step events: an `action_completed` with
+`actionType: "truncated"` and `status: "skipped"`. Measured end-to-end: the
+e2e workflow multiplies from 3 baseline events (`execution_requested`-style
+run events) to 13 events per run with step telemetry enabled (~4.3x).
+
+### Spans free ride
+
+Because every step kind follows the `_started`/`_completed` naming pair,
+`tracking.tracked_event_spans` derives per-step `duration_ms` with ZERO
+changes to its pairing SQL. Measured live: `agentCall` 1345ms, `jsFunction`
+73ms.
+
 ## REST API Reference
 
 ### Create Workflow Definition
