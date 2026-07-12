@@ -8,6 +8,7 @@ import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { provideRouter } from "@angular/router";
 import { beforeEach, describe, expect, it } from "vitest";
 import { environment } from "../../../../environments/environment";
+import { AuthService } from "../../../core/services/auth.service";
 import type {
   IRunEvent,
   IRunResponse,
@@ -126,6 +127,11 @@ describe("RunViewComponent", () => {
         provideRouter([]),
         WorkflowApiService,
         RunViewService,
+        // T05's popup (hosted by RunViewComponent) injects AuthService to
+        // gate its payload viewer — same mock precedent
+        // `causal-graph.component.spec.ts` uses (real `AuthService` needs
+        // `localStorage`, unavailable in this suite's jsdom setup).
+        { provide: AuthService, useValue: { hasPermission: () => true } },
       ],
     });
     fixture = TestBed.createComponent(RunViewComponent);

@@ -15,9 +15,12 @@ import {
   type IRunResponse,
   RunViewService,
 } from "../../../core/services/run-view.service";
+import type { IWorkflowDefinitionDto } from "../../automation/workflows/services/workflow-api.service";
 import { layoutRun } from "./domain/layout-run";
 import { mergeRun } from "./domain/merge-run";
 import type { ILayoutNode, IRunLayout } from "./domain/run-view.model";
+import { RunViewPopupComponent } from "./run-view-popup.component";
+import type { IAnchorRect } from "./run-view-popup-render";
 import {
   computeForkCollapseChips,
   computeNodePositions,
@@ -57,7 +60,7 @@ type RunState =
  */
 @Component({
   selector: "app-run-view",
-  imports: [RouterLink],
+  imports: [RouterLink, RunViewPopupComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @switch (state().kind) {
@@ -164,7 +167,7 @@ type RunState =
                 [attr.data-color]="node.color"
                 [attr.data-status]="node.status"
                 [attr.transform]="'translate(' + node.x + ',' + node.y + ')'"
-                (click)="onNodeClick(node)"
+                (click)="onNodeClick(node, $event)"
               >
                 <rect
                   class="rv-node-rect"
@@ -199,6 +202,16 @@ type RunState =
               </text>
             }
           </svg>
+
+          @if (selectedNode(); as node) {
+            <app-run-view-popup
+              [run]="run()"
+              [node]="node"
+              [anchorRect]="anchorRect()!"
+              [definition]="definition()"
+              (closed)="closePopup()"
+            />
+          }
         </div>
       }
     }
@@ -366,12 +379,26 @@ export class RunViewComponent {
   /** DESIGN-run-view.md §Layout: header chip shows "workflow name +
    * definition version". The definition version does not exist in the
    * backend API (T02 finding, escalated separately) — this holds the
-   * definition's `name`, falling back to the raw id while loading or if
-   * the definition fetch is unavailable. */
-  private readonly definitionName = signal<string | null>(null);
-  readonly workflowName = computed(
-    () => this.definitionName() ?? this.workflowId()
+   * FULL definition (`name` for the header chip, `actions`/`application`
+   * for T05's "workflow definition" peek), falling back to the raw id for
+   * the header chip while loading or if the definition fetch fails. */
+  private readonly definitionSignal = signal<IWorkflowDefinitionDto | null>(
+    null
   );
+  readonly definition = computed(() => this.definitionSignal());
+  readonly workflowName = computed(
+    () => this.definitionSignal()?.name ?? this.workflowId()
+  );
+
+  /** T05's popup state: the clicked node (`null` = closed) and the DOM
+   * rect of the `<g>` that was clicked, captured on click so the popup
+   * can anchor beside it (SPEC.md T05: "anchored to the clicked step").
+   * Reset whenever the run identity changes so a stale popup never
+   * survives a workflowId/runId navigation. */
+  private readonly selectedNodeSignal = signal<ILayoutNode | null>(null);
+  readonly selectedNode = computed(() => this.selectedNodeSignal());
+  private readonly anchorRectSignal = signal<IAnchorRect | null>(null);
+  readonly anchorRect = computed(() => this.anchorRectSignal());
 
   constructor() {
     effect(() => {
@@ -379,12 +406,14 @@ export class RunViewComponent {
       const runId = this.runId();
       this.state.set({ kind: "loading" });
       this.selected.set(null);
-      this.definitionName.set(null);
+      this.definitionSignal.set(null);
+      this.selectedNodeSignal.set(null);
+      this.anchorRectSignal.set(null);
       this.runViewService.getRun(workflowId, runId).subscribe({
         next: (run) => {
           this.runViewService.getDefinition(workflowId).subscribe({
             next: (definition) => {
-              this.definitionName.set(definition.name);
+              this.definitionSignal.set(definition);
               const merged = mergeRun(run.events, run.spans, definition);
               const layout = layoutRun(merged);
               this.state.set({ kind: "loaded", run, layout });
@@ -474,7 +503,29 @@ export class RunViewComponent {
     this.selected.set(this.selected() === entry.id ? null : entry.id);
   }
 
-  onNodeClick(node: ILayoutNode): void {
+  /** Emits the clicked node (unchanged output contract T04 shipped) AND
+   * opens T05's own popup, anchored to the clicked `<g>`'s screen rect. */
+  onNodeClick(node: ILayoutNode, event: MouseEvent): void {
+    const target = event.currentTarget as Element | null;
+    const rect = target?.getBoundingClientRect();
+    this.anchorRectSignal.set(
+      rect
+        ? {
+            top: rect.top,
+            left: rect.left,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+          }
+        : { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }
+    );
+    this.selectedNodeSignal.set(node);
     this.nodeSelected.emit(node);
+  }
+
+  closePopup(): void {
+    this.selectedNodeSignal.set(null);
+    this.anchorRectSignal.set(null);
   }
 }

@@ -48,6 +48,7 @@ function conditionalStep(
     branches,
     startedAt: "2026-07-11T10:00:00.000Z",
     completedAt: "2026-07-11T10:00:00.000Z",
+    conditionEventId: "cond-evt-1",
     ...overrides,
   };
 }

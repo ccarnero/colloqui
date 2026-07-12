@@ -451,6 +451,14 @@ describe("mergeRun", () => {
     expect(sendStep.nestingDepth).toBe(2);
     expect(sendStep.actionType).toBe("channelSend");
     expect(sendStep.color).toBe("channel");
+    // Regression: each conditional carries the event_id of the SPECIFIC
+    // `condition_evaluated` event it was matched to (queue.shift() order),
+    // not just the shared numeric actionIndex — this is what
+    // `resolve-step-events.ts` relies on to avoid the nested/root
+    // collision bug.
+    expect(outerStep.conditionEventId).toBe(outer.event_id);
+    expect(innerStep.conditionEventId).toBe(inner.event_id);
+    expect(outerStep.conditionEventId).not.toBe(innerStep.conditionEventId);
   });
 
   it("parallel fork: both lanes execute independently and carry their own steps", () => {

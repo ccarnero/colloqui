@@ -146,6 +146,17 @@ export interface IConditionalStep extends ITimeRange {
   readonly branchTaken: string | null;
   readonly hasDefault: boolean;
   readonly branches: readonly IConditionalBranchNode[];
+  /** `event_id` of the `condition_evaluated` event this step was matched
+   * to by `merge-run.ts`'s `indexConditionEvents` FIFO-in-tree-order
+   * consumption (`null` when `executed` is `false`). `condition_evaluated`
+   * events carry no `branch` field, so two conditionals sharing the same
+   * local `actionIndex` (e.g. a root `if` and a nested `if` both at
+   * position 1) cannot be told apart by `(branchPath, actionIndex)` alone
+   * — only this tree-walk-order consumption disambiguates them. Threaded
+   * through `layout-run.ts` onto `ILayoutNode.conditionEventId` so
+   * `resolve-step-events.ts` can look the event up by ITS OWN identity
+   * instead of re-deriving a (possibly wrong) match per click. */
+  readonly conditionEventId: string | null;
 }
 
 export interface IForkLane {
@@ -217,6 +228,26 @@ export interface ILayoutNode {
    * does not. */
   readonly evaluatedValue: string | null;
   readonly branchTaken: string | null;
+  /** `IActionStep.actionType` for `kind === "action"` nodes, the literal
+   * `"branch"` `WorkflowActionKind` for `kind === "fork"` nodes, `null`
+   * for `conditional`/`join` pills — T05's popup (`manual-loops/run-view.md`
+   * T05) uses this to pick the right peek sub-view (connector/agent/
+   * channel) without re-parsing `label`'s formatted string. Additive field,
+   * same "domain carries semantics, T04/T05 own the wording" split as
+   * `instanceId`/`evaluatedValue` above. */
+  readonly actionType: string | null;
+  /** Raw `StepNode.name` (the definition action's own `name`, as opposed
+   * to `instanceId` which is the resolved connector/agent id) — T05's
+   * step-detail identity block needs both independently of `label`'s
+   * combined `instanceId ?? name` formatting. */
+  readonly stepName: string;
+  /** Pass-through of `IConditionalStep.conditionEventId` for
+   * `kind === "conditional"` nodes only (`null` otherwise, or for a
+   * not-executed conditional). `resolve-step-events.ts` uses this to look
+   * up the node's OWN `condition_evaluated` event by exact `event_id`
+   * instead of re-matching by `actionIndex` (see that field's doc for
+   * why the numeric index alone is ambiguous). */
+  readonly conditionEventId: string | null;
 }
 
 export type LayoutEdgeKind =

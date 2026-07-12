@@ -315,6 +315,7 @@ function buildConditionalStep(
     branches,
     startedAt: occurredAt,
     completedAt: occurredAt,
+    conditionEventId: conditionEvent?.event_id ?? null,
   };
 }
 

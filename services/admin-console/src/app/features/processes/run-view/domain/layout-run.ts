@@ -143,6 +143,9 @@ function layoutSequence(
         instanceId: step.instanceId,
         evaluatedValue: null,
         branchTaken: null,
+        actionType: step.actionType,
+        stepName: step.name,
+        conditionEventId: null,
       });
       if (prevId) {
         pushEdge(collector, prevId, id, pendingEdgeKind, {
@@ -173,6 +176,9 @@ function layoutSequence(
         instanceId: null,
         evaluatedValue: step.evaluatedValue,
         branchTaken: step.branchTaken,
+        actionType: null,
+        stepName: step.name,
+        conditionEventId: step.conditionEventId,
       });
       if (prevId) {
         pushEdge(collector, prevId, pillId, pendingEdgeKind, {
@@ -240,6 +246,12 @@ function layoutSequence(
       instanceId: null,
       evaluatedValue: null,
       branchTaken: null,
+      // "branch" is the fork's own `WorkflowActionKind` discriminant
+      // (`IWorkflowBranchAction.activity`) — mirrors the `action` node's
+      // `actionType` field above.
+      actionType: "branch",
+      stepName: step.name,
+      conditionEventId: null,
     });
     if (prevId) {
       pushEdge(collector, prevId, forkId, pendingEdgeKind, {
@@ -300,6 +312,9 @@ function layoutSequence(
       instanceId: null,
       evaluatedValue: null,
       branchTaken: null,
+      actionType: null,
+      stepName: "join",
+      conditionEventId: null,
     });
     for (const l of laneTails) {
       if (!l.tailId) {
