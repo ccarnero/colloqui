@@ -90,4 +90,61 @@ describe("TrackingController", () => {
     );
     expect(permissions).toBeUndefined();
   });
+
+  it("getRun delegates to proxy with tenant, path and both ids", async () => {
+    const runReq = { ...req, url: "/api/tracking/runs/wf-1/run-1" };
+    const result = await controller.getRun(runReq as never);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/runs/wf-1/run-1",
+      tenantId: "t1",
+    });
+    expect(result).toEqual({ correlationId: "corr-1", events: [] });
+  });
+
+  it("getRun decodes a percent-encoded colon-bearing workflowId (composite id shape acme:name:sha256:...:id) from the wildcard path and re-encodes it for the proxy", async () => {
+    const runReq = {
+      ...req,
+      url: "/api/tracking/runs/acme%3Ae2e-http-log%3Asha256%3Adeadbeef%3Aid/run-1",
+    };
+    await controller.getRun(runReq as never);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/runs/acme%3Ae2e-http-log%3Asha256%3Adeadbeef%3Aid/run-1",
+      tenantId: "t1",
+    });
+  });
+
+  it("getRun decodes and re-encodes special characters in both ids", async () => {
+    const runReq = {
+      ...req,
+      url: "/api/tracking/runs/wf%2F1%20x/run%2F1%20x",
+    };
+    await controller.getRun(runReq as never);
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/runs/wf%2F1%20x/run%2F1%20x",
+      tenantId: "t1",
+    });
+  });
+
+  it("getRun throws NotFoundException when the wildcard path does not resolve to exactly two segments", async () => {
+    const runReq = { ...req, url: "/api/tracking/runs/only-one-segment" };
+    await expect(controller.getRun(runReq as never)).rejects.toThrow(
+      "Invalid run path"
+    );
+  });
+
+  it("getRun carries no permission guard (unauthenticated-scope, unlike getPayload)", () => {
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      TrackingController.prototype.getRun
+    );
+    const scopes = Reflect.getMetadata(
+      SCOPES_KEY,
+      TrackingController.prototype.getRun
+    );
+    expect(permissions).toBeUndefined();
+    expect(scopes).toBeUndefined();
+  });
 });

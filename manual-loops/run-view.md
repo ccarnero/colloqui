@@ -204,7 +204,7 @@ grep -n "run-view\|Run view" DOCS/guides/trace-console.md cowork/INDEX.md
 ## Progress
 
 - [x] T01 run chain endpoint
-- [ ] T02 gateway proxy + console service
+- [x] T02 gateway proxy + console service
 - [ ] T03 domain layout model (pure core)
 - [ ] T04 flow component + header + cast
 - [ ] T05 anchored popup + peeks + deep links

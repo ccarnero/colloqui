@@ -1,9 +1,10 @@
-import { Controller, Get, Param, Req } from "@nestjs/common";
+import { Controller, Get, NotFoundException, Param, Req } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RequirePermission } from "../../decorators/permissions.decorator";
 import { Scopes } from "../../decorators/scopes.decorator";
 import { REQUEST_TENANT_KEY } from "../../guards/tenant.guard";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
+import { parseRunPathSegments } from "./parse-run-path-segments";
 import { TrackingProxyService } from "./tracking-proxy.service";
 
 @ApiTags("tracking")
@@ -55,6 +56,32 @@ export class TrackingController {
     return this.proxy.proxy({
       method: "GET",
       path: `/chains/${encodeURIComponent(correlationId)}/events/${encodeURIComponent(eventId)}/payload`,
+      tenantId: req[REQUEST_TENANT_KEY],
+    });
+  }
+
+  /**
+   * T02 of manual-loops/run-view.md: proxies the ingester's
+   * `GET /runs/:workflowId/:runId` (T01). Real Temporal `workflowId`s are
+   * colon-bearing (e.g. `acme:e2e-http-log:sha256:...:id`); the deployed
+   * gateway's named-param route does not match those segments — verified
+   * live: `/runs/foo/bar` matched, but a colon-bearing id returned Nest's
+   * route-not-found 404 — so this route uses a wildcard (`runs/*`) with
+   * manual parsing (`parseRunPathSegments`) instead.
+   *
+   * Parse contract: exactly two non-empty, decoded segments after `runs/`,
+   * otherwise 404 (`Invalid run path`).
+   */
+  @Get("runs/*")
+  async getRun(@Req() req: ITenantScopedRequest): Promise<object> {
+    const segments = parseRunPathSegments(req.url);
+    if (!segments) {
+      throw new NotFoundException("Invalid run path");
+    }
+    const { workflowId, runId } = segments;
+    return this.proxy.proxy({
+      method: "GET",
+      path: `/runs/${encodeURIComponent(workflowId)}/${encodeURIComponent(runId)}`,
       tenantId: req[REQUEST_TENANT_KEY],
     });
   }
