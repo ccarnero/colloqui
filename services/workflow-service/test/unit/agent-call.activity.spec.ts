@@ -1,5 +1,11 @@
 import "reflect-metadata";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+// Captured BEFORE `mock.module("@yoizen/shared", ...)` below patches the
+// module resolver, so this reference is guaranteed to hold the genuine
+// exports. Resolving it lazily via `await import("@yoizen/shared")` inside
+// the mock factory would recurse into the mock itself (the specifier is
+// globally patched for the process) and hang the test run.
+import * as actualYoizenShared from "@yoizen/shared";
 
 const executeAndWaitMock = mock(() =>
   Promise.resolve({
@@ -82,7 +88,11 @@ mock.module("nats", () => {
   };
 });
 
-mock.module("@yoizen/shared", async () => {
+// Spread the real module and override only what this spec needs so other
+// spec files sharing the bun test process (mock.module is not reset between
+// files) keep seeing the genuine `@yoizen/shared` exports, e.g.
+// `isCompliantEnvelope` used by execution-completed-publisher.spec.ts.
+mock.module("@yoizen/shared", () => {
   class FakeExecutionClient {
     async executeAndWait(...args: unknown[]) {
       return executeAndWaitMock(...args);
@@ -90,6 +100,7 @@ mock.module("@yoizen/shared", async () => {
   }
 
   return {
+    ...actualYoizenShared,
     DistributedCircuitBreaker: class DistributedCircuitBreaker {
       scriptLoad() {
         return Promise.resolve();

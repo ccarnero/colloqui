@@ -1,5 +1,7 @@
 import "reflect-metadata";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { isCompliantEnvelope } from "@yoizen/shared";
+import executionStartedFixture from "../../../../fixtures/bus-events/workflow-service-execution-started-envelope-01.json";
 
 /**
  * Ensures the async-projection emitter for workflow execution
@@ -50,10 +52,14 @@ mock.module("@yoizen/observability", () => ({
   }),
 }));
 
-const { publishExecutionCompletedEvent, buildExecutionCompletedSubject } =
-  await import(
-    "../../src/temporal/activities/execution-completed-publisher.activity"
-  );
+const {
+  publishExecutionCompletedEvent,
+  buildExecutionCompletedSubject,
+  publishExecutionStartedEvent,
+  buildExecutionStartedSubject,
+} = await import(
+  "../../src/temporal/activities/execution-completed-publisher.activity"
+);
 
 describe("publishExecutionCompletedEvent (async projection emit)", () => {
   beforeEach(() => {
@@ -221,6 +227,150 @@ describe("publishExecutionCompletedEvent (async projection emit)", () => {
 
   it("no-ops silently when tenantId is missing", async () => {
     await publishExecutionCompletedEvent("exec-no-tenant", "COMPLETED");
+    expect(mockPublish).toHaveBeenCalledTimes(0);
+    expect(connectMock).toHaveBeenCalledTimes(0);
+  });
+});
+
+/**
+ * T02 — execution_started emitter (manual-loops/workflow-step-events.md).
+ * MIRRORS the `publishExecutionCompletedEvent` suite above: same
+ * publish path (`getConnection()`/`conn.publish()`), same envelope
+ * derivation, same subject-builder pattern
+ * (`buildExecutionStartedSubject`). Also asserts envelope compliance
+ * (`isCompliantEnvelope`) and shape-parity with the T01 fixture
+ * (`fixtures/bus-events/workflow-service-execution-started-envelope-01.json`).
+ */
+describe("publishExecutionStartedEvent (execution_started emit)", () => {
+  beforeEach(() => {
+    mockFlush.mockClear();
+    mockPublish.mockClear();
+    mockHeaderSet.mockClear();
+    connectMock.mockClear();
+    connectMock.mockImplementation(() => Promise.resolve(mockConn));
+  });
+
+  it("builds the canonical execution_started subject for a tenant", () => {
+    expect(buildExecutionStartedSubject("tenant-a")).toBe(
+      "evt.tenant-a.workflow-service.workflow.internal.native.execution_started.v1"
+    );
+  });
+
+  it("matches the T01 fixture's subject convention and CloudEvents type", () => {
+    expect(executionStartedFixture.type).toBe(
+      "io.yoizen.workflow.execution.started.v1"
+    );
+    expect(isCompliantEnvelope(executionStartedFixture)).toBe(true);
+    expect(buildExecutionStartedSubject(executionStartedFixture.tenant)).toBe(
+      "evt.tenant-a.workflow-service.workflow.internal.native.execution_started.v1"
+    );
+  });
+
+  it("publishes a canonical, spec-compliant envelope to INGRESS-<tenant>", async () => {
+    await publishExecutionStartedEvent({
+      executionId: "exec-1",
+      workflowId: "tenant-a:demo-workflow:abc123",
+      runId: "run-1",
+      tenantId: "tenant-a",
+      workflowName: "demo-workflow",
+    });
+
+    expect(mockPublish).toHaveBeenCalledTimes(1);
+    const [subject, payloadBytes] = mockPublish.mock.calls[0];
+    expect(subject).toBe(
+      "evt.tenant-a.workflow-service.workflow.internal.native.execution_started.v1"
+    );
+
+    const envelope = JSON.parse(
+      new TextDecoder().decode(payloadBytes as Uint8Array)
+    );
+
+    expect(isCompliantEnvelope(envelope)).toBe(true);
+    expect(envelope.specversion).toBe("1.0");
+    expect(envelope.tenant).toBe("tenant-a");
+    expect(envelope.type).toBe("io.yoizen.workflow.execution.started.v1");
+    expect(envelope.producer).toBe("workflow-service");
+    expect(envelope.domain).toBe("workflow");
+    expect(envelope.channel).toBe("internal");
+    expect(envelope.provider).toBe("native");
+    expect(envelope.data.payload.executionId).toBe("exec-1");
+    expect(envelope.data.payload.workflowId).toBe(
+      "tenant-a:demo-workflow:abc123"
+    );
+    expect(envelope.data.payload.runId).toBe("run-1");
+    expect(envelope.data.payload.workflowName).toBe("demo-workflow");
+    expect(envelope.idempotencykey).toMatch(/^sha256:/);
+    expect(envelope.resource).toBe("tenant/tenant-a/workflow-execution/exec-1");
+
+    expect(mockFlush).toHaveBeenCalledTimes(1);
+
+    const headerCalls = mockHeaderSet.mock.calls;
+    const natsMsgId = headerCalls.find(([k]) => k === "Nats-Msg-Id");
+    expect(natsMsgId).toBeDefined();
+    expect(natsMsgId?.[1]).toBe(envelope.idempotencykey);
+  });
+
+  /**
+   * Causal fields (SPEC decision 2 / T02 acceptance): correlation
+   * preserved, causation = the trigger event id, depth incremented.
+   */
+  it("inherits causal context: correlation preserved, causation = trigger event, depth incremented", async () => {
+    await publishExecutionStartedEvent({
+      executionId: "exec-causal",
+      workflowId: "tenant-a:demo-workflow:abc123",
+      runId: "run-causal",
+      tenantId: "tenant-a",
+      workflowName: "demo-workflow",
+      correlationId: "corr-root-1",
+      causationId: "evt-trigger-1",
+      depth: 2,
+    });
+
+    expect(mockPublish).toHaveBeenCalledTimes(1);
+    const envelope = JSON.parse(
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
+    );
+    expect(isCompliantEnvelope(envelope)).toBe(true);
+    expect(envelope.correlation_id).toBe("corr-root-1");
+    expect(envelope.causation_id).toBe("evt-trigger-1");
+    expect(envelope.transport.depth).toBe(2);
+
+    const headerCalls = mockHeaderSet.mock.calls;
+    const corrHeader = headerCalls.find(([k]) => k === "X-Correlation-Id");
+    const causHeader = headerCalls.find(([k]) => k === "X-Causation-Id");
+    expect(corrHeader?.[1]).toBe("corr-root-1");
+    expect(causHeader?.[1]).toBe("evt-trigger-1");
+  });
+
+  it("stays a self-correlated root (causation null, depth 0) when no causal context is provided", async () => {
+    await publishExecutionStartedEvent({
+      executionId: "exec-root",
+      workflowId: "tenant-a:demo-workflow:abc123",
+      runId: "run-root",
+      tenantId: "tenant-a",
+    });
+
+    const envelope = JSON.parse(
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
+    );
+    expect(isCompliantEnvelope(envelope)).toBe(true);
+    expect(envelope.correlation_id).toBe(envelope.id);
+    expect(envelope.causation_id).toBeNull();
+    expect(envelope.transport.depth).toBe(0);
+
+    const causHeader = mockHeaderSet.mock.calls.find(
+      ([k]) => k === "X-Causation-Id"
+    );
+    expect(causHeader).toBeUndefined();
+  });
+
+  it("no-ops silently when tenantId is missing", async () => {
+    await publishExecutionStartedEvent({
+      executionId: "exec-no-tenant",
+      workflowId: "tenant-a:demo-workflow:abc123",
+      runId: "run-no-tenant",
+      tenantId: "",
+    });
     expect(mockPublish).toHaveBeenCalledTimes(0);
     expect(connectMock).toHaveBeenCalledTimes(0);
   });

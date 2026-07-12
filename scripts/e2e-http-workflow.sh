@@ -23,12 +23,17 @@ set -euo pipefail
 #   9. Capture the correlation_id of the happy-path run (stage 4/5's nonce)
 #      via the log-workflow's execution detail (`result.causal.correlation_id`)
 #  10. GET /api/tracking/chains/:correlationId via the gateway and assert the
-#      chain has >=5 events, a numeric summary.orphan_count, and at least one
-#      span with duration_ms > 0. The nonzero span requires a real runtime
-#      execution (workflow-service's fast jsFunction path never emits
-#      `execution_started`), so stages 3a/3b idempotently provision an echo
-#      agent + a second workflow with an `agentCall` action sharing the same
-#      http trigger, so its events land on the same correlation.
+#      chain has >=5 events, a numeric summary.orphan_count, at least one span
+#      with duration_ms > 0, a chain `execution_started` event, AND a
+#      workflow-execution span specifically (entity_id == the happy-path
+#      executionId captured in stage 9, kind_prefix == "execution") with
+#      duration_ms > 0 — every workflow run now emits `execution_started`
+#      (T02, manual-loops/workflow-step-events.md), so the workflow's own
+#      execution_started/execution_completed pair is asserted directly and no
+#      longer needs the agent-path's span as a stand-in. Stages 3a/3b still
+#      idempotently provision an echo agent + a second workflow with an
+#      `agentCall` action sharing the same http trigger — kept as separate,
+#      still-valid coverage for the agent-execution span family, not removed.
 #  11. GET /api/tracking/chains/:correlationId/events/:eventId/payload for
 #      the chain's webhook_received (ingress) event and assert HTTP 200 with
 #      the payload containing the happy-path nonce, then repeat for a
@@ -92,6 +97,12 @@ WORKFLOW_ID=""
 AGENT_ID=""
 AGENT_WORKFLOW_ID=""
 CORRELATION_ID=""
+# The happy-path (nonce=$NONCE) execution id, captured by
+# stage_capture_correlation_id. Used by stage_verify_chain (stage 10) to
+# find the workflow-execution span specifically (entity_id == this id),
+# rather than relying on ANY nonzero-duration span in the chain (see T02,
+# manual-loops/workflow-step-events.md).
+HAPPY_PATH_EXECUTION_ID=""
 # Set to 1 once the workflow has been disabled and not yet confirmed
 # re-enabled; the EXIT trap uses this to guarantee the workflow is never
 # left disabled, regardless of which stage fails.
@@ -500,6 +511,7 @@ stage_capture_correlation_id() {
     err "No execution of workflow ${WORKFLOW_ID} found for nonce ${nonce} within ${POLL_TIMEOUT_S}s"
     return 1
   fi
+  HAPPY_PATH_EXECUTION_ID="$execution_id"
   log "Found execution ${execution_id} for nonce ${nonce}; polling for causal.correlation_id"
 
   while (( $(date +%s) < deadline )); do
@@ -530,15 +542,29 @@ stage_verify_chain() {
     status="$(api_status_code "$combined")"
     body="$(api_status_body "$combined")"
     if [[ "$status" == "200" ]]; then
-      local events_ok orphan_ok nonzero_span_ok
+      local events_ok orphan_ok nonzero_span_ok execution_started_ok workflow_span_ok
       events_ok="$(echo "$body" | jq '(.events | length) >= 5')"
       orphan_ok="$(echo "$body" | jq '(.summary.orphan_count | type) == "number"')"
       nonzero_span_ok="$(echo "$body" | jq '([.spans[]? | select(.duration_ms > 0)] | length) >= 1')"
-      if [[ "$events_ok" == "true" && "$orphan_ok" == "true" && "$nonzero_span_ok" == "true" ]]; then
-        log "Chain verified: events>=5=${events_ok} orphan_count-numeric=${orphan_ok} nonzero-span=${nonzero_span_ok}"
+      # T02 (manual-loops/workflow-step-events.md): the chain must contain
+      # an execution_started event for the happy-path run...
+      execution_started_ok="$(echo "$body" | jq '([.events[]? | select(.kind == "execution_started")] | length) >= 1')"
+      # ...and the execution_started/execution_completed pair for the
+      # workflow execution itself (entity_id == the Temporal-run
+      # executionId captured in stage 9, kind_prefix == "execution" per
+      # tracking.tracked_event_spans's pairing) must yield duration_ms > 0.
+      # This is the specific workflow-level span assertion that REPLACES
+      # the prior reliance on the agent-path's nonzero span (nonzero_span_ok
+      # above still passes via either the agent or the workflow execution
+      # now, and stays as a general "some span paired" sanity check).
+      workflow_span_ok="$(echo "$body" | jq --arg eid "$HAPPY_PATH_EXECUTION_ID" \
+        '([.spans[]? | select(.entity_id == $eid and .kind_prefix == "execution" and .duration_ms > 0)] | length) >= 1')"
+      if [[ "$events_ok" == "true" && "$orphan_ok" == "true" && "$nonzero_span_ok" == "true" \
+            && "$execution_started_ok" == "true" && "$workflow_span_ok" == "true" ]]; then
+        log "Chain verified: events>=5=${events_ok} orphan_count-numeric=${orphan_ok} nonzero-span=${nonzero_span_ok} execution_started=${execution_started_ok} workflow-span=${workflow_span_ok}"
         return 0
       fi
-      log "Chain not yet complete (events>=5=${events_ok} orphan_count-numeric=${orphan_ok} nonzero-span=${nonzero_span_ok}); retrying"
+      log "Chain not yet complete (events>=5=${events_ok} orphan_count-numeric=${orphan_ok} nonzero-span=${nonzero_span_ok} execution_started=${execution_started_ok} workflow-span=${workflow_span_ok}); retrying"
     else
       log "Chain endpoint returned status ${status}; retrying"
     fi

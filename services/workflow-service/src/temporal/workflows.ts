@@ -1,4 +1,4 @@
-import { proxyActivities } from "@temporalio/workflow";
+import { proxyActivities, workflowInfo } from "@temporalio/workflow";
 import type {
   AgentCallArgs,
   ChannelSendArgs,
@@ -39,6 +39,16 @@ interface IExecutionPublisherActivities {
   publishExecutionCompletedEvent(args: {
     executionId: string;
     status: string;
+    tenantId: string;
+    workflowName?: string;
+    correlationId?: string;
+    causationId?: string | null;
+    depth?: number;
+  }): Promise<void>;
+  publishExecutionStartedEvent(args: {
+    executionId: string;
+    workflowId: string;
+    runId: string;
     tenantId: string;
     workflowName?: string;
     correlationId?: string;
@@ -470,6 +480,39 @@ export async function runWorkflow(
     ...(executionId && { executionId }),
     ...(workflow.causal && { causal: workflow.causal }),
   };
+
+  if (executionId) {
+    try {
+      const info = workflowInfo();
+      await publisher.publishExecutionStartedEvent({
+        executionId,
+        workflowId: info.workflowId,
+        runId: info.runId,
+        tenantId: workflow.tenant,
+        workflowName: workflow.name,
+        /**
+         * Depth math (MAX_DEPTH_BY_CATEGORY, packages/shared/src/envelope.utils.ts):
+         * workflow-service publishes are `internal_service` category,
+         * ceiling 5. `execution_started` is one hop off the trigger
+         * (`context.causal.depth + 1`), same as `execution_completed`'s
+         * base case — they are SIBLING hops off the same trigger, not
+         * chained to each other, so this never compounds. Realistic
+         * trigger depths from api-gateway/agent-admin-service land at
+         * 0-2, so 0-2 + 1 = 1-3, comfortably under the ceiling of 5 even
+         * before accounting for the agentCall rederivation (fix 3 below,
+         * `completedDepth`) which only affects `execution_completed`,
+         * not `execution_started` (emitted before any action runs).
+         */
+        ...(context.causal && {
+          correlationId: context.causal.correlation_id,
+          causationId: context.causal.causation_id,
+          depth: context.causal.depth + 1,
+        }),
+      });
+    } catch (_) {
+      /* best-effort: a telemetry gap must never block the workflow */
+    }
+  }
 
   let status = "FAILED";
   try {

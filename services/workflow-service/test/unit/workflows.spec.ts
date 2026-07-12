@@ -26,6 +26,7 @@ const executeAgentCall = mock(() =>
   })
 );
 const publishExecutionCompletedEvent = mock(() => Promise.resolve());
+const publishExecutionStartedEvent = mock(() => Promise.resolve());
 
 let runWorkflow: (
   workflow: WorkflowDefinition,
@@ -43,6 +44,13 @@ beforeAll(async () => {
       executeServiceCall,
       executeAgentCall,
       publishExecutionCompletedEvent,
+      publishExecutionStartedEvent,
+    }),
+    // Deterministic workflow-context stub — mirrors what Temporal's
+    // real workflowInfo() exposes (subset used by runWorkflow).
+    workflowInfo: () => ({
+      workflowId: "temporal-wf-id-1",
+      runId: "temporal-run-id-1",
     }),
   }));
   ({ runWorkflow } = await import("../../src/temporal/workflows"));
@@ -648,6 +656,111 @@ describe("runWorkflow (temporal/workflows)", () => {
       actions: [],
     });
     expect(publishExecutionCompletedEvent).not.toHaveBeenCalled();
+  });
+
+  /**
+   * T02 — execution_started. Emitted BEFORE any action runs (via
+   * `workflowInfo()` + the activity, never inline), carrying the run's
+   * causal snapshot: causation = the trigger event, correlation
+   * preserved, depth = trigger depth + 1 (see depth-math comment in
+   * `src/temporal/workflows.ts`).
+   */
+  it("publishes execution_started before running any action, with workflowId/runId", async () => {
+    publishExecutionStartedEvent.mockClear();
+    const callOrder: string[] = [];
+    publishExecutionStartedEvent.mockImplementationOnce(() => {
+      callOrder.push("started");
+      return Promise.resolve();
+    });
+    executeJsFunction.mockImplementationOnce(() => {
+      callOrder.push("action");
+      return Promise.resolve({ computed: 1 });
+    });
+
+    await runWorkflow(
+      {
+        ...base,
+        actions: [
+          { activity: "jsFunction", name: "step", args: { code: "return 1" } },
+        ],
+      },
+      "exec-started-1"
+    );
+
+    expect(publishExecutionStartedEvent).toHaveBeenCalledWith({
+      executionId: "exec-started-1",
+      workflowId: "temporal-wf-id-1",
+      runId: "temporal-run-id-1",
+      tenantId: "tenant-1",
+      workflowName: "wf",
+    });
+    expect(callOrder).toEqual(["started", "action"]);
+  });
+
+  it("forwards workflow.causal to publishExecutionStartedEvent (causation = trigger event, correlation preserved, depth+1)", async () => {
+    publishExecutionStartedEvent.mockClear();
+    await runWorkflow(
+      {
+        ...base,
+        causal: {
+          causation_id: "evt-root",
+          correlation_id: "conv-1",
+          depth: 1,
+        },
+        actions: [
+          {
+            activity: "jsFunction",
+            name: "step",
+            args: { code: "return 1" },
+          },
+        ],
+      },
+      "exec-started-caused"
+    );
+    expect(publishExecutionStartedEvent).toHaveBeenCalledWith({
+      executionId: "exec-started-caused",
+      workflowId: "temporal-wf-id-1",
+      runId: "temporal-run-id-1",
+      tenantId: "tenant-1",
+      workflowName: "wf",
+      correlationId: "conv-1",
+      causationId: "evt-root",
+      depth: 2,
+    });
+  });
+
+  it("still publishes execution_started when the workflow subsequently fails", async () => {
+    publishExecutionStartedEvent.mockClear();
+    executeJsFunction.mockImplementationOnce(() =>
+      Promise.reject(new Error("boom"))
+    );
+    await expect(
+      runWorkflow(
+        {
+          ...base,
+          actions: [
+            { activity: "jsFunction", name: "bad", args: { code: "throw" } },
+          ],
+        },
+        "exec-started-failed"
+      )
+    ).rejects.toThrow("boom");
+    expect(publishExecutionStartedEvent).toHaveBeenCalledWith({
+      executionId: "exec-started-failed",
+      workflowId: "temporal-wf-id-1",
+      runId: "temporal-run-id-1",
+      tenantId: "tenant-1",
+      workflowName: "wf",
+    });
+  });
+
+  it("skips publishExecutionStartedEvent when executionId is not provided", async () => {
+    publishExecutionStartedEvent.mockClear();
+    await runWorkflow({
+      ...base,
+      actions: [],
+    });
+    expect(publishExecutionStartedEvent).not.toHaveBeenCalled();
   });
 
   describe("conditional action", () => {
