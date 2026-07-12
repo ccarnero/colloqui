@@ -120,16 +120,22 @@ describe("computeGraphNodes", () => {
     ]);
   });
 
-  it("uses causation_depth for the primary row", () => {
+  it("uses structural tree depth (root=0, resolved children=parent+1); an unresolved causation_id makes a forest root at depth 0", () => {
     const nodes = computeGraphNodes(chain);
-    expect(nodes.map((n) => n.depth)).toEqual([0, 1, 1, 2]);
+    // evt-1 root (0), evt-2/evt-3 its children (1); evt-4's causation_id
+    // ("evt-missing") does not resolve in the chain, so it is a forest root
+    // in its own right (depth 0), not depth 2.
+    expect(nodes.map((n) => n.depth)).toEqual([0, 1, 1, 0]);
   });
 
-  it("keeps the first child of a branching parent on column 0 and offsets the 2nd+ sibling to column 1", () => {
+  it("centers a branching parent's x over its children, ordered left-to-right by offsetMs", () => {
     const nodes = computeGraphNodes(chain);
     const byId = new Map(nodes.map((n) => [n.eventId, n]));
-    expect(byId.get("evt-2")?.column).toBe(0);
-    expect(byId.get("evt-3")?.column).toBe(1);
+    const child1 = byId.get("evt-2")!; // offsetMs 100
+    const child2 = byId.get("evt-3")!; // offsetMs 150
+    const parent = byId.get("evt-1")!;
+    expect(child1.x).toBeLessThan(child2.x);
+    expect(parent.x).toBe((child1.x + child2.x) / 2);
   });
 
   it("is deterministic — identical input produces identical coordinates", () => {
@@ -143,6 +149,254 @@ describe("computeGraphNodes", () => {
     const byId = new Map(nodes.map((n) => [n.eventId, n]));
     expect(byId.get("evt-2")?.offsetMs).toBe(100);
     expect(byId.get("evt-3")?.offsetMs).toBe(150);
+  });
+});
+
+describe("computeGraphNodes — tree layout properties", () => {
+  it("centers a parent with 3 children between the leftmost and rightmost child, with distinct increasing child x", () => {
+    const root = event({
+      event_id: "root",
+      causation_id: null,
+      occurred_at: "2026-01-01T00:00:00.000Z",
+    });
+    const childA = event({
+      event_id: "child-a",
+      causation_id: "root",
+      occurred_at: "2026-01-01T00:00:00.100Z",
+    });
+    const childB = event({
+      event_id: "child-b",
+      causation_id: "root",
+      occurred_at: "2026-01-01T00:00:00.200Z",
+    });
+    const childC = event({
+      event_id: "child-c",
+      causation_id: "root",
+      occurred_at: "2026-01-01T00:00:00.300Z",
+    });
+    const threeChildChain: ITrackingChainResponse = {
+      ...chain,
+      events: [root, childA, childB, childC],
+    };
+
+    const nodes = computeGraphNodes(threeChildChain);
+    const byId = new Map(nodes.map((n) => [n.eventId, n]));
+    const a = byId.get("child-a")!;
+    const b = byId.get("child-b")!;
+    const c = byId.get("child-c")!;
+    const rootNode = byId.get("root")!;
+
+    expect(a.x).toBeLessThan(b.x);
+    expect(b.x).toBeLessThan(c.x);
+    expect(rootNode.x).toBe((a.x + c.x) / 2);
+  });
+
+  it("computes depth as structural distance from the root through a 3-level chain", () => {
+    const grandparent = event({
+      event_id: "gp",
+      causation_id: null,
+      occurred_at: "2026-01-01T00:00:00.000Z",
+    });
+    const parent = event({
+      event_id: "p",
+      causation_id: "gp",
+      occurred_at: "2026-01-01T00:00:00.100Z",
+    });
+    const grandchild = event({
+      event_id: "gc",
+      causation_id: "p",
+      occurred_at: "2026-01-01T00:00:00.200Z",
+    });
+    const threeLevelChain: ITrackingChainResponse = {
+      ...chain,
+      events: [grandparent, parent, grandchild],
+    };
+
+    const nodes = computeGraphNodes(threeLevelChain);
+    const byId = new Map(nodes.map((n) => [n.eventId, n]));
+    expect(byId.get("gp")?.depth).toBe(0);
+    expect(byId.get("p")?.depth).toBe(1);
+    expect(byId.get("gc")?.depth).toBe(2);
+  });
+
+  it("orders children left-to-right by offsetMs even when declared out of chain order", () => {
+    const root = event({
+      event_id: "root",
+      causation_id: null,
+      occurred_at: "2026-01-01T00:00:00.000Z",
+    });
+    // Declared in chain order [late, early] — offsetMs must still win.
+    const late = event({
+      event_id: "late",
+      causation_id: "root",
+      occurred_at: "2026-01-01T00:00:00.500Z",
+    });
+    const early = event({
+      event_id: "early",
+      causation_id: "root",
+      occurred_at: "2026-01-01T00:00:00.050Z",
+    });
+    const outOfOrderChain: ITrackingChainResponse = {
+      ...chain,
+      events: [root, late, early],
+    };
+
+    const nodes = computeGraphNodes(outOfOrderChain);
+    const byId = new Map(nodes.map((n) => [n.eventId, n]));
+    expect(byId.get("early")!.x).toBeLessThan(byId.get("late")!.x);
+  });
+
+  it("lays out a forest (two roots, or a root + an unresolved orphan) side by side with non-overlapping x ranges", () => {
+    const rootA = event({
+      event_id: "root-a",
+      causation_id: null,
+      occurred_at: "2026-01-01T00:00:00.000Z",
+    });
+    const childA1 = event({
+      event_id: "root-a-child",
+      causation_id: "root-a",
+      occurred_at: "2026-01-01T00:00:00.100Z",
+    });
+    const rootB = event({
+      event_id: "root-b",
+      causation_id: "unresolved-parent", // orphan: does not resolve in chain
+      occurred_at: "2026-01-01T00:00:00.200Z",
+    });
+    const forestChain: ITrackingChainResponse = {
+      ...chain,
+      events: [rootA, childA1, rootB],
+    };
+
+    const nodes = computeGraphNodes(forestChain);
+    const byId = new Map(nodes.map((n) => [n.eventId, n]));
+    const treeAXs = [byId.get("root-a")!.x, byId.get("root-a-child")!.x];
+    const treeBX = byId.get("root-b")!.x;
+
+    expect(Math.max(...treeAXs)).toBeLessThan(treeBX);
+    expect(byId.get("root-b")?.depth).toBe(0);
+  });
+
+  it("gives leaves at the same depth distinct x (no two nodes share x and y)", () => {
+    const root = event({
+      event_id: "root",
+      causation_id: null,
+      occurred_at: "2026-01-01T00:00:00.000Z",
+    });
+    const childA = event({
+      event_id: "child-a",
+      causation_id: "root",
+      occurred_at: "2026-01-01T00:00:00.100Z",
+    });
+    const childB = event({
+      event_id: "child-b",
+      causation_id: "root",
+      occurred_at: "2026-01-01T00:00:00.200Z",
+    });
+    const siblingsChain: ITrackingChainResponse = {
+      ...chain,
+      events: [root, childA, childB],
+    };
+
+    const nodes = computeGraphNodes(siblingsChain);
+    const seen = new Set<string>();
+    for (const node of nodes) {
+      const key = `${node.x},${node.y}`;
+      expect(seen.has(key)).toBe(false);
+      seen.add(key);
+    }
+  });
+});
+
+describe("computeGraphNodes — cycle safety (malformed causation_id)", () => {
+  it("treats a self-loop (causation_id === event_id) as a forest root instead of infinite-recursing", () => {
+    const selfLoop = event({
+      event_id: "self-loop",
+      causation_id: "self-loop",
+      occurred_at: "2026-01-01T00:00:00.000Z",
+    });
+    const selfLoopChain: ITrackingChainResponse = {
+      ...chain,
+      events: [selfLoop],
+    };
+
+    const nodes = computeGraphNodes(selfLoopChain);
+    expect(nodes).toHaveLength(1);
+    const node = nodes[0]!;
+    expect(node.eventId).toBe("self-loop");
+    expect(node.depth).toBe(0);
+    expect(Number.isFinite(node.x)).toBe(true);
+    expect(Number.isFinite(node.y)).toBe(true);
+  });
+
+  it("demotes a 2-cycle (A causation_id=B, B causation_id=A) to two forest roots instead of throwing", () => {
+    const a = event({
+      event_id: "cycle-a",
+      causation_id: "cycle-b",
+      occurred_at: "2026-01-01T00:00:00.000Z",
+    });
+    const b = event({
+      event_id: "cycle-b",
+      causation_id: "cycle-a",
+      occurred_at: "2026-01-01T00:00:00.100Z",
+    });
+    const cycleChain: ITrackingChainResponse = {
+      ...chain,
+      events: [a, b],
+    };
+
+    expect(() => computeGraphNodes(cycleChain)).not.toThrow();
+    const nodes = computeGraphNodes(cycleChain);
+    expect(nodes).toHaveLength(2);
+    for (const node of nodes) {
+      expect(node.depth).toBe(0);
+      expect(Number.isFinite(node.x)).toBe(true);
+      expect(Number.isFinite(node.y)).toBe(true);
+    }
+  });
+
+  it("guarantees exactly one node per input event, with finite x/y, on a mixed topology (normal tree + self-loop + 2-cycle)", () => {
+    const root = event({
+      event_id: "mixed-root",
+      causation_id: null,
+      occurred_at: "2026-01-01T00:00:00.000Z",
+    });
+    const child = event({
+      event_id: "mixed-child",
+      causation_id: "mixed-root",
+      occurred_at: "2026-01-01T00:00:00.100Z",
+    });
+    const selfLoop = event({
+      event_id: "mixed-self-loop",
+      causation_id: "mixed-self-loop",
+      occurred_at: "2026-01-01T00:00:00.200Z",
+    });
+    const cycleA = event({
+      event_id: "mixed-cycle-a",
+      causation_id: "mixed-cycle-b",
+      occurred_at: "2026-01-01T00:00:00.300Z",
+    });
+    const cycleB = event({
+      event_id: "mixed-cycle-b",
+      causation_id: "mixed-cycle-a",
+      occurred_at: "2026-01-01T00:00:00.400Z",
+    });
+    const mixedEvents = [root, child, selfLoop, cycleA, cycleB];
+    const mixedChain: ITrackingChainResponse = {
+      ...chain,
+      events: mixedEvents,
+    };
+
+    const nodes = computeGraphNodes(mixedChain);
+    expect(nodes).toHaveLength(mixedEvents.length);
+    expect(new Set(nodes.map((n) => n.eventId)).size).toBe(mixedEvents.length);
+    for (const node of nodes) {
+      expect(Number.isFinite(node.x)).toBe(true);
+      expect(Number.isFinite(node.y)).toBe(true);
+    }
+    // The normal tree branch is unaffected by the malformed siblings.
+    const byId = new Map(nodes.map((n) => [n.eventId, n]));
+    expect(byId.get("mixed-root")?.depth).toBe(0);
+    expect(byId.get("mixed-child")?.depth).toBe(1);
   });
 });
 

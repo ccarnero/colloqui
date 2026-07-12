@@ -38,9 +38,8 @@ export interface IGraphEdge {
   readonly dashed: boolean;
 }
 
-const ROW_HEIGHT = 90;
-const SUB_ROW_HEIGHT = 70;
-const COL_WIDTH = 260;
+const ROW_HEIGHT = 84;
+const COL_WIDTH = 196;
 const MARGIN_X = 40;
 const MARGIN_Y = 40;
 /** Length of the dashed "missing parent" stub drawn above an orphaned node. */
@@ -50,74 +49,239 @@ function producerOf(event: ITrackedEvent): string {
   return event.producer || "—";
 }
 
-/**
- * For every event whose `causation_id` resolves within the chain, records
- * the event's zero-based index among its siblings (other events sharing the
- * same `causation_id`), in chain (array) order. Used to decide branch
- * columns deterministically.
- */
-function siblingIndexByEventId(
-  events: readonly ITrackedEvent[],
-  idSet: ReadonlySet<string>
-): ReadonlyMap<string, number> {
-  const childrenByParent = new Map<string, string[]>();
-  for (const event of events) {
-    if (event.causation_id && idSet.has(event.causation_id)) {
-      const list = childrenByParent.get(event.causation_id) ?? [];
-      list.push(event.event_id);
-      childrenByParent.set(event.causation_id, list);
-    }
-  }
-
-  const result = new Map<string, number>();
-  for (const children of childrenByParent.values()) {
-    children.forEach((eventId, index) => result.set(eventId, index));
-  }
-  return result;
+/** Internal tree-node shape used while computing the Reingold–Tilford-style layout. */
+interface ITreeNode {
+  readonly event: ITrackedEvent;
+  depth: number;
+  readonly children: ITreeNode[];
+  slot: number;
 }
 
 /**
- * Lays out chain events on the causal graph's vertical spine: `depth`
- * (`causation_depth`, defaulting to 0) drives the primary row, siblings
- * sharing a depth are stacked with a secondary row offset, and a node is
- * offset into a second column when its parent has more than one child
- * (SPEC.md `manual-loops/trace-console.md` T06 — "agent-branch offset to a
- * second column when depth branches"). Deterministic: identical input
- * produces identical coordinates (same array order, same arithmetic).
+ * Resolves each event's parent id, guarding against the two ways producer-set
+ * `causation_id` (never validated for acyclicity on the write path) can break
+ * a naive tree walk — mirrors the visited/attached hardening in
+ * `audit-service`'s `build-chain-tree.ts`:
+ *
+ * - SELF-LOOP (`causation_id === event_id`): treated as "no parent" so the
+ *   node can never be pushed as its own child.
+ * - CYCLE (A -> B -> ... -> A): detected with an iterative three-color walk
+ *   (white/gray/black — no recursion, so it can never infinite-loop even on
+ *   pathological input). Every event on a cycle is demoted to "no parent" so
+ *   it still gets attached as a forest root instead of being unreachable.
+ *
+ * Returns, for every event id, its resolved parent id or `null` (forest
+ * root). By construction each event maps to at most one parent, so the
+ * forest built from this map is guaranteed a real (cycle-free) tree.
+ */
+function resolveParentIds(
+  events: readonly ITrackedEvent[],
+  idSet: ReadonlySet<string>
+): ReadonlyMap<string, string | null> {
+  const rawParentId = new Map<string, string | null>();
+  for (const event of events) {
+    const causationId = event.causation_id;
+    const hasParent =
+      causationId !== null &&
+      causationId !== undefined &&
+      causationId !== event.event_id && // self-loop guard: never your own parent
+      idSet.has(causationId);
+    rawParentId.set(event.event_id, hasParent ? (causationId as string) : null);
+  }
+
+  // Iterative three-color cycle detection (CLEAR -> VISITING -> DONE).
+  // Walking up the parent chain from each event; if we re-encounter a node
+  // still VISITING, everything from that node onward in the current path is
+  // part of a cycle.
+  const CLEAR = 0;
+  const VISITING = 1;
+  const DONE = 2;
+  const state = new Map<string, number>();
+  const onCycle = new Set<string>();
+
+  for (const start of events) {
+    if (state.get(start.event_id) === DONE) {
+      continue;
+    }
+    const path: string[] = [];
+    let cursor: string | null = start.event_id;
+    while (cursor !== null && state.get(cursor) !== DONE) {
+      const status = state.get(cursor) ?? CLEAR;
+      if (status === VISITING) {
+        const cycleStart = path.indexOf(cursor);
+        for (let i = cycleStart; i < path.length; i += 1) {
+          onCycle.add(path[i]!);
+        }
+        break;
+      }
+      state.set(cursor, VISITING);
+      path.push(cursor);
+      cursor = rawParentId.get(cursor) ?? null;
+    }
+    for (const id of path) {
+      if (state.get(id) !== DONE) {
+        state.set(id, DONE);
+      }
+    }
+  }
+
+  const parentIdOf = new Map<string, string | null>();
+  for (const event of events) {
+    const parentId = rawParentId.get(event.event_id) ?? null;
+    // A node on a cycle can never reach a true root — demote it so it still
+    // gets laid out (this file's required invariant: one node per event).
+    parentIdOf.set(
+      event.event_id,
+      onCycle.has(event.event_id) ? null : parentId
+    );
+  }
+  return parentIdOf;
+}
+
+/**
+ * Builds the causal forest from `causation_id`: parent -> children where the
+ * parent resolves within the chain. Events whose `causation_id` is null,
+ * does not resolve, is a self-loop, or sits on a cycle become forest roots
+ * (see `resolveParentIds`), kept in chain (array) order. Every event appears
+ * exactly once (each event has at most one resolved parent), so the
+ * resulting forest is guaranteed cycle-free. Children of each node are
+ * ordered by `offsetMs` (then chain order, stable) so left-to-right reads
+ * chronologically. `depth` is the structural distance from the node's root —
+ * NOT the raw `causation_depth` — so it always matches the tree actually
+ * drawn.
+ */
+function buildForest(
+  events: readonly ITrackedEvent[],
+  offsetMsById: ReadonlyMap<string, number>
+): readonly ITreeNode[] {
+  const idSet = new Set(events.map((event) => event.event_id));
+  const nodeById = new Map<string, ITreeNode>();
+  const roots: ITreeNode[] = [];
+
+  for (const event of events) {
+    nodeById.set(event.event_id, {
+      event,
+      depth: 0, // resolved below, once parents are known
+      children: [],
+      slot: 0,
+    });
+  }
+
+  const parentIdOf = resolveParentIds(events, idSet);
+
+  for (const event of events) {
+    const node = nodeById.get(event.event_id)!;
+    const parentId = parentIdOf.get(event.event_id) ?? null;
+    if (parentId !== null) {
+      const parent = nodeById.get(parentId)!;
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  // Assign structural depth by walking down from each root, and sort each
+  // node's children chronologically (offsetMs, then chain order — Array#sort
+  // is stable, so ties keep chain order). Recursion here is safe: the forest
+  // built above is guaranteed acyclic (each node has at most one parent, and
+  // cycle members were demoted to roots), so this always terminates.
+  const assignDepth = (node: ITreeNode, depth: number): ITreeNode => {
+    node.depth = depth;
+    node.children.sort(
+      (a, b) =>
+        (offsetMsById.get(a.event.event_id) ?? 0) -
+        (offsetMsById.get(b.event.event_id) ?? 0)
+    );
+    for (const child of node.children) {
+      assignDepth(child, depth + 1);
+    }
+    return node;
+  };
+
+  return roots.map((root) => assignDepth(root, 0));
+}
+
+/**
+ * Assigns horizontal "slots" via post-order traversal: leaves take
+ * consecutive integer slots from a shared cursor (`nextLeafSlot`), and each
+ * internal node's slot is the average of its first and last child's slot —
+ * centering it over its children, which is what makes the tree
+ * crossing-free and visually balanced.
+ */
+function assignSlots(node: ITreeNode, nextLeafSlot: { value: number }): number {
+  if (node.children.length === 0) {
+    node.slot = nextLeafSlot.value;
+    nextLeafSlot.value += 1;
+    return node.slot;
+  }
+
+  const childSlots = node.children.map((child) =>
+    assignSlots(child, nextLeafSlot)
+  );
+  const first = childSlots[0];
+  const last = childSlots[childSlots.length - 1];
+  node.slot = (first + last) / 2;
+  return node.slot;
+}
+
+/**
+ * Lays out chain events as a compact, crossing-free top-down TREE
+ * (Reingold–Tilford style): `depth` is the structural tree depth from the
+ * event's root (root at depth 0, each child = parent depth + 1) walked over
+ * the `causation_id` forest, and `x` comes from a post-order horizontal
+ * "slot" assignment where leaves get consecutive slots and every parent is
+ * centered over its children (SPEC.md `manual-loops/trace-console.md` T06).
+ * `column` is kept for API/back-compat as the rounded integer slot.
+ * Deterministic: identical input produces identical coordinates (same array
+ * order, same arithmetic, no Date.now/random).
  */
 export function computeGraphNodes(
   chain: ITrackingChainResponse
 ): readonly IGraphNode[] {
   const events = chain.events;
-  const idSet = new Set(events.map((event) => event.event_id));
   const firstAt = chain.summary.first_at
     ? new Date(chain.summary.first_at).getTime()
     : 0;
-  const siblingIndex = siblingIndexByEventId(events, idSet);
 
-  const rowsSeenAtDepth = new Map<number, number>();
+  const offsetMsById = new Map<string, number>();
+  for (const event of events) {
+    const occurredMs = new Date(event.occurred_at).getTime();
+    offsetMsById.set(event.event_id, Math.max(0, occurredMs - firstAt));
+  }
+
+  const roots = buildForest(events, offsetMsById);
+
+  // Share one leaf-slot cursor across every root so separate trees in the
+  // forest sit side by side without overlapping.
+  const nextLeafSlot = { value: 0 };
+  for (const root of roots) {
+    assignSlots(root, nextLeafSlot);
+  }
+
+  const nodeByEventId = new Map<string, ITreeNode>();
+  const collect = (node: ITreeNode): void => {
+    nodeByEventId.set(node.event.event_id, node);
+    for (const child of node.children) {
+      collect(child);
+    }
+  };
+  for (const root of roots) {
+    collect(root);
+  }
 
   return events.map((event) => {
-    const depth = event.causation_depth ?? 0;
-    const rowInDepth = rowsSeenAtDepth.get(depth) ?? 0;
-    rowsSeenAtDepth.set(depth, rowInDepth + 1);
-
-    // Second column only for the 2nd+ sibling of a branching parent — the
-    // first child stays on the main spine (column 0).
-    const column = (siblingIndex.get(event.event_id) ?? 0) > 0 ? 1 : 0;
-
-    const occurredMs = new Date(event.occurred_at).getTime();
-    const offsetMs = Math.max(0, occurredMs - firstAt);
+    const treeNode = nodeByEventId.get(event.event_id)!;
+    const column = Math.round(treeNode.slot);
 
     return {
       eventId: event.event_id,
       kind: event.kind ?? event.subject,
       producer: producerOf(event),
-      offsetMs,
-      depth,
+      offsetMs: offsetMsById.get(event.event_id) ?? 0,
+      depth: treeNode.depth,
       column,
-      x: MARGIN_X + column * COL_WIDTH,
-      y: MARGIN_Y + depth * ROW_HEIGHT + rowInDepth * SUB_ROW_HEIGHT,
+      x: MARGIN_X + treeNode.slot * COL_WIDTH,
+      y: MARGIN_Y + treeNode.depth * ROW_HEIGHT,
     };
   });
 }

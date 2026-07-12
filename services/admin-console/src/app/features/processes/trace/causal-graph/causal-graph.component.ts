@@ -40,8 +40,8 @@ type PayloadViewState =
   | { readonly kind: "not-captured"; readonly message: string }
   | { readonly kind: "error" };
 
-const NODE_WIDTH = 200;
-const NODE_HEIGHT = 52;
+const NODE_WIDTH = 168;
+const NODE_HEIGHT = 46;
 const NODE_PAD_X = 30;
 const NODE_PAD_Y = 40;
 
@@ -94,9 +94,13 @@ interface IRenderedEdge {
       </header>
 
       <div class="cg-body">
+        <div class="cg-svg-scroll">
         <svg
           class="cg-svg"
           [attr.viewBox]="viewBox()"
+          [attr.width]="graphWidth()"
+          [attr.height]="graphHeight()"
+          preserveAspectRatio="xMinYMin meet"
           role="img"
           aria-label="Causal graph"
         >
@@ -150,15 +154,16 @@ interface IRenderedEdge {
                 [attr.height]="NODE_HEIGHT"
                 rx="8"
               />
-              <text class="cg-node-line1" [attr.x]="NODE_WIDTH / 2" y="20">
+              <text class="cg-node-line1" [attr.x]="NODE_WIDTH / 2" y="18">
                 {{ node.kind }}
               </text>
-              <text class="cg-node-line2" [attr.x]="NODE_WIDTH / 2" y="38">
+              <text class="cg-node-line2" [attr.x]="NODE_WIDTH / 2" y="34">
                 {{ node.producer }} · t+{{ node.offsetMs }}ms
               </text>
             </g>
           }
         </svg>
+        </div>
 
         @if (selectedEvent(); as event) {
           <aside class="cg-detail" aria-label="Event detail">
@@ -269,9 +274,14 @@ interface IRenderedEdge {
       gap: 16px;
       align-items: flex-start;
     }
-    .cg-svg {
+    .cg-svg-scroll {
       flex: 1 1 auto;
+      min-width: 0;
       min-height: 300px;
+      overflow: auto;
+    }
+    .cg-svg {
+      display: block;
       background: var(--bg2, #f8f9fa);
       border-radius: 8px;
     }
@@ -438,10 +448,19 @@ export class CausalGraphComponent {
     return rendered;
   });
 
-  readonly viewBox = computed(() => {
+  /** Shared node-extent bounding box, in graph coordinates — the single
+   * source of truth for both `viewBox` (coordinate space) and
+   * `graphWidth`/`graphHeight` (the SVG's intrinsic pixel size), so the two
+   * never drift apart. */
+  private readonly extents = computed(() => {
     const nodes = this.nodes();
     if (nodes.length === 0) {
-      return `0 0 ${NODE_WIDTH + NODE_PAD_X * 2} ${NODE_HEIGHT + NODE_PAD_Y * 2}`;
+      return {
+        minX: 0,
+        minY: 0,
+        width: NODE_WIDTH + NODE_PAD_X * 2,
+        height: NODE_HEIGHT + NODE_PAD_Y * 2,
+      };
     }
     const minX =
       Math.min(...nodes.map((n) => n.x)) - NODE_WIDTH / 2 - NODE_PAD_X;
@@ -451,8 +470,19 @@ export class CausalGraphComponent {
       Math.min(...nodes.map((n) => n.y)) - NODE_HEIGHT / 2 - NODE_PAD_Y;
     const maxY =
       Math.max(...nodes.map((n) => n.y)) + NODE_HEIGHT / 2 + NODE_PAD_Y;
-    return `${minX} ${minY} ${maxX - minX} ${maxY - minY}`;
+    return { minX, minY, width: maxX - minX, height: maxY - minY };
   });
+
+  readonly viewBox = computed(() => {
+    const { minX, minY, width, height } = this.extents();
+    return `${minX} ${minY} ${width} ${height}`;
+  });
+
+  /** Intrinsic pixel width/height the SVG renders at — same extents as
+   * `viewBox`, so the tree is drawn at full readable size and the
+   * `.cg-svg-scroll` wrapper scrolls instead of scaling it down. */
+  readonly graphWidth = computed(() => this.extents().width);
+  readonly graphHeight = computed(() => this.extents().height);
 
   readonly selectedEvent = computed<ITrackedEvent | null>(() => {
     const id = this.selected();
