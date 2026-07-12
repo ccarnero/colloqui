@@ -52,6 +52,7 @@ function node(overrides: Partial<ILayoutNode>): ILayoutNode {
     status: "ok",
     row: 0,
     lane: 0,
+    onSpine: true,
     nestingDepth: 0,
     durationMs: 120,
     dashed: false,

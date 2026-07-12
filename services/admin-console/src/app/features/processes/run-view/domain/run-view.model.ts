@@ -205,9 +205,22 @@ export interface ILayoutNode {
   readonly status: ActionStatus;
   /** Equally-spaced vertical position — NOT time-scaled (decision 1). */
   readonly row: number;
-  /** `0` = spine; `>0` = fork lane index (1-based, capped at
-   * `FORK_LANE_CAP`). */
+  /** Column position, CENTERED on its parent fork/conditional pill —
+   * fractional and possibly negative once fork lanes/condition branches are
+   * centered around their parent (e.g. a 3-case condition's branches sit at
+   * −1/0/+1 relative to the pill). `0` at the top level (the spine). See
+   * `onSpine` below for whether a node is actually ON the main spine
+   * column — a middle branch can coincide with lane `0` while NOT being the
+   * spine. */
   readonly lane: number;
+  /** `true` iff this node was laid out by the TOP-LEVEL sequence — i.e. it
+   * sits on the main vertical spine, not inside any fork lane or
+   * conditional branch (regardless of nesting depth or numeric `lane`
+   * value). REPLACES the old `nestingDepth === 0 && lane === 0` heuristic:
+   * under lane centering, a condition's middle branch can also land at
+   * `lane === 0` while nested one level deep — it must NOT be treated as
+   * spine. */
+  readonly onSpine: boolean;
   readonly nestingDepth: number;
   readonly durationMs: number | null;
   /** `true` for a definition-only, not-executed step (dashed box). */

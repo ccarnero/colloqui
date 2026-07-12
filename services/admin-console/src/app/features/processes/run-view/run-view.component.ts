@@ -35,7 +35,6 @@ import {
   computeNodePositions,
   computeRenderedEdges,
   computeViewBox,
-  formatDecisionSubtitle,
   formatPillLabel,
   formatRunStatusChip,
   type IArtifactBox,
@@ -247,11 +246,6 @@ type RunState =
                   <text class="rv-node-status" x="10" y="34">
                     {{ nodeSubLabel(node) }}
                   </text>
-                  @if (decisionSubtitle(node); as subtitle) {
-                    <text class="rv-node-subtitle" x="10" [attr.y]="nodeHeight + 14">
-                      {{ subtitle }}
-                    </text>
-                  }
                 }
               </g>
             }
@@ -553,10 +547,6 @@ type RunState =
       font-size: 10px;
       fill: var(--text3, #8a8880);
     }
-    .rv-node-subtitle {
-      font-size: 10px;
-      fill: var(--rv-amber-border);
-    }
     .rv-fork-chip {
       font-size: 11px;
       fill: var(--rv-edge-stroke);
@@ -794,7 +784,11 @@ export class RunViewComponent {
    * spine positions + the run's `cast` (render-layer overlay, domain step
    * tree untouched). */
   readonly artifactBoxes = computed(() =>
-    computeArtifactBoxes(this.positionedNodes(), this.run().cast)
+    computeArtifactBoxes(
+      this.positionedNodes(),
+      this.run().cast,
+      this.forkChips()
+    )
   );
 
   readonly artifactEdges = computed(() =>
@@ -835,10 +829,6 @@ export class RunViewComponent {
 
   resolveCastColor = resolveCastColor;
   nodeSubLabel = nodeSubLabel;
-
-  decisionSubtitle(node: ILayoutNode): string | null {
-    return formatDecisionSubtitle(node);
-  }
 
   isHighlighted(node: ILayoutNode): boolean {
     const selected = this.selected();

@@ -90,20 +90,27 @@ describe("layoutRun", () => {
     expect(layout.edges[0]!.kind).toBe("linear");
     expect(layout.edges[0]!.dashed).toBe(false);
     expect(layout.edges[0]!.thick).toBe(false);
+
+    // Top-level steps are on the main spine.
+    expect(layout.nodes.every((n) => n.onSpine === true)).toBe(true);
   });
 
-  it("3-case condition: renders a decision node plus one branch entry per declared case", () => {
+  it("3-case condition: renders a decision node plus one branch entry per declared case, each in its own lane, CENTERED on the pill", () => {
     const cond = conditionalStep({ branchTaken: "100-500" }, [
       {
         label: "<100",
         taken: false,
-        steps: [actionStep({ status: "not_executed" })],
+        steps: [actionStep({ branchPath: "<100", status: "not_executed" })],
       },
-      { label: "100-500", taken: true, steps: [actionStep({ status: "ok" })] },
+      {
+        label: "100-500",
+        taken: true,
+        steps: [actionStep({ branchPath: "100-500", status: "ok" })],
+      },
       {
         label: ">500",
         taken: false,
-        steps: [actionStep({ status: "not_executed" })],
+        steps: [actionStep({ branchPath: ">500", status: "not_executed" })],
       },
     ]);
     const layout = layoutRun(merged([cond]));
@@ -113,15 +120,41 @@ describe("layoutRun", () => {
       (e) => e.kind === "taken" || e.kind === "not-taken"
     );
     expect(branchEdges).toHaveLength(3);
+
+    // Side-by-side lanes: the three branch-entry nodes must sit in three
+    // DISTINCT columns, not stacked on top of each other in the same lane.
+    const branchEntryNodes = branchEdges
+      .map((e) => layout.nodes.find((n) => n.id === e.toId))
+      .filter((n): n is NonNullable<typeof n> => n !== undefined);
+    expect(branchEntryNodes).toHaveLength(3);
+    const lanes = new Set(branchEntryNodes.map((n) => n.lane));
+    expect(lanes.size).toBe(3);
+
+    // Centered geometry: for N=3 branches around pill lane 0, the lanes are
+    // exactly {-1, 0, +1} — the middle case sits directly under the pill.
+    expect(new Set(branchEntryNodes.map((n) => n.lane))).toEqual(
+      new Set([-1, 0, 1])
+    );
+    // Symmetry check (equivalent, more general assertion): the mean of the
+    // branch lanes equals the pill's own lane.
+    const mean =
+      branchEntryNodes.reduce((sum, n) => sum + n.lane, 0) /
+      branchEntryNodes.length;
+    expect(mean).toBe(decisionNode!.lane);
+
+    // None of the branch nodes are on the spine — they are nested inside a
+    // condition branch, even the middle one that happens to land at lane 0.
+    expect(branchEntryNodes.every((n) => n.onSpine === false)).toBe(true);
+    expect(decisionNode!.onSpine).toBe(true);
   });
 
-  it("taken/not-taken: the taken branch's edge is solid+thick, others are dashed", () => {
+  it("taken/not-taken: the taken branch's edge is solid+thick, others are dashed, and each branch node has its own lane", () => {
     const cond = conditionalStep({ branchTaken: "yes" }, [
-      { label: "yes", taken: true, steps: [actionStep()] },
+      { label: "yes", taken: true, steps: [actionStep({ branchPath: "yes" })] },
       {
         label: "no",
         taken: false,
-        steps: [actionStep({ status: "not_executed" })],
+        steps: [actionStep({ branchPath: "no", status: "not_executed" })],
       },
     ]);
     const layout = layoutRun(merged([cond]));
@@ -133,6 +166,30 @@ describe("layoutRun", () => {
     expect(notTakenEdge?.kind).toBe("not-taken");
     expect(notTakenEdge?.dashed).toBe(true);
     expect(notTakenEdge?.thick).toBe(false);
+
+    const takenNode = layout.nodes.find((n) => n.id === takenEdge?.toId);
+    const notTakenNode = layout.nodes.find((n) => n.id === notTakenEdge?.toId);
+    expect(takenNode?.lane).not.toBe(notTakenNode?.lane);
+  });
+
+  it("taken continuity: the edge to the next sibling after the conditional originates from the taken branch's tail node, not another column", () => {
+    const cond = conditionalStep({ branchTaken: "yes" }, [
+      { label: "yes", taken: true, steps: [actionStep({ branchPath: "yes" })] },
+      {
+        label: "no",
+        taken: false,
+        steps: [actionStep({ branchPath: "no", status: "not_executed" })],
+      },
+    ]);
+    const next = actionStep({ actionIndex: 1, name: "sendMessage" });
+    const layout = layoutRun(merged([cond, next]));
+
+    const takenEdge = layout.edges.find((e) => e.label === "yes");
+    const takenTailNode = layout.nodes.find((n) => n.id === takenEdge?.toId);
+    const nextNode = layout.nodes.find((n) => n.stepName === "sendMessage");
+    const continuityEdge = layout.edges.find((e) => e.toId === nextNode?.id);
+    expect(continuityEdge).toBeDefined();
+    expect(continuityEdge?.fromId).toBe(takenTailNode?.id);
   });
 
   it("nested if: an inner conditional inside a taken branch increases nesting depth in its own node", () => {
@@ -157,12 +214,25 @@ describe("layoutRun", () => {
     const layout = layoutRun(merged([outer]));
     const nested = layout.nodes.find((n) => n.nestingDepth === 2);
     expect(nested).toBeDefined();
-    expect(
-      layout.nodes.some((n) => n.nestingDepth === 1 && n.kind === "conditional")
-    ).toBe(true);
+    const innerPill = layout.nodes.find(
+      (n) => n.nestingDepth === 1 && n.kind === "conditional"
+    );
+    expect(innerPill).toBeDefined();
+
+    // Centered geometry: the outer conditional has a SINGLE branch ("yes"),
+    // so N=1 centers it exactly on the pill's own lane (0) — no lane shift
+    // for a single case. The inner conditional (nested inside that branch)
+    // also has a single case, so it too stays centered at lane 0. Depth is
+    // now the only thing distinguishing these nodes from the spine — which
+    // is exactly why `onSpine` (not `lane === 0`) is the correct spine
+    // check.
+    expect(innerPill?.lane).toBe(0);
+    expect(nested?.lane).toBe(0);
+    expect(innerPill?.onSpine).toBe(false);
+    expect(nested?.onSpine).toBe(false);
   });
 
-  it("parallel fork: renders a fork pill, a join pill, and one fork-out edge per visible lane", () => {
+  it("parallel fork: renders a fork pill, a join pill, and one fork-out edge per visible lane, CENTERED on the fork pill", () => {
     const fork = forkStep({}, [
       {
         label: "A",
@@ -186,13 +256,27 @@ describe("layoutRun", () => {
       },
     ]);
     const layout = layoutRun(merged([fork]));
-    expect(layout.nodes.some((n) => n.kind === "fork")).toBe(true);
+    const forkNode = layout.nodes.find((n) => n.kind === "fork");
+    expect(forkNode).toBeDefined();
     expect(layout.nodes.some((n) => n.kind === "join")).toBe(true);
     const forkOutEdges = layout.edges.filter((e) => e.kind === "fork-out");
     expect(forkOutEdges).toHaveLength(2);
     expect(layout.forks).toHaveLength(1);
     expect(layout.forks[0]!.visibleLaneCount).toBe(2);
     expect(layout.forks[0]!.collapsedCount).toBe(0);
+
+    // Centered geometry: N=2 lanes around the fork pill's own lane (0) land
+    // symmetrically at {-0.5, +0.5} — no lane touches the pill's own lane
+    // directly (even count), but they are symmetric around it.
+    const laneNodes = forkOutEdges
+      .map((e) => layout.nodes.find((n) => n.id === e.toId))
+      .filter((n): n is NonNullable<typeof n> => n !== undefined);
+    expect(new Set(laneNodes.map((n) => n.lane))).toEqual(new Set([-0.5, 0.5]));
+    const mean =
+      laneNodes.reduce((sum, n) => sum + n.lane, 0) / laneNodes.length;
+    expect(mean).toBe(forkNode!.lane);
+    expect(laneNodes.every((n) => n.onSpine === false)).toBe(true);
+    expect(forkNode!.onSpine).toBe(true);
   });
 
   it("fork with more than FORK_LANE_CAP lanes collapses the rest", () => {

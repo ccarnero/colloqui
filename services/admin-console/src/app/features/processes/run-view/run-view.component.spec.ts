@@ -778,13 +778,13 @@ describe("RunViewComponent", () => {
       flush(conditionalRun, conditionalDefinition);
     });
 
-    it("renders the amber decision node with the evaluated chip", () => {
+    it("renders the amber decision node with the evaluated chip inline (no separate floating subtitle)", () => {
       const el = fixture.nativeElement as HTMLElement;
       const decision = el.querySelector('.rv-node[data-color="decision"]');
       expect(decision).toBeTruthy();
-      expect(decision?.textContent).toContain(
-        'evaluated: 320 → case "100-500" ✓'
-      );
+      const status = decision?.querySelector(".rv-node-status");
+      expect(status?.textContent).toContain('evaluated: 320 → "100-500" ✓');
+      expect(el.querySelector(".rv-node-subtitle")).toBeNull();
     });
 
     it("renders the not-taken branches dashed, labeled not executed", () => {

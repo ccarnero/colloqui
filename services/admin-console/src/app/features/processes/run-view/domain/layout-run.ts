@@ -117,6 +117,7 @@ function layoutSequence(
   steps: readonly StepNode[],
   startRow: number,
   lane: number,
+  onSpine: boolean,
   collector: Collector
 ): SequenceResult {
   let row = startRow;
@@ -140,6 +141,7 @@ function layoutSequence(
         status: step.status,
         row,
         lane,
+        onSpine,
         nestingDepth: step.nestingDepth,
         durationMs: step.durationMs,
         dashed: step.status === "not_executed",
@@ -173,6 +175,7 @@ function layoutSequence(
         status: step.executed ? "ok" : "not_executed",
         row,
         lane,
+        onSpine,
         nestingDepth: step.nestingDepth,
         durationMs: null,
         dashed: !step.executed,
@@ -195,8 +198,29 @@ function layoutSequence(
 
       let maxRow = row;
       let takenTailId: string | null = null;
-      for (const branch of step.branches) {
-        const branchResult = layoutSequence(branch.steps, row, lane, collector);
+      // Each branch (case) gets its OWN lane, side by side below the
+      // decision pill, CENTERED on the pill's own lane — mirrors the fork
+      // block's centered lane assignment below (mockup: a 3-case condition
+      // fans out left/center/right with the pill directly above the middle
+      // case). For N branches centered on `lane`, branch i sits at
+      // `lane + (i - (N - 1) / 2)` — fractional/negative lanes are expected
+      // (N=3 -> −1,0,+1 relative to the pill; N=2 -> −0.5,+0.5). Without
+      // this, every branch laid out in the SAME `lane`, stacking their
+      // nodes on top of each other (garbled overlapping edge labels, only
+      // the last-declared branch visible). Conditions stay uncapped here
+      // (unlike `FORK_LANE_CAP` for forks) so the taken branch is always
+      // visible; collapsing many-case conditions to a summary is a
+      // follow-up, not implemented here.
+      const branchCount = step.branches.length;
+      step.branches.forEach((branch, i) => {
+        const branchLane = lane + (i - (branchCount - 1) / 2);
+        const branchResult = layoutSequence(
+          branch.steps,
+          row,
+          branchLane,
+          false,
+          collector
+        );
         if (branchResult.firstId) {
           pushEdge(
             collector,
@@ -214,7 +238,7 @@ function layoutSequence(
           takenTailId = branchResult.tailId ?? pillId;
         }
         maxRow = Math.max(maxRow, branchResult.nextRow);
-      }
+      });
       row = maxRow;
 
       // Bypass: an if-without-else that evaluated false (no branch taken,
@@ -249,6 +273,7 @@ function layoutSequence(
       status: step.status,
       row,
       lane,
+      onSpine,
       nestingDepth: step.nestingDepth,
       durationMs: step.durationMs,
       dashed: step.status === "not_executed",
@@ -281,8 +306,19 @@ function layoutSequence(
       ms: number | null;
     }> = [];
 
+    // Fork lanes are centered around the fork pill's own lane, same
+    // formula as the conditional branches above (mockup: symmetric fan-out
+    // on both sides of the pill, not rightward-only).
+    const visibleLaneCount = visibleLanes.length;
     visibleLanes.forEach((laneStep, i) => {
-      const laneResult = layoutSequence(laneStep.steps, row, i + 1, collector);
+      const forkLane = lane + (i - (visibleLaneCount - 1) / 2);
+      const laneResult = layoutSequence(
+        laneStep.steps,
+        row,
+        forkLane,
+        false,
+        collector
+      );
       if (laneResult.firstId) {
         pushEdge(collector, forkId, laneResult.firstId, "fork-out", {
           label: laneStep.label,
@@ -315,6 +351,7 @@ function layoutSequence(
       status: step.status,
       row,
       lane,
+      onSpine,
       nestingDepth: step.nestingDepth,
       durationMs: critical?.ms ?? null,
       dashed: step.status === "not_executed",
@@ -367,7 +404,7 @@ function layoutSequence(
  */
 export function layoutRun(merged: IMergedRun): IRunLayout {
   const collector: Collector = { nodes: [], edges: [], forks: [] };
-  layoutSequence(merged.steps, 0, 0, collector);
+  layoutSequence(merged.steps, 0, 0, true, collector);
   return {
     nodes: collector.nodes,
     edges: collector.edges,

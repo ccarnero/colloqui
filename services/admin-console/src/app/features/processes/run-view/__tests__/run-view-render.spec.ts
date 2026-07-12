@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { IRunCastEntry } from "../../../../core/services/run-view.service";
-import type { ILayoutEdge, ILayoutNode } from "../domain/run-view.model";
+import type {
+  IForkGeometry,
+  ILayoutEdge,
+  ILayoutNode,
+} from "../domain/run-view.model";
 import {
   ARTIFACT_BOX_WIDTH,
   computeArtifactBoxes,
   computeArtifactColumnX,
   computeArtifactEdges,
   computeContentWidth,
+  computeForkCollapseChips,
+  computeNodePositions,
   computeRenderedEdges,
   formatPillLabel,
   type IPositionedNode,
@@ -15,6 +21,8 @@ import {
   isPillNode,
   isSpineArtifactNode,
   isUuidLike,
+  LANE_BASE_X,
+  LANE_GAP,
   NODE_HEIGHT,
   NODE_WIDTH,
   nodePosition,
@@ -26,6 +34,19 @@ import {
   resolveArtifactKind,
 } from "../run-view-render";
 
+function forkGeometry(overrides: Partial<IForkGeometry>): IForkGeometry {
+  return {
+    forkId: "fork-1",
+    joinId: "join-1",
+    laneLabels: ["a", "b", "c", "d"],
+    visibleLaneCount: 3,
+    collapsedCount: 1,
+    criticalLane: null,
+    criticalMs: null,
+    ...overrides,
+  };
+}
+
 function node(overrides: Partial<ILayoutNode>): ILayoutNode {
   return {
     id: "n1",
@@ -35,6 +56,7 @@ function node(overrides: Partial<ILayoutNode>): ILayoutNode {
     status: "ok",
     row: 0,
     lane: 0,
+    onSpine: true,
     nestingDepth: 0,
     durationMs: 100,
     dashed: false,
@@ -72,6 +94,40 @@ describe("isPillNode / nodeVisualHeight / pillOffsetX", () => {
     const offset = pillOffsetX();
     expect(offset).toBe((NODE_WIDTH - PILL_WIDTH) / 2);
     expect(offset).toBeGreaterThan(0);
+  });
+});
+
+describe("computeNodePositions — min-lane offset (centered fork/condition lanes)", () => {
+  it("a node at lane 0 sits at x=LANE_BASE_X when no node has a negative lane", () => {
+    const a = node({ id: "a", lane: 0, row: 0 });
+    const b = node({ id: "b", lane: 1, row: 1 });
+    const [posA] = computeNodePositions([a, b]);
+    expect(posA!.x).toBe(LANE_BASE_X);
+  });
+
+  it("negative lanes never produce x<LANE_BASE_X — the whole run shifts right by minLane", () => {
+    const left = node({ id: "left", lane: -1, row: 0 });
+    const center = node({ id: "center", lane: 0, row: 0 });
+    const right = node({ id: "right", lane: 1, row: 0 });
+    const positions = computeNodePositions([left, center, right]);
+    for (const p of positions) {
+      expect(p.x).toBeGreaterThanOrEqual(LANE_BASE_X);
+    }
+    const byId = new Map(positions.map((p) => [p.id, p]));
+    // Leftmost lane (-1) lands exactly at LANE_BASE_X.
+    expect(byId.get("left")!.x).toBe(LANE_BASE_X);
+    // Center (lane 0) and right (lane 1) shift by the same minLane offset.
+    expect(byId.get("center")!.x).toBe(LANE_BASE_X + LANE_GAP);
+    expect(byId.get("right")!.x).toBe(LANE_BASE_X + 2 * LANE_GAP);
+  });
+
+  it("fractional lanes (centered fork/condition columns) offset by the same fraction of LANE_GAP", () => {
+    const left = node({ id: "left", lane: -0.5, row: 0 });
+    const right = node({ id: "right", lane: 0.5, row: 0 });
+    const positions = computeNodePositions([left, right]);
+    const byId = new Map(positions.map((p) => [p.id, p]));
+    expect(byId.get("left")!.x).toBe(LANE_BASE_X);
+    expect(byId.get("right")!.x).toBe(LANE_BASE_X + LANE_GAP);
   });
 });
 
@@ -385,49 +441,65 @@ describe("computeArtifactBoxes", () => {
   // `isNestedArtifactNode`/`nodeSubLabel`), which is what avoids the old
   // same-row collision the removed vertical-stacking hack used to paper
   // over.
-  it("produces a box for a spine-level (nestingDepth 0, lane 0) connector node", () => {
+  it("produces a box for a spine-level (onSpine true) connector node", () => {
     const spine = positioned({
       id: "n1",
       actionType: "endpointCall",
       instanceId: "conn-1",
       nestingDepth: 0,
       lane: 0,
+      onSpine: true,
     });
     const boxes = computeArtifactBoxes([spine], cast);
     expect(boxes).toHaveLength(1);
     expect(boxes[0]!.stepId).toBe("n1");
   });
 
-  it("produces NO box for a fork-lane (lane > 0) connector/agent node", () => {
+  it("produces NO box for a fork-lane (onSpine false, lane > 0) connector/agent node", () => {
     const laneNode = positioned({
       id: "n1",
       actionType: "endpointCall",
       instanceId: "conn-1",
       nestingDepth: 0,
       lane: 1,
+      onSpine: false,
     });
     expect(computeArtifactBoxes([laneNode], cast)).toHaveLength(0);
   });
 
-  it("produces NO box for a nested (nestingDepth > 0) condition-branch agent node", () => {
+  it("produces NO box for a nested (onSpine false, nestingDepth > 0) condition-branch agent node", () => {
     const nestedNode = positioned({
       id: "n1",
       actionType: "agentCall",
       instanceId: "agent-1",
       nestingDepth: 1,
       lane: 0,
+      onSpine: false,
     });
     expect(computeArtifactBoxes([nestedNode], cast)).toHaveLength(0);
+  });
+
+  it("produces NO box for a condition's MIDDLE branch node that coincides with lane 0 but is not on the spine (centered-lane regression)", () => {
+    const middleBranchNode = positioned({
+      id: "n1",
+      actionType: "endpointCall",
+      instanceId: "conn-1",
+      nestingDepth: 1,
+      lane: 0,
+      onSpine: false,
+    });
+    expect(computeArtifactBoxes([middleBranchNode], cast)).toHaveLength(0);
   });
 });
 
 describe("nodeSubLabel — spine unchanged, nested artifact steps get an inline collapsed chip", () => {
-  it("a spine node (non-artifact or lane 0/nestingDepth 0) keeps the plain status/duration sub-label", () => {
+  it("a spine node (onSpine true) keeps the plain status/duration sub-label", () => {
     const spine = node({
       actionType: "endpointCall",
       instanceId: "conn-1",
       nestingDepth: 0,
       lane: 0,
+      onSpine: true,
       status: "ok",
       durationMs: 183,
     });
@@ -440,30 +512,33 @@ describe("nodeSubLabel — spine unchanged, nested artifact steps get an inline 
       instanceId: null,
       nestingDepth: 1,
       lane: 0,
+      onSpine: false,
       status: "ok",
       durationMs: 50,
     });
     expect(nodeSubLabel(nested)).toBe("ok · 50ms");
   });
 
-  it("a fork-lane connector node (lane > 0) gets the '↔ <kind> · <ms>ms · <status>' inline chip", () => {
+  it("a fork-lane connector node (onSpine false, lane > 0) gets the '↔ <kind> · <ms>ms · <status>' inline chip", () => {
     const laneNode = node({
       actionType: "endpointCall",
       instanceId: "conn-1",
       nestingDepth: 0,
       lane: 1,
+      onSpine: false,
       status: "ok",
       durationMs: 356,
     });
     expect(nodeSubLabel(laneNode)).toBe("↔ connector · 356ms · ok");
   });
 
-  it("a condition-branch agent node (nestingDepth > 0) gets the inline chip too", () => {
+  it("a condition-branch agent node (onSpine false, nestingDepth > 0) gets the inline chip too", () => {
     const branchNode = node({
       actionType: "agentCall",
       instanceId: "agent-1",
       nestingDepth: 1,
       lane: 0,
+      onSpine: false,
       status: "ok",
       durationMs: 412,
     });
@@ -471,42 +546,92 @@ describe("nodeSubLabel — spine unchanged, nested artifact steps get an inline 
   });
 });
 
+describe("nodeSubLabel — decision node shows the evaluated subtitle inline (in-box, not a floating element)", () => {
+  it("a conditional node with an evaluated value and a taken branch returns the evaluated subtitle, not the plain status", () => {
+    const decision = node({
+      kind: "conditional",
+      actionType: null,
+      instanceId: null,
+      evaluatedValue: "320",
+      branchTaken: "medium",
+      status: "ok",
+    });
+    const label = nodeSubLabel(decision);
+    expect(label).toContain("320");
+    expect(label).toContain("medium");
+    expect(label).toContain("✓");
+  });
+
+  it("a conditional node with no evaluation (evaluatedValue null) falls back to the plain status label", () => {
+    const decision = node({
+      kind: "conditional",
+      actionType: null,
+      instanceId: null,
+      evaluatedValue: null,
+      branchTaken: null,
+      status: "not_executed",
+      durationMs: null,
+    });
+    expect(nodeSubLabel(decision)).toBe("not executed");
+  });
+});
+
 describe("isSpineArtifactNode / isNestedArtifactNode", () => {
-  it("a spine artifact node (nestingDepth 0, lane 0) is spine, not nested", () => {
+  it("a spine artifact node (onSpine true) is spine, not nested", () => {
     const spine = node({
       actionType: "endpointCall",
       instanceId: "conn-1",
       nestingDepth: 0,
       lane: 0,
+      onSpine: true,
     });
     expect(isSpineArtifactNode(spine)).toBe(true);
     expect(isNestedArtifactNode(spine)).toBe(false);
   });
 
-  it("a fork-lane artifact node (lane > 0) is nested, not spine", () => {
+  it("a fork-lane artifact node (onSpine false, lane > 0) is nested, not spine", () => {
     const laneNode = node({
       actionType: "endpointCall",
       instanceId: "conn-1",
       nestingDepth: 0,
       lane: 2,
+      onSpine: false,
     });
     expect(isSpineArtifactNode(laneNode)).toBe(false);
     expect(isNestedArtifactNode(laneNode)).toBe(true);
   });
 
-  it("a condition-branch artifact node (nestingDepth > 0) is nested, not spine", () => {
+  it("a condition-branch artifact node (onSpine false, nestingDepth > 0) is nested, not spine", () => {
     const branchNode = node({
       actionType: "channelSend",
       instanceId: null,
       nestingDepth: 1,
       lane: 0,
+      onSpine: false,
     });
     expect(isSpineArtifactNode(branchNode)).toBe(false);
     expect(isNestedArtifactNode(branchNode)).toBe(true);
   });
 
+  it("a middle-branch node at lane 0 with onSpine=false is NESTED (gets a chip), not a spine box — centered-lane regression", () => {
+    const middleBranchNode = node({
+      actionType: "endpointCall",
+      instanceId: "conn-1",
+      nestingDepth: 1,
+      lane: 0,
+      onSpine: false,
+    });
+    expect(isSpineArtifactNode(middleBranchNode)).toBe(false);
+    expect(isNestedArtifactNode(middleBranchNode)).toBe(true);
+  });
+
   it("a non-artifact node is neither spine nor nested regardless of position", () => {
-    const plain = node({ actionType: "jsFunction", nestingDepth: 1, lane: 2 });
+    const plain = node({
+      actionType: "jsFunction",
+      nestingDepth: 1,
+      lane: 2,
+      onSpine: false,
+    });
     expect(isSpineArtifactNode(plain)).toBe(false);
     expect(isNestedArtifactNode(plain)).toBe(false);
   });
@@ -650,6 +775,7 @@ describe("bug 2 (slice 4) is now structurally avoided: fork-lane artifacts never
       instanceId: "conn-get-post",
       row: 1,
       lane: 1,
+      onSpine: false,
     });
     const lane2 = positioned({
       id: "getPokemon",
@@ -657,6 +783,7 @@ describe("bug 2 (slice 4) is now structurally avoided: fork-lane artifacts never
       instanceId: "conn-get-pokemon",
       row: 1,
       lane: 2,
+      onSpine: false,
     });
     const lane3 = positioned({
       id: "getCatFact",
@@ -664,6 +791,7 @@ describe("bug 2 (slice 4) is now structurally avoided: fork-lane artifacts never
       instanceId: "conn-get-catfact",
       row: 1,
       lane: 3,
+      onSpine: false,
     });
     // All three source nodes share the same row -> would have shared the
     // same node.y under the old shared-column layout.
@@ -675,6 +803,142 @@ describe("bug 2 (slice 4) is now structurally avoided: fork-lane artifacts never
     // No paired boxes -> no artifact edges either (no req/resp arrows
     // crossing into the right column for fork-lane steps).
     expect(computeArtifactEdges([lane1, lane2, lane3], [])).toHaveLength(0);
+  });
+});
+
+describe("computeForkCollapseChips", () => {
+  it("a fork with collapsedCount > 0 produces one chip, positioned past the rightmost node's RIGHT edge", () => {
+    const forkNode = positioned({
+      id: "fork-1",
+      kind: "fork",
+      actionType: "branch",
+      row: 0,
+      lane: 0,
+    });
+    const lane1 = positioned({
+      id: "lane1",
+      row: 1,
+      lane: 1,
+      onSpine: false,
+    });
+    const lane2 = positioned({
+      id: "lane2",
+      row: 1,
+      lane: 2,
+      onSpine: false,
+    });
+    const positionsById = new Map<string, IPositionedNode>([
+      [forkNode.id, forkNode],
+      [lane1.id, lane1],
+      [lane2.id, lane2],
+    ]);
+    const chips = computeForkCollapseChips(
+      [forkGeometry({ forkId: "fork-1", collapsedCount: 2 })],
+      positionsById
+    );
+    expect(chips).toHaveLength(1);
+    expect(chips[0]!.forkId).toBe("fork-1");
+    const maxRight = Math.max(
+      ...[forkNode, lane1, lane2].map((p) => p.x + NODE_WIDTH)
+    );
+    // Bug fix: must trail the rightmost node's RIGHT edge (x + NODE_WIDTH),
+    // not its LEFT edge (x) — the pre-fix formula placed the chip up to a
+    // full NODE_WIDTH too far left, overlapping the node it should trail.
+    expect(chips[0]!.x).toBeGreaterThanOrEqual(maxRight);
+    expect(chips[0]!.x).toBe(maxRight + LANE_GAP);
+  });
+
+  it("a fork with collapsedCount <= 0 produces no chip", () => {
+    const forkNode = positioned({
+      id: "fork-1",
+      kind: "fork",
+      actionType: "branch",
+      row: 0,
+      lane: 0,
+    });
+    const positionsById = new Map<string, IPositionedNode>([
+      [forkNode.id, forkNode],
+    ]);
+    const chips = computeForkCollapseChips(
+      [forkGeometry({ forkId: "fork-1", collapsedCount: 0 })],
+      positionsById
+    );
+    expect(chips).toHaveLength(0);
+  });
+
+  it("empty positions -> sane fallback, no crash", () => {
+    const chips = computeForkCollapseChips(
+      [forkGeometry({ forkId: "fork-1", collapsedCount: 1 })],
+      new Map<string, IPositionedNode>()
+    );
+    // No positioned fork node to anchor to -> the fork is skipped entirely
+    // (its forkId can't be resolved in positionsById), not a crash.
+    expect(chips).toHaveLength(0);
+  });
+
+  it("REGRESSION: a collapse chip and the artifact column never overlap, even when both are present in the same run", () => {
+    // A fork whose lanes fan out wide enough to be the rightmost content,
+    // PLUS a spine artifact node (connector) that produces a right-column
+    // artifact box — this is the exact combination the pre-fix formula got
+    // wrong (chip landed inside/behind the artifact column).
+    const forkNode = positioned({
+      id: "fork-1",
+      kind: "fork",
+      actionType: "branch",
+      row: 0,
+      lane: 0,
+    });
+    const lane1 = positioned({
+      id: "lane1",
+      row: 1,
+      lane: 1,
+      onSpine: false,
+    });
+    const lane2 = positioned({
+      id: "lane2",
+      row: 1,
+      lane: 2,
+      onSpine: false,
+    });
+    const lane3 = positioned({
+      id: "lane3",
+      row: 1,
+      lane: 3,
+      onSpine: false,
+    });
+    const spineArtifact = positioned({
+      id: "connector-1",
+      actionType: "endpointCall",
+      instanceId: "conn-1",
+      row: 2,
+      lane: 0,
+      onSpine: true,
+    });
+    const positions = [forkNode, lane1, lane2, lane3, spineArtifact];
+    const positionsById = new Map<string, IPositionedNode>(
+      positions.map((p) => [p.id, p])
+    );
+    const chips = computeForkCollapseChips(
+      [forkGeometry({ forkId: "fork-1", collapsedCount: 2 })],
+      positionsById
+    );
+    expect(chips).toHaveLength(1);
+
+    const cast: readonly IRunCastEntry[] = [
+      { kind: "connector", id: "conn-1", name: "Order API", count: 1 },
+    ];
+    const artifactBoxes = computeArtifactBoxes(positions, cast, chips);
+    expect(artifactBoxes).toHaveLength(1);
+    const colX = computeArtifactColumnX(positions, chips);
+    expect(artifactBoxes[0]!.x).toBe(colX);
+
+    const chip = chips[0]!;
+    const chipStart = chip.x;
+    const chipEnd = chip.x + NODE_WIDTH;
+    const colStart = colX;
+    const colEnd = colX + ARTIFACT_BOX_WIDTH;
+    const overlaps = chipStart < colEnd && colStart < chipEnd;
+    expect(overlaps).toBe(false);
   });
 });
 

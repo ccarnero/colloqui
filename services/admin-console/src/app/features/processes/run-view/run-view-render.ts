@@ -39,8 +39,12 @@ export const PILL_WIDTH = 110;
 export const PILL_HEIGHT = 30;
 const ROW_HEIGHT = 92;
 const ROW_PAD_TOP = 30;
-const LANE_GAP = 240;
-const LANE_BASE_X = 50;
+export const LANE_GAP = 240;
+/** Leftmost `x` any node/lane column ever renders at — `computeNodePositions`
+ * shifts every node by the run's own `minLane` so the leftmost lane always
+ * lands here, even when domain lanes are fractional/negative (centered fork
+ * lanes/condition branches). Exported for tests asserting that invariant. */
+export const LANE_BASE_X = 50;
 const NEST_INDENT = 18;
 /** Extra virtual lane column collapsed-fork chips render into, one lane
  * past the highest visible lane a fork can produce (`FORK_LANE_CAP`). */
@@ -162,14 +166,26 @@ export interface IForkCollapseChip {
 }
 
 /** Top-left corner of a node's box, from its domain-owned `row`/`lane`/
- * `nestingDepth` — NOT time-scaled (SPEC decision 1: equally-spaced). */
-export function nodePosition(node: {
-  readonly row: number;
-  readonly lane: number;
-  readonly nestingDepth: number;
-}): { readonly x: number; readonly y: number } {
+ * `nestingDepth` — NOT time-scaled (SPEC decision 1: equally-spaced).
+ * `lane` is now CENTERED on its parent pill (`layout-run.ts`) and can be
+ * fractional/negative, so `minLane` (the smallest `lane` across every node
+ * in the run, `0` when there is none) shifts everything so the LEFTMOST
+ * lane always lands at `LANE_BASE_X` — `computeNodePositions` computes this
+ * once per run and passes it down; callers positioning a single node in
+ * isolation (tests) can omit it (defaults to `0`, i.e. no shift). */
+export function nodePosition(
+  node: {
+    readonly row: number;
+    readonly lane: number;
+    readonly nestingDepth: number;
+  },
+  minLane = 0
+): { readonly x: number; readonly y: number } {
   return {
-    x: LANE_BASE_X + node.lane * LANE_GAP + node.nestingDepth * NEST_INDENT,
+    x:
+      LANE_BASE_X +
+      (node.lane - minLane) * LANE_GAP +
+      node.nestingDepth * NEST_INDENT,
     y: ROW_PAD_TOP + node.row * ROW_HEIGHT,
   };
 }
@@ -177,7 +193,11 @@ export function nodePosition(node: {
 export function computeNodePositions(
   nodes: readonly ILayoutNode[]
 ): readonly IPositionedNode[] {
-  return nodes.map((node) => ({ ...node, ...nodePosition(node) }));
+  const minLane = nodes.length > 0 ? Math.min(...nodes.map((n) => n.lane)) : 0;
+  return nodes.map((node) => ({
+    ...node,
+    ...nodePosition(node, minLane),
+  }));
 }
 
 /** Straight line from the source box's bottom-center to the target box's
@@ -219,12 +239,26 @@ export function computeRenderedEdges(
 
 /** `↔ N more` collapse chip for lanes beyond `FORK_LANE_CAP`
  * (DESIGN.md: "max 2-3, then collapse to summary"), one per fork whose
- * `collapsedCount > 0`, anchored to the fork node's row. */
+ * `collapsedCount > 0`, anchored to the fork node's row. Under the centered
+ * fork-lane layout, lanes fan out on BOTH sides of the pill, so a fixed
+ * virtual-lane offset from `LANE_BASE_X` no longer reliably lands past the
+ * rightmost VISIBLE lane (it could sit under a left-side lane, or too far
+ * right of a narrow fan-out). Instead, derive the chip's `x` from the
+ * actual rendered positions: one `LANE_GAP` past the RIGHT edge of the
+ * rightmost node currently on screen (`p.x + NODE_WIDTH`, mirroring
+ * `computeArtifactColumnX`'s own `maxRight` — using `p.x` alone, the node's
+ * LEFT edge, previously made the chip land under/behind the artifact
+ * column whenever both were present in the same run). */
 export function computeForkCollapseChips(
   forks: readonly IForkGeometry[],
   positionsById: ReadonlyMap<string, IPositionedNode>
 ): readonly IForkCollapseChip[] {
   const chips: IForkCollapseChip[] = [];
+  const allPositions = [...positionsById.values()];
+  const rightmostX =
+    allPositions.length > 0
+      ? Math.max(...allPositions.map((p) => p.x + NODE_WIDTH))
+      : LANE_BASE_X + NODE_WIDTH + (COLLAPSED_LANE_OFFSET - 1) * LANE_GAP;
   for (const fork of forks) {
     if (fork.collapsedCount <= 0) {
       continue;
@@ -235,7 +269,7 @@ export function computeForkCollapseChips(
     }
     chips.push({
       forkId: fork.forkId,
-      x: LANE_BASE_X + COLLAPSED_LANE_OFFSET * LANE_GAP,
+      x: rightmostX + LANE_GAP,
       y: forkNode.y + ROW_HEIGHT,
       text: `↔ ${fork.collapsedCount} more`,
     });
@@ -336,13 +370,18 @@ export function formatEdgeLabel(edge: ILayoutEdge): string | null {
  * wording, not the semantics). `null` for non-conditional nodes and for
  * not-executed conditionals (their dashed box only needs the generic
  * "not executed" status label, no evaluation happened).
+ *
+ * Renders as the decision node's own in-box sub-line (`nodeSubLabel`), so
+ * it must fit inside the NODE_WIDTH (200px) pill — the word "case" is
+ * dropped in favor of just quoting the branch name directly after the
+ * arrow (`evaluated: 320 → "medium" ✓`) to keep it from overflowing.
  */
 export function formatDecisionSubtitle(node: ILayoutNode): string | null {
   if (node.kind !== "conditional" || node.status === "not_executed") {
     return null;
   }
   if (node.branchTaken !== null) {
-    return `evaluated: ${node.evaluatedValue} → case "${node.branchTaken}" ✓`;
+    return `evaluated: ${node.evaluatedValue} → "${node.branchTaken}" ✓`;
   }
   // If-without-else, evaluated false: no branch taken, no default —
   // DESIGN.md's bypass case ("evaluó: false -> salteado").
@@ -446,25 +485,26 @@ export function isArtifactNode(node: ILayoutNode): boolean {
 
 /**
  * Run-view visual rewrite slice 5: the mockup only pairs a SEPARATE
- * right-column artifact box with TOP-LEVEL SPINE artifact steps (the main
- * connector/channel steps, `nestingDepth === 0 && lane === 0` —
- * `layoutSequence`'s top-level call always lays out at `lane: 0`, and every
- * fork lane/conditional branch nests at `lane >= 1` or `nestingDepth >= 1`,
- * see `layout-run.ts`). A step inside a fork lane or a condition branch
- * gets its artifact info rendered INLINE in its own box instead (see
- * `isNestedArtifactNode`/`nodeSubLabel` below) — this is what avoids the
- * same-row collision the old vertical-stacking hack used to paper over.
+ * right-column artifact box with TOP-LEVEL SPINE artifact steps — driven by
+ * `ILayoutNode.onSpine` (`layout-run.ts`), NOT `nestingDepth === 0 && lane
+ * === 0`: under the centered-lane layout, a condition's MIDDLE branch (or a
+ * 2-lane fork's either lane) can also land at `lane === 0` while it is
+ * clearly nested inside a branch/fork lane, not on the spine. A step inside
+ * a fork lane or a condition branch gets its artifact info rendered INLINE
+ * in its own box instead (see `isNestedArtifactNode`/`nodeSubLabel` below)
+ * — this is what avoids the same-row collision the old vertical-stacking
+ * hack used to paper over.
  */
 export function isSpineArtifactNode(node: ILayoutNode): boolean {
-  return isArtifactNode(node) && node.nestingDepth === 0 && node.lane === 0;
+  return isArtifactNode(node) && node.onSpine;
 }
 
-/** The complement of `isSpineArtifactNode`: an artifact-eligible step
- * nested inside a fork lane (`lane > 0`) or a condition branch
- * (`nestingDepth > 0`) — gets the mockup's collapsed "↔" inline chip in its
- * own sub-label instead of a paired right-column box. */
+/** The complement of `isSpineArtifactNode`: an artifact-eligible step NOT
+ * on the spine (inside a fork lane or a condition branch) — gets the
+ * mockup's collapsed "↔" inline chip in its own sub-label instead of a
+ * paired right-column box. */
 export function isNestedArtifactNode(node: ILayoutNode): boolean {
-  return isArtifactNode(node) && (node.nestingDepth > 0 || node.lane > 0);
+  return isArtifactNode(node) && !node.onSpine;
 }
 
 /** Same rect footprint as a standard action box, so the artifact column
@@ -492,14 +532,27 @@ export interface IArtifactBox {
 
 /** Fixed right-column `x` for every artifact box in the run (mockup: one
  * shared column, not per-lane) — one gap past the rightmost spine node,
- * so nothing the domain's fork lanes produce ever overlaps it. */
+ * so nothing the domain's fork lanes produce ever overlaps it.
+ *
+ * Non-overlap invariant with `computeForkCollapseChips`: both derive from
+ * the same rightmost-RIGHT-edge anchor, and this function additionally
+ * folds in any collapse chips' own right edges (`chip.x + NODE_WIDTH`) when
+ * computing that anchor. Since a chip's right edge is already included in
+ * `maxRight` here, the column (`maxRight + ARTIFACT_COL_GAP`) is
+ * guaranteed to start strictly after every chip ends — chip and column
+ * boxes can never intersect, regardless of gap constants. */
 export function computeArtifactColumnX(
-  positions: readonly IPositionedNode[]
+  positions: readonly IPositionedNode[],
+  chips: readonly IForkCollapseChip[] = []
 ): number {
-  if (positions.length === 0) {
+  if (positions.length === 0 && chips.length === 0) {
     return LANE_BASE_X + NODE_WIDTH + ARTIFACT_COL_GAP;
   }
-  const maxRight = Math.max(...positions.map((p) => p.x + NODE_WIDTH));
+  const maxRight = Math.max(
+    LANE_BASE_X + NODE_WIDTH,
+    ...positions.map((p) => p.x + NODE_WIDTH),
+    ...chips.map((c) => c.x + NODE_WIDTH)
+  );
   return maxRight + ARTIFACT_COL_GAP;
 }
 
@@ -601,10 +654,24 @@ function formatArtifactSubLabel(node: ILayoutNode): string {
  * than drawn as a separate paired box. Clicking the node's own box still
  * opens the same popup peek unchanged (`onNodeClick`, T05's wiring) — this
  * only changes what text renders, not the click behavior.
+ *
+ * For a DECISION node (`kind === "conditional"`), the in-box sub-line
+ * shows the evaluation subtitle (`formatDecisionSubtitle`) instead of the
+ * plain status/duration line — this is the box's own sub-line, not a
+ * separate floating element, so it stays inside the pill and never
+ * overlaps the fan-out branch labels below it. Falls back to the plain
+ * status label when there is no evaluation to show (not-executed/degraded
+ * decision, `formatDecisionSubtitle` returns `null`).
  */
 export function nodeSubLabel(node: ILayoutNode): string {
   const statusLabel = formatNodeStatusLabel(node.status);
   const durationPart = node.durationMs !== null ? `${node.durationMs}ms` : null;
+  if (node.kind === "conditional") {
+    const decisionSubtitle = formatDecisionSubtitle(node);
+    if (decisionSubtitle !== null) {
+      return decisionSubtitle;
+    }
+  }
   if (!isNestedArtifactNode(node)) {
     return durationPart !== null
       ? `${statusLabel} · ${durationPart}`
@@ -629,12 +696,17 @@ export function nodeSubLabel(node: ILayoutNode): string {
  * `nodeSubLabel`). This removes the long crossing req/resp edges that
  * stacking used to create when 3 parallel fork lanes pushed their boxes far
  * down the shared column.
+ *
+ * `chips` (optional) are the run's fork-collapse chips, passed through so
+ * `computeArtifactColumnX` can keep the column clear of them too — see the
+ * non-overlap invariant documented on that function.
  */
 export function computeArtifactBoxes(
   positions: readonly IPositionedNode[],
-  cast: readonly IRunCastEntry[]
+  cast: readonly IRunCastEntry[],
+  chips: readonly IForkCollapseChip[] = []
 ): readonly IArtifactBox[] {
-  const columnX = computeArtifactColumnX(positions);
+  const columnX = computeArtifactColumnX(positions, chips);
   const boxes: IArtifactBox[] = [];
   for (const node of positions) {
     if (!isSpineArtifactNode(node)) {
