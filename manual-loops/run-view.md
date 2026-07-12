@@ -210,7 +210,7 @@ grep -n "run-view\|Run view" DOCS/guides/trace-console.md cowork/INDEX.md
 - [x] T05 anchored popup + peeks + deep links
 - [x] T06 entries wiring
 - [x] T07 cluster e2e
-- [ ] T08 docs + index
+- [x] T08 docs + index
 
 ## Out of scope (explicit)
 

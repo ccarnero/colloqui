@@ -104,6 +104,70 @@ has a "View payload" action for the selected event — `manual-loops/payload-cap
 The **Message traces** dashboard's `payload` column (below) is unrelated —
 that is a separate, still-unresolved decision for the Grafana detail table.
 
+## Run view (per-instance execution view)
+
+A Temporal-UI-like, per-instance execution view in the admin console for a
+single workflow run — it answers "what did THIS run do, step by step",
+complementary to the other two views in this guide:
+
+- **Causal graph** (`/processes/trace`) — cross-service causality: who
+  called whom, across services, for a `correlation_id`.
+- **Tempo waterfall** (Grafana) — span timing: how long each hop took.
+- **Run view** (new) — the run's own step-by-step flow: which actions and
+  conditions fired, in order, for one workflow execution.
+
+Backed by `GET /api/tracking/runs/:workflowId/:runId` (gateway wildcard
+proxy of the ingester's `GET /runs/:workflowId/:runId` — see
+`services/tracking-ingester-service/README.md` for the response shape and
+run-scoping semantics).
+
+### Two entries
+
+1. **Workflows → detail → Executions row click** —
+   `processes/runs/:workflowId/:runId`. The direct path for someone already
+   looking at a workflow's execution history.
+2. **A "Run view" tab in `processes/trace/:correlationId`** — appears when
+   the causal chain for that correlation contains a workflow run, so an
+   operator debugging a message via the causal graph can pivot straight
+   into the run's internal step-by-step flow without leaving the trace
+   page.
+
+### The view
+
+- **Header chips**: workflow name (from the workflow definition), status,
+  duration, step count.
+- **Cast strip**: the run's `cast` (connectors/agents/channels/tools it
+  touched), with the current instance highlighted.
+- **Equally-spaced vertical flow** — a hand-rolled SVG, NOT time-scaled
+  (steps are laid out by sequence, not by duration, since the run view's
+  job is "what happened, in what order", not timing — that is the Tempo
+  waterfall's job).
+- **Anchored popup per step** with peek sub-views (connector, agent,
+  channel, or definition detail, quoting the existing feature services) and
+  "Open in <feature>" deep-links into the owning console section.
+- **Plan-vs-executed**: branches the workflow definition allows but this
+  run did not take are rendered dashed, distinguishing the plan from what
+  actually executed.
+
+Domain layout (merge-run + layout-run) is a pure, exhaustively unit-tested
+core — components only bind the resulting model, they do not compute
+layout themselves.
+
+### Degraded modes
+
+- **Runs with no step-level events** (`step_detail: false`) — a resolvable
+  run whose own scoped events carry no step-level kinds (e.g. a workflow
+  definition with zero actions) falls back to an artifact-only spine
+  (events/spans without step detail) plus a "step detail unavailable"
+  banner, rather than failing outright. Genuinely pre-step-events runs
+  (older than `manual-loops/workflow-step-events.md`) never recorded a
+  real `workflowId`/`runId` and 404 instead — they never reach this
+  degraded view.
+- **Payloads** — step popups reuse the payload-capture states described
+  above (admin-gated, on-demand fetch, audited); a step with no captured
+  payload shows the same status-specific messaging as the causal-graph
+  payload viewer.
+
 ## Known limitation (as of this change)
 
 The **Open in Temporal** data link (`workflow_id`/`run_id` columns and node-graph

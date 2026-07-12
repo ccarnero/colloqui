@@ -137,6 +137,39 @@ Decision cuádruple:
   (`services/api-gateway/src/modules/tracking/tracking.controller.ts`).
 - **Engram topic**: `tracking/payload-capture`.
 
+## Change: per-instance run view (run-view)
+
+Spec-driven change adding a Temporal-UI-like, per-instance execution view to
+the admin console: a run-scoped `GET /runs/:workflowId/:runId` endpoint on
+the ingester (gateway wildcard proxy at `/api/tracking/runs/:workflowId/:runId`,
+needed because the deployed gateway router does not match colon-bearing
+named-param segments and `workflowId` itself contains colons), plus two
+console entries (`processes/runs/:workflowId/:runId` from the Executions
+row, and a "Run view" tab inside `processes/trace/:correlationId`). Full
+task queue, gates, and human decisions: `manual-loops/run-view.md`.
+Operational contract (endpoint response shape, run-scoping semantics,
+404/`step_detail`): `services/tracking-ingester-service/README.md`.
+Console-facing contract (two entries, view anatomy, degraded modes):
+`DOCS/guides/trace-console.md`.
+
+Decision cuádruple:
+- **Rule**: the run view is a per-instance, sequence-ordered flow (equally
+  spaced, NOT time-scaled) — complementary to, not a replacement for, the
+  causal graph (cross-service causality) and the Tempo waterfall (span
+  timing) — `manual-loops/run-view.md` §User decisions.
+- **Why**: neither existing view answers "what did THIS run do, step by
+  step" directly — the causal graph spans services/correlations and the
+  waterfall is timing-first; operators debugging a single workflow
+  execution needed a dedicated, plan-vs-executed step flow.
+- **Evidence**: the endpoint resolves run scope via the run's
+  `execution_started` row, then filters events by `causation_id` match
+  (step events) or `executionId` match (`execution_completed`), excluding
+  sibling runs that share a trigger's `correlation_id` — this is what
+  makes the endpoint return exactly one run instead of the whole chain;
+  domain layout (merge-run + layout-run) is a pure, exhaustively
+  unit-tested core, components only bind the model.
+- **Engram topic**: `tracking/run-view`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

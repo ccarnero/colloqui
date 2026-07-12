@@ -130,6 +130,49 @@ route. The gateway proxies this route with a tenant-admin permission guard
 (`tracking:payload:read`) and audits every successful view; see
 `DOCS/guides/trace-console.md` for the console-facing contract.
 
+### Run view endpoint
+
+`GET /runs/:workflowId/:runId` (tenant header required) → a per-instance
+execution view for a single Temporal run — "what did THIS run do, step by
+step", complementary to the chain endpoint above (cross-service causality)
+and the Tempo waterfall (span timing). The gateway proxies this route at
+`/api/tracking/runs/:workflowId/:runId` as a wildcard route, because the
+deployed gateway router does not match colon-bearing named-param segments
+and `workflowId` is itself a Temporal id containing colons
+(`tenant:name:...:...`).
+
+Response shape:
+
+```
+{
+  workflow_id, run_id, correlation_id, tenant,
+  events: [...],
+  spans: [...],
+  summary: { status, started_at, completed_at, total_ms, steps_ok, steps_failed },
+  cast: [{ kind: "connector" | "agent" | "channel" | "tool", id, name, count }],
+  step_detail
+}
+```
+
+**Run-scoping semantics**: the endpoint resolves the run's correlation via
+its `execution_started` row, then filters to that run's own events only —
+step events by `causation_id` match against the run's `execution_started`,
+and `execution_completed` by `executionId` match. Sibling runs that happen
+to share the same trigger's `correlation_id` are excluded; a single
+correlation chain can fan out into multiple runs, and this endpoint returns
+exactly one of them.
+
+**Errors and degraded state**: `404` for an unknown `workflowId`/`runId`
+pair — this also covers genuinely pre-step-events runs (before
+`manual-loops/workflow-step-events.md` shipped `execution_started`), since
+those never recorded a real `workflowId`/`runId` and are not resolvable by
+this endpoint at all (only `GET /chains/:correlationId` can reach them).
+`step_detail` is `false` for runs that DO resolve but whose own scoped
+events carry no step-level kinds (`action_started` / `action_completed` /
+`condition_evaluated`) — e.g. a workflow definition with zero actions — so
+the console falls back to an artifact-only view; see
+`DOCS/guides/trace-console.md` for the console-facing contract.
+
 ## `compliance` column
 
 Every row records how close its stored body is to a canonical `EventEnvelope`:
