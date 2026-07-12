@@ -34,6 +34,15 @@ set -euo pipefail
 #      idempotently provision an echo agent + a second workflow with an
 #      `agentCall` action sharing the same http trigger — kept as separate,
 #      still-valid coverage for the agent-execution span family, not removed.
+#  10b. Verify the T03 step-event contract on the same chain (T05,
+#      manual-loops/workflow-step-events.md): >=2 `action_started` AND >=2
+#      `action_completed` events (one jsFunction pair from e2e-http-log, one
+#      agentCall pair from e2e-http-agent, stages 3/3b), `actionIndex`
+#      present and numeric (fetched via the payload endpoint — the chain LIST
+#      response excludes the envelope, so `action_index` is not a queryable
+#      column), and the event-count multiplier vs the pre-step-events
+#      baseline of 3 events/run is logged and asserted to stay under the
+#      100-step volume cap.
 #  11. GET /api/tracking/chains/:correlationId/events/:eventId/payload for
 #      the chain's webhook_received (ingress) event and assert HTTP 200 with
 #      the payload containing the happy-path nonce, then repeat for a
@@ -103,6 +112,12 @@ CORRELATION_ID=""
 # rather than relying on ANY nonzero-duration span in the chain (see T02,
 # manual-loops/workflow-step-events.md).
 HAPPY_PATH_EXECUTION_ID=""
+# The last successful chain response body captured by stage_verify_chain
+# (stage 10). stage_verify_step_events (stage 10b) reuses it instead of
+# re-polling the chain endpoint — stage 10 already waited for the chain to
+# stabilize (events_ok/orphan_ok/nonzero_span_ok/etc. all true), so a second
+# independent poll would just repeat that wait for no benefit.
+CHAIN_BODY=""
 # Set to 1 once the workflow has been disabled and not yet confirmed
 # re-enabled; the EXIT trap uses this to guarantee the workflow is never
 # left disabled, regardless of which stage fails.
@@ -562,6 +577,7 @@ stage_verify_chain() {
       if [[ "$events_ok" == "true" && "$orphan_ok" == "true" && "$nonzero_span_ok" == "true" \
             && "$execution_started_ok" == "true" && "$workflow_span_ok" == "true" ]]; then
         log "Chain verified: events>=5=${events_ok} orphan_count-numeric=${orphan_ok} nonzero-span=${nonzero_span_ok} execution_started=${execution_started_ok} workflow-span=${workflow_span_ok}"
+        CHAIN_BODY="$body"
         return 0
       fi
       log "Chain not yet complete (events>=5=${events_ok} orphan_count-numeric=${orphan_ok} nonzero-span=${nonzero_span_ok} execution_started=${execution_started_ok} workflow-span=${workflow_span_ok}); retrying"
@@ -573,6 +589,86 @@ stage_verify_chain() {
   err "Chain assertions never satisfied for correlation ${CORRELATION_ID} within ${CHAIN_TIMEOUT_S}s"
   err "Last response (status ${status}): ${body}"
   return 1
+}
+
+stage_verify_step_events() {
+  # Stage 10b (T05, manual-loops/workflow-step-events.md): verifies T03's
+  # action_started/action_completed step events landed on the same chain
+  # stage 10 already verified, checks the actionIndex payload field, and
+  # measures/logs the event-count volume multiplier.
+  #
+  # actionIndex verification approach: the chain LIST endpoint
+  # (GET /chains/:correlationId) deliberately EXCLUDES the raw envelope jsonb
+  # from every row (build-chain-query.ts's CHAIN_COLUMNS / has_envelope
+  # comment), and `action_index` is not a column on tracking.tracked_events —
+  # it only exists inside the envelope's `data.payload`. So it cannot be
+  # asserted from the chain response. Instead this stage picks one
+  # action_started event_id from the chain and fetches its payload via
+  # GET /chains/:correlationId/events/:eventId/payload (same admin-authed
+  # endpoint stage 11 already exercises), asserting `payload.actionIndex` is
+  # present and numeric there.
+  #
+  # actionIndex ORDERING note: both e2e workflows here (e2e-http-log,
+  # e2e-http-agent) have exactly one action each, so every action_started/
+  # action_completed pair on this chain carries actionIndex 0 — this flow
+  # can only assert the field is present and numeric, NOT exercise ordering
+  # across multiple actions of the same workflow (that needs a multi-action
+  # workflow definition, out of scope for this single-action http-webhook
+  # e2e; T03's unit tests already cover multi-action ordering).
+  log "Stage 10b: verify action_started/action_completed pairs, actionIndex, and volume cap"
+  if [[ -z "$CHAIN_BODY" ]]; then
+    err "CHAIN_BODY is empty — stage_verify_chain (stage 10) must run first"
+    return 1
+  fi
+
+  local started_count completed_count total_events
+  started_count="$(echo "$CHAIN_BODY" | jq '[.events[]? | select(.kind == "action_started")] | length')"
+  completed_count="$(echo "$CHAIN_BODY" | jq '[.events[]? | select(.kind == "action_completed")] | length')"
+  total_events="$(echo "$CHAIN_BODY" | jq '.events | length')"
+
+  # e2e-http-log's single jsFunction action + e2e-http-agent's single
+  # agentCall action (stages 3/3b, same happy-path trigger) -> >=2
+  # action_started/action_completed PAIRS expected on this correlation.
+  if [[ "$started_count" -lt 2 || "$completed_count" -lt 2 ]]; then
+    err "Expected >=2 action_started and >=2 action_completed events, got started=${started_count} completed=${completed_count}"
+    return 1
+  fi
+  log "action_started/action_completed pairs present: started=${started_count} completed=${completed_count}"
+
+  local first_action_event_id
+  first_action_event_id="$(echo "$CHAIN_BODY" | jq -r '[.events[]? | select(.kind == "action_started")][0].event_id')"
+  if [[ -z "$first_action_event_id" || "$first_action_event_id" == "null" ]]; then
+    err "Could not resolve an action_started event_id from the chain"
+    return 1
+  fi
+
+  local combined body status action_index_type
+  combined="$(api_status GET "/api/tracking/chains/${CORRELATION_ID}/events/${first_action_event_id}/payload")"
+  status="$(api_status_code "$combined")"
+  body="$(api_status_body "$combined")"
+  if [[ "$status" != "200" ]]; then
+    err "Payload fetch for action_started event ${first_action_event_id} returned status ${status}: ${body}"
+    return 1
+  fi
+  action_index_type="$(echo "$body" | jq -r '.payload.actionIndex | type')"
+  if [[ "$action_index_type" != "number" ]]; then
+    err "Expected numeric actionIndex on action_started payload (event ${first_action_event_id}), got type ${action_index_type}: ${body}"
+    return 1
+  fi
+  log "actionIndex present and numeric on action_started event ${first_action_event_id} (value=$(echo "$body" | jq -r '.payload.actionIndex'))"
+
+  # Volume guard (SPEC.md constraint "Volume guard" + T05 "measure the
+  # multiplier"): step events are emitted for EVERY run, so log the
+  # multiplier vs the pre-step-events baseline of 3 events/run and assert
+  # the run stays under the 100-step cap.
+  local multiplier
+  multiplier="$(awk -v n="$total_events" 'BEGIN { printf "%.1f", n / 3 }')"
+  log "events per run: ${total_events} (multiplier vs pre-step-events baseline 3: x${multiplier})"
+  if [[ "$total_events" -ge 100 ]]; then
+    err "Event count ${total_events} for correlation ${CORRELATION_ID} reaches/exceeds the 100-step cap"
+    return 1
+  fi
+  log "Event count ${total_events} within the 100-step cap"
 }
 
 stage_verify_payload() {
@@ -663,8 +759,9 @@ main() {
   stage_verify_execution "$NONCE_REENABLED"
   stage_capture_correlation_id "$NONCE"
   stage_verify_chain
+  stage_verify_step_events
   stage_verify_payload "$NONCE"
-  log "E2E http → workflow → jsFunction chain + toggle scenario + tracking chain + payload round-trip verified (nonces ${NONCE}, ${NONCE_DISABLED}, ${NONCE_REENABLED}; correlation ${CORRELATION_ID})"
+  log "E2E http → workflow → jsFunction chain + toggle scenario + tracking chain + step events + payload round-trip verified (nonces ${NONCE}, ${NONCE_DISABLED}, ${NONCE_REENABLED}; correlation ${CORRELATION_ID})"
 }
 
 main "$@"

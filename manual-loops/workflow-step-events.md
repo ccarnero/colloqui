@@ -193,7 +193,7 @@ grep -n "workflow-step-events" cowork/INDEX.md
 - [x] T02 execution_started
 - [x] T03 action_started/completed
 - [x] T04 condition_evaluated
-- [ ] T05 cluster verification + volume
+- [x] T05 cluster verification + volume
 - [ ] T06 docs + index
 
 ## Out of scope (explicit)
