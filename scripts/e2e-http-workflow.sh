@@ -48,6 +48,24 @@ set -euo pipefail
 #      the payload containing the happy-path nonce, then repeat for a
 #      fabricated unknown event id on the same correlation and assert 404 —
 #      proves durable payload capture end-to-end.
+#  12. GET /api/tracking/runs/:workflowId/:runId (T07,
+#      manual-loops/run-view.md) for the happy-path run and assert HTTP 200,
+#      summary.status == "completed", summary.steps_ok >= 1, `cast` contains
+#      a channel-kind entry for the http channel (`tech` "http-generic" per
+#      TAXONOMY.md's Q5 rename), and at least one step span with
+#      duration_ms > 0. The (workflowId, runId) pair is the real Temporal
+#      ids — sourced from the SAME executions-list response stage 9 already
+#      polls by nonce (`GET /workflows/:id/executions?pageSize=100`), whose
+#      items carry `temporalWorkflowId`/`temporalRunId`
+#      (IWorkflowExecutionListItem, workflows.service.ts's mapExecutionRow) —
+#      verified by reading the workflow-service execution list/DTO source;
+#      the single-execution detail endpoint used later in stage 9
+#      (`GET /workflows/:id/executions/:executionId`) only exposes
+#      `temporalWorkflowId`, not `temporalRunId` (IExecutionStatusResult), so
+#      it could not have served this purpose alone. workflowId is
+#      colon-bearing (`acme:e2e-http-log:sha256:...:id`) and is
+#      percent-encoded before being placed in the URL path, matching the
+#      gateway's `parseRunPathSegments` contract (T02).
 #
 # Exit code 0 = full chain verified; 1 = any stage failed. The workflow is
 # always left ENABLED on exit (trap), even on failure, so a failed run never
@@ -72,7 +90,12 @@ WORKFLOW_NAME="e2e-http-log"
 # execution (agent-ai-service) whose span has duration_ms > 0 (see stage 10).
 AGENT_NAME="e2e-http-agent-echo"
 AGENT_WORKFLOW_NAME="e2e-http-agent"
-POLL_TIMEOUT_S="${E2E_POLL_TIMEOUT_S:-60}"
+# 120s (was 60s): the workflow-execution wait must accommodate re-enable
+# propagation and the fuller event pipeline — every run now also publishes
+# the step-event stream (execution_started + action/condition events, x2 for
+# the shared-trigger agent workflow), so a re-enabled run occasionally lands
+# just past a 60s bound even though it runs correctly. Matches CHAIN_TIMEOUT_S.
+POLL_TIMEOUT_S="${E2E_POLL_TIMEOUT_S:-120}"
 # Bound for the disabled-workflow stage's *positive* wait (see
 # stage_verify_no_execution): it polls workflow-service-worker logs for the
 # trigger-consumer's "Skipped trigger for disabled workflow" warn line, i.e.
@@ -86,6 +109,8 @@ DISABLED_CHECK_TIMEOUT_S="${E2E_DISABLED_CHECK_TIMEOUT_S:-$POLL_TIMEOUT_S}"
 # is a Postgres query behind the ingester, not a Temporal/NATS hop, but it
 # still races the agentCall runtime execution (agent-ai-service via
 # ai-agent-gateway), which can be slower than the plain jsFunction path.
+# Also reused by stage 12 (run endpoint), which is the same class of
+# ingester Postgres read, scoped to one run instead of the whole chain.
 CHAIN_TIMEOUT_S="${E2E_CHAIN_TIMEOUT_S:-120}"
 
 # macOS mDNS resolves *.dev.local in ~5s even with /etc/hosts entries;
@@ -132,6 +157,13 @@ CORRELATION_ID=""
 # rather than relying on ANY nonzero-duration span in the chain (see T02,
 # manual-loops/workflow-step-events.md).
 HAPPY_PATH_EXECUTION_ID=""
+# The happy-path run's real Temporal identifiers, captured alongside
+# HAPPY_PATH_EXECUTION_ID by stage_capture_correlation_id (stage 9) from the
+# SAME executions-list response (IWorkflowExecutionListItem carries both).
+# Used by stage_verify_run (stage 12) to call the ingester's run endpoint
+# (T01/T02, manual-loops/run-view.md).
+HAPPY_PATH_WORKFLOW_ID=""
+HAPPY_PATH_RUN_ID=""
 # The last successful chain response body captured by stage_verify_chain
 # (stage 10). stage_verify_step_events (stage 10b) reuses it instead of
 # re-polling the chain endpoint — stage 10 already waited for the chain to
@@ -543,20 +575,35 @@ stage_capture_correlation_id() {
   local nonce="$1"
   log "Stage 9: resolve correlation_id for nonce ${nonce} (timeout ${POLL_TIMEOUT_S}s)"
   local deadline=$(( $(date +%s) + POLL_TIMEOUT_S ))
-  local execution_id=""
+  local execution_id="" execution_row=""
   while (( $(date +%s) < deadline )); do
     # curl timeouts inside poll loops degrade to a retry — pipefail would otherwise abort the script
-    execution_id="$(api GET "/api/workflows/${WORKFLOW_ID}/executions?pageSize=100" \
-      | jq -r ".items[]? | select(.request.text == \"${nonce}\") | .id" | head -1)" || true
-    [[ -n "$execution_id" ]] && break
+    execution_row="$(api GET "/api/workflows/${WORKFLOW_ID}/executions?pageSize=100" \
+      | jq -c ".items[]? | select(.request.text == \"${nonce}\")" | head -1)" || true
+    [[ -n "$execution_row" ]] && break
     sleep 3
   done
-  if [[ -z "$execution_id" ]]; then
+  if [[ -z "$execution_row" ]]; then
     err "No execution of workflow ${WORKFLOW_ID} found for nonce ${nonce} within ${POLL_TIMEOUT_S}s"
     return 1
   fi
+  execution_id="$(echo "$execution_row" | jq -r '.id // empty')"
+  if [[ -z "$execution_id" ]]; then
+    err "Execution row for nonce ${nonce} missing 'id': ${execution_row}"
+    return 1
+  fi
   HAPPY_PATH_EXECUTION_ID="$execution_id"
-  log "Found execution ${execution_id} for nonce ${nonce}; polling for causal.correlation_id"
+  # Same executions-list row already carries the real Temporal ids
+  # (IWorkflowExecutionListItem.temporalWorkflowId/temporalRunId,
+  # workflows.service.ts's mapExecutionRow) — captured here for stage 12
+  # (stage_verify_run) so it never needs a second poll.
+  HAPPY_PATH_WORKFLOW_ID="$(echo "$execution_row" | jq -r '.temporalWorkflowId // empty')"
+  HAPPY_PATH_RUN_ID="$(echo "$execution_row" | jq -r '.temporalRunId // empty')"
+  if [[ -z "$HAPPY_PATH_WORKFLOW_ID" || -z "$HAPPY_PATH_RUN_ID" ]]; then
+    err "Execution ${execution_id} missing temporalWorkflowId/temporalRunId: ${execution_row}"
+    return 1
+  fi
+  log "Found execution ${execution_id} for nonce ${nonce} (temporalWorkflowId=${HAPPY_PATH_WORKFLOW_ID}, temporalRunId=${HAPPY_PATH_RUN_ID}); polling for causal.correlation_id"
 
   while (( $(date +%s) < deadline )); do
     local correlation_id
@@ -773,6 +820,61 @@ stage_verify_payload() {
   log "Confirmed 404 for fabricated unknown event id"
 }
 
+stage_verify_run() {
+  # Stage 12 (T07, manual-loops/run-view.md): GET /api/tracking/runs/:workflowId/:runId
+  # for the happy-path run and assert the shape T01/to-run-response.ts
+  # produces: summary.status == "completed", summary.steps_ok >= 1, a
+  # channel-kind cast entry for the http channel, and at least one step
+  # span with duration_ms > 0 (guaranteed once workflow-step-events has
+  # landed, which stage 10b already confirmed on this same correlation).
+  #
+  # workflowId is the real Temporal id (colon-bearing, e.g.
+  # "acme:e2e-http-log:sha256:...:id") — percent-encoded via jq's `@uri`
+  # before being placed in the URL path, matching the gateway's
+  # parseRunPathSegments contract (T02), which accepts either raw or
+  # percent-encoded colons but this stage encodes to stay a well-formed URL.
+  log "Stage 12: GET /api/tracking/runs/${HAPPY_PATH_WORKFLOW_ID}/${HAPPY_PATH_RUN_ID} (timeout ${CHAIN_TIMEOUT_S}s)"
+  if [[ -z "$HAPPY_PATH_WORKFLOW_ID" || -z "$HAPPY_PATH_RUN_ID" ]]; then
+    err "HAPPY_PATH_WORKFLOW_ID/HAPPY_PATH_RUN_ID empty — cannot verify run"
+    return 1
+  fi
+
+  local encoded_wf encoded_run
+  encoded_wf="$(jq -rn --arg v "$HAPPY_PATH_WORKFLOW_ID" '$v|@uri')"
+  encoded_run="$(jq -rn --arg v "$HAPPY_PATH_RUN_ID" '$v|@uri')"
+
+  local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
+  local combined body status
+  while (( $(date +%s) < deadline )); do
+    # timeout -> retry
+    combined="$(api_status GET "/api/tracking/runs/${encoded_wf}/${encoded_run}")" || true
+    status="$(api_status_code "$combined")"
+    body="$(api_status_body "$combined")"
+    if [[ "$status" == "200" ]]; then
+      local status_ok steps_ok_ok channel_cast_ok nonzero_step_span_ok
+      status_ok="$(echo "$body" | jq '.summary.status == "completed"')"
+      steps_ok_ok="$(echo "$body" | jq '(.summary.steps_ok // 0) >= 1')"
+      # Channel cast entry for the http channel — TAXONOMY.md Q5 renames
+      # the `http` channel token to public tech value "http-generic".
+      channel_cast_ok="$(echo "$body" | jq \
+        '([.cast[]? | select(.kind == "channel" and (.name == "http-generic" or .id == "http-generic"))] | length) >= 1')"
+      nonzero_step_span_ok="$(echo "$body" | jq '([.spans[]? | select(.duration_ms > 0)] | length) >= 1')"
+      if [[ "$status_ok" == "true" && "$steps_ok_ok" == "true" \
+            && "$channel_cast_ok" == "true" && "$nonzero_step_span_ok" == "true" ]]; then
+        log "Run verified: status=completed=${status_ok} steps_ok>=1=${steps_ok_ok} http-channel-cast=${channel_cast_ok} nonzero-step-span=${nonzero_step_span_ok}"
+        return 0
+      fi
+      log "Run not yet complete (status-completed=${status_ok} steps_ok>=1=${steps_ok_ok} http-channel-cast=${channel_cast_ok} nonzero-step-span=${nonzero_step_span_ok}); retrying"
+    else
+      log "Run endpoint returned status ${status}; retrying"
+    fi
+    sleep 3
+  done
+  err "Run assertions never satisfied for ${HAPPY_PATH_WORKFLOW_ID}/${HAPPY_PATH_RUN_ID} within ${CHAIN_TIMEOUT_S}s"
+  err "Last response (status ${status}): ${body}"
+  return 1
+}
+
 main() {
   command -v jq >/dev/null || { err "jq is required"; exit 1; }
   stage_login
@@ -794,7 +896,8 @@ main() {
   stage_verify_chain
   stage_verify_step_events
   stage_verify_payload "$NONCE"
-  log "E2E http → workflow → jsFunction chain + toggle scenario + tracking chain + step events + payload round-trip verified (nonces ${NONCE}, ${NONCE_DISABLED}, ${NONCE_REENABLED}; correlation ${CORRELATION_ID})"
+  stage_verify_run
+  log "E2E http → workflow → jsFunction chain + toggle scenario + tracking chain + step events + payload round-trip + run view verified (nonces ${NONCE}, ${NONCE_DISABLED}, ${NONCE_REENABLED}; correlation ${CORRELATION_ID})"
 }
 
 main "$@"
