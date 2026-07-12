@@ -2,17 +2,23 @@ import { describe, expect, it } from "vitest";
 import type { IRunCastEntry } from "../../../../core/services/run-view.service";
 import type { ILayoutEdge, ILayoutNode } from "../domain/run-view.model";
 import {
+  ARTIFACT_BOX_WIDTH,
   computeArtifactBoxes,
   computeArtifactColumnX,
   computeArtifactEdges,
+  computeContentWidth,
   computeRenderedEdges,
   formatPillLabel,
   type IPositionedNode,
   isArtifactNode,
+  isNestedArtifactNode,
   isPillNode,
+  isSpineArtifactNode,
+  isUuidLike,
   NODE_HEIGHT,
   NODE_WIDTH,
   nodePosition,
+  nodeSubLabel,
   nodeVisualHeight,
   PILL_HEIGHT,
   PILL_WIDTH,
@@ -143,6 +149,62 @@ describe("computeRenderedEdges — pill-aware edge origin + label offset", () =>
     const midX = (rendered!.x1 + rendered!.x2) / 2;
     const midY = (rendered!.y1 + rendered!.y2) / 2;
     expect(rendered!.labelX !== midX || rendered!.labelY !== midY).toBe(true);
+  });
+
+  it("bug 3 regression: a fork-out label always floats ABOVE its line's midpoint, regardless of which way the line slopes", () => {
+    // Fork pill at lane 0 fanning out down-right into lane 1 (label would
+    // previously drift below the line for this slope direction).
+    const forkDownRight = positioned({
+      id: "f1",
+      kind: "fork",
+      row: 0,
+      lane: 0,
+    });
+    const laneRight = positioned({ id: "l1", kind: "action", row: 1, lane: 1 });
+    // Fork pill fanning out down-LEFT (opposite slope) into a nested lane.
+    const forkDownLeft = positioned({
+      id: "f2",
+      kind: "fork",
+      row: 0,
+      lane: 1,
+    });
+    const laneLeft = positioned({
+      id: "l2",
+      kind: "action",
+      row: 1,
+      lane: 0,
+    });
+    const edges: ILayoutEdge[] = [
+      {
+        id: "e1",
+        fromId: "f1",
+        toId: "l1",
+        kind: "fork-out",
+        dashed: false,
+        thick: false,
+        label: "pokeapi",
+      },
+      {
+        id: "e2",
+        fromId: "f2",
+        toId: "l2",
+        kind: "fork-out",
+        dashed: false,
+        thick: false,
+        label: "catfacts",
+      },
+    ];
+    const byId = new Map([
+      [forkDownRight.id, forkDownRight],
+      [laneRight.id, laneRight],
+      [forkDownLeft.id, forkDownLeft],
+      [laneLeft.id, laneLeft],
+    ]);
+    const rendered = computeRenderedEdges(edges, byId);
+    for (const edge of rendered) {
+      const midY = (edge.y1 + edge.y2) / 2;
+      expect(edge.labelY).toBeLessThan(midY);
+    }
   });
 });
 
@@ -309,12 +371,144 @@ describe("computeArtifactBoxes", () => {
       actionType: "agentCall",
       instanceId: "agent-1",
       row: 3,
-      lane: 1,
+      lane: 0,
     });
     const boxes = computeArtifactBoxes([a, b], cast);
     expect(boxes).toHaveLength(2);
     expect(boxes[0]!.x).toBe(boxes[1]!.x);
     expect(boxes[0]!.x).toBeGreaterThan(b.x + NODE_WIDTH);
+  });
+
+  // Run-view visual rewrite slice 5: the mockup only pairs a right-column
+  // box with TOP-LEVEL SPINE artifact steps — a fork-lane or condition-
+  // branch artifact step renders its info inline instead (see
+  // `isNestedArtifactNode`/`nodeSubLabel`), which is what avoids the old
+  // same-row collision the removed vertical-stacking hack used to paper
+  // over.
+  it("produces a box for a spine-level (nestingDepth 0, lane 0) connector node", () => {
+    const spine = positioned({
+      id: "n1",
+      actionType: "endpointCall",
+      instanceId: "conn-1",
+      nestingDepth: 0,
+      lane: 0,
+    });
+    const boxes = computeArtifactBoxes([spine], cast);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]!.stepId).toBe("n1");
+  });
+
+  it("produces NO box for a fork-lane (lane > 0) connector/agent node", () => {
+    const laneNode = positioned({
+      id: "n1",
+      actionType: "endpointCall",
+      instanceId: "conn-1",
+      nestingDepth: 0,
+      lane: 1,
+    });
+    expect(computeArtifactBoxes([laneNode], cast)).toHaveLength(0);
+  });
+
+  it("produces NO box for a nested (nestingDepth > 0) condition-branch agent node", () => {
+    const nestedNode = positioned({
+      id: "n1",
+      actionType: "agentCall",
+      instanceId: "agent-1",
+      nestingDepth: 1,
+      lane: 0,
+    });
+    expect(computeArtifactBoxes([nestedNode], cast)).toHaveLength(0);
+  });
+});
+
+describe("nodeSubLabel — spine unchanged, nested artifact steps get an inline collapsed chip", () => {
+  it("a spine node (non-artifact or lane 0/nestingDepth 0) keeps the plain status/duration sub-label", () => {
+    const spine = node({
+      actionType: "endpointCall",
+      instanceId: "conn-1",
+      nestingDepth: 0,
+      lane: 0,
+      status: "ok",
+      durationMs: 183,
+    });
+    expect(nodeSubLabel(spine)).toBe("ok · 183ms");
+  });
+
+  it("a non-artifact node (jsFunction) never gets the inline chip regardless of nesting", () => {
+    const nested = node({
+      actionType: "jsFunction",
+      instanceId: null,
+      nestingDepth: 1,
+      lane: 0,
+      status: "ok",
+      durationMs: 50,
+    });
+    expect(nodeSubLabel(nested)).toBe("ok · 50ms");
+  });
+
+  it("a fork-lane connector node (lane > 0) gets the '↔ <kind> · <ms>ms · <status>' inline chip", () => {
+    const laneNode = node({
+      actionType: "endpointCall",
+      instanceId: "conn-1",
+      nestingDepth: 0,
+      lane: 1,
+      status: "ok",
+      durationMs: 356,
+    });
+    expect(nodeSubLabel(laneNode)).toBe("↔ connector · 356ms · ok");
+  });
+
+  it("a condition-branch agent node (nestingDepth > 0) gets the inline chip too", () => {
+    const branchNode = node({
+      actionType: "agentCall",
+      instanceId: "agent-1",
+      nestingDepth: 1,
+      lane: 0,
+      status: "ok",
+      durationMs: 412,
+    });
+    expect(nodeSubLabel(branchNode)).toBe("↔ agent · 412ms · ok");
+  });
+});
+
+describe("isSpineArtifactNode / isNestedArtifactNode", () => {
+  it("a spine artifact node (nestingDepth 0, lane 0) is spine, not nested", () => {
+    const spine = node({
+      actionType: "endpointCall",
+      instanceId: "conn-1",
+      nestingDepth: 0,
+      lane: 0,
+    });
+    expect(isSpineArtifactNode(spine)).toBe(true);
+    expect(isNestedArtifactNode(spine)).toBe(false);
+  });
+
+  it("a fork-lane artifact node (lane > 0) is nested, not spine", () => {
+    const laneNode = node({
+      actionType: "endpointCall",
+      instanceId: "conn-1",
+      nestingDepth: 0,
+      lane: 2,
+    });
+    expect(isSpineArtifactNode(laneNode)).toBe(false);
+    expect(isNestedArtifactNode(laneNode)).toBe(true);
+  });
+
+  it("a condition-branch artifact node (nestingDepth > 0) is nested, not spine", () => {
+    const branchNode = node({
+      actionType: "channelSend",
+      instanceId: null,
+      nestingDepth: 1,
+      lane: 0,
+    });
+    expect(isSpineArtifactNode(branchNode)).toBe(false);
+    expect(isNestedArtifactNode(branchNode)).toBe(true);
+  });
+
+  it("a non-artifact node is neither spine nor nested regardless of position", () => {
+    const plain = node({ actionType: "jsFunction", nestingDepth: 1, lane: 2 });
+    expect(isSpineArtifactNode(plain)).toBe(false);
+    expect(isNestedArtifactNode(plain)).toBe(false);
   });
 });
 
@@ -353,5 +547,196 @@ describe("computeArtifactEdges", () => {
   it("produces no edges for a step with no paired artifact box", () => {
     const spine = positioned({ id: "n1", actionType: "jsFunction" });
     expect(computeArtifactEdges([spine], [])).toHaveLength(0);
+  });
+
+  it("bug 3 regression: the req and resp labels of a pair sit in the horizontal gap between the two boxes, not on top of each other", () => {
+    const spine = positioned({
+      id: "n1",
+      actionType: "endpointCall",
+      instanceId: "conn-1",
+      durationMs: 183,
+      status: "ok",
+    });
+    const cast: readonly IRunCastEntry[] = [
+      { kind: "connector", id: "conn-1", name: "Order API", count: 1 },
+    ];
+    const boxes = computeArtifactBoxes([spine], cast);
+    const [request, response] = computeArtifactEdges([spine], boxes);
+
+    // Both labels sit horizontally between the spine box's right edge and
+    // the artifact box's left edge (the shared request/response line's own
+    // x-span), not past either endpoint.
+    expect(request!.labelX).toBeGreaterThan(request!.x1);
+    expect(request!.labelX).toBeLessThan(request!.x2);
+    expect(response!.labelX).toBeGreaterThan(response!.x2);
+    expect(response!.labelX).toBeLessThan(response!.x1);
+
+    // The two labels no longer land on the exact same point (previously
+    // both rendered at the shared line's midpoint, directly overlapping).
+    expect(request!.labelY).not.toBe(response!.labelY);
+  });
+});
+
+describe("bug 1 regression: content width includes the full artifact box extent", () => {
+  it("computeContentWidth is wide enough to contain the widest artifact box's right edge + padding, not just its column x", () => {
+    const spine = positioned({
+      id: "n1",
+      actionType: "endpointCall",
+      instanceId: "conn-1",
+      row: 0,
+      lane: 0,
+    });
+    const cast: readonly IRunCastEntry[] = [
+      { kind: "connector", id: "conn-1", name: "Order API", count: 1 },
+    ];
+    const boxes = computeArtifactBoxes([spine], cast);
+    const width = computeContentWidth([spine], [], boxes);
+    const widestBoxRightEdge = Math.max(
+      ...boxes.map((b) => b.x + ARTIFACT_BOX_WIDTH)
+    );
+    expect(width).toBeGreaterThan(widestBoxRightEdge);
+  });
+
+  it("truncates a long raw instance-id fallback (no cast name resolved) so the label fits the box, but keeps a resolved cast name intact", () => {
+    const spine = positioned({
+      id: "n1",
+      actionType: "endpointCall",
+      instanceId: "d021a4ce-9112-4835-a1fa-74aedd2d2133",
+      row: 0,
+      lane: 0,
+    });
+    const boxes = computeArtifactBoxes([spine], []);
+    expect(boxes[0]!.label).toBe("connector · d021a4ce…");
+    expect(boxes[0]!.label.length).toBeLessThan(30);
+
+    const named = computeArtifactBoxes(
+      [spine],
+      [
+        {
+          kind: "connector",
+          id: "d021a4ce-9112-4835-a1fa-74aedd2d2133",
+          name: "Order API",
+          count: 1,
+        },
+      ]
+    );
+    expect(named[0]!.label).toBe("connector · Order API");
+  });
+});
+
+// Run-view visual rewrite slice 5: the same-row collision the old
+// vertical-stacking hack (bug 2, slice 4) used to paper over is now
+// impossible by construction — 3 parallel fork-lane artifact steps on the
+// SAME `row` never produce right-column boxes at all (`lane > 0`
+// disqualifies them from `computeArtifactBoxes`), so there is nothing to
+// stack. Their artifact info instead renders inline in their own boxes
+// (`nodeSubLabel`), which is exercised by the "nodeSubLabel" describe block
+// above.
+describe("bug 2 (slice 4) is now structurally avoided: fork-lane artifacts never reach the right column", () => {
+  it("3 artifact nodes fanned out on the same row (3 fork lanes) produce ZERO right-column boxes, not 3 stacked ones", () => {
+    const cast: readonly IRunCastEntry[] = [
+      {
+        kind: "connector",
+        id: "conn-get-post",
+        name: "jsonplaceholder",
+        count: 1,
+      },
+      { kind: "connector", id: "conn-get-pokemon", name: "pokeapi", count: 1 },
+      { kind: "connector", id: "conn-get-catfact", name: "catfacts", count: 1 },
+    ];
+    const lane1 = positioned({
+      id: "getPost",
+      actionType: "endpointCall",
+      instanceId: "conn-get-post",
+      row: 1,
+      lane: 1,
+    });
+    const lane2 = positioned({
+      id: "getPokemon",
+      actionType: "endpointCall",
+      instanceId: "conn-get-pokemon",
+      row: 1,
+      lane: 2,
+    });
+    const lane3 = positioned({
+      id: "getCatFact",
+      actionType: "endpointCall",
+      instanceId: "conn-get-catfact",
+      row: 1,
+      lane: 3,
+    });
+    // All three source nodes share the same row -> would have shared the
+    // same node.y under the old shared-column layout.
+    expect(lane1.y).toBe(lane2.y);
+    expect(lane2.y).toBe(lane3.y);
+
+    expect(computeArtifactBoxes([lane1, lane2, lane3], cast)).toHaveLength(0);
+
+    // No paired boxes -> no artifact edges either (no req/resp arrows
+    // crossing into the right column for fork-lane steps).
+    expect(computeArtifactEdges([lane1, lane2, lane3], [])).toHaveLength(0);
+  });
+});
+
+describe("isUuidLike", () => {
+  it("matches a canonical UUID (8-4-4-4-12 hex groups)", () => {
+    expect(isUuidLike("88b3da16-d20c-4ff4-95bc-d68033dc2cde")).toBe(true);
+  });
+
+  it("rejects a friendly connector/agent name", () => {
+    expect(isUuidLike("http-generic")).toBe(false);
+    expect(isUuidLike("getPost")).toBe(false);
+  });
+});
+
+describe("bug regression: connector/agent artifact label truncates a raw UUID even when it arrives via the cast entry's name field", () => {
+  it("truncates a cast entry whose resolved name IS a raw UUID (unnamed connector/agent)", () => {
+    const spine = positioned({
+      id: "n1",
+      actionType: "endpointCall",
+      instanceId: "88b3da16-d20c-4ff4-95bc-d68033dc2cde",
+      row: 0,
+      lane: 0,
+    });
+    const cast: readonly IRunCastEntry[] = [
+      {
+        kind: "connector",
+        id: "88b3da16-d20c-4ff4-95bc-d68033dc2cde",
+        name: "88b3da16-d20c-4ff4-95bc-d68033dc2cde",
+        count: 1,
+      },
+    ];
+    const boxes = computeArtifactBoxes([spine], cast);
+    expect(boxes[0]!.label).toBe("connector · 88b3da16…");
+    expect(boxes[0]!.label).not.toContain(
+      "88b3da16-d20c-4ff4-95bc-d68033dc2cde"
+    );
+  });
+
+  it("passes through a friendly cast entry name (e.g. a channel) unchanged", () => {
+    const spine = positioned({
+      id: "n1",
+      actionType: "endpointCall",
+      instanceId: "chan-1",
+      row: 0,
+      lane: 0,
+    });
+    const cast: readonly IRunCastEntry[] = [
+      { kind: "connector", id: "chan-1", name: "http-generic", count: 1 },
+    ];
+    const boxes = computeArtifactBoxes([spine], cast);
+    expect(boxes[0]!.label).toBe("connector · http-generic");
+  });
+
+  it("still truncates the raw instanceId fallback when there is no cast match (existing behavior preserved)", () => {
+    const spine = positioned({
+      id: "n1",
+      actionType: "endpointCall",
+      instanceId: "d021a4ce-9112-4835-a1fa-74aedd2d2133",
+      row: 0,
+      lane: 0,
+    });
+    const boxes = computeArtifactBoxes([spine], []);
+    expect(boxes[0]!.label).toBe("connector · d021a4ce…");
   });
 });

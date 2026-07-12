@@ -108,8 +108,19 @@ export interface IRenderedRunEdge {
  * just off the edge). Falls back to a small upward nudge for a
  * (near-)vertical edge, where the perpendicular is (near-)horizontal and
  * would otherwise push the label sideways into a neighboring lane. */
-const EDGE_LABEL_OFFSET = 8;
+const EDGE_LABEL_OFFSET = 10;
 
+/**
+ * Bug 3 fix (run-view visual rewrite slice 4): the fork/branch lane edges
+ * in a crowded fanout (3+ parallel lanes leaving one fork pill) are steep
+ * diagonals in EITHER direction, so a plain "offset to the right of travel"
+ * perpendicular sometimes pushed the label DOWN, straight onto the target
+ * lane's box. The perpendicular is still used (it keeps the label off the
+ * line itself), but its vertical component is now always forced negative
+ * (screen-up) so every fork/branch label floats ABOVE its line — never on
+ * top of the node rect the line terminates into — regardless of which way
+ * the edge itself is sloping.
+ */
 function labelPosition(
   x1: number,
   y1: number,
@@ -129,9 +140,17 @@ function labelPosition(
   // the line they annotate.
   const nx = -dy / length;
   const ny = dx / length;
+  let offX = nx * EDGE_LABEL_OFFSET;
+  let offY = ny * EDGE_LABEL_OFFSET;
+  // Force the vertical component upward (screen-up is negative y) so the
+  // label never drifts onto a box below the line.
+  if (offY > 0) {
+    offX = -offX;
+    offY = -offY;
+  }
   return {
-    x: mx + nx * EDGE_LABEL_OFFSET,
-    y: my + ny * EDGE_LABEL_OFFSET - 2,
+    x: mx + offX,
+    y: my + offY - 2,
   };
 }
 
@@ -244,9 +263,10 @@ function computeContentBox(
   const maxX = Math.max(
     ...positions.map((n) => n.x + NODE_WIDTH),
     ...chips.map((c) => c.x + NODE_WIDTH),
-    // Slice 3: widen the content box to include the right-hand artifact
-    // column so its boxes are never clipped by a viewBox sized off the
-    // spine alone.
+    // Slice 3/4: widen the content box to include the FULL right-hand
+    // artifact box extent (column x + the box's own width), never just the
+    // column's x — otherwise the widest artifact box's text/rect clips off
+    // the right edge of the viewBox (bug 1, slice 4).
     ...artifactBoxes.map((b) => b.x + ARTIFACT_BOX_WIDTH)
   );
   const maxY = Math.max(
@@ -424,6 +444,29 @@ export function isArtifactNode(node: ILayoutNode): boolean {
   return kind === "channel" || node.instanceId !== null;
 }
 
+/**
+ * Run-view visual rewrite slice 5: the mockup only pairs a SEPARATE
+ * right-column artifact box with TOP-LEVEL SPINE artifact steps (the main
+ * connector/channel steps, `nestingDepth === 0 && lane === 0` —
+ * `layoutSequence`'s top-level call always lays out at `lane: 0`, and every
+ * fork lane/conditional branch nests at `lane >= 1` or `nestingDepth >= 1`,
+ * see `layout-run.ts`). A step inside a fork lane or a condition branch
+ * gets its artifact info rendered INLINE in its own box instead (see
+ * `isNestedArtifactNode`/`nodeSubLabel` below) — this is what avoids the
+ * same-row collision the old vertical-stacking hack used to paper over.
+ */
+export function isSpineArtifactNode(node: ILayoutNode): boolean {
+  return isArtifactNode(node) && node.nestingDepth === 0 && node.lane === 0;
+}
+
+/** The complement of `isSpineArtifactNode`: an artifact-eligible step
+ * nested inside a fork lane (`lane > 0`) or a condition branch
+ * (`nestingDepth > 0`) — gets the mockup's collapsed "↔" inline chip in its
+ * own sub-label instead of a paired right-column box. */
+export function isNestedArtifactNode(node: ILayoutNode): boolean {
+  return isArtifactNode(node) && (node.nestingDepth > 0 || node.lane > 0);
+}
+
 /** Same rect footprint as a standard action box, so the artifact column
  * lines up row-for-row with the spine's own `NODE_HEIGHT`. */
 export const ARTIFACT_BOX_WIDTH = NODE_WIDTH;
@@ -488,16 +531,50 @@ function findCastEntry(
   return null;
 }
 
+/** Max characters of a raw instance ref (e.g. a connector UUID) shown
+ * before truncating — bug 1 fix (slice 4): an untruncated UUID like
+ * `"d021a4ce-9112-4835-a1fa-74aedd2d2133"` renders far wider than
+ * `ARTIFACT_BOX_WIDTH` and overflows the box. 8 chars + the ellipsis glyph
+ * keeps the label within the box at the artifact font size. */
+const INSTANCE_REF_TRUNCATE_LEN = 8;
+
+/** Truncates a long raw instance ref (id) to a short display form; short
+ * refs (including a resolved cast `name`, which is already human-sized)
+ * pass through unchanged. */
+function truncateInstanceRef(ref: string): string {
+  if (ref.length <= INSTANCE_REF_TRUNCATE_LEN + 1) {
+    return ref;
+  }
+  return `${ref.slice(0, INSTANCE_REF_TRUNCATE_LEN)}…`;
+}
+
+/** Canonical UUID shape check (8-4-4-4-12 hex groups). Used to decide
+ * whether an artifact ref needs truncation, regardless of whether it came
+ * from a resolved cast entry's `name` (which, when the cast has no
+ * friendly name, IS the raw UUID) or the unresolved `instanceId` fallback
+ * — bug fix: a cast entry `name` that is itself a raw UUID was previously
+ * passed through untruncated, overflowing `ARTIFACT_BOX_WIDTH`. */
+export function isUuidLike(ref: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    ref
+  );
+}
+
 /** Box label: `"<kind> · <instance ref>"` — the instance ref prefers the
- * resolved cast entry's human `name`, falling back to the raw
- * `instanceId` (unresolved cast) or the literal `"unknown"` (no id and no
- * cast match at all — degraded run). */
+ * resolved cast entry's human `name`, falling back to the raw `instanceId`
+ * or the literal `"unknown"` (no id and no cast match at all — degraded
+ * run). Whichever ref is chosen, it is truncated only when UUID-shaped
+ * (bug fix, slice 6): a friendly name like `http-generic` passes through
+ * unchanged, while a raw connector/agent UUID — whether it arrived via
+ * `castEntry.name` or `instanceId` — is always shortened so it fits inside
+ * `ARTIFACT_BOX_WIDTH`. */
 function formatArtifactLabel(
   kind: ArtifactKind,
   node: ILayoutNode,
   castEntry: IRunCastEntry | null
 ): string {
-  const ref = castEntry?.name ?? node.instanceId ?? "unknown";
+  const raw = castEntry?.name ?? node.instanceId ?? "unknown";
+  const ref = isUuidLike(raw) ? truncateInstanceRef(raw) : raw;
   return `${kind} · ${ref}`;
 }
 
@@ -511,6 +588,48 @@ function formatArtifactSubLabel(node: ILayoutNode): string {
   return `↔ · ${ms} · ${formatNodeStatusLabel(node.status)}`;
 }
 
+/**
+ * A node's own sub-label (the status/duration line under its title) —
+ * `"<status> · <ms>ms"` for every ordinary node, unchanged from before.
+ * For a NESTED artifact step (`isNestedArtifactNode` — inside a fork lane
+ * or a condition branch, run-view visual rewrite slice 5), the mockup shows
+ * the artifact info INLINE instead of a separate right-column box: the
+ * sub-label is prefixed with a collapsed "↔ <kind> · " chip (mockup:
+ * `"↔ connector · 356 ms · ok"`, `"↔ ai-agent-gateway · 412 ms · ok"`) — the
+ * same "↔ = collapsed artifact" glyph the legend already documents,
+ * signaling this box's own request/response pair was folded into it rather
+ * than drawn as a separate paired box. Clicking the node's own box still
+ * opens the same popup peek unchanged (`onNodeClick`, T05's wiring) — this
+ * only changes what text renders, not the click behavior.
+ */
+export function nodeSubLabel(node: ILayoutNode): string {
+  const statusLabel = formatNodeStatusLabel(node.status);
+  const durationPart = node.durationMs !== null ? `${node.durationMs}ms` : null;
+  if (!isNestedArtifactNode(node)) {
+    return durationPart !== null
+      ? `${statusLabel} · ${durationPart}`
+      : statusLabel;
+  }
+  const kind = resolveArtifactKind(node)!;
+  const parts = [kind, durationPart, statusLabel].filter(
+    (part): part is string => part !== null
+  );
+  return `↔ ${parts.join(" · ")}`;
+}
+
+/**
+ * Right-column artifact box per SPINE artifact-eligible node only
+ * (`isSpineArtifactNode` — run-view visual rewrite slice 5), one shared `x`
+ * column (`computeArtifactColumnX`). Spine steps are strictly sequential
+ * (one per `row`, always `lane === 0`), so two spine artifact boxes can
+ * never land on the same `y` — the vertical-stacking offset the old (slice
+ * 4) implementation needed for colliding fork-lane boxes on the same `row`
+ * is gone, because fork-lane/branch steps no longer get a right-column box
+ * at all (they render their artifact info inline instead, see
+ * `nodeSubLabel`). This removes the long crossing req/resp edges that
+ * stacking used to create when 3 parallel fork lanes pushed their boxes far
+ * down the shared column.
+ */
 export function computeArtifactBoxes(
   positions: readonly IPositionedNode[],
   cast: readonly IRunCastEntry[]
@@ -518,7 +637,7 @@ export function computeArtifactBoxes(
   const columnX = computeArtifactColumnX(positions);
   const boxes: IArtifactBox[] = [];
   for (const node of positions) {
-    if (!isArtifactNode(node)) {
+    if (!isSpineArtifactNode(node)) {
       continue;
     }
     const kind = resolveArtifactKind(node)!;
@@ -551,7 +670,20 @@ export interface IArtifactEdge {
   readonly y1: number;
   readonly x2: number;
   readonly y2: number;
+  /** Label anchor for the req/resp text (bug 3 fix, slice 4) — centered
+   * horizontally in the GAP between the spine box and the artifact box (the
+   * pair's `x1`/`x2` midpoint already lands there), but nudged vertically
+   * off the connecting line itself: the request label floats just above
+   * the line, the response label just below, so the two labels of a pair
+   * (which share the same line, only reversed) never render on top of each
+   * other or the line. */
+  readonly labelX: number;
+  readonly labelY: number;
 }
+
+/** Vertical clearance an artifact request/response label gets off its own
+ * connecting line (bug 3 fix, slice 4). */
+const ARTIFACT_EDGE_LABEL_OFFSET = 8;
 
 /** Request (spine → artifact, solid, "req") + response (artifact → spine,
  * dashed, "resp · <ms>ms") edge PAIR per artifact box, both anchored at
@@ -574,6 +706,8 @@ export function computeArtifactEdges(
     const stepMidY = node.y + nodeVisualHeight(node.kind) / 2;
     const boxLeftX = box.x;
     const boxMidY = box.y + ARTIFACT_BOX_HEIGHT / 2;
+    const midX = (stepRightX + boxLeftX) / 2;
+    const midY = (stepMidY + boxMidY) / 2;
     edges.push({
       id: `${node.id}->req`,
       stepId: node.id,
@@ -584,6 +718,8 @@ export function computeArtifactEdges(
       y1: stepMidY,
       x2: boxLeftX,
       y2: boxMidY,
+      labelX: midX,
+      labelY: midY - ARTIFACT_EDGE_LABEL_OFFSET,
     });
     const responseMs = node.durationMs !== null ? `${node.durationMs}ms` : "—";
     edges.push({
@@ -596,6 +732,8 @@ export function computeArtifactEdges(
       y1: boxMidY,
       x2: stepRightX,
       y2: stepMidY,
+      labelX: midX,
+      labelY: midY + ARTIFACT_EDGE_LABEL_OFFSET + 8,
     });
   }
   return edges;

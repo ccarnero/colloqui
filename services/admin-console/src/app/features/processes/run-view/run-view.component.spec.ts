@@ -565,6 +565,139 @@ describe("RunViewComponent", () => {
     });
   });
 
+  describe("parallel fork (run-view visual rewrite slice 5: nested artifact steps)", () => {
+    const forkDefinition = definition([
+      {
+        activity: "branch",
+        name: "fanOut",
+        A: [{ activity: "endpointCall", name: "getPost", args: {} }],
+        B: [{ activity: "agentCall", name: "support", args: {} }],
+      },
+    ]);
+
+    const forkRun = runResponse({
+      events: [
+        event({
+          event_id: "fork-started",
+          kind: "action_started",
+          payload_action_index: 0,
+          payload_action_type: "branch",
+          payload_action_name: "fanOut",
+        }),
+        event({
+          event_id: "fork-completed",
+          kind: "action_completed",
+          payload_action_index: 0,
+          payload_action_type: "branch",
+          payload_action_name: "fanOut",
+          payload_step_status: "ok",
+        }),
+        event({
+          event_id: "a-started",
+          kind: "action_started",
+          payload_action_index: 0,
+          payload_action_type: "endpointCall",
+          payload_action_name: "getPost",
+          payload_branch: "A",
+          payload_connector_id: "conn-get-post",
+        }),
+        event({
+          event_id: "a-completed",
+          kind: "action_completed",
+          payload_action_index: 0,
+          payload_action_type: "endpointCall",
+          payload_action_name: "getPost",
+          payload_branch: "A",
+          payload_connector_id: "conn-get-post",
+          payload_step_status: "ok",
+        }),
+        event({
+          event_id: "b-started",
+          kind: "action_started",
+          payload_action_index: 0,
+          payload_action_type: "agentCall",
+          payload_action_name: "support",
+          payload_branch: "B",
+          payload_agent_id: "support-agent",
+        }),
+        event({
+          event_id: "b-completed",
+          kind: "action_completed",
+          payload_action_index: 0,
+          payload_action_type: "agentCall",
+          payload_action_name: "support",
+          payload_branch: "B",
+          payload_agent_id: "support-agent",
+          payload_step_status: "ok",
+        }),
+      ],
+      spans: [
+        span({
+          event_id: "fork-started",
+          causation_id: null,
+          entity_id: "exec-1",
+        }),
+        span({
+          event_id: "a-started",
+          causation_id: null,
+          entity_id: "exec-1",
+          duration_ms: 356,
+        }),
+        span({
+          event_id: "b-started",
+          causation_id: null,
+          entity_id: "exec-1",
+          duration_ms: 412,
+        }),
+      ],
+      cast: [
+        {
+          kind: "connector",
+          id: "conn-get-post",
+          name: "jsonplaceholder",
+          count: 1,
+        },
+        { kind: "agent", id: "support-agent", name: "Support Agent", count: 1 },
+      ],
+    });
+
+    beforeEach(() => {
+      setup();
+      flush(forkRun, forkDefinition);
+    });
+
+    it("does NOT render a right-column artifact box for a fork-lane connector/agent step", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelectorAll(".rv-artifact-box").length).toBe(0);
+    });
+
+    it("shows the inline '↔ <kind> · <ms>ms · <status>' chip in the fork-lane step's own sub-label", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const statuses = Array.from(el.querySelectorAll(".rv-node-status")).map(
+        (n) => n.textContent?.trim()
+      );
+      expect(statuses.some((s) => s?.includes("↔ connector"))).toBe(true);
+      expect(statuses.some((s) => s?.includes("↔ agent"))).toBe(true);
+    });
+
+    it("clicking the fork-lane step's own box (no separate artifact box exists) still opens the popup", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      let emitted: ILayoutNode | undefined;
+      fixture.componentInstance.nodeSelected.subscribe((n) => (emitted = n));
+
+      const laneNode = Array.from(el.querySelectorAll(".rv-node")).find((n) =>
+        n.textContent?.includes("getPost")
+      ) as HTMLElement;
+      expect(laneNode).toBeTruthy();
+
+      laneNode.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(emitted).toBeTruthy();
+      expect(el.querySelector("app-run-view-popup")).toBeTruthy();
+    });
+  });
+
   describe("3-case condition", () => {
     const conditionalDefinition = definition([
       {

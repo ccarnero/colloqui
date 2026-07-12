@@ -36,7 +36,6 @@ import {
   computeRenderedEdges,
   computeViewBox,
   formatDecisionSubtitle,
-  formatNodeStatusLabel,
   formatPillLabel,
   formatRunStatusChip,
   type IArtifactBox,
@@ -44,6 +43,7 @@ import {
   isPillNode,
   NODE_HEIGHT,
   NODE_WIDTH,
+  nodeSubLabel,
   PILL_HEIGHT,
   PILL_WIDTH,
   pillOffsetX,
@@ -245,10 +245,7 @@ type RunState =
                     {{ node.label }}
                   </text>
                   <text class="rv-node-status" x="10" y="34">
-                    {{ formatNodeStatusLabel(node.status) }}
-                    @if (node.durationMs !== null) {
-                      · {{ node.durationMs }}ms
-                    }
+                    {{ nodeSubLabel(node) }}
                   </text>
                   @if (decisionSubtitle(node); as subtitle) {
                     <text class="rv-node-subtitle" x="10" [attr.y]="nodeHeight + 14">
@@ -282,7 +279,7 @@ type RunState =
                   [attr.y2]="edge.y2"
                   marker-end="url(#rv-arrow)"
                 />
-                <text class="rv-edge-label" [attr.x]="(edge.x1 + edge.x2) / 2" [attr.y]="(edge.y1 + edge.y2) / 2 - 6">
+                <text class="rv-edge-label" [attr.x]="edge.labelX" [attr.y]="edge.labelY">
                   {{ edge.label }}
                 </text>
               </g>
@@ -837,7 +834,7 @@ export class RunViewComponent {
   });
 
   resolveCastColor = resolveCastColor;
-  formatNodeStatusLabel = formatNodeStatusLabel;
+  nodeSubLabel = nodeSubLabel;
 
   decisionSubtitle(node: ILayoutNode): string | null {
     return formatDecisionSubtitle(node);
