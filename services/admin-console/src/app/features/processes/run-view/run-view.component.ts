@@ -15,13 +15,17 @@ import {
   type IRunResponse,
   RunViewService,
 } from "../../../core/services/run-view.service";
-import type { IWorkflowDefinitionDto } from "../../automation/workflows/services/workflow-api.service";
+import {
+  type IWorkflowDefinitionDto,
+  WorkflowApiService,
+} from "../../automation/workflows/services/workflow-api.service";
 import { layoutRun } from "./domain/layout-run";
 import { mergeRun } from "./domain/merge-run";
 import type { ILayoutNode, IRunLayout } from "./domain/run-view.model";
 import { RunViewPopupComponent } from "./run-view-popup.component";
 import type { IAnchorRect } from "./run-view-popup-render";
 import {
+  computeContentWidth,
   computeForkCollapseChips,
   computeNodePositions,
   computeRenderedEdges,
@@ -135,6 +139,8 @@ type RunState =
           <svg
             class="rv-svg"
             [attr.viewBox]="viewBox()"
+            preserveAspectRatio="xMinYMin meet"
+            [style.width.px]="contentWidth()"
             role="img"
             aria-label="Run flow"
           >
@@ -293,7 +299,8 @@ type RunState =
       border-color: #1a9e8f;
     }
     .rv-svg {
-      width: 100%;
+      display: block;
+      max-width: 100%;
       min-height: 320px;
       background: var(--bg2, #f8f9fa);
       border-radius: 8px;
@@ -360,6 +367,7 @@ type RunState =
 })
 export class RunViewComponent {
   private readonly runViewService = inject(RunViewService);
+  private readonly workflowApi = inject(WorkflowApiService);
 
   readonly workflowId = input.required<string>();
   readonly runId = input.required<string>();
@@ -427,30 +435,64 @@ export class RunViewComponent {
       this.definitionSignal.set(null);
       this.selectedNodeSignal.set(null);
       this.anchorRectSignal.set(null);
+      const finishWithFallback = (run: IRunResponse): void => {
+        // No definition resolved for this entry (T06 finding fix / run-view
+        // visual rewrite slice 1's Change A) — fall back to the events-only
+        // spine rather than 404/guess. Merge with an empty action list:
+        // `mergeRun` detects the empty definition and falls back to its
+        // events-only spine (executed steps only, flat, no plan-vs-executed
+        // dashed overlay — see merge-run.ts's `buildStepsFromEvents`), and
+        // the header falls back to the raw id via `workflowName()`.
+        const merged = mergeRun(run.events, run.spans, { actions: [] });
+        const layout = layoutRun(merged);
+        this.state.set({ kind: "loaded", run, layout });
+      };
+
       this.runViewService.getRun(workflowId, runId).subscribe({
         next: (run) => {
-          if (!definitionId) {
-            // No definition id known by this entry (T06 finding fix) —
-            // skip the fetch entirely rather than 404 against the
-            // TEMPORAL workflowId. Merge with an empty action list:
-            // `mergeRun` detects the empty definition and falls back to its
-            // events-only spine (executed steps only, flat, no
-            // plan-vs-executed dashed overlay — see merge-run.ts's
-            // `buildStepsFromEvents`), and the header falls back to the raw
-            // id via `workflowName()`.
-            const merged = mergeRun(run.events, run.spans, { actions: [] });
-            const layout = layoutRun(merged);
-            this.state.set({ kind: "loaded", run, layout });
+          if (definitionId) {
+            // Executions-list entry: it already knows the DEFINITION id, so
+            // fetch it directly — unchanged from the T06 fix.
+            this.runViewService.getDefinition(definitionId).subscribe({
+              next: (definition) => {
+                this.definitionSignal.set(definition);
+                const merged = mergeRun(run.events, run.spans, definition);
+                const layout = layoutRun(merged);
+                this.state.set({ kind: "loaded", run, layout });
+              },
+              error: () => this.state.set({ kind: "error" }),
+            });
             return;
           }
-          this.runViewService.getDefinition(definitionId).subscribe({
-            next: (definition) => {
-              this.definitionSignal.set(definition);
-              const merged = mergeRun(run.events, run.spans, definition);
-              const layout = layoutRun(merged);
-              this.state.set({ kind: "loaded", run, layout });
+
+          // Trace-tab entry (run-view visual rewrite slice 1, Change A): no
+          // definitionId input, only the TEMPORAL `workflowId`
+          // (`{tenantId}:{name}:{nanoid}`). Resolve the definition
+          // CLIENT-SIDE by matching its `name` (the id's 2nd colon segment)
+          // against `WorkflowApiService.list()` — there is no by-name
+          // endpoint. Names are not guaranteed unique per tenant, so only a
+          // SINGLE match is trusted; zero or multiple matches fall back to
+          // the events-only spine rather than guessing which definition
+          // produced this run.
+          const nameSegment = workflowId.split(":")[1];
+          this.workflowApi.list().subscribe({
+            next: (definitions) => {
+              const matches = definitions.filter(
+                (def) => def.name === nameSegment
+              );
+              if (matches.length === 1) {
+                const matched = matches[0]!;
+                this.definitionSignal.set(matched);
+                const merged = mergeRun(run.events, run.spans, matched);
+                const layout = layoutRun(merged);
+                this.state.set({ kind: "loaded", run, layout });
+                return;
+              }
+              // Zero matches (unknown/renamed workflow) or ambiguous
+              // (duplicate names across tenants) — do not guess.
+              finishWithFallback(run);
             },
-            error: () => this.state.set({ kind: "error" }),
+            error: () => finishWithFallback(run),
           });
         },
         error: (err: HttpErrorResponse) => {
@@ -499,6 +541,15 @@ export class RunViewComponent {
 
   readonly viewBox = computed(() =>
     computeViewBox(this.positionedNodes(), this.forkChips())
+  );
+
+  /** Change B (run-view visual rewrite slice 1): intrinsic pixel width of
+   * the flow's content, bound to the svg's own `width` alongside
+   * `preserveAspectRatio="xMinYMin meet"` so a narrow tree renders at its
+   * natural size (never upscaled to fill the container) and only shrinks
+   * via CSS `max-width: 100%` when the container is narrower. */
+  readonly contentWidth = computed(() =>
+    computeContentWidth(this.positionedNodes(), this.forkChips())
   );
 
   readonly notExecutedCount = computed(

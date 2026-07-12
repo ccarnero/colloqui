@@ -215,7 +215,7 @@ describe("RunViewComponent", () => {
     ).toHaveLength(0);
   });
 
-  it("skips the definition fetch entirely when no definitionId is provided, degrading gracefully", () => {
+  it("resolves the definition by name via list() when no definitionId is provided, falling back to the events-only spine on zero matches", () => {
     TestBed.configureTestingModule({
       imports: [RunViewComponent],
       providers: [
@@ -238,17 +238,171 @@ describe("RunViewComponent", () => {
     httpMock.expectOne(`${TRACKING_RUNS_URL}/wf-1/run-1`).flush(runResponse());
     fixture.detectChanges();
 
-    // No 404 spam: no request to WorkflowApiService at all.
+    // No definitionId -> the name-resolution path calls list() (never
+    // `getDefinition` directly). "wf-1" has no colon, so no name segment
+    // exists to match, and the returned list has none matching anyway ->
+    // zero matches -> events-only fallback, no getDefinition/:id request.
+    httpMock
+      .expectOne(WORKFLOWS_URL)
+      .flush([definition([], { name: "other-workflow" })]);
+    fixture.detectChanges();
     httpMock.verify();
 
     const el = fixture.nativeElement as HTMLElement;
     expect(fixture.componentInstance.workflowName()).toBe("wf-1");
     // Loaded, not stuck loading/errored — the empty-events fixture still
     // triggers the (unrelated) degraded-banner path since it has no
-    // executed step events, but no alert/error state from the skipped
-    // definition fetch.
+    // executed step events, but no alert/error state from the fallback.
     expect(el.querySelector('[role="alert"]')).toBeFalsy();
     expect(el.textContent).toContain("wf-1");
+  });
+
+  it("resolves the definition-driven layout when the workflow name matches exactly one definition", () => {
+    TestBed.configureTestingModule({
+      imports: [RunViewComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        WorkflowApiService,
+        RunViewService,
+        { provide: AuthService, useValue: { hasPermission: () => true } },
+      ],
+    });
+    fixture = TestBed.createComponent(RunViewComponent);
+    fixture.componentRef.setInput("workflowId", "acme:order-workflow:abc123");
+    fixture.componentRef.setInput("runId", "run-1");
+    // No definitionId — trace-tab entry.
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+
+    const conditionalDef = definition(
+      [
+        {
+          activity: "conditional",
+          name: "checkTotal",
+          branches: [
+            {
+              label: "<100",
+              condition: {
+                variable: "{{total}}",
+                comparator: "lt",
+                value: "100",
+              },
+              actions: [{ activity: "channelSend", name: "notifyLow" }],
+            },
+            {
+              label: "100-500",
+              condition: {
+                variable: "{{total}}",
+                comparator: "between",
+                value: "100-500",
+              },
+              actions: [{ activity: "channelSend", name: "notify" }],
+            },
+          ],
+        },
+      ],
+      { id: "def-order", name: "order-workflow" }
+    );
+
+    httpMock
+      .expectOne(`${TRACKING_RUNS_URL}/acme%3Aorder-workflow%3Aabc123/run-1`)
+      .flush(
+        runResponse({
+          workflow_id: "acme:order-workflow:abc123",
+          events: [
+            event({
+              event_id: "evt-1",
+              kind: "condition_evaluated",
+              payload_action_index: 0,
+              payload_expression: "{{total}}",
+              payload_evaluated_value: "320",
+              payload_branch_taken: "100-500",
+              payload_cases: ["<100", "100-500"],
+            }),
+            event({
+              event_id: "evt-2",
+              kind: "action_started",
+              payload_action_index: 0,
+              payload_branch: "100-500",
+              payload_action_type: "channelSend",
+            }),
+            event({
+              event_id: "evt-3",
+              kind: "action_completed",
+              payload_action_index: 0,
+              payload_branch: "100-500",
+              payload_action_type: "channelSend",
+              payload_step_status: "ok",
+            }),
+          ],
+        })
+      );
+    fixture.detectChanges();
+
+    // Only list() is called — never getDefinition/:id.
+    httpMock
+      .expectOne(WORKFLOWS_URL)
+      .flush([
+        definition([], { id: "def-unrelated", name: "unrelated-workflow" }),
+        conditionalDef,
+      ]);
+    fixture.detectChanges();
+
+    expect(httpMock.match(`${WORKFLOWS_URL}/def-order`)).toHaveLength(0);
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(fixture.componentInstance.workflowName()).toBe("order-workflow");
+    // Definition-driven layout renders the amber decision (conditional)
+    // node — proof the matched definition's `actions` reached `mergeRun`,
+    // not the flat events-only spine.
+    const decision = el.querySelector('.rv-node[data-color="decision"]');
+    expect(decision).toBeTruthy();
+    // Not-taken branch (<100) renders dashed — only possible with the
+    // definition's declared branches, unavailable in the events-only path.
+    expect(el.querySelector(".rv-edge-dashed")).toBeTruthy();
+  });
+
+  it("falls back to the events-only spine when the workflow name matches more than one definition (ambiguous)", () => {
+    TestBed.configureTestingModule({
+      imports: [RunViewComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        WorkflowApiService,
+        RunViewService,
+        { provide: AuthService, useValue: { hasPermission: () => true } },
+      ],
+    });
+    fixture = TestBed.createComponent(RunViewComponent);
+    fixture.componentRef.setInput("workflowId", "acme:order-workflow:abc123");
+    fixture.componentRef.setInput("runId", "run-1");
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+
+    httpMock
+      .expectOne(`${TRACKING_RUNS_URL}/acme%3Aorder-workflow%3Aabc123/run-1`)
+      .flush(runResponse({ workflow_id: "acme:order-workflow:abc123" }));
+    fixture.detectChanges();
+
+    // Two definitions share the name "order-workflow" (duplicate names
+    // across tenants) — ambiguous, must not guess.
+    httpMock
+      .expectOne(WORKFLOWS_URL)
+      .flush([
+        definition([], { id: "def-a", name: "order-workflow" }),
+        definition([], { id: "def-b", name: "order-workflow" }),
+      ]);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.definition()).toBeNull();
+    // Falls back to the raw Temporal workflowId for the header, per the
+    // events-only fallback contract.
+    expect(fixture.componentInstance.workflowName()).toBe(
+      "acme:order-workflow:abc123"
+    );
   });
 
   describe("linear run", () => {
@@ -342,6 +496,17 @@ describe("RunViewComponent", () => {
     it("does not show the degraded banner for a run with step events", () => {
       const el = fixture.nativeElement as HTMLElement;
       expect(el.querySelector(".rv-degraded-banner")).toBeFalsy();
+    });
+
+    it("renders the svg with preserveAspectRatio and an intrinsic content width, never stretched to 100%", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const svg = el.querySelector("svg.rv-svg") as SVGSVGElement;
+      expect(svg.getAttribute("preserveAspectRatio")).toBe("xMinYMin meet");
+      // Bound to the content width (via computeContentWidth), not "100%".
+      expect(svg.style.width).toBe(
+        `${fixture.componentInstance.contentWidth()}px`
+      );
+      expect(svg.getAttribute("width")).not.toBe("100%");
     });
 
     it("toggles node highlight when its cast chip is clicked, and clears it on a second click", () => {

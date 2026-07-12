@@ -137,12 +137,21 @@ export function computeForkCollapseChips(
   return chips;
 }
 
-export function computeViewBox(
+/** Content bounding box, in SVG user units (== pixels at 1:1, T04's "no
+ * upscale" fix — SPEC.md run-view visual rewrite slice 1, Change B). Shared
+ * by `computeViewBox` (the `viewBox` attribute) and `computeContentWidth`
+ * (the svg's intrinsic `width`, bound with `preserveAspectRatio="xMinYMin
+ * meet"` so a narrow tree renders at its natural size instead of stretching
+ * to fill the container). */
+function computeContentBox(
   positions: readonly IPositionedNode[],
-  chips: readonly IForkCollapseChip[] = []
-): string {
+  chips: readonly IForkCollapseChip[]
+): { readonly width: number; readonly height: number } {
   if (positions.length === 0) {
-    return `0 0 ${LANE_BASE_X * 2 + NODE_WIDTH} ${ROW_PAD_TOP * 2 + ROW_HEIGHT}`;
+    return {
+      width: LANE_BASE_X * 2 + NODE_WIDTH,
+      height: ROW_PAD_TOP * 2 + ROW_HEIGHT,
+    };
   }
   const maxX = Math.max(
     ...positions.map((n) => n.x + NODE_WIDTH),
@@ -152,7 +161,27 @@ export function computeViewBox(
     ...positions.map((n) => n.y + NODE_HEIGHT),
     ...chips.map((c) => c.y + NODE_HEIGHT)
   );
-  return `0 0 ${maxX + LANE_BASE_X} ${maxY + ROW_PAD_TOP}`;
+  return { width: maxX + LANE_BASE_X, height: maxY + ROW_PAD_TOP };
+}
+
+export function computeViewBox(
+  positions: readonly IPositionedNode[],
+  chips: readonly IForkCollapseChip[] = []
+): string {
+  const { width, height } = computeContentBox(positions, chips);
+  return `0 0 ${width} ${height}`;
+}
+
+/** Intrinsic pixel width of the flow's content — bound to the svg's
+ * `[style.width.px]` (capped to the container via `max-width: 100%` in CSS)
+ * so boxes render at their natural size and only scale DOWN (never up) when
+ * the container is narrower than the content (Change B: "stop the SVG
+ * stretch"). */
+export function computeContentWidth(
+  positions: readonly IPositionedNode[],
+  chips: readonly IForkCollapseChip[] = []
+): number {
+  return computeContentBox(positions, chips).width;
 }
 
 /** `ActionStatus` -> readable English label — the not-executed/failed/ok
