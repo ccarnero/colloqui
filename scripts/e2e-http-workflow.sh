@@ -431,7 +431,7 @@ stage_verify_execution() {
   local deadline=$(( $(date +%s) + POLL_TIMEOUT_S ))
   while (( $(date +%s) < deadline )); do
     if kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=workflow-worker \
-        --since=5m --tail=500 2>/dev/null | grep -q "$nonce"; then
+        --since=5m --tail=5000 2>/dev/null | grep -q "$nonce"; then
       log "console.log with nonce found in workflow-worker logs"
       return 0
     fi
@@ -494,7 +494,7 @@ stage_verify_no_execution() {
   local skip_seen=0
   while (( $(date +%s) < deadline )); do
     if kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=workflow-service-worker \
-        --since=5m --tail=500 2>/dev/null \
+        --since=5m --tail=5000 2>/dev/null \
         | grep -q "Skipped trigger for disabled workflow ${WORKFLOW_NAME} (${WORKFLOW_ID})"; then
       log "Confirmed: trigger-consumer skip line found for workflow ${WORKFLOW_ID}"
       skip_seen=1
