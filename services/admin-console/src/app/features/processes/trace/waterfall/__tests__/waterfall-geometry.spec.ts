@@ -36,6 +36,7 @@ function event(overrides: Partial<ITrackedEvent>): ITrackedEvent {
     connector_id: null,
     cache_status: null,
     has_envelope: true,
+    payload_action_name: null,
     ...overrides,
   };
 }
@@ -239,6 +240,60 @@ describe("computeWaterfallRows", () => {
     expect(rows[0]?.group).toBe("channel"); // ingress
     expect(rows[1]?.group).toBe("channel"); // channel-processing
     expect(rows[2]?.group).toBe("platform"); // workflow-execution
+  });
+
+  it("labels action_started/action_completed rows with the action name instead of the generic kind", () => {
+    const actionChain: ITrackingChainResponse = {
+      ...chain,
+      events: [
+        event({
+          event_id: "evt-action-start",
+          kind: "action_started",
+          payload_action_name: "getPost",
+        }),
+        event({
+          event_id: "evt-action-complete",
+          kind: "action_completed",
+          payload_action_name: "getPost",
+        }),
+      ],
+      spans: [],
+    };
+    const actionRows = computeWaterfallRows(actionChain);
+    expect(actionRows[0]?.label).toBe("getPost");
+    expect(actionRows[1]?.label).toBe("getPost");
+  });
+
+  it("falls back to the kind when an action event has no captured action name", () => {
+    const noNameChain: ITrackingChainResponse = {
+      ...chain,
+      events: [
+        event({
+          event_id: "evt-action-noname",
+          kind: "action_started",
+          payload_action_name: null,
+        }),
+      ],
+      spans: [],
+    };
+    const noNameRows = computeWaterfallRows(noNameChain);
+    expect(noNameRows[0]?.label).toBe("action_started");
+  });
+
+  it("keeps the kind as the label for non-action events, even when payload_action_name is somehow set", () => {
+    const nonActionChain: ITrackingChainResponse = {
+      ...chain,
+      events: [
+        event({
+          event_id: "evt-non-action",
+          kind: "received",
+          payload_action_name: "getPost",
+        }),
+      ],
+      spans: [],
+    };
+    const nonActionRows = computeWaterfallRows(nonActionChain);
+    expect(nonActionRows[0]?.label).toBe("received");
   });
 });
 

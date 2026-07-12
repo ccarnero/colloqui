@@ -23,6 +23,11 @@ export interface ChainQuery {
  * `envelope`, plus the derived `has_envelope` flag. */
 export type ChainEventRow = Omit<TrackedEventRow, "envelope"> & {
   has_envelope: boolean;
+  /** `data.payload.actionName` — `WorkflowAction.name`. Set on
+   * `action_started`/`action_completed` events, same JSON path
+   * `build-run-events-query.ts` already projects for the run view. Null on
+   * every other event kind. Plain text, no numeric normalization needed. */
+  payload_action_name: string | null;
 };
 
 const CHAIN_COLUMNS = [
@@ -48,6 +53,11 @@ const CHAIN_COLUMNS = [
   "connector_id",
   "cache_status",
   "(compliance <> 'none') AS has_envelope",
+  // Same JSON path build-run-events-query.ts already projects for the run
+  // view — lets the waterfall show the action NAME (e.g. "getPost") instead
+  // of the generic "action_started"/"action_completed" kind as the row
+  // label.
+  "envelope->'data'->'payload'->>'actionName' AS payload_action_name",
 ] as const;
 
 /**

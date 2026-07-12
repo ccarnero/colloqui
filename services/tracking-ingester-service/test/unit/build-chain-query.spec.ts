@@ -16,18 +16,26 @@ describe("buildChainQuery", () => {
     expect(text).not.toMatch(/SELECT\s+\*/i);
   });
 
-  it("excludes the raw envelope jsonb column", () => {
+  it("excludes the raw envelope jsonb column but extracts the action name", () => {
     const { text } = buildChainQuery("corr-1", "tenant-a");
     const columnsBlock = text.slice(
       text.indexOf("SELECT") + "SELECT".length,
       text.indexOf("FROM")
     );
-    expect(columnsBlock).not.toMatch(/\benvelope\b/);
+    expect(columnsBlock).not.toMatch(/,\s*envelope,/);
+    expect(columnsBlock).not.toMatch(/,\s*envelope\s*$/);
   });
 
   it("includes a derived has_envelope boolean column", () => {
     const { text } = buildChainQuery("corr-1", "tenant-a");
     expect(text).toContain("(compliance <> 'none') AS has_envelope");
+  });
+
+  it("projects the action name out of the envelope payload", () => {
+    const { text } = buildChainQuery("corr-1", "tenant-a");
+    expect(text).toContain(
+      "envelope->'data'->'payload'->>'actionName' AS payload_action_name"
+    );
   });
 
   it("passes correlationId and tenant as positional params", () => {

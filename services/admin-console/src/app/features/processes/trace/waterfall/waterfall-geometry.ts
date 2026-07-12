@@ -101,6 +101,22 @@ function serviceOf(event: ITrackedEvent): string {
   return event.producer || event.subject.split(".")[2] || "—";
 }
 
+/** Row label: for `action_started`/`action_completed` events, prefer the
+ * action NAME (e.g. "getPost") over the generic kind — a run has many
+ * action rows, and "action_started" repeated for each is useless. Falls
+ * back to `kind ?? subject` when the event isn't an action event, or is an
+ * action event with no captured name. Started vs completed stays
+ * distinguishable via the row's bar/diamond geometry and ordering, not the
+ * label text. */
+function labelOf(event: ITrackedEvent): string {
+  const isActionEvent =
+    event.kind === "action_started" || event.kind === "action_completed";
+  if (isActionEvent && event.payload_action_name) {
+    return event.payload_action_name;
+  }
+  return event.kind ?? event.subject;
+}
+
 /**
  * Builds the waterfall's grid rows: time-axis offsets and bar/diamond
  * geometry (as percentages of the chain's total duration), indented by
@@ -124,7 +140,7 @@ export function computeWaterfallRows(
 
     return {
       eventId: event.event_id,
-      label: event.kind ?? event.subject,
+      label: labelOf(event),
       service: serviceOf(event),
       depth: event.causation_depth ?? 0,
       group: businessFnGroup(event.business_fn),

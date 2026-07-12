@@ -28,6 +28,7 @@ function sampleRawEvent(
     connector_id: null,
     cache_status: null,
     has_envelope: true,
+    payload_action_name: null,
     ...overrides,
   };
 }
@@ -60,5 +61,10 @@ describe("normalizeChainEventRow", () => {
     expect(normalized.event_id).toBe("evt-2");
     expect(normalized.rule).toBe(7);
     expect(normalized.tenant).toBe("tenant-a");
+  });
+
+  it("passes payload_action_name through unchanged", () => {
+    const row = sampleRawEvent({ payload_action_name: "getPost" });
+    expect(normalizeChainEventRow(row).payload_action_name).toBe("getPost");
   });
 });

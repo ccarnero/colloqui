@@ -31,6 +31,10 @@ export interface ITrackedEvent {
   readonly connector_id: string | null;
   readonly cache_status: string | null;
   readonly has_envelope: boolean;
+  /** `data.payload.actionName` — `WorkflowAction.name`. Set on
+   * `action_started`/`action_completed` events. Null on every other event
+   * kind. */
+  readonly payload_action_name: string | null;
 }
 
 export interface ITrackedEventSpan {

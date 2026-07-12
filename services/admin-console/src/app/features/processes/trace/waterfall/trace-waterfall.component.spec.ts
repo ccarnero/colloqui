@@ -32,6 +32,7 @@ function event(overrides: Partial<ITrackedEvent>): ITrackedEvent {
     connector_id: null,
     cache_status: null,
     has_envelope: true,
+    payload_action_name: null,
     ...overrides,
   };
 }
