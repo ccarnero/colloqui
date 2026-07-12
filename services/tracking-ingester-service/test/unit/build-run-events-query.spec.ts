@@ -34,6 +34,41 @@ describe("buildRunEventsQuery", () => {
     );
   });
 
+  it("extracts the T03 step/condition detail columns (actionIndex, actionType, actionName, branch, expression, evaluatedValue, branchTaken, cases)", () => {
+    const { text } = buildRunEventsQuery("corr-1", "tenant-a");
+    const columnsBlock = text.slice(
+      text.indexOf("SELECT") + "SELECT".length,
+      text.indexOf("FROM")
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'actionIndex' AS payload_action_index"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'actionType' AS payload_action_type"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'actionName' AS payload_action_name"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'branch' AS payload_branch"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'expression' AS payload_expression"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'evaluatedValue' AS payload_evaluated_value"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'branchTaken' AS payload_branch_taken"
+    );
+    // `cases` is extracted as jsonb (`->`), not text (`->>`) — the driver
+    // pre-parses it into a JS array.
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->'cases' AS payload_cases"
+    );
+    expect(columnsBlock).not.toContain("envelope->'data'->'payload'->>'cases'");
+  });
+
   it("includes workflow_id, run_id, connector_id, and has_envelope columns", () => {
     const { text } = buildRunEventsQuery("corr-1", "tenant-a");
     expect(text).toContain("workflow_id");

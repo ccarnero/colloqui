@@ -62,6 +62,50 @@ export type RunEventRow = Omit<TrackedEventRow, "envelope"> & {
    * carries no `workflowId`/`runId`, only `executionId`. Null on events that
    * don't carry it (e.g. connector-invocation rows from a different family). */
   payload_execution_id: string | null;
+  /** `data.payload.actionIndex` — 0-based position of the action within its
+   * own action list (top-level, a `branch` sub-list, or a `conditional`
+   * branch/default list; NOT globally unique across nesting). Set on
+   * `action_started`/`action_completed`/`condition_evaluated` (T03 of
+   * `manual-loops/run-view.md`, extending the projection T01 flagged as the
+   * anticipated follow-up). `merge-run.ts` uses it to match executed events
+   * back to definition actions. Cast to `int` at the DB layer the same way
+   * `duration_ms` is cast to `Number` at the normalize layer — Postgres'
+   * `->>'actionIndex'` returns text, so this column arrives as a numeric
+   * STRING from the driver and `normalize-run-event-row.ts` converts it. */
+  payload_action_index: number | null;
+  /** `data.payload.actionType` — the `WorkflowAction.activity` discriminant
+   * (`endpointCall|mcpCall|jsFunction|serviceBusCall|serviceCall|
+   * channelSend|agentCall|branch|conditional`). Set on
+   * `action_started`/`action_completed`. Null otherwise. */
+  payload_action_type: string | null;
+  /** `data.payload.actionName` — `WorkflowAction.name`. Set on
+   * `action_started`/`action_completed`. Null otherwise. */
+  payload_action_name: string | null;
+  /** `data.payload.branch` — label of the enclosing fork/conditional branch
+   * path (e.g. `"pathA/approved"`), when the action is nested. Set on
+   * `action_started`/`action_completed` for nested actions only; null for
+   * top-level actions and every other event kind. */
+  payload_branch: string | null;
+  /** `data.payload.expression` — `{{path.to.value}}`-shaped reference to the
+   * tested variable. Set on `condition_evaluated` only. */
+  payload_expression: string | null;
+  /** `data.payload.evaluatedValue` — scalar/short evaluated value (never the
+   * full variable scope). Set on `condition_evaluated` only. */
+  payload_evaluated_value: string | null;
+  /** `data.payload.branchTaken` — matched case label, `"default"` when the
+   * default branch ran, `null` for if-without-else evaluating false (both
+   * "not set on this event kind" and "explicitly null in the payload"
+   * collapse to SQL NULL here — `merge-run.ts` does not need to
+   * distinguish them, since it only reads this column on `condition_evaluated`
+   * rows in the first place). Set on `condition_evaluated` only. */
+  payload_branch_taken: string | null;
+  /** `data.payload.cases` — declared case labels, in definition order, as a
+   * raw JSON array (`jsonb`, not text — same "extract as JSON, not text"
+   * choice `resolve-payload.ts` uses for structured payload fields, so
+   * `normalize-run-event-row.ts` doesn't need to `JSON.parse` a
+   * double-encoded string). Set on `condition_evaluated` only; `null`
+   * (never `[]`) on every other event kind. */
+  payload_cases: string[] | null;
 };
 
 const RUN_EVENT_COLUMNS = [
@@ -91,6 +135,25 @@ const RUN_EVENT_COLUMNS = [
   "envelope->'data'->'payload'->>'agentId' AS payload_agent_id",
   "envelope->'data'->'payload'->>'status' AS payload_step_status",
   "envelope->'data'->'payload'->>'executionId' AS payload_execution_id",
+  // T03 of manual-loops/run-view.md — the anticipated follow-up flagged in
+  // this file's header comment: widening the projection with the fields
+  // `merge-run.ts`/`layout-run.ts` need to build the executed step tree.
+  // `->>'actionIndex'` extracts as TEXT (same as `duration_ms` from
+  // `tracking.tracked_event_spans`, which also arrives as a driver string) —
+  // `normalize-run-event-row.ts` converts it to `number | null`, never a SQL
+  // `::int` cast, so a malformed/missing value degrades to `NaN`-checked
+  // `null` in JS instead of failing the whole query.
+  "envelope->'data'->'payload'->>'actionIndex' AS payload_action_index",
+  "envelope->'data'->'payload'->>'actionType' AS payload_action_type",
+  "envelope->'data'->'payload'->>'actionName' AS payload_action_name",
+  "envelope->'data'->'payload'->>'branch' AS payload_branch",
+  "envelope->'data'->'payload'->>'expression' AS payload_expression",
+  "envelope->'data'->'payload'->>'evaluatedValue' AS payload_evaluated_value",
+  "envelope->'data'->'payload'->>'branchTaken' AS payload_branch_taken",
+  // `->'cases'` (NOT `->>`) keeps it jsonb so the `postgres` driver
+  // auto-parses it into a real JS array — same choice `build-payload-query.ts`
+  // makes for the whole payload object, just narrowed to one field here.
+  "envelope->'data'->'payload'->'cases' AS payload_cases",
 ] as const;
 
 /**

@@ -33,6 +33,14 @@ function event(overrides: Partial<RunEventRow>): RunEventRow {
     payload_agent_id: null,
     payload_step_status: null,
     payload_execution_id: null,
+    payload_action_index: null,
+    payload_action_type: null,
+    payload_action_name: null,
+    payload_branch: null,
+    payload_expression: null,
+    payload_evaluated_value: null,
+    payload_branch_taken: null,
+    payload_cases: null,
     ...overrides,
   };
 }

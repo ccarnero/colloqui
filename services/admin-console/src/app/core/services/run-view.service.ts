@@ -20,17 +20,41 @@ export type RunStatus = "running" | "completed" | "failed";
  * A run's OWN event row, wire-faithful to
  * `tracking-ingester-service/src/lib/build-run-events-query.ts`'s
  * `RunEventRow` — `ITrackedEvent` (tracking-chain.service.ts) PLUS the
- * three step-event payload fields the run view needs
- * (`payload_connector_id`/`payload_agent_id`/`payload_step_status`) and
- * `payload_execution_id`, which chain events never carry (see that file's
+ * step-event payload fields the run view needs
+ * (`payload_connector_id`/`payload_agent_id`/`payload_step_status`/
+ * `payload_execution_id`), which chain events never carry (see that file's
  * header for why they're jsonb-path-extracted rather than dedicated
- * columns).
+ * columns), PLUS the T03 step/condition detail fields
+ * (`payload_action_index`/`payload_action_type`/`payload_action_name`/
+ * `payload_branch`/`payload_expression`/`payload_evaluated_value`/
+ * `payload_branch_taken`/`payload_cases`) the domain layer's `merge-run.ts`
+ * consumes to build the executed step tree.
  */
 export interface IRunEvent extends ITrackedEvent {
   readonly payload_connector_id: string | null;
   readonly payload_agent_id: string | null;
   readonly payload_step_status: string | null;
   readonly payload_execution_id: string | null;
+  /** `action_started`/`action_completed`/`condition_evaluated` — 0-based
+   * position of the action within its own action list. Null otherwise. */
+  readonly payload_action_index: number | null;
+  /** `action_started`/`action_completed` — `WorkflowAction.activity`
+   * discriminant (e.g. `endpointCall`, `agentCall`, `branch`, `conditional`). */
+  readonly payload_action_type: string | null;
+  /** `action_started`/`action_completed` — `WorkflowAction.name`. */
+  readonly payload_action_name: string | null;
+  /** `action_started`/`action_completed` — enclosing fork/conditional
+   * branch path (e.g. `"pathA/approved"`) for nested actions. */
+  readonly payload_branch: string | null;
+  /** `condition_evaluated` — `{{path.to.value}}`-shaped tested variable. */
+  readonly payload_expression: string | null;
+  /** `condition_evaluated` — scalar/short evaluated value. */
+  readonly payload_evaluated_value: string | null;
+  /** `condition_evaluated` — matched case label, `"default"`, or `null`
+   * for an if-without-else evaluating false. */
+  readonly payload_branch_taken: string | null;
+  /** `condition_evaluated` — declared case labels, in definition order. */
+  readonly payload_cases: string[] | null;
 }
 
 /**

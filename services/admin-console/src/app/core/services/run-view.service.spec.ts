@@ -48,6 +48,14 @@ function makeRunResponse(overrides: Partial<IRunResponse> = {}): IRunResponse {
         payload_agent_id: null,
         payload_step_status: "ok",
         payload_execution_id: "exec-1",
+        payload_action_index: 0,
+        payload_action_type: "endpointCall",
+        payload_action_name: "callOrderApi",
+        payload_branch: null,
+        payload_expression: null,
+        payload_evaluated_value: null,
+        payload_branch_taken: null,
+        payload_cases: null,
       },
     ],
     spans: [
@@ -132,6 +140,9 @@ describe("RunViewService", () => {
       expect(result).toEqual(response);
       expect(result?.events[0]?.payload_connector_id).toBe("conn-1");
       expect(result?.events[0]?.payload_execution_id).toBe("exec-1");
+      expect(result?.events[0]?.payload_action_index).toBe(0);
+      expect(result?.events[0]?.payload_action_type).toBe("endpointCall");
+      expect(result?.events[0]?.payload_action_name).toBe("callOrderApi");
       expect(result?.spans[0]?.causation_id).toBe("evt-0");
       expect(result?.summary.status).toBe("completed");
       expect(result?.cast[0]?.kind).toBe("connector");
