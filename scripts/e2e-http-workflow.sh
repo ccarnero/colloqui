@@ -88,6 +88,26 @@ DISABLED_CHECK_TIMEOUT_S="${E2E_DISABLED_CHECK_TIMEOUT_S:-$POLL_TIMEOUT_S}"
 # ai-agent-gateway), which can be slower than the plain jsFunction path.
 CHAIN_TIMEOUT_S="${E2E_CHAIN_TIMEOUT_S:-120}"
 
+# macOS mDNS resolves *.dev.local in ~5s even with /etc/hosts entries;
+# --resolve skips DNS. Override/disable via E2E_RESOLVE_IP.
+E2E_RESOLVE_IP="${E2E_RESOLVE_IP-127.0.0.1}"
+API_SCHEME="${API_URL%%://*}"
+API_HOST_PORT="${API_URL#*://}"
+API_HOST_PORT="${API_HOST_PORT%%/*}"
+if [[ "$API_HOST_PORT" == *:* ]]; then
+  API_PORT="${API_HOST_PORT##*:}"
+elif [[ "$API_SCHEME" == "https" ]]; then
+  API_PORT=443
+else
+  API_PORT=80
+fi
+# Built once as an array; the length check at each call site below skips
+# appending the --resolve flag entirely when E2E_RESOLVE_IP is unset/empty.
+RESOLVE_ARGS=()
+if [[ -n "$E2E_RESOLVE_IP" ]]; then
+  RESOLVE_ARGS=(--resolve "${HOST_HEADER}:${API_PORT}:${E2E_RESOLVE_IP}")
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -139,11 +159,13 @@ trap ensure_workflow_enabled_on_exit EXIT
 
 api() {
   # api <method> <path> [json-body]
+  # --connect-timeout/--max-time bound a hanging gateway connection (was a live 10+min stall).
   local method="$1" path="$2" body="${3:-}"
-  local args=(-s -X "$method" "${API_URL}${path}"
+  local args=(-s --connect-timeout 10 --max-time 45 -X "$method" "${API_URL}${path}"
     -H "Host: ${HOST_HEADER}"
     -H "Content-Type: application/json"
     -H "x-yoizen-tenant: ${TENANT}")
+  [[ ${#RESOLVE_ARGS[@]} -gt 0 ]] && args+=("${RESOLVE_ARGS[@]}")
   [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer ${TOKEN}")
   [[ -n "$body" ]] && args+=(-d "$body")
   curl "${args[@]}"
@@ -156,11 +178,13 @@ api_status() {
   # only the status code; api_status_body/api_status_code split the two via
   # plain bash parameter expansion (no sed/grep — keeps this shellcheck -x
   # clean and avoids embedded-newline edge cases in the response body).
+  # Same --connect-timeout/--max-time hang guard as api().
   local method="$1" path="$2" body="${3:-}"
-  local args=(-s -w '\n%{http_code}' -X "$method" "${API_URL}${path}"
+  local args=(-s --connect-timeout 10 --max-time 45 -w '\n%{http_code}' -X "$method" "${API_URL}${path}"
     -H "Host: ${HOST_HEADER}"
     -H "Content-Type: application/json"
     -H "x-yoizen-tenant: ${TENANT}")
+  [[ ${#RESOLVE_ARGS[@]} -gt 0 ]] && args+=("${RESOLVE_ARGS[@]}")
   [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer ${TOKEN}")
   [[ -n "$body" ]] && args+=(-d "$body")
   curl "${args[@]}"
@@ -383,12 +407,16 @@ stage_send_message() {
   # stage_send_message <nonce>
   local nonce="$1"
   log "Stage 4: POST webhook message with nonce ${nonce}"
+  # Same --connect-timeout/RESOLVE_ARGS mDNS short-circuit as api()/api_status()
+  # — this webhook POST pays the same ~5s macOS mDNS tax otherwise.
   local resp status
-  resp="$(curl -s -X POST "${API_URL}/api/webhooks/http/${TENANT}" \
-    -H "Host: ${HOST_HEADER}" \
-    -H "Content-Type: application/json" \
-    -H "x-http-channel-token: ${APP_SECRET}" \
-    -d "{\"from\":\"e2e-user\",\"text\":\"${nonce}\"}")"
+  local webhook_args=(-s --connect-timeout 10 --max-time 45 -X POST "${API_URL}/api/webhooks/http/${TENANT}"
+    -H "Host: ${HOST_HEADER}"
+    -H "Content-Type: application/json"
+    -H "x-http-channel-token: ${APP_SECRET}"
+    -d "{\"from\":\"e2e-user\",\"text\":\"${nonce}\"}")
+  [[ ${#RESOLVE_ARGS[@]} -gt 0 ]] && webhook_args+=("${RESOLVE_ARGS[@]}")
+  resp="$(curl "${webhook_args[@]}")"
   status="$(echo "$resp" | jq -r '.status // empty')"
   if [[ "$status" != "accepted" ]]; then
     err "Webhook not accepted: $resp"
@@ -517,8 +545,9 @@ stage_capture_correlation_id() {
   local deadline=$(( $(date +%s) + POLL_TIMEOUT_S ))
   local execution_id=""
   while (( $(date +%s) < deadline )); do
+    # curl timeouts inside poll loops degrade to a retry — pipefail would otherwise abort the script
     execution_id="$(api GET "/api/workflows/${WORKFLOW_ID}/executions?pageSize=100" \
-      | jq -r ".items[]? | select(.request.text == \"${nonce}\") | .id" | head -1)"
+      | jq -r ".items[]? | select(.request.text == \"${nonce}\") | .id" | head -1)" || true
     [[ -n "$execution_id" ]] && break
     sleep 3
   done
@@ -531,8 +560,9 @@ stage_capture_correlation_id() {
 
   while (( $(date +%s) < deadline )); do
     local correlation_id
+    # timeout -> retry
     correlation_id="$(api GET "/api/workflows/${WORKFLOW_ID}/executions/${execution_id}" \
-      | jq -r '.result.causal.correlation_id // empty')"
+      | jq -r '.result.causal.correlation_id // empty')" || true
     if [[ -n "$correlation_id" ]]; then
       CORRELATION_ID="$correlation_id"
       log "Captured correlation_id ${CORRELATION_ID}"
@@ -553,7 +583,8 @@ stage_verify_chain() {
   local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
   local combined body status
   while (( $(date +%s) < deadline )); do
-    combined="$(api_status GET "/api/tracking/chains/${CORRELATION_ID}")"
+    # timeout -> retry
+    combined="$(api_status GET "/api/tracking/chains/${CORRELATION_ID}")" || true
     status="$(api_status_code "$combined")"
     body="$(api_status_body "$combined")"
     if [[ "$status" == "200" ]]; then
@@ -695,8 +726,9 @@ stage_verify_payload() {
   local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
   local ingress_event_id=""
   while (( $(date +%s) < deadline )); do
+    # timeout -> retry
     ingress_event_id="$(api GET "/api/tracking/chains/${CORRELATION_ID}" \
-      | jq -r '.events[]? | select(.kind == "webhook_received") | .event_id' | head -1)"
+      | jq -r '.events[]? | select(.kind == "webhook_received") | .event_id' | head -1)" || true
     [[ -n "$ingress_event_id" ]] && break
     sleep 3
   done
@@ -708,7 +740,8 @@ stage_verify_payload() {
 
   local combined body status
   while (( $(date +%s) < deadline )); do
-    combined="$(api_status GET "/api/tracking/chains/${CORRELATION_ID}/events/${ingress_event_id}/payload")"
+    # timeout -> retry
+    combined="$(api_status GET "/api/tracking/chains/${CORRELATION_ID}/events/${ingress_event_id}/payload")" || true
     status="$(api_status_code "$combined")"
     body="$(api_status_body "$combined")"
     if [[ "$status" == "200" ]]; then
