@@ -150,8 +150,18 @@ function timeRangeFromSpan(
     return { range: { startedAt: null, completedAt: null }, durationMs: null };
   }
   // Cartesian-pairing ambiguity (see this file's header) — the shortest
-  // candidate is the safest lower-bound duration.
-  const chosen = candidates.reduce((min, span) =>
+  // NON-NEGATIVE candidate is the safest lower-bound duration. A cross-
+  // paired candidate (a `completed` row from a DIFFERENT action sharing
+  // this run's `entity_id`/`kind_prefix`) can have `completed_at` earlier
+  // than `started_at`, producing a negative `duration_ms` — that value is
+  // never a real duration, so it is excluded rather than picked as the
+  // "shortest" (run-view visual rewrite slice 2, negative-duration guard).
+  // When every candidate is negative, no safe duration/range exists.
+  const nonNegative = candidates.filter((span) => span.duration_ms >= 0);
+  if (nonNegative.length === 0) {
+    return { range: { startedAt: null, completedAt: null }, durationMs: null };
+  }
+  const chosen = nonNegative.reduce((min, span) =>
     span.duration_ms < min.duration_ms ? span : min
   );
   return {

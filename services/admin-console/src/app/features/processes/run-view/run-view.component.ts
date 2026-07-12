@@ -32,10 +32,15 @@ import {
   computeViewBox,
   formatDecisionSubtitle,
   formatNodeStatusLabel,
+  formatPillLabel,
   formatRunStatusChip,
   type IPositionedNode,
+  isPillNode,
   NODE_HEIGHT,
   NODE_WIDTH,
+  PILL_HEIGHT,
+  PILL_WIDTH,
+  pillOffsetX,
   resolveCastColor,
 } from "./run-view-render";
 
@@ -144,19 +149,34 @@ type RunState =
             role="img"
             aria-label="Run flow"
           >
+            <defs>
+              <marker
+                id="rv-arrow"
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="7"
+                markerHeight="7"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 1 L 9 5 L 0 9 z" class="rv-arrow-head" />
+              </marker>
+            </defs>
+
             @for (edge of renderedEdges(); track edge.id) {
-              <g class="rv-edge" [class.rv-edge-dashed]="edge.dashed" [class.rv-edge-thick]="edge.thick">
+              <g class="rv-edge" [class.rv-edge-dashed]="edge.dashed" [class.rv-edge-thick]="edge.thick" [attr.data-kind]="edge.kind">
                 <line
                   [attr.x1]="edge.x1"
                   [attr.y1]="edge.y1"
                   [attr.x2]="edge.x2"
                   [attr.y2]="edge.y2"
+                  marker-end="url(#rv-arrow)"
                 />
                 @if (edge.label) {
                   <text
                     class="rv-edge-label"
-                    [attr.x]="(edge.x1 + edge.x2) / 2"
-                    [attr.y]="(edge.y1 + edge.y2) / 2"
+                    [attr.x]="edge.labelX"
+                    [attr.y]="edge.labelY"
                   >
                     {{ edge.label }}
                   </text>
@@ -169,31 +189,49 @@ type RunState =
                 class="rv-node"
                 [class.rv-node-dashed]="node.dashed"
                 [class.rv-node-highlighted]="isHighlighted(node)"
+                [class.rv-node-pill]="isPillNode(node.kind)"
                 [attr.data-kind]="node.kind"
                 [attr.data-color]="node.color"
                 [attr.data-status]="node.status"
                 [attr.transform]="'translate(' + node.x + ',' + node.y + ')'"
                 (click)="onNodeClick(node, $event)"
               >
-                <rect
-                  class="rv-node-rect"
-                  [attr.width]="nodeWidth"
-                  [attr.height]="nodeHeight"
-                  rx="6"
-                />
-                <text class="rv-node-label" x="10" y="18">
-                  {{ node.label }}
-                </text>
-                <text class="rv-node-status" x="10" y="34">
-                  {{ formatNodeStatusLabel(node.status) }}
-                  @if (node.durationMs !== null) {
-                    · {{ node.durationMs }}ms
-                  }
-                </text>
-                @if (decisionSubtitle(node); as subtitle) {
-                  <text class="rv-node-subtitle" x="10" [attr.y]="nodeHeight + 14">
-                    {{ subtitle }}
+                @if (isPillNode(node.kind)) {
+                  <rect
+                    class="rv-node-rect rv-node-pill-rect"
+                    [attr.x]="pillOffsetX()"
+                    [attr.width]="pillWidth"
+                    [attr.height]="pillHeight"
+                    rx="15"
+                  />
+                  <text
+                    class="rv-node-label rv-node-pill-label"
+                    [attr.x]="nodeWidth / 2"
+                    [attr.y]="pillHeight / 2 + 4"
+                  >
+                    {{ formatPillLabel(node) }}
                   </text>
+                } @else {
+                  <rect
+                    class="rv-node-rect"
+                    [attr.width]="nodeWidth"
+                    [attr.height]="nodeHeight"
+                    rx="6"
+                  />
+                  <text class="rv-node-label" x="10" y="18">
+                    {{ node.label }}
+                  </text>
+                  <text class="rv-node-status" x="10" y="34">
+                    {{ formatNodeStatusLabel(node.status) }}
+                    @if (node.durationMs !== null) {
+                      · {{ node.durationMs }}ms
+                    }
+                  </text>
+                  @if (decisionSubtitle(node); as subtitle) {
+                    <text class="rv-node-subtitle" x="10" [attr.y]="nodeHeight + 14">
+                      {{ subtitle }}
+                    </text>
+                  }
                 }
               </g>
             }
@@ -208,6 +246,15 @@ type RunState =
               </text>
             }
           </svg>
+
+          <div class="rv-legend">
+            <p class="rv-legend-line">
+              solid = request / taken · dashed = response / not executed · thick = critical path · amber = decision
+            </p>
+            <p class="rv-legend-line">
+              ↔ = collapsed artifact (click to expand) · gray = platform · purple = agent · teal = channel
+            </p>
+          </div>
 
           @if (selectedNode(); as node) {
             <app-run-view-popup
@@ -225,6 +272,25 @@ type RunState =
   styles: `
     :host {
       display: block;
+      /* Node/pill fill+border per DESIGN-run-view.md's color table
+       * (gray=platform, amber=decision, purple=agent, teal=channel),
+       * mapped to the console's EXISTING theme-aware globals
+       * (services/admin-console/src/styles.scss's :root / .light-theme
+       * blocks) rather than new hardcoded hex — run-view visual rewrite
+       * slice 2's color/token approach. \`--yellow\`/\`--purple\`/\`--cyan\`
+       * and their \`-dim\` (0.12-alpha) tints are brand accent colors the
+       * app keeps constant across themes (only surfaces/text swap), so
+       * they stay legible composited over either theme's \`--bg2\`. */
+      --rv-gray-fill: var(--bg3);
+      --rv-gray-border: var(--border2);
+      --rv-amber-fill: var(--yellow-dim);
+      --rv-amber-border: var(--yellow);
+      --rv-purple-fill: var(--purple-dim);
+      --rv-purple-border: var(--purple);
+      --rv-teal-fill: var(--cyan-dim);
+      --rv-teal-border: var(--cyan);
+      --rv-edge-stroke: var(--text3);
+      --rv-critical-stroke: var(--purple);
     }
     .rv {
       display: flex;
@@ -305,41 +371,63 @@ type RunState =
       background: var(--bg2, #f8f9fa);
       border-radius: 8px;
     }
+    /* Arrow marker head — same fill as the default edge stroke; dashed
+     * (not-executed/response) and thick (critical-path) edges recolor it
+     * via the [data-kind]/[class] selectors below (mockup: one \`arr4\`
+     * marker, edges vary stroke color/width/dash only). */
+    .rv-arrow-head {
+      fill: var(--rv-edge-stroke);
+    }
     .rv-edge line {
-      stroke: #495057;
+      stroke: var(--rv-edge-stroke);
       stroke-width: 1.5;
     }
+    /* not-executed / response edges — dashed (mockup: \`stroke-dasharray:
+     * 5 4\`). */
     .rv-edge-dashed line {
-      stroke: #adb5bd;
-      stroke-dasharray: 4 3;
+      stroke-dasharray: 5 4;
     }
+    /* critical-path / taken / bypass edges — thick, critical path also
+     * recolors to the agent/accent token (mockup: \`#7F77DD\`, width 2.5). */
     .rv-edge-thick line {
-      stroke-width: 3;
+      stroke-width: 2.5;
+    }
+    .rv-edge[data-kind="join-in"].rv-edge-thick line {
+      stroke: var(--rv-critical-stroke);
+    }
+    .rv-edge[data-kind="join-in"].rv-edge-thick .rv-arrow-head {
+      fill: var(--rv-critical-stroke);
     }
     .rv-edge-label {
-      font-size: 9px;
-      fill: #868e96;
+      font-size: 10px;
+      fill: var(--rv-edge-stroke);
       text-anchor: middle;
     }
     .rv-node {
       cursor: pointer;
     }
-    .rv-node-rect {
-      fill: #fff;
-      stroke: #868e96;
+    /* platform = gray — DESIGN-run-view.md's color table (T04's own CSS
+     * colors; the domain only assigns the semantic StepColor). */
+    .rv-node-rect,
+    .rv-node[data-color="platform"] .rv-node-rect {
+      fill: var(--rv-gray-fill);
+      stroke: var(--rv-gray-border);
       stroke-width: 1.5;
     }
+    /* decision = amber */
     .rv-node[data-color="decision"] .rv-node-rect {
-      fill: #fff8e1;
-      stroke: #b8860b;
+      fill: var(--rv-amber-fill);
+      stroke: var(--rv-amber-border);
     }
+    /* agent = purple */
     .rv-node[data-color="agent"] .rv-node-rect {
-      fill: #f3edfb;
-      stroke: #8a63d2;
+      fill: var(--rv-purple-fill);
+      stroke: var(--rv-purple-border);
     }
+    /* channel = teal */
     .rv-node[data-color="channel"] .rv-node-rect {
-      fill: #e6f7f5;
-      stroke: #1a9e8f;
+      fill: var(--rv-teal-fill);
+      stroke: var(--rv-teal-border);
     }
     .rv-node-dashed .rv-node-rect {
       stroke-dasharray: 4 3;
@@ -350,18 +438,45 @@ type RunState =
     .rv-node-label {
       font-size: 11px;
       font-weight: 600;
+      fill: var(--text, #26241f);
     }
     .rv-node-status {
       font-size: 10px;
-      fill: #868e96;
+      fill: var(--text3, #8a8880);
     }
     .rv-node-subtitle {
       font-size: 10px;
-      fill: #7a5900;
+      fill: var(--rv-amber-border);
     }
     .rv-fork-chip {
       font-size: 11px;
-      fill: #495057;
+      fill: var(--rv-edge-stroke);
+    }
+    /* Fork/join pills (mockup: small rounded pill, not a full two-line
+     * box — SPEC.md run-view visual rewrite slice 2, "Fork & join as
+     * pills"). Always platform-gray regardless of \`data-color\` (both
+     * kinds carry \`color: "platform"\` from the domain already). */
+    .rv-node-pill-rect {
+      fill: var(--rv-gray-fill);
+      stroke: var(--rv-gray-border);
+      stroke-width: 1.5;
+    }
+    .rv-node-pill-label {
+      font-size: 12px;
+      font-weight: 500;
+      text-anchor: middle;
+      fill: var(--text, #26241f);
+    }
+    .rv-legend {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 0 4px;
+    }
+    .rv-legend-line {
+      margin: 0;
+      font-size: 11px;
+      color: var(--text3, #8a8880);
     }
   `,
 })
@@ -396,6 +511,11 @@ export class RunViewComponent {
 
   readonly nodeWidth = NODE_WIDTH;
   readonly nodeHeight = NODE_HEIGHT;
+  readonly pillWidth = PILL_WIDTH;
+  readonly pillHeight = PILL_HEIGHT;
+  isPillNode = isPillNode;
+  formatPillLabel = formatPillLabel;
+  pillOffsetX = pillOffsetX;
 
   protected readonly state = signal<RunState>({ kind: "loading" });
   private readonly selected = signal<string | null>(null);

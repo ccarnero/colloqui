@@ -624,6 +624,65 @@ describe("mergeRun", () => {
     expect(merged.degraded).toBe(true);
   });
 
+  it("regression: negative-duration guard picks the smallest NON-NEGATIVE candidate span, ignoring cartesian-paired negatives", () => {
+    const started = event({
+      event_id: "started-1",
+      kind: "action_started",
+      payload_action_index: 0,
+      payload_action_type: "endpointCall",
+      payload_action_name: "callOrderApi",
+    });
+    const completed = event({
+      event_id: "completed-1",
+      kind: "action_completed",
+      payload_action_index: 0,
+      payload_action_type: "endpointCall",
+      payload_action_name: "callOrderApi",
+      payload_step_status: "ok",
+    });
+    const spans: IRunSpan[] = [
+      span({ event_id: "started-1", duration_ms: -158 }),
+      span({ event_id: "started-1", duration_ms: 356 }),
+      span({ event_id: "started-1", duration_ms: 900 }),
+    ];
+    const definition = {
+      actions: [{ activity: "endpointCall", name: "callOrderApi", args: {} }],
+    };
+    const merged = mergeRun([started, completed], spans, definition);
+    const step = merged.steps[0] as IActionStep;
+    expect(step.durationMs).toBe(356);
+  });
+
+  it("regression: negative-duration guard returns null duration/range when every candidate span is negative", () => {
+    const started = event({
+      event_id: "started-1",
+      kind: "action_started",
+      payload_action_index: 0,
+      payload_action_type: "endpointCall",
+      payload_action_name: "callOrderApi",
+    });
+    const completed = event({
+      event_id: "completed-1",
+      kind: "action_completed",
+      payload_action_index: 0,
+      payload_action_type: "endpointCall",
+      payload_action_name: "callOrderApi",
+      payload_step_status: "ok",
+    });
+    const spans: IRunSpan[] = [
+      span({ event_id: "started-1", duration_ms: -158 }),
+      span({ event_id: "started-1", duration_ms: -42 }),
+    ];
+    const definition = {
+      actions: [{ activity: "endpointCall", name: "callOrderApi", args: {} }],
+    };
+    const merged = mergeRun([started, completed], spans, definition);
+    const step = merged.steps[0] as IActionStep;
+    expect(step.durationMs).toBeNull();
+    expect(step.startedAt).toBeNull();
+    expect(step.completedAt).toBeNull();
+  });
+
   it("degraded: a run with zero step events walks the definition with every step 'not_executed'", () => {
     const definition = {
       actions: [

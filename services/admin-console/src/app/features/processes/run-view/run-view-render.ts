@@ -29,6 +29,14 @@ import type {
 
 export const NODE_WIDTH = 200;
 export const NODE_HEIGHT = 44;
+/** Fork/join render as small rounded PILLS, not full two-line boxes
+ * (mockup contract: `workflow_run_full_combined_mockup.html` ~110×30,
+ * rx≈15, centered single-line label) — narrower/shorter than the
+ * standard action box but still centered within the same lane slot, so
+ * `nodePosition`'s `x`/`row`/`lane` math (and the fork lane x-positions
+ * it drives) is untouched; only the VISUAL rect/label offsets differ. */
+export const PILL_WIDTH = 110;
+export const PILL_HEIGHT = 30;
 const ROW_HEIGHT = 92;
 const ROW_PAD_TOP = 30;
 const LANE_GAP = 240;
@@ -43,6 +51,41 @@ export interface IPositionedNode extends ILayoutNode {
   readonly y: number;
 }
 
+/** `true` for the two structural node kinds the mockup renders as pills
+ * instead of full boxes. */
+export function isPillNode(kind: ILayoutNode["kind"]): boolean {
+  return kind === "fork" || kind === "join";
+}
+
+/** Rendered box/pill height for a node — pills are shorter than the
+ * standard action box, so edges must leave from the pill's own bottom
+ * edge, not `NODE_HEIGHT`. */
+export function nodeVisualHeight(kind: ILayoutNode["kind"]): number {
+  return isPillNode(kind) ? PILL_HEIGHT : NODE_HEIGHT;
+}
+
+/** `x` offset (within the node's `NODE_WIDTH`-wide lane slot) of a pill's
+ * narrower rect, so it renders centered on the same lane column a full
+ * box would occupy. */
+export function pillOffsetX(): number {
+  return (NODE_WIDTH - PILL_WIDTH) / 2;
+}
+
+/**
+ * Pill label wording (T04's own wording layer, same split as
+ * `formatEdgeLabel`/`formatDecisionSubtitle`): the domain's fork label
+ * already ends in `"· fork"` (`layout-run.ts`'s `labelFor`) — this appends
+ * the mockup's "∥" parallel glyph (`"fanout ∥"`-style) rather than
+ * reformatting the domain string. Join's domain label is already the bare
+ * `"join"` word, so it passes through unchanged.
+ */
+export function formatPillLabel(node: ILayoutNode): string {
+  if (node.kind === "fork") {
+    return `${node.label} ∥`;
+  }
+  return node.label;
+}
+
 export interface IRenderedRunEdge {
   readonly id: string;
   readonly kind: ILayoutEdge["kind"];
@@ -53,6 +96,43 @@ export interface IRenderedRunEdge {
   readonly y1: number;
   readonly x2: number;
   readonly y2: number;
+  /** Label anchor, nudged perpendicular off the line's own midpoint (see
+   * `labelPosition`) so a diagonal fork-out/taken/bypass edge's label does
+   * not sit dead-center on top of the line/node rects it crosses. */
+  readonly labelX: number;
+  readonly labelY: number;
+}
+
+/** Perpendicular offset applied to an edge's label so it clears the line
+ * itself instead of sitting directly on top of it (mockup: labels float
+ * just off the edge). Falls back to a small upward nudge for a
+ * (near-)vertical edge, where the perpendicular is (near-)horizontal and
+ * would otherwise push the label sideways into a neighboring lane. */
+const EDGE_LABEL_OFFSET = 8;
+
+function labelPosition(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): { readonly x: number; readonly y: number } {
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) {
+    return { x: mx, y: my - EDGE_LABEL_OFFSET };
+  }
+  // Perpendicular unit vector, offset toward the right of the edge's own
+  // direction — matches the mockup's labels sitting to the right of/above
+  // the line they annotate.
+  const nx = -dy / length;
+  const ny = dx / length;
+  return {
+    x: mx + nx * EDGE_LABEL_OFFSET,
+    y: my + ny * EDGE_LABEL_OFFSET - 2,
+  };
 }
 
 export interface IForkCollapseChip {
@@ -96,16 +176,23 @@ export function computeRenderedEdges(
     if (!from || !to) {
       continue;
     }
+    const x1 = from.x + NODE_WIDTH / 2;
+    const y1 = from.y + nodeVisualHeight(from.kind);
+    const x2 = to.x + NODE_WIDTH / 2;
+    const y2 = to.y;
+    const { x: labelX, y: labelY } = labelPosition(x1, y1, x2, y2);
     rendered.push({
       id: edge.id,
       kind: edge.kind,
       dashed: edge.dashed,
       thick: edge.thick,
       label: formatEdgeLabel(edge),
-      x1: from.x + NODE_WIDTH / 2,
-      y1: from.y + NODE_HEIGHT,
-      x2: to.x + NODE_WIDTH / 2,
-      y2: to.y,
+      x1,
+      y1,
+      x2,
+      y2,
+      labelX,
+      labelY,
     });
   }
   return rendered;
