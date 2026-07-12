@@ -432,10 +432,12 @@ export class RunViewComponent {
           if (!definitionId) {
             // No definition id known by this entry (T06 finding fix) —
             // skip the fetch entirely rather than 404 against the
-            // TEMPORAL workflowId. Merge with an empty action list: the
-            // run still renders (executed steps only, no plan-vs-executed
-            // dashed overlay), and the header falls back to the raw id via
-            // `workflowName()`.
+            // TEMPORAL workflowId. Merge with an empty action list:
+            // `mergeRun` detects the empty definition and falls back to its
+            // events-only spine (executed steps only, flat, no
+            // plan-vs-executed dashed overlay — see merge-run.ts's
+            // `buildStepsFromEvents`), and the header falls back to the raw
+            // id via `workflowName()`.
             const merged = mergeRun(run.events, run.spans, { actions: [] });
             const layout = layoutRun(merged);
             this.state.set({ kind: "loaded", run, layout });

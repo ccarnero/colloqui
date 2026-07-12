@@ -288,4 +288,14 @@ describe("layoutRun", () => {
     const layout = layoutRun(merged([step1, step2]));
     expect(layout.nodes[1]!.row - layout.nodes[0]!.row).toBe(1);
   });
+
+  it("action node label shows the human action NAME, not the instance UUID", () => {
+    const step = actionStep({
+      name: "getPost",
+      instanceId: "d021a4ce-9112-4835-a1fa-74aedd2d2133",
+    });
+    const layout = layoutRun(merged([step]));
+    expect(layout.nodes[0]!.label).toContain("getPost");
+    expect(layout.nodes[0]!.label).not.toContain("d021a4ce");
+  });
 });

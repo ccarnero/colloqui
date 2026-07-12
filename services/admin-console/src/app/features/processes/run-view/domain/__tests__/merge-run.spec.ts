@@ -3,6 +3,7 @@ import type {
   IRunEvent,
   IRunSpan,
 } from "../../../../../core/services/run-view.service";
+import { layoutRun } from "../layout-run";
 import { mergeRun } from "../merge-run";
 import type {
   IActionStep,
@@ -505,6 +506,122 @@ describe("mergeRun", () => {
     expect((fork.lanes[1]!.steps[0] as IActionStep).instanceId).toBe(
       "support-agent"
     );
+  });
+
+  it("events-only fallback (empty definition): multi-action run produces one flat step per executed action, ordered by occurred_at", () => {
+    const first = actionEvents({
+      actionIndex: 0,
+      actionType: "endpointCall",
+      actionName: "callOrderApi",
+      connectorId: "order-api",
+      durationMs: 100,
+    });
+    // Give the second action a LATER occurred_at than the first, but build
+    // it with a SMALLER actionIndex than would sort it first if occurred_at
+    // were ignored — proves ordering is by occurred_at, not array order.
+    const second = actionEvents({
+      actionIndex: 1,
+      actionType: "jsFunction",
+      actionName: "computeTotal",
+      durationMs: 50,
+    }).events.map((event) => ({
+      ...event,
+      occurred_at: "2026-07-11T10:00:05.000Z",
+    }));
+
+    const merged = mergeRun([...second, ...first.events], first.spans, {
+      actions: [],
+    });
+
+    expect(merged.degraded).toBe(false);
+    expect(merged.steps).toHaveLength(2);
+    const [step1, step2] = merged.steps as IActionStep[];
+    expect(step1.actionType).toBe("endpointCall");
+    expect(step1.name).toBe("callOrderApi");
+    expect(step1.status).toBe("ok");
+    expect(step1.nestingDepth).toBe(0);
+    expect(step1.durationMs).toBe(100);
+    expect(step2.actionType).toBe("jsFunction");
+    expect(step2.name).toBe("computeTotal");
+    expect(step2.status).toBe("ok");
+    expect(
+      merged.steps.some(
+        (s) => s.type === "action" && s.status === "not_executed"
+      )
+    ).toBe(false);
+  });
+
+  it("events-only fallback: an agentCall action colors 'agent' and instanceId is the agent id", () => {
+    const { events, spans } = actionEvents({
+      actionIndex: 0,
+      actionType: "agentCall",
+      actionName: "askAgent",
+      agentId: "support-agent",
+    });
+    const merged = mergeRun(events, spans, { actions: [] });
+    const step = merged.steps[0] as IActionStep;
+    expect(step.type).toBe("action");
+    expect(step.color).toBe("agent");
+    expect(step.instanceId).toBe("support-agent");
+  });
+
+  it("events-only fallback: a condition_evaluated event produces a decision node with empty branches (no plan)", () => {
+    const cond = conditionEvent({
+      actionIndex: 0,
+      expression: "{{order.total}}",
+      evaluatedValue: "320",
+      branchTaken: "100-500",
+      cases: ["<100", "100-500", ">500"],
+    });
+    const merged = mergeRun([cond], [], { actions: [] });
+    expect(merged.steps).toHaveLength(1);
+    const step = merged.steps[0] as IConditionalStep;
+    expect(step.type).toBe("conditional");
+    expect(step.executed).toBe(true);
+    expect(step.evaluatedValue).toBe("320");
+    expect(step.branchTaken).toBe("100-500");
+    expect(step.hasDefault).toBe(false);
+    expect(step.branches).toEqual([]);
+    expect(step.conditionEventId).toBe(cond.event_id);
+
+    // Doesn't crash layout-run with zero branches, and still chains
+    // (regression: `takenTailId` used to stay `null` when `branches` is
+    // empty, orphaning the next sibling's incoming edge).
+    const layout = layoutRun(merged);
+    expect(layout.nodes).toHaveLength(1);
+    expect(layout.nodes[0]!.kind).toBe("conditional");
+    expect(layout.edges).toHaveLength(0);
+  });
+
+  it("run WITH a definition still uses the plan-driven path even when events are present (regression: fallback only triggers on empty definition)", () => {
+    const { events, spans } = actionEvents({
+      actionIndex: 0,
+      actionType: "endpointCall",
+      actionName: "callOrderApi",
+      connectorId: "order-api",
+    });
+    const definition = {
+      actions: [
+        { activity: "endpointCall", name: "callOrderApi", args: {} },
+        { activity: "jsFunction", name: "neverRan", args: {} },
+      ],
+    };
+    const merged = mergeRun(events, spans, definition);
+    // Plan-driven path renders BOTH definition actions (including the
+    // not-executed second one) — the events-only fallback would only ever
+    // produce the ONE executed step.
+    expect(merged.steps).toHaveLength(2);
+    expect((merged.steps[1] as IActionStep).status).toBe("not_executed");
+  });
+
+  it("degraded: a run with zero step events and an empty definition renders no steps and sets degraded", () => {
+    const merged = mergeRun(
+      [event({ kind: "execution_started", payload_action_index: null })],
+      [],
+      { actions: [] }
+    );
+    expect(merged.steps).toEqual([]);
+    expect(merged.degraded).toBe(true);
   });
 
   it("degraded: a run with zero step events walks the definition with every step 'not_executed'", () => {

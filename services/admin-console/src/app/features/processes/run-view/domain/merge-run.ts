@@ -336,6 +336,113 @@ function walkActions(
   });
 }
 
+/** Builds one flat (unnested) `IActionStep` straight from a run's OWN
+ * events — no definition available to supply structural (fork/conditional
+ * plan) context. Used by `buildStepsFromEvents`'s events-only fallback
+ * (see that function's header). `actionType`/`name` fall back to
+ * `"unknown"`/the action type itself when the payload is missing them
+ * (should not happen for a well-formed `action_started` row, but the
+ * fallback keeps this defensive rather than throwing). */
+function buildActionStepFromEvents(
+  pair: ActionEventPair,
+  spans: readonly IRunSpan[]
+): IActionStep {
+  const source = pair.started ?? pair.completed;
+  const actionType = source?.payload_action_type ?? "unknown";
+  const name = source?.payload_action_name ?? actionType;
+  const { range, durationMs } = timeRangeFromSpan(pair.started, spans);
+  return {
+    type: "action",
+    actionIndex: source?.payload_action_index ?? 0,
+    branchPath: source?.payload_branch ?? null,
+    nestingDepth: 0,
+    actionType,
+    name,
+    color: colorForActionType(actionType),
+    status: statusFromPair(pair),
+    instanceId: instanceIdFromPair(pair),
+    durationMs,
+    ...range,
+  };
+}
+
+/** Builds one `IConditionalStep` straight from a single `condition_evaluated`
+ * event — no definition, so no declared branches/default exist to walk
+ * (`branches: []`, `hasDefault: false`). `layout-run.ts` renders this as a
+ * bare decision pill with the evaluated chip and no child lanes/edges. */
+function buildConditionalStepFromEvent(event: IRunEvent): IConditionalStep {
+  return {
+    type: "conditional",
+    actionIndex: event.payload_action_index ?? 0,
+    branchPath: event.payload_branch,
+    nestingDepth: 0,
+    name: event.payload_expression ?? "condition",
+    color: "decision",
+    executed: true,
+    expression: event.payload_expression,
+    evaluatedValue: event.payload_evaluated_value,
+    branchTaken: event.payload_branch_taken,
+    hasDefault: false,
+    branches: [],
+    startedAt: event.occurred_at,
+    completedAt: event.occurred_at,
+    conditionEventId: event.event_id,
+  };
+}
+
+/**
+ * Events-only fallback for when NO workflow definition is available (T06
+ * finding: the trace-detail "Run view" tab only has a Temporal workflowId,
+ * not a definitionId). Builds a FLAT spine of the steps the run actually
+ * EXECUTED, straight from its own events — no fork/conditional plan
+ * reconstruction is possible without the definition, so every step comes
+ * back at `nestingDepth: 0` and conditionals carry `branches: []` (no
+ * not-executed siblings to show). Ordered by the step's own `occurred_at`
+ * (an action step's `action_started` row, or the `condition_evaluated`
+ * event itself) ascending, tiebroken by `actionIndex` — the definition-
+ * driven `walkActions` path gets its order for free from the definition's
+ * own array order; this path has no such array, so it derives order from
+ * WHEN each step actually ran.
+ */
+function buildStepsFromEvents(
+  events: readonly IRunEvent[],
+  spans: readonly IRunSpan[]
+): StepNode[] {
+  const actionPairsByKey = indexActionEvents(events);
+  const entries: Array<{ step: StepNode; occurredAt: string }> = [];
+
+  for (const pair of actionPairsByKey.values()) {
+    const source = pair.started ?? pair.completed;
+    if (!source) {
+      continue;
+    }
+    entries.push({
+      step: buildActionStepFromEvents(pair, spans),
+      occurredAt: source.occurred_at,
+    });
+  }
+
+  for (const event of events) {
+    if (event.kind !== "condition_evaluated") {
+      continue;
+    }
+    entries.push({
+      step: buildConditionalStepFromEvent(event),
+      occurredAt: event.occurred_at,
+    });
+  }
+
+  return entries
+    .sort((a, b) => {
+      const byTime = Date.parse(a.occurredAt) - Date.parse(b.occurredAt);
+      if (byTime !== 0) {
+        return byTime;
+      }
+      return a.step.actionIndex - b.step.actionIndex;
+    })
+    .map((entry) => entry.step);
+}
+
 /**
  * Builds the run's step tree from its definition, matched against the
  * run's OWN events/spans (already scoped by `to-run-response.ts`).
@@ -343,6 +450,13 @@ function walkActions(
  * (`IWorkflowDefinitionDto`) — cast to `WorkflowActionInput[]` here, the one
  * place in the domain layer that asserts the shape, mirroring the
  * definition's own runtime contract (`packages/shared`).
+ *
+ * When no definition actions are available (T06: trace-detail's "Run view"
+ * tab has no definitionId), falls back to `buildStepsFromEvents` — the
+ * EXECUTED steps only, flat, no plan-vs-executed enrichment — rather than
+ * an empty tree. `degraded` still only reflects "genuinely no step events
+ * at all" (the old-run/artifact-only banner case), NOT "no definition":
+ * a run with step events but no definition is a full (if flat) render.
  */
 export function mergeRun(
   events: readonly IRunEvent[],
@@ -356,11 +470,16 @@ export function mergeRun(
   };
 
   const actions = (definition.actions ?? []) as WorkflowActionInput[];
-  const steps = walkActions(actions, null, 0, ctx);
-
-  const degraded = !events.some(
+  const hasStepEvents = events.some(
     (event) => event.kind !== null && STEP_EVENT_KINDS.has(event.kind)
   );
 
-  return { steps, degraded };
+  const steps =
+    actions.length > 0
+      ? walkActions(actions, null, 0, ctx)
+      : hasStepEvents
+        ? buildStepsFromEvents(events, spans)
+        : [];
+
+  return { steps, degraded: !hasStepEvents };
 }

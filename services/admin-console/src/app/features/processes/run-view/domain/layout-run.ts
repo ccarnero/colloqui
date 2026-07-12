@@ -24,7 +24,10 @@ function nodeId(step: StepNode): string {
 
 function labelFor(step: StepNode): string {
   if (step.type === "action") {
-    return `${step.actionIndex + 1} · ${step.actionType} → ${step.instanceId ?? step.name}`;
+    // Primary label is the human action NAME (e.g. "getPost"), not the
+    // instance UUID — the connector/agent instance id is secondary detail
+    // already surfaced in the cast strip and the step popup.
+    return `${step.actionIndex + 1} · ${step.actionType} → ${step.name}`;
   }
   if (step.type === "conditional") {
     return step.name;
@@ -223,7 +226,13 @@ function layoutSequence(
         pendingEdgeKind = "bypass";
         pendingThick = true;
       } else {
-        prevId = takenTailId;
+        // `takenTailId` stays `null` when `step.branches` is empty (the
+        // events-only fallback's conditionals carry no branches — no
+        // definition to walk) even though a branch WAS taken per the
+        // event's `branchTaken`. Without this fallback the next sibling
+        // would chain from nothing (an orphaned node, no incoming edge) —
+        // fall back to the pill itself, same as the `isBypass` case above.
+        prevId = takenTailId ?? pillId;
         pendingEdgeKind = "linear";
         pendingThick = false;
       }
