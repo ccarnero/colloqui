@@ -26,8 +26,8 @@ export interface IGraphNode {
  * - `true` (dashed, the "solo correlation" case): `causation_id` is set
  *   but does NOT resolve to any event in the chain (the same population
  *   `summary.orphan_count` counts). The parent has no coordinates to draw
- *   from, so the component renders a short dashed stub above the child
- *   node instead of a parent->child line.
+ *   from, so the component renders a short dashed stub to the left of the
+ *   child node instead of a parent->child line.
  *
  * Events with a null `causation_id` (true roots) produce no edge at all.
  */
@@ -38,11 +38,13 @@ export interface IGraphEdge {
   readonly dashed: boolean;
 }
 
-const ROW_HEIGHT = 84;
-const COL_WIDTH = 196;
+/** Horizontal distance per structural depth level (time/depth flows rightward). */
+const DEPTH_DX = 208;
+/** Vertical distance per sibling slot (siblings stack top-to-bottom). */
+const SLOT_DY = 56;
 const MARGIN_X = 40;
 const MARGIN_Y = 40;
-/** Length of the dashed "missing parent" stub drawn above an orphaned node. */
+/** Length of the dashed "missing parent" stub drawn to the left of an orphaned node. */
 export const DASHED_STUB_LENGTH = 40;
 
 function producerOf(event: ITrackedEvent): string {
@@ -202,11 +204,12 @@ function buildForest(
 }
 
 /**
- * Assigns horizontal "slots" via post-order traversal: leaves take
+ * Assigns vertical "slots" via post-order traversal: leaves take
  * consecutive integer slots from a shared cursor (`nextLeafSlot`), and each
  * internal node's slot is the average of its first and last child's slot —
  * centering it over its children, which is what makes the tree
- * crossing-free and visually balanced.
+ * crossing-free and visually balanced. In the left-to-right layout, slot
+ * drives `y` (siblings stack top-to-bottom).
  */
 function assignSlots(node: ITreeNode, nextLeafSlot: { value: number }): number {
   if (node.children.length === 0) {
@@ -225,15 +228,17 @@ function assignSlots(node: ITreeNode, nextLeafSlot: { value: number }): number {
 }
 
 /**
- * Lays out chain events as a compact, crossing-free top-down TREE
- * (Reingold–Tilford style): `depth` is the structural tree depth from the
- * event's root (root at depth 0, each child = parent depth + 1) walked over
- * the `causation_id` forest, and `x` comes from a post-order horizontal
- * "slot" assignment where leaves get consecutive slots and every parent is
- * centered over its children (SPEC.md `manual-loops/trace-console.md` T06).
- * `column` is kept for API/back-compat as the rounded integer slot.
- * Deterministic: identical input produces identical coordinates (same array
- * order, same arithmetic, no Date.now/random).
+ * Lays out chain events as a compact, crossing-free LEFT-TO-RIGHT TREE
+ * (Reingold–Tilford style, rotated 90°): `depth` is the structural tree
+ * depth from the event's root (root at depth 0, each child = parent depth
+ * + 1) walked over the `causation_id` forest and drives `x` — time/depth
+ * flows rightward. `y` comes from a post-order vertical "slot" assignment
+ * where leaves get consecutive slots (stacked top-to-bottom, ordered by
+ * `offsetMs`) and every parent is centered VERTICALLY over its children
+ * (SPEC.md `manual-loops/trace-console.md` T06). `column` is kept for
+ * API/back-compat as the rounded integer slot. Deterministic: identical
+ * input produces identical coordinates (same array order, same arithmetic,
+ * no Date.now/random).
  */
 export function computeGraphNodes(
   chain: ITrackingChainResponse
@@ -280,8 +285,8 @@ export function computeGraphNodes(
       offsetMs: offsetMsById.get(event.event_id) ?? 0,
       depth: treeNode.depth,
       column,
-      x: MARGIN_X + treeNode.slot * COL_WIDTH,
-      y: MARGIN_Y + treeNode.depth * ROW_HEIGHT,
+      x: MARGIN_X + treeNode.depth * DEPTH_DX,
+      y: MARGIN_Y + treeNode.slot * SLOT_DY,
     };
   });
 }
@@ -327,8 +332,10 @@ export interface IGraphEdgePoints {
 /**
  * Computes the visual line for an edge. Solid edges connect the parent
  * node's coordinates to the child's. Dashed edges have no parent node to
- * connect from (it is missing from the chain), so a short vertical stub is
- * drawn directly above the child node instead (`DASHED_STUB_LENGTH`).
+ * connect from (it is missing from the chain), so a short horizontal stub
+ * is drawn directly to the left of the child node instead
+ * (`DASHED_STUB_LENGTH`) — the missing parent would sit at a smaller `x`
+ * in this left-to-right layout.
  */
 export function computeEdgePoints(
   edge: IGraphEdge,
@@ -340,7 +347,7 @@ export function computeEdgePoints(
   }
 
   if (edge.dashed || !edge.fromEventId) {
-    return { x1: to.x, y1: to.y - DASHED_STUB_LENGTH, x2: to.x, y2: to.y };
+    return { x1: to.x - DASHED_STUB_LENGTH, y1: to.y, x2: to.x, y2: to.y };
   }
 
   const from = nodesById.get(edge.fromEventId);

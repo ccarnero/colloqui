@@ -128,14 +128,14 @@ describe("computeGraphNodes", () => {
     expect(nodes.map((n) => n.depth)).toEqual([0, 1, 1, 0]);
   });
 
-  it("centers a branching parent's x over its children, ordered left-to-right by offsetMs", () => {
+  it("centers a branching parent's y over its children, ordered top-to-bottom by offsetMs", () => {
     const nodes = computeGraphNodes(chain);
     const byId = new Map(nodes.map((n) => [n.eventId, n]));
     const child1 = byId.get("evt-2")!; // offsetMs 100
     const child2 = byId.get("evt-3")!; // offsetMs 150
     const parent = byId.get("evt-1")!;
-    expect(child1.x).toBeLessThan(child2.x);
-    expect(parent.x).toBe((child1.x + child2.x) / 2);
+    expect(child1.y).toBeLessThan(child2.y);
+    expect(parent.y).toBe((child1.y + child2.y) / 2);
   });
 
   it("is deterministic — identical input produces identical coordinates", () => {
@@ -153,7 +153,7 @@ describe("computeGraphNodes", () => {
 });
 
 describe("computeGraphNodes — tree layout properties", () => {
-  it("centers a parent with 3 children between the leftmost and rightmost child, with distinct increasing child x", () => {
+  it("centers a parent with 3 children between the topmost and bottommost child, with distinct increasing child y", () => {
     const root = event({
       event_id: "root",
       causation_id: null,
@@ -186,12 +186,12 @@ describe("computeGraphNodes — tree layout properties", () => {
     const c = byId.get("child-c")!;
     const rootNode = byId.get("root")!;
 
-    expect(a.x).toBeLessThan(b.x);
-    expect(b.x).toBeLessThan(c.x);
-    expect(rootNode.x).toBe((a.x + c.x) / 2);
+    expect(a.y).toBeLessThan(b.y);
+    expect(b.y).toBeLessThan(c.y);
+    expect(rootNode.y).toBe((a.y + c.y) / 2);
   });
 
-  it("computes depth as structural distance from the root through a 3-level chain", () => {
+  it("computes depth as structural distance from the root through a 3-level chain, driving x rightward", () => {
     const grandparent = event({
       event_id: "gp",
       causation_id: null,
@@ -214,12 +214,20 @@ describe("computeGraphNodes — tree layout properties", () => {
 
     const nodes = computeGraphNodes(threeLevelChain);
     const byId = new Map(nodes.map((n) => [n.eventId, n]));
-    expect(byId.get("gp")?.depth).toBe(0);
-    expect(byId.get("p")?.depth).toBe(1);
-    expect(byId.get("gc")?.depth).toBe(2);
+    const gp = byId.get("gp")!;
+    const p = byId.get("p")!;
+    const gc = byId.get("gc")!;
+    expect(gp.depth).toBe(0);
+    expect(p.depth).toBe(1);
+    expect(gc.depth).toBe(2);
+    // depth now drives x (left-to-right layout): root smallest x, and each
+    // level advances by the same constant horizontal step (DEPTH_DX).
+    expect(gp.x).toBeLessThan(p.x);
+    expect(p.x).toBeLessThan(gc.x);
+    expect(p.x - gp.x).toBe(gc.x - p.x);
   });
 
-  it("orders children left-to-right by offsetMs even when declared out of chain order", () => {
+  it("orders children top-to-bottom by offsetMs even when declared out of chain order", () => {
     const root = event({
       event_id: "root",
       causation_id: null,
@@ -243,10 +251,10 @@ describe("computeGraphNodes — tree layout properties", () => {
 
     const nodes = computeGraphNodes(outOfOrderChain);
     const byId = new Map(nodes.map((n) => [n.eventId, n]));
-    expect(byId.get("early")!.x).toBeLessThan(byId.get("late")!.x);
+    expect(byId.get("early")!.y).toBeLessThan(byId.get("late")!.y);
   });
 
-  it("lays out a forest (two roots, or a root + an unresolved orphan) side by side with non-overlapping x ranges", () => {
+  it("lays out a forest (two roots, or a root + an unresolved orphan) stacked vertically with non-overlapping y ranges", () => {
     const rootA = event({
       event_id: "root-a",
       causation_id: null,
@@ -269,14 +277,17 @@ describe("computeGraphNodes — tree layout properties", () => {
 
     const nodes = computeGraphNodes(forestChain);
     const byId = new Map(nodes.map((n) => [n.eventId, n]));
-    const treeAXs = [byId.get("root-a")!.x, byId.get("root-a-child")!.x];
-    const treeBX = byId.get("root-b")!.x;
+    const treeAYs = [byId.get("root-a")!.y, byId.get("root-a-child")!.y];
+    const treeBY = byId.get("root-b")!.y;
 
-    expect(Math.max(...treeAXs)).toBeLessThan(treeBX);
+    // Both roots sit at depth 0 (same x column) but stack vertically —
+    // separate forest trees occupy non-overlapping y ranges.
+    expect(Math.max(...treeAYs)).toBeLessThan(treeBY);
+    expect(byId.get("root-a")?.x).toBe(byId.get("root-b")?.x);
     expect(byId.get("root-b")?.depth).toBe(0);
   });
 
-  it("gives leaves at the same depth distinct x (no two nodes share x and y)", () => {
+  it("gives leaves at the same depth distinct y (no two nodes share x and y)", () => {
     const root = event({
       event_id: "root",
       causation_id: null,
@@ -450,13 +461,13 @@ describe("computeEdgePoints", () => {
     });
   });
 
-  it("draws a short vertical stub above the child node for a dashed edge (no parent coordinates exist)", () => {
+  it("draws a short horizontal stub to the left of the child node for a dashed edge (no parent coordinates exist)", () => {
     const edge = edges.find((e) => e.toEventId === "evt-4");
     const points = computeEdgePoints(edge!, byId);
     const child = byId.get("evt-4")!;
     expect(points).toEqual({
-      x1: child.x,
-      y1: child.y - DASHED_STUB_LENGTH,
+      x1: child.x - DASHED_STUB_LENGTH,
+      y1: child.y,
       x2: child.x,
       y2: child.y,
     });
