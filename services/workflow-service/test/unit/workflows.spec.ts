@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { WorkflowDefinition } from "@yoizen/shared";
 
 const executeEndpointCall = mock(() =>
@@ -27,6 +27,8 @@ const executeAgentCall = mock(() =>
 );
 const publishExecutionCompletedEvent = mock(() => Promise.resolve());
 const publishExecutionStartedEvent = mock(() => Promise.resolve());
+const publishActionStartedEvent = mock(() => Promise.resolve());
+const publishActionCompletedEvent = mock(() => Promise.resolve());
 
 let runWorkflow: (
   workflow: WorkflowDefinition,
@@ -45,6 +47,8 @@ beforeAll(async () => {
       executeAgentCall,
       publishExecutionCompletedEvent,
       publishExecutionStartedEvent,
+      publishActionStartedEvent,
+      publishActionCompletedEvent,
     }),
     // Deterministic workflow-context stub — mirrors what Temporal's
     // real workflowInfo() exposes (subset used by runWorkflow).
@@ -52,6 +56,14 @@ beforeAll(async () => {
       workflowId: "temporal-wf-id-1",
       runId: "temporal-run-id-1",
     }),
+    // Deterministic stand-in for Temporal's real uuid4() (which is
+    // itself deterministic under replay — seeded from the workflow's
+    // own random). Increments per call so tests can assert distinct
+    // action-event causal chains.
+    uuid4: (() => {
+      let n = 0;
+      return () => `uuid4-test-${++n}`;
+    })(),
   }));
   ({ runWorkflow } = await import("../../src/temporal/workflows"));
 });
@@ -689,6 +701,7 @@ describe("runWorkflow (temporal/workflows)", () => {
 
     expect(publishExecutionStartedEvent).toHaveBeenCalledWith({
       executionId: "exec-started-1",
+      eventId: expect.any(String),
       workflowId: "temporal-wf-id-1",
       runId: "temporal-run-id-1",
       tenantId: "tenant-1",
@@ -719,6 +732,7 @@ describe("runWorkflow (temporal/workflows)", () => {
     );
     expect(publishExecutionStartedEvent).toHaveBeenCalledWith({
       executionId: "exec-started-caused",
+      eventId: expect.any(String),
       workflowId: "temporal-wf-id-1",
       runId: "temporal-run-id-1",
       tenantId: "tenant-1",
@@ -747,6 +761,7 @@ describe("runWorkflow (temporal/workflows)", () => {
     ).rejects.toThrow("boom");
     expect(publishExecutionStartedEvent).toHaveBeenCalledWith({
       executionId: "exec-started-failed",
+      eventId: expect.any(String),
       workflowId: "temporal-wf-id-1",
       runId: "temporal-run-id-1",
       tenantId: "tenant-1",
@@ -2023,6 +2038,475 @@ describe("runWorkflow (temporal/workflows)", () => {
       executeJsFunction.mockImplementation(() =>
         Promise.resolve({ computed: 1 })
       );
+    });
+  });
+
+  /**
+   * T03 — action_started/action_completed emitters
+   * (manual-loops/workflow-step-events.md).
+   */
+  describe("action_started/action_completed telemetry (T03)", () => {
+    beforeEach(() => {
+      publishActionStartedEvent.mockClear();
+      publishActionCompletedEvent.mockClear();
+      executeJsFunction.mockClear();
+      executeJsFunction.mockImplementation(() => Promise.resolve({ v: 1 }));
+    });
+
+    it("emits started/completed for each top-level action with the real activity name as actionType", async () => {
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            { activity: "jsFunction", name: "step1", args: { code: "1" } },
+            { activity: "jsFunction", name: "step2", args: { code: "2" } },
+          ],
+        },
+        "exec-t03-1"
+      );
+
+      expect(publishActionStartedEvent).toHaveBeenCalledTimes(2);
+      expect(publishActionCompletedEvent).toHaveBeenCalledTimes(2);
+
+      const startedCalls = publishActionStartedEvent.mock.calls;
+      expect(startedCalls[0][0]).toMatchObject({
+        executionId: "exec-t03-1",
+        actionIndex: 0,
+        actionType: "jsFunction",
+        actionName: "step1",
+      });
+      expect(startedCalls[1][0]).toMatchObject({
+        executionId: "exec-t03-1",
+        actionIndex: 1,
+        actionType: "jsFunction",
+        actionName: "step2",
+      });
+
+      const completedCalls = publishActionCompletedEvent.mock.calls;
+      expect(completedCalls[0][0]).toMatchObject({
+        actionIndex: 0,
+        actionType: "jsFunction",
+        actionName: "step1",
+        status: "ok",
+      });
+    });
+
+    it("does not emit action telemetry when executionId is absent", async () => {
+      await runWorkflow({
+        ...base,
+        actions: [
+          { activity: "jsFunction", name: "step1", args: { code: "1" } },
+        ],
+      });
+      expect(publishActionStartedEvent).not.toHaveBeenCalled();
+      expect(publishActionCompletedEvent).not.toHaveBeenCalled();
+    });
+
+    it("cites the execution_started event id as causation for every action event, with a constant depth", async () => {
+      publishExecutionStartedEvent.mockClear();
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            { activity: "jsFunction", name: "step1", args: { code: "1" } },
+            { activity: "jsFunction", name: "step2", args: { code: "2" } },
+          ],
+        },
+        "exec-t03-causal"
+      );
+
+      const startedEventId =
+        publishExecutionStartedEvent.mock.calls[0][0].eventId;
+      expect(startedEventId).toBeDefined();
+
+      const allActionCalls = [
+        ...publishActionStartedEvent.mock.calls,
+        ...publishActionCompletedEvent.mock.calls,
+      ];
+      expect(allActionCalls.length).toBeGreaterThan(0);
+      for (const [args] of allActionCalls) {
+        expect(args.causationId).toBe(startedEventId);
+        // Depth math: root trigger (no causal) -> execution_started
+        // depth 0 -> action events depth 1. Constant across all actions.
+        expect(args.depth).toBe(1);
+      }
+    });
+
+    it("threads the trigger's causal depth through execution_started into action events (SIBLING hops, never chained)", async () => {
+      publishExecutionStartedEvent.mockClear();
+      await runWorkflow(
+        {
+          ...base,
+          causal: {
+            causation_id: "evt-root",
+            correlation_id: "conv-1",
+            depth: 1,
+          },
+          actions: [
+            { activity: "jsFunction", name: "step1", args: { code: "1" } },
+          ],
+        },
+        "exec-t03-depth"
+      );
+
+      // trigger depth 1 -> execution_started depth 2 -> action events depth 3
+      expect(publishActionStartedEvent).toHaveBeenCalledTimes(1);
+      const args = publishActionStartedEvent.mock.calls[0][0];
+      expect(args.depth).toBe(3);
+      expect(args.correlationId).toBe("conv-1");
+    });
+
+    it("attaches connectorId for endpointCall via args.adapterId", async () => {
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "endpointCall",
+              name: "call",
+              args: { method: "GET", url: "/x", adapterId: "adapter-1" },
+            },
+          ],
+        },
+        "exec-t03-connector"
+      );
+      expect(publishActionStartedEvent.mock.calls[0][0]).toMatchObject({
+        actionType: "endpointCall",
+        connectorId: "adapter-1",
+      });
+    });
+
+    it("attaches agentId for agentCall", async () => {
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "agentCall",
+              name: "yc",
+              args: {
+                agentId: "550e8400-e29b-41d4-a716-446655440000",
+                message: "hi",
+              },
+            },
+          ],
+        },
+        "exec-t03-agent"
+      );
+      expect(publishActionStartedEvent.mock.calls[0][0]).toMatchObject({
+        actionType: "agentCall",
+        agentId: "550e8400-e29b-41d4-a716-446655440000",
+      });
+    });
+
+    it("emits status:failed with the error CLASS NAME (no stack trace) and rethrows", async () => {
+      executeJsFunction.mockImplementationOnce(() =>
+        Promise.reject(new TypeError("boom"))
+      );
+      await expect(
+        runWorkflow(
+          {
+            ...base,
+            actions: [
+              { activity: "jsFunction", name: "bad", args: { code: "throw" } },
+            ],
+          },
+          "exec-t03-failed"
+        )
+      ).rejects.toThrow("boom");
+
+      expect(publishActionCompletedEvent).toHaveBeenCalledTimes(1);
+      const args = publishActionCompletedEvent.mock.calls[0][0];
+      expect(args.status).toBe("failed");
+      expect(args.errorClass).toBe("TypeError");
+      expect(JSON.stringify(args)).not.toContain("at ");
+      executeJsFunction.mockImplementation(() => Promise.resolve({ v: 1 }));
+    });
+
+    it("labels branch/fork child actions with their branch name, and the fork itself gets actionType 'branch'", async () => {
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "branch",
+              name: "split",
+              pathA: [
+                { activity: "jsFunction", name: "a1", args: { code: "1" } },
+              ],
+              pathB: [
+                { activity: "jsFunction", name: "b1", args: { code: "1" } },
+              ],
+            },
+          ],
+        },
+        "exec-t03-branch"
+      );
+
+      const started = publishActionStartedEvent.mock.calls.map((c) => c[0]);
+      const fork = started.find((a) => a.actionName === "split");
+      expect(fork).toMatchObject({ actionType: "branch" });
+      expect(fork.branch).toBeUndefined();
+
+      const a1 = started.find((a) => a.actionName === "a1");
+      const b1 = started.find((a) => a.actionName === "b1");
+      expect(a1).toMatchObject({ branch: "pathA" });
+      expect(b1).toMatchObject({ branch: "pathB" });
+    });
+
+    it("labels the matched conditional branch and nested fork-inside-condition with a combined path", async () => {
+      executeJsFunction.mockImplementation(() =>
+        Promise.resolve({ status: "aprobado" })
+      );
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "jsFunction",
+              name: "check",
+              args: { code: "return { status: 'aprobado' }" },
+            },
+            {
+              activity: "conditional",
+              name: "route",
+              branches: [
+                {
+                  label: "approved",
+                  condition: {
+                    variable: "results.check.status",
+                    comparator: "eq",
+                    value: "aprobado",
+                  },
+                  actions: [
+                    {
+                      activity: "branch",
+                      name: "fork-inside",
+                      pathA: [
+                        {
+                          activity: "jsFunction",
+                          name: "nested",
+                          args: { code: "1" },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        "exec-t03-nested"
+      );
+
+      const started = publishActionStartedEvent.mock.calls.map((c) => c[0]);
+      const conditionalNode = started.find((a) => a.actionName === "route");
+      expect(conditionalNode).toMatchObject({ actionType: "conditional" });
+      expect(conditionalNode.branch).toBeUndefined();
+
+      const forkInside = started.find((a) => a.actionName === "fork-inside");
+      expect(forkInside).toMatchObject({ branch: "approved" });
+
+      const nested = started.find((a) => a.actionName === "nested");
+      expect(nested).toMatchObject({ branch: "approved/pathA" });
+    });
+
+    it("emits NOTHING for actions inside an untaken conditional branch (not executed = no event)", async () => {
+      executeJsFunction.mockImplementation(() =>
+        Promise.resolve({ status: "rejected" })
+      );
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "conditional",
+              name: "route",
+              branches: [
+                {
+                  label: "approved",
+                  condition: {
+                    variable: "results.check.status",
+                    comparator: "eq",
+                    value: "aprobado",
+                  },
+                  actions: [
+                    {
+                      activity: "jsFunction",
+                      name: "onApproved",
+                      args: { code: "1" },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        "exec-t03-skip"
+      );
+
+      const started = publishActionStartedEvent.mock.calls.map((c) => c[0]);
+      expect(started.some((a) => a.actionName === "onApproved")).toBe(false);
+      // only the conditional node itself gets telemetry — no branch matched
+      expect(started.some((a) => a.actionName === "route")).toBe(true);
+    });
+
+    it("caps step events at 100 with a single truncated marker, emitting nothing further", async () => {
+      const actions = Array.from({ length: 60 }, (_, i) => ({
+        activity: "jsFunction" as const,
+        name: `step${i}`,
+        args: { code: "1" },
+      }));
+
+      await runWorkflow({ ...base, actions }, "exec-t03-volume");
+
+      // Cap is 100 TOTAL step events (started+completed). 49 actions can
+      // fully emit (49*2=98), the 50th would push to 100 so it becomes
+      // the single truncated marker instead, and actions 51-60 emit
+      // nothing further — while all 60 still EXECUTE (jsFunction called
+      // 60 times).
+      expect(executeJsFunction).toHaveBeenCalledTimes(60);
+
+      const totalEmitted =
+        publishActionStartedEvent.mock.calls.length +
+        publishActionCompletedEvent.mock.calls.length;
+      expect(totalEmitted).toBeLessThanOrEqual(100);
+
+      const truncatedCalls = publishActionCompletedEvent.mock.calls.filter(
+        ([args]) => args.actionType === "truncated"
+      );
+      expect(truncatedCalls).toHaveLength(1);
+      expect(truncatedCalls[0][0]).toMatchObject({ status: "skipped" });
+
+      // Nothing emitted for the actions after the marker.
+      const lastStartedIndex = Math.max(
+        ...publishActionStartedEvent.mock.calls.map(
+          ([args]) => args.actionIndex
+        )
+      );
+      expect(lastStartedIndex).toBeLessThan(59);
+    });
+
+    it("reserves the decision+counter atomically so concurrent branch children never race the cap boundary (regression: check-then-act race)", async () => {
+      // 48 sequential jsFunction actions consume 96 of the 100-event
+      // budget (48 * 2). The next reservation (the branch fork action
+      // itself) pushes to 98, still safely emitting. The fork then
+      // spawns 3 children CONCURRENTLY via Promise.all, each running a
+      // single jsFunction action — with count already at 98, the FIRST
+      // child to reserve must become the truncated marker (98+2=100 >
+      // 99), and every other sibling reading state AFTER that
+      // reservation must see `truncated: true` and skip. Before the
+      // atomic-reservation fix, all three siblings read the same stale
+      // count synchronously (their mutation happened only after
+      // awaiting the publish call) and could each independently decide
+      // "truncated-marker", publishing 3 markers and blowing the cap.
+      const warmup = Array.from({ length: 48 }, (_, i) => ({
+        activity: "jsFunction" as const,
+        name: `warmup${i}`,
+        args: { code: "1" },
+      }));
+
+      const actions = [
+        ...warmup,
+        {
+          activity: "branch" as const,
+          name: "fork",
+          pathA: [
+            {
+              activity: "jsFunction" as const,
+              name: "childA",
+              args: { code: "1" },
+            },
+          ],
+          pathB: [
+            {
+              activity: "jsFunction" as const,
+              name: "childB",
+              args: { code: "1" },
+            },
+          ],
+          pathC: [
+            {
+              activity: "jsFunction" as const,
+              name: "childC",
+              args: { code: "1" },
+            },
+          ],
+        },
+      ];
+
+      await runWorkflow({ ...base, actions }, "exec-t03-concurrent-cap");
+
+      // Every action still EXECUTES regardless of telemetry emission —
+      // 48 warmups + 3 branch children (the fork itself is not a
+      // jsFunction call).
+      expect(executeJsFunction).toHaveBeenCalledTimes(48 + 3);
+
+      const totalEmitted =
+        publishActionStartedEvent.mock.calls.length +
+        publishActionCompletedEvent.mock.calls.length;
+      expect(totalEmitted).toBeLessThanOrEqual(100);
+
+      const truncatedCalls = publishActionCompletedEvent.mock.calls.filter(
+        ([args]) => args.actionType === "truncated"
+      );
+      // EXACTLY one truncated marker run-wide, even though 3 siblings
+      // raced the boundary concurrently.
+      expect(truncatedCalls).toHaveLength(1);
+      expect(truncatedCalls[0][0]).toMatchObject({ status: "skipped" });
+    });
+
+    it("does not double-reserve or drop reservations across concurrent branch children well under the cap", async () => {
+      // Fresh run, no warmup — 4 branch children each with 1 action,
+      // running concurrently. Reservation must be exact: fork (2) +
+      // 4 children * 2 = 10 total events, no truncation.
+      const actions = [
+        {
+          activity: "branch" as const,
+          name: "fork",
+          path1: [
+            {
+              activity: "jsFunction" as const,
+              name: "c1",
+              args: { code: "1" },
+            },
+          ],
+          path2: [
+            {
+              activity: "jsFunction" as const,
+              name: "c2",
+              args: { code: "1" },
+            },
+          ],
+          path3: [
+            {
+              activity: "jsFunction" as const,
+              name: "c3",
+              args: { code: "1" },
+            },
+          ],
+          path4: [
+            {
+              activity: "jsFunction" as const,
+              name: "c4",
+              args: { code: "1" },
+            },
+          ],
+        },
+      ];
+
+      await runWorkflow({ ...base, actions }, "exec-t03-concurrent-under-cap");
+
+      const totalEmitted =
+        publishActionStartedEvent.mock.calls.length +
+        publishActionCompletedEvent.mock.calls.length;
+      // fork itself (started+completed) + 4 children (started+completed each)
+      expect(totalEmitted).toBe(2 + 4 * 2);
+
+      const truncatedCalls = publishActionCompletedEvent.mock.calls.filter(
+        ([args]) => args.actionType === "truncated"
+      );
+      expect(truncatedCalls).toHaveLength(0);
     });
   });
 });

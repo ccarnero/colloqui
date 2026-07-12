@@ -191,7 +191,7 @@ grep -n "workflow-step-events" cowork/INDEX.md
 
 - [x] T01 taxonomy + classifier + golden (judge first)
 - [x] T02 execution_started
-- [ ] T03 action_started/completed
+- [x] T03 action_started/completed
 - [ ] T04 condition_evaluated
 - [ ] T05 cluster verification + volume
 - [ ] T06 docs + index

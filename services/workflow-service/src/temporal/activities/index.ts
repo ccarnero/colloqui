@@ -1,6 +1,8 @@
 export { executeAgentCall } from "./agent-call.activity";
 export { executeChannelSend } from "./channel-send.activity";
 export {
+  publishActionCompletedEvent,
+  publishActionStartedEvent,
   publishExecutionCompletedEvent,
   publishExecutionStartedEvent,
 } from "./execution-completed-publisher.activity";

@@ -1,6 +1,8 @@
 import "reflect-metadata";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { isCompliantEnvelope } from "@yoizen/shared";
+import actionCompletedFixture from "../../../../fixtures/bus-events/workflow-service-action-completed-envelope-01.json";
+import actionStartedFixture from "../../../../fixtures/bus-events/workflow-service-action-started-envelope-01.json";
 import executionStartedFixture from "../../../../fixtures/bus-events/workflow-service-execution-started-envelope-01.json";
 
 /**
@@ -57,6 +59,10 @@ const {
   buildExecutionCompletedSubject,
   publishExecutionStartedEvent,
   buildExecutionStartedSubject,
+  publishActionStartedEvent,
+  publishActionCompletedEvent,
+  buildActionStartedSubject,
+  buildActionCompletedSubject,
 } = await import(
   "../../src/temporal/activities/execution-completed-publisher.activity"
 );
@@ -369,6 +375,180 @@ describe("publishExecutionStartedEvent (execution_started emit)", () => {
       executionId: "exec-no-tenant",
       workflowId: "tenant-a:demo-workflow:abc123",
       runId: "run-no-tenant",
+      tenantId: "",
+    });
+    expect(mockPublish).toHaveBeenCalledTimes(0);
+    expect(connectMock).toHaveBeenCalledTimes(0);
+  });
+
+  /**
+   * `eventId` override (T03): lets the calling workflow generate the
+   * id via Temporal's deterministic `uuid4()` BEFORE this activity
+   * runs, so it can be cited as causation for action_started/completed.
+   */
+  it("uses the caller-supplied eventId instead of generating one", async () => {
+    await publishExecutionStartedEvent({
+      executionId: "exec-fixed-id",
+      workflowId: "tenant-a:demo-workflow:abc123",
+      runId: "run-fixed-id",
+      tenantId: "tenant-a",
+      eventId: "fixed-event-id-1",
+    });
+    const envelope = JSON.parse(
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
+    );
+    expect(envelope.id).toBe("fixed-event-id-1");
+  });
+});
+
+/**
+ * T03 — action_started / action_completed emitters
+ * (manual-loops/workflow-step-events.md). MIRRORS
+ * `publishExecutionStartedEvent`'s suite: same publish path, same
+ * envelope derivation, same subject-builder pattern.
+ */
+describe("publishActionStartedEvent / publishActionCompletedEvent (action telemetry emit)", () => {
+  beforeEach(() => {
+    mockFlush.mockClear();
+    mockPublish.mockClear();
+    mockHeaderSet.mockClear();
+    connectMock.mockClear();
+    connectMock.mockImplementation(() => Promise.resolve(mockConn));
+  });
+
+  it("builds the canonical action_started/action_completed subjects for a tenant", () => {
+    expect(buildActionStartedSubject("tenant-a")).toBe(
+      "evt.tenant-a.workflow-service.workflow.internal.native.action_started.v1"
+    );
+    expect(buildActionCompletedSubject("tenant-a")).toBe(
+      "evt.tenant-a.workflow-service.workflow.internal.native.action_completed.v1"
+    );
+  });
+
+  it("matches the T01 fixtures' subject convention and CloudEvents type", () => {
+    expect(actionStartedFixture.type).toBe(
+      "io.yoizen.workflow.action.started.v1"
+    );
+    expect(isCompliantEnvelope(actionStartedFixture)).toBe(true);
+    expect(actionCompletedFixture.type).toBe(
+      "io.yoizen.workflow.action.completed.v1"
+    );
+    expect(isCompliantEnvelope(actionCompletedFixture)).toBe(true);
+  });
+
+  it("publishes a spec-compliant action_started envelope with actionIndex/actionType/actionName", async () => {
+    await publishActionStartedEvent({
+      executionId: "exec-1",
+      actionIndex: 0,
+      actionType: "endpointCall",
+      actionName: "fetch-customer",
+      connectorId: "connector-1",
+      tenantId: "tenant-a",
+      correlationId: "corr-1",
+      causationId: "wf-exec-started-1",
+      depth: 2,
+    });
+
+    expect(mockPublish).toHaveBeenCalledTimes(1);
+    const [subject, payloadBytes] = mockPublish.mock.calls[0];
+    expect(subject).toBe(
+      "evt.tenant-a.workflow-service.workflow.internal.native.action_started.v1"
+    );
+    const envelope = JSON.parse(
+      new TextDecoder().decode(payloadBytes as Uint8Array)
+    );
+    expect(isCompliantEnvelope(envelope)).toBe(true);
+    expect(envelope.type).toBe("io.yoizen.workflow.action.started.v1");
+    expect(envelope.causation_id).toBe("wf-exec-started-1");
+    expect(envelope.correlation_id).toBe("corr-1");
+    expect(envelope.transport.depth).toBe(2);
+    expect(envelope.data.payload).toEqual({
+      executionId: "exec-1",
+      actionIndex: 0,
+      actionType: "endpointCall",
+      actionName: "fetch-customer",
+      connectorId: "connector-1",
+    });
+  });
+
+  it("publishes action_completed with status:ok and no branch/connector/agent when absent", async () => {
+    await publishActionCompletedEvent({
+      executionId: "exec-1",
+      actionIndex: 1,
+      actionType: "jsFunction",
+      actionName: "compute",
+      status: "ok",
+      tenantId: "tenant-a",
+    });
+    const envelope = JSON.parse(
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
+    );
+    expect(envelope.type).toBe("io.yoizen.workflow.action.completed.v1");
+    expect(envelope.data.payload).toEqual({
+      executionId: "exec-1",
+      actionIndex: 1,
+      actionType: "jsFunction",
+      actionName: "compute",
+      status: "ok",
+    });
+  });
+
+  it("publishes action_completed with status:failed and errorClass, and includes branch label", async () => {
+    await publishActionCompletedEvent({
+      executionId: "exec-1",
+      actionIndex: 2,
+      actionType: "jsFunction",
+      actionName: "risky",
+      branch: "pathA",
+      status: "failed",
+      errorClass: "TypeError",
+      tenantId: "tenant-a",
+    });
+    const envelope = JSON.parse(
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
+    );
+    expect(envelope.data.payload).toEqual({
+      executionId: "exec-1",
+      actionIndex: 2,
+      actionType: "jsFunction",
+      actionName: "risky",
+      branch: "pathA",
+      status: "failed",
+      errorClass: "TypeError",
+    });
+    // No stack trace in the payload (SPEC constraint).
+    expect(JSON.stringify(envelope.data.payload)).not.toContain("at ");
+  });
+
+  it("attaches agentId for agent-targeting actions", async () => {
+    await publishActionStartedEvent({
+      executionId: "exec-1",
+      actionIndex: 0,
+      actionType: "agentCall",
+      actionName: "yc",
+      agentId: "agent-1",
+      tenantId: "tenant-a",
+    });
+    const envelope = JSON.parse(
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
+    );
+    expect(envelope.data.payload.agentId).toBe("agent-1");
+  });
+
+  it("no-ops silently when tenantId is missing", async () => {
+    await publishActionStartedEvent({
+      executionId: "exec-no-tenant",
+      actionIndex: 0,
+      actionType: "jsFunction",
+      actionName: "x",
+      tenantId: "",
+    });
+    await publishActionCompletedEvent({
+      executionId: "exec-no-tenant",
+      actionIndex: 0,
+      actionType: "jsFunction",
+      actionName: "x",
+      status: "ok",
       tenantId: "",
     });
     expect(mockPublish).toHaveBeenCalledTimes(0);

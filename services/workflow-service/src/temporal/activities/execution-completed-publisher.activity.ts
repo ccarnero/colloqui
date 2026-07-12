@@ -220,6 +220,17 @@ export interface IPublishExecutionStartedArgs {
   causationId?: string | null;
   /** Causal depth for the emitted envelope (triggering event's depth + 1). */
   depth?: number;
+  /**
+   * Optional pre-generated event id, supplied by the calling Temporal
+   * workflow via the deterministic `uuid4()` helper from
+   * `@temporalio/workflow`. This lets `runWorkflow` (T03,
+   * `manual-loops/workflow-step-events.md`) know this event's id
+   * BEFORE the activity runs, so it can be cited as `causation_id` for
+   * the run's `action_started`/`action_completed` events without a
+   * round-trip. Falls back to `crypto.randomUUID()` when absent —
+   * unchanged behavior for existing callers (T02).
+   */
+  eventId?: string;
 }
 
 /**
@@ -257,7 +268,7 @@ export async function publishExecutionStartedEvent(
   const conn = await getConnection();
   const subject = buildExecutionStartedSubject(args.tenantId);
   const now = new Date().toISOString();
-  const eventId = crypto.randomUUID();
+  const eventId = args.eventId ?? crypto.randomUUID();
   const traceid = activeOrRandomTraceId();
 
   const payload: Record<string, JsonValue> = {
@@ -330,4 +341,198 @@ export async function publishExecutionStartedEvent(
       `subject=${subject} correlation_id=${correlationId} ` +
       `causation_id=${causationId ?? "null"} depth=${envelope.transport.depth}`
   );
+}
+
+// ── T03: action_started / action_completed
+// (manual-loops/workflow-step-events.md) ───────────────────────────
+//
+// SAME publisher family as execution_started/execution_completed
+// above: same lazy `getConnection()`, same envelope derivation, same
+// `evt.<tenant>.workflow-service.workflow.internal.native.<kind>.v1`
+// subject shape (TAXONOMY.md rule 19 — kind-agnostic, keys on
+// producer+domain tokens only, so no classifier change is needed for
+// these new kinds). NO second publish path is introduced.
+
+/** Canonical subject for workflow action-start telemetry. */
+export function buildActionStartedSubject(tenantId: string): string {
+  return `evt.${tenantId}.workflow-service.workflow.internal.native.action_started.v1`;
+}
+
+/** Canonical subject for workflow action-completion telemetry. */
+export function buildActionCompletedSubject(tenantId: string): string {
+  return `evt.${tenantId}.workflow-service.workflow.internal.native.action_completed.v1`;
+}
+
+/**
+ * Payload contract per TAXONOMY.md rule 19 (workflow-execution):
+ * `actionIndex` (0-based position of the action within its own action
+ * list — top-level, a `branch` sub-list, or a `conditional`
+ * branch/default list; NOT globally unique across nesting),
+ * `actionType` (the REAL `WorkflowAction.activity` discriminant from
+ * `@yoizen/shared` — `endpointCall|mcpCall|jsFunction|serviceBusCall|
+ * serviceCall|channelSend|agentCall|branch|conditional` — chosen over
+ * the SPEC's illustrative names (`http_call`, `fork`, `join`, ...)
+ * because the task instructs "use the ACTUAL action/activity type
+ * names from the workflow definition types"; `branch` doubles as the
+ * fork marker, there is no separate `join` kind because the codebase
+ * has no explicit join step — a fork's own `action_completed` fires
+ * after `Promise.all()` resolves, which IS the join point), and
+ * `actionName` (`WorkflowAction.name`).
+ */
+export interface IPublishActionStartedArgs {
+  executionId: string;
+  actionIndex: number;
+  actionType: string;
+  actionName: string;
+  /** Label of the enclosing fork branch / conditional branch, when nested. */
+  branch?: string;
+  /** Instance ref for endpointCall/serviceCall/mcpCall targets. */
+  connectorId?: string;
+  /** Instance ref for agentCall targets. */
+  agentId?: string;
+  tenantId: string;
+  correlationId?: string;
+  causationId?: string | null;
+  depth?: number;
+}
+
+export interface IPublishActionCompletedArgs extends IPublishActionStartedArgs {
+  /**
+   * `ok` = the activity resolved normally. `failed` = the activity
+   * threw (see `errorClass`). `skipped` is reserved by TAXONOMY.md's
+   * payload contract for a future emitter — per SPEC decision
+   * ("not executed = no event"), actions inside an untaken
+   * conditional branch never run `executeAction` at all, so T03 never
+   * has a concrete case to emit `skipped` from.
+   */
+  status: "ok" | "failed" | "skipped";
+  /** Error CLASS NAME only (e.g. `TypeError`) — never a stack trace. */
+  errorClass?: string;
+}
+
+async function publishActionEvent(
+  kind: "started" | "completed",
+  args: IPublishActionStartedArgs | IPublishActionCompletedArgs
+): Promise<void> {
+  if (!args.tenantId) {
+    console.warn(
+      `[publishActionEvent] no tenantId for execution=${args.executionId} ` +
+        `action=${args.actionName}; skipping event emit`
+    );
+    return;
+  }
+
+  const conn = await getConnection();
+  const subject =
+    kind === "started"
+      ? buildActionStartedSubject(args.tenantId)
+      : buildActionCompletedSubject(args.tenantId);
+  const now = new Date().toISOString();
+  const eventId = crypto.randomUUID();
+  const traceid = activeOrRandomTraceId();
+
+  const completedArgs =
+    kind === "completed" ? (args as IPublishActionCompletedArgs) : null;
+
+  const payload: Record<string, JsonValue> = {
+    executionId: args.executionId,
+    actionIndex: args.actionIndex,
+    actionType: args.actionType,
+    actionName: args.actionName,
+    ...(args.branch !== undefined && { branch: args.branch }),
+    ...(args.connectorId !== undefined && { connectorId: args.connectorId }),
+    ...(args.agentId !== undefined && { agentId: args.agentId }),
+    ...(completedArgs && { status: completedArgs.status }),
+    ...(completedArgs?.errorClass !== undefined && {
+      errorClass: completedArgs.errorClass,
+    }),
+  };
+
+  const idempotencykey = computeIdempotencyKey(payload);
+  const payloadChecksum = computePayloadChecksum(payload);
+  const payloadBytes = canonicalByteLength(payload);
+  const correlationId = args.correlationId ?? eventId;
+  const causationId = args.causationId ?? null;
+
+  const envelope: EventEnvelope = {
+    specversion: "1.0",
+    id: eventId,
+    source: "//workflow-service/execution-status",
+    type: `io.yoizen.workflow.action.${kind}.v1`,
+    resource: `tenant/${args.tenantId}/workflow-execution/${args.executionId}`,
+    time: now,
+    traceid,
+    causation_id: causationId,
+    correlation_id: correlationId,
+    tenant: args.tenantId,
+    producer: "workflow-service",
+    domain: "workflow",
+    channel: "internal",
+    provider: "native",
+    accountid: "system",
+    idempotencykey,
+    transport: {
+      method: "stream",
+      protocol: "internal",
+      depth: args.depth ?? 0,
+    },
+    data: {
+      received_at: now,
+      payload_inline: true,
+      payload_ref: null,
+      payload_bytes: payloadBytes,
+      payload_checksum: payloadChecksum,
+      payload,
+    },
+  };
+
+  const hdrs = natsHeaders();
+  hdrs.set(TENANT_HEADER, args.tenantId);
+  hdrs.set("Nats-Msg-Id", idempotencykey);
+  hdrs.set("X-Correlation-Id", correlationId);
+  if (causationId) {
+    hdrs.set("X-Causation-Id", causationId);
+  }
+  injectTraceContext(hdrs);
+
+  const { span } = startNatsProducerSpan("workflow-service", subject, hdrs);
+  try {
+    conn.publish(subject, encoder.encode(JSON.stringify(envelope)), {
+      headers: hdrs,
+    });
+    await conn.flush();
+  } finally {
+    span.end();
+  }
+
+  console.log(
+    `[publishActionEvent] published kind=${kind} execution=${args.executionId} ` +
+      `actionIndex=${args.actionIndex} actionType=${args.actionType} ` +
+      `actionName=${args.actionName} branch=${args.branch ?? "none"} ` +
+      `tenant=${args.tenantId} subject=${subject} correlation_id=${correlationId} ` +
+      `causation_id=${causationId ?? "null"} depth=${envelope.transport.depth}` +
+      (completedArgs ? ` status=${completedArgs.status}` : "")
+  );
+}
+
+/**
+ * Publishes `io.yoizen.workflow.action.started.v1`. MIRRORS
+ * `publishExecutionStartedEvent`: same publish path, same envelope
+ * derivation, same subject-builder pattern.
+ */
+export async function publishActionStartedEvent(
+  args: IPublishActionStartedArgs
+): Promise<void> {
+  return publishActionEvent("started", args);
+}
+
+/**
+ * Publishes `io.yoizen.workflow.action.completed.v1`, including on
+ * failure (`status: "failed"` + `errorClass`, never a stack trace —
+ * SPEC constraint).
+ */
+export async function publishActionCompletedEvent(
+  args: IPublishActionCompletedArgs
+): Promise<void> {
+  return publishActionEvent("completed", args);
 }

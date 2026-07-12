@@ -1,4 +1,4 @@
-import { proxyActivities, workflowInfo } from "@temporalio/workflow";
+import { proxyActivities, uuid4, workflowInfo } from "@temporalio/workflow";
 import type {
   AgentCallArgs,
   ChannelSendArgs,
@@ -35,6 +35,21 @@ interface IOrchestratorActivities {
   ): Promise<{ published: true; subject: string }>;
 }
 
+/** Shared shape for action_started/action_completed activity args (T03). */
+interface IActionEventArgs {
+  executionId: string;
+  actionIndex: number;
+  actionType: string;
+  actionName: string;
+  branch?: string;
+  connectorId?: string;
+  agentId?: string;
+  tenantId: string;
+  correlationId?: string;
+  causationId?: string | null;
+  depth?: number;
+}
+
 interface IExecutionPublisherActivities {
   publishExecutionCompletedEvent(args: {
     executionId: string;
@@ -54,7 +69,16 @@ interface IExecutionPublisherActivities {
     correlationId?: string;
     causationId?: string | null;
     depth?: number;
+    /** Pre-generated via `uuid4()` so the workflow knows the id up front (T03). */
+    eventId?: string;
   }): Promise<void>;
+  publishActionStartedEvent(args: IActionEventArgs): Promise<void>;
+  publishActionCompletedEvent(
+    args: IActionEventArgs & {
+      status: "ok" | "failed" | "skipped";
+      errorClass?: string;
+    }
+  ): Promise<void>;
 }
 
 interface IHttpActivities {
@@ -206,10 +230,16 @@ function resolveTemplates<T>(value: T, context: WorkflowExecutionContext): T {
 
 async function executeActions(
   actions: WorkflowAction[],
-  context: ExtendedContext
+  context: ExtendedContext,
+  branchLabel?: string
 ): Promise<void> {
   for (let i = 0; i < actions.length; i++) {
-    const result = await executeAction(actions[i], context);
+    const result = await executeActionWithTelemetry(
+      actions[i],
+      context,
+      i,
+      branchLabel
+    );
     context.results[actions[i].name] = result;
     context.variables.previous = (result ?? {}) as Record<string, unknown>;
     context.variables.node[actions[i].name] = (result ?? {}) as Record<
@@ -217,6 +247,16 @@ async function executeActions(
       unknown
     >;
   }
+}
+
+/**
+ * Combines an outer branch label with an inner one for actions nested
+ * inside a fork-inside-condition (or condition-inside-fork) chain, so
+ * `action_started.branch` always reflects the full path
+ * (`"pathA/approved"`), not just the innermost label.
+ */
+function combineBranchLabel(outer: string | undefined, inner: string): string {
+  return outer ? `${outer}/${inner}` : inner;
 }
 
 function evaluateCondition(
@@ -270,6 +310,37 @@ function evaluateCondition(
 }
 
 /**
+ * Mutable, shared-by-reference bookkeeping for the step-event volume
+ * guard (T03 SPEC constraint: "cap with a `truncated` marker event
+ * rather than unbounded emission"). Shared (not cloned) across `branch`
+ * sub-contexts so the 100-event cap applies to the WHOLE run, not
+ * per-branch.
+ */
+interface StepEventState {
+  /** Total action_started + action_completed events emitted so far. */
+  count: number;
+  /** True once the truncated marker has fired — all further actions emit nothing. */
+  truncated: boolean;
+}
+
+const STEP_EVENT_CAP = 100;
+
+/**
+ * Per-run step-event telemetry context, computed once in `runWorkflow`
+ * when `executionId` is set (best-effort — absent when
+ * `publishExecutionStartedEvent` itself failed or executionId is
+ * missing, in which case no action telemetry is emitted at all,
+ * mirroring the existing execution_started/completed gate).
+ */
+interface StepEventContext {
+  executionId: string;
+  tenantId: string;
+  /** Fixed causal context shared by EVERY action_started/completed in this run (see design note in runWorkflow). */
+  actionCausal: EventCausalContext;
+  state: StepEventState;
+}
+
+/**
  * Extended context that includes agentTimeoutMs on the workflow
  * property. Used internally so agentCall can read the per-execution
  * timeout without widening the shared WorkflowExecutionContext.
@@ -281,11 +352,195 @@ type ExtendedContext = WorkflowExecutionContext & {
     application: string;
     agentTimeoutMs?: number;
   };
+  /** T03 step-event telemetry — undefined means "do not emit". */
+  stepEvents?: StepEventContext;
 };
+
+/**
+ * Instance references for action_started/completed telemetry (SPEC:
+ * "connectorId/agentId when applicable"). Mapped from each activity's
+ * real argument shape (`@yoizen/shared` `workflow.interfaces.ts`):
+ * `endpointCall`/`serviceCall`/`mcpCall` target an external instance
+ * (adapter, internal service, or MCP server respectively) and report
+ * it as `connectorId`; `agentCall` reports `agentId`. Other activity
+ * types (`jsFunction`, `serviceBusCall`, `channelSend`, `branch`,
+ * `conditional`) have no such reference.
+ */
+function extractInstanceRefs(action: WorkflowAction): {
+  connectorId?: string;
+  agentId?: string;
+} {
+  switch (action.activity) {
+    case "endpointCall":
+      return action.args.adapterId
+        ? { connectorId: action.args.adapterId }
+        : {};
+    case "serviceCall": {
+      const ref = action.args.serviceSlug ?? action.args.serviceId;
+      return ref ? { connectorId: ref } : {};
+    }
+    case "mcpCall":
+      return { connectorId: action.args.serverId };
+    case "agentCall":
+      return { agentId: action.args.agentId };
+    default:
+      return {};
+  }
+}
+
+/**
+ * Decides whether this action's telemetry should be emitted, replaced
+ * by the single `truncated` marker, or skipped entirely (volume guard,
+ * SPEC constraint: total step events for a run must never exceed
+ * `STEP_EVENT_CAP`, INCLUDING the marker itself). Each action
+ * contributes up to 2 events (started + completed); pairs keep
+ * emitting only while there is still room left over for a potential
+ * future marker (`STEP_EVENT_CAP - 1` reserved budget) — once that
+ * would be exceeded, a SINGLE `truncated` marker fires instead
+ * (reusing `action_completed` with `actionType: "truncated"`,
+ * `status: "skipped"` — the least invasive design, needs no new
+ * TAXONOMY kind) and every subsequent action emits nothing.
+ *
+ * ATOMIC RESERVATION (concurrency fix): `branch` children share a
+ * single `stepEvents.state` object BY REFERENCE and run concurrently
+ * via `Promise.all` (see the `branch` case in `executeAction`).
+ * Temporal's workflow sandbox is single-threaded, so each sibling
+ * runs synchronously up to its own first `await`. If the decision
+ * (read `state.count`/`state.truncated`) and the mutation
+ * (`state.count += ...` / `state.truncated = true`) were split
+ * across an `await` boundary, two siblings could both read the same
+ * stale `count`, both decide "emit" (blowing the `>100` cap) or both
+ * decide "truncated-marker" (publishing more than one marker). This
+ * function is therefore the ONLY place allowed to touch
+ * `state.count`/`state.truncated`: it decides AND reserves the full
+ * event budget for the action (2 slots for started+completed, 1 slot
+ * for the truncated marker) in one synchronous call, before the
+ * caller ever awaits a publish. Callers must not increment the
+ * counters themselves — a failed publish does not roll back the
+ * reservation (best-effort telemetry: a lost event still counts
+ * against the cap, which only pushes the run further under the cap,
+ * never over it).
+ */
+function reserveStepEmission(
+  state: StepEventState
+): "emit" | "truncated-marker" | "skip" {
+  if (state.truncated) {
+    return "skip";
+  }
+  if (state.count + 2 > STEP_EVENT_CAP - 1) {
+    // Reserve the single truncated-marker slot synchronously — no
+    // other sibling can observe count/truncated between this read
+    // and this write because there is no await in between.
+    state.count += 1;
+    state.truncated = true;
+    return "truncated-marker";
+  }
+  // Reserve both the started AND completed slots up front so a
+  // concurrent sibling reading count immediately after this
+  // synchronous call sees the full cost of this action already
+  // accounted for, even though the two publishes themselves are
+  // still separated by awaits.
+  state.count += 2;
+  return "emit";
+}
+
+async function executeActionWithTelemetry(
+  action: WorkflowAction,
+  context: ExtendedContext,
+  actionIndex: number,
+  branchLabel: string | undefined
+): Promise<unknown> {
+  const stepEvents = context.stepEvents;
+  if (!stepEvents) {
+    return executeAction(action, context, branchLabel);
+  }
+
+  // Reserve the decision + counter/flag mutation SYNCHRONOUSLY, before
+  // any await below. This is the single critical section: concurrent
+  // `branch` siblings sharing `stepEvents.state` by reference can only
+  // interleave at an `await`, so by the time we hit our first `await`
+  // the reservation for THIS action is already committed and visible
+  // to every other sibling's next `reserveStepEmission` call.
+  const emission = reserveStepEmission(stepEvents.state);
+  if (emission === "skip") {
+    return executeAction(action, context, branchLabel);
+  }
+
+  const instanceRefs = extractInstanceRefs(action);
+  const baseArgs = {
+    executionId: stepEvents.executionId,
+    actionIndex,
+    tenantId: stepEvents.tenantId,
+    correlationId: stepEvents.actionCausal.correlation_id,
+    causationId: stepEvents.actionCausal.causation_id,
+    depth: stepEvents.actionCausal.depth,
+    ...(branchLabel !== undefined && { branch: branchLabel }),
+    ...instanceRefs,
+  };
+
+  if (emission === "truncated-marker") {
+    try {
+      await publisher.publishActionCompletedEvent({
+        ...baseArgs,
+        actionType: "truncated",
+        actionName: "truncated",
+        status: "skipped",
+      });
+    } catch (_) {
+      // Best-effort: a telemetry gap must never block the workflow.
+      // The reservation above is NOT rolled back on publish failure —
+      // the slot stays spent, which only makes the run's emitted
+      // total further under the cap, never over it.
+    }
+    return executeAction(action, context, branchLabel);
+  }
+
+  try {
+    await publisher.publishActionStartedEvent({
+      ...baseArgs,
+      actionType: action.activity,
+      actionName: action.name,
+    });
+  } catch (_) {
+    // Best-effort: reservation already committed synchronously above,
+    // intentionally not rolled back on failure (see reserveStepEmission).
+  }
+
+  try {
+    const result = await executeAction(action, context, branchLabel);
+    try {
+      await publisher.publishActionCompletedEvent({
+        ...baseArgs,
+        actionType: action.activity,
+        actionName: action.name,
+        status: "ok",
+      });
+    } catch (_) {
+      /* best-effort: a telemetry gap must never block the workflow */
+    }
+    return result;
+  } catch (err) {
+    try {
+      await publisher.publishActionCompletedEvent({
+        ...baseArgs,
+        actionType: action.activity,
+        actionName: action.name,
+        status: "failed",
+        // Error CLASS NAME only — never a stack trace (SPEC constraint).
+        errorClass:
+          err instanceof Error ? err.constructor.name : "UnknownError",
+      });
+    } catch (_) {
+      /* best-effort: a telemetry gap must never block the workflow */
+    }
+    throw err;
+  }
+}
 
 async function executeAction(
   action: WorkflowAction,
-  context: ExtendedContext
+  context: ExtendedContext,
+  branchLabel?: string
 ): Promise<unknown> {
   const tenant = context.workflow.tenant;
 
@@ -385,8 +640,8 @@ async function executeAction(
       }
 
       const branchResults = await Promise.all(
-        branchEntries.map(async ([_name, branchActions]) => {
-          const branchCtx: WorkflowExecutionContext = {
+        branchEntries.map(async ([name, branchActions]) => {
+          const branchCtx: ExtendedContext = {
             workflow: context.workflow,
             request: context.request,
             results: { ...context.results },
@@ -399,8 +654,16 @@ async function executeAction(
             },
             ...(context.causal && { causal: context.causal }),
             ...(context.executionId && { executionId: context.executionId }),
+            // Shared BY REFERENCE (not cloned) — the volume cap and
+            // action_started/completed causal context apply to the
+            // WHOLE run, not per-branch.
+            ...(context.stepEvents && { stepEvents: context.stepEvents }),
           };
-          await executeActions(branchActions, branchCtx);
+          await executeActions(
+            branchActions,
+            branchCtx,
+            combineBranchLabel(branchLabel, name)
+          );
           return {
             results: branchCtx.results,
             nodeVars: branchCtx.variables.node,
@@ -427,13 +690,21 @@ async function executeAction(
         if (
           evaluateCondition(leftValue, branch.condition.comparator, rightValue)
         ) {
-          await executeActions(branch.actions, context);
+          await executeActions(
+            branch.actions,
+            context,
+            combineBranchLabel(branchLabel, branch.label)
+          );
           return { matchedBranch: branch.label };
         }
       }
 
       if (condAction.default && condAction.default.length > 0) {
-        await executeActions(condAction.default, context);
+        await executeActions(
+          condAction.default,
+          context,
+          combineBranchLabel(branchLabel, "default")
+        );
         return { matchedBranch: "default" };
       }
 
@@ -452,14 +723,7 @@ export async function runWorkflow(
   executionId?: string,
   systemVariables?: Record<string, unknown>
 ): Promise<WorkflowExecutionContext> {
-  const context: WorkflowExecutionContext & {
-    workflow: {
-      name: string;
-      tenant: string;
-      application: string;
-      agentTimeoutMs?: number;
-    };
-  } = {
+  const context: ExtendedContext = {
     workflow: {
       name: workflow.name,
       tenant: workflow.tenant,
@@ -484,8 +748,15 @@ export async function runWorkflow(
   if (executionId) {
     try {
       const info = workflowInfo();
+      // Generated up front (Temporal's deterministic `uuid4()`, safe in
+      // workflow code — unlike `crypto.randomUUID()`) so it is known
+      // BEFORE the publish activity runs: action_started/completed
+      // events (below) cite it as their causation_id without a
+      // round-trip through the activity's own id generation.
+      const executionStartedEventId = uuid4();
       await publisher.publishExecutionStartedEvent({
         executionId,
+        eventId: executionStartedEventId,
         workflowId: info.workflowId,
         runId: info.runId,
         tenantId: workflow.tenant,
@@ -509,6 +780,37 @@ export async function runWorkflow(
           depth: context.causal.depth + 1,
         }),
       });
+
+      /**
+       * T03 action-event causal design (SPEC decision 2,
+       * manual-loops/workflow-step-events.md): every
+       * action_started/action_completed in this run cites THIS
+       * execution_started event as its causation_id — a SIBLING hop
+       * off execution_started, not chained action-to-action. This
+       * keeps the depth CONSTANT no matter how many actions run (no
+       * per-action growth), which is what makes the 100-event volume
+       * cap safe: even a maximally-sized run never approaches
+       * MAX_DEPTH_BY_CATEGORY.internal_service = 5.
+       *
+       * Depth math: trigger depth 0-2 → execution_started =
+       * trigger+1 = 1-3 (see comment above) → action events =
+       * execution_started+1 = 2-4. Still comfortably under the
+       * ceiling of 5.
+       */
+      const executionStartedDepth = context.causal
+        ? context.causal.depth + 1
+        : 0;
+      context.stepEvents = {
+        executionId,
+        tenantId: workflow.tenant,
+        actionCausal: {
+          causation_id: executionStartedEventId,
+          correlation_id:
+            context.causal?.correlation_id ?? executionStartedEventId,
+          depth: executionStartedDepth + 1,
+        },
+        state: { count: 0, truncated: false },
+      };
     } catch (_) {
       /* best-effort: a telemetry gap must never block the workflow */
     }
