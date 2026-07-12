@@ -24,6 +24,26 @@ silently per instructions — no live NATS messages are included in this set.
 | `audit-service-execution-envelope-01.json` | `services/audit-service/test/unit/execution-audit.service.spec.ts`, first argument to `invokePersist()` in the "persists a well-formed execution_completed envelope" test (lines 72-85) | Deliberately minimal — only the fields `persistExecutionEnvelope` reads (`id`, `tenant`, `correlation_id`, `causation_id`, `transport.depth`, `data.payload.{executionId,agentId,state}`). Not a full `EventEnvelope`; no `specversion`/`type`/`source`/etc. in the original test object. |
 | `api-gateway-gateway-audit-event-01.json` | `services/api-gateway/test/unit/gateway-audit-publish.util.spec.ts`, `minimalEvent()` (lines 7-23) | This is a `GatewayAuditEvent` (`packages/shared/src/audit.interfaces.ts`), **not** the canonical `EventEnvelope`/`ChannelEnvelope` shape — it is published to the separate `audit.gateway.>` control channel (see SCHEMAS.md §8). Included because it is bus-adjacent and directly relevant to the gateway-audit drift check in DRIFT.md. `timestamp` was `new Date().toISOString()` in the source — preserved as a placeholder string. Source file lives outside the three services named as primary targets (usage-aggregator-service, audit-service, channel-service) but was pulled in because `audit-service`'s `gateway-audit.service.spec.ts` only has the *persisted Mongo row* shape (`sampleRow`), not the *published* event shape — this fixture fills that gap. |
 
+## Addendum (2026-07-11) — workflow-step-events T01 synthetic fixtures
+
+The four `workflow-service-{action-started,action-completed,condition-evaluated,
+execution-started}-envelope-01.json` fixtures are **synthetic**, not transcribed
+from an existing test literal — they violate the "faithfully transcribed" invariant
+above by necessity, not oversight. `manual-loops/workflow-step-events.md` T01 lands
+the TAXONOMY.md rule-19 classification contract for four `workflow-service`
+step-event kinds (`execution_started`, `action_started`, `action_completed`,
+`condition_evaluated`) **before the emitter exists** (golden rule 3: rule + golden +
+classifier land together — see `golden/README.md`'s matching addendum for the
+corresponding synthetic golden rows, seq 1312-1319). Since no test file or live
+capture emits these kinds yet, the fixtures were hand-built to match the envelope
+shape produced by `execution-completed-publisher.activity.ts` (camelCase payload
+fields per `TAXONOMY.md` rule 19) and the shared `EventEnvelope` interface
+(`packages/shared/src/interfaces.ts:29-57` — no top-level `kind` field; the kind
+lives only in the subject's trailing token). Forward-referenced by T02 (emitter
+implementation), T03 (classifier coverage), and T04 (end-to-end verification) of
+the same manual loop, which will replace these placeholders with fixtures
+transcribed from the real emitter's tests once it exists.
+
 ## Fixture coverage gaps
 
 See "Fixture coverage gaps" section in `DRIFT.md` at the repo root for the full list of

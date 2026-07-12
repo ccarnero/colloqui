@@ -1,0 +1,34 @@
+{
+  "specversion": "1.0",
+  "id": "wf-action-completed-1",
+  "source": "//workflow-service/execution-status",
+  "type": "io.yoizen.workflow.action.completed.v1",
+  "resource": "tenant/tenant-a/workflow-execution/exec-1",
+  "time": "2026-07-11T00:00:02.000Z",
+  "traceid": "trace-wf-1",
+  "causation_id": "wf-action-started-1",
+  "correlation_id": "corr-wf-1",
+  "tenant": "tenant-a",
+  "producer": "workflow-service",
+  "domain": "workflow",
+  "channel": "internal",
+  "provider": "native",
+  "accountid": "system",
+  "idempotencykey": "idem-wf-action-completed-1",
+  "transport": { "method": "stream", "protocol": "internal", "depth": 3 },
+  "data": {
+    "received_at": "2026-07-11T00:00:02.000Z",
+    "payload_inline": true,
+    "payload_ref": null,
+    "payload_bytes": 0,
+    "payload_checksum": "chk",
+    "payload": {
+      "executionId": "exec-1",
+      "actionIndex": 0,
+      "actionType": "http_call",
+      "actionName": "fetch-customer",
+      "connectorId": "connector-1",
+      "status": "ok"
+    }
+  }
+}

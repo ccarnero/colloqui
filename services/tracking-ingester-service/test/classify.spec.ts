@@ -295,6 +295,58 @@ describe("classify — TAXONOMY.md §4 rules 1-20", () => {
     expect(c.rule).not.toBe(17);
   });
 
+  // workflow-step-events T01: rule 19 is kind-agnostic (matches on
+  // producer+domain, not an explicit kind enum), so every step-event kind
+  // added by manual-loops/workflow-step-events.md must already classify as
+  // rule 19 platform/workflow-execution with no classifier code change.
+  it("rule 19 — execution_started (step-events T01) → platform/workflow-execution", () => {
+    const c = value(
+      "evt.acme.workflow-service.workflow.internal.native.execution_started.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "workflow-execution",
+      rule: 19,
+    });
+    expect(c.unknown).toBe(false);
+  });
+
+  it("rule 19 — action_started (step-events T01) → platform/workflow-execution", () => {
+    const c = value(
+      "evt.acme.workflow-service.workflow.internal.native.action_started.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "workflow-execution",
+      rule: 19,
+    });
+    expect(c.unknown).toBe(false);
+  });
+
+  it("rule 19 — action_completed (step-events T01) → platform/workflow-execution", () => {
+    const c = value(
+      "evt.acme.workflow-service.workflow.internal.native.action_completed.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "workflow-execution",
+      rule: 19,
+    });
+    expect(c.unknown).toBe(false);
+  });
+
+  it("rule 19 — condition_evaluated (step-events T01) → platform/workflow-execution", () => {
+    const c = value(
+      "evt.acme.workflow-service.workflow.internal.native.condition_evaluated.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "workflow-execution",
+      rule: 19,
+    });
+    expect(c.unknown).toBe(false);
+  });
+
   it("rule 19 — near-miss: producer workflow-service but domain != workflow falls through", () => {
     // domain token is `messaging`, not `workflow` → rule 19 must NOT fire;
     // it falls to the generic rule 17 (channel `whatsapp` is whitelisted).

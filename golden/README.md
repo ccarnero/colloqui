@@ -9,9 +9,12 @@ recorded in `DRIFT.md`.
 
 ## Contents
 
-- `raw/*.json` — 72 live events. Each file is a wrapper object:
-  `{ stream, seq, received, subject, headers, envelope }`. File name encodes
-  provenance: `<STREAM>-seq<N>.json`.
+- `raw/*.json` — 72 live captured events + 8 synthetic events (seq 1312-1319,
+  added by `manual-loops/workflow-step-events.md` T01 to cover the
+  `execution_started`/`action_started`/`action_completed`/`condition_evaluated`
+  kinds ahead of the emitter per golden rule 3 — see addendum below), 80 total.
+  Each file is a wrapper object: `{ stream, seq, received, subject, headers,
+  envelope }`. File name encodes provenance: `<STREAM>-seq<N>.json`.
 - `labeled.tsv` — pre-labels produced by applying the classification rules in
   `TAXONOMY.md` §4 (20-rule table, first match wins) deterministically to every event.
 
@@ -26,11 +29,13 @@ recorded in `DRIFT.md`.
 
 ## Sample composition
 
-- **`INGRESS-ACME`** — 70 events, contiguous range seq 1242–1311.
+- **`INGRESS-ACME`** — 70 live-captured events (contiguous range seq 1242–1311) +
+  8 synthetic workflow-step-events T01 events (seq 1312–1319, see addendum below).
 - **`GATEWAY_AUDIT`** — 2 events.
 - 6 correlation chains, all formally closed by `correlation_id` + `causation_id`:
   4 conversation chains (1 Telegram, 3 HTTP) and 2 memory approve/reject cycles
-  (test-provenance memories created via the admin API for fix-4 validation).
+  (test-provenance memories created via the admin API for fix-4 validation), plus
+  2 synthetic workflow-step-events chains (seq 1312–1315, 1316–1319).
 
 ## `labeled.tsv` column contract
 
@@ -51,8 +56,22 @@ recorded in `DRIFT.md`.
 
 These labels were generated mechanically from the `TAXONOMY.md` rule table.
 **`labeled.tsv` becomes the classifier's golden truth ONLY after user correction.**
-All 72 rows carry HIGH confidence; rows with a non-empty `notes` column are the ones
+All 80 rows carry HIGH confidence; rows with a non-empty `notes` column are the ones
 most likely to need a human decision.
+
+## Addendum (2026-07-11) — workflow-step-events T01 synthetic rows
+
+`manual-loops/workflow-step-events.md` T01 lands the classification rule for four
+new `workflow-service` event kinds (`execution_started`, `action_started`,
+`action_completed`, `condition_evaluated`) BEFORE the emitter exists (golden rule
+3: rule + golden + classifier land together). Since these kinds are not yet
+emitted in the live cluster, 8 rows (seq 1312-1319, two synthetic correlation
+chains under `INGRESS-ACME`) were added by hand, following the exact shape of the
+captured rule-19 `execution_completed` rows. All 8 classify as rule 19
+`platform`/`workflow-execution` — rule 19 is kind-agnostic (matches on
+`producer`+`domain`, not a kind enum), so no classifier code change was required
+to make them pass; they exist to guard the classifier against a future
+kind-narrowing regression. See `TAXONOMY.md` §3/§4 rule 19 design note.
 
 ## Anomalies surfaced by pre-labeling (verified in code)
 

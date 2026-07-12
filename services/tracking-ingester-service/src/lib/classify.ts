@@ -266,7 +266,15 @@ export function classify(
     // Placed BEFORE the 16/17/18 catch-alls so it is reachable — its 5th token
     // `internal` is not in the channel whitelist and would otherwise fall to
     // rule 17 `unknown`. tech `platform` per §2 (Temporal is a runtime detail
-    // absent from the subject). TAXONOMY.md §4 rule 19.
+    // absent from the subject).
+    //
+    // Deliberately kind-agnostic (unlike rule 6's AGENT_EXECUTION_KINDS or rule
+    // 9's AGENT_MEMORY_KINDS enums): matching on (producer, domain) alone covers
+    // run-level kinds (`execution_started`, `execution_completed`) AND the
+    // step-level telemetry kinds added by `manual-loops/workflow-step-events.md`
+    // T01 (`action_started`, `action_completed`, `condition_evaluated`) with NO
+    // kind enum, because every kind in this family represents the same
+    // workflow-execution business function. TAXONOMY.md §4 rule 19.
     if (producer === "workflow-service" && domain === "workflow") {
       return ok(classified("platform", "workflow-execution", 19));
     }

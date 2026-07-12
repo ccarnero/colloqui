@@ -1,0 +1,44 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1312,
+  "received": "2026-07-11 00:00:00.000000000",
+  "subject": "evt.acme.workflow-service.workflow.internal.native.execution_started.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:wf-exec-started-1",
+    "X-Correlation-Id": "07102a98-5185-40b7-85e8-3a60d23fd096",
+    "X-Causation-Id": "208e49bf-9938-4809-b90e-6eb027cb3e87",
+    "traceparent": "00-829809fa85e4d535058d950c22b451ec-97c7b298bc05e4e7-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "1f57ae8e-6c10-47ad-bfca-885e9753457a",
+    "source": "//workflow-service/execution-status",
+    "type": "io.yoizen.workflow.execution.started.v1",
+    "resource": "tenant/acme/workflow-execution/exec-1312",
+    "time": "2026-07-11T00:00:00.000Z",
+    "traceid": "829809fa85e4d535058d950c22b451ec",
+    "causation_id": "208e49bf-9938-4809-b90e-6eb027cb3e87",
+    "correlation_id": "07102a98-5185-40b7-85e8-3a60d23fd096",
+    "tenant": "acme",
+    "producer": "workflow-service",
+    "domain": "workflow",
+    "channel": "internal",
+    "provider": "native",
+    "accountid": "system",
+    "idempotencykey": "sha256:wf-exec-started-1",
+    "transport": { "method": "stream", "protocol": "internal", "depth": 2 },
+    "data": {
+      "received_at": "2026-07-11T00:00:00.000Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 88,
+      "payload_checksum": "sha256:wf-exec-started-1",
+      "payload": {
+        "executionId": "exec-1312",
+        "workflowId": "acme:demo-workflow:seq1312",
+        "workflowName": "demo-workflow"
+      }
+    }
+  }
+}
