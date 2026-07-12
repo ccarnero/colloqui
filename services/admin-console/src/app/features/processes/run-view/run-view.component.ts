@@ -25,6 +25,11 @@ import type { ILayoutNode, IRunLayout } from "./domain/run-view.model";
 import { RunViewPopupComponent } from "./run-view-popup.component";
 import type { IAnchorRect } from "./run-view-popup-render";
 import {
+  ARTIFACT_BOX_HEIGHT,
+  ARTIFACT_BOX_WIDTH,
+  computeArtifactBoxes,
+  computeArtifactEdges,
+  computeColumnHeaders,
   computeContentWidth,
   computeForkCollapseChips,
   computeNodePositions,
@@ -34,6 +39,7 @@ import {
   formatNodeStatusLabel,
   formatPillLabel,
   formatRunStatusChip,
+  type IArtifactBox,
   type IPositionedNode,
   isPillNode,
   NODE_HEIGHT,
@@ -163,6 +169,23 @@ type RunState =
               </marker>
             </defs>
 
+            <text
+              class="rv-column-header"
+              [attr.x]="columnHeaders().spineX"
+              [attr.y]="columnHeaders().y"
+            >
+              workflow run
+            </text>
+            @if (artifactBoxes().length > 0) {
+              <text
+                class="rv-column-header"
+                [attr.x]="columnHeaders().artifactX"
+                [attr.y]="columnHeaders().y"
+              >
+                artifacts
+              </text>
+            }
+
             @for (edge of renderedEdges(); track edge.id) {
               <g class="rv-edge" [class.rv-edge-dashed]="edge.dashed" [class.rv-edge-thick]="edge.thick" [attr.data-kind]="edge.kind">
                 <line
@@ -244,6 +267,47 @@ type RunState =
               >
                 {{ chip.text }}
               </text>
+            }
+
+            @for (edge of artifactEdges(); track edge.id) {
+              <g
+                class="rv-artifact-edge"
+                [class.rv-artifact-edge-dashed]="edge.dashed"
+                [attr.data-direction]="edge.direction"
+              >
+                <line
+                  [attr.x1]="edge.x1"
+                  [attr.y1]="edge.y1"
+                  [attr.x2]="edge.x2"
+                  [attr.y2]="edge.y2"
+                  marker-end="url(#rv-arrow)"
+                />
+                <text class="rv-edge-label" [attr.x]="(edge.x1 + edge.x2) / 2" [attr.y]="(edge.y1 + edge.y2) / 2 - 6">
+                  {{ edge.label }}
+                </text>
+              </g>
+            }
+
+            @for (box of artifactBoxes(); track box.stepId) {
+              <g
+                class="rv-artifact-box"
+                [attr.data-color]="box.color"
+                [attr.transform]="'translate(' + box.x + ',' + box.y + ')'"
+                (click)="onArtifactClick(box, $event)"
+              >
+                <rect
+                  class="rv-artifact-rect"
+                  [attr.width]="artifactBoxWidth"
+                  [attr.height]="artifactBoxHeight"
+                  rx="6"
+                />
+                <text class="rv-artifact-label" x="10" y="18">
+                  {{ box.label }}
+                </text>
+                <text class="rv-artifact-sublabel" x="10" y="34">
+                  {{ box.subLabel }}
+                </text>
+              </g>
             }
           </svg>
 
@@ -402,6 +466,54 @@ type RunState =
       font-size: 10px;
       fill: var(--rv-edge-stroke);
       text-anchor: middle;
+    }
+    /* Slice 3: two-column header text ("workflow run" / "artifacts") atop
+     * the spine and artifact columns respectively. */
+    .rv-column-header {
+      font-size: 11px;
+      fill: var(--text3, #8a8880);
+      text-anchor: middle;
+    }
+    /* Artifact request/response edge pair — same solid/dashed convention
+     * as \`.rv-edge\`/\`.rv-edge-dashed\` (deliberately its OWN class, not
+     * \`.rv-edge\`, so it stays out of \`.rv-edge\` step-count assertions —
+     * these are the derived artifact-lane overlay, not domain edges). */
+    .rv-artifact-edge line {
+      stroke: var(--rv-edge-stroke);
+      stroke-width: 1.5;
+    }
+    .rv-artifact-edge-dashed line {
+      stroke-dasharray: 5 4;
+    }
+    /* Artifact box — same node-rect look/color table as a spine action box
+     * (gray=connector, purple=agent, teal=channel), clickable to open the
+     * same T05 popup as the underlying step. Own class (not \`.rv-node\`)
+     * so it stays out of \`.rv-node\` step-count assertions. */
+    .rv-artifact-box {
+      cursor: pointer;
+    }
+    .rv-artifact-rect,
+    .rv-artifact-box[data-color="platform"] .rv-artifact-rect {
+      fill: var(--rv-gray-fill);
+      stroke: var(--rv-gray-border);
+      stroke-width: 1.5;
+    }
+    .rv-artifact-box[data-color="agent"] .rv-artifact-rect {
+      fill: var(--rv-purple-fill);
+      stroke: var(--rv-purple-border);
+    }
+    .rv-artifact-box[data-color="channel"] .rv-artifact-rect {
+      fill: var(--rv-teal-fill);
+      stroke: var(--rv-teal-border);
+    }
+    .rv-artifact-label {
+      font-size: 11px;
+      font-weight: 600;
+      fill: var(--text, #26241f);
+    }
+    .rv-artifact-sublabel {
+      font-size: 10px;
+      fill: var(--text3, #8a8880);
     }
     .rv-node {
       cursor: pointer;
@@ -660,7 +772,11 @@ export class RunViewComponent {
   );
 
   readonly viewBox = computed(() =>
-    computeViewBox(this.positionedNodes(), this.forkChips())
+    computeViewBox(
+      this.positionedNodes(),
+      this.forkChips(),
+      this.artifactBoxes()
+    )
   );
 
   /** Change B (run-view visual rewrite slice 1): intrinsic pixel width of
@@ -669,8 +785,41 @@ export class RunViewComponent {
    * natural size (never upscaled to fill the container) and only shrinks
    * via CSS `max-width: 100%` when the container is narrower. */
   readonly contentWidth = computed(() =>
-    computeContentWidth(this.positionedNodes(), this.forkChips())
+    computeContentWidth(
+      this.positionedNodes(),
+      this.forkChips(),
+      this.artifactBoxes()
+    )
   );
+
+  /** Slice 3: the right-hand "artefactos" column — paired boxes for every
+   * connector/agent/channel action node, derived from the already-computed
+   * spine positions + the run's `cast` (render-layer overlay, domain step
+   * tree untouched). */
+  readonly artifactBoxes = computed(() =>
+    computeArtifactBoxes(this.positionedNodes(), this.run().cast)
+  );
+
+  readonly artifactEdges = computed(() =>
+    computeArtifactEdges(this.positionedNodes(), this.artifactBoxes())
+  );
+
+  private readonly artifactColumnX = computed(() => {
+    const boxes = this.artifactBoxes();
+    return boxes.length > 0
+      ? boxes[0]!.x
+      : // No artifact boxes this run — still resolve a column x so the
+        // "artifacts" header position stays deterministic (it is hidden
+        // by the template's `@if` in that case anyway).
+        NODE_WIDTH;
+  });
+
+  readonly columnHeaders = computed(() =>
+    computeColumnHeaders(this.positionedNodes(), this.artifactColumnX())
+  );
+
+  readonly artifactBoxWidth = ARTIFACT_BOX_WIDTH;
+  readonly artifactBoxHeight = ARTIFACT_BOX_HEIGHT;
 
   readonly notExecutedCount = computed(
     () => this.layout().nodes.filter((n) => n.dashed).length
@@ -730,5 +879,18 @@ export class RunViewComponent {
   closePopup(): void {
     this.selectedNodeSignal.set(null);
     this.anchorRectSignal.set(null);
+  }
+
+  /** Artifact box click opens the SAME T05 popup as clicking its paired
+   * spine step (SPEC.md: "Do NOT build a new data path") — resolves the
+   * underlying `ILayoutNode` via `IArtifactBox.stepId` and delegates to
+   * `onNodeClick`, anchored to the artifact box's OWN screen rect (not the
+   * spine step's, since that is where the user actually clicked). */
+  onArtifactClick(box: IArtifactBox, event: MouseEvent): void {
+    const node = this.positionsById().get(box.stepId);
+    if (!node) {
+      return;
+    }
+    this.onNodeClick(node, event);
   }
 }

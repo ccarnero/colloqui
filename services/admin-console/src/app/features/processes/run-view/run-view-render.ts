@@ -232,7 +232,8 @@ export function computeForkCollapseChips(
  * to fill the container). */
 function computeContentBox(
   positions: readonly IPositionedNode[],
-  chips: readonly IForkCollapseChip[]
+  chips: readonly IForkCollapseChip[],
+  artifactBoxes: readonly IArtifactBox[] = []
 ): { readonly width: number; readonly height: number } {
   if (positions.length === 0) {
     return {
@@ -242,20 +243,26 @@ function computeContentBox(
   }
   const maxX = Math.max(
     ...positions.map((n) => n.x + NODE_WIDTH),
-    ...chips.map((c) => c.x + NODE_WIDTH)
+    ...chips.map((c) => c.x + NODE_WIDTH),
+    // Slice 3: widen the content box to include the right-hand artifact
+    // column so its boxes are never clipped by a viewBox sized off the
+    // spine alone.
+    ...artifactBoxes.map((b) => b.x + ARTIFACT_BOX_WIDTH)
   );
   const maxY = Math.max(
     ...positions.map((n) => n.y + NODE_HEIGHT),
-    ...chips.map((c) => c.y + NODE_HEIGHT)
+    ...chips.map((c) => c.y + NODE_HEIGHT),
+    ...artifactBoxes.map((b) => b.y + ARTIFACT_BOX_HEIGHT)
   );
   return { width: maxX + LANE_BASE_X, height: maxY + ROW_PAD_TOP };
 }
 
 export function computeViewBox(
   positions: readonly IPositionedNode[],
-  chips: readonly IForkCollapseChip[] = []
+  chips: readonly IForkCollapseChip[] = [],
+  artifactBoxes: readonly IArtifactBox[] = []
 ): string {
-  const { width, height } = computeContentBox(positions, chips);
+  const { width, height } = computeContentBox(positions, chips, artifactBoxes);
   return `0 0 ${width} ${height}`;
 }
 
@@ -266,9 +273,10 @@ export function computeViewBox(
  * stretch"). */
 export function computeContentWidth(
   positions: readonly IPositionedNode[],
-  chips: readonly IForkCollapseChip[] = []
+  chips: readonly IForkCollapseChip[] = [],
+  artifactBoxes: readonly IArtifactBox[] = []
 ): number {
-  return computeContentBox(positions, chips).width;
+  return computeContentBox(positions, chips, artifactBoxes).width;
 }
 
 /** `ActionStatus` -> readable English label — the not-executed/failed/ok
@@ -348,4 +356,280 @@ export function resolveCastColor(kind: RunCastKind): StepColor {
 
 export function castEntryId(entry: IRunCastEntry): string {
   return entry.id;
+}
+
+// ── Artifact lane (run-view visual rewrite slice 3) ──────────────────
+//
+// RENDER-LAYER OVERLAY ONLY — derives a right-hand "artefactos" column
+// from the existing `IPositionedNode`s. The domain step tree
+// (`layout-run.ts`/`merge-run.ts`) is NOT touched; this reads the
+// already-computed `actionType`/`instanceId`/`durationMs`/`status` fields
+// the domain already carries and adds screen geometry + display strings,
+// same split as the rest of this file.
+//
+// DATA REALITY (verified against the ingester's run endpoint, do not
+// fabricate beyond this): the connector's `connector.endpoint_call.completed`
+// event carries no correlation id, so it never lands in the run's own
+// events, and there is no agent tool/memory event family either. So the
+// artifact box shows only what IS on the layout node already — the
+// instance kind + id/name (via the run's `cast`), the step's own
+// duration/status — and the req/resp edges carry duration + status, NOT
+// invented byte sizes / HTTP status / cache result / tool counts.
+
+export type ArtifactKind = "connector" | "agent" | "channel";
+
+/** `WorkflowActionKind`s that resolve to a "connector" artifact — mirrors
+ * `IWorkflowLeafAction.activity`'s connector-shaped variants (mockup:
+ * `endpointCall`/`mcpCall`/`serviceCall`/`serviceBusCall` all render the
+ * same paired "connector-runtime"-style box). */
+const CONNECTOR_ACTION_TYPES: ReadonlySet<string> = new Set([
+  "endpointCall",
+  "mcpCall",
+  "serviceCall",
+  "serviceBusCall",
+]);
+
+/** Which artifact family (if any) a node's `actionType` belongs to.
+ * `null` for every structural node (`conditional`/`fork`/`join` — their
+ * `actionType` is `null`/`"branch"`, neither of which is in the leaf sets
+ * below) and for plain non-artifact leaf actions (`jsFunction`,
+ * `setVariable`). */
+export function resolveArtifactKind(node: ILayoutNode): ArtifactKind | null {
+  if (node.kind !== "action" || node.actionType === null) {
+    return null;
+  }
+  if (CONNECTOR_ACTION_TYPES.has(node.actionType)) {
+    return "connector";
+  }
+  if (node.actionType === "agentCall") {
+    return "agent";
+  }
+  if (node.actionType === "channelSend") {
+    return "channel";
+  }
+  return null;
+}
+
+/** `true` when a node gets a paired artifact box: it must resolve to an
+ * `ArtifactKind` AND either carry a real `instanceId` (connector/agent —
+ * `merge-run.ts` only fills `instanceId` from `payload_connector_id`/
+ * `payload_agent_id`) or be a `channelSend` (which never carries an
+ * `instanceId` per the domain model's own doc comment, but still gets a
+ * box per SPEC.md — its instance ref falls back to the run's `cast`). */
+export function isArtifactNode(node: ILayoutNode): boolean {
+  const kind = resolveArtifactKind(node);
+  if (kind === null) {
+    return false;
+  }
+  return kind === "channel" || node.instanceId !== null;
+}
+
+/** Same rect footprint as a standard action box, so the artifact column
+ * lines up row-for-row with the spine's own `NODE_HEIGHT`. */
+export const ARTIFACT_BOX_WIDTH = NODE_WIDTH;
+export const ARTIFACT_BOX_HEIGHT = NODE_HEIGHT;
+/** Horizontal gap between the widest spine content and the artifact
+ * column (mockup: spine boxes end at x=300, artifact boxes start at
+ * x=400 — a 100px gap; padded slightly wider here to leave room for the
+ * req/resp edge labels sitting in between). */
+const ARTIFACT_COL_GAP = 140;
+
+export interface IArtifactBox {
+  /** Id of the underlying spine `ILayoutNode` this box is paired with —
+   * T05's popup wiring resolves back to that node via this id rather than
+   * the artifact box carrying its own click/popup logic. */
+  readonly stepId: string;
+  readonly kind: ArtifactKind;
+  readonly color: StepColor;
+  readonly x: number;
+  readonly y: number;
+  readonly label: string;
+  readonly subLabel: string;
+}
+
+/** Fixed right-column `x` for every artifact box in the run (mockup: one
+ * shared column, not per-lane) — one gap past the rightmost spine node,
+ * so nothing the domain's fork lanes produce ever overlaps it. */
+export function computeArtifactColumnX(
+  positions: readonly IPositionedNode[]
+): number {
+  if (positions.length === 0) {
+    return LANE_BASE_X + NODE_WIDTH + ARTIFACT_COL_GAP;
+  }
+  const maxRight = Math.max(...positions.map((p) => p.x + NODE_WIDTH));
+  return maxRight + ARTIFACT_COL_GAP;
+}
+
+/** `ArtifactKind` -> `StepColor` — connector reuses the platform/gray
+ * family (DESIGN.md's color table has no separate "connector" color),
+ * agent/channel reuse their own existing families. */
+function artifactColor(kind: ArtifactKind): StepColor {
+  if (kind === "connector") {
+    return "platform";
+  }
+  return kind;
+}
+
+function findCastEntry(
+  node: ILayoutNode,
+  kind: ArtifactKind,
+  cast: readonly IRunCastEntry[]
+): IRunCastEntry | null {
+  if (node.instanceId !== null) {
+    return cast.find((entry) => entry.id === node.instanceId) ?? null;
+  }
+  // `channelSend` carries no `instanceId` (domain model doc comment) — the
+  // run's cast still lists the channel actor (same fallback the header's
+  // "entry/channel" chip already uses), so fall back to the first
+  // `channel`-kind cast entry rather than showing no instance ref at all.
+  if (kind === "channel") {
+    return cast.find((entry) => entry.kind === "channel") ?? null;
+  }
+  return null;
+}
+
+/** Box label: `"<kind> · <instance ref>"` — the instance ref prefers the
+ * resolved cast entry's human `name`, falling back to the raw
+ * `instanceId` (unresolved cast) or the literal `"unknown"` (no id and no
+ * cast match at all — degraded run). */
+function formatArtifactLabel(
+  kind: ArtifactKind,
+  node: ILayoutNode,
+  castEntry: IRunCastEntry | null
+): string {
+  const ref = castEntry?.name ?? node.instanceId ?? "unknown";
+  return `${kind} · ${ref}`;
+}
+
+/** Sub-line: `"↔ · <ms>ms · <status>"` — duration + status only, per the
+ * data-reality note above (no byte sizes / HTTP status / tool counts to
+ * show). `"↔ · — · <status>"` when the step carries no duration (e.g. a
+ * `not_executed` step, which can still resolve to an artifact kind for a
+ * definition-only dashed box). */
+function formatArtifactSubLabel(node: ILayoutNode): string {
+  const ms = node.durationMs !== null ? `${node.durationMs}ms` : "—";
+  return `↔ · ${ms} · ${formatNodeStatusLabel(node.status)}`;
+}
+
+export function computeArtifactBoxes(
+  positions: readonly IPositionedNode[],
+  cast: readonly IRunCastEntry[]
+): readonly IArtifactBox[] {
+  const columnX = computeArtifactColumnX(positions);
+  const boxes: IArtifactBox[] = [];
+  for (const node of positions) {
+    if (!isArtifactNode(node)) {
+      continue;
+    }
+    const kind = resolveArtifactKind(node)!;
+    const castEntry = findCastEntry(node, kind, cast);
+    boxes.push({
+      stepId: node.id,
+      kind,
+      color: artifactColor(kind),
+      x: columnX,
+      y: node.y,
+      label: formatArtifactLabel(kind, node, castEntry),
+      subLabel: formatArtifactSubLabel(node),
+    });
+  }
+  return boxes;
+}
+
+export interface IArtifactEdge {
+  readonly id: string;
+  /** Id of the paired spine `ILayoutNode` — same wiring key as
+   * `IArtifactBox.stepId`. */
+  readonly stepId: string;
+  readonly direction: "request" | "response";
+  /** `false` (solid) for the request edge, `true` (dashed) for the
+   * response edge — mirrors the mockup's "sólida = request … punteada =
+   * response" legend line, reusing the existing `.rv-edge-dashed` CSS. */
+  readonly dashed: boolean;
+  readonly label: string;
+  readonly x1: number;
+  readonly y1: number;
+  readonly x2: number;
+  readonly y2: number;
+}
+
+/** Request (spine → artifact, solid, "req") + response (artifact → spine,
+ * dashed, "resp · <ms>ms") edge PAIR per artifact box, both anchored at
+ * the shared row's vertical center (spine box's right edge <-> artifact
+ * box's left edge) — same "plain line, no chart lib" approach as
+ * `computeRenderedEdges`. Duration-only response label (data-reality
+ * note: no byte figures to show). */
+export function computeArtifactEdges(
+  positions: readonly IPositionedNode[],
+  boxes: readonly IArtifactBox[]
+): readonly IArtifactEdge[] {
+  const boxByStepId = new Map(boxes.map((box) => [box.stepId, box]));
+  const edges: IArtifactEdge[] = [];
+  for (const node of positions) {
+    const box = boxByStepId.get(node.id);
+    if (!box) {
+      continue;
+    }
+    const stepRightX = node.x + NODE_WIDTH;
+    const stepMidY = node.y + nodeVisualHeight(node.kind) / 2;
+    const boxLeftX = box.x;
+    const boxMidY = box.y + ARTIFACT_BOX_HEIGHT / 2;
+    edges.push({
+      id: `${node.id}->req`,
+      stepId: node.id,
+      direction: "request",
+      dashed: false,
+      label: "req",
+      x1: stepRightX,
+      y1: stepMidY,
+      x2: boxLeftX,
+      y2: boxMidY,
+    });
+    const responseMs = node.durationMs !== null ? `${node.durationMs}ms` : "—";
+    edges.push({
+      id: `${node.id}<-resp`,
+      stepId: node.id,
+      direction: "response",
+      dashed: true,
+      label: `resp · ${responseMs}`,
+      x1: boxLeftX,
+      y1: boxMidY,
+      x2: stepRightX,
+      y2: stepMidY,
+    });
+  }
+  return edges;
+}
+
+export interface IRunColumnHeaders {
+  readonly spineX: number;
+  readonly artifactX: number;
+  readonly y: number;
+}
+
+const COLUMN_HEADER_Y = 14;
+
+/** The two column header texts (mockup: "workflow run" / "artefactos",
+ * English per SPEC.md decision 5 — "artifacts"). `spineX` centers over the
+ * spine's own content bounding box (so it stays correct regardless of how
+ * many fork lanes are visible); `artifactX` centers over the artifact
+ * box's own fixed width at the shared column `x`. */
+export function computeColumnHeaders(
+  positions: readonly IPositionedNode[],
+  artifactColumnX: number
+): IRunColumnHeaders {
+  if (positions.length === 0) {
+    return {
+      spineX: LANE_BASE_X + NODE_WIDTH / 2,
+      artifactX: artifactColumnX + ARTIFACT_BOX_WIDTH / 2,
+      y: COLUMN_HEADER_Y,
+    };
+  }
+  const minX = Math.min(...positions.map((p) => p.x));
+  const maxX = Math.max(...positions.map((p) => p.x + NODE_WIDTH));
+  return {
+    spineX: (minX + maxX) / 2,
+    artifactX: artifactColumnX + ARTIFACT_BOX_WIDTH / 2,
+    y: COLUMN_HEADER_Y,
+  };
 }

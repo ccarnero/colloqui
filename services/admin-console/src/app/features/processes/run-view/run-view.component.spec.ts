@@ -537,6 +537,32 @@ describe("RunViewComponent", () => {
       expect(emitted).toBeTruthy();
       expect(emitted?.kind).toBe("action");
     });
+
+    it("renders a paired artifact box per connector/agent step, and clicking it opens the SAME popup as the underlying step (no new data path)", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const boxes = el.querySelectorAll(".rv-artifact-box");
+      // linearDefinition: one endpointCall (connector) + one agentCall
+      // (agent) step, both carrying a resolved cast instanceId — SPEC.md
+      // slice 3's artifact-derivation rule pairs a box with each.
+      expect(boxes.length).toBe(2);
+      expect(el.querySelector("app-run-view-popup")).toBeFalsy();
+
+      let emitted: ILayoutNode | undefined;
+      fixture.componentInstance.nodeSelected.subscribe((n) => (emitted = n));
+
+      (boxes[0] as HTMLElement).dispatchEvent(
+        new MouseEvent("click", { bubbles: true })
+      );
+      fixture.detectChanges();
+
+      // Same nodeSelected/popup wiring the underlying spine step already
+      // uses — clicking the artifact box resolves back to its paired
+      // `ILayoutNode` (via `IArtifactBox.stepId`) rather than opening a
+      // second, artifact-specific popup.
+      expect(emitted).toBeTruthy();
+      expect(emitted?.kind).toBe("action");
+      expect(el.querySelector("app-run-view-popup")).toBeTruthy();
+    });
   });
 
   describe("3-case condition", () => {
