@@ -33,8 +33,11 @@ echoes every URL below to your terminal so they are always one scroll away.
      Connect via `POSTGRES_URL` after `kubectl port-forward -n support-services-dev svc/postgres 5432:5432`.
    - Paste a known id into the **Message traces** dashboard's `$correlation_id` textbox
      (URL below — append `?var-correlation_id=<value>` to jump straight there).
-3. See the trace: Tempo waterfall (timing/spans) + causal node graph (who-called-who) +
-   detail table (taxonomy, compliance, cache status) in one screen.
+3. See the trace: Tempo waterfall (timing/spans) + detail table (taxonomy, compliance,
+   cache status) in Grafana. For who-called-who causality, use the admin-console's
+   **causal graph view** (`processes/trace/:correlationId`) — see "Two console views"
+   below; Grafana's own causal node graph panel was removed (business causality now
+   lives in the console, not Grafana).
 
 **Caveats for the Recent traces table:**
 
@@ -54,7 +57,7 @@ All URLs below assume `./port-forward.sh` is running with default ports
 | What | URL |
 |---|---|
 | Grafana folder **"Message tracking"** (both dashboards, tag-filtered — folder UIDs are server-generated, so this is the stable link) | `http://localhost:3000/dashboards?tag=message-tracking` |
-| **Message traces** dashboard (Tempo waterfall + causal node graph + detail table) | `http://localhost:3000/d/message-traces?var-correlation_id=<PASTE_HERE>` |
+| **Message traces** dashboard (Recent traces + Tempo waterfall + Orphan events + detail table — no causal node graph panel, see below) | `http://localhost:3000/d/message-traces?var-correlation_id=<PASTE_HERE>` |
 | **Connector detail** dashboard (invocations, latency, error rate, cache hit-rate, last 50 calls) | `http://localhost:3000/d/connector-detail?var-connector=<CONNECTOR_ID>` |
 | **Tempo Explore** (search traces without knowing the id — by service, tag, duration) | `http://localhost:3000/explore?left=%7B%22datasource%22:%22tempo%22%7D` |
 | **Temporal UI** (workflow execution history) | `http://localhost:8233` |
@@ -74,6 +77,39 @@ Per `.sdd/changes/trace-visualization/design.md`'s complementarity note:
 
 Both key off the SAME `correlation_id` — copy-paste it between the two, no separate ID
 scheme.
+
+## Two console views: waterfall and causal graph
+
+`processes/trace/:correlationId` offers a view switcher between two
+console-native views, both fed by the ingester's `GET /chains/:correlationId`
+endpoint (`services/tracking-ingester-service/README.md` — response shape,
+tenant scoping, `has_envelope`/`orphan_count` semantics) instead of the
+legacy client-side assembly against audit endpoints. A third "Legacy" tab
+keeps the old client-side assembly available; removing it is a separate,
+later human decision.
+
+- **Waterfall view** — events ordered by `occurred_at`, indented by
+  `causation_depth`, duration bars sourced from `tracking.tracked_event_spans`
+  (matched by `kind_prefix`/`entity_id`), point events rendered as diamonds,
+  color-coded by category (channel / platform / agent). Header chips show
+  `correlation_id`, total duration, and the bottleneck (longest span + % of
+  total).
+- **Causal graph view** — nodes are events, edges are `causation_id →
+  event_id` (dashed when only `correlation_id` links two events, i.e. the
+  causal parent fell outside the fetched chain), with a chain-completeness
+  badge and a detail card per selected event (including a flag for
+  null-tenant rows). This view replaces Grafana's former "Causal node
+  graph" panel as the place to answer who-called-who questions.
+
+**Why the Grafana panel was removed**: Grafana's node-graph panel type could
+show edges but not the richer per-event detail (payload access, taxonomy
+fields, chain-completeness) the causal-graph console view needed, and
+duplicating causality across both a Grafana panel and a console view
+invited them to drift. Grafana keeps the panels it is actually good at —
+Tempo waterfall (span timing), Recent traces (correlation discovery),
+Orphan events (drift volume), Trace events detail (taxonomy/compliance) —
+while business causality (who-called-who, with drill-down) now lives
+exclusively in the admin console's causal graph view.
 
 ## Payload viewer (event detail)
 

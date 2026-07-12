@@ -265,7 +265,7 @@ grep -n "trace-console" cowork/INDEX.md
 - [x] T07 wiring + view switcher
 - [x] T08 grafana panel removal
 - [x] T09 cluster e2e chain assertion
-- [ ] T10 docs + index
+- [x] T10 docs + index
 
 ## Out of scope (explicit)
 

@@ -391,7 +391,7 @@ data:
         },
         {
           "title": "Last 50 calls",
-          "description": "correlation_id links back to the Message traces dashboard (Tempo waterfall + node graph for the owning message). raw_envelope is inspectable via the JSON-view cell (click to expand) — no separate redaction here, connector-call-detail already ships redacted headers + truncated bodies inside the envelope payload.",
+          "description": "correlation_id links back to the Message traces dashboard (Tempo waterfall for the owning message); business causality across messages is now in the admin console's causal graph view. raw_envelope is inspectable via the JSON-view cell (click to expand) — no separate redaction here, connector-call-detail already ships redacted headers + truncated bodies inside the envelope payload.",
           "type": "table",
           "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
           "datasource": { "type": "postgres", "uid": "tracking-postgres" },

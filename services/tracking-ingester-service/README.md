@@ -119,6 +119,51 @@ applies again. If the CronJob already exists, the script leaves
 existing CronJob, so a human-managed unsuspend is never reverted by a
 rebuild.
 
+### Chain read endpoint
+
+`GET /chains/:correlationId` (tenant header `x-yoizen-tenant` required, set
+by the gateway proxy) → the causal chain for a `correlation_id`: `400` if
+the tenant header is missing, `404` if the correlation has zero matching
+rows. Built from `build-chain-query.ts` (events) + `build-spans-query.ts`
+(spans) + `to-chain-response.ts` (response shaping) — pure functions in
+`src/lib/`, with only the query execution living in `main.ts`.
+
+Response shape:
+
+```
+{
+  correlation_id, tenant,
+  events: [...],
+  spans: [...],
+  summary: { count, first_at, last_at, total_ms, orphan_count }
+}
+```
+
+- `events[]` are `tracked_events` rows minus the raw `envelope` jsonb, plus
+  a derived `has_envelope` boolean (`compliance <> 'none'`) — the list
+  payload never carries the full envelope body; use the payload read
+  endpoint below for that.
+- `spans[]` carry `kind_prefix`, `entity_id`, `started_at`, `completed_at`,
+  `duration_ms` from `tracking.tracked_event_spans`.
+- `summary.orphan_count` counts events whose `causation_id` is non-null and
+  not present as an `event_id` anywhere in the same event set — a true
+  root-less orphan, or a parent excluded by the tenant scope.
+- `summary.first_at`/`last_at`/`total_ms` are derived from `occurred_at`
+  across all returned events.
+
+**Tenant scoping**: rows are scoped by `(tenant = $2 OR tenant IS NULL)` —
+rows with `tenant IS NULL` (drift/non-envelope rows that never carried a
+tenant) belonging to the correlation are INCLUDED, not excluded, so the
+chain stays complete; `has_envelope`/`compliance` on those rows lets a
+consumer flag them distinctly. This is a deliberate product decision
+(`manual-loops/trace-console.md` §User decisions 4), not an oversight.
+
+The gateway proxies this route (`GET /api/tracking/chains/:correlationId`)
+under the standard tenant/auth guards. The admin console's trace views
+(waterfall + causal graph, `processes/trace/:correlationId`) are the
+consumer — see `DOCS/guides/trace-console.md` for the console-facing
+contract.
+
 ### Payload read endpoint
 
 `GET /chains/:correlationId/events/:eventId/payload` (tenant header

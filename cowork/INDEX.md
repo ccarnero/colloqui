@@ -170,6 +170,47 @@ Decision cuádruple:
   unit-tested core, components only bind the model.
 - **Engram topic**: `tracking/run-view`.
 
+## Change: causal trace views in the admin console (trace-console)
+
+Spec-driven change adding per-correlation causal trace views to the admin
+console, fed by `tracking.tracked_events`/`tracking.tracked_event_spans`
+(the durable causal store) instead of the legacy client-side assembly
+against audit endpoints: a `GET /chains/:correlationId` read endpoint on
+`tracking-ingester-service` (gateway read-only proxy mirroring the `audit`
+module), two console views under `processes/trace/:correlationId`
+(waterfall — time-ordered, `causation_depth`-indented, span duration bars;
+causal graph — `causation_id → event_id` node/edge graph with a
+chain-completeness badge and event detail card), and removal of Grafana's
+"Causal node graph" panel now that the console owns business causality.
+Full task queue, gates, and human decisions: `manual-loops/trace-console.md`.
+Operational contract (endpoint response shape, tenant scoping,
+`has_envelope`/`orphan_count` semantics): `services/tracking-ingester-service/README.md`.
+Console-facing contract (the two views, removal rationale): `DOCS/guides/trace-console.md`.
+
+Decision cuádruple:
+- **Rule**: rows with `tenant IS NULL` (drift/non-envelope) belonging to a
+  correlation are INCLUDED in the chain response, not excluded, but flagged
+  via `has_envelope`/`compliance` — `manual-loops/trace-console.md` §User
+  decisions 4.
+- **Why**: excluding null-tenant rows would silently truncate causal chains
+  at exactly the drift/non-envelope events an operator most needs to see
+  when debugging "why did this chain look incomplete" — the console's job
+  is to surface drift, not hide it behind a tenant filter designed for
+  compliant rows.
+- **Evidence**: the scoping predicate `(tenant = $2 OR tenant IS NULL)` in
+  `buildChainQuery`/`buildSpansQuery`
+  (`services/tracking-ingester-service/src/lib/build-chain-query.ts`,
+  `build-spans-query.ts`), consumed by `toChainResponse`
+  (`to-chain-response.ts`) which derives `summary.orphan_count` from
+  events whose `causation_id` has no matching `event_id` in the same
+  fetched set — including the tenant-scope-excluded case. Grafana's
+  "Causal node graph" panel removal
+  (`infrastructure/base/observability/grafana/dashboards-message-tracking-configmap.yaml`)
+  leaves "Trace waterfall (Tempo)", "Recent traces", "Orphan events", and
+  "Trace events (detail)" as the ops-facing panels, with the admin
+  console's causal graph view as the sole business-causality UI.
+- **Engram topic**: `tracking/trace-console`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.
