@@ -536,3 +536,146 @@ export async function publishActionCompletedEvent(
 ): Promise<void> {
   return publishActionEvent("completed", args);
 }
+
+// ── T04: condition_evaluated
+// (manual-loops/workflow-step-events.md) ───────────────────────────
+//
+// SAME publisher family as execution_started/execution_completed and
+// action_started/action_completed above: same lazy `getConnection()`,
+// same envelope derivation, same
+// `evt.<tenant>.workflow-service.workflow.internal.native.<kind>.v1`
+// subject shape (TAXONOMY.md rule 19 — kind-agnostic, no classifier
+// change needed for this kind either). NO second publish path.
+
+/** Canonical subject for workflow condition-evaluation telemetry. */
+export function buildConditionEvaluatedSubject(tenantId: string): string {
+  return `evt.${tenantId}.workflow-service.workflow.internal.native.condition_evaluated.v1`;
+}
+
+/**
+ * Payload contract per TAXONOMY.md rule 19 (workflow-execution),
+ * `condition_evaluated`: `{ expression, evaluatedValue, branchTaken,
+ * cases }` (SPEC decision 3 — `evaluatedValue` is the scalar/short
+ * evaluated value only, NEVER the full variable scope). `executionId`
+ * and `actionIndex` follow the same convention as
+ * `IPublishActionStartedArgs` — the 0-based position of the
+ * `conditional` action within its own action list (top-level, a
+ * `branch` sub-list, or an outer conditional branch/default list).
+ */
+export interface IPublishConditionEvaluatedArgs {
+  executionId: string;
+  actionIndex: number;
+  /** `{{path.to.value}}`-shaped reference to the tested variable. */
+  expression: string;
+  /** Scalar/short value only — truncated to 256 chars upstream (workflow layer). */
+  evaluatedValue: string;
+  /** Matched case label, `"default"` when the default branch ran, `null` for if-without-else evaluating false. */
+  branchTaken: string | null;
+  /** Declared case labels, in definition order. */
+  cases: string[];
+  /** Set when `evaluatedValue` was truncated to the 256-char cap. */
+  truncated?: boolean;
+  tenantId: string;
+  correlationId?: string;
+  causationId?: string | null;
+  depth?: number;
+}
+
+/**
+ * Publishes `io.yoizen.workflow.condition.evaluated.v1`. MIRRORS
+ * `publishActionEvent`: same publish path, same envelope derivation,
+ * same subject-builder pattern.
+ */
+export async function publishConditionEvaluatedEvent(
+  args: IPublishConditionEvaluatedArgs
+): Promise<void> {
+  if (!args.tenantId) {
+    console.warn(
+      `[publishConditionEvaluatedEvent] no tenantId for execution=${args.executionId}; ` +
+        `skipping event emit`
+    );
+    return;
+  }
+
+  const conn = await getConnection();
+  const subject = buildConditionEvaluatedSubject(args.tenantId);
+  const now = new Date().toISOString();
+  const eventId = crypto.randomUUID();
+  const traceid = activeOrRandomTraceId();
+
+  const payload: Record<string, JsonValue> = {
+    executionId: args.executionId,
+    actionIndex: args.actionIndex,
+    expression: args.expression,
+    evaluatedValue: args.evaluatedValue,
+    branchTaken: args.branchTaken,
+    cases: args.cases,
+    ...(args.truncated === true && { truncated: true }),
+  };
+
+  const idempotencykey = computeIdempotencyKey(payload);
+  const payloadChecksum = computePayloadChecksum(payload);
+  const payloadBytes = canonicalByteLength(payload);
+  const correlationId = args.correlationId ?? eventId;
+  const causationId = args.causationId ?? null;
+
+  const envelope: EventEnvelope = {
+    specversion: "1.0",
+    id: eventId,
+    source: "//workflow-service/execution-status",
+    type: "io.yoizen.workflow.condition.evaluated.v1",
+    resource: `tenant/${args.tenantId}/workflow-execution/${args.executionId}`,
+    time: now,
+    traceid,
+    causation_id: causationId,
+    correlation_id: correlationId,
+    tenant: args.tenantId,
+    producer: "workflow-service",
+    domain: "workflow",
+    channel: "internal",
+    provider: "native",
+    accountid: "system",
+    idempotencykey,
+    transport: {
+      method: "stream",
+      protocol: "internal",
+      depth: args.depth ?? 0,
+    },
+    data: {
+      received_at: now,
+      payload_inline: true,
+      payload_ref: null,
+      payload_bytes: payloadBytes,
+      payload_checksum: payloadChecksum,
+      payload,
+    },
+  };
+
+  const hdrs = natsHeaders();
+  hdrs.set(TENANT_HEADER, args.tenantId);
+  hdrs.set("Nats-Msg-Id", idempotencykey);
+  hdrs.set("X-Correlation-Id", correlationId);
+  if (causationId) {
+    hdrs.set("X-Causation-Id", causationId);
+  }
+  injectTraceContext(hdrs);
+
+  const { span } = startNatsProducerSpan("workflow-service", subject, hdrs);
+  try {
+    conn.publish(subject, encoder.encode(JSON.stringify(envelope)), {
+      headers: hdrs,
+    });
+    await conn.flush();
+  } finally {
+    span.end();
+  }
+
+  console.log(
+    `[publishConditionEvaluatedEvent] published execution=${args.executionId} ` +
+      `actionIndex=${args.actionIndex} expression=${args.expression} ` +
+      `branchTaken=${args.branchTaken ?? "null"} cases=${args.cases.join("|")} ` +
+      `truncated=${args.truncated === true} tenant=${args.tenantId} subject=${subject} ` +
+      `correlation_id=${correlationId} causation_id=${causationId ?? "null"} ` +
+      `depth=${envelope.transport.depth}`
+  );
+}

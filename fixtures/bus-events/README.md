@@ -44,6 +44,17 @@ implementation), T03 (classifier coverage), and T04 (end-to-end verification) of
 the same manual loop, which will replace these placeholders with fixtures
 transcribed from the real emitter's tests once it exists.
 
+**Causal contract (corrected 2026-07-12, T04 review fix):** `action_started`,
+`action_completed`, and `condition_evaluated` are SIBLING hops off the run's
+`execution_started` event, not a chained step-to-step causation. All three
+step-event fixtures cite `wf-exec-started-1` (the `execution-started`
+fixture's `id`) as their `causation_id`, and all three share the SAME constant
+`transport.depth` of `execution_started.depth + 1` (`3` in this synthetic
+run), regardless of how many actions precede them. See TAXONOMY.md rule 19
+for the ceiling rationale (chained causation would grow depth linearly with
+action count and exceed `MAX_DEPTH_BY_CATEGORY.internal_service` for any
+workflow with more than a few actions).
+
 ## Fixture coverage gaps
 
 See "Fixture coverage gaps" section in `DRIFT.md` at the repo root for the full list of

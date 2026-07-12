@@ -6,7 +6,7 @@
   "resource": "tenant/tenant-a/workflow-execution/exec-1",
   "time": "2026-07-11T00:00:02.000Z",
   "traceid": "trace-wf-1",
-  "causation_id": "wf-action-started-1",
+  "causation_id": "wf-exec-started-1",
   "correlation_id": "corr-wf-1",
   "tenant": "tenant-a",
   "producer": "workflow-service",

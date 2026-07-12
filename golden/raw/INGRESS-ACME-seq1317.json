@@ -27,7 +27,7 @@
     "provider": "native",
     "accountid": "system",
     "idempotencykey": "sha256:wf-action-started-2",
-    "transport": { "method": "stream", "protocol": "internal", "depth": 4 },
+    "transport": { "method": "stream", "protocol": "internal", "depth": 3 },
     "data": {
       "received_at": "2026-07-11T00:01:01.000Z",
       "payload_inline": true,

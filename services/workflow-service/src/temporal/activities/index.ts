@@ -3,6 +3,7 @@ export { executeChannelSend } from "./channel-send.activity";
 export {
   publishActionCompletedEvent,
   publishActionStartedEvent,
+  publishConditionEvaluatedEvent,
   publishExecutionCompletedEvent,
   publishExecutionStartedEvent,
 } from "./execution-completed-publisher.activity";

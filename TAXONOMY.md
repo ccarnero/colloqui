@@ -146,6 +146,22 @@ encodes the alarm set — a rule number's membership there is authoritative, not
   golden set (§ below) still carries labeled rows for all four new kinds per golden
   rule 3, to guard against a future kind-narrowing regression that would silently
   break this design.
+- **Causal contract for step events (workflow-step-events T03/T04, authoritative
+  home):** `action_started`, `action_completed`, and `condition_evaluated` are
+  SIBLING hops off the run's `execution_started` event — `causation_id` is
+  ALWAYS the run's `execution_started` envelope id, NEVER the preceding step
+  event (e.g. `action_completed` does not chain off its matching
+  `action_started`, and `condition_evaluated` does not chain off the preceding
+  action's `action_completed`). `transport.depth` is therefore CONSTANT across
+  every step event of a run, equal to `execution_started.depth + 1`, regardless
+  of `action_index` or how many actions/conditions precede it. This is
+  deliberate: a chained step-to-step design would grow depth linearly with
+  action count and exceed `MAX_DEPTH_BY_CATEGORY.internal_service` (ceiling 5,
+  `envelope.utils.ts`) for any workflow with more than a handful of actions,
+  which the sibling design avoids entirely. `golden/labeled.tsv` rows
+  seq1312-1319 and the `fixtures/bus-events/workflow-service-*-envelope-01.json`
+  fixtures encode this contract; the `golden/raw` synthetic events for those
+  rows and the fixtures must stay consistent with it.
 - Rules 2–5 rely on the literal 8-token subject grammar (`docs/messaging/envelope.md` §3), so they should be implemented as fixed-position token checks (split on `.`, check tokens 3–4 and the `<kind>` token), not full-string regex, to survive tenant-name variability.
 - Rule 1 (DLQ) must run first because a DLQ subject *embeds* the original subject as a suffix (`dlq.<tenant>.evt.<tenant>...`) — a naive later-priority match would otherwise mis-tag DLQ'd channel/platform events with `channel-processing`/`agent-admin` instead of `dlq`.
 - Rule 9 (agent-memory) matches on the subject's domain token `agent-memory` — do NOT classify by `envelope.domain`, which is `"automation"` for these events (subject/envelope mismatch, see §3 Q3 decision note and `DRIFT.md` #9).

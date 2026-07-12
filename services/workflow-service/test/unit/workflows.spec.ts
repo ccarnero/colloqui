@@ -29,6 +29,7 @@ const publishExecutionCompletedEvent = mock(() => Promise.resolve());
 const publishExecutionStartedEvent = mock(() => Promise.resolve());
 const publishActionStartedEvent = mock(() => Promise.resolve());
 const publishActionCompletedEvent = mock(() => Promise.resolve());
+const publishConditionEvaluatedEvent = mock(() => Promise.resolve());
 
 let runWorkflow: (
   workflow: WorkflowDefinition,
@@ -49,6 +50,7 @@ beforeAll(async () => {
       publishExecutionStartedEvent,
       publishActionStartedEvent,
       publishActionCompletedEvent,
+      publishConditionEvaluatedEvent,
     }),
     // Deterministic workflow-context stub — mirrors what Temporal's
     // real workflowInfo() exposes (subset used by runWorkflow).
@@ -2507,6 +2509,455 @@ describe("runWorkflow (temporal/workflows)", () => {
         ([args]) => args.actionType === "truncated"
       );
       expect(truncatedCalls).toHaveLength(0);
+    });
+  });
+
+  describe("condition_evaluated telemetry (T04)", () => {
+    beforeEach(() => {
+      publishActionStartedEvent.mockClear();
+      publishActionCompletedEvent.mockClear();
+      publishConditionEvaluatedEvent.mockClear();
+      executeJsFunction.mockClear();
+      executeJsFunction.mockImplementation(() =>
+        Promise.resolve({ status: "aprobado" })
+      );
+    });
+
+    it("emits condition_evaluated with expression/evaluatedValue/branchTaken/cases for a multi-case match", async () => {
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "jsFunction",
+              name: "check",
+              args: { code: "return { status: 'aprobado' }" },
+            },
+            {
+              activity: "conditional",
+              name: "route",
+              branches: [
+                {
+                  label: "approved",
+                  condition: {
+                    variable: "results.check.status",
+                    comparator: "eq",
+                    value: "aprobado",
+                  },
+                  actions: [
+                    {
+                      activity: "jsFunction",
+                      name: "onApproved",
+                      args: { code: "1" },
+                    },
+                  ],
+                },
+                {
+                  label: "rejected",
+                  condition: {
+                    variable: "results.check.status",
+                    comparator: "eq",
+                    value: "rechazado",
+                  },
+                  actions: [],
+                },
+              ],
+            },
+          ],
+        },
+        "exec-t04-multicase"
+      );
+
+      expect(publishConditionEvaluatedEvent).toHaveBeenCalledTimes(1);
+      const args = publishConditionEvaluatedEvent.mock.calls[0][0];
+      expect(args).toMatchObject({
+        executionId: "exec-t04-multicase",
+        actionIndex: 1,
+        expression: "{{results.check.status}}",
+        evaluatedValue: "aprobado",
+        branchTaken: "approved",
+        cases: ["approved", "rejected"],
+      });
+      expect(args.truncated).toBeUndefined();
+    });
+
+    it("emits branchTaken: null for an if-without-else evaluating false, and the skipped branch emits NOTHING", async () => {
+      executeJsFunction.mockImplementation(() =>
+        Promise.resolve({ status: "pendiente" })
+      );
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "jsFunction",
+              name: "check",
+              args: { code: "return { status: 'pendiente' }" },
+            },
+            {
+              activity: "conditional",
+              name: "route",
+              branches: [
+                {
+                  label: "approved",
+                  condition: {
+                    variable: "results.check.status",
+                    comparator: "eq",
+                    value: "aprobado",
+                  },
+                  actions: [
+                    {
+                      activity: "jsFunction",
+                      name: "onApproved",
+                      args: { code: "1" },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        "exec-t04-if-no-else"
+      );
+
+      expect(publishConditionEvaluatedEvent).toHaveBeenCalledTimes(1);
+      const args = publishConditionEvaluatedEvent.mock.calls[0][0];
+      expect(args).toMatchObject({
+        expression: "{{results.check.status}}",
+        evaluatedValue: "pendiente",
+        branchTaken: null,
+        cases: ["approved"],
+      });
+
+      // Not executed = no event: the skipped branch's own action never
+      // gets action_started/completed telemetry.
+      const startedNames = publishActionStartedEvent.mock.calls.map(
+        (c) => c[0].actionName
+      );
+      expect(startedNames).not.toContain("onApproved");
+    });
+
+    it("labels branchTaken 'default' when the default branch runs", async () => {
+      executeJsFunction.mockImplementation(() =>
+        Promise.resolve({ status: "unknown" })
+      );
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "jsFunction",
+              name: "check",
+              args: { code: "return { status: 'unknown' }" },
+            },
+            {
+              activity: "conditional",
+              name: "route",
+              branches: [
+                {
+                  label: "approved",
+                  condition: {
+                    variable: "results.check.status",
+                    comparator: "eq",
+                    value: "aprobado",
+                  },
+                  actions: [],
+                },
+              ],
+              default: [
+                {
+                  activity: "jsFunction",
+                  name: "onDefault",
+                  args: { code: "1" },
+                },
+              ],
+            },
+          ],
+        },
+        "exec-t04-default"
+      );
+
+      expect(publishConditionEvaluatedEvent).toHaveBeenCalledTimes(1);
+      expect(publishConditionEvaluatedEvent.mock.calls[0][0]).toMatchObject({
+        branchTaken: "default",
+        evaluatedValue: "unknown",
+        cases: ["approved"],
+      });
+    });
+
+    it("composes branch labels for a condition nested inside a fork branch", async () => {
+      executeJsFunction.mockImplementation(() =>
+        Promise.resolve({ status: "aprobado" })
+      );
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "jsFunction",
+              name: "check",
+              args: { code: "return { status: 'aprobado' }" },
+            },
+            {
+              activity: "branch",
+              name: "fork",
+              pathA: [
+                {
+                  activity: "conditional",
+                  name: "innerRoute",
+                  branches: [
+                    {
+                      label: "approved",
+                      condition: {
+                        variable: "results.check.status",
+                        comparator: "eq",
+                        value: "aprobado",
+                      },
+                      actions: [],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        "exec-t04-nested-fork"
+      );
+
+      // condition_evaluated fires once for the nested conditional node;
+      // the action_started/completed pair for that same node carries
+      // the composed branch label "pathA".
+      expect(publishConditionEvaluatedEvent).toHaveBeenCalledTimes(1);
+      expect(publishConditionEvaluatedEvent.mock.calls[0][0]).toMatchObject({
+        branchTaken: "approved",
+        actionIndex: 0,
+      });
+
+      const started = publishActionStartedEvent.mock.calls.map((c) => c[0]);
+      const innerNode = started.find((a) => a.actionName === "innerRoute");
+      expect(innerNode).toMatchObject({ branch: "pathA" });
+    });
+
+    it("truncates evaluatedValue at 256 chars and sets truncated: true", async () => {
+      const longValue = "x".repeat(300);
+      executeJsFunction.mockImplementation(() =>
+        Promise.resolve({ status: longValue })
+      );
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "jsFunction",
+              name: "check",
+              args: { code: "return { status: 'x' }" },
+            },
+            {
+              activity: "conditional",
+              name: "route",
+              branches: [
+                {
+                  label: "matches",
+                  condition: {
+                    variable: "results.check.status",
+                    comparator: "eq",
+                    value: longValue,
+                  },
+                  actions: [],
+                },
+              ],
+            },
+          ],
+        },
+        "exec-t04-truncate"
+      );
+
+      expect(publishConditionEvaluatedEvent).toHaveBeenCalledTimes(1);
+      const args = publishConditionEvaluatedEvent.mock.calls[0][0];
+      expect(args.evaluatedValue).toHaveLength(256);
+      expect(args.evaluatedValue).toBe(longValue.slice(0, 256));
+      expect(args.truncated).toBe(true);
+    });
+
+    it("does not set truncated when evaluatedValue is exactly 256 chars", async () => {
+      const exactValue = "y".repeat(256);
+      executeJsFunction.mockImplementation(() =>
+        Promise.resolve({ status: exactValue })
+      );
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            {
+              activity: "jsFunction",
+              name: "check",
+              args: { code: "return { status: 'y' }" },
+            },
+            {
+              activity: "conditional",
+              name: "route",
+              branches: [
+                {
+                  label: "matches",
+                  condition: {
+                    variable: "results.check.status",
+                    comparator: "eq",
+                    value: exactValue,
+                  },
+                  actions: [],
+                },
+              ],
+            },
+          ],
+        },
+        "exec-t04-exact-256"
+      );
+
+      const args = publishConditionEvaluatedEvent.mock.calls[0][0];
+      expect(args.evaluatedValue).toHaveLength(256);
+      expect(args.truncated).toBeUndefined();
+    });
+
+    it("does not emit condition_evaluated when executionId is absent", async () => {
+      await runWorkflow({
+        ...base,
+        actions: [
+          {
+            activity: "conditional",
+            name: "route",
+            branches: [
+              {
+                label: "approved",
+                condition: {
+                  variable: "results.check.status",
+                  comparator: "eq",
+                  value: "aprobado",
+                },
+                actions: [],
+              },
+            ],
+          },
+        ],
+      });
+      expect(publishConditionEvaluatedEvent).not.toHaveBeenCalled();
+    });
+
+    it("counts condition_evaluated toward the 100-event step cap", async () => {
+      // 49 warmup jsFunction actions consume 98 of the 100-event budget
+      // (49 * 2). The next reservation — the conditional node's own
+      // action_started/completed pair — pushes to 100 (98+2), so THAT
+      // pair becomes the single truncated marker, and the subsequent
+      // condition_evaluated reservation (cost 1) sees `truncated: true`
+      // already set and is skipped entirely.
+      const warmup = Array.from({ length: 49 }, (_, i) => ({
+        activity: "jsFunction" as const,
+        name: `warmup${i}`,
+        args: { code: "1" },
+      }));
+
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            ...warmup,
+            {
+              activity: "conditional",
+              name: "route",
+              branches: [
+                {
+                  label: "approved",
+                  condition: {
+                    variable: "results.check.status",
+                    comparator: "eq",
+                    value: "aprobado",
+                  },
+                  actions: [],
+                },
+              ],
+            },
+          ],
+        },
+        "exec-t04-cap"
+      );
+
+      const totalEmitted =
+        publishActionStartedEvent.mock.calls.length +
+        publishActionCompletedEvent.mock.calls.length +
+        publishConditionEvaluatedEvent.mock.calls.length;
+      expect(totalEmitted).toBeLessThanOrEqual(100);
+
+      const truncatedCalls = publishActionCompletedEvent.mock.calls.filter(
+        ([args]) => args.actionType === "truncated"
+      );
+      expect(truncatedCalls).toHaveLength(1);
+      // The reservation for the conditional node's own pair already
+      // spent the cap, so the condition evaluation itself never got a
+      // reservation to try — zero condition_evaluated events emitted.
+      expect(publishConditionEvaluatedEvent).toHaveBeenCalledTimes(0);
+    });
+
+    it("still counts toward the cap when only the condition_evaluated reservation crosses the boundary", async () => {
+      // 49 warmup actions (98 events) + the conditional node's own pair
+      // reserved via a SEPARATE emission where enough room remains
+      // (98+2=100 is NOT > 99? recompute): to isolate the
+      // condition_evaluated boundary specifically, use 48 warmups (96
+      // events) so the conditional pair reserves cleanly (96+2=98,
+      // still <= 99) and the condition_evaluated single-slot
+      // reservation (98+1=99, still <= 99) also succeeds — then a
+      // SECOND conditional node's pair (98+2=100 > 99) becomes the
+      // truncated marker, proving condition_evaluated slots count
+      // against later reservations too.
+      const warmup = Array.from({ length: 48 }, (_, i) => ({
+        activity: "jsFunction" as const,
+        name: `warmup${i}`,
+        args: { code: "1" },
+      }));
+
+      const conditionalAction = {
+        activity: "conditional" as const,
+        branches: [
+          {
+            label: "approved",
+            condition: {
+              variable: "results.check.status",
+              comparator: "eq" as const,
+              value: "aprobado",
+            },
+            actions: [],
+          },
+        ],
+      };
+
+      await runWorkflow(
+        {
+          ...base,
+          actions: [
+            ...warmup,
+            { ...conditionalAction, name: "route1" },
+            { ...conditionalAction, name: "route2" },
+          ],
+        },
+        "exec-t04-cap-boundary"
+      );
+
+      // route1: action pair (96->98) + condition_evaluated (98->99) both succeed.
+      expect(
+        publishConditionEvaluatedEvent.mock.calls.filter(
+          ([args]) => args.actionIndex === 48
+        )
+      ).toHaveLength(1);
+
+      // route2: action pair reservation (99+2=101 > 99) becomes the
+      // truncated marker instead; its condition_evaluated is skipped.
+      const truncatedCalls = publishActionCompletedEvent.mock.calls.filter(
+        ([args]) => args.actionType === "truncated"
+      );
+      expect(truncatedCalls).toHaveLength(1);
+      expect(
+        publishConditionEvaluatedEvent.mock.calls.filter(
+          ([args]) => args.actionIndex === 49
+        )
+      ).toHaveLength(0);
     });
   });
 });

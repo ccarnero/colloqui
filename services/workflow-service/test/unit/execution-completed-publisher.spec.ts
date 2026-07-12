@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { isCompliantEnvelope } from "@yoizen/shared";
 import actionCompletedFixture from "../../../../fixtures/bus-events/workflow-service-action-completed-envelope-01.json";
 import actionStartedFixture from "../../../../fixtures/bus-events/workflow-service-action-started-envelope-01.json";
+import conditionEvaluatedFixture from "../../../../fixtures/bus-events/workflow-service-condition-evaluated-envelope-01.json";
 import executionStartedFixture from "../../../../fixtures/bus-events/workflow-service-execution-started-envelope-01.json";
 
 /**
@@ -63,6 +64,8 @@ const {
   publishActionCompletedEvent,
   buildActionStartedSubject,
   buildActionCompletedSubject,
+  publishConditionEvaluatedEvent,
+  buildConditionEvaluatedSubject,
 } = await import(
   "../../src/temporal/activities/execution-completed-publisher.activity"
 );
@@ -436,6 +439,27 @@ describe("publishActionStartedEvent / publishActionCompletedEvent (action teleme
     expect(isCompliantEnvelope(actionCompletedFixture)).toBe(true);
   });
 
+  /**
+   * Causal contract (TAXONOMY.md rule 19 design note, corrected 2026-07-12):
+   * action_started/action_completed are SIBLING hops off the run's
+   * execution_started event, not chained step-to-step. Both fixtures MUST
+   * cite the execution_started fixture's id as causation_id and share the
+   * SAME constant depth (execution_started.depth + 1) — action_completed
+   * does NOT chain off action_started's id.
+   */
+  it("matches the T01 fixtures' SIBLING causal contract (both cite execution_started, constant depth)", () => {
+    expect(actionStartedFixture.causation_id).toBe(executionStartedFixture.id);
+    expect(actionCompletedFixture.causation_id).toBe(
+      executionStartedFixture.id
+    );
+    expect(actionStartedFixture.transport.depth).toBe(
+      executionStartedFixture.transport.depth + 1
+    );
+    expect(actionCompletedFixture.transport.depth).toBe(
+      actionStartedFixture.transport.depth
+    );
+  });
+
   it("publishes a spec-compliant action_started envelope with actionIndex/actionType/actionName", async () => {
     await publishActionStartedEvent({
       executionId: "exec-1",
@@ -549,6 +573,161 @@ describe("publishActionStartedEvent / publishActionCompletedEvent (action teleme
       actionType: "jsFunction",
       actionName: "x",
       status: "ok",
+      tenantId: "",
+    });
+    expect(mockPublish).toHaveBeenCalledTimes(0);
+    expect(connectMock).toHaveBeenCalledTimes(0);
+  });
+});
+
+/**
+ * T04 — condition_evaluated emitter (manual-loops/workflow-step-events.md).
+ * MIRRORS the action-event suite above: same publish path, same
+ * envelope derivation, same subject-builder pattern
+ * (`buildConditionEvaluatedSubject`).
+ */
+describe("publishConditionEvaluatedEvent (condition_evaluated emit)", () => {
+  beforeEach(() => {
+    mockFlush.mockClear();
+    mockPublish.mockClear();
+    mockHeaderSet.mockClear();
+    connectMock.mockClear();
+    connectMock.mockImplementation(() => Promise.resolve(mockConn));
+  });
+
+  it("builds the canonical condition_evaluated subject for a tenant", () => {
+    expect(buildConditionEvaluatedSubject("tenant-a")).toBe(
+      "evt.tenant-a.workflow-service.workflow.internal.native.condition_evaluated.v1"
+    );
+  });
+
+  it("matches the T01 fixture's subject convention and CloudEvents type", () => {
+    expect(conditionEvaluatedFixture.type).toBe(
+      "io.yoizen.workflow.condition.evaluated.v1"
+    );
+    expect(isCompliantEnvelope(conditionEvaluatedFixture)).toBe(true);
+    expect(
+      buildConditionEvaluatedSubject(conditionEvaluatedFixture.tenant)
+    ).toBe(
+      "evt.tenant-a.workflow-service.workflow.internal.native.condition_evaluated.v1"
+    );
+  });
+
+  /**
+   * Causal contract (TAXONOMY.md rule 19 design note, corrected 2026-07-12):
+   * condition_evaluated is a SIBLING hop off the run's execution_started
+   * event, NOT chained off the preceding action's action_completed. Depth
+   * is the SAME constant depth as the sibling action_started/completed
+   * events of the same run.
+   */
+  it("matches the T01 fixture's SIBLING causal contract (cites execution_started, constant depth)", () => {
+    expect(conditionEvaluatedFixture.causation_id).toBe(
+      executionStartedFixture.id
+    );
+    expect(conditionEvaluatedFixture.transport.depth).toBe(
+      executionStartedFixture.transport.depth + 1
+    );
+    expect(conditionEvaluatedFixture.transport.depth).toBe(
+      actionStartedFixture.transport.depth
+    );
+  });
+
+  it("publishes a spec-compliant envelope with expression/evaluatedValue/branchTaken/cases", async () => {
+    await publishConditionEvaluatedEvent({
+      executionId: "exec-1",
+      actionIndex: 1,
+      expression: "{{results.fetch-customer.data.tier}}",
+      evaluatedValue: "320",
+      branchTaken: "100-500",
+      cases: ["0-100", "100-500", "500+"],
+      tenantId: "tenant-a",
+      correlationId: "corr-1",
+      // SIBLING hop: causation cites the run's execution_started event
+      // id directly, not the preceding action's action_completed id.
+      causationId: "wf-exec-started-1",
+      depth: 3,
+    });
+
+    expect(mockPublish).toHaveBeenCalledTimes(1);
+    const [subject, payloadBytes] = mockPublish.mock.calls[0];
+    expect(subject).toBe(
+      "evt.tenant-a.workflow-service.workflow.internal.native.condition_evaluated.v1"
+    );
+
+    const envelope = JSON.parse(
+      new TextDecoder().decode(payloadBytes as Uint8Array)
+    );
+    expect(isCompliantEnvelope(envelope)).toBe(true);
+    expect(envelope.type).toBe("io.yoizen.workflow.condition.evaluated.v1");
+    expect(envelope.causation_id).toBe("wf-exec-started-1");
+    expect(envelope.correlation_id).toBe("corr-1");
+    expect(envelope.transport.depth).toBe(3);
+    expect(envelope.data.payload).toEqual({
+      executionId: "exec-1",
+      actionIndex: 1,
+      expression: "{{results.fetch-customer.data.tier}}",
+      evaluatedValue: "320",
+      branchTaken: "100-500",
+      cases: ["0-100", "100-500", "500+"],
+    });
+  });
+
+  it("sets branchTaken null for an if-without-else evaluating false", async () => {
+    await publishConditionEvaluatedEvent({
+      executionId: "exec-1",
+      actionIndex: 0,
+      expression: "{{results.check.status}}",
+      evaluatedValue: "pendiente",
+      branchTaken: null,
+      cases: ["approved"],
+      tenantId: "tenant-a",
+    });
+    const envelope = JSON.parse(
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
+    );
+    expect(envelope.data.payload.branchTaken).toBeNull();
+  });
+
+  it("includes truncated: true only when the caller sets it", async () => {
+    await publishConditionEvaluatedEvent({
+      executionId: "exec-1",
+      actionIndex: 0,
+      expression: "{{results.check.status}}",
+      evaluatedValue: "x".repeat(256),
+      branchTaken: "matches",
+      cases: ["matches"],
+      truncated: true,
+      tenantId: "tenant-a",
+    });
+    const envelope = JSON.parse(
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
+    );
+    expect(envelope.data.payload.truncated).toBe(true);
+    mockPublish.mockClear();
+
+    await publishConditionEvaluatedEvent({
+      executionId: "exec-1",
+      actionIndex: 0,
+      expression: "{{results.check.status}}",
+      evaluatedValue: "short",
+      branchTaken: "matches",
+      cases: ["matches"],
+      tenantId: "tenant-a",
+    });
+    const envelope2 = JSON.parse(
+      new TextDecoder().decode(mockPublish.mock.calls[0][1] as Uint8Array)
+    );
+    expect(envelope2.data.payload.truncated).toBeUndefined();
+  });
+
+  it("no-ops silently when tenantId is missing", async () => {
+    await publishConditionEvaluatedEvent({
+      executionId: "exec-no-tenant",
+      actionIndex: 0,
+      expression: "{{results.check.status}}",
+      evaluatedValue: "x",
+      branchTaken: null,
+      cases: [],
       tenantId: "",
     });
     expect(mockPublish).toHaveBeenCalledTimes(0);

@@ -7,7 +7,7 @@
     "x-yoizen-tenant": "acme",
     "Nats-Msg-Id": "sha256:wf-condition-evaluated-2",
     "X-Correlation-Id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
-    "X-Causation-Id": "3b324467-86a7-436d-93b6-80542c1e65d8",
+    "X-Causation-Id": "1c19bc4a-8864-4e3a-ac29-28f135140f1a",
     "traceparent": "00-829809fa85e4d535058d950c22b451ed-97c7b298bc05e4ee-01"
   },
   "envelope": {
@@ -18,7 +18,7 @@
     "resource": "tenant/acme/workflow-execution/exec-1316",
     "time": "2026-07-11T00:01:03.000Z",
     "traceid": "829809fa85e4d535058d950c22b451ed",
-    "causation_id": "3b324467-86a7-436d-93b6-80542c1e65d8",
+    "causation_id": "1c19bc4a-8864-4e3a-ac29-28f135140f1a",
     "correlation_id": "583625a7-8eb0-4189-a68b-b597eaff69c4",
     "tenant": "acme",
     "producer": "workflow-service",

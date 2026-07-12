@@ -79,6 +79,19 @@ interface IExecutionPublisherActivities {
       errorClass?: string;
     }
   ): Promise<void>;
+  publishConditionEvaluatedEvent(args: {
+    executionId: string;
+    actionIndex: number;
+    expression: string;
+    evaluatedValue: string;
+    branchTaken: string | null;
+    cases: string[];
+    truncated?: boolean;
+    tenantId: string;
+    correlationId?: string;
+    causationId?: string | null;
+    depth?: number;
+  }): Promise<void>;
 }
 
 interface IHttpActivities {
@@ -420,14 +433,24 @@ function extractInstanceRefs(action: WorkflowAction): {
  * reservation (best-effort telemetry: a lost event still counts
  * against the cap, which only pushes the run further under the cap,
  * never over it).
+ *
+ * `cost` (T04, `manual-loops/workflow-step-events.md`): generalizes
+ * the reservation beyond the action started+completed PAIR (cost 2,
+ * the default) so `condition_evaluated` — a SINGLE step event per
+ * `conditional` node, emitted alongside (not instead of) that node's
+ * own action_started/completed pair — can reserve exactly 1 slot
+ * through the SAME atomic decision+mutation critical section. The
+ * truncated-marker slot itself always costs 1, regardless of the
+ * caller's requested cost, since only one marker ever fires per run.
  */
 function reserveStepEmission(
-  state: StepEventState
+  state: StepEventState,
+  cost: 1 | 2 = 2
 ): "emit" | "truncated-marker" | "skip" {
   if (state.truncated) {
     return "skip";
   }
-  if (state.count + 2 > STEP_EVENT_CAP - 1) {
+  if (state.count + cost > STEP_EVENT_CAP - 1) {
     // Reserve the single truncated-marker slot synchronously — no
     // other sibling can observe count/truncated between this read
     // and this write because there is no await in between.
@@ -435,13 +458,106 @@ function reserveStepEmission(
     state.truncated = true;
     return "truncated-marker";
   }
-  // Reserve both the started AND completed slots up front so a
-  // concurrent sibling reading count immediately after this
-  // synchronous call sees the full cost of this action already
-  // accounted for, even though the two publishes themselves are
-  // still separated by awaits.
-  state.count += 2;
+  // Reserve the full requested cost up front so a concurrent sibling
+  // reading count immediately after this synchronous call sees the
+  // full cost of this event already accounted for, even though the
+  // publish itself is still separated by an await.
+  state.count += cost;
   return "emit";
+}
+
+/** SPEC decision 3: `evaluatedValue` is the scalar/short value only. */
+const EVALUATED_VALUE_MAX_LENGTH = 256;
+
+/**
+ * Stringifies + truncates the raw evaluated left-hand value for
+ * `condition_evaluated` (T04). Mirrors `evaluateCondition`'s own
+ * `String(left ?? "")` coercion so the reported value matches what
+ * was actually compared, never the full variable scope (SPEC
+ * decision 3).
+ */
+function truncateEvaluatedValue(value: unknown): {
+  value: string;
+  truncated: boolean;
+} {
+  const str = String(value ?? "");
+  if (str.length > EVALUATED_VALUE_MAX_LENGTH) {
+    return { value: str.slice(0, EVALUATED_VALUE_MAX_LENGTH), truncated: true };
+  }
+  return { value: str, truncated: false };
+}
+
+/**
+ * Emits `condition_evaluated` (T04) for a `conditional` node's
+ * evaluation. Fires ONCE per node (not per branch tested) — the
+ * expression/value reported are whichever branch's LEFT value decided
+ * the outcome (the matched branch, or the first-declared branch when
+ * nothing matched, mirroring a switch's subject expression). Reuses
+ * `reserveStepEmission`'s atomic reservation (cost 1) and the SAME
+ * truncated-marker fallback as action events — the volume cap is
+ * run-wide, not per-kind.
+ *
+ * Causal design (SPEC decision 2, consistent with T03): causation_id
+ * is the run's `execution_started` event id and depth matches action
+ * events — condition_evaluated is a SIBLING hop off execution_started,
+ * not chained to the conditional node's own action_started/completed.
+ */
+async function emitConditionEvaluatedTelemetry(
+  context: ExtendedContext,
+  actionIndex: number,
+  expression: string,
+  rawEvaluatedValue: unknown,
+  branchTaken: string | null,
+  cases: string[]
+): Promise<void> {
+  const stepEvents = context.stepEvents;
+  if (!stepEvents) {
+    return;
+  }
+
+  const emission = reserveStepEmission(stepEvents.state, 1);
+  if (emission === "skip") {
+    return;
+  }
+
+  const baseArgs = {
+    executionId: stepEvents.executionId,
+    actionIndex,
+    tenantId: stepEvents.tenantId,
+    correlationId: stepEvents.actionCausal.correlation_id,
+    causationId: stepEvents.actionCausal.causation_id,
+    depth: stepEvents.actionCausal.depth,
+  };
+
+  if (emission === "truncated-marker") {
+    try {
+      await publisher.publishActionCompletedEvent({
+        ...baseArgs,
+        actionType: "truncated",
+        actionName: "truncated",
+        status: "skipped",
+      });
+    } catch (_) {
+      // Best-effort: reservation already committed synchronously above.
+    }
+    return;
+  }
+
+  const { value: evaluatedValue, truncated } =
+    truncateEvaluatedValue(rawEvaluatedValue);
+
+  try {
+    await publisher.publishConditionEvaluatedEvent({
+      ...baseArgs,
+      expression,
+      evaluatedValue,
+      branchTaken,
+      cases,
+      ...(truncated && { truncated }),
+    });
+  } catch (_) {
+    // Best-effort: a telemetry gap must never block the workflow.
+  }
 }
 
 async function executeActionWithTelemetry(
@@ -452,7 +568,7 @@ async function executeActionWithTelemetry(
 ): Promise<unknown> {
   const stepEvents = context.stepEvents;
   if (!stepEvents) {
-    return executeAction(action, context, branchLabel);
+    return executeAction(action, context, branchLabel, actionIndex);
   }
 
   // Reserve the decision + counter/flag mutation SYNCHRONOUSLY, before
@@ -463,7 +579,7 @@ async function executeActionWithTelemetry(
   // to every other sibling's next `reserveStepEmission` call.
   const emission = reserveStepEmission(stepEvents.state);
   if (emission === "skip") {
-    return executeAction(action, context, branchLabel);
+    return executeAction(action, context, branchLabel, actionIndex);
   }
 
   const instanceRefs = extractInstanceRefs(action);
@@ -492,7 +608,7 @@ async function executeActionWithTelemetry(
       // the slot stays spent, which only makes the run's emitted
       // total further under the cap, never over it.
     }
-    return executeAction(action, context, branchLabel);
+    return executeAction(action, context, branchLabel, actionIndex);
   }
 
   try {
@@ -507,7 +623,12 @@ async function executeActionWithTelemetry(
   }
 
   try {
-    const result = await executeAction(action, context, branchLabel);
+    const result = await executeAction(
+      action,
+      context,
+      branchLabel,
+      actionIndex
+    );
     try {
       await publisher.publishActionCompletedEvent({
         ...baseArgs,
@@ -540,7 +661,15 @@ async function executeActionWithTelemetry(
 async function executeAction(
   action: WorkflowAction,
   context: ExtendedContext,
-  branchLabel?: string
+  branchLabel?: string,
+  /**
+   * 0-based position of `action` within its OWN action list (T04):
+   * threaded through so the `conditional` case can cite it on the
+   * `condition_evaluated` event, matching the SAME `actionIndex` the
+   * conditional node's own action_started/completed pair already
+   * reports. Only `conditional` uses it today.
+   */
+  actionIndex?: number
 ): Promise<unknown> {
   const tenant = context.workflow.tenant;
 
@@ -681,15 +810,43 @@ async function executeAction(
 
     case "conditional": {
       const condAction = action as ConditionalAction;
+      // T04 `condition_evaluated` payload's `cases`: declared case
+      // labels in definition order — independent of which one matched.
+      const cases = condAction.branches.map((b) => b.label);
+      const resolvedActionIndex = actionIndex ?? 0;
+
+      // T04: the node's reported expression/value are the FIRST
+      // declared branch's — well-formed multi-case definitions test
+      // the SAME variable across branches (SPEC "evaluó: 320 → caso
+      // 100–500"), so branch[0] is the node's representative "switch
+      // subject" even when a LATER branch matches (that branch's own
+      // left value is used instead in that case, see below). Captured
+      // from the loop's own evaluation (i === 0) — NOT a second
+      // resolvePathRaw call — so the evaluation itself never moves.
+      let firstBranchExpression: string | undefined;
+      let firstBranchValue: unknown;
 
       for (let i = 0; i < condAction.branches.length; i++) {
         const branch: IConditionalBranch = condAction.branches[i];
         const leftValue = resolvePathRaw(context, branch.condition.variable);
         const rightValue = resolveTemplates(branch.condition.value, context);
 
+        if (i === 0) {
+          firstBranchExpression = `{{${branch.condition.variable}}}`;
+          firstBranchValue = leftValue;
+        }
+
         if (
           evaluateCondition(leftValue, branch.condition.comparator, rightValue)
         ) {
+          await emitConditionEvaluatedTelemetry(
+            context,
+            resolvedActionIndex,
+            `{{${branch.condition.variable}}}`,
+            leftValue,
+            branch.label,
+            cases
+          );
           await executeActions(
             branch.actions,
             context,
@@ -700,6 +857,14 @@ async function executeAction(
       }
 
       if (condAction.default && condAction.default.length > 0) {
+        await emitConditionEvaluatedTelemetry(
+          context,
+          resolvedActionIndex,
+          firstBranchExpression ?? "",
+          firstBranchValue,
+          "default",
+          cases
+        );
         await executeActions(
           condAction.default,
           context,
@@ -708,6 +873,18 @@ async function executeAction(
         return { matchedBranch: "default" };
       }
 
+      // If-without-else evaluating false (or no branch matched and no
+      // default): branchTaken null (SPEC constraint). The skipped
+      // branch's own actions emit NOTHING — they never run
+      // executeActionWithTelemetry at all (not executed = no event).
+      await emitConditionEvaluatedTelemetry(
+        context,
+        resolvedActionIndex,
+        firstBranchExpression ?? "",
+        firstBranchValue,
+        null,
+        cases
+      );
       return { matchedBranch: null };
     }
 

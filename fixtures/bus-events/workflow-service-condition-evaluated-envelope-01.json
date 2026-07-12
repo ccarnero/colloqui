@@ -6,7 +6,7 @@
   "resource": "tenant/tenant-a/workflow-execution/exec-1",
   "time": "2026-07-11T00:00:03.000Z",
   "traceid": "trace-wf-1",
-  "causation_id": "wf-action-completed-1",
+  "causation_id": "wf-exec-started-1",
   "correlation_id": "corr-wf-1",
   "tenant": "tenant-a",
   "producer": "workflow-service",
@@ -15,7 +15,7 @@
   "provider": "native",
   "accountid": "system",
   "idempotencykey": "idem-wf-condition-evaluated-1",
-  "transport": { "method": "stream", "protocol": "internal", "depth": 4 },
+  "transport": { "method": "stream", "protocol": "internal", "depth": 3 },
   "data": {
     "received_at": "2026-07-11T00:00:03.000Z",
     "payload_inline": true,
