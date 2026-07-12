@@ -26,10 +26,10 @@ describe("buildSpansQuery", () => {
   it("selects kind_prefix and entity_id (SPEC.md T01 required columns)", () => {
     const { text } = buildSpansQuery("corr-1", "tenant-a");
     const normalized = text.replace(/\s+/g, " ").trim();
-    expect(normalized).toMatch(/SELECT\s+kind_prefix,\s*entity_id,/);
+    expect(normalized).toMatch(/kind_prefix,\s*entity_id,/);
   });
 
-  it("selects exactly the five SPEC.md T01 columns, no more", () => {
+  it("selects exactly the seven columns (five SPEC.md T01 columns plus event_id/causation_id for run-scoping, T01 of manual-loops/run-view.md), no more", () => {
     const { text } = buildSpansQuery("corr-1", "tenant-a");
     const selectClause = text.slice(
       text.indexOf("SELECT") + "SELECT".length,
@@ -39,6 +39,8 @@ describe("buildSpansQuery", () => {
       .split(",")
       .map((column) => column.replace(/\s+/g, " ").trim());
     expect(columns).toEqual([
+      "event_id",
+      "causation_id",
       "kind_prefix",
       "entity_id",
       "start_time AS started_at",

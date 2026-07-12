@@ -37,6 +37,8 @@ const EVENT: ChainEventRow = {
 };
 
 const SPAN: ChainSpanRow = {
+  event_id: "evt-span-1",
+  causation_id: null,
   kind_prefix: "channel",
   entity_id: "evt-1",
   started_at: "2026-07-01T00:00:00.000Z",

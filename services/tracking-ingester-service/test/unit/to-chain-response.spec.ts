@@ -33,6 +33,8 @@ function sampleEvent(overrides: Partial<ChainEventRow> = {}): ChainEventRow {
 
 function sampleSpan(overrides: Partial<ChainSpanRow> = {}): ChainSpanRow {
   return {
+    event_id: "evt-span-1",
+    causation_id: null,
     kind_prefix: "execution",
     entity_id: "run-1",
     started_at: "2026-07-11T12:00:00.000Z",

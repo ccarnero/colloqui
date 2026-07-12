@@ -10,8 +10,17 @@ export interface SpansQuery {
 }
 
 /** Row shape returned by the query built here — the five columns SPEC.md's
- * T01 requires from `tracking.tracked_event_spans`. */
+ * T01 requires from `tracking.tracked_event_spans`, PLUS `event_id`/
+ * `causation_id` (T01 of manual-loops/run-view.md, cross-run-leakage fix):
+ * `scope-run-spans.ts` needs these to attribute a span row to a specific
+ * run — `entity_id` alone is not enough (action-event spans carry no
+ * executionId-shaped entity_id at all, see that file's header). Both
+ * columns already exist on the underlying `tracking.tracked_event_spans`
+ * view (src/sql/span-pairs.sql's final SELECT) — this only widens the
+ * projection, no view change needed. */
 export interface ChainSpanRow {
+  event_id: string;
+  causation_id: string | null;
   kind_prefix: string | null;
   entity_id: string | null;
   started_at: string;
@@ -20,6 +29,8 @@ export interface ChainSpanRow {
 }
 
 const SPAN_COLUMNS = [
+  "event_id",
+  "causation_id",
   "kind_prefix",
   "entity_id",
   "start_time AS started_at",

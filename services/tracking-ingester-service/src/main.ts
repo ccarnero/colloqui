@@ -42,6 +42,7 @@ import {
 import postgres from "postgres";
 import { applySchema } from "./lib/apply-schema.js";
 import type { PayloadRow } from "./lib/build-payload-query.js";
+import type { RunRootRow } from "./lib/build-run-root-query.js";
 import {
   consumeEvents,
   makeTrackedEventHandler,
@@ -50,6 +51,7 @@ import {
 import { emitOtelSpans } from "./lib/emit-otel-spans.js";
 import { handleChainRequest } from "./lib/handle-chain-request.js";
 import { handlePayloadRequest } from "./lib/handle-payload-request.js";
+import { handleRunRequest } from "./lib/handle-run-request.js";
 import {
   buildHealthResponse,
   type ReadinessState,
@@ -62,6 +64,7 @@ import { loadTrackingIngesterConfig } from "./lib/load-config.js";
 import { loadSchemaStatements } from "./lib/load-schema-statements.js";
 import { matchChainRoute } from "./lib/match-chain-route.js";
 import { matchPayloadRoute } from "./lib/match-payload-route.js";
+import { matchRunRoute } from "./lib/match-run-route.js";
 import {
   normalizeChainEventRow,
   type RawChainEventRow,
@@ -70,6 +73,10 @@ import {
   normalizeChainSpanRow,
   type RawChainSpanRow,
 } from "./lib/normalize-chain-span-row.js";
+import {
+  normalizeRunEventRow,
+  type RawRunEventRow,
+} from "./lib/normalize-run-event-row.js";
 import { toOtelSpan } from "./lib/to-otel-span.js";
 import { toSpanSourceRow } from "./lib/to-span-source-row.js";
 import type { TrackedEventRow } from "./lib/to-tracked-event-row.js";
@@ -355,6 +362,42 @@ async function bootstrap(): Promise<void> {
             log: line,
           }
         ).then((result) =>
+          Response.json(result.body, { status: result.status })
+        );
+      }
+
+      // T01 of manual-loops/run-view.md: workflow run read endpoint. Route
+      // match (`matchRunRoute`) and the tenant/root/404 orchestration
+      // (`handleRunRequest`) are pure functions from src/lib; the
+      // `sql.unsafe(...)` round trips below are the only I/O.
+      const runRoute =
+        request.method === "GET" ? matchRunRoute(url.pathname) : null;
+      if (runRoute) {
+        const tenant = request.headers.get("x-yoizen-tenant");
+        line(
+          `GET /runs/${runRoute.workflowId}/${runRoute.runId} — tenant=${tenant ?? "MISSING"}`
+        );
+        return handleRunRequest(runRoute.workflowId, runRoute.runId, tenant, {
+          queryRoot: async (query) => {
+            return sql.unsafe<RunRootRow[]>(query.text, [...query.params]);
+          },
+          // Normalize driver rows before they reach the pure response
+          // shaping (`toRunResponse`), same `Date`/numeric coercion as the
+          // chains route.
+          queryEvents: async (query) => {
+            const rows = await sql.unsafe<RawRunEventRow[]>(query.text, [
+              ...query.params,
+            ]);
+            return rows.map(normalizeRunEventRow);
+          },
+          querySpans: async (query) => {
+            const rows = await sql.unsafe<RawChainSpanRow[]>(query.text, [
+              ...query.params,
+            ]);
+            return rows.map(normalizeChainSpanRow);
+          },
+          log: line,
+        }).then((result) =>
           Response.json(result.body, { status: result.status })
         );
       }
