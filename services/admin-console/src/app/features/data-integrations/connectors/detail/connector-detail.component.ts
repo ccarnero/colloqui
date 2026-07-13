@@ -142,7 +142,7 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
           @if (callsLoading()) {
             <div class="loader"><mat-spinner diameter="24"></mat-spinner><span>Loading recent calls…</span></div>
           } @else if (recentCalls().length === 0) {
-            <p class="no-calls">No calls in the last hour.</p>
+            <p class="no-calls">No calls in the last 7 days.</p>
           } @else {
             <div class="call-list">
               @for (c of recentCalls(); track $index; let idx = $index) {
@@ -602,7 +602,7 @@ export class ConnectorDetailComponent implements OnInit {
       ...(this.canViewCalls()
         ? [
             {
-              label: "Cache hits (1h)",
+              label: "Cache hits (7d)",
               value: String(
                 this.recentCalls().filter((c) => c.cacheResult === "hit").length
               ),
@@ -641,7 +641,7 @@ export class ConnectorDetailComponent implements OnInit {
       return;
     }
     this.callsLoading.set(true);
-    this.calls.recentCalls(id, 60, 20).subscribe({
+    this.calls.recentCalls(id, undefined, 20).subscribe({
       next: (rows) => {
         this.recentCalls.set(rows);
         this.callsLoading.set(false);

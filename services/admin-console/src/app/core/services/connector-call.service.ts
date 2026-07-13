@@ -3,10 +3,18 @@ import { Injectable, inject } from "@angular/core";
 import { map, type Observable } from "rxjs";
 import { environment } from "../../../environments/environment";
 
-const AUDIT = `${environment.apiUrl}/audit`;
+// T04 of manual-loops/connector-trace-linking.md: reads the durable causal
+// store (`tracking.tracked_events`) via the gateway's `GET /tracking/events`
+// route (proxying the ingester's T03 `GET /events`) instead of
+// audit-service's 60-minute window.
+const TRACKING = `${environment.apiUrl}/tracking`;
 const EVENT_TYPE = "connector.endpoint_call.completed.v1";
-/** Fetch more than we need so client-side filter by adapterId doesn't under-deliver. */
-const FETCH_LIMIT = 200;
+/** `envelope->>'resource'` shape set by
+ * `connector-runtime/src/activities/_shared/event-publisher.ts`
+ * (`resource: \`adapter/${adapterId}\``). */
+const RESOURCE_PREFIX = "adapter/";
+/** Default lookback window: 7 days (was 60 minutes under audit-service). */
+const DEFAULT_WINDOW_MIN = 7 * 24 * 60;
 
 const CONNECTOR_CACHE_RESULT = {
   HIT: "hit",
@@ -36,93 +44,77 @@ export interface IConnectorCall {
   readonly cacheTtlSeconds?: number;
 }
 
-interface IAuditListResponse {
-  events?: AuditRow[];
+/** `GET /tracking/events` row shape (verified live). Payload bodies are
+ * NEVER present here (by design — payload viewing stays in the trace
+ * console, `tracking-chain.service.ts`'s `getEventPayload`). */
+interface ITrackingEventRow {
+  readonly event_id?: string;
+  readonly correlation_id?: string | null;
+  readonly connector_id?: string | null;
+  readonly occurred_at?: string;
+  readonly payload_method?: string | null;
+  readonly payload_resolved_url?: string | null;
+  readonly payload_http_status?: number | null;
+  readonly payload_duration_ms?: number | null;
+  readonly payload_cache_result?: string | null;
 }
 
-type AuditRow = Record<string, unknown>;
+interface ITrackingEventsResponse {
+  readonly events?: ITrackingEventRow[];
+}
 
 @Injectable({ providedIn: "root" })
 export class ConnectorCallService {
   private readonly http = inject(HttpClient);
 
   /**
-   * Returns recent endpoint calls for a given adapter, client-side filtered.
+   * Returns recent endpoint calls for a given adapter, server-side filtered
+   * by `resource=adapter/<adapterId>`.
    * @param adapterId  Adapter to filter on.
-   * @param windowMin  How many minutes back to search (default 60).
-   * @param limit      Max rows to return after client-side filter (default 20).
+   * @param windowMin  How many minutes back to search (default 7 days).
+   * @param limit      Max rows to return (default 20).
    */
   recentCalls(
     adapterId: string,
-    windowMin = 60,
+    windowMin = DEFAULT_WINDOW_MIN,
     limit = 20
   ): Observable<IConnectorCall[]> {
     const from = new Date(Date.now() - windowMin * 60_000).toISOString();
     const params = new HttpParams()
       .set("type", EVENT_TYPE)
+      .set("resource", `${RESOURCE_PREFIX}${adapterId}`)
       .set("from", from)
-      .set("limit", String(FETCH_LIMIT));
+      .set("limit", String(limit));
 
     return this.http
-      .get<IAuditListResponse>(`${AUDIT}/events`, { params })
+      .get<ITrackingEventsResponse>(`${TRACKING}/events`, { params })
       .pipe(
-        map((res) =>
-          (res.events ?? [])
-            .map(toCall)
-            .filter(
-              (c): c is IConnectorCall =>
-                c !== null && c.adapterId === adapterId
-            )
-            .slice(0, limit)
-        )
+        map((res) => (res.events ?? []).map((row) => toCall(row, adapterId)))
       );
   }
 }
 
-function toCall(row: AuditRow): IConnectorCall | null {
-  const rawPayload = row["payload"];
-  const payload = parsePayload(rawPayload);
-  const adapterId = str(payload["adapterId"]);
-  if (!adapterId) {
-    return null;
-  }
+function toCall(row: ITrackingEventRow, adapterId: string): IConnectorCall {
   return {
-    adapterId,
-    endpointId: str(payload["endpointId"]) || null,
-    method: str(payload["method"]) || "GET",
-    resolvedUrl: str(payload["resolvedUrl"]),
-    status: num(payload["status"]),
-    durationMs: num(payload["durationMs"]),
-    cacheResult: normalizeCacheResult(payload["cacheResult"]),
-    timestamp: str(row["created_at"]) || str(row["createdAt"]),
-    correlationId:
-      str(row["correlation_id"]) || str(row["correlationId"]) || undefined,
-    requestHeaders: recordField(payload["requestHeaders"]),
-    requestBody: parseBodyField(payload["requestBody"]),
-    responseHeaders: recordField(payload["responseHeaders"]),
-    responseBody: parseBodyField(payload["responseBody"]),
-    cacheKey: str(payload["cacheKey"]) || undefined,
-    cacheTtlSeconds:
-      typeof payload["cacheTtlSeconds"] === "number"
-        ? payload["cacheTtlSeconds"]
-        : undefined,
+    adapterId: row.connector_id ?? adapterId,
+    // `endpointId` is not present in the tracked-events projection
+    // (`build-events-query.ts`'s `EventRow`) — never available from this
+    // endpoint.
+    endpointId: null,
+    method: row.payload_method ?? "GET",
+    resolvedUrl: row.payload_resolved_url ?? "",
+    status: row.payload_http_status ?? 0,
+    durationMs: row.payload_duration_ms ?? 0,
+    cacheResult: normalizeCacheResult(row.payload_cache_result),
+    timestamp: row.occurred_at ?? "",
+    correlationId: row.correlation_id ?? undefined,
   };
 }
 
-function parsePayload(rawPayload: unknown): Record<string, unknown> {
-  if (typeof rawPayload === "string") {
-    try {
-      const parsed = JSON.parse(rawPayload) as unknown;
-      return recordFieldUnknown(parsed) ?? {};
-    } catch {
-      return {};
-    }
-  }
-  return recordFieldUnknown(rawPayload) ?? {};
-}
-
-function normalizeCacheResult(v: unknown): ConnectorCacheResult {
-  const value = str(v).toLowerCase();
+function normalizeCacheResult(
+  v: string | null | undefined
+): ConnectorCacheResult {
+  const value = (v ?? "").toLowerCase();
   if (
     value === CONNECTOR_CACHE_RESULT.HIT ||
     value === CONNECTOR_CACHE_RESULT.MISS ||
@@ -131,35 +123,4 @@ function normalizeCacheResult(v: unknown): ConnectorCacheResult {
     return value;
   }
   return null;
-}
-
-function str(v: unknown): string {
-  return typeof v === "string" ? v : "";
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" ? v : 0;
-}
-
-function parseBodyField(v: unknown): unknown {
-  if (typeof v !== "string") {
-    return undefined;
-  }
-  try {
-    return JSON.parse(v);
-  } catch {
-    return v;
-  }
-}
-
-function recordField(v: unknown): Record<string, string> | undefined {
-  return v !== null && typeof v === "object" && !Array.isArray(v)
-    ? (v as Record<string, string>)
-    : undefined;
-}
-
-function recordFieldUnknown(v: unknown): Record<string, unknown> | undefined {
-  return v !== null && typeof v === "object" && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : undefined;
 }

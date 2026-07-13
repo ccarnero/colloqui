@@ -19,7 +19,7 @@ import { RunViewPopupComponent } from "./run-view-popup.component";
 import type { IAnchorRect } from "./run-view-popup-render";
 
 const CONNECTORS_URL = `${environment.apiUrl}/connectors`;
-const AUDIT_URL = `${environment.apiUrl}/audit/events`;
+const TRACKING_EVENTS_URL = `${environment.apiUrl}/tracking/events`;
 const AGENTS_URL = `${environment.apiUrl}/admin/agents`;
 const CHANNELS_URL = `${environment.apiUrl}/channels/accounts`;
 const PAYLOAD_URL = (correlationId: string, eventId: string) =>
@@ -313,7 +313,7 @@ describe("RunViewPopupComponent", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
           endpoints: [],
         });
-      httpMock.expectOne((r) => r.url === AUDIT_URL).flush({ events: [] });
+      httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL).flush({ events: [] });
       fixture.detectChanges();
 
       const text = el().textContent ?? "";
@@ -345,7 +345,7 @@ describe("RunViewPopupComponent", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
           endpoints: [],
         });
-      httpMock.expectOne((r) => r.url === AUDIT_URL).flush({ events: [] });
+      httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL).flush({ events: [] });
       fixture.detectChanges();
 
       const link = el().querySelector("a.rvp-deep-link") as HTMLAnchorElement;
@@ -375,7 +375,7 @@ describe("RunViewPopupComponent", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
           endpoints: [],
         });
-      httpMock.expectOne((r) => r.url === AUDIT_URL).flush({ events: [] });
+      httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL).flush({ events: [] });
       fixture.detectChanges();
 
       (el().querySelector(".rvp-back") as HTMLElement).click();

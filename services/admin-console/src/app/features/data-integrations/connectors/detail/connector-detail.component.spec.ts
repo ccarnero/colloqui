@@ -133,6 +133,19 @@ describe("ConnectorDetailComponent", () => {
     expect(calls.recentCalls).not.toHaveBeenCalled();
   });
 
+  it("shows the 7-day window in the empty state copy", async () => {
+    await setup(of(makeAdapter()), true, of([]));
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+    expect(text).toContain("No calls in the last 7 days.");
+  });
+
+  it("passes the default (7-day) window through to recentCalls", async () => {
+    await setup(of(makeAdapter()), true, of([]));
+
+    expect(calls.recentCalls).toHaveBeenCalledWith("adp-1", undefined, 20);
+  });
+
   it("shows cache hit calls even when current cache config is absent", async () => {
     await setup(
       of(makeAdapter({ defaultCache: undefined, endpoints: [] })),
@@ -152,7 +165,7 @@ describe("ConnectorDetailComponent", () => {
     );
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
-    expect(text).toContain("Cache hits (1h)");
+    expect(text).toContain("Cache hits (7d)");
     expect(text).toContain("hit");
   });
 });

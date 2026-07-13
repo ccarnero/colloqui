@@ -5,29 +5,27 @@ import {
   provideHttpClientTesting,
 } from "@angular/common/http/testing";
 import { TestBed } from "@angular/core/testing";
-import { describe, expect, it, afterEach, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { environment } from "../../../environments/environment";
 import { ConnectorCallService } from "./connector-call.service";
 
-const AUDIT_URL = `${environment.apiUrl}/audit/events`;
+const TRACKING_EVENTS_URL = `${environment.apiUrl}/tracking/events`;
 const EVENT_TYPE = "connector.endpoint_call.completed.v1";
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-// payload arrives from the API as a JSON string (JSONB serialized by postgres.js)
 function makeRow(
-  adapterId: string,
   overrides: Record<string, unknown> = {}
 ): Record<string, unknown> {
   return {
-    payload: JSON.stringify({
-      adapterId,
-      endpointId: "ep-1",
-      method: "GET",
-      resolvedUrl: "https://api.example.com/data",
-      status: 200,
-      durationMs: 50,
-      cacheResult: "hit",
-    }),
-    created_at: "2026-06-01T12:00:00.000Z",
+    event_id: "evt-1",
+    correlation_id: "corr-1",
+    connector_id: "adp-target",
+    occurred_at: "2026-06-01T12:00:00.000Z",
+    payload_method: "GET",
+    payload_resolved_url: "https://api.example.com/data",
+    payload_http_status: 200,
+    payload_duration_ms: 50,
+    payload_cache_result: "hit",
     ...overrides,
   };
 }
@@ -53,116 +51,103 @@ describe("ConnectorCallService", () => {
     TestBed.resetTestingModule();
   });
 
-  it("requests the correct URL with required query params", () => {
-    service.recentCalls("adp-1").subscribe();
+  it("requests the tracking/events route with required query params", () => {
+    service.recentCalls("adp-target").subscribe();
 
-    const req = httpMock.expectOne((r) => r.url === AUDIT_URL);
+    const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
     expect(req.request.method).toBe("GET");
     expect(req.request.params.get("type")).toBe(EVENT_TYPE);
-    expect(req.request.params.get("limit")).toBe("200");
+    expect(req.request.params.get("resource")).toBe("adapter/adp-target");
+    expect(req.request.params.get("limit")).toBe("20");
     expect(req.request.params.get("from")).toBeTruthy();
     req.flush({ events: [] });
   });
 
-  it("client-side filters by adapterId", () => {
+  it("defaults the lookback window to 7 days", () => {
+    const before = Date.now();
+    service.recentCalls("adp-target").subscribe();
+
+    const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+    const from = new Date(req.request.params.get("from") ?? "").getTime();
+    expect(before - from).toBeGreaterThanOrEqual(SEVEN_DAYS_MS - 5000);
+    expect(before - from).toBeLessThanOrEqual(SEVEN_DAYS_MS + 5000);
+    req.flush({ events: [] });
+  });
+
+  it("maps tracking-event rows into IConnectorCall", () => {
     let result: unknown[] = [];
     service.recentCalls("adp-target").subscribe((rows) => (result = rows));
 
-    const req = httpMock.expectOne((r) => r.url === AUDIT_URL);
-    req.flush({
-      events: [
-        makeRow("adp-target"),
-        makeRow("adp-other"),
-        makeRow("adp-target"),
-      ],
-    });
+    const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+    req.flush({ events: [makeRow()] });
 
-    expect(result.length).toBe(2);
-    expect(
-      (result as Array<{ adapterId: string }>).every(
-        (c) => c.adapterId === "adp-target"
-      )
-    ).toBe(true);
+    expect(result).toEqual([
+      {
+        adapterId: "adp-target",
+        endpointId: null,
+        method: "GET",
+        resolvedUrl: "https://api.example.com/data",
+        status: 200,
+        durationMs: 50,
+        cacheResult: "hit",
+        timestamp: "2026-06-01T12:00:00.000Z",
+        correlationId: "corr-1",
+      },
+    ]);
   });
 
-  it("slices to the requested limit", () => {
-    let result: unknown[] = [];
-    service.recentCalls("adp-1", 60, 20).subscribe((rows) => (result = rows));
+  it("respects a custom limit", () => {
+    service.recentCalls("adp-1", 60, 5).subscribe();
 
-    const req = httpMock.expectOne((r) => r.url === AUDIT_URL);
-    req.flush({
-      events: Array.from({ length: 25 }, () => makeRow("adp-1")),
-    });
-
-    expect(result.length).toBe(20);
+    const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+    expect(req.request.params.get("limit")).toBe("5");
+    req.flush({ events: [] });
   });
 
-  it("drops rows without payload.adapterId", () => {
-    let result: unknown[] = [];
-    service.recentCalls("adp-1").subscribe((rows) => (result = rows));
-
-    const req = httpMock.expectOne((r) => r.url === AUDIT_URL);
-    req.flush({
-      events: [
-        { payload: "{}", created_at: "2026-06-01T12:00:00.000Z" }, // no adapterId
-        makeRow("adp-1"),
-      ],
-    });
-
-    expect(result.length).toBe(1);
-  });
-
-  it("normalizes uppercase cache results from older audit rows", () => {
+  it("normalizes uppercase cache results", () => {
     let result: Array<{ cacheResult: string | null }> = [];
     service.recentCalls("adp-1").subscribe((rows) => (result = rows));
 
-    const req = httpMock.expectOne((r) => r.url === AUDIT_URL);
+    const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
     req.flush({
-      events: [
-        makeRow("adp-1", {
-          payload: JSON.stringify({
-            adapterId: "adp-1",
-            method: "GET",
-            resolvedUrl: "https://api.example.com/data",
-            status: 200,
-            durationMs: 50,
-            cacheResult: "HIT",
-          }),
-        }),
-      ],
+      events: [makeRow({ payload_cache_result: "HIT" })],
     });
 
     expect(result[0]?.cacheResult).toBe("hit");
   });
 
-  it("accepts createdAt (camelCase) as timestamp key", () => {
-    let result: Array<{ timestamp: string }> = [];
-    service.recentCalls("adp-1").subscribe((rows) => (result = rows));
-
-    const req = httpMock.expectOne((r) => r.url === AUDIT_URL);
-    req.flush({
-      events: [
-        {
-          payload: JSON.stringify({
-            adapterId: "adp-1",
-            method: "GET",
-            status: 200,
-          }),
-          createdAt: "2026-06-02T09:00:00.000Z",
-        },
-      ],
-    });
-
-    expect(result[0]?.timestamp).toBe("2026-06-02T09:00:00.000Z");
-  });
-
-  it("leaves correlationId undefined when absent (not empty string)", () => {
+  it("leaves correlationId undefined when absent (not null)", () => {
     let result: Array<{ correlationId?: string }> = [];
     service.recentCalls("adp-1").subscribe((rows) => (result = rows));
 
-    const req = httpMock.expectOne((r) => r.url === AUDIT_URL);
-    req.flush({ events: [makeRow("adp-1")] }); // no correlation_id field
+    const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+    req.flush({
+      events: [makeRow({ correlation_id: null })],
+    });
 
     expect(result[0]?.correlationId).toBeUndefined();
+  });
+
+  it("falls back to the requested adapterId when connector_id is absent", () => {
+    let result: Array<{ adapterId: string }> = [];
+    service.recentCalls("adp-fallback").subscribe((rows) => (result = rows));
+
+    const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+    req.flush({
+      events: [makeRow({ connector_id: null })],
+    });
+
+    expect(result[0]?.adapterId).toBe("adp-fallback");
+  });
+
+  it("never attempts to read a request/response body (payload viewing stays in the trace console)", () => {
+    let result: Array<{ requestBody?: unknown; responseBody?: unknown }> = [];
+    service.recentCalls("adp-1").subscribe((rows) => (result = rows));
+
+    const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+    req.flush({ events: [makeRow()] });
+
+    expect(result[0]?.requestBody).toBeUndefined();
+    expect(result[0]?.responseBody).toBeUndefined();
   });
 });
