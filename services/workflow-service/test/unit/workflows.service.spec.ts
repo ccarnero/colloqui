@@ -193,6 +193,26 @@ describe("WorkflowsService", () => {
     expect(rows[0]?.id).toBe("def-1");
   });
 
+  // Regression: list/get must echo the persisted status. It was dropped by
+  // toCreateResult, so disabled workflows rendered as enabled in the console
+  // after a reload even though executions were still blocked.
+  it("listWorkflows includes the persisted status", async () => {
+    mockDefinitions.findDefinitionsByTenant.mockResolvedValueOnce([
+      { ...baseRow, status: WorkflowStatus.DISABLED },
+    ]);
+    const rows = await service.listWorkflows("t1");
+    expect(rows[0]?.status).toBe(WorkflowStatus.DISABLED);
+  });
+
+  it("getWorkflow includes the persisted status", async () => {
+    mockDefinitions.findDefinitionById.mockResolvedValueOnce({
+      ...baseRow,
+      status: WorkflowStatus.DISABLED,
+    });
+    const row = await service.getWorkflow("def-1", "t1");
+    expect(row.status).toBe(WorkflowStatus.DISABLED);
+  });
+
   it("getWorkflow throws when missing", async () => {
     mockDefinitions.findDefinitionById.mockResolvedValueOnce(undefined);
     await expect(service.getWorkflow("missing", "t1")).rejects.toBeInstanceOf(

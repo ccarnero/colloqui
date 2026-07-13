@@ -654,6 +654,16 @@ Already-running executions are unaffected by the block point; those are stopped 
 the termination sweep triggered from `updateWorkflowStatus`, not by
 `executeWorkflow`.
 
+### Read endpoints echo `status`
+
+`GET /workflows` and `GET /workflows/:id` include the persisted `status` field on
+each definition. Clients (the admin console in particular) treat a missing `status`
+as `enabled` for legacy rows, so the read side MUST project the column — an earlier
+regression dropped it from the list/get mapping and disabled workflows rendered as
+enabled in the console after a reload, while executions were still correctly
+blocked. Covered by regression tests in `test/unit/workflows.service.spec.ts`
+("listWorkflows/getWorkflow includes the persisted status").
+
 ## Multi-Tenancy & Per-Tenant Databases
 
 ### Tenant Isolation

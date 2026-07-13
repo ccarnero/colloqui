@@ -93,6 +93,7 @@ export interface ICreateWorkflowResult {
   actions: unknown;
   trigger: unknown;
   variables: unknown;
+  status: WorkflowStatusValue;
   createdAt: Date;
 }
 
@@ -863,6 +864,7 @@ export class WorkflowsService {
       actions: row.actions,
       trigger: row.trigger,
       variables: row.variables,
+      status: row.status,
       createdAt: row.created_at,
     };
   }

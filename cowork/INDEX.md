@@ -79,6 +79,13 @@ Decision cuádruple:
   `services/workflow-service/src/modules/workflows/workflows.service.ts` — both the
   HTTP execute endpoint and the trigger-fired path go through it.
 
+Post-delivery fix (2026-07-13): `GET /workflows` and `GET /workflows/:id` dropped the
+`status` field (`toCreateResult` didn't project it), so disabled workflows rendered as
+enabled in the console after a reload while executions stayed correctly blocked. Read
+endpoints now echo the persisted status — contract in
+`services/workflow-service/README.md` §"Read endpoints echo `status`", regression
+tests in `test/unit/workflows.service.spec.ts`.
+
 ## Change: workflow step-event telemetry (workflow-step-events)
 
 Spec-driven change making `workflow-service` observable at step level: every run now
