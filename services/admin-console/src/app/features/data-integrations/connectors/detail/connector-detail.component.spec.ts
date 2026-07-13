@@ -168,4 +168,41 @@ describe("ConnectorDetailComponent", () => {
     expect(text).toContain("Cache hits (7d)");
     expect(text).toContain("hit");
   });
+
+  it("renders the scalar row + View trace link, with the dead REQUEST/RESPONSE sections removed (T09)", async () => {
+    await setup(
+      of(makeAdapter({ defaultCache: undefined, endpoints: [] })),
+      true,
+      of([
+        {
+          adapterId: "adp-1",
+          endpointId: "ep-1",
+          method: "GET",
+          resolvedUrl: "https://api.example.com/data",
+          status: 200,
+          durationMs: 20,
+          cacheResult: "hit",
+          timestamp: "2026-06-01T12:00:00.000Z",
+          correlationId: "corr-42",
+        },
+      ])
+    );
+
+    const host = fixture.nativeElement as HTMLElement;
+    // Scalar row present.
+    expect(host.querySelector(".call-row")).toBeTruthy();
+    const text = host.textContent ?? "";
+    expect(text).toContain("GET");
+    expect(text).toContain("200");
+    // View-trace link present and always visible (no expand needed).
+    const trace = host.querySelector(
+      "a.trace-link[href='/processes/trace/corr-42']"
+    );
+    expect(trace).toBeTruthy();
+    // Dead audit-era expand/detail markup gone.
+    expect(host.querySelector(".call-detail")).toBeFalsy();
+    expect(host.querySelector(".detail-section")).toBeFalsy();
+    expect(text).not.toContain("Request");
+    expect(text).not.toContain("Response");
+  });
 });

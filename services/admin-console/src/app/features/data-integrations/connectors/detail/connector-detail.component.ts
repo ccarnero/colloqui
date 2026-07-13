@@ -144,18 +144,15 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
           } @else if (recentCalls().length === 0) {
             <p class="no-calls">No calls in the last 7 days.</p>
           } @else {
+            <!-- T09: the audit-era REQUEST/RESPONSE (and cache-key/TTL)
+                 expand sections were removed — since T04 the scalar row is
+                 sourced from tracking.tracked_events, which never carries
+                 payload bodies (payload viewing stays in the trace console,
+                 by SPEC decision). Only the scalar row + View-trace link
+                 remain as the payload path. -->
             <div class="call-list">
-              @for (c of recentCalls(); track $index; let idx = $index) {
-                <div
-                  class="call-row"
-                  [class.expanded]="expandedIdx() === idx"
-                  (click)="toggleExpand(idx)"
-                  role="button"
-                  tabindex="0"
-                  (keydown.enter)="toggleExpand(idx)"
-                  (keydown.space)="toggleExpand(idx)"
-                  [attr.aria-expanded]="expandedIdx() === idx"
-                >
+              @for (c of recentCalls(); track $index) {
+                <div class="call-row">
                   <span class="call-ts">{{ c.timestamp | utcDate: "medium" }}</span>
                   <span class="call-method">{{ c.method }}</span>
                   <span class="call-status" [class]="statusClass(c.status)">{{ c.status }}</span>
@@ -171,87 +168,14 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
                       {{ c.cacheResult }}
                     </span>
                   }
-
-                  @if (expandedIdx() === idx) {
-                    <div class="call-detail" (click)="$event.stopPropagation()">
-                      <!-- Request -->
-                      <div class="detail-section">
-                        <div class="detail-label">Request</div>
-                        <div class="detail-row">
-                          <span class="detail-sub">URL</span>
-                          <pre class="detail-pre mono">{{ c.resolvedUrl }}</pre>
-                        </div>
-                        @if (c.requestHeaders) {
-                          <div class="detail-row">
-                            <span class="detail-sub">Headers</span>
-                            <pre class="detail-pre mono">{{ formatHeaders(c.requestHeaders) }}</pre>
-                          </div>
-                        }
-                        @if (c.requestBody) {
-                          <div class="detail-row">
-                            <span class="detail-sub">Body</span>
-                            <pre class="detail-pre mono">{{ formatBody(c.requestBody) }}</pre>
-                          </div>
-                        }
-                      </div>
-
-                      <!-- Response -->
-                      <div class="detail-section">
-                        <div class="detail-label">Response</div>
-                        @if (c.responseHeaders) {
-                          <div class="detail-row">
-                            <span class="detail-sub">Headers</span>
-                            <pre class="detail-pre mono">{{ formatHeaders(c.responseHeaders) }}</pre>
-                          </div>
-                        }
-                        @if (c.responseBody) {
-                          <div class="detail-row">
-                            <span class="detail-sub">Body</span>
-                            <pre class="detail-pre mono">{{ formatBody(c.responseBody) }}</pre>
-                          </div>
-                        }
-                      </div>
-
-                      <!-- Cache -->
-                      @if (c.cacheResult) {
-                        <div class="detail-section">
-                          <div class="detail-label">Cache</div>
-                          <div class="detail-row">
-                            <span class="detail-sub">Result</span>
-                            <span
-                              class="call-cache"
-                              [class.cache-hit]="c.cacheResult === 'hit'"
-                              [class.cache-miss]="c.cacheResult === 'miss'"
-                              [class.cache-bypass]="c.cacheResult === 'bypass'"
-                            >
-                              {{ c.cacheResult }}
-                            </span>
-                          </div>
-                          @if (c.cacheKey) {
-                            <div class="detail-row">
-                              <span class="detail-sub">Key</span>
-                              <pre class="detail-pre mono">{{ c.cacheKey }}</pre>
-                            </div>
-                          }
-                          @if (c.cacheTtlSeconds !== undefined) {
-                            <div class="detail-row">
-                              <span class="detail-sub">TTL</span>
-                              <span>{{ c.cacheTtlSeconds }}s</span>
-                            </div>
-                          }
-                        </div>
-                      }
-
-                      <!-- Trace link -->
-                      @if (c.correlationId) {
-                        <div class="detail-section detail-trace">
-                          <a [routerLink]="['/processes/trace', c.correlationId]" class="trace-link">
-                            <mat-icon>open_in_new</mat-icon>
-                            View trace
-                          </a>
-                        </div>
-                      }
-                    </div>
+                  @if (c.correlationId) {
+                    <a
+                      [routerLink]="['/processes/trace', c.correlationId]"
+                      class="trace-link"
+                    >
+                      <mat-icon>open_in_new</mat-icon>
+                      View trace
+                    </a>
                   }
                 </div>
               }
@@ -557,7 +481,6 @@ export class ConnectorDetailComponent implements OnInit {
   readonly errorMessage = signal<string | null>(null);
   readonly recentCalls = signal<IConnectorCall[]>([]);
   readonly callsLoading = signal(false);
-  readonly expandedIdx = signal<number | null>(null);
 
   readonly canViewCalls = computed(() =>
     this.auth.hasPermission(DIAGNOSTICS_PERMISSION)
@@ -650,29 +573,6 @@ export class ConnectorDetailComponent implements OnInit {
         this.callsLoading.set(false);
       },
     });
-  }
-
-  protected toggleExpand(idx: number): void {
-    this.expandedIdx.update((cur) => (cur === idx ? null : idx));
-  }
-
-  protected formatHeaders(headers: Record<string, string> | undefined): string {
-    if (!headers) {
-      return "";
-    }
-    return Object.entries(headers)
-      .map(([k, v]) => `${k}: ${v}`)
-      .join("\n");
-  }
-
-  protected formatBody(body: unknown): string {
-    if (body === undefined || body === null) {
-      return "";
-    }
-    if (typeof body === "string") {
-      return body;
-    }
-    return JSON.stringify(body, null, 2);
   }
 
   protected shortUrl(url: string): string {

@@ -269,6 +269,39 @@ ephemeral account.
 # a run WITH E2E_KEEP=1 leaves them and shows accountIds-scoped triggers.
 ```
 
+### T09 — Run view: HTTP payload of endpointCall steps + Recent calls dead sections
+
+Added 2026-07-13 after user report: the run-view popup's "View request/response"
+buttons fetch the payloads of the `action_started`/`action_completed` WRAPPER
+events (generic `{actionName, actionIndex, connectorId, ...}`), never the
+connector's `endpoint_call_completed` event — whose stored payload carries the
+real HTTP data (`method`, `resolvedUrl`, `status`, `requestHeaders`,
+`requestBody`, `responseHeaders`, `responseBody` — verified live via the chain
+payload endpoint). The causal graph's endpoint_call node payload button already
+shows it; the run view never offers it.
+
+1. **Run view popup** — for `endpointCall` steps, resolve the step's
+   `endpoint_call_completed` event(s) in the same chain (match by
+   `connector_id` + occurred_at within the step's started/completed window;
+   prefer exposing the matched event id server-side from the run endpoint if
+   the ingester already joins those rows) and add "View HTTP request /
+   response" actions that open THAT event's payload through the existing
+   payload viewer (same `tracking:payload:read` guard, same claim-check
+   handling). The wrapper Request/response buttons stay (renamed to make the
+   distinction obvious, e.g. "Action request/response").
+2. **Recent calls (connector detail)** — remove the dead REQUEST/RESPONSE
+   sections left from the audit era (they render empty by design since T04:
+   entity screens never show payloads). Keep the scalar row (method, URL,
+   status, duration, cache) and the View trace link as the payload path.
+3. A branch fan-out can run several endpointCalls under ONE step context —
+   if more than one endpoint_call event matches the step, list them all
+   (URL + status per entry), each opening its own payload.
+
+**Accept**
+```
+cd services/admin-console && pnpm test
+```
+
 ### T07 — Docs + index
 
 - `services/connector-runtime/README.md`: causal contract of endpoint_call events
@@ -292,6 +325,7 @@ grep -n "connector-trace-linking" cowork/INDEX.md
 - [x] T05 deep links detail card → entity screens (mcp/hosted: no tracked events exist today — mapping returns null; causal-graph agent link needs ingester agentId extraction, future work)
 - [x] T06 cluster e2e correlation round-trip (orphan evidence 2026-07-13: pre-fix rows stay at orphans=4 across runs; every post-fix run's endpoint_call row lands WITH siblings — with_siblings grew 6→18 over the day's runs. Bonus: fixed a pre-existing SIGPIPE/pipefail false-negative in the stage-5/7 log pollers that had been misread as flakiness)
 - [x] T07 docs + index
+- [x] T09 run-view HTTP payloads for endpointCall steps + Recent calls cleanup
 - [x] T08 e2e isolation: account-scoped triggers + end-of-run cleanup (live-verified 2026-07-13: clean run leaves 0 e2e defs/accounts/agents; E2E_KEEP run's triggers carry the per-run accountIds; next run converges keeper leftovers. Bonus fixes: stage-5b wait-for-COMPLETED — disable was terminating the 2-action happy path mid-probe — and empty-body DELETE 400s that had silently no-op'd the stale sweep, 28 accounts piled up)
 
 ## Out of scope (explicit)

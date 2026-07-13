@@ -358,9 +358,12 @@ describe("RunViewPopupComponent", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
           endpoints: [],
         });
-      httpMock
-        .expectOne((r) => r.url === TRACKING_EVENTS_URL)
-        .flush({ events: [] });
+      // Two `/tracking/events` requests now exist: the T09 eager
+      // endpoint_call resolver (fires when an endpointCall step opens) and
+      // this peek's own recent-calls fetch. Flush both.
+      for (const req of httpMock.match((r) => r.url === TRACKING_EVENTS_URL)) {
+        req.flush({ events: [] });
+      }
       fixture.detectChanges();
 
       const text = el().textContent ?? "";
@@ -392,9 +395,12 @@ describe("RunViewPopupComponent", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
           endpoints: [],
         });
-      httpMock
-        .expectOne((r) => r.url === TRACKING_EVENTS_URL)
-        .flush({ events: [] });
+      // Two `/tracking/events` requests now exist: the T09 eager
+      // endpoint_call resolver (fires when an endpointCall step opens) and
+      // this peek's own recent-calls fetch. Flush both.
+      for (const req of httpMock.match((r) => r.url === TRACKING_EVENTS_URL)) {
+        req.flush({ events: [] });
+      }
       fixture.detectChanges();
 
       const link = el().querySelector("a.rvp-deep-link") as HTMLAnchorElement;
@@ -424,9 +430,12 @@ describe("RunViewPopupComponent", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
           endpoints: [],
         });
-      httpMock
-        .expectOne((r) => r.url === TRACKING_EVENTS_URL)
-        .flush({ events: [] });
+      // Two `/tracking/events` requests now exist: the T09 eager
+      // endpoint_call resolver (fires when an endpointCall step opens) and
+      // this peek's own recent-calls fetch. Flush both.
+      for (const req of httpMock.match((r) => r.url === TRACKING_EVENTS_URL)) {
+        req.flush({ events: [] });
+      }
       fixture.detectChanges();
 
       (el().querySelector(".rvp-back") as HTMLElement).click();
@@ -550,7 +559,7 @@ describe("RunViewPopupComponent", () => {
     it("fetches and shows the request payload on demand", () => {
       setup();
       const btn = Array.from(el().querySelectorAll("button")).find((b) =>
-        b.textContent?.includes("View request")
+        b.textContent?.includes("Action request")
       ) as HTMLElement;
       btn.click();
       fixture.detectChanges();
@@ -568,7 +577,7 @@ describe("RunViewPopupComponent", () => {
     it("shows the expired state on a 410", () => {
       setup();
       const btn = Array.from(el().querySelectorAll("button")).find((b) =>
-        b.textContent?.includes("View response")
+        b.textContent?.includes("Action response")
       ) as HTMLElement;
       btn.click();
       fixture.detectChanges();
@@ -587,7 +596,7 @@ describe("RunViewPopupComponent", () => {
     it("shows the not-captured state on a 404", () => {
       setup();
       const btn = Array.from(el().querySelectorAll("button")).find((b) =>
-        b.textContent?.includes("View request")
+        b.textContent?.includes("Action request")
       ) as HTMLElement;
       btn.click();
       fixture.detectChanges();
@@ -609,6 +618,169 @@ describe("RunViewPopupComponent", () => {
         "Payload requires the tracking:payload:read permission"
       );
       expect(el().querySelector(".rvp-payload-btn")).toBeFalsy();
+    });
+  });
+
+  describe("HTTP payload of endpointCall steps (T09 of manual-loops/connector-trace-linking.md)", () => {
+    // A `/tracking/events` row (recentCalls projection shape) that matches the
+    // default endpointCall step: adapter order-api, correlation corr-1,
+    // occurred_at inside the step's started/completed window.
+    function httpRow(
+      overrides: Record<string, unknown> = {}
+    ): Record<string, unknown> {
+      return {
+        event_id: "evt-http-1",
+        correlation_id: "corr-1",
+        connector_id: "order-api",
+        occurred_at: "2026-07-11T10:00:00.000Z",
+        payload_method: "GET",
+        payload_resolved_url: "https://api.example.com/orders/1",
+        payload_http_status: 200,
+        payload_duration_ms: 42,
+        payload_cache_result: "miss",
+        ...overrides,
+      };
+    }
+
+    function flushEndpointCalls(rows: Record<string, unknown>[]): void {
+      httpMock
+        .expectOne((r) => r.url === TRACKING_EVENTS_URL)
+        .flush({ events: rows });
+      fixture.detectChanges();
+    }
+
+    function findButton(text: string): HTMLElement | undefined {
+      return Array.from(el().querySelectorAll("button")).find((b) =>
+        b.textContent?.includes(text)
+      ) as HTMLElement | undefined;
+    }
+
+    it("renders 'View HTTP request/response' for an endpointCall step with a matched event", () => {
+      setup();
+      flushEndpointCalls([httpRow()]);
+
+      expect(findButton("View HTTP request")).toBeTruthy();
+      expect(findButton("View HTTP response")).toBeTruthy();
+      // Single match → no multi-entry list.
+      expect(el().querySelector(".rvp-http-list")).toBeFalsy();
+    });
+
+    it("renders NO HTTP buttons when no endpoint_call event matches the step", () => {
+      setup();
+      flushEndpointCalls([]);
+
+      expect(findButton("View HTTP request")).toBeFalsy();
+      expect(el().querySelector(".rvp-http")).toBeFalsy();
+    });
+
+    it("does NOT fetch endpoint_call events for a non-endpointCall step", () => {
+      setup({
+        node: node({
+          actionType: "agentCall",
+          instanceId: "agent-1",
+          stepName: "summarize",
+        }),
+      });
+      // No eager recentCalls fetch fired for a non-endpointCall step.
+      httpMock.expectNone((r) => r.url === TRACKING_EVENTS_URL);
+      expect(findButton("View HTTP request")).toBeFalsy();
+    });
+
+    it("splits the endpoint_call payload into request-side fields", () => {
+      setup();
+      flushEndpointCalls([httpRow()]);
+
+      findButton("View HTTP request")!.click();
+      fixture.detectChanges();
+
+      httpMock
+        .expectOne((r) => r.url === PAYLOAD_URL("corr-1", "evt-http-1"))
+        .flush({
+          payload: {
+            method: "POST",
+            resolvedUrl: "https://api.example.com/orders",
+            status: 201,
+            requestHeaders: { "content-type": "application/json" },
+            requestBody: { id: 7 },
+            responseHeaders: { "x-trace": "zzz" },
+            responseBody: { created: true },
+          },
+          payload_status: "inline",
+        });
+      fixture.detectChanges();
+
+      const text = el().textContent ?? "";
+      expect(text).toContain("HTTP request");
+      expect(text).toContain("POST");
+      expect(text).toContain("https://api.example.com/orders");
+      // Request side must NOT leak the response body.
+      expect(text).not.toContain("created");
+    });
+
+    it("splits the endpoint_call payload into response-side fields", () => {
+      setup();
+      flushEndpointCalls([httpRow()]);
+
+      findButton("View HTTP response")!.click();
+      fixture.detectChanges();
+
+      httpMock
+        .expectOne((r) => r.url === PAYLOAD_URL("corr-1", "evt-http-1"))
+        .flush({
+          payload: {
+            method: "POST",
+            resolvedUrl: "https://api.example.com/orders",
+            status: 201,
+            durationMs: 87,
+            cacheResult: "bypass",
+            requestBody: { id: 7 },
+            responseBody: { created: true },
+          },
+          payload_status: "inline",
+        });
+      fixture.detectChanges();
+
+      const text = el().textContent ?? "";
+      expect(text).toContain("HTTP response");
+      expect(text).toContain("201");
+      expect(text).toContain("87 ms");
+      expect(text).toContain("bypass");
+      // Response side must NOT leak the request body.
+      expect(text).not.toContain('"id"');
+    });
+
+    it("lists ALL matches with per-entry buttons for a branch fan-out", () => {
+      setup();
+      flushEndpointCalls([
+        httpRow({
+          event_id: "evt-http-a",
+          payload_resolved_url: "https://api.example.com/a",
+          payload_http_status: 200,
+          occurred_at: "2026-07-11T10:00:00.000Z",
+        }),
+        httpRow({
+          event_id: "evt-http-b",
+          payload_resolved_url: "https://api.example.com/b",
+          payload_http_status: 500,
+          occurred_at: "2026-07-11T10:00:00.000Z",
+        }),
+      ]);
+
+      const entries = el().querySelectorAll(".rvp-http-entry");
+      expect(entries.length).toBe(2);
+      const text = el().textContent ?? "";
+      expect(text).toContain("https://api.example.com/a");
+      expect(text).toContain("https://api.example.com/b");
+      expect(text).toContain("500");
+      // Each entry carries its own request/response buttons.
+      expect(el().querySelectorAll("button").length).toBeGreaterThanOrEqual(4);
+    });
+
+    it("renames the wrapper buttons to 'Action request/response'", () => {
+      setup();
+      flushEndpointCalls([]);
+      expect(findButton("Action request")).toBeTruthy();
+      expect(findButton("Action response")).toBeTruthy();
     });
   });
 });

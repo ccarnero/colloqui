@@ -36,6 +36,10 @@ export interface IConnectorCall {
   readonly cacheResult: ConnectorCacheResult;
   readonly timestamp: string;
   readonly correlationId?: string;
+  /** The `endpoint_call_completed` event's id — carried through so a consumer
+   * (T09's run-view HTTP-payload section) can fetch THIS event's payload via
+   * the trace payload endpoint. Undefined when the projection omits it. */
+  readonly eventId?: string;
   readonly requestHeaders?: Record<string, string>;
   readonly requestBody?: unknown;
   readonly responseHeaders?: Record<string, string>;
@@ -108,6 +112,7 @@ function toCall(row: ITrackingEventRow, adapterId: string): IConnectorCall {
     cacheResult: normalizeCacheResult(row.payload_cache_result),
     timestamp: row.occurred_at ?? "",
     correlationId: row.correlation_id ?? undefined,
+    eventId: row.event_id ?? undefined,
   };
 }
 

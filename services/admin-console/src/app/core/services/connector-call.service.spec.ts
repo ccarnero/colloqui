@@ -92,6 +92,7 @@ describe("ConnectorCallService", () => {
         cacheResult: "hit",
         timestamp: "2026-06-01T12:00:00.000Z",
         correlationId: "corr-1",
+        eventId: "evt-1",
       },
     ]);
   });

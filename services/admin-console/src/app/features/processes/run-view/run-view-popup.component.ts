@@ -25,6 +25,15 @@ import type { IRunResponse } from "../../../core/services/run-view.service";
 import type { IEventPayloadResponse } from "../../../core/services/tracking-chain.service";
 import { TrackingChainService } from "../../../core/services/tracking-chain.service";
 import type { IWorkflowDefinitionDto } from "../../automation/workflows/services/workflow-api.service";
+import {
+  type IEndpointCallMatch,
+  matchEndpointCalls,
+} from "./domain/match-endpoint-calls";
+import {
+  type HttpPayloadSide,
+  type IHttpPayloadProjection,
+  projectHttpPayload,
+} from "./domain/project-http-payload";
 import { resolveStepDeepLink } from "./domain/resolve-step-deep-link";
 import {
   type IStepEventPair,
@@ -78,6 +87,38 @@ type PayloadViewState =
   | { readonly kind: "expired" }
   | { readonly kind: "not-captured"; readonly message: string }
   | { readonly kind: "error" };
+
+/** State of the `endpoint_call_completed` match fetch for an `endpointCall`
+ * step (T09 of `manual-loops/connector-trace-linking.md`). */
+type HttpCallsState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "loading" }
+  | { readonly kind: "loaded"; readonly matches: readonly IEndpointCallMatch[] }
+  | { readonly kind: "error" };
+
+/** Generous cap on connector-call rows fetched to resolve a step's HTTP
+ * call(s) — one run's endpointCall step rarely hits one adapter more than a
+ * handful of times, but a busy adapter shares the correlation-agnostic
+ * `/tracking/events` projection, so we over-fetch then filter by correlation
+ * + window client-side (`match-endpoint-calls.ts`). Server cap is 500. */
+const HTTP_CALLS_FETCH_LIMIT = 200;
+
+/** Lookback window (minutes) for the connector-calls fetch: from the run's
+ * start (plus a 1h margin for clock skew) to now, so the run's own
+ * endpoint_call events always fall inside the server-side `from` filter
+ * regardless of how old the run is. `undefined` (the run has no start time)
+ * falls back to `recentCalls`' 7-day default. */
+function resolveWindowMinutes(startedAt: string | null): number | undefined {
+  if (startedAt === null) {
+    return undefined;
+  }
+  const start = Date.parse(startedAt);
+  if (Number.isNaN(start)) {
+    return undefined;
+  }
+  const minutesSince = Math.ceil((Date.now() - start) / 60_000);
+  return Math.max(minutesSince + 60, 60);
+}
 
 /**
  * Anchored step popup (T05 of `manual-loops/run-view.md`): opened by
@@ -189,7 +230,7 @@ type PayloadViewState =
                       class="rvp-payload-btn"
                       (click)="viewPayload('request', eventPair().started!.eventId)"
                     >
-                      View request
+                      Action request
                     </button>
                   }
                   @if (eventPair().completed) {
@@ -198,10 +239,63 @@ type PayloadViewState =
                       class="rvp-payload-btn"
                       (click)="viewPayload('response', eventPair().completed!.eventId)"
                     >
-                      View response
+                      Action response
                     </button>
                   }
                 </div>
+
+                @if (httpMatches().length > 0) {
+                  <div class="rvp-http">
+                    <h5 class="rvp-subtitle">
+                      HTTP call{{ httpMatches().length > 1 ? "s" : "" }}
+                    </h5>
+                    @if (httpMatches().length === 1 && httpMatches()[0]; as only) {
+                      <div class="rvp-payload-actions">
+                        <button
+                          type="button"
+                          class="rvp-payload-btn"
+                          (click)="viewHttpPayload('request', only.eventId)"
+                        >
+                          View HTTP request
+                        </button>
+                        <button
+                          type="button"
+                          class="rvp-payload-btn"
+                          (click)="viewHttpPayload('response', only.eventId)"
+                        >
+                          View HTTP response
+                        </button>
+                      </div>
+                    } @else {
+                      <ul class="rvp-http-list">
+                        @for (m of httpMatches(); track m.eventId) {
+                          <li class="rvp-http-entry">
+                            <span class="rvp-http-summary rvp-mono">
+                              {{ m.method }} {{ m.resolvedUrl }} · {{ m.status }}
+                            </span>
+                            <div class="rvp-payload-actions">
+                              <button
+                                type="button"
+                                class="rvp-payload-btn"
+                                (click)="viewHttpPayload('request', m.eventId)"
+                              >
+                                View HTTP request
+                              </button>
+                              <button
+                                type="button"
+                                class="rvp-payload-btn"
+                                (click)="viewHttpPayload('response', m.eventId)"
+                              >
+                                View HTTP response
+                              </button>
+                            </div>
+                          </li>
+                        }
+                      </ul>
+                    }
+                  </div>
+                }
+
                 @switch (payloadState().kind) {
                   @case ("loading") {
                     <p class="rvp-status">Loading payload…</p>
@@ -220,12 +314,36 @@ type PayloadViewState =
                     </p>
                   }
                   @case ("loaded") {
-                    <details class="rvp-payload-details">
-                      <summary>
-                        {{ payloadLabel() }} ({{ loadedResponse()?.payload_status }})
-                      </summary>
-                      <pre class="rvp-payload-pre">{{ payloadJson() }}</pre>
-                    </details>
+                    @if (httpProjection(); as proj) {
+                      <details class="rvp-payload-details" open>
+                        <summary>
+                          {{ payloadLabel() }} ({{ loadedResponse()?.payload_status }})
+                        </summary>
+                        @if (proj.rows.length > 0) {
+                          <dl class="rvp-rows">
+                            @for (row of proj.rows; track row.label) {
+                              <dt>{{ row.label }}</dt>
+                              <dd class="rvp-mono">{{ row.value }}</dd>
+                            }
+                          </dl>
+                        }
+                        @if (proj.headers) {
+                          <h6 class="rvp-subtitle">headers</h6>
+                          <pre class="rvp-payload-pre">{{ proj.headers }}</pre>
+                        }
+                        @if (proj.body) {
+                          <h6 class="rvp-subtitle">body</h6>
+                          <pre class="rvp-payload-pre">{{ proj.body }}</pre>
+                        }
+                      </details>
+                    } @else {
+                      <details class="rvp-payload-details">
+                        <summary>
+                          {{ payloadLabel() }} ({{ loadedResponse()?.payload_status }})
+                        </summary>
+                        <pre class="rvp-payload-pre">{{ payloadJson() }}</pre>
+                      </details>
+                    }
                   }
                 }
               }
@@ -567,6 +685,27 @@ type PayloadViewState =
       color: #185fa5;
       font-weight: 500;
     }
+    .rvp-http {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-subtle, #ddd);
+    }
+    .rvp-http-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .rvp-http-entry {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .rvp-http-summary {
+      word-break: break-all;
+    }
   `,
 })
 export class RunViewPopupComponent {
@@ -642,6 +781,32 @@ export class RunViewPopupComponent {
     return state.kind === "not-captured" ? state.message : "";
   });
 
+  /** Matched `endpoint_call_completed` events for an `endpointCall` step (T09
+   * of `manual-loops/connector-trace-linking.md`). `loading` while the
+   * connector-calls fetch is in flight, `loaded` with the matches (possibly
+   * empty), `error` on fetch failure, `idle` for non-endpointCall steps. The
+   * fetch is driven by the constructor effect below. */
+  private readonly endpointCallsState = signal<HttpCallsState>({
+    kind: "idle",
+  });
+  readonly httpMatches = computed<readonly IEndpointCallMatch[]>(() => {
+    const state = this.endpointCallsState();
+    return state.kind === "loaded" ? state.matches : [];
+  });
+
+  /** Which half (`request`/`response`) of the CURRENTLY-loaded payload the
+   * user asked for, or `null` when the loaded payload is a raw wrapper
+   * payload (the "Action request/response" buttons). Drives whether the
+   * loaded view renders the HTTP projection or the raw JSON. */
+  private readonly httpSide = signal<HttpPayloadSide | null>(null);
+  readonly httpProjection = computed<IHttpPayloadProjection | null>(() => {
+    const side = this.httpSide();
+    const response = this.loadedResponse();
+    return side !== null && response !== null
+      ? projectHttpPayload(response.payload, side)
+      : null;
+  });
+
   private readonly connectorPeekState = signal<
     PeekState<{ adapter: IAdapterDto; recentCalls: IConnectorCall[] }>
   >({ kind: "loading" });
@@ -705,6 +870,46 @@ export class RunViewPopupComponent {
     effect(() => {
       this.node();
       queueMicrotask(() => this.panel()?.nativeElement.focus());
+    });
+
+    // Resolve the step's connector `endpoint_call_completed` event(s) whenever
+    // an `endpointCall` step opens (T09 of
+    // `manual-loops/connector-trace-linking.md`). The run response's `events`
+    // are SCOPED to the run's own execution/step events (scope-run-events.ts)
+    // and never include the rule-11 endpoint_call rows, so this fetches them
+    // via the EXISTING `recentCalls` projection (`GET /tracking/events`,
+    // console-only) and matches by correlation + window. Also resets the
+    // payload viewer so a stale request/response from a previous step never
+    // lingers across a step change.
+    effect(() => {
+      const node = this.node();
+      const run = this.run();
+      const pair = this.eventPair();
+      const canView = this.canViewPayload();
+      this.endpointCallsState.set({ kind: "idle" });
+      this.payload.set({ kind: "idle" });
+      this.httpSide.set(null);
+
+      if (node.actionType !== "endpointCall" || !node.instanceId || !canView) {
+        return;
+      }
+      const adapterId = node.instanceId;
+      const correlationId = run.correlation_id;
+      this.endpointCallsState.set({ kind: "loading" });
+      this.connectorCallService
+        .recentCalls(
+          adapterId,
+          resolveWindowMinutes(run.summary.started_at),
+          HTTP_CALLS_FETCH_LIMIT
+        )
+        .subscribe({
+          next: (calls) =>
+            this.endpointCallsState.set({
+              kind: "loaded",
+              matches: matchEndpointCalls(node, pair, calls, correlationId),
+            }),
+          error: () => this.endpointCallsState.set({ kind: "error" }),
+        });
     });
   }
 
@@ -796,9 +1001,29 @@ export class RunViewPopupComponent {
     });
   }
 
+  /** Wrapper `action_started`/`action_completed` payload (renamed to "Action
+   * request/response" — T09): the generic step envelope, shown as raw JSON
+   * (`httpSide` stays null so `httpProjection()` is null). */
   viewPayload(kind: "request" | "response", eventId: string): void {
+    this.httpSide.set(null);
+    this.fetchPayload(kind === "request" ? "Request" : "Response", eventId);
+  }
+
+  /** Connector `endpoint_call_completed` payload (T09): fetched through the
+   * SAME viewer flow (same `tracking:payload:read` gate, same claim-check /
+   * expired states), then rendered as the request-side or response-side
+   * projection (`httpProjection()`) instead of raw JSON. */
+  viewHttpPayload(side: HttpPayloadSide, eventId: string): void {
+    this.httpSide.set(side);
+    this.fetchPayload(
+      side === "request" ? "HTTP request" : "HTTP response",
+      eventId
+    );
+  }
+
+  private fetchPayload(label: string, eventId: string): void {
     const correlationId = this.run().correlation_id;
-    this.payloadLabelSig.set(kind === "request" ? "Request" : "Response");
+    this.payloadLabelSig.set(label);
     this.payload.set({ kind: "loading" });
     this.trackingChainService
       .getEventPayload(correlationId, eventId)
