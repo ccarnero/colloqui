@@ -1,4 +1,11 @@
-import { Controller, Get, NotFoundException, Param, Req } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Query,
+  Req,
+} from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RequirePermission } from "../../decorators/permissions.decorator";
 import { Scopes } from "../../decorators/scopes.decorator";
@@ -83,6 +90,31 @@ export class TrackingController {
       method: "GET",
       path: `/runs/${encodeURIComponent(workflowId)}/${encodeURIComponent(runId)}`,
       tenantId: req[REQUEST_TENANT_KEY],
+    });
+  }
+
+  /**
+   * T03 of manual-loops/connector-trace-linking.md: proxies the ingester's
+   * `GET /events?type=<t>&resource=<r>&from=<iso>&limit=<n>` — the connector
+   * "Recent calls" feed (and any future entity "recent activity" panel,
+   * SPEC.md "Out of scope") reading from the durable causal store instead of
+   * audit-service's 60-minute window. Query params are forwarded verbatim as
+   * the raw `Record<string, string>` Nest hands back from `@Query()` — same
+   * pass-through shape `IJsonProxyRequest.query` already supports, no DTO
+   * validation layer here (the ingester itself validates `type`/`from` and
+   * clamps `limit`, same division of responsibility as `getChain`/`getRun`
+   * leaving id validation to the ingester).
+   */
+  @Get("events")
+  async getEvents(
+    @Req() req: ITenantScopedRequest,
+    @Query() query: Record<string, string>
+  ): Promise<object> {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/events",
+      tenantId: req[REQUEST_TENANT_KEY],
+      query,
     });
   }
 }

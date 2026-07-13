@@ -147,4 +147,48 @@ describe("TrackingController", () => {
     expect(permissions).toBeUndefined();
     expect(scopes).toBeUndefined();
   });
+
+  it("getEvents delegates to proxy with tenant, path and the raw query object", async () => {
+    const result = await controller.getEvents(req as never, {
+      type: "connector.endpoint_call.completed.v1",
+      resource: "adapter/adp-1",
+      from: "2026-07-01T00:00:00.000Z",
+      limit: "10",
+    });
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/events",
+      tenantId: "t1",
+      query: {
+        type: "connector.endpoint_call.completed.v1",
+        resource: "adapter/adp-1",
+        from: "2026-07-01T00:00:00.000Z",
+        limit: "10",
+      },
+    });
+    expect(result).toEqual({ correlationId: "corr-1", events: [] });
+  });
+
+  it("getEvents forwards an empty query object as-is (validation lives in the ingester)", async () => {
+    await controller.getEvents(req as never, {});
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/events",
+      tenantId: "t1",
+      query: {},
+    });
+  });
+
+  it("getEvents carries no permission guard (unauthenticated-scope, same as getChain/getRun)", () => {
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      TrackingController.prototype.getEvents
+    );
+    const scopes = Reflect.getMetadata(
+      SCOPES_KEY,
+      TrackingController.prototype.getEvents
+    );
+    expect(permissions).toBeUndefined();
+    expect(scopes).toBeUndefined();
+  });
 });

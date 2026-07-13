@@ -162,3 +162,12 @@ ALTER TABLE tracking.tracked_events
 CREATE INDEX IF NOT EXISTS idx_tracked_events_payload_scrub_scan
   ON tracking.tracked_events (occurred_at)
   WHERE payload_status IN ('inline', 'resolved');
+
+-- T03 (connector-trace-linking) `GET /events?type=<t>&resource=<r>&from=<iso>
+-- &limit=<n>` filters on `tenant` + the CloudEvents-style `envelope->>'type'`
+-- (see `build-events-query.ts` for why `type` is NOT the `domain`/`kind`/
+-- `version` columns), ordered `occurred_at DESC`. A functional index on the
+-- jsonb extraction keeps that filter+sort index-only instead of a per-tenant
+-- sequential scan. New index, does not repurpose any existing one.
+CREATE INDEX IF NOT EXISTS idx_tracked_events_tenant_type_occurred_at
+  ON tracking.tracked_events (tenant, (envelope->>'type'), occurred_at DESC);

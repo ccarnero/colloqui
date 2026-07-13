@@ -50,6 +50,7 @@ import {
 } from "./lib/consume-events.js";
 import { emitOtelSpans } from "./lib/emit-otel-spans.js";
 import { handleChainRequest } from "./lib/handle-chain-request.js";
+import { handleEventsRequest } from "./lib/handle-events-request.js";
 import { handlePayloadRequest } from "./lib/handle-payload-request.js";
 import { handleRunRequest } from "./lib/handle-run-request.js";
 import {
@@ -73,6 +74,10 @@ import {
   normalizeChainSpanRow,
   type RawChainSpanRow,
 } from "./lib/normalize-chain-span-row.js";
+import {
+  normalizeEventsRow,
+  type RawEventRow,
+} from "./lib/normalize-events-row.js";
 import {
   normalizeRunEventRow,
   type RawRunEventRow,
@@ -398,6 +403,42 @@ async function bootstrap(): Promise<void> {
           },
           log: line,
         }).then((result) =>
+          Response.json(result.body, { status: result.status })
+        );
+      }
+
+      // T03 of manual-loops/connector-trace-linking.md: events-by-type/
+      // resource read endpoint (connector "Recent calls" and any future
+      // entity "recent activity" panel). Static path — no dynamic-segment
+      // route matcher needed, same as `/health`. Query params are read here
+      // (the only I/O edge) and handed to the pure `handleEventsRequest`.
+      if (request.method === "GET" && url.pathname === "/events") {
+        const tenant = request.headers.get("x-yoizen-tenant");
+        const searchParams = url.searchParams;
+        line(
+          `GET /events — tenant=${tenant ?? "MISSING"} type=${searchParams.get("type") ?? "-"} resource=${searchParams.get("resource") ?? "-"} from=${searchParams.get("from") ?? "-"} limit=${searchParams.get("limit") ?? "-"}`
+        );
+        return handleEventsRequest(
+          tenant,
+          {
+            type: searchParams.get("type"),
+            resource: searchParams.get("resource"),
+            from: searchParams.get("from"),
+            limit: searchParams.get("limit"),
+          },
+          {
+            // Normalize driver rows before they reach the pure response
+            // shaping (`toEventsResponse`), same `Date`/numeric coercion as
+            // the chains/run routes.
+            queryEvents: async (query) => {
+              const rows = await sql.unsafe<RawEventRow[]>(query.text, [
+                ...query.params,
+              ]);
+              return rows.map(normalizeEventsRow);
+            },
+            log: line,
+          }
+        ).then((result) =>
           Response.json(result.body, { status: result.status })
         );
       }

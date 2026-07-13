@@ -257,7 +257,7 @@ grep -n "connector-trace-linking" cowork/INDEX.md
 
 - [x] T01 causal threading endpointCall
 - [x] T02 diagnose empty Recent calls (report)
-- [ ] T03 ingester /events endpoint + gateway proxy
+- [x] T03 ingester /events endpoint + gateway proxy
 - [ ] T04 Recent calls on tracked_events + trace links
 - [ ] T05 deep links detail card → entity screens
 - [ ] T06 cluster e2e correlation round-trip
