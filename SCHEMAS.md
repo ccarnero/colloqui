@@ -155,6 +155,24 @@ type is exported for these kinds beyond the `IPublishActionStartedArgs` /
 argument interfaces (same file) — there is no shared runtime validator, same
 posture as every other row in this inventory.
 
+## 13. Connector-runtime endpoint_call events (`services/connector-runtime`)
+
+Owner: **`connector-runtime`**. `connector.endpoint_call.completed.v1`
+(`publishEndpointCallEvent` / `emit()`,
+`src/activities/_shared/event-publisher.ts`) rides the canonical
+`EventEnvelope` shape. Added by `manual-loops/connector-trace-linking.md`
+T01: `IEndpointCallEvent` now accepts an optional
+`causal?: EventCausalContext`, mirroring the `mcp-call.activity.ts` /
+`agent-call.activity.ts` pattern — when the calling workflow action
+supplies it, the published envelope's `correlation_id`/`causation_id` are
+set from it and `transport.depth` is `causal.depth + 1`, joining the run's
+causal chain. Absent `causal`, the envelope is a root event (random
+`correlation_id`, null `causation_id`, `depth 0`) — the pre-fix, still
+valid, behavior. A `DepthExceededError` from `buildEventEnvelope` falls
+back to a root-event envelope (warn-logged) rather than failing the
+fire-and-forget publish. Pre-fix events already persisted in
+`tracking.tracked_events` remain valid root events; not backfilled.
+
 ---
 
 ## Coverage map

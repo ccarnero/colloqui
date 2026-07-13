@@ -211,6 +211,43 @@ Decision cuádruple:
   console's causal graph view as the sole business-causality UI.
 - **Engram topic**: `tracking/trace-console`.
 
+## Change: connector causality fix, Recent calls on tracked_events & diagram deep links (connector-trace-linking)
+
+Spec-driven change making connector executions first-class citizens of the
+trace and the trace navigable: `connector.endpoint_call.completed.v1`
+events now join the workflow run's correlation instead of being emitted as
+causal orphans, the connector detail's "Recent calls" section reads from
+the durable causal store (`tracking.tracked_events`, 7-day window) via a
+new `GET /events` ingester endpoint instead of audit-service's 60-minute
+window, and trace/run-view detail cards link out to entity screens
+(connector/mcp/hosted-service/agent). Full task queue, gates, and human
+decisions: `manual-loops/connector-trace-linking.md`. Operational contract
+(causal fields, fallback semantics): `services/connector-runtime/README.md`
+"Event Publishing". Read endpoint contract (query params, projection,
+gateway mirror): `services/tracking-ingester-service/README.md` "Events-by-
+type/resource read endpoint". Envelope inventory entry: `SCHEMAS.md` §13.
+
+Decision cuádruple:
+- **Rule**: `publishEndpointCallEvent` stays fire-and-forget — causal
+  threading must never make an endpoint call fail; a `DepthExceededError`
+  falls back to emitting WITHOUT causal fields (root event, warn log), an
+  orphan event beats a lost event — `manual-loops/connector-trace-linking.md`
+  §Constraints.
+- **Why**: connector calls were causal orphans (`event-publisher.ts`'s
+  `emit()` omitted `correlationId`/`causationId`, so `buildEventEnvelope`
+  assigned a random UUID) while agent/mcp calls already joined the run's
+  trace — this SPEC brings HTTP endpoint calls to parity and fixes the
+  root cause of the empty "Recent calls" list (audit-service's 60-minute
+  window, diagnosed in T02, not a missing-emission bug).
+- **Evidence**: the gap was `IEndpointCallEvent`
+  (`services/connector-runtime/src/activities/_shared/event-publisher.ts`,
+  lines 45-60) having no causal fields; the fix mirrors
+  `mcp-call.activity.ts:291` (connector-runtime) / workflow-service's
+  `agent-call.activity.ts:289-293` existing `causal` threading pattern. Live verification (T06, 2026-07-13):
+  post-fix endpoint_call rows land WITH siblings (`with_siblings` grew
+  6→18 over the day's runs) while pre-fix rows stay at a flat orphan count.
+- **Engram topic**: `tracking/connector-trace-linking`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

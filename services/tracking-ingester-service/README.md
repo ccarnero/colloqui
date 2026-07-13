@@ -218,6 +218,52 @@ events carry no step-level kinds (`action_started` / `action_completed` /
 the console falls back to an artifact-only view; see
 `DOCS/guides/trace-console.md` for the console-facing contract.
 
+### Events-by-type/resource read endpoint
+
+`GET /events?type=<t>&resource=<r>&from=<iso>&limit=<n>` (tenant header
+`x-yoizen-tenant` required) → a filtered, `occurred_at DESC` list of
+`tracking.tracked_events` rows for a given envelope `type` — the general
+read endpoint the connector "Recent calls" panel (and any future
+entity-detail "recent activity" panel) uses instead of audit-service's
+60-minute window.
+
+Query params:
+
+- `type` (required) — matches `envelope->>'type'` (the CloudEvents-style
+  field, e.g. `"connector.endpoint_call.completed.v1"`), NOT the
+  `domain`/`kind`/`version` columns derived from the NATS subject (those
+  project as a different string for the same event family). `400` when
+  missing.
+- `resource` (optional) — matches `envelope->>'resource'` (e.g.
+  `"adapter/<adapterId>"`).
+- `from` (optional) — inclusive lower bound on `occurred_at`, ISO-8601.
+  `400` if present but not a parseable date.
+- `limit` (optional) — clamped via the shared `clampListLimit` helper:
+  default `50`, hard cap `500`.
+
+`400` when the `x-yoizen-tenant` header is missing. Rows are scoped by a
+strict `tenant = $1` (no `OR tenant IS NULL` — unlike the chain/payload
+endpoints, this event family always carries a real tenant). `200` with an
+empty `events` array when nothing matches — this is a filtered list, not a
+single-resource lookup, so an empty result is not a `404`.
+
+Response projection excludes the raw `envelope` jsonb (same chain-list
+decision as `GET /chains/:correlationId`) but adds five payload scalars
+extracted server-side for the connector "Recent calls" view: `payload_method`,
+`payload_resolved_url`, `payload_http_status`, `payload_duration_ms`,
+`payload_cache_result` (from `data.payload.method`/`resolvedUrl`/`status`/
+`durationMs`/`cacheResult` respectively) — the full payload is never
+returned by this endpoint.
+
+Built from `build-events-query.ts` (query) + `parse-events-query.ts`
+(validation) + `handle-events-request.ts` (orchestration) — same pure-core,
+I/O-at-the-edges shape as the chain/run endpoints.
+
+The gateway mirrors this route at `GET /api/tracking/events` under the
+standard tenant/auth guards, forwarding query params verbatim — same
+explicit-proxy-module pattern as the chain/run/payload routes
+(`services/api-gateway/src/modules/tracking`).
+
 ## `compliance` column
 
 Every row records how close its stored body is to a canonical `EventEnvelope`:

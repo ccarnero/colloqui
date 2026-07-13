@@ -244,6 +244,43 @@ activity = executeServiceCall({
 }
 ```
 
+## Event Publishing
+
+Every `executeEndpointCall` invocation fire-and-forgets a
+`connector.endpoint_call.completed.v1` event to NATS JetStream via
+`publishEndpointCallEvent` (`src/activities/_shared/event-publisher.ts`).
+Publish failures are logged as warnings and never propagate to the caller —
+this is an observability side-effect, not part of the activity's critical
+path.
+
+### Causal contract
+
+`IEndpointCallEvent` accepts an optional `causal?: EventCausalContext`
+field, mirroring the causal-threading pattern used by
+`mcp-call.activity.ts` (this service) and workflow-service's
+`agent-call.activity.ts`:
+
+- **With `causal` present** — the workflow action supplied a causal
+  context (`correlation_id`, `causation_id`, `depth`). The published
+  envelope's `correlation_id`/`causation_id` are set from it, and
+  `transport.depth` is `causal.depth + 1`, joining the event into the run's
+  correlation chain instead of starting a new one.
+- **With `causal` absent** — today's pre-existing behavior: `buildEventEnvelope`
+  assigns a random `correlation_id`, `causation_id` stays `null`, and
+  `transport.depth` is `0`. The event is published as a root event, not
+  linked to any run.
+- **`DepthExceededError` fallback** — if threading the causal context would
+  exceed `MAX_DEPTH_BY_CATEGORY`, `buildEventEnvelope` throws
+  `DepthExceededError`. `emit()` catches it, logs a warning (visible as
+  "endpoint_call event depth exceeded ... publishing as root event"), and
+  retries `buildEventEnvelope` WITHOUT the causal fields — the event is
+  still published, just as a root event. The publish path never fails
+  because of causal threading; an orphan event beats a lost event.
+
+Backward compatibility: events emitted before this contract existed (no
+`causal` field ever passed) remain valid root events — the causal fields
+are additive, not a breaking envelope change.
+
 ## Error Handling
 
 ### Circuit Breaker
