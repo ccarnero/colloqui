@@ -135,6 +135,38 @@ is true today (fix nothing yet — T03's design depends on the answer):
 ./scripts/e2e-http-workflow.sh   # exit 0, then evidence of all three answers in the report
 ```
 
+**T02 findings (recorded 2026-07-13, dev cluster):**
+
+1. **Emission** — CONFIRMED for the currently deployed (post-T01) image by a
+   direct probe (throwaway `endpointCall` workflow → pokeapi adapter, triggered
+   once via webhook at 15:13:25 UTC, then deleted): connector-runtime logged
+   `published endpoint_call event adapter=a2dcbf77… status=200` (event_id
+   441e034c-9e0f-491d-aad5-d976095a3bdb) and the row landed in
+   `tracked_events` with `correlation_id 31dff99e…` SHARED by an 18-event
+   chain, non-null `causation_id`, `depth 2` — i.e., the T01 causal fix is
+   verified live, not an orphan. Historical context: a pre-T01 build also
+   emitted (4 events, 12:03:59-12:04:02 UTC, manual `http-fanout-telegram`
+   run). Note: `e2e-http-workflow.sh` alone produces NO endpoint_call events —
+   its workflows (`e2e-http-log`, `e2e-http-agent`) contain no `endpointCall`
+   action; T06 must add one for the standing e2e assertion.
+2. **tracked_events** — YES, events reach `tracking.tracked_events`
+   (postgres-0 in support-services-dev, db `yoizen`): 4 rows in last 24h
+   (count taken BEFORE the 15:13 probe, which added a 5th),
+   kind `endpoint_call_completed`, each with a UNIQUE `correlation_id`,
+   NULL `causation_id`, `causation_depth 0`, ZERO siblings — textbook causal
+   orphans, confirming the pre-T01 bug (the 15:13 probe row above shows the
+   post-T01 contrast: chain of 18). Type projects as
+   `platform.endpoint_call_completed.v1` (verified via SQL on the
+   domain/kind/version columns; domain `platform` per event-publisher.ts).
+3. **audit-service** — YES, persists and serves them at `/audit/events?type=
+   connector.endpoint_call.completed.v1` (full payloads incl. bodies).
+   Root cause of the EMPTY Recent calls list: the console queries with
+   `from = now - 60min`; today's events are older than the window whenever the
+   user looks more than an hour after the last call. Store + emission are fine.
+
+**T02 verdict:** events ARE emitted and durably stored — no infra pause needed;
+T03 proceeds as designed (read from tracked_events, 7-day window).
+
 ### T03 — Ingester read endpoint: events by type/resource + gateway proxy
 
 - Ingester: `GET /events?type=<t>&resource=<r>&from=<iso>&limit=<n>` (tenant
@@ -224,7 +256,7 @@ grep -n "connector-trace-linking" cowork/INDEX.md
 ---
 
 - [x] T01 causal threading endpointCall
-- [ ] T02 diagnose empty Recent calls (report)
+- [x] T02 diagnose empty Recent calls (report)
 - [ ] T03 ingester /events endpoint + gateway proxy
 - [ ] T04 Recent calls on tracked_events + trace links
 - [ ] T05 deep links detail card → entity screens
