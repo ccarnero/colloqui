@@ -417,6 +417,17 @@ export function castEntryId(entry: IRunCastEntry): string {
   return entry.id;
 }
 
+/** The run's channel-kind cast entry name (the workflow's channel
+ * trigger/send actor), or `null` when none is present — BUG 1 fix: shared
+ * by the component's header "entry/channel" chip AND the `mergeRun(...)`
+ * call that prepends the leading trigger node, so both derive the SAME
+ * channel from the SAME rule (DESIGN.md: one entry point per run). */
+export function resolveEntryChannel(
+  cast: readonly IRunCastEntry[]
+): string | null {
+  return cast.find((entry) => entry.kind === "channel")?.name ?? null;
+}
+
 // ── Artifact lane (run-view visual rewrite slice 3) ──────────────────
 //
 // RENDER-LAYER OVERLAY ONLY — derives a right-hand "artefactos" column
@@ -528,6 +539,14 @@ export interface IArtifactBox {
   readonly y: number;
   readonly label: string;
   readonly subLabel: string;
+  /** Cast entry id this box resolves to (BUG 2 fix — cast-chip highlight
+   * must also light up the paired artifact box, not just the spine node).
+   * Prefers the resolved cast entry's own id (covers `channelSend`, which
+   * carries no `instanceId` on the layout node itself and falls back to
+   * the run's channel cast entry — see `findCastEntry`), falling back to
+   * the node's raw `instanceId`. `null` only when neither resolved
+   * (unresolved/degraded cast). */
+  readonly instanceId: string | null;
 }
 
 /** Fixed right-column `x` for every artifact box in the run (mockup: one
@@ -666,6 +685,12 @@ function formatArtifactSubLabel(node: ILayoutNode): string {
 export function nodeSubLabel(node: ILayoutNode): string {
   const statusLabel = formatNodeStatusLabel(node.status);
   const durationPart = node.durationMs !== null ? `${node.durationMs}ms` : null;
+  // BUG 1 fix: the leading channel-trigger node is NOT an artifact node
+  // and never renders a pill — its sub-line is just the channel it
+  // entered on, no status/duration (it never executes/fails).
+  if (node.kind === "trigger") {
+    return `channel · ${node.stepName}`;
+  }
   if (node.kind === "conditional") {
     const decisionSubtitle = formatDecisionSubtitle(node);
     if (decisionSubtitle !== null) {
@@ -722,6 +747,7 @@ export function computeArtifactBoxes(
       y: node.y,
       label: formatArtifactLabel(kind, node, castEntry),
       subLabel: formatArtifactSubLabel(node),
+      instanceId: castEntry?.id ?? node.instanceId,
     });
   }
   return boxes;

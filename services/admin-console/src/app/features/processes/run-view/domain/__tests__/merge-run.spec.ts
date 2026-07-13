@@ -683,6 +683,60 @@ describe("mergeRun", () => {
     expect(step.completedAt).toBeNull();
   });
 
+  it("BUG 1 fix: prepends a leading trigger step when entryChannel is set", () => {
+    const { events, spans } = actionEvents({
+      actionIndex: 0,
+      actionType: "endpointCall",
+      actionName: "callOrderApi",
+      connectorId: "order-api",
+    });
+    const definition = {
+      actions: [{ activity: "endpointCall", name: "callOrderApi", args: {} }],
+    };
+    const merged = mergeRun(events, spans, definition, "http-generic");
+    expect(merged.steps).toHaveLength(2);
+    const trigger = merged.steps[0]!;
+    expect(trigger.type).toBe("trigger");
+    expect((trigger as { name: string }).name).toBe("http-generic");
+    expect((trigger as { channel: string | null }).channel).toBe(
+      "http-generic"
+    );
+    expect(merged.steps[1]!.type).toBe("action");
+    // Status-neutral: the trigger step must never affect degraded/executed
+    // accounting.
+    expect(merged.degraded).toBe(false);
+  });
+
+  it("BUG 1 fix: no trigger step when entryChannel is null (graceful — degraded/no-channel runs unchanged)", () => {
+    const { events, spans } = actionEvents({
+      actionIndex: 0,
+      actionType: "endpointCall",
+      actionName: "callOrderApi",
+      connectorId: "order-api",
+    });
+    const definition = {
+      actions: [{ activity: "endpointCall", name: "callOrderApi", args: {} }],
+    };
+    const merged = mergeRun(events, spans, definition, null);
+    expect(merged.steps).toHaveLength(1);
+    expect(merged.steps[0]!.type).toBe("action");
+  });
+
+  it("BUG 1 fix: entryChannel defaults to null when the 4th argument is omitted (backward compatible)", () => {
+    const { events, spans } = actionEvents({
+      actionIndex: 0,
+      actionType: "endpointCall",
+      actionName: "callOrderApi",
+      connectorId: "order-api",
+    });
+    const definition = {
+      actions: [{ activity: "endpointCall", name: "callOrderApi", args: {} }],
+    };
+    const merged = mergeRun(events, spans, definition);
+    expect(merged.steps).toHaveLength(1);
+    expect(merged.steps[0]!.type).toBe("action");
+  });
+
   it("degraded: a run with zero step events walks the definition with every step 'not_executed'", () => {
     const definition = {
       actions: [

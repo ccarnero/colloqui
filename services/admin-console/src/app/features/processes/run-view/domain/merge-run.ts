@@ -43,6 +43,7 @@ import type {
   IForkStep,
   IMergedRun,
   ITimeRange,
+  ITriggerStep,
   IWorkflowBranchAction,
   IWorkflowConditionalAction,
   StepColor,
@@ -419,7 +420,13 @@ function buildStepsFromEvents(
   spans: readonly IRunSpan[]
 ): StepNode[] {
   const actionPairsByKey = indexActionEvents(events);
-  const entries: Array<{ step: StepNode; occurredAt: string }> = [];
+  // Never produces a trigger step (that is `mergeRun`'s own prepend, not
+  // anything derivable from raw events) — narrowed so `step.actionIndex`
+  // below (a field `ITriggerStep` does not carry) type-checks.
+  const entries: Array<{
+    step: Exclude<StepNode, { type: "trigger" }>;
+    occurredAt: string;
+  }> = [];
 
   for (const pair of actionPairsByKey.values()) {
     const source = pair.started ?? pair.completed;
@@ -468,10 +475,28 @@ function buildStepsFromEvents(
  * at all" (the old-run/artifact-only banner case), NOT "no definition":
  * a run with step events but no definition is a full (if flat) render.
  */
+/** Builds the leading channel-trigger step (BUG 1 fix) — the run's own
+ * entry point, mirrors the workflow builder's leading "Channel ·
+ * {{request.channel}}" node. `entryChannel` is the run's channel-kind
+ * cast entry name (already resolved by the caller); `null` means no
+ * channel actor was found for this run (degraded/no-cast runs), in which
+ * case no trigger step is added at all — graceful, not a placeholder. */
+function buildTriggerStep(entryChannel: string): ITriggerStep {
+  return {
+    type: "trigger",
+    name: entryChannel,
+    channel: entryChannel,
+    nestingDepth: 0,
+    startedAt: null,
+    completedAt: null,
+  };
+}
+
 export function mergeRun(
   events: readonly IRunEvent[],
   spans: readonly IRunSpan[],
-  definition: Pick<IWorkflowDefinitionDto, "actions">
+  definition: Pick<IWorkflowDefinitionDto, "actions">,
+  entryChannel: string | null = null
 ): IMergedRun {
   const ctx: WalkContext = {
     actionEventsByKey: indexActionEvents(events),
@@ -484,12 +509,21 @@ export function mergeRun(
     (event) => event.kind !== null && STEP_EVENT_KINDS.has(event.kind)
   );
 
-  const steps =
+  const walkedSteps =
     actions.length > 0
       ? walkActions(actions, null, 0, ctx)
       : hasStepEvents
         ? buildStepsFromEvents(events, spans)
         : [];
+
+  // BUG 1 fix: prepend the leading channel-trigger step ahead of the
+  // definition/events-derived steps, when the run resolved a channel
+  // actor at all — status-neutral, never affects `degraded` (still driven
+  // solely by `hasStepEvents`, same as before this fix).
+  const steps: StepNode[] =
+    entryChannel !== null
+      ? [buildTriggerStep(entryChannel), ...walkedSteps]
+      : walkedSteps;
 
   return { steps, degraded: !hasStepEvents };
 }

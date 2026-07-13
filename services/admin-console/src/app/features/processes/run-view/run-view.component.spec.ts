@@ -524,6 +524,27 @@ describe("RunViewComponent", () => {
       expect(el.querySelectorAll(".rv-node-highlighted").length).toBe(0);
     });
 
+    it("BUG 2 fix: also highlights the paired right-column artifact box when its cast chip is selected, and clears it on a second click", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const chip = el.querySelectorAll(".rv-cast-chip")[0] as HTMLElement;
+
+      expect(el.querySelectorAll(".rv-artifact-box-highlighted").length).toBe(
+        0
+      );
+
+      chip.click();
+      fixture.detectChanges();
+      const highlighted = el.querySelectorAll(".rv-artifact-box-highlighted");
+      expect(highlighted.length).toBe(1);
+      expect(highlighted[0]?.textContent).toContain("Order API");
+
+      chip.click();
+      fixture.detectChanges();
+      expect(el.querySelectorAll(".rv-artifact-box-highlighted").length).toBe(
+        0
+      );
+    });
+
     it("emits the clicked layout node via nodeSelected", () => {
       let emitted: ILayoutNode | undefined;
       fixture.componentInstance.nodeSelected.subscribe((n) => (emitted = n));
@@ -695,6 +716,109 @@ describe("RunViewComponent", () => {
 
       expect(emitted).toBeTruthy();
       expect(el.querySelector("app-run-view-popup")).toBeTruthy();
+    });
+
+    it("BUG 1 fix: does NOT render a leading Channel trigger node when the run's cast has no channel entry (no-channel run unchanged)", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('.rv-node[data-kind="trigger"]')).toBeFalsy();
+      // Unaffected node count: fork + 2 lane steps + join, no trigger.
+      expect(el.querySelectorAll(".rv-node").length).toBe(4);
+    });
+  });
+
+  describe("fork run with a channel entry (BUG 1 fix: leading trigger node)", () => {
+    const forkDefinitionWithChannel = definition([
+      {
+        activity: "branch",
+        name: "fanOut",
+        A: [{ activity: "endpointCall", name: "getPost", args: {} }],
+      },
+    ]);
+
+    const forkRunWithChannel = runResponse({
+      events: [
+        event({
+          event_id: "fork-started",
+          kind: "action_started",
+          payload_action_index: 0,
+          payload_action_type: "branch",
+          payload_action_name: "fanOut",
+        }),
+        event({
+          event_id: "fork-completed",
+          kind: "action_completed",
+          payload_action_index: 0,
+          payload_action_type: "branch",
+          payload_action_name: "fanOut",
+          payload_step_status: "ok",
+        }),
+        event({
+          event_id: "a-started",
+          kind: "action_started",
+          payload_action_index: 0,
+          payload_action_type: "endpointCall",
+          payload_action_name: "getPost",
+          payload_branch: "A",
+          payload_connector_id: "conn-get-post",
+        }),
+        event({
+          event_id: "a-completed",
+          kind: "action_completed",
+          payload_action_index: 0,
+          payload_action_type: "endpointCall",
+          payload_action_name: "getPost",
+          payload_branch: "A",
+          payload_connector_id: "conn-get-post",
+          payload_step_status: "ok",
+        }),
+      ],
+      cast: [
+        {
+          kind: "connector",
+          id: "conn-get-post",
+          name: "jsonplaceholder",
+          count: 1,
+        },
+        { kind: "channel", id: "http-generic", name: "http-generic", count: 1 },
+      ],
+    });
+
+    beforeEach(() => {
+      setup();
+      flush(forkRunWithChannel, forkDefinitionWithChannel);
+    });
+
+    it("renders a teal 'Channel' trigger node first, before the fanOut fork node", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const nodes = Array.from(el.querySelectorAll(".rv-node"));
+      const triggerNode = nodes.find(
+        (n) => n.getAttribute("data-kind") === "trigger"
+      );
+      expect(triggerNode).toBeTruthy();
+      expect(triggerNode?.getAttribute("data-color")).toBe("channel");
+      expect(triggerNode?.textContent).toContain("Channel");
+      expect(triggerNode?.textContent).toContain("http-generic");
+
+      const forkNode = nodes.find(
+        (n) => n.getAttribute("data-kind") === "fork"
+      );
+      expect(forkNode).toBeTruthy();
+      // DOM order proof: the trigger renders BEFORE the fork node.
+      expect(nodes.indexOf(triggerNode!)).toBeLessThan(
+        nodes.indexOf(forkNode!)
+      );
+    });
+
+    it("connects the trigger node to the first real action via a linear (non-dashed) edge", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const edges = Array.from(el.querySelectorAll(".rv-edge"));
+      const linearEdges = edges.filter(
+        (e) => e.getAttribute("data-kind") === "linear"
+      );
+      expect(linearEdges.length).toBeGreaterThanOrEqual(1);
+      expect(
+        linearEdges.some((e) => !e.classList.contains("rv-edge-dashed"))
+      ).toBe(true);
     });
   });
 

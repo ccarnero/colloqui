@@ -176,7 +176,29 @@ export interface IForkStep extends ITimeRange {
   readonly lanes: readonly IForkLane[];
 }
 
-export type StepNode = IActionStep | IConditionalStep | IForkStep;
+/** Leading channel-trigger step (bug fix: the run view was missing the
+ * entry point — the workflow builder shows a leading "Channel ·
+ * {{request.channel}}" node before the first definition action). Minimal
+ * on purpose: it carries no `instanceId`/`durationMs`/`actionIndex`/
+ * `branchPath` (it is not part of the definition's own action tree, just
+ * a synthetic entry node `merge-run.ts` prepends from the run's OWN
+ * channel cast entry) and is always at the top level (`nestingDepth: 0`).
+ * Status-neutral: never counted in executed/not-executed totals and
+ * never renders dashed (see `layout-run.ts`). */
+export interface ITriggerStep {
+  readonly type: "trigger";
+  readonly name: string;
+  readonly channel: string | null;
+  readonly nestingDepth: 0;
+  readonly startedAt: null;
+  readonly completedAt: null;
+}
+
+export type StepNode =
+  | IActionStep
+  | IConditionalStep
+  | IForkStep
+  | ITriggerStep;
 
 export interface IMergedRun {
   readonly steps: readonly StepNode[];
@@ -190,7 +212,12 @@ export interface IMergedRun {
 
 // ── Layout (geometry) model ──────────────────────────────────────────
 
-export type LayoutNodeKind = "action" | "conditional" | "fork" | "join";
+export type LayoutNodeKind =
+  | "action"
+  | "conditional"
+  | "fork"
+  | "join"
+  | "trigger";
 
 /** Lane cap for a fork segment (DESIGN.md: "max 2-3, then collapse to
  * summary"). Beyond this, extra lanes collapse into `IForkGeometry`'s

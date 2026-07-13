@@ -18,11 +18,19 @@ import {
   type StepNode,
 } from "./run-view.model";
 
-function nodeId(step: StepNode): string {
+/** `nodeId`/`labelFor` only ever see the definition-tree-derived step
+ * kinds — the leading trigger step (BUG 1 fix) is handled by its OWN
+ * branch in `layoutSequence` (fixed id `"trigger"`, no `branchPath`/
+ * `actionIndex` to derive an id from at all), so it is excluded here
+ * rather than widening these helpers' signature for a shape they never
+ * receive. */
+type IdentifiableStepNode = Exclude<StepNode, { type: "trigger" }>;
+
+function nodeId(step: IdentifiableStepNode): string {
   return `${step.branchPath ?? "root"}::${step.actionIndex}`;
 }
 
-function labelFor(step: StepNode): string {
+function labelFor(step: IdentifiableStepNode): string {
   if (step.type === "action") {
     // Primary label is the human action NAME (e.g. "getPost"), not the
     // instance UUID — the connector/agent instance id is secondary detail
@@ -131,6 +139,39 @@ function layoutSequence(
   let pendingThick = false;
 
   for (const step of steps) {
+    if (step.type === "trigger") {
+      // BUG 1 fix: leading channel-trigger node — a leaf leading node,
+      // always first in `steps` (`merge-run.ts` only ever prepends it),
+      // so it never has an incoming edge of its own; the NEXT step chains
+      // from it via the normal linear-edge bookkeeping below (mirrors the
+      // simplest part of the action branch: no lanes, no fork/conditional
+      // fan-out).
+      const id = "trigger";
+      collector.nodes.push({
+        id,
+        kind: "trigger",
+        color: "channel",
+        label: "Channel",
+        stepName: step.name,
+        status: "ok",
+        row,
+        lane,
+        onSpine,
+        nestingDepth: 0,
+        durationMs: null,
+        dashed: false,
+        instanceId: null,
+        evaluatedValue: null,
+        branchTaken: null,
+        actionType: null,
+        conditionEventId: null,
+      });
+      firstId ??= id;
+      prevId = id;
+      row += 1;
+      continue;
+    }
+
     if (step.type === "action") {
       const id = nodeId(step);
       collector.nodes.push({

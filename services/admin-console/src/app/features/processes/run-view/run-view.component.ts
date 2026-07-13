@@ -47,6 +47,7 @@ import {
   PILL_WIDTH,
   pillOffsetX,
   resolveCastColor,
+  resolveEntryChannel,
 } from "./run-view-render";
 
 /** View state for the component's own fetch (T04 owns the seam per
@@ -148,6 +149,7 @@ type RunState =
 
           <svg
             class="rv-svg"
+            [class.rv-has-selection]="selectedInstanceId() !== null"
             [attr.viewBox]="viewBox()"
             preserveAspectRatio="xMinYMin meet"
             [style.width.px]="contentWidth()"
@@ -282,6 +284,7 @@ type RunState =
             @for (box of artifactBoxes(); track box.stepId) {
               <g
                 class="rv-artifact-box"
+                [class.rv-artifact-box-highlighted]="isArtifactHighlighted(box)"
                 [attr.data-color]="box.color"
                 [attr.transform]="'translate(' + box.x + ',' + box.y + ')'"
                 (click)="onArtifactClick(box, $event)"
@@ -346,6 +349,12 @@ type RunState =
       --rv-teal-border: var(--cyan);
       --rv-edge-stroke: var(--text3);
       --rv-critical-stroke: var(--purple);
+      /* BUG 2 fix: cast-chip highlight accent — \`--accent-yz\` is a fixed
+       * brand orange (not swapped per theme, same precedent as
+       * \`--yellow\`/\`--purple\`/\`--cyan\` above), distinct from every
+       * existing node color (gray/amber/purple/teal) so a highlighted
+       * node/artifact box is unambiguous on both light and dark themes. */
+      --rv-highlight: var(--accent-yz);
     }
     .rv {
       display: flex;
@@ -535,8 +544,30 @@ type RunState =
     .rv-node-dashed .rv-node-rect {
       stroke-dasharray: 4 3;
     }
+    /* BUG 2 fix: the old rule only bumped \`stroke-width\` — imperceptible
+     * on a node that is already bordered. Recolor to the dedicated
+     * highlight accent + a soft glow so the selected step is unmistakable
+     * regardless of its own gray/amber/purple/teal border. */
     .rv-node-highlighted .rv-node-rect {
+      stroke: var(--rv-highlight);
       stroke-width: 3;
+      filter: drop-shadow(0 0 3px rgba(253, 100, 33, 0.6));
+    }
+    /* Same treatment for the paired right-column artifact box (BUG 2:
+     * "also highlight the matching spine artifact box"). Own selector
+     * (not reusing \`.rv-node-highlighted\`) since artifact boxes render
+     * as a separate \`.rv-artifact-box\` element, not a \`.rv-node\`. */
+    .rv-artifact-box-highlighted .rv-artifact-rect {
+      stroke: var(--rv-highlight);
+      stroke-width: 3;
+      filter: drop-shadow(0 0 3px rgba(253, 100, 33, 0.6));
+    }
+    /* Optional dim: once a selection is active, fade every non-highlighted
+     * node so the highlighted one(s) pop — subtle, not applied to edges or
+     * artifact boxes (those already have their own highlight/no-highlight
+     * treatment). */
+    .rv-has-selection .rv-node:not(.rv-node-highlighted) {
+      opacity: 0.45;
     }
     .rv-node-label {
       font-size: 11px;
@@ -662,7 +693,12 @@ export class RunViewComponent {
         // events-only spine (executed steps only, flat, no plan-vs-executed
         // dashed overlay — see merge-run.ts's `buildStepsFromEvents`), and
         // the header falls back to the raw id via `workflowName()`.
-        const merged = mergeRun(run.events, run.spans, { actions: [] });
+        const merged = mergeRun(
+          run.events,
+          run.spans,
+          { actions: [] },
+          resolveEntryChannel(run.cast)
+        );
         const layout = layoutRun(merged);
         this.state.set({ kind: "loaded", run, layout });
       };
@@ -675,7 +711,12 @@ export class RunViewComponent {
             this.runViewService.getDefinition(definitionId).subscribe({
               next: (definition) => {
                 this.definitionSignal.set(definition);
-                const merged = mergeRun(run.events, run.spans, definition);
+                const merged = mergeRun(
+                  run.events,
+                  run.spans,
+                  definition,
+                  resolveEntryChannel(run.cast)
+                );
                 const layout = layoutRun(merged);
                 this.state.set({ kind: "loaded", run, layout });
               },
@@ -702,7 +743,12 @@ export class RunViewComponent {
               if (matches.length === 1) {
                 const matched = matches[0]!;
                 this.definitionSignal.set(matched);
-                const merged = mergeRun(run.events, run.spans, matched);
+                const merged = mergeRun(
+                  run.events,
+                  run.spans,
+                  matched,
+                  resolveEntryChannel(run.cast)
+                );
                 const layout = layoutRun(merged);
                 this.state.set({ kind: "loaded", run, layout });
                 return;
@@ -822,10 +868,7 @@ export class RunViewComponent {
 
   /** DESIGN.md header: "entry/channel" — the run's channel-kind cast
    * entry (the workflow's channel trigger/send actor), when present. */
-  readonly entryChannel = computed(() => {
-    const channelEntry = this.run().cast.find((c) => c.kind === "channel");
-    return channelEntry?.name ?? null;
-  });
+  readonly entryChannel = computed(() => resolveEntryChannel(this.run().cast));
 
   resolveCastColor = resolveCastColor;
   nodeSubLabel = nodeSubLabel;
@@ -833,6 +876,17 @@ export class RunViewComponent {
   isHighlighted(node: ILayoutNode): boolean {
     const selected = this.selected();
     return selected !== null && node.instanceId === selected;
+  }
+
+  /** BUG 2 fix: the right-column artifact box paired with a selected cast
+   * chip's step must ALSO light up (DESIGN.md: "Click = highlight that
+   * artifact's steps in the flow" — the artifact box is one of those
+   * steps). Compares against `IArtifactBox.instanceId` (the resolved cast
+   * entry id, which also covers `channelSend` boxes whose underlying
+   * layout node carries no `instanceId` of its own). */
+  isArtifactHighlighted(box: IArtifactBox): boolean {
+    const selected = this.selected();
+    return selected !== null && box.instanceId === selected;
   }
 
   /** Cast chip click toggles highlight of that instance's steps

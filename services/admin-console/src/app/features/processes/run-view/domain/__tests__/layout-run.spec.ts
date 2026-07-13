@@ -7,9 +7,22 @@ import type {
   IForkLane,
   IForkStep,
   IMergedRun,
+  ITriggerStep,
   StepColor,
   StepNode,
 } from "../run-view.model";
+
+function triggerStep(overrides: Partial<ITriggerStep> = {}): ITriggerStep {
+  return {
+    type: "trigger",
+    name: "http-generic",
+    channel: "http-generic",
+    nestingDepth: 0,
+    startedAt: null,
+    completedAt: null,
+    ...overrides,
+  };
+}
 
 function actionStep(overrides: Partial<IActionStep> = {}): IActionStep {
   return {
@@ -371,6 +384,31 @@ describe("layoutRun", () => {
     const step2 = actionStep({ actionIndex: 1, durationMs: 1 });
     const layout = layoutRun(merged([step1, step2]));
     expect(layout.nodes[1]!.row - layout.nodes[0]!.row).toBe(1);
+  });
+
+  it("BUG 1 fix: a leading trigger step positions first, on spine, not dashed, teal, with a linear edge to the first real action", () => {
+    const trigger = triggerStep({ name: "http-generic" });
+    const action = actionStep({ actionIndex: 0, name: "fanout" });
+    const layout = layoutRun(merged([trigger, action]));
+
+    expect(layout.nodes).toHaveLength(2);
+    const triggerNode = layout.nodes[0]!;
+    const actionNode = layout.nodes[1]!;
+    expect(triggerNode.kind).toBe("trigger");
+    expect(triggerNode.color).toBe("channel");
+    expect(triggerNode.row).toBe(0);
+    expect(triggerNode.onSpine).toBe(true);
+    expect(triggerNode.dashed).toBe(false);
+    expect(triggerNode.status).toBe("ok");
+    expect(triggerNode.stepName).toBe("http-generic");
+
+    expect(actionNode.row).toBe(1);
+    expect(layout.edges).toHaveLength(1);
+    const edge = layout.edges[0]!;
+    expect(edge.kind).toBe("linear");
+    expect(edge.fromId).toBe(triggerNode.id);
+    expect(edge.toId).toBe(actionNode.id);
+    expect(edge.dashed).toBe(false);
   });
 
   it("action node label shows the human action NAME, not the instance UUID", () => {
