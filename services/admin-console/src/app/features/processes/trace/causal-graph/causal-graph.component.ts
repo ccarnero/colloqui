@@ -7,6 +7,7 @@ import {
   input,
   signal,
 } from "@angular/core";
+import { RouterLink } from "@angular/router";
 import { AuthService } from "../../../../core/services/auth.service";
 import {
   type IEventPayloadResponse,
@@ -14,6 +15,7 @@ import {
   type ITrackingChainResponse,
   TrackingChainService,
 } from "../../../../core/services/tracking-chain.service";
+import { resolveTrackedEventDeepLink } from "./causal-graph-deep-link";
 import {
   computeChainCompleteness,
   computeChannel,
@@ -65,6 +67,7 @@ interface IRenderedEdge {
  */
 @Component({
   selector: "app-causal-graph",
+  imports: [RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="cg">
@@ -230,6 +233,14 @@ interface IRenderedEdge {
                 }
               </div>
             }
+
+            @if (deepLink(); as link) {
+              <div class="cg-deep-link">
+                <a class="cg-deep-link-btn" [routerLink]="link.route">
+                  {{ link.label }}
+                </a>
+              </div>
+            }
           </aside>
         }
       </div>
@@ -383,6 +394,23 @@ interface IRenderedEdge {
       white-space: pre-wrap;
       word-break: break-all;
     }
+    .cg-deep-link {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-subtle, #ddd);
+    }
+    .cg-deep-link-btn {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      border: 1px solid var(--border, #185fa5);
+      border-radius: 6px;
+      background: var(--bg, #fff);
+      color: #185fa5;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+    }
   `,
 })
 export class CausalGraphComponent {
@@ -490,6 +518,14 @@ export class CausalGraphComponent {
       return null;
     }
     return this.chain().events.find((event) => event.event_id === id) ?? null;
+  });
+
+  /** "Open <entity>" deep link for the selected event (T05 of
+   * `manual-loops/connector-trace-linking.md`) — `null` hides the button,
+   * same pattern as `canViewPayload()` gating the payload section. */
+  readonly deepLink = computed(() => {
+    const event = this.selectedEvent();
+    return event ? resolveTrackedEventDeepLink(event) : null;
   });
 
   select(eventId: string): void {

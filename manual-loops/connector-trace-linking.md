@@ -259,7 +259,7 @@ grep -n "connector-trace-linking" cowork/INDEX.md
 - [x] T02 diagnose empty Recent calls (report)
 - [x] T03 ingester /events endpoint + gateway proxy
 - [x] T04 Recent calls on tracked_events + trace links
-- [ ] T05 deep links detail card → entity screens
+- [x] T05 deep links detail card → entity screens (mcp/hosted: no tracked events exist today — mapping returns null; causal-graph agent link needs ingester agentId extraction, future work)
 - [ ] T06 cluster e2e correlation round-trip
 - [ ] T07 docs + index
 

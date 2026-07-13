@@ -278,6 +278,51 @@ describe("RunViewPopupComponent", () => {
     it("offers a workflow definition peek button", () => {
       expect(el().textContent?.includes("View workflow definition")).toBe(true);
     });
+
+    it("renders no 'Open <entity>' deep link when the matched event carries no connector/agent id", () => {
+      expect(el().querySelector(".rvp-step-deep-link")).toBeFalsy();
+    });
+  });
+
+  describe("'Open <entity>' deep link (T05 of manual-loops/connector-trace-linking.md)", () => {
+    it("renders 'Open connector' for a completed event carrying payload_connector_id", () => {
+      setup({
+        run: runResponse({
+          events: [
+            event({
+              event_id: "evt-completed",
+              kind: "action_completed",
+              payload_action_index: 0,
+              payload_connector_id: "adapter-9",
+            }),
+          ],
+        }),
+      });
+
+      const link = el().querySelector(".rvp-step-deep-link");
+      expect(link).toBeTruthy();
+      expect(link?.textContent?.trim()).toBe("Open connector");
+    });
+
+    it("renders 'Open agent' for a completed event carrying payload_agent_id", () => {
+      setup({
+        node: node({ actionType: "agentCall", instanceId: "agent-1" }),
+        run: runResponse({
+          events: [
+            event({
+              event_id: "evt-completed",
+              kind: "action_completed",
+              payload_action_index: 0,
+              payload_agent_id: "agent-7",
+            }),
+          ],
+        }),
+      });
+
+      const link = el().querySelector(".rvp-step-deep-link");
+      expect(link).toBeTruthy();
+      expect(link?.textContent?.trim()).toBe("Open agent");
+    });
   });
 
   describe("connector peek navigation", () => {
@@ -313,7 +358,9 @@ describe("RunViewPopupComponent", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
           endpoints: [],
         });
-      httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL).flush({ events: [] });
+      httpMock
+        .expectOne((r) => r.url === TRACKING_EVENTS_URL)
+        .flush({ events: [] });
       fixture.detectChanges();
 
       const text = el().textContent ?? "";
@@ -345,7 +392,9 @@ describe("RunViewPopupComponent", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
           endpoints: [],
         });
-      httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL).flush({ events: [] });
+      httpMock
+        .expectOne((r) => r.url === TRACKING_EVENTS_URL)
+        .flush({ events: [] });
       fixture.detectChanges();
 
       const link = el().querySelector("a.rvp-deep-link") as HTMLAnchorElement;
@@ -375,7 +424,9 @@ describe("RunViewPopupComponent", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
           endpoints: [],
         });
-      httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL).flush({ events: [] });
+      httpMock
+        .expectOne((r) => r.url === TRACKING_EVENTS_URL)
+        .flush({ events: [] });
       fixture.detectChanges();
 
       (el().querySelector(".rvp-back") as HTMLElement).click();

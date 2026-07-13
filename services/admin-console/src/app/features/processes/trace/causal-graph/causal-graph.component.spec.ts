@@ -5,6 +5,7 @@ import {
   provideHttpClientTesting,
 } from "@angular/common/http/testing";
 import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { provideRouter } from "@angular/router";
 import { beforeEach, describe, expect, it } from "vitest";
 import { environment } from "../../../../../environments/environment";
 import { AuthService } from "../../../../core/services/auth.service";
@@ -105,6 +106,7 @@ describe("CausalGraphComponent", () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        provideRouter([]),
         { provide: AuthService, useValue: { hasPermission: () => true } },
       ],
     }).compileComponents();
@@ -168,6 +170,45 @@ describe("CausalGraphComponent", () => {
     node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     fixture.detectChanges();
     expect(el.querySelector(".cg-detail")).toBeFalsy();
+  });
+
+  describe("'Open <entity>' deep link (T05 of manual-loops/connector-trace-linking.md)", () => {
+    it("renders 'Open connector' for a selected endpoint_call_completed event with a connector_id", () => {
+      const chainWithConnectorEvent: ITrackingChainResponse = {
+        ...fixtureChain,
+        events: [
+          event({
+            event_id: "evt-connector",
+            kind: "endpoint_call_completed",
+            business_fn: "connector-invocation",
+            connector_id: "adapter-9",
+          }),
+        ],
+      };
+      fixture.componentRef.setInput("chain", chainWithConnectorEvent);
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      (el.querySelector(".cg-node") as HTMLElement).dispatchEvent(
+        new MouseEvent("click", { bubbles: true })
+      );
+      fixture.detectChanges();
+
+      const link = el.querySelector(".cg-deep-link-btn");
+      expect(link).toBeTruthy();
+      expect(link?.textContent?.trim()).toBe("Open connector");
+    });
+
+    it("renders no deep link for an event the mapping does not resolve", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const nodes = el.querySelectorAll(".cg-node");
+      (nodes[2] as HTMLElement).dispatchEvent(
+        new MouseEvent("click", { bubbles: true })
+      );
+      fixture.detectChanges();
+
+      expect(el.querySelector(".cg-deep-link-btn")).toBeFalsy();
+    });
   });
 
   describe("payload viewer (admin permission granted)", () => {

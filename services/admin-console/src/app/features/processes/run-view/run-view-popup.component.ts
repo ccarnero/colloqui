@@ -25,6 +25,7 @@ import type { IRunResponse } from "../../../core/services/run-view.service";
 import type { IEventPayloadResponse } from "../../../core/services/tracking-chain.service";
 import { TrackingChainService } from "../../../core/services/tracking-chain.service";
 import type { IWorkflowDefinitionDto } from "../../automation/workflows/services/workflow-api.service";
+import { resolveStepDeepLink } from "./domain/resolve-step-deep-link";
 import {
   type IStepEventPair,
   parseNodeId,
@@ -261,6 +262,18 @@ type PayloadViewState =
                 >
                   View workflow definition
                 </button>
+              </section>
+            }
+
+            @if (stepDeepLink(); as link) {
+              <section class="rvp-peek-actions">
+                <a
+                  class="rvp-peek-btn rvp-step-deep-link"
+                  [routerLink]="link.route"
+                  (click)="close()"
+                >
+                  {{ link.label }}
+                </a>
               </section>
             }
           }
@@ -596,6 +609,14 @@ export class RunViewPopupComponent {
   );
 
   readonly peekKind = computed<PeekKind>(() => resolvePeekKind(this.node()));
+
+  /** "Open <entity>" deep link for the step-detail view (T05 of
+   * `manual-loops/connector-trace-linking.md`) — `null` hides the button.
+   * Distinct from the peek flow above (`peekKind`/`openPeek`): this is a
+   * direct link, no intermediate "View connector profile" step. */
+  readonly stepDeepLink = computed(() =>
+    resolveStepDeepLink(this.node(), this.run().events)
+  );
 
   readonly canViewPayload = computed(() =>
     this.auth.hasPermission(PAYLOAD_PERMISSION)
