@@ -1,7 +1,11 @@
 import { ApplicationFailure } from "@temporalio/activity";
 import { tracedFetch, PinoLoggerService } from "@yoizen/observability";
 import { TENANT_HEADER, computeBreakerKey } from "@yoizen/shared";
-import type { ResolvedAdapterRequest, ServiceCallArgs } from "@yoizen/shared";
+import type {
+  EventCausalContext,
+  ResolvedAdapterRequest,
+  ServiceCallArgs,
+} from "@yoizen/shared";
 import { workflowHttpWorkerConfig } from "../config";
 import {
   getAdapterClient,
@@ -49,6 +53,10 @@ const logger = new PinoLoggerService("service-call.activity");
 export async function executeServiceCall(
   args: ServiceCallArgs,
   tenantId: string,
+  // Accepted for Temporal positional-signature parity with `executeEndpointCall`/
+  // `executeMcpCall`; unused here because `serviceCall` emits no
+  // `endpoint_call_completed` event to thread causal context into.
+  _causal?: EventCausalContext,
   executionId?: string,
 ): Promise<IServiceCallResult> {
   if (executionId) {

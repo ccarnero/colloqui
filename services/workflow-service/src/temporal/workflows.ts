@@ -98,6 +98,7 @@ interface IHttpActivities {
   executeEndpointCall(
     args: EndpointCallArgs,
     tenantId: string,
+    causal?: EventCausalContext,
     executionId?: string
   ): Promise<{
     status: number;
@@ -107,6 +108,7 @@ interface IHttpActivities {
   executeServiceCall(
     args: ServiceCallArgs,
     tenantId: string,
+    causal?: EventCausalContext,
     executionId?: string
   ): Promise<{
     status: number;
@@ -678,6 +680,7 @@ async function executeAction(
       return http.executeEndpointCall(
         resolveTemplates(action.args, context),
         tenant,
+        context.causal,
         context.executionId
       );
 
@@ -707,6 +710,7 @@ async function executeAction(
       return http.executeServiceCall(
         resolveTemplates(action.args, context),
         tenant,
+        context.causal,
         context.executionId
       );
 

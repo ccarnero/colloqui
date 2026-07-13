@@ -7,6 +7,7 @@ mock.module("@yoizen/observability", () => ({
     createCounter: () => ({ add() {} }),
     createHistogram: () => ({ record() {} }),
   }),
+  logWithEnvelope: () => {},
   PinoLoggerService: class FakeLogger {
     log() {}
     warn(_msg: string) {}
@@ -15,6 +16,16 @@ mock.module("@yoizen/observability", () => ({
 }));
 
 // ---- mock @yoizen/shared with real-ish implementations ----
+class FakeDepthExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DepthExceededError";
+  }
+}
+
+/** Set by individual tests to force `buildEventEnvelope` to simulate a depth breach. */
+const depthState = { forceDepthExceeded: false };
+
 mock.module("@yoizen/shared", () => ({
   platformServiceUrl: (name: string) => `http://${name}.svc`,
   buildSubject: ({
@@ -27,12 +38,24 @@ mock.module("@yoizen/shared", () => ({
     version,
   }: Record<string, string>) =>
     `evt.${tenant}.${producer}.${domain}.${channel}.${provider}.${kind}.${version}`,
-  buildEventEnvelope: (params: Record<string, unknown>) => ({
-    type: params["type"],
-    source: params["source"],
-    data: { payload: params["payload"] },
-    tenant: params["tenant"],
-  }),
+  buildEventEnvelope: (params: Record<string, unknown>) => {
+    const depth = (params["depth"] as number | undefined) ?? 0;
+    if (depthState.forceDepthExceeded && depth > 0) {
+      throw new FakeDepthExceededError(
+        `Causal depth ${depth} exceeds MAX_DEPTH`
+      );
+    }
+    return {
+      type: params["type"],
+      source: params["source"],
+      data: { payload: params["payload"] },
+      tenant: params["tenant"],
+      correlation_id: params["correlationId"] ?? "generated-correlation-id",
+      causation_id: params["causationId"] ?? null,
+      transport: { depth },
+    };
+  },
+  DepthExceededError: FakeDepthExceededError,
   TENANT_HEADER: "x-yoizen-tenant",
 }));
 
@@ -68,11 +91,13 @@ describe("publishEndpointCallEvent", () => {
   beforeEach(() => {
     publishSpy.mockClear();
     fakeHeaders.clear();
+    depthState.forceDepthExceeded = false;
   });
 
   afterEach(() => {
     publishSpy.mockClear();
     fakeHeaders.clear();
+    depthState.forceDepthExceeded = false;
   });
 
   const baseEvt = {
@@ -262,5 +287,73 @@ describe("publishEndpointCallEvent", () => {
     expect(() => publishEndpointCallEvent(baseEvt)).not.toThrow();
     await flush();
     // No unhandled rejection — test passes if we reach here
+  });
+
+  it("with causal context: propagates correlationId, causationId, and depth + 1", async () => {
+    const evt = {
+      ...baseEvt,
+      causal: {
+        correlation_id: "run-correlation-id",
+        causation_id: "parent-event-id",
+        depth: 2,
+      },
+    };
+    publishEndpointCallEvent(evt);
+    await flush();
+
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    const rawBytes = publishSpy.mock.calls[0]![1] as Uint8Array;
+    const envelope = JSON.parse(new TextDecoder().decode(rawBytes)) as {
+      correlation_id: string;
+      causation_id: string | null;
+      transport: { depth: number };
+    };
+    expect(envelope.correlation_id).toBe("run-correlation-id");
+    expect(envelope.causation_id).toBe("parent-event-id");
+    expect(envelope.transport.depth).toBe(3);
+  });
+
+  it("without causal context: envelope gets a random correlation and null causation (root event)", async () => {
+    publishEndpointCallEvent(baseEvt);
+    await flush();
+
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    const rawBytes = publishSpy.mock.calls[0]![1] as Uint8Array;
+    const envelope = JSON.parse(new TextDecoder().decode(rawBytes)) as {
+      correlation_id: string;
+      causation_id: string | null;
+      transport: { depth: number };
+    };
+    expect(envelope.correlation_id).toBe("generated-correlation-id");
+    expect(envelope.causation_id).toBeNull();
+    expect(envelope.transport.depth).toBe(0);
+  });
+
+  it("falls back to a root event when buildEventEnvelope throws DepthExceededError", async () => {
+    depthState.forceDepthExceeded = true;
+    const evt = {
+      ...baseEvt,
+      causal: {
+        correlation_id: "run-correlation-id",
+        causation_id: "parent-event-id",
+        depth: 50,
+      },
+    };
+
+    publishEndpointCallEvent(evt);
+    await flush();
+
+    // Publish still happens (fallback root envelope), never fails silently.
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    const rawBytes = publishSpy.mock.calls[0]![1] as Uint8Array;
+    const envelope = JSON.parse(new TextDecoder().decode(rawBytes)) as {
+      correlation_id: string;
+      causation_id: string | null;
+      transport: { depth: number };
+    };
+    // Fallback envelope is built without causal fields → root event.
+    expect(envelope.correlation_id).toBe("generated-correlation-id");
+    expect(envelope.causation_id).toBeNull();
+    expect(envelope.transport.depth).toBe(0);
   });
 });

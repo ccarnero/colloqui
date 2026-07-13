@@ -1,6 +1,6 @@
 import { ApplicationFailure } from "@temporalio/activity";
 import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
-import type { EndpointCallArgs } from "@yoizen/shared";
+import type { EndpointCallArgs, EventCausalContext } from "@yoizen/shared";
 import { computeBreakerKey, TENANT_HEADER } from "@yoizen/shared";
 import { workflowHttpWorkerConfig } from "../config";
 import {
@@ -59,11 +59,17 @@ const logger = new PinoLoggerService("endpoint-call.activity");
  *
  * @param args - Method, URL, body, optional adapter/endpoint ids.
  * @param tenantId - Injected tenant for adapter resolution and `x-yoizen-tenant`.
+ * @param causal - Causal context from the calling workflow's `endpointCall`/
+ *   `serviceCall` action (when present), mirroring `mcp-call.activity.ts`'s
+ *   `causal` param. Threaded into the published `endpoint_call_completed`
+ *   event so it joins the run's correlation chain instead of becoming a
+ *   causal orphan.
  * @returns Normalized status, body, and string headers.
  */
 export async function executeEndpointCall(
   args: EndpointCallArgs,
   tenantId: string,
+  causal?: EventCausalContext,
   executionId?: string
 ): Promise<IEndpointCallResult> {
   if (executionId) {
@@ -96,9 +102,9 @@ export async function executeEndpointCall(
   try {
     let result: IEndpointCallResult;
     if (hasAdapter && hasEndpoint) {
-      result = await executeWithAdapterEndpoint(args, tenantId);
+      result = await executeWithAdapterEndpoint(args, tenantId, causal);
     } else if (hasAdapter) {
-      result = await executeWithAdapterBase(args, tenantId);
+      result = await executeWithAdapterBase(args, tenantId, causal);
     } else {
       result = await executeRaw(args, tenantId);
     }
@@ -112,7 +118,8 @@ export async function executeEndpointCall(
 
 async function executeWithAdapterEndpoint(
   args: EndpointCallArgs,
-  tenantId: string
+  tenantId: string,
+  causal?: EventCausalContext
 ): Promise<IEndpointCallResult> {
   const client = getAdapterClient();
   const resolved = await client.resolveRequest(
@@ -168,6 +175,7 @@ async function executeWithAdapterEndpoint(
     responseBody: truncateBody(result.data),
     cacheKey: decision.policy?.key,
     cacheTtlSeconds: decision.policy?.ttlSeconds,
+    causal,
   });
   return result;
 }
@@ -184,7 +192,8 @@ async function executeWithAdapterEndpoint(
  */
 async function executeWithAdapterBase(
   args: EndpointCallArgs,
-  tenantId: string
+  tenantId: string,
+  causal?: EventCausalContext
 ): Promise<IEndpointCallResult> {
   if (!args.url || args.url.length === 0) {
     throw ApplicationFailure.nonRetryable(
@@ -251,6 +260,7 @@ async function executeWithAdapterBase(
     responseBody: truncateBody(result.data),
     cacheKey: decision.policy?.key,
     cacheTtlSeconds: decision.policy?.ttlSeconds,
+    causal,
   });
   return result;
 }

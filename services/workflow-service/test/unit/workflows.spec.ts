@@ -218,6 +218,8 @@ describe("runWorkflow (temporal/workflows)", () => {
         },
       },
       "tenant-1",
+      // causal (undefined in this test context), then executionId
+      undefined,
       undefined
     );
     executeJsFunction.mockImplementation(() =>
@@ -1604,6 +1606,7 @@ describe("runWorkflow (temporal/workflows)", () => {
           path: "/api?reply=first",
         }),
         "tenant-1",
+        undefined,
         undefined
       );
       executeJsFunction.mockImplementation(() =>
@@ -1640,6 +1643,7 @@ describe("runWorkflow (temporal/workflows)", () => {
           path: "/items/ABC123",
         }),
         "tenant-1",
+        undefined,
         undefined
       );
       executeJsFunction.mockImplementation(() =>
@@ -1668,6 +1672,7 @@ describe("runWorkflow (temporal/workflows)", () => {
           path: "/items/",
         }),
         "tenant-1",
+        undefined,
         undefined
       );
     });
@@ -1695,6 +1700,7 @@ describe("runWorkflow (temporal/workflows)", () => {
           path: "/orders/o1?env=production",
         }),
         "tenant-1",
+        undefined,
         undefined
       );
     });

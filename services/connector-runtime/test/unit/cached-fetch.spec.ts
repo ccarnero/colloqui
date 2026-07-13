@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 mock.module("@yoizen/observability", () => ({
+  logWithEnvelope: () => {},
   getMeter: () => ({
     createCounter: () => ({ add() {} }),
   }),

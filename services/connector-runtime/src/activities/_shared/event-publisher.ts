@@ -1,7 +1,9 @@
-import { PinoLoggerService } from "@yoizen/observability";
+import { logWithEnvelope, PinoLoggerService } from "@yoizen/observability";
 import {
   buildEventEnvelope,
   buildSubject,
+  DepthExceededError,
+  type EventCausalContext,
   TENANT_HEADER,
 } from "@yoizen/shared";
 import {
@@ -57,6 +59,15 @@ export interface IEndpointCallEvent {
   readonly responseBody?: string;
   readonly cacheKey?: string;
   readonly cacheTtlSeconds?: number;
+  /**
+   * Causal context from the workflow's `endpointCall`/`serviceCall` action,
+   * mirroring `mcp-call.activity.ts`'s `causal` threading (metering-foundation.md
+   * G5). When present, the published envelope's `correlation_id`/`causation_id`/
+   * `transport.depth` join the run's causal chain instead of becoming a root
+   * event. Absent `causal` preserves today's behavior (random correlation,
+   * null causation, depth 0).
+   */
+  readonly causal?: EventCausalContext;
 }
 
 /**
@@ -108,7 +119,7 @@ async function emit(evt: IEndpointCallEvent): Promise<void> {
     version: "v1",
   });
 
-  const envelope = buildEventEnvelope({
+  const baseOptions = {
     type: "connector.endpoint_call.completed.v1",
     source: "//connector-runtime/endpoint-call",
     resource: `adapter/${evt.adapterId}`,
@@ -119,7 +130,36 @@ async function emit(evt: IEndpointCallEvent): Promise<void> {
     provider: "system",
     accountid: evt.tenantId,
     payload,
-  });
+  } as const;
+
+  let envelope;
+  try {
+    // Causal threading: join the run's correlation chain when the calling
+    // workflow action carried one, same pattern as `mcp-call.activity.ts`'s
+    // `causal` → `reportMcpUsageEvent` threading (metering-foundation.md G5).
+    envelope = buildEventEnvelope(
+      evt.causal
+        ? {
+            ...baseOptions,
+            correlationId: evt.causal.correlation_id,
+            causationId: evt.causal.causation_id,
+            depth: evt.causal.depth + 1,
+          }
+        : baseOptions
+    );
+  } catch (err) {
+    if (err instanceof DepthExceededError) {
+      // Never let causal threading break the fire-and-forget publish path:
+      // fall back to a root event (no correlation/causation inherited) and
+      // warn so the depth cap breach is visible in logs.
+      logger.warn(
+        `endpoint_call event depth exceeded for tenant=${evt.tenantId} adapter=${evt.adapterId}, publishing as root event: ${err.message}`
+      );
+      envelope = buildEventEnvelope(baseOptions);
+    } else {
+      throw err;
+    }
+  }
 
   const hdrs = natsHeaders();
   hdrs.set(TENANT_HEADER, evt.tenantId);
@@ -129,7 +169,13 @@ async function emit(evt: IEndpointCallEvent): Promise<void> {
     headers: hdrs,
   });
 
-  logger.log(
-    `published endpoint_call event tenant=${evt.tenantId} adapter=${evt.adapterId} status=${evt.status}`
+  // Structured correlation via the shared helper (observability.md §3.1):
+  // `envelope` is a fully-built EventEnvelope, so this emits canonical
+  // correlation_id / causation_id / depth / tenant / event_id fields.
+  logWithEnvelope(
+    logger,
+    envelope,
+    "connector.endpoint_call.publish",
+    `published endpoint_call event adapter=${evt.adapterId} status=${evt.status}`
   );
 }
