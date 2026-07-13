@@ -66,6 +66,26 @@ set -euo pipefail
 #      colon-bearing (`acme:e2e-http-log:sha256:...:id`) and is
 #      percent-encoded before being placed in the URL path, matching the
 #      gateway's `parseRunPathSegments` contract (T02).
+#  13. (T06, manual-loops/connector-trace-linking.md) Stage 3 now also
+#      provisions a second action on '${WORKFLOW_NAME}' — an `endpointCall`
+#      hitting the pokeapi adapter — since neither e2e workflow previously
+#      exercised `endpointCall` at all (T02 finding: no endpoint_call event
+#      was ever produced by this suite). After the happy-path run, a SQL
+#      query against `tracking.tracked_events` asserts the resulting
+#      `endpoint_call_completed` row shares the happy-path run's
+#      correlation_id (proves connector-runtime inherits workflow causal
+#      correlation end-to-end, not just in unit tests).
+#  14. GET /api/tracking/events?type=connector.endpoint_call.completed.v1
+#      &resource=adapter/<adapterId>&limit=20 via the gateway and assert the
+#      response contains an event whose correlation_id matches the
+#      happy-path run — proves the gateway->ingester events-by-type/resource
+#      read path (the connector "Recent calls" feed) also carries the
+#      correlation through.
+#      Around stages 13/14 the script also logs (not asserts) the
+#      before/after count of endpoint_call_completed rows that are
+#      "orphaned" (no other tracked_events row shares their correlation_id)
+#      vs those that have siblings — evidence-at-volume for the correlation
+#      fix, per T06.
 #
 # Exit code 0 = full chain verified; 1 = any stage failed. The workflow is
 # always left ENABLED on exit (trap), even on failure, so a failed run never
@@ -90,6 +110,21 @@ WORKFLOW_NAME="e2e-http-log"
 # execution (agent-ai-service) whose span has duration_ms > 0 (see stage 10).
 AGENT_NAME="e2e-http-agent-echo"
 AGENT_WORKFLOW_NAME="e2e-http-agent"
+# T06 (manual-loops/connector-trace-linking.md): the pokeapi adapter — a
+# harmless GET, already registered in the dev cluster — used by stage 3's
+# 'probeEndpoint' endpointCall action so the e2e suite finally exercises the
+# endpointCall activity (T02 finding: previously NO endpoint_call event was
+# ever produced by this script).
+ENDPOINT_ADAPTER_ID="${E2E_ENDPOINT_ADAPTER_ID:-a2dcbf77-7b4f-4a7b-b8ac-3e48c6496f0d}"
+# Namespace/pod for the direct SQL assertions in stages 13/14 — same
+# Postgres instance the tracking-ingester-service writes tracking.tracked_events
+# to. There is no ingester-side SQL helper endpoint, so this queries Postgres
+# directly via kubectl exec, same as the log-grep stages query Kubernetes logs
+# directly.
+TRACKING_PG_NAMESPACE="${E2E_TRACKING_PG_NAMESPACE:-support-services-dev}"
+TRACKING_PG_POD="${E2E_TRACKING_PG_POD:-postgres-0}"
+TRACKING_PG_USER="${E2E_TRACKING_PG_USER:-yoizen}"
+TRACKING_PG_DB="${E2E_TRACKING_PG_DB:-yoizen}"
 # 120s (was 60s): the workflow-execution wait must accommodate re-enable
 # propagation and the fuller event pipeline — every run now also publishes
 # the step-event stream (execution_started + action/condition events, x2 for
@@ -275,25 +310,92 @@ stage_ensure_account() {
 }
 
 stage_ensure_workflow() {
-  log "Stage 3: ensure workflow definition '${WORKFLOW_NAME}'"
+  # T06 (manual-loops/connector-trace-linking.md): '${WORKFLOW_NAME}' must
+  # carry TWO actions — the original 'logMessage' jsFunction, plus a new
+  # 'probeEndpoint' endpointCall hitting the pokeapi adapter — so the
+  # happy-path run finally exercises the endpointCall activity end to end
+  # (T02 finding: no endpoint_call event was ever produced by this script
+  # before). stage_ensure_workflow reuses a definition purely by name match,
+  # so an OLD cluster's '${WORKFLOW_NAME}' (single-action, pre-T06) must be
+  # detected and upgraded — via PUT first, falling back to delete+recreate,
+  # the same reconcile SHAPE as stage_ensure_agent_workflow (stage 3b),
+  # except this rewrites the full canonical actions array rather than
+  # jq-patching the existing one (the target definition is fixed and known
+  # here, so a full rewrite is simpler than an in-place merge).
+  log "Stage 3: ensure workflow definition '${WORKFLOW_NAME}' (incl. endpointCall probe action)"
   WORKFLOW_ID="$(api GET /api/workflows \
     | jq -r ".[] | select(.name == \"${WORKFLOW_NAME}\") | .id" | head -1)"
   if [[ -n "$WORKFLOW_ID" ]]; then
-    log "Reusing existing workflow ${WORKFLOW_ID}"
-    return 0
+    local existing_def has_probe
+    existing_def="$(api GET "/api/workflows/${WORKFLOW_ID}")"
+    has_probe="$(echo "$existing_def" | jq --arg aid "$ENDPOINT_ADAPTER_ID" \
+      '([.actions[]? | select(.activity == "endpointCall" and .args.adapterId == $aid)] | length) >= 1')"
+    if [[ "$has_probe" == "true" ]]; then
+      log "Reusing existing workflow ${WORKFLOW_ID} (already has endpointCall probe action)"
+      return 0
+    fi
+    warn "Workflow ${WORKFLOW_ID} missing the endpointCall probe action (T02 finding); upgrading via PUT"
+    local update_resp update_status update_body
+    update_resp="$(api_status PUT "/api/workflows/${WORKFLOW_ID}" "$(cat <<JSON
+{
+  "name": $(echo "$existing_def" | jq -c '.name'),
+  "application": $(echo "$existing_def" | jq -c '.application'),
+  "actions": [
+    {
+      "name": "logMessage",
+      "activity": "jsFunction",
+      "args": {
+        "code": "(ctx) => { console.log('[e2e-http-log]', ctx.request.from, ctx.request.text); return ctx.request.text; }"
+      }
+    },
+    {
+      "name": "probeEndpoint",
+      "activity": "endpointCall",
+      "args": {
+        "adapterId": "${ENDPOINT_ADAPTER_ID}",
+        "method": "GET",
+        "url": "/api/v2/pokemon/ditto"
+      }
+    }
+  ],
+  "trigger": $(echo "$existing_def" | jq -c '.trigger'),
+  "variables": $(echo "$existing_def" | jq -c '.variables')
+}
+JSON
+)")"
+    update_status="$(api_status_code "$update_resp")"
+    update_body="$(api_status_body "$update_resp")"
+    if [[ "$update_status" == "200" || "$update_status" == "201" ]]; then
+      log "Upgraded workflow ${WORKFLOW_ID} via PUT (added endpointCall probe action)"
+      return 0
+    fi
+    warn "PUT upgrade failed (status ${update_status}: ${update_body}); deleting and recreating workflow ${WORKFLOW_ID} instead"
+    api DELETE "/api/workflows/${WORKFLOW_ID}" >/dev/null 2>&1 || true
+    WORKFLOW_ID=""
   fi
   local resp
   resp="$(api POST /api/workflows "$(cat <<JSON
 {
   "name": "${WORKFLOW_NAME}",
   "application": "e2e",
-  "actions": [{
-    "name": "logMessage",
-    "activity": "jsFunction",
-    "args": {
-      "code": "(ctx) => { console.log('[e2e-http-log]', ctx.request.from, ctx.request.text); return ctx.request.text; }"
+  "actions": [
+    {
+      "name": "logMessage",
+      "activity": "jsFunction",
+      "args": {
+        "code": "(ctx) => { console.log('[e2e-http-log]', ctx.request.from, ctx.request.text); return ctx.request.text; }"
+      }
+    },
+    {
+      "name": "probeEndpoint",
+      "activity": "endpointCall",
+      "args": {
+        "adapterId": "${ENDPOINT_ADAPTER_ID}",
+        "method": "GET",
+        "url": "/api/v2/pokemon/ditto"
+      }
     }
-  }],
+  ],
   "trigger": {
     "type": "message_received",
     "mode": "shared",
@@ -307,6 +409,7 @@ JSON
     err "Workflow creation failed: $resp"
     return 1
   fi
+  log "Workflow created: ${WORKFLOW_ID}"
 }
 
 stage_ensure_agent() {
@@ -462,8 +565,16 @@ stage_verify_execution() {
   log "Stage 5: wait for workflow execution + console.log (timeout ${POLL_TIMEOUT_S}s, nonce ${nonce})"
   local deadline=$(( $(date +%s) + POLL_TIMEOUT_S ))
   while (( $(date +%s) < deadline )); do
-    if kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=workflow-worker \
-        --since=5m --tail=5000 2>/dev/null | grep -q "$nonce"; then
+    # Capture logs into a var THEN grep — never `kubectl logs | grep -q`.
+    # Under `set -o pipefail`, a matching `grep -q` closes the pipe and exits
+    # instantly; kubectl, still writing, takes SIGPIPE (141) and that becomes
+    # the pipeline's status, so the `if` takes the FALSE branch exactly when
+    # the nonce WAS present — a timing race that made this poll spuriously
+    # "miss" completed runs. `$(...)` capture reads to EOF and is immune.
+    local logs
+    logs="$(kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=workflow-worker \
+        --since=5m --tail=5000 2>/dev/null || true)"
+    if grep -q "$nonce" <<<"$logs"; then
       log "console.log with nonce found in workflow-worker logs"
       return 0
     fi
@@ -525,9 +636,15 @@ stage_verify_no_execution() {
   local deadline=$(( $(date +%s) + DISABLED_CHECK_TIMEOUT_S ))
   local skip_seen=0
   while (( $(date +%s) < deadline )); do
-    if kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=workflow-service-worker \
-        --since=5m --tail=5000 2>/dev/null \
-        | grep -q "Skipped trigger for disabled workflow ${WORKFLOW_NAME} (${WORKFLOW_ID})"; then
+    # Same SIGPIPE+pipefail hazard as stage_verify_execution: capture the
+    # logs into a var FIRST, then grep the captured string — a piped
+    # `kubectl logs | grep -q` can report "not found" precisely when the
+    # line IS present, because the matching grep closes the pipe and
+    # kubectl's SIGPIPE (141) becomes the pipeline status under pipefail.
+    local skip_logs
+    skip_logs="$(kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=workflow-service-worker \
+        --since=5m --tail=5000 2>/dev/null || true)"
+    if grep -q "Skipped trigger for disabled workflow ${WORKFLOW_NAME} (${WORKFLOW_ID})" <<<"$skip_logs"; then
       log "Confirmed: trigger-consumer skip line found for workflow ${WORKFLOW_ID}"
       skip_seen=1
       break
@@ -611,6 +728,14 @@ stage_capture_correlation_id() {
     correlation_id="$(api GET "/api/workflows/${WORKFLOW_ID}/executions/${execution_id}" \
       | jq -r '.result.causal.correlation_id // empty')" || true
     if [[ -n "$correlation_id" ]]; then
+      # Enforce the UUID invariant in code (not by convention): every
+      # downstream stage interpolates CORRELATION_ID into a URL path (stages
+      # 10/11/14) or directly into a psql string (stage 13). Failing fast here
+      # guarantees it is a canonical UUID before any of those uses.
+      if [[ ! "$correlation_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+        err "Captured correlation_id is not a valid UUID: '${correlation_id}'"
+        return 1
+      fi
       CORRELATION_ID="$correlation_id"
       log "Captured correlation_id ${CORRELATION_ID}"
       return 0
@@ -875,6 +1000,119 @@ stage_verify_run() {
   return 1
 }
 
+count_endpoint_orphans() {
+  # T06: prints "<orphans>|<with_siblings>" on stdout — a plain SQL scan of
+  # ALL tracking.tracked_events rows currently sitting in Postgres, split by
+  # whether each 'endpoint_call_completed' row's correlation_id is shared
+  # with at least one other tracked_events row (any kind) or not. This is
+  # LOG-ONLY evidence-at-volume (no assertion on the absolute counts) — the
+  # per-run correlation match is asserted separately by
+  # stage_verify_endpoint_call_correlation. Not wrapped in a poll loop:
+  # callers snapshot it as a point-in-time before/after comparison.
+  kubectl exec -n "$TRACKING_PG_NAMESPACE" "$TRACKING_PG_POD" -- psql -U "$TRACKING_PG_USER" -d "$TRACKING_PG_DB" -Atc "
+    select
+      coalesce(count(*) filter (where sibling_count = 0), 0) || '|' || coalesce(count(*) filter (where sibling_count > 0), 0)
+    from (
+      select e.event_id,
+        (select count(*) from tracking.tracked_events s
+           where s.correlation_id = e.correlation_id and s.event_id <> e.event_id) as sibling_count
+      from tracking.tracked_events e
+      where e.kind = 'endpoint_call_completed'
+    ) t;
+  " 2>/dev/null
+}
+
+log_endpoint_orphans() {
+  # log_endpoint_orphans <label>
+  local label="$1"
+  local counts orphans with_siblings
+  counts="$(count_endpoint_orphans)" || counts=""
+  if [[ -z "$counts" ]]; then
+    warn "Could not query endpoint_call_completed orphan counts (${label}) — psql call failed or returned no rows"
+    return 0
+  fi
+  orphans="${counts%%|*}"
+  with_siblings="${counts##*|}"
+  log "endpoint_call_completed orphan-correlation count (${label}): orphans=${orphans} with_siblings=${with_siblings}"
+}
+
+stage_verify_endpoint_call_correlation() {
+  # Stage 13 (T06, manual-loops/connector-trace-linking.md): asserts stage 3's
+  # 'probeEndpoint' endpointCall action produced an endpoint_call_completed
+  # row in tracking.tracked_events sharing the happy-path run's
+  # correlation_id — proves connector-runtime's endpointCall path inherits
+  # the workflow's causal correlation live, not just in unit tests (T02
+  # finding was that this event had never been produced by this suite at
+  # all). Polled like the other async assertions (event is written
+  # asynchronously by the ingester off a NATS subject).
+  log "Stage 13: assert endpoint_call_completed row shares correlation_id ${CORRELATION_ID} (timeout ${CHAIN_TIMEOUT_S}s)"
+  if [[ -z "$CORRELATION_ID" ]]; then
+    err "CORRELATION_ID is empty — cannot verify endpoint_call correlation"
+    return 1
+  fi
+  local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
+  local found=""
+  while (( $(date +%s) < deadline )); do
+    # kubectl/psql failure -> retry, same as the other poll loops treating a
+    # transient error as "not yet" rather than a hard failure.
+    # CORRELATION_ID is validated as a canonical UUID at capture time
+    # (stage_capture_correlation_id), so interpolating it into this SQL is
+    # safe. psql's -c invocation does not apply `-v`/`:'var'` substitution
+    # (verified live: `-v corr=foo -c "select :'corr'"` errors at `:`), so
+    # that parameterized form is not usable in this call shape.
+    found="$(kubectl exec -n "$TRACKING_PG_NAMESPACE" "$TRACKING_PG_POD" -- \
+      psql -U "$TRACKING_PG_USER" -d "$TRACKING_PG_DB" -Atc \
+      "select correlation_id from tracking.tracked_events where kind = 'endpoint_call_completed' and correlation_id = '${CORRELATION_ID}' limit 1;" \
+      2>/dev/null)" || true
+    [[ -n "$found" ]] && break
+    sleep 3
+  done
+  if [[ -z "$found" ]]; then
+    err "No endpoint_call_completed row found for correlation_id ${CORRELATION_ID} within ${CHAIN_TIMEOUT_S}s"
+    return 1
+  fi
+  log "Confirmed: endpoint_call_completed row in tracking.tracked_events shares correlation_id ${CORRELATION_ID}"
+}
+
+stage_verify_endpoint_events_gateway() {
+  # Stage 14 (T06, manual-loops/connector-trace-linking.md): GET
+  # /api/tracking/events?type=connector.endpoint_call.completed.v1
+  # &resource=adapter/<adapterId>&limit=20 via the gateway (T03's connector
+  # "Recent calls" read endpoint) and assert the response contains an event
+  # whose correlation_id matches the happy-path run — proves the
+  # gateway->ingester events-by-type/resource read path also carries the
+  # correlation through end-to-end, not just the direct-SQL check in
+  # stage 13.
+  log "Stage 14: GET /api/tracking/events (type=connector.endpoint_call.completed.v1, resource=adapter/${ENDPOINT_ADAPTER_ID}) (timeout ${CHAIN_TIMEOUT_S}s)"
+  if [[ -z "$CORRELATION_ID" ]]; then
+    err "CORRELATION_ID is empty — cannot verify endpoint events via gateway"
+    return 1
+  fi
+  local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
+  local combined body status match_ok
+  while (( $(date +%s) < deadline )); do
+    # timeout -> retry
+    combined="$(api_status GET "/api/tracking/events?type=connector.endpoint_call.completed.v1&resource=adapter/${ENDPOINT_ADAPTER_ID}&limit=20")" || true
+    status="$(api_status_code "$combined")"
+    body="$(api_status_body "$combined")"
+    if [[ "$status" == "200" ]]; then
+      match_ok="$(echo "$body" | jq --arg cid "$CORRELATION_ID" \
+        '([.events[]? | select(.correlation_id == $cid)] | length) >= 1')"
+      if [[ "$match_ok" == "true" ]]; then
+        log "Confirmed: gateway events endpoint returned an endpoint_call event with correlation_id ${CORRELATION_ID}"
+        return 0
+      fi
+      log "Gateway events endpoint returned 200 but no matching correlation_id yet; retrying"
+    else
+      log "Gateway events endpoint returned status ${status}; retrying"
+    fi
+    sleep 3
+  done
+  err "Gateway events endpoint never returned an event with correlation_id ${CORRELATION_ID} within ${CHAIN_TIMEOUT_S}s"
+  err "Last response (status ${status}): ${body}"
+  return 1
+}
+
 main() {
   command -v jq >/dev/null || { err "jq is required"; exit 1; }
   stage_login
@@ -882,6 +1120,7 @@ main() {
   stage_ensure_workflow
   stage_ensure_agent
   stage_ensure_agent_workflow
+  log_endpoint_orphans "before this run"
   stage_send_message "$NONCE"
   stage_verify_execution "$NONCE"
   stage_disable_workflow
@@ -897,7 +1136,10 @@ main() {
   stage_verify_step_events
   stage_verify_payload "$NONCE"
   stage_verify_run
-  log "E2E http → workflow → jsFunction chain + toggle scenario + tracking chain + step events + payload round-trip + run view verified (nonces ${NONCE}, ${NONCE_DISABLED}, ${NONCE_REENABLED}; correlation ${CORRELATION_ID})"
+  stage_verify_endpoint_call_correlation
+  stage_verify_endpoint_events_gateway
+  log_endpoint_orphans "after this run"
+  log "E2E http → workflow → jsFunction chain + toggle scenario + tracking chain + step events + payload round-trip + run view + endpointCall correlation round-trip verified (nonces ${NONCE}, ${NONCE_DISABLED}, ${NONCE_REENABLED}; correlation ${CORRELATION_ID})"
 }
 
 main "$@"

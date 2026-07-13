@@ -260,7 +260,7 @@ grep -n "connector-trace-linking" cowork/INDEX.md
 - [x] T03 ingester /events endpoint + gateway proxy
 - [x] T04 Recent calls on tracked_events + trace links
 - [x] T05 deep links detail card → entity screens (mcp/hosted: no tracked events exist today — mapping returns null; causal-graph agent link needs ingester agentId extraction, future work)
-- [ ] T06 cluster e2e correlation round-trip
+- [x] T06 cluster e2e correlation round-trip (orphan evidence 2026-07-13: pre-fix rows stay at orphans=4 across runs; every post-fix run's endpoint_call row lands WITH siblings — with_siblings grew 6→18 over the day's runs. Bonus: fixed a pre-existing SIGPIPE/pipefail false-negative in the stage-5/7 log pollers that had been misread as flakiness)
 - [ ] T07 docs + index
 
 ## Out of scope (explicit)
