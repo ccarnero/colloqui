@@ -6,8 +6,13 @@ set -euo pipefail
 #   1. Login as tenant admin (acme by default)
 #   2. Ensure a fresh http channel account (delete + recreate so the
 #      auto-generated appSecret is always known to this run)
-#   3. Ensure the e2e workflow definition exists (message_received trigger
-#      on channels:["http"], single jsFunction action that console.logs)
+#   3. Converge the e2e workflow definition (message_received trigger on
+#      channels:["http"] and — T08 — config.accountIds scoped to THIS run's
+#      account so the shared trigger no longer fans out onto every http
+#      message of the tenant; a jsFunction that console.logs + a T06
+#      endpointCall probe). Converged every run because the per-run account id
+#      always changes; an EXIT trap tears the definitions/account/agent down
+#      afterwards (skipped when E2E_KEEP=1).
 #   4. POST a webhook message carrying a unique nonce
 #   5. Poll the workflow executions API until an execution for this run
 #      completes, then assert the nonce appeared in workflow-worker logs
@@ -182,6 +187,12 @@ NONCE_DISABLED="e2e-disabled-$(date +%s)-$RANDOM"
 NONCE_REENABLED="e2e-reenabled-$(date +%s)-$RANDOM"
 TOKEN=""
 APP_SECRET=""
+# T08 (manual-loops/connector-trace-linking.md): the http account created by
+# stage 2 each run. Its id is (a) the value the webhook envelope carries as
+# `accountId`, which the account-scoped triggers filter on, and (b) captured so
+# the EXIT cleanup can delete exactly this run's account. Was previously
+# discarded — only appSecret was kept.
+ACCOUNT_ID=""
 WORKFLOW_ID=""
 AGENT_ID=""
 AGENT_WORKFLOW_ID=""
@@ -210,7 +221,87 @@ CHAIN_BODY=""
 # left disabled, regardless of which stage fails.
 WORKFLOW_DISABLED=0
 
-ensure_workflow_enabled_on_exit() {
+cleanup_e2e_resources() {
+  # T08 (manual-loops/connector-trace-linking.md): best-effort end-of-run
+  # teardown of this run's e2e footprint so the greedy shared-trigger
+  # definitions never linger between runs (before account-scoped triggers they
+  # fanned out onto every http message; even scoped, a leftover definition is
+  # noise). Deletes: both e2e workflow definitions, this run's http account
+  # (plus any e2e-prefixed stragglers), and the shared echo agent. Every call
+  # is `|| true` — cleanup NEVER changes the run's exit status. `E2E_KEEP=1`
+  # skips it entirely (logged), leaving the converged definitions in place for
+  # inspection; the stage-2 stale sweep then reclaims them on the next run.
+  if [[ "${E2E_KEEP:-0}" == "1" ]]; then
+    warn "Cleanup: E2E_KEEP=1 set — leaving e2e workflows/account/echo agent in place"
+    return 0
+  fi
+  log "Cleanup: removing this run's e2e workflows, http account, and echo agent (best-effort)"
+  local id
+  # Workflow definitions — DELETE /api/workflows/:id (same endpoint the T06
+  # PUT-fallback and stage-2 sweep already use). Resolved by name so an early
+  # failure (ids never captured) is still cleaned.
+  local wf_ids
+  wf_ids="$(api GET /api/workflows 2>/dev/null \
+    | jq -r ".[] | select(.name == \"${WORKFLOW_NAME}\" or .name == \"${AGENT_WORKFLOW_NAME}\") | .id" 2>/dev/null || true)"
+  for id in $wf_ids; do
+    cleanup_delete "workflow" "/api/workflows/${id}" "${id}"
+  done
+  # Http account(s) — DELETE /api/channels/accounts/:id (same endpoint the
+  # stage-2 stale sweep uses). Covers this run's account and any e2e-prefixed
+  # leftovers from crashed runs.
+  local acc_ids
+  acc_ids="$(api GET "/api/channels/accounts?channel=http" 2>/dev/null \
+    | jq -r ".[] | select(.externalId | startswith(\"${ACCOUNT_EXTERNAL_PREFIX}\")) | .id" 2>/dev/null || true)"
+  for id in $acc_ids; do
+    cleanup_delete "http account" "/api/channels/accounts/${id}" "${id}"
+  done
+  # Echo agent — DELETE /api/admin/agents/:id (gateway admin-agents route).
+  local agent_ids
+  agent_ids="$(api GET /api/admin/agents 2>/dev/null \
+    | jq -r ".agents[]? | select(.name == \"${AGENT_NAME}\") | .id" 2>/dev/null || true)"
+  for id in $agent_ids; do
+    cleanup_delete "echo agent" "/api/admin/agents/${id}" "${id}"
+  done
+  log "Cleanup: done"
+}
+
+cleanup_delete() {
+  # cleanup_delete <label> <path> <id>
+  # Best-effort DELETE that reports the REAL HTTP status. `api DELETE` uses
+  # `curl -s` with no `-f`, so curl exits 0 on ANY completed response
+  # (including 4xx/5xx) — an earlier version's `if api DELETE ...` therefore
+  # logged false "deleted" successes for calls that actually 404'd/errored.
+  # This checks the status code via api_status and treats only 2xx (and 404,
+  # already-gone) as success, warning with the body otherwise. Never returns
+  # non-zero: cleanup must never flip the run's exit status.
+  local label="$1" path="$2" id="$3"
+  local combined status body
+  # NOTE the '{}' body: api()/api_status() always set
+  # Content-Type: application/json, and a DELETE with an EMPTY body then 400s
+  # ("Body cannot be empty ...") at the gateway — the same gotcha the
+  # agent-publish call documents. Sending '{}' satisfies the content-type
+  # check; the gateway ignores the body on DELETE (verified live: 204).
+  combined="$(api_status DELETE "$path" '{}' 2>/dev/null || true)"
+  status="$(api_status_code "$combined")"
+  body="$(api_status_body "$combined")"
+  case "$status" in
+    2??|404)
+      log "Cleanup: deleted ${label} ${id} (status ${status})"
+      ;;
+    *)
+      warn "Cleanup: failed to delete ${label} ${id} (status ${status}: ${body}) — non-fatal"
+      ;;
+  esac
+}
+
+on_exit() {
+  # Single merged EXIT handler. Two responsibilities, in order:
+  #   1. (pre-existing) never leave the workflow DISABLED — re-enable it if a
+  #      failure struck between stage 6 (disable) and stage 8 (re-enable).
+  #   2. (T08) best-effort teardown of this run's e2e resources.
+  # Both run before propagating the original exit code. Under E2E_KEEP=1 the
+  # re-enable still runs (so a kept definition is left usable) but the teardown
+  # is skipped inside cleanup_e2e_resources.
   local exit_code=$?
   if [[ "$WORKFLOW_DISABLED" -eq 1 && -n "$WORKFLOW_ID" ]]; then
     warn "Cleanup: re-enabling workflow ${WORKFLOW_ID} before exit"
@@ -220,9 +311,10 @@ ensure_workflow_enabled_on_exit() {
       err "Cleanup: FAILED to re-enable workflow ${WORKFLOW_ID} — manual intervention required"
     fi
   fi
+  cleanup_e2e_resources
   exit "$exit_code"
 }
-trap ensure_workflow_enabled_on_exit EXIT
+trap on_exit EXIT
 
 api() {
   # api <method> <path> [json-body]
@@ -292,11 +384,15 @@ stage_ensure_account() {
 
   # Best-effort hygiene: remove accounts from previous runs. Failures here are
   # non-fatal — the unique externalId above guarantees the create won't collide.
+  # NOTE the '{}' body on DELETE: api() always sets
+  # Content-Type: application/json, so an empty-body DELETE 400s at the gateway
+  # ("Body cannot be empty ...") — this sweep silently no-op'd for exactly that
+  # reason before T08 (accounts piled up run over run). '{}' fixes it.
   local stale
   stale="$(api GET "/api/channels/accounts?channel=http" \
     | jq -r ".[] | select(.externalId | startswith(\"${ACCOUNT_EXTERNAL_PREFIX}\")) | .id")"
   for id in $stale; do
-    api DELETE "/api/channels/accounts/${id}" >/dev/null 2>&1 || true
+    api DELETE "/api/channels/accounts/${id}" '{}' >/dev/null 2>&1 || true
   done
 
   local resp
@@ -307,74 +403,25 @@ stage_ensure_account() {
     err "Account creation did not return appSecret: $resp"
     return 1
   fi
+  # T08: capture the account id — it is the `accountId` the ingress stamps on
+  # every message envelope (payload.accountId), which the account-scoped
+  # triggers (stages 3/3b) filter on, and the target of the EXIT cleanup.
+  ACCOUNT_ID="$(echo "$resp" | jq -r '.id // empty')"
+  if [[ -z "$ACCOUNT_ID" ]]; then
+    err "Account creation did not return id: $resp"
+    return 1
+  fi
+  log "Account created: ${ACCOUNT_ID} (externalId=${external_id})"
 }
 
-stage_ensure_workflow() {
-  # T06 (manual-loops/connector-trace-linking.md): '${WORKFLOW_NAME}' must
-  # carry TWO actions — the original 'logMessage' jsFunction, plus a new
-  # 'probeEndpoint' endpointCall hitting the pokeapi adapter — so the
-  # happy-path run finally exercises the endpointCall activity end to end
-  # (T02 finding: no endpoint_call event was ever produced by this script
-  # before). stage_ensure_workflow reuses a definition purely by name match,
-  # so an OLD cluster's '${WORKFLOW_NAME}' (single-action, pre-T06) must be
-  # detected and upgraded — via PUT first, falling back to delete+recreate,
-  # the same reconcile SHAPE as stage_ensure_agent_workflow (stage 3b),
-  # except this rewrites the full canonical actions array rather than
-  # jq-patching the existing one (the target definition is fixed and known
-  # here, so a full rewrite is simpler than an in-place merge).
-  log "Stage 3: ensure workflow definition '${WORKFLOW_NAME}' (incl. endpointCall probe action)"
-  WORKFLOW_ID="$(api GET /api/workflows \
-    | jq -r ".[] | select(.name == \"${WORKFLOW_NAME}\") | .id" | head -1)"
-  if [[ -n "$WORKFLOW_ID" ]]; then
-    local existing_def has_probe
-    existing_def="$(api GET "/api/workflows/${WORKFLOW_ID}")"
-    has_probe="$(echo "$existing_def" | jq --arg aid "$ENDPOINT_ADAPTER_ID" \
-      '([.actions[]? | select(.activity == "endpointCall" and .args.adapterId == $aid)] | length) >= 1')"
-    if [[ "$has_probe" == "true" ]]; then
-      log "Reusing existing workflow ${WORKFLOW_ID} (already has endpointCall probe action)"
-      return 0
-    fi
-    warn "Workflow ${WORKFLOW_ID} missing the endpointCall probe action (T02 finding); upgrading via PUT"
-    local update_resp update_status update_body
-    update_resp="$(api_status PUT "/api/workflows/${WORKFLOW_ID}" "$(cat <<JSON
-{
-  "name": $(echo "$existing_def" | jq -c '.name'),
-  "application": $(echo "$existing_def" | jq -c '.application'),
-  "actions": [
-    {
-      "name": "logMessage",
-      "activity": "jsFunction",
-      "args": {
-        "code": "(ctx) => { console.log('[e2e-http-log]', ctx.request.from, ctx.request.text); return ctx.request.text; }"
-      }
-    },
-    {
-      "name": "probeEndpoint",
-      "activity": "endpointCall",
-      "args": {
-        "adapterId": "${ENDPOINT_ADAPTER_ID}",
-        "method": "GET",
-        "url": "/api/v2/pokemon/ditto"
-      }
-    }
-  ],
-  "trigger": $(echo "$existing_def" | jq -c '.trigger'),
-  "variables": $(echo "$existing_def" | jq -c '.variables')
-}
-JSON
-)")"
-    update_status="$(api_status_code "$update_resp")"
-    update_body="$(api_status_body "$update_resp")"
-    if [[ "$update_status" == "200" || "$update_status" == "201" ]]; then
-      log "Upgraded workflow ${WORKFLOW_ID} via PUT (added endpointCall probe action)"
-      return 0
-    fi
-    warn "PUT upgrade failed (status ${update_status}: ${update_body}); deleting and recreating workflow ${WORKFLOW_ID} instead"
-    api DELETE "/api/workflows/${WORKFLOW_ID}" >/dev/null 2>&1 || true
-    WORKFLOW_ID=""
-  fi
-  local resp
-  resp="$(api POST /api/workflows "$(cat <<JSON
+e2e_log_workflow_body() {
+  # T06/T08: the canonical '${WORKFLOW_NAME}' definition — two actions
+  # (jsFunction 'logMessage' + endpointCall 'probeEndpoint' on the pokeapi
+  # adapter, T06) and an ACCOUNT-SCOPED trigger (T08: config.accountIds gates
+  # the shared http trigger to THIS run's account so it no longer fans out
+  # onto every http message of the tenant). Emitted as one JSON body reused by
+  # both the PUT-converge and POST-create paths below so they can never drift.
+  cat <<JSON
 {
   "name": "${WORKFLOW_NAME}",
   "application": "e2e",
@@ -399,17 +446,53 @@ JSON
   "trigger": {
     "type": "message_received",
     "mode": "shared",
-    "config": { "channels": ["http"], "providers": ["http"] }
+    "config": { "channels": ["http"], "providers": ["http"], "accountIds": ["${ACCOUNT_ID}"] }
   }
 }
 JSON
-)")"
+}
+
+stage_ensure_workflow() {
+  # T08 (manual-loops/connector-trace-linking.md): '${WORKFLOW_NAME}' must be
+  # CONVERGED to the canonical definition EVERY run, not merely created-if-
+  # absent. Two reasons it can never be reused as-is:
+  #   - the trigger is now account-scoped (config.accountIds), and stage 2
+  #     mints a fresh account every run, so the accountIds always differ;
+  #   - a pre-T08 cluster still has a greedy (no-accountIds) and/or pre-T06
+  #     (no endpointCall probe) definition that MUST be converged or deleted
+  #     on first contact so it stops fanning out onto unrelated http messages.
+  # So: if a definition exists, PUT the canonical body over it (fall back to
+  # delete+recreate if PUT is rejected); otherwise create it. The old
+  # reuse-early-return is intentionally gone — with a per-run accountIds it
+  # was always dead weight (the definition would never already match).
+  log "Stage 3: converge workflow definition '${WORKFLOW_NAME}' (account-scoped trigger + endpointCall probe)"
+  local body
+  body="$(e2e_log_workflow_body)"
+  WORKFLOW_ID="$(api GET /api/workflows \
+    | jq -r ".[] | select(.name == \"${WORKFLOW_NAME}\") | .id" | head -1)"
+  if [[ -n "$WORKFLOW_ID" ]]; then
+    local update_resp update_status update_body
+    update_resp="$(api_status PUT "/api/workflows/${WORKFLOW_ID}" "$body")"
+    update_status="$(api_status_code "$update_resp")"
+    update_body="$(api_status_body "$update_resp")"
+    if [[ "$update_status" == "200" || "$update_status" == "201" ]]; then
+      log "Converged workflow ${WORKFLOW_ID} via PUT (accountIds=[${ACCOUNT_ID}], endpointCall probe present)"
+      return 0
+    fi
+    warn "PUT converge failed (status ${update_status}: ${update_body}); deleting and recreating workflow ${WORKFLOW_ID} instead"
+    # '{}' body: empty-body DELETE 400s (Content-Type is always JSON), see
+    # stage 2's sweep note.
+    api DELETE "/api/workflows/${WORKFLOW_ID}" '{}' >/dev/null 2>&1 || true
+    WORKFLOW_ID=""
+  fi
+  local resp
+  resp="$(api POST /api/workflows "$body")"
   WORKFLOW_ID="$(echo "$resp" | jq -r '.id // empty')"
   if [[ -z "$WORKFLOW_ID" ]]; then
     err "Workflow creation failed: $resp"
     return 1
   fi
-  log "Workflow created: ${WORKFLOW_ID}"
+  log "Workflow created: ${WORKFLOW_ID} (accountIds=[${ACCOUNT_ID}])"
 }
 
 stage_ensure_agent() {
@@ -463,54 +546,14 @@ JSON
   log "Agent ready: ${AGENT_ID} (published)"
 }
 
-stage_ensure_agent_workflow() {
-  # Idempotent workflow '${AGENT_WORKFLOW_NAME}' with a single agentCall
-  # action, sharing the SAME shared message_received http trigger config as
-  # '${WORKFLOW_NAME}' so its runtime execution (and resulting nonzero-ms
-  # span) lands on the same correlation as the happy-path run.
-  log "Stage 3b: ensure agent workflow '${AGENT_WORKFLOW_NAME}'"
-  AGENT_WORKFLOW_ID="$(api GET /api/workflows \
-    | jq -r ".[] | select(.name == \"${AGENT_WORKFLOW_NAME}\") | .id" | head -1)"
-  if [[ -n "$AGENT_WORKFLOW_ID" ]]; then
-    # The agent (stage 3a) may have been deleted + recreated under a new
-    # id since this workflow was last provisioned; reusing a stale
-    # agentCall.args.agentId makes every execution fail with a 404 from
-    # agent-ai-service. Reconcile before reusing.
-    local existing_def existing_agent_id
-    existing_def="$(api GET "/api/workflows/${AGENT_WORKFLOW_ID}")"
-    existing_agent_id="$(echo "$existing_def" \
-      | jq -r '.actions[] | select(.activity == "agentCall") | .args.agentId // empty' | head -1)"
-    if [[ "$existing_agent_id" == "$AGENT_ID" ]]; then
-      log "Reusing existing agent workflow ${AGENT_WORKFLOW_ID}"
-      return 0
-    fi
-    warn "Agent workflow ${AGENT_WORKFLOW_ID} references stale agentId ${existing_agent_id}, reconciling to ${AGENT_ID}"
-    local updated_actions update_resp update_status update_body
-    updated_actions="$(echo "$existing_def" | jq -c \
-      --arg agentId "$AGENT_ID" \
-      '.actions | map(if .activity == "agentCall" then .args.agentId = $agentId else . end)')"
-    update_resp="$(api_status PUT "/api/workflows/${AGENT_WORKFLOW_ID}" "$(cat <<JSON
-{
-  "name": $(echo "$existing_def" | jq -c '.name'),
-  "application": $(echo "$existing_def" | jq -c '.application'),
-  "actions": ${updated_actions},
-  "trigger": $(echo "$existing_def" | jq -c '.trigger'),
-  "variables": $(echo "$existing_def" | jq -c '.variables')
-}
-JSON
-)")"
-    update_status="$(api_status_code "$update_resp")"
-    update_body="$(api_status_body "$update_resp")"
-    if [[ "$update_status" == "200" || "$update_status" == "201" ]]; then
-      log "Reconciled agent workflow ${AGENT_WORKFLOW_ID} via PUT (new agentId ${AGENT_ID})"
-      return 0
-    fi
-    warn "PUT reconcile failed (status ${update_status}: ${update_body}); deleting and recreating agent workflow ${AGENT_WORKFLOW_ID} instead"
-    api DELETE "/api/workflows/${AGENT_WORKFLOW_ID}" >/dev/null 2>&1 || true
-    AGENT_WORKFLOW_ID=""
-  fi
-  local resp
-  resp="$(api POST /api/workflows "$(cat <<JSON
+e2e_agent_workflow_body() {
+  # T08: canonical '${AGENT_WORKFLOW_NAME}' definition — one agentCall action
+  # bound to the current ${AGENT_ID}, and the SAME account-scoped http trigger
+  # as '${WORKFLOW_NAME}' so its runtime execution (and nonzero-ms span) lands
+  # on the happy-path run's correlation while no longer fanning out onto the
+  # tenant's other http messages. One body reused by PUT-converge and
+  # POST-create so the two paths cannot drift.
+  cat <<JSON
 {
   "name": "${AGENT_WORKFLOW_NAME}",
   "application": "e2e",
@@ -525,17 +568,49 @@ JSON
   "trigger": {
     "type": "message_received",
     "mode": "shared",
-    "config": { "channels": ["http"], "providers": ["http"] }
+    "config": { "channels": ["http"], "providers": ["http"], "accountIds": ["${ACCOUNT_ID}"] }
   }
 }
 JSON
-)")"
+}
+
+stage_ensure_agent_workflow() {
+  # T08: converge '${AGENT_WORKFLOW_NAME}' to the canonical body EVERY run.
+  # Two things force a per-run reconcile: the account-scoped trigger
+  # (config.accountIds changes every run, stage 2 mints a fresh account) and
+  # the agentCall.args.agentId (stage 3a may have recreated the echo agent
+  # under a new id — a stale id makes every execution 404 from
+  # agent-ai-service). Both are folded into the single canonical body, so the
+  # old agentId-only reuse check is gone. PUT over an existing definition;
+  # fall back to delete+recreate if PUT is rejected; else create.
+  log "Stage 3b: converge agent workflow '${AGENT_WORKFLOW_NAME}' (account-scoped trigger + current agentId)"
+  local body
+  body="$(e2e_agent_workflow_body)"
+  AGENT_WORKFLOW_ID="$(api GET /api/workflows \
+    | jq -r ".[] | select(.name == \"${AGENT_WORKFLOW_NAME}\") | .id" | head -1)"
+  if [[ -n "$AGENT_WORKFLOW_ID" ]]; then
+    local update_resp update_status update_body
+    update_resp="$(api_status PUT "/api/workflows/${AGENT_WORKFLOW_ID}" "$body")"
+    update_status="$(api_status_code "$update_resp")"
+    update_body="$(api_status_body "$update_resp")"
+    if [[ "$update_status" == "200" || "$update_status" == "201" ]]; then
+      log "Converged agent workflow ${AGENT_WORKFLOW_ID} via PUT (agentId=${AGENT_ID}, accountIds=[${ACCOUNT_ID}])"
+      return 0
+    fi
+    warn "PUT converge failed (status ${update_status}: ${update_body}); deleting and recreating agent workflow ${AGENT_WORKFLOW_ID} instead"
+    # '{}' body: empty-body DELETE 400s (Content-Type is always JSON), see
+    # stage 2's sweep note.
+    api DELETE "/api/workflows/${AGENT_WORKFLOW_ID}" '{}' >/dev/null 2>&1 || true
+    AGENT_WORKFLOW_ID=""
+  fi
+  local resp
+  resp="$(api POST /api/workflows "$body")"
   AGENT_WORKFLOW_ID="$(echo "$resp" | jq -r '.id // empty')"
   if [[ -z "$AGENT_WORKFLOW_ID" ]]; then
     err "Agent workflow creation failed: $resp"
     return 1
   fi
-  log "Agent workflow created: ${AGENT_WORKFLOW_ID}"
+  log "Agent workflow created: ${AGENT_WORKFLOW_ID} (agentId=${AGENT_ID}, accountIds=[${ACCOUNT_ID}])"
 }
 
 stage_send_message() {
@@ -583,6 +658,36 @@ stage_verify_execution() {
   err "Nonce ${nonce} not seen in workflow-worker logs within ${POLL_TIMEOUT_S}s"
   err "Recent executions:"
   api GET "/api/workflows/${WORKFLOW_ID}/executions" | jq '.' >&2 || true
+  return 1
+}
+
+stage_wait_execution_completed() {
+  # stage_wait_execution_completed <nonce>
+  #
+  # Stage 5b: waits for the '${WORKFLOW_NAME}' execution matching <nonce> to
+  # reach a terminal COMPLETED status. Necessary because '${WORKFLOW_NAME}'
+  # now has TWO actions (T06): stage_verify_execution returns the moment the
+  # FIRST action's console.log appears, but the slower second action (the
+  # endpointCall probe over the network) may still be running. Without this
+  # wait, stage 6's disable+terminate can kill the happy-path execution
+  # mid-flight, so it never records result.causal.correlation_id (stage 9
+  # then fails) and never emits its endpoint_call_completed event (stages
+  # 13/14). Polling the executions list by nonce reuses stage 9's lookup.
+  local nonce="$1"
+  log "Stage 5b: wait for '${WORKFLOW_NAME}' execution (nonce ${nonce}) to reach COMPLETED (timeout ${POLL_TIMEOUT_S}s)"
+  local deadline=$(( $(date +%s) + POLL_TIMEOUT_S ))
+  local status=""
+  while (( $(date +%s) < deadline )); do
+    # curl/jq timeout inside a poll loop -> retry (pipefail would else abort)
+    status="$(api GET "/api/workflows/${WORKFLOW_ID}/executions?pageSize=100" \
+      | jq -r ".items[]? | select(.request.text == \"${nonce}\") | .status" | head -1)" || true
+    if [[ "$status" == "COMPLETED" ]]; then
+      log "Execution for nonce ${nonce} reached COMPLETED"
+      return 0
+    fi
+    sleep 3
+  done
+  err "Execution for nonce ${nonce} did not reach COMPLETED within ${POLL_TIMEOUT_S}s (last status '${status}')"
   return 1
 }
 
@@ -1123,6 +1228,9 @@ main() {
   log_endpoint_orphans "before this run"
   stage_send_message "$NONCE"
   stage_verify_execution "$NONCE"
+  # Let the happy-path run finish BOTH its actions (jsFunction + endpointCall
+  # probe) before disabling, so stage 6's terminate can't kill it mid-flight.
+  stage_wait_execution_completed "$NONCE"
   stage_disable_workflow
   local ids_before_disabled_send
   ids_before_disabled_send="$(stage_capture_execution_ids)"

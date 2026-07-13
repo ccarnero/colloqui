@@ -239,6 +239,36 @@ cd services/admin-console && pnpm test
 ./scripts/e2e-http-workflow.sh   # exit 0 including new assertions
 ```
 
+### T08 — e2e isolation: account-scoped triggers + end-of-run cleanup
+
+Added 2026-07-13 after user report: the e2e workflows (`e2e-http-log`,
+`e2e-http-agent`) use shared http triggers WITHOUT `accountIds`, so they fire
+on EVERY http message of the tenant — user fanout runs produced traces
+containing three executions (fanout + both e2e workflows) under one
+correlation. Two fixes in `scripts/e2e-http-workflow.sh`:
+
+1. **Account-scoped triggers** — both e2e workflow definitions set
+   `trigger.config.accountIds: [<per-run account id>]` (the account stage 2
+   creates). Since the account changes per run, `stage_ensure_workflow` /
+   `stage_ensure_agent_workflow` must reconcile the trigger every run (the
+   T06 PUT/recreate path already exists — extend it to always converge the
+   accountIds, not only the actions).
+2. **End-of-run cleanup** — an EXIT trap (best-effort, non-fatal) deletes the
+   run's e2e workflows, http account, and echo agent. `E2E_KEEP=1` skips
+   cleanup for debugging. Existing partial cleanups (stale-account sweep,
+   probe traps) stay.
+
+Result: e2e leaves no definitions/accounts behind and can never contaminate
+non-e2e traces, even mid-run, because its triggers only match its own
+ephemeral account.
+
+**Accept**
+```
+./scripts/e2e-http-workflow.sh   # exit 0
+# then: no e2e workflows or e2e accounts remain (script logs the cleanup);
+# a run WITH E2E_KEEP=1 leaves them and shows accountIds-scoped triggers.
+```
+
 ### T07 — Docs + index
 
 - `services/connector-runtime/README.md`: causal contract of endpoint_call events
@@ -262,6 +292,7 @@ grep -n "connector-trace-linking" cowork/INDEX.md
 - [x] T05 deep links detail card → entity screens (mcp/hosted: no tracked events exist today — mapping returns null; causal-graph agent link needs ingester agentId extraction, future work)
 - [x] T06 cluster e2e correlation round-trip (orphan evidence 2026-07-13: pre-fix rows stay at orphans=4 across runs; every post-fix run's endpoint_call row lands WITH siblings — with_siblings grew 6→18 over the day's runs. Bonus: fixed a pre-existing SIGPIPE/pipefail false-negative in the stage-5/7 log pollers that had been misread as flakiness)
 - [x] T07 docs + index
+- [x] T08 e2e isolation: account-scoped triggers + end-of-run cleanup (live-verified 2026-07-13: clean run leaves 0 e2e defs/accounts/agents; E2E_KEEP run's triggers carry the per-run accountIds; next run converges keeper leftovers. Bonus fixes: stage-5b wait-for-COMPLETED — disable was terminating the 2-action happy path mid-probe — and empty-body DELETE 400s that had silently no-op'd the stale sweep, 28 accounts piled up)
 
 ## Out of scope (explicit)
 
