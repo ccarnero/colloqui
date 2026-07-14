@@ -663,6 +663,35 @@ apply_knative_config() {
     knative_overlay="$(local_knative_overlay_path "$script_dir" "$env")"
     log "Applying Knative services for '${env}' (${STORAGE_ENGINE}) → ${knative_overlay##*/}"
     retry 5 3 kubectl apply -k "$knative_overlay"
+
+    # connector-runtime is the only platform service shipped as three
+    # plain Deployments (not Knative Services) — it hosts the invoke API,
+    # which needs a fixed, always-warm pod instead of KPA scale-to-zero.
+    # Wait for all three in parallel, same pattern as the observability
+    # rollout above, so a broken image fails bootstrap instead of leaving
+    # a silently-crashlooping invoke path.
+    local platform_ns="platform-services-${env}"
+    log "Waiting for connector-runtime Deployments in ${platform_ns} (parallel)..."
+    local runtime_pids=()
+    local runtime_names=(connector-runtime connector-runtime-http connector-runtime-invoke)
+    for dep in "${runtime_names[@]}"; do
+      kubectl rollout status "deployment/$dep" \
+        --namespace "$platform_ns" \
+        --timeout=120s &
+      runtime_pids+=($!)
+    done
+
+    local runtime_exit=0
+    for idx in "${!runtime_pids[@]}"; do
+      if ! wait "${runtime_pids[$idx]}"; then
+        warn "Rollout did not converge: deployment/${runtime_names[$idx]}"
+        runtime_exit=1
+      fi
+    done
+    if (( runtime_exit != 0 )); then
+      err "One or more connector-runtime deployments failed to become Available within 120s."
+      return 1
+    fi
   done
 }
 
