@@ -434,7 +434,105 @@ test -f demos/crm-support-telegram/README.es.md
   never hardcode them" boundary; a future iteration that needs a specific
   pipeline would resolve it via HubSpot's pipelines API at provisioning time,
   not inline in the workflow body.
-- [ ] T07 setup.sh orchestrator + run.sh e2e
+- [x] T07 setup.sh orchestrator + run.sh e2e (built, NOT executed — human boundary, see below)
+
+### Findings (T07 — platform/SDK gaps, SPEC deviations, and human-boundary notes)
+
+- HUMAN BOUNDARY HONORED: per the task instructions, `setup.sh` was never
+  executed and `run.sh` was never executed end-to-end against the cluster —
+  both are validated via `shellcheck` (G2, clean) and `bunx tsc --noEmit`
+  (G1, clean) only. The SPEC's own G4 gate ("the task's own script runs
+  green against the dev cluster TWICE") is explicitly NOT satisfiable by
+  this agent for T07 — it is reserved for the human's first run (SPEC
+  "Human boundaries": "Human triggers the FIRST full `setup.sh` run... and
+  the first `run.sh` that writes to HubSpot").
+- Simulated inbound uses `client.webhooks.ingest()` (`sdk/src/resources/
+  webhooks/client.ts`), not a raw `fetch` POST to `TG_PUBLIC_URL` — it hits
+  the platform's own gateway route (`POST /api/webhooks/telegram/:tenant/
+  :instance`, `services/api-gateway/src/modules/channels/
+  webhooks.controller.ts`) with the same `x-telegram-bot-api-secret-token`
+  signature verification (`services/channel-service/src/providers/telegram/
+  telegram.provider.ts`, `webhook-ingress.service.ts` `resolveAccount()`) a
+  real Telegram delivery would exercise, and does not depend on the
+  `TG_PUBLIC_URL` tunnel's uptime (already covered by `01-telegram-
+  channel.sh`'s `webhook_registered` assertion). This exact pattern is
+  proven live by `sdk/samples/telegram-transform-reply/src/setup.ts`'s
+  `simulateInbound()`.
+- SPEC WORDING GAP: "contact searched (cache miss then hit on second
+  message)" cannot be asserted on the `searchContact` workflow action —
+  T03 deliberately made `search-contact` UNCACHED ("search results must
+  always reflect the latest contact state", `02-hubspot-connector.ts`). The
+  cacheable reads (`list-deals-by-contact`/`list-tickets-by-contact`, 60s
+  TTL) are invoked from INSIDE `priority-scorer`'s own process
+  (`priority-scorer/src/hubspot-associations.ts`), never as a workflow
+  action, so their `cacheResult` is invisible to `workflows.getExecution()`
+  and no invocationId is surfaced back for `connectors.invocations.get()`
+  either. `06-run-e2e.ts` instead demonstrates the SAME cache mechanism
+  directly and honestly with two back-to-back sync `connectors.invoke()`
+  calls of `list-deals-by-contact` for the seeded contact, asserting
+  `cacheResult` miss-then-hit — the exact endpoint + cache strategy the
+  scorer itself relies on.
+- PLATFORM OBSERVABILITY GAP: `channelSend`'s local activity
+  (`services/workflow-service/src/temporal/activities/
+  channel-send.activity.ts`) is fire-and-forget — it publishes a NATS
+  command and returns `{ published: true, subject }` immediately; actual
+  Telegram delivery happens asynchronously in channel-service and is never
+  surfaced back into the workflow execution context. "Reply delivered" is
+  therefore asserted as "reply publish confirmed" (`published === true`),
+  the strongest signal `workflows.getExecution()` actually exposes — not a
+  true delivery guarantee. Follow-up candidate: surface a delivery
+  confirmation (or at least a correlatable id) back into
+  `WorkflowExecutionContext.results` for `channelSend`.
+- DEVIATION: VIP-ticket cleanup identifies the created HubSpot ticket via
+  the `invocationId` `results.createTicket.data.invocationId` returns
+  (polled through `connectors.invocations.get()` to the created object's
+  own `id`), NOT via an "[E2E]"-tagged ticket subject as SPEC T07's
+  "E2E CLEANUP" wording literally suggests. `05-workflow.ts`'s ticket
+  `subject` is a fixed, already gate-passed (T06) production string with no
+  template variable to hook a test-only tag onto — tagging it would either
+  permanently prefix every REAL VIP ticket a production run creates, or
+  require re-editing and re-verifying a shipped T06 artifact against the
+  live cluster, which this task could not execute (human boundary). Polling
+  the invocation's own result for the exact created object id is a STRICTER
+  identification method than a subject substring match (zero false
+  positives/negatives), so cleanup stays within the SPEC's actual intent.
+  The CONTACT and VIP DEALS `06-run-e2e.ts` seeds directly (not through the
+  workflow) ARE "[E2E]"-tagged (`firstname`/`dealname`), matching the SPEC
+  literally, since this script fully controls those payloads.
+- NEW TERRITORY: no connector endpoint (T03) covers deal create/associate,
+  ticket delete, deal delete, or contact delete — `06-run-e2e.ts` uses
+  direct `fetch` calls to `api.hubapi.com` with `HUBSPOT_SERVICE_KEY` for
+  all E2E seeding/cleanup of deals, and for deleting the contact/deals/
+  ticket it created, per the task's explicit allowance. Deal association
+  uses HubSpot's v4 default-association route (`PUT /crm/v4/objects/
+  deals/{dealId}/associations/default/contacts/{contactId}`) — no
+  association-type id resolution needed. Deal `hs_pipeline`/`dealstage` are
+  omitted (HubSpot defaults to the account's default pipeline/stage),
+  mirroring T06's ticket-body precedent ("resolve pipeline/stage ids by
+  API, never hardcode them").
+- NEW TERRITORY: the admin-console run-view URL
+  (`processes/runs/:workflowId/:runId`, `services/admin-console/src/app/
+  app.routes.ts`, bound from `WorkflowExecutionListItem.temporalWorkflowId`/
+  `.temporalRunId` per `services/admin-console/src/app/features/automation/
+  workflows/detail/workflow-executions.component.ts`'s routerLink build) is
+  assembled from a computed host
+  (`admin-console.platform-services-<env>.<domain>`) mirroring the SAME
+  `GW_HOST` convention `sdk/samples/lib/resolve-env.sh` already uses for
+  `api-gateway`, against the `admin-console` Knative service
+  (`knative/services/base/admin-console.yaml`). No dedicated Ingress
+  manifest was found in this repo to verify the exact public hostname
+  end-to-end (assumes Knative's default domain templating, same class of
+  assumption `04-priority-scorer.ts`'s in-cluster addressing note already
+  documents) — overridable via `ADMIN_CONSOLE_BASE_URL` if the human's
+  cluster differs. Human should verify this URL resolves on the first
+  `run.sh`.
+- `setup.sh`'s webhook_registered=false hard-fail check greps its own
+  sibling script's documented stdout contract (`01-telegram-channel.sh`'s
+  last diagnostic line) — an explicitly SPEC-sanctioned exception to
+  "the orchestrator and later scripts never parse this script's stdout"
+  (that rule is about artifact-id resolution, which still always goes
+  through the SDK by name; this is a one-off soft-failure detector for the
+  orchestrator's OWN fail-fast contract, not artifact resolution).
 - [ ] T08 docs + index
 
 ## Out of scope (explicit)
