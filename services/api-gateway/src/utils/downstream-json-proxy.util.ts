@@ -1,5 +1,5 @@
+import { type PinoLoggerService, tracedFetch } from "@yoizen/observability";
 import { TENANT_HEADER } from "@yoizen/shared";
-import { tracedFetch, type PinoLoggerService } from "@yoizen/observability";
 import { PROXY_TIMEOUT_MS } from "../constants";
 import { throwProxyError } from "./proxy-error.util";
 
@@ -33,7 +33,7 @@ export type IJsonProxyRequest = Pick<
 export function createTenantJsonProxyForwarder(
   baseUrl: string,
   serviceLabel: string,
-  logger: PinoLoggerService,
+  logger: PinoLoggerService
 ): (req: IJsonProxyRequest) => Promise<object> {
   return (req: IJsonProxyRequest) =>
     downstreamJsonProxy({
@@ -50,14 +50,32 @@ export function createTenantJsonProxyForwarder(
     });
 }
 
-/** Executes a tenant-scoped JSON downstream HTTP call (O(q) query build). */
-export async function downstreamJsonProxy(
-  params: IDownstreamJsonProxyParams,
-): Promise<object> {
+/**
+ * `downstreamJsonProxyWithStatus`'s success result — status ALWAYS a 2xx
+ * (non-2xx throws via `throwProxyError`, same as `downstreamJsonProxy`).
+ */
+export interface IDownstreamJsonProxyResult {
+  readonly status: number;
+  readonly body: object;
+}
+
+/**
+ * Status-aware variant of `downstreamJsonProxy` (T06 gateway fix,
+ * `manual-loops/connector-invoke-api.md`): returns the downstream's REAL
+ * 2xx status alongside the body instead of discarding it. Introduced for
+ * routes whose contract varies by success status (connector invoke: 200
+ * sync vs 202 async accept) — `downstreamJsonProxy` still returns body-only
+ * for every other proxy call site, unchanged.
+ */
+export async function downstreamJsonProxyWithStatus(
+  params: IDownstreamJsonProxyParams
+): Promise<IDownstreamJsonProxyResult> {
   const qs = new URLSearchParams();
   if (params.query) {
     for (const [k, v] of Object.entries(params.query)) {
-      if (v !== undefined) qs.set(k, v);
+      if (v !== undefined) {
+        qs.set(k, v);
+      }
     }
   }
   const queryStr = qs.toString();
@@ -89,6 +107,16 @@ export async function downstreamJsonProxy(
   if (!res.ok) {
     await throwProxyError(res, params.serviceLabel, params.logger);
   }
-  if (res.status === 204) return {};
-  return res.json() as Promise<object>;
+  if (res.status === 204) {
+    return { status: res.status, body: {} };
+  }
+  return { status: res.status, body: (await res.json()) as object };
+}
+
+/** Executes a tenant-scoped JSON downstream HTTP call (O(q) query build). */
+export async function downstreamJsonProxy(
+  params: IDownstreamJsonProxyParams
+): Promise<object> {
+  const { body } = await downstreamJsonProxyWithStatus(params);
+  return body;
 }

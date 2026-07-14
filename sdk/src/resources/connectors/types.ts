@@ -191,3 +191,115 @@ export interface ConnectorUsageResult {
   windowDays: number;
   topByCallCount: ConnectorUsageRow[];
 }
+
+/**
+ * Types for `connectors.invoke()` / `connectors.invocations.get()`
+ * (`manual-loops/connector-invoke-api.md` T06), hand-typed against the REAL
+ * gateway + downstream shapes:
+ *
+ * - Gateway routes: `POST /connectors/:connectorId/endpoints/:endpointId/invoke`
+ *   and `GET /connectors/invocations/:invocationId`
+ *   (`services/api-gateway/src/modules/connector-invoke/`), verbatim JSON +
+ *   status passthrough to connector-runtime's HTTP facade.
+ * - Facade: `services/connector-runtime/src/lib/http-facade/handle-invoke-request.ts`
+ *   (sync/async) and `handle-get-invocation-request.ts` (polling), body
+ *   shapes mirrored 1:1 below.
+ * - `IHttpCallResult` (`services/connector-runtime/src/activities/_shared/http-call-with-retry.ts`)
+ *   is the sync/completed-async result shape (`status`/`data`/`headers`/`cacheResult`).
+ *
+ * Load-bearing behavioral notes:
+ * - **At-least-once for async.** The `mode: "async"` request travels over
+ *   NATS JetStream to a durable consumer; if the consumer dies between
+ *   running the call and acking the message, JetStream redelivers and the
+ *   OUTBOUND HTTP call to the connector's endpoint can be repeated. This is
+ *   an accepted platform tradeoff (SPEC.md "User decisions" — no
+ *   exactly-once). Pass `idempotencyKey` whenever the underlying endpoint
+ *   verb is NOT naturally idempotent (`POST`, non-idempotent `PATCH`, etc.)
+ *   so a redelivery-driven retry is safe on the callee's side; the facade
+ *   also reuses the SAME `idempotencyKey` as the JetStream dedup key
+ *   (`Nats-Msg-Id`), so a caller-side retry of the SDK call itself (e.g.
+ *   after a network timeout) collapses onto the same invocation instead of
+ *   double-publishing.
+ * - **Webhook is caller-supplied, SSRF-restricted.** `webhook.url` is
+ *   validated by the facade at request time (`validate-outbound-url.ts`) —
+ *   private/loopback/link-local/cloud-metadata targets are rejected with a
+ *   400 before the invocation is even accepted. `webhook.headers` travel
+ *   verbatim to the delivery POST (hop-by-hop headers are stripped by the
+ *   facade). Webhook delivery failure never blocks result availability —
+ *   `invocations.get()` still returns the result until the polling TTL
+ *   expires (see below).
+ * - **Polling TTL default 15m.** The async result (or `pending` marker) is
+ *   parked in Redis with a TTL — 900s (15 minutes) unless the platform
+ *   operator configured a different `resultTtlSeconds` on the facade. After
+ *   the TTL, `invocations.get()` returns `status: "expired"` (404) even for
+ *   a real invocationId that already completed — poll before the window
+ *   closes, or rely on the webhook for delivery instead.
+ */
+
+/** `invoke()`'s `args` param — the endpoint call itself (mirrors `EndpointCallArgs` minus `adapterId`/`endpointId`, which come from the method's own `connectorId`/`endpointId` params). */
+export interface ConnectorInvokeArgs {
+  method: string;
+  /** Optional; only meaningful when the connector has no matching endpoint route (adapter-base call). Usually omitted — the endpoint's configured path is used. */
+  url?: string;
+  params?: Record<string, unknown>;
+  data?: unknown;
+  headers?: Record<string, string>;
+}
+
+/** Caller-supplied webhook target for async invoke result delivery. SSRF-validated server-side — see `types.ts` doc comment above. */
+export interface ConnectorInvokeWebhookTarget {
+  url: string;
+  headers?: Record<string, string>;
+}
+
+/** `invoke()` options. Defaults to `mode: "sync"` when omitted. */
+export interface ConnectorInvokeOptions {
+  mode?: "sync" | "async";
+  /**
+   * Caller-supplied dedup key. Reused for BOTH JetStream dedup (`mode:
+   * "async"`) and as the audit `invocationId` (both modes) — see the
+   * at-least-once doc comment above. Required in practice for any
+   * non-idempotent underlying HTTP verb.
+   */
+  idempotencyKey?: string;
+  /** `mode: "async"` only; ignored (and never sent) for `mode: "sync"`. */
+  webhook?: ConnectorInvokeWebhookTarget;
+}
+
+/** The underlying HTTP call's result — mirrors `IHttpCallResult` (downstream). */
+export interface ConnectorInvokeHttpResult {
+  status: number;
+  data: unknown;
+  headers: Record<string, string>;
+  cacheResult?: "hit" | "miss" | "bypass" | null;
+}
+
+/** `POST .../invoke` response for `mode: "sync"` (200) — the facade's `{ invocationId, ...IEndpointCallResult }`. */
+export interface ConnectorSyncInvokeResult extends ConnectorInvokeHttpResult {
+  invocationId: string;
+}
+
+/** `POST .../invoke` response for `mode: "async"` (202) — `{ invocationId }` only; poll `invocations.get(invocationId)` or wait for the webhook. */
+export interface ConnectorAsyncInvokeAccepted {
+  invocationId: string;
+}
+
+/** `GET .../invocations/:invocationId` response (200) — still queued. */
+export interface ConnectorInvocationPending {
+  invocationId: string;
+  status: "pending";
+}
+
+/** `GET .../invocations/:invocationId` response (200) — the consumer finished; `outcome: "error"` still 200s here (the HTTP-level failure is data, not a transport error). */
+export interface ConnectorInvocationCompleted {
+  invocationId: string;
+  status: "completed";
+  outcome: "ok" | "error";
+  result?: ConnectorInvokeHttpResult;
+  error?: { kind: string; message: string };
+}
+
+/** Union of every `invocations.get()` success shape. A 404 (unknown/expired — see polling TTL doc comment above) is thrown as `NotFoundError`, not part of this union. */
+export type ConnectorInvocationStatus =
+  | ConnectorInvocationPending
+  | ConnectorInvocationCompleted;

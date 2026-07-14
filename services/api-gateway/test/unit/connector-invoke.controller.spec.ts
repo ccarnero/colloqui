@@ -15,29 +15,64 @@ import { ConnectorInvokeProxyService } from "../../src/modules/connector-invoke/
 describe("ConnectorInvokeController", () => {
   let controller: ConnectorInvokeController;
   let proxy: ReturnType<typeof mock>;
+  let proxyWithStatus: ReturnType<typeof mock>;
 
   beforeEach(async () => {
     proxy = mock(() => Promise.resolve({ invocationId: "inv-1", status: 200 }));
+    proxyWithStatus = mock(() =>
+      Promise.resolve({ status: 200, body: { invocationId: "inv-1" } })
+    );
     const moduleRef = await Test.createTestingModule({
       controllers: [ConnectorInvokeController],
       providers: [
-        { provide: ConnectorInvokeProxyService, useValue: { proxy } },
+        {
+          provide: ConnectorInvokeProxyService,
+          useValue: { proxy, proxyWithStatus },
+        },
       ],
     }).compile();
     controller = moduleRef.get(ConnectorInvokeController);
   });
 
   const req = { [REQUEST_TENANT_KEY]: "t1" } as Record<string, unknown>;
+  const fakeReply = () => {
+    const status = mock(() => reply);
+    const reply = { status } as unknown as Record<string, unknown>;
+    return { reply, status };
+  };
 
-  it("invoke delegates to proxy with tenant, encoded ids and body verbatim", async () => {
+  it("invoke delegates to proxyWithStatus with tenant, encoded ids and body verbatim", async () => {
     const body = { args: { foo: "bar" }, mode: "sync" };
-    await controller.invoke(req as never, "conn/1", "ep 1", body);
-    expect(proxy).toHaveBeenCalledWith({
+    const { reply } = fakeReply();
+    await controller.invoke(
+      req as never,
+      reply as never,
+      "conn/1",
+      "ep 1",
+      body
+    );
+    expect(proxyWithStatus).toHaveBeenCalledWith({
       method: "POST",
       path: "/invoke/conn%2F1/ep%201",
       tenantId: "t1",
       body,
     });
+  });
+
+  it("invoke sets the reply status from proxyWithStatus's downstream status (T06 202 fix)", async () => {
+    proxyWithStatus.mockImplementationOnce(() =>
+      Promise.resolve({ status: 202, body: { invocationId: "inv-async" } })
+    );
+    const { reply, status } = fakeReply();
+    const result = await controller.invoke(
+      req as never,
+      reply as never,
+      "conn-1",
+      "ep-1",
+      { args: {}, mode: "async" }
+    );
+    expect(status).toHaveBeenCalledWith(202);
+    expect(result).toEqual({ invocationId: "inv-async" });
   });
 
   // --- T05: GET /connectors/invocations/:invocationId ---

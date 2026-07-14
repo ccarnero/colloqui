@@ -1,14 +1,6 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Req,
-} from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Req, Res } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
+import type { FastifyReply } from "fastify";
 import { REQUEST_TENANT_KEY } from "../../guards/tenant.guard";
 import type { ITenantScopedRequest } from "../../types/yoizen-request";
 import { ConnectorInvokeProxyService } from "./connector-invoke-proxy.service";
@@ -37,23 +29,35 @@ import { ConnectorInvokeProxyService } from "./connector-invoke-proxy.service";
 export class ConnectorInvokeController {
   constructor(private readonly proxy: ConnectorInvokeProxyService) {}
 
-  // Facade returns 200 for sync invoke (T02); Nest's default POST status is
-  // 201, so this must be explicit to keep the gateway's status passthrough
-  // exact.
+  /**
+   * T06 fix (manual-loops/connector-invoke-api.md, KNOWN GAP left by T03/T05):
+   * the facade returns 200 for sync invoke and 202 + `{ invocationId }` for
+   * async invoke (`mode: "async"`) — a REAL contract distinction the SDK's
+   * `connectors.invoke()` depends on to discriminate a sync result from an
+   * async accept. The previous `@HttpCode(HttpStatus.OK)` + `proxy()`
+   * (body-only) always collapsed the facade's status to 200, silently
+   * losing the async signal downstream of the gateway. `@Res({ passthrough:
+   * true })` + `proxyWithStatus()` forwards the REAL downstream status (200
+   * or 202) verbatim while keeping Nest's normal body
+   * serialization/interceptors (passthrough mode — we still `return` the
+   * body).
+   */
   @Post(":connectorId/endpoints/:endpointId/invoke")
-  @HttpCode(HttpStatus.OK)
   async invoke(
     @Req() req: ITenantScopedRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
     @Param("connectorId") connectorId: string,
     @Param("endpointId") endpointId: string,
     @Body() body: unknown
   ): Promise<object> {
-    return this.proxy.proxy({
+    const { status, body: responseBody } = await this.proxy.proxyWithStatus({
       method: "POST",
       path: `/invoke/${encodeURIComponent(connectorId)}/${encodeURIComponent(endpointId)}`,
       tenantId: req[REQUEST_TENANT_KEY],
       body,
     });
+    reply.status(status);
+    return responseBody;
   }
 
   // T05: polling fallback for async invoke results. Route MUST be declared

@@ -70,12 +70,18 @@ describe("ConnectorInvokeController — no @Public() decorator", () => {
 describe("ConnectorInvokeController — HTTP contract (payload + status mapping)", () => {
   let app: NestFastifyApplication;
   const proxy = mock(() => Promise.resolve({ invocationId: "inv-1" }));
+  const proxyWithStatus = mock(() =>
+    Promise.resolve({ status: 200, body: { invocationId: "inv-1" } })
+  );
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [ConnectorInvokeController],
       providers: [
-        { provide: ConnectorInvokeProxyService, useValue: { proxy } },
+        {
+          provide: ConnectorInvokeProxyService,
+          useValue: { proxy, proxyWithStatus },
+        },
       ],
     }).compile();
 
@@ -92,7 +98,10 @@ describe("ConnectorInvokeController — HTTP contract (payload + status mapping)
   });
 
   afterAll(async () => app.close());
-  afterEach(() => proxy.mockClear());
+  afterEach(() => {
+    proxy.mockClear();
+    proxyWithStatus.mockClear();
+  });
 
   it("forwards connectorId/endpointId (percent-encoded) and the body verbatim", async () => {
     const body = { args: { a: 1, nested: { b: "c" } }, mode: "sync" };
@@ -104,7 +113,7 @@ describe("ConnectorInvokeController — HTTP contract (payload + status mapping)
     });
 
     expect(res.statusCode).toBe(200);
-    expect(proxy).toHaveBeenCalledWith(
+    expect(proxyWithStatus).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "POST",
         path: "/invoke/conn-1/ep-1",
@@ -113,7 +122,7 @@ describe("ConnectorInvokeController — HTTP contract (payload + status mapping)
     );
   });
 
-  it("returns 200 with the facade body on success", async () => {
+  it("returns 200 with the facade body on sync success", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/v1/connectors/conn-1/endpoints/ep-1/invoke",
@@ -121,6 +130,24 @@ describe("ConnectorInvokeController — HTTP contract (payload + status mapping)
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({ invocationId: "inv-1" });
+  });
+
+  // T06 fix (manual-loops/connector-invoke-api.md KNOWN GAP): the facade's
+  // 202 async accept must reach the SDK unmodified — previously collapsed
+  // to 200 by @HttpCode(HttpStatus.OK) + body-only proxy().
+  it("returns 202 with the facade body on async accept (T06 202 passthrough fix)", async () => {
+    proxyWithStatus.mockImplementationOnce(() =>
+      Promise.resolve({ status: 202, body: { invocationId: "inv-async-1" } })
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/connectors/conn-1/endpoints/ep-1/invoke",
+      payload: { args: {}, mode: "async" },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(JSON.parse(res.payload)).toEqual({ invocationId: "inv-async-1" });
   });
 
   const statusCases: Array<[number, Record<string, unknown>]> = [
@@ -134,7 +161,7 @@ describe("ConnectorInvokeController — HTTP contract (payload + status mapping)
   for (const [status, body] of statusCases) {
     it(`surfaces downstream status ${status} with its body unmodified`, async () => {
       const { HttpException } = await import("@nestjs/common");
-      proxy.mockImplementationOnce(() =>
+      proxyWithStatus.mockImplementationOnce(() =>
         Promise.reject(new HttpException(body, status))
       );
 
@@ -193,6 +220,9 @@ describe("ConnectorInvokeController — HTTP contract (payload + status mapping)
 describe("ConnectorInvokeController — real AuthGuard cross-tenant 403", () => {
   let app: NestFastifyApplication;
   const proxy = mock(() => Promise.resolve({ invocationId: "inv-1" }));
+  const proxyWithStatus = mock(() =>
+    Promise.resolve({ status: 200, body: { invocationId: "inv-1" } })
+  );
   let jwtService: JwtService;
   let publicRoutesCache: PublicRoutesCacheService;
 
@@ -217,7 +247,10 @@ describe("ConnectorInvokeController — real AuthGuard cross-tenant 403", () => 
     const moduleRef = await Test.createTestingModule({
       controllers: [ConnectorInvokeController],
       providers: [
-        { provide: ConnectorInvokeProxyService, useValue: { proxy } },
+        {
+          provide: ConnectorInvokeProxyService,
+          useValue: { proxy, proxyWithStatus },
+        },
         { provide: "JwtService", useValue: jwtService },
         Reflector,
         {

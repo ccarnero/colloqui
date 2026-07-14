@@ -2,9 +2,15 @@ import type { Paginated } from "../../core/pagination.js";
 import { paginate, toSinglePage } from "../../core/pagination.js";
 import type { RetryConfig } from "../../core/retry.js";
 import type { Transport } from "../../core/transport.js";
+import { ValidationError } from "../../domain/errors.js";
 import type {
   Connector,
+  ConnectorAsyncInvokeAccepted,
   ConnectorEndpoint,
+  ConnectorInvocationStatus,
+  ConnectorInvokeArgs,
+  ConnectorInvokeOptions,
+  ConnectorSyncInvokeResult,
   ConnectorUsageParams,
   ConnectorUsageResult,
   CreateConnectorEndpointInput,
@@ -21,6 +27,26 @@ export interface ConnectorsClientDeps {
 export interface ConnectorCallOptions {
   /** Per-call retry override; `false` disables retries for this call only. */
   retry?: RetryConfig | false;
+}
+
+/**
+ * `connectors.invocations` — polling fallback for async invoke results
+ * (`manual-loops/connector-invoke-api.md` T05/T06). See `types.ts`'s
+ * "polling TTL default 15m" doc comment before relying on this past the
+ * result-parking window.
+ */
+export interface ConnectorInvocationsClient {
+  /**
+   * `GET /connectors/invocations/:invocationId`. Rejects with
+   * `NotFoundError` (404) once the invocation is unknown OR its result has
+   * expired past the polling TTL — both collapse onto the same response,
+   * there is no way to distinguish "never existed" from "expired" (see
+   * `types.ts`).
+   */
+  get(
+    invocationId: string,
+    opts?: ConnectorCallOptions
+  ): Promise<ConnectorInvocationStatus>;
 }
 
 export interface ConnectorsClient {
@@ -80,6 +106,42 @@ export interface ConnectorsClient {
     endpointId: string,
     opts?: ConnectorCallOptions
   ): Promise<void>;
+  /**
+   * `POST /connectors/:connectorId/endpoints/:endpointId/invoke` — runs the
+   * SAME governed pipe (breaker, cache, audit event) workflows use, from
+   * code. Defaults to `mode: "sync"` (200, the result inline). Pass
+   * `{ mode: "async" }` to get a `202 { invocationId }` accept instead — the
+   * request travels over NATS JetStream to a durable consumer, and the
+   * result is delivered by webhook (if `opts.webhook` is supplied) with
+   * `connectors.invocations.get(invocationId)` as the polling fallback.
+   *
+   * IMPORTANT — read `types.ts`'s doc comment on `ConnectorInvokeOptions`
+   * before using `mode: "async"` in production: async delivery is
+   * at-least-once (JetStream redelivery can repeat the OUTBOUND HTTP call),
+   * so pass `idempotencyKey` for any non-idempotent underlying verb.
+   *
+   * Overloaded on `opts.mode` so the return type is `ConnectorSyncInvokeResult`
+   * for the (default) sync call and `ConnectorAsyncInvokeAccepted` when
+   * `mode: "async"` is explicit — no runtime discriminant needed by callers
+   * who set `mode` as a literal.
+   */
+  invoke(
+    connectorId: string,
+    endpointId: string,
+    args: ConnectorInvokeArgs,
+    opts?: (Omit<ConnectorInvokeOptions, "mode"> & { mode?: "sync" }) &
+      ConnectorCallOptions
+  ): Promise<ConnectorSyncInvokeResult>;
+  invoke(
+    connectorId: string,
+    endpointId: string,
+    args: ConnectorInvokeArgs,
+    opts: Omit<ConnectorInvokeOptions, "mode"> & {
+      mode: "async";
+    } & ConnectorCallOptions
+  ): Promise<ConnectorAsyncInvokeAccepted>;
+  /** `connectors.invocations` — polling fallback for async invoke results. */
+  invocations: ConnectorInvocationsClient;
 }
 
 /**
@@ -223,6 +285,56 @@ export function createConnectorsClient({
     });
   }
 
+  async function invoke(
+    connectorId: string,
+    endpointId: string,
+    args: ConnectorInvokeArgs,
+    opts: ConnectorInvokeOptions & ConnectorCallOptions = {}
+  ): Promise<ConnectorSyncInvokeResult | ConnectorAsyncInvokeAccepted> {
+    const mode = opts.mode ?? "sync";
+    if (opts.webhook !== undefined && mode !== "async") {
+      // Client-side guard (mirrors the facade's own 400 for the same
+      // misuse, `parse-invoke-request-body.ts`) — fail fast instead of a
+      // round trip that will always 400.
+      throw new ValidationError('webhook is only valid for mode: "async"');
+    }
+
+    const body: {
+      args: ConnectorInvokeArgs;
+      mode: "sync" | "async";
+      idempotencyKey?: string;
+      webhook?: ConnectorInvokeOptions["webhook"];
+    } = { args, mode };
+    if (opts.idempotencyKey !== undefined) {
+      body.idempotencyKey = opts.idempotencyKey;
+    }
+    if (opts.webhook !== undefined) {
+      body.webhook = opts.webhook;
+    }
+
+    const { body: responseBody } = await transport.request<
+      ConnectorSyncInvokeResult | ConnectorAsyncInvokeAccepted
+    >({
+      path: `/connectors/${encodePath(connectorId)}/endpoints/${encodePath(endpointId)}/invoke`,
+      method: "POST",
+      body,
+      retry: opts.retry,
+    });
+    return responseBody;
+  }
+
+  async function invocationsGet(
+    invocationId: string,
+    opts: ConnectorCallOptions = {}
+  ): Promise<ConnectorInvocationStatus> {
+    const { body } = await transport.request<ConnectorInvocationStatus>({
+      path: `/connectors/invocations/${encodePath(invocationId)}`,
+      method: "GET",
+      retry: opts.retry,
+    });
+    return body;
+  }
+
   return {
     create,
     list,
@@ -233,5 +345,7 @@ export function createConnectorsClient({
     addEndpoint,
     updateEndpoint,
     removeEndpoint,
+    invoke: invoke as ConnectorsClient["invoke"],
+    invocations: { get: invocationsGet },
   };
 }

@@ -5,7 +5,12 @@ import type {
   TransportRequestOptions,
   TransportResponse,
 } from "../../../src/core/transport.js";
-import { ConflictError } from "../../../src/domain/errors.js";
+import {
+  ConflictError,
+  NotFoundError,
+  RateLimitError,
+  ValidationError,
+} from "../../../src/domain/errors.js";
 import { createConnectorsClient } from "../../../src/resources/connectors/client.js";
 
 interface Call extends TransportRequestOptions {}
@@ -254,4 +259,182 @@ test("removeEndpoint() DELETEs /connectors/:id/endpoints/:epId and resolves with
   assert.equal(calls[0]!.path, "/connectors/conn-1/endpoints/ep-1");
   assert.equal(calls[0]!.method, "DELETE");
   assert.equal(result, undefined);
+});
+
+// --- T06 (manual-loops/connector-invoke-api.md): connectors.invoke() + connectors.invocations.get() ---
+
+// Contract fixture from T02/T04: sync 200 body is `{ invocationId, ...IEndpointCallResult }`.
+const sampleSyncInvokeResult = {
+  invocationId: "inv-sync-1",
+  status: 200,
+  data: { ok: true },
+  headers: { "content-type": "application/json" },
+  cacheResult: "miss" as const,
+};
+
+test("invoke() defaults to mode: sync and POSTs the facade route with args + mode in the body", async () => {
+  const { transport, calls } = fakeTransport(() => ({
+    status: 200,
+    body: sampleSyncInvokeResult,
+  }));
+  const client = createConnectorsClient({ transport });
+
+  const result = await client.invoke("conn-1", "ep-1", {
+    method: "GET",
+    params: { id: "1" },
+  });
+
+  assert.equal(calls[0]!.path, "/connectors/conn-1/endpoints/ep-1/invoke");
+  assert.equal(calls[0]!.method, "POST");
+  assert.deepEqual(calls[0]!.body, {
+    args: { method: "GET", params: { id: "1" } },
+    mode: "sync",
+  });
+  assert.deepEqual(result, sampleSyncInvokeResult);
+});
+
+test("invoke() URL-encodes connectorId/endpointId in the path", async () => {
+  const { transport, calls } = fakeTransport(() => ({
+    status: 200,
+    body: sampleSyncInvokeResult,
+  }));
+  const client = createConnectorsClient({ transport });
+
+  await client.invoke("conn/1", "ep 1", { method: "GET" });
+  assert.equal(calls[0]!.path, "/connectors/conn%2F1/endpoints/ep%201/invoke");
+});
+
+test("invoke() forwards idempotencyKey in the body (not the transport's Idempotency-Key header) — the facade contract reads it from the JSON body", async () => {
+  const { transport, calls } = fakeTransport(() => ({
+    status: 200,
+    body: sampleSyncInvokeResult,
+  }));
+  const client = createConnectorsClient({ transport });
+
+  await client.invoke(
+    "conn-1",
+    "ep-1",
+    { method: "POST", data: { a: 1 } },
+    { idempotencyKey: "idem-1" }
+  );
+  assert.deepEqual(calls[0]!.body, {
+    args: { method: "POST", data: { a: 1 } },
+    mode: "sync",
+    idempotencyKey: "idem-1",
+  });
+});
+
+test("invoke({ mode: 'async' }) POSTs mode: async and returns the 202 accept body verbatim", async () => {
+  const { transport, calls } = fakeTransport(() => ({
+    status: 202,
+    body: { invocationId: "inv-async-1" },
+  }));
+  const client = createConnectorsClient({ transport });
+
+  const result = await client.invoke(
+    "conn-1",
+    "ep-1",
+    { method: "POST", data: { a: 1 } },
+    { mode: "async", idempotencyKey: "idem-2" }
+  );
+
+  assert.deepEqual(calls[0]!.body, {
+    args: { method: "POST", data: { a: 1 } },
+    mode: "async",
+    idempotencyKey: "idem-2",
+  });
+  assert.deepEqual(result, { invocationId: "inv-async-1" });
+});
+
+test("invoke({ mode: 'async', webhook }) forwards the webhook target verbatim in the body", async () => {
+  const { transport, calls } = fakeTransport(() => ({
+    status: 202,
+    body: { invocationId: "inv-async-2" },
+  }));
+  const client = createConnectorsClient({ transport });
+
+  await client.invoke(
+    "conn-1",
+    "ep-1",
+    { method: "POST" },
+    {
+      mode: "async",
+      webhook: { url: "https://example.com/hook", headers: { "x-a": "1" } },
+    }
+  );
+
+  assert.deepEqual(calls[0]!.body, {
+    args: { method: "POST" },
+    mode: "async",
+    webhook: { url: "https://example.com/hook", headers: { "x-a": "1" } },
+  });
+});
+
+test("invoke({ webhook }) without mode: async rejects client-side with ValidationError before any request", async () => {
+  const { transport, calls } = fakeTransport(() => ({
+    status: 200,
+    body: sampleSyncInvokeResult,
+  }));
+  const client = createConnectorsClient({ transport });
+
+  await assert.rejects(
+    () =>
+      client.invoke(
+        "conn-1",
+        "ep-1",
+        { method: "GET" },
+        // @ts-expect-error — webhook without mode: "async" is a type error too; this exercises the runtime guard for untyped/JS callers.
+        { webhook: { url: "https://example.com/hook" } }
+      ),
+    ValidationError
+  );
+  assert.equal(calls.length, 0);
+});
+
+test("invoke() propagates RateLimitError for a 429 (error-mapping passthrough)", async () => {
+  const { transport } = fakeTransport(() => {
+    throw new RateLimitError("request failed: rate limited");
+  });
+  const client = createConnectorsClient({ transport });
+
+  await assert.rejects(
+    () => client.invoke("conn-1", "ep-1", { method: "GET" }),
+    RateLimitError
+  );
+});
+
+test("invocations.get() GETs /connectors/invocations/:invocationId with the encoded id", async () => {
+  const { transport, calls } = fakeTransport(() => ({
+    status: 200,
+    body: { invocationId: "inv-1", status: "pending" },
+  }));
+  const client = createConnectorsClient({ transport });
+
+  const result = await client.invocations.get("inv 1");
+  assert.equal(calls[0]!.path, "/connectors/invocations/inv%201");
+  assert.equal(calls[0]!.method, "GET");
+  assert.deepEqual(result, { invocationId: "inv-1", status: "pending" });
+});
+
+test("invocations.get() returns the completed shape with outcome + result", async () => {
+  const completed = {
+    invocationId: "inv-1",
+    status: "completed" as const,
+    outcome: "ok" as const,
+    result: sampleSyncInvokeResult,
+  };
+  const { transport } = fakeTransport(() => ({ status: 200, body: completed }));
+  const client = createConnectorsClient({ transport });
+
+  const result = await client.invocations.get("inv-1");
+  assert.deepEqual(result, completed);
+});
+
+test("invocations.get() propagates NotFoundError for an unknown/expired invocationId (404)", async () => {
+  const { transport } = fakeTransport(() => {
+    throw new NotFoundError("request failed: not found");
+  });
+  const client = createConnectorsClient({ transport });
+
+  await assert.rejects(() => client.invocations.get("gone"), NotFoundError);
 });
