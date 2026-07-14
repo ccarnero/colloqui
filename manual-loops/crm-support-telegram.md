@@ -259,7 +259,7 @@ test -f demos/crm-support-telegram/README.es.md
 
 ---
 
-- [ ] T01 scaffolding demos/ + shared lib
+- [x] T01 scaffolding demos/ + shared lib
 - [ ] T02 01-telegram-channel.sh
 - [ ] T03 02-hubspot-connector.sh
 - [ ] T04 03-ai-agent.sh
