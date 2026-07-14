@@ -211,7 +211,28 @@ Code references:
 - Consumers use `MultiTenantConsumerManager` with `streamPattern: /^INGRESS-/`.
 - The manager discovers existing tenant streams and ensures a durable consumer per tenant stream.
 - Consumers do not create ingress streams; they reconcile against discovered streams.
-- Typical durable names: `audit-service`, `channel-service`, `connector-admin`, `usage-aggregator-service`, `workflow-triggers`, `agent-ai-service-consumer`, `skb-ingestion-worker`.
+- Typical durable names: `audit-service`, `channel-service`, `connector-admin`, `usage-aggregator-service`, `workflow-triggers`, `agent-ai-service-consumer`, `skb-ingestion-worker`, `connector-runtime-invoke` (async `connectors.invoke()` transport, see below).
+
+### Connector-invoke transport pair (rides `INGRESS-<tenant>`, no dedicated stream)
+
+`connector-runtime`'s async invoke API (`manual-loops/connector-invoke-api.md`,
+detail: `services/connector-runtime/README.md` "Async invoke transport")
+publishes/consumes two additional kinds on the existing per-tenant ingress
+stream — a dedicated stream was evaluated and rejected because both subjects
+already fall inside `INGRESS-<tenant>`'s `evt.<tenant>.>` filter and
+JetStream forbids overlapping stream subject bindings:
+
+```
+evt.<tenant>.connector-runtime.platform.endpoint.system.invoke_requested.v1
+evt.<tenant>.connector-runtime.platform.endpoint.system.invoke_completed.v1
+```
+
+Producer: `connector-runtime`'s HTTP invoke facade (`invoke_requested`, on
+`mode: "async"` accept). Consumer: `connector-runtime`'s async invoke
+consumer, durable `connector-runtime-invoke` (`invoke_completed` is
+published back by the same consumer after it runs the call). Verified with
+`services/connector-runtime/scripts/verify-invoke-stream-binding.ts`
+(asserts the binding, provisions nothing — there is nothing to provision).
 
 ### DLQ Lifecycle
 

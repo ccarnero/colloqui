@@ -117,7 +117,7 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 | [Workflow Engine](./workflows/engine.md) | Trigger bridge, action dispatch, and task queue model | Automation developers |
 | [Agent Execution Flow](./agents/execution.md) | `agentCall` lifecycle from workflow to runtime and back | Automation/AI developers |
 | [UI Flows](./guides/ui-flows.md) | Admin and messaging console flows mapped to backend services | Frontend/full-stack developers |
-| [Connector Runtime vs Workflow Service](./workflows/connector-vs-workflow.md) | Decision matrix and when to use each service with scenario walkthroughs | Feature implementers |
+| [Connector Runtime vs Workflow Service](./workflows/connector-vs-workflow.md) | Decision matrix and when to use each service with scenario walkthroughs, including invoking connectors directly from hosted-service code via `connectors.invoke()` | Feature implementers |
 | [Workflow Telegram Sequence](./channels/telegram-sequence.md) | Concrete Telegram inbound flow with hosted + agent branches | All developers |
 | [Common Patterns](./workflows/patterns.md) | Practical pseudocode recipes for 10 common use cases | All developers |
 | [Developer Onboarding Guide](./guides/onboarding.md) | Setup, navigation, common tasks, debugging, testing | New team members |

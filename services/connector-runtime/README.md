@@ -326,13 +326,32 @@ In developer mode it runs at a fixed **1 replica** with no autoscaling. Each rep
 
 **HTTP invoke facade (`src/http-main.ts`) scales differently from the worker** — see the section below.
 
+## Three entrypoints, one deployable
+
+`manual-loops/connector-invoke-api.md` turns connector-runtime into a
+**three-entrypoint deployable** (human-approved shape, 2026-07-14 — see
+"Deployment: three Deployments" below), all sharing the same image and the
+same pure core (`src/lib/endpoint-call-core/`):
+
+| Entrypoint | File | Purpose | Scales on |
+|---|---|---|---|
+| Temporal worker | `src/worker.ts` | `executeEndpointCall`/`executeServiceCall` activities dispatched by workflow-service | Temporal task-queue depth |
+| HTTP invoke facade | `src/http-main.ts` | Sync invoke (`mode: "sync"`, default) + async publish (`mode: "async"`) + `GET /invocations/:id` polling | Inbound RPS |
+| Async invoke consumer | `src/invoke-consumer-main.ts` | Durable JetStream consumer that executes async invoke requests, parks the result, and delivers the webhook | JetStream (`INGRESS-<tenant>`) consumer lag |
+
+Every invocation (sync, async, hit or miss) emits the SAME
+`connector.endpoint_call.completed.v1` audit event — no new event kinds for
+audit, only the transport pair (see "Async invoke transport" below) that
+carries the request/result between the facade and the consumer.
+
 ## HTTP Invoke Facade (`src/http-main.ts`)
 
-`manual-loops/connector-invoke-api.md` T02 adds a SECOND entrypoint to the
-same deployable: a plain `Bun.serve` HTTP server (no Express/Fastify) that
-lets hosted-service code invoke connectors synchronously without going
-through Temporal. It reuses the exact same governed pipeline (breaker,
-HTTP-response cache, `connector.endpoint_call.completed.v1` audit event) as
+`manual-loops/connector-invoke-api.md` T02/T04 adds a SECOND entrypoint to
+the same deployable: a plain `Bun.serve` HTTP server (no Express/Fastify)
+that lets hosted-service code invoke connectors — synchronously or
+asynchronously — without going through Temporal. It reuses the exact same
+governed pipeline (breaker, HTTP-response cache,
+`connector.endpoint_call.completed.v1` audit event) as
 `executeEndpointCall` — both are thin wrappers around the pure core in
 `src/lib/endpoint-call-core/`.
 
@@ -341,33 +360,97 @@ HTTP-response cache, `connector.endpoint_call.completed.v1` audit event) as
 ```
 POST /invoke/:connectorId/:endpointId
 Headers: x-yoizen-tenant: <tenant>
-Body: { "args": { "method": "GET", "params": {...}, "data": {...}, "headers": {...} }, "mode"?: "sync" }
+Body: {
+  "args": { "method": "GET", "params": {...}, "data": {...}, "headers": {...} },
+  "mode"?: "sync" | "async",
+  "idempotencyKey"?: string,
+  "webhook"?: { "url": string, "headers"?: Record<string, string> }  // mode: "async" only
+}
 ```
 
 `connectorId`/`endpointId` map onto the core's `adapterId`/`endpointId`
 (fully-resolved adapter+endpoint branch — method/path/headers/timeouts all
-come from the adapter). Only `mode: "sync"` is implemented in T02; any other
-`mode` value is rejected with 400 (async publish is a later task in the same
-queue).
+come from the adapter). Any `mode` other than `"sync"`/`"async"` is rejected
+with 400.
+
+### Sync vs. async invoke contract
+
+- **`mode: "sync"` (default, T02)** — the facade runs the core inline and
+  returns the result in the SAME HTTP response: `200` with
+  `{ invocationId, status, data, headers, cacheResult }`, or a mapped error
+  status (see "Responses" below). `webhook` is rejected (400) for sync —
+  there is nothing to deliver later, the caller already has the result.
+- **`mode: "async"` (T04/T05)** — the facade validates the request, publishes
+  an `invoke_requested` envelope to NATS JetStream (see "Async invoke
+  transport" below), and returns immediately with `202 { invocationId }`.
+  The actual HTTP call has NOT happened yet at that point — it runs later,
+  in the async invoke consumer entrypoint. The result reaches the caller one
+  of two ways: **webhook** (if `webhook.url` was supplied, delivered
+  best-effort once the consumer finishes) or **polling**
+  `GET /invocations/:invocationId` (works regardless of whether a webhook
+  was supplied, and is the only option if it was not).
+- **`idempotencyKey`** — reused as the JetStream `Nats-Msg-Id` for async
+  dedup AND as the audit `invocationId` for both modes (present in both
+  sync's response and async's `invoke_requested` envelope) — see "At-least-
+  once contract" below for why callers should set it.
 
 ### Responses
 
 | Status | When |
 |---|---|
-| 200 | Success — `{ invocationId, status, data, headers, cacheResult }` |
-| 400 | Missing/blank `x-yoizen-tenant` header, invalid JSON body, missing/invalid `args`, or the core's `invalid_args` error |
+| 200 | Sync success — `{ invocationId, status, data, headers, cacheResult }` |
+| 202 | Async accepted — `{ invocationId }` (the call has not run yet) |
+| 400 | Missing/blank `x-yoizen-tenant` header, invalid JSON body, missing/invalid `args`, unsupported `mode`, `webhook` on a sync request, a webhook URL that fails the SSRF guard, or the core's `invalid_args` error |
 | 429 | Per-tenant rate limit exceeded — `{ error: "rate_limited", resetSeconds }` |
-| 503 | Circuit breaker OPEN — `{ error: "circuit_open", retryAfterMs }` (caller should back off; transient, not a hard failure) |
-| 502 | Upstream HTTP failure — `{ error: "upstream_http_error" }` |
-| 504 | Upstream timeout — `{ error: "upstream_timeout" }` |
+| 503 | Circuit breaker OPEN (sync only) — `{ error: "circuit_open", retryAfterMs }` (caller should back off; transient, not a hard failure). For `mode: "async"`, an `invoke_requested` publish failure ALSO returns an immediate synchronous 503 to the POST caller — `{ invocationId, error }` — distinct from post-accept async errors, which surface via `GET /invocations/:id` instead |
+| 502 | Upstream HTTP failure (sync only) — `{ error: "upstream_http_error" }` |
+| 504 | Upstream timeout (sync only) — `{ error: "upstream_timeout" }` |
 
 Every response includes `invocationId` — a UUID generated per request
-(`randomUUID()`), even on sync calls, so the audit event is addressable by
-invocation. Standalone (non-workflow) invocations start a **root
-correlation** (no `causal` context to join, since there's no workflow
-`executionId`); the published envelope's `resource` is
-`invocation/${invocationId}` instead of the Temporal path's
-`adapter/${adapterId}`.
+(`randomUUID()`, or the caller's `idempotencyKey` when supplied), even on
+sync calls, so the audit event is addressable by invocation. Standalone
+(non-workflow) invocations start a **root correlation** (no `causal` context
+to join, since there's no workflow `executionId`); the published envelope's
+`resource` is `invocation/${invocationId}` instead of the Temporal path's
+`adapter/${adapterId}`. This holds for BOTH the audit
+`connector.endpoint_call.completed.v1` event and the async transport pair —
+no new audit event kind exists for invoke.
+
+### `GET /invocations/:invocationId` — polling fallback
+
+```
+GET /invocations/:invocationId
+Headers: x-yoizen-tenant: <tenant>
+```
+
+| Status | Body |
+|---|---|
+| 200 | `{ invocationId, status: "pending" }` — the consumer hasn't finished yet |
+| 200 | `{ invocationId, status: "completed", outcome: "ok" \| "error", result?, error? }` |
+| 404 | Unknown invocation ID, OR the result expired past the Redis TTL — the two cases are indistinguishable |
+
+Backed by `getInvocationRecord` (`src/activities/_shared/invocation-store.ts`)
+reading the same Redis key the consumer parks into (see "Result parking"
+below).
+
+### At-least-once contract (async)
+
+Async delivery is **at-least-once, not exactly-once**, by explicit human
+decision (`manual-loops/connector-invoke-api.md` "User decisions" — durability-
+by-workflow is a Temporal feature, not something this API re-implements).
+The window where a duplicate outbound HTTP call can happen: if the async
+invoke consumer crashes or is killed AFTER it has made the outbound HTTP
+call to the target endpoint but BEFORE it acks the JetStream message, the
+message is redelivered and the SAME outbound HTTP call runs again on
+another (or the same) consumer instance. Explicit ack happens only AFTER
+the result is parked in Redis (`handle-invoke-requested-message.ts`), which
+narrows the window as much as possible but cannot close it entirely — ack
+and the outbound call cannot be one atomic operation.
+
+**Caller responsibility**: pass `idempotencyKey` whenever the underlying
+HTTP verb is not naturally idempotent (e.g. a `POST` that creates a
+resource). The platform does not attempt exactly-once delivery — this is a
+documented caller-side contract, not a bug.
 
 ### Tenant guard + rate limit
 
@@ -386,24 +469,174 @@ correlation** (no `causal` context to join, since there's no workflow
   `INVOKE_RATE_LIMIT`/`INVOKE_RATE_LIMIT_WINDOW_MS`. Rejections are logged
   as warnings with the tenant and reset window.
 
-### Deployment: second container/profile, independent scaling
+## Async invoke transport (`invoke_requested` / `invoke_completed`)
 
-Same image as the Temporal worker — run `bun run src/http-main.ts` as a
-second container (or a second Deployment sharing the image) rather than a
-separate service. The two entrypoints have fundamentally different scaling
-signals:
+The `mode: "async"` request/result pair travels over NATS JetStream as its
+own subject family, published/consumed with the exact same envelope,
+correlation-header, and `Nats-Msg-Id` dedup semantics
+`service-bus.activity.ts` established for `serviceBusCall`
+(`workflow-service`):
 
-- **Temporal worker** (`src/worker.ts`) scales on **Temporal task-queue
-  depth** — pull-based, no inbound HTTP, KEDA/HPA on queue backlog if
-  autoscaling is ever enabled.
-- **HTTP invoke facade** (`src/http-main.ts`) scales on **inbound RPS** —
-  it's a normal HTTP server behind the gateway/ingress, so HPA on
-  CPU/RPS/concurrent-connections applies as it would to any other HTTP
-  service.
+```
+evt.<tenant>.connector-runtime.platform.endpoint.system.invoke_requested.v1
+evt.<tenant>.connector-runtime.platform.endpoint.system.invoke_completed.v1
+```
+
+TAXONOMY.md rule 21 classifies both kinds `tech: platform` /
+`business_fn: connector-invocation` — evaluated BEFORE rule 11 (the broader
+`connector.endpoint_call.completed.v1` audit-event rule) so these two
+transport/control-plane kinds are never mis-tagged `tech: connector`. This
+is a SEPARATE concern from the audit event: `invoke_requested`/
+`invoke_completed` carry the request/result across the broker,
+`connector.endpoint_call.completed.v1` (unchanged, resource
+`invocation/<invocationId>`) is the durable audit trail of the HTTP call
+itself — both are emitted for every async invocation, neither replaces the
+other.
+
+**Stream binding — design change from the original plan:** a dedicated
+`CONNECTOR-INVOKE` stream turned out to be impossible. Every tenant's
+`INGRESS-<tenant>` stream already binds `evt.<tenant>.>`, and JetStream
+forbids overlapping stream subject filters — both invoke subjects fall
+inside that wildcard, so they ride the tenant's existing `INGRESS-<tenant>`
+stream (created at tenant provisioning), the same mechanism every other
+`evt.<tenant>.*` publisher in the platform already relies on. There is
+nothing to provision for a new tenant beyond what tenant provisioning
+already does.
+
+**`scripts/verify-invoke-stream-binding.ts` — verify-only, not provisioning.**
+This script CREATES NOTHING. For each tenant given on the command line, it
+asserts that BOTH invoke subjects resolve to a bound JetStream stream
+(expected: `INGRESS-<tenant>`) and fails loud (non-zero exit) if either does
+not — e.g. because the tenant was never provisioned, or its
+`INGRESS-<tenant>` stream was deleted out of band. It replaces an earlier
+`provision-invoke-stream.ts` design that assumed a dedicated stream would
+exist; there is no `--apply` flag because there is nothing this script could
+apply.
+
+```bash
+kubectl port-forward -n support-services-dev svc/nats 4222:4222 &
+NATS_URL=nats://localhost:4222 bun run scripts/verify-invoke-stream-binding.ts acme
+```
+
+The HTTP facade's async publish path (`publish-invoke-request.ts` via
+`src/activities/_shared/invoke-request-publisher.ts`) never falls back to a
+non-streamed core-NATS publish for these subjects — if the subject is
+somehow unbound, the publish fails loud (503) rather than silently
+delivering an unreliable message.
+
+## Async invoke consumer (`src/invoke-consumer-main.ts`)
+
+The THIRD entrypoint of the deployable (`manual-loops/connector-invoke-api.md`
+T05): a durable JetStream consumer, `connector-runtime-invoke`, bound
+against every stream matching `INGRESS-<tenant>` (`MultiTenantConsumerManager`,
+`streamPattern: /^INGRESS-/`), filtering on `invoke_requested`. One durable
+name shared across pods — pull-consumer sharding load-balances
+automatically across replicas, same pattern `channel-service`'s
+`webhook-ingress-consumer.service.ts` uses.
+
+Per message:
+
+1. Decode + validate the envelope (`parseInvokeRequestedEnvelope`). A
+   malformed message, non-compliant envelope, or a payload that fails
+   validation is a `PermanentError` — `msg.term()`, never redelivered, no
+   retry loop for something that can never succeed.
+2. Run the SAME pure core (`src/lib/endpoint-call-core/`) the sync facade
+   and the Temporal activity use — breaker, cache, and the
+   `connector.endpoint_call.completed.v1` audit event fire identically to
+   the sync path.
+3. **Park the result in Redis** (see below) BEFORE acking.
+4. Publish `invoke_completed`.
+5. Best-effort **deliver the caller's webhook** if one was supplied (see
+   below) — delivery failure never blocks the ack; the result is already
+   parked, so polling still works.
+6. Ack the JetStream message.
+
+Concurrency: 16 in-flight messages per pod (`runnerOptions.concurrency`) —
+async invoke work is I/O-bound (outbound HTTP + Redis + NATS publishes) and
+independent per invocation, so several run concurrently per pod, mirroring
+`webhook-ingress-consumer.service.ts`'s own reasoning.
+
+Health: a tiny `Bun.serve` on `INVOKE_CONSUMER_HEALTH_PORT` (default
+`3200`) serving `GET /health`.
+
+### Redis result parking
+
+`parkInvocationResult`/`getInvocationRecord`
+(`src/activities/_shared/invocation-store.ts`) read/write a single Redis key
+per invocation:
+
+```
+invocation:<tenantId>:<invocationId>
+```
+
+`SET ... EX <ttlSeconds>` — TTL default **900s (15 minutes)**, configurable
+via `INVOCATION_RESULT_TTL_SECONDS`. Both the facade's initial "pending"
+write (when the async request is accepted) and the consumer's "completed"
+write target the SAME key; each write resets the full TTL window. This
+single-key design is what makes result parking idempotent across JetStream
+redelivery — replaying the same `invocationId` after a crash-before-ack
+overwrites the same key with the same "completed" shape, never creating a
+duplicate record. Past the TTL, `GET /invocations/:id` 404s — expired and
+never-existed are indistinguishable by design (see "Responses" above).
+
+### Webhook delivery
+
+`deliverWebhook` (`src/activities/_shared/webhook-delivery.ts`) POSTs the
+completed `InvocationRecord` as JSON to the caller-supplied `webhook.url`,
+with the caller's `webhook.headers` merged in (bounded timeout,
+`INVOKE_WEBHOOK_TIMEOUT_MS`, default 10s). Two defense-in-depth layers
+protect this — a caller-supplied URL is never trusted to be safe just
+because it was valid when the request was accepted:
+
+- **SSRF guard** (`src/activities/_shared/validate-outbound-url.ts`,
+  `validateOutboundUrl`) runs TWICE: once at request-validation time
+  (`parse-invoke-request-body.ts`, rejects with 400 before the request is
+  ever queued) and again at delivery time (defense in depth — the envelope
+  crosses a broker in between, so a value that was valid when parked is not
+  assumed to still be safe when dequeued). It rejects: non-`http(s)`
+  schemes, `localhost`/`127.0.0.1`/`::1`, the cloud-metadata endpoint
+  (`169.254.169.254`), link-local addresses (`169.254.*`, `fe80:`), and
+  RFC1918 private ranges (`10.*`, `172.16-31.*`, `192.168.*`). **Known
+  limitation** (reviewer-flagged, non-blocking follow-up): the guard checks
+  the URL's literal hostname/IP only — it never resolves DNS, so a
+  cluster-internal name like `foo.svc.cluster.local` is NOT caught even
+  though it would resolve to an in-cluster address. There is no `scope:
+  "internal"` opt-in here (unlike `mcp-call.activity.ts`'s MCP server
+  config) — webhook targets are always caller-supplied over the public
+  invoke API, so no private-range exception exists.
+- **Hop-by-hop header denylist** (`DENIED_WEBHOOK_HEADERS` in
+  `webhook-delivery.ts`) strips `host`, `content-length`, `content-type`,
+  `transfer-encoding`, `connection`, `keep-alive`, `upgrade`, `te`,
+  `trailer`, `proxy-authorization`, `proxy-connection` from a caller's
+  `webhook.headers` before the outbound POST — these would corrupt or
+  desync the request, or override the fixed `content-type:
+  application/json` this activity sets itself, if caller-controlled.
+  Stripping is logged (warn) per header so a misbehaving caller is visible.
+  `authorization` is intentionally NOT denied — a caller supplying their own
+  bearer/basic auth for their own webhook endpoint is expected and safe.
+
+Delivery failure (blocked URL, non-2xx response, network error, timeout) is
+logged as a warning and never propagates — the result is already parked in
+Redis before delivery is attempted, so `GET /invocations/:id` polling
+remains the reliable path regardless of webhook outcome (SPEC.md: "webhook
+delivery failure → warn + result still available by polling until TTL").
+
+## Deployment: three Deployments, independently scaled
+
+**Human-approved shape (2026-07-14).** Same image across all three; each
+entrypoint is its own Deployment (not a second container in the worker's
+pod) so each gets independent replica counts and resource requests, and a
+rebuild-redeploy rolls all three:
+
+| Deployment | Entrypoint | Scales on |
+|---|---|---|
+| `connector-runtime` (worker) | `src/worker.ts` | Temporal task-queue depth — pull-based, no inbound HTTP, KEDA/HPA on queue backlog if autoscaling is ever enabled |
+| `connector-runtime-http` | `src/http-main.ts`, port `HTTP_FACADE_PORT` (3100), fronted by a Service | Inbound RPS — a normal HTTP server behind the gateway, so HPA on CPU/RPS/concurrent-connections applies as it would to any other HTTP service |
+| `connector-runtime-invoke` | `src/invoke-consumer-main.ts` | JetStream consumer lag on the `connector-runtime-invoke` durable across `INGRESS-<tenant>` streams |
 
 Sharing one image keeps the breaker/cache/audit-event code identical across
-both paths without a build/publish step per entrypoint; the two containers
-get independent resource requests and HPA targets in the Deployment spec.
+all three entrypoints without a build/publish step per entrypoint; each
+Deployment gets independent resource requests and (if enabled) HPA targets.
 
 ## Configuration
 
@@ -423,6 +656,9 @@ get independent resource requests and HPA targets in the Deployment spec.
 | `HTTP_FACADE_PORT` | `3100` | Port for the HTTP invoke facade (`src/http-main.ts`) — separate from the worker's health `PORT` |
 | `INVOKE_RATE_LIMIT` | `RATE_LIMIT_DEFAULT_LIMIT` (`@yoizen/shared`, currently `1000`) | Per-tenant request limit for the invoke facade's sliding window |
 | `INVOKE_RATE_LIMIT_WINDOW_MS` | `RATE_LIMIT_DEFAULT_WINDOW_MS` (`@yoizen/shared`, currently `60000`) | Sliding-window duration (ms) for the invoke facade's rate limit |
+| `INVOCATION_RESULT_TTL_SECONDS` | `900` (15 min) | Redis TTL for a parked invocation result (`invocation:<tenant>:<id>`) |
+| `INVOKE_WEBHOOK_TIMEOUT_MS` | `10000` | Bounded timeout for the async invoke consumer's outbound webhook POST |
+| `INVOKE_CONSUMER_HEALTH_PORT` | `3200` | Health server port for the async invoke consumer entrypoint (`src/invoke-consumer-main.ts`) |
 
 ### Connector Configuration
 
@@ -508,12 +744,21 @@ redis-cli KEYS "*adapter*"
 ### Called By
 
 - **workflow-service**: `endpointCall` actions dispatch to connector-runtime task queue
+- **api-gateway**: proxies `POST /api/v1/connectors/:connectorId/endpoints/:endpointId/invoke`
+  (200 sync / 202 async passthrough) and `GET /api/v1/connectors/invocations/:invocationId`
+  to `connector-runtime-http` — tenant-scoped authz + per-tenant rate limiting from day one,
+  no `@Public()` bypass. See `services/api-gateway/src/modules/connector-invoke/`.
+- **NATS JetStream (`INGRESS-<tenant>`)**: the async invoke consumer
+  (`connector-runtime-invoke` durable) is invoked indirectly — the facade
+  publishes `invoke_requested`, the consumer picks it up.
 
 ### Calls To
 
 - **connector-admin**: REST API for connector config resolution
-- **Redis**: Stale-while-revalidate cache
-- **Target endpoints**: User-configured HTTP endpoints
+- **Redis**: stale-while-revalidate connector-config cache AND (T05) invocation result
+  parking (`invocation:<tenant>:<id>`)
+- **Target endpoints**: user-configured HTTP endpoints (sync, and async via the invoke consumer)
+- **Caller-supplied webhook URLs**: best-effort async invoke result delivery, SSRF-guarded
 - **OpenTelemetry collector** (if configured): Traces and metrics
 
 ## Further Reading

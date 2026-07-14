@@ -10,6 +10,15 @@ A practical guide for developers choosing between `connector-runtime` and `workf
 > that the real `EndpointCallArgs`/`ServiceCallArgs` do not have — the actual per-attempt timeout
 > and retry count are fixed by the Temporal activity policy (30s, 5 attempts), not settable per-call.
 
+> **Calling a connector directly from code (not a workflow)?** This guide covers
+> Temporal-orchestrated dispatch (`workflow-service`) and direct Temporal-client
+> `executeEndpointCall`. If the caller is hosted-service *code* (not a workflow) and needs
+> the same governed pipe (breaker, cache, audit event) without touching Temporal at all, use
+> the SDK's `connectors.invoke()` instead — sync (inline result) or async (202 + webhook/
+> polling). See `sdk/README.md` "connectors.invoke()" and
+> `services/connector-runtime/README.md` "Three entrypoints, one deployable" /
+> "HTTP Invoke Facade".
+
 ## Quick Decision Matrix
 
 | Need | Use Connector Runtime | Use Workflow Service | Use Agent Call |

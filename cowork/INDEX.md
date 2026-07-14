@@ -255,6 +255,50 @@ Decision cuádruple:
   6→18 over the day's runs) while pre-fix rows stay at a flat orphan count.
 - **Engram topic**: `tracking/connector-trace-linking`.
 
+## Change: connector invoke API — sync + async invocation from code (connector-invoke-api)
+
+Spec-driven change letting hosted-service code invoke connectors through the
+same governed pipe workflows use (breaker, cache, audit event) without
+touching Temporal, in two flavors. Full task queue, gates, and human
+decisions: `manual-loops/connector-invoke-api.md`. Operational contract
+(three-entrypoint deployable, sync/async contract, at-least-once window,
+webhook SSRF guard + header denylist, Redis result parking, verify-only
+stream-binding script): `services/connector-runtime/README.md` "Three
+entrypoints, one deployable" onward. SDK usage:
+`sdk/README.md` "`connectors.invoke()`". Cross-reference in
+`DOCS/workflows/connector-vs-workflow.md` and `DOCS/messaging/service-bus.md`
+"Connector-invoke transport pair".
+
+Decision cuádruple:
+- **Rule**: sync (`mode: "sync"`, default) runs the core inline and returns
+  the result in the same HTTP response; async (`mode: "async"`) publishes an
+  `invoke_requested` envelope and returns `202 { invocationId }` immediately
+  — the call itself runs later in a separate consumer entrypoint. Async
+  delivery is at-least-once (JetStream redelivery can repeat the outbound
+  HTTP call between the call and the consumer's ack); callers must pass
+  `idempotencyKey` for non-idempotent verbs — exactly-once was explicitly
+  out of scope.
+- **Why**: request/response semantics for code needed a transport that
+  doesn't pull in Temporal's durability machinery (that stays a workflow
+  feature); NATS JetStream already proved the streamed-subject + server-side
+  `Nats-Msg-Id` dedup pattern via `serviceBusCall`, so async invoke reuses it
+  instead of inventing a new mechanism.
+- **Evidence**: `TAXONOMY.md` rule 21 (subjects
+  `evt.<t>.connector-runtime.platform.endpoint.system.invoke_{requested,completed}.v1`,
+  evaluated before rule 11 so these transport kinds are not mis-tagged
+  `tech: connector`); the audit trail stays the SAME
+  `connector.endpoint_call.completed.v1` event (resource
+  `invocation/<invocationId>`) for both sync and async — no new audit event
+  kind. Deployment shape (3 Deployments: worker / `connector-runtime-http` /
+  `connector-runtime-invoke`) and the Redis TTL default (900s) were both
+  explicit human calls (`manual-loops/connector-invoke-api.md` "Human
+  boundaries for this change"). Known follow-ups (reviewer-flagged,
+  non-blocking): `validateOutboundUrl` checks literal hostnames only, never
+  resolves DNS, so `*.svc.cluster.local` webhook targets bypass the RFC1918
+  guard; the e2e's async header comment says cache-status is informational
+  but the assertion is currently strict.
+- **Engram topic**: `platform/connector-invoke-api`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

@@ -326,6 +326,54 @@ double-encodes).
 - `create` / `list` / `get` / `update` / `remove` — connector CRUD (registry-managed field locks surface as `ConflictError`)
 - `usage` — per-connector call statistics
 - `addEndpoint` / `updateEndpoint` / `removeEndpoint` — endpoint sub-resource
+- `invoke` / `invocations.get` — invoke a connector endpoint from code (sync or async), see below
+
+#### `connectors.invoke()` — call a connector endpoint from code
+
+`connectors.invoke(connectorId, endpointId, args, opts?)` runs the SAME governed pipe
+(circuit breaker, response cache, `connector.endpoint_call.completed.v1` audit event) that
+workflow `endpointCall` actions use — from hosted-service code, without touching Temporal.
+It has two flavors, selected by `opts.mode` (default `"sync"`):
+
+```ts
+// Sync (default) — runs inline, returns the HTTP result directly.
+const result = await sdk.connectors.invoke("crm-connector", "get-customer", {
+  method: "GET",
+  params: { id: "123" },
+});
+// result: { invocationId, status, data, headers, cacheResult }
+
+// Async — 202-accepts and returns only { invocationId }; the connector-runtime
+// invoke consumer runs the call, parks the result in Redis, and (if a webhook
+// is supplied) POSTs it back. Poll as a fallback.
+const { invocationId } = await sdk.connectors.invoke(
+  "crm-connector",
+  "create-ticket",
+  { method: "POST", data: { subject: "..." } },
+  {
+    mode: "async",
+    idempotencyKey: "ticket-create-order-42", // see caveat below
+    webhook: { url: "https://hosted-service.example.com/webhooks/invoke", headers: { "x-secret": "..." } },
+  }
+);
+
+const status = await sdk.connectors.invocations.get(invocationId);
+// status.status === "pending" | "completed"; when completed, status.outcome is "ok" | "error"
+```
+
+**At-least-once caveat (async only):** delivery of the async invoke request rides NATS
+JetStream. If the connector-runtime invoke consumer crashes AFTER making the outbound HTTP
+call but BEFORE acking the message, JetStream redelivers and the SAME outbound HTTP call
+runs again — this is at-least-once, not exactly-once, by design (see
+`manual-loops/connector-invoke-api.md` "User decisions"). Always pass `idempotencyKey` when
+the underlying HTTP verb is not naturally idempotent (e.g. `POST` that creates a resource);
+the platform does not build exactly-once delivery on your behalf.
+
+**Polling window:** `connectors.invocations.get()` reads the result parked in Redis by the
+invoke consumer, TTL default 900s (`INVOCATION_RESULT_TTL_SECONDS`, see
+`services/connector-runtime/README.md`). After the TTL, the invocation is indistinguishable
+from one that never existed and `invocations.get()` rejects with `NotFoundError` (404) —
+poll (or rely on the webhook) well inside that window.
 
 ### registry — [`src/resources/registry/types.ts`](./src/resources/registry/types.ts)
 
