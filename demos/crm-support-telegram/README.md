@@ -38,14 +38,16 @@ Workflow (low-code)
 
 | Var | Purpose |
 | --- | --- |
-| `HUBSPOT_PRIVATE_APP_TOKEN` | Private app token for the demo HubSpot account — used for contact lookup/create and ticket creation |
+| `HUBSPOT_SERVICE_KEY` | HubSpot account Service Key (Bearer `pat-na1-…`, public beta since 2026-02-10, Development > Keys > Service keys, object scopes) used for contact lookup/create, deal/ticket association reads, and ticket creation. A legacy private-app token is an equally free, interchangeable Bearer-token fallback. |
 | `TELEGRAM_BOT_TOKEN` | Bot token for the customer-facing Telegram channel |
 | `TELEGRAM_TEST_CHAT_ID` | Chat id used by test/demo scripts to simulate a customer message |
 | `OPENAI_API_KEY` | Backing model for the AI agent leading the support conversation |
 | `TG_PUBLIC_URL` | Public URL (e.g. cloudflared tunnel) the Telegram webhook and async-invoke webhook callback are reachable at |
 
 No secrets are committed — every credential above is read from the environment (`.env`, not
-tracked) at run time.
+tracked; see `.env.example` for the documented shape) at run time. `YOIZEN_TENANT`, `YOIZEN_EMAIL`,
+`YOIZEN_PASSWORD`, `YOIZEN_BASE_URL` (platform login/session) are not demo-specific — they are
+sourced from the sibling SDK sample `.env` files (see the numbered scripts' own header comments).
 
 ## Script inventory
 

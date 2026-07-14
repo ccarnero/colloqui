@@ -274,7 +274,22 @@ test -f demos/crm-support-telegram/README.es.md
 
 - [x] T01 scaffolding demos/ + shared lib
 - [x] T02 01-telegram-channel.sh
-- [ ] T03 02-hubspot-connector.sh
+- [x] T03 02-hubspot-connector.sh
+
+### Findings (T03 — platform/SDK gaps, escalated not patched)
+
+- connector-runtime has NO per-invocation path templating (`buildUrl` only
+  appends query params; `resolveRequest` uses the configured path verbatim),
+  so the two association endpoints are `POST /crm/v3/associations/contacts/
+  {deals,tickets}/batch/read` (contact id in body, cached with `keyBody: true`)
+  instead of the SPEC's literal "GET, associations". Verified by both
+  reviewers against connector-runtime source. Follow-up candidate: path
+  templating support.
+- SDK gap: `sdk/src/resources/connectors/index.ts` does not re-export the
+  invoke result types (`ConnectorSyncInvokeResult` etc.); the demo carries a
+  minimal local mirror. Follow-up candidate: add the re-exports.
+- Gotcha: `sdk/dist` (gitignored) can be stale vs `sdk/src` — `connectors.invoke`
+  was missing until `npm run build` in `sdk/`. Demos depend on `file:../../sdk`.
 - [ ] T04 03-ai-agent.sh
 - [ ] T05 04-priority-scorer.sh (hosted service)
 - [ ] T06 05-workflow.sh
