@@ -396,7 +396,44 @@ test -f demos/crm-support-telegram/README.es.md
   the unit tests cover for real HubSpot errors — confirmed live twice
   (`kubectl logs`), never a crash, exactly the SPEC T05 edge case.
 - [x] T05 04-priority-scorer.sh (hosted service)
-- [ ] T06 05-workflow.sh
+- [x] T06 05-workflow.sh
+
+### Findings (T06 — platform/SDK gaps and notes, escalated not patched)
+
+- No new platform/SDK gap found. `endpointCall`'s connector-aware args
+  (`adapterId`/`endpointId`) and `serviceCall`'s `serviceId`+`serviceSlug`
+  resolve-by-slug convention (both `packages/shared/src/workflow.interfaces.ts`
+  and the SDK's loosely-typed `WorkflowAction`, `sdk/src/resources/workflows/
+  types.ts`) worked exactly as documented in `DOCS/workflows/patterns.md` and
+  the `ai-call-center-supervisor` reference — verified live twice against the
+  dev cluster (create then update-in-place, same workflow id both times).
+- The VIP branch's `serviceCall` to the scorer's `POST /tickets` (T05) uses
+  `{{executionId}}` as the `turn` value for `create-ticket`'s idempotency key
+  (`ticket-<tenant>-<conversationId>-<turn>`,
+  `priority-scorer/src/create-ticket.ts`) and `{{workflow.tenant}}` for the
+  tenant. Both are verified against the execution-context source:
+  `WorkflowExecutionContext` is `{ workflow: { name, tenant, application },
+  request, results, variables, causal?, executionId? }`
+  (`packages/shared/src/workflow.interfaces.ts:29-53`), and `runWorkflow`
+  sets `context.executionId` from `workflow_executions.id`
+  (`services/workflow-service/src/temporal/workflows.ts:925`) — unique per
+  workflow execution, and one execution is one conversational turn, so no
+  separate turn counter is needed. `resolvePath`
+  (`workflows.ts:194-204`) walks segments from the context root, so
+  `{{executionId}}` resolves to `context.executionId` and `{{workflow.tenant}}`
+  to `context.workflow.tenant`. NOTE (attempt-1 bug, fixed): the first attempt
+  used `{{workflow.tenantId}}` and `{{workflow.startTime}}`, NEITHER of which
+  exists in the context (`resolvePath` silently coerces a missing path to
+  `""`), which would have collapsed the idempotency key to
+  `ticket--<from>-` and made `POST /tickets` a permanent no-op after the first
+  VIP ticket per user. Documented in `src/05-workflow.ts`'s `createTicket`
+  action comment.
+- The ticket body omits `hs_pipeline`/`hs_pipeline_stage` (HubSpot defaults
+  to the account's default ticket pipeline when they're absent) rather than
+  hardcoding ids — consistent with T03's "resolve pipeline/stage ids by API,
+  never hardcode them" boundary; a future iteration that needs a specific
+  pipeline would resolve it via HubSpot's pipelines API at provisioning time,
+  not inline in the workflow body.
 - [ ] T07 setup.sh orchestrator + run.sh e2e
 - [ ] T08 docs + index
 
