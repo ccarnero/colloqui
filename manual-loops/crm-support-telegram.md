@@ -290,7 +290,49 @@ test -f demos/crm-support-telegram/README.es.md
   minimal local mirror. Follow-up candidate: add the re-exports.
 - Gotcha: `sdk/dist` (gitignored) can be stale vs `sdk/src` — `connectors.invoke`
   was missing until `npm run build` in `sdk/`. Demos depend on `file:../../sdk`.
-- [ ] T04 03-ai-agent.sh
+
+### Findings (T04 — platform/SDK gaps, escalated not patched)
+
+- api-gateway's `UpdateAgentDto`
+  (`services/api-gateway/src/modules/admin/admin.dto.ts`) omits
+  `knowledge_base_ids`, even though its sibling `CreateAgentDto` (same file)
+  and agent-admin-service's OWN `UpdateAgentDto`
+  (`services/agent-admin-service/src/modules/agents/agents.dto.ts`) both
+  declare it. The gateway's global `ValidationPipe`
+  (`whitelist: true, forbidNonWhitelisted: true`,
+  `services/api-gateway/src/main.ts`) rejects a PUT carrying the field with
+  HTTP 400 "property knowledge_base_ids should not exist" — verified live.
+  (The sibling samples `ai-knowledge-base-agent` / `ai-skill-support-agent`
+  assumed this was compile-time-only and "still reaches the wire on update";
+  that is false against the live cluster.) Workaround: the demo wires the KB
+  on agent CREATE and omits `knowledge_base_ids` from the UPDATE body; the
+  repository only writes the column `if (data.knowledge_base_ids !==
+  undefined)` (`agents.postgres.repository.ts`), so the CREATE-time link
+  survives. Follow-up candidate: add the field to the gateway
+  `UpdateAgentDto`.
+- `PATCH /admin/skills/:id` returns HTTP 500 for every payload
+  (`SkillsService.update` builds its SET clause from unstringifiable
+  postgres.js fragments) — pre-documented in
+  `sdk/src/resources/skills/types.ts`. Workaround: the demo's skill payload
+  is static, so it skips the update call on re-run and relies on
+  reuse-by-name for idempotency. Follow-up candidate: fix
+  `SkillsService.update` upstream.
+- NEW: the dev cluster's `agent-admin-service-worker` KB document-ingestion
+  pipeline (NATS JetStream pull consumer,
+  `services/agent-admin-service/src/modules/knowledge-bases/ingestion-worker.service.ts`)
+  showed multi-minute stalls: `reingest()` events sat unprocessed for 4–7+
+  minutes, and one event never processed at all across 9+ minutes AND a
+  worker pod restart (`kubectl delete pod agent-admin-service-worker-*` did
+  not help). The pod's logs carry a continuous, unrelated
+  `JobExecutionStatusConsumer` "Error processing execution status event"
+  loop dating back well before this task, suggesting a broader
+  consumer-health problem in that pod. The actual chunk+embed work completes
+  in seconds once a message is picked up. Workaround (sound idempotency
+  regardless): the demo skips reingest for an already-`ready` document whose
+  `content_text` is unchanged; `CRM_KB_DOC_FORCE_REINGEST=1` forces it.
+  Follow-up candidate: investigate the worker's NATS consumer health / the
+  `JobExecutionStatusConsumer` error loop.
+- [x] T04 03-ai-agent.sh
 - [ ] T05 04-priority-scorer.sh (hosted service)
 - [ ] T06 05-workflow.sh
 - [ ] T07 setup.sh orchestrator + run.sh e2e
