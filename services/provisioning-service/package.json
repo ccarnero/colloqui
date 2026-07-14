@@ -1,0 +1,32 @@
+{
+  "name": "provisioning-service",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "bun run dist/main.js",
+    "start:dev": "bun run --watch src/main.ts",
+    "test": "bun test --preload ./test/preload-env.ts",
+    "test:unit": "bun test --preload ./test/preload-env.ts test/unit"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.14",
+    "@nestjs/core": "^11.1.14",
+    "@nestjs/platform-fastify": "^11.1.14",
+    "fastify": "^5.2.2",
+    "@yoizen/database": "workspace:*",
+    "@yoizen/observability": "workspace:*",
+    "@yoizen/shared": "workspace:*",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "postgres": "^3.4.5",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.0.0",
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2"
+  }
+}

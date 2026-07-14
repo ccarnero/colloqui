@@ -24,7 +24,7 @@ VALID_SERVICES=(
   proxy-service agent-admin-service admin-console
   usage-aggregator-service ai-agent-gateway
   agent-memory-service agent-ai-service agent-scheduler-service
-  tracking-ingester-service
+  tracking-ingester-service provisioning-service
 )
 
 VALID_ENVIRONMENTS=(dev qa staging production)

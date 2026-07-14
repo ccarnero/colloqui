@@ -225,6 +225,7 @@ get_targets() {
     agent-ai-service)       echo "ksvc	agent-ai-service	src/main.ts	agent-ai-service" ;;
     agent-scheduler-service) echo "ksvc	agent-scheduler-service	src/main.ts	agent-scheduler-service" ;;
     ai-agent-gateway)       echo "ksvc	ai-agent-gateway	src/main.ts	ai-agent-gateway" ;;
+    provisioning-service)  echo "ksvc	provisioning-service	src/main.ts	provisioning-service" ;;
     # ── Not supported ──────────────────────────────────────────────────────
     admin-console)
       err "admin-console is not supported by dev-mode."

@@ -44,6 +44,9 @@ resources:
   - agent-memory-service.yaml
   - agent-ai-service.yaml
   - agent-scheduler-service.yaml
+  # manual-loops/declarative-provisioning.md T02 — manifest apply engine +
+  # secrets broker (server-side, engram #590: every workload wired 1:1 here).
+  - provisioning-service.yaml
   # ----- Plain Deployments (Temporal workers, fixed 1 replica) -----
   - workflow-worker.yaml
   - connector-runtime.yaml

@@ -93,7 +93,8 @@ else:
 # Group B — NestJS + shared/observability/database:
 #   api-gateway, cache-service, audit-service, workflow-service,
 #   agent-admin-service, ai-agent-gateway,
-#   agent-ai-service, agent-memory-service, agent-scheduler-service
+#   agent-ai-service, agent-memory-service, agent-scheduler-service,
+#   provisioning-service
 #
 # Group C — NestJS + shared/observability (no database):
 #   proxy-service, connector-runtime
@@ -126,6 +127,7 @@ _nestjs_core_svcs = [
     'agent-ai-service',
     'agent-memory-service',
     'agent-scheduler-service',
+    'provisioning-service',
 ]
 
 _nestjs_no_db_svcs = [
@@ -206,6 +208,11 @@ k8s_resource('agent-scheduler-service', labels=['ai'])
 k8s_resource('ai-agent-gateway', labels=['ai'])
 k8s_resource('agent-admin-service', labels=['ai'])
 k8s_resource('agent-admin-service-worker', labels=['ai'])
+
+# -----------------------------------------------------------------------
+# Declarative provisioning (manual-loops/declarative-provisioning.md)
+# -----------------------------------------------------------------------
+k8s_resource('provisioning-service', labels=['core'])
 
 # -----------------------------------------------------------------------
 # Admin UI (Angular frontend)

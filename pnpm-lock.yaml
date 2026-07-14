@@ -145,7 +145,13 @@ importers:
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
+      '@types/bun':
+        specifier: ^1.3.14
+        version: 1.3.14
       '@types/node':
         specifier: ^25.5.0
         version: 25.9.2
@@ -1035,6 +1041,58 @@ importers:
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.4
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  services/provisioning-service:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^11.1.14
+        version: 11.1.26(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core':
+        specifier: ^11.1.14
+        version: 11.1.26(@nestjs/common@11.1.26(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/platform-fastify':
+        specifier: ^11.1.14
+        version: 11.1.26(@fastify/static@8.3.0)(@nestjs/common@11.1.26(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.26(@nestjs/common@11.1.26(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))
+      '@yoizen/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@yoizen/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
+      '@yoizen/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      class-transformer:
+        specifier: ^0.5.1
+        version: 0.5.1
+      class-validator:
+        specifier: ^0.15.1
+        version: 0.15.1
+      fastify:
+        specifier: ^5.2.2
+        version: 5.8.5
+      postgres:
+        specifier: ^3.4.5
+        version: 3.4.9
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
+      rxjs:
+        specifier: ^7.8.1
+        version: 7.8.2
+    devDependencies:
+      '@nestjs/testing':
+        specifier: ^11.0.0
+        version: 11.1.26(@nestjs/common@11.1.26(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.26(@nestjs/common@11.1.26(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))
+      '@types/node':
+        specifier: ^22.10.1
+        version: 22.19.20
       tsx:
         specifier: ^4.19.2
         version: 4.22.4
@@ -8342,7 +8400,7 @@ snapshots:
 
   '@types/iconv-lite@0.0.1':
     dependencies:
-      '@types/node': 22.19.20
+      '@types/node': 25.9.2
 
   '@types/js-yaml@4.0.9': {}
 
@@ -8373,7 +8431,7 @@ snapshots:
 
   '@types/papaparse@5.5.2':
     dependencies:
-      '@types/node': 22.19.20
+      '@types/node': 25.9.2
 
   '@types/ssh2-streams@0.1.13':
     dependencies:

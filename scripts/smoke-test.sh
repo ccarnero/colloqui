@@ -25,6 +25,7 @@ ALL_KNATIVE_SERVICES=(
   agent-memory-service
   agent-scheduler-service
   ai-agent-gateway
+  provisioning-service
   admin-console
   proxy-service
   connector-admin-api
