@@ -98,6 +98,7 @@ async function emit(evt: IEndpointCallEventPayload): Promise<void> {
     ...(evt.cacheTtlSeconds !== undefined && {
       cacheTtlSeconds: evt.cacheTtlSeconds,
     }),
+    ...(evt.invocationId !== undefined && { invocationId: evt.invocationId }),
   };
 
   const subject = buildSubject({
@@ -110,10 +111,18 @@ async function emit(evt: IEndpointCallEventPayload): Promise<void> {
     version: "v1",
   });
 
+  // Standalone (non-workflow) callers set `invocationId` (HTTP facade, T02)
+  // so the audit event is addressable by invocation even though it starts a
+  // root correlation (no `causal` to join) — SPEC.md T02 constraint. Workflow
+  // calls (Temporal activity) never set it and keep the pre-T02 resource shape.
+  const resource = evt.invocationId
+    ? `invocation/${evt.invocationId}`
+    : `adapter/${evt.adapterId}`;
+
   const baseOptions = {
     type: "connector.endpoint_call.completed.v1",
     source: "//connector-runtime/endpoint-call",
-    resource: `adapter/${evt.adapterId}`,
+    resource,
     tenant: evt.tenantId,
     producer: "connector-runtime",
     domain: "platform",

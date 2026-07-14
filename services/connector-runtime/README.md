@@ -320,9 +320,90 @@ If test succeeds → circuit closes, normal operation resumes
 
 ### Scaling
 
-The service is deployed as a plain Kubernetes Deployment (not Knative Service) because Temporal uses pull-based task distribution — it pulls tasks over a long-lived gRPC connection and never receives inbound HTTP, so Knative's activator/KPA model adds nothing.
+The Temporal worker is deployed as a plain Kubernetes Deployment (not Knative Service) because Temporal uses pull-based task distribution — it pulls tasks over a long-lived gRPC connection and never receives inbound HTTP, so Knative's activator/KPA model adds nothing.
 
 In developer mode it runs at a fixed **1 replica** with no autoscaling. Each replica sustains up to 400 concurrent activities; horizontal capacity would come from raising the replica count.
+
+**HTTP invoke facade (`src/http-main.ts`) scales differently from the worker** — see the section below.
+
+## HTTP Invoke Facade (`src/http-main.ts`)
+
+`manual-loops/connector-invoke-api.md` T02 adds a SECOND entrypoint to the
+same deployable: a plain `Bun.serve` HTTP server (no Express/Fastify) that
+lets hosted-service code invoke connectors synchronously without going
+through Temporal. It reuses the exact same governed pipeline (breaker,
+HTTP-response cache, `connector.endpoint_call.completed.v1` audit event) as
+`executeEndpointCall` — both are thin wrappers around the pure core in
+`src/lib/endpoint-call-core/`.
+
+### Route
+
+```
+POST /invoke/:connectorId/:endpointId
+Headers: x-yoizen-tenant: <tenant>
+Body: { "args": { "method": "GET", "params": {...}, "data": {...}, "headers": {...} }, "mode"?: "sync" }
+```
+
+`connectorId`/`endpointId` map onto the core's `adapterId`/`endpointId`
+(fully-resolved adapter+endpoint branch — method/path/headers/timeouts all
+come from the adapter). Only `mode: "sync"` is implemented in T02; any other
+`mode` value is rejected with 400 (async publish is a later task in the same
+queue).
+
+### Responses
+
+| Status | When |
+|---|---|
+| 200 | Success — `{ invocationId, status, data, headers, cacheResult }` |
+| 400 | Missing/blank `x-yoizen-tenant` header, invalid JSON body, missing/invalid `args`, or the core's `invalid_args` error |
+| 429 | Per-tenant rate limit exceeded — `{ error: "rate_limited", resetSeconds }` |
+| 503 | Circuit breaker OPEN — `{ error: "circuit_open", retryAfterMs }` (caller should back off; transient, not a hard failure) |
+| 502 | Upstream HTTP failure — `{ error: "upstream_http_error" }` |
+| 504 | Upstream timeout — `{ error: "upstream_timeout" }` |
+
+Every response includes `invocationId` — a UUID generated per request
+(`randomUUID()`), even on sync calls, so the audit event is addressable by
+invocation. Standalone (non-workflow) invocations start a **root
+correlation** (no `causal` context to join, since there's no workflow
+`executionId`); the published envelope's `resource` is
+`invocation/${invocationId}` instead of the Temporal path's
+`adapter/${adapterId}`.
+
+### Tenant guard + rate limit
+
+- **Tenant guard** (`src/lib/http-facade/check-tenant-header.ts`): same
+  header contract as the gateway-proxied services (e.g.
+  `tracking-ingester-service`) — `x-yoizen-tenant` must be present and
+  non-blank, or the request is rejected with 400. No `@Public()`-style
+  bypass; this is a new HTTP surface with no task-queue boundary protecting
+  it, so authz is required from day one.
+- **Rate limit** (`src/lib/http-facade/check-rate-limit.ts`): per-tenant
+  sliding-window counter, in-memory per pod (not Redis-backed like the
+  breaker — the facade rate limit gates per-pod RPS, it doesn't need
+  cross-pod accuracy). Defaults reuse the platform-wide
+  `RATE_LIMIT_DEFAULT_LIMIT`/`RATE_LIMIT_DEFAULT_WINDOW_MS` constants
+  already established in `@yoizen/shared`; override via
+  `INVOKE_RATE_LIMIT`/`INVOKE_RATE_LIMIT_WINDOW_MS`. Rejections are logged
+  as warnings with the tenant and reset window.
+
+### Deployment: second container/profile, independent scaling
+
+Same image as the Temporal worker — run `bun run src/http-main.ts` as a
+second container (or a second Deployment sharing the image) rather than a
+separate service. The two entrypoints have fundamentally different scaling
+signals:
+
+- **Temporal worker** (`src/worker.ts`) scales on **Temporal task-queue
+  depth** — pull-based, no inbound HTTP, KEDA/HPA on queue backlog if
+  autoscaling is ever enabled.
+- **HTTP invoke facade** (`src/http-main.ts`) scales on **inbound RPS** —
+  it's a normal HTTP server behind the gateway/ingress, so HPA on
+  CPU/RPS/concurrent-connections applies as it would to any other HTTP
+  service.
+
+Sharing one image keeps the breaker/cache/audit-event code identical across
+both paths without a build/publish step per entrypoint; the two containers
+get independent resource requests and HPA targets in the Deployment spec.
 
 ## Configuration
 
@@ -339,6 +420,9 @@ In developer mode it runs at a fixed **1 replica** with no autoscaling. Each rep
 | `REDIS_DB` | `0` | Redis database number |
 | `REDIS_PASSWORD` | *(unset)* | Redis password (if required) |
 | `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
+| `HTTP_FACADE_PORT` | `3100` | Port for the HTTP invoke facade (`src/http-main.ts`) — separate from the worker's health `PORT` |
+| `INVOKE_RATE_LIMIT` | `RATE_LIMIT_DEFAULT_LIMIT` (`@yoizen/shared`, currently `1000`) | Per-tenant request limit for the invoke facade's sliding window |
+| `INVOKE_RATE_LIMIT_WINDOW_MS` | `RATE_LIMIT_DEFAULT_WINDOW_MS` (`@yoizen/shared`, currently `60000`) | Sliding-window duration (ms) for the invoke facade's rate limit |
 
 ### Connector Configuration
 

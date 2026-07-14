@@ -47,6 +47,10 @@ const logger = new PinoLoggerService("endpoint-call-core");
  *   to the process-wide singleton (`getHttpResponseCache()`). Tests supply
  *   an isolated in-memory implementation instead of mutating the singleton
  *   in place (`manual-loops/connector-invoke-api.md` T01 review round 2).
+ * @param invocationId - Set by standalone (non-workflow) callers — today the
+ *   HTTP facade (T02) — so the published audit event's envelope `resource`
+ *   is addressable by invocation. `undefined` (the Temporal activity's
+ *   behavior) preserves the pre-T02 `adapter/${adapterId}` resource shape.
  * @returns `Result<IEndpointCallResult, EndpointCallError>` — never throws.
  */
 export async function executeEndpointCallCore(
@@ -54,7 +58,8 @@ export async function executeEndpointCallCore(
   tenantId: string,
   causal?: EventCausalContext,
   publish: EndpointCallEventSink = noopEndpointCallEventSink,
-  httpResponseCache: IHttpResponseCache = getHttpResponseCache()
+  httpResponseCache: IHttpResponseCache = getHttpResponseCache(),
+  invocationId?: string
 ): Promise<Result<IEndpointCallResult, EndpointCallError>> {
   const hasAdapter = !!args.adapterId;
   const hasEndpoint = !!args.endpointId;
@@ -89,7 +94,8 @@ export async function executeEndpointCallCore(
           tenantId,
           causal,
           publish,
-          httpResponseCache
+          httpResponseCache,
+          invocationId
         )
       : hasAdapter
         ? await executeWithAdapterBase(
@@ -97,7 +103,8 @@ export async function executeEndpointCallCore(
             tenantId,
             causal,
             publish,
-            httpResponseCache
+            httpResponseCache,
+            invocationId
           )
         : await executeRaw(args, tenantId, httpResponseCache);
 

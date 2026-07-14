@@ -48,6 +48,7 @@ mock.module("@yoizen/shared", () => ({
     return {
       type: params["type"],
       source: params["source"],
+      resource: params["resource"],
       data: { payload: params["payload"] },
       tenant: params["tenant"],
       correlation_id: params["correlationId"] ?? "generated-correlation-id",
@@ -311,6 +312,31 @@ describe("publishEndpointCallEvent", () => {
     expect(envelope.correlation_id).toBe("run-correlation-id");
     expect(envelope.causation_id).toBe("parent-event-id");
     expect(envelope.transport.depth).toBe(3);
+  });
+
+  it("resource defaults to adapter/${adapterId} when invocationId is absent", async () => {
+    publishEndpointCallEvent(baseEvt);
+    await flush();
+
+    const rawBytes = publishSpy.mock.calls[0]![1] as Uint8Array;
+    const envelope = JSON.parse(new TextDecoder().decode(rawBytes)) as {
+      resource: string;
+    };
+    expect(envelope.resource).toBe("adapter/adp-1");
+  });
+
+  it("resource is invocation/${invocationId} when invocationId is set (standalone HTTP-facade invocations, T02)", async () => {
+    const evt = { ...baseEvt, invocationId: "inv-123" };
+    publishEndpointCallEvent(evt);
+    await flush();
+
+    const rawBytes = publishSpy.mock.calls[0]![1] as Uint8Array;
+    const envelope = JSON.parse(new TextDecoder().decode(rawBytes)) as {
+      resource: string;
+      data: { payload: Record<string, unknown> };
+    };
+    expect(envelope.resource).toBe("invocation/inv-123");
+    expect(envelope.data.payload["invocationId"]).toBe("inv-123");
   });
 
   it("without causal context: envelope gets a random correlation and null causation (root event)", async () => {

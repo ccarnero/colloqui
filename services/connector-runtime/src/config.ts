@@ -1,4 +1,8 @@
-import { platformServiceUrl } from "@yoizen/shared";
+import {
+  platformServiceUrl,
+  RATE_LIMIT_DEFAULT_LIMIT,
+  RATE_LIMIT_DEFAULT_WINDOW_MS,
+} from "@yoizen/shared";
 
 const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
 
@@ -20,6 +24,27 @@ type WorkflowHttpWorkerConfig = {
   readonly registryServiceUrl: string;
   readonly agentAdminServiceUrl: string;
   readonly natsUrl: string;
+  /**
+   * Port for the HTTP invoke facade (`src/http-main.ts`,
+   * `manual-loops/connector-invoke-api.md` T02) — a SECOND entrypoint of the
+   * same deployable, distinct from the Temporal worker's health port
+   * (`PORT`). Defaults to a different port so both can run in the same
+   * process/container during local dev without clashing.
+   */
+  readonly httpFacadePort: number;
+  /**
+   * Per-tenant sliding-window rate limit for the invoke facade
+   * (`checkRateLimit`, T02). Defaults reuse the platform-wide defaults
+   * already established in `@yoizen/shared/rate-limit.constants.ts`
+   * (`RATE_LIMIT_DEFAULT_LIMIT` / `_WINDOW_MS`) — this queue's SPEC.md
+   * flags "rate-limit defaults" as a human boundary, so this task does NOT
+   * invent new numbers, it reuses the already-approved platform defaults
+   * with env overrides for operators to tune per deployment.
+   */
+  readonly rateLimitPerTenant: {
+    readonly limit: number;
+    readonly windowMs: number;
+  };
 };
 
 export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
@@ -41,4 +66,16 @@ export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
     process.env.AGENT_ADMIN_SERVICE_URL ??
     platformServiceUrl("agent-admin-service", env),
   natsUrl: process.env.NATS_URL ?? "nats://localhost:4222",
+  httpFacadePort: Number.parseInt(process.env.HTTP_FACADE_PORT ?? "3100", 10),
+  rateLimitPerTenant: {
+    limit: Number.parseInt(
+      process.env.INVOKE_RATE_LIMIT ?? String(RATE_LIMIT_DEFAULT_LIMIT),
+      10
+    ),
+    windowMs: Number.parseInt(
+      process.env.INVOKE_RATE_LIMIT_WINDOW_MS ??
+        String(RATE_LIMIT_DEFAULT_WINDOW_MS),
+      10
+    ),
+  },
 };

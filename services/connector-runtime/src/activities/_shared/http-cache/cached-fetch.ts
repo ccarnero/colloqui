@@ -10,10 +10,19 @@ import type {
   IHttpResponseCache,
 } from "./http-response-cache";
 
+/**
+ * Structural fetch signature rather than `typeof globalThis.fetch`: callers
+ * pass wrapped fetch implementations (e.g. `tracedFetch` from
+ * `@yoizen/observability`) that do not carry `fetch`'s static members
+ * (`preconnect`), so the narrower type accepts any function matching the
+ * call shape.
+ */
+type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
+
 export interface ICachedFetchContext {
   readonly decision: IHttpResponseCachePolicyDecision;
   readonly cache: IHttpResponseCache;
-  readonly fetchFn: typeof globalThis.fetch;
+  readonly fetchFn: FetchLike;
   readonly onCacheResult?: (result: HttpResponseCacheResultValue) => void;
 }
 

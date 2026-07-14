@@ -39,13 +39,17 @@ const logger = new PinoLoggerService("endpoint-call-core");
  * @param httpResponseCache - Injected cache store, defaulting to the
  *   process-wide singleton (`getHttpResponseCache()`). Tests supply an
  *   isolated in-memory implementation instead of touching the singleton.
+ * @param invocationId - Set by standalone (non-workflow) callers (HTTP
+ *   facade, T02) so the published audit event's envelope `resource` is
+ *   addressable by invocation instead of falling back to `adapter/${id}`.
  */
 export async function executeWithAdapterBase(
   args: EndpointCallArgs,
   tenantId: string,
   causal?: EventCausalContext,
   publish: EndpointCallEventSink = noopEndpointCallEventSink,
-  httpResponseCache: IHttpResponseCache = getHttpResponseCache()
+  httpResponseCache: IHttpResponseCache = getHttpResponseCache(),
+  invocationId?: string
 ): Promise<Result<IEndpointCallResult, EndpointCallError>> {
   if (!args.url || args.url.length === 0) {
     logger.warn(
@@ -132,6 +136,7 @@ export async function executeWithAdapterBase(
     cacheKey: decision.policy?.key,
     cacheTtlSeconds: decision.policy?.ttlSeconds,
     causal,
+    invocationId,
   });
 
   logger.log(

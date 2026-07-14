@@ -38,6 +38,16 @@ export interface IEndpointCallEventPayload {
   readonly cacheKey?: string;
   readonly cacheTtlSeconds?: number;
   /**
+   * Set by standalone (non-workflow) callers — today the HTTP facade
+   * (`src/http-main.ts`, `manual-loops/connector-invoke-api.md` T02). When
+   * present, `event-publisher.ts`'s `emit()` uses it to build the envelope
+   * `resource` (`invocation/${invocationId}`) instead of the default
+   * `adapter/${adapterId}`, so a standalone invocation's audit event is
+   * addressable by `invocationId` even though it has no `causal` context to
+   * join (root correlation, per SPEC.md T02).
+   */
+  readonly invocationId?: string;
+  /**
    * Causal context from the workflow's `endpointCall`/`serviceCall` action,
    * mirroring `mcp-call.activity.ts`'s `causal` threading (metering-foundation.md
    * G5). When present, the published envelope's `correlation_id`/`causation_id`/

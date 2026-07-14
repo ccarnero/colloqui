@@ -1,10 +1,10 @@
-import { applyAdapterAuthHeadersSync } from "./adapter-auth-headers";
-import { TENANT_HEADER } from "./constants";
 import type {
   AdapterCache,
   AdapterConfig,
   ResolvedAdapterRequest,
 } from "./adapter.interfaces";
+import { applyAdapterAuthHeadersSync } from "./adapter-auth-headers";
+import { TENANT_HEADER } from "./constants";
 
 interface CachedAdapter {
   data: AdapterConfig;
@@ -26,16 +26,28 @@ const INTERNAL_BY_SERVICE_KEY_PREFIX = "adapter:internal-by-service:";
 /** Shorter negative-cache TTL: new mirrors should propagate fast. */
 const NEGATIVE_CACHE_TTL_S = 10;
 
+/**
+ * Structural fetch signature (input/init/response only) rather than
+ * `typeof globalThis.fetch`. Consumers pass wrapped fetch implementations
+ * (e.g. `tracedFetch` from `@yoizen/observability`) that do not carry
+ * `fetch`'s static members (`preconnect`), so the narrower type is used
+ * here to accept any function matching the call shape.
+ */
+export type FetchLike = (
+  input: string | URL | Request,
+  init?: RequestInit
+) => Promise<Response>;
+
 export interface AdapterClientOptions {
   baseUrl: string;
-  fetchFn: typeof globalThis.fetch;
+  fetchFn: FetchLike;
   cache: AdapterCache;
   cacheTtlSeconds?: number;
 }
 
 export class AdapterClient {
   private readonly baseUrl: string;
-  private readonly fetchFn: typeof globalThis.fetch;
+  private readonly fetchFn: FetchLike;
   private readonly cache: AdapterCache;
   private readonly cacheTtlS: number;
 
@@ -53,7 +65,7 @@ export class AdapterClient {
    */
   async getAdapter(
     tenantId: string,
-    adapterId: string,
+    adapterId: string
   ): Promise<AdapterConfig> {
     const key = `${ADAPTER_KEY_PREFIX}${tenantId}:${adapterId}`;
     const raw = await this.cache.get(key);
@@ -76,7 +88,7 @@ export class AdapterClient {
   async resolveRequest(
     tenantId: string,
     adapterId: string,
-    endpointId: string,
+    endpointId: string
   ): Promise<ResolvedAdapterRequest> {
     let adapter = await this.getAdapter(tenantId, adapterId);
     let endpoint = adapter.endpoints.find((ep) => ep.id === endpointId);
@@ -89,7 +101,7 @@ export class AdapterClient {
 
     if (!endpoint) {
       throw new Error(
-        `Endpoint '${endpointId}' not found on adapter '${adapterId}'`,
+        `Endpoint '${endpointId}' not found on adapter '${adapterId}'`
       );
     }
 
@@ -135,7 +147,7 @@ export class AdapterClient {
   async resolveAdapterRequest(
     tenantId: string,
     adapterId: string,
-    opts: { method: string; path?: string },
+    opts: { method: string; path?: string }
   ): Promise<ResolvedAdapterRequest> {
     const adapter = await this.getAdapter(tenantId, adapterId);
     return this.buildRequestFromAdapterBase(adapter, {
@@ -155,7 +167,7 @@ export class AdapterClient {
 
   async invalidateInternalByServiceId(
     tenantId: string,
-    serviceId: string,
+    serviceId: string
   ): Promise<void> {
     const key = `${INTERNAL_BY_SERVICE_KEY_PREFIX}${tenantId}:${serviceId}`;
     await this.cache.del(key);
@@ -176,7 +188,7 @@ export class AdapterClient {
    */
   async findInternalByServiceId(
     tenantId: string,
-    serviceId: string,
+    serviceId: string
   ): Promise<AdapterConfig | null> {
     const key = `${INTERNAL_BY_SERVICE_KEY_PREFIX}${tenantId}:${serviceId}`;
     const raw = await this.cache.get(key);
@@ -205,10 +217,12 @@ export class AdapterClient {
   async resolveForInternalService(
     tenantId: string,
     serviceId: string,
-    opts: { endpointId?: string; path?: string; method?: string },
+    opts: { endpointId?: string; path?: string; method?: string }
   ): Promise<ResolvedAdapterRequest | null> {
     const adapter = await this.findInternalByServiceId(tenantId, serviceId);
-    if (!adapter) return null;
+    if (!adapter) {
+      return null;
+    }
 
     if (opts.endpointId) {
       return this.resolveRequest(tenantId, adapter.id, opts.endpointId);
@@ -230,7 +244,7 @@ export class AdapterClient {
    */
   private async buildRequestFromAdapterBase(
     adapter: AdapterConfig,
-    opts: { method: string; path?: string },
+    opts: { method: string; path?: string }
   ): Promise<ResolvedAdapterRequest> {
     const base = adapter.baseUrl.replace(/\/+$/, "");
     const rawPath = opts.path ?? "";
@@ -259,7 +273,7 @@ export class AdapterClient {
     tenantId: string,
     adapterId: string,
     key: string,
-    staleData: AdapterConfig,
+    staleData: AdapterConfig
   ): Promise<AdapterConfig> {
     try {
       return await this.fetchAndCache(tenantId, adapterId, key);
@@ -272,7 +286,7 @@ export class AdapterClient {
     tenantId: string,
     serviceId: string,
     key: string,
-    staleData: AdapterConfig | null,
+    staleData: AdapterConfig | null
   ): Promise<AdapterConfig | null> {
     try {
       return await this.fetchAndCacheInternal(tenantId, serviceId, key);
@@ -284,7 +298,7 @@ export class AdapterClient {
   private async fetchAndCacheInternal(
     tenantId: string,
     serviceId: string,
-    key: string,
+    key: string
   ): Promise<AdapterConfig | null> {
     const config = await this.fetchInternalByServiceId(tenantId, serviceId);
     const ttlS = config ? this.cacheTtlS : NEGATIVE_CACHE_TTL_S;
@@ -305,7 +319,7 @@ export class AdapterClient {
    */
   private async fetchInternalByServiceId(
     tenantId: string,
-    serviceId: string,
+    serviceId: string
   ): Promise<AdapterConfig | null> {
     const qs = new URLSearchParams({
       context: "internal",
@@ -324,19 +338,21 @@ export class AdapterClient {
 
     if (!res.ok) {
       throw new Error(
-        `Failed to list internal adapters for service '${serviceId}': HTTP ${res.status}`,
+        `Failed to list internal adapters for service '${serviceId}': HTTP ${res.status}`
       );
     }
 
     const list = (await res.json()) as AdapterConfig[];
-    if (!Array.isArray(list) || list.length === 0) return null;
+    if (!Array.isArray(list) || list.length === 0) {
+      return null;
+    }
     return list[0]!;
   }
 
   private async fetchAndCache(
     tenantId: string,
     adapterId: string,
-    key: string,
+    key: string
   ): Promise<AdapterConfig> {
     const config = await this.fetchAdapter(tenantId, adapterId);
     const entry: CachedAdapter = {
@@ -350,7 +366,7 @@ export class AdapterClient {
 
   private async fetchAdapter(
     tenantId: string,
-    adapterId: string,
+    adapterId: string
   ): Promise<AdapterConfig> {
     const url = `${this.baseUrl}/connectors/${encodeURIComponent(adapterId)}`;
     const res = await this.fetchFn(url, {
@@ -364,7 +380,7 @@ export class AdapterClient {
 
     if (!res.ok) {
       throw new Error(
-        `Failed to fetch adapter '${adapterId}': HTTP ${res.status}`,
+        `Failed to fetch adapter '${adapterId}': HTTP ${res.status}`
       );
     }
 
@@ -373,7 +389,7 @@ export class AdapterClient {
 
   private async injectAuthHeaders(
     adapter: AdapterConfig,
-    headers: Record<string, string>,
+    headers: Record<string, string>
   ): Promise<void> {
     applyAdapterAuthHeadersSync(adapter, headers);
     if (adapter.authType === "oauth2") {
@@ -407,7 +423,7 @@ export class AdapterClient {
 
     if (!res.ok) {
       throw new Error(
-        `OAuth2 token request failed for adapter '${adapter.id}': HTTP ${res.status}`,
+        `OAuth2 token request failed for adapter '${adapter.id}': HTTP ${res.status}`
       );
     }
 
@@ -430,7 +446,7 @@ export class AdapterClient {
 export function createAdapterClientWithRedisAndFetch(
   baseUrl: string,
   cache: AdapterClientOptions["cache"],
-  fetchFn: AdapterClientOptions["fetchFn"],
+  fetchFn: AdapterClientOptions["fetchFn"]
 ): AdapterClient {
   return new AdapterClient({ baseUrl, cache, fetchFn });
 }

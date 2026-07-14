@@ -261,7 +261,7 @@ Docs build/lint green; reviewed prose.
 ## Progress
 
 - [x] T01 endpoint-call core extraction (pure lib, Result types) — core in `src/lib/endpoint-call-core/` with injected `EndpointCallEventSink` + injectable HTTP response cache; activity is a thin wrapper mapping Result → ApplicationFailure (exact pre-extraction fields)
-- [ ] T02 http facade entrypoint (sync invoke)
+- [x] T02 http facade entrypoint (sync invoke) — `src/http-main.ts` (Bun.serve, port 3100) + pure `src/lib/http-facade/*`; tenant header guard, per-tenant in-memory rate limit (platform `RATE_LIMIT_DEFAULT_*` defaults + env overrides — human to confirm), error map breaker_open→503/invalid_args→400/http_error→502/timeout→504; envelope resource `invocation/<id>`; `FetchLike` narrowing in packages/shared for @types/bun
 - [ ] T03 gateway proxy route
 - [ ] T04 async publish path (202 + invocationId)
 - [ ] T05 async consumer + result parking + webhook
