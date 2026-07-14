@@ -160,7 +160,11 @@ get_deployment_names() {
     # workflow-service ships three pods: api KSVC, NATS worker Deployment,
     # and the Temporal worker Deployment (workflow-worker).
     workflow-service)         echo "workflow-service-worker workflow-worker" ;;
-    connector-runtime)        echo "connector-runtime" ;;
+    # T07 (connector-invoke-api): connector-runtime ships three Deployments
+    # from the same image (worker.ts, http-main.ts, invoke-consumer-main.ts)
+    # — all three must roll on rebuild so the facade/consumer pick up the
+    # freshly built image alongside the Temporal worker.
+    connector-runtime)        echo "connector-runtime connector-runtime-http connector-runtime-invoke" ;;
     tracking-ingester-service) echo "tracking-ingester-worker" ;;
     *)                        echo "" ;;
   esac

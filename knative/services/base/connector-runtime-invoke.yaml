@@ -1,0 +1,67 @@
+# Plain Kubernetes Deployment (NOT a Knative Service) — same rationale as
+# `connector-runtime.yaml`: a JetStream pull-based durable consumer
+# (`connector-runtime-invoke`, see `src/invoke-consumer-main.ts`) with no
+# inbound HTTP traffic besides its own `/health` port, so Knative's
+# activator/KPA model adds nothing. Third Deployment of the
+# human-approved shape from `manual-loops/connector-invoke-api.md` T07
+# (alongside `connector-runtime` and `connector-runtime-http`).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connector-runtime-invoke
+  labels:
+    app.kubernetes.io/name: connector-runtime-invoke
+    app.kubernetes.io/component: workflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: connector-runtime-invoke
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: connector-runtime-invoke
+        app.kubernetes.io/component: workflow
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: user-container
+          image: dev.local/connector-runtime:local
+          imagePullPolicy: IfNotPresent
+          # Same image as `connector-runtime` (worker.ts) and
+          # `connector-runtime-http` (http-main.ts). The command override
+          # selects the async invoke consumer entrypoint
+          # (`manual-loops/connector-invoke-api.md` T05/T07).
+          command: ["bun", "dist/invoke-consumer-main.js"]
+          ports:
+            - name: health
+              containerPort: 3200
+              protocol: TCP
+          env:
+            - name: INVOKE_CONSUMER_HEALTH_PORT
+              value: "3200"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3200
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

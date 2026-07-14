@@ -98,17 +98,17 @@ export const gatewayConfig = {
       `${platformServiceUrl("tracking-ingester-worker", env)}:3000`,
     // T03 of manual-loops/connector-invoke-api.md: connector-runtime's HTTP
     // invoke facade (T02, `services/connector-runtime/src/http-main.ts`,
-    // `Bun.serve` on `HTTP_FACADE_PORT`, default 3100) — a second
-    // entrypoint of the connector-runtime deployable, not a separate
-    // service. Same "explicit port suffix" shape as `tracking` above
-    // because connector-runtime is deployed as a plain Deployment, not a
-    // Knative ksvc listening on port 80. Deployment shape (second
-    // container/profile) is a pending human call per the SPEC; this env
-    // var is additive and defaults to the documented facade port so it is
-    // ready once that call lands.
+    // `Bun.serve` on `HTTP_FACADE_PORT`, default 3100). T07 settled the
+    // deployment shape: three separate Deployments from the same image —
+    // `connector-runtime` (worker.ts), `connector-runtime-http` (this
+    // facade), `connector-runtime-invoke` (async consumer) — with
+    // `connector-runtime-http` fronted by its own ClusterIP Service
+    // (`knative/services/base/connector-runtime-http-svc.yaml`). Same
+    // "explicit port suffix" shape as `tracking` above because it's a plain
+    // Deployment, not a Knative ksvc listening on port 80.
     connectorRuntimeHttp:
       process.env.CONNECTOR_RUNTIME_HTTP_URL ??
-      `${platformServiceUrl("connector-runtime", env)}:3100`,
+      `${platformServiceUrl("connector-runtime-http", env)}:3100`,
   },
 
   rateLimit: {

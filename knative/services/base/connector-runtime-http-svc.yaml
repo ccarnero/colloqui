@@ -1,0 +1,23 @@
+# ClusterIP Service for the connector-runtime-http Deployment (T07 of
+# manual-loops/connector-invoke-api.md). Gives the api-gateway proxy
+# (`CONNECTOR_RUNTIME_HTTP_URL` / `services.connectorRuntimeHttp`) an
+# in-cluster address for the invoke facade, mirroring the
+# tracking-ingester-worker-svc.yaml pattern: plain `v1.Service`, ClusterIP,
+# selector matches the Deployment's pod template labels, port 3100 (the same
+# port http-main.ts serves `/invoke/*`, `/invocations/*`, and `/health` on).
+apiVersion: v1
+kind: Service
+metadata:
+  name: connector-runtime-http
+  labels:
+    app.kubernetes.io/name: connector-runtime-http
+    app.kubernetes.io/component: workflow
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: connector-runtime-http
+  ports:
+    - name: http
+      port: 3100
+      targetPort: http
+      protocol: TCP

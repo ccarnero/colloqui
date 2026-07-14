@@ -47,3 +47,10 @@ resources:
   # ----- Plain Deployments (Temporal workers, fixed 1 replica) -----
   - workflow-worker.yaml
   - connector-runtime.yaml
+  # T07 (connector-invoke-api) — HTTP invoke facade + async invoke consumer,
+  # same image as connector-runtime, different entrypoints via command
+  # override. See connector-runtime-http.yaml / connector-runtime-invoke.yaml
+  # module-header comments for the deployment-shape rationale.
+  - connector-runtime-http.yaml
+  - connector-runtime-http-svc.yaml
+  - connector-runtime-invoke.yaml
