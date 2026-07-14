@@ -1,32 +1,10 @@
-import { ApplicationFailure } from "@temporalio/activity";
-import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
+import { PinoLoggerService } from "@yoizen/observability";
 import type { EndpointCallArgs, EventCausalContext } from "@yoizen/shared";
-import { computeBreakerKey, TENANT_HEADER } from "@yoizen/shared";
-import { workflowHttpWorkerConfig } from "../config";
-import {
-  getAdapterClient,
-  getHttpResponseCache,
-} from "./_shared/adapter-client.provider";
-import { getHttpBreaker, HTTP_BREAKER_COOLDOWN_MS } from "./_shared/breaker";
+import type { IEndpointCallResult } from "../lib/endpoint-call-core";
+import { executeEndpointCallCore } from "../lib/endpoint-call-core";
 import { publishEndpointCallEvent } from "./_shared/event-publisher";
-import {
-  createBypassHttpResponseCacheDecision,
-  resolveHttpResponseCachePolicy,
-} from "./_shared/http-cache/cache-policy";
-import { cachedFetch } from "./_shared/http-cache/cached-fetch";
-import {
-  applyJsonBody,
-  buildUrl,
-  httpCallWithRetry,
-  type IHttpCallResult,
-} from "./_shared/http-call-with-retry";
-import { HttpResponseCacheReason } from "./_shared/metrics";
-import { redactHeaders } from "./_shared/redact-headers";
-import { truncateBody } from "./_shared/truncate-body";
+import { mapEndpointCallErrorToApplicationFailure } from "./map-endpoint-call-error-to-application-failure";
 
-type IEndpointCallResult = IHttpCallResult;
-
-const RAW_TIMEOUT_MS = 30_000;
 const logger = new PinoLoggerService("endpoint-call.activity");
 
 /**
@@ -53,9 +31,13 @@ const logger = new PinoLoggerService("endpoint-call.activity");
  * expires). The breaker stays a TRANSIENT signal, not a kill
  * switch.
  *
- * Falsy checks use truthy-string (`!!`) so that UIs sending empty
- * strings for unfilled optional fields are treated the same as
- * omitted — this matches how NestJS DTOs serialise optional inputs.
+ * This activity is a THIN WRAPPER (`manual-loops/connector-invoke-api.md`
+ * T01): all execution logic (breaker, cache, URL-resolution branches,
+ * audit event) lives in the pure `src/lib/endpoint-call-core` lib, which
+ * returns a `Result` and never throws. This function's only job is
+ * unwrapping that `Result` into Temporal's `ApplicationFailure` shape —
+ * preserving today's exact `type`/`nonRetryable`/`nextRetryDelay` fields
+ * so calling workflows see no behavior change.
  *
  * @param args - Method, URL, body, optional adapter/endpoint ids.
  * @param tenantId - Injected tenant for adapter resolution and `x-yoizen-tenant`.
@@ -76,267 +58,16 @@ export async function executeEndpointCall(
     logger.log(`endpointCall executionId=${executionId} tenant=${tenantId}`);
   }
 
-  const hasAdapter = !!args.adapterId;
-  const hasEndpoint = !!args.endpointId;
-
-  const breaker = getHttpBreaker();
-  const key = computeBreakerKey({
+  const result = await executeEndpointCallCore(
+    args,
     tenantId,
-    kind: "endpoint",
-    adapterId: args.adapterId,
-    endpointId: args.endpointId,
-    url: hasAdapter && hasEndpoint ? undefined : args.url,
-  });
-
-  const decision = await breaker.canProceed(key);
-  if (decision.action === "deny") {
-    throw ApplicationFailure.create({
-      message: `Circuit breaker ${decision.status} for endpoint call (${decision.reason})`,
-      type: "CIRCUIT_OPEN",
-      nonRetryable: false,
-      nextRetryDelay: HTTP_BREAKER_COOLDOWN_MS,
-      details: [{ key, status: decision.status, reason: decision.reason }],
-    });
-  }
-
-  try {
-    let result: IEndpointCallResult;
-    if (hasAdapter && hasEndpoint) {
-      result = await executeWithAdapterEndpoint(args, tenantId, causal);
-    } else if (hasAdapter) {
-      result = await executeWithAdapterBase(args, tenantId, causal);
-    } else {
-      result = await executeRaw(args, tenantId);
-    }
-    breaker.recordSuccess(key);
-    return result;
-  } catch (err) {
-    breaker.recordFailure(key);
-    throw err;
-  }
-}
-
-async function executeWithAdapterEndpoint(
-  args: EndpointCallArgs,
-  tenantId: string,
-  causal?: EventCausalContext
-): Promise<IEndpointCallResult> {
-  const client = getAdapterClient();
-  const resolved = await client.resolveRequest(
-    tenantId,
-    args.adapterId!,
-    args.endpointId!
-  );
-
-  const mergedHeaders: Record<string, string> = {
-    ...resolved.headers,
-    [TENANT_HEADER]: tenantId,
-    ...args.headers,
-  };
-
-  const url = buildUrl(resolved.url, args.params);
-  const body = applyJsonBody(args.data, mergedHeaders);
-  const decision = resolveHttpResponseCachePolicy({
-    enabled: workflowHttpWorkerConfig.httpResponseCacheEnabled,
-    strategy: resolved.cache,
-    tenantId,
-    method: resolved.method,
-    url,
-    headers: mergedHeaders,
-    body,
-  });
-
-  const startedAt = Date.now();
-  const result = await httpCallWithRetry({
-    url,
-    method: resolved.method,
-    headers: mergedHeaders,
-    body,
-    timeoutMs: resolved.timeoutMs,
-    maxRetries: resolved.maxRetries,
-    retryBackoffMs: resolved.retryBackoffMs,
-    cache: {
-      decision,
-      store: getHttpResponseCache(),
-    },
-  });
-  publishEndpointCallEvent({
-    tenantId,
-    adapterId: args.adapterId ?? "",
-    endpointId: args.endpointId ?? null,
-    method: resolved.method,
-    resolvedUrl: url,
-    status: result.status,
-    durationMs: Date.now() - startedAt,
-    cacheResult: result.cacheResult ?? null,
-    requestHeaders: redactHeaders(mergedHeaders),
-    requestBody: truncateBody(body),
-    responseHeaders: redactHeaders(result.headers),
-    responseBody: truncateBody(result.data),
-    cacheKey: decision.policy?.key,
-    cacheTtlSeconds: decision.policy?.ttlSeconds,
     causal,
-  });
-  return result;
-}
-
-/**
- * Adapter-with-path mode: join `adapter.baseUrl` with `args.url` and
- * use `args.method` verbatim. Adapter headers/auth/timeouts/retries
- * are honoured, so this branch behaves exactly like the endpoint
- * branch apart from URL + method coming from the action.
- *
- * `args.url` must be non-empty; we throw a non-retryable failure
- * early so the execution fails fast with a clear message rather than
- * falling through to an eventual 404.
- */
-async function executeWithAdapterBase(
-  args: EndpointCallArgs,
-  tenantId: string,
-  causal?: EventCausalContext
-): Promise<IEndpointCallResult> {
-  if (!args.url || args.url.length === 0) {
-    throw ApplicationFailure.nonRetryable(
-      "endpointCall: when 'adapterId' is set without 'endpointId', 'url' must be a non-empty path (e.g. '/resource').",
-      "INVALID_ENDPOINT_CALL_ARGS",
-      { adapterId: args.adapterId }
-    );
-  }
-
-  const client = getAdapterClient();
-  const resolved = await client.resolveAdapterRequest(
-    tenantId,
-    args.adapterId!,
-    {
-      method: args.method,
-      path: args.url,
-    }
+    publishEndpointCallEvent
   );
 
-  const mergedHeaders: Record<string, string> = {
-    ...resolved.headers,
-    [TENANT_HEADER]: tenantId,
-    ...args.headers,
-  };
-
-  const url = buildUrl(resolved.url, args.params);
-  const body = applyJsonBody(args.data, mergedHeaders);
-  const decision = resolveHttpResponseCachePolicy({
-    enabled: workflowHttpWorkerConfig.httpResponseCacheEnabled,
-    strategy: resolved.cache,
-    tenantId,
-    method: resolved.method,
-    url,
-    headers: mergedHeaders,
-    body,
-  });
-
-  const startedAt = Date.now();
-  const result = await httpCallWithRetry({
-    url,
-    method: resolved.method,
-    headers: mergedHeaders,
-    body,
-    timeoutMs: resolved.timeoutMs,
-    maxRetries: resolved.maxRetries,
-    retryBackoffMs: resolved.retryBackoffMs,
-    cache: {
-      decision,
-      store: getHttpResponseCache(),
-    },
-  });
-  publishEndpointCallEvent({
-    tenantId,
-    adapterId: args.adapterId ?? "",
-    endpointId: null,
-    method: resolved.method,
-    resolvedUrl: url,
-    status: result.status,
-    durationMs: Date.now() - startedAt,
-    cacheResult: result.cacheResult ?? null,
-    requestHeaders: redactHeaders(mergedHeaders),
-    requestBody: truncateBody(body),
-    responseHeaders: redactHeaders(result.headers),
-    responseBody: truncateBody(result.data),
-    cacheKey: decision.policy?.key,
-    cacheTtlSeconds: decision.policy?.ttlSeconds,
-    causal,
-  });
-  return result;
-}
-
-async function executeRaw(
-  args: EndpointCallArgs,
-  tenantId: string
-): Promise<IEndpointCallResult> {
-  assertAbsoluteUrl(args.url);
-
-  const headers: Record<string, string> = {
-    [TENANT_HEADER]: tenantId,
-    ...args.headers,
-  };
-
-  const url = buildUrl(args.url, args.params);
-  const body = applyJsonBody(args.data, headers);
-  const decision = createBypassHttpResponseCacheDecision(
-    args.method,
-    HttpResponseCacheReason.UNSUPPORTED_TARGET
-  );
-
-  const res = await cachedFetch(
-    url,
-    {
-      method: args.method,
-      headers,
-      body,
-      signal: AbortSignal.timeout(RAW_TIMEOUT_MS),
-    },
-    {
-      decision,
-      cache: getHttpResponseCache(),
-      fetchFn: tracedFetch,
-    }
-  );
-
-  const responseHeaders: Record<string, string> = {};
-  res.headers.forEach((v, k) => {
-    responseHeaders[k] = v;
-  });
-
-  let data: unknown;
-  const contentType = res.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    data = await res.json();
-  } else {
-    data = await res.text();
+  if (result.ok) {
+    return result.value;
   }
 
-  return { status: res.status, data, headers: responseHeaders };
-}
-
-/**
- * The raw branch calls `fetch()` directly, which requires an
- * absolute URL. When the UI sends a relative path without an
- * `adapterId`, undici throws an opaque `TypeError: fetch() URL is
- * invalid` — we catch that case up front and throw a non-retryable
- * `ApplicationFailure` with actionable context instead.
- *
- * Uses the WHATWG `URL` constructor rather than a regex: it handles
- * userinfo, IPv6, unicode hosts, etc. without us reimplementing
- * RFC 3986. O(length of url), no allocations beyond the URL object
- * that's already paid by `fetch` internally.
- */
-function assertAbsoluteUrl(url: string): void {
-  try {
-    const parsed = new URL(url);
-    if (!parsed.protocol || parsed.protocol.length === 0) {
-      throw new Error("missing protocol");
-    }
-  } catch {
-    throw ApplicationFailure.nonRetryable(
-      `endpointCall: 'url' must be absolute (e.g. 'https://…') when no 'adapterId' is provided; received '${url}'.`,
-      "INVALID_ENDPOINT_CALL_URL",
-      { url }
-    );
-  }
+  throw mapEndpointCallErrorToApplicationFailure(result.error);
 }

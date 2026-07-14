@@ -3,7 +3,6 @@ import {
   buildEventEnvelope,
   buildSubject,
   DepthExceededError,
-  type EventCausalContext,
   TENANT_HEADER,
 } from "@yoizen/shared";
 import {
@@ -13,7 +12,10 @@ import {
   headers as natsHeaders,
 } from "nats";
 import { workflowHttpWorkerConfig } from "../../config";
-import type { EndpointCacheResult } from "./http-call-with-retry";
+import type {
+  EndpointCallEventSink,
+  IEndpointCallEventPayload,
+} from "../../lib/endpoint-call-core";
 
 const logger = new PinoLoggerService("connector-runtime-events");
 const encoder = new TextEncoder();
@@ -44,46 +46,35 @@ async function getJetStream(): Promise<JetStreamClient> {
   return js;
 }
 
-export interface IEndpointCallEvent {
-  readonly tenantId: string;
-  readonly adapterId: string;
-  readonly endpointId: string | null;
-  readonly method: string;
-  readonly resolvedUrl: string;
-  readonly status: number;
-  readonly durationMs: number;
-  readonly cacheResult: EndpointCacheResult;
-  readonly requestHeaders?: Record<string, string>;
-  readonly requestBody?: string;
-  readonly responseHeaders?: Record<string, string>;
-  readonly responseBody?: string;
-  readonly cacheKey?: string;
-  readonly cacheTtlSeconds?: number;
-  /**
-   * Causal context from the workflow's `endpointCall`/`serviceCall` action,
-   * mirroring `mcp-call.activity.ts`'s `causal` threading (metering-foundation.md
-   * G5). When present, the published envelope's `correlation_id`/`causation_id`/
-   * `transport.depth` join the run's causal chain instead of becoming a root
-   * event. Absent `causal` preserves today's behavior (random correlation,
-   * null causation, depth 0).
-   */
-  readonly causal?: EventCausalContext;
-}
+/**
+ * Backward-compatible alias for the core's audit-event payload shape
+ * (`src/lib/endpoint-call-core/types.ts`'s `IEndpointCallEventPayload`).
+ * The core owns the canonical type since it defines the `EndpointCallEventSink`
+ * port that this module implements; kept re-exported under its historical
+ * name so nothing outside this module has to change.
+ */
+export type IEndpointCallEvent = IEndpointCallEventPayload;
 
 /**
  * Fire-and-forget: publishes an endpoint_call_completed event to NATS JetStream.
  * Failures are logged as warnings and never propagate to the caller — this is
  * an observability side-effect, not a critical path.
+ *
+ * This is the concrete `EndpointCallEventSink` implementation injected into
+ * the pure `endpoint-call-core` lib by entrypoints (today: the Temporal
+ * activity wrapper, `endpoint-call.activity.ts`) — the ONLY place in the
+ * endpoint-call pipeline where a `nats` import is allowed
+ * (`manual-loops/connector-invoke-api.md` T01).
  */
-export function publishEndpointCallEvent(evt: IEndpointCallEvent): void {
+export const publishEndpointCallEvent: EndpointCallEventSink = (evt) => {
   void emit(evt).catch((err) =>
     logger.warn(
       `endpoint_call event publish failed: ${err instanceof Error ? err.message : String(err)}`
     )
   );
-}
+};
 
-async function emit(evt: IEndpointCallEvent): Promise<void> {
+async function emit(evt: IEndpointCallEventPayload): Promise<void> {
   const payload: Record<string, unknown> = {
     adapterId: evt.adapterId,
     endpointId: evt.endpointId,
