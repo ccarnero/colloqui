@@ -333,7 +333,69 @@ test -f demos/crm-support-telegram/README.es.md
   Follow-up candidate: investigate the worker's NATS consumer health / the
   `JobExecutionStatusConsumer` error loop.
 - [x] T04 03-ai-agent.sh
-- [ ] T05 04-priority-scorer.sh (hosted service)
+
+### Findings (T05 — platform/SDK gaps and new-territory notes, escalated not patched)
+
+- DATA-AVAILABILITY GAP: the `demo-hubspot` connector's `list-deals-by-contact`
+  / `list-tickets-by-contact` endpoints (T03, HubSpot v3
+  `associations/.../batch/read`) return ONLY associated object ids — no deal
+  `amount` or ticket status/pipeline-stage properties, and no connector
+  endpoint exists to fetch those object properties. `OPEN_DEAL_VALUE_VIP_THRESHOLD`
+  and `UNRESOLVED_TICKETS_ESCALATION_COUNT` are therefore evaluated against
+  the COUNT of associated deals/tickets (a proxy for "value"/"unresolved"),
+  not real HubSpot property values — documented in
+  `priority-scorer/src/score.ts`'s header comment. Follow-up candidate: a
+  `get-deal`/`get-ticket` (or batch objects-read-with-properties) connector
+  endpoint if a future iteration needs real dollar amounts or ticket status.
+- NEW TERRITORY (no prior sample builds a custom hosted-service image):
+  `sdk/samples/hosted-services-api` only ever registers a public prebuilt
+  image (`ealen/echo-server`). `priority-scorer/Dockerfile` builds the SDK
+  from source in its own build stage because the repo-root `.dockerignore`
+  excludes `**/dist` everywhere ("always reinstalled/rebuilt inside the
+  image") — copying a host-built `sdk/dist` was tried first and rejected by
+  that ignore rule (`CopyIgnoredFile` warning + checksum error), so
+  `sdk-build` stage runs `bun install && bun run build` against `sdk/src`
+  instead. The image is tagged `dev.local/priority-scorer:local` — the exact
+  host `bootstrap-orbstack-osx.sh`'s `configure_local_registry()` configured
+  Knative (`registries-skipping-tag-resolving: dev.local`) to accept without
+  a push, matching `rebuild-redeploy.sh`'s convention for platform services.
+- NEW TERRITORY (in-cluster addressing, verified LIVE against the dev cluster
+  2026-07-14): a hosted service registered via `client.registry.services`
+  needs to reach the platform gateway AND its own public URL from inside its
+  pod to call `connectors.invoke()` and to build the `/tickets` ->
+  `/webhooks/invoke` callback — no prior sample does this (`hosted-services-
+  api`'s echo image never calls back into the platform). Confirmed live via
+  `kubectl run curlimages/curl` probes from both `platform-services-dev` and
+  `acme-dev-ns` namespaces: `http://api-gateway.platform-services-dev.
+  svc.cluster.local` and `http://<knativeName>.<namespace>.svc.cluster.local`
+  both resolve and answer HTTP 200 with NO Host-header override needed
+  (unlike the host-side dev-ingress path every other demo script uses). Also
+  confirmed the Knative-generated public `*.dev.local` hostnames (e.g.
+  `sample-crm-acme.acme-dev-ns.dev.local`) do NOT resolve in-cluster (DNS
+  timeout) — only `*.svc.cluster.local` does. `knativeName`
+  (`${name}-${tenantId}`) and `namespace` (`${tenantId}-${env}-ns`) are fully
+  deterministic per `services/registry-service/src/modules/services/
+  services.service.ts`, so `04-priority-scorer.ts` precomputes both URLs
+  client-side and passes them as `envVars` at registration time — no
+  chicken-and-egg second `update()` call needed.
+- NEW TERRITORY (host-to-cluster reachability for the T05 smoke check): also
+  confirmed live that OrbStack resolves `*.svc.cluster.local` names directly
+  from the macOS HOST (not just from inside pods) — `04-priority-scorer.ts`'s
+  smoke check calls `http://priority-scorer-<tenant>.<tenant>-dev-ns.
+  svc.cluster.local/score` directly from the host with a plain `fetch()`, no
+  gateway route or Host-header trick required. This is OrbStack-specific
+  behavior (see `bootstrap-orbstack-osx.sh`'s "shared Docker daemon" note for
+  the sibling convention) and may not hold on minikube/other dev backends —
+  a future portability pass should treat this as an OrbStack assumption.
+- OBSERVED (not a bug): the smoke check's probe `contactId` doesn't exist in
+  HubSpot, so HubSpot's v3 associations batch/read legitimately answers HTTP
+  207 (partial success / `OBJECT_NOT_FOUND` for that one input) rather than
+  200. The scorer's `fetchAssociatedIds` (`priority-scorer/src/
+  hubspot-associations.ts`) treats any non-200 as `{ ok: false }`, so the
+  smoke check exercises the SAME `reasons: ["crm-unavailable"]` degraded path
+  the unit tests cover for real HubSpot errors — confirmed live twice
+  (`kubectl logs`), never a crash, exactly the SPEC T05 edge case.
+- [x] T05 04-priority-scorer.sh (hosted service)
 - [ ] T06 05-workflow.sh
 - [ ] T07 setup.sh orchestrator + run.sh e2e
 - [ ] T08 docs + index

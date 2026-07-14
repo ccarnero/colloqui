@@ -1,0 +1,20 @@
+{
+  "name": "priority-scorer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hosted service (Knative) for the crm-support-telegram demo: parallel connectors.invoke() fan-out to HubSpot deals/tickets, readable priority scoring, and async ticket creation.",
+  "scripts": {
+    "start": "bun src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@yoizen/platform-sdk": "file:../../../sdk"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
