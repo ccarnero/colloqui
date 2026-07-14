@@ -30,8 +30,12 @@ end-to-end customer support over Telegram against a REAL cloud CRM.
    of several demos to come.
 2. Artifact creation is SEQUENTIAL: one `.sh` per artifact plus one
    orchestrator `setup.sh` that runs them all in order.
-3. External system: HubSpot Free CRM (private-app token; contacts, deals,
-   tickets APIs).
+3. External system: HubSpot Free CRM (contacts, deals, tickets APIs) at ZERO
+   cost. Auth via account Service Key (Bearer `pat-na1-…`, public beta since
+   2026-02-10, created under Development > Keys > Service keys with object
+   scopes); legacy private-app token is the equally-free fallback if the
+   portal lacks the beta — both are interchangeable Bearer tokens for the
+   connector.
 4. The AI agent LEADS the conversation; the workflow silently enriches each
    turn — not intent-routing with a passive agent.
 5. Ticket creation uses async `connectors.invoke()` with `idempotencyKey`
@@ -66,7 +70,7 @@ end-to-end customer support over Telegram against a REAL cloud CRM.
   thin bash wrapper over `src/NN-<artifact>.ts` built on `@yoizen/platform-sdk`.
 - Every provisioning script is IDEMPOTENT (create-or-update by name/externalId):
   running any script twice never duplicates artifacts.
-- No secrets in the repo — everything env-driven (`HUBSPOT_PRIVATE_APP_TOKEN`,
+- No secrets in the repo — everything env-driven (`HUBSPOT_SERVICE_KEY`,
   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_TEST_CHAT_ID`, `OPENAI_API_KEY`, `TG_PUBLIC_URL`).
 - Verbose logging on every path; nothing fails silently.
 - NO changes to platform services, SDK, or admin-console. If a platform/SDK gap
@@ -92,8 +96,8 @@ Gate rules OVERRIDE for THIS queue (supersedes the inherited
 so dev-mode/rebuild-redeploy gates (G5a/G5b) do not apply. The task script's
 double green run against the live dev cluster IS the commit gate.
 
-PRECONDITION (before T02, once): dev cluster reachable, HubSpot private-app
-token and Telegram bot token loaded in env by the HUMAN, `TG_PUBLIC_URL` tunnel
+PRECONDITION (before T02, once): dev cluster reachable, HubSpot Service Key
+(or legacy private-app token) and Telegram bot token loaded in env by the HUMAN, `TG_PUBLIC_URL` tunnel
 live (cloudflared `httpHostHeader` must point at the current gateway host — see
 engram `demo/crm-telegram-showcase` for the stale-host gotcha).
 
@@ -145,7 +149,9 @@ demos/crm-support-telegram/01-telegram-channel.sh && demos/crm-support-telegram/
 
 - Thin wrapper over `src/02-hubspot-connector.ts`: ensure connector
   `demo-hubspot` (base URL `https://api.hubapi.com`, bearer auth from
-  `HUBSPOT_PRIVATE_APP_TOKEN` header context) with endpoints:
+  `HUBSPOT_SERVICE_KEY` header context — the key needs object scopes for
+  contacts/deals/tickets read + write; Service Keys cannot receive HubSpot
+  webhooks, which is fine: this demo is outbound REST only) with endpoints:
   `search-contact` (POST /crm/v3/objects/contacts/search),
   `create-contact` (POST /crm/v3/objects/contacts),
   `list-deals-by-contact` (GET, associations),
@@ -260,7 +266,7 @@ test -f demos/crm-support-telegram/README.es.md
 ---
 
 - [x] T01 scaffolding demos/ + shared lib
-- [ ] T02 01-telegram-channel.sh
+- [x] T02 01-telegram-channel.sh
 - [ ] T03 02-hubspot-connector.sh
 - [ ] T04 03-ai-agent.sh
 - [ ] T05 04-priority-scorer.sh (hosted service)
@@ -274,14 +280,15 @@ test -f demos/crm-support-telegram/README.es.md
   it does not patch; gaps get escalated, not fixed inline.
 - Other channels (WhatsApp, Instagram, web chat) — Telegram only for v1.
 - HubSpot beyond contacts/deals/tickets (no custom objects, no OAuth app) —
-  private-app token keeps the demo reproducible in minutes.
+  a Service Key keeps the demo reproducible in minutes.
 - Multi-tenant demo choreography — single dev tenant (`acme`-style) only.
 - Load/performance testing of the scorer — demo-scale traffic only.
 
 ## Human boundaries for this change
 
 - Human approves this SPEC before the first run.
-- Human creates the HubSpot free portal + private-app token and the Telegram
+- Human creates the HubSpot free portal + Service Key (Development > Keys >
+  Service keys, object scopes for contacts/deals/tickets) and the Telegram
   bot, and loads both tokens in env — tokens never enter the repo or the SPEC.
 - Human triggers the FIRST full `setup.sh` run against the cluster and the
   first `run.sh` that writes to HubSpot.

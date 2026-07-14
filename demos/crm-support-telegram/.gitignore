@@ -1,0 +1,9 @@
+# Cached Telegram webhook secret (appSecret), used to sign/verify the
+# webhook across re-runs without re-minting a new one.
+.telegram-channel-secret
+
+# Cached auto-discovered TELEGRAM_TEST_CHAT_ID, so re-runs after the webhook
+# is registered don't need to clear+restore it just to poll getUpdates again.
+.telegram-test-chat-id
+
+node_modules/
