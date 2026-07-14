@@ -1,7 +1,8 @@
 # OrbStack override for `postgres-temporal` CNPG cluster.
-# Same shrink as `local-base/patches/postgres-temporal-resources.yaml`
-# plus explicit `storageClass: local-path` (orbstack default storage
-# class). PVCs and WAL PVCs both use it.
+# Keeps the local single-instance + `local-path` storage profile, but
+# uses the stress-grade resource/Postgres sizing from local-base. The
+# 200 rps webhook stress run saturated the previous 1 CPU / 1Gi cap and
+# left Temporal draining workflows behind the ingress phase.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -10,11 +11,11 @@ spec:
   instances: 1
   resources:
     requests:
-      cpu: 200m
-      memory: 512Mi
+      cpu: 500m
+      memory: 1500Mi
     limits:
-      cpu: "1"
-      memory: 1Gi
+      cpu: "4"
+      memory: 3Gi
   storage:
     size: 10Gi
     storageClass: local-path
@@ -27,20 +28,23 @@ spec:
     podAntiAffinityType: preferred
   postgresql:
     parameters:
-      shared_buffers: "256MB"
-      effective_cache_size: "768MB"
-      work_mem: "8MB"
-      maintenance_work_mem: "128MB"
+      shared_buffers: "1GB"
+      effective_cache_size: "2GB"
+      work_mem: "24MB"
+      maintenance_work_mem: "320MB"
       huge_pages: "off"
-      max_connections: "150"
-      max_wal_size: "1GB"
-      min_wal_size: "256MB"
-      wal_buffers: "16MB"
-      autovacuum_max_workers: "3"
-      # 2026-05-22 post-mortem: align naptime with base/local (10s) so
-      # the orbstack profile doesn't fall behind on `executions`
-      # autovacuum and start cascading `update-wf-execution` timeouts.
+      max_connections: "300"
+      # CNPG validates max_wal_size < walStorage (2Gi here). 1.5GB
+      # leaves headroom for bursts without rejecting the manifest.
+      max_wal_size: "1500MB"
+      min_wal_size: "512MB"
+      wal_buffers: "32MB"
+      autovacuum_max_workers: "6"
       autovacuum_naptime: "10s"
+      # Single-instance local dev: trade the last few hundred ms of
+      # durability on pod/host loss for much lower commit latency under
+      # Temporal's write-heavy stress workload. Do not propagate to HA.
+      synchronous_commit: "off"
 ---
 # OrbStack resource sizing for the single auto-setup Deployment.
 # Replaces the 4-role HA patches (temporal-frontend/history/matching/worker)
