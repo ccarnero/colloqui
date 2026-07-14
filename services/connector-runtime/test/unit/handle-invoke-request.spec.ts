@@ -97,6 +97,24 @@ describe("handleInvokeRequest", () => {
     expect(call[5]).toBe("inv-fixed-id");
   });
 
+  it("uses a client-supplied idempotencyKey as the invocationId even in mode: sync (pins parse-invoke-request-body.ts contract)", async () => {
+    const executeCore = mock(async () =>
+      ok({ status: 200, data: {}, headers: {}, cacheResult: "miss" })
+    );
+    const result = await handleInvokeRequest({
+      ...baseDeps(),
+      rawBody: {
+        args: { method: "GET" },
+        idempotencyKey: "client-sync-key",
+      },
+      executeCore,
+    });
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ invocationId: "client-sync-key" });
+    const call = executeCore.mock.calls[0]!;
+    expect(call[5]).toBe("client-sync-key");
+  });
+
   it("maps breaker_open to 503", async () => {
     const error: EndpointCallError = {
       kind: "breaker_open",
@@ -150,5 +168,119 @@ describe("handleInvokeRequest", () => {
       executeCore: executeCoreTimeout,
     });
     expect(timeoutResult.status).toBe(504);
+  });
+
+  // --- mode: "async" (T04) ---
+
+  describe("mode: async", () => {
+    const asyncDeps = () => ({
+      ...baseDeps(),
+      rawBody: { args: { method: "GET" }, mode: "async" },
+    });
+
+    it("returns 202 with invocationId and never calls executeCore", async () => {
+      const executeCore = mock(async () =>
+        ok({ status: 200, data: {}, headers: {} })
+      );
+      const publishInvokeRequest = mock(async () => ok({ subject: "s" }));
+      const result = await handleInvokeRequest({
+        ...asyncDeps(),
+        executeCore,
+        publishInvokeRequest,
+      });
+      expect(result.status).toBe(202);
+      expect(result.body).toEqual({ invocationId: "inv-fixed-id" });
+      expect(executeCore).not.toHaveBeenCalled();
+      expect(publishInvokeRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it("calls publishInvokeRequest with tenant/connector/endpoint/args/invocationId", async () => {
+      const publishInvokeRequest = mock(async () => ok({ subject: "s" }));
+      await handleInvokeRequest({
+        ...asyncDeps(),
+        publishInvokeRequest,
+      });
+      expect(publishInvokeRequest).toHaveBeenCalledTimes(1);
+      const call = publishInvokeRequest.mock.calls[0]![0];
+      expect(call).toMatchObject({
+        tenantId: "tenant-abc",
+        connectorId: "adp-1",
+        endpointId: "ep-1",
+        invocationId: "inv-fixed-id",
+      });
+    });
+
+    it("dedup contract: same idempotencyKey across two requests -> same invocationId (same Nats-Msg-Id)", async () => {
+      const publishInvokeRequest = mock(async () => ok({ subject: "s" }));
+      const deps = {
+        ...asyncDeps(),
+        rawBody: {
+          args: { method: "GET" },
+          mode: "async",
+          idempotencyKey: "client-retry-key",
+        },
+        publishInvokeRequest,
+      };
+
+      const first = await handleInvokeRequest(deps);
+      const second = await handleInvokeRequest(deps);
+
+      expect(first.status).toBe(202);
+      expect(second.status).toBe(202);
+      expect(first.body).toEqual({ invocationId: "client-retry-key" });
+      expect(second.body).toEqual({ invocationId: "client-retry-key" });
+      expect(publishInvokeRequest).toHaveBeenCalledTimes(2);
+      const firstCallArgs = publishInvokeRequest.mock.calls[0]![0];
+      const secondCallArgs = publishInvokeRequest.mock.calls[1]![0];
+      expect(firstCallArgs.invocationId).toBe(secondCallArgs.invocationId);
+    });
+
+    it("without idempotencyKey, each request gets a fresh (generated) invocationId", async () => {
+      let counter = 0;
+      const publishInvokeRequest = mock(async () => ok({ subject: "s" }));
+      const deps = {
+        ...asyncDeps(),
+        generateInvocationId: () => `gen-${++counter}`,
+        publishInvokeRequest,
+      };
+
+      const first = await handleInvokeRequest(deps);
+      const second = await handleInvokeRequest(deps);
+
+      expect(first.body).toEqual({ invocationId: "gen-1" });
+      expect(second.body).toEqual({ invocationId: "gen-2" });
+    });
+
+    it("returns 503 when publishInvokeRequest fails (never silently accepted)", async () => {
+      const publishInvokeRequest = mock(async () =>
+        err({ message: "invoke subject not stream-bound" })
+      );
+      const result = await handleInvokeRequest({
+        ...asyncDeps(),
+        publishInvokeRequest,
+      });
+      expect(result.status).toBe(503);
+      expect(result.body).toMatchObject({
+        invocationId: "inv-fixed-id",
+        error: "invoke subject not stream-bound",
+      });
+    });
+
+    it("still enforces tenant guard and rate limit before publishing", async () => {
+      const publishInvokeRequest = mock(async () => ok({ subject: "s" }));
+      const missingTenant = await handleInvokeRequest({
+        ...asyncDeps(),
+        tenantHeader: null,
+        publishInvokeRequest,
+      });
+      expect(missingTenant.status).toBe(400);
+      expect(publishInvokeRequest).not.toHaveBeenCalled();
+    });
+
+    it("throws when mode=async but publishInvokeRequest was not wired (entrypoint misconfiguration)", async () => {
+      await expect(handleInvokeRequest(asyncDeps())).rejects.toThrow(
+        /publishInvokeRequest/
+      );
+    });
   });
 });

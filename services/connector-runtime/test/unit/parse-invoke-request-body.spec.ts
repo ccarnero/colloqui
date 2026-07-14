@@ -66,11 +66,65 @@ describe("parseInvokeRequestBody", () => {
   it("rejects unsupported modes", () => {
     const result = parseInvokeRequestBody("adp-1", "ep-1", {
       args: { method: "GET" },
-      mode: "async",
+      mode: "yolo",
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toContain("async");
+      expect(result.error).toContain("yolo");
+    }
+  });
+
+  // --- mode: "async" (T04) ---
+
+  it("accepts mode: async", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.mode).toBe("async");
+    }
+  });
+
+  it("passes through an idempotencyKey for async mode", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+      idempotencyKey: "client-retry-key-1",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.idempotencyKey).toBe("client-retry-key-1");
+    }
+  });
+
+  it("rejects a blank idempotencyKey", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+      idempotencyKey: "   ",
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a non-string idempotencyKey", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+      idempotencyKey: 123,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("omits idempotencyKey from the result when not provided", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect("idempotencyKey" in result.value).toBe(false);
     }
   });
 });

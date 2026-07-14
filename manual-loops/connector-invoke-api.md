@@ -263,7 +263,7 @@ Docs build/lint green; reviewed prose.
 - [x] T01 endpoint-call core extraction (pure lib, Result types) — core in `src/lib/endpoint-call-core/` with injected `EndpointCallEventSink` + injectable HTTP response cache; activity is a thin wrapper mapping Result → ApplicationFailure (exact pre-extraction fields)
 - [x] T02 http facade entrypoint (sync invoke) — `src/http-main.ts` (Bun.serve, port 3100) + pure `src/lib/http-facade/*`; tenant header guard, per-tenant in-memory rate limit (platform `RATE_LIMIT_DEFAULT_*` defaults + env overrides — human to confirm), error map breaker_open→503/invalid_args→400/http_error→502/timeout→504; envelope resource `invocation/<id>`; `FetchLike` narrowing in packages/shared for @types/bun
 - [x] T03 gateway proxy route — `modules/connector-invoke` (TenantJsonProxyBase), `CONNECTOR_RUNTIME_HTTP_URL` (default :3100); health-map registration deferred until the deployment-shape human call (reviewer note)
-- [ ] T04 async publish path (202 + invocationId)
+- [x] T04 async publish path (202 + invocationId) — subjects approved 2026-07-13: `evt.<t>.connector-runtime.platform.endpoint.system.invoke_{requested,completed}.v1` (TAXONOMY rule 21, goldens 80→82); stream `CONNECTOR-INVOKE` via `services/connector-runtime/scripts/provision-invoke-stream.ts` (HUMAN must run first `--apply`); facade startup fails loud if subject unbound. KNOWN GAP for T06: gateway proxy collapses facade 202→200 (`@HttpCode(OK)` + downstreamJsonProxy)
 - [ ] T05 async consumer + result parking + webhook
 - [ ] T06 sdk connectors.invoke() both flavors
 - [ ] T07 cluster e2e sync + async (post-change only, cleanup)

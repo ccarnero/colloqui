@@ -8,6 +8,7 @@ mock.module("@yoizen/observability", () => ({
     createHistogram: () => ({ record() {} }),
   }),
   logWithEnvelope: () => {},
+  injectTraceContext: () => {},
   PinoLoggerService: class FakeLogger {
     log() {}
     warn(_msg: string) {}

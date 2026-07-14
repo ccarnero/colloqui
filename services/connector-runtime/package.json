@@ -18,6 +18,7 @@
     "@temporalio/activity": "^1.11.0",
     "@temporalio/interceptors-opentelemetry": "^1.17.2",
     "@temporalio/worker": "^1.11.0",
+    "@yoizen/database": "workspace:*",
     "@yoizen/observability": "workspace:*",
     "@yoizen/shared": "workspace:*",
     "class-transformer": "^0.5.1",

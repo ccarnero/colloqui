@@ -998,6 +998,9 @@ importers:
       '@temporalio/worker':
         specifier: ^1.11.0
         version: 1.18.0(tslib@2.8.1)
+      '@yoizen/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@yoizen/observability':
         specifier: workspace:*
         version: link:../../packages/observability

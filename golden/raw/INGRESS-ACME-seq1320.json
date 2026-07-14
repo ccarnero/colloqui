@@ -1,0 +1,43 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1320,
+  "received": "2026-07-13 00:00:00.000000000",
+  "subject": "evt.acme.connector-runtime.platform.endpoint.system.invoke_requested.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "inv-seq1320",
+    "X-Correlation-Id": "020241f0-f81b-4855-96e3-70e6a764d277",
+    "traceparent": "00-a1b2c3d4e5f60718293a4b5c6d7e8f90-1a2b3c4d5e6f7081-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "020241f0-f81b-4855-96e3-70e6a764d277",
+    "source": "//connector-runtime/endpoint-invoke",
+    "type": "connector.endpoint.invoke_requested.v1",
+    "resource": "invocation/inv-seq1320",
+    "time": "2026-07-13T00:00:00.000Z",
+    "traceid": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+    "causation_id": null,
+    "correlation_id": "020241f0-f81b-4855-96e3-70e6a764d277",
+    "tenant": "acme",
+    "producer": "connector-runtime",
+    "domain": "platform",
+    "channel": "endpoint",
+    "provider": "system",
+    "accountid": "acme",
+    "idempotencykey": "sha256:invoke-requested-1320",
+    "transport": { "method": "stream", "protocol": "internal", "depth": 0 },
+    "data": {
+      "received_at": "2026-07-13T00:00:00.000Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 96,
+      "payload_checksum": "sha256:invoke-requested-1320",
+      "payload": {
+        "connectorId": "adp-demo",
+        "endpointId": "ep-demo",
+        "args": { "method": "GET", "url": "https://api.example.com/demo" }
+      }
+    }
+  }
+}

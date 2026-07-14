@@ -18,6 +18,7 @@ import { checkRateLimit, type RateLimitState } from "./check-rate-limit";
 import { checkTenantHeader } from "./check-tenant-header";
 import { mapEndpointCallErrorToHttpResponse } from "./map-endpoint-call-error-to-http-response";
 import { parseInvokeRequestBody } from "./parse-invoke-request-body";
+import type { PublishInvokeRequest } from "./publish-invoke-request";
 
 export interface HandleInvokeRequestDeps {
   readonly tenantHeader: string | null;
@@ -35,6 +36,13 @@ export interface HandleInvokeRequestDeps {
   readonly executeCore?: typeof executeEndpointCallCore;
   /** Injected audit-event sink (real: `publishEndpointCallEvent`). */
   readonly publish: EndpointCallEventSink;
+  /**
+   * Injected `invoke_requested` transport publisher for `mode: "async"`
+   * (T04; real: `publishInvokeRequestEvent`). Optional so `mode: "sync"`
+   * unit tests never need to stub it — `handleInvokeRequest` only calls it
+   * on the async branch.
+   */
+  readonly publishInvokeRequest?: PublishInvokeRequest;
   readonly log?: (message: string) => void;
   readonly warn?: (message: string) => void;
 }
@@ -61,6 +69,18 @@ export type HandleInvokeRequestResult =
       readonly body: { readonly invocationId: string } & ReturnType<
         typeof mapEndpointCallErrorToHttpResponse
       >["body"];
+    }
+  | {
+      // T04 async accept response.
+      readonly status: 202;
+      readonly body: { readonly invocationId: string };
+    }
+  | {
+      // T04: the invoke_requested subject publish itself failed (broker
+      // down, or — per the fail-loud contract — not stream-bound). Never
+      // silently swallowed; surfaced as a retryable 503.
+      readonly status: 503;
+      readonly body: { readonly invocationId: string; readonly error: string };
     };
 
 /**
@@ -120,7 +140,46 @@ export async function handleInvokeRequest(
   // Standalone (non-workflow) invocation: generated here even in sync mode
   // (SPEC.md T02) so the audit event is addressable by invocationId and
   // starts a root correlation (no `causal` — no workflow executionId to join).
-  const invocationId = deps.generateInvocationId();
+  // For `mode: "async"` (T04), a client-supplied `idempotencyKey` is reused
+  // AS the invocationId so retries of the same logical invocation collapse
+  // onto the same `Nats-Msg-Id` (JetStream dedup, `invoke-request-publisher.ts`).
+  const invocationId =
+    parsed.value.idempotencyKey ?? deps.generateInvocationId();
+
+  if (parsed.value.mode === "async") {
+    log(
+      `invoke START invocationId=${invocationId} tenant=${tenantId} connector=${deps.connectorId} endpoint=${deps.endpointId} mode=async`
+    );
+    if (!deps.publishInvokeRequest) {
+      // Programmer error, not a runtime/user condition: the entrypoint MUST
+      // wire `publishInvokeRequest` before exposing `mode: "async"`. Fail
+      // loud rather than silently degrading to a no-op accept.
+      throw new Error(
+        "handleInvokeRequest: mode=async requires deps.publishInvokeRequest to be wired by the entrypoint"
+      );
+    }
+    const published = await deps.publishInvokeRequest({
+      tenantId,
+      invocationId,
+      connectorId: deps.connectorId,
+      endpointId: deps.endpointId,
+      args: parsed.value.args,
+    });
+    if (!published.ok) {
+      warn(
+        `invoke ASYNC PUBLISH FAILED invocationId=${invocationId} tenant=${tenantId} connector=${deps.connectorId} endpoint=${deps.endpointId} — ${published.error.message}`
+      );
+      return {
+        status: 503,
+        body: { invocationId, error: published.error.message },
+      };
+    }
+    log(
+      `invoke ACCEPTED invocationId=${invocationId} tenant=${tenantId} connector=${deps.connectorId} endpoint=${deps.endpointId} subject=${published.value.subject}`
+    );
+    return { status: 202, body: { invocationId } };
+  }
+
   log(
     `invoke START invocationId=${invocationId} tenant=${tenantId} connector=${deps.connectorId} endpoint=${deps.endpointId} mode=sync`
   );

@@ -12,9 +12,13 @@ recorded in `DRIFT.md`.
 - `raw/*.json` — 72 live captured events + 8 synthetic events (seq 1312-1319,
   added by `manual-loops/workflow-step-events.md` T01 to cover the
   `execution_started`/`action_started`/`action_completed`/`condition_evaluated`
-  kinds ahead of the emitter per golden rule 3 — see addendum below), 80 total.
-  Each file is a wrapper object: `{ stream, seq, received, subject, headers,
-  envelope }`. File name encodes provenance: `<STREAM>-seq<N>.json`.
+  kinds ahead of the emitter per golden rule 3 — see addendum below) + 2
+  synthetic events (seq 1320-1321, added by `manual-loops/connector-invoke-api.md`
+  T04 to cover the `invoke_requested`/`invoke_completed` connector-invoke
+  transport pair ahead of the T05 emitter, same golden rule 3 — see addendum
+  below), 82 total. Each file is a wrapper object: `{ stream, seq, received,
+  subject, headers, envelope }`. File name encodes provenance:
+  `<STREAM>-seq<N>.json`.
 - `labeled.tsv` — pre-labels produced by applying the classification rules in
   `TAXONOMY.md` §4 (20-rule table, first match wins) deterministically to every event.
 
@@ -30,12 +34,14 @@ recorded in `DRIFT.md`.
 ## Sample composition
 
 - **`INGRESS-ACME`** — 70 live-captured events (contiguous range seq 1242–1311) +
-  8 synthetic workflow-step-events T01 events (seq 1312–1319, see addendum below).
+  8 synthetic workflow-step-events T01 events (seq 1312–1319, see addendum below) +
+  2 synthetic connector-invoke-api T04 events (seq 1320–1321, see addendum below).
 - **`GATEWAY_AUDIT`** — 2 events.
-- 6 correlation chains, all formally closed by `correlation_id` + `causation_id`:
+- 7 correlation chains, all formally closed by `correlation_id` + `causation_id`:
   4 conversation chains (1 Telegram, 3 HTTP) and 2 memory approve/reject cycles
   (test-provenance memories created via the admin API for fix-4 validation), plus
-  2 synthetic workflow-step-events chains (seq 1312–1315, 1316–1319).
+  2 synthetic workflow-step-events chains (seq 1312–1315, 1316–1319), plus 1
+  synthetic connector-invoke async-transport chain (seq 1320–1321).
 
 ## `labeled.tsv` column contract
 
@@ -56,8 +62,24 @@ recorded in `DRIFT.md`.
 
 These labels were generated mechanically from the `TAXONOMY.md` rule table.
 **`labeled.tsv` becomes the classifier's golden truth ONLY after user correction.**
-All 80 rows carry HIGH confidence; rows with a non-empty `notes` column are the ones
+All 82 rows carry HIGH confidence; rows with a non-empty `notes` column are the ones
 most likely to need a human decision.
+
+## Addendum (2026-07-13) — connector-invoke-api T04 synthetic rows
+
+`manual-loops/connector-invoke-api.md` T04 lands the classification rule (rule 21)
+for the async invoke transport pair (`invoke_requested`/`invoke_completed`,
+producer `connector-runtime`, domain `platform`, channel `endpoint`, provider
+`system`) BEFORE the `invoke_completed` emitter exists (T05, not built yet —
+same golden rule 3 pattern as workflow-step-events T01 below). 2 rows (seq
+1320-1321, one synthetic correlation chain under `INGRESS-ACME`) were added by
+hand: `invoke_requested` is a standalone root event (correlation_id = own id,
+causation null, depth 0, mirroring the sync facade's audit event shape) and
+`invoke_completed` inherits its correlation and cites it as causation (depth 1).
+Both classify as rule 21 `platform`/`connector-invocation` — distinct from rule
+11's `connector`/`connector-invocation` (the `endpoint_call_completed` HTTP-call
+audit trail), because these two kinds are transport/control-plane signaling, not
+an HTTP-call audit record. See `TAXONOMY.md` §4 rule 21 design note.
 
 ## Addendum (2026-07-11) — workflow-step-events T01 synthetic rows
 

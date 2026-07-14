@@ -4,6 +4,7 @@ import { describe, expect, it, mock } from "bun:test";
 
 mock.module("@yoizen/observability", () => ({
   logWithEnvelope: () => {},
+  injectTraceContext: () => {},
   getMeter: () => ({
     createCounter: () => ({ add() {} }),
   }),

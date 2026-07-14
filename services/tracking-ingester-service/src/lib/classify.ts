@@ -81,6 +81,12 @@ const AGENT_EXECUTION_KINDS = new Set([
   "execution_failed",
 ]);
 
+// Kinds that mark the connector-invoke async transport pair (rule 21).
+const CONNECTOR_INVOKE_KINDS = new Set([
+  "invoke_requested",
+  "invoke_completed",
+]);
+
 // Kinds that mark an agent-memory lifecycle event (rule 9).
 const AGENT_MEMORY_KINDS = new Set([
   "memory_proposed",
@@ -252,6 +258,26 @@ export function classify(
       provider === "system"
     ) {
       return ok(classified("platform", "registry-sync", 10));
+    }
+
+    // Rule 21 — connector-runtime async invoke transport pair
+    // (`invoke_requested`/`invoke_completed`, `manual-loops/connector-invoke-api.md`
+    // T04). Evaluated BEFORE rule 11 — both match the same
+    // `.connector-runtime.platform.endpoint.` subject family, and rule 11's
+    // substring check has no kind whitelist, so it would otherwise shadow
+    // these two kinds and mis-tag them `tech: connector` instead of the
+    // intended `tech: platform` (transport/control-plane signaling,
+    // mirroring the `ai-agent-gateway` execution_requested/completed
+    // precedent, rule 6 — NOT the HTTP-call audit trail rule 11 covers).
+    // TAXONOMY.md §4 rule 21.
+    if (
+      producer === "connector-runtime" &&
+      domain === "platform" &&
+      channel === "endpoint" &&
+      provider === "system" &&
+      CONNECTOR_INVOKE_KINDS.has(kind)
+    ) {
+      return ok(classified("platform", "connector-invocation", 21));
     }
 
     // Rule 11 — connector-runtime endpoint invocation. TAXONOMY.md §4 rule 11.
