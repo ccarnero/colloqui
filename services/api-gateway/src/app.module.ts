@@ -9,6 +9,7 @@ import { AdminModule } from "./modules/admin/admin.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { ChannelsModule } from "./modules/channels/channels.module";
+import { ConnectorInvokeModule } from "./modules/connector-invoke/connector-invoke.module";
 import { ConnectorsModule } from "./modules/connectors/connectors.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { DynamicRoutesModule } from "./modules/dynamic-routes/dynamic-routes.module";
@@ -32,6 +33,7 @@ import { ProvidersModule } from "./providers/providers.module";
     TenantsModule,
     RegistryModule,
     ConnectorsModule,
+    ConnectorInvokeModule,
     ChannelsModule,
     WorkflowsModule,
     ProxyModule,
