@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { setActivePublishSpy } from "../helpers/fake-nats-jetstream";
 
 const fakeAdapterConfig = {
   id: "adp-1",
@@ -104,6 +105,27 @@ mock.module("@yoizen/observability", () => {
     }),
   };
 });
+
+// `endpoint-call.activity.ts` imports the REAL `publishEndpointCallEvent`
+// (`./_shared/event-publisher`) and calls it (fire-and-forget) after every
+// `executeEndpointCallCore` run — that module lazily dials real NATS
+// (`getConnection()` -> `connect()`) the first time it is invoked. Without
+// mocking `"nats"`, every test below triggers a REAL TCP connect attempt to
+// `nats://localhost:4222` (`workflowHttpWorkerConfig.natsUrl` default),
+// which — since `localhost` resolves to both an IPv4 and IPv6 address —
+// races Node's happy-eyeballs `internalConnectMultipleTimeout` and surfaces
+// as `TypeError: null is not an object (evaluating 'context')` several
+// seconds later as an "Unhandled error between tests" (root cause, see
+// `manual-loops/connector-invoke-api.md` T05 follow-up).
+//
+// This uses the SHARED `"nats"` double from `test/helpers/fake-nats-jetstream`
+// instead of a private `mock.module("nats", ...)` here — see that file's doc
+// comment for why: `event-publisher.ts` is an ES module singleton evaluated
+// only ONCE across the whole `bun test` process (this file and
+// `event-publisher.spec.ts` both import it), so whichever spec file's own
+// private `"nats"` mock happened to be active at that ONE evaluation would
+// win FOREVER, silently starving the other file's `publishSpy` assertions.
+setActivePublishSpy(mock(async () => ({ seq: 1 })));
 
 const { executeEndpointCall } = await import(
   "../../src/activities/endpoint-call.activity"

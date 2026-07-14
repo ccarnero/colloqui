@@ -282,5 +282,67 @@ describe("handleInvokeRequest", () => {
         /publishInvokeRequest/
       );
     });
+
+    // --- result parking (T05) ---
+
+    it("parks a pending record after a successful async publish", async () => {
+      const publishInvokeRequest = mock(async () => ok({ subject: "s" }));
+      const parkPendingInvocation = mock(async () => {});
+      const result = await handleInvokeRequest({
+        ...asyncDeps(),
+        publishInvokeRequest,
+        parkPendingInvocation,
+      });
+      expect(result.status).toBe(202);
+      expect(parkPendingInvocation).toHaveBeenCalledTimes(1);
+      const [record, ttl] = parkPendingInvocation.mock.calls[0]!;
+      expect(record).toMatchObject({
+        status: "pending",
+        tenantId: "tenant-abc",
+        invocationId: "inv-fixed-id",
+      });
+      expect(typeof ttl).toBe("number");
+    });
+
+    it("still returns 202 when parkPendingInvocation rejects (best-effort, never blocks accept)", async () => {
+      const publishInvokeRequest = mock(async () => ok({ subject: "s" }));
+      const parkPendingInvocation = mock(async () => {
+        throw new Error("redis down");
+      });
+      const result = await handleInvokeRequest({
+        ...asyncDeps(),
+        publishInvokeRequest,
+        parkPendingInvocation,
+      });
+      expect(result.status).toBe(202);
+    });
+
+    it("never calls parkPendingInvocation when the publish itself fails", async () => {
+      const publishInvokeRequest = mock(async () =>
+        err({ message: "not stream-bound" })
+      );
+      const parkPendingInvocation = mock(async () => {});
+      await handleInvokeRequest({
+        ...asyncDeps(),
+        publishInvokeRequest,
+        parkPendingInvocation,
+      });
+      expect(parkPendingInvocation).not.toHaveBeenCalled();
+    });
+
+    it("threads webhook into publishInvokeRequest when provided", async () => {
+      const publishInvokeRequest = mock(async () => ok({ subject: "s" }));
+      await handleInvokeRequest({
+        ...asyncDeps(),
+        rawBody: {
+          args: { method: "GET" },
+          mode: "async",
+          webhook: { url: "https://caller.example/hook" },
+        },
+        publishInvokeRequest,
+      });
+      const call = publishInvokeRequest.mock.calls[0]![0];
+      expect(call.webhook).toEqual({ url: "https://caller.example/hook" });
+    });
   });
 });

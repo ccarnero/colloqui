@@ -8,6 +8,7 @@
 // `publishInvokeRequestEvent`, injected by the entrypoint (`http-main.ts`).
 
 import type { EndpointCallArgs, EventCausalContext } from "@yoizen/shared";
+import type { InvokeWebhookTarget } from "../invoke-consumer/types";
 import type { Result } from "../result";
 
 export interface PublishInvokeRequestArgs {
@@ -23,6 +24,12 @@ export interface PublishInvokeRequestArgs {
    * real chain without changing this port's shape.
    */
   readonly causal?: EventCausalContext;
+  /**
+   * Caller's webhook target for result delivery (T05). Carried verbatim in
+   * the `invoke_requested` envelope payload so the T05 consumer can deliver
+   * to it after parking the result — see `parse-invoke-request-body.ts`.
+   */
+  readonly webhook?: InvokeWebhookTarget;
 }
 
 export type PublishInvokeRequestError = { readonly message: string };

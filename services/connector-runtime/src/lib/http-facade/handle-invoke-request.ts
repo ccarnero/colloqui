@@ -13,12 +13,20 @@ import type {
   IEndpointCallResult,
 } from "../endpoint-call-core";
 import { executeEndpointCallCore } from "../endpoint-call-core";
+import type { ParkInvocationResult } from "../invoke-consumer/park-invocation-result";
 import type { Result } from "../result";
 import { checkRateLimit, type RateLimitState } from "./check-rate-limit";
 import { checkTenantHeader } from "./check-tenant-header";
 import { mapEndpointCallErrorToHttpResponse } from "./map-endpoint-call-error-to-http-response";
 import { parseInvokeRequestBody } from "./parse-invoke-request-body";
 import type { PublishInvokeRequest } from "./publish-invoke-request";
+
+/**
+ * SPEC.md T05 human boundary: "Redis result TTL: config-driven, default
+ * 15m." Used as the fallback when `deps.resultTtlSeconds` is not supplied
+ * (real entrypoint always wires `workflowHttpWorkerConfig.invocationResultTtlSeconds`).
+ */
+const DEFAULT_RESULT_TTL_SECONDS = 15 * 60;
 
 export interface HandleInvokeRequestDeps {
   readonly tenantHeader: string | null;
@@ -43,6 +51,19 @@ export interface HandleInvokeRequestDeps {
    * on the async branch.
    */
   readonly publishInvokeRequest?: PublishInvokeRequest;
+  /**
+   * Injected result-parking port for `mode: "async"` (T05; real:
+   * `parkInvocationResult` from `src/activities/_shared/invocation-store.ts`).
+   * Optional so `mode: "sync"` and pre-T05 async tests never need to stub
+   * it. Writes a `status: "pending"` marker right after a successful
+   * publish so `GET /invocations/:id` can tell "queued" apart from
+   * "unknown/expired" (both otherwise read as a Redis cache-miss — see
+   * `invoke-consumer/types.ts`'s `InvocationRecord` doc comment).
+   * Best-effort: a parking failure here is warned and NEVER changes the
+   * `202` response — the async accept already succeeded on the broker.
+   */
+  readonly parkPendingInvocation?: ParkInvocationResult;
+  readonly resultTtlSeconds?: number;
   readonly log?: (message: string) => void;
   readonly warn?: (message: string) => void;
 }
@@ -164,6 +185,9 @@ export async function handleInvokeRequest(
       connectorId: deps.connectorId,
       endpointId: deps.endpointId,
       args: parsed.value.args,
+      ...(parsed.value.webhook !== undefined && {
+        webhook: parsed.value.webhook,
+      }),
     });
     if (!published.ok) {
       warn(
@@ -177,6 +201,29 @@ export async function handleInvokeRequest(
     log(
       `invoke ACCEPTED invocationId=${invocationId} tenant=${tenantId} connector=${deps.connectorId} endpoint=${deps.endpointId} subject=${published.value.subject}`
     );
+
+    // Best-effort "pending" marker (T05) so GET /invocations/:id can answer
+    // "queued" instead of "unknown/expired" before the consumer completes.
+    // Never affects the 202 response — the broker already accepted the
+    // invoke_requested publish, which is the actual contract of this call.
+    if (deps.parkPendingInvocation) {
+      try {
+        await deps.parkPendingInvocation(
+          {
+            status: "pending",
+            tenantId,
+            invocationId,
+            acceptedAt: new Date().toISOString(),
+          },
+          deps.resultTtlSeconds ?? DEFAULT_RESULT_TTL_SECONDS
+        );
+      } catch (cause) {
+        warn(
+          `invoke PENDING PARK FAILED invocationId=${invocationId} tenant=${tenantId} — ${cause instanceof Error ? cause.message : String(cause)} (202 already returned; GET may read as expired/unknown until the consumer completes it)`
+        );
+      }
+    }
+
     return { status: 202, body: { invocationId } };
   }
 

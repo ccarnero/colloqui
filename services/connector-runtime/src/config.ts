@@ -45,6 +45,22 @@ type WorkflowHttpWorkerConfig = {
     readonly limit: number;
     readonly windowMs: number;
   };
+  /**
+   * TTL (seconds) for the Redis-parked async invocation result
+   * (`invocation:<tenant>:<id>`, T05). SPEC.md human boundary: "Redis
+   * result TTL: config-driven, default 15m" — 15 minutes is the SPEC's
+   * stated default; kept overridable via env for operators.
+   */
+  readonly invocationResultTtlSeconds: number;
+  /** Per-request timeout (ms) for the T05 outbound webhook delivery POST. */
+  readonly invokeWebhookTimeoutMs: number;
+  /**
+   * Health-check port for the T05 async invoke consumer
+   * (`src/invoke-consumer-main.ts`) — a THIRD entrypoint of this
+   * deployable, distinct from the Temporal worker's `PORT` and the HTTP
+   * facade's `httpFacadePort`.
+   */
+  readonly invokeConsumerHealthPort: number;
 };
 
 export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
@@ -78,4 +94,16 @@ export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
       10
     ),
   },
+  invocationResultTtlSeconds: Number.parseInt(
+    process.env.INVOCATION_RESULT_TTL_SECONDS ?? String(15 * 60),
+    10
+  ),
+  invokeWebhookTimeoutMs: Number.parseInt(
+    process.env.INVOKE_WEBHOOK_TIMEOUT_MS ?? "10000",
+    10
+  ),
+  invokeConsumerHealthPort: Number.parseInt(
+    process.env.INVOKE_CONSUMER_HEALTH_PORT ?? "3200",
+    10
+  ),
 };

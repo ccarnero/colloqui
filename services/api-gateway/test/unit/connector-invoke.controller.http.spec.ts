@@ -56,6 +56,15 @@ describe("ConnectorInvokeController — no @Public() decorator", () => {
     expect(handlerMeta).toBeUndefined();
     expect(classMeta).toBeUndefined();
   });
+
+  it("does not carry IS_PUBLIC_KEY metadata on the getInvocation handler (T05)", () => {
+    const reflector = new Reflector();
+    const handlerMeta = reflector.get(
+      IS_PUBLIC_KEY,
+      ConnectorInvokeController.prototype.getInvocation
+    );
+    expect(handlerMeta).toBeUndefined();
+  });
 });
 
 describe("ConnectorInvokeController — HTTP contract (payload + status mapping)", () => {
@@ -139,6 +148,46 @@ describe("ConnectorInvokeController — HTTP contract (payload + status mapping)
       expect(JSON.parse(res.payload)).toMatchObject(body);
     });
   }
+
+  // --- T05: GET /connectors/invocations/:invocationId ---
+
+  it("GET invocations forwards the encoded invocationId with no body", async () => {
+    proxy.mockImplementationOnce(() =>
+      Promise.resolve({ invocationId: "inv-1", status: "pending" })
+    );
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/v1/connectors/invocations/inv%201",
+      headers: { [REQUEST_TENANT_KEY]: "acme" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(proxy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/invocations/inv%201",
+      })
+    );
+    expect(JSON.parse(res.payload)).toEqual({
+      invocationId: "inv-1",
+      status: "pending",
+    });
+  });
+
+  it("GET invocations surfaces a 404 expired status unmodified", async () => {
+    const { HttpException } = await import("@nestjs/common");
+    proxy.mockImplementationOnce(() =>
+      Promise.reject(
+        new HttpException({ invocationId: "inv-1", status: "expired" }, 404)
+      )
+    );
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/v1/connectors/invocations/inv-1",
+    });
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.payload)).toMatchObject({ status: "expired" });
+  });
 });
 
 describe("ConnectorInvokeController — real AuthGuard cross-tenant 403", () => {

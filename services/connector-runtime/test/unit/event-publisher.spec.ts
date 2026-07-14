@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { setActivePublishSpy } from "../helpers/fake-nats-jetstream";
 
 // ---- mock @yoizen/observability before any module import ----
 mock.module("@yoizen/observability", () => ({
@@ -62,24 +63,13 @@ mock.module("@yoizen/shared", () => ({
 }));
 
 // ---- fake JetStream publish spy ----
+// Routed through the SHARED `"nats"` module double (`test/helpers/fake-nats-jetstream`)
+// instead of a private `mock.module("nats", ...)` here — `event-publisher.ts` is
+// an ES module singleton also imported by `endpoint-call.activity.spec.ts`; see
+// that helper's doc comment for why a private mock here would silently starve
+// this file's own `publishSpy` assertions depending on `bun test`'s (non-
+// deterministic) file execution order.
 let publishSpy: ReturnType<typeof mock>;
-let fakeHeaders: Map<string, string>;
-
-mock.module("nats", () => {
-  publishSpy = mock(async () => ({ seq: 1 }));
-  fakeHeaders = new Map<string, string>();
-  const hdrs = {
-    set: (k: string, v: string) => fakeHeaders.set(k, v),
-    get: (k: string) => fakeHeaders.get(k),
-  };
-  return {
-    connect: mock(async () => ({
-      isClosed: () => false,
-      jetstream: () => ({ publish: publishSpy }),
-    })),
-    headers: () => hdrs,
-  };
-});
 
 // Import AFTER all mocks are in place
 const { publishEndpointCallEvent } = await import(
@@ -91,14 +81,12 @@ const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 
 describe("publishEndpointCallEvent", () => {
   beforeEach(() => {
-    publishSpy.mockClear();
-    fakeHeaders.clear();
+    publishSpy = mock(async () => ({ seq: 1 }));
+    setActivePublishSpy(publishSpy);
     depthState.forceDepthExceeded = false;
   });
 
   afterEach(() => {
-    publishSpy.mockClear();
-    fakeHeaders.clear();
     depthState.forceDepthExceeded = false;
   });
 
@@ -158,7 +146,10 @@ describe("publishEndpointCallEvent", () => {
     publishEndpointCallEvent(baseEvt);
     await flush();
 
-    expect(fakeHeaders.get("x-yoizen-tenant")).toBe("tenant-abc");
+    const opts = publishSpy.mock.calls[0]![2] as {
+      headers: { get: (k: string) => string | undefined };
+    };
+    expect(opts.headers.get("x-yoizen-tenant")).toBe("tenant-abc");
   });
 
   it("truncates resolvedUrl longer than 2048 chars", async () => {

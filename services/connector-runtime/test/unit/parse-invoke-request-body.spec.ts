@@ -127,4 +127,99 @@ describe("parseInvokeRequestBody", () => {
       expect("idempotencyKey" in result.value).toBe(false);
     }
   });
+
+  // --- webhook (T05) ---
+
+  it("accepts a webhook target for mode: async", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+      webhook: { url: "https://caller.example/hook", headers: { "x-a": "1" } },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.webhook).toEqual({
+        url: "https://caller.example/hook",
+        headers: { "x-a": "1" },
+      });
+    }
+  });
+
+  it("rejects webhook for mode: sync", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      webhook: { url: "https://caller.example/hook" },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a webhook without a url", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+      webhook: { headers: { "x-a": "1" } },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("omits webhook from the result when not provided", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect("webhook" in result.value).toBe(false);
+    }
+  });
+
+  // --- webhook SSRF guard (T05 security fix) ---
+
+  it("rejects a webhook.url targeting the cloud metadata endpoint", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+      webhook: { url: "http://169.254.169.254/latest/meta-data" },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("webhook.url is invalid");
+    }
+  });
+
+  it("rejects a webhook.url targeting localhost", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+      webhook: { url: "http://localhost:8080/hook" },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a webhook.url targeting an RFC1918 private address", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+      webhook: { url: "http://10.0.0.5/hook" },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a webhook.url with a non-http(s) scheme", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+      webhook: { url: "ftp://caller.example/hook" },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepts a public https webhook.url", () => {
+    const result = parseInvokeRequestBody("adp-1", "ep-1", {
+      args: { method: "GET" },
+      mode: "async",
+      webhook: { url: "https://caller.example/hook" },
+    });
+    expect(result.ok).toBe(true);
+  });
 });

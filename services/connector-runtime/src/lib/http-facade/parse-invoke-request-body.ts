@@ -9,6 +9,8 @@
 // types, unit-testable without sockets.
 
 import type { EndpointCallArgs } from "@yoizen/shared";
+import { validateOutboundUrl } from "../../activities/_shared/validate-outbound-url";
+import type { InvokeWebhookTarget } from "../invoke-consumer/types";
 import { err, ok, type Result } from "../result";
 
 export interface ParsedInvokeRequest {
@@ -25,6 +27,16 @@ export interface ParsedInvokeRequest {
    * regardless of mode (see `handleInvokeRequest`'s invocationId comment).
    */
   readonly idempotencyKey?: string;
+  /**
+   * `mode: "async"` only (T05): the caller's webhook target for result
+   * delivery. Threaded verbatim into the `invoke_requested` envelope
+   * payload so the T05 consumer can POST the result there once the core
+   * finishes — matches T06's SDK contract
+   * `{ mode: "async", webhook?, idempotencyKey? }`, so this body shape
+   * needs no separate "register a callback" step. Ignored for
+   * `mode: "sync"` — sync callers get the result in the HTTP response body.
+   */
+  readonly webhook?: InvokeWebhookTarget;
 }
 
 /**
@@ -45,6 +57,7 @@ export function parseInvokeRequestBody(
     readonly args?: unknown;
     readonly mode?: unknown;
     readonly idempotencyKey?: unknown;
+    readonly webhook?: unknown;
   };
 
   if (
@@ -64,6 +77,38 @@ export function parseInvokeRequestBody(
       body.idempotencyKey.trim().length === 0)
   ) {
     return err("idempotencyKey must be a non-empty string when provided");
+  }
+
+  let webhook: InvokeWebhookTarget | undefined;
+  if (body.webhook !== undefined) {
+    if (mode !== "async") {
+      return err('webhook is only valid for mode: "async"');
+    }
+    if (body.webhook === null || typeof body.webhook !== "object") {
+      return err("webhook must be an object with a 'url' field when provided");
+    }
+    const rawWebhook = body.webhook as { url?: unknown; headers?: unknown };
+    if (
+      typeof rawWebhook.url !== "string" ||
+      rawWebhook.url.trim().length === 0
+    ) {
+      return err("webhook.url is required and must be a non-empty string");
+    }
+    // SSRF guard (T05 security fix): reject private/loopback/link-local/
+    // cloud-metadata webhook targets at request time so callers get an
+    // immediate 400 instead of a silently-dropped delivery later. The
+    // delivery activity (`webhook-delivery.ts`) re-validates at dequeue
+    // time as defense in depth — the envelope crosses a broker in between.
+    const urlCheck = validateOutboundUrl(rawWebhook.url);
+    if (!urlCheck.ok) {
+      return err(`webhook.url is invalid: ${urlCheck.error}`);
+    }
+    webhook = {
+      url: rawWebhook.url,
+      ...(rawWebhook.headers !== undefined && {
+        headers: rawWebhook.headers as Record<string, string>,
+      }),
+    };
   }
 
   if (body.args === null || typeof body.args !== "object") {
@@ -98,5 +143,6 @@ export function parseInvokeRequestBody(
     ...(body.idempotencyKey !== undefined && {
       idempotencyKey: body.idempotencyKey as string,
     }),
+    ...(webhook !== undefined && { webhook }),
   });
 }

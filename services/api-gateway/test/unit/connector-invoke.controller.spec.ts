@@ -39,4 +39,15 @@ describe("ConnectorInvokeController", () => {
       body,
     });
   });
+
+  // --- T05: GET /connectors/invocations/:invocationId ---
+
+  it("getInvocation delegates to proxy with tenant and encoded invocationId, no body", async () => {
+    await controller.getInvocation(req as never, "inv 1");
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/invocations/inv%201",
+      tenantId: "t1",
+    });
+  });
 });

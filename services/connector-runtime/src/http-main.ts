@@ -2,31 +2,40 @@ import { randomUUID } from "node:crypto";
 import { PinoLoggerService } from "@yoizen/observability";
 import { publishEndpointCallEvent } from "./activities/_shared/event-publisher";
 import {
+  getInvocationRecord,
+  parkInvocationResult,
+} from "./activities/_shared/invocation-store";
+import {
   assertInvokeSubjectStreamBound,
   publishInvokeRequestEvent,
 } from "./activities/_shared/invoke-request-publisher";
 import { workflowHttpWorkerConfig } from "./config";
 import { createRateLimitState } from "./lib/http-facade/check-rate-limit";
+import { handleGetInvocationRequest } from "./lib/http-facade/handle-get-invocation-request";
 import { handleInvokeRequest } from "./lib/http-facade/handle-invoke-request";
+import { matchGetInvocationRoute } from "./lib/http-facade/match-get-invocation-route";
 import { matchInvokeRoute } from "./lib/http-facade/match-invoke-route";
 
 const logger = new PinoLoggerService("connector-runtime-http-facade");
 
 /**
  * HTTP invoke facade — SECOND entrypoint of the connector-runtime
- * deployable (`manual-loops/connector-invoke-api.md` T02/T04), alongside the
- * Temporal worker (`worker.ts`). Serves `POST /invoke/:connectorId/:endpointId`
- * (`mode: "sync"` from T02, `mode: "async"` from T04) and `GET /health`,
- * following the plain-`Bun.serve` style of `temporal-worker-health.ts` — no
- * Express/Fastify despite this package's `fastify`/`@nestjs/*` deps (unused
- * legacy deps, not touched by this task per SPEC.md's "do NOT add Express"
- * constraint).
+ * deployable (`manual-loops/connector-invoke-api.md` T02/T04/T05), alongside
+ * the Temporal worker (`worker.ts`). Serves
+ * `POST /invoke/:connectorId/:endpointId` (`mode: "sync"` from T02,
+ * `mode: "async"` from T04), `GET /invocations/:invocationId` (T05 polling
+ * fallback), and `GET /health`, following the plain-`Bun.serve` style of
+ * `temporal-worker-health.ts` — no Express/Fastify despite this package's
+ * `fastify`/`@nestjs/*` deps (unused legacy deps, not touched by this task
+ * per SPEC.md's "do NOT add Express" constraint).
  *
  * All orchestration (tenant guard, rate limit, body validation, core
  * execution/publish → HTTP status mapping) lives in the pure
- * `src/lib/http-facade/handle-invoke-request.ts`; this file is the only I/O
- * edge — `Bun.serve` binding, header/JSON body reads, and injecting the real
- * `publishEndpointCallEvent` / `publishInvokeRequestEvent` NATS sinks.
+ * `src/lib/http-facade/handle-invoke-request.ts` /
+ * `handle-get-invocation-request.ts`; this file is the only I/O edge —
+ * `Bun.serve` binding, header/JSON body reads, and injecting the real
+ * `publishEndpointCallEvent` / `publishInvokeRequestEvent` /
+ * `parkInvocationResult` / `getInvocationRecord` implementations.
  *
  * Deployment note: same image as the Temporal worker, run as a second
  * container/profile (`bun run src/http-main.ts`) so the worker (which scales
@@ -67,6 +76,23 @@ async function handleInvoke(
     generateInvocationId: randomUUID,
     publish: publishEndpointCallEvent,
     publishInvokeRequest: publishInvokeRequestEvent,
+    parkPendingInvocation: parkInvocationResult,
+    resultTtlSeconds: workflowHttpWorkerConfig.invocationResultTtlSeconds,
+    log: (message) => logger.log(message),
+    warn: (message) => logger.warn(message),
+  });
+
+  return jsonResponse(result.status, result.body);
+}
+
+async function handleGetInvocation(
+  request: Request,
+  invocationId: string
+): Promise<Response> {
+  const result = await handleGetInvocationRequest({
+    tenantHeader: request.headers.get("x-yoizen-tenant"),
+    invocationId,
+    getInvocationRecord,
     log: (message) => logger.log(message),
     warn: (message) => logger.warn(message),
   });
@@ -75,13 +101,12 @@ async function handleInvoke(
 }
 
 /**
- * Fail-loud startup gate (T04): the `invoke_requested` subject MUST already
- * be bound to a JetStream stream (`scripts/provision-invoke-stream.ts
- * --apply`) before this facade accepts traffic — never a silent core-NATS
- * fallback for the async path. Any failure here crashes the process
- * (non-zero exit), which is the intended behavior for a misconfigured
- * deploy: fail the readiness probe loudly instead of serving async invokes
- * with no dedup guarantee.
+ * Startup connectivity probe (T04 fail-loud-per-subject; T05 relaxed to a
+ * JetStream reachability check per the design change documented in
+ * `invoke-request-publisher.ts`'s module header — invoke subjects now ride
+ * per-tenant `INGRESS-<tenant>` streams, so a single subject can no longer
+ * be probed at boot). A genuinely unreachable broker still crashes startup;
+ * see that file's `assertInvokeSubjectStreamBound` doc comment.
  */
 await assertInvokeSubjectStreamBound();
 
@@ -92,6 +117,13 @@ const server = Bun.serve({
 
     if (request.method === "GET" && url.pathname === "/health") {
       return jsonResponse(200, { status: "ok" });
+    }
+
+    if (request.method === "GET") {
+      const invocationId = matchGetInvocationRoute(url.pathname);
+      if (invocationId) {
+        return handleGetInvocation(request, invocationId);
+      }
     }
 
     if (request.method === "POST") {
