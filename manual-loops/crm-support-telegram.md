@@ -149,14 +149,21 @@ demos/crm-support-telegram/01-telegram-channel.sh && demos/crm-support-telegram/
 
 - Thin wrapper over `src/02-hubspot-connector.ts`: ensure connector
   `demo-hubspot` (base URL `https://api.hubapi.com`, bearer auth from
-  `HUBSPOT_SERVICE_KEY` header context — the key needs object scopes for
-  contacts/deals/tickets read + write; Service Keys cannot receive HubSpot
-  webhooks, which is fine: this demo is outbound REST only) with endpoints:
+  `HUBSPOT_SERVICE_KEY` header context — required scopes:
+  `crm.objects.contacts.read/write`, `crm.objects.deals.read/write`,
+  `crm.objects.tickets.read/write`, `crm.schemas.contacts.read/write` (the
+  schemas pair is for the custom property below); Service Keys cannot receive
+  HubSpot webhooks, which is fine: this demo is outbound REST only) with endpoints:
   `search-contact` (POST /crm/v3/objects/contacts/search),
   `create-contact` (POST /crm/v3/objects/contacts),
   `list-deals-by-contact` (GET, associations),
   `list-tickets-by-contact` (GET, associations),
   `create-ticket` (POST /crm/v3/objects/tickets).
+- Ensure the custom contact property `telegram_user_id` via the HubSpot
+  properties API (idempotent create-if-missing) — it is the search key
+  `search-contact` filters on ({{request.from}}). Standard objects, default
+  pipelines, and built-in associations need NO setup; resolve pipeline/stage
+  ids by API, never hardcode them.
 - Cache strategy on the two read/list endpoints (short TTL, e.g. 60s) so the
   demo shows `cacheResult` hit/miss; writes stay uncached.
 - Smoke check inside the script: sync `connectors.invoke()` of `search-contact`
