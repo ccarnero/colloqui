@@ -305,6 +305,8 @@ export type {
   IKbListResponse,
   IKnowledgeBase,
 } from "./knowledge-base.interfaces";
+export type { Result } from "./lib/result";
+export { err, ok } from "./lib/result";
 export type { IMcpUsageEvent } from "./mcp-usage.interfaces";
 export { reportMcpUsageEvent } from "./mcp-usage-client";
 export type {
@@ -344,6 +346,41 @@ export {
   PLATFORM_TENANT_DEFAULT_TIER,
 } from "./platform-mongo-schema";
 export { platformServiceUrl } from "./platform-service-url";
+export type {
+  Agent,
+  ChannelDirection,
+  Connector,
+  HostedService,
+  IntegrationManifest,
+  IntegrationManifestMetadata,
+  IntegrationManifestSpec,
+  KbDocument,
+  KbSource,
+  KnowledgeBase,
+  ManifestChannel,
+  ManifestValidationError,
+  SecretBinding,
+  SecretScope,
+  SecretScopeKind,
+  ServiceEnvVar,
+  SymbolicRefOccurrence,
+  SymbolicRefType,
+  Workflow,
+} from "./provisioning";
+export {
+  agentRefSchema,
+  channelRefSchema,
+  collectSymbolicRefs,
+  integrationManifestSchema,
+  KB_INLINE_CONTENT_MAX_BYTES,
+  kbSourceSchema,
+  nameSchema,
+  SYMBOLIC_REF_KEYS,
+  secretRefSchema,
+  serviceRefSchema,
+  validateManifest,
+  validateManifestStructuralRules,
+} from "./provisioning";
 export {
   RATE_LIMIT_CONFIG_FETCH_TIMEOUT_MS,
   RATE_LIMIT_CONFIG_POLL_INTERVAL_MS,
