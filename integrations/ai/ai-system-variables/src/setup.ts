@@ -592,7 +592,7 @@ async function stageResolve(): Promise<void> {
     fail(
       [
         "no active Telegram channel account found.",
-        "Provision one first:  (cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN=... ./setup.sh)",
+        "Provision one first:  (cd ../../channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN=... ./setup.sh)",
         "or pin one with TG_ACCOUNT_ID=<id>.",
       ].join("\n")
     );

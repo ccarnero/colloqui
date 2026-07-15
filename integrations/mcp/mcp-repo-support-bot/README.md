@@ -8,8 +8,8 @@ answers questions about a GitHub repository by calling the public
 Where [`mcp-connections`](../mcp-connections) demonstrates the MCP *SDK call
 shapes* against a fake endpoint, this sample wires a **real** MCP server into a
 **real** multi-step workflow, combining the Telegram channel pattern from
-[`telegram-transform-reply`](../telegram-transform-reply) with the triage-agent
-pattern from [`ai-agent-triage`](../ai-agent-triage).
+[`telegram-transform-reply`](../../channels/telegram-transform-reply) with the triage-agent
+pattern from [`ai-agent-triage`](../../ai/ai-agent-triage).
 
 ## The scenario
 

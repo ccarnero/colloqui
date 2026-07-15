@@ -313,7 +313,7 @@ rg -l "sdk/samples/" manual-loops/crm-support-telegram.md ; test $? -eq 1
 - [x] T01 inventory + reference map + provisioning audit
 - [x] T02 git mv by group + path sweep
 - [x] T03 tier READMEs
-- [ ] T04 canary e2e per group (pre-migration, original scripts)
+- [x] T04 canary e2e per group (pre-migration, original scripts)
 - [ ] T05 SDK CLI (`yoizen manifests` / `yoizen secrets`)
 - [ ] T06 manifest migration (delete setup scripts, CLI-driven provisioning)
 - [ ] T07 docs + index + gap SPEC + downstream SPEC fix
@@ -693,3 +693,41 @@ READMEs still contain stale relative links to `../http-bridge`
 (ai-agent-triage, telegram-transform-reply, http-connectors,
 ai-call-center-supervisor) — the target is now `sdk/examples/reference-pattern`.
 Fix within T04's "move-induced breakage" scope.
+
+### T04 — 2026-07-15
+
+All four G4 canaries GREEN against the dev cluster (original setup scripts,
+pre-migration):
+- `integrations/http/http-connectors/setup.sh` — 5 connectors reconciled,
+  created=0 reused=5 failed=0 (idempotent re-run).
+- `integrations/mcp/mcp-connections/setup.sh` — MCP server + agent + workflow
+  provisioned; connection/discovery warnings are documented-expected (fake
+  endpoint by design); description-override skip is a server feature flag,
+  noted in the sample itself.
+- `integrations/ai/ai-agent-playground/setup.sh` — LLM connector reused,
+  agent created + published (connector credential mode, human-loaded .env).
+- `integrations/channels/telegram-transform-reply/setup.sh` — account +
+  workflow reused, Telegram webhook registered (human-loaded .env).
+
+Move-induced breakage uncovered by real execution and fixed (3 attempts):
+1. SDK dependency depth: all 12 integration `package.json` had
+   `"@yoizen/platform-sdk": "file:../.."` (correct at the old flat depth) →
+   bumped to `file:../../../sdk`; `sdk/examples/reference-pattern` keeps
+   `file:../..` (correct at its depth). Untracked `node_modules/@yoizen/
+   platform-sdk` symlinks repointed (no lockfiles; symlink IS the install
+   artifact).
+2. Cross-group relative paths broken by the flat→grouped layout, swept
+   exhaustively across README.md/README.es.md/src/*.ts/env.example plus the
+   cross-tree refs in `sdk/examples/reference-pattern`: functional fixes in
+   `http-fanout-telegram/src/index.ts` (runSetupScript cwd) and user-facing
+   `cd` instructions; the rest are prose/comment path strings. Same-group
+   `../<sibling>` refs and `../lib/resolve-env.sh` prose left as-is
+   (correct/non-navigable). Old-name `http-bridge` mentions in .ts comments
+   left (rename artifact, not a path bug).
+
+Attempt history: attempt 1 fixed package.json/README links (rejected: missed
+src-level refs); attempt 2 fixed src refs (rejected: missed README-body +
+env.example refs); attempt 3 ran the exhaustive classified sweep — 2× APPROVED
+with both reviewers re-running the sweep and verifying zero cross-group refs
+remain. Gates G1-G3 green throughout (G1 at error level; SC1091 info baseline
+per T02 note).

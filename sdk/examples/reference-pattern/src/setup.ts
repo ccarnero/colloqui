@@ -434,7 +434,7 @@ async function stageResolve(): Promise<void> {
   if (!TG_ACCOUNT_ID) {
     err("no active Telegram channel account found.");
     err(
-      "Provision one first:  (cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN=... ./setup.sh)"
+      "Provision one first:  (cd ../../../integrations/channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN=... ./setup.sh)"
     );
     err("or pin one with TG_ACCOUNT_ID=<id>.");
     process.exit(1);

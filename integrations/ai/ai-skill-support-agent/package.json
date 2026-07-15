@@ -10,7 +10,7 @@
     "setup": "tsx src/setup.ts"
   },
   "dependencies": {
-    "@yoizen/platform-sdk": "file:../.."
+    "@yoizen/platform-sdk": "file:../../../sdk"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

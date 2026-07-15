@@ -1,9 +1,9 @@
 # ai-call-center-supervisor
 
 The **capstone** sample — an AI supervisor loop that mixes every workflow ingredient the other
-samples introduce one at a time: a **hosted service** ([`hosted-services-api`](../hosted-services-api)),
+samples introduce one at a time: a **hosted service** ([`hosted-services-api`](../../http/hosted-services-api)),
 an **AI agent** ([`ai-agent-playground`](../ai-agent-playground)), **conditional routing**, and
-**Telegram escalation** ([`http-bridge`](../http-bridge)).
+**Telegram escalation** ([`http-bridge`](../../../sdk/examples/reference-pattern)).
 
 A customer message arrives on a dedicated HTTP channel instance; the workflow looks the customer up
 in a mock CRM (a hosted echo service), asks an AI triage agent whether the case must escalate, and
@@ -94,7 +94,7 @@ Verified against `packages/shared/src/workflow.interfaces.ts`,
    (the supervisor chat is discovered from the bot's recent messages, same mechanism as
    `http-bridge`):
    ```bash
-   (cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
+   (cd ../../channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
    ```
 2. **An LLM provider key** — the triage agent needs a real online LLM. Put `OPENAI_API_KEY`
    (or another provider's key) in `.env`.
@@ -200,7 +200,7 @@ dev gateway endpoint. All knobs:
   previous account id — re-run `setup.sh` to rewire.
 - **Telegram chat discovery** clears and restores the bot webhook, and previously webhook-consumed
   `/start`s never replay — send `/start` again when prompted. Full gotcha list in
-  [`http-bridge/README.md`](../http-bridge/README.md#design-notes--gotchas).
+  [`http-bridge/README.md`](../../../sdk/examples/reference-pattern/README.md#design-notes--gotchas).
 - **The `triage` step pins a fixed `conversationId`** (`ai-call-center-supervisor`), so all test
   customers share one agent conversation thread. A real integration should derive it per customer
   (e.g. from `request.from`).

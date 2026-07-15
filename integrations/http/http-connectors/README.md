@@ -3,7 +3,7 @@
 Declarative **outbound HTTP connectors** for the platform. Each connector wraps a well-known
 public developer API as a platform *adapter*, so a workflow can call it with an `endpointCall`
 action instead of hard-coding URLs and credentials. This is the outbound counterpart to the
-[`http-bridge`](../http-bridge) sample (which pushes messages *into* the platform).
+[`http-bridge`](../../../sdk/examples/reference-pattern) sample (which pushes messages *into* the platform).
 
 A single idempotent [`setup.sh`](./setup.sh) reads the JSON files in [`connectors/`](./connectors)
 and **upserts** each one through the platform API: it creates the connector if it's missing (or

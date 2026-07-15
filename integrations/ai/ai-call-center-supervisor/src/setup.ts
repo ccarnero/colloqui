@@ -131,7 +131,7 @@ const WORKFLOW_NAME =
   process.env.SUPERVISOR_WORKFLOW_NAME ?? "ai-call-center-supervisor";
 const APPLICATION = process.env.SUPERVISOR_APPLICATION ?? "samples";
 
-// Hosted mock-CRM service (same knobs/style as ../hosted-services-api).
+// Hosted mock-CRM service (same knobs/style as ../../http/hosted-services-api).
 const CRM_SERVICE_NAME = process.env.CRM_SERVICE_NAME ?? "sample-crm";
 const CRM_SERVICE_IMAGE =
   process.env.CRM_SERVICE_IMAGE ?? "ealen/echo-server:latest";
@@ -892,7 +892,7 @@ async function stageResolve(): Promise<void> {
   if (!TG_ACCOUNT_ID) {
     err("no active Telegram channel account found.");
     err(
-      "Provision one first:  (cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN=... ./setup.sh)"
+      "Provision one first:  (cd ../../channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN=... ./setup.sh)"
     );
     err("or pin one with TG_ACCOUNT_ID=<id>.");
     process.exit(1);

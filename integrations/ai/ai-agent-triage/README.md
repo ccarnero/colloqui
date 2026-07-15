@@ -7,7 +7,7 @@ it derives an `escalate` verdict but takes no routing decision), and a **`condit
 exclusive gateway** routes to either a 🚨 escalation alert or a ✅ triage summary over Telegram
 (`channelSend`). It is the first sample demonstrating the **`agentCall` workflow action** and
 the canonical *parse-then-gate* pairing of `jsFunction` + `conditional` — the
-call-center-flavored sibling of [`http-bridge`](../http-bridge) (same inbound transport and
+call-center-flavored sibling of [`http-bridge`](../../../sdk/examples/reference-pattern) (same inbound transport and
 notify path, but with an LLM in the middle) built on the agent-provisioning contract of
 [`ai-agent-playground`](../ai-agent-playground).
 
@@ -72,7 +72,7 @@ and the **workflow**. You still need:
 
 1. **A Telegram channel account** with a real bot token (the notify path):
    ```bash
-   (cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
+   (cd ../../channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
    ```
 2. **You must have `/start`-ed the bot.** `setup.sh` auto-discovers `TELEGRAM_CHAT_ID` from the
    bot's recent `getUpdates` exactly like `http-bridge` does (including the webhook

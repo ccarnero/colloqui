@@ -1,6 +1,6 @@
 /**
  * mcp-repo-support-bot sample driver — SDK-powered, mirrors
- * ../telegram-transform-reply/src/index.ts.
+ * ../../channels/telegram-transform-reply/src/index.ts.
  *
  * `run.sh` execs this file to drive ONE end-to-end exchange. By default it
  * turns on SIMULATE_INBOUND (unless the caller set it explicitly), so the

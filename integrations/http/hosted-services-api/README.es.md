@@ -117,7 +117,7 @@ Knative Service), `services/registry-service/src/modules/routes/routes.service.t
 ## Cómo ejecutarlo y qué esperar
 
 Prerrequisitos: `jq`, `curl`, clúster dev alcanzable. Para la parte de Telegram: una cuenta
-Telegram activa (`(cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN=... ./setup.sh)`) y el
+Telegram activa (`(cd ../../channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN=... ./setup.sh)`) y el
 `chat_id` numérico con `/start` ya enviado al bot.
 
 ```bash

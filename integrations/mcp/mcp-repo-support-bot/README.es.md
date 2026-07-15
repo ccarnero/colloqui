@@ -14,8 +14,8 @@ público [DeepWiki](https://mcp.deepwiki.com/mcp) **desde dentro de un workflow*
 Mientras que [`mcp-connections`](../mcp-connections) muestra las *formas de las
 llamadas del SDK* contra un endpoint falso, este sample conecta un servidor MCP
 **real** dentro de un workflow **real** de varios pasos, combinando el patrón de
-canal Telegram de [`telegram-transform-reply`](../telegram-transform-reply) con
-el patrón de agente de triage de [`ai-agent-triage`](../ai-agent-triage).
+canal Telegram de [`telegram-transform-reply`](../../channels/telegram-transform-reply) con
+el patrón de agente de triage de [`ai-agent-triage`](../../ai/ai-agent-triage).
 
 ## Escenario de uso
 

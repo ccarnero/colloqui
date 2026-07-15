@@ -5,7 +5,7 @@
  * Prerequisite: run ./setup.sh once first to provision the workflow and its
  * dedicated HTTP channel instance. This script:
  *   1. Ensures the sample's connector prerequisites exist by shelling out to
- *      `../http-connectors/setup.sh` (that sample is not yet SDK-ported, so
+ *      `../../http/http-connectors/setup.sh` (that sample is not yet SDK-ported, so
  *      it is still a bash script — invoked exactly like the old run.sh did).
  *   2. If `TELEGRAM_BOT_TOKEN` is set, also shells out to
  *      `../telegram-transform-reply/setup.sh` to ensure the Telegram account.
@@ -70,7 +70,7 @@ async function main(): Promise<void> {
 
   // ----- 1. Prerequisites ----------------------------------------------------
   step("1/3 ensuring connectors (jsonplaceholder/pokeapi/catfacts/httpbin)...");
-  runSetupScript("http-connectors");
+  runSetupScript("../http/http-connectors");
   step("    connectors ready");
 
   if (process.env.TELEGRAM_BOT_TOKEN) {

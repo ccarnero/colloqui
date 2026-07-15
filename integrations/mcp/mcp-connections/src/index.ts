@@ -1,6 +1,6 @@
 /**
  * mcp-connections sample driver — SDK-powered, mirrors
- * ../http-connectors/src/index.ts.
+ * ../../http/http-connectors/src/index.ts.
  *
  * This sample has no separate "call" step of its own: running it just
  * (re)provisions the MCP server, agent, and workflow, same as `./setup.sh`.

@@ -69,7 +69,7 @@ the **dedicated HTTP instance** and the **workflow**. You still need:
 
 1. **A Telegram channel account** with a real bot token (the notify path):
    ```bash
-   (cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
+   (cd ../../channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
    ```
 2. **You must have `/start`-ed the bot.** `setup.sh` auto-discovers `TELEGRAM_CHAT_ID` from the
    bot's recent `getUpdates` — but **only when `TELEGRAM_CHAT_ID` is unset** (discovery clears

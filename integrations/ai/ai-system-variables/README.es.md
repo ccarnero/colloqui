@@ -135,7 +135,7 @@ variables, connector y agente se upsertean en el lugar de todas formas.
 1. **Una cuenta de canal Telegram** con bot token real, y haber hecho `/start` al bot
    (`TELEGRAM_CHAT_ID` se auto-descubre solo cuando está sin definir):
    ```bash
-   (cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
+   (cd ../../channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
    ```
 2. **Una API key de proveedor LLM** (por ejemplo `OPENAI_API_KEY`) en `.env`. El sample
    `http-connectors` no hace falta: este mismo setup crea el connector.

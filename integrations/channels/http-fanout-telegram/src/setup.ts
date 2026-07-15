@@ -259,7 +259,7 @@ async function stageResolve(): Promise<void> {
   }
   if (missing.length > 0) {
     err(`connector(s) not found: ${missing.join(" ")}`);
-    err("Provision them first:  (cd ../http-connectors && ./setup.sh)");
+    err("Provision them first:  (cd ../../http/http-connectors && ./setup.sh)");
     process.exit(1);
   }
   log(

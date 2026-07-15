@@ -4,7 +4,7 @@ Demonstrates the **MCP Connections** feature end to end through `@yoizen/platfor
 `mcpServers`, `agents`, and `workflows` resources: typed auth on an MCP server, a live
 connectivity probe, live tool discovery, per-agent per-tool enablement (with a description
 override), and an `mcpCall` workflow action. This is the MCP counterpart to the
-[`http-connectors`](../http-connectors) sample (which does the same for outbound HTTP adapters).
+[`http-connectors`](../../http/http-connectors) sample (which does the same for outbound HTTP adapters).
 
 ## What gets created
 

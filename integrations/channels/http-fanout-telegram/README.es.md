@@ -79,7 +79,7 @@ Conceptos de plataforma involucrados:
 - **`branch` con paralelismo real.** El ejecutor corre las ramas con `Promise.all`; las tres
   llamadas HTTP salen de forma genuinamente concurrente.
 - **Connectors por `adapterId`.** Los ids (por tenant) se resuelven al momento de crear el
-  workflow; si falta un connector el script se detiene apuntando a `../http-connectors/setup.sh`.
+  workflow; si falta un connector el script se detiene apuntando a `../../http/http-connectors/setup.sh`.
 - **Coerción String() del templating.** El resolutor de `{{...}}` aplica `String(value)` a cada
   hoja: no se pueden pasar objetos anidados. Por eso `join` entrega **strings** — un `summary`
   legible y un `combinedJson` (JSON serializado) — que los pasos siguientes consumen tal cual.
@@ -124,7 +124,7 @@ Referencias de contrato (verificadas en código): `services/workflow-service/src
 Prerrequisitos (este script solo cablea el workflow):
 
 1. Connectors `jsonplaceholder`, `pokeapi`, `catfacts`, `httpbin`:
-   `(cd ../http-connectors && ./setup.sh)`.
+   `(cd ../../http/http-connectors && ./setup.sh)`.
 2. Cuenta Telegram con token real: `(cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN=... ./setup.sh)`.
 3. El `chat_id` numérico propio, con `/start` ya enviado al bot (un bot no puede iniciar
    conversación por número de teléfono).

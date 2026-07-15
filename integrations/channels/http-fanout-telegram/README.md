@@ -2,16 +2,16 @@
 
 > **Now SDK-powered.** Both `./run.sh` and `./setup.sh` resolve the dev environment (same as
 > before) and then exec a small Node/TypeScript app that drives the platform through
-> `@yoizen/platform-sdk` (see [`sdk/README.md`](../../README.md)) — `client.connectors.list()`,
+> `@yoizen/platform-sdk` (see [`sdk/README.md`](../../../sdk/README.md)) — `client.connectors.list()`,
 > `client.channels.listAccounts()`, `client.workflows.create()`, and `client.webhooks.ingest()`
 > replace the old inline `curl`+`jq` calls. `./run.sh` (`src/index.ts`) still shells out to
-> `../http-connectors/setup.sh` (and, if `TELEGRAM_BOT_TOKEN` is set, `../telegram-transform-reply/setup.sh`)
+> `../../http/http-connectors/setup.sh` (and, if `TELEGRAM_BOT_TOKEN` is set, `../telegram-transform-reply/setup.sh`)
 > since those sibling samples aren't SDK-ported yet.
 
 A workflow that, on **any message arriving over the HTTP channel**, fans out **three connector
 calls in parallel**, **joins** their responses, **POSTs** the result to the httpbin connector, and
 **DMs you a summary over Telegram**. It stitches together the two other samples —
-[`http-connectors`](../http-connectors) (the outbound connectors) and
+[`http-connectors`](../../http/http-connectors) (the outbound connectors) and
 [`telegram-transform-reply`](../telegram-transform-reply) (the Telegram channel account) — into one
 end-to-end flow.
 
@@ -67,7 +67,7 @@ This script only wires the **workflow**. Provision its dependencies first:
 
 1. **Connectors** `jsonplaceholder`, `pokeapi`, `catfacts`, `httpbin`:
    ```bash
-   (cd ../http-connectors && ./setup.sh)
+   (cd ../../http/http-connectors && ./setup.sh)
    ```
 2. **A Telegram channel account** with a real bot token:
    ```bash
@@ -147,7 +147,7 @@ next to `setup.sh` — no manual sourcing needed.
   therefore hands off **strings** — a human `summary` and a `combinedJson` JSON string — which the
   later steps reference via `{{results.join.summary}}` / `{{results.join.combinedJson}}`.
 - **Connectors are referenced by `adapterId`** (per-tenant), resolved at create time. If a connector
-  is missing the script stops with a clear message pointing at `../http-connectors/setup.sh`.
+  is missing the script stops with a clear message pointing at `../../http/http-connectors/setup.sh`.
 - **The HTTP channel is ingest-only**, so Telegram is the reply path by design — there's no "reply
   over HTTP".
 - **Parallel result names matter.** The join reads `results.getPost`, `results.getPokemon`,

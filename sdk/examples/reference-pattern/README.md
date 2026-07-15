@@ -13,9 +13,9 @@
 A workflow that, on **any message arriving over a dedicated HTTP channel instance**, **echoes**
 the received payload (text/from/metadata) plus added timestamp data, and **DMs the result to you
 over Telegram** (`channelSend`). It is the HTTP-channel counterpart to
-[`telegram-transform-reply`](../telegram-transform-reply) — same echo-and-reply shape, different
+[`telegram-transform-reply`](../../../integrations/channels/telegram-transform-reply) — same echo-and-reply shape, different
 inbound transport — and follows the same idempotent provisioning style as
-[`http-fanout-telegram`](../http-fanout-telegram).
+[`http-fanout-telegram`](../../../integrations/channels/http-fanout-telegram).
 
 ```
 HTTP msg ─► trigger (message_received, channels:["http"], pinned to this sample's own instance)
@@ -66,7 +66,7 @@ Telegram side first:
 
 1. **A Telegram channel account** with a real bot token:
    ```bash
-   (cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
+   (cd ../../../integrations/channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
    ```
 2. **You (and optionally a second recipient) must have `/start`-ed the bot.** A bot cannot
    cold-message a phone number — Telegram addresses recipients by `chat_id`. You don't need to look

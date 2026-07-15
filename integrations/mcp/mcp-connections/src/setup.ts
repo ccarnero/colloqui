@@ -31,7 +31,7 @@
  * and the agent are both resolved-by-name and reused if present. RECREATE=1
  * deletes this sample's own MCP server + agent + workflow (by name) first,
  * then re-provisions from scratch. Same env var / idempotency conventions
- * as ../http-connectors/src/setup.ts. Invoked by `setup.sh` after
+ * as ../../http/http-connectors/src/setup.ts. Invoked by `setup.sh` after
  * `../lib/resolve-env.sh` has resolved the environment. Login itself is
  * handled transparently by createClient()/the SDK session on first request
  * — no explicit login stage needed here (see http-bridge/src/setup.ts, same

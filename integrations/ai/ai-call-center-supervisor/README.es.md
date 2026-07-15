@@ -137,7 +137,7 @@ instancia HTTP y workflow.
 1. **Una cuenta de canal Telegram** con bot token real, y haber hecho `/start` al bot (el chat
    del supervisor se descubre desde los mensajes recientes del bot, igual que en `http-bridge`):
    ```bash
-   (cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
+   (cd ../../channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
    ```
 2. **Una API key de proveedor LLM** (por defecto `OPENAI_API_KEY`) en `.env` — el agente de
    triage usa un LLM real en línea.
@@ -188,6 +188,6 @@ Telegram, nunca en la respuesta HTTP:
 - **Descubrimiento del chat de Telegram.** El proceso limpia y restaura el webhook del bot, y
   los `/start` ya consumidos por el webhook no se reenvían — enviar `/start` de nuevo cuando el
   script lo pida. La lista completa de gotchas está en
-  [`http-bridge/README.md`](../http-bridge/README.md#design-notes--gotchas).
+  [`http-bridge/README.md`](../../../sdk/examples/reference-pattern/README.md#design-notes--gotchas).
 - **No llega nada a Telegram** → revisar las ejecuciones del workflow en la admin console y que
   el servicio Knative `sample-crm` pueda arrancar desde cero.

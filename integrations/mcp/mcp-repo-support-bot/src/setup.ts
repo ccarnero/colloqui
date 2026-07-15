@@ -21,12 +21,12 @@
  *      endpoint is unreachable) — same best-effort handling as
  *      ../mcp-connections/src/setup.ts.
  *   2. Triage agent — classifies the inbound message, replies with strict JSON
- *      `{"about_repo": true|false}` (mirrors ../ai-agent-triage's strict-JSON
+ *      `{"about_repo": true|false}` (mirrors ../../ai/ai-agent-triage's strict-JSON
  *      prompt style). Needs an LLM connector unless AI_CREDENTIAL_MODE=env.
  *   3. Summarizer agent — rewrites DeepWiki's technical answer for end users,
  *      brief and friendly.
  *   4. Telegram channel account + webhook registration (reuses
- *      ../telegram-transform-reply's account/webhook/TG_PUBLIC_URL logic
+ *      ../../channels/telegram-transform-reply's account/webhook/TG_PUBLIC_URL logic
  *      verbatim; skipped with a warning when TG_PUBLIC_URL/token are unset).
  *   5. The workflow — trigger on the Telegram channel, actions per the scenario
  *      above, using the strongly-typed `McpCallAction` shape.
@@ -108,7 +108,7 @@ const MCP_SERVER_DESCRIPTION =
 // its full tool set: read_wiki_structure, read_wiki_contents, ask_question).
 const DEEPWIKI_TOOL = process.env.DEEPWIKI_TOOL ?? "ask_question";
 
-// --- AI agents + LLM connector (same knobs as ../ai-agent-triage) -----------
+// --- AI agents + LLM connector (same knobs as ../../ai/ai-agent-triage) -----------
 const CREDENTIAL_MODE = process.env.AI_CREDENTIAL_MODE ?? "connector";
 const AGENT_PROVIDER = process.env.AI_AGENT_PROVIDER ?? "openai";
 const AGENT_MODEL = process.env.AI_AGENT_MODEL ?? "gpt-4o-mini";
@@ -183,7 +183,7 @@ function loadSecret(): string {
 // ----- Agent prompts ---------------------------------------------------------
 
 // Triage: reply ONLY with strict single-line JSON so the `route` jsFunction can
-// parse it deterministically. Mirrors ../ai-agent-triage's strict-JSON style.
+// parse it deterministically. Mirrors ../../ai/ai-agent-triage's strict-JSON style.
 const TRIAGE_SYSTEM_PROMPT = `You are a triage classifier for a support bot dedicated to the GitHub repository "${REPO_NAME}". For every user message, decide whether it is a question ABOUT that repository (its code, architecture, APIs, configuration, usage, behavior, or internals) or something else (greetings, small talk, unrelated topics, other repositories).
 Reply ONLY with a compact single-line JSON object and nothing else — no prose, no markdown, no code fences:
 {"about_repo": true}  or  {"about_repo": false}
@@ -198,7 +198,7 @@ const SUMMARIZER_SYSTEM_PROMPT = `You are a friendly support assistant for the G
 // agent-call.activity.ts), so the raw JSON lives at results.triage.data.reply.
 // A conditional CANNOT parse a JSON string itself (IConditionRule.variable is a
 // dot-path walked over objects), which is why this jsFunction must exist — same
-// bridge role as ../ai-agent-triage's `route` step. Fail-safe: an unparseable
+// bridge role as ../../ai/ai-agent-triage's `route` step. Fail-safe: an unparseable
 // verdict is treated as "not about the repo" so the bot declines rather than
 // firing an MCP call on garbage.
 const ROUTE_CODE = `(ctx) => {
@@ -293,7 +293,7 @@ export interface SetupResult {
   workflowId: string;
 }
 
-// ----- LLM provider helpers (same contract as ../ai-agent-triage) -----------
+// ----- LLM provider helpers (same contract as ../../ai/ai-agent-triage) -----------
 function providerApiKeyVar(provider: string): string {
   switch (provider.toLowerCase()) {
     case "anthropic":
@@ -731,7 +731,7 @@ async function stageUpsertAgents(): Promise<void> {
 }
 
 // ----- Stage 5: ensure the Telegram channel account (receive + send) --------
-// Reuses ../telegram-transform-reply's account logic verbatim: dedup by
+// Reuses ../../channels/telegram-transform-reply's account logic verbatim: dedup by
 // externalId prefix (keep newest), reuse unless RECREATE=1, cache the webhook
 // appSecret locally.
 async function ensureAccount(): Promise<void> {
@@ -896,7 +896,7 @@ function buildWorkflowBody() {
   // first match wins, `default` runs when none match. The condition reads
   // results.route.about_repo (a boolean); the engine resolves the path raw and
   // String()-compares, so value "true" matches a boolean true (same mechanism
-  // as ../ai-agent-triage's escalate condition).
+  // as ../../ai/ai-agent-triage's escalate condition).
   const respondAction = {
     name: "respond",
     activity: "conditional",
@@ -994,7 +994,7 @@ async function stageEnsureWorkflow(): Promise<void> {
 }
 
 // ----- Stage 7: register the Telegram webhook (needs a public HTTPS URL) -----
-// Reuses ../telegram-transform-reply's registerWebhook logic verbatim,
+// Reuses ../../channels/telegram-transform-reply's registerWebhook logic verbatim,
 // including the TG_PUBLIC_URL normalization (handles a base URL that already
 // contains the webhook path).
 async function registerWebhook(): Promise<void> {
@@ -1067,7 +1067,7 @@ function sleep(seconds: number): Promise<void> {
 }
 
 // ----- Optional: drive the chain with a synthetic inbound update ------------
-// Mirrors ../telegram-transform-reply's simulate driver: POST a signed fake
+// Mirrors ../../channels/telegram-transform-reply's simulate driver: POST a signed fake
 // Telegram update straight to the webhook ingest endpoint, then poll for a
 // workflow execution. Observing an execution proves the whole chain fired —
 // it does NOT require Telegram to deliver the OUTBOUND reply (that needs a real

@@ -1,6 +1,6 @@
 # telegram-transform-reply
 
-A sibling of [`http-bridge`](../http-bridge), from the **automation side** of the platform.
+A sibling of [`http-bridge`](../../../sdk/examples/reference-pattern), from the **automation side** of the platform.
 A message that arrives on **Telegram** is transformed by a workflow (echo + a millisecond
 timestamp) and **replied back over Telegram** to the same chat.
 

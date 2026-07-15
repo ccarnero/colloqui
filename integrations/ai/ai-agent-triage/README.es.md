@@ -6,7 +6,7 @@
 
 Este sample construye un **clasificador de triage de call center dentro de un workflow**: cada mensaje de cliente que llega a una instancia de canal HTTP dedicada es clasificado por un agente de IA publicado (acción `agentCall`) en intención / sentimiento / prioridad / resumen de una línea; la respuesta JSON del agente es parseada por una `jsFunction`, y un gateway exclusivo `conditional` enruta hacia una alerta de escalamiento 🚨 o un resumen de triage ✅ enviado por Telegram (`channelSend`).
 
-Es el primer sample que demuestra la acción de workflow **`agentCall`** y el patrón canónico **parse-then-gate** (`jsFunction` + `conditional`). Conceptualmente es el hermano de [`http-bridge`](../http-bridge) (mismo transporte de entrada y misma ruta de notificación) con un LLM en el medio, construido sobre el contrato de aprovisionamiento de agentes de [`ai-agent-playground`](../ai-agent-playground).
+Es el primer sample que demuestra la acción de workflow **`agentCall`** y el patrón canónico **parse-then-gate** (`jsFunction` + `conditional`). Conceptualmente es el hermano de [`http-bridge`](../../../sdk/examples/reference-pattern) (mismo transporte de entrada y misma ruta de notificación) con un LLM en el medio, construido sobre el contrato de aprovisionamiento de agentes de [`ai-agent-playground`](../ai-agent-playground).
 
 **Verificado en vivo contra el clúster de desarrollo**: los tres samples corren con éxito; el ruteo condicional quedó probado (mensaje enojado → matchedBranch "Escalate" 🚨; neutro y positivo → rama default ✅) y el contrato JSON del agente se sostuvo con `gpt-4o-mini`.
 
@@ -113,7 +113,7 @@ A diferencia de `endpointCall`, la actividad `agentCall` corre **localmente en e
 
 Prerrequisitos (el script cablea connector + agente + instancia HTTP + workflow; el resto va aparte):
 
-1. Una cuenta de canal de Telegram con bot token real: `(cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-..." ./setup.sh)`
+1. Una cuenta de canal de Telegram con bot token real: `(cd ../../channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-..." ./setup.sh)`
 2. Haber enviado `/start` al bot (el `TELEGRAM_CHAT_ID` se descubre automáticamente vía `getUpdates`, con la danza de limpiar/restaurar el webhook — o se fija por `.env`).
 3. Una API key de LLM (por ejemplo `OPENAI_API_KEY`) en `.env`. El sample `http-connectors` **no** es necesario.
 
