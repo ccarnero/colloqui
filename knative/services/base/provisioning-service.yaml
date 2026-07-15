@@ -27,6 +27,17 @@ spec:
           env:
             - name: TZ
               value: "UTC"
+            # The @kubernetes/client-node v1 fetch client validates the
+            # cluster API server's serving cert against the trust store. Under
+            # Bun the serviceaccount CA is NOT trusted by default, so the first
+            # HTTPS call that reaches the API server (the T05 secrets broker's
+            # Secret read/write) fails with "self signed certificate in
+            # certificate chain". Point NODE_EXTRA_CA_CERTS at the mounted
+            # serviceaccount CA so the CA is trusted — the SAME fix
+            # tenant-service and registry-service already carry (they hit the
+            # K8s API too). Never disable TLS verification.
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
             - name: NATS_URL
               value: "nats://nats:4222"
             - name: POSTGRES_DB

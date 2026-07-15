@@ -323,7 +323,11 @@ grep -n "manifests" sdk/README.md
 - [x] T06 KB sources (inline/file/url)
 - [x] T07 gateway routes + authz
 - [x] T08 SDK manifests + secrets clients
-- [ ] T09 full e2e (demo manifest + negative secret test)
+- [x] T09 full e2e (demo manifest + negative secret test) — runtime numbers
+  (2026-07-15, dev cluster): first plan 64ms; first apply 144ms wall / 59ms
+  server for 4 resources; second plan 25ms; second apply 30ms wall / 1ms server
+  (all-noop). Negative broker test: binding_mismatch denied + secret_access_denied
+  audited in tracking.tracked_events.
 - [ ] T10 docs + index
 
 ## Out of scope (explicit)

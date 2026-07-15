@@ -1517,6 +1517,13 @@ spec:
               value: "yoizen"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
+            # Trust the serviceaccount CA so @kubernetes/client-node's fetch
+            # client validates the API server cert under Bun (mirrors
+            # tenant-service / registry-service). Without this the T05 secrets
+            # broker's Secret read/write fails "self signed certificate in
+            # certificate chain".
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
