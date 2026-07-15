@@ -310,7 +310,7 @@ rg -l "sdk/samples/" manual-loops/crm-support-telegram.md ; test $? -eq 1
 
 ---
 
-- [ ] T01 inventory + reference map + provisioning audit
+- [x] T01 inventory + reference map + provisioning audit
 - [ ] T02 git mv by group + path sweep
 - [ ] T03 tier READMEs
 - [ ] T04 canary e2e per group (pre-migration, original scripts)
@@ -351,3 +351,303 @@ rg -l "sdk/samples/" manual-loops/crm-support-telegram.md ; test $? -eq 1
   ask, do not guess its tier.
 - Canary env/keys are loaded by the human, as in the samples' own docs;
   secret VALUES only ever travel env → `client.secrets`, never the repo.
+
+## Progress
+
+### T01 — 2026-07-15
+
+**1. Inventory of `sdk/samples/` vs decision-2 mapping**
+
+`fd . sdk/samples -t f | sort` (94 files) classifies cleanly against decision 2,
+except three root-level files (finding 8):
+
+| Group (decision 2) | Sample dirs (all files inside move as a unit) |
+| --- | --- |
+| `integrations/channels/` | `telegram-transform-reply/`, `http-fanout-telegram/`, `telegram-onboard.sh` |
+| `integrations/ai/` | `ai-agent-playground/`, `ai-agent-triage/`, `ai-call-center-supervisor/`, `ai-knowledge-base-agent/`, `ai-skill-support-agent/`, `ai-system-variables/` |
+| `integrations/http/` | `http-connectors/`, `hosted-services-api/` |
+| `integrations/mcp/` | `mcp-connections/`, `mcp-repo-support-bot/` |
+| `integrations/lib/` | `lib/resolve-env.sh` |
+| `sdk/examples/reference-pattern/` | `http-bridge/` |
+
+13 sample directories total (12 platform integrations + `http-bridge`), matching
+the Goal section's "one true SDK example with twelve platform integration
+examples."
+
+**2. Unmapped files (decision-2 gap — flagged per human-boundary rule "stop and
+ask, do not guess its tier")**
+
+```
+$ fd . sdk/samples -t f | rg -v "^sdk/samples/(ai-agent-playground|ai-agent-triage|ai-call-center-supervisor|ai-knowledge-base-agent|ai-skill-support-agent|ai-system-variables|hosted-services-api|http-bridge|http-connectors|http-fanout-telegram|mcp-connections|mcp-repo-support-bot|telegram-transform-reply|lib)/"
+sdk/samples/README.md
+sdk/samples/telegram-onboard.sh
+$ fd -H . sdk/samples -d 1 -t f
+sdk/samples/.gitignore
+sdk/samples/README.md
+sdk/samples/telegram-onboard.sh
+```
+
+- `sdk/samples/telegram-onboard.sh` — decision 2 explicitly assigns this to
+  `integrations/channels/` (named in the mapping text), so this one IS mapped;
+  listed here only because `fd`'s directory-based filter above doesn't match
+  loose root files. No action needed — moves per decision 2.
+- `sdk/samples/README.md` — **unmapped**. Decision 2 does not name a
+  destination for the tier-level index file. T03 supersedes its content with
+  `integrations/README.md` + `sdk/examples/README.md`, but decision 2 itself
+  says nothing about deleting vs. redirecting it. STOP-AND-ASK item per the
+  human-boundaries rule; recommend `git rm` in T02 once T03's replacement
+  READMEs exist (content-wise it is fully superseded, not moved), but this is
+  a human decision, not T01's to make.
+- `sdk/samples/.gitignore` — **unmapped**. Ignores `.env`, `**/.env`,
+  `.telegram-chat-id` for the sample run scripts. Not named in decision 2.
+  Recommend `git mv` to `integrations/.gitignore` (same ignore patterns apply
+  to the moved trees) in T02, folded into the same commit — but flagging here
+  per the stop-and-ask rule since decision 2 is silent on it.
+
+**3. Full referrer map** (every file outside `manual-loops/**` containing
+`sdk/samples/`; the T01 Accept command run verbatim)
+
+```
+$ rg -c "sdk/samples/" -g '!manual-loops/**' . | sort
+```
+90 files match the T01 Accept command (below, grouped 3a/3b/3c; full per-line
+evidence via `rg -n` for each file is available by group — the summary above is
+the literal Accept-command output).
+
+IMPORTANT (attempt-2 correction): the Accept command uses PLAIN `rg`, which by
+default SKIPS hidden directories. Six additional git-tracked referrer files live
+under the hidden `.sdd/` directory and do NOT appear in the Accept output above —
+they are enumerated in **3d** below. The "90 files" count is the Accept-command
+result; the TRUE total including hidden-dir referrers is **96 files** (90 + 6).
+
+*3a. Referrers OUTSIDE `sdk/samples/` (need a path rewrite in T02/T07; not
+part of the move itself):*
+
+| File | Lines (rg -n) | Planned rewrite |
+| --- | --- | --- |
+| `bootstrap-from-scratch.md` | 33,38,46,51,56,62,72,77,92,97,104,111 (12 hits) | Rewrite each `cd sdk/samples/<x>` / `.env` path to `integrations/<group>/<x>/` or `sdk/examples/reference-pattern/` (T07) |
+| `cowork/DEBUG-fanout-telegram.md` | 8,62,83 | Historical debug note — rewrite live paths (`http-fanout-telegram`, `lib/resolve-env.sh`, `telegram-onboard.sh`) to `integrations/channels/...` (T07); this is NOT a `manual-loops/*` file so it is in-scope for G2 |
+| `cowork/DOC-VS-CODE-AUDIT.md` | 43,108 | References `sdk/samples/README.md` as a pending-commit item; once T01/T02 land, this becomes historical — rewrite path or annotate as superseded (T07) |
+| `cowork/SDK-http-sdk.md` | 147,168 | `sdk/samples/http-bridge` → `sdk/examples/reference-pattern`; `sdk/samples/README.md` reference drops (superseded) (T07) |
+| `cowork/SESSION-HANDOFF.md` | 38,42 | `telegram-transform-reply` → `integrations/channels/...`; `http-connectors` → `integrations/http/...` (T07) |
+| `demos/README.md` | 5 | `sdk/samples/` mention (contrast with demos) → keep the *concept* reference but repoint to `integrations/` per decision 3's distinction (T07; demos content itself is out of scope per decision 4, but this cross-link line is a referrer, not demo content) |
+| `demos/crm-support-telegram/*` (19 files, verified `rg -l "sdk/samples/" demos/crm-support-telegram/ \| wc -l` → 19: four `01..04-*.sh`, `lib/resolve-demo-env.sh`, `priority-scorer/Dockerfile`, `README.md`, `run.sh`, `setup.sh`, six `src/01..06-*.ts`, four `src/lib/{fail,logging,require-env,run-stage}.ts` = 4+1+1+1+1+1+6+4) | see raw `rg -n` output captured below | All are **comments/doc citations** pointing at the sample they were adapted from (`http-bridge`, `http-connectors`, `ai-knowledge-base-agent`, `ai-skill-support-agent`, `ai-system-variables`, `hosted-services-api`, `ai-call-center-supervisor`, `telegram-transform-reply`, `lib/resolve-env.sh`, `ai-agent-playground`) plus one live `.env`-resolution path list in `lib/resolve-demo-env.sh`. Demo CONTENT is out of scope (decision 4) but these are referrer citations in comments/paths — rewrite to new `integrations/...` paths in T07 (crm-support-telegram.md's own Prior-art citations are T07's explicit job per the SPEC header; these source comments are the same category of citation) |
+| `sdk/GROWTH-PLAN.md` | 46,86,88,130,132 | Historical growth-plan status entries citing `sdk/samples/README.md` and the migration plan — rewrite live paths, leave historical status prose intact (T07) |
+| `sdk/test/e2e/agents.e2e.ts` | 13,14 | Doc-comment citing `ai-agent-playground/setup.sh`, `ai-agent-triage/setup.sh` → rewrite to `integrations/ai/...` (T02, mechanical, since this is a code comment in a moving-adjacent file) |
+| `sdk/test/e2e/http-ingest.e2e.ts` | 26 | Doc-comment citing `lib/resolve-env.sh` → rewrite to `integrations/lib/resolve-env.sh` (T02) |
+| `sdk/test/e2e/README.md` | 19 | Same rewrite as above (T02) |
+| `services/admin-console/src/app/features/channels/channels.component.ts` | 72 | UI copy: `<span class="mono">sdk/samples/http-bridge</span> example.` → `sdk/examples/reference-pattern` (T07; touches a platform service file, flagged for explicit review since this loop's constraints say "no platform services" for GATES, but this is a doc-string edit, not a service behavior change) |
+
+*3b. Internal referrers (inside `sdk/samples/`, moving with their own
+sample — path text becomes stale only because it's a self-reference to the
+sample's own dirname; fixed mechanically as part of the same `git mv` in T02,
+zero cross-sample coupling):* every per-sample `README.md`/`README.es.md`
+`cd sdk/samples/<name>` snippet, every `run.sh`/`setup.sh`
+`echo "... (see sdk/samples/<name>/README.md) ..."` line, and self-referential
+doc-comments in each sample's own `src/setup.ts` (e.g.
+`ai-agent-playground/src/setup.ts:66`, `ai-system-variables/src/setup.ts:347,353,359,97`,
+`mcp-connections/src/setup.ts:93,114`, `mcp-repo-support-bot/src/setup.ts:106,716,726`).
+Full per-file list: `ai-agent-playground` (5), `ai-agent-triage` (5),
+`ai-call-center-supervisor` (6), `ai-knowledge-base-agent` (4),
+`ai-skill-support-agent` (5), `ai-system-variables` (6), `hosted-services-api`
+(4), `http-bridge` (4), `http-connectors` (4), `http-fanout-telegram` (4),
+`mcp-connections` (6), `mcp-repo-support-bot` (6), `telegram-transform-reply`
+(5) — matches the per-file `rg -c` counts from the Accept command above.
+
+*3c. `sdk/samples/README.md` itself* — 13 hits (all internal `cd sdk/samples/<x>`
+snippets), superseded per finding 2, not rewritten in place.
+
+*3d. HIDDEN-DIRECTORY referrers under `.sdd/` (missed by the Accept command's
+plain `rg`; surfaced with `rg --hidden`).* These are git-tracked (`git ls-files
+.sdd/changes/...` lists all seven files across the two changes) SDD change
+artifacts. 6 files, 16 hits total:
+
+```
+$ rg --hidden -n "sdk/samples/" .sdd/changes/telegram-channel-instances/ .sdd/changes/http-channel-instances/
+.sdd/changes/telegram-channel-instances/design.md:5
+.sdd/changes/telegram-channel-instances/adr.md:79,80
+.sdd/changes/telegram-channel-instances/tasks.md:3,9,37,69,106,156,208
+.sdd/changes/telegram-channel-instances/archive.md:24,25
+.sdd/changes/http-channel-instances/design.md:82
+.sdd/changes/http-channel-instances/tasks.md:21,27,49
+```
+
+All 16 hits cite `sdk/samples/telegram-transform-reply/{setup.sh,README.md}`
+(14) or `sdk/samples/http-fanout-telegram/setup.sh` (3 — one overlaps in
+`tasks.md`). They are SDD change artifacts documenting a past change to those
+samples.
+
+**Closure status verified PER CHANGE (attempt-3 correction — NOT a blanket
+`archive.md` claim):**
+```
+$ fd . .sdd/changes/telegram-channel-instances --hidden -t f
+adr.md  archive.md  design.md  tasks.md
+$ fd . .sdd/changes/http-channel-instances --hidden -t f
+adr.md  design.md  tasks.md          # <-- NO archive.md
+$ rg -n "status|Status|COMPLETE|DONE|closed|Closed|^- \[" .sdd/changes/http-channel-instances/tasks.md
+(no output — no closure/status marker and no task checkboxes)
+$ git log --oneline -5 -- .sdd/changes/http-channel-instances/
+2778af7a fix: metrics, remove fake data in processes, connections and channels
+```
+- `telegram-channel-instances` — **CLOSED**: carries `archive.md` (the SDK
+  archive artifact). Historical record; safe to treat as such.
+- `http-channel-instances` — **CLOSURE UNVERIFIED**: has NO `archive.md`, no
+  status/closure marker in `tasks.md`/`design.md`, and no task checkboxes to
+  infer completion from. Git history shows only an unrelated commit touching
+  the directory. Its "historical" status therefore CANNOT be asserted from the
+  artifacts; it may be an in-flight or abandoned SDD change.
+
+**Disposition (explicit — no guessing).** One fact is firm; the closure
+asymmetry keeps this a stop-and-ask item:
+
+1. **G2 does NOT see either change.** G2 runs
+   `rg -l "sdk/samples/" --glob '!manual-loops/**' .` from the repo root —
+   PLAIN `rg`, which skips hidden dirs. Verified:
+   ```
+   $ rg -l "sdk/samples/" --glob '!manual-loops/**' . | rg "\.sdd"
+   (no output — plain rg skips .sdd when scanning `.`)
+   ```
+   (`rg` only descends into `.sdd/` when the path is named EXPLICITLY, as in the
+   `rg --hidden` command above; the G2 sweep never names it, so these files can
+   NEVER trip G2 as written.) Reviewer-2's claim that they "will trip G2's
+   stale-path sweep after T02" is therefore not borne out by G2's literal
+   command — but they ARE real git-tracked referrers, so they belong in this
+   map regardless of closure status.
+2. **Closure is asymmetric** (verified above): only `telegram-channel-instances`
+   is provably closed; `http-channel-instances`'s status is unverified.
+
+RECOMMENDATION: treat `.sdd/changes/telegram-channel-instances/*` as a
+HISTORICAL closed-change record (leave its paths untouched, like old
+`manual-loops/*` specs). For `.sdd/changes/http-channel-instances/*`, do NOT
+assume closure — flag it as a **stop-and-ask escalation** (see finding 8): the
+human must state whether it is closed history (leave untouched) or an active
+change (in which case its `sdk/samples/http-fanout-telegram/setup.sh` citations
+should be rewritten to `integrations/channels/http-fanout-telegram/` when its
+change runs). Either way G2 stays green (hidden dir), so there is no gate
+pressure forcing the decision at T02 — but the map records the true state
+honestly rather than assuming both are closed. If a rewrite IS wanted, it is
+mechanical: 2 sample dirs → `integrations/channels/telegram-transform-reply/`
+and `integrations/channels/http-fanout-telegram/`.
+
+*3d (completeness check).* Re-ran the referrer sweep WITH hidden paths to prove
+`.sdd/` was the ONLY hidden-dir source missed:
+```
+$ rg --hidden -l "sdk/samples/" -g '!manual-loops/**' .
+```
+The only hidden-path hits are the six `.sdd/changes/...` files above; every other
+line of that output is already covered by 3a/3b/3c (the `.env.example` files that
+appear are NOT referrers — they are sample-local env templates that `rg --hidden`
+lists as siblings, not `sdk/samples/`-string matches; re-verified per-file). No
+other hidden directory (`.git` excluded by rg's ignore rules; `.claude`,
+`.ywai`, etc.) contains a `sdk/samples/` referrer.
+
+**4. Cross-check on the Prior-art section's "starting sweep list" (line 94-98)**
+— it names `sdk/README.md`, `cowork/INDEX.md`, `DOCS/README.md`, and generic
+`scripts/` as referrers. Verified NONE of them currently reference
+`sdk/samples/` (or even the word "samples"):
+```
+$ rg -n "sdk/samples" cowork/INDEX.md DOCS/README.md sdk/README.md
+(no output)
+$ rg -n "samples" cowork/INDEX.md DOCS/README.md sdk/README.md
+(no output)
+```
+T07's tasks against these three files (index entry, doc refresh, CLI section)
+are therefore NEW ADDITIONS, not rewrites of stale paths — the Prior-art list
+was aspirational/stale on this point. No G2 risk from these three files today.
+
+**5. Provisioning audit (drives T06 — MIGRATABLE vs STAND-BY)**
+
+Manifest v1 sections (`packages/shared/src/provisioning/manifest.schema.ts`):
+`channels`, `connectors`, `agents`, `knowledgeBases`, `services` (name +
+`image`/`buildRef` REFERENCE + `env` only — no port/scaling/routing fields),
+`workflows`, `secrets` (name+scope bindings only). No `mcpServers` section, no
+`systemVariables` section, no route/HTTP-routing concept anywhere in the
+schema (`rg -n "route|Route" packages/shared/src/provisioning/manifest.schema.ts`
+→ no output).
+
+| Sample | Resources created (kind + how) | Classification | Notes |
+| --- | --- | --- | --- |
+| `telegram-transform-reply` | `client.channels` create/list/removeAccount (telegram inbound) L179,232; `client.workflows.create` L334 | **MIGRATABLE** | fits `channels`+`workflows` |
+| `http-fanout-telegram` | `client.channels` create/list/removeAccount (http) L175,213,271; `client.workflows.create` L402; `client.connectors.list` L159 (READ-ONLY lookup of an existing connector by name — cross-sample dependency on `http-connectors`, not a create) | **MIGRATABLE** | manifest must declare the external connector via `connectors: [{ name: ..., external: true }]` or equivalent symbolic ref; no new resource kind needed |
+| `ai-agent-playground` | `client.agents.create` L346 | **MIGRATABLE** | agent only |
+| `ai-agent-triage` | `client.agents.create` L468; `client.workflows.create` L933; `client.channels.listAccounts` L493,750 (READ-ONLY) | **MIGRATABLE** | fits `agents`+`workflows` |
+| `ai-call-center-supervisor` | `client.connectors.create` L554; `client.agents.create` L633; `client.workflows.create` L1047 | **MIGRATABLE** | fits `connectors`+`agents`+`workflows`; connector `authConfig: { bearerToken: apiKey }` at L545 — decision-7 flag (see finding 6) |
+| `ai-knowledge-base-agent` | `client.connectors.create` L310; `client.knowledgeBases.create` L366; `client.agents.create` L529 | **MIGRATABLE** | fits `connectors`+`knowledgeBases`+`agents`; connector `authConfig: { bearerToken: apiKey }` L301 — decision-7 flag |
+| `ai-skill-support-agent` | `client.connectors.create` L301; `client.knowledgeBases.create` L450; `client.agents.create` L619 | **MIGRATABLE** | same shape as above; `authConfig: { bearerToken: apiKey }` L292 — decision-7 flag |
+| `ai-system-variables` | `client.agents.create` L489; `client.workflows.create` L755; `client.systemVariables.list/update` L287,306 | **STAND-BY** | `systemVariables` has NO manifest v1 section (anticipated in decision 6) |
+| `hosted-services-api` | `client.registry.services.create/update` L246,234 (fields: `image`,`port`,`minScale`,`maxScale`,`concurrencyTarget`,`envVars` — L200-206); `client.registry.routes.create` L295 (`pathPrefix`,`methods`,`isPublic`,`stripPrefix`); `client.workflows.create` L502; `client.channels.listAccounts` L318,445 (READ-ONLY) | **STAND-BY (NEW finding, not one of the SPEC's anticipated candidates)** | manifest v1 `services` section is a REFERENCE only (`name`+`image`/`buildRef`+`env`) — it has NO `port`/`minScale`/`maxScale`/`concurrencyTarget` fields, and there is NO route/HTTP-routing concept anywhere in manifest v1 (`rg -n "route\|Route"` on the schema → zero hits). This sample's actual provisioned state (scaling knobs + a routed path) cannot be expressed in manifest v1 today — decision 6/8 stand-by, same as the MCP/system-variables gaps but a distinct gap kind (routing + scaling, not a whole missing section) |
+| `http-connectors` | `client.connectors.create/update/addEndpoint` L266,237,205 | **MIGRATABLE** | fits `connectors`; per-connector JSON config files (`connectors/*.json`) map to the `config` field |
+| `mcp-connections` | `client.mcpServers.create/update/remove/testConnection/listTools` L247,238,211,263,287; `client.agents.create` L335 | **STAND-BY** | `mcpServers` has NO manifest v1 section (anticipated in decision 6); auth: `authConfig: { token: MCP_AUTH_TOKEN }` L225, `MCP_AUTH_TOKEN` from env — decision-7 flag |
+| `mcp-repo-support-bot` | `client.mcpServers.create/update/remove/testConnection/listTools` L528,519,493,544,561; `client.agents.create` L689; `client.workflows.create` L986; `client.channels.listAccounts` L741 (READ-ONLY) | **STAND-BY** | same `mcpServers` gap; two `authConfig: { bearerToken: apiKey }` L614,635 — decision-7 flag |
+| `http-bridge` | `client.channels.create/list/removeAccount` L164,182,199,425; `client.workflows.create` L555 | **N/A — not migrated** | becomes `sdk/examples/reference-pattern` per decision 2/T06 explicit exclusion; not part of the MIGRATABLE/STAND-BY count |
+
+**MIGRATABLE: 8** (`telegram-transform-reply`, `http-fanout-telegram`,
+`ai-agent-playground`, `ai-agent-triage`, `ai-call-center-supervisor`,
+`ai-knowledge-base-agent`, `ai-skill-support-agent`, `http-connectors`).
+**STAND-BY: 4** (`ai-system-variables`, `hosted-services-api`,
+`mcp-connections`, `mcp-repo-support-bot`). 8 + 4 + `http-bridge` = 13,
+consistent with the Goal section's count.
+
+**6. Decision-7 credential-handling flags** (connector `authConfig` wiring via
+broker, LLM credential mode as `secretRef` — both documented-but-unshipped
+follow-ups; samples keep CURRENT handling per decision 7, no inline fixes):
+
+```
+$ rg -n "authConfig|process\.env\." sdk/samples/{http-connectors,ai-call-center-supervisor,ai-knowledge-base-agent,ai-skill-support-agent,mcp-connections,mcp-repo-support-bot}/src/setup.ts | rg -i "authConfig|apiKey|token|OPENAI"
+```
+- Connector `authConfig` is set INLINE at create time from env vars/plaintext
+  bearer tokens in `ai-call-center-supervisor:545`,
+  `ai-knowledge-base-agent:301`, `ai-skill-support-agent:292`,
+  `mcp-connections:225` (`MCP_AUTH_TOKEN`), `mcp-repo-support-bot:614,635` —
+  none use the broker/`secretRef` mechanism (not shipped). Keep as-is.
+- LLM/agent provider credentials read directly from
+  `process.env.OPENAI_API_KEY` in `ai-skill-support-agent:244`,
+  `ai-knowledge-base-agent:253`, and via `AI_AGENT_PROVIDER`/implicit
+  `OPENAI_API_KEY` in `ai-agent-playground`, `ai-agent-triage`,
+  `ai-call-center-supervisor`, `mcp-connections`, `mcp-repo-support-bot` — no
+  `secretRef` LLM credential mode exists yet (not shipped). Keep as-is; T06
+  manifests express these via plain env-sourced `secrets`/`secretRef`
+  bindings (name+scope only), matching current behavior exactly per decision 7.
+
+**7. G4 canary recommendation (adjusts the SPEC's default canary set at
+T04/T06 Accept blocks)**
+
+Default canaries (per T04/T06 Accept): `telegram-transform-reply` (channels),
+`ai-agent-playground` (ai), `http-connectors` (http), `mcp-connections` (mcp).
+Per the audit above:
+- **channels**: `telegram-transform-reply` — MIGRATABLE, canary unchanged.
+- **ai**: `ai-agent-playground` — MIGRATABLE, canary unchanged.
+- **http**: `http-connectors` — MIGRATABLE, canary unchanged (the group's
+  other sample, `hosted-services-api`, is STAND-BY per finding 5).
+- **mcp**: `mcp-connections` is STAND-BY (not anticipated to change per
+  decision 6, confirmed here) — AND its sibling `mcp-repo-support-bot` is
+  ALSO STAND-BY. **The entire `mcp` group is stand-by; there is no migratable
+  sample left to promote as canary.** Per the gate note ("a fully stand-by
+  group drops out of G4 with a note in the progress entry"): the `mcp` group
+  DROPS OUT of G4/G5/G6 from T06 onward. G4 from T06 onward runs 3 canaries
+  (channels, ai, http), not 4. T04 (pre-migration, original setup scripts)
+  still runs all 4 groups' original canaries since T04 predates the
+  MIGRATABLE/STAND-BY split.
+
+**8. Escalation items for human review (per the human-boundaries section)**
+
+- `sdk/samples/README.md` and `sdk/samples/.gitignore` are unmapped by
+  decision 2 (finding 2) — recommend `git rm`/`git mv` respectively in T02,
+  pending explicit human sign-off alongside the T02 move-commit approval.
+- `hosted-services-api` is a STAND-BY sample beyond the SPEC's anticipated gap
+  candidates (MCP servers, system variables) — its gap is service
+  scaling/routing fields, not a whole missing manifest section. This changes
+  T07's `provisioning-manifest-gaps.md` scope (three gap kinds, not two) and
+  reduces the `mcp` group's G4 presence to zero canaries from T06 onward
+  (finding 7). Flagging for the human OK required before T06 deletes any
+  script (per the human-boundaries section).
+- `.sdd/changes/{telegram,http}-channel-instances/*` (6 git-tracked files, 16
+  `sdk/samples/...` hits — finding 3d) are SDD change artifacts in a HIDDEN dir
+  the G2 sweep never scans. Closure is ASYMMETRIC (verified per-change in 3d):
+  `telegram-channel-instances` has an `archive.md` (closed → treat as historical,
+  leave untouched like old `manual-loops/*` specs); `http-channel-instances` has
+  NO `archive.md` and no status marker, so its closure is UNVERIFIED. The human
+  must (a) confirm the SPEC's "historical specs keep their paths" rule
+  (Out-of-scope, line 335-336, names only `manual-loops/`) extends to the closed
+  telegram change, and (b) state whether `http-channel-instances` is closed
+  history or an active change before T02. G2 stays green either way (hidden dir).
