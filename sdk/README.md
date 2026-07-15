@@ -452,9 +452,10 @@ see `types.ts`.
 
 ### manifests — [`src/resources/manifests/types.ts`](./src/resources/manifests/types.ts)
 
-Declarative provisioning (`manual-loops/declarative-provisioning.md`): describe a full
-integration — channels, connectors, agents, knowledge bases, hosted-service refs, workflows —
-in ONE manifest object, then `plan` the diff and `apply` to converge. v1 is create-or-update
+Declarative provisioning (`manual-loops/declarative-provisioning.md`, full operational
+contract: `services/provisioning-service/README.md`): describe a full integration —
+channels, connectors, agents, knowledge bases, hosted-service refs, workflows — in ONE
+manifest object, then `plan` the diff and `apply` to converge. v1 is create-or-update
 only; there is no delete/prune semantics yet.
 
 - `validate(manifest)` — schema + structural-rule validation, never mutates anything. Never
@@ -504,7 +505,8 @@ console.log(secondPlan.resources.every((r) => r.verdict === "noop")); // true
 ### secrets — [`src/resources/secrets/types.ts`](./src/resources/secrets/types.ts)
 
 Write-only Secret API backing `manifests`' `secretRef`s (`manual-loops/declarative-provisioning.md`
-decision 4): ONE k8s Secret per resource, never a per-tenant bag. No route ever returns a
+decision 4, full contract in `services/provisioning-service/README.md` "Secrets model"):
+ONE k8s Secret per resource, never a per-tenant bag. No route ever returns a
 secret VALUE — `set()` echoes back only `{name, scope}`, `list()` returns names + bindings
 only.
 

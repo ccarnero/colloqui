@@ -47,7 +47,7 @@ recorded in `DRIFT.md`.
   below) + 3 synthetic declarative-provisioning T05 events (seq 1327–1329, see
   addendum below).
 - **`GATEWAY_AUDIT`** — 2 events.
-- 11 correlation chains, all formally closed by `correlation_id` + `causation_id`:
+- 13 correlation chains, all formally closed by `correlation_id` + `causation_id`:
   4 conversation chains (1 Telegram, 3 HTTP) and 2 memory approve/reject cycles
   (test-provenance memories created via the admin API for fix-4 validation), plus
   2 synthetic workflow-step-events chains (seq 1312–1315, 1316–1319), plus 1

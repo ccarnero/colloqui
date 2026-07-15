@@ -299,6 +299,65 @@ Decision cuádruple:
   but the assertion is currently strict.
 - **Engram topic**: `platform/connector-invoke-api`.
 
+## Change: declarative provisioning — manifest apply + secrets broker (declarative-provisioning)
+
+Spec-driven change adding a NEW `provisioning-service` that reconciles a full
+integration (channels, connectors, agents, knowledge bases, hosted-service refs,
+workflows) described in ONE YAML manifest: `validate`/`plan`/`apply` lifecycle over
+tenant-scoped manifest revisions, a create-or-update apply engine that resolves
+symbolic refs (`channelRef`/`agentRef`/`serviceRef`/`secretRef`) against live platform
+state via the existing internal APIs, a write-only per-resource secrets CRUD API
+backed by ONE k8s Secret per resource plus an internal-only secrets broker enforcing
+consumer-identity + scope-binding checks, and KB sources (`inline`/`file`/`url`) with
+sha256 checksum-driven re-embedding. Full task queue, gates, and human decisions:
+`manual-loops/declarative-provisioning.md`. Operational contract (manifest lifecycle,
+plan verdicts, apply partial-failure/resume, secrets model, KB checksum semantics,
+RBAC, follow-ups): `services/provisioning-service/README.md`. Gateway routes:
+`services/api-gateway/src/modules/provisioning/`. SDK: `sdk/README.md`
+"`manifests`"/"`secrets`". Audit event subjects and causal-chain shape:
+`DOCS/messaging/service-bus.md` "Provisioning-service audit events". Classification:
+`TAXONOMY.md` rules 22 (`platform`/`provisioning`) and 23 (`platform`/`secrets-audit`),
+golden rows seq1322-1329.
+
+Decision cuádruple:
+- **Rule**: the secrets broker lives INSIDE `provisioning-service` (not
+  `tenant-service`) as a single RBAC-privileged reader; consumers present service
+  identity + the resource they act for; the broker enforces the scope binding,
+  delivers the value ephemerally, and audits every resolve/deny — per-resource
+  isolation is application-layer (k8s RBAC cannot filter by Secret name or label),
+  and v1 apply is strictly create-or-update, with NO prune/delete semantics —
+  `manual-loops/declarative-provisioning.md` §User decisions 4/5/8.
+- **Why**: ONE k8s Secret per resource (never a per-tenant bag) keeps blast radius to
+  a single resource's credential if a consumer is compromised, while a broker inside
+  the reconciler (rather than a new tenant-service capability) means the same service
+  that already resolves symbolic refs and materializes hosted-service Knative specs
+  is the one that hands secrets to their k8s-native env vars — no second
+  cross-service round trip for the common case (decision 7: hosted services get
+  secrets k8s-natively). Prune/delete semantics were deferred because destructive
+  reconciliation (detecting "this used to be in the manifest, now it's gone, so
+  delete it") needs its own design round with explicit human sign-off, not a
+  side-effect of shipping create/update.
+- **Evidence**: `secret-consumer-policy.ts`'s static per-kind allow-set (the apply
+  engine's fixed identity `provisioning-service-apply-engine` may act for every kind;
+  runtime consumers like `channel-service`/`connector-runtime`/`agent-ai-service`/
+  `workflow-service` are scoped to their own kind) plus the `(kind, owner)` binding
+  match in `SecretsBrokerService` are the two enforcement layers; the granted
+  `provisioning-service-secrets-manager` ClusterRole
+  (`knative/services/rbac/cluster-role.yaml`) has no `delete` verb on `secrets`,
+  matching the "no prune" stance end to end. Runtime numbers recorded in T09
+  (2026-07-15, dev cluster): first plan 64ms; first apply 144ms wall / 59ms server
+  for 4 resources; second plan 25ms; second apply 30ms wall / 1ms server (all-noop).
+  Negative broker test: a mismatched-binding consumer is denied and a
+  `secret_access_denied` event is audited in `tracking.tracked_events`.
+- **Engram topic**: `platform/declarative-provisioning`.
+
+Known follow-ups (reviewer-flagged, non-blocking, carried forward not silently
+inherited): connector `authConfig`/LLM credential-mode unification onto `secretRef`;
+`validateOutboundUrl`'s DNS-resolution SSRF gap, now more urgent because KB `url:`
+sources are server-side fetch targets; true `multipart/form-data` for the apply bundle
+transport (currently base64-encoded tar in the JSON body, human decision 2026-07-15)
+once a multipart parser dependency is vendored.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

@@ -328,7 +328,7 @@ grep -n "manifests" sdk/README.md
   server for 4 resources; second plan 25ms; second apply 30ms wall / 1ms server
   (all-noop). Negative broker test: binding_mismatch denied + secret_access_denied
   audited in tracking.tracked_events.
-- [ ] T10 docs + index
+- [x] T10 docs + index
 
 ## Out of scope (explicit)
 

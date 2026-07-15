@@ -55,6 +55,7 @@ flowchart LR
             connectorAdmin[connector-admin]
             cache[cache-service]
             proxy[proxy-service]
+            provisioning[provisioning-service]
         end
 
         subgraph ui[UI]
@@ -95,6 +96,7 @@ flowchart LR
 | `cache-service` | Platform | L1/L2 cache abstraction backed by Redis |
 | `proxy-service` | Platform | HTTP proxy for external tenant-dependent backends |
 | `admin-console` | Platform | Operational UI for platform and YoizenClaw admin workflows |
+| `provisioning-service` | Platform | Declarative manifest provisioning: validate/plan/apply reconciler (channels/connectors/agents/KBs/hosted services/workflows), write-only per-resource secrets CRUD + internal-only secrets broker with scope binding |
 
 ## Key Architecture Decisions
 
@@ -459,6 +461,37 @@ graph LR
 
 ---
 
+### Provisioning Service
+
+| Aspect | Detail |
+|--------|--------|
+| **Role** | Declarative manifest reconciler: validate/plan/apply for channels, connectors, agents, knowledge bases, hosted-service refs, and workflows described in one manifest; write-only per-resource k8s Secrets CRUD; internal-only secrets broker with scope-binding enforcement |
+| **Port** | 3000 |
+| **Scale** | 1 -- 3 replicas (concurrency target: 50) |
+
+Full contract (manifest lifecycle, plan verdicts, apply partial-failure/resume, KB
+checksum reconciliation, secrets broker binding enforcement, RBAC, known follow-ups):
+`services/provisioning-service/README.md`. Reconciliation never writes to other
+services' tables directly — it calls their existing internal APIs (channels,
+connectors, agents, registry, workflows), same rule as workflow `serviceCall`. v1 is
+create-or-update only; there is no prune/delete semantics. The secrets broker's
+`POST /internal/secrets/resolve` route is never exposed through the gateway.
+
+```mermaid
+graph LR
+    C([Client]) -->|HTTP| GW[API Gateway]
+    GW -->|Proxy /provisioning/*| PS[Provisioning Service]
+    PS -->|create/update by name| CH[Channel Service]
+    PS -->|create/update by name| CA[Connector Admin]
+    PS -->|create/update by name| YZA[Agent Admin Service]
+    PS -->|create/update by name| REG[Registry Service]
+    PS -->|create/update by name| WFA[Workflow API]
+    PS -->|"psec-&lt;kind&gt;-&lt;owner&gt; Secrets"| K8sAPI[Kubernetes API]
+    PS -->|"apply_*, secret_* audit events"| NATS[(NATS JetStream)]
+```
+
+---
+
 ### Workflow Service (API + Worker)
 
 | Aspect | Detail |
@@ -565,6 +598,7 @@ graph TB
 | Agent Admin Service | 1 | 3 | 50 |
 | AI Agent Gateway | 1 | 3 | 50 |
 | Agent AI / Memory / Scheduler Services | 1 | 3 | 50 |
+| Provisioning Service | 1 | 3 | 50 |
 | Usage Aggregator (API) | 1 | 3 | 100 |
 | Proxy Service | 1 | 5 | 50 |
 | Admin Console | 1 | 3 | 200 |

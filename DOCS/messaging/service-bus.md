@@ -234,6 +234,54 @@ published back by the same consumer after it runs the call). Verified with
 `services/connector-runtime/scripts/verify-invoke-stream-binding.ts`
 (asserts the binding, provisions nothing — there is nothing to provision).
 
+### Provisioning-service audit events (rides `INGRESS-<tenant>`, no dedicated stream)
+
+`provisioning-service` (`manual-loops/declarative-provisioning.md`, detail:
+`services/provisioning-service/README.md` "Audit events") publishes 7 best-effort,
+fire-and-forget event kinds on the existing per-tenant ingress stream — same pattern
+as the connector-invoke transport pair above (no dedicated stream; a publish failure
+is logged and swallowed, never fails the underlying operation):
+
+```
+evt.<tenant>.provisioning-service.provisioning.platform.internal.apply_started.v1
+evt.<tenant>.provisioning-service.provisioning.platform.internal.resource_applied.v1
+evt.<tenant>.provisioning-service.provisioning.platform.internal.apply_completed.v1
+evt.<tenant>.provisioning-service.provisioning.platform.internal.apply_failed.v1
+evt.<tenant>.provisioning-service.provisioning.platform.internal.secret_written.v1
+evt.<tenant>.provisioning-service.provisioning.platform.internal.secret_resolved.v1
+evt.<tenant>.provisioning-service.provisioning.platform.internal.secret_access_denied.v1
+```
+
+Classification: `TAXONOMY.md` rule 22 (`platform`/`provisioning`, the four
+`apply_*`/`resource_applied` kinds) and rule 23 (`platform`/`secrets-audit`, the three
+secret kinds) — kept as two distinct `business_fn` values even though both rule
+families share the same producer/domain/channel/provider tokens, per human decision
+(secrets audit is a distinct business concern from apply-run bookkeeping).
+
+**Causal chain shape** — sibling-hop pattern (same shape as workflow-step-events and
+the connector-invoke transport pair):
+
+- `apply_started` is the run ROOT: its `id` is generated up front and reused as its own
+  `correlation_id`, with `causation_id: null` and `depth: 0`.
+- `resource_applied` (one per resource action), `apply_completed`, and `apply_failed`
+  are all SIBLINGS off that root — each cites the run's `apply_started` id as
+  `causation_id` (never a preceding sibling event), inherits its `correlation_id`, and
+  sits at constant `depth: 1`.
+- `secret_written` (a `PUT /secrets/:name` write) is its OWN standalone root
+  (`correlation_id` = own id, `causation_id: null`, `depth: 0`) — it is an operator
+  action, not a step inside an existing apply-run chain.
+- `secret_resolved` and `secret_access_denied` are SIBLINGS at `depth: 1`, each citing
+  the CALLER-SUPPLIED `correlationId` as both `correlation_id` and `causation_id` — so
+  a `secret_resolved` emitted mid-apply-run reuses that run's `apply_started`
+  correlation id (joining the same chain), while a standalone broker call (e.g. a
+  denied resolve attempt) gets its own fresh chain.
+
+Producer/consumer: `provisioning-service` publishes all 7 kinds internally
+(`ApplyEventsPublisher`, `SecretAuditPublisher`); there is no dedicated consumer today
+— events are picked up by the generic tenant-scoped consumers
+(`tracking-ingester-service`, `usage-aggregator-service`) like every other
+`INGRESS-<tenant>` event.
+
 ### DLQ Lifecycle
 
 - When DLQ is enabled in manager config, tenant DLQ resources are provisioned alongside the durable.
