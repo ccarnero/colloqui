@@ -1,0 +1,76 @@
+apiVersion: yoizen.io/v1
+kind: IntegrationManifest
+metadata:
+  name: telegram-transform-reply
+spec:
+  # ---------------------------------------------------------------------------
+  # Telegram channel account — the built-in TelegramProvider is activated by
+  # this account (RECEIVE via the webhook secret channel-service auto-generates;
+  # SEND via the bot token). The bot token is the ONLY secret value: it is
+  # bound below and its VALUE is supplied at apply time from the same-named env
+  # var via `--secrets-from-env` (never stored in the repo).
+  #
+  # End-state note vs the deleted setup.ts: the apply engine's channels-writer
+  # sets the account `accessToken` to the resolved secret and derives the
+  # externalId deterministically as `manifest:telegram-transform-reply-bot`.
+  # telegram.provider.ts reads `telegramBotToken ?? accessToken`, so a
+  # token delivered as `accessToken` drives the SEND path identically
+  # (services/channel-service/src/providers/telegram/telegram.provider.ts:36).
+  # ---------------------------------------------------------------------------
+  channels:
+    - name: telegram-transform-reply-bot
+      type: telegram
+      direction: inbound
+      secretRef: telegram-bot-token
+  workflows:
+    # transform (jsFunction: echo + millisecond timestamp) -> reply
+    # (channelSend back to the SAME chat). Both reply args are RUNTIME
+    # templates resolved per-request by workflow-service — they carry no
+    # manifest-time id, so they are embedded verbatim (identical to the
+    # deleted setup.ts buildWorkflowBody()).
+    #
+    # DEVIATION (reported to the human): setup.ts default TG_PIN=1 pinned the
+    # trigger to the created account via `config.accountIds:[<accountId>]`.
+    # That account id does not exist at manifest-author time and manifest v1
+    # has no manifest-time id substitution, so the trigger here expresses the
+    # documented TG_PIN=0 mode (fires on any telegram message for the tenant).
+    # In a single-telegram-account tenant this is behaviorally equivalent.
+    - name: telegram-transform-reply
+      definition:
+        application: samples
+        actions:
+          - name: transform
+            activity: jsFunction
+            args:
+              code: |
+                (context) => {
+                  var src = (context.request && context.request.text) || "";
+                  var now = new Date();
+                  return { text: "Echo: " + src + " — processed at " + now.toISOString() + " (epoch_ms=" + now.getTime() + ")" };
+                }
+          - name: reply
+            activity: channelSend
+            args:
+              accountId: "{{request.envelope.accountId}}"
+              channel: "{{request.channel}}"
+              provider: "{{request.provider}}"
+              to: "{{request.from}}"
+              type: text
+              text: "{{results.transform.text}}"
+        trigger:
+          type: message_received
+          mode: shared
+          config:
+            channels:
+              - telegram
+            providers:
+              - telegram
+  secrets:
+    # Bound to the channel owner so the broker binding-match check passes when
+    # channels-writer resolves the secretRef (scope kind=channel, owner=the
+    # channel name). The binding NAME is the env var the CLI reads the VALUE
+    # from with `--secrets-from-env` (no naming transform — decision 7).
+    - name: telegram-bot-token
+      scope:
+        kind: channel
+        owner: telegram-transform-reply-bot

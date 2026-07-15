@@ -2,14 +2,16 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# One-shot: resolve the dev env, require a real bot token, then provision the
-# Telegram account + workflow — SDK-powered (sdk/GROWTH-PLAN.md P3.1). The
-# actual token-check + provisioning-delegation logic lives in src/index.ts,
-# run via `@yoizen/platform-sdk`; this script only resolves the dev
-# environment (via ../../lib/resolve-env.sh, same as every other sample's
-# run.sh) and execs the Node app with those env vars in scope.
+# One-shot: resolve the dev env, then EXERCISE the manifest-provisioned
+# Telegram account + workflow by injecting a synthetic inbound update
+# (the run/exercise side; provisioning is declarative now — see README.md
+# and manifest.yaml). The actual drive logic lives in src/index.ts, run via
+# `@yoizen/platform-sdk`; this script only resolves the dev environment (via
+# ../../lib/resolve-env.sh, same as every other sample's run.sh) and execs the
+# Node app with those env vars in scope.
 #
-# Needs a real bot token — put it in ./.env (see .env.example) or pass inline.
+# Needs TELEGRAM_WEBHOOK_SECRET + TELEGRAM_TEST_CHAT_ID (see README.md) — put
+# them in ./.env or pass inline.
 . ../../lib/resolve-env.sh
 
 if ! command -v node >/dev/null 2>&1; then

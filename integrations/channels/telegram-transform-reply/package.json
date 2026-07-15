@@ -5,8 +5,7 @@
   "type": "module",
   "description": "telegram-transform-reply sample driver — provisions a Telegram channel account + transform/reply workflow through @yoizen/platform-sdk.",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "setup": "tsx src/setup.ts"
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@yoizen/platform-sdk": "file:../../../sdk"

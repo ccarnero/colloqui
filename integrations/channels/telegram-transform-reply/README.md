@@ -18,25 +18,29 @@ Telegram msg ──► api-gateway (/api/webhooks/telegram/<tenant>/<externalId>
               channel-service-worker (egress) ──► Telegram reply
 ```
 
-Like `http-bridge`, this sample is powered by `@yoizen/platform-sdk` (`setup.sh`/`run.sh` are thin
-wrappers around `src/setup.ts`/`src/index.ts`) — but the Telegram path itself is driven entirely
-by the platform's built-in `TelegramProvider`. You don't write an adapter; you **configure an
-account** that activates it, plus the workflow. One script does it all.
+The Telegram path is driven entirely by the platform's built-in `TelegramProvider`. You don't
+write an adapter; you **configure an account** that activates it, plus the workflow. Provisioning
+is **declarative**: a single [`manifest.yaml`](./manifest.yaml) applied through the `yoizen` CLI
+(no setup scripts).
 
-## What `setup.sh` creates
+## What `manifest.yaml` provisions
 
-1. **A Telegram channel account** — wires the built-in adapter for **receive + send**:
+1. **A Telegram channel account** (`telegram-transform-reply-bot`) — wires the built-in adapter for
+   **receive + send**:
    - **receive** — the webhook is verified against the account's auto-generated `appSecret`;
-   - **send** — the account stores the **bot token** the egress path uses;
-   - the `appSecret` is cached locally in `.telegram-sample-secret` (gitignored).
+   - **send** — the account stores the **bot token**, supplied at apply time from the
+     `telegram-bot-token` secret binding (see below), NEVER stored in the repo.
 2. **A workflow** (`telegram-transform-reply`) — `message_received` trigger on channel
    `telegram`, with `transform` (jsFunction) → `reply` (channelSend, `to: {{request.from}}`,
-   `accountId: {{request.envelope.accountId}}`).
-3. **Webhook registration** — if you pass `TG_PUBLIC_URL`, it calls Telegram `setWebhook` at the
-   per-instance URL `/api/webhooks/telegram/<tenant>/<externalId>` with the matching secret.
+   `accountId: {{request.envelope.accountId}}`). Those templates are resolved per-request by
+   workflow-service, so the workflow stays valid regardless of which account the message came from.
+3. **A secret binding** (`telegram-bot-token`, scope `channel:telegram-transform-reply-bot`) — the
+   bot token's binding; its VALUE is provided via `--secrets-from-env` at apply time.
 
-Idempotent and verbose. Re-running **reuses** the account (matched by `externalId` prefix) and
-the workflow (matched by name). `RECREATE=1` rebuilds both from scratch.
+> **Trigger scope note.** The old script pinned the trigger to a specific account id (`TG_PIN=1`).
+> A manifest cannot express a not-yet-created account id (manifest v1 has no manifest-time id
+> substitution), so the manifest uses the unpinned trigger: it fires on any Telegram message for
+> the tenant. In a single-Telegram-account tenant this is behaviorally equivalent.
 
 ## Message flow
 
@@ -56,70 +60,68 @@ the workflow (matched by name). `RECREATE=1` rebuilds both from scratch.
 
 - A running dev cluster (`scripts/orbstack/startup.sh` or `scripts/minikube/startup.sh`) with a
   provisioned tenant (`acme` by default), reachable (e.g. Kourier port-forward on `localhost:8080`).
-- `jq` and `curl`.
 - A **real** Telegram bot token from [@BotFather](https://t.me/BotFather) — required for sending.
-- For **real inbound**, a **public HTTPS URL** Telegram can reach (Telegram only calls public
-  URLs — `localhost`/minikube isn't reachable directly). A [cloudflared](https://github.com/cloudflare/cloudflared)
-  tunnel works well:
+- The `yoizen` CLI available. One-time: `cd sdk && bun link` (then `yoizen ...` works anywhere), or
+  run it directly without linking via `cd sdk && bun run bin/yoizen.ts ...`.
+- Environment for the CLI (same precedence as the SDK client):
+  - `YOIZEN_BASE_URL` — e.g. `http://127.0.0.1:8080`
+  - `YOIZEN_HOST_HEADER` — the gateway ingress Host, e.g. `api-gateway.platform-services-dev.dev.local`
+  - `YOIZEN_TENANT` (`acme`), `YOIZEN_EMAIL`, `YOIZEN_PASSWORD`
+- The secret VALUE env var, read verbatim by `--secrets-from-env` (the binding name IS the env var
+  name — no transform):
+  - `telegram-bot-token` — your @BotFather bot token.
 
-  ```bash
-  # config maps your public host -> localhost:8080 with the gateway Host header
-  cloudflared tunnel --config ~/.cloudflared/config.yml run
-  ```
+## Provision (declarative)
 
-## Run
-
-Place secrets in `.env` next to `setup.sh` (loaded automatically):
+Validate the manifest, preview the plan, then apply — supplying the secret value from the
+environment (never from the repo). The binding name contains a hyphen, so pass it via `env`:
 
 ```bash
-# integrations/channels/telegram-transform-reply/.env
-TELEGRAM_BOT_TOKEN=123456:ABC-your-bot-token
-# Base URL only. Do not include /api/webhooks/telegram/... here.
-TG_PUBLIC_URL=https://api.devmachina.net
+cd sdk && bun link           # one-time; or prefix each call with `bun run bin/yoizen.ts`
+
+yoizen manifests validate -f ../integrations/channels/telegram-transform-reply/manifest.yaml
+yoizen manifests plan     -f ../integrations/channels/telegram-transform-reply/manifest.yaml
+env 'telegram-bot-token=123456:ABC-your-bot-token' \
+  yoizen manifests apply  -f ../integrations/channels/telegram-transform-reply/manifest.yaml --secrets-from-env
 ```
 
-Then run:
+`plan` prints a per-resource verdict table (create/update/noop); a second `apply` is a no-op once
+converged. To rotate the token, re-run `apply` with a new `telegram-bot-token` value.
+
+## Run / exercise
+
+After apply, just message your bot → it replies
+`Echo: <your text> — processed at <ISO ms> (epoch_ms=...)`.
+
+For **real inbound**, Telegram needs a **public HTTPS URL** to reach the gateway (it never calls
+`localhost`). Register the webhook once against the per-instance path
+`/api/webhooks/telegram/<tenant>/<externalId>` (externalId `manifest:telegram-transform-reply-bot`),
+using the account's `appSecret` as the `secret_token`:
+
+```bash
+# appSecret: GET the account after apply, e.g. via the gateway /api/channels/accounts
+curl -s "https://api.telegram.org/bot<token>/setWebhook" \
+  --data-urlencode "url=https://<your-public-host>/api/webhooks/telegram/acme/manifest:telegram-transform-reply-bot" \
+  --data-urlencode "secret_token=<appSecret>"
+```
+
+To drive the chain **without** a public URL (injects a synthetic inbound update straight at the
+gateway), use the run driver — it needs the account's webhook secret and a real chat id:
 
 ```bash
 cd integrations/channels/telegram-transform-reply
-./setup.sh
+TELEGRAM_WEBHOOK_SECRET=<appSecret> TELEGRAM_TEST_CHAT_ID=<your-numeric-chat-id> ./run.sh
 ```
 
-Then message your bot → it replies `Echo: <your text> — processed at <ISO ms> (epoch_ms=...)`.
-
-Drive the chain without a real message (injects a synthetic inbound update straight at the gateway):
-
-```bash
-SIMULATE_INBOUND=1 TELEGRAM_TEST_CHAT_ID="<your-numeric-chat-id>" ./setup.sh
-```
-
-`TELEGRAM_TEST_CHAT_ID` must be a real chat that has already `/start`-ed the bot. The script fails
-fast without it because a fake id makes the workflow run but Telegram rejects the reply with
-`Bad Request: chat not found`.
-
-## Configuration (env)
-
-| Var | Default | Notes |
-| --- | --- | --- |
-Gateway coordinates (`YOIZEN_BASE_URL`, `YOIZEN_HOST_HEADER`, `YOIZEN_TENANT`, `YOIZEN_EMAIL`, `YOIZEN_PASSWORD`) are auto-detected by `resolve-env.sh`. Override them in `.env` if needed.
-
-| Var | Default | Notes |
-| --- | --- | --- |
-| `TELEGRAM_BOT_TOKEN` | placeholder | Bot token from @BotFather. **Required for sending** — the account stores it. |
-| `TG_PUBLIC_URL` | — | Public HTTPS **base URL** for your tunnel, e.g. `https://api.devmachina.net`. Do not include `/api/webhooks/telegram/...`; the script appends the webhook path. If you accidentally pass a full webhook path, the script normalizes it and warns. |
-| `TG_WORKFLOW_NAME` | `telegram-transform-reply` | Workflow name. |
-| `TG_EXTERNAL_ID` | `telegram-sample-bot` | Account externalId **prefix** (each create appends a unique suffix). |
-| `RECREATE` | `0` | `1` rebuilds the account **and** the workflow from scratch. |
-| `TG_PIN` | `1` | `1` pins the workflow trigger to this account via `accountIds`. `0` lets any Telegram message on the tenant fire it. |
-| `SIMULATE_INBOUND` | `0` | `1` injects a synthetic inbound update. |
-| `TELEGRAM_TEST_CHAT_ID` | — | Required for a real reply when simulating. |
+`TELEGRAM_TEST_CHAT_ID` must be a real chat that has already `/start`-ed the bot (a fake id makes
+the workflow run but Telegram rejects the reply with `Bad Request: chat not found`). The driver
+waits up to 60 s for a workflow execution and prints it (`id`, `status`, timestamps).
 
 ## Persistence & reuse
 
-The account lives in the per-tenant Postgres DB and the workflow in Mongo, so both **persist
-across restarts/redeploys**. Re-running `setup.sh` reuses them. `RECREATE=1` rotates the token
-/ rebuilds the workflow. Only a data wipe (full re-bootstrap / `DROP TABLE`) removes them — then
-just re-run `setup.sh`.
+The account lives in the per-tenant Postgres DB and the workflow in Mongo, so both **persist across
+restarts/redeploys**. Re-applying the manifest reconciles them (idempotent — a converged re-apply
+is a no-op). Only a data wipe (full re-bootstrap / `DROP TABLE`) removes them — then just re-apply.
 
 ## Troubleshooting
 
@@ -150,8 +152,8 @@ Telegram error codes you'll see there:
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
-| `404 Not Found` | bot token is wrong/placeholder | re-run with the real `TELEGRAM_BOT_TOKEN` + `RECREATE=1` |
-| `401 Unauthorized` | token revoked | re-issue via @BotFather |
+| `404 Not Found` | bot token is wrong/placeholder | re-`apply` with the real `telegram-bot-token` value |
+| `401 Unauthorized` | token revoked | re-issue via @BotFather, re-`apply` |
 | `400 chat not found` | bad `to`/chat id (or bot not `/start`-ed) | message the bot first; `from.id` = chat id for private chats |
 | `circuit_open … cooldown` | the egress **circuit breaker** tripped after repeated failures | `kubectl rollout restart deploy/channel-service-worker -n $NS` |
 
@@ -159,44 +161,16 @@ Telegram error codes you'll see there:
 
 The gateway has a global prefix `api`, so the webhook path is **`/api/webhooks/telegram/<tenant>/<externalId>`**.
 The platform's auto-registration omits `/api`; if your bot points at `/webhooks/...` (no `/api`),
-Telegram 404s and nothing is ingested. Fix by passing `TG_PUBLIC_URL` (the script registers the
-correct path). `TG_PUBLIC_URL` should be the base URL only:
-
-```bash
-TG_PUBLIC_URL=https://api.devmachina.net ./setup.sh
-```
-
-Manual equivalent:
-
-```bash
-# replace <externalId> with the value logged during setup (e.g. telegram-sample-bot-1700000000-12345)
-curl -s "https://api.telegram.org/bot<token>/setWebhook" \
-  --data-urlencode "url=https://api.devmachina.net/api/webhooks/telegram/acme/<externalId>" \
-  --data-urlencode "secret_token=$(cat .telegram-sample-secret)"
-curl -s "https://api.telegram.org/bot<token>/getWebhookInfo" | jq   # url ends in /api/.../<externalId>
-```
-
-### `500 duplicate key … channel_accounts_channel_external_id_key`
-
-The `(channel, external_id)` unique key is global, and a delete may not free it in dev. That's
-why this script appends a **unique suffix** to every created `externalId` and matches reuse by
-the prefix — so recreates never collide. If you hit this manually, just use a fresh `externalId`.
+Telegram 404s and nothing is ingested. Register the correct path with `setWebhook` as shown above.
 
 ### Message received but no `send` event at all
 
-If the trace shows a `received` row with no matching `send`, the workflow didn't fire — usually a
-**stale/reused workflow** whose `trigger.config.accountIds` is pinned to an old account id, so the
-matcher skips messages from the new one. Inspect and rebuild:
+If the trace shows a `received` row with no matching `send`, the workflow didn't fire. Inspect it:
 
 ```bash
 auth "$GW/api/workflows" | jq '.[] | select(.name=="telegram-transform-reply") | {id, trigger, reply: (.actions[]|select(.name=="reply").args)}'
-# with TG_PIN=1 (default): trigger.config.accountIds should contain the CURRENT account id
-# with TG_PIN=0: trigger.config should be just {channels:["telegram"], providers:["telegram"]}
+# the manifest trigger is unpinned: trigger.config is {channels:["telegram"], providers:["telegram"]}
 ```
-
-A stale `accountIds` value (pointing to a deleted or rotated account) is the most common cause.
-`RECREATE=1` rebuilds both account and workflow together, so the pinned id is always current.
-If you rotated the account without `RECREATE=1`, run it now to fix the stale pin.
 
 ### Trace a message across services
 
