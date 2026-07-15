@@ -9,7 +9,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # Runs every numbered provisioning script sequentially, fail-fast, with a
 # numbered [N/5] stage log line before/after each one. Nothing beyond the env
 # sourcing below is resolved here — each 0N-<artifact>.sh remains a
-# self-contained thin wrapper (mirrors sdk/samples/http-bridge); this script
+# self-contained thin wrapper (mirrors sdk/examples/reference-pattern); this script
 # only sequences them and enforces the fail-fast contract.
 #
 # RECOVERY: every child script is IDEMPOTENT (create-or-update by
@@ -34,8 +34,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # Optional: TELEGRAM_TEST_CHAT_ID (auto-discovered by 01 if unset — DM the
 #   bot first), YOIZEN_HOST_HEADER, PLATFORM_ENVIRONMENT.
 #
-# Env sourcing (SPEC T07): loads, in order, sdk/samples/ai-agent-playground/.env,
-# sdk/samples/telegram-transform-reply/.env, then this demo's own .env — see
+# Env sourcing (SPEC T07): loads, in order, integrations/ai/ai-agent-playground/.env,
+# integrations/channels/telegram-transform-reply/.env, then this demo's own .env — see
 # lib/resolve-demo-env.sh for the full rationale.
 # =============================================================================
 # shellcheck source=lib/resolve-demo-env.sh

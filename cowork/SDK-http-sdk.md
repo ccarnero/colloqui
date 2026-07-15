@@ -144,7 +144,7 @@ Missing `tenant`/`email`/`password` → `ConfigError` with `details.missing`. Mi
 ## 7. Tests & sample
 
 - **Tests**: `node:test` runner with fully stubbed ports/`fetch` — no install step. 9 files across `test/{domain,application,infrastructure}`. Run: `cd sdk && node --test`.
-- **Sample** (`sdk/samples/http-bridge`): a tiny `node:http` server that receives `POST /messages` and forwards it via `client.send(...)` — a minimal ingress so anything that can POST JSON (e.g. an iOS Shortcut) can push into the platform. Consumes the SDK by name through a local `file:` link (like an external project would). Responses: `202` accepted, `400` validation, `502` platform/auth/channel failure; `GET /health` → `{status:"ok"}`. The bridge has **no auth of its own** — trusted-network use only.
+- **Sample** (`sdk/examples/reference-pattern`, formerly under the old `sdk/samples` tier as `http-bridge`): a tiny `node:http` server that receives `POST /messages` and forwards it via `client.send(...)` — a minimal ingress so anything that can POST JSON (e.g. an iOS Shortcut) can push into the platform. Consumes the SDK by name through a local `file:` link (like an external project would). Responses: `202` accepted, `400` validation, `502` platform/auth/channel failure; `GET /health` → `{status:"ok"}`. The bridge has **no auth of its own** — trusted-network use only.
 
 ---
 
@@ -165,4 +165,4 @@ Missing `tenant`/`email`/`password` → `ConfigError` with `details.missing`. Mi
 
 ---
 
-*Sources: `sdk/README.md`, `sdk/package.json`, `sdk/src/index.js`, `sdk/src/domain/{message,sender,token,errors}.js`, `sdk/src/application/{ports,ingest-client}.js`, `sdk/src/infrastructure/{create-client,config,http,auth-adapter,channel-directory-adapter,ingest-adapter,system-clock}.js`, `sdk/samples/http-bridge/{server.js,README.md}`, `sdk/samples/README.md`.*
+*Sources: `sdk/README.md`, `sdk/package.json`, `sdk/src/index.js`, `sdk/src/domain/{message,sender,token,errors}.js`, `sdk/src/application/{ports,ingest-client}.js`, `sdk/src/infrastructure/{create-client,config,http,auth-adapter,channel-directory-adapter,ingest-adapter,system-clock}.js`, `sdk/examples/reference-pattern/{server.js,README.md}` (formerly under the old `sdk/samples` tier), the old `sdk/samples` tier's top-level `README.md` (superseded by `integrations/README.md` + `sdk/examples/README.md`).*

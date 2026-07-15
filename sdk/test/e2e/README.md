@@ -16,7 +16,7 @@ SDK_E2E=1 npm run test:e2e
 ## Required cluster access
 
 The test needs a reachable api-gateway. Base URL resolution mirrors
-`sdk/samples/lib/resolve-env.sh`:
+`integrations/lib/resolve-env.sh`:
 
 1. `YOIZEN_BASE_URL` if set, used as-is.
 2. Otherwise probe `http://localhost:${API_GATEWAY_PORT:-8080}/health` (a local port-forward).

@@ -10,8 +10,8 @@ import { createClient } from "../../src/index.js";
  * `createClient().agents`.
  *
  * The agent payload mirrors the minimal shape used by
- * `sdk/samples/ai-agent-playground/setup.sh` and
- * `sdk/samples/ai-agent-triage/setup.sh` (`agent_payload()`): `name`,
+ * `integrations/ai/ai-agent-playground/setup.sh` and
+ * `integrations/ai/ai-agent-triage/setup.sh` (`agent_payload()`): `name`,
  * `system_prompt`, `model_config.llm` (provider/model/connectorId/
  * temperature), empty `tools`/`channels`. `provider: "env"` with no
  * `connectorId` avoids needing a working LLM connector for create/get/list/

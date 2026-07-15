@@ -2,7 +2,7 @@
  * 05-workflow — ensures the `crm-support-telegram` low-code orchestration
  * workflow: the visible-in-the-builder half of the demo (SPEC "Goal" #2).
  *
- * Adapted from `sdk/samples/ai-call-center-supervisor/src/setup.ts`
+ * Adapted from `integrations/ai/ai-call-center-supervisor/src/setup.ts`
  * (`buildWorkflowBody`, ~line 917 — the exact `serviceCall` -> `jsFunction`
  * -> `agentCall` -> `conditional` -> `channelSend` action sequence and the
  * Telegram outbound `sendBase` shape) and
@@ -81,7 +81,7 @@ function messageOf(e: unknown): string {
 // ----- jsFunction bodies ------------------------------------------------------
 // Each is `(ctx) => {...}` — the same sandboxed-function shape as the
 // TRIAGE_INPUT_CODE/DECIDE_CODE constants in
-// sdk/samples/ai-call-center-supervisor/src/setup.ts. `ctx.request` is the
+// integrations/ai/ai-call-center-supervisor/src/setup.ts. `ctx.request` is the
 // trigger payload (`from`/`text` for a Telegram message_received event),
 // `ctx.results.<actionName>` is the prior action's result (`.data` for
 // endpointCall/serviceCall/agentCall).

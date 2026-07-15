@@ -2,13 +2,13 @@
  * 04-priority-scorer -- builds the priority-scorer hosted-service image and
  * registers it as a Knative-backed service via the registry resource
  * (client.registry.services) for the crm-support-telegram demo, per the
- * sdk/samples/hosted-services-api conventions -- PORT is Knative-reserved,
+ * integrations/http/hosted-services-api conventions -- PORT is Knative-reserved,
  * never set it in envVars.
  *
  * Adapted from demos/crm-support-telegram/src/0{1,2,3}-*.ts (stage
  * structure, lib helpers, client bootstrap with the Host-header fetch
- * wrapper) and sdk/samples/hosted-services-api/src/setup.ts plus
- * sdk/samples/ai-call-center-supervisor/src/setup.ts (registry.services
+ * wrapper) and integrations/http/hosted-services-api/src/setup.ts plus
+ * integrations/ai/ai-call-center-supervisor/src/setup.ts (registry.services
  * create-or-update-by-name, the waitForCrmReady poll of the Knative Ready
  * condition). Copied and adapted, NOT imported across trees, see
  * demos/README.md.

@@ -8,7 +8,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # =============================================================================
 #
 # Thin bash wrapper over src/04-priority-scorer.ts (mirrors the
-# sdk/samples/hosted-services-api + this demo's 01-/02-/03- scripts). The
+# integrations/http/hosted-services-api + this demo's 01-/02-/03- scripts). The
 # actual provisioning logic (docker build, registry.services create-or-
 # update, Knative Ready wait, /score smoke check) lives there, run via
 # `@yoizen/platform-sdk`; this script only checks prerequisites and execs the

@@ -6,7 +6,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # run.sh — end-to-end proof for the crm-support-telegram demo (SPEC T07)
 # =============================================================================
 #
-# Thin bash wrapper over src/06-run-e2e.ts (mirrors sdk/samples/http-bridge
+# Thin bash wrapper over src/06-run-e2e.ts (mirrors sdk/examples/reference-pattern
 # and this demo's own 0N-*.sh convention — see their header comments). All
 # driver logic (contact/deal seeding, simulated inbound x2, execution
 # polling, assertions, HubSpot cleanup, admin-console run-view URLs) lives

@@ -6,7 +6,7 @@ import { log, step } from "./logging.js";
  * `05-workflow`) with consistent start/finish/failure logging, so every
  * script in this demo reports its own progress the same way. Adapted from
  * the stage-by-stage logging style in
- * `sdk/samples/http-bridge/src/setup.ts` (`step(...)` before each phase).
+ * `sdk/examples/reference-pattern/src/setup.ts` (`step(...)` before each phase).
  *
  * On failure, logs the stage name and the error message via `fail`, then
  * exits — nothing in this demo fails silently.

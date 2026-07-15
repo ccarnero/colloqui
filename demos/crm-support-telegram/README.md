@@ -53,7 +53,7 @@ sourced from the sibling SDK sample `.env` files (see the numbered scripts' own 
 
 | Script | Purpose |
 | --- | --- |
-| `setup.sh` | Resolves the dev environment (mirrors `sdk/samples/lib/resolve-env.sh`) and drives provisioning end to end |
+| `setup.sh` | Resolves the dev environment (mirrors `integrations/lib/resolve-env.sh`) and drives provisioning end to end |
 | `01-telegram-channel.sh` | Provisions the customer-facing Telegram channel account |
 | `02-hubspot-connector.sh` | Registers the HubSpot connector deployment (contact lookup/create, ticket API) |
 | `03-ai-agent.sh` | Provisions the AI support agent that leads the conversation — knowledge base, skills, memory, and system variables |
@@ -68,4 +68,4 @@ the follow-up tasks that add them.
 
 Scaffolding only (this task). No cluster interaction, no provisioning logic yet — see
 `src/lib/` for the shared logging/`requireEnv`/`fail`/stage helpers that the numbered scripts
-above will build on, adapted from `sdk/samples/http-bridge`'s pattern.
+above will build on, adapted from `sdk/examples/reference-pattern`'s pattern.

@@ -311,7 +311,7 @@ rg -l "sdk/samples/" manual-loops/crm-support-telegram.md ; test $? -eq 1
 ---
 
 - [x] T01 inventory + reference map + provisioning audit
-- [ ] T02 git mv by group + path sweep
+- [x] T02 git mv by group + path sweep
 - [ ] T03 tier READMEs
 - [ ] T04 canary e2e per group (pre-migration, original scripts)
 - [ ] T05 SDK CLI (`yoizen manifests` / `yoizen secrets`)
@@ -651,3 +651,29 @@ Per the audit above:
   (Out-of-scope, line 335-336, names only `manual-loops/`) extends to the closed
   telegram change, and (b) state whether `http-channel-instances` is closed
   history or an active change before T02. G2 stays green either way (hidden dir).
+
+### T02 — 2026-07-15
+
+Move executed per the T01 map + human rulings (approved 2026-07-15): all
+`git mv` by group; `sdk/samples/README.md` removed (`git rm`, superseded by
+T03 tier READMEs); `sdk/samples/.gitignore` → `integrations/.gitignore`;
+`http-bridge` → `sdk/examples/reference-pattern` with `integrations/lib`
+resolver logic inlined verbatim into its own `setup.sh`/`run.sh` (the SDK
+tier carries no shared-lib dependency); `.sdd/changes/**` left untouched
+(historical, hidden dir — G2 never scans it). All T01-mapped referrers
+rewritten (sdk/test/e2e, bootstrap-from-scratch.md, cowork docs, demos
+citations + the live path list in `demos/crm-support-telegram/lib/
+resolve-demo-env.sh`, sdk/GROWTH-PLAN.md, admin-console UI copy string).
+A stray untracked `.telegram-chat-id` runtime artifact inside the old tree
+was removed so `sdk/samples/` could be deleted entirely.
+
+Gates: G2 clean (no `sdk/samples/` reference outside `manual-loops/**`);
+G3 no-op (no tsconfig in moved trees); Accept both PASS. G1 note: shellcheck
+exits 1 on info-level SC1091 ("not following" sourced files) — verified
+IDENTICAL notices exist at HEAD pre-move and `shellcheck -S error` is clean
+pre and post; treated as pre-existing noise, not a move defect (fixing it
+would violate the move-verbatim constraint). Dual review: 2× APPROVED
+(attempt 1) — reviewers verified rename similarity indexes, the verbatim
+resolver inlining, path-depth fixes (`../../lib` and telegram-onboard.sh's
+`../lib`), README.es.md path-string-only edits, and no unauthorized
+deletions.

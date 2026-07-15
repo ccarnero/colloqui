@@ -2,9 +2,9 @@
  * 01-telegram-channel — provisions the customer-facing Telegram channel
  * account for the crm-support-telegram demo.
  *
- * Adapted from `sdk/samples/telegram-transform-reply/src/setup.ts` (account
+ * Adapted from `integrations/channels/telegram-transform-reply/src/setup.ts` (account
  * create-or-update, webhook registration) and
- * `sdk/samples/http-bridge/src/setup.ts` (`discoverChatIds` /
+ * `sdk/examples/reference-pattern/src/setup.ts` (`discoverChatIds` /
  * `fetchTelegramChats` — the "DM your bot first" chat-id auto-discovery via
  * raw Telegram `getUpdates`). Copied and adapted, NOT imported across trees
  * (`demos/README.md`).
@@ -84,7 +84,7 @@ function sleep(seconds: number): Promise<void> {
 
 // fetchTelegramChats — one getUpdates call, returns one row per distinct
 // chat, most recent message first. Adapted from
-// `sdk/samples/http-bridge/src/setup.ts`.
+// `sdk/examples/reference-pattern/src/setup.ts`.
 async function fetchTelegramChats(botToken: string): Promise<TelegramChat[]> {
   const resp = await fetch(
     `https://api.telegram.org/bot${botToken}/getUpdates`

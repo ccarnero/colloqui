@@ -8,7 +8,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # =============================================================================
 #
 # Thin bash wrapper over src/02-hubspot-connector.ts (mirrors the
-# sdk/samples/http-connectors and 01-telegram-channel.sh pattern). The actual
+# integrations/http/http-connectors and 01-telegram-channel.sh pattern). The actual
 # provisioning logic (connector + endpoint + cache-strategy upsert, the
 # telegram_user_id custom contact property, and the search-contact smoke
 # check) lives there, run via `@yoizen/platform-sdk`; this script only checks

@@ -40,7 +40,7 @@
 | M4 | `DOCS/architecture/decision-log.md:51,73` | Only MCP mention is "MCP server as publish interface — Pending" | Shipped feature is the inverse (consume external MCP servers as tools) | Add closed/implemented entry; keep O8/M2 as distinct pending idea |
 | M5 | `DOCS/agents/execution.md:12-29` | Only old async model; no streaming | Stream-mode + token pipeline shipped; documented only in `runtime-streaming.md` | Cross-link or merge |
 | M6 | `DOCS/agents/adapter-tools.md`, `DOCS/agents/execution.md`, `DOCS/skb/*` | Zero MCP mentions | MCP tool bridge + per-tool enablement (`enabled_mcp_tools`, flag `AGENT_MCP_TOOL_FILTERING_ENABLED`) shipped | Cross-link `mcp-connections.md` |
-| M7 | `sdk/samples/README.md` (committed HEAD) | "migration underway, only http-bridge SDK-powered" | All samples SDK-powered; accurate rewrite exists **uncommitted** in working tree | Commit the pending rewrite |
+| M7 | the old `sdk/samples` tier's top-level `README.md` (committed HEAD, since superseded by the `integrations/`/`sdk/examples/` reorg) | "migration underway, only http-bridge SDK-powered" | All samples SDK-powered; accurate rewrite exists **uncommitted** in working tree | Commit the pending rewrite (historical — superseded) |
 | M8 | `DOCS/architecture/multi-tenancy.md:274-278` | `buildIngressStreamName`/`buildClaimCheckBucket` in `channel.constants.ts` | Both live in `packages/shared/src/channel.utils.ts` | Fix file column |
 
 ## Low-priority drift
@@ -105,5 +105,5 @@ The full VERIFIED tables (38 architecture/runbook rows + workflow/SDK/messaging 
 2. **Gateway versioning docs** (H3, H7, missing-doc #1) — public API surface.
 3. **Workflow docs** (H4, H5, H6) — the README fabrication survived one repair pass already.
 4. **Implement locks K1-K7** — before more drift accrues; K7 belongs with the async CRITICAL fix.
-5. Medium/low doc fixes in table order; commit the pending `sdk/samples/README.md`.
+5. Medium/low doc fixes in table order; commit the pending rewrite of the old `sdk/samples` tier's top-level `README.md` (see M7 — historical, superseded by the `integrations/`/`sdk/examples/` reorg).
 6. Code fixes tracked separately: async findings (see ASYNC-RESILIENCE-AUDIT.md) and the 5 SKB defects.

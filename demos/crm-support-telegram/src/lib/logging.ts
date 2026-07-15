@@ -1,6 +1,6 @@
 /**
  * Verbose console logging helpers — adapted from
- * `sdk/samples/http-bridge/src/setup.ts`. Kept local to this demo tree on
+ * `sdk/examples/reference-pattern/src/setup.ts`. Kept local to this demo tree on
  * purpose (see `demos/README.md`): demos are commercial showcases and do not
  * import runtime code across sibling trees, only the published
  * `@yoizen/platform-sdk` package.

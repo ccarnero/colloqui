@@ -11,7 +11,7 @@
  * Adapted from `demos/crm-support-telegram/src/0{1,2,4,5}-*.ts` (stage
  * structure, lib helpers, client bootstrap with the Host-header fetch
  * wrapper, locally-mirrored connector-invoke types — SDK gap, T03) and
- * `sdk/samples/telegram-transform-reply/src/setup.ts`'s `simulateInbound()`
+ * `integrations/channels/telegram-transform-reply/src/setup.ts`'s `simulateInbound()`
  * (the `client.webhooks.ingest()` call + execution-polling loop this stage
  * generalizes to two runs with real assertions). Copied and adapted, NOT
  * imported across trees (`demos/README.md`).
@@ -1066,7 +1066,7 @@ async function main(): Promise<void> {
     // WorkflowExecutionListItem returns (services/admin-console/src/app/
     // features/automation/workflows/detail/workflow-executions.component.ts,
     // the routerLink build). Host convention mirrors GW_HOST
-    // (sdk/samples/lib/resolve-env.sh) against the `admin-console` Knative
+    // (integrations/lib/resolve-env.sh) against the `admin-console` Knative
     // service (knative/services/base/admin-console.yaml) — same namespace
     // pattern as api-gateway; not verified against a dedicated Ingress
     // manifest (none found in this repo — Knative's default domain

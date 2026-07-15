@@ -5,7 +5,7 @@
 > ejecución y **entregue** el resumen por Telegram. Podés correr todo y ver outputs en vivo.
 
 ## Síntoma actual
-`./run.sh` (en `sdk/samples/http-fanout-telegram/`) **no produce ejecución** del workflow / no llega
+`./run.sh` (en `integrations/channels/http-fanout-telegram/`) **no produce ejecución** del workflow / no llega
 ningún mensaje a Telegram. Antes llegó a andar (un envío OK a las 13:36), después se rompió.
 
 ## Entorno (dev)
@@ -59,7 +59,7 @@ kubectl rollout restart deploy/channel-service-worker -n platform-services-dev
 kubectl rollout status  deploy/channel-service-worker -n platform-services-dev
 
 # 2) simplificar: fanout SIN pin (dispara con cualquier http), chat+cuenta probados
-cd sdk/samples/http-fanout-telegram
+cd integrations/channels/http-fanout-telegram
 FANOUT_PIN=0 YOIZEN_BASE_URL=$GW YOIZEN_HOST_HEADER=$HH \
   TG_ACCOUNT_ID=0346a0d0-1505-4524-805e-6dc4ec52b88b TELEGRAM_CHAT_ID=517998951 RECREATE=1 ./setup.sh
 
@@ -80,7 +80,7 @@ kubectl logs -n platform-services-dev -l app.kubernetes.io/name=channel-service-
 (ruteo/pin) → revisar `trigger.config` y a qué cuenta resolvió el mensaje.
 
 ## Dónde está el código
-- Sample: `sdk/samples/http-fanout-telegram/{setup.sh,run.sh}` · `sdk/samples/lib/resolve-env.sh` · `sdk/samples/telegram-onboard.sh`
+- Sample: `integrations/channels/http-fanout-telegram/{setup.sh,run.sh}` · `integrations/lib/resolve-env.sh` · `integrations/channels/telegram-onboard.sh`
 - Opción B (necesita el redeploy): `services/api-gateway/src/modules/channels/{webhooks.controller.ts,webhook-ingress-publisher.service.ts}` ·
   `services/channel-service/src/modules/webhooks/{webhook-ingress.service.ts (resolveAccount),webhook-ingress-consumer.service.ts}` ·
   `packages/shared/src/webhook.interfaces.ts` · `sdk/src/infrastructure/{ingest-adapter,channel-directory-adapter,config}.js` + `sdk/src/application/{ingest-client,ports}.js`

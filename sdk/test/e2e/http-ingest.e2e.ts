@@ -23,7 +23,7 @@ import { createClient } from "../../src/index.js";
 const RUN_E2E = process.env.SDK_E2E === "1";
 
 // --- env resolution -------------------------------------------------------
-// Mirrors sdk/samples/lib/resolve-env.sh: prefer an explicit YOIZEN_BASE_URL,
+// Mirrors integrations/lib/resolve-env.sh: prefer an explicit YOIZEN_BASE_URL,
 // else probe a local port-forward (`./port-forward.sh dev`, default port
 // 8080), else fall back to the ingress hostname the SDK itself defaults to.
 const YWAI_ENV = process.env.YWAI_ENV ?? "dev";

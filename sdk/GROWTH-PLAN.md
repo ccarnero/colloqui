@@ -43,7 +43,7 @@ Scope: evolve `sdk/` (`@yoizen/http-sdk` v0.1.0) into a full platform SDK coveri
 
 ### 1.3 Known documentation drift (fix in Phase 0.5)
 
-`sdk/samples/README.md` claims every sample depends on the SDK via a local `file:` link. This is false: no `package.json` exists under `sdk/samples/`, all samples are `curl`+`jq` bash scripts, and `sdk/samples/http-bridge/README.md` states it migrated away from the SDK. No sample currently exercises the SDK.
+The old `sdk/samples` tier's top-level `README.md` claimed every sample depends on the SDK via a local `file:` link. This was false: no `package.json` existed under that tier, all samples were `curl`+`jq` bash scripts, and the `http-bridge` sample's `README.md` (now `sdk/examples/reference-pattern/README.md`) stated it migrated away from the SDK. No sample exercised the SDK at the time.
 
 ### 1.4 Existing safety net (verified)
 
@@ -83,9 +83,9 @@ Acceptance: gateway serves `/api/v1/*` and OpenAPI JSON; old routes still work; 
 
 ### Phase 0.5 — SDK regression contract (MANDATORY before any refactor)
 
-Status: DONE — `sdk/test/e2e/http-ingest.e2e.ts` reproduces the full ingest flow through `createClient()` (gated behind `SDK_E2E=1`, `npm run test:e2e` added); `sdk/samples/README.md` corrected; green baseline recorded against the dev cluster and kept green through Phases 1-2.
+Status: DONE — `sdk/test/e2e/http-ingest.e2e.ts` reproduces the full ingest flow through `createClient()` (gated behind `SDK_E2E=1`, `npm run test:e2e` added); the old `sdk/samples` tier's top-level `README.md` was corrected (since superseded by `integrations/README.md` + `sdk/examples/README.md`); green baseline recorded against the dev cluster and kept green through Phases 1-2.
 
-- Fix `sdk/samples/README.md` (remove the false `file:`-link claim or make it true).
+- Fix the old `sdk/samples` tier's top-level `README.md` (remove the false `file:`-link claim or make it true).
 - Create `sdk/test/e2e/` with a live-cluster test that reproduces `scripts/e2e-http-workflow.sh` THROUGH the SDK: `createClient()` → resolve channel account → `send()` → assert `status === "accepted"`. Gate it behind an env flag (e.g. `SDK_E2E=1`) so `npm test` stays offline-safe; add `npm run test:e2e`.
 - Run it against the dev cluster and record the green baseline.
 
@@ -127,9 +127,9 @@ Acceptance per resource: unit tests green; types compile; README updated; Phase 
 
 ### Phase 3 — Real-world validation, docs, release hygiene
 
-Status: P3.2 DONE — `sdk/README.md` rewritten for the full surface (config table, per-resource method index, error/retry/pagination semantics, e2e guide, known gaps, semver/compatibility policy); `sdk/CHANGELOG.md` added (Keep a Changelog, with a documented future-publishing path). P3.1 DONE — `sdk/samples/http-bridge` migrated to a `file:../..` SDK dependency (Node/TS app under `src/`, SDK-powered `run.sh`), verified live end-to-end against the dev cluster (`{"status":"accepted"}`); remaining samples migrate as follow-ups. P3.3 DONE — no wired CI exists anywhere in the repo (only `skills/devops` template assets), so per the fallback rule below the proposed jobs (typecheck + unit on PR, env-gated manual e2e, no publishing yet) are documented in `sdk/ci-notes.md` instead of inventing pipeline infra.
+Status: P3.2 DONE — `sdk/README.md` rewritten for the full surface (config table, per-resource method index, error/retry/pagination semantics, e2e guide, known gaps, semver/compatibility policy); `sdk/CHANGELOG.md` added (Keep a Changelog, with a documented future-publishing path). P3.1 DONE — the `http-bridge` sample (now `sdk/examples/reference-pattern`) migrated to a `file:../..` SDK dependency (Node/TS app under `src/`, SDK-powered `run.sh`), verified live end-to-end against the dev cluster (`{"status":"accepted"}`); remaining samples migrate as follow-ups. P3.3 DONE — no wired CI exists anywhere in the repo (only `skills/devops` template assets), so per the fallback rule below the proposed jobs (typecheck + unit on PR, env-gated manual e2e, no publishing yet) are documented in `sdk/ci-notes.md` instead of inventing pipeline infra.
 
-- **P3.1 Migrate samples to the SDK.** Each sample under `sdk/samples/` gets a `package.json` with a `file:../..` dependency and replaces its `curl`+`jq` logic with SDK calls where the SDK now has coverage. Samples become living integration tests. Keep `run.sh` entry points working.
+- **P3.1 Migrate samples to the SDK.** Each sample under `integrations/` (formerly the `sdk/samples` tier) gets a `package.json` with a `file:../..` dependency and replaces its `curl`+`jq` logic with SDK calls where the SDK now has coverage. Samples become living integration tests. Keep `run.sh` entry points working.
 - **P3.2 Docs.** Rewrite `sdk/README.md` for the full surface (per-resource sections, config table, error table, pagination/retry/streaming semantics). Add `CHANGELOG.md` (Keep a Changelog format) and a documented semver policy: SDK semver is independent of API version; the supported API version(s) are declared in a compatibility table.
 - **P3.3 CI.** Add SDK jobs to the pipeline: typecheck, unit tests on every PR; e2e job (env-gated) against the dev cluster; publish flow to the internal registry when ready to drop `private: true`.
 

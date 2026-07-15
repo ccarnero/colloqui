@@ -69,7 +69,7 @@ import {
           <span class="mono">externalId</span> is the last path segment. POST JSON to it
           with that account's webhook token (the <strong>App Secret</strong> shown when
           you connect the account). Same flow as the
-          <span class="mono">sdk/samples/http-bridge</span> example.
+          <span class="mono">sdk/examples/reference-pattern</span> example.
         </p>
         @for (a of filteredAccounts(); track a.id) {
           <div style="margin-bottom: 12px;">

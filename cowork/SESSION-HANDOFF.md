@@ -35,11 +35,11 @@ left rail) with **Traffic by channel** + **Needs attention**; dropped fake "Web 
 "Auto-Reply" channel entry. Nav lives only in the left rail now.
 
 ### (earlier in session) Telegram sample + workflow builder
-`sdk/samples/telegram-transform-reply/` (`setup.sh`, `README.md`); the workflow builder reply
+`integrations/channels/telegram-transform-reply/` (`setup.sh`, `README.md`); the workflow builder reply
 node's "Same as incoming message" account option (account-agnostic `{{request.envelope.accountId}}`).
 
 ### 4. (added 2026-06-26, Cowork session) HTTP connectors sample — outbound adapters
-New sample `sdk/samples/http-connectors/` provisioning **outbound** HTTP connectors (platform
+New sample `integrations/http/http-connectors/` provisioning **outbound** HTTP connectors (platform
 *adapters*, the `endpointCall` counterpart to the inbound http channel). NOT the same thing as the
 "HTTP connector (Channels)" item above — that one is an inbound channel; this is outbound calls.
 

@@ -30,12 +30,12 @@ For Linux/minikube, replace step 1 with:
 ```bash
 # 6) HTTP connectors
 # No .env required.
-cd sdk/samples/http-connectors
+cd integrations/http/http-connectors
 ./setup.sh
 cd ../../..
 
 # 7) Telegram account + reply workflow
-cat > sdk/samples/telegram-transform-reply/.env <<'ENV'
+cat > integrations/channels/telegram-transform-reply/.env <<'ENV'
 TELEGRAM_BOT_TOKEN=<bot-token-from-botfather>
 # Optional, only for real Telegram webhook inbound:
 # TG_PUBLIC_URL=https://<public-https-url>
@@ -43,23 +43,23 @@ TELEGRAM_BOT_TOKEN=<bot-token-from-botfather>
 # SIMULATE_INBOUND=1
 # TELEGRAM_TEST_CHAT_ID=<numeric-chat-id>
 ENV
-cd sdk/samples/telegram-transform-reply
+cd integrations/channels/telegram-transform-reply
 ./setup.sh
 cd ../../..
 
 # 8) HTTP fanout -> connectors -> Telegram
-cat > sdk/samples/http-fanout-telegram/.env <<'ENV'
+cat > integrations/channels/http-fanout-telegram/.env <<'ENV'
 TELEGRAM_CHAT_ID=<numeric-chat-id>
 # Optional: lets run.sh also provision/reuse the Telegram account.
 # TELEGRAM_BOT_TOKEN=<bot-token-from-botfather>
 ENV
-cd sdk/samples/http-fanout-telegram
+cd integrations/channels/http-fanout-telegram
 ./setup.sh
 ./run.sh
 cd ../../..
 
 # 9) AI agent playground
-cat > sdk/samples/ai-agent-playground/.env <<'ENV'
+cat > integrations/ai/ai-agent-playground/.env <<'ENV'
 AI_AGENT_PROVIDER=openai
 AI_AGENT_MODEL=gpt-4o-mini
 AI_CREDENTIAL_MODE=connector
@@ -69,12 +69,12 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 RECREATE=0
 POLL_TIMEOUT_S=90
 ENV
-cd sdk/samples/ai-agent-playground
+cd integrations/ai/ai-agent-playground
 ./setup.sh
 cd ../../..
 
 # 10) AI knowledge base agent
-cat > sdk/samples/ai-knowledge-base-agent/.env <<'ENV'
+cat > integrations/ai/ai-knowledge-base-agent/.env <<'ENV'
 AI_AGENT_PROVIDER=openai
 AI_AGENT_MODEL=gpt-4o-mini
 AI_CREDENTIAL_MODE=connector
@@ -89,26 +89,26 @@ RECREATE=0
 POLL_TIMEOUT_S=120
 DOC_TIMEOUT_S=120
 ENV
-cd sdk/samples/ai-knowledge-base-agent
+cd integrations/ai/ai-knowledge-base-agent
 ./setup.sh
 cd ../../..
 
 # 11) Hosted services API sample
-cat > sdk/samples/hosted-services-api/.env <<'ENV'
+cat > integrations/http/hosted-services-api/.env <<'ENV'
 HOSTED_SERVICE_NAME=sample-echo
 HOSTED_ROUTE_PREFIX=/samples/hosted-echo
 HOSTED_SERVICE_IMAGE=ealen/echo-server:latest
 HOSTED_SERVICE_PORT=8080
 RECREATE=0
 ENV
-cd sdk/samples/hosted-services-api
+cd integrations/http/hosted-services-api
 ./setup.sh
 ./run.sh
 cd ../../..
 
 # 12) HTTP bridge sample - long-running, keep terminal open
 # No .env required.
-cd sdk/samples/http-bridge
+cd sdk/examples/reference-pattern
 ./run.sh
 ```
 

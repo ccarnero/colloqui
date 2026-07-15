@@ -2,7 +2,7 @@
 #
 # priority-scorer — hosted Knative service for the crm-support-telegram demo.
 # Build context is the REPO ROOT (needed to reach the local `sdk/` `file:`
-# dependency, per `sdk/samples/hosted-services-api` conventions):
+# dependency, per `integrations/http/hosted-services-api` conventions):
 #
 #   docker build -f demos/crm-support-telegram/priority-scorer/Dockerfile \
 #     -t dev.local/priority-scorer:local .

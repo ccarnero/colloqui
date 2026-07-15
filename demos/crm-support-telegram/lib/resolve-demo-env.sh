@@ -12,8 +12,8 @@
 # Per SPEC T07 ("Env: reuse the same env sourcing convention"), this loads —
 # in order, later files override earlier ones — the three `.env` files the
 # task names explicitly:
-#   1. sdk/samples/ai-agent-playground/.env   (OPENAI_API_KEY, etc.)
-#   2. sdk/samples/telegram-transform-reply/.env (TELEGRAM_BOT_TOKEN, TG_PUBLIC_URL —
+#   1. integrations/ai/ai-agent-playground/.env   (OPENAI_API_KEY, etc.)
+#   2. integrations/channels/telegram-transform-reply/.env (TELEGRAM_BOT_TOKEN, TG_PUBLIC_URL —
 #      convenient reuse if the human already set these up for that sample)
 #   3. demos/crm-support-telegram/.env         (this demo's own secrets —
 #      HUBSPOT_SERVICE_KEY, TELEGRAM_BOT_TOKEN, TG_PUBLIC_URL, OPENAI_API_KEY,
@@ -25,11 +25,11 @@
 # YOIZEN_TENANT/EMAIL/PASSWORD/BASE_URL are NOT expected to live in any of
 # those `.env` files (see ai-agent-playground/.env.example — they're commented
 # out, auto-resolved). This file supplies the SAME dev-seed defaults
-# `sdk/samples/lib/resolve-env.sh` computes (acme / yclawd@demo.io / admin123
+# `integrations/lib/resolve-env.sh` computes (acme / yclawd@demo.io / admin123
 # / http://api-gateway.platform-services-<env>.<domain>), so every 0N-*.ts
 # script's `requireEnv("YOIZEN_*")` preflight succeeds without the human
 # hand-exporting them, exactly like every other SDK sample's run.sh already
-# does via that shared lib. Not sourcing `sdk/samples/lib/resolve-env.sh`
+# does via that shared lib. Not sourcing `integrations/lib/resolve-env.sh`
 # itself here on purpose — that file derives its target `.env` from
 # `BASH_SOURCE[1]` (the CALLING script's directory), which would silently
 # load the wrong `.env` when sourced from this indirection layer; replicating
@@ -44,8 +44,8 @@ __demo_dir="$(cd "$(dirname "${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}")" && pwd)"
 __repo_root="$(cd "${__demo_dir}/../.." && pwd)"
 
 for __env_file in \
-  "${__repo_root}/sdk/samples/ai-agent-playground/.env" \
-  "${__repo_root}/sdk/samples/telegram-transform-reply/.env" \
+  "${__repo_root}/integrations/ai/ai-agent-playground/.env" \
+  "${__repo_root}/integrations/channels/telegram-transform-reply/.env" \
   "${__demo_dir}/.env"; do
   if [ -f "${__env_file}" ]; then
     echo "[env] loading ${__env_file}"
@@ -56,7 +56,7 @@ for __env_file in \
   fi
 done
 
-# Dev-seed defaults — mirrors sdk/samples/lib/resolve-env.sh exactly (same
+# Dev-seed defaults — mirrors integrations/lib/resolve-env.sh exactly (same
 # tenant/email/password, same GW_HOST derivation) so this demo's login
 # preflight (every 0N-*.ts's `requireEnv("YOIZEN_*")`) behaves identically to
 # every other SDK sample without duplicating that file's full port-forward /

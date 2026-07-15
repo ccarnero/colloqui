@@ -8,7 +8,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # =============================================================================
 #
 # Thin bash wrapper over src/01-telegram-channel.ts (mirrors the
-# sdk/samples/http-bridge pattern). The actual provisioning logic (account
+# sdk/examples/reference-pattern pattern). The actual provisioning logic (account
 # create-or-update by bot token, TELEGRAM_TEST_CHAT_ID auto-discovery,
 # webhook registration against TG_PUBLIC_URL) lives there, run via
 # `@yoizen/platform-sdk`; this script only checks prerequisites and execs the

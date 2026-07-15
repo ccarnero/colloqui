@@ -5,18 +5,18 @@
  * hours), per-user memory, and the published agent wiring all of them
  * together.
  *
- * Adapted from `sdk/samples/ai-knowledge-base-agent/src/setup.ts` (KB create
+ * Adapted from `integrations/ai/ai-knowledge-base-agent/src/setup.ts` (KB create
  * + document upload/reingest + poll-to-ready) and
- * `sdk/samples/ai-skill-support-agent/src/setup.ts` (custom skill create +
+ * `integrations/ai/ai-skill-support-agent/src/setup.ts` (custom skill create +
  * the `model_config.subagents` snapshot wiring) and
- * `sdk/samples/ai-system-variables/src/setup.ts` (system variable
+ * `integrations/ai/ai-system-variables/src/setup.ts` (system variable
  * upsert-by-name, value-preserving re-run semantics) and
  * `demos/crm-support-telegram/src/0{1,2}-*.ts` (stage structure, lib
  * helpers, client bootstrap with the Host-header fetch wrapper). Copied and
  * adapted, NOT imported across trees (`demos/README.md`).
  *
  * LLM connector: reuses the shared `sample-<provider>-llm` naming convention
- * from `sdk/samples/ai-agent-playground` (env: AI_AGENT_PROVIDER,
+ * from `integrations/ai/ai-agent-playground` (env: AI_AGENT_PROVIDER,
  * AI_AGENT_MODEL, AI_CREDENTIAL_MODE, AI_LLM_CONNECTOR_NAME) so this demo
  * reuses the SAME connector other samples already provisioned on the tenant
  * instead of creating a duplicate one.

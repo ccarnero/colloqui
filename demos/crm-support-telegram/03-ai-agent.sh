@@ -9,7 +9,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # =============================================================================
 #
 # Thin bash wrapper over src/03-ai-agent.ts (mirrors the
-# sdk/samples/ai-knowledge-base-agent + ai-skill-support-agent pattern and
+# integrations/ai/ai-knowledge-base-agent + ai-skill-support-agent pattern and
 # this demo's 01-/02- scripts). The actual provisioning logic lives there, run
 # via `@yoizen/platform-sdk`; this script only checks prerequisites and execs
 # the TypeScript entrypoint with the caller's environment in scope.

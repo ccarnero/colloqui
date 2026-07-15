@@ -3,7 +3,7 @@
  * REST API) for the crm-support-telegram demo: contact search/create, deal
  * and ticket associations by contact, and ticket creation.
  *
- * Adapted from `sdk/samples/http-connectors/src/setup.ts` (connector +
+ * Adapted from `integrations/http/http-connectors/src/setup.ts` (connector +
  * endpoint + cache-strategy upsert via `@yoizen/platform-sdk`'s `connectors`
  * resource) and `demos/crm-support-telegram/src/01-telegram-channel.ts`
  * (stage structure, lib helpers, client bootstrap with the Host-header fetch
