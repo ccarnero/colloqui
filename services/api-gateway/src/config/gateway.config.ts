@@ -109,6 +109,14 @@ export const gatewayConfig = {
     connectorRuntimeHttp:
       process.env.CONNECTOR_RUNTIME_HTTP_URL ??
       `${platformServiceUrl("connector-runtime-http", env)}:3100`,
+    // T07 of manual-loops/declarative-provisioning.md: provisioning-service
+    // is a standard Knative ksvc (port 80 via `platformServiceUrl`), same
+    // shape as registry/workflow/connector-admin above — no explicit port
+    // suffix needed (unlike `tracking`/`connectorRuntimeHttp`, which are
+    // plain Deployments).
+    provisioning:
+      process.env.PROVISIONING_SERVICE_URL ??
+      platformServiceUrl("provisioning-service", env),
   },
 
   rateLimit: {

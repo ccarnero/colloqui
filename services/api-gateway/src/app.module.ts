@@ -14,6 +14,7 @@ import { ConnectorsModule } from "./modules/connectors/connectors.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { DynamicRoutesModule } from "./modules/dynamic-routes/dynamic-routes.module";
 import { HealthModule } from "./modules/health/health.module";
+import { ProvisioningModule } from "./modules/provisioning/provisioning.module";
 import { ProxyModule } from "./modules/proxy/proxy.module";
 import { RateLimitModule } from "./modules/rate-limit/rate-limit.module";
 import { RegistryModule } from "./modules/registry/registry.module";
@@ -36,6 +37,7 @@ import { ProvidersModule } from "./providers/providers.module";
     ConnectorInvokeModule,
     ChannelsModule,
     WorkflowsModule,
+    ProvisioningModule,
     ProxyModule,
     AdminModule,
     RuntimeModule,

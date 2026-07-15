@@ -43,6 +43,9 @@ import { publishGatewayAuditEvent } from "./utils/gateway-audit-publish.util";
 const REQUEST_ID_HEADER = "x-request-id";
 const TRACER_NAME = "api-gateway";
 const HEALTH_PATHS = new Set(["/health", "/readyz"]);
+// T07 of manual-loops/declarative-provisioning.md — see the FastifyAdapter
+// `bodyLimit` comment in `bootstrap()` for the sizing rationale.
+const PROVISIONING_APPLY_BODY_LIMIT_BYTES = 150 * 1024 * 1024; // 150 MiB
 const accessLogLogger = createPinoLogger("access-log");
 const gatewayAuditPublishLogger = new PinoLoggerService("api-gateway");
 
@@ -234,6 +237,22 @@ async function bootstrap(): Promise<void> {
       genReqId: (req: { headers: Record<string, unknown> }) =>
         (req.headers[REQUEST_ID_HEADER] as string | undefined) ??
         crypto.randomUUID(),
+      // T07 of manual-loops/declarative-provisioning.md: Fastify's default
+      // bodyLimit is 1 MiB — too small for `POST /api/provisioning/manifests/
+      // :name/apply`, whose JSON body can carry a base64-encoded KB content
+      // bundle up to `10 * KB_FILE_SOURCE_MAX_BYTES` = 100 MiB
+      // (`services/provisioning-service/src/modules/apply/apply.controller.ts`,
+      // `MAX_BUNDLE_TOTAL_BYTES`), inflated ~37% by base64 encoding. This
+      // repo has no per-route Fastify body-limit precedent (Nest+Fastify
+      // applies `bodyLimit` server-wide); the one existing precedent
+      // (`channel-service`'s `fastifyAdapterOptions: { bodyLimit: 1_048_576
+      // }`, `packages/observability/src/bootstrap-fastify.ts`) is also
+      // service-wide, so this raises the gateway-wide limit rather than
+      // inventing an unprecedented per-route mechanism. Every OTHER route
+      // still accepts bodies far below this ceiling; raising it does not
+      // relax any existing validation (`ValidationPipe`'s
+      // `forbidNonWhitelisted` still rejects unexpected fields).
+      bodyLimit: PROVISIONING_APPLY_BODY_LIMIT_BYTES,
     }),
     {
       logger: pinoLogger,
