@@ -21,6 +21,8 @@ import type { JobsClient } from "../resources/jobs/index.js";
 import { createJobsClient } from "../resources/jobs/index.js";
 import type { KnowledgeBasesClient } from "../resources/knowledge-bases/index.js";
 import { createKnowledgeBasesClient } from "../resources/knowledge-bases/index.js";
+import type { ManifestsClient } from "../resources/manifests/index.js";
+import { createManifestsClient } from "../resources/manifests/index.js";
 import type { McpServersClient } from "../resources/mcp-servers/index.js";
 import { createMcpServersClient } from "../resources/mcp-servers/index.js";
 import type { MemoriesClient } from "../resources/memories/index.js";
@@ -29,6 +31,8 @@ import type { RegistryClient } from "../resources/registry/index.js";
 import { createRegistryClient } from "../resources/registry/index.js";
 import type { RuntimeClient } from "../resources/runtime/index.js";
 import { createRuntimeClient } from "../resources/runtime/index.js";
+import type { SecretsClient } from "../resources/secrets/index.js";
+import { createSecretsClient } from "../resources/secrets/index.js";
 import type { SkillsClient } from "../resources/skills/index.js";
 import { createSkillsClient } from "../resources/skills/index.js";
 import type { StructuredKbClient } from "../resources/structured-kb/index.js";
@@ -90,6 +94,10 @@ export interface Client {
   configFiles: ConfigFilesClient;
   /** Namespaced resource client — see sdk/README.md "Resource clients". */
   dashboard: DashboardClient;
+  /** Namespaced resource client — see sdk/README.md "Resource clients". */
+  manifests: ManifestsClient;
+  /** Namespaced resource client — see sdk/README.md "Resource clients". */
+  secrets: SecretsClient;
 }
 
 /**
@@ -190,6 +198,8 @@ export function createClient(userConfig: UserConfig = {}): Client {
   const structuredKb = createStructuredKbClient({ transport });
   const configFiles = createConfigFilesClient({ transport });
   const dashboard = createDashboardClient({ transport });
+  const manifests = createManifestsClient({ transport });
+  const secrets = createSecretsClient({ transport });
 
   return {
     send,
@@ -213,5 +223,7 @@ export function createClient(userConfig: UserConfig = {}): Client {
     structuredKb,
     configFiles,
     dashboard,
+    manifests,
+    secrets,
   };
 }

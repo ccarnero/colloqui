@@ -608,7 +608,7 @@ Images are built against the shared OrbStack Docker daemon as `dev.local/<servic
 | `@yoizen/observability` | `PinoLoggerService`, OpenTelemetry setup, NATS spans, split-service bootstrap (`SERVICE_MODE`) |
 | `@yoizen/angular-shared` | Shared Angular building blocks for `admin-console` |
 | `@yoizen/testing` | Test utilities (consumed by auth/tenant services) |
-| `@yoizen/platform-sdk` | Full-surface platform SDK — 19 resource namespaces (agents, audit, auth-admin, channels, config-files, connectors, dashboard, jobs, knowledge-bases, mcp-servers, memories, registry, runtime, skills, structured-kb, system-variables, tenants, webhooks, workflows). Message ingest via the http channel is one capability among many. Lives at repo-root `sdk/` — **not** a workspace member (imported by path). |
+| `@yoizen/platform-sdk` | Full-surface platform SDK — 21 resource namespaces (agents, audit, auth-admin, channels, config-files, connectors, dashboard, jobs, knowledge-bases, manifests, mcp-servers, memories, registry, runtime, secrets, skills, structured-kb, system-variables, tenants, webhooks, workflows). Message ingest via the http channel is one capability among many. Lives at repo-root `sdk/` — **not** a workspace member (imported by path). |
 
 ## Shared Package: `@yoizen/shared`
 

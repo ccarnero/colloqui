@@ -91,6 +91,14 @@
     "./dashboard": {
       "types": "./dist/resources/dashboard/index.d.ts",
       "import": "./dist/resources/dashboard/index.js"
+    },
+    "./manifests": {
+      "types": "./dist/resources/manifests/index.d.ts",
+      "import": "./dist/resources/manifests/index.js"
+    },
+    "./secrets": {
+      "types": "./dist/resources/secrets/index.d.ts",
+      "import": "./dist/resources/secrets/index.js"
     }
   },
   "files": [

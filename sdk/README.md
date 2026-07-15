@@ -450,6 +450,80 @@ see `types.ts`.
 
 - `getStats` — gateway-computed, Redis-cached dashboard stats aggregate (quota "limits" are hardcoded constants, not a real quota system)
 
+### manifests — [`src/resources/manifests/types.ts`](./src/resources/manifests/types.ts)
+
+Declarative provisioning (`manual-loops/declarative-provisioning.md`): describe a full
+integration — channels, connectors, agents, knowledge bases, hosted-service refs, workflows —
+in ONE manifest object, then `plan` the diff and `apply` to converge. v1 is create-or-update
+only; there is no delete/prune semantics yet.
+
+- `validate(manifest)` — schema + structural-rule validation, never mutates anything. Never
+  throws for an invalid manifest — check `result.valid`/`result.errors`.
+- `put(name, manifest)` — validates then stores a new revision (revisions are never
+  overwritten).
+- `get(name)` — fetch the latest stored revision. `NotFoundError` (404) if `name` is unknown.
+- `plan(name)` — read-only diff against live platform state: per-resource `create` / `update`
+  / `noop`, plus unmet preconditions (missing secrets, unresolvable external refs, KB
+  re-embed estimates). `ConflictError` (409) on a dependency cycle.
+- `apply(name, opts?)` — executes the latest plan in dependency order. Pass
+  `opts.bundle` (raw tar bytes, `Uint8Array`) when the manifest has `file:` knowledge-base
+  sources whose content must travel with this call — the client base64-encodes it into the
+  JSON body (`{ bundle: { contentBase64 } }`); there is no `multipart/form-data` support yet.
+  `NotFoundError` (404, unknown manifest) or `ConflictError` (409, cycle OR a partial-failure
+  apply result — `error.details.body.error` carries `applied`/`pending` resources so you can
+  re-apply to resume).
+
+**No YAML parsing in this SDK.** `sdk/package.json` has no runtime dependencies (no `yaml`/
+`js-yaml`), so every method above takes an ALREADY-PARSED manifest object
+(`Record<string, unknown>`), never a YAML string. Parse your `.yaml` file yourself (e.g. with
+`js-yaml` in your own project) before calling `validate`/`put`/`apply`.
+
+```ts
+import { readFileSync } from "node:fs";
+import { load } from "js-yaml"; // your own dependency, not the SDK's
+
+const manifest = load(readFileSync("./support-bot.yaml", "utf8")) as Record<string, unknown>;
+
+const { valid, errors } = await sdk.manifests.validate(manifest);
+if (!valid) throw new Error(`invalid manifest: ${JSON.stringify(errors)}`);
+
+await sdk.manifests.put("support-bot", manifest);
+
+// plan BEFORE apply — shows creates/updates/noops and any missing secrets, without touching anything.
+const plan = await sdk.manifests.plan("support-bot");
+console.log(`will create/update ${plan.resources.filter((r) => r.verdict !== "noop").length} resource(s)`);
+
+const result = await sdk.manifests.apply("support-bot");
+console.log(`applied ${result.appliedCount}, noop ${result.noopCount}`);
+
+// Re-running plan/apply on an unchanged manifest is a no-op — idempotent by name/externalId.
+const secondPlan = await sdk.manifests.plan("support-bot");
+console.log(secondPlan.resources.every((r) => r.verdict === "noop")); // true
+```
+
+### secrets — [`src/resources/secrets/types.ts`](./src/resources/secrets/types.ts)
+
+Write-only Secret API backing `manifests`' `secretRef`s (`manual-loops/declarative-provisioning.md`
+decision 4): ONE k8s Secret per resource, never a per-tenant bag. No route ever returns a
+secret VALUE — `set()` echoes back only `{name, scope}`, `list()` returns names + bindings
+only.
+
+- `set(name, value, scope)` — creates/updates a secret bound to `{kind, owner}` (`kind`:
+  `channel` | `connector` | `agent` | `service` | `workflow`). Requires the tenant ADMIN scope
+  at the gateway — `PermissionError` (403) otherwise.
+- `list()` — names + bindings only, tenant-operator level.
+
+```ts
+await sdk.secrets.set("telegram-token", process.env.TELEGRAM_BOT_TOKEN!, {
+  kind: "channel",
+  owner: "telegram-in",
+});
+
+const bindings = await sdk.secrets.list();
+// [{ name: "telegram-token", scope: { kind: "channel", owner: "telegram-in" } }, ...]
+// — never a `value` field, by contract.
+```
+
 ### send / sendText (message ingest, unchanged since v0.1.0)
 
 - `send(message)` — ingest a message via the http channel (`from`, `text?`, `media?`, `raw?`, ...); resolves only when the platform returns `"accepted"`

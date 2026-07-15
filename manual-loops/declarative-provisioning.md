@@ -322,7 +322,7 @@ grep -n "manifests" sdk/README.md
 - [x] T05 secrets CRUD + broker
 - [x] T06 KB sources (inline/file/url)
 - [x] T07 gateway routes + authz
-- [ ] T08 SDK manifests + secrets clients
+- [x] T08 SDK manifests + secrets clients
 - [ ] T09 full e2e (demo manifest + negative secret test)
 - [ ] T10 docs + index
 
