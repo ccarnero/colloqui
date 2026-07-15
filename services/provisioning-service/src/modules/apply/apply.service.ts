@@ -1,6 +1,12 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 import { err, ok, type Result } from "../../lib/result";
+import type { KbBundle, KbReconcileError } from "../kb/domain/kb.interfaces";
+import {
+  type IKnowledgeBaseReconciler,
+  KB_RECONCILER,
+  NOOP_KB_RECONCILER,
+} from "../kb/domain/kb.interfaces";
 import {
   type IManifestRevisionRepository,
   MANIFEST_REVISION_REPOSITORY,
@@ -27,6 +33,7 @@ export interface ManifestNotFoundApplyError {
 export type ApplyError =
   | ManifestNotFoundApplyError
   | CycleDetectedError
+  | KbReconcileError
   | ManifestApplyFailure;
 
 @Injectable()
@@ -41,19 +48,28 @@ export class ApplyService {
     @Inject(PLATFORM_RESOURCE_WRITERS)
     private readonly writers: PlatformResourceWriters,
     @Inject(APPLY_EVENT_PUBLISHER)
-    private readonly events: IApplyEventPublisher
+    private readonly events: IApplyEventPublisher,
+    // T06: optional so pre-T06 call sites (existing unit tests instantiate
+    // `ApplyService` with 4 positional args) keep working unchanged — a
+    // manifest with no `knowledgeBases` never even touches this.
+    @Optional()
+    @Inject(KB_RECONCILER)
+    private readonly kbReconciler: IKnowledgeBaseReconciler = NOOP_KB_RECONCILER
   ) {}
 
   /**
-   * Loads the latest stored revision of `name`, builds a FRESH T03 plan
-   * against current live state (so a re-apply after a partial failure
-   * always resumes from reality, never a stale cached plan), then executes
-   * the T04 apply engine. Never mutates anything the planner did not
-   * already mark `create`/`update`.
+   * Loads the latest stored revision of `name`, reconciles its
+   * `knowledgeBases` (T06 — create-or-update via agent-admin, checksum-gated
+   * re-embedding) BEFORE building the T03 plan (so agents can resolve
+   * `knowledgeBaseRefs`), builds a FRESH plan against current live state (so
+   * a re-apply after a partial failure always resumes from reality, never a
+   * stale cached plan), then executes the T04 apply engine. Never mutates
+   * anything the planner did not already mark `create`/`update`.
    */
   async apply(
     tenantId: string,
-    name: string
+    name: string,
+    bundle?: KbBundle
   ): Promise<Result<ManifestApplySuccess, ApplyError>> {
     this.logger.log(`apply: loading manifest='${name}' tenant='${tenantId}'`);
     const revision = await this.manifestRepository.getLatest(tenantId, name);
@@ -63,6 +79,23 @@ export class ApplyService {
       );
       return err({ kind: "manifest_not_found", name });
     }
+
+    const kbResult = await this.kbReconciler.reconcile(
+      tenantId,
+      name,
+      revision.manifest,
+      bundle,
+      undefined
+    );
+    if (!kbResult.ok) {
+      this.logger.warn(
+        `apply: knowledge-base reconciliation FAILED for manifest='${name}' tenant='${tenantId}': ${kbResult.error.message}`
+      );
+      return err(kbResult.error);
+    }
+    const knowledgeBaseExternalIdsByName = new Map(
+      kbResult.value.map((kb) => [kb.kbName, kb.kbExternalId])
+    );
 
     const planResult = await buildManifestPlan(
       revision.manifest,
@@ -80,11 +113,12 @@ export class ApplyService {
       revision: revision.revision,
       writers: this.writers,
       events: this.events,
+      knowledgeBaseExternalIdsByName,
     });
 
     if (!result.ok) {
       return err(result.error);
     }
-    return ok(result.value);
+    return ok({ ...result.value, knowledgeBases: kbResult.value });
   }
 }

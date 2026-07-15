@@ -21,9 +21,16 @@ export type CreateOrUpdateResult =
  * secrets broker as a SIBLING event of the current apply run — see
  * `channels-writer.ts`/`connectors-writer.ts`). Writers that don't need it
  * simply ignore the parameter.
+ *
+ * T06: `knowledgeBaseExternalIds` is the `kbName -> kbExternalId` map
+ * produced by the KB reconciler run BEFORE `applyManifestPlan` (see
+ * `kb.interfaces.ts` header for why KBs are reconciled out-of-band instead
+ * of through this same writer contract) — `agents-writer.ts` uses it to
+ * resolve `Agent.knowledgeBaseRefs`.
  */
 export interface WriterContext {
   readonly correlationId?: string;
+  readonly knowledgeBaseExternalIds?: ReadonlyMap<string, string>;
 }
 
 export interface IPlatformResourceWriter {

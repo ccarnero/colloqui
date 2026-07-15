@@ -7,6 +7,10 @@
 // silently" constraint.
 
 import type { IntegrationManifest } from "@yoizen/shared";
+import {
+  buildKbPlan,
+  type StoredKbChecksumLookup,
+} from "../../kb/lib/build-kb-plan";
 import type {
   CycleDetectedError,
   ManifestPlan,
@@ -27,12 +31,16 @@ export type BuildManifestPlanResult =
   | { readonly ok: true; readonly value: ManifestPlan }
   | { readonly ok: false; readonly error: CycleDetectedError };
 
+/** T06 default: no manifest has ever been applied before -> every document is `create`. */
+const NOOP_KB_CHECKSUM_LOOKUP: StoredKbChecksumLookup = () => undefined;
+
 export async function buildManifestPlan(
   manifest: IntegrationManifest,
   tenantId: string,
   clients: PlatformResourceClients,
   logger: PlanLogger = NOOP_PLAN_LOGGER,
-  secretsChecker: SecretExistenceChecker = NOOP_SECRET_EXISTENCE_CHECKER
+  secretsChecker: SecretExistenceChecker = NOOP_SECRET_EXISTENCE_CHECKER,
+  kbChecksumLookup: StoredKbChecksumLookup = NOOP_KB_CHECKSUM_LOOKUP
 ): Promise<BuildManifestPlanResult> {
   logger.log(
     `plan: resolving dependency order for manifest='${manifest.metadata.name}' tenant='${tenantId}'`
@@ -163,6 +171,13 @@ export async function buildManifestPlan(
     });
   }
 
+  // T06: KB reembed estimate — read-only (`kbChecksumLookup` is a sync read
+  // of this service's own checksum bookkeeping, never a mutation).
+  const knowledgeBases = buildKbPlan(manifest, kbChecksumLookup);
+  for (const kb of knowledgeBases) {
+    logger.log(`plan: ${kb.summary}`);
+  }
+
   logger.log(
     `plan: completed manifest='${manifest.metadata.name}' tenant='${tenantId}' resources=${String(resources.length)} preconditions=${String(preconditions.length)}`
   );
@@ -173,6 +188,7 @@ export async function buildManifestPlan(
       manifestName: manifest.metadata.name,
       resources,
       preconditions,
+      knowledgeBases,
     },
   };
 }

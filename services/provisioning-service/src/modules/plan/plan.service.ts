@@ -1,6 +1,11 @@
 import { Inject, Injectable, Optional } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 import { err, ok, type Result } from "../../lib/result";
+import type { IKbChecksumRepository } from "../kb/domain/kb-checksum-repository.interface";
+import {
+  createInMemoryKbChecksumRepository,
+  KB_CHECKSUM_REPOSITORY,
+} from "../kb/domain/kb-checksum-repository.interface";
 import type { IManifestRevisionRepository } from "../manifests/domain/manifest-revision.repository.interface";
 import { MANIFEST_REVISION_REPOSITORY } from "../manifests/domain/manifest-revision.repository.interface";
 import type {
@@ -34,7 +39,13 @@ export class PlanService {
     private readonly clients: PlatformResourceClients,
     @Optional()
     @Inject(SECRET_EXISTENCE_CHECKER)
-    private readonly secretsChecker: SecretExistenceChecker = NOOP_SECRET_EXISTENCE_CHECKER
+    private readonly secretsChecker: SecretExistenceChecker = NOOP_SECRET_EXISTENCE_CHECKER,
+    // T06: falls back to an in-memory (never-applied) checksum lookup when
+    // not wired — every manifest reads as "first apply" in that case, same
+    // as the pre-T06 behavior of reporting no KB plan data at all.
+    @Optional()
+    @Inject(KB_CHECKSUM_REPOSITORY)
+    private readonly kbChecksums: IKbChecksumRepository = createInMemoryKbChecksumRepository()
   ) {}
 
   /**
@@ -54,12 +65,54 @@ export class PlanService {
       return err({ kind: "manifest_not_found", name });
     }
 
+    // T06: read this service's own checksum bookkeeping (never a mutation)
+    // so buildManifestPlan can decide create/reembed/skip per KB document.
+    // A read failure (e.g. a transient DB error) must NEVER blank the KB
+    // plan or 500 the endpoint — it degrades to "no stored checksum", i.e.
+    // the document reads as a fresh `create` and is counted toward the
+    // re-embed estimate. Plan stays read-only and always returns the KB
+    // cost estimate the caller relies on.
+    const knowledgeBases = revision.manifest.spec.knowledgeBases ?? [];
+    const checksumRows = await Promise.all(
+      knowledgeBases.flatMap((kb) =>
+        kb.documents.map(async (doc) => {
+          try {
+            const row = await this.kbChecksums.getChecksum(
+              tenantId,
+              name,
+              kb.name,
+              doc.name
+            );
+            return {
+              kbName: kb.name,
+              documentName: doc.name,
+              sha256: row?.sha256,
+            };
+          } catch (cause) {
+            this.logger.warn(
+              `plan: KB checksum read failed kb='${kb.name}' document='${doc.name}' tenant='${tenantId}' — treating as never-applied (create): ${cause instanceof Error ? cause.message : String(cause)}`
+            );
+            return {
+              kbName: kb.name,
+              documentName: doc.name,
+              sha256: undefined,
+            };
+          }
+        })
+      )
+    );
+    const checksumLookup = (kbName: string, documentName: string) =>
+      checksumRows.find(
+        (r) => r.kbName === kbName && r.documentName === documentName
+      )?.sha256;
+
     const result = await buildManifestPlan(
       revision.manifest,
       tenantId,
       this.clients,
       this.logger,
-      this.secretsChecker
+      this.secretsChecker,
+      checksumLookup
     );
     if (!result.ok) {
       return err(result.error);

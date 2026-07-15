@@ -229,7 +229,9 @@ cd services/provisioning-service && bun test && bunx tsc -p tsconfig.json --noEm
 ### T06 — KB sources: inline / file bundle / url
 
 - `inline`: content in the manifest (size-capped, validator enforces).
-- `file`: apply accepts manifest + tar bundle (multipart); blobs stored
+- `file`: apply accepts manifest + tar bundle (base64-encoded tar in the JSON
+  body — human decision 2026-07-15; true `multipart/form-data` is a follow-up
+  once a multipart parser dependency is vendored); blobs stored
   content-addressed (sha256) in the tenant PAYLOAD object store; KB ingestion
   reuses `documents.service.ts` paths.
 - `url`: server-side fetch guarded by `validateOutboundUrl`; carry forward its
@@ -318,7 +320,7 @@ grep -n "manifests" sdk/README.md
 - [x] T03 resolver + planner
 - [x] T04 apply engine + e2e script
 - [x] T05 secrets CRUD + broker
-- [ ] T06 KB sources (inline/file/url)
+- [x] T06 KB sources (inline/file/url)
 - [ ] T07 gateway routes + authz
 - [ ] T08 SDK manifests + secrets clients
 - [ ] T09 full e2e (demo manifest + negative secret test)

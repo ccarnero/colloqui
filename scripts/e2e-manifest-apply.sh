@@ -23,11 +23,19 @@ set -euo pipefail
 #      convergence — the exact criterion SPEC.md requires).
 #   5. POST .../apply again: expect an all-noop apply (appliedCount 0),
 #      proving re-apply is a true no-op.
-#   6. Teardown: delete the channel account and the workflow definition
-#      created above, directly via their owning services (provisioning-
-#      service has no delete/prune route by design — decision 8). Runs via
-#      an EXIT trap, idempotent (resolves by e2e-prefixed NAME as a
-#      fallback, safe to rerun after a crashed prior run).
+#   6. (T06) Add a `knowledgeBases` section (one inline document + one
+#      `file:` document shipped in a tar bundle) to the SAME manifest, PUT
+#      it as revision 2, plan (expect 2 documents to embed), apply with the
+#      bundle attached (base64 tar in the JSON body — see apply.controller.ts
+#      for why this is base64-JSON and not true multipart), then change the
+#      inline document's content and re-apply: plan/apply must show EXACTLY
+#      ONE re-embed (the changed document only).
+#   7. Teardown: delete the channel account, the workflow definition, and
+#      the knowledge base created above, directly via their owning services
+#      (provisioning-service has no delete/prune route by design —
+#      decision 8). Runs via an EXIT trap, idempotent (resolves by
+#      e2e-prefixed NAME as a fallback, safe to rerun after a crashed prior
+#      run).
 #
 # Exit code 0 = full round trip verified; 1 = any stage failed.
 
@@ -43,6 +51,8 @@ CHANNEL_URL="${E2E_CHANNEL_URL:-http://channel-service-api.platform-services-dev
 CHANNEL_HOST="${E2E_CHANNEL_HOST:-channel-service-api.platform-services-dev.dev.local}"
 WORKFLOW_URL="${E2E_WORKFLOW_URL:-http://workflow-service-api.platform-services-dev.dev.local}"
 WORKFLOW_HOST="${E2E_WORKFLOW_HOST:-workflow-service-api.platform-services-dev.dev.local}"
+AGENT_ADMIN_URL="${E2E_AGENT_ADMIN_URL:-http://agent-admin-service.platform-services-dev.dev.local}"
+AGENT_ADMIN_HOST="${E2E_AGENT_ADMIN_HOST:-agent-admin-service.platform-services-dev.dev.local}"
 
 POLL_TIMEOUT_S="${E2E_POLL_TIMEOUT_S:-60}"
 
@@ -83,15 +93,18 @@ url_port() {
 PROVISIONING_PORT="$(url_port "$PROVISIONING_URL")"
 CHANNEL_PORT="$(url_port "$CHANNEL_URL")"
 WORKFLOW_PORT="$(url_port "$WORKFLOW_URL")"
+AGENT_ADMIN_PORT="$(url_port "$AGENT_ADMIN_URL")"
 
 # Per-host --resolve args, appended only when E2E_RESOLVE_IP is set.
 PROVISIONING_RESOLVE=()
 CHANNEL_RESOLVE=()
 WORKFLOW_RESOLVE=()
+AGENT_ADMIN_RESOLVE=()
 if [[ -n "$E2E_RESOLVE_IP" ]]; then
   PROVISIONING_RESOLVE=(--resolve "${PROVISIONING_HOST}:${PROVISIONING_PORT}:${E2E_RESOLVE_IP}")
   CHANNEL_RESOLVE=(--resolve "${CHANNEL_HOST}:${CHANNEL_PORT}:${E2E_RESOLVE_IP}")
   WORKFLOW_RESOLVE=(--resolve "${WORKFLOW_HOST}:${WORKFLOW_PORT}:${E2E_RESOLVE_IP}")
+  AGENT_ADMIN_RESOLVE=(--resolve "${AGENT_ADMIN_HOST}:${AGENT_ADMIN_PORT}:${E2E_RESOLVE_IP}")
 fi
 
 # Thin curl wrappers: each pins the correct Host header + --resolve for its
@@ -114,14 +127,22 @@ workflow_curl() {
     -H "Host: ${WORKFLOW_HOST}" -H "x-yoizen-tenant: ${TENANT}" \
     "$@" "${WORKFLOW_URL}${path}"
 }
+agent_admin_curl() {
+  local method="$1" path="$2"; shift 2
+  curl -fsS "${AGENT_ADMIN_RESOLVE[@]}" -X "$method" \
+    -H "Host: ${AGENT_ADMIN_HOST}" -H "x-yoizen-tenant: ${TENANT}" \
+    "$@" "${AGENT_ADMIN_URL}${path}"
+}
 
 NONCE="e2e-$(date +%s)-$RANDOM"
 MANIFEST_NAME="e2e-manifest-apply-${NONCE}"
 CHANNEL_NAME="e2e-http-${NONCE}"
 WORKFLOW_NAME="e2e-flow-${NONCE}"
+KB_NAME="e2e-kb-${NONCE}"
 
 CHANNEL_EXTERNAL_ID=""
 WORKFLOW_EXTERNAL_ID=""
+KB_EXTERNAL_ID=""
 
 wait_for_health() {
   local svc="$1"
@@ -139,6 +160,7 @@ wait_for_health() {
 cleanup() {
   local status=$?
   log "Cleanup: tearing down e2e-created resources (idempotent)"
+  [[ -n "${BUNDLE_DIR:-}" && -d "${BUNDLE_DIR:-}" ]] && rm -rf "$BUNDLE_DIR"
 
   # Resolve by e2e-prefixed NAME as a fallback when no externalId was
   # captured yet (e.g. the script failed before the first apply).
@@ -160,6 +182,15 @@ cleanup() {
     log "deleted workflow definition externalId=${WORKFLOW_EXTERNAL_ID}"
   fi
 
+  if [[ -z "$KB_EXTERNAL_ID" ]]; then
+    KB_EXTERNAL_ID="$(agent_admin_curl GET /admin/knowledge-bases 2>/dev/null \
+      | jq -r --arg n "$KB_NAME" '[.[]? | select(.name == $n)][0].id // empty' 2>/dev/null || true)"
+  fi
+  if [[ -n "$KB_EXTERNAL_ID" ]]; then
+    agent_admin_curl DELETE "/admin/knowledge-bases/${KB_EXTERNAL_ID}" >/dev/null 2>&1 || true
+    log "deleted knowledge base externalId=${KB_EXTERNAL_ID}"
+  fi
+
   if [[ $status -eq 0 ]]; then
     log "e2e-manifest-apply: PASSED"
   else
@@ -175,6 +206,7 @@ log "Targeting provisioning-service at ${PROVISIONING_URL} (Host: ${PROVISIONING
 wait_for_health prov
 wait_for_health channel
 wait_for_health workflow
+wait_for_health agent_admin
 
 # --- 1. PUT the minimal manifest ----------------------------------------
 
@@ -275,5 +307,129 @@ if [[ "$SECOND_APPLIED_COUNT" != "0" || "$SECOND_NOOP_COUNT" != "2" ]]; then
   exit 1
 fi
 log "second apply: no-op (appliedCount=0, noopCount=2) — idempotent apply verified (OK)"
+
+# --- 6. T06: add a knowledgeBases section (inline + file sources) --------
+
+BUNDLE_DIR="$(mktemp -d)"
+FILE_DOC_CONTENT="e2e file-sourced KB document — ${NONCE}"
+printf '%s' "$FILE_DOC_CONTENT" > "${BUNDLE_DIR}/manual.txt"
+FILE_DOC_SHA256="$(shasum -a 256 "${BUNDLE_DIR}/manual.txt" | awk '{print $1}')"
+TAR_BASE64="$(tar -cf - -C "$BUNDLE_DIR" manual.txt | base64 | tr -d '\n')"
+
+INLINE_DOC_CONTENT_V1="e2e inline KB document, version 1 — ${NONCE}"
+
+manifest_with_kb() {
+  local inline_content="$1"
+  jq -n \
+    --arg name "$MANIFEST_NAME" \
+    --arg channel "$CHANNEL_NAME" \
+    --arg workflow "$WORKFLOW_NAME" \
+    --arg kb "$KB_NAME" \
+    --arg inlineContent "$inline_content" \
+    --arg fileSha "$FILE_DOC_SHA256" \
+    '{
+      apiVersion: "yoizen.io/v1",
+      kind: "IntegrationManifest",
+      metadata: { name: $name },
+      spec: {
+        channels: [
+          { name: $channel, type: "http", direction: "inbound" }
+        ],
+        connectors: [],
+        agents: [],
+        knowledgeBases: [
+          {
+            name: $kb,
+            documents: [
+              { name: "faq", source: { type: "inline", content: $inlineContent } },
+              { name: "manual", source: { type: "file", path: "manual.txt", sha256: $fileSha } }
+            ]
+          }
+        ],
+        services: [],
+        workflows: [
+          {
+            name: $workflow,
+            definition: {
+              application: $name,
+              actions: [
+                {
+                  activity: "jsFunction",
+                  name: "log-e2e-nonce",
+                  args: { code: "(ctx) => ({ ok: true })" }
+                }
+              ]
+            }
+          }
+        ],
+        secrets: []
+      }
+    }'
+}
+
+log "PUT /manifests/${MANIFEST_NAME} (revision 2 — adds knowledgeBases)"
+manifest_with_kb "$INLINE_DOC_CONTENT_V1" > "${BUNDLE_DIR}/manifest.json"
+prov_curl PUT "/manifests/${MANIFEST_NAME}" \
+  -H "content-type: application/json" \
+  --data-binary @"${BUNDLE_DIR}/manifest.json" | jq -e '.revision == 2' >/dev/null \
+  || { err "manifest PUT (with KB) did not return revision 2"; exit 1; }
+
+log "POST /manifests/${MANIFEST_NAME}/plan (expect 2 documents to embed — both never-applied)"
+KB_FIRST_PLAN="$(prov_curl POST "/manifests/${MANIFEST_NAME}/plan")"
+KB_FIRST_REEMBED="$(echo "$KB_FIRST_PLAN" | jq -r '.knowledgeBases[0].reembedCount')"
+if [[ "$KB_FIRST_REEMBED" != "2" ]]; then
+  err "expected plan.knowledgeBases[0].reembedCount == 2, got: ${KB_FIRST_REEMBED}"
+  echo "$KB_FIRST_PLAN" | jq .
+  exit 1
+fi
+log "first KB plan: reembedCount=2 (OK — both documents never applied before)"
+
+log "POST /manifests/${MANIFEST_NAME}/apply with bundle (expect 2 documents create'd)"
+KB_FIRST_APPLY_BODY="$(jq -n --arg b "$TAR_BASE64" '{ bundle: { contentBase64: $b } }')"
+KB_FIRST_APPLY="$(prov_curl POST "/manifests/${MANIFEST_NAME}/apply" \
+  -H "content-type: application/json" -d "$KB_FIRST_APPLY_BODY")"
+
+KB_FIRST_APPLY_ACTIONS="$(echo "$KB_FIRST_APPLY" | jq -r '.knowledgeBases[0].documents[].action' | sort -u)"
+if [[ "$KB_FIRST_APPLY_ACTIONS" != "create" ]]; then
+  err "expected both KB documents action=create on first apply, got: ${KB_FIRST_APPLY_ACTIONS}"
+  echo "$KB_FIRST_APPLY" | jq .
+  exit 1
+fi
+KB_EXTERNAL_ID="$(echo "$KB_FIRST_APPLY" | jq -r '.knowledgeBases[0].kbExternalId')"
+log "first KB apply: both documents created, kb externalId=${KB_EXTERNAL_ID} (OK)"
+
+# --- 7. re-apply with ONE changed document: exactly one re-embed ---------
+
+INLINE_DOC_CONTENT_V2="e2e inline KB document, version 2 (CHANGED) — ${NONCE}"
+manifest_with_kb "$INLINE_DOC_CONTENT_V2" > "${BUNDLE_DIR}/manifest-v2.json"
+prov_curl PUT "/manifests/${MANIFEST_NAME}" \
+  -H "content-type: application/json" \
+  --data-binary @"${BUNDLE_DIR}/manifest-v2.json" | jq -e '.revision == 3' >/dev/null \
+  || { err "manifest PUT (changed doc) did not return revision 3"; exit 1; }
+
+log "POST /manifests/${MANIFEST_NAME}/plan (expect exactly 1 document to re-embed)"
+KB_SECOND_PLAN="$(prov_curl POST "/manifests/${MANIFEST_NAME}/plan")"
+KB_SECOND_REEMBED="$(echo "$KB_SECOND_PLAN" | jq -r '.knowledgeBases[0].reembedCount')"
+if [[ "$KB_SECOND_REEMBED" != "1" ]]; then
+  err "expected plan.knowledgeBases[0].reembedCount == 1 after changing one document, got: ${KB_SECOND_REEMBED}"
+  echo "$KB_SECOND_PLAN" | jq .
+  exit 1
+fi
+KB_SECOND_PLAN_ACTIONS="$(echo "$KB_SECOND_PLAN" | jq -r '.knowledgeBases[0].documents[] | "\(.documentName)=\(.action)"')"
+log "second KB plan: reembedCount=1 (OK — unchanged document stays skip): ${KB_SECOND_PLAN_ACTIONS}"
+
+log "POST /manifests/${MANIFEST_NAME}/apply with bundle (expect exactly 1 document reembed'd)"
+KB_SECOND_APPLY_BODY="$(jq -n --arg b "$TAR_BASE64" '{ bundle: { contentBase64: $b } }')"
+KB_SECOND_APPLY="$(prov_curl POST "/manifests/${MANIFEST_NAME}/apply" \
+  -H "content-type: application/json" -d "$KB_SECOND_APPLY_BODY")"
+
+KB_REEMBED_COUNT="$(echo "$KB_SECOND_APPLY" | jq -r '[.knowledgeBases[0].documents[] | select(.action == "reembed")] | length')"
+KB_SKIP_COUNT="$(echo "$KB_SECOND_APPLY" | jq -r '[.knowledgeBases[0].documents[] | select(.action == "skip")] | length')"
+if [[ "$KB_REEMBED_COUNT" != "1" || "$KB_SKIP_COUNT" != "1" ]]; then
+  err "expected exactly one reembed and one skip on second apply, got reembed=${KB_REEMBED_COUNT} skip=${KB_SKIP_COUNT}"
+  echo "$KB_SECOND_APPLY" | jq .
+  exit 1
+fi
+log "second KB apply: exactly 1 document re-embedded, 1 unchanged (skip) — checksum reconciliation verified (OK)"
 
 log "All stages passed"

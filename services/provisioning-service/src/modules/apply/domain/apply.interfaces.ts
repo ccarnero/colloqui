@@ -9,6 +9,7 @@
 // re-plans against current live state, so already-converged resources come
 // back as `noop` and are skipped.
 
+import type { ReconcileKbOutcome } from "../../kb/domain/kb.interfaces";
 import type {
   ResourceKind,
   ResourceVerdict,
@@ -69,6 +70,8 @@ export interface ManifestApplySuccess {
   readonly appliedCount: number;
   readonly noopCount: number;
   readonly durationMs: number;
+  /** T06 — knowledge-base reconciliation outcomes (create/reembed/skip per document), run before `resources`. */
+  readonly knowledgeBases?: readonly ReconcileKbOutcome[];
 }
 
 export interface ManifestApplyFailure {

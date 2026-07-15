@@ -44,6 +44,8 @@ export interface ApplyManifestArgs {
   readonly writers: PlatformResourceWriters;
   readonly events: IApplyEventPublisher;
   readonly logger?: PlanLogger;
+  /** T06: `kbName -> kbExternalId` map from the KB reconciler, run before this call. */
+  readonly knowledgeBaseExternalIdsByName?: ReadonlyMap<string, string>;
 }
 
 export async function applyManifestPlan(
@@ -115,7 +117,12 @@ export async function applyManifestPlan(
     // T05: threads the run's correlationId into the writer so a
     // secretRef resolution (channels/connectors) audits as a SIBLING of
     // this apply run (see `secret-audit-publisher.interface.ts`).
-    const writerContext = { correlationId: runAudit.correlationId };
+    // T06: threads the KB reconciler's name->externalId map so
+    // `agents-writer.ts` can resolve `knowledgeBaseRefs`.
+    const writerContext = {
+      correlationId: runAudit.correlationId,
+      knowledgeBaseExternalIds: args.knowledgeBaseExternalIdsByName,
+    };
     const result =
       verdict === "create"
         ? await writer.create(tenantId, resource, writerContext)

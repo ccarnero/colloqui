@@ -3,10 +3,16 @@
 // The manifest's `Agent.profile` is a free-form record; T04 passes through
 // the fields `CreateAgentDto` recognizes (description/system_prompt/
 // model_config/tools/channels/input_variables/output_variables) verbatim —
-// none of them are secret-bearing. `knowledgeBaseRefs` resolution (manifest
-// KB names -> agent-admin UUIDs) is explicitly OUT of scope for T04 (lands
-// with T06's knowledge-base sources); omitted here, not silently dropped —
-// see the comment at the call site.
+// none of them are secret-bearing.
+//
+// T06 resolves `knowledgeBaseRefs` (manifest KB names) to agent-admin
+// `knowledge_base_ids` via `context.knowledgeBaseExternalIds` (the map the
+// KB reconciler produces BEFORE `applyManifestPlan` runs — see
+// `kb.interfaces.ts`). When the context isn't wired at all (back-compat: the
+// T04-era call sites that construct writers directly without T06's DI), the
+// old T04 behavior is preserved — log and create without knowledge_base_ids
+// rather than fabricating a mapping or failing loud for callers that never
+// asked for KB support in the first place.
 //
 // Update: `agentComparable` (T03) is existence-only — never produces an
 // `update` verdict, so this is a defensive no-op stub.
@@ -17,6 +23,7 @@ import { TENANT_HEADER } from "@yoizen/shared";
 import type {
   CreateOrUpdateResult,
   IPlatformResourceWriter,
+  WriterContext,
 } from "../domain/platform-resource-writer.interface";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -34,22 +41,48 @@ export function createAgentsWriter(baseUrl: string): IPlatformResourceWriter {
   const logger = new PinoLoggerService("apply.agent-writer");
 
   return {
-    async create(tenantId, resourceUnknown): Promise<CreateOrUpdateResult> {
+    async create(
+      tenantId,
+      resourceUnknown,
+      context?: WriterContext
+    ): Promise<CreateOrUpdateResult> {
       const agent = resourceUnknown as Agent;
-
-      // T06 will resolve `knowledgeBaseRefs` (manifest KB names) to
-      // agent-admin knowledge_base_ids; T04 creates the agent without them
-      // rather than fabricating a mapping.
-      if (agent.knowledgeBaseRefs && agent.knowledgeBaseRefs.length > 0) {
-        logger.log(
-          `create: agent '${agent.name}' declares knowledgeBaseRefs=[${agent.knowledgeBaseRefs.join(",")}] — KB ref resolution lands in T06, creating without knowledge_base_ids for now`
-        );
-      }
 
       const body: Record<string, unknown> = { name: agent.name };
       for (const key of PASSTHROUGH_PROFILE_KEYS) {
         if (agent.profile[key] !== undefined) {
           body[key] = agent.profile[key];
+        }
+      }
+
+      if (agent.knowledgeBaseRefs && agent.knowledgeBaseRefs.length > 0) {
+        if (context?.knowledgeBaseExternalIds) {
+          const resolved: string[] = [];
+          for (const ref of agent.knowledgeBaseRefs) {
+            const externalId = context.knowledgeBaseExternalIds.get(ref);
+            if (!externalId) {
+              const message = `agent '${agent.name}' references unresolved knowledgeBaseRef '${ref}' — the KB reconciler did not produce an externalId for it`;
+              logger.warn(`create: ${message}`);
+              return {
+                ok: false,
+                error: {
+                  kind: "missing_required_field",
+                  resourceKind: "agent",
+                  resourceName: agent.name,
+                  message,
+                },
+              };
+            }
+            resolved.push(externalId);
+          }
+          logger.log(
+            `create: agent '${agent.name}' resolved knowledgeBaseRefs=[${agent.knowledgeBaseRefs.join(",")}] -> knowledge_base_ids=[${resolved.join(",")}]`
+          );
+          body.knowledge_base_ids = resolved;
+        } else {
+          logger.log(
+            `create: agent '${agent.name}' declares knowledgeBaseRefs=[${agent.knowledgeBaseRefs.join(",")}] but no KB reconciler context was supplied — creating without knowledge_base_ids`
+          );
         }
       }
 

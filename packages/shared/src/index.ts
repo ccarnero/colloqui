@@ -457,6 +457,7 @@ export {
   getTenantSubjectPattern,
   TENANT_TIER_LIMITS,
 } from "./tenant-stream.constants";
+export { validateOutboundUrl } from "./validate-outbound-url";
 export type {
   IDataConnection,
   VariableDeclaration,

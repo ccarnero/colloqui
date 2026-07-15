@@ -1,9 +1,5 @@
 import { Module } from "@nestjs/common";
-import {
-  jetStreamManagerProvider,
-  jetStreamProvider,
-  natsProvider,
-} from "../../providers/nats.provider";
+import { NatsModule } from "../../providers/nats.module";
 import { ManifestsModule } from "../manifests/manifests.module";
 import { PlanModule } from "../plan/plan.module";
 import { SecretsModule } from "../secrets/secrets.module";
@@ -17,12 +13,9 @@ import { BrokerSecretResolver } from "./infrastructure/broker-secret-resolver";
 import { buildPlatformResourceWriters } from "./infrastructure/platform-resource-writers.provider";
 
 @Module({
-  imports: [ManifestsModule, PlanModule, SecretsModule],
+  imports: [NatsModule, ManifestsModule, PlanModule, SecretsModule],
   providers: [
     ApplyService,
-    natsProvider,
-    jetStreamManagerProvider,
-    jetStreamProvider,
     ApplyEventsPublisher,
     { provide: APPLY_EVENT_PUBLISHER, useExisting: ApplyEventsPublisher },
     BrokerSecretResolver,
