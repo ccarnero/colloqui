@@ -315,7 +315,7 @@ rg -l "sdk/samples/" manual-loops/crm-support-telegram.md ; test $? -eq 1
 - [x] T03 tier READMEs
 - [x] T04 canary e2e per group (pre-migration, original scripts)
 - [x] T05 SDK CLI (`yoizen manifests` / `yoizen secrets`)
-- [ ] T06 manifest migration (delete setup scripts, CLI-driven provisioning)
+- [x] T06 manifest migration (delete setup scripts, CLI-driven provisioning)
 - [ ] T07 docs + index + gap SPEC + downstream SPEC fix
 
 ## Out of scope (explicit)
@@ -763,3 +763,52 @@ glob (`tsx --test 'test/**/*.test.ts'`) does not include the colocated
 align the glob or move the tests. Also `VALID_SCOPE_KINDS` array duplicated
 in `parse-scope-arg.ts` + `extract-secret-bindings.ts` — extract to one
 shared constant.
+
+### T06 — 2026-07-15
+
+ESCALATION + HUMAN RE-RULING: the implementer stopped before touching any
+file — code inspection of the APPLY ENGINE (not just the schema) showed the
+T01 audit's kind-level classification was too optimistic. Three hard gaps,
+all code-verified: (a) connector `authConfig` unreachable through apply —
+inline keys are dropped and `secretRef` fails loud `secret_not_resolvable`
+(`connectors-writer.ts:41-73`, by design); (b) connector `endpoints` have no
+schema/writer concept at all; (c) no manifest-time real-ID substitution —
+workflows baking `adapterId`/`agentId` cannot be created correctly
+(`workflows-writer.ts` sends definitions verbatim). Human ruled 2026-07-15:
+MINIMAL T06 — migrate `telegram-transform-reply` only; the other seven
+formerly-MIGRATABLE samples join the four original gap samples in stand-by
+(11 total).
+
+Executed: `telegram-transform-reply` → `manifest.yaml` (telegram channel via
+`secretRef telegram-bot-token` + workflow with transform code and reply args
+copied VERBATIM from the deleted setup script), `git rm setup.sh src/setup.ts`,
+README/README.es.md rewritten to the CLI flow, `src/index.ts` rewritten as a
+self-contained run-side driver. Documented deviations: trigger unpinned
+(no ID substitution; equivalent in single-account tenants), writer-owned
+`manifest:<name>` externalId + slug display name, webhook secret via
+`TELEGRAM_WEBHOOK_SECRET` env (apply does not surface appSecret). 11×
+STANDBY.md with per-sample gap + file:line evidence, all linking
+`manual-loops/provisioning-manifest-gaps.md` (authored in T07). Stand-by
+scripts untouched.
+
+Gates: G1-G3 green. G4 (CLI canary, live cluster): first apply → channel
+create + workflow noop. G5: validate=true; second apply appliedCount=0,
+both verdicts noop (idempotence proven). G6 run at SAMPLE-ROOT granularity
+(orchestrator interpretation, recorded): the SPEC's literal `dirname` check
+false-positives on `src/setup.ts` since STANDBY.md sits at the sample root —
+decision 8 marks the SAMPLE as stand-by, so a root STANDBY.md covers its
+setup files; zero leftovers under that reading. Counts: 1 manifest,
+11 STANDBY.md, 22 stand-by setup files. Dual review: 2× APPROVED (attempt 2
+after the escalation round) — reviewers independently re-verified the writer
+code, the verbatim workflow copy, and that no secret value exists in the repo.
+
+CANARY SET from T06 onward: G4/G5 run on `telegram-transform-reply` only —
+the ai, http and mcp groups are fully stand-by and drop out per the gate
+rule. FOLLOW-UPS: `.env.example` of the migrated sample still documents the
+old setup flow (write-denied in-session; update alongside T07 docs);
+`secrets-from-env` binding names are slug-cased so env vars need `env
+'telegram-bot-token=...'` form — ergonomics candidate for the gap SPEC.
+T07 SCOPE CHANGE: `provisioning-manifest-gaps.md` must now cover SIX gap
+kinds: connector credential wiring (broker secretRef + inline authConfig),
+connector endpoints, manifest-time ID substitution, systemVariables,
+service scaling+routes, mcpServers.
