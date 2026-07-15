@@ -125,3 +125,26 @@ roleRef:
   kind: ClusterRole
   name: registry-service-manager
   apiGroup: rbac.authorization.k8s.io
+---
+# manual-loops/declarative-provisioning.md T05 — HUMAN MUST APPLY THIS THE
+# FIRST TIME (per the SPEC's human boundary: "Human applies the RBAC
+# manifest granting provisioning-service access to tenant-namespace
+# secrets"). Developer-mode single config (dev-only, `platform-services-dev`
+# namespace) — no qa/staging/production variants, matching the current
+# collapsed single-config convention (unlike the legacy multi-env bindings
+# above, which predate that collapse).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: provisioning-service-secrets-manager-dev
+  labels:
+    app.kubernetes.io/name: provisioning-service
+    app.kubernetes.io/part-of: yoizen-arch
+subjects:
+  - kind: ServiceAccount
+    name: provisioning-service
+    namespace: platform-services-dev
+roleRef:
+  kind: ClusterRole
+  name: provisioning-service-secrets-manager
+  apiGroup: rbac.authorization.k8s.io

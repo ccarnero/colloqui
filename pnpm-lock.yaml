@@ -1050,6 +1050,9 @@ importers:
 
   services/provisioning-service:
     dependencies:
+      '@kubernetes/client-node':
+        specifier: ^1.2.0
+        version: 1.4.0
       '@nestjs/common':
         specifier: ^11.1.14
         version: 11.1.26(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -1077,6 +1080,9 @@ importers:
       fastify:
         specifier: ^5.2.2
         version: 5.8.5
+      nats:
+        specifier: ^2.29.3
+        version: 2.29.3
       postgres:
         specifier: ^3.4.5
         version: 3.4.9
@@ -7476,7 +7482,7 @@ snapshots:
       form-data: 4.0.5
       hpagent: 1.2.0
       isomorphic-ws: 5.0.0(ws@8.21.0)
-      js-yaml: 4.2.0
+      js-yaml: 4.3.0
       jsonpath-plus: 10.4.0
       node-fetch: 2.7.0
       openid-client: 6.8.4

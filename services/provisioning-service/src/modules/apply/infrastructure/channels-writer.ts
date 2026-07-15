@@ -1,18 +1,17 @@
 // `IPlatformResourceWriter` for channel-service's `POST /channels/accounts`
 // / `PATCH /channels/accounts/:id`.
 //
-// T04 SCOPE LIMIT (secrets broker lands in T05): a `ManifestChannel` with a
-// `secretRef` cannot be created yet — there is no way to resolve the real
-// credential value without fabricating it, which SPEC.md forbids. Such a
-// resource fails loud with a typed `secret_not_resolvable` error instead.
+// T05: a `ManifestChannel` with a `secretRef` first attempts broker
+// resolution (`secretResolver`, wired to the T05 secrets broker) — if that
+// resolves, the real value is used as `accessToken` and NEVER logged. If no
+// resolver is wired (tests, or a not-yet-bound secret) it fails loud with a
+// typed `secret_not_resolvable` error, exactly like T04.
 //
 // For channels WITHOUT a `secretRef` (the only shape T04's e2e manifest
 // uses — an `http` channel), `accessToken: "placeholder"` is used. This is
 // NOT a fabricated secret: it mirrors the existing convention already used
 // by `scripts/e2e-http-workflow.sh` for the same `http` provider, which does
-// not validate token authenticity. Any channel type that DOES need a real
-// credential (whatsapp/instagram/telegram) MUST declare a `secretRef` and is
-// therefore blocked above until T05.
+// not validate token authenticity.
 //
 // Update: the T03 comparable-fields contract for channels projects ONLY
 // `type` (see `comparable-fields.ts`), and `UpdateAccountDto` has no field to
@@ -24,12 +23,73 @@
 import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
 import type { ManifestChannel } from "@yoizen/shared";
 import { TENANT_HEADER } from "@yoizen/shared";
+import type { ApplyWriteError } from "../domain/apply.interfaces";
 import type {
   CreateOrUpdateResult,
   IPlatformResourceWriter,
 } from "../domain/platform-resource-writer.interface";
+import type { ISecretValueResolver } from "../domain/secret-value-resolver.interface";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+
+type ResolveSecretOutcome =
+  | { readonly ok: true; readonly value: string }
+  | { readonly ok: false; readonly error: ApplyWriteError };
+
+/**
+ * Resolves a channel's `secretRef` through the broker (T05) if one is
+ * wired, else returns the T04 `secret_not_resolvable` typed error. NEVER
+ * logs the resolved value — only the outcome.
+ */
+async function resolveChannelSecret(
+  secretResolver: ISecretValueResolver | undefined,
+  logger: PinoLoggerService,
+  tenantId: string,
+  channel: ManifestChannel,
+  correlationId: string | undefined
+): Promise<ResolveSecretOutcome> {
+  const secretRef = channel.secretRef as string;
+
+  if (secretResolver) {
+    const resolved = await secretResolver.resolve({
+      tenantId,
+      kind: "channel",
+      owner: channel.name,
+      secretName: secretRef,
+      correlationId,
+    });
+    if (resolved.ok) {
+      logger.log(
+        `create: channel '${channel.name}' resolved secretRef '${secretRef}' via the T05 broker (value NEVER logged)`
+      );
+      return { ok: true, value: resolved.value };
+    }
+    logger.warn(
+      `create: channel '${channel.name}' secretRef '${secretRef}' broker resolution FAILED: ${resolved.error}`
+    );
+    return {
+      ok: false,
+      error: {
+        kind: "secret_not_resolvable",
+        resourceKind: "channel",
+        resourceName: channel.name,
+        message: `broker could not resolve secretRef '${secretRef}': ${resolved.error}`,
+      },
+    };
+  }
+
+  const message = `channel '${channel.name}' declares secretRef '${secretRef}' but no secrets broker resolver is wired`;
+  logger.warn(`create: ${message}`);
+  return {
+    ok: false,
+    error: {
+      kind: "secret_not_resolvable",
+      resourceKind: "channel",
+      resourceName: channel.name,
+      message,
+    },
+  };
+}
 
 /** Manifest channel `type` values `CreateAccountDto` accepts today. */
 const SUPPORTED_CHANNEL_TYPES = new Set([
@@ -49,25 +109,34 @@ function providerFor(channelType: string): string {
   return "meta";
 }
 
-export function createChannelsWriter(baseUrl: string): IPlatformResourceWriter {
+export function createChannelsWriter(
+  baseUrl: string,
+  secretResolver?: ISecretValueResolver
+): IPlatformResourceWriter {
   const logger = new PinoLoggerService("apply.channel-writer");
 
   return {
-    async create(tenantId, resourceUnknown): Promise<CreateOrUpdateResult> {
+    async create(
+      tenantId,
+      resourceUnknown,
+      context
+    ): Promise<CreateOrUpdateResult> {
       const channel = resourceUnknown as ManifestChannel;
+      let accessToken = "placeholder";
 
       if (channel.secretRef) {
-        const message = `channel '${channel.name}' declares secretRef '${channel.secretRef}' — the secrets broker lands in T05, cannot resolve a real credential yet`;
-        logger.warn(`create: ${message}`);
-        return {
-          ok: false,
-          error: {
-            kind: "secret_not_resolvable",
-            resourceKind: "channel",
-            resourceName: channel.name,
-            message,
-          },
-        };
+        const resolved = await resolveChannelSecret(
+          secretResolver,
+          logger,
+          tenantId,
+          channel,
+          context?.correlationId
+        );
+        if (!resolved.ok) {
+          return resolved;
+        }
+        // Never logged: `resolved.value` is the real credential.
+        accessToken = resolved.value;
       }
 
       if (!SUPPORTED_CHANNEL_TYPES.has(channel.type)) {
@@ -93,7 +162,7 @@ export function createChannelsWriter(baseUrl: string): IPlatformResourceWriter {
         // channels (only wiring, per SPEC decision 3). Derived deterministically
         // from the manifest name — never a secret value.
         externalId: `manifest:${channel.name}`,
-        accessToken: "placeholder",
+        accessToken,
       };
 
       logger.log(

@@ -15,16 +15,29 @@ export type CreateOrUpdateResult =
   | { readonly ok: true; readonly value: { readonly externalId: string } }
   | { readonly ok: false; readonly error: ApplyWriteError };
 
+/**
+ * Optional per-call context threaded from `apply-manifest.ts`'s run
+ * (T05: `correlationId` lets a writer resolve a `secretRef` through the
+ * secrets broker as a SIBLING event of the current apply run — see
+ * `channels-writer.ts`/`connectors-writer.ts`). Writers that don't need it
+ * simply ignore the parameter.
+ */
+export interface WriterContext {
+  readonly correlationId?: string;
+}
+
 export interface IPlatformResourceWriter {
   /**
    * Creates the resource from its manifest shape. Never fabricates secret
    * values — resources whose manifest entry declares a `secretRef` (or an
-   * env var `secretRef`) resolve to a typed `secret_not_resolvable` error
-   * until the T05 secrets broker lands.
+   * env var `secretRef`) attempt broker resolution first (T05, where wired)
+   * and resolve to a typed `secret_not_resolvable` error if the broker
+   * cannot resolve it.
    */
   create(
     tenantId: string,
-    resource: AnyManifestResource
+    resource: AnyManifestResource,
+    context?: WriterContext
   ): Promise<CreateOrUpdateResult>;
 
   /**
@@ -37,7 +50,8 @@ export interface IPlatformResourceWriter {
     tenantId: string,
     externalId: string,
     resource: AnyManifestResource,
-    diff: readonly { readonly field: string }[]
+    diff: readonly { readonly field: string }[],
+    context?: WriterContext
   ): Promise<CreateOrUpdateResult>;
 }
 

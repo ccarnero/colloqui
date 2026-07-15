@@ -39,6 +39,7 @@ export type BusinessFn =
   | "runtime-presence"
   | "registry-sync"
   | "provisioning"
+  | "secrets-audit"
   | "tenant-provisioning"
   | "audit"
   | "dlq"
@@ -86,6 +87,13 @@ const AGENT_EXECUTION_KINDS = new Set([
 const CONNECTOR_INVOKE_KINDS = new Set([
   "invoke_requested",
   "invoke_completed",
+]);
+
+// Kinds that mark the T05 secrets-audit trail (rule 23).
+const SECRETS_AUDIT_KINDS = new Set([
+  "secret_written",
+  "secret_resolved",
+  "secret_access_denied",
 ]);
 
 // Kinds that mark an agent-memory lifecycle event (rule 9).
@@ -259,6 +267,24 @@ export function classify(
       provider === "system"
     ) {
       return ok(classified("platform", "registry-sync", 10));
+    }
+
+    // Rule 23 — provisioning-service secrets-audit trail
+    // (`manual-loops/declarative-provisioning.md` T05). SAME producer/
+    // domain/channel/provider family as rule 22, but a DIFFERENT
+    // business_fn (human decision, 2026-07-14) — secrets audit is a
+    // distinct business concern from apply-run bookkeeping. MUST be
+    // evaluated BEFORE rule 22 (kind-agnostic within the same family) or
+    // these three kinds would silently get business_fn: provisioning
+    // instead. Values NEVER appear in these events. TAXONOMY.md §4 rule 23.
+    if (
+      producer === "provisioning-service" &&
+      domain === "provisioning" &&
+      channel === "platform" &&
+      provider === "internal" &&
+      SECRETS_AUDIT_KINDS.has(kind)
+    ) {
+      return ok(classified("platform", "secrets-audit", 23));
     }
 
     // Rule 22 — provisioning-service apply-engine audit trail

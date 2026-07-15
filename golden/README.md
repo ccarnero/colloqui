@@ -20,9 +20,12 @@ recorded in `DRIFT.md`.
   `manual-loops/declarative-provisioning.md` T04 to cover the
   `apply_started`/`resource_applied`/`apply_completed`/`apply_failed`
   provisioning-service apply-engine kinds, landed WITH the emitter — see
-  addendum below), 87 total. Each file is a wrapper object: `{ stream, seq,
-  received, subject, headers, envelope }`. File name encodes provenance:
-  `<STREAM>-seq<N>.json`.
+  addendum below) + 3 synthetic events (seq 1327-1329, added by
+  `manual-loops/declarative-provisioning.md` T05 to cover the
+  `secret_written`/`secret_resolved`/`secret_access_denied` secrets-audit
+  kinds, landed WITH the emitter — see addendum below), 90 total. Each file
+  is a wrapper object: `{ stream, seq, received, subject, headers, envelope
+  }`. File name encodes provenance: `<STREAM>-seq<N>.json`.
 - `labeled.tsv` — pre-labels produced by applying the classification rules in
   `TAXONOMY.md` §4 (20-rule table, first match wins) deterministically to every event.
 
@@ -41,15 +44,19 @@ recorded in `DRIFT.md`.
   8 synthetic workflow-step-events T01 events (seq 1312–1319, see addendum below) +
   2 synthetic connector-invoke-api T04 events (seq 1320–1321, see addendum below) +
   5 synthetic declarative-provisioning T04 events (seq 1322–1326, see addendum
-  below).
+  below) + 3 synthetic declarative-provisioning T05 events (seq 1327–1329, see
+  addendum below).
 - **`GATEWAY_AUDIT`** — 2 events.
-- 9 correlation chains, all formally closed by `correlation_id` + `causation_id`:
+- 11 correlation chains, all formally closed by `correlation_id` + `causation_id`:
   4 conversation chains (1 Telegram, 3 HTTP) and 2 memory approve/reject cycles
   (test-provenance memories created via the admin API for fix-4 validation), plus
   2 synthetic workflow-step-events chains (seq 1312–1315, 1316–1319), plus 1
   synthetic connector-invoke async-transport chain (seq 1320–1321), plus 2
   synthetic declarative-provisioning apply chains (seq 1322–1324 successful run,
-  seq 1325–1326 failed run).
+  seq 1325–1326 failed run), plus 2 synthetic declarative-provisioning secrets
+  chains (seq 1327 standalone `secret_written` root, seq 1328 a `secret_resolved`
+  sibling reusing the seq1322 apply-run's correlation, seq 1329 a standalone
+  `secret_access_denied` chain).
 
 ## `labeled.tsv` column contract
 
@@ -89,6 +96,25 @@ by workflow-step-events T01: `resource_applied`/`apply_completed`/`apply_failed`
 all cite the run's `apply_started` envelope id as `causation_id` (never a
 preceding sibling event), correlation inherited, depth 1. All 5 classify as
 rule 22 `platform`/`provisioning`. See `TAXONOMY.md` §4 rule 22 design note.
+
+## Addendum (2026-07-14) — declarative-provisioning T05 synthetic rows
+
+`manual-loops/declarative-provisioning.md` T05 lands the classification rule
+(rule 23), the secrets CRUD/broker emitter, AND the golden rows together in
+the same task (same golden rule 3 pattern as T04's rule 22 addendum above).
+3 rows (seq 1327-1329) were added by hand: seq1327 is a standalone
+`secret_written` root (a `PUT /secrets/:name` write — correlation_id = own
+id, causation null, depth 0); seq1328 is a `secret_resolved` SIBLING that
+reuses the seq1322 apply-run's `correlation_id` as its own `causation_id`
+(demonstrating the broker resolving a secret mid-apply-run) at depth 1;
+seq1329 is a `secret_access_denied` SIBLING off its own fresh correlation
+(a standalone denied resolve attempt, binding mismatch) at depth 1. All 3
+classify as rule 23 `platform`/`secrets-audit` — a NEW `business_fn`, kept
+separate from rule 22's `provisioning` even though both share the same
+producer/domain/channel/provider family (human decision: secrets audit is a
+distinct business concern from apply-run bookkeeping). None of the three
+payloads carry a secret VALUE — `secret_access_denied` carries a `reason`
+string only. See `TAXONOMY.md` §4 rule 23 design note.
 
 ## Addendum (2026-07-13) — connector-invoke-api T04 synthetic rows
 

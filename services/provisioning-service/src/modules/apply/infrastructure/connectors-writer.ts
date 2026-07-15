@@ -4,13 +4,20 @@
 // plain infra wiring (not a credential), so it is read straight off the
 // manifest's `config.baseUrl` (never fabricated; missing -> typed error).
 // Auth material (`authConfig`) is NEVER set here: a connector with a
-// `secretRef` fails loud with `secret_not_resolvable` until the T05 secrets
-// broker lands, exactly like the channel writer.
+// `secretRef` fails loud with `secret_not_resolvable`, exactly like T04.
 //
-// Update: `connectorComparable` (T03) is existence-only — `diffResource`
-// with two empty projections never produces an `update` verdict for a
-// connector, so this method is a defensive no-op stub, never exercised by
-// the current planner.
+// T05 SCOPE DECISION: the connector writer deliberately does NOT call the
+// secrets broker. Threading a resolved value into connector-admin's
+// `CreateAdapterDto` needs a correct `authType`→`authConfig` field mapping
+// that this task does not attempt — and a resolve-and-discard call would
+// pollute the audit trail with a phantom "credential accessed" event while
+// leaving the connector with no auth material anyway. So T05 keeps the T04
+// fail-loud behavior for connectors and defers real broker wiring to a
+// follow-up (the channel writer, whose `accessToken` field maps cleanly, IS
+// wired to the broker in this task). `connectorComparable` (T03) is
+// existence-only — `diffResource` with two empty projections never produces
+// an `update` verdict for a connector, so `update` is a defensive no-op
+// stub, never exercised by the current planner.
 
 import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
 import type { Connector } from "@yoizen/shared";
@@ -32,7 +39,7 @@ export function createConnectorsWriter(
       const connector = resourceUnknown as Connector;
 
       if (connector.secretRef) {
-        const message = `connector '${connector.name}' declares secretRef '${connector.secretRef}' — the secrets broker lands in T05, cannot resolve auth material yet`;
+        const message = `connector '${connector.name}' declares secretRef '${connector.secretRef}' — connector auth wiring through the broker is a follow-up beyond T05's scope, cannot resolve auth material yet`;
         logger.warn(`create: ${message}`);
         return {
           ok: false,

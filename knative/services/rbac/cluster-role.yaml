@@ -39,3 +39,28 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list"]
+---
+# manual-loops/declarative-provisioning.md T05 — grants provisioning-service
+# read/write on Secrets across tenant namespaces (`<tenant>-<env>-ns`) for
+# the write-only Secret API (`PUT /secrets/:name`) and the secrets broker's
+# `readResourceSecret` reads. Cluster-scoped (not namespace-scoped) because
+# provisioning-service must reach EVERY tenant namespace, not just one — the
+# SAME shape registry-service already uses to create Knative services across
+# tenant namespaces above. Per-resource isolation (one Secret per resource,
+# `psec-<kind>-<owner>`) is APPLICATION-layer, enforced by
+# `SecretsBrokerService` — k8s RBAC cannot filter by label or by Secret name,
+# so this grant is intentionally broad at the k8s layer (consistent with the
+# platform's no-NATS-ACLs stance, SPEC.md decision 5). No `delete` verb: T05
+# is create-or-update only (SPEC.md decision 8's "no prune" stance extends
+# here too — secrets are never programmatically deleted by this service).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: provisioning-service-secrets-manager
+  labels:
+    app.kubernetes.io/name: provisioning-service
+    app.kubernetes.io/part-of: yoizen-arch
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get", "list", "update", "patch"]

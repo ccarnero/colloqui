@@ -18,7 +18,7 @@ describe("createConnectorsWriter", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("create: refuses a connector with a secretRef — never fabricates auth material", async () => {
+  it("create: refuses a connector with a secretRef — connector broker wiring is a T05 follow-up, never fabricates auth material", async () => {
     globalThis.fetch = mock(async () => {
       throw new Error(
         "must never call the network for a secretRef'd connector"

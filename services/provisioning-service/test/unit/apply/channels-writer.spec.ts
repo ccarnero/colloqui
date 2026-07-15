@@ -18,7 +18,7 @@ describe("createChannelsWriter", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("create: refuses a channel with a secretRef (secrets broker lands in T05) — never fabricates a credential", async () => {
+  it("create: refuses a channel with a secretRef when NO broker resolver is wired — never fabricates a credential", async () => {
     globalThis.fetch = mock(async () => {
       throw new Error("must never call the network for a secretRef'd channel");
     }) as unknown as typeof fetch;
@@ -36,6 +36,64 @@ describe("createChannelsWriter", () => {
     if (!result.ok) {
       expect(result.error.kind).toBe("secret_not_resolvable");
       expect(result.error.resourceName).toBe("wa-in");
+    }
+  });
+
+  it("create: T05 — resolves secretRef via the broker resolver and uses the real value as accessToken", async () => {
+    let capturedBody: unknown;
+    globalThis.fetch = mock(async (_url, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string);
+      return json({ id: "chan-wa-1" }, 201);
+    }) as unknown as typeof fetch;
+
+    const resolver = {
+      resolve: mock(async () => ({
+        ok: true as const,
+        value: "real-wa-token",
+      })),
+    };
+    const writer = createChannelsWriter(BASE_URL, resolver);
+    const channel: ManifestChannel = {
+      name: "wa-in",
+      type: "whatsapp",
+      direction: "inbound",
+      secretRef: "wa-token",
+    };
+
+    const result = await writer.create("tenant-a", channel, {
+      correlationId: "run-1",
+    });
+    expect(result.ok).toBe(true);
+    expect(resolver.resolve).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      kind: "channel",
+      owner: "wa-in",
+      secretName: "wa-token",
+      correlationId: "run-1",
+    });
+    expect(capturedBody).toMatchObject({ accessToken: "real-wa-token" });
+  });
+
+  it("create: T05 — a broker resolution failure still fails loud with secret_not_resolvable, never fabricating a value", async () => {
+    globalThis.fetch = mock(async () => {
+      throw new Error("must never call the network when the broker denies");
+    }) as unknown as typeof fetch;
+
+    const resolver = {
+      resolve: mock(async () => ({ ok: false as const, error: "denied" })),
+    };
+    const writer = createChannelsWriter(BASE_URL, resolver);
+    const channel: ManifestChannel = {
+      name: "wa-in",
+      type: "whatsapp",
+      direction: "inbound",
+      secretRef: "wa-token",
+    };
+
+    const result = await writer.create("tenant-a", channel);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("secret_not_resolvable");
     }
   });
 

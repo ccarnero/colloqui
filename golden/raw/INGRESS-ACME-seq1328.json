@@ -1,0 +1,45 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1328,
+  "received": "2026-07-14 00:00:03.000000000",
+  "subject": "evt.acme.provisioning-service.provisioning.platform.internal.secret_resolved.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:secret-resolved-1328",
+    "X-Correlation-Id": "6f1a2b3c-4d5e-4f60-8172-83a4b5c6d7e8",
+    "X-Causation-Id": "6f1a2b3c-4d5e-4f60-8172-83a4b5c6d7e8",
+    "traceparent": "00-b2c3d4e5f60718293a4b5c6d7e8f9001-5d6e7f8091a2b3c4-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "cf708192-a3b4-4f25-b647-e8f9013245b6",
+    "source": "//provisioning-service/secrets",
+    "type": "io.yoizen.provisioning.secret_resolved.v1",
+    "resource": "secret/connector/hubspot",
+    "time": "2026-07-14T00:00:03.000Z",
+    "traceid": "b2c3d4e5f60718293a4b5c6d7e8f9001",
+    "causation_id": "6f1a2b3c-4d5e-4f60-8172-83a4b5c6d7e8",
+    "correlation_id": "6f1a2b3c-4d5e-4f60-8172-83a4b5c6d7e8",
+    "tenant": "acme",
+    "producer": "provisioning-service",
+    "domain": "provisioning",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "acme",
+    "idempotencykey": "sha256:secret-resolved-1328",
+    "transport": { "method": "stream", "protocol": "internal", "depth": 1 },
+    "data": {
+      "received_at": "2026-07-14T00:00:03.000Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 96,
+      "payload_checksum": "sha256:secret-resolved-1328",
+      "payload": {
+        "secretName": "hubspot-api-key",
+        "kind": "connector",
+        "owner": "hubspot",
+        "consumerService": "provisioning-service-apply-engine"
+      }
+    }
+  }
+}

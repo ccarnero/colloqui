@@ -1,0 +1,46 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1329,
+  "received": "2026-07-14 00:00:04.000000000",
+  "subject": "evt.acme.provisioning-service.provisioning.platform.internal.secret_access_denied.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:secret-access-denied-1329",
+    "X-Correlation-Id": "d8192a3b-4c5d-4e6f-8081-92a3b4c5d6e7",
+    "X-Causation-Id": "d8192a3b-4c5d-4e6f-8081-92a3b4c5d6e7",
+    "traceparent": "00-d4e5f60718293a4b5c6d7e8f9001324a-6e7f8091a2b3c4d5-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "e9203b4c-5d6e-4f70-9192-a3b4c5d6e7f8",
+    "source": "//provisioning-service/secrets",
+    "type": "io.yoizen.provisioning.secret_access_denied.v1",
+    "resource": "secret/connector/hubspot",
+    "time": "2026-07-14T00:00:04.000Z",
+    "traceid": "d4e5f60718293a4b5c6d7e8f9001324a",
+    "causation_id": "d8192a3b-4c5d-4e6f-8081-92a3b4c5d6e7",
+    "correlation_id": "d8192a3b-4c5d-4e6f-8081-92a3b4c5d6e7",
+    "tenant": "acme",
+    "producer": "provisioning-service",
+    "domain": "provisioning",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "acme",
+    "idempotencykey": "sha256:secret-access-denied-1329",
+    "transport": { "method": "stream", "protocol": "internal", "depth": 1 },
+    "data": {
+      "received_at": "2026-07-14T00:00:04.000Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 128,
+      "payload_checksum": "sha256:secret-access-denied-1329",
+      "payload": {
+        "secretName": "unrelated-secret-name",
+        "kind": "connector",
+        "owner": "hubspot",
+        "consumerService": "provisioning-service-apply-engine",
+        "reason": "secret 'unrelated-secret-name' is not bound to resource 'connector/hubspot' (binding mismatch)"
+      }
+    }
+  }
+}

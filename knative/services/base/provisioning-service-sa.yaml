@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: provisioning-service
+  labels:
+    app.kubernetes.io/name: provisioning-service
+    app.kubernetes.io/part-of: yoizen-arch

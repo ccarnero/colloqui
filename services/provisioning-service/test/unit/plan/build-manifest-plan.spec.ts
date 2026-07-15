@@ -218,6 +218,82 @@ describe("buildManifestPlan", () => {
     }
   });
 
+  it("T05: does NOT report missing_secret when the injected checker confirms the k8s Secret key exists", async () => {
+    const manifest = manifestWith({
+      channels: [
+        {
+          name: "http-in",
+          type: "http",
+          direction: "inbound",
+          secretRef: "webhook-secret",
+        },
+      ],
+      agents: [{ name: "agent-1", profile: {} }],
+      secrets: [
+        {
+          name: "webhook-secret",
+          scope: { kind: "channel", owner: "http-in" },
+        },
+      ],
+    });
+
+    const result = await buildManifestPlan(
+      manifest,
+      "tenant-a",
+      noopClients(),
+      undefined,
+      {
+        async exists() {
+          return { ok: true, value: true };
+        },
+      }
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(
+        result.value.preconditions.some((p) => p.kind === "missing_secret")
+      ).toBe(false);
+    }
+  });
+
+  it("T05: reports missing_secret when the injected checker reports the key absent", async () => {
+    const manifest = manifestWith({
+      channels: [
+        {
+          name: "http-in",
+          type: "http",
+          direction: "inbound",
+          secretRef: "webhook-secret",
+        },
+      ],
+      agents: [{ name: "agent-1", profile: {} }],
+      secrets: [
+        {
+          name: "webhook-secret",
+          scope: { kind: "channel", owner: "http-in" },
+        },
+      ],
+    });
+
+    const result = await buildManifestPlan(
+      manifest,
+      "tenant-a",
+      noopClients(),
+      undefined,
+      {
+        async exists() {
+          return { ok: true, value: false };
+        },
+      }
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(
+        result.value.preconditions.some((p) => p.kind === "missing_secret")
+      ).toBe(true);
+    }
+  });
+
   it("does NOT report an external secret as a missing_secret precondition", async () => {
     const manifest = manifestWith({
       channels: [

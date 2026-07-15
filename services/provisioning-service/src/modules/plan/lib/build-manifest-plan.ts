@@ -14,6 +14,8 @@ import type {
   ResourcePlanEntry,
 } from "../domain/plan.interfaces";
 import type { PlatformResourceClients } from "../domain/platform-resource-client.interface";
+import type { SecretExistenceChecker } from "../domain/secret-existence-checker.interface";
+import { NOOP_SECRET_EXISTENCE_CHECKER } from "../domain/secret-existence-checker.interface";
 import { desiredFieldsOfResource } from "./desired-fields-of-resource";
 import { diffResource } from "./diff-resource";
 import { gatherSecretReferences } from "./gather-secret-references";
@@ -29,7 +31,8 @@ export async function buildManifestPlan(
   manifest: IntegrationManifest,
   tenantId: string,
   clients: PlatformResourceClients,
-  logger: PlanLogger = NOOP_PLAN_LOGGER
+  logger: PlanLogger = NOOP_PLAN_LOGGER,
+  secretsChecker: SecretExistenceChecker = NOOP_SECRET_EXISTENCE_CHECKER
 ): Promise<BuildManifestPlanResult> {
   logger.log(
     `plan: resolving dependency order for manifest='${manifest.metadata.name}' tenant='${tenantId}'`
@@ -125,8 +128,30 @@ export async function buildManifestPlan(
     if (!binding || binding.external) {
       continue;
     }
-    logger.log(
-      `plan: secret '${binding.name}' (scope ${binding.scope.kind}/${binding.scope.owner}) reported as a missing-secret precondition — real Secret verification arrives in T05`
+
+    // T05: verify against the REAL k8s Secret (via the same k8s client the
+    // secrets broker uses) instead of unconditionally reporting every
+    // non-external secret as missing (the T04 placeholder behavior, still
+    // the default when no checker is injected — see NOOP_SECRET_EXISTENCE_CHECKER).
+    const existence = await secretsChecker.exists(
+      tenantId,
+      binding.scope.kind,
+      binding.scope.owner,
+      binding.name
+    );
+
+    if (existence.ok && existence.value) {
+      logger.log(
+        `plan: secret '${binding.name}' (scope ${binding.scope.kind}/${binding.scope.owner}) verified present in the k8s Secret — no precondition`
+      );
+      continue;
+    }
+
+    const reason = existence.ok
+      ? "no matching key found in the resource's k8s Secret"
+      : `existence check failed: ${existence.error}`;
+    logger.warn(
+      `plan: secret '${binding.name}' (scope ${binding.scope.kind}/${binding.scope.owner}) reported as a missing-secret precondition — ${reason}`
     );
     preconditions.push({
       kind: "missing_secret",
@@ -134,7 +159,7 @@ export async function buildManifestPlan(
       resourceName: binding.scope.owner,
       refType: "secretRef",
       refValue: binding.name,
-      message: `secret "${binding.name}" referenced by ${binding.scope.kind} "${binding.scope.owner}" has no verified value yet (Secret checks land in T05)`,
+      message: `secret "${binding.name}" referenced by ${binding.scope.kind} "${binding.scope.owner}" is not yet available (${reason})`,
     });
   }
 

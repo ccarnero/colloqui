@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 import { err, ok, type Result } from "../../lib/result";
 import type { IManifestRevisionRepository } from "../manifests/domain/manifest-revision.repository.interface";
@@ -9,6 +9,11 @@ import type {
 } from "./domain/plan.interfaces";
 import type { PlatformResourceClients } from "./domain/platform-resource-client.interface";
 import { PLATFORM_RESOURCE_CLIENTS } from "./domain/platform-resource-client.interface";
+import type { SecretExistenceChecker } from "./domain/secret-existence-checker.interface";
+import {
+  NOOP_SECRET_EXISTENCE_CHECKER,
+  SECRET_EXISTENCE_CHECKER,
+} from "./domain/secret-existence-checker.interface";
 import { buildManifestPlan } from "./lib/build-manifest-plan";
 
 export interface ManifestNotFoundError {
@@ -26,7 +31,10 @@ export class PlanService {
     @Inject(MANIFEST_REVISION_REPOSITORY)
     private readonly manifestRepository: IManifestRevisionRepository,
     @Inject(PLATFORM_RESOURCE_CLIENTS)
-    private readonly clients: PlatformResourceClients
+    private readonly clients: PlatformResourceClients,
+    @Optional()
+    @Inject(SECRET_EXISTENCE_CHECKER)
+    private readonly secretsChecker: SecretExistenceChecker = NOOP_SECRET_EXISTENCE_CHECKER
   ) {}
 
   /**
@@ -50,7 +58,8 @@ export class PlanService {
       revision.manifest,
       tenantId,
       this.clients,
-      this.logger
+      this.logger,
+      this.secretsChecker
     );
     if (!result.ok) {
       return err(result.error);

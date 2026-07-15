@@ -47,6 +47,9 @@ resources:
   # manual-loops/declarative-provisioning.md T02 — manifest apply engine +
   # secrets broker (server-side, engram #590: every workload wired 1:1 here).
   - provisioning-service.yaml
+  # T05 — dedicated ServiceAccount so the secrets-manager ClusterRoleBinding
+  # (knative/services/rbac/cluster-role-bindings.yaml) can target it.
+  - provisioning-service-sa.yaml
   # ----- Plain Deployments (Temporal workers, fixed 1 replica) -----
   - workflow-worker.yaml
   - connector-runtime.yaml

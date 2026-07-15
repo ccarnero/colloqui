@@ -4,16 +4,29 @@
 
 import { provisioningServiceConfig } from "../../../config";
 import type { PlatformResourceWriters } from "../domain/platform-resource-writer.interface";
+import type { ISecretValueResolver } from "../domain/secret-value-resolver.interface";
 import { createAgentsWriter } from "./agents-writer";
 import { createChannelsWriter } from "./channels-writer";
 import { createConnectorsWriter } from "./connectors-writer";
 import { createRegistryServicesWriter } from "./registry-services-writer";
 import { createWorkflowsWriter } from "./workflows-writer";
 
-export function buildPlatformResourceWriters(): PlatformResourceWriters {
+/**
+ * T05: `secretResolver` is optional — when wired (see `apply.module.ts`),
+ * the CHANNEL writer resolves a `secretRef` through the T05 secrets broker
+ * instead of failing loud with `secret_not_resolvable` (its `accessToken`
+ * field maps cleanly). The connector writer deliberately does NOT take the
+ * resolver in T05 (its connector-admin `authType`→`authConfig` mapping is a
+ * follow-up — see `connectors-writer.ts` header), and registry
+ * (hosted-service) + workflow writers are OUT of T05's minimal scope
+ * (SPEC.md: "hosted-service k8s-native env delivery is a later concern").
+ */
+export function buildPlatformResourceWriters(
+  secretResolver?: ISecretValueResolver
+): PlatformResourceWriters {
   const urls = provisioningServiceConfig.downstreamServiceUrls;
   return {
-    channel: createChannelsWriter(urls.channels),
+    channel: createChannelsWriter(urls.channels, secretResolver),
     connector: createConnectorsWriter(urls.connectors),
     agent: createAgentsWriter(urls.agents),
     service: createRegistryServicesWriter(urls.registry),

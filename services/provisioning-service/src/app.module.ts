@@ -4,6 +4,7 @@ import { ApplyModule } from "./modules/apply/apply.module";
 import { HealthModule } from "./modules/health/health.module";
 import { ManifestsModule } from "./modules/manifests/manifests.module";
 import { PlanModule } from "./modules/plan/plan.module";
+import { SecretsModule } from "./modules/secrets/secrets.module";
 import { ProvidersModule } from "./providers/providers.module";
 
 @Global()
@@ -13,6 +14,7 @@ import { ProvidersModule } from "./providers/providers.module";
     ProvidersModule,
     HealthModule,
     ManifestsModule,
+    SecretsModule,
     PlanModule,
     ApplyModule,
   ],

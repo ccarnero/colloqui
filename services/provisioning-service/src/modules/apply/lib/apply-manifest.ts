@@ -112,14 +112,19 @@ export async function applyManifestPlan(
       `apply: ${entry.kind} '${entry.name}' verdict='${verdict}' — writing via ${entry.kind} writer`
     );
 
+    // T05: threads the run's correlationId into the writer so a
+    // secretRef resolution (channels/connectors) audits as a SIBLING of
+    // this apply run (see `secret-audit-publisher.interface.ts`).
+    const writerContext = { correlationId: runAudit.correlationId };
     const result =
       verdict === "create"
-        ? await writer.create(tenantId, resource)
+        ? await writer.create(tenantId, resource, writerContext)
         : await writer.update(
             tenantId,
             entry.externalId ?? "",
             resource,
-            entry.diff
+            entry.diff,
+            writerContext
           );
 
     if (!result.ok) {

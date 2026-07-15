@@ -17,6 +17,7 @@ spec:
         autoscaling.knative.dev/max-scale: "3"
     spec:
       containerConcurrency: 0
+      serviceAccountName: provisioning-service
       containers:
         - name: user-container
           image: dev.local/provisioning-service:local
