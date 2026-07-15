@@ -173,3 +173,70 @@ Todo lo anterior es DATA (cachés derivados, contadores, breakers) salvo lo marc
 - **Colecciones Mongo a vaciar:** ver lista DATA en §5.
 - **Keys Redis a borrar:** todos los patrones de §6 salvo `adapter:oauth:*` (dudoso).
 - **No tocar:** todo lo listado como CONFIG en §4/§5, ni las definiciones de streams/consumers/buckets (solo su contenido).
+
+---
+
+## Manifest-from-zero: borrón y cuenta nueva (wipe de definiciones)
+
+> Añadido 2026-07-15 tras un ejercicio real de "aplicar un manifest.yaml
+> contra un tenant sin ningún recurso previo". `reset-dev.ts` (§ arriba)
+> deliberadamente NO alcanza para esto: por diseño solo trunca las tablas
+> **DATA** de §4/§5 (mensajes, eventos, runs) — nunca las **DEFINICIONES**
+> de recursos (cuentas de canal, workflows, agentes, adaptadores, etc.),
+> que son justamente lo que un manifest crea/reconcilia. Para probar un
+> `apply` desde cero hace falta vaciar esas definiciones a mano.
+
+### Qué NO toca `reset-dev.ts` (y por qué hace falta un paso aparte)
+
+`reset-dev.ts` clasifica y trunca únicamente las tablas/colecciones DATA de
+§4/§5 (`events`, `channel_events`, `execution_events`, `workflow_executions`,
+`job_executions`, etc.) y respeta explícitamente todo lo listado como CONFIG.
+Las **definiciones** de recursos (lo que un `manifest.yaml` provisiona) viven
+en Postgres compartido, en la base por tenant `tenant_acme`, y quedan
+intactas después de cualquier corrida de `reset-dev.ts`.
+
+### Tablas de definiciones en `tenant_acme` (Postgres compartido)
+
+Las tablas de definición relevantes para un wipe manifest-from-zero, todas
+en la base por tenant (`tenant_acme` en dev):
+
+`workflow_definitions`, `http_adapters`, `adapter_endpoints`, `agents`,
+`agent_versions`, `channel_accounts`, `knowledge_bases`, `documents`,
+`document_chunks`/`document_chunks_embedding`, `kb_document_checksums`,
+`mcp_servers`, `manifest_revisions`, `system_variables`, `skills`, `jobs`,
+`config_files`, `auto_reply_rules`.
+
+### Comando usado (dev, verificado en vivo)
+
+```bash
+kubectl exec -n support-services-dev postgres-shared-1 -c postgres -- \
+  psql -U postgres -d tenant_acme -c "
+TRUNCATE workflow_definitions, http_adapters, adapter_endpoints, agents,
+  agent_versions, channel_accounts, knowledge_bases, documents,
+  document_chunks, document_chunks_embedding, kb_document_checksums,
+  mcp_servers, manifest_revisions, system_variables, skills, jobs,
+  config_files, auto_reply_rules
+CASCADE;
+"
+```
+
+### Qué se preserva (no incluir en el TRUNCATE)
+
+`tenant_users`, `tenant_roles`, `tenant_role_permissions`, `credentials` —
+identidad, RBAC y credenciales del tenant no son parte del estado que un
+manifest reconstruye; wipearlas rompería el login/la sesión usada para
+correr el `apply` que sigue.
+
+### Consecuencias post-wipe (las dos que importan)
+
+1. **El webhook de Telegram queda apuntando a una cuenta borrada** hasta
+   que se re-aplique el manifest y (si `CHANNEL_SERVICE_PUBLIC_URL` sigue
+   sin configurar en el deploy, ver
+   `integrations/channels/telegram-transform-reply/README.md` §
+   Troubleshooting) se re-registre el webhook a mano — la cuenta vieja ya
+   no existe, así que cualquier `setWebhook` previo referencia un
+   `externalId` que ya no resuelve a nada.
+2. **El siguiente `plan` muestra todo en `create`**: al no quedar ninguna
+   definición previa, `yoizen manifests plan` reporta cada recurso del
+   manifest como `create` (nunca `noop`/`update`) — es el comportamiento
+   esperado de un tenant "en blanco", no un bug del planner.

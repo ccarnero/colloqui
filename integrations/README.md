@@ -116,6 +116,20 @@ missing kinds is
 `channels/telegram-transform-reply/` is the one reference integration
 migrated so far; the other eleven samples are stand-by.
 
+### Known caveat: Telegram webhook self-registration
+
+`channel-service` self-registers the Telegram webhook on account creation,
+using `CHANNEL_SERVICE_PUBLIC_URL` as the URL base. If that env var is
+unset on a deployment, the base falls back to an internal `http://` URL and
+Telegram rejects `setWebhook` (`bad webhook: An HTTPS URL must be
+provided`) — the account ends up with no webhook and inbound messages
+queue at Telegram until it's registered by hand. Once
+`CHANNEL_SERVICE_PUBLIC_URL` is set on `channel-service`, self-registration
+succeeds and no manual step is needed. See
+[`channels/telegram-transform-reply/README.md`](./channels/telegram-transform-reply/README.md)
+§ Run / exercise for the full manual remediation procedure (reading the
+account's `appSecret` from Postgres and calling `setWebhook` directly).
+
 ## Shared library
 
 `lib/resolve-env.sh` is a shared shell helper for resolving the dev-cluster environment

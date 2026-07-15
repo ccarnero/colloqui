@@ -92,10 +92,10 @@ drops out of G4/G5 entirely.
    `agentId`)? An allowlist is safer (no accidental substitution of an
    unrelated same-named key) but must be kept in sync with
    `@yoizen/shared` workflow action types by hand.
-5. `systemVariables` (gap 4) and `mcpServers` (gap 5) sections mirror the
+5. `systemVariables` (gap 4) and `mcpServers` (gap 6) sections mirror the
    existing section shape (`name` + payload fields + `external` flag),
    validated `.strict()` like every other section — no special-casing.
-6. Service scaling + routes (gap 6): scaling fields
+6. Service scaling + routes (gap 5): scaling fields
    (`port`/`minScale`/`maxScale`/`concurrencyTarget`) are added directly to
    the existing `services` section (optional, defaulting to
    `registry-service`'s own server-side defaults when omitted — the manifest
@@ -460,6 +460,40 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - Cross-manifest route collision enforcement, UNLESS decision 6's OPEN
   ruling requires it — default is documenting the existing risk, not
   building new enforcement, absent an explicit human call.
+
+## Related findings (recorded 2026-07-15, not in scope)
+
+Two incidents surfaced while operating the one shipped manifest
+(`telegram-transform-reply`) that are adjacent to this SPEC but are NOT
+folded into its task queue — recorded here for the human approval round,
+per this SPEC's own "no reinterpreting scope inline" boundary.
+
+1. **`CHANNEL_SERVICE_PUBLIC_URL` webhook self-registration failure**
+   (infra fix, not a manifest-schema gap). `channel-service` self-registers
+   the Telegram webhook on account creation
+   (`services/channel-service/src/modules/accounts/accounts.service.ts` →
+   `registerTelegramWebhook`, URL base from
+   `channelServiceConfig.channelServicePublicUrl`,
+   `services/channel-service/src/config.ts:25`). On the dev deployment this
+   env var is unset, so the fallback is the internal `http://` cluster URL;
+   Telegram rejects `setWebhook` with `bad webhook: An HTTPS URL must be
+   provided`, leaving the account with no webhook and inbound messages
+   queued at Telegram. Verified live twice; manual remediation documented in
+   `integrations/channels/telegram-transform-reply/README.md` §
+   Troubleshooting and `integrations/README.md` § Declarative provisioning.
+   Once `CHANNEL_SERVICE_PUBLIC_URL=https://api.devmachina.net/api` is set
+   on channel-service, self-registration succeeds and the manual step
+   disappears — this is an infra/deploy-config fix, not a change to the
+   manifest schema or apply engine.
+2. **Workflow `status` is invisible to the manifest** — a disabled workflow
+   diffs as `noop` against a manifest that doesn't declare `status` at all,
+   so `apply` cannot express or enforce enabled/disabled state. Verified:
+   manifest-CREATED workflows are always born `enabled`, so this only bites
+   PRE-EXISTING disabled workflows that a manifest later reconciles against.
+   Candidate follow-up: a `status` field in the `workflows` manifest
+   section — NOT added to the task queue above; needs its own human
+   decision round (new field shape, planner-diff semantics, whether it's
+   additive-only per this SPEC's decision 1) before becoming a task.
 
 ## Human boundaries for this change
 

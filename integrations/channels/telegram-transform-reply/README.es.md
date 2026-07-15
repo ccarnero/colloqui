@@ -149,6 +149,56 @@ curl -s "https://api.telegram.org/bot<token>/setWebhook" \
   --data-urlencode "secret_token=<appSecret>"
 ```
 
+> **Causa raíz y por qué a veces hay que hacerlo a mano.** `channel-service`
+> ya auto-registra el webhook al crear la cuenta (`registerTelegramWebhook`,
+> `services/channel-service/src/modules/accounts/accounts.service.ts`), usando
+> `channelServiceConfig.channelServicePublicUrl`
+> (`services/channel-service/src/config.ts:25`) como base de la URL. Si
+> `CHANNEL_SERVICE_PUBLIC_URL` no está seteada en el deployment, esa base cae
+> a la URL interna `http://` del clúster — Telegram rechaza `setWebhook` con
+> `bad webhook: An HTTPS URL must be provided`, así que la cuenta queda
+> **sin ningún webhook** y los mensajes entrantes quedan encolados del lado
+> de Telegram hasta registrarlo a mano. Una vez que `CHANNEL_SERVICE_PUBLIC_URL`
+> está seteada (p. ej. `https://api.devmachina.net/api`) en `channel-service`,
+> la auto-registración funciona al crear la cuenta y este paso manual
+> desaparece por completo.
+>
+> `apply` no expone el `appSecret` auto-generado de la cuenta en su propia
+> salida. La forma principal de leerlo es el endpoint autenticado del
+> gateway `GET /api/channels/accounts/<id>`, que devuelve `appSecret` en el
+> DTO de la cuenta (`services/channel-service/src/modules/accounts/accounts.service.ts:36`).
+> Usando el helper `auth()` definido en la sección de Troubleshooting del
+> README en inglés (headers bearer + `x-yoizen-tenant`):
+>
+> ```bash
+> # listar cuentas, encontrar la de externalId manifest:telegram-transform-reply-bot, leer su appSecret
+> auth "$GW/api/channels/accounts" \
+>   | jq -r '.[] | select(.externalId=="manifest:telegram-transform-reply-bot") | .appSecret'
+> ```
+>
+> Fallback de dev — si no tenés un token bearer a mano, leelo directo de
+> Postgres:
+>
+> ```bash
+> kubectl exec -n support-services-dev postgres-shared-1 -c postgres -- \
+>   psql -U postgres -d tenant_acme -At -c \
+>   "SELECT app_secret FROM channel_accounts WHERE external_id='manifest:telegram-transform-reply-bot';"
+> ```
+>
+> Llamada completa de registro usada para remediar esto en vivo (body JSON,
+> incluye `allowed_updates`/`max_connections`):
+>
+> ```bash
+> curl -X POST "https://api.telegram.org/bot<token>/setWebhook" \
+>   -H 'Content-Type: application/json' \
+>   -d '{
+>     "url": "https://api.devmachina.net/api/webhooks/telegram/acme/manifest:telegram-transform-reply-bot",
+>     "secret_token": "<appSecret de la consulta de arriba>",
+>     "allowed_updates": ["message", "channel_post"],
+>     "max_connections": 40
+>   }'
+> ```
+
 Para probar la cadena **sin** URL pública (inyecta un update sintético directo al gateway), usá el
 driver de ejecución — necesita el secreto de webhook de la cuenta y un chat id real:
 
