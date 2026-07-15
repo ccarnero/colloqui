@@ -314,7 +314,7 @@ rg -l "sdk/samples/" manual-loops/crm-support-telegram.md ; test $? -eq 1
 - [x] T02 git mv by group + path sweep
 - [x] T03 tier READMEs
 - [x] T04 canary e2e per group (pre-migration, original scripts)
-- [ ] T05 SDK CLI (`yoizen manifests` / `yoizen secrets`)
+- [x] T05 SDK CLI (`yoizen manifests` / `yoizen secrets`)
 - [ ] T06 manifest migration (delete setup scripts, CLI-driven provisioning)
 - [ ] T07 docs + index + gap SPEC + downstream SPEC fix
 
@@ -731,3 +731,35 @@ env.example refs); attempt 3 ran the exhaustive classified sweep — 2× APPROVE
 with both reviewers re-running the sweep and verifying zero cross-group refs
 remain. Gates G1-G3 green throughout (G1 at error level; SC1091 info baseline
 per T02 note).
+
+### T05 — 2026-07-15
+
+SDK CLI shipped: `yoizen` bin (`sdk/bin/yoizen.ts`) with
+`manifests validate|plan|apply -f <file>` (+ `--secrets-from-env`) and
+`secrets put <name> --scope <kind>:<owner> --value-env <VAR>`. Thin layer
+over existing `client.manifests`/`client.secrets` (verified against the
+resource clients — zero new SDK API surface); config resolution reuses
+`createClient()`; zero new deps (node:util parseArgs + Bun.YAML built-in —
+CLI requires the Bun runtime). Secret values flow env → `client.secrets.set`
+only — never argv/disk/logs; missing env vars fail fast listing ALL names.
+Verdict table `KIND\tNAME\tVERDICT` with literal create/update/noop is G5's
+assertion source.
+
+Accept run LIVE against the dev cluster: `bunx yoizen manifests validate -f
+sdk/test/cli/fixtures/sample-manifest.yaml` → valid=true; `plan` → 2 create
+verdicts (channel + workflow), grep-assertable. `cd sdk && bun test src/cli`
+→ 41 pass; full `bun test` → 384 pass 0 fail. Dual review: 2× APPROVED
+(attempt 1), both reviewers traced the secret flow end-to-end.
+
+Deviations documented: (a) no repo workspace wiring — `bunx yoizen` needs a
+one-time `cd sdk && bun link`, or run `cd sdk && bun run bin/yoizen.ts ...`;
+(b) no canonical showcase-manifest file existed — fixture added at
+`sdk/test/cli/fixtures/sample-manifest.yaml`; (c) CLI tests are colocated
+under `sdk/src/cli/**` to satisfy the Accept command verbatim.
+
+FOLLOW-UPS (non-blocking, from review): `sdk/package.json`'s `test` script
+glob (`tsx --test 'test/**/*.test.ts'`) does not include the colocated
+`src/cli` tests — `bun test` discovers them, the npm-script path does not;
+align the glob or move the tests. Also `VALID_SCOPE_KINDS` array duplicated
+in `parse-scope-arg.ts` + `extract-secret-bindings.ts` — extract to one
+shared constant.

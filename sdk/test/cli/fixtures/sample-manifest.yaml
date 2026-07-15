@@ -1,0 +1,13 @@
+apiVersion: yoizen.io/v1
+kind: IntegrationManifest
+metadata:
+  name: cli-verification-sample
+spec:
+  channels:
+    - name: cli-sample-http-in
+      type: http
+      direction: inbound
+  workflows:
+    - name: cli-sample-workflow
+      definition:
+        steps: []

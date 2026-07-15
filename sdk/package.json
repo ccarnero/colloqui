@@ -7,6 +7,9 @@
   "engines": {
     "node": ">=18"
   },
+  "bin": {
+    "yoizen": "./bin/yoizen.ts"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
