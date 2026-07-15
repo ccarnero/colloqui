@@ -25,7 +25,16 @@ For Linux/minikube, replace step 1 with:
 ./bootstrap-minikube-linux.sh --smoke
 ```
 
-## Samples
+Samples are organized into three tiers, each with one reason to exist:
+`sdk/examples/` (SDK API-surface examples), `integrations/` (end-to-end
+platform-feature references, grouped `channels/`/`ai/`/`http/`/`mcp/`), and
+`demos/` (commercial showcases, untouched here). See
+[`integrations/README.md`](./integrations/README.md) for the taxonomy and the
+declarative provisioning convention. Most samples below still run through
+their own `setup.sh`; `telegram-transform-reply` is the one migrated
+reference — it provisions declaratively through a `manifest.yaml` applied via
+the `yoizen` CLI instead of a setup script (the eleven remaining stand-by
+samples are unaffected, see `manual-loops/provisioning-manifest-gaps.md`).
 
 ```bash
 # 6) HTTP connectors
@@ -34,18 +43,14 @@ cd integrations/http/http-connectors
 ./setup.sh
 cd ../../..
 
-# 7) Telegram account + reply workflow
-cat > integrations/channels/telegram-transform-reply/.env <<'ENV'
-TELEGRAM_BOT_TOKEN=<bot-token-from-botfather>
-# Optional, only for real Telegram webhook inbound:
-# TG_PUBLIC_URL=https://<public-https-url>
-# Optional, only for synthetic inbound test:
-# SIMULATE_INBOUND=1
-# TELEGRAM_TEST_CHAT_ID=<numeric-chat-id>
-ENV
-cd integrations/channels/telegram-transform-reply
-./setup.sh
-cd ../../..
+# 7) Telegram account + reply workflow (declarative — manifest.yaml + yoizen CLI, no setup script)
+cd sdk && bun link && cd ..   # one-time; or prefix each call with `cd sdk && bun run bin/yoizen.ts`
+yoizen manifests validate -f integrations/channels/telegram-transform-reply/manifest.yaml
+yoizen manifests plan     -f integrations/channels/telegram-transform-reply/manifest.yaml
+env 'telegram-bot-token=<bot-token-from-botfather>' \
+  yoizen manifests apply -f integrations/channels/telegram-transform-reply/manifest.yaml --secrets-from-env
+# Optional: register the real Telegram webhook, or drive a synthetic inbound —
+# see integrations/channels/telegram-transform-reply/README.md "Run / exercise".
 
 # 8) HTTP fanout -> connectors -> Telegram
 cat > integrations/channels/http-fanout-telegram/.env <<'ENV'

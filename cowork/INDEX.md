@@ -358,6 +358,42 @@ sources are server-side fetch targets; true `multipart/form-data` for the apply 
 transport (currently base64-encoded tar in the JSON body, human decision 2026-07-15)
 once a multipart parser dependency is vendored.
 
+## Change: samples reorg — three-tier examples taxonomy + declarative provisioning showcase (samples-reorg)
+
+Manual-loop change (not SDD) reorganizing the old flat SDK samples tree (one true SDK example plus
+twelve platform integration examples) into three tiers, each with one reason to
+exist: `sdk/examples/` (SDK API-surface examples, seeded with `reference-pattern`),
+`integrations/` (end-to-end platform-feature references grouped `channels/`, `ai/`,
+`http/`, `mcp/`), and `demos/` (unchanged — commercial showcases). Migrated
+integrations provision exclusively through a `manifest.yaml` (`IntegrationManifest`)
+applied via the new SDK CLI (`yoizen manifests apply -f manifest.yaml
+--secrets-from-env`) against `provisioning-service` — no imperative setup scripts.
+Full task queue, gates, and human decisions: `manual-loops/samples-reorg.md`.
+Companion gap SPEC (manifest v1 extensions needed to migrate the remaining
+stand-by samples): `manual-loops/provisioning-manifest-gaps.md`.
+
+Decision cuádruple:
+- **Rule**: a migrated integration has ZERO imperative setup `.sh`/`.ts` files —
+  `manifest.yaml` + README CLI instructions only; a sample whose provisioned
+  end-state cannot be expressed in manifest v1 (verified against the apply-engine
+  writer code, not just the schema) goes to STAND-BY (untouched scripts +
+  `STANDBY.md`) instead of being approximated — `manual-loops/samples-reorg.md`
+  §User decisions 6/8.
+- **Why**: wrapping setup scripts around manifest calls would keep two competing
+  provisioning mechanisms alive for the same resource; the loop's explicit goal is
+  for `integrations/` to be the living "after" showcase of declarative provisioning,
+  so a sample that cannot honestly express its end-state through the manifest must
+  wait rather than fake it.
+- **Evidence**: code-level inspection of the apply engine (not just the schema)
+  during T06 found the T01 schema-only audit too optimistic — connector `authConfig`
+  is unreachable (`connectors-writer.ts:41-73`, inline keys dropped, `secretRef`
+  fails loud `secret_not_resolvable`), connector `endpoints` and manifest-time
+  symbolic-ref-to-real-ID substitution have no apply-engine concept at all. Human
+  ruling (2026-07-15): migrate `telegram-transform-reply` only; the other seven
+  formerly-MIGRATABLE samples join the four original gap samples in stand-by (11
+  total), restored by `manual-loops/provisioning-manifest-gaps.md`.
+- **Engram topic**: `platform/samples-reorg`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

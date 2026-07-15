@@ -6,9 +6,9 @@
 > Origin: user decisions 2026-07-13/14 (Cowork sessions, demo showcase design).
 > Engram topic: 'demo/crm-telegram-showcase'.
 > SEQUENCING OVERRIDE (user decision 2026-07-15): the remaining T08 runs AFTER
-> `manual-loops/samples-reorg.md` completes — that loop's T07 rewrites this
-> SPEC's `sdk/samples/*` Prior-art citations to the new `integrations/` paths,
-> so T08 documents against the final layout.
+> `manual-loops/samples-reorg.md` completes — that loop's T07 rewrote this
+> SPEC's citations of the old flat sample layout to the new `integrations/`
+> and `sdk/examples/` paths, so T08 documents against the final layout.
 
 ## Goal
 
@@ -30,8 +30,8 @@ end-to-end customer support over Telegram against a REAL cloud CRM.
 
 ## User decisions (human boundary — do not reinterpret)
 
-1. Demo lives in a NEW top-level `demos/` folder (NOT `sdk/samples/`) — first
-   of several demos to come.
+1. Demo lives in a NEW top-level `demos/` folder (NOT `integrations/` or
+   `sdk/examples/`) — first of several demos to come.
 2. Artifact creation is SEQUENTIAL: one `.sh` per artifact plus one
    orchestrator `setup.sh` that runs them all in order.
 3. External system: HubSpot Free CRM (contacts, deals, tickets APIs) at ZERO
@@ -48,17 +48,26 @@ end-to-end customer support over Telegram against a REAL cloud CRM.
 
 ## Prior art (validated 2026-07-14 — REUSE, do not duplicate)
 
-- `sdk/samples/ai-call-center-supervisor/src/setup.ts` (~line 917 `buildWorkflowBody`) —
-  the exact workflow action sequence (`serviceCall` → `jsFunction` → `agentCall` →
-  `conditional` → `channelSend`) and Telegram outbound `sendBase` shape.
-- `sdk/samples/telegram-transform-reply/` — Telegram inbound + reply to the
-  SAME user; webhook via `TG_PUBLIC_URL`; `TELEGRAM_TEST_CHAT_ID` requirement.
-- `sdk/samples/http-connectors/` — connector + endpoints + cache strategies
-  provisioning via SDK.
-- `sdk/samples/hosted-services-api/` — Knative hosted service registration via
-  `client.registry.services`; PORT is reserved by Knative (never set it).
-- `sdk/samples/http-bridge/` — the reference TS-SDK sample pattern: thin bash
-  wrappers over `src/*.ts`, logging helpers, `requireEnv`/`fail`, stage functions.
+- `integrations/ai/ai-call-center-supervisor/src/setup.ts` (~line 917
+  `buildWorkflowBody`; STAND-BY sample, see its `STANDBY.md` — script kept
+  untouched) — the exact workflow action sequence (`serviceCall` →
+  `jsFunction` → `agentCall` → `conditional` → `channelSend`) and Telegram
+  outbound `sendBase` shape.
+- `integrations/channels/telegram-transform-reply/` — Telegram inbound +
+  reply to the SAME user; the reference migrated integration (declarative
+  `manifest.yaml` applied via the `yoizen` CLI, no setup script); webhook
+  registration and `TELEGRAM_TEST_CHAT_ID` requirement documented in its
+  `README.md` "Run / exercise".
+- `integrations/http/http-connectors/` — connector + endpoints + cache
+  strategies provisioning via SDK (STAND-BY sample, see its `STANDBY.md` —
+  script kept untouched).
+- `integrations/http/hosted-services-api/` — Knative hosted service
+  registration via `client.registry.services`; PORT is reserved by Knative
+  (never set it) (STAND-BY sample, see its `STANDBY.md` — script kept
+  untouched).
+- `sdk/examples/reference-pattern/` — the reference TS-SDK sample pattern:
+  thin bash wrappers over `src/*.ts`, logging helpers, `requireEnv`/`fail`,
+  stage functions.
 - `sdk/README.md` "`connectors.invoke()`" section + `services/connector-runtime/README.md` —
   invoke contract: sync result `{ invocationId, status, data, headers, cacheResult }`;
   async 202 + Redis parking (TTL 900s) + webhook + `invocations.get()` fallback.
@@ -70,8 +79,9 @@ end-to-end customer support over Telegram against a REAL cloud CRM.
 ## Constraints (apply to every task)
 
 - All artifacts in English (scripts, code, docs, workflow/agent names).
-- Mirror the `sdk/samples/http-bridge` pattern: each `NN-<artifact>.sh` is a
-  thin bash wrapper over `src/NN-<artifact>.ts` built on `@yoizen/platform-sdk`.
+- Mirror the `sdk/examples/reference-pattern` pattern: each `NN-<artifact>.sh`
+  is a thin bash wrapper over `src/NN-<artifact>.ts` built on
+  `@yoizen/platform-sdk`.
 - Every provisioning script is IDEMPOTENT (create-or-update by name/externalId):
   running any script twice never duplicates artifacts.
 - No secrets in the repo — everything env-driven (`HUBSPOT_SERVICE_KEY`,
@@ -119,8 +129,10 @@ Commits only happen after the double green cluster run of the task's script.
 ### T01 — Scaffolding: `demos/` folder + shared lib
 
 - Create `demos/README.md` (one paragraph: what this folder is, how demos
-  differ from `sdk/samples/` — demos are commercial showcases, samples are
-  feature references) and `demos/crm-support-telegram/` with `package.json`,
+  differ from `integrations/`/`sdk/examples/` — demos are commercial
+  showcases, `integrations/` are feature references, `sdk/examples/`
+  demonstrate the SDK API surface) and `demos/crm-support-telegram/` with
+  `package.json`,
   `tsconfig.json`, `src/lib/` (logging, `requireEnv`, `fail`, stage helpers —
   copied from the `http-bridge` pattern, adapted, NOT imported across trees).
 - `demos/crm-support-telegram/README.md` skeleton: pitch, architecture sketch,
@@ -352,8 +364,8 @@ test -f demos/crm-support-telegram/README.es.md
   `get-deal`/`get-ticket` (or batch objects-read-with-properties) connector
   endpoint if a future iteration needs real dollar amounts or ticket status.
 - NEW TERRITORY (no prior sample builds a custom hosted-service image):
-  `sdk/samples/hosted-services-api` only ever registers a public prebuilt
-  image (`ealen/echo-server`). `priority-scorer/Dockerfile` builds the SDK
+  `integrations/http/hosted-services-api` only ever registers a public
+  prebuilt image (`ealen/echo-server`). `priority-scorer/Dockerfile` builds the SDK
   from source in its own build stage because the repo-root `.dockerignore`
   excludes `**/dist` everywhere ("always reinstalled/rebuilt inside the
   image") — copying a host-built `sdk/dist` was tried first and rejected by
@@ -459,9 +471,12 @@ test -f demos/crm-support-telegram/README.es.md
   telegram.provider.ts`, `webhook-ingress.service.ts` `resolveAccount()`) a
   real Telegram delivery would exercise, and does not depend on the
   `TG_PUBLIC_URL` tunnel's uptime (already covered by `01-telegram-
-  channel.sh`'s `webhook_registered` assertion). This exact pattern is
-  proven live by `sdk/samples/telegram-transform-reply/src/setup.ts`'s
-  `simulateInbound()`.
+  channel.sh`'s `webhook_registered` assertion). This exact pattern was
+  proven live by `integrations/channels/telegram-transform-reply`'s
+  `simulateInbound()` before that sample's setup script was deleted in its
+  manifest migration (`manual-loops/samples-reorg.md` T06) — the run-side
+  driver (`integrations/channels/telegram-transform-reply/src/index.ts`)
+  keeps the same synthetic-inbound behavior post-migration.
 - SPEC WORDING GAP: "contact searched (cache miss then hit on second
   message)" cannot be asserted on the `searchContact` workflow action —
   T03 deliberately made `search-contact` UNCACHED ("search results must
@@ -521,7 +536,7 @@ test -f demos/crm-support-telegram/README.es.md
   workflows/detail/workflow-executions.component.ts`'s routerLink build) is
   assembled from a computed host
   (`admin-console.platform-services-<env>.<domain>`) mirroring the SAME
-  `GW_HOST` convention `sdk/samples/lib/resolve-env.sh` already uses for
+  `GW_HOST` convention `integrations/lib/resolve-env.sh` already uses for
   `api-gateway`, against the `admin-console` Knative service
   (`knative/services/base/admin-console.yaml`). No dedicated Ingress
   manifest was found in this repo to verify the exact public hostname

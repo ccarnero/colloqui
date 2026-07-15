@@ -684,6 +684,57 @@ Runnable examples live in three tiers, each with one reason to exist:
 - [`demos/`](../demos/README.md) — commercial showcases that tell a business story,
   composing several integrations into one narrative.
 
+## CLI: `yoizen` bin
+
+A thin CLI (`bin/yoizen.ts`) wraps `client.manifests`/`client.secrets` for
+scripting and README-driven provisioning — no new SDK API surface, just a
+command layer over the resource clients above (`manual-loops/samples-reorg.md`
+decision 9).
+
+```bash
+cd sdk && bun link   # one-time; exposes `yoizen` on PATH
+# or, without linking:
+cd sdk && bun run bin/yoizen.ts <command>
+```
+
+> Requires the **Bun** runtime — the CLI parses YAML with Bun's built-in
+> `Bun.YAML.parse` rather than adding a `js-yaml` dependency, so plain `node`
+> cannot run it.
+
+### Subcommands
+
+```bash
+yoizen manifests validate -f <file>                 # schema + structural checks only, never mutates
+yoizen manifests plan     -f <file>                 # read-only diff; prints a KIND/NAME/VERDICT table
+yoizen manifests apply    -f <file> [--secrets-from-env]
+yoizen secrets put <name> --scope <kind>:<owner> --value-env <VAR>
+```
+
+### Config resolution
+
+Identical to `createClient()` above — same env vars, same precedence
+(`YOIZEN_TENANT`, `YOIZEN_EMAIL`, `YOIZEN_PASSWORD`, `YOIZEN_BASE_URL`, ...).
+The CLI does not duplicate that logic; it just calls `createClient()` with no
+arguments.
+
+### `--secrets-from-env`
+
+Reads the manifest's `secrets` bindings, takes each VALUE from the
+same-named environment variable, `client.secrets.set()`s it, then applies —
+secret values never touch disk or argv. Missing env vars fail fast, listing
+every missing binding name. Binding names are slug-cased, so a name
+containing a hyphen needs the `env 'name=value'` invocation form rather than
+a bare shell assignment:
+
+```bash
+env 'telegram-bot-token=123456:ABC-your-bot-token' \
+  yoizen manifests apply -f manifest.yaml --secrets-from-env
+```
+
+`yoizen secrets put` is the equivalent one-off command outside a manifest
+apply: it reads the value from the env var named by `--value-env` and is
+never logged.
+
 ## Development
 
 ```bash

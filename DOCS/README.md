@@ -162,6 +162,15 @@ For the build/rollout inventory, treat [`../services.conf`](../services.conf)
 as the source of truth. It includes `agent-memory-service` and
 `agent-scheduler-service` in addition to the core platform services.
 
+### Samples and examples
+
+Runnable examples live in three tiers under the repo root, each with one reason
+to exist: [`sdk/examples/`](../sdk/examples/README.md) (SDK API-surface
+examples), [`integrations/`](../integrations/README.md) (end-to-end platform
+feature references, provisioned declaratively through the SDK), and
+[`demos/`](../demos/README.md) (commercial showcases). See
+`sdk/README.md` "Samples & examples" for the same map from the SDK's side.
+
 ## Architecture Overview
 
 ### Focused Runtime Sequences

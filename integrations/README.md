@@ -52,6 +52,70 @@ surface — not a business narrative and not a tour of the SDK's API shape.
 - `mcp-repo-support-bot/` — a Telegram bot answering questions about a GitHub
   repository through the `mcpCall` workflow action.
 
+## Declarative provisioning
+
+A migrated integration provisions its platform resources through ONE
+`manifest.yaml` (`apiVersion: yoizen.io/v1`, `kind: IntegrationManifest`,
+schema: `packages/shared/src/provisioning/manifest.schema.ts`), applied via
+the SDK's `yoizen` CLI against `provisioning-service` — never through an
+imperative `setup.sh`/`setup.ts`. See
+[`telegram-transform-reply/manifest.yaml`](./channels/telegram-transform-reply/manifest.yaml)
+and its README for a worked example, and
+[`services/provisioning-service/README.md`](../services/provisioning-service/README.md)
+for the full operational contract (plan verdicts, apply ordering, partial-failure
+resume, RBAC).
+
+### CLI commands
+
+One-time setup (or run every command through `bun run bin/yoizen.ts` without
+linking):
+
+```bash
+cd sdk && bun link   # exposes `yoizen` on PATH; or prefix calls with `cd sdk && bun run bin/yoizen.ts`
+```
+
+```bash
+yoizen manifests validate -f manifest.yaml
+yoizen manifests plan     -f manifest.yaml
+yoizen manifests apply    -f manifest.yaml --secrets-from-env
+```
+
+`validate` and `plan` never mutate anything. `apply` executes the latest
+plan in dependency order; a second `apply` against a converged manifest is a
+no-op (`0 create / 0 update`, all verdicts `noop`) — the idempotence proof
+every migrated integration's README documents.
+
+### Secrets: `--secrets-from-env`
+
+A manifest's `secrets` section carries only NAME + SCOPE bindings, never
+values. `apply --secrets-from-env` reads each binding's VALUE from a
+same-named environment variable — the value never touches the repo, disk,
+or argv. Binding names are slug-cased (manifest `nameSchema`: lowercase
+alphanumeric + hyphens), so when your shell doesn't allow hyphens in a bare
+`VAR=value` assignment, use the `env` command form:
+
+```bash
+env 'telegram-bot-token=<real-bot-token>' \
+  yoizen manifests apply -f manifest.yaml --secrets-from-env
+```
+
+Missing bindings fail fast, listing every missing variable name — `apply`
+never partially resolves secrets silently.
+
+### What `STANDBY.md` means
+
+A sample carrying a `STANDBY.md` at its root is **not** manifest-migrated:
+its resources exceed what manifest v1 can express (verified against the
+apply engine's writer code, not just the schema — see each `STANDBY.md` for
+the specific gap and file:line evidence). Its setup scripts stay untouched
+until the gap is closed. The companion SPEC extending manifest v1 with the
+missing kinds is
+[`manual-loops/provisioning-manifest-gaps.md`](../manual-loops/provisioning-manifest-gaps.md)
+— it needs its own human approval before it runs.
+
+`channels/telegram-transform-reply/` is the one reference integration
+migrated so far; the other eleven samples are stand-by.
+
 ## Shared library
 
 `lib/resolve-env.sh` is a shared shell helper for resolving the dev-cluster environment

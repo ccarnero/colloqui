@@ -316,7 +316,7 @@ rg -l "sdk/samples/" manual-loops/crm-support-telegram.md ; test $? -eq 1
 - [x] T04 canary e2e per group (pre-migration, original scripts)
 - [x] T05 SDK CLI (`yoizen manifests` / `yoizen secrets`)
 - [x] T06 manifest migration (delete setup scripts, CLI-driven provisioning)
-- [ ] T07 docs + index + gap SPEC + downstream SPEC fix
+- [x] T07 docs + index + gap SPEC + downstream SPEC fix
 
 ## Out of scope (explicit)
 
@@ -812,3 +812,29 @@ T07 SCOPE CHANGE: `provisioning-manifest-gaps.md` must now cover SIX gap
 kinds: connector credential wiring (broker secretRef + inline authConfig),
 connector endpoints, manifest-time ID substitution, systemVariables,
 service scaling+routes, mcpServers.
+
+### T07 — 2026-07-15
+
+Docs + index + gap SPEC shipped: `cowork/INDEX.md` reorg entry (reworded
+once — attempt 2 — after the literal old path tripped G2); content refresh
+of `bootstrap-from-scratch.md` (telegram step now CLI flow) and
+`DOCS/README.md` (three-tier pointer); "Declarative provisioning" section
+in `integrations/README.md` (manifest convention, CLI commands,
+secrets-from-env slug rule, STANDBY.md meaning); CLI section in
+`sdk/README.md`; every `sdk/samples/*` citation in
+`manual-loops/crm-support-telegram.md` rewritten to the new paths with
+accurate migrated/stand-by annotations (crm T08 can now run).
+
+AUTHORED `manual-loops/provisioning-manifest-gaps.md` (487 lines): the
+companion SPEC covering all SIX manifest v1 gaps (connector credential
+wiring, connector endpoints, manifest-time ID substitution, systemVariables,
+service scaling+routes, mcpServers), task queue T01-T09, end state = the 11
+stand-by samples migrated and STANDBY.md removed, full canary set restored.
+It requires its own explicit human approval before it ever runs (stated in
+three places). KNOWN NIT for that approval round (review finding,
+non-blocking): the "(gap 5)"/"(gap 6)" parentheticals in its User decisions
+are swapped relative to its Goal numbering — fix when approving.
+
+Gates: G1-G3 green (G2 failed once on the INDEX wording, fixed), Accept all
+green. Dual review: 2× APPROVED (attempt 2) — reviewers verified every code
+citation line-for-line and the 11-sample stand-by list against disk.
