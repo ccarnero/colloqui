@@ -5,6 +5,10 @@
 > Depends on: `manual-loops/connector-invoke-api.md` (shipped, done 8/8 — `connectors.invoke()` sync/async).
 > Origin: user decisions 2026-07-13/14 (Cowork sessions, demo showcase design).
 > Engram topic: 'demo/crm-telegram-showcase'.
+> SEQUENCING OVERRIDE (user decision 2026-07-15): the remaining T08 runs AFTER
+> `manual-loops/samples-reorg.md` completes — that loop's T07 rewrites this
+> SPEC's `sdk/samples/*` Prior-art citations to the new `integrations/` paths,
+> so T08 documents against the final layout.
 
 ## Goal
 
