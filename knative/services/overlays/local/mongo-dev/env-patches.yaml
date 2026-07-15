@@ -1480,3 +1480,64 @@ spec:
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
+---
+
+# provisioning-service is Postgres-only (ProvisioningTenantConnectionManagerPostgres),
+# so — exactly like agent-memory-service above — it keeps its Postgres env even
+# in the mongo overlay. The critical entry is NATS_URL: NATS lives in
+# support-services-dev, and the base yaml's `nats://nats:4222` is unresolvable
+# from this namespace, which blocks Nest bootstrap forever in ApplyModule's
+# NATS connection provider (waitOnFirstConnect). The Postgres connection is
+# lazy/per-tenant, so it never blocks bootstrap.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: provisioning-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-container
+          image: dev.local/provisioning-service:local
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NATS_URL
+              value: "nats://nats.support-services-dev.svc.cluster.local:4222"
+            - name: POSTGRES_HOST
+              value: "postgres.support-services-dev.svc.cluster.local"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_USER
+              value: "yoizen"
+            - name: POSTGRES_PASSWORD
+              value: "yoizen-dev-password"
+            - name: POSTGRES_DB
+              value: "yoizen"
+            - name: PLATFORM_ENVIRONMENT
+              value: "dev"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "provisioning-service"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10

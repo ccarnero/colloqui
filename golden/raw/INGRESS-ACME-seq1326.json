@@ -1,0 +1,46 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1326,
+  "received": "2026-07-14 00:05:01.000000000",
+  "subject": "evt.acme.provisioning-service.provisioning.platform.internal.apply_failed.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "sha256:apply-failed-1326",
+    "X-Correlation-Id": "9c4d5e6f-7081-4203-9425-c6d7e8f90132",
+    "X-Causation-Id": "9c4d5e6f-7081-4203-9425-c6d7e8f90132",
+    "traceparent": "00-c3d4e5f60718293a4b5c6d7e8f90112-6f70819203142536-01"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "ad5e6f70-8192-4314-a536-d7e8f9013243",
+    "source": "//provisioning-service/manifests",
+    "type": "io.yoizen.provisioning.apply_failed.v1",
+    "resource": "manifest/broken-manifest/connector/broken-connector",
+    "time": "2026-07-14T00:05:01.000Z",
+    "traceid": "c3d4e5f60718293a4b5c6d7e8f90112",
+    "causation_id": "9c4d5e6f-7081-4203-9425-c6d7e8f90132",
+    "correlation_id": "9c4d5e6f-7081-4203-9425-c6d7e8f90132",
+    "tenant": "acme",
+    "producer": "provisioning-service",
+    "domain": "provisioning",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "acme",
+    "idempotencykey": "sha256:apply-failed-1326",
+    "transport": { "method": "stream", "protocol": "internal", "depth": 1 },
+    "data": {
+      "received_at": "2026-07-14T00:05:01.000Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 104,
+      "payload_checksum": "sha256:apply-failed-1326",
+      "payload": {
+        "manifestName": "broken-manifest",
+        "kind": "connector",
+        "name": "broken-connector",
+        "message": "missing required field 'config.baseUrl'",
+        "appliedSoFar": []
+      }
+    }
+  }
+}

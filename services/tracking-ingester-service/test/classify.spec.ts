@@ -381,4 +381,72 @@ describe("classify — TAXONOMY.md §4 rules 1-20", () => {
     });
     expect(c.unknown).toBe(true);
   });
+
+  it("rule 22 — provisioning-service apply_started -> platform/provisioning", () => {
+    const c = value(
+      "evt.acme.provisioning-service.provisioning.platform.internal.apply_started.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "provisioning",
+      rule: 22,
+    });
+    expect(c.unknown).toBe(false);
+  });
+
+  it("rule 22 — provisioning-service resource_applied -> platform/provisioning", () => {
+    const c = value(
+      "evt.acme.provisioning-service.provisioning.platform.internal.resource_applied.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "provisioning",
+      rule: 22,
+    });
+  });
+
+  it("rule 22 — provisioning-service apply_completed -> platform/provisioning", () => {
+    const c = value(
+      "evt.acme.provisioning-service.provisioning.platform.internal.apply_completed.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "provisioning",
+      rule: 22,
+    });
+  });
+
+  it("rule 22 — provisioning-service apply_failed -> platform/provisioning", () => {
+    const c = value(
+      "evt.acme.provisioning-service.provisioning.platform.internal.apply_failed.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "provisioning",
+      rule: 22,
+    });
+  });
+
+  it("rule 22 — kind-agnostic within the family (unknown future kind still matches)", () => {
+    const c = value(
+      "evt.acme.provisioning-service.provisioning.platform.internal.some_future_kind.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "provisioning",
+      rule: 22,
+    });
+    expect(c.unknown).toBe(false);
+  });
+
+  it("rule 22 — near-miss: domain != provisioning falls through to rule 17", () => {
+    const c = value(
+      "evt.acme.provisioning-service.automation.platform.internal.apply_started.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "unknown",
+      rule: 16,
+    });
+  });
 });

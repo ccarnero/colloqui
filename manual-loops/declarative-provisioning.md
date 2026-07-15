@@ -316,7 +316,7 @@ grep -n "manifests" sdk/README.md
 - [x] T01 manifest schema + validator
 - [x] T02 service scaffold + validate endpoint
 - [x] T03 resolver + planner
-- [ ] T04 apply engine + e2e script
+- [x] T04 apply engine + e2e script
 - [ ] T05 secrets CRUD + broker
 - [ ] T06 KB sources (inline/file/url)
 - [ ] T07 gateway routes + authz

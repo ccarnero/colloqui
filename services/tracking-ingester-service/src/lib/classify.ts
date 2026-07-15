@@ -38,6 +38,7 @@ export type BusinessFn =
   | "workflow-execution"
   | "runtime-presence"
   | "registry-sync"
+  | "provisioning"
   | "tenant-provisioning"
   | "audit"
   | "dlq"
@@ -258,6 +259,23 @@ export function classify(
       provider === "system"
     ) {
       return ok(classified("platform", "registry-sync", 10));
+    }
+
+    // Rule 22 — provisioning-service apply-engine audit trail
+    // (`manual-loops/declarative-provisioning.md` T04). Kind-agnostic within
+    // the family (matches producer+domain, same design as rule 19): covers
+    // `apply_started`/`resource_applied`/`apply_completed`/`apply_failed`.
+    // Evaluated BEFORE the 16/17/18 catch-alls — rule 17's channel whitelist
+    // already contains `platform`, so without this rule these events would
+    // get the right tech by accident but business_fn would fall to rule 17's
+    // `unknown` and alarm on every manifest apply. TAXONOMY.md §4 rule 22.
+    if (
+      producer === "provisioning-service" &&
+      domain === "provisioning" &&
+      channel === "platform" &&
+      provider === "internal"
+    ) {
+      return ok(classified("platform", "provisioning", 22));
     }
 
     // Rule 21 — connector-runtime async invoke transport pair

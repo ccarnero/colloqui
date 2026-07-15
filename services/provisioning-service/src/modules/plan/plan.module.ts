@@ -15,6 +15,9 @@ import { PlanService } from "./plan.service";
     },
   ],
   controllers: [PlanController],
-  exports: [PlanService],
+  // PLATFORM_RESOURCE_CLIENTS is exported so ApplyModule (T04) can reuse the
+  // SAME read-only client factory to build a fresh plan right before every
+  // apply, instead of re-instantiating a parallel client set.
+  exports: [PlanService, PLATFORM_RESOURCE_CLIENTS],
 })
 export class PlanModule {}

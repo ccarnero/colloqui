@@ -16,8 +16,12 @@ recorded in `DRIFT.md`.
   synthetic events (seq 1320-1321, added by `manual-loops/connector-invoke-api.md`
   T04 to cover the `invoke_requested`/`invoke_completed` connector-invoke
   transport pair ahead of the T05 emitter, same golden rule 3 — see addendum
-  below), 82 total. Each file is a wrapper object: `{ stream, seq, received,
-  subject, headers, envelope }`. File name encodes provenance:
+  below) + 5 synthetic events (seq 1322-1326, added by
+  `manual-loops/declarative-provisioning.md` T04 to cover the
+  `apply_started`/`resource_applied`/`apply_completed`/`apply_failed`
+  provisioning-service apply-engine kinds, landed WITH the emitter — see
+  addendum below), 87 total. Each file is a wrapper object: `{ stream, seq,
+  received, subject, headers, envelope }`. File name encodes provenance:
   `<STREAM>-seq<N>.json`.
 - `labeled.tsv` — pre-labels produced by applying the classification rules in
   `TAXONOMY.md` §4 (20-rule table, first match wins) deterministically to every event.
@@ -35,13 +39,17 @@ recorded in `DRIFT.md`.
 
 - **`INGRESS-ACME`** — 70 live-captured events (contiguous range seq 1242–1311) +
   8 synthetic workflow-step-events T01 events (seq 1312–1319, see addendum below) +
-  2 synthetic connector-invoke-api T04 events (seq 1320–1321, see addendum below).
+  2 synthetic connector-invoke-api T04 events (seq 1320–1321, see addendum below) +
+  5 synthetic declarative-provisioning T04 events (seq 1322–1326, see addendum
+  below).
 - **`GATEWAY_AUDIT`** — 2 events.
-- 7 correlation chains, all formally closed by `correlation_id` + `causation_id`:
+- 9 correlation chains, all formally closed by `correlation_id` + `causation_id`:
   4 conversation chains (1 Telegram, 3 HTTP) and 2 memory approve/reject cycles
   (test-provenance memories created via the admin API for fix-4 validation), plus
   2 synthetic workflow-step-events chains (seq 1312–1315, 1316–1319), plus 1
-  synthetic connector-invoke async-transport chain (seq 1320–1321).
+  synthetic connector-invoke async-transport chain (seq 1320–1321), plus 2
+  synthetic declarative-provisioning apply chains (seq 1322–1324 successful run,
+  seq 1325–1326 failed run).
 
 ## `labeled.tsv` column contract
 
@@ -64,6 +72,23 @@ These labels were generated mechanically from the `TAXONOMY.md` rule table.
 **`labeled.tsv` becomes the classifier's golden truth ONLY after user correction.**
 All 82 rows carry HIGH confidence; rows with a non-empty `notes` column are the ones
 most likely to need a human decision.
+
+## Addendum (2026-07-14) — declarative-provisioning T04 synthetic rows
+
+`manual-loops/declarative-provisioning.md` T04 lands the classification rule
+(rule 22), the apply-engine emitter, AND the golden rows together in the same
+task (unlike the two addenda below, which landed the rule ahead of a
+not-yet-built emitter) — golden rule 3 still applies (rule + golden + classifier
+land together), just with the emitter shipping in the same commit instead of a
+later one. 5 rows (seq 1322-1326, two synthetic correlation chains under
+`INGRESS-ACME`) were added by hand: chain one is a successful 3-resource-count
+run (`apply_started` → `resource_applied` (channel created) → `apply_completed`,
+seq 1322-1324); chain two is a failed run (`apply_started` → `apply_failed`,
+seq 1325-1326). Both chains follow the sibling-hop causal pattern established
+by workflow-step-events T01: `resource_applied`/`apply_completed`/`apply_failed`
+all cite the run's `apply_started` envelope id as `causation_id` (never a
+preceding sibling event), correlation inherited, depth 1. All 5 classify as
+rule 22 `platform`/`provisioning`. See `TAXONOMY.md` §4 rule 22 design note.
 
 ## Addendum (2026-07-13) — connector-invoke-api T04 synthetic rows
 
