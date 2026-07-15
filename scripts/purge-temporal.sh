@@ -99,17 +99,21 @@ set -euo pipefail
 # ----- defaults --------------------------------------------------------------
 
 DEFAULT_NAMESPACE="support-services-dev"
-# Post-HA-migration the single `temporal` Deployment was split into 4
-# role-specific Deployments. Hardcoded list because the purge flow has
-# to scale ALL of them down before TRUNCATE (otherwise the remaining
-# role would hold row locks). Order matters: roll history last in the
-# scale-up so the frontend has a ring to discover when it boots.
-TEMPORAL_DEPLOYMENTS=(
+# Temporal topology is AUTO-DETECTED at runtime (see
+# ensure_deployments_exist). The 2026-05 HA migration split `temporal`
+# into 4 role Deployments, but the cluster later reverted to the single
+# `temporalio/auto-setup` Deployment (2026-06-11 — see
+# DOCS/RUNBOOK-TEMPORAL.md). Both topologies are supported. The HA list
+# keeps its original order: history last on scale-up so the frontend
+# has a ring to discover when it boots.
+TEMPORAL_DEPLOYMENTS=()
+HA_DEPLOYMENTS=(
   temporal-frontend
   temporal-history
   temporal-matching
   temporal-worker
 )
+SINGLE_DEPLOYMENT="temporal"
 DEFAULT_PG_POD="postgres-temporal-1"
 DEFAULT_PG_USER="postgres"
 # Visibility moved to its own CNPG cluster on 2026-05-22 (see
@@ -282,21 +286,43 @@ ensure_namespace_exists() {
   fi
 }
 
+# Detects which Temporal topology is running and populates
+# TEMPORAL_DEPLOYMENTS accordingly. Prefers the 4-role HA topology when
+# ALL roles are present; falls back to the single auto-setup Deployment.
+# A partial HA topology (some roles missing) is refused loudly — purging
+# with a live writer still up would deadlock the TRUNCATE.
 ensure_deployments_exist() {
   local missing=()
-  for d in "${TEMPORAL_DEPLOYMENTS[@]}"; do
+  for d in "${HA_DEPLOYMENTS[@]}"; do
     if ! "${KCTL[@]}" -n "$NAMESPACE" get deploy "$d" >/dev/null 2>&1; then
       missing+=("$d")
     fi
   done
-  if (( ${#missing[@]} > 0 )); then
-    err "Temporal role Deployments not found in ${NAMESPACE}: ${missing[*]}"
-    err "  Hint: post-HA-migration the cluster runs 4 Deployments"
-    err "        (frontend, history, matching, worker). If you are on"
-    err "        the legacy single-Deployment topology, pin to the old"
-    err "        purge-temporal.sh revision tagged pre-HA-migration."
+
+  if (( ${#missing[@]} == 0 )); then
+    TEMPORAL_DEPLOYMENTS=("${HA_DEPLOYMENTS[@]}")
+    log "Detected HA topology (4 role Deployments): ${TEMPORAL_DEPLOYMENTS[*]}"
+    return 0
+  fi
+
+  if (( ${#missing[@]} < ${#HA_DEPLOYMENTS[@]} )); then
+    err "Partial HA topology in ${NAMESPACE}: missing ${missing[*]}"
+    err "  Refusing to guess which Deployments hold row locks."
+    err "  Fix the cluster (all 4 roles up, or single auto-setup) and re-run."
     exit 2
   fi
+
+  if "${KCTL[@]}" -n "$NAMESPACE" get deploy "$SINGLE_DEPLOYMENT" >/dev/null 2>&1; then
+    TEMPORAL_DEPLOYMENTS=("$SINGLE_DEPLOYMENT")
+    log "Detected single auto-setup Deployment topology: ${SINGLE_DEPLOYMENT}"
+    log "  (HA topology reverted 2026-06-11 — see DOCS/RUNBOOK-TEMPORAL.md)"
+    return 0
+  fi
+
+  err "No Temporal Deployments found in ${NAMESPACE}."
+  err "  Looked for HA roles (${HA_DEPLOYMENTS[*]})"
+  err "  and the single auto-setup Deployment ('${SINGLE_DEPLOYMENT}')."
+  exit 2
 }
 
 ensure_pg_pod_exists() {
@@ -315,11 +341,59 @@ ensure_vis_pg_pod_exists() {
     return 0
   fi
   if ! "${KCTL[@]}" -n "$NAMESPACE" get pod "$VIS_PG_POD" >/dev/null 2>&1; then
+    # If the operator did NOT override the flag, fall back to the
+    # workflow-state pod: the 2026-05-22 visibility split was reverted
+    # and single-cluster setups host temporal_visibility on the same
+    # CNPG primary (see DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md,
+    # marked inactive).
+    if [[ "$VIS_PG_POD" == "$DEFAULT_VIS_PG_POD" ]]; then
+      warn "Visibility pod ${VIS_PG_POD} not found — falling back to ${PG_POD}"
+      warn "  (single-cluster topology: visibility lives on the workflow-state primary)"
+      VIS_PG_POD="$PG_POD"
+      return 0
+    fi
     err "Visibility Postgres pod not found: ${NAMESPACE}/${VIS_PG_POD}"
     err "  Hint: pass --vis-pg-pod=postgres-temporal-1 for legacy"
     err "        single-cluster setups; see runbooks/temporal-visibility-split.md."
     exit 2
   fi
+}
+
+# Returns 0 iff `executions_visibility` exists on <pod> in $VIS_DB.
+# Read-only (to_regclass), safe to run even in --dry-run.
+vis_table_exists_on() {
+  local pod=$1
+  local user=$2
+  local result
+  result=$("${KCTL[@]}" -n "$NAMESPACE" exec -i "$pod" -c postgres -- \
+    psql -U "$user" -d "$VIS_DB" -At -c \
+    "SELECT to_regclass('public.executions_visibility') IS NOT NULL;" \
+    2>/dev/null) || return 1
+  [[ "$result" == "t" ]]
+}
+
+# Pod existence is NOT enough to pick the visibility target: after the
+# visibility-split revert the old `postgres-temporal-visibility` CNPG
+# cluster can still be running with an EMPTY temporal_visibility DB,
+# while the ACTIVE visibility datasource lives on the workflow-state
+# cluster. Resolve by locating the actual relation.
+SKIP_VISIBILITY=false
+resolve_visibility_target() {
+  if vis_table_exists_on "$VIS_PG_POD" "$VIS_PG_USER"; then
+    log "Visibility table found on ${VIS_PG_POD} (db=${VIS_DB})"
+    return 0
+  fi
+  if [[ "$VIS_PG_POD" != "$PG_POD" ]] && vis_table_exists_on "$PG_POD" "$PG_USER"; then
+    warn "executions_visibility not found on ${VIS_PG_POD}/${VIS_DB} — using ${PG_POD}"
+    warn "  (visibility split reverted: active datasource is on the workflow-state cluster;"
+    warn "   the old visibility CNPG cluster is still up but empty)"
+    VIS_PG_POD="$PG_POD"
+    VIS_PG_USER="$PG_USER"
+    return 0
+  fi
+  warn "executions_visibility not found on ${VIS_PG_POD} nor ${PG_POD} (db=${VIS_DB})."
+  warn "  SKIPPING the visibility TRUNCATE stage — nothing to wipe there."
+  SKIP_VISIBILITY=true
 }
 
 # ----- arg parsing ----------------------------------------------------------
@@ -448,20 +522,27 @@ print_counts_report() {
   # Read each "tbl<TAB>count" line into two fields. We don't sort here
   # — psql already ORDER BY'd.
   local tbl rows
-  local primary_tables
-  mapfile -t primary_tables < <(build_workflow_truncate_list)
+  # while-read instead of mapfile: macOS ships bash 3.2 (no mapfile).
+  local primary_tables=()
+  while IFS= read -r tbl; do
+    primary_tables+=("$tbl")
+  done < <(build_workflow_truncate_list)
   while IFS=$'\t' read -r tbl rows; do
     [[ -z "$tbl" ]] && continue
     printf '%-40s %12s\n' "$tbl" "$rows"
   done < <(counts_for_tables "$PG_POD" "$PG_USER" "$DB" "${primary_tables[@]}")
 
-  printf '\n[%s on %s]\n' "$VIS_DB" "$VIS_PG_POD"
-  printf '%-40s %12s\n' "table" "rows"
-  printf '%-40s %12s\n' "----------------------------------------" "------------"
-  while IFS=$'\t' read -r tbl rows; do
-    [[ -z "$tbl" ]] && continue
-    printf '%-40s %12s\n' "$tbl" "$rows"
-  done < <(counts_for_tables "$VIS_PG_POD" "$VIS_PG_USER" "$VIS_DB" "${VISIBILITY_TABLES[@]}")
+  if [[ "$SKIP_VISIBILITY" == "true" ]]; then
+    printf '\n[%s] visibility stage skipped — executions_visibility not found\n' "$VIS_DB"
+  else
+    printf '\n[%s on %s]\n' "$VIS_DB" "$VIS_PG_POD"
+    printf '%-40s %12s\n' "table" "rows"
+    printf '%-40s %12s\n' "----------------------------------------" "------------"
+    while IFS=$'\t' read -r tbl rows; do
+      [[ -z "$tbl" ]] && continue
+      printf '%-40s %12s\n' "$tbl" "$rows"
+    done < <(counts_for_tables "$VIS_PG_POD" "$VIS_PG_USER" "$VIS_DB" "${VISIBILITY_TABLES[@]}")
+  fi
   printf '\n'
 }
 
@@ -543,8 +624,11 @@ wait_for_rollout() {
 # explicitly so a future schema addition fails loudly here instead of
 # being silently cascaded into.
 build_truncate_sql_primary() {
-  local tables
-  mapfile -t tables < <(build_workflow_truncate_list)
+  # while-read instead of mapfile: macOS ships bash 3.2 (no mapfile).
+  local tables=() line
+  while IFS= read -r line; do
+    tables+=("$line")
+  done < <(build_workflow_truncate_list)
 
   printf 'BEGIN;\n'
   printf 'TRUNCATE TABLE\n'
@@ -583,6 +667,10 @@ run_truncates() {
   log "Truncating workflow tables in DB=${DB} on pod=${PG_POD}"
   build_truncate_sql_primary | psql_exec "$PG_POD" "$PG_USER" "$DB"
 
+  if [[ "$SKIP_VISIBILITY" == "true" ]]; then
+    warn "Skipping visibility TRUNCATE (executions_visibility not found anywhere)"
+    return 0
+  fi
   log "Truncating visibility tables in DB=${VIS_DB} on pod=${VIS_PG_POD}"
   build_truncate_sql_visibility | psql_exec "$VIS_PG_POD" "$VIS_PG_USER" "$VIS_DB"
 }
@@ -597,6 +685,14 @@ confirm() {
   local primary_count
   primary_count=$(build_workflow_truncate_list | wc -l | tr -d ' ')
 
+  local vis_line
+  if [[ "$SKIP_VISIBILITY" == "true" ]]; then
+    vis_line="  - SKIP visibility stage (executions_visibility not found)."
+  else
+    vis_line="  - TRUNCATE ${#VISIBILITY_TABLES[@]} table(s) in DB=${VIS_DB} on pod=${VIS_PG_POD}
+      (executions_visibility)."
+  fi
+
   cat <<EOF
 
 This will:
@@ -604,8 +700,7 @@ This will:
       to 0 (and back to each one's current value).
   - TRUNCATE ${primary_count} table(s) in DB=${DB} on pod=${PG_POD}
       (workflow / history / tasks / shards).
-  - TRUNCATE ${#VISIBILITY_TABLES[@]} table(s) in DB=${VIS_DB} on pod=${VIS_PG_POD}
-      (executions_visibility).
+${vis_line}
   - PRESERVE: namespaces, schema_*, cluster_metadata*, nexus_*, queue*.
 
 EOF
@@ -624,21 +719,26 @@ cmd_purge() {
   ensure_deployments_exist
   ensure_pg_pod_exists
   ensure_vis_pg_pod_exists
+  resolve_visibility_target
 
   # Capture every role's current replica count BEFORE we touch
   # anything. Stored in a bash associative array indexed by deployment
   # name so each role can be restored to its own original value (the
   # 4 roles may have different replica counts per overlay).
-  declare -A ORIGINAL_REPLICAS=()
-  local d
-  for d in "${TEMPORAL_DEPLOYMENTS[@]}"; do
+  # Indexed array PARALLEL to TEMPORAL_DEPLOYMENTS (same index = same
+  # role). macOS ships bash 3.2, which has no associative arrays
+  # (`declare -A`), so we key by position instead of by name.
+  ORIGINAL_REPLICAS=()
+  local i d
+  for i in "${!TEMPORAL_DEPLOYMENTS[@]}"; do
+    d="${TEMPORAL_DEPLOYMENTS[$i]}"
     local r
     r=$(current_replicas "$d")
     if [[ -z "$r" ]]; then
       err "Could not read current replica count for deploy/${d}"
       exit 1
     fi
-    ORIGINAL_REPLICAS["$d"]="$r"
+    ORIGINAL_REPLICAS[$i]="$r"
     log "Current replicas of deploy/${d}: ${r}"
   done
 
@@ -680,8 +780,8 @@ cmd_purge() {
   if [[ $truncate_rc -ne 0 ]]; then
     err "TRUNCATE failed (exit ${truncate_rc}); attempting to restore replicas"
     if [[ "$SKIP_SCALE" == "false" && "$SKIP_RESTART" == "false" ]]; then
-      for d in "${TEMPORAL_DEPLOYMENTS[@]}"; do
-        scale_deployment "$d" "${ORIGINAL_REPLICAS[$d]}" || true
+      for i in "${!TEMPORAL_DEPLOYMENTS[@]}"; do
+        scale_deployment "${TEMPORAL_DEPLOYMENTS[$i]}" "${ORIGINAL_REPLICAS[$i]}" || true
       done
     fi
     exit 1
@@ -697,9 +797,10 @@ cmd_purge() {
     # per role. Sequential rollout-wait keeps the output ordered;
     # parallel `wait_for_rollout &` would interleave the kubectl
     # spinners.
-    for d in "${TEMPORAL_DEPLOYMENTS[@]}"; do
-      log "Scaling deploy/${d} back to ${ORIGINAL_REPLICAS[$d]}"
-      scale_deployment "$d" "${ORIGINAL_REPLICAS[$d]}"
+    for i in "${!TEMPORAL_DEPLOYMENTS[@]}"; do
+      d="${TEMPORAL_DEPLOYMENTS[$i]}"
+      log "Scaling deploy/${d} back to ${ORIGINAL_REPLICAS[$i]}"
+      scale_deployment "$d" "${ORIGINAL_REPLICAS[$i]}"
     done
     for d in "${TEMPORAL_DEPLOYMENTS[@]}"; do
       wait_for_rollout "$d" || {
@@ -718,6 +819,7 @@ cmd_counts() {
   ensure_namespace_exists "$NAMESPACE"
   ensure_pg_pod_exists
   ensure_vis_pg_pod_exists
+  resolve_visibility_target
   print_counts_report "CURRENT"
 }
 
