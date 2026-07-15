@@ -312,7 +312,7 @@ rg -l "sdk/samples/" manual-loops/crm-support-telegram.md ; test $? -eq 1
 
 - [x] T01 inventory + reference map + provisioning audit
 - [x] T02 git mv by group + path sweep
-- [ ] T03 tier READMEs
+- [x] T03 tier READMEs
 - [ ] T04 canary e2e per group (pre-migration, original scripts)
 - [ ] T05 SDK CLI (`yoizen manifests` / `yoizen secrets`)
 - [ ] T06 manifest migration (delete setup scripts, CLI-driven provisioning)
@@ -677,3 +677,19 @@ would violate the move-verbatim constraint). Dual review: 2× APPROVED
 resolver inlining, path-depth fixes (`../../lib` and telegram-onboard.sh's
 `../lib`), README.es.md path-string-only edits, and no unauthorized
 deletions.
+
+### T03 — 2026-07-15
+
+Tier READMEs written: `integrations/README.md` (new — reason to exist, group
+index with all 12 samples + telegram-onboard.sh + lib, tier distinction),
+`sdk/examples/README.md` (new — inventory `reference-pattern`, no-shared-lib
+rule), `demos/README.md` (cross-link paragraph only), `sdk/README.md` (new
+"Samples & examples" section linking the three tiers). Gates G1-G3 green;
+Accept green. Dual review: 2× APPROVED (attempt 1); reviewers verified all
+sample listings against disk and every relative link resolves.
+
+CARRY-OVER for T04 (move-induced breakage found by review): four sample
+READMEs still contain stale relative links to `../http-bridge`
+(ai-agent-triage, telegram-transform-reply, http-connectors,
+ai-call-center-supervisor) — the target is now `sdk/examples/reference-pattern`.
+Fix within T04's "move-induced breakage" scope.

@@ -671,6 +671,19 @@ per semver spec item 4, but the project's own invariant (GROWTH-PLAN.md §2.1) k
 `createClient` → `{ send, sendText }` and the error classes stable until a major bump is
 explicitly decided.
 
+## Samples & examples
+
+Runnable examples live in three tiers, each with one reason to exist:
+
+- [`sdk/examples/`](./examples/README.md) — examples of the SDK itself (this
+  package's API surface: auth/config, per-resource CRUD, `connectors.invoke()`,
+  pagination, error handling). Imports only `@yoizen/platform-sdk`.
+- [`integrations/`](../integrations/README.md) — end-to-end references for a single
+  platform feature (channels, AI, HTTP/connectors, MCP), grouped by category and
+  provisioned through this SDK.
+- [`demos/`](../demos/README.md) — commercial showcases that tell a business story,
+  composing several integrations into one narrative.
+
 ## Development
 
 ```bash
