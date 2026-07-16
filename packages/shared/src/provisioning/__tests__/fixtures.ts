@@ -29,11 +29,23 @@ export function buildValidManifest(): IntegrationManifest {
           },
         },
       ],
+      mcpServers: [
+        {
+          name: "support-mcp",
+          transport_type: "http",
+          url: "https://mcp.example.com",
+          auth: {
+            authType: "bearer",
+            token: { secretRef: "support-mcp-token" },
+          },
+        },
+      ],
       agents: [
         {
           name: "support-agent",
           profile: { model: "gpt-4", systemPrompt: "You are helpful." },
           knowledgeBaseRefs: ["support-kb"],
+          enabledMcpServerRefs: ["support-mcp"],
         },
       ],
       knowledgeBases: [
@@ -98,6 +110,10 @@ export function buildValidManifest(): IntegrationManifest {
           name: "scorer-api-key",
           scope: { kind: "service", owner: "priority-scorer" },
           external: true,
+        },
+        {
+          name: "support-mcp-token",
+          scope: { kind: "mcpServer", owner: "support-mcp" },
         },
       ],
     },

@@ -29,6 +29,7 @@ import type {
   Connector,
   HostedService,
   ManifestChannel,
+  ManifestMcpServer,
   ManifestSystemVariable,
   Workflow,
 } from "@yoizen/shared";
@@ -106,6 +107,24 @@ export interface SystemVariableDto {
   readonly name: string;
   readonly type: string;
   readonly value: unknown;
+}
+
+/**
+ * Live shape from `GET /admin/mcp-servers` (agent-admin-service's
+ * `IMcpServer`, T06, gap 6). Deliberately EXCLUDES `headers`/`authType`/
+ * `authConfig` — `headers` values can be credential-capable (a header may
+ * carry a resolved `secretRef`, see `manifest.schema.ts`'s
+ * `mcpServerSchema` comment) and `authConfig` always is (see
+ * `AdapterDto`'s header comment for the same reasoning on connectors) — so
+ * neither is even READABLE from this DTO, making an accidental projection
+ * impossible.
+ */
+export interface McpServerDto {
+  readonly id: string;
+  readonly name: string;
+  readonly transport_type: string;
+  readonly url: string;
+  readonly enabled: boolean;
 }
 
 export interface ComparableFieldsContract<TManifest, TLive> {
@@ -372,4 +391,42 @@ export const systemVariableComparable: ComparableFieldsContract<
     live.type === "secret"
       ? { type: live.type }
       : { type: live.type, value: live.value },
+};
+
+// MCP server (manual-loops/provisioning-manifest-gaps.md T06, gap 6):
+// `transport_type`/`url`/`enabled` are faithfully comparable on both sides
+// (agent-admin-service's `IMcpServer` round-trips them 1:1, identifier space
+// is the manifest `name`, matched like every other kind here).
+//
+// SECRET-LEAK DEFENSE (this file's "secret VALUES never appear in a
+// projection" hard rule): `auth`/`headers` are NEVER projected — `McpServerDto`
+// (above) doesn't even carry `headers`/`authType`/`authConfig` fields, so
+// there is nothing to accidentally read here, mirroring `connectorComparable`
+// / `AdapterDto`'s precedent exactly. `headers` is additionally excluded
+// because, unlike connector endpoints, a header VALUE can itself be
+// credential-capable (a resolved `secretRef`) — diffing it would require
+// reading the resolved plaintext value, which this file's header rule
+// forbids outright. An mcpServer's `auth`/`headers`-only change therefore
+// no-ops in the planner today (same documented limitation T02's endpoint
+// follow-up (c) notes for connector cache-only changes): an mcpServer whose
+// ONLY manifest change is `auth`/`headers` stays `noop` and `update()` is
+// never invoked. `mcp-servers-writer.ts`'s `update()` DOES still resend the
+// full desired `auth`/`headers` alongside whatever comparable field changed,
+// so an auth/headers change bundled with a comparable field change is never
+// dropped — only a pure auth/headers-only change is a known follow-up gap
+// (documented in the writer, mirrors the connector cache-only precedent).
+export const mcpServerComparable: ComparableFieldsContract<
+  ManifestMcpServer,
+  McpServerDto
+> = {
+  fromManifest: (mcpServer) => ({
+    transport_type: mcpServer.transport_type,
+    url: mcpServer.url,
+    enabled: mcpServer.enabled ?? true,
+  }),
+  fromLive: (live) => ({
+    transport_type: live.transport_type,
+    url: live.url,
+    enabled: live.enabled,
+  }),
 };

@@ -14,12 +14,31 @@
 // rather than fabricating a mapping or failing loud for callers that never
 // asked for KB support in the first place.
 //
+// manual-loops/provisioning-manifest-gaps.md T06, gap 6 ALSO resolves
+// `enabledMcpServerRefs` — but via a SEPARATE, dedicated
+// `PATCH /admin/agents/:id/mcp-servers` call AFTER the agent itself is
+// created, using the manifest NAMES directly, never an id lookup. This is
+// deliberately NOT the generic symbolic-ref id-substitution mechanism (T03):
+// agent-admin/agent-ai-service's own `enabled_mcp_servers`/`ns` field is
+// keyed by MCP server NAME (`tool-bridge.service.ts` filters
+// `McpClientService.getConnectedServers()`, which only ever returns names —
+// see the regression test in `tool-bridge.service.spec.ts` fixing a real bug
+// where admin-console previously saved this field by id, silently dropping
+// every MCP tool for agents with an explicit allowlist). Substituting these
+// refs to a real externalId here would reintroduce that exact bug, so
+// `manifest.schema.ts`'s `agentSchema.enabledMcpServerRefs` stays outside
+// `substitution-allowlist.ts` and this writer passes the plain names
+// straight through.
+//
 // Update: `agentComparable` (T03) is existence-only — never produces an
-// `update` verdict, so this is a defensive no-op stub.
+// `update` verdict, so this is a defensive no-op stub. `enabledMcpServerRefs`
+// shares this limitation today: an enablement-only change never reaches
+// `update()` (same documented gap as `mcpServerComparable`'s auth/headers).
 
 import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
 import type { Agent } from "@yoizen/shared";
 import { TENANT_HEADER } from "@yoizen/shared";
+import type { ApplyWriteError } from "../domain/apply.interfaces";
 import type {
   CreateOrUpdateResult,
   IPlatformResourceWriter,
@@ -36,6 +55,70 @@ const PASSTHROUGH_PROFILE_KEYS = [
   "input_variables",
   "output_variables",
 ] as const;
+
+/**
+ * `PATCH /admin/agents/:id/mcp-servers` — sets the agent's enabled MCP
+ * servers by NAME (never id, see this file's header comment). Called AFTER
+ * the agent itself is created/resolved; `enabledMcpServerRefs` names are
+ * used verbatim as `enabled_mcp_servers` (agent-admin's own field name).
+ */
+async function reconcileEnabledMcpServers(
+  baseUrl: string,
+  logger: PinoLoggerService,
+  tenantId: string,
+  agentName: string,
+  externalId: string,
+  enabledMcpServerRefs: readonly string[]
+): Promise<{ ok: true } | { ok: false; error: ApplyWriteError }> {
+  const url = `${baseUrl}/admin/agents/${externalId}/mcp-servers`;
+  logger.log(
+    `create: PATCH ${url} agent='${agentName}' enabled_mcp_servers=[${enabledMcpServerRefs.join(",")}] tenant='${tenantId}'`
+  );
+
+  let response: Response;
+  try {
+    response = await tracedFetch(url, {
+      method: "PATCH",
+      headers: {
+        [TENANT_HEADER]: tenantId,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ enabled_mcp_servers: enabledMcpServerRefs }),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+  } catch (cause) {
+    const message = `network failure calling ${url} for agent '${agentName}': ${cause instanceof Error ? cause.message : String(cause)}`;
+    logger.warn(`create: ${message}`);
+    return {
+      ok: false,
+      error: {
+        kind: "downstream_error",
+        resourceKind: "agent",
+        resourceName: agentName,
+        message,
+      },
+    };
+  }
+
+  if (!response.ok) {
+    const message = `HTTP ${String(response.status)} from ${url} for agent '${agentName}'`;
+    logger.warn(`create: ${message}`);
+    return {
+      ok: false,
+      error: {
+        kind: "downstream_error",
+        resourceKind: "agent",
+        resourceName: agentName,
+        message,
+      },
+    };
+  }
+
+  logger.log(
+    `create: agent '${agentName}' enabled_mcp_servers reconciled -> [${enabledMcpServerRefs.join(",")}]`
+  );
+  return { ok: true };
+}
 
 export function createAgentsWriter(baseUrl: string): IPlatformResourceWriter {
   const logger = new PinoLoggerService("apply.agent-writer");
@@ -134,6 +217,21 @@ export function createAgentsWriter(baseUrl: string): IPlatformResourceWriter {
       logger.log(
         `create: agent '${agent.name}' created -> externalId='${created.id}'`
       );
+
+      if (agent.enabledMcpServerRefs) {
+        const reconciled = await reconcileEnabledMcpServers(
+          baseUrl,
+          logger,
+          tenantId,
+          agent.name,
+          created.id,
+          agent.enabledMcpServerRefs
+        );
+        if (!reconciled.ok) {
+          return reconciled;
+        }
+      }
+
       return { ok: true, value: { externalId: created.id } };
     },
 

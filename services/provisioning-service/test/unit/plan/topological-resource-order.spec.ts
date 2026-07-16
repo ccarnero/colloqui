@@ -19,6 +19,7 @@ function baseManifest(): IntegrationManifest {
         { name: "priority-scorer", image: "registry.example.com/x:1" },
       ],
       systemVariables: [],
+      mcpServers: [],
       workflows: [
         {
           name: "ticket-router",
@@ -102,6 +103,56 @@ describe("computeResourceOrder", () => {
       ]);
       const names = result.value.map((r) => r.name);
       expect(names.indexOf("escalation-threshold")).toBeLessThan(
+        names.indexOf("ticket-router")
+      );
+    }
+  });
+
+  it("T06 (gap 6) — mcpServer is ordered BEFORE the agent that enables it and the workflow that calls it", () => {
+    const manifest = baseManifest();
+    manifest.spec.mcpServers = [
+      {
+        name: "github-mcp",
+        transport_type: "http",
+        url: "https://mcp.example.com",
+      },
+    ];
+    manifest.spec.agents = [
+      {
+        name: "support-agent",
+        profile: {},
+        enabledMcpServerRefs: ["github-mcp"],
+      },
+    ];
+    manifest.spec.workflows[0]!.definition = {
+      steps: [
+        { channelRef: "support-telegram" },
+        { agentRef: "support-agent" },
+        { serviceRef: "priority-scorer" },
+        {
+          activity: "mcpCall",
+          args: { serverId: { mcpServerRef: "github-mcp" } },
+        },
+      ],
+    };
+
+    const result = computeResourceOrder(manifest);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const kinds = result.value.map((r) => r.kind);
+      expect(kinds).toEqual([
+        "channel",
+        "connector",
+        "mcpServer",
+        "agent",
+        "service",
+        "workflow",
+      ]);
+      const names = result.value.map((r) => r.name);
+      expect(names.indexOf("github-mcp")).toBeLessThan(
+        names.indexOf("support-agent")
+      );
+      expect(names.indexOf("github-mcp")).toBeLessThan(
         names.indexOf("ticket-router")
       );
     }

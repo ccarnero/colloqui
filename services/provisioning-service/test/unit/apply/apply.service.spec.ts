@@ -111,6 +111,7 @@ function validManifest(name: string): IntegrationManifest {
       knowledgeBases: [],
       services: [],
       systemVariables: [],
+      mcpServers: [],
       workflows: [],
       secrets: [],
     },

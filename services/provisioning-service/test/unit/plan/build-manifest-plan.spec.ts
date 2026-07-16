@@ -61,6 +61,7 @@ function manifestWith(
       knowledgeBases: [],
       services: [],
       systemVariables: [],
+      mcpServers: [],
       workflows: [],
       secrets: [],
       ...overrides,

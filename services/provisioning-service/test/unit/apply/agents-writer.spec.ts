@@ -116,4 +116,86 @@ describe("createAgentsWriter", () => {
     const result = await writer.update("tenant-a", "agent-1", agent, []);
     expect(result.ok).toBe(true);
   });
+
+  // T06 (manual-loops/provisioning-manifest-gaps.md, gap 6):
+  // enabledMcpServerRefs — reconciled via a SEPARATE PATCH call, by NAME,
+  // never an id lookup (see agents-writer.ts header for the regression this
+  // avoids).
+  describe("enabledMcpServerRefs (T06)", () => {
+    it("create: PATCHes /admin/agents/:id/mcp-servers with the manifest NAMES verbatim, never ids", async () => {
+      const calls: { url: string; method: string; body: unknown }[] = [];
+      globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          method: init.method as string,
+          body: init.body ? JSON.parse(init.body as string) : undefined,
+        });
+        if (init.method === "POST") {
+          return json({ id: "agent-uuid-1" }, 201);
+        }
+        return json({ id: "agent-uuid-1" }, 200);
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = {
+        name: "support-agent",
+        profile: {},
+        enabledMcpServerRefs: ["github-mcp", "deepwiki-mcp"],
+      };
+
+      const result = await writer.create("tenant-a", agent);
+      expect(result.ok).toBe(true);
+
+      expect(calls).toHaveLength(2);
+      expect(calls[0]?.method).toBe("POST");
+      expect(calls[1]?.method).toBe("PATCH");
+      expect(calls[1]?.url).toBe(
+        `${BASE_URL}/admin/agents/agent-uuid-1/mcp-servers`
+      );
+      // The critical assertion: the PATCH body carries the manifest NAMES
+      // untouched, never substituted to a real externalId/UUID.
+      expect(calls[1]?.body).toEqual({
+        enabled_mcp_servers: ["github-mcp", "deepwiki-mcp"],
+      });
+    });
+
+    it("create: omits the mcp-servers PATCH entirely when enabledMcpServerRefs is not declared", async () => {
+      const calls: { url: string; method: string }[] = [];
+      globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+        calls.push({ url, method: init.method as string });
+        return json({ id: "agent-uuid-1" }, 201);
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = { name: "support-agent", profile: {} };
+
+      const result = await writer.create("tenant-a", agent);
+      expect(result.ok).toBe(true);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.method).toBe("POST");
+    });
+
+    it("create: a PATCH failure fails loud with a typed downstream_error, never silently dropping the enablement", async () => {
+      globalThis.fetch = mock(async (_url: string, init: RequestInit) => {
+        if (init.method === "POST") {
+          return json({ id: "agent-uuid-1" }, 201);
+        }
+        return json({ message: "server error" }, 500);
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = {
+        name: "support-agent",
+        profile: {},
+        enabledMcpServerRefs: ["github-mcp"],
+      };
+
+      const result = await writer.create("tenant-a", agent);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe("downstream_error");
+        expect(result.error.resourceKind).toBe("agent");
+      }
+    });
+  });
 });

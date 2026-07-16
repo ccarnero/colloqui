@@ -437,7 +437,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T03 manifest-time real-ID substitution (`connectorRef` + resolver)
 - [x] T04 `systemVariables` section
 - [x] T05 service scaling fields + routes
-- [ ] T06 `mcpServers` section
+- [x] T06 `mcpServers` section
 - [ ] T07 SDK/CLI compatibility sweep
 - [ ] T08 migrate the 11 stand-by samples
 - [ ] T09 restore the full G4 canary set (4 groups, mcp included)
@@ -695,3 +695,38 @@ FOLLOW-UPS: pre-existing unguarded response.json() in every writer's
 create() path (predates this loop) — shared safeFetchJson helper candidate;
 DEFAULT_ROUTE_METHODS normalization duplicated between writer and
 comparable; malformed-JSON catch branch untested (mirrors factory).
+
+### T06 — 2026-07-16
+
+`mcpServers` section shipped: schema mirrors `CreateMcpServerInput`
+(name/description?/transport_type/url/headers?/auth?/enabled?/scope?/
+external?); `mcpServerAuthSchema` follows the decision-3 nested-secretRef
+pattern with agent-admin's OWN authConfig field names (token / key+
+headerName? / username+password — verified against the DTO, reviewers
+confirmed word-for-word). Headers are `string | {secretRef}` — plaintext
+strings for metadata, secretRef for credential-capable values (inherent
+schema limitation that a string COULD be a secret is documented; mitigation
+= secretRef path + structural validation + never logged). Writer over
+agent-admin-service `POST/PATCH /admin/mcp-servers[/:id]`; broker resolution
+reuses the apply-engine identity; `"mcpServer"` ADDED to secretScopeKindSchema
++ consumer policy (the SPEC text wrongly assumed T04 had added it).
+`RESOURCE_KIND_ORDER`: mcpServer before agent. Comparable projects
+transport_type/url/enabled ONLY (auth/headers not even readable by DTO
+design — T04 lesson applied). SUBSTITUTION_ALLOWLIST +1:
+`serverId → mcpServerRef` (McpCallArgs.serverId).
+
+DOCUMENTED DEVIATION (reviewer-verified correct): agents reference MCP
+servers by NAME, not id — `agentSchema.enabledMcpServerRefs` is a plain
+name array passed straight to `PATCH /admin/agents/:id/mcp-servers`
+(`enabled_mcp_servers` is name-keyed; regression test
+tool-bridge.service.spec.ts:679 guards a REAL bug where ids broke MCP
+tools). The task text's assumption of id-substitution for agent enablement
+was wrong and would have reintroduced that bug.
+
+Gates: G1 318/318, G2 clean, G3 257/257 + shared tsc clean, G6b revision
+00026 live + e2e-manifest-apply PASSED, G5 valid=true + double noop.
+Dual review: 2x APPROVED (attempt 1).
+FOLLOW-UPS: pre-existing missing connectorRef case in
+validate-structural-rules' workflow ref walk (left, documented — T03
+escape); auth/headers-only changes no-op in the planner (mirrors T02's
+endpoint-cache precedent).

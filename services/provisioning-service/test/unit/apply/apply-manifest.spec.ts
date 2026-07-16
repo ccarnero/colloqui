@@ -24,6 +24,7 @@ function manifestWith(names: {
       knowledgeBases: [],
       services: [],
       systemVariables: [],
+      mcpServers: [],
       workflows: names.workflow
         ? [
             {
@@ -443,6 +444,7 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
         knowledgeBases: [],
         services: [],
         systemVariables: [],
+        mcpServers: [],
         workflows: [
           {
             name: "w1",
@@ -759,6 +761,7 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
         knowledgeBases: [],
         services: [],
         systemVariables: [],
+        mcpServers: [],
         workflows: [
           {
             name: "w1",

@@ -60,6 +60,36 @@ describe("substituteSymbolicRefs — T03 manifest-time real-ID substitution", ()
     }
   });
 
+  it("substitutes serverId when its value is { mcpServerRef } and resolvable (T06, gap 6)", () => {
+    const value = {
+      actions: [
+        {
+          activity: "mcpCall",
+          args: {
+            serverId: { mcpServerRef: "github-mcp" },
+            toolName: "search_issues",
+          },
+        },
+      ],
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "wf-1",
+      resolveRef: (refType, name) =>
+        refType === "mcpServerRef" && name === "github-mcp"
+          ? "mcp-server-real-id-1"
+          : undefined,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(
+        (result.value as { actions: { args: { serverId: unknown } }[] })
+          .actions[0]?.args.serverId
+      ).toBe("mcp-server-real-id-1");
+    }
+  });
+
   it("substitutes agentId when its value is { agentRef } and resolvable", () => {
     const value = {
       actions: [

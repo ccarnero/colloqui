@@ -17,6 +17,8 @@ import type {
   IntegrationManifest,
   KnowledgeBase,
   ManifestChannel,
+  ManifestMcpServer,
+  McpServerAuth,
   SecretBinding,
   SecretScopeKind,
   Workflow,
@@ -65,6 +67,68 @@ function connectorAuthSecretRefs(
   }
 }
 
+/**
+ * Every `{ path, secretRef }` pair inside an mcpServer's nested `auth` block
+ * (T06, gap 6 — mirrors `connectorAuthSecretRefs` above, different field
+ * names: `token`/`key` (one) or `username` + `password` (two)).
+ */
+function mcpServerAuthSecretRefs(
+  auth: McpServerAuth | undefined,
+  basePath: string
+): { path: string; secretRef: string }[] {
+  if (!auth) {
+    return [];
+  }
+  switch (auth.authType) {
+    case "bearer":
+      return [
+        {
+          path: `${basePath}.token.secretRef`,
+          secretRef: auth.token.secretRef,
+        },
+      ];
+    case "api-key":
+      return [
+        { path: `${basePath}.key.secretRef`, secretRef: auth.key.secretRef },
+      ];
+    case "basic":
+      return [
+        {
+          path: `${basePath}.username.secretRef`,
+          secretRef: auth.username.secretRef,
+        },
+        {
+          path: `${basePath}.password.secretRef`,
+          secretRef: auth.password.secretRef,
+        },
+      ];
+  }
+}
+
+/**
+ * Every `{ path, secretRef }` pair among an mcpServer's `headers` values that
+ * use the nested `{ secretRef }` form (T06, gap 6) — plain string header
+ * values carry no secretRef and are skipped.
+ */
+function mcpServerHeaderSecretRefs(
+  headers: ManifestMcpServer["headers"],
+  basePath: string
+): { path: string; secretRef: string }[] {
+  if (!headers) {
+    return [];
+  }
+  const refs: { path: string; secretRef: string }[] = [];
+  for (const [headerName, value] of Object.entries(headers)) {
+    if (typeof value === "object" && value !== null && "secretRef" in value) {
+      refs.push({
+        path: `${basePath}.headers.${headerName}.secretRef`,
+        secretRef: value.secretRef,
+      });
+    }
+  }
+  return refs;
+}
+
 export function validateManifestStructuralRules(
   manifest: IntegrationManifest
 ): ManifestValidationError[] {
@@ -72,6 +136,7 @@ export function validateManifestStructuralRules(
 
   checkUniqueNames(manifest.spec.channels, "spec.channels", errors);
   checkUniqueNames(manifest.spec.connectors, "spec.connectors", errors);
+  checkUniqueNames(manifest.spec.mcpServers, "spec.mcpServers", errors);
   checkUniqueNames(manifest.spec.agents, "spec.agents", errors);
   checkUniqueNames(manifest.spec.knowledgeBases, "spec.knowledgeBases", errors);
   checkUniqueNames(manifest.spec.services, "spec.services", errors);
@@ -141,6 +206,9 @@ function checkRefResolution(
   const channelNames = new Set(manifest.spec.channels.map((c) => c.name));
   const agentNames = new Set(manifest.spec.agents.map((a) => a.name));
   const serviceNames = new Set(manifest.spec.services.map((s) => s.name));
+  const mcpServerNames = new Set(
+    manifest.spec.mcpServers.map((server) => server.name)
+  );
   const secretsByName = new Map(manifest.spec.secrets.map((s) => [s.name, s]));
 
   manifest.spec.channels.forEach((channel, index) => {
@@ -173,6 +241,27 @@ function checkRefResolution(
     }
   });
 
+  manifest.spec.mcpServers.forEach((server: ManifestMcpServer, index) => {
+    const authRefs = mcpServerAuthSecretRefs(
+      server.auth,
+      `spec.mcpServers[${index}].auth`
+    );
+    const headerRefs = mcpServerHeaderSecretRefs(
+      server.headers,
+      `spec.mcpServers[${index}]`
+    );
+    for (const { path, secretRef } of [...authRefs, ...headerRefs]) {
+      checkSecretRef(
+        secretRef,
+        path,
+        "mcpServer",
+        server.name,
+        secretsByName,
+        errors
+      );
+    }
+  });
+
   manifest.spec.agents.forEach((agent, index) => {
     (agent.knowledgeBaseRefs ?? []).forEach((kbRef, kbIndex) => {
       const knownKbNames = new Set(
@@ -182,6 +271,18 @@ function checkRefResolution(
         errors.push({
           path: `spec.agents[${index}].knowledgeBaseRefs[${kbIndex}]`,
           message: `unresolved knowledgeBaseRef "${kbRef}": no knowledge base with this name in the manifest`,
+        });
+      }
+    });
+
+    // T06, gap 6 — mirrors the knowledgeBaseRefs check above exactly, but
+    // against `spec.mcpServers[].name` (see `agentSchema.enabledMcpServerRefs`
+    // for why this stays a plain name check, never an id substitution).
+    (agent.enabledMcpServerRefs ?? []).forEach((mcpRef, mcpIndex) => {
+      if (!mcpServerNames.has(mcpRef)) {
+        errors.push({
+          path: `spec.agents[${index}].enabledMcpServerRefs[${mcpIndex}]`,
+          message: `unresolved mcpServerRef "${mcpRef}": no MCP server with this name in the manifest`,
         });
       }
     });
@@ -241,6 +342,17 @@ function checkRefResolution(
             });
           }
           break;
+        case "mcpServerRef":
+          if (!mcpServerNames.has(ref.value)) {
+            errors.push({
+              path: ref.path,
+              message: `unresolved mcpServerRef "${ref.value}": no MCP server with this name in the manifest`,
+            });
+          }
+          break;
+        // NOTE (T06 follow-up, not this task's scope): `connectorRef` is
+        // similarly absent from this switch since T03 shipped it — a
+        // pre-existing gap, not introduced or fixed here.
       }
     }
   });

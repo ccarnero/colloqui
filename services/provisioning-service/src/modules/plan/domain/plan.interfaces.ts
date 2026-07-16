@@ -12,6 +12,12 @@ export type ResourceKind = SecretScopeKind;
 export const RESOURCE_KIND_ORDER: readonly ResourceKind[] = [
   "channel",
   "connector",
+  // T06 (manual-loops/provisioning-manifest-gaps.md, gap 6) — BEFORE agent:
+  // an agent's `enabledMcpServerRefs` and a workflow's `mcpCall.serverId`
+  // both reference an mcpServers[] entry by manifest name, so mcp servers
+  // must be resolved/created first (mirrors the connector-before-agent
+  // ordering already established for connectorRef).
+  "mcpServer",
   "agent",
   "service",
   // T04 (manual-loops/provisioning-manifest-gaps.md, gap 4) — a leaf node

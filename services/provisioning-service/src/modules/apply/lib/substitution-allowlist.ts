@@ -61,6 +61,20 @@ export const SUBSTITUTION_ALLOWLIST: readonly SubstitutionAllowlistEntry[] = [
       "@yoizen/shared workflow.interfaces.ts ServiceCallArgs.serviceId — " +
       "the serviceCall activity's target registered_services row id.",
   },
+  // manual-loops/provisioning-manifest-gaps.md T06, gap 6. NOTE: this is the
+  // ONLY place `mcpServerRef` participates in name->id substitution — an
+  // agent's own `enabledMcpServerRefs` (which also embeds `{ mcpServerRef }`)
+  // is DELIBERATELY excluded from this allowlist: agent-ai-service's
+  // `enabled_mcp_servers`/`ns` field is keyed by MCP server NAME, not id (see
+  // `manifest.schema.ts`'s `agentSchema.enabledMcpServerRefs` comment for the
+  // regression this would reintroduce if added here).
+  {
+    argKey: "serverId",
+    refType: "mcpServerRef",
+    source:
+      "@yoizen/shared workflow.interfaces.ts McpCallArgs.serverId — " +
+      "the mcpCall activity's target agent-admin-service MCP server id.",
+  },
 ] as const;
 
 /** `argKey -> refType`, derived once from `SUBSTITUTION_ALLOWLIST` above. */

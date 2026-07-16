@@ -198,4 +198,64 @@ describe("structural rule — ref resolution", () => {
     const errors = validateManifestStructuralRules(manifest);
     expect(errors.some((e) => /scope binding/.test(e.message))).toBe(false);
   });
+
+  // T06 (manual-loops/provisioning-manifest-gaps.md, gap 6)
+  test("flags an unresolved mcpServerRef inside a workflow definition", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.workflows[0].definition = {
+      steps: [{ type: "mcpCall", mcpServerRef: "no-such-mcp-server" }],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some((e) =>
+        /unresolved mcpServerRef "no-such-mcp-server"/.test(e.message)
+      )
+    ).toBe(true);
+  });
+
+  test("flags an unresolved enabledMcpServerRefs entry on an agent", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      enabledMcpServerRefs: ["no-such-mcp-server"],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some((e) =>
+        /unresolved mcpServerRef "no-such-mcp-server"/.test(e.message)
+      )
+    ).toBe(true);
+  });
+
+  test("flags an unresolved secretRef inside an mcpServer's auth block", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.mcpServers[0] = {
+      ...manifest.spec.mcpServers[0],
+      auth: { authType: "bearer", token: { secretRef: "missing-mcp-secret" } },
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some(
+        (e) =>
+          e.path === "spec.mcpServers[0].auth.token.secretRef" &&
+          /unresolved secretRef "missing-mcp-secret"/.test(e.message)
+      )
+    ).toBe(true);
+  });
+
+  test("flags an unresolved secretRef inside an mcpServer's headers", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.mcpServers[0] = {
+      ...manifest.spec.mcpServers[0],
+      headers: { "X-Custom": { secretRef: "missing-header-secret" } },
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some(
+        (e) =>
+          e.path === "spec.mcpServers[0].headers.X-Custom.secretRef" &&
+          /unresolved secretRef "missing-header-secret"/.test(e.message)
+      )
+    ).toBe(true);
+  });
 });

@@ -36,6 +36,13 @@ const CONSUMER_POLICY: Readonly<Record<ResourceKind, ReadonlySet<string>>> = {
   // allow-listed, mirroring `service`'s defensive-only entry, purely so
   // `ResourceKind`'s new member type-checks here.
   systemVariable: new Set([APPLY_ENGINE_CONSUMER_SERVICE]),
+  // T06 (manual-loops/provisioning-manifest-gaps.md, gap 6) — mcpServer
+  // `auth`/`headers` fields resolve secretRefs through the SAME broker
+  // resolver connectors already use. `mcp-client-service` (agent-ai-service)
+  // is the runtime consumer that actually connects to the live MCP server,
+  // mirroring `connector-runtime` for connectors — allow-listed alongside the
+  // apply engine.
+  mcpServer: new Set([APPLY_ENGINE_CONSUMER_SERVICE, "agent-ai-service"]),
   workflow: new Set([APPLY_ENGINE_CONSUMER_SERVICE, "workflow-service"]),
 };
 

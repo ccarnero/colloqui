@@ -8,6 +8,7 @@ import type { ISecretValueResolver } from "../domain/secret-value-resolver.inter
 import { createAgentsWriter } from "./agents-writer";
 import { createChannelsWriter } from "./channels-writer";
 import { createConnectorsWriter } from "./connectors-writer";
+import { createMcpServersWriter } from "./mcp-servers-writer";
 import { createRegistryServicesWriter } from "./registry-services-writer";
 import { createSystemVariablesWriter } from "./system-variables-writer";
 import { createWorkflowsWriter } from "./workflows-writer";
@@ -26,6 +27,10 @@ import { createWorkflowsWriter } from "./workflows-writer";
  * bearer/api-key/basic secretRefs through the same broker resolver, mapped
  * into connector-admin's `authType`→`authConfig` shape (see
  * `connectors-writer.ts` header for the consumer-identity reuse rationale).
+ *
+ * T06 (manual-loops/provisioning-manifest-gaps.md, gap 6): the MCPSERVER
+ * writer ALSO takes `secretResolver` — its `auth`/`headers` fields resolve
+ * secretRefs through the same broker resolver (see `mcp-servers-writer.ts`).
  */
 export function buildPlatformResourceWriters(
   secretResolver?: ISecretValueResolver
@@ -34,6 +39,9 @@ export function buildPlatformResourceWriters(
   return {
     channel: createChannelsWriter(urls.channels, secretResolver),
     connector: createConnectorsWriter(urls.connectors, secretResolver),
+    // T06 — same downstream base URL as agents: MCP servers live in
+    // agent-admin-service.
+    mcpServer: createMcpServersWriter(urls.agents, secretResolver),
     agent: createAgentsWriter(urls.agents),
     service: createRegistryServicesWriter(urls.registry),
     // T04 (manual-loops/provisioning-manifest-gaps.md, gap 4) — same

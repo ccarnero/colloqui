@@ -8,6 +8,7 @@ import type {
   HostedService,
   IntegrationManifest,
   ManifestChannel,
+  ManifestMcpServer,
   ManifestSystemVariable,
   Workflow,
 } from "@yoizen/shared";
@@ -16,6 +17,7 @@ import type { ResourceKind } from "../domain/plan.interfaces";
 export type AnyManifestResource =
   | ManifestChannel
   | Connector
+  | ManifestMcpServer
   | Agent
   | HostedService
   | ManifestSystemVariable
@@ -47,6 +49,14 @@ export function listManifestResources(
       name: connector.name,
       external: connector.external ?? false,
       resource: connector,
+    });
+  }
+  for (const mcpServer of manifest.spec.mcpServers) {
+    entries.push({
+      kind: "mcpServer",
+      name: mcpServer.name,
+      external: mcpServer.external ?? false,
+      resource: mcpServer,
     });
   }
   for (const agent of manifest.spec.agents) {

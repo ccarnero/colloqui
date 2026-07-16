@@ -4,6 +4,7 @@ import {
   connectorRefSchema,
   integrationManifestSchema,
   kbSourceSchema,
+  mcpServerRefSchema,
   nameSchema,
   SYMBOLIC_REF_KEYS,
   serviceRouteMethodSchema,
@@ -11,13 +12,14 @@ import {
 import { buildValidManifest } from "./fixtures";
 
 describe("connectorRefSchema — SYMBOLIC_REF_KEYS (T03, gap 3)", () => {
-  test("SYMBOLIC_REF_KEYS includes connectorRef alongside the original four", () => {
+  test("SYMBOLIC_REF_KEYS includes connectorRef and mcpServerRef alongside the original four", () => {
     const sorted: string[] = [...SYMBOLIC_REF_KEYS].sort();
     expect(sorted).toEqual(
       [
         "agentRef",
         "channelRef",
         "connectorRef",
+        "mcpServerRef",
         "secretRef",
         "serviceRef",
       ].sort()
@@ -763,5 +765,241 @@ describe("manifestSpecSchema — systemVariables (T04, gap 4)", () => {
       unknownField: "nope",
     });
     expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+});
+
+// T06 (manual-loops/provisioning-manifest-gaps.md, gap 6): `mcpServers` —
+// mirrors `sdk/src/resources/mcp-servers/types.ts` `CreateMcpServerInput`,
+// with `auth` following T01's decision-3 nested-secretRef-targeting ruling
+// (no literal inline credential field exists, exactly like connectors).
+describe("mcpServerRefSchema", () => {
+  test("accepts a slug-like name", () => {
+    expect(mcpServerRefSchema.safeParse("support-mcp").success).toBe(true);
+  });
+
+  test("rejects an empty string", () => {
+    expect(mcpServerRefSchema.safeParse("").success).toBe(false);
+  });
+});
+
+describe("manifestSpecSchema — mcpServers (T06, gap 6)", () => {
+  function manifestWithMcpServer(mcpServer: Record<string, unknown>) {
+    const manifest = buildValidManifest();
+    return {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        mcpServers: [mcpServer],
+      },
+    };
+  }
+
+  test("omission stays valid — additive, defaults to []", () => {
+    const manifest = buildValidManifest();
+    const { mcpServers: _omit, ...specWithoutMcpServers } = manifest.spec;
+    const withoutMcpServers = { ...manifest, spec: specWithoutMcpServers };
+    const result = integrationManifestSchema.safeParse(withoutMcpServers);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.spec.mcpServers).toEqual([]);
+    }
+  });
+
+  test("accepts a minimal mcpServer (name/transport_type/url only, no auth)", () => {
+    const manifest = manifestWithMcpServer({
+      name: "no-auth-mcp",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts sse transport_type", () => {
+    const manifest = manifestWithMcpServer({
+      name: "sse-mcp",
+      transport_type: "sse",
+      url: "https://mcp.example.com/sse",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts description/enabled/scope/external", () => {
+    const manifest = manifestWithMcpServer({
+      name: "full-mcp",
+      description: "Full-featured MCP server",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+      enabled: false,
+      scope: "internal",
+      external: true,
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts a bearer auth block with a secretRef, never a literal token", () => {
+    const manifest = manifestWithMcpServer({
+      name: "bearer-mcp",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+      auth: { authType: "bearer", token: { secretRef: "mcp-token" } },
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts an api-key auth block with an optional headerName", () => {
+    const manifest = manifestWithMcpServer({
+      name: "api-key-mcp",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+      auth: {
+        authType: "api-key",
+        key: { secretRef: "mcp-key" },
+        headerName: "X-Api-Key",
+      },
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts a basic auth block with both secretRefs", () => {
+    const manifest = manifestWithMcpServer({
+      name: "basic-mcp",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+      auth: {
+        authType: "basic",
+        username: { secretRef: "mcp-user" },
+        password: { secretRef: "mcp-pass" },
+      },
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("rejects a bearer auth block with a literal plaintext token (no secretRef escape hatch)", () => {
+    const manifest = manifestWithMcpServer({
+      name: "leaky-mcp",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+      auth: { authType: "bearer", token: "plaintext-token-value" },
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects an authType with no matching secretRef fields (e.g. bearer without token)", () => {
+    const manifest = manifestWithMcpServer({
+      name: "incomplete-mcp",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+      auth: { authType: "bearer" },
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("accepts headers with a plain string value (non-secret metadata)", () => {
+    const manifest = manifestWithMcpServer({
+      name: "header-mcp",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+      headers: { "X-Request-Source": "manifest" },
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts headers with a nested secretRef value (credential-capable header)", () => {
+    const manifest = manifestWithMcpServer({
+      name: "secret-header-mcp",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+      headers: {
+        "X-Telegram-Bot-Api-Secret-Token": { secretRef: "telegram-secret" },
+      },
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("rejects a header value that is neither a string nor a { secretRef } object", () => {
+    const manifest = manifestWithMcpServer({
+      name: "bad-header-mcp",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+      headers: { "X-Bad": 123 },
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects an mcpServer missing name", () => {
+    const manifest = manifestWithMcpServer({
+      transport_type: "http",
+      url: "https://mcp.example.com",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects an mcpServer missing transport_type", () => {
+    const manifest = manifestWithMcpServer({
+      name: "no-transport",
+      url: "https://mcp.example.com",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects an mcpServer with an invalid transport_type literal", () => {
+    const manifest = manifestWithMcpServer({
+      name: "bad-transport",
+      transport_type: "websocket",
+      url: "https://mcp.example.com",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects an mcpServer missing url", () => {
+    const manifest = manifestWithMcpServer({
+      name: "no-url",
+      transport_type: "http",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects an mcpServer with an invalid url", () => {
+    const manifest = manifestWithMcpServer({
+      name: "bad-url",
+      transport_type: "http",
+      url: "not-a-url",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects an mcpServer declaring BOTH nested auth fields for a mismatched authType (e.g. api-key with token)", () => {
+    const manifest = manifestWithMcpServer({
+      name: "mismatched-mcp",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+      auth: { authType: "api-key", token: { secretRef: "wrong-field" } },
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects an mcpServer with an unknown key (.strict())", () => {
+    const manifest = manifestWithMcpServer({
+      name: "extra-key-mcp",
+      transport_type: "http",
+      url: "https://mcp.example.com",
+      unknownField: "nope",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+});
+
+describe("agentSchema — enabledMcpServerRefs (T06, gap 6)", () => {
+  test("accepts an agent with enabledMcpServerRefs pointing at a declared mcpServer", () => {
+    const manifest = buildValidManifest();
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts an agent with no enabledMcpServerRefs (optional, additive)", () => {
+    const manifest = buildValidManifest();
+    const { enabledMcpServerRefs: _omit, ...agentWithoutMcpRefs } =
+      manifest.spec.agents[0];
+    manifest.spec.agents = [agentWithoutMcpRefs];
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
   });
 });

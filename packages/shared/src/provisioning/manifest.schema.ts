@@ -44,6 +44,15 @@ export const secretRefSchema = nameSchema;
 // channelRef/agentRef/serviceRef exactly (same `nameSchema`, same
 // resolve-by-name-at-apply-time semantics).
 export const connectorRefSchema = nameSchema;
+// manual-loops/provisioning-manifest-gaps.md T06, gap 6 — lets a workflow
+// `mcpCall` action's `serverId` argument reference an `mcpServers[]` entry by
+// manifest name, resolved to the real MCP server id at apply time exactly
+// like connectorRef/agentRef/serviceRef (see
+// `services/provisioning-service/.../substitution-allowlist.ts`'s `serverId`
+// entry). NOT used for an agent's own MCP-server enablement list — see
+// `agentSchema.enabledMcpServerRefs` below for why that field resolves to the
+// manifest NAME, never a real id.
+export const mcpServerRefSchema = nameSchema;
 
 export const SYMBOLIC_REF_KEYS = [
   "channelRef",
@@ -51,6 +60,7 @@ export const SYMBOLIC_REF_KEYS = [
   "serviceRef",
   "secretRef",
   "connectorRef",
+  "mcpServerRef",
 ] as const;
 
 export type SymbolicRefType = (typeof SYMBOLIC_REF_KEYS)[number];
@@ -261,6 +271,109 @@ const connectorSchema = z
 export type Connector = z.infer<typeof connectorSchema>;
 
 // ---------------------------------------------------------------------------
+// MCP servers (manual-loops/provisioning-manifest-gaps.md T06, gap 6) —
+// mirrors `sdk/src/resources/mcp-servers/types.ts` `CreateMcpServerInput`
+// (`name`/`description`/`transport_type`/`url`/`headers`/`authType`/
+// `authConfig`/`enabled`/`scope`), backed by agent-admin-service's
+// `admin/mcp-servers` route.
+//
+// AUTH (per the SPEC's own T06 note: "follows whatever decision-3 ruling T01
+// established for connector auth, for consistency"): the raw SDK/live shape
+// (`authType` + free-form `authConfig: Record<string, unknown>`) would let a
+// literal credential live in the checked-in manifest — the exact hole
+// decision 3 closed for connectors. So, exactly like `connectorAuthSchema`,
+// this manifest schema replaces that pair with a discriminated `auth` block:
+// `authType` plus, per type, the exact `authConfig` field(s) each `secretRef`
+// targets (field NAMES verified against the SDK's own doc comment:
+// `{ headerName?, key }` for `api-key`, `{ token }` for `bearer`,
+// `{ username, password }` for `basic` — deliberately DIFFERENT field names
+// than `connectorAuthSchema`'s `bearerToken`/`apiKey`/`basicUsername`/
+// `basicPassword`, because they map into a different downstream `authConfig`
+// shape). Omitting `auth` entirely means `authType: "none"` (the platform's
+// own create-time default) — mirrors `connectorSchema.auth` exactly, no
+// separate "none" variant needed.
+//
+// HEADERS: `CreateMcpServerInput.headers` is a free-form
+// `Record<string, string>` the live MCP client sends verbatim on every
+// upstream call — this is EXACTLY the kind of custom-auth escape hatch (e.g.
+// a non-standard `X-Api-Key`/`X-Telegram-Bot-Api-Secret-Token` style header)
+// that a structured `authType` enum cannot cover, so a header VALUE can
+// legitimately be a credential. To preserve the "no plaintext credential
+// value in the manifest" invariant (decision 3) for this escape hatch too,
+// each header value is EITHER a plain non-secret string OR the SAME nested
+// `{ secretRef }` targeting `auth` uses — never a literal secret string
+// disguised as a header. The writer resolves any `{ secretRef }` header
+// value through the broker at apply time, exactly like `auth` fields; a
+// header whose value the author believes is a real credential MUST use the
+// `{ secretRef }` form (impossible to enforce by schema alone which literal
+// strings "are" secrets, but the escape hatch to do it safely always
+// exists — the plain-string branch is for genuinely non-secret metadata
+// headers only, e.g. `X-Request-Source`).
+// ---------------------------------------------------------------------------
+
+const mcpServerTransportTypeSchema = z.enum(["http", "sse"]);
+
+export type McpServerTransportType = z.infer<
+  typeof mcpServerTransportTypeSchema
+>;
+
+const mcpServerBearerAuthSchema = z
+  .object({
+    authType: z.literal("bearer"),
+    token: connectorSecretFieldSchema,
+  })
+  .strict();
+
+const mcpServerApiKeyAuthSchema = z
+  .object({
+    authType: z.literal("api-key"),
+    key: connectorSecretFieldSchema,
+    // Non-secret: the HEADER NAME the resolved key is sent under, never a value.
+    headerName: z.string().min(1).optional(),
+  })
+  .strict();
+
+const mcpServerBasicAuthSchema = z
+  .object({
+    authType: z.literal("basic"),
+    username: connectorSecretFieldSchema,
+    password: connectorSecretFieldSchema,
+  })
+  .strict();
+
+export const mcpServerAuthSchema = z.discriminatedUnion("authType", [
+  mcpServerBearerAuthSchema,
+  mcpServerApiKeyAuthSchema,
+  mcpServerBasicAuthSchema,
+]);
+
+export type McpServerAuth = z.infer<typeof mcpServerAuthSchema>;
+export type McpServerAuthType = McpServerAuth["authType"];
+
+const mcpServerHeaderValueSchema = z.union([
+  z.string().min(1, "header value must not be empty"),
+  connectorSecretFieldSchema,
+]);
+
+export type McpServerHeaderValue = z.infer<typeof mcpServerHeaderValueSchema>;
+
+const mcpServerSchema = z
+  .object({
+    name: nameSchema,
+    description: z.string().min(1).optional(),
+    transport_type: mcpServerTransportTypeSchema,
+    url: z.url("url must be a valid absolute URL"),
+    headers: z.record(z.string(), mcpServerHeaderValueSchema).optional(),
+    auth: mcpServerAuthSchema.optional(),
+    enabled: z.boolean().optional(),
+    scope: z.enum(["external", "internal"]).optional(),
+    external: z.boolean().optional(),
+  })
+  .strict();
+
+export type ManifestMcpServer = z.infer<typeof mcpServerSchema>;
+
+// ---------------------------------------------------------------------------
 // Agents — a "process" for the >=1-process structural rule.
 // ---------------------------------------------------------------------------
 
@@ -269,6 +382,27 @@ const agentSchema = z
     name: nameSchema,
     profile: z.record(z.string(), z.unknown()),
     knowledgeBaseRefs: z.array(nameSchema).optional(),
+    // manual-loops/provisioning-manifest-gaps.md T06, gap 6 — the MCP
+    // servers this agent has enabled, referenced by manifest NAME.
+    //
+    // DELIBERATELY NOT run through the generic symbolic-ref id-substitution
+    // mechanism (`substitution-allowlist.ts`/`substitute-symbolic-refs.ts`)
+    // the way `serverId` inside a workflow `mcpCall` action is: agent-admin
+    // and agent-ai-service's own `enabled_mcp_servers`/`ns` field is keyed by
+    // MCP server NAME, not id (`agent-ai-service`'s `tool-bridge.service.ts`
+    // filters `McpClientService.getConnectedServers()`, which only ever
+    // returns names — see the regression test
+    // `services/agent-ai-service/test/unit/tool-bridge.service.spec.ts`
+    // "drops all MCP tools when the allowlist contains the server's id
+    // instead of its name", fixing a real admin-console bug that saved this
+    // field by id). Substituting these refs to a real externalId would
+    // silently reintroduce that exact bug. So `enabledMcpServerRefs` stays a
+    // plain array of manifest NAMES (validated to resolve against
+    // `spec.mcpServers[].name` by `validate-structural-rules.ts`, exactly
+    // like `knowledgeBaseRefs`), and `agents-writer.ts` passes those names
+    // straight through to `PATCH /admin/agents/:id/mcp-servers` — no id
+    // lookup, ever, for this one field.
+    enabledMcpServerRefs: z.array(mcpServerRefSchema).optional(),
     external: z.boolean().optional(),
   })
   .strict();
@@ -508,12 +642,20 @@ export type Workflow = z.infer<typeof workflowSchema>;
 // systemVariable owner — whether `sdk/src/cli/extract-secret-bindings.ts`'s
 // separate `VALID_SCOPE_KINDS` constant also needs "systemVariable" is T07's
 // explicit scope, not decided here.
+// T06 (manual-loops/provisioning-manifest-gaps.md, gap 6): "mcpServer" added
+// so secret bindings can be scoped to an mcpServers[] owner (this section's
+// `auth`/`headers` fields both target secretRefs — see `mcpServerSchema`
+// above) and so `ResourceKind` gains the member `mcp-servers-writer.ts` /
+// `resource-kind-of-ref-type.ts` need. NOTE: the T06 task text asserted this
+// member already existed "since T04's plumbing" — verified FALSE (T04 only
+// added "systemVariable"); added here for the first time.
 const secretScopeKindSchema = z.enum([
   "channel",
   "connector",
   "agent",
   "service",
   "systemVariable",
+  "mcpServer",
   "workflow",
 ]);
 
@@ -555,6 +697,10 @@ const manifestSpecSchema = z
   .object({
     channels: z.array(channelSchema).default([]),
     connectors: z.array(connectorSchema).default([]),
+    // T06, gap 6 — placed before agents: agents may reference an mcpServers[]
+    // entry by name (`agentSchema.enabledMcpServerRefs`), so mcpServers must
+    // resolve/create first (RESOURCE_KIND_ORDER mirrors this section order).
+    mcpServers: z.array(mcpServerSchema).default([]),
     agents: z.array(agentSchema).default([]),
     knowledgeBases: z.array(knowledgeBaseSchema).default([]),
     services: z.array(serviceSchema).default([]),
