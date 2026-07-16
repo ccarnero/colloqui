@@ -50,11 +50,22 @@ export interface ManifestRevision {
   createdAt: string;
 }
 
+/**
+ * Mirrors provisioning-service's `ResourceKind`
+ * (`services/provisioning-service/src/modules/plan/domain/plan.interfaces.ts`),
+ * itself `= SecretScopeKind` from `@yoizen/shared`'s manifest schema.
+ * `"systemVariable"` (T04) and `"mcpServer"` (T06) added in
+ * `manual-loops/provisioning-manifest-gaps.md` T07 so `plan()`/`apply()`
+ * responses for manifests with `systemVariables[]`/`mcpServers[]` sections
+ * type-check against the real server payload shape.
+ */
 export type ResourceKind =
   | "channel"
   | "connector"
   | "agent"
   | "service"
+  | "systemVariable"
+  | "mcpServer"
   | "workflow";
 
 export type ResourceVerdict = "create" | "update" | "noop";

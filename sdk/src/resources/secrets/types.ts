@@ -15,11 +15,21 @@
  * only. This client never logs `value` — see `client.ts`.
  */
 
+/**
+ * Mirrors `@yoizen/shared`'s `secretScopeKindSchema`
+ * (`packages/shared/src/provisioning/manifest.schema.ts`) minus
+ * `"systemVariable"` — see `sdk/src/cli/valid-scope-kinds.ts` for why that
+ * member is deliberately excluded (added there only for `ResourceKind`
+ * plumbing, never for an actual secret-scope binding). `"mcpServer"` added
+ * in `manual-loops/provisioning-manifest-gaps.md` T07: mcpServers[]'s
+ * `auth`/`headers` fields bind secrets to this owner kind.
+ */
 export type SecretScopeKind =
   | "channel"
   | "connector"
   | "agent"
   | "service"
+  | "mcpServer"
   | "workflow";
 
 export interface SecretScope {

@@ -438,7 +438,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T04 `systemVariables` section
 - [x] T05 service scaling fields + routes
 - [x] T06 `mcpServers` section
-- [ ] T07 SDK/CLI compatibility sweep
+- [x] T07 SDK/CLI compatibility sweep
 - [ ] T08 migrate the 11 stand-by samples
 - [ ] T09 restore the full G4 canary set (4 groups, mcp included)
 
@@ -730,3 +730,29 @@ FOLLOW-UPS: pre-existing missing connectorRef case in
 validate-structural-rules' workflow ref walk (left, documented — T03
 escape); auth/headers-only changes no-op in the planner (mirrors T02's
 endpoint-cache precedent).
+
+### T07 — 2026-07-16
+
+SDK/CLI sweep shipped (sdk-only, no service rebuild): single
+`VALID_SCOPE_KINDS` constant (`sdk/src/cli/valid-scope-kinds.ts`) folding
+the samples-reorg T05 duplication; `mcpServer` ADDED (mcpServer auth/header
+secretRefs bind with that scope kind — structural validator verified);
+`systemVariable` DELIBERATELY EXCLUDED (manifest rejects type:"secret", the
+structural validator never checks that kind — a systemVariable-scoped
+binding would be an orphan; both reviewers confirmed the shared schema's own
+comment deferred exactly this call to T07). Hand-kept constant with
+drift-guard comment — the SDK's documented zero-deps/no-shared-import
+convention is real. `SecretScopeKind` +mcpServer, `ResourceKind`
++systemVariable+mcpServer (plan/apply response parity).
+BINDING CONTRACT CLARIFIED: extract-secret-bindings reads ONLY top-level
+`spec.secrets[]`; nested secretRefs (connector auth, mcp auth/headers) are
+NAME REFERENCES to those bindings — no extractor change needed.
+New `comprehensive-manifest.yaml` fixture exercising every T01-T06 section
++ 8 CLI compat tests (parse, bindings, env resolution, validate/plan/apply
+e2e, fail-fast, no-secret-in-output). No new subcommands.
+
+Gates: G4 sdk 392/392 + tsc clean; provisioning 318 + shared 257 untouched
+green; G5 double noop LIVE; the comprehensive fixture VALIDATES LIVE against
+revision 00026 (valid=true errors=0). Dual review: 2x APPROVED (attempt 1).
+INCIDENT during gates: the OrbStack k8s API dropped (TLS handshake timeout,
+~15 min) — recovered on its own; G5 re-run clean after recovery.

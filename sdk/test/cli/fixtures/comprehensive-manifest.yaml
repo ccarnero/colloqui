@@ -1,0 +1,121 @@
+# Comprehensive fixture (manual-loops/provisioning-manifest-gaps.md T07) —
+# exercises every gap-kind section T01-T06 added to manifest v1, in ONE
+# manifest, so the CLI's `validate|plan|apply` + `secrets put` flows and
+# `extract-secret-bindings.ts` are proven against the full new shape.
+# Distinct from `sample-manifest.yaml` (kept untouched — pre-existing
+# regression fixture for the minimal channel+workflow shape).
+apiVersion: yoizen.io/v1
+kind: IntegrationManifest
+metadata:
+  name: cli-comprehensive-sample
+spec:
+  channels:
+    - name: cli-comprehensive-http-in
+      type: http
+      direction: inbound
+
+  # T01 (nested-secretRef connector auth) + T02 (connector endpoints).
+  connectors:
+    - name: cli-comprehensive-connector
+      type: http
+      auth:
+        authType: bearer
+        bearerToken:
+          secretRef: connector-bearer-token
+      endpoints:
+        - label: list-items
+          method: GET
+          path: /items
+
+  # T06 mcpServers — nested auth (bearer) + mixed headers (plain string +
+  # nested secretRef form).
+  mcpServers:
+    - name: cli-comprehensive-mcp-server
+      transport_type: http
+      url: https://mcp.example.com
+      auth:
+        authType: bearer
+        token:
+          secretRef: mcp-server-bearer-token
+      headers:
+        X-Request-Source: cli-comprehensive-sample
+        X-Api-Key:
+          secretRef: mcp-server-header-key
+
+  # T06 agent — enabledMcpServerRefs (manifest-name reference, never
+  # substituted to a real id, see agentSchema.enabledMcpServerRefs).
+  agents:
+    - name: cli-comprehensive-agent
+      profile:
+        instructions: "Comprehensive CLI-compat sample agent."
+      enabledMcpServerRefs:
+        - cli-comprehensive-mcp-server
+
+  # T05 — scaling fields + routes.
+  services:
+    - name: cli-comprehensive-service
+      image: registry.example.com/cli-comprehensive-service:latest
+      port: 8080
+      minScale: 0
+      maxScale: 3
+      concurrencyTarget: 10
+      routes:
+        - pathPrefix: /cli-comprehensive
+          methods:
+            - GET
+            - POST
+          isPublic: true
+          stripPrefix: true
+
+  # T04 — systemVariables (non-"secret" type only; manifest rejects "secret").
+  systemVariables:
+    - name: cli-comprehensive-flag
+      type: boolean
+      value: true
+      label: Comprehensive sample flag
+
+  # T03 — manifest-time ID substitution refs: connectorRef (endpointCall
+  # adapterId) and mcpServerRef (mcpCall serverId), both allowlisted argument
+  # keys per substitution-allowlist.ts.
+  workflows:
+    - name: cli-comprehensive-workflow
+      definition:
+        application: samples
+        actions:
+          - name: call-connector
+            activity: endpointCall
+            args:
+              adapterId:
+                connectorRef: cli-comprehensive-connector
+              endpointLabel: list-items
+          - name: call-mcp
+            activity: mcpCall
+            args:
+              serverId:
+                mcpServerRef: cli-comprehensive-mcp-server
+        trigger:
+          type: message_received
+          mode: shared
+          config:
+            channels:
+              - http
+            providers:
+              - http
+
+  # Top-level bindings — nested secretRefs above (connector auth, mcpServer
+  # auth, mcpServer header) all REFERENCE these by name; they do not carry
+  # values themselves (manifest v1 never does). `--secrets-from-env` reads
+  # the VALUE for each from the identically-named environment variable.
+  secrets:
+    - name: connector-bearer-token
+      scope:
+        kind: connector
+        owner: cli-comprehensive-connector
+    - name: mcp-server-bearer-token
+      scope:
+        kind: mcpServer
+        owner: cli-comprehensive-mcp-server
+    - name: mcp-server-header-key
+      scope:
+        kind: mcpServer
+        owner: cli-comprehensive-mcp-server

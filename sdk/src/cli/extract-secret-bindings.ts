@@ -4,20 +4,13 @@ import type {
   SecretScopeKind,
 } from "../resources/secrets/index.js";
 import { CliError } from "./cli-error.js";
+import { VALID_SCOPE_KINDS } from "./valid-scope-kinds.js";
 
 /** One `spec.secrets[]` binding read out of a parsed manifest object (name + scope, never a value — manifest v1 never carries secret values). */
 export interface CliSecretBinding {
   name: string;
   scope: SecretScope;
 }
-
-const VALID_SCOPE_KINDS: readonly SecretScopeKind[] = [
-  "channel",
-  "connector",
-  "agent",
-  "service",
-  "workflow",
-];
 
 /**
  * Reads `spec.secrets[]` (name + scope bindings only, per the manifest v1

@@ -4,14 +4,7 @@ import type {
   SecretScopeKind,
 } from "../resources/secrets/index.js";
 import { CliError } from "./cli-error.js";
-
-const VALID_SCOPE_KINDS: readonly SecretScopeKind[] = [
-  "channel",
-  "connector",
-  "agent",
-  "service",
-  "workflow",
-];
+import { VALID_SCOPE_KINDS } from "./valid-scope-kinds.js";
 
 /** Parses `secrets put`'s `--scope <kind>:<owner>` into a `SecretScope`. */
 export function parseScopeArg(raw: string): Result<SecretScope, CliError> {
