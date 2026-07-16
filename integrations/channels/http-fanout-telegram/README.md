@@ -1,19 +1,12 @@
 # http-fanout-telegram
 
-> **Now SDK-powered.** Both `./run.sh` and `./setup.sh` resolve the dev environment (same as
-> before) and then exec a small Node/TypeScript app that drives the platform through
-> `@yoizen/platform-sdk` (see [`sdk/README.md`](../../../sdk/README.md)) — `client.connectors.list()`,
-> `client.channels.listAccounts()`, `client.workflows.create()`, and `client.webhooks.ingest()`
-> replace the old inline `curl`+`jq` calls. `./run.sh` (`src/index.ts`) still shells out to
-> `../../http/http-connectors/setup.sh` (and, if `TELEGRAM_BOT_TOKEN` is set, `../telegram-transform-reply/setup.sh`)
-> since those sibling samples aren't SDK-ported yet.
-
 A workflow that, on **any message arriving over the HTTP channel**, fans out **three connector
 calls in parallel**, **joins** their responses, **POSTs** the result to the httpbin connector, and
-**DMs you a summary over Telegram**. It stitches together the two other samples —
-[`http-connectors`](../../http/http-connectors) (the outbound connectors) and
-[`telegram-transform-reply`](../telegram-transform-reply) (the Telegram channel account) — into one
-end-to-end flow.
+**DMs you a summary over Telegram**. It stitches together two other samples —
+[`http-connectors`](../../http/http-connectors) (the outbound connectors, still imperative —
+STAND-BY, see below) and [`telegram-transform-reply`](../telegram-transform-reply) (the Telegram
+channel account) — into one end-to-end flow. Provisioning is **declarative**: a single
+[`manifest.yaml`](./manifest.yaml) applied through the `yoizen` CLI (no setup scripts).
 
 ```
 HTTP msg ─► trigger (message_received, channels:["http"])
@@ -29,135 +22,111 @@ HTTP msg ─► trigger (message_received, channels:["http"])
             notify       channelSend  telegram → your chat_id   (text = summary)
 ```
 
-## How each step maps to the engine
+## What `manifest.yaml` provisions
 
-Verified against `services/workflow-service/src/temporal/workflows.ts`:
+1. **A dedicated HTTP channel account** (`http-fanout-telegram`) — this workflow's own ingest
+   instance (`externalId` derived as `manifest:http-fanout-telegram`).
+2. **A workflow** (`http-fanout-telegram`) — `branch` (3 parallel `endpointCall`) → `join`
+   (`jsFunction`) → `postToHttpbin` (`endpointCall`) → `notify` (`channelSend`). Every `adapterId`
+   the deleted `setup.ts` resolved to a real id at provisioning time is now a `connectorRef` (T03);
+   `accountId` is a `channelRef` — both substituted to real ids by the apply engine at apply time,
+   never sent to workflow-service verbatim.
+3. **A system variable** (`http-fanout-telegram-chat-id`) — the Telegram chat id the notify step
+   DMs. See § Configure below.
 
-| Step | Activity | Notes |
-| --- | --- | --- |
-| Receive any HTTP message | `trigger: message_received`, `channels:["http"]` | Same trigger as the `http-bridge` sample |
-| Parallel calls | `branch` | The executor runs branch arms with `Promise.all` — genuinely concurrent |
-| Join | `jsFunction` | The fn receives the full context; after the branch, each arm's result is in `context.results.<name>`, so one JS step reads `getPost` / `getPokemon` / `getCatFact` and combines them |
-| POST to httpbin | `endpointCall` | `adapterId` = httpbin connector, `POST /post`, `data` = joined payload |
-| Telegram reply | `channelSend` | `to` → Telegram `chat_id`; published to the egress stream, delivered by the bot |
+> **Cross-sample dependencies, both `external: true`** (resolved by NAME against LIVE platform
+> state, never created by this manifest — see the comments in `manifest.yaml`):
+> - The 4 connectors (`jsonplaceholder`/`pokeapi`/`catfacts`/`httpbin`) — owned by
+>   [`http-connectors`](../../http/http-connectors), which is **STAND-BY** (its own migration is
+>   escalated — see its `STANDBY.md` and this batch's report: manifest v1's
+>   >=1-inbound-channel + >=1-process structural rule makes a connector-only manifest with no
+>   channel/workflow of its own impossible to express). Run `(cd ../../http/http-connectors &&
+>   ./setup.sh)` first — imperative, unchanged.
+> - The Telegram channel — owned by
+>   [`telegram-transform-reply`](../telegram-transform-reply)'s `manifest.yaml`. Apply it first.
 
-## Message flow
+## Documented deviation (trigger is unpinned)
 
-| # | From | Transport | Subject / URL | To |
-|---|------|-----------|---------------|----|
-| 1 | HTTP client | HTTPS POST · `x-http-channel-token: <appSecret>` | `/api/webhooks/http/acme/http-fanout-telegram` | api-gateway |
-| 2 | api-gateway | NATS JetStream · stream `INGRESS-ACME` | `evt.acme.api-gateway.messaging.http.webhook.webhook_received.v1` | channel-service-worker |
-| 3 | channel-service-worker (ingress) | NATS JetStream · stream `INGRESS-ACME` | `evt.acme.channel-service.messaging.http.http.received.v1` | workflow-service |
-| 4 | workflow-service | Temporal gRPC | task queue `workflow-orchestrator` · workflow `runWorkflow` | workflow-service worker |
-| 5 | workflow-service worker · `branch` (parallel) | Temporal task dispatch | task queue `connector-runtime` | connector-runtime (×3 concurrent) |
-| 5a | connector-runtime | HTTPS GET | `https://jsonplaceholder.typicode.com/posts/1` | JSONPlaceholder |
-| 5b | connector-runtime | HTTPS GET | `https://pokeapi.co/api/v2/pokemon/ditto` | PokéAPI |
-| 5c | connector-runtime | HTTPS GET | `https://catfact.ninja/fact` | Cat Facts |
-| 6 | workflow-service worker · `jsFunction` activity | local (in-process) | task queue `workflow-orchestrator` | workflow-service worker |
-| 7 | workflow-service worker · `endpointCall` (postToHttpbin) | Temporal task dispatch | task queue `connector-runtime` | connector-runtime |
-| 7a | connector-runtime | HTTPS POST | `https://httpbin.org/post` | httpbin |
-| 8 | workflow-service worker · `channelSend` activity | NATS core publish · captured by `INGRESS-ACME` | `evt.acme.channel-service.messaging.telegram.telegram.send.v1` | channel-service-worker |
-| 9 | channel-service-worker (egress) | HTTPS POST | `https://api.telegram.org/bot<token>/sendMessage` | Telegram |
-
-> Steps 5a–5c run concurrently via `Promise.all` inside a `branch` action. `endpointCall` activities (hops 5 and 7) are dispatched to `connector-runtime` — a separate service with its own Temporal task queue. `jsFunction` and `channelSend` run in-process on the `workflow-orchestrator` worker.
+The deleted `setup.ts` pinned this workflow's trigger to its own dedicated HTTP instance via
+`config.accountIds: [<id>]` (`FANOUT_PIN=1` default) so no OTHER HTTP-triggered workflow could fire
+it. Manifest v1's symbolic-ref substitution only covers the **singular** `accountId`
+action-argument key (`SUBSTITUTION_ALLOWLIST`), not the **plural** `trigger.config.accountIds`
+array — the same limitation the shipped `telegram-transform-reply/manifest.yaml` already documents
+for its own trigger. The trigger here fires on **any** HTTP message for the tenant. If you also run
+[`hosted-services-api`](../../http/hosted-services-api) (also unpinned after its own migration),
+**both** workflows fire on every inbound HTTP message — see § Troubleshooting.
 
 ## Prerequisites
 
-This script only wires the **workflow**. Provision its dependencies first:
+- A running dev cluster with a provisioned tenant (`acme` by default).
+- The connectors and Telegram account above already provisioned (see § What `manifest.yaml`
+  provisions).
+- The `yoizen` CLI (`cd sdk && bun link`, or `cd sdk && bun run bin/yoizen.ts ...`).
+- CLI environment: `YOIZEN_BASE_URL`, `YOIZEN_HOST_HEADER`, `YOIZEN_TENANT`, `YOIZEN_EMAIL`,
+  `YOIZEN_PASSWORD` — same as every other sample.
+- No secret bindings — this manifest declares no `secrets:` section.
 
-1. **Connectors** `jsonplaceholder`, `pokeapi`, `catfacts`, `httpbin`:
-   ```bash
-   (cd ../../http/http-connectors && ./setup.sh)
-   ```
-2. **A Telegram channel account** with a real bot token:
-   ```bash
-   (cd ../telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
-   ```
-3. The **dedicated HTTP channel instance** is created automatically by this sample's `setup.sh`
-   (account `externalId = http-fanout-telegram`); you don't need to create one by hand.
-4. **Your numeric Telegram `chat_id`**, and you must have `/start`-ed the bot. A bot cannot
-   cold-message a phone number — Telegram addresses recipients by `chat_id`. Get yours with:
-   ```bash
-   curl -s "https://api.telegram.org/bot<token>/getUpdates" | jq '.result[].message.chat.id'
-   ```
+## Provision (declarative)
 
-## Run
+```bash
+cd sdk && bun link   # one-time; or prefix each call with `bun run bin/yoizen.ts`
+
+yoizen manifests validate -f ../integrations/channels/http-fanout-telegram/manifest.yaml
+yoizen manifests plan     -f ../integrations/channels/http-fanout-telegram/manifest.yaml
+yoizen manifests apply    -f ../integrations/channels/http-fanout-telegram/manifest.yaml --secrets-from-env
+```
+
+A second `apply` is a no-op once converged (no live external-ref changes).
+
+## Configure (Telegram recipient)
+
+The Telegram chat id is a `systemVariables` entry (`http-fanout-telegram-chat-id`), not an env var
+— edit `spec.systemVariables[0].value` in `manifest.yaml` to your real numeric chat id, then
+re-apply:
+
+```bash
+yoizen manifests apply -f ../integrations/channels/http-fanout-telegram/manifest.yaml --secrets-from-env
+```
+
+The workflow reads it at RUNTIME via `{{variables.system.http-fanout-telegram-chat-id}}` —
+changing the recipient is a variable-value re-apply, never a workflow edit.
+
+## Run / exercise
 
 ```bash
 cd integrations/channels/http-fanout-telegram
-TELEGRAM_CHAT_ID=123456789 ./setup.sh
-# [STEP]  2/3 resolve connectors + telegram account
-# [INFO]  connectors  jsonplaceholder=…  pokeapi=…  catfacts=…  httpbin=…
-# [INFO]  telegram account=…
-# [STEP]  3/3 ensure workflow 'http-fanout-telegram'
-# [INFO]  created workflow id=…
+./run.sh
 ```
 
-The script logs in, **resolves the connector `adapterId`s and the Telegram `accountId` by name**,
-**creates a dedicated HTTP channel instance** (`externalId = http-fanout-telegram`), and builds the
-workflow with its trigger **pinned to that instance** (`config.accountIds = [<that account>]`). So
-this workflow fires **only** for messages sent to its own instance — never on unrelated HTTP traffic.
-Idempotent — re-running reuses everything by name; `RECREATE=1` rebuilds the workflow.
-
-### Drive it end to end
-
-This workflow has its **own ingest URL** — the last path segment is its instance `externalId`
-(`/api/webhooks/http/<tenant>/http-fanout-telegram`). POST straight to it (the `setup.sh` prints the
-exact URL and token at the end):
-
-```bash
-curl -X POST 'http://localhost:8080/api/webhooks/http/acme/http-fanout-telegram' \
-  -H 'content-type: application/json' \
-  -H 'x-http-channel-token: <app-secret-printed-by-setup>' \
-  -d '{"text":"hola"}'
-```
-
-The message hits **this instance** → the workflow fires (and no other) → three calls run in parallel
-→ the join builds the summary → it's POSTed to httpbin → and the bot DMs you:
+`run.sh` (`src/index.ts`) verifies (read-only) an active Telegram account and the workflow, then
+POSTs a test message through the sample's own ingest URL
+(`/api/webhooks/http/<tenant>/manifest:http-fanout-telegram`). It still shells out to
+`../../http/http-connectors/setup.sh` first (that sample is still imperative). Expect:
 
 ```
-Mensaje recibido: hola
+Mensaje recibido: hola desde run.sh [...]
 Post: sunt aut facere repellat provident…
 Pokemon: ditto
 Dato gatuno: Cats sleep 70% of their lives.
 (httpbin status: 200)
 ```
 
-## Environment
-
-`setup.sh` sources `../lib/resolve-env.sh` automatically, which loads a `.env` file from this
-directory (if present) and detects the gateway endpoint. Place secrets and overrides in `.env`
-next to `setup.sh` — no manual sourcing needed.
+## Environment (run.sh overrides only — provisioning is manifest-driven)
 
 | Var | Default | Notes |
 | --- | --- | --- |
-| `TELEGRAM_CHAT_ID` | — | **Required.** Your numeric Telegram chat id |
-| `TG_ACCOUNT_ID` | first active telegram account | Pin a specific Telegram channel account |
-| `YOIZEN_BASE_URL` | dev gateway | Gateway base URL |
-| `YOIZEN_HOST_HEADER` | dev gateway host | `Host` header for the dev ingress |
-| `YOIZEN_TENANT` / `YOIZEN_EMAIL` / `YOIZEN_PASSWORD` | `acme` / `yclawd@demo.io` / `admin123` | Tenant + login |
-| `FANOUT_WORKFLOW_NAME` | `http-fanout-telegram` | Workflow name |
-| `FANOUT_JSONPLACEHOLDER` / `FANOUT_POKEAPI` / `FANOUT_CATFACTS` / `FANOUT_HTTPBIN` | connector names | Override the connector names to resolve |
-| `RECREATE` | `0` | `1` deletes + recreates the workflow |
+| `FANOUT_WORKFLOW_NAME` | `http-fanout-telegram` | Must match `manifest.yaml`'s workflow name |
+| `FANOUT_HTTP_EXTERNAL_ID` | `manifest:http-fanout-telegram` | The apply engine's derived externalId (`manifest:<channel name>`) |
+| `RUN_TEXT` | `hola desde run.sh` | Test message text |
 
 ## Design notes & gotchas
 
 - **`{{…}}` templating is string-coercing.** The resolver does `String(value)` on each leaf, so
   nested objects can't be piped raw into the httpbin body or the Telegram text. The `join` step
-  therefore hands off **strings** — a human `summary` and a `combinedJson` JSON string — which the
-  later steps reference via `{{results.join.summary}}` / `{{results.join.combinedJson}}`.
-- **Connectors are referenced by `adapterId`** (per-tenant), resolved at create time. If a connector
-  is missing the script stops with a clear message pointing at `../../http/http-connectors/setup.sh`.
-- **The HTTP channel is ingest-only**, so Telegram is the reply path by design — there's no "reply
-  over HTTP".
+  therefore hands off **strings** — a human `summary` and a `combinedJson` JSON string.
 - **Parallel result names matter.** The join reads `results.getPost`, `results.getPokemon`,
-  `results.getCatFact` — the names of the actions inside the branch arms. Rename an arm action and
-  you must update the join.
-- **`FANOUT_PIN=1` (the default)** pins the trigger to the dedicated HTTP instance via
-  `accountIds: [<http-fanout-telegram account id>]`, so only messages sent to its own ingest URL
-  fire this workflow. Set `FANOUT_PIN=0` to remove the pin and let any HTTP message on the tenant
-  trigger it (the stale-pin trap described in the Telegram sample's troubleshooting still applies
-  if the account is recreated while the workflow retains the old id).
+  `results.getCatFact` — the names of the actions inside the branch arms.
 - **`endpointCall` activities run on `connector-runtime`**, a separate service registered on
-  Temporal task queue `connector-runtime`. They are NOT executed in-process on the
-  `workflow-orchestrator` worker — that task queue only handles `jsFunction` and `channelSend`.
+  Temporal task queue `connector-runtime` — not in-process on `workflow-orchestrator`.
+- **The HTTP channel is ingest-only**, so Telegram is the reply path by design.
+- **Cross-firing with `hosted-services-api`** — see § Documented deviation above.

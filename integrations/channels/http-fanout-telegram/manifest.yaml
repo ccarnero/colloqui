@@ -1,0 +1,197 @@
+apiVersion: yoizen.io/v1
+kind: IntegrationManifest
+metadata:
+  name: http-fanout-telegram
+spec:
+  # ---------------------------------------------------------------------------
+  # Dedicated HTTP channel account — a per-instance ingress so this workflow
+  # CAN be pinned to only its own traffic. See the DEVIATION note on the
+  # workflow trigger below: manifest v1 cannot actually express the pin today
+  # (no manifest-time id exists for `trigger.config.accountIds` to embed), so
+  # the account still exists but the trigger is unpinned.
+  # ---------------------------------------------------------------------------
+  channels:
+    - name: http-fanout-telegram
+      type: http
+      direction: inbound
+
+    # ---------------------------------------------------------------------------
+    # CROSS-SAMPLE DEPENDENCY (Telegram account): owned by
+    # ../../channels/telegram-transform-reply/manifest.yaml, already applied.
+    # `external: true` resolves this entry by NAME against LIVE platform state
+    # at plan/apply time (see build-manifest-plan.ts's `entry.external`
+    # branch) — it is NEVER created or mutated by THIS manifest. `type`/
+    # `direction` below are schema filler only; an external entry's fields are
+    # ignored, only `name` drives the lookup. PREREQUISITE: apply
+    # telegram-transform-reply/manifest.yaml first, or this manifest's `plan`/
+    # `apply` fails loud with `unresolvable_external_ref`.
+    # ---------------------------------------------------------------------------
+    - name: telegram-transform-reply-bot
+      type: telegram
+      direction: inbound
+      external: true
+
+  # ---------------------------------------------------------------------------
+  # CROSS-SAMPLE DEPENDENCY (connectors): all four owned by
+  # ../../http/http-connectors, which is currently STAND-BY (its own
+  # migration is escalated — see http-connectors/STANDBY.md and this batch's
+  # report: manifest v1's >=1-inbound-channel + >=1-process structural rule,
+  # `declarative-provisioning.md` decision 2, makes a connector-only manifest
+  # with no channel/workflow of its own impossible to express). `external:
+  # true` resolves each by NAME against LIVE platform state exactly like the
+  # Telegram channel above — it does not require http-connectors to itself be
+  # manifest-provisioned, only that the named connectors already exist live
+  # (via `http-connectors/setup.sh`, still imperative). `type` is schema
+  # filler only, ignored for external entries.
+  # ---------------------------------------------------------------------------
+  connectors:
+    - name: jsonplaceholder
+      type: http
+      external: true
+    - name: pokeapi
+      type: http
+      external: true
+    - name: catfacts
+      type: http
+      external: true
+    - name: httpbin
+      type: http
+      external: true
+
+  # ---------------------------------------------------------------------------
+  # T04 systemVariables — the ONLY correct way to make the Telegram recipient
+  # (`TELEGRAM_CHAT_ID` in the deleted setup.ts) editable without a workflow
+  # edit: the OLD script baked it as a literal into the workflow definition at
+  # PROVISIONING time (read from an env var, then frozen into the created
+  # workflow's `channelSend.args.to`). A manifest is static/checked-in, so
+  # that literal cannot be a per-operator env value the way a `secretRef`
+  # value is — but a chat id is not a secret either. `systemVariables` (T04)
+  # is designed exactly for this: `{{variables.system.<name>}}` is resolved by
+  # workflow-service at RUNTIME (mirrors integrations/ai/ai-system-variables'
+  # `escalationPriority` pattern for `channelSend`/`conditional` args), so
+  # changing the recipient is a `PATCH`-and-reapply of this ONE value, never a
+  # workflow edit. Placeholder value below MUST be edited to a real chat id
+  # before the notify step will reach a real chat (see README § Configure).
+  # ---------------------------------------------------------------------------
+  systemVariables:
+    - name: http-fanout-telegram-chat-id
+      type: string
+      value: "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID"
+      label: Telegram chat id for http-fanout-telegram
+      description: >-
+        Numeric Telegram chat id the 'notify' step DMs a summary to. Edit
+        this value (systemVariables[0].value) and re-apply to change the
+        recipient — resolved at workflow execution time via
+        {{variables.system.http-fanout-telegram-chat-id}}.
+
+  # ---------------------------------------------------------------------------
+  # The fan-out workflow — branch (3 parallel endpointCall) -> join (jsFunction)
+  # -> postToHttpbin (endpointCall) -> notify (channelSend). Every `adapterId`/
+  # `accountId` that the deleted setup.ts resolved to a REAL id at provisioning
+  # time is now a T03 symbolic ref (`connectorRef`/`channelRef`), substituted
+  # to the real id by the apply engine at apply time (never sent to
+  # workflow-service verbatim — see workflows-writer.ts's substitution
+  # precondition). The `join` code and `{{...}}` runtime templates are
+  # embedded VERBATIM from the deleted setup.ts (byte-identical behavior,
+  # including the Spanish user-facing summary text).
+  # ---------------------------------------------------------------------------
+  workflows:
+    - name: http-fanout-telegram
+      definition:
+        application: samples
+        actions:
+          - name: fanout
+            activity: branch
+            jsonplaceholder:
+              - name: getPost
+                activity: endpointCall
+                args:
+                  adapterId:
+                    connectorRef: jsonplaceholder
+                  method: GET
+                  url: /posts/1
+            pokeapi:
+              - name: getPokemon
+                activity: endpointCall
+                args:
+                  adapterId:
+                    connectorRef: pokeapi
+                  method: GET
+                  url: /api/v2/pokemon/ditto
+            catfacts:
+              - name: getCatFact
+                activity: endpointCall
+                args:
+                  adapterId:
+                    connectorRef: catfacts
+                  method: GET
+                  url: /fact
+          - name: join
+            activity: jsFunction
+            args:
+              code: |
+                (ctx) => {
+                  var post = (ctx.results.getPost && ctx.results.getPost.data) || {};
+                  var poke = (ctx.results.getPokemon && ctx.results.getPokemon.data) || {};
+                  var cat  = (ctx.results.getCatFact && ctx.results.getCatFact.data) || {};
+                  var inbound = (ctx.request && ctx.request.text) || "";
+                  var combined = {
+                    inbound: inbound,
+                    post: { id: post.id, title: post.title },
+                    pokemon: { name: poke.name, baseExperience: poke.base_experience },
+                    catFact: cat.fact
+                  };
+                  var summary =
+                    "Mensaje recibido: " + inbound + "\n" +
+                    "Post: " + (post.title || "-") + "\n" +
+                    "Pokemon: " + (poke.name || "-") + "\n" +
+                    "Dato gatuno: " + (cat.fact || "-");
+                  return { summary: summary, combinedJson: JSON.stringify(combined) };
+                }
+          - name: postToHttpbin
+            activity: endpointCall
+            args:
+              adapterId:
+                connectorRef: httpbin
+              method: POST
+              url: /post
+              data:
+                source: http-fanout-telegram
+                summary: "{{results.join.summary}}"
+                payload: "{{results.join.combinedJson}}"
+          - name: notify
+            activity: channelSend
+            args:
+              accountId:
+                channelRef: telegram-transform-reply-bot
+              channel: telegram
+              provider: telegram
+              to: "{{variables.system.http-fanout-telegram-chat-id}}"
+              type: text
+              text: "{{results.join.summary}}\n(httpbin status: {{results.postToHttpbin.status}})"
+        # ---------------------------------------------------------------------
+        # DEVIATION (reported to the human, mirrors telegram-transform-reply's
+        # own documented trigger deviation): the deleted setup.ts pinned this
+        # trigger to the just-created HTTP instance via
+        # `config.accountIds: [<httpAccountId>]` (FANOUT_PIN=1 default) so
+        # ONLY messages sent to this sample's own ingest URL fired it. That
+        # account id does not exist at manifest-author time, and
+        # `SUBSTITUTION_ALLOWLIST` only covers the SINGULAR `accountId`
+        # argument key inside action `args` (channelSend/etc) — it does NOT
+        # cover the PLURAL `trigger.config.accountIds` array, which sits in a
+        # structurally different location workflows-writer.ts never runs
+        # substitution over. So this trigger is UNPINNED: it fires on ANY
+        # HTTP message for the tenant. In a tenant running ONLY this sample's
+        # HTTP-triggered workflow this is behaviorally equivalent; running it
+        # alongside hosted-services-api's ALSO-unpinned HTTP workflow means
+        # BOTH fire on every inbound HTTP message — see README §
+        # Troubleshooting for how to avoid cross-firing during testing.
+        # ---------------------------------------------------------------------
+        trigger:
+          type: message_received
+          mode: shared
+          config:
+            channels:
+              - http
+            providers:
+              - http

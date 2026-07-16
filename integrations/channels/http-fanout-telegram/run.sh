@@ -8,13 +8,13 @@ cd "$(dirname "$0")"
 # ../../lib/resolve-env.sh, same as every other sample's run.sh) and execs the
 # Node app with those env vars in scope.
 #
-# Prerequisite: run ./setup.sh once first to provision the workflow and its
-# dedicated HTTP account. This script never creates or modifies platform
-# objects itself (it may shell out to sibling samples' setup.sh — see
-# src/index.ts).
+# Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+# once first to provision the workflow and its dedicated HTTP account (see
+# README.md). This script never creates or modifies platform objects itself
+# (it may shell out to the still-imperative http-connectors/setup.sh — see
+# src/index.ts). The Telegram recipient chat id lives in the manifest's
+# `systemVariables` section now, not an env var here.
 . ../../lib/resolve-env.sh
-
-: "${TELEGRAM_CHAT_ID:?TELEGRAM_CHAT_ID is required (your numeric chat id — put it in ./.env)}"
 
 if ! command -v node >/dev/null 2>&1; then
   echo "[run] 'node' was not found on PATH." >&2

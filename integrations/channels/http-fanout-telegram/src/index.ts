@@ -1,16 +1,20 @@
 /**
- * http-fanout-telegram sample driver — SDK-powered replacement for the old
- * curl+jq `run.sh` body.
+ * http-fanout-telegram sample driver — the RUN side that EXERCISES the
+ * already-provisioned resources (provisioning itself is declarative now, via
+ * `manifest.yaml` + `yoizen manifests apply`; see README.md).
  *
- * Prerequisite: run ./setup.sh once first to provision the workflow and its
- * dedicated HTTP channel instance. This script:
+ * This script:
  *   1. Ensures the sample's connector prerequisites exist by shelling out to
- *      `../../http/http-connectors/setup.sh` (that sample is not yet SDK-ported, so
- *      it is still a bash script — invoked exactly like the old run.sh did).
- *   2. If `TELEGRAM_BOT_TOKEN` is set, also shells out to
- *      `../telegram-transform-reply/setup.sh` to ensure the Telegram account.
+ *      `../../http/http-connectors/setup.sh` (that sample is still STAND-BY —
+ *      see `../../http/http-connectors/STANDBY.md` — imperative, unchanged).
+ *   2. Verifies (read-only) that an active Telegram channel account exists —
+ *      it no longer shells out to `../telegram-transform-reply/setup.ts`,
+ *      deleted when that sample migrated to `manifest.yaml`
+ *      (`yoizen manifests apply -f ../telegram-transform-reply/manifest.yaml
+ *      --secrets-from-env` provisions it instead; see README.md §
+ *      Prerequisites).
  *   3. Logs in and lists workflows via `client.workflows.list()` to confirm
- *      the sample's workflow exists.
+ *      this sample's own manifest-provisioned workflow exists.
  *   4. Lists `channel: "http"` accounts via `client.channels.listAccounts()`
  *      to resolve the dedicated instance's `appSecret`.
  *   5. Posts a test payload through `client.webhooks.ingest()` — the generic
@@ -62,26 +66,23 @@ async function main(): Promise<void> {
 
   const workflowName =
     process.env.FANOUT_WORKFLOW_NAME ?? "http-fanout-telegram";
+  // The apply engine derives a channel's externalId as `manifest:<name>`
+  // (see manifest.yaml's channel `http-fanout-telegram`) — NOT the bare name
+  // the deleted setup.ts used directly as its externalId.
   const instanceExternalId =
-    process.env.FANOUT_HTTP_EXTERNAL_ID ?? "http-fanout-telegram";
+    process.env.FANOUT_HTTP_EXTERNAL_ID ?? "manifest:http-fanout-telegram";
   const runText = process.env.RUN_TEXT ?? "hola desde run.sh";
-
-  requireEnv("TELEGRAM_CHAT_ID");
 
   // ----- 1. Prerequisites ----------------------------------------------------
   step("1/3 ensuring connectors (jsonplaceholder/pokeapi/catfacts/httpbin)...");
   runSetupScript("../http/http-connectors");
   step("    connectors ready");
 
-  if (process.env.TELEGRAM_BOT_TOKEN) {
-    step("2/3 ensuring telegram account (TELEGRAM_BOT_TOKEN provided)...");
-    runSetupScript("telegram-transform-reply");
-    step("    telegram account ready");
-  } else {
-    step(
-      "2/3 no TELEGRAM_BOT_TOKEN — assuming an active telegram account already exists"
-    );
-  }
+  step(
+    "2/3 checking for an active telegram account (apply " +
+      "../telegram-transform-reply/manifest.yaml first if this sample was " +
+      "never provisioned)..."
+  );
 
   // The gateway's dev ingress routes by Host header (see
   // ../lib/resolve-env.sh); the SDK's fetch-based transport needs it passed
@@ -102,9 +103,27 @@ async function main(): Promise<void> {
     fetch: hostHeader ? fetchWithHostHeader : undefined,
   });
 
+  let hasActiveTelegram = false;
+  for await (const account of client.channels.listAccounts({
+    channel: "telegram",
+  })) {
+    if (account.isActive) {
+      hasActiveTelegram = true;
+      break;
+    }
+  }
+  if (!hasActiveTelegram) {
+    console.error(
+      "[run] no active telegram account found — apply " +
+        "../telegram-transform-reply/manifest.yaml --secrets-from-env first"
+    );
+    process.exit(1);
+  }
+  step("    active telegram account found");
+
   // ----- 2. Login + verify workflow exists ------------------------------------
   step(
-    `3/3 verifying workflow '${workflowName}' exists (run ./setup.sh first if this fails)...`
+    `3/3 verifying workflow '${workflowName}' exists (apply manifest.yaml first if this fails)...`
   );
   let workflowId: string | undefined;
   for await (const workflow of client.workflows.list()) {
@@ -115,7 +134,7 @@ async function main(): Promise<void> {
   }
   if (!workflowId) {
     console.error(
-      `[run] workflow '${workflowName}' not found — run ./setup.sh first`
+      `[run] workflow '${workflowName}' not found — apply manifest.yaml first (see README.md)`
     );
     process.exit(1);
   }
@@ -132,7 +151,7 @@ async function main(): Promise<void> {
   }
   if (!appSecret) {
     console.error(
-      `[run] could not resolve the '${instanceExternalId}' instance token — run ./setup.sh first`
+      `[run] could not resolve the '${instanceExternalId}' instance token — apply manifest.yaml first (see README.md)`
     );
     process.exit(1);
   }
