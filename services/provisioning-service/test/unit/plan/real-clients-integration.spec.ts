@@ -55,7 +55,14 @@ function realisticManifest(): IntegrationManifest {
         },
       ],
       connectors: [
-        { name: "hubspot", type: "http", secretRef: "hubspot-api-key" },
+        {
+          name: "hubspot",
+          type: "http",
+          auth: {
+            authType: "bearer",
+            bearerToken: { secretRef: "hubspot-api-key" },
+          },
+        },
       ],
       agents: [{ name: "support-agent", profile: { model: "gpt-4" } }],
       knowledgeBases: [],

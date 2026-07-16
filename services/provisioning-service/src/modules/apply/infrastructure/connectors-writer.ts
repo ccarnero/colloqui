@@ -3,53 +3,201 @@
 // connector-admin's `CreateAdapterDto` requires a real `baseUrl` — that is
 // plain infra wiring (not a credential), so it is read straight off the
 // manifest's `config.baseUrl` (never fabricated; missing -> typed error).
-// Auth material (`authConfig`) is NEVER set here: a connector with a
-// `secretRef` fails loud with `secret_not_resolvable`, exactly like T04.
 //
-// T05 SCOPE DECISION: the connector writer deliberately does NOT call the
-// secrets broker. Threading a resolved value into connector-admin's
-// `CreateAdapterDto` needs a correct `authType`→`authConfig` field mapping
-// that this task does not attempt — and a resolve-and-discard call would
-// pollute the audit trail with a phantom "credential accessed" event while
-// leaving the connector with no auth material anyway. So T05 keeps the T04
-// fail-loud behavior for connectors and defers real broker wiring to a
-// follow-up (the channel writer, whose `accessToken` field maps cleanly, IS
-// wired to the broker in this task). `connectorComparable` (T03) is
-// existence-only — `diffResource` with two empty projections never produces
-// an `update` verdict for a connector, so `update` is a defensive no-op
-// stub, never exercised by the current planner.
+// T01 (manual-loops/provisioning-manifest-gaps.md, gap 1, decision 3 ruling
+// 2026-07-16): a connector's `auth` block (see `manifest.schema.ts`) is
+// resolved through the SAME secrets-broker resolver `channels-writer.ts`
+// already uses (`ISecretValueResolver`, wired at the module boundary in
+// `platform-resource-writers.provider.ts` / `apply.module.ts` via
+// `BrokerSecretResolver`, whose consumer identity is the fixed
+// `provisioning-service-apply-engine` literal — REUSED here rather than
+// registering a new consumer identity, since `secret-consumer-policy.ts`'s
+// static allow-set already authorizes the apply engine for every
+// `ResourceKind`, including `connector`; a new identity would only be
+// needed if a DIFFERENT service, not the apply engine, were the caller).
+// A connector declaring `auth` with NO resolver wired (tests, or a
+// not-yet-bound secret) fails loud with a typed `secret_not_resolvable`
+// error, exactly like the T04/T05 fail-loud precedent. The resolved value
+// is NEVER logged — only the outcome (resolved vs. failed) and field NAMES.
+//
+// `connectorComparable` (T03) stays existence-only per T01's scope — an
+// endpoint/auth diff producing an `update` verdict is `connectorComparable`'s
+// job (T02/out of scope here), so `update` remains a defensive no-op stub,
+// never exercised by the current planner.
 
 import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
-import type { Connector } from "@yoizen/shared";
+import type { Connector, ConnectorAuthType } from "@yoizen/shared";
 import { TENANT_HEADER } from "@yoizen/shared";
+import type { ApplyWriteError } from "../domain/apply.interfaces";
 import type {
   CreateOrUpdateResult,
   IPlatformResourceWriter,
 } from "../domain/platform-resource-writer.interface";
+import type { ISecretValueResolver } from "../domain/secret-value-resolver.interface";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-export function createConnectorsWriter(
-  baseUrl: string
-): IPlatformResourceWriter {
-  const logger = new PinoLoggerService("apply.connector-writer");
+type ResolveConnectorAuthOutcome =
+  | {
+      readonly ok: true;
+      readonly authType: ConnectorAuthType;
+      readonly authConfig: Record<string, unknown>;
+    }
+  | { readonly ok: false; readonly error: ApplyWriteError };
 
-  return {
-    async create(tenantId, resourceUnknown): Promise<CreateOrUpdateResult> {
-      const connector = resourceUnknown as Connector;
+/**
+ * Resolves every `secretRef` in a connector's `auth` block through the
+ * broker and maps each resolved value into the correct connector-admin
+ * `authConfig` field for the declared `authType` (see
+ * `packages/shared/src/adapter-auth-headers.ts` for the field names
+ * connector-admin/connector-runtime expect: `bearerToken` / `apiKey` +
+ * `apiKeyHeader` / `basicUsername` + `basicPassword`). NEVER logs a
+ * resolved value — only the field NAME being populated.
+ */
+async function resolveConnectorAuth(
+  secretResolver: ISecretValueResolver | undefined,
+  logger: PinoLoggerService,
+  tenantId: string,
+  connector: Connector,
+  correlationId: string | undefined
+): Promise<ResolveConnectorAuthOutcome> {
+  const auth = connector.auth;
+  if (!auth) {
+    return { ok: true, authType: "bearer", authConfig: {} } as const;
+  }
 
-      if (connector.secretRef) {
-        const message = `connector '${connector.name}' declares secretRef '${connector.secretRef}' — connector auth wiring through the broker is a follow-up beyond T05's scope, cannot resolve auth material yet`;
-        logger.warn(`create: ${message}`);
+  async function resolveField(
+    fieldName: string,
+    secretRef: string
+  ): Promise<{ ok: true; value: string } | { ok: false; error: string }> {
+    if (!secretResolver) {
+      const message = `connector '${connector.name}' auth.${fieldName}.secretRef '${secretRef}' declared but no secrets broker resolver is wired`;
+      logger.warn(`create: ${message}`);
+      return { ok: false, error: message };
+    }
+    const resolved = await secretResolver.resolve({
+      tenantId,
+      kind: "connector",
+      owner: connector.name,
+      secretName: secretRef,
+      correlationId,
+    });
+    if (!resolved.ok) {
+      logger.warn(
+        `create: connector '${connector.name}' auth.${fieldName}.secretRef '${secretRef}' broker resolution FAILED: ${resolved.error}`
+      );
+      return { ok: false, error: resolved.error };
+    }
+    logger.log(
+      `create: connector '${connector.name}' resolved auth.${fieldName}.secretRef '${secretRef}' via the broker (value NEVER logged)`
+    );
+    return { ok: true, value: resolved.value };
+  }
+
+  const authConfig: Record<string, unknown> = {};
+
+  switch (auth.authType) {
+    case "bearer": {
+      const resolved = await resolveField(
+        "bearerToken",
+        auth.bearerToken.secretRef
+      );
+      if (!resolved.ok) {
         return {
           ok: false,
           error: {
             kind: "secret_not_resolvable",
             resourceKind: "connector",
             resourceName: connector.name,
-            message,
+            message: resolved.error,
           },
         };
+      }
+      authConfig.bearerToken = resolved.value;
+      break;
+    }
+    case "api-key": {
+      const resolved = await resolveField("apiKey", auth.apiKey.secretRef);
+      if (!resolved.ok) {
+        return {
+          ok: false,
+          error: {
+            kind: "secret_not_resolvable",
+            resourceKind: "connector",
+            resourceName: connector.name,
+            message: resolved.error,
+          },
+        };
+      }
+      authConfig.apiKey = resolved.value;
+      if (auth.apiKeyHeader) {
+        authConfig.apiKeyHeader = auth.apiKeyHeader;
+      }
+      break;
+    }
+    case "basic": {
+      const resolvedUser = await resolveField(
+        "basicUsername",
+        auth.basicUsername.secretRef
+      );
+      if (!resolvedUser.ok) {
+        return {
+          ok: false,
+          error: {
+            kind: "secret_not_resolvable",
+            resourceKind: "connector",
+            resourceName: connector.name,
+            message: resolvedUser.error,
+          },
+        };
+      }
+      const resolvedPass = await resolveField(
+        "basicPassword",
+        auth.basicPassword.secretRef
+      );
+      if (!resolvedPass.ok) {
+        return {
+          ok: false,
+          error: {
+            kind: "secret_not_resolvable",
+            resourceKind: "connector",
+            resourceName: connector.name,
+            message: resolvedPass.error,
+          },
+        };
+      }
+      authConfig.basicUsername = resolvedUser.value;
+      authConfig.basicPassword = resolvedPass.value;
+      break;
+    }
+  }
+
+  return { ok: true, authType: auth.authType, authConfig };
+}
+
+export function createConnectorsWriter(
+  baseUrl: string,
+  secretResolver?: ISecretValueResolver
+): IPlatformResourceWriter {
+  const logger = new PinoLoggerService("apply.connector-writer");
+
+  return {
+    async create(
+      tenantId,
+      resourceUnknown,
+      context
+    ): Promise<CreateOrUpdateResult> {
+      const connector = resourceUnknown as Connector;
+
+      const authResolution = await resolveConnectorAuth(
+        secretResolver,
+        logger,
+        tenantId,
+        connector,
+        context?.correlationId
+      );
+      if (!authResolution.ok) {
+        return authResolution;
       }
 
       const config = (connector.config ?? {}) as Record<string, unknown>;
@@ -69,12 +217,23 @@ export function createConnectorsWriter(
         };
       }
 
-      const context =
+      const adapterContext =
         typeof config.context === "string" ? config.context : "external";
       const url = `${baseUrl}/connectors`;
       logger.log(
-        `create: POST ${url} connector='${connector.name}' tenant='${tenantId}'`
+        `create: POST ${url} connector='${connector.name}' tenant='${tenantId}'` +
+          (connector.auth ? ` authType='${connector.auth.authType}'` : "")
       );
+
+      const requestBody: Record<string, unknown> = {
+        name: connector.name,
+        context: adapterContext,
+        baseUrl: configBaseUrl,
+      };
+      if (connector.auth) {
+        requestBody.authType = authResolution.authType;
+        requestBody.authConfig = authResolution.authConfig;
+      }
 
       let response: Response;
       try {
@@ -84,11 +243,7 @@ export function createConnectorsWriter(
             [TENANT_HEADER]: tenantId,
             "content-type": "application/json",
           },
-          body: JSON.stringify({
-            name: connector.name,
-            context,
-            baseUrl: configBaseUrl,
-          }),
+          body: JSON.stringify(requestBody),
           signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
         });
       } catch (cause) {

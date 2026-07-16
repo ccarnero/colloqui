@@ -21,7 +21,10 @@ function buildManifest(): IntegrationManifest {
         {
           name: "hubspot",
           type: "http",
-          secretRef: "hubspot-api-key",
+          auth: {
+            authType: "bearer",
+            bearerToken: { secretRef: "hubspot-api-key" },
+          },
         },
       ],
       agents: [{ name: "support-agent", profile: {} }],
@@ -81,7 +84,10 @@ describe("gatherSecretReferences", () => {
     manifest.spec.connectors.push({
       name: "second-connector",
       type: "http",
-      secretRef: "tg-bot-token",
+      auth: {
+        authType: "bearer",
+        bearerToken: { secretRef: "tg-bot-token" },
+      },
     });
 
     const refs = gatherSecretReferences(manifest);
@@ -94,7 +100,7 @@ describe("gatherSecretReferences", () => {
   it("returns an empty list when nothing references a secret", () => {
     const manifest = buildManifest();
     manifest.spec.channels[0]!.secretRef = undefined;
-    manifest.spec.connectors[0]!.secretRef = undefined;
+    manifest.spec.connectors[0]!.auth = undefined;
     manifest.spec.services[0]!.env = [];
 
     const refs = gatherSecretReferences(manifest);

@@ -28,12 +28,15 @@ describe("desiredFieldsOfResource", () => {
     });
   });
 
-  it("connector: existence-only projection (never `config`, never `secretRef`, never auth material)", () => {
+  it("connector: existence-only projection (never `config`, never `auth`, never auth material)", () => {
     const connector: Connector = {
       name: "hubspot",
       type: "http",
       config: { baseUrl: "https://hubspot.example.com" },
-      secretRef: "hubspot-api-key",
+      auth: {
+        authType: "bearer",
+        bearerToken: { secretRef: "hubspot-api-key" },
+      },
     };
     expect(desiredFieldsOfResource("connector", connector)).toEqual({});
   });

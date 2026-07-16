@@ -61,4 +61,44 @@ describe("validateManifest — structural failures surface as a verbose error li
       ).toBe(true);
     }
   });
+
+  test("T01: reports an unresolved connector auth.bearerToken.secretRef with a path into the nested auth block", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.connectors[0].auth = {
+      authType: "bearer",
+      bearerToken: { secretRef: "ghost-secret" },
+    };
+    const result = validateManifest(manifest);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(
+        result.error.some(
+          (e) =>
+            e.path === "spec.connectors[0].auth.bearerToken.secretRef" &&
+            e.message.includes("ghost-secret")
+        )
+      ).toBe(true);
+    }
+  });
+
+  test("T01: reports a connector auth secretRef whose scope binding does not match the connector", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.secrets.push({
+      name: "wrong-owner-secret",
+      scope: { kind: "connector", owner: "some-other-connector" },
+    });
+    manifest.spec.connectors[0].auth = {
+      authType: "bearer",
+      bearerToken: { secretRef: "wrong-owner-secret" },
+    };
+    const result = validateManifest(manifest);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(
+        result.error.some(
+          (e) => e.path === "spec.connectors[0].auth.bearerToken.secretRef"
+        )
+      ).toBe(true);
+    }
+  });
 });

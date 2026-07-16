@@ -12,6 +12,7 @@ import { collectSymbolicRefs } from "./collect-symbolic-refs";
 import type {
   Agent,
   Connector,
+  ConnectorAuth,
   HostedService,
   IntegrationManifest,
   KnowledgeBase,
@@ -21,6 +22,48 @@ import type {
   Workflow,
 } from "./manifest.schema";
 import type { ManifestValidationError } from "./validation-error.interfaces";
+
+/**
+ * Every `{ path, secretRef }` pair inside a connector's nested `auth` block
+ * (T01 gap-1 ruling) — `bearerToken`/`apiKey` (one) or `basicUsername` +
+ * `basicPassword` (two), each with its own field-level path for error
+ * reporting.
+ */
+function connectorAuthSecretRefs(
+  auth: ConnectorAuth | undefined,
+  basePath: string
+): { path: string; secretRef: string }[] {
+  if (!auth) {
+    return [];
+  }
+  switch (auth.authType) {
+    case "bearer":
+      return [
+        {
+          path: `${basePath}.bearerToken.secretRef`,
+          secretRef: auth.bearerToken.secretRef,
+        },
+      ];
+    case "api-key":
+      return [
+        {
+          path: `${basePath}.apiKey.secretRef`,
+          secretRef: auth.apiKey.secretRef,
+        },
+      ];
+    case "basic":
+      return [
+        {
+          path: `${basePath}.basicUsername.secretRef`,
+          secretRef: auth.basicUsername.secretRef,
+        },
+        {
+          path: `${basePath}.basicPassword.secretRef`,
+          secretRef: auth.basicPassword.secretRef,
+        },
+      ];
+  }
+}
 
 export function validateManifestStructuralRules(
   manifest: IntegrationManifest
@@ -114,10 +157,14 @@ function checkRefResolution(
   });
 
   manifest.spec.connectors.forEach((connector: Connector, index) => {
-    if (connector.secretRef !== undefined) {
+    const authRefs = connectorAuthSecretRefs(
+      connector.auth,
+      `spec.connectors[${index}].auth`
+    );
+    for (const { path, secretRef } of authRefs) {
       checkSecretRef(
-        connector.secretRef,
-        `spec.connectors[${index}].secretRef`,
+        secretRef,
+        path,
         "connector",
         connector.name,
         secretsByName,

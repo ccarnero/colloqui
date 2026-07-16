@@ -23,7 +23,10 @@ export function buildValidManifest(): IntegrationManifest {
           name: "hubspot",
           type: "http",
           config: { baseUrl: "https://hubspot.example.com" },
-          secretRef: "hubspot-api-key",
+          auth: {
+            authType: "bearer",
+            bearerToken: { secretRef: "hubspot-api-key" },
+          },
         },
       ],
       agents: [

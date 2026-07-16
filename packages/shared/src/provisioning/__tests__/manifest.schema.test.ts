@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  connectorAuthSchema,
   integrationManifestSchema,
   kbSourceSchema,
   nameSchema,
@@ -186,5 +187,110 @@ describe("kbSourceSchema — inline | file | url discriminated union", () => {
       kbSourceSchema.safeParse({ type: "ftp", url: "ftp://example.com" })
         .success
     ).toBe(false);
+  });
+});
+
+// T01 (manual-loops/provisioning-manifest-gaps.md, gap 1, decision 3 ruling
+// 2026-07-16): secretRef-ONLY connector auth with NESTED-FIELD TARGETING —
+// there is no literal inline `authConfig` field, so a plaintext credential
+// value is impossible by schema.
+describe("connectorAuthSchema — secretRef-only, nested-field targeting", () => {
+  test("accepts a bearer auth block", () => {
+    expect(
+      connectorAuthSchema.safeParse({
+        authType: "bearer",
+        bearerToken: { secretRef: "hubspot-key" },
+      }).success
+    ).toBe(true);
+  });
+
+  test("accepts an api-key auth block with an optional apiKeyHeader", () => {
+    expect(
+      connectorAuthSchema.safeParse({
+        authType: "api-key",
+        apiKey: { secretRef: "acme-key" },
+        apiKeyHeader: "X-Acme-Key",
+      }).success
+    ).toBe(true);
+  });
+
+  test("accepts a basic auth block with both username and password secretRefs", () => {
+    expect(
+      connectorAuthSchema.safeParse({
+        authType: "basic",
+        basicUsername: { secretRef: "crm-user" },
+        basicPassword: { secretRef: "crm-pass" },
+      }).success
+    ).toBe(true);
+  });
+
+  test("rejects a literal inline credential value — a plaintext string is impossible by schema", () => {
+    expect(
+      connectorAuthSchema.safeParse({
+        authType: "bearer",
+        bearerToken: "plaintext-token-not-a-secretref-object",
+      }).success
+    ).toBe(false);
+  });
+
+  test("rejects authConfig-shaped input (the superseded inline mechanism)", () => {
+    expect(
+      connectorAuthSchema.safeParse({
+        authType: "bearer",
+        authConfig: { bearerToken: "plaintext-token" },
+      }).success
+    ).toBe(false);
+  });
+
+  test("rejects a bearer auth block missing bearerToken", () => {
+    expect(connectorAuthSchema.safeParse({ authType: "bearer" }).success).toBe(
+      false
+    );
+  });
+
+  test("rejects a basic auth block missing basicPassword", () => {
+    expect(
+      connectorAuthSchema.safeParse({
+        authType: "basic",
+        basicUsername: { secretRef: "crm-user" },
+      }).success
+    ).toBe(false);
+  });
+
+  test("rejects an unknown authType", () => {
+    expect(
+      connectorAuthSchema.safeParse({
+        authType: "oauth2",
+        bearerToken: { secretRef: "x" },
+      }).success
+    ).toBe(false);
+  });
+
+  test("rejects an unknown key inside bearerToken (.strict())", () => {
+    expect(
+      connectorAuthSchema.safeParse({
+        authType: "bearer",
+        bearerToken: { secretRef: "hubspot-key", value: "plaintext" },
+      }).success
+    ).toBe(false);
+  });
+
+  test("integrationManifestSchema rejects a connector with an unknown top-level secretRef (superseded flat mechanism)", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        connectors: [
+          {
+            name: "hubspot",
+            type: "http",
+            config: { baseUrl: "https://hubspot.example.com" },
+            secretRef: "hubspot-api-key",
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
   });
 });

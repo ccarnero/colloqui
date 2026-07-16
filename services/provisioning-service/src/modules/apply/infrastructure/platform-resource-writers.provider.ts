@@ -15,11 +15,16 @@ import { createWorkflowsWriter } from "./workflows-writer";
  * T05: `secretResolver` is optional — when wired (see `apply.module.ts`),
  * the CHANNEL writer resolves a `secretRef` through the T05 secrets broker
  * instead of failing loud with `secret_not_resolvable` (its `accessToken`
- * field maps cleanly). The connector writer deliberately does NOT take the
- * resolver in T05 (its connector-admin `authType`→`authConfig` mapping is a
- * follow-up — see `connectors-writer.ts` header), and registry
- * (hosted-service) + workflow writers are OUT of T05's minimal scope
- * (SPEC.md: "hosted-service k8s-native env delivery is a later concern").
+ * field maps cleanly). Registry (hosted-service) + workflow writers remain
+ * OUT of scope (SPEC.md: "hosted-service k8s-native env delivery is a later
+ * concern"; decision 7/gap-1's `declarative-provisioning.md` scope excludes
+ * agent/LLM credential wiring).
+ *
+ * T01 (manual-loops/provisioning-manifest-gaps.md, gap 1): the CONNECTOR
+ * writer now ALSO takes `secretResolver` — its `auth` block resolves
+ * bearer/api-key/basic secretRefs through the same broker resolver, mapped
+ * into connector-admin's `authType`→`authConfig` shape (see
+ * `connectors-writer.ts` header for the consumer-identity reuse rationale).
  */
 export function buildPlatformResourceWriters(
   secretResolver?: ISecretValueResolver
@@ -27,7 +32,7 @@ export function buildPlatformResourceWriters(
   const urls = provisioningServiceConfig.downstreamServiceUrls;
   return {
     channel: createChannelsWriter(urls.channels, secretResolver),
-    connector: createConnectorsWriter(urls.connectors),
+    connector: createConnectorsWriter(urls.connectors, secretResolver),
     agent: createAgentsWriter(urls.agents),
     service: createRegistryServicesWriter(urls.registry),
     workflow: createWorkflowsWriter(urls.workflows),

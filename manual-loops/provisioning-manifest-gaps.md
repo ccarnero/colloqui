@@ -432,7 +432,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 
 ---
 
-- [ ] T01 connector credential wiring (broker secretRef + inline authConfig)
+- [x] T01 connector credential wiring (broker secretRef + inline authConfig)
 - [ ] T02 connector `endpoints` manifest concept
 - [ ] T03 manifest-time real-ID substitution (`connectorRef` + resolver)
 - [ ] T04 `systemVariables` section
@@ -518,4 +518,45 @@ per this SPEC's own "no reinterpreting scope inline" boundary.
 
 ## Progress
 
-(none yet — this SPEC has not been approved to run)
+### Run approval — 2026-07-16
+
+Human approved this SPEC by invoking `/manual-loop` on it (2026-07-16).
+PRECONDITION note: `./scripts/validate-dev-mode.sh --with-e2e` fails
+deterministically at stage 5 — a race INTERNAL to the validator (stage 4's
+canary-revert triggers a second bun --watch reload; stage 5's e2e hits the
+API mid-reload: `jq: Cannot index number with string "name"` on the workflow
+LIST). The same e2e passes standalone both with dev-mode on and off. Per the
+SPEC's own fallback: G6a is SKIPPED for this run; G6b (built image) is the
+cluster gate. Two repairs were needed first: `./dev-mode.sh deps --force`
+(stale PVC lock hash) and re-provisioning the http-connectors sample
+(yesterday's tenant wipe removed the pokeapi adapter the e2e hardcodes;
+`E2E_ENDPOINT_ADAPTER_ID` env override documented in the script).
+
+### T01 — 2026-07-16
+
+HUMAN RULING (decision 3): secretRef-only with NESTED-FIELD TARGETING — no
+literal inline `authConfig` field exists; gap 1 collapses to secretRef
+targeting nested auth fields. Implemented: `connectorAuthSchema`
+(discriminated union bearer/api-key/basic, every credential field a strict
+`{ secretRef }` object — literal strings impossible by schema);
+`connectors-writer.ts` resolves through the secrets broker exactly like
+channels-writer (consumer identity: REUSED `provisioning-service-apply-engine`
+— already allow-listed for kind `connector` in secret-consumer-policy.ts);
+resolved values map to connector-admin CreateAdapterDto authConfig fields
+(names verified against `adapter-auth-headers.ts`). The old flat
+`connectorSchema.secretRef` (never functional — always failed
+`secret_not_resolvable`) was REMOVED; both reviewers adjudicated this as the
+decision-3 ruling superseding decision 1's additive-only wording for this
+dead field. Tests: existing secret_not_resolvable assertions preserved
+verbatim + resolved-path (bearer/api-key/basic) + literal-credential
+rejection tests.
+
+Gates: G1 238/238, G2 clean, G3 197/197, G5 valid=true + noop noop, G6b
+rebuilt image + e2e-manifest-apply PASSED (G6a skipped per precondition
+fallback above). Accept note: the SPEC command `bun test -t
+"connectors-writer"` matches 0 tests — the describe block is
+`createConnectorsWriter` per repo convention (`createChannelsWriter`);
+equivalent run 9/9 green. Dual review: 2x APPROVED (attempt 1).
+FOLLOW-UP: stale comments referencing the old T05 connector deferral in
+`scripts/e2e-manifest-showcase-driver.ts` and `apply-manifest.ts` — prose
+only, touch up in a later task.

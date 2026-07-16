@@ -134,15 +134,64 @@ export type ManifestChannel = z.infer<typeof channelSchema>;
 export type ChannelDirection = z.infer<typeof channelDirectionSchema>;
 
 // ---------------------------------------------------------------------------
-// Connectors
+// Connectors — credential wiring (manual-loops/provisioning-manifest-gaps.md
+// T01, decision 3 ruling 2026-07-16): secretRef-ONLY, with NESTED-FIELD
+// TARGETING. There is no literal inline `authConfig` field — a plaintext
+// credential in the manifest is impossible by schema. Instead a connector
+// declares an `auth` block: `authType` plus, per authType, the exact
+// connector-admin `authConfig` field(s) each `secretRef` targets (mirrors
+// `channelSchema.secretRef`, extended because different authTypes need
+// different — and for `basic`, multiple — authConfig keys). Values are
+// resolved through the secrets broker only, never persisted to the manifest.
 // ---------------------------------------------------------------------------
+
+const connectorSecretFieldSchema = z
+  .object({
+    secretRef: secretRefSchema,
+  })
+  .strict();
+
+export type ConnectorSecretField = z.infer<typeof connectorSecretFieldSchema>;
+
+const connectorBearerAuthSchema = z
+  .object({
+    authType: z.literal("bearer"),
+    bearerToken: connectorSecretFieldSchema,
+  })
+  .strict();
+
+const connectorApiKeyAuthSchema = z
+  .object({
+    authType: z.literal("api-key"),
+    apiKey: connectorSecretFieldSchema,
+    // Non-secret: the HEADER NAME the resolved key is sent under, never a value.
+    apiKeyHeader: z.string().min(1).optional(),
+  })
+  .strict();
+
+const connectorBasicAuthSchema = z
+  .object({
+    authType: z.literal("basic"),
+    basicUsername: connectorSecretFieldSchema,
+    basicPassword: connectorSecretFieldSchema,
+  })
+  .strict();
+
+export const connectorAuthSchema = z.discriminatedUnion("authType", [
+  connectorBearerAuthSchema,
+  connectorApiKeyAuthSchema,
+  connectorBasicAuthSchema,
+]);
+
+export type ConnectorAuth = z.infer<typeof connectorAuthSchema>;
+export type ConnectorAuthType = ConnectorAuth["authType"];
 
 const connectorSchema = z
   .object({
     name: nameSchema,
     type: z.string().min(1, "connector type must not be empty"),
     config: z.record(z.string(), z.unknown()).optional(),
-    secretRef: secretRefSchema.optional(),
+    auth: connectorAuthSchema.optional(),
     external: z.boolean().optional(),
   })
   .strict();

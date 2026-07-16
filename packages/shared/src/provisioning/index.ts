@@ -6,6 +6,9 @@ export type {
   Agent,
   ChannelDirection,
   Connector,
+  ConnectorAuth,
+  ConnectorAuthType,
+  ConnectorSecretField,
   HostedService,
   IntegrationManifest,
   IntegrationManifestMetadata,
@@ -24,6 +27,7 @@ export type {
 export {
   agentRefSchema,
   channelRefSchema,
+  connectorAuthSchema,
   integrationManifestSchema,
   KB_INLINE_CONTENT_MAX_BYTES,
   kbSourceSchema,
