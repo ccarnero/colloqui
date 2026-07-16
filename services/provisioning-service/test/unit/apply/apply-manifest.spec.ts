@@ -823,4 +823,87 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
     expect(workflowWriter.create).not.toHaveBeenCalled();
     expect(calls.map((c) => c.method)).toEqual(["applyStarted", "applyFailed"]);
   });
+
+  // manual-loops/provisioning-manifest-gaps-2.md T02, gap 3, decision 5
+  // ruling (FAIL LOUD).
+  it("a ref-object at a non-allowlisted key fails loud (unallowlisted_symbolic_ref) and never calls the workflow writer", async () => {
+    const manifest: IntegrationManifest = {
+      apiVersion: "yoizen.io/v1",
+      kind: "IntegrationManifest",
+      metadata: { name: "e2e-manifest-apply" },
+      spec: {
+        channels: [],
+        connectors: [],
+        agents: [],
+        knowledgeBases: [],
+        services: [],
+        systemVariables: [],
+        mcpServers: [],
+        workflows: [
+          {
+            name: "w1",
+            definition: {
+              application: "e2e",
+              actions: [
+                {
+                  activity: "endpointCall",
+                  name: "call",
+                  args: {
+                    // `connectorId` is not in SUBSTITUTION_ALLOWLIST — a
+                    // recognized connectorRef ref-object here must fail
+                    // loud, never reach the writer un-substituted.
+                    connectorId: { connectorRef: "hubspot" },
+                    method: "GET",
+                    url: "/x",
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        secrets: [],
+      },
+    };
+    const workflowWriter = {
+      create: mock(async () => ({
+        ok: true as const,
+        value: { externalId: "should-never-be-called" },
+      })),
+      update: mock(async (_t: string, id: string) => ({
+        ok: true as const,
+        value: { externalId: id },
+      })),
+    };
+    const { writers } = fakeWriters({ workflow: workflowWriter });
+    const { events, calls } = recordingEvents();
+
+    const plan = planWith([
+      {
+        kind: "workflow",
+        name: "w1",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.failure.kind).toBe("unallowlisted_symbolic_ref");
+      expect(result.error.failure.message).toContain("connectorId");
+      expect(result.error.failure.message).toContain("connectorRef");
+      expect(result.error.failure.message).toContain("hubspot");
+    }
+    expect(workflowWriter.create).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.method)).toEqual(["applyStarted", "applyFailed"]);
+  });
 });

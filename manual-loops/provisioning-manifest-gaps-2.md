@@ -476,7 +476,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 ---
 
 - [x] T01 library/channel-less manifests (gap 1)
-- [ ] T02 safety fix: fail loud on ref-shaped objects at non-allowlisted keys (gap 3)
+- [x] T02 safety fix: fail loud on ref-shaped objects at non-allowlisted keys (gap 3)
 - [ ] T03 LLM/KB connector ID references (gap 2)
 - [ ] T04 agent per-tool MCP fields (gap 4)
 - [ ] T05 service `env` vars (gap 5)
@@ -560,3 +560,28 @@ Gates: G1 321/321, G2 clean, G3 265/265 + tsc, G4 392/392, G6b revision
 00027 + e2e-manifest-apply PASSED, G5 TRIPLE regression (3 shipped
 manifests) all VALID + all-noop. Dual review: 2x APPROVED (attempt 1).
 
+
+### T02 — 2026-07-16
+
+HUMAN RULING (decision 5): FAIL LOUD. `walk` now also inspects children at
+NON-allowlisted keys: a recognized `{ <refKind>: <name> }` object returns
+NEW error kind `unallowlisted_symbolic_ref` (key + kind + name + owning
+resource, value-free) — closing the silent-corruption path where a stranded
+ref-object persisted verbatim. TWO review rounds: attempt 1 REJECTED — the
+check wrongly included `secretRef`; reviewer proved with two sources
+(workflow schema comment manifest.schema.ts:610-618 + checkRefResolution's
+live `case "secretRef"`) that secretRef legitimately appears inside walked
+definitions. Attempt 2: secretRef EXEMPTED (different lifecycle — validated
+structurally against spec.secrets, broker/consumer-resolved, never
+substituted); the FIVE substitutable kinds keep the fail-loud; mixed test
+proves the split at the identical nesting position; secretRef at an
+ALLOWLISTED key still correctly hits `mismatched_symbolic_ref` (unchanged).
+Header rewritten to the two-source truth. The pre-existing test that encoded
+the silent-passthrough bug was upgraded (sanctioned — non-allowlisted-key
+behavior, not a protected assertion). Three shipped manifests' definitions
+transcribed as regression tests — walk clean.
+
+Gates (attempt 2): G1 333/333, G2 clean, G3 265, G4 392, G6b revision 00029
++ e2e-manifest-apply PASSED (note: one rebuild attempt silently no-opped —
+revision verified before gates re-ran), G5 triple regression all-noop.
+Dual review: attempt 1 split (secretRef inclusion), attempt 2 → 2x APPROVED.

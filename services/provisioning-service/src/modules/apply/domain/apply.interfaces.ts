@@ -55,6 +55,16 @@ export type ApplyWriteErrorKind =
   // would only surface at runtime with no trail — so this fails loud with
   // the same posture as `unresolved_symbolic_ref`, naming expected vs actual.
   | "mismatched_symbolic_ref"
+  // manual-loops/provisioning-manifest-gaps-2.md T02, gap 3, decision 5
+  // ruling (2026-07-16, FAIL LOUD) — a recognized single-key ref-object
+  // (`{ <SYMBOLIC_REF_KEYS member>: name }`) sits at a key that is NOT in
+  // `SUBSTITUTION_ALLOWLIST` at all, so it was never a candidate for
+  // resolution in the first place. Persisting it verbatim would silently
+  // corrupt the resource (the writer receives a nested ref-object where it
+  // expects a plain value/id) — so this fails loud, naming the key, the ref
+  // kind/name, and the owning resource, exactly like its allowlisted-key
+  // siblings above.
+  | "unallowlisted_symbolic_ref"
   // manual-loops/provisioning-manifest-gaps.md T05, gap 5, decision 6 ruling
   // (2026-07-16) — a declared route `pathPrefix` collides with a LIVE route
   // owned by a DIFFERENT service/tenant. Re-verified by

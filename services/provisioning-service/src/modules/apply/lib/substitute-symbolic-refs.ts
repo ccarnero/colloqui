@@ -20,7 +20,7 @@
 // walker recognizes, so they pass straight through at any nesting depth.
 //
 // Fails loud (never a silent passthrough of a symbolic ref that would reach
-// the writer un-substituted), in two cases, both naming the ref kind, the
+// the writer un-substituted), in THREE cases, all naming the ref kind, the
 // symbolic name, and the owning resource so `apply-manifest.ts` can treat
 // them exactly like a writer failure (stop-at-first-error, never call the
 // writer):
@@ -29,10 +29,45 @@
 //   - `mismatched_symbolic_ref`: an allowlisted key holds a recognized
 //     ref-object whose kind is NOT the one that key accepts (e.g.
 //     `{ agentRef }` in `accountId`, which only accepts `channelRef`).
+//   - `unallowlisted_symbolic_ref` (manual-loops/provisioning-manifest-gaps-2.md
+//     T02, gap 3, decision 5 ruling 2026-07-16, FAIL LOUD): a key that is
+//     NOT in `SUBSTITUTION_ALLOWLIST` at all holds a recognized single-key
+//     ref-object of a SUBSTITUTABLE kind anyway (e.g. today's un-substituted
+//     `connectorId`). Before this fix such an object was walked as a plain
+//     nested object and persisted verbatim — silent corruption, since the
+//     writer would receive a `{ <refType>: <name> }` object where it expects
+//     a plain string/id that some upstream step should have substituted.
+//     Checked at EVERY non-allowlisted key, at any nesting depth, exactly
+//     like the allowlisted-key check.
+//
+//     EXEMPTION: `secretRef`. Unlike the substitutable kinds
+//     (channelRef/agentRef/serviceRef/connectorRef/mcpServerRef, which resolve
+//     to a real platform id at APPLY time and are corrupt if they reach a
+//     writer un-substituted), `secretRef` has a fundamentally different
+//     lifecycle: it is NEVER substituted by this walker — it is validated
+//     against `spec.secrets` at manifest time and resolved by the secrets
+//     broker / downstream consumers at RUNTIME. Two sources confirm a
+//     `{ secretRef: <name> }` object legitimately appears inside a walked
+//     workflow `definition` at ANY depth, and this walker must let it pass:
+//       1. `packages/shared/src/provisioning/manifest.schema.ts:610-618` —
+//          the workflow schema's own comment states definition steps "may
+//          embed channelRef/agentRef/serviceRef/secretRef/connectorRef keys
+//          at any depth; those are walked and resolved by the structural-rule
+//          validators".
+//       2. `packages/shared/src/provisioning/validate-structural-rules.ts`
+//          `checkRefResolution` — runs `collectSymbolicRefs` over EVERY
+//          `workflow.definition` and has a live `case "secretRef"` validating
+//          the ref against `spec.secrets`. The structural validator is built
+//          to ACCEPT a secretRef embedded in a definition; failing it loud
+//          here would reject a manifest that validate was designed to pass.
+//     So a recognized `{ secretRef }` at a non-allowlisted key passes through
+//     untouched (recurse/continue), while every OTHER SYMBOLIC_REF_KEYS kind
+//     at a non-allowlisted key still fails loud.
+//
 // Only genuinely non-ref-shaped values (literal id strings, runtime
 // `{{...}}` templates, multi-key objects, single-key objects whose key is
-// not a SYMBOLIC_REF_KEYS member) legitimately pass through at an
-// allowlisted key.
+// not a SYMBOLIC_REF_KEYS member) — plus `{ secretRef }` at any key, per the
+// exemption above — legitimately pass through, at ANY key.
 
 import type { SymbolicRefType } from "@yoizen/shared";
 import { SYMBOLIC_REF_KEYS } from "@yoizen/shared";
@@ -159,6 +194,29 @@ function walk(
         // single-key object whose key is not a SYMBOLIC_REF_KEYS member) —
         // legitimately passes through untouched. Keep walking in case it
         // nests further allowlisted keys.
+      } else {
+        // T02, gap 3, decision 5 (FAIL LOUD) — `key` is NOT in
+        // `SUBSTITUTION_ALLOWLIST` at all, so it was never a candidate for
+        // substitution. If its value is STILL a recognized single-key
+        // ref-object of a SUBSTITUTABLE kind, persisting it verbatim would
+        // silently corrupt the resource — fail loud instead of recursing.
+        // EXEMPTION: `secretRef` is never substituted by this walker (it is
+        // validated against `spec.secrets` at manifest time and resolved by
+        // the broker/consumers at runtime); it legitimately appears inside a
+        // workflow `definition` at any depth (see this file's header, sources
+        // 1 and 2), so it passes through untouched like a plain value.
+        const recognized = readRecognizedRefObject(child);
+        if (recognized && recognized.refType !== "secretRef") {
+          return {
+            ok: false,
+            error: {
+              kind: "unallowlisted_symbolic_ref",
+              resourceKind: args.owningResourceKind,
+              resourceName: args.owningResourceName,
+              message: `${args.owningResourceKind} '${args.owningResourceName}' at ${childPath} holds a recognized ${recognized.refType} ref-object '${recognized.name}' at key '${key}', which is not in SUBSTITUTION_ALLOWLIST — this ref would never be substituted and persisting it verbatim would silently corrupt the resource`,
+            },
+          };
+        }
       }
 
       const result = walk(child, childPath, args);
