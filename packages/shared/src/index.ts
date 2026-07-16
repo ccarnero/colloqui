@@ -352,6 +352,8 @@ export type {
   Connector,
   ConnectorAuth,
   ConnectorAuthType,
+  ConnectorEndpointCache,
+  ConnectorEndpointManifest,
   ConnectorSecretField,
   HostedService,
   IntegrationManifest,

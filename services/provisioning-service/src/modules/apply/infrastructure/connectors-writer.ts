@@ -20,13 +20,27 @@
 // error, exactly like the T04/T05 fail-loud precedent. The resolved value
 // is NEVER logged — only the outcome (resolved vs. failed) and field NAMES.
 //
-// `connectorComparable` (T03) stays existence-only per T01's scope — an
-// endpoint/auth diff producing an `update` verdict is `connectorComparable`'s
-// job (T02/out of scope here), so `update` remains a defensive no-op stub,
-// never exercised by the current planner.
+// T02 (manual-loops/provisioning-manifest-gaps.md, gap 2): `connector.endpoints`
+// is reconciled AFTER the connector itself is created/resolved, in
+// declaration order, via connector-admin's dedicated endpoint API —
+// `POST /connectors/:id/endpoints` (create) and
+// `PATCH /connectors/:id/endpoints/:epId` (update) — the SAME two routes the
+// SDK's `client.connectors.addEndpoint`/`updateEndpoint` call
+// (`sdk/src/resources/connectors/client.ts`). Endpoint uniqueness downstream
+// is `(method, path)` per connector (never a manifest-declared id), so the
+// writer matches each declared endpoint against the connector's LIVE
+// endpoints by that pair to decide add-vs-update. Create-or-update only
+// (decision 2, no prune) — an endpoint present live but absent from the
+// manifest is left untouched. `connectorComparable` (T02) now diffs
+// endpoints too, so `update()` is reachable whenever endpoints changed —
+// no longer the defensive no-op stub T01 left it as.
 
 import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
-import type { Connector, ConnectorAuthType } from "@yoizen/shared";
+import type {
+  Connector,
+  ConnectorAuthType,
+  ConnectorEndpointManifest,
+} from "@yoizen/shared";
 import { TENANT_HEADER } from "@yoizen/shared";
 import type { ApplyWriteError } from "../domain/apply.interfaces";
 import type {
@@ -36,6 +50,163 @@ import type {
 import type { ISecretValueResolver } from "../domain/secret-value-resolver.interface";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+
+/** Live endpoint shape read off `GET /connectors/:id` (mirrors `mapEndpoint`). */
+interface LiveConnectorEndpoint {
+  readonly id: string;
+  readonly label: string;
+  readonly method: string;
+  readonly path: string;
+}
+
+/**
+ * Reconciles every declared endpoint against the connector's live endpoints,
+ * in declaration order. `existingEndpoints` is empty for a just-created
+ * connector (nothing to match yet) and fetched from the live connector for
+ * an update. Matches by `(method, path)` — connector-admin's own uniqueness
+ * key — never by manifest order or a manifest-declared id. Fails loud on the
+ * first endpoint API error, naming both the connector and the endpoint.
+ */
+async function reconcileConnectorEndpoints(
+  baseUrl: string,
+  logger: PinoLoggerService,
+  tenantId: string,
+  connectorName: string,
+  externalId: string,
+  endpoints: readonly ConnectorEndpointManifest[],
+  existingEndpoints: readonly LiveConnectorEndpoint[]
+): Promise<{ ok: true } | { ok: false; error: ApplyWriteError }> {
+  for (const endpoint of endpoints) {
+    const match = existingEndpoints.find(
+      (existing) =>
+        existing.method.toUpperCase() === endpoint.method.toUpperCase() &&
+        existing.path === endpoint.path
+    );
+
+    const requestBody: Record<string, unknown> = {
+      label: endpoint.label,
+      method: endpoint.method,
+      path: endpoint.path,
+    };
+    if (endpoint.cache) {
+      requestBody.cache = endpoint.cache;
+    }
+
+    const verb = match ? "PATCH" : "POST";
+    const url = match
+      ? `${baseUrl}/connectors/${externalId}/endpoints/${match.id}`
+      : `${baseUrl}/connectors/${externalId}/endpoints`;
+
+    logger.log(
+      `reconcile-endpoints: ${verb} ${url} connector='${connectorName}' endpoint='${endpoint.label}' (${endpoint.method} ${endpoint.path}) tenant='${tenantId}'`
+    );
+
+    let response: Response;
+    try {
+      response = await tracedFetch(url, {
+        method: verb,
+        headers: {
+          [TENANT_HEADER]: tenantId,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+      });
+    } catch (cause) {
+      const message = `network failure calling ${url} for connector '${connectorName}' endpoint '${endpoint.label}' (${endpoint.method} ${endpoint.path}): ${cause instanceof Error ? cause.message : String(cause)}`;
+      logger.warn(`reconcile-endpoints: ${message}`);
+      return {
+        ok: false,
+        error: {
+          kind: "downstream_error",
+          resourceKind: "connector",
+          resourceName: connectorName,
+          message,
+        },
+      };
+    }
+
+    if (!response.ok) {
+      const message = `HTTP ${String(response.status)} from ${url} for connector '${connectorName}' endpoint '${endpoint.label}' (${endpoint.method} ${endpoint.path})`;
+      logger.warn(`reconcile-endpoints: ${message}`);
+      return {
+        ok: false,
+        error: {
+          kind: "downstream_error",
+          resourceKind: "connector",
+          resourceName: connectorName,
+          message,
+        },
+      };
+    }
+
+    logger.log(
+      `reconcile-endpoints: connector '${connectorName}' endpoint '${endpoint.label}' (${endpoint.method} ${endpoint.path}) ${match ? "updated" : "created"}`
+    );
+  }
+  return { ok: true };
+}
+
+/**
+ * Fetches the connector's current endpoints from the live platform state
+ * (`GET /connectors/:id`), used ONLY on the update path — a just-created
+ * connector has no live endpoints yet, so `create()` never needs this call.
+ */
+async function fetchLiveConnectorEndpoints(
+  baseUrl: string,
+  logger: PinoLoggerService,
+  tenantId: string,
+  connectorName: string,
+  externalId: string
+): Promise<
+  | { ok: true; endpoints: readonly LiveConnectorEndpoint[] }
+  | { ok: false; error: ApplyWriteError }
+> {
+  const url = `${baseUrl}/connectors/${externalId}`;
+  logger.log(
+    `update: GET ${url} connector='${connectorName}' tenant='${tenantId}' (fetching live endpoints for add-vs-update matching)`
+  );
+
+  let response: Response;
+  try {
+    response = await tracedFetch(url, {
+      method: "GET",
+      headers: { [TENANT_HEADER]: tenantId },
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+  } catch (cause) {
+    const message = `network failure calling ${url} for connector '${connectorName}': ${cause instanceof Error ? cause.message : String(cause)}`;
+    logger.warn(`update: ${message}`);
+    return {
+      ok: false,
+      error: {
+        kind: "downstream_error",
+        resourceKind: "connector",
+        resourceName: connectorName,
+        message,
+      },
+    };
+  }
+
+  if (!response.ok) {
+    const message = `HTTP ${String(response.status)} from ${url} for connector '${connectorName}'`;
+    logger.warn(`update: ${message}`);
+    return {
+      ok: false,
+      error: {
+        kind: "downstream_error",
+        resourceKind: "connector",
+        resourceName: connectorName,
+        message,
+      },
+    };
+  }
+
+  const live = (await response.json()) as {
+    endpoints?: LiveConnectorEndpoint[];
+  };
+  return { ok: true, endpoints: live.endpoints ?? [] };
+}
 
 type ResolveConnectorAuthOutcome =
   | {
@@ -278,18 +449,71 @@ export function createConnectorsWriter(
       logger.log(
         `create: connector '${connector.name}' created -> externalId='${created.id}'`
       );
+
+      const endpoints = connector.endpoints ?? [];
+      if (endpoints.length > 0) {
+        logger.log(
+          `create: connector '${connector.name}' reconciling ${String(endpoints.length)} declared endpoint(s), in declaration order`
+        );
+        const reconciled = await reconcileConnectorEndpoints(
+          baseUrl,
+          logger,
+          tenantId,
+          connector.name,
+          created.id,
+          endpoints,
+          []
+        );
+        if (!reconciled.ok) {
+          return reconciled;
+        }
+      }
+
       return { ok: true, value: { externalId: created.id } };
     },
 
     async update(
-      _tenantId,
+      tenantId,
       externalId,
       resourceUnknown
     ): Promise<CreateOrUpdateResult> {
       const connector = resourceUnknown as Connector;
-      logger.log(
-        `update: connector '${connector.name}' is existence-only (no comparable field) — no-op, this path is never exercised by the current planner`
+      const endpoints = connector.endpoints ?? [];
+
+      if (endpoints.length === 0) {
+        logger.log(
+          `update: connector '${connector.name}' declares no endpoints and has no other comparable/writable field — no-op`
+        );
+        return { ok: true, value: { externalId } };
+      }
+
+      const live = await fetchLiveConnectorEndpoints(
+        baseUrl,
+        logger,
+        tenantId,
+        connector.name,
+        externalId
       );
+      if (!live.ok) {
+        return live;
+      }
+
+      logger.log(
+        `update: connector '${connector.name}' reconciling ${String(endpoints.length)} declared endpoint(s) against ${String(live.endpoints.length)} live endpoint(s), in declaration order`
+      );
+      const reconciled = await reconcileConnectorEndpoints(
+        baseUrl,
+        logger,
+        tenantId,
+        connector.name,
+        externalId,
+        endpoints,
+        live.endpoints
+      );
+      if (!reconciled.ok) {
+        return reconciled;
+      }
+
       return { ok: true, value: { externalId } };
     },
   };

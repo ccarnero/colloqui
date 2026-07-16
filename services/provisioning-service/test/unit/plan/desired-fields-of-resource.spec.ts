@@ -28,7 +28,7 @@ describe("desiredFieldsOfResource", () => {
     });
   });
 
-  it("connector: existence-only projection (never `config`, never `auth`, never auth material)", () => {
+  it("connector: never projects `config`, `auth`, or auth material — only `endpoints` (T02)", () => {
     const connector: Connector = {
       name: "hubspot",
       type: "http",
@@ -38,7 +38,26 @@ describe("desiredFieldsOfResource", () => {
         bearerToken: { secretRef: "hubspot-api-key" },
       },
     };
-    expect(desiredFieldsOfResource("connector", connector)).toEqual({});
+    expect(desiredFieldsOfResource("connector", connector)).toEqual({
+      endpoints: [],
+    });
+  });
+
+  it("connector: projects declared endpoints (label/method/path), sorted by (method, path)", () => {
+    const connector: Connector = {
+      name: "hubspot",
+      type: "http",
+      endpoints: [
+        { label: "create-contact", method: "POST", path: "/contacts" },
+        { label: "list-contacts", method: "get", path: "/contacts" },
+      ],
+    };
+    expect(desiredFieldsOfResource("connector", connector)).toEqual({
+      endpoints: [
+        { label: "list-contacts", method: "GET", path: "/contacts" },
+        { label: "create-contact", method: "POST", path: "/contacts" },
+      ],
+    });
   });
 
   it("agent: existence-only projection (profile/KB refs not faithfully comparable yet)", () => {

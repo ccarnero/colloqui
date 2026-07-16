@@ -294,3 +294,128 @@ describe("connectorAuthSchema — secretRef-only, nested-field targeting", () =>
     expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
   });
 });
+
+// T02 (manual-loops/provisioning-manifest-gaps.md, gap 2): connector
+// `endpoints` — mirrors the SDK's `CreateConnectorEndpointInput`
+// (`label`/`method`/`path`/optional `cache`). Additive-only: optional field,
+// `.strict()` per every other manifest section.
+describe("connectorSchema — endpoints (T02)", () => {
+  function manifestWithConnector(connector: Record<string, unknown>) {
+    const manifest = buildValidManifest();
+    return {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        connectors: [connector],
+      },
+    };
+  }
+
+  test("accepts a connector with no endpoints declared (additive — omission stays valid)", () => {
+    const manifest = manifestWithConnector({
+      name: "hubspot",
+      type: "http",
+      config: { baseUrl: "https://hubspot.example.com" },
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts a connector with a valid endpoints array", () => {
+    const manifest = manifestWithConnector({
+      name: "hubspot",
+      type: "http",
+      config: { baseUrl: "https://hubspot.example.com" },
+      endpoints: [
+        { label: "list-contacts", method: "GET", path: "/contacts" },
+        {
+          label: "create-contact",
+          method: "POST",
+          path: "/contacts",
+          cache: { enabled: true, ttlSeconds: 60 },
+        },
+      ],
+    });
+    const result = integrationManifestSchema.safeParse(manifest);
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts an endpoint cache block with methods/keyHeaders/keyQueryParams/keyBody", () => {
+    const manifest = manifestWithConnector({
+      name: "hubspot",
+      type: "http",
+      config: { baseUrl: "https://hubspot.example.com" },
+      endpoints: [
+        {
+          label: "list-contacts",
+          method: "GET",
+          path: "/contacts",
+          cache: {
+            enabled: true,
+            ttlSeconds: 60,
+            methods: ["GET"],
+            keyHeaders: ["Authorization"],
+            keyQueryParams: "all",
+            keyBody: false,
+          },
+        },
+      ],
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("rejects an endpoint missing a required field (path)", () => {
+    const manifest = manifestWithConnector({
+      name: "hubspot",
+      type: "http",
+      config: { baseUrl: "https://hubspot.example.com" },
+      endpoints: [{ label: "list-contacts", method: "GET" }],
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects an endpoint with an invalid HTTP method", () => {
+    const manifest = manifestWithConnector({
+      name: "hubspot",
+      type: "http",
+      config: { baseUrl: "https://hubspot.example.com" },
+      endpoints: [
+        { label: "list-contacts", method: "FETCH", path: "/contacts" },
+      ],
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects an endpoint with an unknown key (.strict())", () => {
+    const manifest = manifestWithConnector({
+      name: "hubspot",
+      type: "http",
+      config: { baseUrl: "https://hubspot.example.com" },
+      endpoints: [
+        {
+          label: "list-contacts",
+          method: "GET",
+          path: "/contacts",
+          unknownField: "nope",
+        },
+      ],
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects an endpoint cache block with an unknown key (.strict())", () => {
+    const manifest = manifestWithConnector({
+      name: "hubspot",
+      type: "http",
+      config: { baseUrl: "https://hubspot.example.com" },
+      endpoints: [
+        {
+          label: "list-contacts",
+          method: "GET",
+          path: "/contacts",
+          cache: { enabled: true, ttlSeconds: 60, unknownCacheField: true },
+        },
+      ],
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+});

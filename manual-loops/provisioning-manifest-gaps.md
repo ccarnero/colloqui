@@ -433,7 +433,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 ---
 
 - [x] T01 connector credential wiring (broker secretRef + inline authConfig)
-- [ ] T02 connector `endpoints` manifest concept
+- [x] T02 connector `endpoints` manifest concept
 - [ ] T03 manifest-time real-ID substitution (`connectorRef` + resolver)
 - [ ] T04 `systemVariables` section
 - [ ] T05 service scaling fields + routes
@@ -560,3 +560,36 @@ equivalent run 9/9 green. Dual review: 2x APPROVED (attempt 1).
 FOLLOW-UP: stale comments referencing the old T05 connector deferral in
 `scripts/e2e-manifest-showcase-driver.ts` and `apply-manifest.ts` — prose
 only, touch up in a later task.
+
+### T02 — 2026-07-16
+
+`connectors[].endpoints` shipped: schema mirrors the SDK
+`CreateConnectorEndpointInput` field-for-field (label/method/path/cache,
+strict, additive); `connectors-writer.ts` reconciles endpoints in declaration
+order via connector-admin `POST /connectors/:id/endpoints` + `PATCH
+/connectors/:id/endpoints/:epId`, matched by (method, path), create-or-update
+only (no DELETE anywhere — decision 2), live GET skipped when the manifest
+declares zero endpoints; `connectorComparable` upgraded from existence-only
+to endpoint diffing (normalized {label, METHOD, path}, sorted — order can
+never cause a false update; endpoint `cache` config deliberately excluded
+from the diff, documented). Two pre-existing tests migrated from the
+superseded existence-only `{}` projection shape — both reviewers adjudicated
+this a legitimate shape migration (secret-scrub assertions preserved and
+strengthened with a new dedicated projection test).
+
+Gates: G1 247/247, G2 clean, G3 204/204 (+ shared tsc clean), G6b rebuilt
+image (revision 00018) + e2e-manifest-apply PASSED, G5 valid=true + double
+noop. CLUSTER INCIDENT during G6b: revision 00018 stuck Deploying — the
+cluster ClusterIP range was FULL (`failed to allocate a serviceIP: range is
+full`, knative-serving controller); remediated by deleting 10 stale
+zero-traffic Knative revisions (150 -> 114 Services), after which 00018 went
+Ready and all cluster gates were re-run against the T02 image. Dual review:
+2x APPROVED (attempt 1).
+
+FOLLOW-UPS: (a) a cache-only endpoint change no-ops in the planner (excluded
+from the comparable by scoped decision) — revisit if a sample needs it;
+(b) stale "existence-only" header comment in
+`plan/infrastructure/connectors-client.ts`; (c) cache-method enum literal
+duplicates `AdapterCacheMethod` (same package) — DRY candidate; (d) update
+path of the endpoint API error branch only covered via the shared create-path
+code.

@@ -468,6 +468,84 @@ describe("buildManifestPlan", () => {
     });
   });
 
+  // T02 (manual-loops/provisioning-manifest-gaps.md, gap 2): `endpoints`
+  // makes `connectorComparable` reachable beyond existence-only.
+  describe("diff correctness per resource kind — connector endpoints (T02)", () => {
+    it("update verdict when a declared endpoint is absent live (endpoint-only change)", async () => {
+      const manifest = manifestWith({
+        channels: [{ name: "http-in", type: "http", direction: "inbound" }],
+        agents: [{ name: "agent-1", profile: {} }],
+        connectors: [
+          {
+            name: "hubspot",
+            type: "http",
+            config: { baseUrl: "https://hubspot.example.com" },
+            endpoints: [
+              { label: "list-contacts", method: "GET", path: "/contacts" },
+            ],
+          },
+        ],
+      });
+      const clients = noopClients();
+      clients.connector = fakeClient("connector", {
+        hubspot: {
+          externalId: "conn-1",
+          fields: connectorComparable.fromLive({
+            id: "conn-1",
+            name: "hubspot",
+            context: "external",
+            endpoints: [],
+          }),
+        },
+      });
+
+      const result = await buildManifestPlan(manifest, "t", clients);
+      expect(result.ok && entryFor(result.value, "hubspot")?.verdict).toBe(
+        "update"
+      );
+    });
+
+    it("noop when declared and live endpoints match, regardless of declaration order", async () => {
+      const manifest = manifestWith({
+        channels: [{ name: "http-in", type: "http", direction: "inbound" }],
+        agents: [{ name: "agent-1", profile: {} }],
+        connectors: [
+          {
+            name: "hubspot",
+            type: "http",
+            config: { baseUrl: "https://hubspot.example.com" },
+            endpoints: [
+              { label: "create-contact", method: "POST", path: "/contacts" },
+              { label: "list-contacts", method: "GET", path: "/contacts" },
+            ],
+          },
+        ],
+      });
+      const clients = noopClients();
+      clients.connector = fakeClient("connector", {
+        hubspot: {
+          externalId: "conn-1",
+          fields: connectorComparable.fromLive({
+            id: "conn-1",
+            name: "hubspot",
+            context: "external",
+            // Live returns them in a DIFFERENT order than declared — must
+            // still be noop (order-insensitive comparison).
+            endpoints: [
+              { label: "list-contacts", method: "get", path: "/contacts" },
+              { label: "create-contact", method: "post", path: "/contacts" },
+            ],
+          }),
+        },
+      });
+
+      const result = await buildManifestPlan(manifest, "t", clients);
+      expect(result.ok && entryFor(result.value, "hubspot")?.verdict).toBe(
+        "noop"
+      );
+    });
+  });
+
   describe("diff correctness per resource kind — service", () => {
     const service = {
       name: "priority-scorer",

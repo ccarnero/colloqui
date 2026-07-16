@@ -226,7 +226,11 @@ describe("createConnectorsWriter", () => {
     }
   });
 
-  it("update: existence-only kind — never exercised, safe no-op", async () => {
+  it("update: a connector with no declared endpoints is a safe no-op (never calls the network)", async () => {
+    globalThis.fetch = mock(async () => {
+      throw new Error("must never call the network with no endpoints declared");
+    }) as unknown as typeof fetch;
+
     const writer = createConnectorsWriter(BASE_URL);
     const connector: Connector = { name: "hubspot", type: "http" };
     const result = await writer.update("tenant-a", "conn-1", connector, []);
@@ -234,5 +238,213 @@ describe("createConnectorsWriter", () => {
     if (result.ok) {
       expect(result.value.externalId).toBe("conn-1");
     }
+  });
+
+  // T02 (manual-loops/provisioning-manifest-gaps.md, gap 2): endpoint
+  // reconciliation on create/update, via connector-admin's dedicated
+  // endpoint API (POST .../endpoints, PATCH .../endpoints/:epId).
+  describe("endpoints (T02)", () => {
+    it("create: reconciles declared endpoints AFTER the connector is created, in declaration order", async () => {
+      const calls: { url: string; method: string; body: unknown }[] = [];
+      globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          method: init.method as string,
+          body: init.body ? JSON.parse(init.body as string) : undefined,
+        });
+        if (init.method === "POST" && url.endsWith("/connectors")) {
+          return json({ id: "conn-1" }, 201);
+        }
+        return json({ id: "ep-x" }, 201);
+      }) as unknown as typeof fetch;
+
+      const writer = createConnectorsWriter(BASE_URL);
+      const connector: Connector = {
+        name: "hubspot",
+        type: "http",
+        config: { baseUrl: "https://hubspot.example.com" },
+        endpoints: [
+          { label: "list-contacts", method: "GET", path: "/contacts" },
+          { label: "create-contact", method: "POST", path: "/contacts" },
+        ],
+      };
+
+      const result = await writer.create("tenant-a", connector);
+      expect(result.ok).toBe(true);
+
+      // Call 0 creates the connector itself; calls 1-2 are the endpoints,
+      // in the SAME order as declared in the manifest.
+      expect(calls).toHaveLength(3);
+      expect(calls[0].url).toBe(`${BASE_URL}/connectors`);
+      expect(calls[1].url).toBe(`${BASE_URL}/connectors/conn-1/endpoints`);
+      expect(calls[1].method).toBe("POST");
+      expect(calls[1].body).toMatchObject({
+        label: "list-contacts",
+        method: "GET",
+        path: "/contacts",
+      });
+      expect(calls[2].url).toBe(`${BASE_URL}/connectors/conn-1/endpoints`);
+      expect(calls[2].body).toMatchObject({
+        label: "create-contact",
+        method: "POST",
+        path: "/contacts",
+      });
+    });
+
+    it("create: fails loud with a typed downstream_error naming the connector AND the endpoint on an endpoint API failure", async () => {
+      globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+        if (init.method === "POST" && url.endsWith("/connectors")) {
+          return json({ id: "conn-1" }, 201);
+        }
+        return json({ message: "boom" }, 500);
+      }) as unknown as typeof fetch;
+
+      const writer = createConnectorsWriter(BASE_URL);
+      const connector: Connector = {
+        name: "hubspot",
+        type: "http",
+        config: { baseUrl: "https://hubspot.example.com" },
+        endpoints: [
+          { label: "list-contacts", method: "GET", path: "/contacts" },
+        ],
+      };
+
+      const result = await writer.create("tenant-a", connector);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe("downstream_error");
+        expect(result.error.resourceName).toBe("hubspot");
+        expect(result.error.message).toContain("hubspot");
+        expect(result.error.message).toContain("list-contacts");
+      }
+    });
+
+    it("update: fetches live endpoints, then ADDS a new declared endpoint absent live", async () => {
+      const calls: { url: string; method: string; body?: unknown }[] = [];
+      globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          method: init.method as string,
+          body: init.body ? JSON.parse(init.body as string) : undefined,
+        });
+        if (init.method === "GET") {
+          return json({ id: "conn-1", name: "hubspot", endpoints: [] });
+        }
+        return json({ id: "ep-1" }, 201);
+      }) as unknown as typeof fetch;
+
+      const writer = createConnectorsWriter(BASE_URL);
+      const connector: Connector = {
+        name: "hubspot",
+        type: "http",
+        endpoints: [
+          { label: "list-contacts", method: "GET", path: "/contacts" },
+        ],
+      };
+
+      const result = await writer.update("tenant-a", "conn-1", connector, [
+        { field: "endpoints" },
+      ]);
+      expect(result.ok).toBe(true);
+
+      expect(calls[0].method).toBe("GET");
+      expect(calls[0].url).toBe(`${BASE_URL}/connectors/conn-1`);
+      expect(calls[1].method).toBe("POST");
+      expect(calls[1].url).toBe(`${BASE_URL}/connectors/conn-1/endpoints`);
+    });
+
+    it("update: matches an existing endpoint by (method, path) and PATCHes it instead of creating a duplicate", async () => {
+      const calls: { url: string; method: string; body?: unknown }[] = [];
+      globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          method: init.method as string,
+          body: init.body ? JSON.parse(init.body as string) : undefined,
+        });
+        if (init.method === "GET") {
+          return json({
+            id: "conn-1",
+            name: "hubspot",
+            endpoints: [
+              {
+                id: "ep-existing",
+                adapterId: "conn-1",
+                label: "old-label",
+                method: "get",
+                path: "/contacts",
+                cache: null,
+                createdAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+          });
+        }
+        return json({ id: "ep-existing" }, 200);
+      }) as unknown as typeof fetch;
+
+      const writer = createConnectorsWriter(BASE_URL);
+      const connector: Connector = {
+        name: "hubspot",
+        type: "http",
+        endpoints: [
+          { label: "list-contacts", method: "GET", path: "/contacts" },
+        ],
+      };
+
+      const result = await writer.update("tenant-a", "conn-1", connector, [
+        { field: "endpoints" },
+      ]);
+      expect(result.ok).toBe(true);
+
+      const endpointCall = calls[1];
+      expect(endpointCall.method).toBe("PATCH");
+      expect(endpointCall.url).toBe(
+        `${BASE_URL}/connectors/conn-1/endpoints/ep-existing`
+      );
+      expect(endpointCall.body).toMatchObject({
+        label: "list-contacts",
+        method: "GET",
+        path: "/contacts",
+      });
+    });
+
+    it("update: never issues a DELETE — an endpoint present live but absent from the manifest is left untouched (decision 2, no prune)", async () => {
+      globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+        if (init.method === "DELETE") {
+          throw new Error("must never delete an endpoint");
+        }
+        if (init.method === "GET") {
+          return json({
+            id: "conn-1",
+            name: "hubspot",
+            endpoints: [
+              {
+                id: "ep-untouched",
+                adapterId: "conn-1",
+                label: "legacy-endpoint",
+                method: "DELETE",
+                path: "/legacy",
+                cache: null,
+                createdAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+          });
+        }
+        return json({ id: "ep-new" }, 201);
+      }) as unknown as typeof fetch;
+
+      const writer = createConnectorsWriter(BASE_URL);
+      const connector: Connector = {
+        name: "hubspot",
+        type: "http",
+        endpoints: [
+          { label: "list-contacts", method: "GET", path: "/contacts" },
+        ],
+      };
+
+      const result = await writer.update("tenant-a", "conn-1", connector, [
+        { field: "endpoints" },
+      ]);
+      expect(result.ok).toBe(true);
+    });
   });
 });

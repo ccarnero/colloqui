@@ -186,12 +186,67 @@ export const connectorAuthSchema = z.discriminatedUnion("authType", [
 export type ConnectorAuth = z.infer<typeof connectorAuthSchema>;
 export type ConnectorAuthType = ConnectorAuth["authType"];
 
+// ---------------------------------------------------------------------------
+// Connector endpoints (manual-loops/provisioning-manifest-gaps.md T02, gap 2)
+// — mirrors `sdk/src/resources/connectors/types.ts` `CreateConnectorEndpointInput`
+// (itself `CreateEndpointDto` in connector-admin: `label`/`method`/`path`/
+// `cache`). Endpoint uniqueness downstream is `(method, path)` per connector,
+// not a manifest-declared id — the writer matches on that pair to decide
+// add-vs-update (T02). No secrets: endpoints carry only routing metadata.
+// ---------------------------------------------------------------------------
+
+const connectorEndpointCacheMethodSchema = z.enum([
+  "GET",
+  "HEAD",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+]);
+
+const connectorEndpointCacheSchema = z
+  .object({
+    enabled: z.boolean(),
+    ttlSeconds: z.number().int().min(1),
+    methods: z.array(connectorEndpointCacheMethodSchema).optional(),
+    keyHeaders: z.array(z.string()).optional(),
+    keyQueryParams: z.union([z.array(z.string()), z.literal("all")]).optional(),
+    keyBody: z.boolean().optional(),
+  })
+  .strict();
+
+export type ConnectorEndpointCache = z.infer<
+  typeof connectorEndpointCacheSchema
+>;
+
+const connectorEndpointHttpMethodSchema = z.enum([
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+]);
+
+const connectorEndpointSchema = z
+  .object({
+    label: z.string().min(1, "endpoint label must not be empty"),
+    method: connectorEndpointHttpMethodSchema,
+    path: z.string().min(1, "endpoint path must not be empty"),
+    cache: connectorEndpointCacheSchema.optional(),
+  })
+  .strict();
+
+export type ConnectorEndpointManifest = z.infer<typeof connectorEndpointSchema>;
+
 const connectorSchema = z
   .object({
     name: nameSchema,
     type: z.string().min(1, "connector type must not be empty"),
     config: z.record(z.string(), z.unknown()).optional(),
     auth: connectorAuthSchema.optional(),
+    endpoints: z.array(connectorEndpointSchema).optional(),
     external: z.boolean().optional(),
   })
   .strict();
