@@ -8,9 +8,10 @@ cd "$(dirname "$0")"
 # dev environment (via ../../lib/resolve-env.sh, same as every other sample's
 # run.sh) and execs the Node app with those env vars in scope.
 #
-# Prerequisite: run ./setup.sh once first to provision the hosted service and
-# its dynamic route (and, optionally, the workflow + dedicated HTTP channel
-# instance). This script never creates or modifies platform objects.
+# Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+# once first to provision the hosted service, its dynamic route, the
+# workflow, and the dedicated HTTP channel instance (see README.md). This
+# script never creates or modifies platform objects.
 . ../../lib/resolve-env.sh
 
 if ! command -v node >/dev/null 2>&1; then

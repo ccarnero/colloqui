@@ -1,11 +1,12 @@
 /**
- * hosted-services-api sample driver — SDK-powered replacement for the old
- * curl+jq `run.sh` body (see sdk/GROWTH-PLAN.md P3.1).
+ * hosted-services-api sample driver — the RUN side that EXERCISES the
+ * already-provisioned resources (provisioning itself is declarative now, via
+ * `manifest.yaml` + `yoizen manifests apply`; see README.md).
  *
- * Prerequisite: run ./setup.sh once first to provision the hosted service,
- * its dynamic route, and (optionally) the workflow + dedicated HTTP channel
- * instance. This script never creates or modifies platform objects — it
- * only:
+ * Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+ * once first to provision the hosted service, its dynamic route, the
+ * workflow, and its dedicated HTTP channel instance. This script never
+ * creates or modifies platform objects — it only:
  *   1. Confirms the sample's hosted service exists via
  *      `client.registry.services.list()`.
  *   2. Confirms the sample's dynamic route exists via
@@ -49,8 +50,11 @@ async function main(): Promise<void> {
   );
   const workflowName =
     process.env.HOSTED_WORKFLOW_NAME ?? "hosted-service-telegram";
+  // The apply engine derives a channel's externalId as `manifest:<name>`
+  // (see manifest.yaml's channel `hosted-services-api`) — NOT the bare name
+  // the deleted setup.ts used directly as its externalId.
   const httpExternalId =
-    process.env.HOSTED_HTTP_EXTERNAL_ID ?? "hosted-services-api";
+    process.env.HOSTED_HTTP_EXTERNAL_ID ?? "manifest:hosted-services-api";
   const runText = process.env.RUN_TEXT ?? "hello hosted service workflow";
 
   // The gateway's dev ingress routes by Host header (see
@@ -73,7 +77,7 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    `[run] verifying hosted service '${serviceName}' exists (run ./setup.sh first if this fails)...`
+    `[run] verifying hosted service '${serviceName}' exists (apply manifest.yaml first if this fails)...`
   );
   let serviceId: string | undefined;
   for await (const service of client.registry.services.list()) {
@@ -84,7 +88,7 @@ async function main(): Promise<void> {
   }
   if (!serviceId) {
     console.error(
-      `[run] service '${serviceName}' not found — run ./setup.sh first`
+      `[run] service '${serviceName}' not found — apply manifest.yaml first (see README.md)`
     );
     process.exit(1);
   }
@@ -100,7 +104,7 @@ async function main(): Promise<void> {
   }
   if (!routeId) {
     console.error(
-      `[run] route '${routePrefix}' not found — run ./setup.sh first`
+      `[run] route '${routePrefix}' not found — apply manifest.yaml first (see README.md)`
     );
     process.exit(1);
   }
@@ -165,7 +169,7 @@ async function main(): Promise<void> {
     );
   } else {
     console.log(
-      "[run] workflow not configured — run ./setup.sh with TELEGRAM_CHAT_ID to enable Telegram notification."
+      "[run] workflow not found — apply manifest.yaml --secrets-from-env first (see README.md)"
     );
   }
 

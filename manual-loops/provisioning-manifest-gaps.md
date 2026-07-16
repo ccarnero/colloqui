@@ -756,3 +756,34 @@ green; G5 double noop LIVE; the comprehensive fixture VALIDATES LIVE against
 revision 00026 (valid=true errors=0). Dual review: 2x APPROVED (attempt 1).
 INCIDENT during gates: the OrbStack k8s API dropped (TLS handshake timeout,
 ~15 min) — recovered on its own; G5 re-run clean after recovery.
+
+### T08 batch 1 (http/channels) — 2026-07-16
+
+MIGRATED (2/11): `http-fanout-telegram` (http channel + fan-out workflow with
+`{connectorRef}` at adapterId, 4 external:true connector stubs + external
+telegram channel, chat id moved from baked literal to a `systemVariables`
+entry resolved at runtime via `{{variables.system.<name>}}` — reviewer-
+verified real mechanism) and `hosted-services-api` (service with scaling
+fields + route + serviceRef workflow). Both: VALID + first apply creates +
+second apply FULL NOOP live on revision 00026; G7 zero leftovers; dual
+review 2x APPROVED (attempt 1) with every code citation re-verified.
+Latent bug fixed en route: run drivers' externalId default was the
+pre-manifest `<name>` form; the apply engine derives `manifest:<name>`
+(channels-writer.ts:164).
+
+ESCALATED, NOT MIGRATED: `http-connectors` — a connectors-only "library"
+manifest is STRUCTURALLY INVALID: `validate-structural-rules.ts` requires
+>=1 inbound channel AND >=1 process in every manifest
+(checkAtLeastOneInboundChannel/checkAtLeastOneProcess). This is a SEVENTH
+constraint outside the six shipped gaps. Needs a human ruling: relax the
+structural rule for library manifests vs. a different shape for shared
+connector catalogs. Until then http-fanout-telegram documents http-
+connectors' setup.sh as its imperative prerequisite.
+
+ESCALATED (documented, sample shipped): `hosted-services-api`'s
+`envVars: {YOIZEN_SAMPLE}` omitted — `registry-services-writer.ts`
+checkEnvSupport() fails loud on ANY non-empty env (pre-existing
+restriction T05 did not lift); the marker is non-functional; needs a
+ruling to lift checkEnvSupport. Trigger-pin deviation (plural accountIds
+outside the substitution allowlist) mirrors the shipped telegram sample's
+documented precedent.

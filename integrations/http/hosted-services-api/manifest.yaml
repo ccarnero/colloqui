@@ -1,0 +1,153 @@
+apiVersion: yoizen.io/v1
+kind: IntegrationManifest
+metadata:
+  name: hosted-services-api
+spec:
+  # ---------------------------------------------------------------------------
+  # Dedicated HTTP channel account — the workflow's own ingest instance
+  # (mirrors http-fanout-telegram; see the trigger DEVIATION note below for
+  # why it's created but not actually pin-able today).
+  # ---------------------------------------------------------------------------
+  channels:
+    - name: hosted-services-api
+      type: http
+      direction: inbound
+
+    # CROSS-SAMPLE DEPENDENCY (Telegram account): owned by
+    # ../../channels/telegram-transform-reply/manifest.yaml, already applied.
+    # `external: true` resolves by NAME against LIVE platform state (see
+    # http-fanout-telegram/manifest.yaml for the full mechanism note).
+    # PREREQUISITE: apply telegram-transform-reply/manifest.yaml first.
+    - name: telegram-transform-reply-bot
+      type: telegram
+      direction: inbound
+      external: true
+
+  # ---------------------------------------------------------------------------
+  # T05 gap 5 — hosted service scaling fields + a route. Mirrors the deleted
+  # setup.ts's `serviceBody()` (port/minScale/maxScale/concurrencyTarget)
+  # field-for-field, and its `stageEnsureRoute()` route
+  # (pathPrefix/methods/isPublic/stripPrefix).
+  #
+  # ESCALATION (documented deviation, NOT approximated — see this batch's
+  # report): the deleted setup.ts also declared ONE env var,
+  # `envVars: { YOIZEN_SAMPLE: "hosted-services-api" }`. `serviceSchema.env`
+  # (packages/shared/src/provisioning/manifest.schema.ts) has NO plain-value
+  # field — only `{name, secretRef}` — AND
+  # `registry-services-writer.ts`'s `checkEnvSupport()` fails loud on ANY
+  # non-empty `env` array, secretRef or not (a still-open restriction from
+  # `declarative-provisioning.md` T04 that this SPEC's T05 did not lift even
+  # though it touched this exact schema section for the sibling scaling
+  # fields). This ONE env var is therefore DROPPED, not expressed — `env` is
+  # omitted entirely below rather than declared and left to fail apply. It is
+  # a non-functional debug marker (read by nothing in the workflow or the
+  # echo-server image), so dropping it does not change the sample's
+  # observable behavior, but it IS a genuine end-state gap: flagged for human
+  # ruling on lifting `checkEnvSupport`'s empty-only restriction now that a
+  # secretRef-bearing env var COULD resolve through the T05 broker the same
+  # way connector/channel secrets do.
+  # ---------------------------------------------------------------------------
+  services:
+    - name: sample-echo
+      image: ealen/echo-server:latest
+      port: 8080
+      minScale: 0
+      maxScale: 2
+      concurrencyTarget: 25
+      routes:
+        - pathPrefix: /samples/hosted-echo
+          methods:
+            - GET
+            - POST
+          isPublic: true
+          stripPrefix: true
+
+  # T04 systemVariables — same rationale as http-fanout-telegram: the deleted
+  # setup.ts baked `TELEGRAM_CHAT_ID` into the workflow body at provisioning
+  # time; a manifest expresses this as a runtime-resolved systemVariable
+  # instead, editable without a workflow edit.
+  systemVariables:
+    - name: hosted-services-api-chat-id
+      type: string
+      value: "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID"
+      label: Telegram chat id for hosted-services-api
+      description: >-
+        Numeric Telegram chat id the 'notify' step DMs a summary to. Edit
+        this value and re-apply to change the recipient — resolved at
+        workflow execution time via
+        {{variables.system.hosted-services-api-chat-id}}.
+
+  # `serviceId` (T03 allowlist -> `serviceRef`) resolves to the real
+  # registered_services row id at apply time — never sent to workflow-service
+  # verbatim. `summarize`/`notify` embed the deleted setup.ts's SUMMARY_CODE
+  # and channelSend args VERBATIM.
+  workflows:
+    - name: hosted-service-telegram
+      definition:
+        application: samples
+        actions:
+          - name: invokeHosted
+            activity: serviceCall
+            args:
+              serviceId:
+                serviceRef: sample-echo
+              serviceSlug: sample-echo
+              method: POST
+              path: /anything
+              data:
+                source: hosted-services-api
+                marker: HOSTED SERVICE SAMPLE
+                workflowName: hosted-service-telegram
+                serviceName: sample-echo
+                inbound: "{{request.text}}"
+          - name: summarize
+            activity: jsFunction
+            args:
+              code: |
+                (ctx) => {
+                  var inbound = (ctx.request && ctx.request.text) || "";
+                  var call = ctx.results.invokeHosted || {};
+                  var data = call.data || {};
+                  var path = data.path || data.url || data.originalUrl || "/anything";
+                  var body = data.body || data.data || {};
+                  var workflowName = body.workflowName || "hosted-service-telegram";
+                  var serviceName = body.serviceName || "sample-echo";
+                  var marker = "HOSTED SERVICE SAMPLE";
+                  return {
+                    text:
+                      marker + "\n" +
+                      "Workflow: " + workflowName + "\n" +
+                      "Inbound: " + (inbound || "-") + "\n" +
+                      "Hosted service: " + serviceName + "\n" +
+                      "Status: " + (call.status || "-") + "\n" +
+                      "Echo path: " + path + "\n" +
+                      "Echo body: " + JSON.stringify(body)
+                  };
+                }
+          - name: notify
+            activity: channelSend
+            args:
+              accountId:
+                channelRef: telegram-transform-reply-bot
+              channel: telegram
+              provider: telegram
+              to: "{{variables.system.hosted-services-api-chat-id}}"
+              type: text
+              text: "{{results.summarize.text}}"
+        # DEVIATION (mirrors http-fanout-telegram/manifest.yaml exactly): the
+        # deleted setup.ts pinned this trigger to its own dedicated HTTP
+        # instance via `config.accountIds` (HOSTED_WORKFLOW_PIN=1 default),
+        # which manifest v1 cannot express (SUBSTITUTION_ALLOWLIST only
+        # covers the singular `accountId` action-arg key, not
+        # `trigger.config.accountIds`). Unpinned here: fires on ANY HTTP
+        # message for the tenant — see README § Troubleshooting for running
+        # this alongside http-fanout-telegram (also unpinned) without
+        # cross-firing.
+        trigger:
+          type: message_received
+          mode: shared
+          config:
+            channels:
+              - http
+            providers:
+              - http

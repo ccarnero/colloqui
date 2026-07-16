@@ -1,77 +1,142 @@
 # hosted-services-api
 
 Registers a tenant-scoped **hosted service** through the platform API, creates a dynamic route for
-it, invokes that route through `api-gateway`, and optionally wires a workflow that calls the hosted
-service and sends a Telegram notification.
+it, and wires a workflow that calls the hosted service and sends a Telegram notification.
+Provisioning is **declarative**: a single [`manifest.yaml`](./manifest.yaml) applied through the
+`yoizen` CLI (no setup scripts).
 
 ```
-POST /api/registry/services ─► registry-service ─► Knative Service
-POST /api/registry/services/:id/routes ─► dynamic route discovery
-GET  /samples/hosted-echo/... ─► api-gateway dynamic-route hook ─► Knative Service
+manifest.yaml ─► yoizen manifests apply ─► registry-service ─► Knative Service
+                                        └─► gateway dynamic route (/samples/hosted-echo)
+                                        └─► workflow-service (hosted-service-telegram)
+
 HTTP webhook ─► workflow-service ─► serviceCall(sample-echo) ─► Telegram
 ```
 
-## What it creates
+## What `manifest.yaml` provisions
 
-- A registered service named `sample-echo` by default.
-- A Knative Service in the tenant namespace.
-- A dynamic route at `/samples/hosted-echo`.
-- A public route by default, so the invoke call only needs tenant resolution headers.
-- If `TELEGRAM_CHAT_ID` is set, a workflow named `hosted-service-telegram`.
-- A dedicated HTTP channel instance with `externalId=hosted-services-api`, so this workflow does not
-  cross-fire with `http-fanout-telegram`.
+1. **A hosted service** (`sample-echo`) — image `ealen/echo-server:latest`, `port: 8080`,
+   `minScale: 0`, `maxScale: 2`, `concurrencyTarget: 25` — a Knative Service in the tenant
+   namespace, reconciled through the T05 scaling fields.
+2. **A route** (`/samples/hosted-echo`, `GET`/`POST`, public, `stripPrefix: true`) — reconciled
+   through `client.registry.routes` (T05).
+3. **A dedicated HTTP channel account** (`hosted-services-api`) — this workflow's own ingest
+   instance.
+4. **A workflow** (`hosted-service-telegram`) — `serviceCall` (invokes the hosted service) →
+   `jsFunction` (summarizes the echoed response) → `channelSend` (DMs the summary via Telegram).
+   `serviceId` is a `serviceRef` (T03), resolved to the real `registered_services` row id at apply
+   time — never a manifest-time id baked into the workflow.
+5. **A system variable** (`hosted-services-api-chat-id`) — the Telegram chat id the notify step
+   DMs. See § Configure below.
 
-## Run
+> **Cross-sample dependency (Telegram account).** The `notify` step's `accountId` is a
+> `channelRef` to `telegram-transform-reply-bot`, declared `external: true` in this manifest — it
+> is resolved by NAME against LIVE platform state, never created here. Apply
+> [`../../channels/telegram-transform-reply/manifest.yaml`](../../channels/telegram-transform-reply/manifest.yaml)
+> first, or this manifest's `apply` fails loud with `unresolvable_external_ref`.
+
+## Documented gap (env vars — NOT expressed)
+
+The deleted `setup.ts` declared one env var on the hosted service,
+`envVars: { YOIZEN_SAMPLE: "hosted-services-api" }` — a non-functional debug marker read by
+nothing in the workflow or the echo-server image. Manifest v1's `serviceSchema.env` has no
+plain-value field (only `{name, secretRef}`), and `registry-services-writer.ts`'s
+`checkEnvSupport()` fails loud on **any** non-empty `env` array regardless — a still-open
+restriction from `declarative-provisioning.md` that this loop's T05 did not lift even though it
+extended this exact schema section for the scaling fields. This env var is therefore **omitted**
+from `manifest.yaml`, not approximated — see the schema-adjacent comment in `manifest.yaml` for
+the full citation. This does not change the sample's observable behavior.
+
+## Documented deviation (trigger is unpinned)
+
+The deleted `setup.ts` pinned this workflow's trigger to its own dedicated HTTP instance via
+`config.accountIds: [<id>]` (`HOSTED_WORKFLOW_PIN=1` default) so no OTHER HTTP-triggered workflow
+could fire it. Manifest v1's symbolic-ref substitution only covers the **singular** `accountId`
+action-argument key (`SUBSTITUTION_ALLOWLIST`), not the **plural** `trigger.config.accountIds`
+array, so this cannot be expressed today (same limitation the shipped
+`telegram-transform-reply/manifest.yaml` already documents for its own trigger). The trigger here
+fires on **any** HTTP message for the tenant. If you also run
+[`http-fanout-telegram`](../../channels/http-fanout-telegram) (also unpinned after its own
+migration), **both** workflows fire on every inbound HTTP message — see § Troubleshooting.
+
+## Prerequisites
+
+- A running dev cluster with a provisioned tenant (`acme` by default).
+- A Telegram bot account already provisioned — see
+  [`telegram-transform-reply`](../../channels/telegram-transform-reply)'s own README.
+- The `yoizen` CLI (`cd sdk && bun link`, or `cd sdk && bun run bin/yoizen.ts ...`).
+- CLI environment: `YOIZEN_BASE_URL`, `YOIZEN_HOST_HEADER`, `YOIZEN_TENANT`, `YOIZEN_EMAIL`,
+  `YOIZEN_PASSWORD` — same as every other sample.
+- No secret bindings — this manifest declares no `secrets:` section (no credential-bearing
+  fields).
+
+## Provision (declarative)
+
+```bash
+cd sdk && bun link   # one-time; or prefix each call with `bun run bin/yoizen.ts`
+
+yoizen manifests validate -f ../integrations/http/hosted-services-api/manifest.yaml
+yoizen manifests plan     -f ../integrations/http/hosted-services-api/manifest.yaml
+yoizen manifests apply    -f ../integrations/http/hosted-services-api/manifest.yaml --secrets-from-env
+```
+
+A second `apply` is a no-op once converged.
+
+## Configure (Telegram recipient)
+
+The Telegram chat id is a `systemVariables` entry (`hosted-services-api-chat-id`), not an env var —
+edit `spec.systemVariables[0].value` in `manifest.yaml` to your real numeric chat id, then re-apply
+(`plan` shows an `update` verdict for the system variable only):
+
+```bash
+yoizen manifests apply -f ../integrations/http/hosted-services-api/manifest.yaml --secrets-from-env
+```
+
+The workflow reads it at RUNTIME via `{{variables.system.hosted-services-api-chat-id}}` — changing
+the recipient is a variable-value re-apply, never a workflow edit (same pattern as
+`integrations/ai/ai-system-variables`).
+
+## Run / exercise
 
 ```bash
 cd integrations/http/hosted-services-api
-cp .env.example .env
-./setup.sh
 ./run.sh
 ```
 
-`setup.sh` is idempotent: it reuses the service by name, updates its desired runtime settings, and
-reuses the matching route. If Telegram is configured, it also creates/updates the workflow and its
-dedicated HTTP trigger account. Use `RECREATE=1 ./setup.sh` to rebuild the sample resources.
-
-Telegram messages from this sample start with:
+`run.sh` (`src/index.ts`) is read-only: it verifies the service, route, and workflow exist, waits
+for the gateway's dynamic-route cache (~15s), invokes `/samples/hosted-echo/health` directly, and —
+if the workflow + HTTP account are present — POSTs a test message through the workflow. Telegram
+messages from this sample start with:
 
 ```text
 HOSTED SERVICE SAMPLE
 ```
 
-That marker intentionally differentiates it from `http-fanout-telegram`, even if both send to the
-same Telegram chat.
+That marker differentiates it from `http-fanout-telegram`, even if both send to the same chat.
 
-## Environment
+## Environment (run.sh overrides only — provisioning is manifest-driven)
 
 | Var | Default | Notes |
 | --- | --- | --- |
-| `HOSTED_SERVICE_NAME` | `sample-echo` | Lowercase DNS-ish service name |
-| `HOSTED_SERVICE_IMAGE` | `ealen/echo-server:latest` | Must run as UID `1001` and serve `/health` |
-| `HOSTED_SERVICE_PORT` | `8080` | Container port registered in Knative; Knative injects reserved `PORT` itself |
-| `HOSTED_ROUTE_PREFIX` | `/samples/hosted-echo` | Must not start with reserved platform prefixes like `/api/registry` |
-| `HOSTED_ROUTE_PUBLIC` | `true` | `false` makes dynamic route invocation require bearer auth |
-| `HOSTED_ROUTE_STRIP_PREFIX` | `true` | Removes the route prefix before proxying upstream |
-| `HOSTED_ROUTE_METHODS` | `GET,POST` | Comma-separated HTTP methods |
-| `HOSTED_WORKFLOW_ENABLED` | `1` | Set `0` to skip workflow/Telegram setup |
-| `HOSTED_WORKFLOW_NAME` | `hosted-service-telegram` | Workflow that invokes the hosted service |
-| `HOSTED_HTTP_EXTERNAL_ID` | `hosted-services-api` | Dedicated HTTP trigger instance for this workflow |
-| `TELEGRAM_CHAT_ID` | *(empty)* | Required only when `HOSTED_WORKFLOW_ENABLED=1`; numeric Telegram chat id |
-| `TG_ACCOUNT_ID` | *(empty)* | Optional Telegram channel account id; otherwise the first active Telegram account is used |
-| `RECREATE` | `0` | `1` deletes and recreates the service before route setup |
+| `HOSTED_SERVICE_NAME` | `sample-echo` | Must match `manifest.yaml`'s service name if overridden |
+| `HOSTED_ROUTE_PREFIX` | `/samples/hosted-echo` | Must match `manifest.yaml`'s route `pathPrefix` |
+| `HOSTED_ROUTE_CACHE_WAIT_SECONDS` | `16` | Gateway dynamic-route cache refresh wait |
+| `HOSTED_WORKFLOW_NAME` | `hosted-service-telegram` | Must match `manifest.yaml`'s workflow name |
+| `HOSTED_HTTP_EXTERNAL_ID` | `manifest:hosted-services-api` | The apply engine's derived externalId (`manifest:<channel name>`) |
+| `RUN_TEXT` | `hello hosted service workflow` | Test message text |
 
-## Gotchas
+## Troubleshooting
 
-- The gateway excludes platform-owned paths such as `/api/auth`, `/api/registry`, `/api/workflows`,
-  `/api/webhooks`, and `/health` from dynamic routing. Use a non-platform prefix like
-  `/samples/hosted-echo`.
-- Dynamic routes are discovered by the gateway on a polling cache. Wait about 15 seconds after route
-  creation before the first invoke.
-- Do not set `PORT` in `envVars`. Knative reserves that variable and injects it from the container
-  port; setting it manually is rejected by the admission webhook.
-- `registry-service` currently hardcodes a readiness probe at `/health` and a non-root security
-  context (`runAsUser: 1001`). Your image must support both, or the route may return `502` while the
-  Knative Service is not ready.
-- The workflow trigger is pinned to its own HTTP channel account by default (`HOSTED_WORKFLOW_PIN=1`).
-  That is what prevents another HTTP workflow sample from handling this sample's test message.
+- **The gateway excludes platform-owned paths** (`/api/auth`, `/api/registry`, `/api/workflows`,
+  `/api/webhooks`, `/health`) from dynamic routing — this is why the route uses
+  `/samples/hosted-echo`, a non-platform prefix.
+- **Dynamic routes are discovered by the gateway on a polling cache** — wait ~15s after `apply`
+  before the first invoke.
+- **`registry-service` hardcodes a `/health` readiness probe and `runAsUser: 1001`** — your image
+  must support both, or the route may return `502` while the Knative Service is not ready.
+- **Cross-firing with `http-fanout-telegram`.** Both samples' HTTP-triggered workflows are unpinned
+  (see § Documented deviation). To test one in isolation, temporarily disable the other's workflow
+  via the admin console, or simply don't apply both manifests in the same tenant at once.
+- **`env` vars are not provisionable** (see § Documented gap) — if your own hosted service NEEDS a
+  real env var, this sample cannot demonstrate that shape yet; track
+  `manual-loops/provisioning-manifest-gaps.md`'s human-ruling backlog.
