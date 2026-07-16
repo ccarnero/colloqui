@@ -60,9 +60,21 @@ export interface AdapterDto {
   readonly endpoints?: readonly AdapterEndpointDto[];
 }
 
+/**
+ * Live shape from `GET /admin/agents` (agent-admin-service's `IAgent`,
+ * `AGENT_ROW_COLUMNS`). `enabled_mcp_tools`/`tool_description_overrides`
+ * (T04, manual-loops/provisioning-manifest-gaps-2.md gap 4) round-trip 1:1 —
+ * unlike `system_prompt`/`model_config`, these two ARE faithfully readable
+ * off the live row, so they join the comparable projection below (unlike the
+ * rest of `AgentDto`, which stays existence-only). Neither field is
+ * credential-bearing (tool names/allowlists/description text, never secret
+ * values), so nothing here violates this file's secret-projection rule.
+ */
 export interface AgentDto {
   readonly id: string;
   readonly name: string;
+  readonly enabled_mcp_tools?: Record<string, string[] | null> | null;
+  readonly tool_description_overrides?: Record<string, string> | null;
 }
 
 /**
@@ -216,13 +228,68 @@ export const connectorComparable: ComparableFieldsContract<
   }),
 };
 
-// Agent: existence-only. agent-admin exposes system_prompt/model_config as
-// separate columns and knowledge-base links as UUIDs, while the manifest
-// carries a free-form `profile` and knowledge-base NAMES — different
-// identifier spaces with no faithful value comparison yet.
+// Agent (manual-loops/provisioning-manifest-gaps-2.md T04, gap 4):
+// `system_prompt`/`model_config`/knowledge-base UUIDs stay existence-only,
+// unchanged from T03 (different identifier spaces, no faithful mapping yet).
+// `enabledMcpTools`/`toolDescriptionOverrides` ARE faithfully comparable —
+// agent-admin-service's `IAgent` round-trips both 1:1 (`AGENT_ROW_COLUMNS`) —
+// so they join the projection using the SAME "only compare what the manifest
+// declares" idiom `serviceComparable` established for scaling fields above:
+// unconditionally projecting them would diff forever for any agent that
+// never declares them (the live column defaults to `null`, an object still
+// present on only one side).
+//
+// Both fields key by MCP server NAME (never substituted to an id — decision
+// 6, mirrors `enabledMcpServerRefs`'s precedent). Normalization sorts object
+// keys and (for `enabledMcpTools`) each server's tool-name array, so manifest
+// declaration order never causes a false `update`, mirroring
+// `sortedNormalizedEndpoints`/`sortedNormalizedRoutes` above.
+function normalizeEnabledMcpTools(
+  value: Record<string, string[] | null> | null | undefined
+): Record<string, string[] | null> {
+  const normalized: Record<string, string[] | null> = {};
+  for (const key of Object.keys(value ?? {}).sort()) {
+    const tools = (value ?? {})[key];
+    normalized[key] = tools === null ? null : [...tools].sort();
+  }
+  return normalized;
+}
+
+function normalizeToolDescriptionOverrides(
+  value: Record<string, string> | null | undefined
+): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  for (const key of Object.keys(value ?? {}).sort()) {
+    normalized[key] = (value ?? {})[key];
+  }
+  return normalized;
+}
+
 export const agentComparable: ComparableFieldsContract<Agent, AgentDto> = {
-  fromManifest: () => ({}),
-  fromLive: () => ({}),
+  fromManifest: (agent) => {
+    const fields: Record<string, unknown> = {};
+    if (agent.enabledMcpTools !== undefined) {
+      fields.enabledMcpTools = normalizeEnabledMcpTools(agent.enabledMcpTools);
+    }
+    if (agent.toolDescriptionOverrides !== undefined) {
+      fields.toolDescriptionOverrides = normalizeToolDescriptionOverrides(
+        agent.toolDescriptionOverrides
+      );
+    }
+    return fields;
+  },
+  fromLive: (live, declared) => {
+    const fields: Record<string, unknown> = {};
+    if (declared?.enabledMcpTools !== undefined) {
+      fields.enabledMcpTools = normalizeEnabledMcpTools(live.enabled_mcp_tools);
+    }
+    if (declared?.toolDescriptionOverrides !== undefined) {
+      fields.toolDescriptionOverrides = normalizeToolDescriptionOverrides(
+        live.tool_description_overrides
+      );
+    }
+    return fields;
+  },
 };
 
 // Hosted service: compare env var NAMES only (sorted). Never values, never

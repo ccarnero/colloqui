@@ -295,6 +295,77 @@ describe("structural rule — ref resolution", () => {
     ).toBe(true);
   });
 
+  // manual-loops/provisioning-manifest-gaps-2.md T04, gap 4.
+  test("flags an unresolved enabledMcpTools server-name key on an agent", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      enabledMcpTools: { "no-such-mcp-server": ["some_tool"] },
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some((e) =>
+        /unresolved mcpServerRef "no-such-mcp-server"/.test(e.message)
+      )
+    ).toBe(true);
+  });
+
+  test("accepts enabledMcpTools keyed by a declared mcpServer name", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      enabledMcpTools: { "support-mcp": ["some_tool"] },
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors.some((e) => /enabledMcpTools/.test(e.path ?? ""))).toBe(
+      false
+    );
+  });
+
+  test("accepts enabledMcpTools keyed by an EXTERNAL mcpServer's name", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.mcpServers[0] = {
+      ...manifest.spec.mcpServers[0],
+      external: true,
+    };
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      enabledMcpTools: { "support-mcp": null },
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors.some((e) => /enabledMcpTools/.test(e.path ?? ""))).toBe(
+      false
+    );
+  });
+
+  test("flags an unresolved serverName prefix in a toolDescriptionOverrides key", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      toolDescriptionOverrides: {
+        "no-such-mcp-server:some_tool": "override text",
+      },
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some((e) =>
+        /unresolved mcpServerRef "no-such-mcp-server"/.test(e.message)
+      )
+    ).toBe(true);
+  });
+
+  test("accepts a plain-name toolDescriptionOverrides key (adapter/builtin tool, no colon, NOT validated against mcpServers)", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      toolDescriptionOverrides: { http_fetch: "Fetch a URL over HTTP." },
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some((e) => /toolDescriptionOverrides/.test(e.path ?? ""))
+    ).toBe(false);
+  });
+
   test("flags an unresolved secretRef inside an mcpServer's auth block", () => {
     const manifest = buildValidManifest();
     manifest.spec.mcpServers[0] = {

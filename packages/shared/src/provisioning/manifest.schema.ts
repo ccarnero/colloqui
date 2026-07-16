@@ -420,6 +420,38 @@ const agentSchema = z
     // straight through to `PATCH /admin/agents/:id/mcp-servers` — no id
     // lookup, ever, for this one field.
     enabledMcpServerRefs: z.array(mcpServerRefSchema).optional(),
+    // manual-loops/provisioning-manifest-gaps-2.md T04, gap 4 — per-tool MCP
+    // allowlist, mirroring `mcp-connections/src/setup.ts:352-374`'s
+    // `client.agents.updateEnabledMcpTools` payload shape exactly:
+    // `Record<mcpServerName, string[] | null>`, `null` meaning "all tools
+    // enabled" for that server. Per decision 6 (mirrors T06's
+    // `enabledMcpServerRefs` precedent above): the outer key is the MCP
+    // server manifest NAME, never substituted to an id — same reasoning as
+    // `enabledMcpServerRefs`'s header comment (agent-ai-service's
+    // `tool-bridge.service.ts` filters by name, not id). The inner tool-name
+    // strings are NOT `nameSchema`-constrained: they come from the MCP
+    // server's own tool list, an external namespace this manifest does not
+    // own. Validated structurally against `spec.mcpServers[].name` (+
+    // external mcpServers) by `validate-structural-rules.ts`'s
+    // `checkRefResolution`, exactly like `enabledMcpServerRefs`.
+    enabledMcpTools: z
+      .record(z.string(), z.union([z.array(z.string()), z.null()]))
+      .optional(),
+    // manual-loops/provisioning-manifest-gaps-2.md T04, gap 4 — per-tool
+    // description overrides, mirroring
+    // `client.agents.updateToolDescriptionOverrides`'s payload shape exactly:
+    // `Record<string, string>`. Two legal key shapes, per the live DTO
+    // (`agent-admin-service`'s `UpdateToolDescriptionOverridesDto`) and the
+    // sample (`mcp-connections/src/setup.ts`'s `overrideKey`):
+    //   - `"<serverName>:<toolName>"` for an MCP tool — the `<serverName>`
+    //     prefix (up to the FIRST colon) is validated against
+    //     `spec.mcpServers[].name` (+ external), same as `enabledMcpTools`'
+    //     outer keys, never substituted to an id (decision 6).
+    //   - a plain key with no colon, for an adapter/builtin tool — NOT
+    //     validated against `mcpServers` (it names a tool the agent runtime
+    //     itself exposes, not an MCP server), left as free-form per the live
+    //     DTO's own lack of a colon requirement.
+    toolDescriptionOverrides: z.record(z.string(), z.string()).optional(),
     external: z.boolean().optional(),
   })
   .strict();

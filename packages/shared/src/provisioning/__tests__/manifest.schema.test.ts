@@ -1089,3 +1089,74 @@ describe("agentSchema — enabledMcpServerRefs (T06, gap 6)", () => {
     expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
   });
 });
+
+// manual-loops/provisioning-manifest-gaps-2.md T04, gap 4.
+describe("agentSchema — enabledMcpTools / toolDescriptionOverrides (T04, gap 4)", () => {
+  test("accepts enabledMcpTools with an explicit tool allowlist array", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      enabledMcpTools: { "support-mcp": ["search_tickets", "create_ticket"] },
+    };
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts enabledMcpTools with null for a server (null = all tools enabled)", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      enabledMcpTools: { "support-mcp": null },
+    };
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts toolDescriptionOverrides with a colon-separated '<serverName>:<toolName>' key (MCP tool)", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      toolDescriptionOverrides: {
+        "support-mcp:search_tickets": "Search the ticket queue.",
+      },
+    };
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts toolDescriptionOverrides with a plain key (adapter/builtin tool, no colon)", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      toolDescriptionOverrides: {
+        http_fetch: "Fetch a URL over HTTP.",
+      },
+    };
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts an agent with neither field (optional, additive)", () => {
+    expect(
+      integrationManifestSchema.safeParse(buildValidManifest()).success
+    ).toBe(true);
+  });
+
+  test("rejects enabledMcpTools whose value is neither an array nor null", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      enabledMcpTools: {
+        "support-mcp": "not-an-array" as unknown as string[] | null,
+      },
+    };
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects toolDescriptionOverrides whose value is not a string", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      toolDescriptionOverrides: {
+        "support-mcp:search_tickets": 123 as unknown as string,
+      },
+    };
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+});

@@ -478,7 +478,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T01 library/channel-less manifests (gap 1)
 - [x] T02 safety fix: fail loud on ref-shaped objects at non-allowlisted keys (gap 3)
 - [x] T03 LLM/KB connector ID references (gap 2)
-- [ ] T04 agent per-tool MCP fields (gap 4)
+- [x] T04 agent per-tool MCP fields (gap 4)
 - [ ] T05 service `env` vars (gap 5)
 - [ ] T06 low-priority cleanup fold-in (optional)
 - [ ] T07 migrate the 9 remaining stand-by samples
@@ -615,3 +615,26 @@ into the reconciliation → 2x APPROVED.
 
 Gates (attempt 2): G1 350/350, G2 clean, G3 269 + G4 392 untouched, G6b
 revision 00031 + e2e-manifest-apply PASSED, G5 triple regression all-noop.
+
+### T04 — 2026-07-16
+
+Agent per-tool MCP fields shipped (decision 6: NAME-keyed, T06 precedent):
+`agentSchema.enabledMcpTools` (Record<serverName, string[]|null>) +
+`toolDescriptionOverrides` (colon keys "<server>:<tool>" validated against
+spec.mcpServers incl. external; plain keys skipped, documented).
+agents-writer reconciles via PATCH /admin/agents/:id/mcp-tools and
+/:id/tool-descriptions after the T06 enablement PATCH; agent comparable
+upgraded for JUST these two fields (readable-live confirmed via
+AGENT_ROW_COLUMNS; declared-gate idiom — no forever-diffs); generic client
+factory forwards declaredResource (backward-compatible).
+
+TWO review rounds: attempt 1 REJECTED — update() reconciled tool fields but
+NOT enabledMcpServerRefs (both-changed-at-once apply silently dropped the
+server-refs change). Attempt 2: update() mirrors create()'s
+order/gate/short-circuit for all three name-keyed fields; both-changed test
++ 500-short-circuit test; header updated → 2x APPROVED.
+
+Gates (attempt 2): G1 367/367 + tsc, G3 281 + G4 392, G6b revision 00033 +
+e2e PASSED, G5 triple regression all-noop.
+FOLLOW-UP (cosmetic): reconcileEnabledMcpServers logs a `create:` prefix
+even from update().

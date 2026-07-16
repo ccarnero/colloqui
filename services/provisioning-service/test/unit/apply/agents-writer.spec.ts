@@ -198,4 +198,274 @@ describe("createAgentsWriter", () => {
       }
     });
   });
+
+  // T04 (manual-loops/provisioning-manifest-gaps-2.md, gap 4):
+  // enabledMcpTools/toolDescriptionOverrides — reconciled via TWO SEPARATE
+  // PATCH calls, by MCP server NAME (decision 6), called AFTER the
+  // enabledMcpServerRefs PATCH (T06).
+  describe("enabledMcpTools / toolDescriptionOverrides (T04)", () => {
+    it("create: PATCHes mcp-tools then tool-descriptions AFTER the mcp-servers PATCH, in that order", async () => {
+      const calls: { url: string; method: string; body: unknown }[] = [];
+      globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          method: init.method as string,
+          body: init.body ? JSON.parse(init.body as string) : undefined,
+        });
+        if (init.method === "POST") {
+          return json({ id: "agent-uuid-1" }, 201);
+        }
+        return json({ id: "agent-uuid-1" }, 200);
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = {
+        name: "support-agent",
+        profile: {},
+        enabledMcpServerRefs: ["github-mcp"],
+        enabledMcpTools: { "github-mcp": ["search_code", "read_file"] },
+        toolDescriptionOverrides: {
+          "github-mcp:search_code": "Search the repo.",
+        },
+      };
+
+      const result = await writer.create("tenant-a", agent);
+      expect(result.ok).toBe(true);
+
+      expect(calls).toHaveLength(4);
+      expect(calls[0]?.method).toBe("POST");
+      expect(calls[1]?.url).toBe(
+        `${BASE_URL}/admin/agents/agent-uuid-1/mcp-servers`
+      );
+      expect(calls[2]?.url).toBe(
+        `${BASE_URL}/admin/agents/agent-uuid-1/mcp-tools`
+      );
+      expect(calls[2]?.body).toEqual({
+        enabled_mcp_tools: { "github-mcp": ["search_code", "read_file"] },
+      });
+      expect(calls[3]?.url).toBe(
+        `${BASE_URL}/admin/agents/agent-uuid-1/tool-descriptions`
+      );
+      expect(calls[3]?.body).toEqual({
+        tool_description_overrides: {
+          "github-mcp:search_code": "Search the repo.",
+        },
+      });
+    });
+
+    it("create: omits both PATCHes when neither field is declared (absent-field no-op)", async () => {
+      const calls: { url: string; method: string }[] = [];
+      globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+        calls.push({ url, method: init.method as string });
+        return json({ id: "agent-uuid-1" }, 201);
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = { name: "support-agent", profile: {} };
+
+      const result = await writer.create("tenant-a", agent);
+      expect(result.ok).toBe(true);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.method).toBe("POST");
+    });
+
+    it("create: enabledMcpTools accepts null for a server (all tools enabled)", async () => {
+      let toolsBody: unknown;
+      globalThis.fetch = mock(async (_url: string, init: RequestInit) => {
+        if (init.method === "POST") {
+          return json({ id: "agent-uuid-1" }, 201);
+        }
+        toolsBody = JSON.parse(init.body as string);
+        return json({}, 200);
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = {
+        name: "support-agent",
+        profile: {},
+        enabledMcpTools: { "github-mcp": null },
+      };
+
+      const result = await writer.create("tenant-a", agent);
+      expect(result.ok).toBe(true);
+      expect(toolsBody).toEqual({ enabled_mcp_tools: { "github-mcp": null } });
+    });
+
+    it("create: a mcp-tools PATCH failure fails loud with a typed downstream_error", async () => {
+      globalThis.fetch = mock(async (_url: string, init: RequestInit) => {
+        if (init.method === "POST") {
+          return json({ id: "agent-uuid-1" }, 201);
+        }
+        return json({ message: "server error" }, 500);
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = {
+        name: "support-agent",
+        profile: {},
+        enabledMcpTools: { "github-mcp": ["search_code"] },
+      };
+
+      const result = await writer.create("tenant-a", agent);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe("downstream_error");
+        expect(result.error.resourceKind).toBe("agent");
+      }
+    });
+
+    it("create: an HTTP 400 on tool-descriptions is treated as skip (feature flag off), not a failure", async () => {
+      globalThis.fetch = mock(async (_url: string, init: RequestInit) => {
+        if (init.method === "POST") {
+          return json({ id: "agent-uuid-1" }, 201);
+        }
+        return json(
+          { message: "Tool description overrides are not enabled." },
+          400
+        );
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = {
+        name: "support-agent",
+        profile: {},
+        toolDescriptionOverrides: { "github-mcp:search_code": "desc" },
+      };
+
+      const result = await writer.create("tenant-a", agent);
+      expect(result.ok).toBe(true);
+    });
+
+    it("create: a non-400 tool-descriptions failure still fails loud", async () => {
+      globalThis.fetch = mock(async (_url: string, init: RequestInit) => {
+        if (init.method === "POST") {
+          return json({ id: "agent-uuid-1" }, 201);
+        }
+        return json({ message: "server error" }, 500);
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = {
+        name: "support-agent",
+        profile: {},
+        toolDescriptionOverrides: { "github-mcp:search_code": "desc" },
+      };
+
+      const result = await writer.create("tenant-a", agent);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe("downstream_error");
+      }
+    });
+
+    it("update: reconciles enabledMcpTools/toolDescriptionOverrides directly against the given externalId (T04 upgrades update() from a pure no-op for these fields)", async () => {
+      const calls: { url: string; method: string; body: unknown }[] = [];
+      globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          method: init.method as string,
+          body: init.body ? JSON.parse(init.body as string) : undefined,
+        });
+        return json({}, 200);
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = {
+        name: "support-agent",
+        profile: {},
+        enabledMcpTools: { "github-mcp": ["search_code"] },
+        toolDescriptionOverrides: { "github-mcp:search_code": "desc" },
+      };
+
+      const result = await writer.update("tenant-a", "agent-uuid-1", agent, [
+        { field: "enabledMcpTools" },
+      ]);
+      expect(result.ok).toBe(true);
+      expect(calls).toHaveLength(2);
+      expect(calls[0]?.url).toBe(
+        `${BASE_URL}/admin/agents/agent-uuid-1/mcp-tools`
+      );
+      expect(calls[1]?.url).toBe(
+        `${BASE_URL}/admin/agents/agent-uuid-1/tool-descriptions`
+      );
+    });
+
+    it("update: no PATCHes when neither field is declared — matches the pre-T04 existence-only no-op", async () => {
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = { name: "support-agent", profile: {} };
+      const result = await writer.update("tenant-a", "agent-1", agent, []);
+      expect(result.ok).toBe(true);
+    });
+
+    it("update: an operator changing BOTH enabledMcpServerRefs AND enabledMcpTools in one apply reconciles servers THEN tools, in create()'s order — the server-refs change is never silently dropped", async () => {
+      const calls: { url: string; method: string; body: unknown }[] = [];
+      globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          method: init.method as string,
+          body: init.body ? JSON.parse(init.body as string) : undefined,
+        });
+        return json({}, 200);
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = {
+        name: "support-agent",
+        profile: {},
+        enabledMcpServerRefs: ["github-mcp", "deepwiki-mcp"],
+        enabledMcpTools: { "github-mcp": ["search_code"] },
+        toolDescriptionOverrides: { "github-mcp:search_code": "desc" },
+      };
+
+      const result = await writer.update("tenant-a", "agent-uuid-1", agent, [
+        { field: "enabledMcpTools" },
+      ]);
+      expect(result.ok).toBe(true);
+
+      expect(calls).toHaveLength(3);
+      expect(calls[0]?.url).toBe(
+        `${BASE_URL}/admin/agents/agent-uuid-1/mcp-servers`
+      );
+      expect(calls[0]?.body).toEqual({
+        enabled_mcp_servers: ["github-mcp", "deepwiki-mcp"],
+      });
+      expect(calls[1]?.url).toBe(
+        `${BASE_URL}/admin/agents/agent-uuid-1/mcp-tools`
+      );
+      expect(calls[2]?.url).toBe(
+        `${BASE_URL}/admin/agents/agent-uuid-1/tool-descriptions`
+      );
+    });
+
+    it("update: an enabledMcpServerRefs PATCH failure fails loud with a typed downstream_error, never proceeding to the tool PATCHes", async () => {
+      const calls: string[] = [];
+      globalThis.fetch = mock(async (url: string) => {
+        calls.push(url);
+        return json({ message: "server error" }, 500);
+      }) as unknown as typeof fetch;
+
+      const writer = createAgentsWriter(BASE_URL);
+      const agent: Agent = {
+        name: "support-agent",
+        profile: {},
+        enabledMcpServerRefs: ["github-mcp"],
+        enabledMcpTools: { "github-mcp": ["search_code"] },
+      };
+
+      const result = await writer.update("tenant-a", "agent-uuid-1", agent, [
+        { field: "enabledMcpTools" },
+      ]);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe("downstream_error");
+        expect(result.error.resourceKind).toBe("agent");
+      }
+      // Only the mcp-servers PATCH was attempted; the failure short-circuited
+      // before the tool PATCHes.
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toBe(
+        `${BASE_URL}/admin/agents/agent-uuid-1/mcp-servers`
+      );
+    });
+  });
 });

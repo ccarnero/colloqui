@@ -143,4 +143,32 @@ describe("createHttpListResourceClient", () => {
       value: { externalId: "id-1", fields: { kind: "x" } },
     });
   });
+
+  // T04 (manual-loops/provisioning-manifest-gaps-2.md, gap 4) — forwards
+  // findByName's optional third argument (the manifest's own desired
+  // resource) through to getFields, the same "declared" idiom
+  // serviceComparable/registry-services-client.ts established for T05.
+  it("forwards the declaredResource argument to getFields", async () => {
+    const items: FakeItem[] = [{ id: "id-1", name: "http-in", kind: "http" }];
+    globalThis.fetch = mock(
+      async () => new Response(JSON.stringify(items), { status: 200 })
+    ) as unknown as typeof fetch;
+
+    let receivedDeclared: unknown;
+    const client = createHttpListResourceClient<FakeItem>({
+      resourceKind: "channel",
+      baseUrl: "http://channel-service.local",
+      listPath: "/channels/accounts",
+      getName: (item) => item.name,
+      getExternalId: (item) => item.id,
+      getFields: (item, declaredResource) => {
+        receivedDeclared = declaredResource;
+        return { kind: item.kind };
+      },
+    });
+
+    const declared = { name: "http-in", marker: "manifest-resource" };
+    await client.findByName("tenant-a", "http-in", declared);
+    expect(receivedDeclared).toBe(declared);
+  });
 });

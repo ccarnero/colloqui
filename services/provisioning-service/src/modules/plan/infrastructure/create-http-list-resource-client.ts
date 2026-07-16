@@ -26,7 +26,19 @@ export interface HttpListResourceClientOptions<TItem> {
   readonly listPath: string;
   readonly getName: (item: TItem) => string;
   readonly getExternalId: (item: TItem) => string;
-  readonly getFields: (item: TItem) => Record<string, unknown>;
+  /**
+   * `declaredResource` (T04, manual-loops/provisioning-manifest-gaps-2.md
+   * gap 4) is the manifest's OWN desired resource for this kind, when the
+   * caller has it — `build-manifest-plan.ts`'s `findByName` call site always
+   * passes it (mirrors `serviceComparable`'s T05 precedent). Every existing
+   * `getFields` ignores the second argument; `agentComparable.fromLive` (T04)
+   * is the first consumer, deciding which OPTIONAL comparable fields to
+   * project the same way `serviceComparable` does for scaling fields.
+   */
+  readonly getFields: (
+    item: TItem,
+    declaredResource?: unknown
+  ) => Record<string, unknown>;
   /** Some list endpoints wrap the array in an envelope, e.g. `{ agents, total }`. */
   readonly unwrapList?: (body: unknown) => TItem[];
 }
@@ -37,7 +49,7 @@ export function createHttpListResourceClient<TItem>(
   const logger = new PinoLoggerService(`plan.${options.resourceKind}-client`);
 
   return {
-    async findByName(tenantId, name) {
+    async findByName(tenantId, name, declaredResource) {
       const url = `${options.baseUrl}${options.listPath}`;
       logger.log(
         `findByName: GET ${url} kind='${options.resourceKind}' name='${name}' tenant='${tenantId}'`
@@ -109,7 +121,7 @@ export function createHttpListResourceClient<TItem>(
 
       const value: LivePlatformResource = {
         externalId: options.getExternalId(match),
-        fields: options.getFields(match),
+        fields: options.getFields(match, declaredResource),
       };
       logger.log(
         `findByName: matched ${options.resourceKind} '${name}' -> externalId='${value.externalId}'`

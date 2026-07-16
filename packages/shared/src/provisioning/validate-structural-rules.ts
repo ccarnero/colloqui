@@ -322,6 +322,37 @@ function checkRefResolution(
         });
       }
     });
+
+    // manual-loops/provisioning-manifest-gaps-2.md T04, gap 4 — mirrors the
+    // enabledMcpServerRefs check above exactly: `enabledMcpTools`' outer keys
+    // are MCP server manifest NAMES (decision 6, never substituted to an id).
+    Object.keys(agent.enabledMcpTools ?? {}).forEach((serverName) => {
+      if (!mcpServerNames.has(serverName)) {
+        errors.push({
+          path: `spec.agents[${index}].enabledMcpTools["${serverName}"]`,
+          message: `unresolved mcpServerRef "${serverName}": no MCP server with this name in the manifest`,
+        });
+      }
+    });
+
+    // `toolDescriptionOverrides` keys are either "<serverName>:<toolName>"
+    // (MCP tool, serverName validated against spec.mcpServers[].name like
+    // enabledMcpTools above) or a plain key with no colon (adapter/builtin
+    // tool name — NOT validated against mcpServers, a different namespace
+    // entirely; see agentSchema's field comment).
+    Object.keys(agent.toolDescriptionOverrides ?? {}).forEach((overrideKey) => {
+      const colonIndex = overrideKey.indexOf(":");
+      if (colonIndex === -1) {
+        return;
+      }
+      const serverName = overrideKey.slice(0, colonIndex);
+      if (!mcpServerNames.has(serverName)) {
+        errors.push({
+          path: `spec.agents[${index}].toolDescriptionOverrides["${overrideKey}"]`,
+          message: `unresolved mcpServerRef "${serverName}": no MCP server with this name in the manifest`,
+        });
+      }
+    });
   });
 
   manifest.spec.services.forEach((service: HostedService, index) => {
