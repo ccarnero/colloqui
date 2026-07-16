@@ -434,7 +434,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 
 - [x] T01 connector credential wiring (broker secretRef + inline authConfig)
 - [x] T02 connector `endpoints` manifest concept
-- [ ] T03 manifest-time real-ID substitution (`connectorRef` + resolver)
+- [x] T03 manifest-time real-ID substitution (`connectorRef` + resolver)
 - [ ] T04 `systemVariables` section
 - [ ] T05 service scaling fields + routes
 - [ ] T06 `mcpServers` section
@@ -593,3 +593,34 @@ from the comparable by scoped decision) — revisit if a sample needs it;
 duplicates `AdapterCacheMethod` (same package) — DRY candidate; (d) update
 path of the endpoint API error branch only covered via the shared create-path
 code.
+
+### T03 — 2026-07-16
+
+HUMAN RULING (decision 4): EXPLICIT ALLOWLIST — no structural `*Ref` walk.
+Shipped: `connectorRef` added to `SYMBOLIC_REF_KEYS` + schema; substitution
+pass in the apply engine runs in the existing topological order on a WORKING
+COPY (stored manifest immutable — dedicated test); allowlist lives in
+`apply/lib/substitution-allowlist.ts` with per-entry sources verified against
+`@yoizen/shared` (`accountId`→channelRef/ChannelSendArgs,
+`adapterId`→connectorRef/EndpointCallArgs, `agentId`→agentRef/AgentCallArgs,
+`serviceId`→serviceRef/ServiceCallArgs); ref shape `{ <refType>: <name> }`;
+`resolvedIds` keyed `<kind>:<name>` holding each writer's returned externalId
+(verified to be the id runtime consumers need). Fail-loud: NEW error kinds
+`unresolved_symbolic_ref` and `mismatched_symbolic_ref` (attempt-2 fix — a
+recognized ref-object of the WRONG kind at an allowlisted key was silently
+passing through; one reviewer caught it; now fails loud naming expected vs
+actual kind, symbolic name, argKey and owning resource, writer never called,
+applyStarted+applyFailed only events). Runtime `{{...}}` templates and
+non-ref-shaped values pass through untouched (regression-tested — the
+shipped telegram manifest depends on it). `workflows-writer.ts` header states
+the substitution precondition. Dependency edges for connectorRef via
+`resource-kind-of-ref-type.ts` + the pre-existing generic collectSymbolicRefs
+walk (never reordered).
+
+Gates: G1 260/260, G2 clean, G3 207/207 + shared tsc clean, G6b revision
+00020 live + e2e-manifest-apply PASSED, G5 valid=true + double noop.
+Dual review: attempt 1 split (1 APPROVED / 1 REJECTED on the wrong-kind
+silent pass-through), attempt 2 fix → 2x APPROVED.
+FOLLOW-UP: agents-writer header comment not updated (only workflows-writer
+was in the task text); agent-profile substitution wired but untested until
+T06 adds mcpServerRef-style resolution.

@@ -16,6 +16,12 @@ export function resourceKindOfRefType(
       return "agent";
     case "serviceRef":
       return "service";
+    // manual-loops/provisioning-manifest-gaps.md T03, gap 3 — connectorRef
+    // resolves against the manifest's `connectors` section, so a
+    // connectorRef occurrence becomes a dependency edge exactly like the
+    // other three resource-kind refs.
+    case "connectorRef":
+      return "connector";
     case "secretRef":
       return null;
     default:

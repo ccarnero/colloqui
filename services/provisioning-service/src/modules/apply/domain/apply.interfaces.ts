@@ -39,7 +39,22 @@ export type ApplyWriteErrorKind =
   | "secret_not_resolvable"
   | "missing_required_field"
   | "unsupported_kind_shape"
-  | "downstream_error";
+  | "downstream_error"
+  // manual-loops/provisioning-manifest-gaps.md T03, gap 3 — a workflow/agent
+  // definition declared an ALLOWLISTED symbolic ref (see
+  // `apply/lib/substitution-allowlist.ts`) whose target name has no
+  // resolved real id yet (never created/resolved, or created AFTER this
+  // resource in dependency order — should not happen given
+  // `topological-resource-order.ts`, but fails loud instead of assuming).
+  | "unresolved_symbolic_ref"
+  // manual-loops/provisioning-manifest-gaps.md T03, gap 3 — an ALLOWLISTED
+  // key held a recognized single-key ref-object, but its ref kind is not the
+  // ONE kind that key accepts (e.g. `{ agentRef }` sitting in `accountId`,
+  // which only accepts `channelRef`). A symbolic ref like this would never
+  // be resolved; forwarding it raw to the writer (typed `string` downstream)
+  // would only surface at runtime with no trail — so this fails loud with
+  // the same posture as `unresolved_symbolic_ref`, naming expected vs actual.
+  | "mismatched_symbolic_ref";
 
 export interface ApplyWriteError {
   readonly kind: ApplyWriteErrorKind;

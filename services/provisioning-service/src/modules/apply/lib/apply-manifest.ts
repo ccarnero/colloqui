@@ -31,6 +31,7 @@ import type {
 } from "../domain/apply.interfaces";
 import type { IApplyEventPublisher } from "../domain/apply-event-publisher.interface";
 import type { PlatformResourceWriters } from "../domain/platform-resource-writer.interface";
+import { buildSubstitutedResource } from "./build-substituted-resource";
 
 export type ApplyManifestResult =
   | { readonly ok: true; readonly value: ManifestApplySuccess }
@@ -80,6 +81,14 @@ export async function applyManifestPlan(
   let appliedCount = 0;
   let noopCount = 0;
 
+  // T03, gap 3 — "<kind>:<name>" -> real platform id, populated as each
+  // resource is processed. Since `plan.resources` is already in dependency
+  // order (`topological-resource-order.ts`), by the time a workflow/agent
+  // is reached every resource it may reference by symbolic ref is already
+  // present here (create/update's fresh externalId, or noop/external's
+  // plan-time externalId) — see `buildSubstitutedResource`.
+  const resolvedIds = new Map<string, string>();
+
   for (let i = 0; i < plan.resources.length; i++) {
     const entry = plan.resources[i];
     if (!entry) {
@@ -96,6 +105,9 @@ export async function applyManifestPlan(
         verdict: "noop",
         externalId: entry.externalId,
       });
+      if (entry.externalId) {
+        resolvedIds.set(`${entry.kind}:${entry.name}`, entry.externalId);
+      }
       noopCount++;
       continue;
     }
@@ -109,6 +121,43 @@ export async function applyManifestPlan(
 
     const writer = writers[entry.kind];
     const verdict: "create" | "update" = entry.verdict;
+
+    // T03, gap 3 — substitute allowlisted symbolic refs in the workflow
+    // `definition` / agent `profile` BEFORE the writer ever sees the
+    // resource. Works on a WORKING COPY only (see
+    // `substitute-symbolic-refs.ts`) — never mutates `resource`, which is
+    // backed by the manifest object `PUT /manifests/:name` stored.
+    const substituted = buildSubstitutedResource({
+      kind: entry.kind,
+      resource,
+      resolvedIds,
+      logger,
+    });
+    if (!substituted.ok) {
+      logger.warn(
+        `apply: ${entry.kind} '${entry.name}' FAILED (${substituted.error.kind}): ${substituted.error.message}`
+      );
+      await events.applyFailed({
+        tenantId,
+        manifestName: plan.manifestName,
+        failure: substituted.error,
+        appliedSoFar: outcomes.map((o) => ({ kind: o.kind, name: o.name })),
+        correlationId: runAudit.correlationId,
+        causationId: runAudit.causationId,
+      });
+      const pending = buildPending(plan, i + 1);
+      return {
+        ok: false,
+        error: {
+          kind: "apply_failed",
+          manifestName: plan.manifestName,
+          applied: outcomes,
+          pending,
+          failure: substituted.error,
+          durationMs: Date.now() - startedAt,
+        },
+      };
+    }
 
     logger.log(
       `apply: ${entry.kind} '${entry.name}' verdict='${verdict}' — writing via ${entry.kind} writer`
@@ -125,11 +174,11 @@ export async function applyManifestPlan(
     };
     const result =
       verdict === "create"
-        ? await writer.create(tenantId, resource, writerContext)
+        ? await writer.create(tenantId, substituted.value, writerContext)
         : await writer.update(
             tenantId,
             entry.externalId ?? "",
-            resource,
+            substituted.value,
             entry.diff,
             writerContext
           );
@@ -169,6 +218,7 @@ export async function applyManifestPlan(
       verdict,
       externalId: result.value.externalId,
     });
+    resolvedIds.set(`${entry.kind}:${entry.name}`, result.value.externalId);
     appliedCount++;
     await events.resourceApplied({
       tenantId,

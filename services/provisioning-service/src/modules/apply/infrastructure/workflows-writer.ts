@@ -1,13 +1,24 @@
 // `IPlatformResourceWriter` for workflow-service's `POST /workflows`.
 //
 // The manifest's `Workflow.definition` is an opaque record (SPEC: its steps
-// may embed channelRef/agentRef/serviceRef/secretRef at any depth, walked by
-// the structural-rule validators, not this writer). T04 reads
-// `definition.application`/`definition.actions`/`definition.trigger`/
+// may embed channelRef/agentRef/serviceRef/secretRef/connectorRef at any
+// depth, walked by the structural-rule validators, not this writer). T04
+// reads `definition.application`/`definition.actions`/`definition.trigger`/
 // `definition.variables` straight off it — the exact shape
 // `workflow-service`'s `CreateWorkflowDto` expects — and fails loud with a
 // typed error if the required fields are missing, rather than fabricating a
 // default `application` or an empty `actions` array.
+//
+// PRECONDITION (manual-loops/provisioning-manifest-gaps.md T03, gap 3): by
+// the time `resourceUnknown.definition` reaches this writer, EVERY
+// allowlisted symbolic ref inside it (`substitution-allowlist.ts` —
+// `accountId`/`adapterId`/`agentId`/`serviceId`) has already been replaced
+// with the real platform id by `apply-manifest.ts`'s substitution pass
+// (`build-substituted-resource.ts` / `substitute-symbolic-refs.ts`), which
+// runs on a WORKING COPY and never touches the stored manifest. This writer
+// still never inspects/walks the definition for refs itself — it only
+// forwards whatever `definition` it is handed, opaque record in, opaque
+// record out.
 //
 // Update: `workflowComparable` (T03) is existence-only — never produces an
 // `update` verdict, so this is a defensive no-op stub.

@@ -1,11 +1,36 @@
 import { describe, expect, test } from "bun:test";
 import {
   connectorAuthSchema,
+  connectorRefSchema,
   integrationManifestSchema,
   kbSourceSchema,
   nameSchema,
+  SYMBOLIC_REF_KEYS,
 } from "../manifest.schema";
 import { buildValidManifest } from "./fixtures";
+
+describe("connectorRefSchema — SYMBOLIC_REF_KEYS (T03, gap 3)", () => {
+  test("SYMBOLIC_REF_KEYS includes connectorRef alongside the original four", () => {
+    const sorted: string[] = [...SYMBOLIC_REF_KEYS].sort();
+    expect(sorted).toEqual(
+      [
+        "agentRef",
+        "channelRef",
+        "connectorRef",
+        "secretRef",
+        "serviceRef",
+      ].sort()
+    );
+  });
+
+  test("connectorRefSchema accepts a slug-like name", () => {
+    expect(connectorRefSchema.safeParse("http-adapter").success).toBe(true);
+  });
+
+  test("connectorRefSchema rejects an empty string", () => {
+    expect(connectorRefSchema.safeParse("").success).toBe(false);
+  });
+});
 
 describe("nameSchema", () => {
   test("accepts a lowercase slug", () => {

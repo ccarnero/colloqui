@@ -53,17 +53,20 @@ describe("collectSymbolicRefs", () => {
     ]);
   });
 
-  test("collects all four ref types", () => {
+  test("collects all five ref types", () => {
     const definition = {
       channelRef: "c",
       agentRef: "a",
       serviceRef: "s",
       secretRef: "sec",
+      // manual-loops/provisioning-manifest-gaps.md T03, gap 3.
+      connectorRef: "conn",
     };
     const refs = collectSymbolicRefs(definition, "root");
     expect(refs.map((r) => r.refType).sort()).toEqual([
       "agentRef",
       "channelRef",
+      "connectorRef",
       "secretRef",
       "serviceRef",
     ]);

@@ -38,12 +38,18 @@ export const channelRefSchema = nameSchema;
 export const agentRefSchema = nameSchema;
 export const serviceRefSchema = nameSchema;
 export const secretRefSchema = nameSchema;
+// manual-loops/provisioning-manifest-gaps.md T03, gap 3 — lets a workflow/
+// agent definition reference a connector by manifest name, mirroring
+// channelRef/agentRef/serviceRef exactly (same `nameSchema`, same
+// resolve-by-name-at-apply-time semantics).
+export const connectorRefSchema = nameSchema;
 
 export const SYMBOLIC_REF_KEYS = [
   "channelRef",
   "agentRef",
   "serviceRef",
   "secretRef",
+  "connectorRef",
 ] as const;
 
 export type SymbolicRefType = (typeof SYMBOLIC_REF_KEYS)[number];
@@ -307,9 +313,13 @@ export type HostedService = z.infer<typeof serviceSchema>;
 
 // ---------------------------------------------------------------------------
 // Workflows — the other "process" kind. `definition` is an opaque record
-// whose steps may embed channelRef/agentRef/serviceRef/secretRef keys at any
-// depth; those are walked and resolved by the structural-rule validators,
-// not by this schema.
+// whose steps may embed channelRef/agentRef/serviceRef/secretRef/
+// connectorRef keys at any depth; those are walked and resolved by the
+// structural-rule validators, not by this schema. `connectorRef` (T03,
+// gap 3) additionally participates in manifest-time real-ID substitution
+// (see `services/provisioning-service/.../substitution-allowlist.ts`) —
+// this schema only validates the ref's own shape (a plain name string),
+// never the substitution semantics.
 // ---------------------------------------------------------------------------
 
 const workflowSchema = z
