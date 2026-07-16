@@ -19,11 +19,13 @@ export type {
   KbSource,
   KnowledgeBase,
   ManifestChannel,
+  ManifestSystemVariable,
   SecretBinding,
   SecretScope,
   SecretScopeKind,
   ServiceEnvVar,
   SymbolicRefType,
+  SystemVariableType,
   Workflow,
 } from "./manifest.schema";
 export {

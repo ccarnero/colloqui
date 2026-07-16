@@ -14,6 +14,7 @@
 // being silently dropped.
 
 import { z } from "zod";
+import type { VariableType } from "../variable.interfaces";
 
 /** Size cap for inline KB document content (bytes, UTF-8). */
 export const KB_INLINE_CONTENT_MAX_BYTES = 64 * 1024;
@@ -312,6 +313,107 @@ const serviceSchema = z
 export type HostedService = z.infer<typeof serviceSchema>;
 
 // ---------------------------------------------------------------------------
+// System variables (manual-loops/provisioning-manifest-gaps.md T04, gap 4)
+// — mirrors `sdk/src/resources/system-variables/types.ts`
+// `CreateSystemVariableInput` (`name`/`type`/`value`/`label?`/`description?`)
+// plus the existing section shape's `external` flag (decision 5: "mirror the
+// existing section shape — name + payload fields + external flag — no
+// special-casing"). This is a LEAF node: nothing refs a systemVariable and
+// it refs nothing back (per SPEC's Prior-art note, `ai-system-variables`'s
+// consumption is a RUNTIME resolution point in workflow-service, not a
+// manifest-time one) — no symbolic-ref participation, no dependency-graph
+// edges.
+//
+// `value` here is CONFIG (thresholds/flags), never a secret VALUE — unlike
+// `secretRef`-bearing fields elsewhere in this schema, a system variable's
+// `value` is a plain manifest value by design, matching
+// `CreateSystemVariableInput.value`.
+//
+// TYPE ENUM — single source of truth: the platform-wide `VariableType`
+// (`packages/shared/src/variable.interfaces.ts`), the SAME type
+// agent-admin-service's own `CreateSystemVariableDto`/`UpdateSystemVariableDto`
+// import. We do NOT re-declare the literal union here; instead the full enum
+// is derived from `VariableType` and a compile-time `satisfies` check makes
+// the build FAIL if `VariableType` ever drifts from this array (adds/removes a
+// member) — so the two can never silently diverge.
+//
+// SECRET-TYPE REJECTION (attempt-2 reviewer ruling, both reviewers): the
+// MANIFEST surface REJECTS `type: "secret"` entirely for now. A secret-typed
+// system variable would carry a PLAINTEXT `value` in the checked-in
+// `manifest.yaml`, and that `value` is echoed verbatim into plan output
+// (`FieldDiff.current/.desired`) and downstream API responses — a direct
+// violation of the SPEC's "secret VALUES never appear in ... plan output ...
+// or the manifest file itself" hard rule. This mirrors decision 3's
+// resolution for connector credentials (no plaintext secret values in the
+// repo). The platform API / SDK keep the FULL `VariableType` enum (including
+// `"secret"`) untouched — this restriction is manifest-surface-only, pending
+// the human ruling recorded in the SPEC's T04 progress entry. When that
+// ruling lands (e.g. secret-typed sysvars sourced via `secretRef` instead of
+// an inline `value`), lift the rejection here.
+// ---------------------------------------------------------------------------
+
+// Full platform enum, kept in lock-step with `VariableType` by the compile-
+// time `satisfies` check below (drift breaks the build, never silently).
+const SYSTEM_VARIABLE_TYPES = [
+  "string",
+  "number",
+  "boolean",
+  "json",
+  "array",
+  "secret",
+] as const satisfies readonly VariableType[];
+
+// Reverse guard: every `VariableType` member must be present in the array
+// above. If a new member is added to `VariableType` without being added here,
+// this assignment fails to compile.
+type _AssertNoMissingVariableType =
+  VariableType extends (typeof SYSTEM_VARIABLE_TYPES)[number] ? true : never;
+const _assertNoMissingVariableType: _AssertNoMissingVariableType = true;
+void _assertNoMissingVariableType;
+
+/** The full platform `VariableType` enum as a zod schema (all members). */
+export const systemVariableTypeSchema = z.enum(SYSTEM_VARIABLE_TYPES);
+
+export type SystemVariableType = z.infer<typeof systemVariableTypeSchema>;
+
+// Manifest-accepted subset: the full enum MINUS "secret" (see the header's
+// SECRET-TYPE REJECTION note). Derived from the same source array so it, too,
+// tracks `VariableType` automatically — only the deliberate `"secret"`
+// exclusion is hand-listed, with a fail-loud message.
+const MANIFEST_SYSTEM_VARIABLE_TYPES = SYSTEM_VARIABLE_TYPES.filter(
+  (type) => type !== "secret"
+) as Exclude<(typeof SYSTEM_VARIABLE_TYPES)[number], "secret">[];
+
+const manifestSystemVariableTypeSchema = z.enum(
+  MANIFEST_SYSTEM_VARIABLE_TYPES as [
+    Exclude<SystemVariableType, "secret">,
+    ...Exclude<SystemVariableType, "secret">[],
+  ],
+  {
+    message:
+      'system variable type "secret" is not yet expressible in a manifest: a secret-typed variable carries a plaintext value that must never live in the repo or plan output. Store the value via the secrets flow instead (pending human ruling — see manual-loops/provisioning-manifest-gaps.md T04 progress). Allowed types: string, number, boolean, json, array.',
+  }
+);
+
+const systemVariableSchema = z
+  .object({
+    name: nameSchema,
+    type: manifestSystemVariableTypeSchema,
+    value: z
+      .unknown()
+      .refine((value) => value !== undefined, "value must not be empty"),
+    label: z.string().min(1, "label must not be empty").optional(),
+    description: z.string().min(1, "description must not be empty").optional(),
+    external: z.boolean().optional(),
+  })
+  .strict();
+
+// Named `ManifestSystemVariable` (not `SystemVariable`) to avoid colliding
+// with the SDK's own `SystemVariable` response type, mirroring the
+// `ManifestChannel` naming convention above.
+export type ManifestSystemVariable = z.infer<typeof systemVariableSchema>;
+
+// ---------------------------------------------------------------------------
 // Workflows — the other "process" kind. `definition` is an opaque record
 // whose steps may embed channelRef/agentRef/serviceRef/secretRef/
 // connectorRef keys at any depth; those are walked and resolved by the
@@ -336,11 +438,22 @@ export type Workflow = z.infer<typeof workflowSchema>;
 // Secrets — bindings only: {name, scope: {kind, owner}}. Never values.
 // ---------------------------------------------------------------------------
 
+// T04 (manual-loops/provisioning-manifest-gaps.md, gap 4): "systemVariable"
+// added so `ResourceKind` (provisioning-service's
+// `plan/domain/plan.interfaces.ts`, deliberately the SAME union as this
+// schema's `SecretScopeKind`) can carry systemVariables through the generic
+// plan/apply pipeline. System variables have no secretRef wiring of their
+// own (`value` is plain config, see the systemVariableSchema comment above),
+// so this addition does not by itself enable secret-scope BINDINGS to a
+// systemVariable owner — whether `sdk/src/cli/extract-secret-bindings.ts`'s
+// separate `VALID_SCOPE_KINDS` constant also needs "systemVariable" is T07's
+// explicit scope, not decided here.
 const secretScopeKindSchema = z.enum([
   "channel",
   "connector",
   "agent",
   "service",
+  "systemVariable",
   "workflow",
 ]);
 
@@ -385,6 +498,8 @@ const manifestSpecSchema = z
     agents: z.array(agentSchema).default([]),
     knowledgeBases: z.array(knowledgeBaseSchema).default([]),
     services: z.array(serviceSchema).default([]),
+    // T04, gap 4 — leaf node, placed before workflows (no refs in/out today).
+    systemVariables: z.array(systemVariableSchema).default([]),
     workflows: z.array(workflowSchema).default([]),
     secrets: z.array(secretSchema).default([]),
   })

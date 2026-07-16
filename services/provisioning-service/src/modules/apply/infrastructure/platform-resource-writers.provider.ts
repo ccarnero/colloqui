@@ -9,6 +9,7 @@ import { createAgentsWriter } from "./agents-writer";
 import { createChannelsWriter } from "./channels-writer";
 import { createConnectorsWriter } from "./connectors-writer";
 import { createRegistryServicesWriter } from "./registry-services-writer";
+import { createSystemVariablesWriter } from "./system-variables-writer";
 import { createWorkflowsWriter } from "./workflows-writer";
 
 /**
@@ -35,6 +36,10 @@ export function buildPlatformResourceWriters(
     connector: createConnectorsWriter(urls.connectors, secretResolver),
     agent: createAgentsWriter(urls.agents),
     service: createRegistryServicesWriter(urls.registry),
+    // T04 (manual-loops/provisioning-manifest-gaps.md, gap 4) — same
+    // downstream base URL as agents: system variables live in
+    // agent-admin-service.
+    systemVariable: createSystemVariablesWriter(urls.agents),
     workflow: createWorkflowsWriter(urls.workflows),
   };
 }

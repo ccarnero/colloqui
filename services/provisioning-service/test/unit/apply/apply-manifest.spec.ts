@@ -23,6 +23,7 @@ function manifestWith(names: {
       agents: names.agent ? [{ name: names.agent, profile: {} }] : [],
       knowledgeBases: [],
       services: [],
+      systemVariables: [],
       workflows: names.workflow
         ? [
             {
@@ -441,6 +442,7 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
         agents: [],
         knowledgeBases: [],
         services: [],
+        systemVariables: [],
         workflows: [
           {
             name: "w1",
@@ -756,6 +758,7 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
         agents: [],
         knowledgeBases: [],
         services: [],
+        systemVariables: [],
         workflows: [
           {
             name: "w1",

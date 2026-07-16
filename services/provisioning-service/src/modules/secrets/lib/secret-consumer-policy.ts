@@ -29,6 +29,13 @@ const CONSUMER_POLICY: Readonly<Record<ResourceKind, ReadonlySet<string>>> = {
   connector: new Set([APPLY_ENGINE_CONSUMER_SERVICE, "connector-runtime"]),
   agent: new Set([APPLY_ENGINE_CONSUMER_SERVICE, "agent-ai-service"]),
   service: new Set([APPLY_ENGINE_CONSUMER_SERVICE]),
+  // T04 (manual-loops/provisioning-manifest-gaps.md, gap 4) — system
+  // variables carry NO secretRef wiring today (`value` is plain config, see
+  // `manifest.schema.ts`'s systemVariableSchema comment), so no runtime
+  // consumer resolves secrets for this kind yet. Only the apply engine is
+  // allow-listed, mirroring `service`'s defensive-only entry, purely so
+  // `ResourceKind`'s new member type-checks here.
+  systemVariable: new Set([APPLY_ENGINE_CONSUMER_SERVICE]),
   workflow: new Set([APPLY_ENGINE_CONSUMER_SERVICE, "workflow-service"]),
 };
 

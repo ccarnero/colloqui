@@ -444,3 +444,130 @@ describe("connectorSchema — endpoints (T02)", () => {
     expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
   });
 });
+
+// T04 (manual-loops/provisioning-manifest-gaps.md, gap 4): `systemVariables`
+// — mirrors `sdk/src/resources/system-variables/types.ts`
+// `CreateSystemVariableInput` (`name`/`type`/`value`/`label?`/`description?`)
+// plus the existing section shape's `external` flag. Additive-only:
+// optional array defaulting to `[]`, `.strict()` per every other section.
+describe("manifestSpecSchema — systemVariables (T04, gap 4)", () => {
+  function manifestWithSystemVariable(systemVariable: Record<string, unknown>) {
+    const manifest = buildValidManifest();
+    return {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        systemVariables: [systemVariable],
+      },
+    };
+  }
+
+  test("omission stays valid — additive, defaults to []", () => {
+    const manifest = buildValidManifest();
+    const { systemVariables: _omit, ...specWithoutSystemVariables } =
+      manifest.spec;
+    const withoutSystemVariables = {
+      ...manifest,
+      spec: specWithoutSystemVariables,
+    };
+    const result = integrationManifestSchema.safeParse(withoutSystemVariables);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.spec.systemVariables).toEqual([]);
+    }
+  });
+
+  test("accepts a minimal systemVariable (name/type/value only)", () => {
+    const manifest = manifestWithSystemVariable({
+      name: "escalation-threshold",
+      type: "number",
+      value: 5,
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts a systemVariable with label/description/external", () => {
+    const manifest = manifestWithSystemVariable({
+      name: "feature-flag",
+      type: "boolean",
+      value: true,
+      label: "Feature flag",
+      description: "Enables the new escalation path",
+      external: true,
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts every manifest-allowed VariableType literal (secret excluded)", () => {
+    const types = ["string", "number", "boolean", "json", "array"];
+    for (const type of types) {
+      const manifest = manifestWithSystemVariable({
+        name: "var-of-type",
+        type,
+        value: type === "json" || type === "array" ? [] : "x",
+      });
+      expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+    }
+  });
+
+  // Attempt-2 reviewer ruling: `type: "secret"` is a VALID platform
+  // `VariableType`, but it is REJECTED at the manifest surface because a
+  // secret-typed variable's plaintext `value` would leak into the checked-in
+  // manifest AND into plan output (`FieldDiff.current/.desired`), violating
+  // the SPEC's "secret VALUES never appear in ... plan output ... or the
+  // manifest file itself" hard rule. Rejecting it makes the leak
+  // unrepresentable. Lift once the human ruling on secret-sourced sysvars
+  // lands (see manual-loops/provisioning-manifest-gaps.md T04 progress).
+  test('rejects type: "secret" — a valid platform VariableType, but not manifest-expressible (no plaintext secret values in the repo/plan)', () => {
+    const manifest = manifestWithSystemVariable({
+      name: "api-key-var",
+      type: "secret",
+      value: "super-secret-plaintext",
+    });
+    const result = integrationManifestSchema.safeParse(manifest);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects a systemVariable missing name", () => {
+    const manifest = manifestWithSystemVariable({
+      type: "string",
+      value: "x",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects a systemVariable missing type", () => {
+    const manifest = manifestWithSystemVariable({
+      name: "no-type",
+      value: "x",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects a systemVariable missing value", () => {
+    const manifest = manifestWithSystemVariable({
+      name: "no-value",
+      type: "string",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects a systemVariable with an unknown type enum literal", () => {
+    const manifest = manifestWithSystemVariable({
+      name: "bad-type",
+      type: "float",
+      value: 1.5,
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects a systemVariable with an unknown key (.strict())", () => {
+    const manifest = manifestWithSystemVariable({
+      name: "extra-key",
+      type: "string",
+      value: "x",
+      unknownField: "nope",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+});

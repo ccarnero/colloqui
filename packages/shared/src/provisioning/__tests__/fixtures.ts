@@ -66,6 +66,13 @@ export function buildValidManifest(): IntegrationManifest {
           env: [{ name: "API_KEY", secretRef: "scorer-api-key" }],
         },
       ],
+      systemVariables: [
+        {
+          name: "escalation-threshold",
+          type: "number",
+          value: 5,
+        },
+      ],
       workflows: [
         {
           name: "ticket-router",

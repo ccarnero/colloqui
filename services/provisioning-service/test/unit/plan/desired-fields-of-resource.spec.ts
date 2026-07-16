@@ -101,4 +101,18 @@ describe("desiredFieldsOfResource", () => {
     };
     expect(desiredFieldsOfResource("workflow", workflow)).toEqual({});
   });
+
+  it("systemVariable (T04): projects `type` and `value` — both faithfully comparable, value is CONFIG not a secret", () => {
+    const systemVariable: ManifestSystemVariable = {
+      name: "escalation-threshold",
+      type: "number",
+      value: 5,
+      label: "Escalation threshold",
+      description: "Retries before escalation",
+    };
+    expect(desiredFieldsOfResource("systemVariable", systemVariable)).toEqual({
+      type: "number",
+      value: 5,
+    });
+  });
 });

@@ -435,7 +435,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T01 connector credential wiring (broker secretRef + inline authConfig)
 - [x] T02 connector `endpoints` manifest concept
 - [x] T03 manifest-time real-ID substitution (`connectorRef` + resolver)
-- [ ] T04 `systemVariables` section
+- [x] T04 `systemVariables` section
 - [ ] T05 service scaling fields + routes
 - [ ] T06 `mcpServers` section
 - [ ] T07 SDK/CLI compatibility sweep
@@ -624,3 +624,42 @@ silent pass-through), attempt 2 fix → 2x APPROVED.
 FOLLOW-UP: agents-writer header comment not updated (only workflows-writer
 was in the task text); agent-profile substitution wired but untested until
 T06 adds mcpServerRef-style resolution.
+
+### T04 — 2026-07-16
+
+`systemVariables` section shipped: schema mirrors `CreateSystemVariableInput`
+(name/type/value/label?/description?/external?, strict, additive);
+`system-variables-writer.ts` + plan client against agent-admin-service
+(`GET/POST /admin/system-variables`, `PATCH /admin/system-variables/:id`),
+create-or-update only; leaf placement in `RESOURCE_KIND_ORDER` before
+`workflow`; comparable projects type+value so value changes produce real
+update verdicts.
+
+THREE review rounds (attempts within budget, escalating secret-safety):
+1. REJECTED — hand-rolled type enum duplicated `VariableType` from
+   @yoizen/shared, and `type: "secret"` would leak plaintext values into
+   plan output.
+2. Fixes: enum now derived from `VariableType` with BIDIRECTIONAL
+   compile-time guards (drift either way fails tsc); ORCHESTRATOR DECISION
+   (recorded, pending human ruling): the MANIFEST surface REJECTS
+   `type: "secret"` entirely — secret-typed system variables are not
+   expressible in manifests until a secretRef-style mechanism ships
+   (mirrors decision 3; platform API/SDK enums untouched). REJECTED again —
+   reviewers found the LIVE-side vector: a pre-existing live variable of
+   type secret, name-matched against a manifest entry, still echoed its
+   plaintext value through `fromLive` into FieldDiff.current.
+3. Fix: `fromLive` REDACTS — live `type === "secret"` projects `{type}`
+   with value omitted; honest update verdict via the type diff; two new
+   tests prove no plaintext anywhere in serialized plan output (plan-level
+   test drives the REAL fromLive). Sweep verified no other comparable
+   projects credential-bearing fields. 2x APPROVED.
+
+Gates (attempt 3): G1 275/275, G2 clean, G3 217/217 + shared tsc clean,
+G6b revision 00023 live + e2e-manifest-apply PASSED, G5 valid=true + double
+noop. Accept-name quirk (documented since T01): describe blocks are
+camelCase (`createSystemVariablesWriter`), the SPEC's hyphenated -t pattern
+matches 1; camelCase pattern covers the set.
+
+OPEN HUMAN RULING RECORDED: whether/how manifests should ever express
+secret-typed system variables (candidate: secretRef binding like connector
+auth). Until then the manifest schema rejects them fail-loud.

@@ -14,6 +14,11 @@ export const RESOURCE_KIND_ORDER: readonly ResourceKind[] = [
   "connector",
   "agent",
   "service",
+  // T04 (manual-loops/provisioning-manifest-gaps.md, gap 4) — a leaf node
+  // with no refs in/out today (`ai-system-variables` consumes them at
+  // RUNTIME, not manifest-time); placed anywhere before workflows per the
+  // task text.
+  "systemVariable",
   "workflow",
 ];
 

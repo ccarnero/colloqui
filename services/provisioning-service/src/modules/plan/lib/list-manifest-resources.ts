@@ -8,6 +8,7 @@ import type {
   HostedService,
   IntegrationManifest,
   ManifestChannel,
+  ManifestSystemVariable,
   Workflow,
 } from "@yoizen/shared";
 import type { ResourceKind } from "../domain/plan.interfaces";
@@ -17,6 +18,7 @@ export type AnyManifestResource =
   | Connector
   | Agent
   | HostedService
+  | ManifestSystemVariable
   | Workflow;
 
 export interface ManifestResourceEntry {
@@ -61,6 +63,14 @@ export function listManifestResources(
       name: service.name,
       external: service.external ?? false,
       resource: service,
+    });
+  }
+  for (const systemVariable of manifest.spec.systemVariables) {
+    entries.push({
+      kind: "systemVariable",
+      name: systemVariable.name,
+      external: systemVariable.external ?? false,
+      resource: systemVariable,
     });
   }
   for (const workflow of manifest.spec.workflows) {

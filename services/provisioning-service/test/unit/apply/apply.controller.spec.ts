@@ -49,6 +49,7 @@ function noopClients(): PlatformResourceClients {
     connector: alwaysMiss,
     agent: alwaysMiss,
     service: alwaysMiss,
+    systemVariable: alwaysMiss,
     workflow: alwaysMiss,
   };
 }
@@ -69,6 +70,7 @@ function alwaysCreateWriters(): PlatformResourceWriters {
     connector: create,
     agent: create,
     service: create,
+    systemVariable: create,
     workflow: create,
   };
 }
@@ -84,6 +86,7 @@ function validManifest(name: string): IntegrationManifest {
       agents: [],
       knowledgeBases: [],
       services: [],
+      systemVariables: [],
       workflows: [],
       secrets: [],
     },

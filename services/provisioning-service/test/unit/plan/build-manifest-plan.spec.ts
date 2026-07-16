@@ -16,6 +16,7 @@ import {
   channelComparable,
   connectorComparable,
   serviceComparable,
+  systemVariableComparable,
   workflowComparable,
 } from "../../../src/modules/plan/lib/comparable-fields";
 
@@ -59,6 +60,7 @@ function manifestWith(
       agents: [],
       knowledgeBases: [],
       services: [],
+      systemVariables: [],
       workflows: [],
       secrets: [],
       ...overrides,
@@ -72,6 +74,7 @@ function noopClients(): PlatformResourceClients {
     connector: fakeClient("connector"),
     agent: fakeClient("agent"),
     service: fakeClient("service"),
+    systemVariable: fakeClient("systemVariable"),
     workflow: fakeClient("workflow"),
   };
 }
@@ -610,6 +613,110 @@ describe("buildManifestPlan", () => {
         const entry = entryFor(result.value, "priority-scorer");
         expect(entry?.verdict).toBe("update");
         expect(entry?.diff.map((d) => d.field)).toEqual(["envNames"]);
+      }
+    });
+  });
+
+  // T04 (manual-loops/provisioning-manifest-gaps.md, gap 4): systemVariable
+  // — both `type` and `value` are faithfully comparable (unlike the
+  // existence-only kinds above), so a value-only change is expected to
+  // produce an `update` verdict, not silently no-op.
+  describe("diff correctness per resource kind — systemVariable (T04)", () => {
+    const systemVariable = {
+      name: "escalation-threshold",
+      type: "number",
+      value: 5,
+    };
+    const manifest = manifestWith({
+      channels: [{ name: "http-in", type: "http", direction: "inbound" }],
+      agents: [{ name: "agent-1", profile: {} }],
+      systemVariables: [systemVariable],
+    });
+
+    it("create when absent live", async () => {
+      const result = await buildManifestPlan(manifest, "t", noopClients());
+      expect(
+        result.ok && entryFor(result.value, "escalation-threshold")?.verdict
+      ).toBe("create");
+    });
+
+    it("noop when a same-named systemVariable exists live with an identical value", async () => {
+      const clients = noopClients();
+      clients.systemVariable = fakeClient("systemVariable", {
+        "escalation-threshold": {
+          externalId: "sysvar-1",
+          fields: systemVariableComparable.fromLive({
+            id: "sysvar-1",
+            name: "escalation-threshold",
+            type: "number",
+            value: 5,
+          }),
+        },
+      });
+      const result = await buildManifestPlan(manifest, "t", clients);
+      expect(
+        result.ok && entryFor(result.value, "escalation-threshold")?.verdict
+      ).toBe("noop");
+    });
+
+    it("update when the live value differs from the manifest's declared value", async () => {
+      const clients = noopClients();
+      clients.systemVariable = fakeClient("systemVariable", {
+        "escalation-threshold": {
+          externalId: "sysvar-1",
+          fields: systemVariableComparable.fromLive({
+            id: "sysvar-1",
+            name: "escalation-threshold",
+            type: "number",
+            value: 3,
+          }),
+        },
+      });
+      const result = await buildManifestPlan(manifest, "t", clients);
+      if (result.ok) {
+        const entry = entryFor(result.value, "escalation-threshold");
+        expect(entry?.verdict).toBe("update");
+        expect(entry?.diff).toEqual([
+          { field: "value", current: 3, desired: 5 },
+        ]);
+      }
+    });
+
+    // LIVE-side secret-leak defense: a live `type: "secret"` variable whose
+    // NAME collides with a manifest (non-secret) variable must NEVER echo its
+    // plaintext value into plan output. It still diffs to an honest `update`
+    // (type differs), but the serialized plan contains no live-secret trace.
+    it("redacts a name-colliding live type:'secret' variable — update verdict, plaintext NEVER in the plan", async () => {
+      const PLAINTEXT_SECRET = "live-secret-plaintext-DO-NOT-LEAK";
+      const clients = noopClients();
+      // Live row built with the REAL production projection (never hand-copied)
+      // so this proves the redaction the actual client performs.
+      clients.systemVariable = fakeClient("systemVariable", {
+        "escalation-threshold": {
+          externalId: "sysvar-secret-1",
+          fields: systemVariableComparable.fromLive({
+            id: "sysvar-secret-1",
+            name: "escalation-threshold",
+            type: "secret",
+            value: PLAINTEXT_SECRET,
+          }),
+        },
+      });
+
+      const result = await buildManifestPlan(manifest, "t", clients);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const entry = entryFor(result.value, "escalation-threshold");
+        expect(entry?.verdict).toBe("update");
+        // type diff surfaces the disagreement; live value is redacted
+        // (current: undefined) — never the plaintext secret.
+        const valueDiff = entry?.diff.find((d) => d.field === "value");
+        expect(valueDiff?.current).toBeUndefined();
+        expect(valueDiff?.desired).toBe(5);
+        const typeDiff = entry?.diff.find((d) => d.field === "type");
+        expect(typeDiff?.current).toBe("secret");
+        // Full serialized plan MUST NOT contain the live secret anywhere.
+        expect(JSON.stringify(result.value)).not.toContain(PLAINTEXT_SECRET);
       }
     });
   });

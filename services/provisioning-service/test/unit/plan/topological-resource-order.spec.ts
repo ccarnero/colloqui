@@ -18,6 +18,7 @@ function baseManifest(): IntegrationManifest {
       services: [
         { name: "priority-scorer", image: "registry.example.com/x:1" },
       ],
+      systemVariables: [],
       workflows: [
         {
           name: "ticket-router",
@@ -78,6 +79,31 @@ describe("computeResourceOrder", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value).toHaveLength(5);
+    }
+  });
+
+  it("T04 (gap 4) — a systemVariable is a leaf node ordered before workflows, with no dependency edges", () => {
+    const manifest = baseManifest();
+    manifest.spec.systemVariables = [
+      { name: "escalation-threshold", type: "number", value: 5 },
+    ];
+
+    const result = computeResourceOrder(manifest);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const kinds = result.value.map((r) => r.kind);
+      expect(kinds).toEqual([
+        "channel",
+        "connector",
+        "agent",
+        "service",
+        "systemVariable",
+        "workflow",
+      ]);
+      const names = result.value.map((r) => r.name);
+      expect(names.indexOf("escalation-threshold")).toBeLessThan(
+        names.indexOf("ticket-router")
+      );
     }
   });
 

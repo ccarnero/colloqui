@@ -363,6 +363,7 @@ export type {
   KbSource,
   KnowledgeBase,
   ManifestChannel,
+  ManifestSystemVariable,
   ManifestValidationError,
   SecretBinding,
   SecretScope,
@@ -370,6 +371,7 @@ export type {
   ServiceEnvVar,
   SymbolicRefOccurrence,
   SymbolicRefType,
+  SystemVariableType,
   Workflow,
 } from "./provisioning";
 export {

@@ -14,6 +14,7 @@ import type {
   Connector,
   HostedService,
   ManifestChannel,
+  ManifestSystemVariable,
   Workflow,
 } from "@yoizen/shared";
 import type { ResourceKind } from "../domain/plan.interfaces";
@@ -22,6 +23,7 @@ import {
   channelComparable,
   connectorComparable,
   serviceComparable,
+  systemVariableComparable,
   workflowComparable,
 } from "./comparable-fields";
 import type { AnyManifestResource } from "./list-manifest-resources";
@@ -39,6 +41,10 @@ export function desiredFieldsOfResource(
       return agentComparable.fromManifest(resource as Agent);
     case "service":
       return serviceComparable.fromManifest(resource as HostedService);
+    case "systemVariable":
+      return systemVariableComparable.fromManifest(
+        resource as ManifestSystemVariable
+      );
     case "workflow":
       return workflowComparable.fromManifest(resource as Workflow);
     default:

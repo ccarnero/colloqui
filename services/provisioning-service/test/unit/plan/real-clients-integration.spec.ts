@@ -6,6 +6,7 @@ import { createAgentsClient } from "../../../src/modules/plan/infrastructure/age
 import { createChannelsClient } from "../../../src/modules/plan/infrastructure/channels-client";
 import { createConnectorsClient } from "../../../src/modules/plan/infrastructure/connectors-client";
 import { createRegistryServicesClient } from "../../../src/modules/plan/infrastructure/registry-services-client";
+import { createSystemVariablesClient } from "../../../src/modules/plan/infrastructure/system-variables-client";
 import { createWorkflowsClient } from "../../../src/modules/plan/infrastructure/workflows-client";
 import { buildManifestPlan } from "../../../src/modules/plan/lib/build-manifest-plan";
 
@@ -36,6 +37,7 @@ function realClients(): PlatformResourceClients {
     connector: createConnectorsClient(BASE.connectors),
     agent: createAgentsClient(BASE.agents),
     service: createRegistryServicesClient(BASE.registry),
+    systemVariable: createSystemVariablesClient(BASE.agents),
     workflow: createWorkflowsClient(BASE.workflows),
   };
 }
@@ -73,6 +75,7 @@ function realisticManifest(): IntegrationManifest {
           env: [{ name: "API_KEY", secretRef: "scorer-api-key" }],
         },
       ],
+      systemVariables: [],
       workflows: [
         {
           name: "ticket-router",

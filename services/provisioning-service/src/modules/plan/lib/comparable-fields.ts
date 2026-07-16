@@ -29,6 +29,7 @@ import type {
   Connector,
   HostedService,
   ManifestChannel,
+  ManifestSystemVariable,
   Workflow,
 } from "@yoizen/shared";
 
@@ -73,6 +74,14 @@ export interface RegisteredServiceDto {
 export interface WorkflowDto {
   readonly id: string;
   readonly name: string;
+}
+
+/** Live shape from `GET /admin/system-variables` (agent-admin-service's `ISystemVariable`). */
+export interface SystemVariableDto {
+  readonly id: string;
+  readonly name: string;
+  readonly type: string;
+  readonly value: unknown;
 }
 
 export interface ComparableFieldsContract<TManifest, TLive> {
@@ -190,4 +199,48 @@ export const workflowComparable: ComparableFieldsContract<
 > = {
   fromManifest: () => ({}),
   fromLive: () => ({}),
+};
+
+// System variable (manual-loops/provisioning-manifest-gaps.md T04, gap 4):
+// `type` and `value` are BOTH comparable — agent-admin-service's
+// `ISystemVariable` round-trips them 1:1 (identifier space is the manifest
+// `name`, matched by `name` like every other kind here).
+//
+// TWO-SIDED secret-leak defense (this file's "secret VALUES never appear in a
+// projection" hard rule — automatic rejection if violated):
+//
+//   MANIFEST side (`fromManifest`): the manifest schema
+//   (`manifest.schema.ts`'s `systemVariableSchema`) REJECTS `type: "secret"`
+//   outright, so a manifest-declared variable is always plain CONFIG
+//   (thresholds/flags) — its `value` is never a credential. No redaction
+//   needed here.
+//
+//   LIVE side (`fromLive`): the live table is NOT so constrained — a
+//   `type: "secret"` variable can be created out-of-band (admin UI / SDK),
+//   and `findByName` matches by NAME ONLY (no type filter). So a live secret
+//   variable whose name collides with a manifest string/number/etc variable
+//   WOULD, if projected naively, echo its plaintext `value` straight into
+//   `FieldDiff.current` in plan output. To close that vector, `fromLive`
+//   OMITS `value` entirely when `live.type === "secret"` — the raw value (and
+//   anything derived from it) is never read into the projection. The
+//   name-collision still surfaces HONESTLY as an `update` verdict: the `type`
+//   field differs ("secret" live vs the manifest's non-secret type), and the
+//   unioned `value` key diffs as `current: undefined` (redacted) vs the
+//   manifest's own safe config value — an accurate "these disagree, reconcile
+//   me" signal with zero live-secret exposure.
+export const systemVariableComparable: ComparableFieldsContract<
+  ManifestSystemVariable,
+  SystemVariableDto
+> = {
+  fromManifest: (systemVariable) => ({
+    type: systemVariable.type,
+    value: systemVariable.value,
+  }),
+  fromLive: (live) =>
+    // Redact: never read a secret-typed live variable's `value` into the
+    // projection (it would leak into plan output). Project `type` only so the
+    // name-collision still diffs to an honest `update` verdict.
+    live.type === "secret"
+      ? { type: live.type }
+      : { type: live.type, value: live.value },
 };

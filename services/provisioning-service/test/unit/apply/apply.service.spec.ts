@@ -48,6 +48,7 @@ function alwaysMissClients(): PlatformResourceClients {
     connector: alwaysMiss,
     agent: alwaysMiss,
     service: alwaysMiss,
+    systemVariable: alwaysMiss,
     workflow: alwaysMiss,
   };
 }
@@ -68,6 +69,7 @@ function alwaysCreateWriters(): PlatformResourceWriters {
     connector: create,
     agent: create,
     service: create,
+    systemVariable: create,
     workflow: create,
   };
 }
@@ -108,6 +110,7 @@ function validManifest(name: string): IntegrationManifest {
       agents: [{ name: "agent-1", profile: {} }],
       knowledgeBases: [],
       services: [],
+      systemVariables: [],
       workflows: [],
       secrets: [],
     },
@@ -202,6 +205,7 @@ describe("ApplyService", () => {
         }),
       },
       service: alwaysMissClients().service,
+      systemVariable: alwaysMissClients().systemVariable,
       workflow: alwaysMissClients().workflow,
     };
     const writers = alwaysCreateWriters();
