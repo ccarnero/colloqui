@@ -787,3 +787,35 @@ restriction T05 did not lift); the marker is non-functional; needs a
 ruling to lift checkEnvSupport. Trigger-pin deviation (plural accountIds
 outside the substitution allowlist) mirrors the shipped telegram sample's
 documented precedent.
+
+### T08 batches 2-3 (ai + mcp) — 2026-07-16: ESCALATED
+
+BLOCKED (9/11 remain stand-by), three NEW gap kinds outside the six shipped
+— per this SPEC's own boundary ("do not invent a seventh gap kind without a
+new human decision round"), no files migrated; all setup scripts untouched.
+
+GAP A — LIBRARY/CHANNEL-LESS MANIFESTS (blocks http-connectors,
+mcp-connections): `validate-structural-rules.ts` unconditionally requires
+>=1 inbound channel AND >=1 process per manifest; connector-catalog and
+mcp-only manifests are structurally invalid by construction.
+
+GAP B — LLM CONNECTOR ID REFERENCES (blocks all 6 ai samples +
+mcp-repo-support-bot): agents bake `model_config.llm.connectorId` (and KBs
+`ingestion_config.provider_connector_id`) = real connector ids;
+`credential-resolver.service.ts:174-247` requires a real id (no name-based
+resolution exists); neither key is in SUBSTITUTION_ALLOWLIST, and
+`knowledgeBases[].ingestion_config` is not walked by the substitution
+mechanism at all. ADJACENT SAFETY FINDING: a ref-object at a NON-allowlisted
+key silently persists verbatim (no fail-loud) — silent-corruption path.
+
+GAP C — AGENT PER-TOOL MCP FIELDS (blocks mcp-connections,
+mcp-repo-support-bot): `enabled_mcp_tools` (per-tool allowlist within a
+server) and `tool_description_overrides` have no manifest expression;
+`PASSTHROUGH_PROFILE_KEYS` in agents-writer excludes them.
+
+GAP D (minor, from batch 1) — `checkEnvSupport()` rejects any service
+`env`; hosted-services-api's YOIZEN_SAMPLE marker inexpressible.
+
+mcp-connections' STANDBY.md updated to the current verified blockers
+(2x APPROVED docs review). T08 stands at 2/11 migrated; T09 (full canary
+set incl. mcp) blocked on GAP A/C rulings.
