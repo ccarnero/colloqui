@@ -1,12 +1,15 @@
 import { Module } from "@nestjs/common";
+import { provisioningServiceConfig } from "../../config";
 import { ManifestsModule } from "../manifests/manifests.module";
 import type { ISecretsStore } from "../secrets/domain/secrets-store.interface";
 import { SECRETS_STORE } from "../secrets/domain/secrets-store.interface";
 import { SecretsModule } from "../secrets/secrets.module";
 import { PLATFORM_RESOURCE_CLIENTS } from "./domain/platform-resource-client.interface";
+import { ROUTE_COLLISION_CHECKER } from "./domain/route-collision-checker.interface";
 import { SECRET_EXISTENCE_CHECKER } from "./domain/secret-existence-checker.interface";
 import { createK8sSecretExistenceChecker } from "./infrastructure/k8s-secret-existence-checker";
 import { buildPlatformResourceClients } from "./infrastructure/platform-resource-clients.provider";
+import { createRegistryRouteCollisionChecker } from "./infrastructure/registry-route-collision-checker";
 import { PlanController } from "./plan.controller";
 import { PlanService } from "./plan.service";
 
@@ -25,6 +28,15 @@ import { PlanService } from "./plan.service";
       useFactory: (store: ISecretsStore) =>
         createK8sSecretExistenceChecker(store),
       inject: [SECRETS_STORE],
+    },
+    {
+      // T05, gap 5, decision 6 ruling — real cross-tenant route discovery
+      // check, backed by registry-service's `GET /routes` root discovery.
+      provide: ROUTE_COLLISION_CHECKER,
+      useFactory: () =>
+        createRegistryRouteCollisionChecker(
+          provisioningServiceConfig.downstreamServiceUrls.registry
+        ),
     },
   ],
   controllers: [PlanController],

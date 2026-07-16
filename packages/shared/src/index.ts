@@ -363,6 +363,7 @@ export type {
   KbSource,
   KnowledgeBase,
   ManifestChannel,
+  ManifestServiceRoute,
   ManifestSystemVariable,
   ManifestValidationError,
   SecretBinding,
@@ -386,6 +387,7 @@ export {
   SYMBOLIC_REF_KEYS,
   secretRefSchema,
   serviceRefSchema,
+  serviceRouteMethodSchema,
   validateManifest,
   validateManifestStructuralRules,
 } from "./provisioning";

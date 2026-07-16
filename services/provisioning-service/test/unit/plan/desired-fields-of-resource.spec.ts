@@ -78,8 +78,12 @@ describe("desiredFieldsOfResource", () => {
         { name: "API_KEY", secretRef: "scorer-api-key" },
       ],
     };
+    // T05 (gap 5): `routes` always projects (empty array when undeclared,
+    // mirroring `connectorComparable`'s endpoint precedent); scaling fields
+    // are absent here because the manifest never declared them.
     expect(desiredFieldsOfResource("service", service)).toEqual({
       envNames: ["API_KEY", "ZED_VAR"],
+      routes: [],
     });
   });
 
@@ -91,6 +95,47 @@ describe("desiredFieldsOfResource", () => {
     };
     expect(desiredFieldsOfResource("service", service)).toEqual({
       envNames: ["PORT"],
+      routes: [],
+    });
+  });
+
+  it("service: projects declared scaling fields (T05, gap 5) — only the ones the manifest declares", () => {
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:1.0",
+      port: 8080,
+      maxScale: 5,
+    };
+    expect(desiredFieldsOfResource("service", service)).toEqual({
+      envNames: [],
+      routes: [],
+      port: 8080,
+      maxScale: 5,
+    });
+  });
+
+  it("service: projects declared routes, normalized and sorted (T05, gap 5)", () => {
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:1.0",
+      routes: [{ pathPrefix: "/b", methods: ["get"] }, { pathPrefix: "/a" }],
+    };
+    expect(desiredFieldsOfResource("service", service)).toEqual({
+      envNames: [],
+      routes: [
+        {
+          pathPrefix: "/a",
+          methods: ["DELETE", "GET", "PATCH", "POST", "PUT"],
+          isPublic: false,
+          stripPrefix: true,
+        },
+        {
+          pathPrefix: "/b",
+          methods: ["GET"],
+          isPublic: false,
+          stripPrefix: true,
+        },
+      ],
     });
   });
 

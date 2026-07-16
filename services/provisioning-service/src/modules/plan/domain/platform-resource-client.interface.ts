@@ -28,10 +28,19 @@ export interface IPlatformResourceClient {
    * Looks up the live resource named `name` for `tenantId`.
    * Resolves to `null` when no such resource exists yet (→ `create`).
    * Never throws — downstream failures surface as a typed `DownstreamError`.
+   *
+   * `declaredResource` (T05, gap 5) is the manifest's OWN desired shape for
+   * this resource, when the caller has it — `registry-services-client.ts`
+   * uses it so `serviceComparable.fromLive` only compares an optional
+   * scaling field (port/minScale/maxScale/concurrencyTarget) when the
+   * manifest actually DECLARES it, never inventing a comparison against a
+   * server-side default the manifest never asked about (decision 6). Every
+   * other client ignores this parameter.
    */
   findByName(
     tenantId: string,
-    name: string
+    name: string,
+    declaredResource?: unknown
   ): Promise<
     | { ok: true; value: LivePlatformResource | null }
     | { ok: false; error: DownstreamError }

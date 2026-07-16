@@ -288,12 +288,72 @@ const serviceEnvVarSchema = z
 
 export type ServiceEnvVar = z.infer<typeof serviceEnvVarSchema>;
 
+// ---------------------------------------------------------------------------
+// Hosted service scaling fields + routes (manual-loops/provisioning-manifest-
+// gaps.md T05, gap 5) — mirrors `sdk/src/resources/registry/types.ts`
+// `RegisterServiceInput` (`port`/`minScale`/`maxScale`/`concurrencyTarget`)
+// and `CreateRouteInput` (`pathPrefix`/`methods`/`isPublic`/`stripPrefix`).
+//
+// Scaling fields are ALL optional and, per decision 6, default to NOTHING
+// client-side: an omitted field means the manifest sends nothing for it and
+// registry-service's own server-side default wins. The manifest never
+// invents/guesses that default (see `comparable-fields.ts`'s
+// `serviceComparable` for how the planner honors this — a field is only ever
+// compared when the manifest actually declares it).
+//
+// `routes` is a NEW nested array reconciled through
+// `client.registry.routes` (create/list/remove only — no update verb exists
+// server-side; see `registry-services-writer.ts` for the documented
+// reconciliation mechanics: no-op if unchanged, remove-then-recreate if
+// changed, since this is reconciliation of a sub-resource the owning
+// service's manifest entry manages, not prune semantics of decision 2).
+//
+// DECISION 6 RULING (2026-07-16): `registry.routes` are NOT tenant-isolated
+// at the live gateway proxy layer (see the SDK's own CAUTION note in
+// `sdk/src/resources/registry/types.ts`) — a manifest-declared `pathPrefix`
+// that collides with an existing route owned by a DIFFERENT
+// service/manifest/tenant now FAILS LOUD (both at plan time, as a
+// `route_collision` precondition, and again at apply time, inside the
+// writer, before any route is written) instead of silently overwriting or
+// shadowing another tenant's route. Same-service collisions (the manifest's
+// own previously-created route) are a normal reconcile, not a collision.
+// ---------------------------------------------------------------------------
+
+export const serviceRouteMethodSchema = z.enum([
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+]);
+
+const serviceRouteSchema = z
+  .object({
+    pathPrefix: z
+      .string()
+      .min(1, "pathPrefix must not be empty")
+      .startsWith("/", "pathPrefix must start with '/'"),
+    methods: z.array(serviceRouteMethodSchema).optional(),
+    isPublic: z.boolean().optional(),
+    stripPrefix: z.boolean().optional(),
+  })
+  .strict();
+
+export type ManifestServiceRoute = z.infer<typeof serviceRouteSchema>;
+
 const serviceSchema = z
   .object({
     name: nameSchema,
     image: z.string().min(1).optional(),
     buildRef: z.string().min(1).optional(),
     env: z.array(serviceEnvVarSchema).optional(),
+    port: z.number().int().positive().optional(),
+    minScale: z.number().int().min(0).optional(),
+    maxScale: z.number().int().positive().optional(),
+    concurrencyTarget: z.number().int().positive().optional(),
+    routes: z.array(serviceRouteSchema).optional(),
     external: z.boolean().optional(),
   })
   .strict()

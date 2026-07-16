@@ -18,6 +18,8 @@ import type {
   ResourcePlanEntry,
 } from "../domain/plan.interfaces";
 import type { PlatformResourceClients } from "../domain/platform-resource-client.interface";
+import type { RouteCollisionChecker } from "../domain/route-collision-checker.interface";
+import { NOOP_ROUTE_COLLISION_CHECKER } from "../domain/route-collision-checker.interface";
 import type { SecretExistenceChecker } from "../domain/secret-existence-checker.interface";
 import { NOOP_SECRET_EXISTENCE_CHECKER } from "../domain/secret-existence-checker.interface";
 import { desiredFieldsOfResource } from "./desired-fields-of-resource";
@@ -40,7 +42,13 @@ export async function buildManifestPlan(
   clients: PlatformResourceClients,
   logger: PlanLogger = NOOP_PLAN_LOGGER,
   secretsChecker: SecretExistenceChecker = NOOP_SECRET_EXISTENCE_CHECKER,
-  kbChecksumLookup: StoredKbChecksumLookup = NOOP_KB_CHECKSUM_LOOKUP
+  kbChecksumLookup: StoredKbChecksumLookup = NOOP_KB_CHECKSUM_LOOKUP,
+  // T05, gap 5, decision 6 ruling (2026-07-16) — appended last so every
+  // existing positional call site (unit tests, `ApplyService`) keeps
+  // working unchanged; defaults to reporting no known live routes (see
+  // that NOOP's own comment for why this is safe: the ACTUAL enforcement
+  // point is `registry-services-writer.ts`, not this precondition).
+  routeCollisionChecker: RouteCollisionChecker = NOOP_ROUTE_COLLISION_CHECKER
 ): Promise<BuildManifestPlanResult> {
   logger.log(
     `plan: resolving dependency order for manifest='${manifest.metadata.name}' tenant='${tenantId}'`
@@ -69,7 +77,11 @@ export async function buildManifestPlan(
     }
 
     const client = clients[kind];
-    const lookup = await client.findByName(tenantId, name);
+    // T05, gap 5 — `entry.resource` is the manifest's OWN desired shape;
+    // only `registry-services-client.ts` reads it (to decide which OPTIONAL
+    // scaling fields to compare — see `serviceComparable`), every other
+    // client ignores it.
+    const lookup = await client.findByName(tenantId, name, entry.resource);
 
     if (!lookup.ok) {
       logger.warn(
@@ -169,6 +181,62 @@ export async function buildManifestPlan(
       refValue: binding.name,
       message: `secret "${binding.name}" referenced by ${binding.scope.kind} "${binding.scope.owner}" is not yet available (${reason})`,
     });
+  }
+
+  // T05, gap 5, decision 6 ruling (2026-07-16): cross-manifest/tenant route
+  // collision check. ONE global routes list call for the whole plan run
+  // (the ruling's accepted cost), reused for every declared route across
+  // every service — never once per route. A pathPrefix that already exists
+  // on a DIFFERENT service/tenant fails loud as a `route_collision`
+  // precondition; the SAME service/tenant owning it already is a normal
+  // reconcile, not a collision.
+  const servicesWithRoutes = manifest.spec.services.filter(
+    (service) => (service.routes?.length ?? 0) > 0
+  );
+  if (servicesWithRoutes.length > 0) {
+    logger.log(
+      `plan: checking ${String(servicesWithRoutes.length)} service(s) with declared routes for cross-manifest/tenant pathPrefix collisions`
+    );
+    const liveRoutes = await routeCollisionChecker.listAll();
+    if (!liveRoutes.ok) {
+      logger.warn(
+        `plan: route collision check FAILED to list live routes — ${liveRoutes.error}`
+      );
+      for (const service of servicesWithRoutes) {
+        preconditions.push({
+          kind: "downstream_error",
+          resourceKind: "service",
+          resourceName: service.name,
+          message: `route collision check could not list live routes: ${liveRoutes.error}`,
+        });
+      }
+    } else {
+      for (const service of servicesWithRoutes) {
+        for (const route of service.routes ?? []) {
+          const collision = liveRoutes.value.find(
+            (existing) =>
+              existing.pathPrefix === route.pathPrefix &&
+              !(
+                existing.tenantId === tenantId &&
+                existing.serviceName === service.name
+              )
+          );
+          if (!collision) {
+            continue;
+          }
+          logger.warn(
+            `plan: route collision pathPrefix='${route.pathPrefix}' declared by service='${service.name}' tenant='${tenantId}' already owned by service='${collision.serviceName}' tenant='${collision.tenantId}'`
+          );
+          preconditions.push({
+            kind: "route_collision",
+            resourceKind: "service",
+            resourceName: service.name,
+            refValue: route.pathPrefix,
+            message: `route pathPrefix '${route.pathPrefix}' declared by service '${service.name}' collides with an existing route owned by service '${collision.serviceName}' (tenant '${collision.tenantId}') — registry.routes are not tenant-isolated at the live gateway proxy layer`,
+          });
+        }
+      }
+    }
   }
 
   // T06: KB reembed estimate — read-only (`kbChecksumLookup` is a sync read

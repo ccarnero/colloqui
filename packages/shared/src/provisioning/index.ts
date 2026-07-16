@@ -19,6 +19,7 @@ export type {
   KbSource,
   KnowledgeBase,
   ManifestChannel,
+  ManifestServiceRoute,
   ManifestSystemVariable,
   SecretBinding,
   SecretScope,
@@ -39,6 +40,7 @@ export {
   SYMBOLIC_REF_KEYS,
   secretRefSchema,
   serviceRefSchema,
+  serviceRouteMethodSchema,
 } from "./manifest.schema";
 export { validateManifest } from "./validate-manifest";
 export { validateManifestStructuralRules } from "./validate-structural-rules";

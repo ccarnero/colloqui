@@ -45,7 +45,17 @@ export interface ResourcePlanEntry {
 export type PlanPreconditionKind =
   | "missing_secret"
   | "unresolvable_external_ref"
-  | "downstream_error";
+  | "downstream_error"
+  // manual-loops/provisioning-manifest-gaps.md T05, gap 5, decision 6 ruling
+  // (2026-07-16): a manifest-declared route `pathPrefix` collides with an
+  // existing LIVE route owned by a DIFFERENT service/manifest/tenant —
+  // `registry.routes` are not tenant-isolated at the live gateway proxy
+  // layer. Surfaced here at plan time (informational) AND re-verified inside
+  // `registry-services-writer.ts` at apply time, right before any route is
+  // written (the actual enforcement point, mirroring how `missing_secret` is
+  // informational here but actually enforced by the writer's own broker
+  // resolution).
+  | "route_collision";
 
 export interface PlanPrecondition {
   readonly kind: PlanPreconditionKind;

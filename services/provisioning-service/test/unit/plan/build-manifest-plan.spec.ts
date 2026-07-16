@@ -721,6 +721,195 @@ describe("buildManifestPlan", () => {
     });
   });
 
+  // T05 (manual-loops/provisioning-manifest-gaps.md, gap 5), decision 6
+  // ruling (2026-07-16) — cross-manifest/tenant route collision check.
+  describe("route collision precondition (T05, gap 5, decision 6 ruling)", () => {
+    function manifestWithServiceRoutes(
+      pathPrefix: string
+    ): IntegrationManifest {
+      return manifestWith({
+        channels: [{ name: "http-in", type: "http", direction: "inbound" }],
+        agents: [{ name: "agent-1", profile: {} }],
+        services: [
+          {
+            name: "priority-scorer",
+            image: "registry.example.com/priority-scorer:1.0",
+            routes: [{ pathPrefix }],
+          },
+        ],
+      });
+    }
+
+    it("no services declare routes -> the checker is never called", async () => {
+      let listAllCalls = 0;
+      const manifest = manifestWith({
+        channels: [{ name: "http-in", type: "http", direction: "inbound" }],
+        agents: [{ name: "agent-1", profile: {} }],
+        services: [
+          {
+            name: "priority-scorer",
+            image: "registry.example.com/priority-scorer:1.0",
+          },
+        ],
+      });
+
+      const result = await buildManifestPlan(
+        manifest,
+        "tenant-a",
+        noopClients(),
+        undefined,
+        undefined,
+        undefined,
+        {
+          async listAll() {
+            listAllCalls++;
+            return { ok: true, value: [] };
+          },
+        }
+      );
+      expect(result.ok).toBe(true);
+      expect(listAllCalls).toBe(0);
+    });
+
+    it("a pathPrefix owned by a DIFFERENT service/tenant is reported as route_collision", async () => {
+      const manifest = manifestWithServiceRoutes("/priority-scorer");
+
+      const result = await buildManifestPlan(
+        manifest,
+        "tenant-a",
+        noopClients(),
+        undefined,
+        undefined,
+        undefined,
+        {
+          async listAll() {
+            return {
+              ok: true,
+              value: [
+                {
+                  pathPrefix: "/priority-scorer",
+                  serviceName: "some-other-service",
+                  tenantId: "tenant-b",
+                },
+              ],
+            };
+          },
+        }
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const precondition = result.value.preconditions.find(
+          (p) => p.kind === "route_collision"
+        );
+        expect(precondition).toBeDefined();
+        expect(precondition?.resourceKind).toBe("service");
+        expect(precondition?.resourceName).toBe("priority-scorer");
+        expect(precondition?.refValue).toBe("/priority-scorer");
+        expect(precondition?.message).toContain("some-other-service");
+        expect(precondition?.message).toContain("tenant-b");
+      }
+    });
+
+    it("a pathPrefix owned by the SAME service/tenant is NOT a collision (normal reconcile)", async () => {
+      const manifest = manifestWithServiceRoutes("/priority-scorer");
+
+      const result = await buildManifestPlan(
+        manifest,
+        "tenant-a",
+        noopClients(),
+        undefined,
+        undefined,
+        undefined,
+        {
+          async listAll() {
+            return {
+              ok: true,
+              value: [
+                {
+                  pathPrefix: "/priority-scorer",
+                  serviceName: "priority-scorer",
+                  tenantId: "tenant-a",
+                },
+              ],
+            };
+          },
+        }
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(
+          result.value.preconditions.some((p) => p.kind === "route_collision")
+        ).toBe(false);
+      }
+    });
+
+    it("no matching live route anywhere -> no collision", async () => {
+      const manifest = manifestWithServiceRoutes("/priority-scorer");
+
+      const result = await buildManifestPlan(
+        manifest,
+        "tenant-a",
+        noopClients(),
+        undefined,
+        undefined,
+        undefined,
+        {
+          async listAll() {
+            return { ok: true, value: [] };
+          },
+        }
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(
+          result.value.preconditions.some((p) => p.kind === "route_collision")
+        ).toBe(false);
+      }
+    });
+
+    it("a listAll() failure surfaces as a downstream_error precondition, never throws", async () => {
+      const manifest = manifestWithServiceRoutes("/priority-scorer");
+
+      const result = await buildManifestPlan(
+        manifest,
+        "tenant-a",
+        noopClients(),
+        undefined,
+        undefined,
+        undefined,
+        {
+          async listAll() {
+            return { ok: false, error: "registry-service unreachable" };
+          },
+        }
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const precondition = result.value.preconditions.find(
+          (p) =>
+            p.kind === "downstream_error" &&
+            p.resourceName === "priority-scorer"
+        );
+        expect(precondition).toBeDefined();
+      }
+    });
+
+    it("defaults to no collision detected when no checker is injected (NOOP)", async () => {
+      const manifest = manifestWithServiceRoutes("/priority-scorer");
+      const result = await buildManifestPlan(
+        manifest,
+        "tenant-a",
+        noopClients()
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(
+          result.value.preconditions.some((p) => p.kind === "route_collision")
+        ).toBe(false);
+      }
+    });
+  });
+
   describe("diff correctness per resource kind — workflow (existence-only)", () => {
     const workflow = {
       name: "ticket-router",

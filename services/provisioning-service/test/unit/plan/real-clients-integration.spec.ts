@@ -143,6 +143,11 @@ function installMatchingDownstream(): void {
         total: 1,
       });
     }
+    if (url.startsWith(`${BASE.registry}/services/svc-1/routes`)) {
+      // No routes declared by the manifest -> live must also report none for
+      // an all-noop plan (T05, gap 5 — routes always compared both sides).
+      return json([]);
+    }
     if (url.startsWith(BASE.registry)) {
       return json([
         {

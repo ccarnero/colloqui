@@ -6,6 +6,7 @@ import {
   kbSourceSchema,
   nameSchema,
   SYMBOLIC_REF_KEYS,
+  serviceRouteMethodSchema,
 } from "../manifest.schema";
 import { buildValidManifest } from "./fixtures";
 
@@ -157,6 +158,199 @@ describe("hosted service — exactly one of image|buildRef", () => {
     };
     const result = integrationManifestSchema.safeParse(valid);
     expect(result.success).toBe(true);
+  });
+});
+
+describe("hosted service — scaling fields (T05, gap 5)", () => {
+  test("accepts a service with no scaling fields declared (server defaults win)", () => {
+    const manifest = buildValidManifest();
+    const result = integrationManifestSchema.safeParse(manifest);
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts a service declaring all scaling fields", () => {
+    const manifest = buildValidManifest();
+    const valid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            port: 8080,
+            minScale: 1,
+            maxScale: 5,
+            concurrencyTarget: 50,
+          },
+        ],
+      },
+    };
+    const result = integrationManifestSchema.safeParse(valid);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects a non-integer port", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [{ ...manifest.spec.services[0], port: 8080.5 }],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("rejects a negative maxScale", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [{ ...manifest.spec.services[0], maxScale: -1 }],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("accepts minScale: 0 (scale-to-zero is a valid Knative setting)", () => {
+    const manifest = buildValidManifest();
+    const valid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [{ ...manifest.spec.services[0], minScale: 0 }],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(valid).success).toBe(true);
+  });
+});
+
+describe("hosted service — routes (T05, gap 5)", () => {
+  test("accepts a service with no routes declared", () => {
+    const manifest = buildValidManifest();
+    const result = integrationManifestSchema.safeParse(manifest);
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts a service declaring a route with only pathPrefix", () => {
+    const manifest = buildValidManifest();
+    const valid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            routes: [{ pathPrefix: "/priority-scorer" }],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(valid).success).toBe(true);
+  });
+
+  test("accepts a route declaring every optional field", () => {
+    const manifest = buildValidManifest();
+    const valid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            routes: [
+              {
+                pathPrefix: "/priority-scorer",
+                methods: ["GET", "POST"],
+                isPublic: true,
+                stripPrefix: false,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(valid).success).toBe(true);
+  });
+
+  test("rejects a pathPrefix not starting with '/'", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            routes: [{ pathPrefix: "priority-scorer" }],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("rejects an empty pathPrefix", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          { ...manifest.spec.services[0], routes: [{ pathPrefix: "" }] },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("rejects an unrecognized HTTP method", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            routes: [{ pathPrefix: "/x", methods: ["TRACE"] }],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("rejects an unknown key on a route entry (.strict())", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            routes: [{ pathPrefix: "/x", unexpectedField: true }],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("serviceRouteMethodSchema accepts every RouteMethod value", () => {
+    for (const method of [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "HEAD",
+      "OPTIONS",
+    ]) {
+      expect(serviceRouteMethodSchema.safeParse(method).success).toBe(true);
+    }
   });
 });
 

@@ -14,6 +14,11 @@ import type {
 } from "./domain/plan.interfaces";
 import type { PlatformResourceClients } from "./domain/platform-resource-client.interface";
 import { PLATFORM_RESOURCE_CLIENTS } from "./domain/platform-resource-client.interface";
+import type { RouteCollisionChecker } from "./domain/route-collision-checker.interface";
+import {
+  NOOP_ROUTE_COLLISION_CHECKER,
+  ROUTE_COLLISION_CHECKER,
+} from "./domain/route-collision-checker.interface";
 import type { SecretExistenceChecker } from "./domain/secret-existence-checker.interface";
 import {
   NOOP_SECRET_EXISTENCE_CHECKER,
@@ -45,7 +50,13 @@ export class PlanService {
     // as the pre-T06 behavior of reporting no KB plan data at all.
     @Optional()
     @Inject(KB_CHECKSUM_REPOSITORY)
-    private readonly kbChecksums: IKbChecksumRepository = createInMemoryKbChecksumRepository()
+    private readonly kbChecksums: IKbChecksumRepository = createInMemoryKbChecksumRepository(),
+    // T05, gap 5, decision 6 ruling — real checker wired in `plan.module.ts`;
+    // falls back to reporting no known live routes (no collision detected)
+    // when not injected.
+    @Optional()
+    @Inject(ROUTE_COLLISION_CHECKER)
+    private readonly routeCollisionChecker: RouteCollisionChecker = NOOP_ROUTE_COLLISION_CHECKER
   ) {}
 
   /**
@@ -112,7 +123,8 @@ export class PlanService {
       this.clients,
       this.logger,
       this.secretsChecker,
-      checksumLookup
+      checksumLookup,
+      this.routeCollisionChecker
     );
     if (!result.ok) {
       return err(result.error);

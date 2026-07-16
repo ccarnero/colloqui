@@ -436,7 +436,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T02 connector `endpoints` manifest concept
 - [x] T03 manifest-time real-ID substitution (`connectorRef` + resolver)
 - [x] T04 `systemVariables` section
-- [ ] T05 service scaling fields + routes
+- [x] T05 service scaling fields + routes
 - [ ] T06 `mcpServers` section
 - [ ] T07 SDK/CLI compatibility sweep
 - [ ] T08 migrate the 11 stand-by samples
@@ -663,3 +663,35 @@ matches 1; camelCase pattern covers the set.
 OPEN HUMAN RULING RECORDED: whether/how manifests should ever express
 secret-typed system variables (candidate: secretRef binding like connector
 auth). Until then the manifest schema rejects them fail-loud.
+
+### T05 — 2026-07-16
+
+HUMAN RULING (decision 6): PLANNER COLLISION CHECK ships. Implemented:
+`serviceSchema` gains optional `port`/`minScale`/`maxScale`/
+`concurrencyTarget` (omitted fields never sent nor compared — server
+defaults win, no perpetual diffs) + `services[].routes`
+(pathPrefix/methods/isPublic/stripPrefix mirroring the SDK routes.create
+input). Registry has NO route update verb → reconciliation is create-or-
+update by pathPrefix with documented remove-then-recreate for changed owned
+routes (fail-loud + self-healing window documented in code; DELETE-ok/
+POST-fail edge case unit-tested). Collision enforcement is two-sided:
+`route_collision` PRECONDITION at plan (one global GET /routes) +
+independent `route_collision` ApplyWriteError re-check in the writer before
+any route write (mirrors the missing_secret pattern); ownership = same
+tenantId AND serviceName (verified against registry-service discover() and
+UNIQUE(tenant_id,name)). Bespoke registry-services client (generic factory
+could not fetch per-service routes).
+
+Two review rounds: attempt 1 REJECTED (unguarded response.json() parses in
+the bespoke client violated the never-throws findByName contract); attempt 2
+guarded all task-introduced parses (typed downstream_error, factory-pattern
+shape), added the DELETE-ok/POST-fail test and the transient-window comment
+→ 2x APPROVED.
+
+Gates (attempt 2): G1 294/294, G2 clean, G3 230/230 + shared tsc clean,
+sdk suite 384 sanity pass, G6b revision 00025 live + e2e-manifest-apply
+PASSED, G5 valid=true + double noop.
+FOLLOW-UPS: pre-existing unguarded response.json() in every writer's
+create() path (predates this loop) — shared safeFetchJson helper candidate;
+DEFAULT_ROUTE_METHODS normalization duplicated between writer and
+comparable; malformed-JSON catch branch untested (mirrors factory).

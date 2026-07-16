@@ -54,7 +54,13 @@ export type ApplyWriteErrorKind =
   // be resolved; forwarding it raw to the writer (typed `string` downstream)
   // would only surface at runtime with no trail — so this fails loud with
   // the same posture as `unresolved_symbolic_ref`, naming expected vs actual.
-  | "mismatched_symbolic_ref";
+  | "mismatched_symbolic_ref"
+  // manual-loops/provisioning-manifest-gaps.md T05, gap 5, decision 6 ruling
+  // (2026-07-16) — a declared route `pathPrefix` collides with a LIVE route
+  // owned by a DIFFERENT service/tenant. Re-verified by
+  // `registry-services-writer.ts` immediately before writing any route
+  // (create or remove-then-recreate), never just at plan time.
+  | "route_collision";
 
 export interface ApplyWriteError {
   readonly kind: ApplyWriteErrorKind;

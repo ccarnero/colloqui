@@ -64,11 +64,35 @@ export interface AgentDto {
   readonly name: string;
 }
 
+/**
+ * Live route shape (T05, gap 5) — mirrors `sdk/src/resources/registry/types.ts`
+ * `ServiceRoute` MINUS `id`/`createdAt` (the manifest has no route id; the
+ * writer matches by `pathPrefix` instead, see `registry-services-writer.ts`).
+ * Populated by `registry-services-client.ts` via a per-matched-service
+ * `GET /services/:id/routes` call — absent when the service itself has no
+ * live match yet (→ `create`).
+ */
+export interface RegisteredServiceRouteDto {
+  readonly pathPrefix: string;
+  readonly methods: readonly string[];
+  readonly isPublic: boolean;
+  readonly stripPrefix: boolean;
+}
+
 export interface RegisteredServiceDto {
   readonly id: string;
   readonly name: string;
   readonly image: string;
   readonly envVars?: Record<string, string>;
+  // T05, gap 5 — scaling fields registry-service ALWAYS reports a real value
+  // for (server-side defaults are applied at creation, never left absent).
+  // See `serviceComparable` below for why these are only COMPARED when the
+  // manifest itself declares the field.
+  readonly port?: number;
+  readonly minScale?: number;
+  readonly maxScale?: number;
+  readonly concurrencyTarget?: number;
+  readonly routes?: readonly RegisteredServiceRouteDto[];
 }
 
 export interface WorkflowDto {
@@ -86,7 +110,17 @@ export interface SystemVariableDto {
 
 export interface ComparableFieldsContract<TManifest, TLive> {
   readonly fromManifest: (resource: TManifest) => Record<string, unknown>;
-  readonly fromLive: (live: TLive) => Record<string, unknown>;
+  /**
+   * `declared` (T05, gap 5) is an OPTIONAL second argument: the manifest's
+   * own desired resource, when the caller has it. Every existing kind
+   * ignores it — only `serviceComparable` uses it, to decide which OPTIONAL
+   * scaling fields to include in the live projection (see that contract's
+   * comment for why this is required for idempotency).
+   */
+  readonly fromLive: (
+    live: TLive,
+    declared?: TManifest
+  ) => Record<string, unknown>;
 }
 
 // Channel: only `type` is faithfully comparable. channel-service's
@@ -178,16 +212,111 @@ export const agentComparable: ComparableFieldsContract<Agent, AgentDto> = {
 // buildRef to an image server-side and exposes no `buildRef`, so comparing
 // either would break idempotency for buildRef-declared services (a one-sided
 // key). Build provenance comparison is a follow-up once registry exposes it.
+//
+// T05 (manual-loops/provisioning-manifest-gaps.md, gap 5) — scaling fields
+// (port/minScale/maxScale/concurrencyTarget) and `routes` join the
+// comparison:
+//
+// SCALING FIELDS: registry-service ALWAYS reports a real value (its own
+// server-side default when the manifest omitted the field at create time —
+// decision 6: "the manifest never invents defaults client-side"). If we
+// projected these unconditionally on both sides, a manifest that never
+// declares `port` would diff FOREVER against whatever real port the server
+// assigned — exactly the "key present on only one side diffs forever" trap
+// this file's header warns about. So each scaling field is included in the
+// projection ONLY when the MANIFEST declares it: `fromManifest` includes the
+// key only if the field is set, and `fromLive` mirrors that decision via its
+// optional `declared` (the same manifest resource) — never inventing a
+// comparison the manifest never asked for. A declared field that changed
+// still produces an honest `update` verdict.
+//
+// ROUTES: unlike scaling fields, `routes` is a manifest-managed nested list
+// (like T02's connector `endpoints`) — always projected as a normalized,
+// sorted array on BOTH sides (empty array when nothing is declared/live),
+// mirroring `connectorComparable`'s endpoint-diffing precedent exactly.
+function normalizeRouteForCompare(route: {
+  readonly pathPrefix: string;
+  readonly methods?: readonly string[];
+  readonly isPublic?: boolean;
+  readonly stripPrefix?: boolean;
+}): {
+  readonly pathPrefix: string;
+  readonly methods: readonly string[];
+  readonly isPublic: boolean;
+  readonly stripPrefix: boolean;
+} {
+  return {
+    pathPrefix: route.pathPrefix,
+    // Mirrors `RoutesService.create`'s own server-side default (see
+    // `services/registry-service/src/modules/routes/routes.service.ts`).
+    methods: [...(route.methods ?? ["GET", "POST", "PUT", "PATCH", "DELETE"])]
+      .map((method) => method.toUpperCase())
+      .sort(),
+    isPublic: route.isPublic ?? false,
+    stripPrefix: route.stripPrefix ?? true,
+  };
+}
+
+function sortedNormalizedRoutes(
+  routes: readonly {
+    readonly pathPrefix: string;
+    readonly methods?: readonly string[];
+    readonly isPublic?: boolean;
+    readonly stripPrefix?: boolean;
+  }[]
+): readonly {
+  readonly pathPrefix: string;
+  readonly methods: readonly string[];
+  readonly isPublic: boolean;
+  readonly stripPrefix: boolean;
+}[] {
+  return routes
+    .map(normalizeRouteForCompare)
+    .sort((a, b) => a.pathPrefix.localeCompare(b.pathPrefix));
+}
+
 export const serviceComparable: ComparableFieldsContract<
   HostedService,
   RegisteredServiceDto
 > = {
-  fromManifest: (service) => ({
-    envNames: (service.env ?? []).map((envVar) => envVar.name).sort(),
-  }),
-  fromLive: (live) => ({
-    envNames: Object.keys(live.envVars ?? {}).sort(),
-  }),
+  fromManifest: (service) => {
+    const fields: Record<string, unknown> = {
+      envNames: (service.env ?? []).map((envVar) => envVar.name).sort(),
+      routes: sortedNormalizedRoutes(service.routes ?? []),
+    };
+    if (service.port !== undefined) {
+      fields.port = service.port;
+    }
+    if (service.minScale !== undefined) {
+      fields.minScale = service.minScale;
+    }
+    if (service.maxScale !== undefined) {
+      fields.maxScale = service.maxScale;
+    }
+    if (service.concurrencyTarget !== undefined) {
+      fields.concurrencyTarget = service.concurrencyTarget;
+    }
+    return fields;
+  },
+  fromLive: (live, declared) => {
+    const fields: Record<string, unknown> = {
+      envNames: Object.keys(live.envVars ?? {}).sort(),
+      routes: sortedNormalizedRoutes(live.routes ?? []),
+    };
+    if (declared?.port !== undefined) {
+      fields.port = live.port;
+    }
+    if (declared?.minScale !== undefined) {
+      fields.minScale = live.minScale;
+    }
+    if (declared?.maxScale !== undefined) {
+      fields.maxScale = live.maxScale;
+    }
+    if (declared?.concurrencyTarget !== undefined) {
+      fields.concurrencyTarget = live.concurrencyTarget;
+    }
+    return fields;
+  },
 };
 
 // Workflow: existence-only. The manifest's opaque `definition` and
