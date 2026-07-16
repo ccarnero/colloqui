@@ -266,8 +266,14 @@ describe("substituteSymbolicRefs — T03 manifest-time real-ID substitution", ()
 describe("substituteSymbolicRefs — T02 fail-loud on ref-shaped objects at non-allowlisted keys", () => {
   it("returns unallowlisted_symbolic_ref, naming the key/kind/name/resource, for a ref-object at a non-allowlisted key", () => {
     const value = {
-      // `connectorId` is not (yet) in SUBSTITUTION_ALLOWLIST.
-      connectorId: { connectorRef: "hubspot" },
+      // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 ADDED
+      // `connectorId`/`provider_connector_id` to SUBSTITUTION_ALLOWLIST
+      // (the ORIGINAL example key this T02 test used, now legitimately
+      // allowlisted — see `apply-manifest.spec.ts`'s T03 gap-2 tests for its
+      // NEW allowlisted behavior). `some_unrelated_field` is NOT (and never
+      // has been) in SUBSTITUTION_ALLOWLIST, keeping this test's coverage of
+      // the non-allowlisted-key path intact.
+      some_unrelated_field: { agentRef: "hubspot" },
     };
     const result = substituteSymbolicRefs({
       value,
@@ -280,8 +286,8 @@ describe("substituteSymbolicRefs — T02 fail-loud on ref-shaped objects at non-
       expect(result.error.kind).toBe("unallowlisted_symbolic_ref");
       expect(result.error.resourceKind).toBe("agent");
       expect(result.error.resourceName).toBe("support-agent");
-      expect(result.error.message).toContain("connectorId");
-      expect(result.error.message).toContain("connectorRef");
+      expect(result.error.message).toContain("some_unrelated_field");
+      expect(result.error.message).toContain("agentRef");
       expect(result.error.message).toContain("hubspot");
       expect(result.error.message).toContain("support-agent");
     }

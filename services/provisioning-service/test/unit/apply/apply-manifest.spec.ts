@@ -563,6 +563,110 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
     );
   });
 
+  // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — `connectorId`
+  // ADDED to SUBSTITUTION_ALLOWLIST. Sits inside an agent's own
+  // `profile.model_config.llm.connectorId`, already covered by the
+  // PRE-EXISTING agent-`profile` tree walk (`build-substituted-resource.ts`)
+  // — this is a NEW allowlist entry, not a new tree root.
+  it("an agent's profile.model_config.llm.connectorId resolves to the connector created in the SAME apply", async () => {
+    const manifest: IntegrationManifest = {
+      apiVersion: "yoizen.io/v1",
+      kind: "IntegrationManifest",
+      metadata: { name: "e2e-manifest-apply" },
+      spec: {
+        channels: [],
+        connectors: [{ name: "openai-main", type: "http" }],
+        agents: [
+          {
+            name: "support-agent",
+            profile: {
+              model_config: {
+                llm: { connectorId: { connectorRef: "openai-main" } },
+              },
+            },
+          },
+        ],
+        knowledgeBases: [],
+        services: [],
+        systemVariables: [],
+        mcpServers: [],
+        workflows: [],
+        secrets: [],
+      },
+    };
+    let capturedAgentResource: unknown;
+    const { writers } = fakeWriters({
+      connector: {
+        create: mock(async () => ({
+          ok: true as const,
+          value: { externalId: "connector-real-id-7" },
+        })),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+      agent: {
+        create: mock(async (_t: string, resource: unknown) => {
+          capturedAgentResource = resource;
+          return {
+            ok: true as const,
+            value: { externalId: "agent-real-id-1" },
+          };
+        }),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+    });
+    const { events } = recordingEvents();
+
+    const plan = planWith([
+      {
+        kind: "connector",
+        name: "openai-main",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+      {
+        kind: "agent",
+        name: "support-agent",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+    });
+
+    expect(result.ok).toBe(true);
+    const substitutedProfile = (
+      capturedAgentResource as {
+        profile: { model_config: { llm: { connectorId: unknown } } };
+      }
+    ).profile;
+    expect(substitutedProfile.model_config.llm.connectorId).toBe(
+      "connector-real-id-7"
+    );
+    // Stored-manifest immutability holds for this NEW allowlist entry too.
+    expect(
+      (
+        manifest.spec.agents[0]?.profile as {
+          model_config: { llm: { connectorId: unknown } };
+        }
+      ).model_config.llm.connectorId
+    ).toEqual({ connectorRef: "openai-main" });
+  });
+
   it("stored-manifest immutability: the original manifest's workflow definition is never mutated by substitution", async () => {
     const manifest = manifestWithConnectorAndWorkflow();
     const originalDefinitionSnapshot = JSON.parse(
@@ -849,10 +953,15 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
                   activity: "endpointCall",
                   name: "call",
                   args: {
-                    // `connectorId` is not in SUBSTITUTION_ALLOWLIST — a
-                    // recognized connectorRef ref-object here must fail
-                    // loud, never reach the writer un-substituted.
-                    connectorId: { connectorRef: "hubspot" },
+                    // manual-loops/provisioning-manifest-gaps-2.md T03,
+                    // gap 2 ADDED `connectorId`/`provider_connector_id` to
+                    // SUBSTITUTION_ALLOWLIST (the ORIGINAL example key this
+                    // T02 test used, now legitimately allowlisted — see this
+                    // file's T03 gap-2 tests for its NEW allowlisted
+                    // behavior). `some_unrelated_arg` is NOT (and never has
+                    // been) in SUBSTITUTION_ALLOWLIST, keeping this test's
+                    // coverage of the non-allowlisted-key path intact.
+                    some_unrelated_arg: { connectorRef: "hubspot" },
                     method: "GET",
                     url: "/x",
                   },
@@ -899,11 +1008,316 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.failure.kind).toBe("unallowlisted_symbolic_ref");
-      expect(result.error.failure.message).toContain("connectorId");
+      expect(result.error.failure.message).toContain("some_unrelated_arg");
       expect(result.error.failure.message).toContain("connectorRef");
       expect(result.error.failure.message).toContain("hubspot");
     }
     expect(workflowWriter.create).not.toHaveBeenCalled();
     expect(calls.map((c) => c.method)).toEqual(["applyStarted", "applyFailed"]);
+  });
+});
+
+// manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — HUMAN RULING
+// (decision 4): ALLOWLIST + KB-TREE WALK. `reconcileKnowledgeBases` moved KB
+// reconciliation FROM strictly-before-the-plan (T06) TO mid-loop, right
+// after every "connector"-kind resource resolves and before "mcpServer"/
+// "agent" (RESOURCE_KIND_ORDER) — these tests cover the hook's boundary and
+// fail-loud/back-compat contracts directly (KB substitution itself is
+// covered by `substitute-kb-ingestion-config.spec.ts` /
+// `reconcile-knowledge-base.spec.ts`).
+describe("applyManifestPlan — T03 gap 2 (gaps-2 SPEC): reconcileKnowledgeBases hook", () => {
+  function connectorAndAgentWriters(): {
+    writers: PlatformResourceWriters;
+    callOrder: string[];
+  } {
+    const callOrder: string[] = [];
+    const make = (name: string) => ({
+      create: mock(async () => {
+        callOrder.push(name);
+        return { ok: true as const, value: { externalId: `ext-${name}` } };
+      }),
+      update: mock(async (_t: string, id: string) => ({
+        ok: true as const,
+        value: { externalId: id },
+      })),
+    });
+    return {
+      writers: {
+        channel: make("channel"),
+        connector: make("connector"),
+        agent: make("agent"),
+        service: make("service"),
+        workflow: make("workflow"),
+      },
+      callOrder,
+    };
+  }
+
+  function manifestWithConnectorAndAgent(): IntegrationManifest {
+    return {
+      apiVersion: "yoizen.io/v1",
+      kind: "IntegrationManifest",
+      metadata: { name: "e2e-manifest-apply" },
+      spec: {
+        channels: [],
+        connectors: [{ name: "hubspot", type: "http" }],
+        agents: [{ name: "agent-1", profile: {} }],
+        knowledgeBases: [],
+        services: [],
+        systemVariables: [],
+        mcpServers: [],
+        workflows: [],
+        secrets: [],
+      },
+    };
+  }
+
+  it("is called AFTER the connector resource resolves and BEFORE the agent resource, with the connector's fresh resolvedIds", async () => {
+    const manifest = manifestWithConnectorAndAgent();
+    const { writers, callOrder } = connectorAndAgentWriters();
+    const { events } = recordingEvents();
+    let capturedResolvedIds: ReadonlyMap<string, string> | undefined;
+
+    const plan = planWith([
+      {
+        kind: "connector",
+        name: "hubspot",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+      {
+        kind: "agent",
+        name: "agent-1",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+      reconcileKnowledgeBases: async (connectorResolvedIds) => {
+        capturedResolvedIds = connectorResolvedIds;
+        callOrder.push("kb-hook");
+        return {
+          ok: true,
+          value: { externalIdsByName: new Map(), outcomes: [] },
+        };
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(callOrder).toEqual(["connector", "kb-hook", "agent"]);
+    expect(capturedResolvedIds?.get("connector:hubspot")).toBe("ext-connector");
+  });
+
+  it("is still called (fallback, after the loop) when the plan has NO resource ranked after 'connector'", async () => {
+    const manifest: IntegrationManifest = {
+      apiVersion: "yoizen.io/v1",
+      kind: "IntegrationManifest",
+      metadata: { name: "e2e-manifest-apply" },
+      spec: {
+        channels: [],
+        connectors: [{ name: "hubspot", type: "http" }],
+        agents: [],
+        knowledgeBases: [],
+        services: [],
+        systemVariables: [],
+        mcpServers: [],
+        workflows: [],
+        secrets: [],
+      },
+    };
+    const { writers } = connectorAndAgentWriters();
+    const { events } = recordingEvents();
+    let hookCalls = 0;
+
+    const plan = planWith([
+      {
+        kind: "connector",
+        name: "hubspot",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+      reconcileKnowledgeBases: async () => {
+        hookCalls++;
+        return {
+          ok: true,
+          value: { externalIdsByName: new Map(), outcomes: [] },
+        };
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(hookCalls).toBe(1);
+  });
+
+  it("a hook failure fails loud through ManifestApplyFailure and the agent writer is never called", async () => {
+    const manifest = manifestWithConnectorAndAgent();
+    const { writers, callOrder } = connectorAndAgentWriters();
+    const { events, calls } = recordingEvents();
+
+    const plan = planWith([
+      {
+        kind: "connector",
+        name: "hubspot",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+      {
+        kind: "agent",
+        name: "agent-1",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+      reconcileKnowledgeBases: async () => ({
+        ok: false,
+        error: {
+          kind: "unresolved_symbolic_ref",
+          resourceKind: "knowledgeBase",
+          resourceName: "kb-support",
+          message:
+            "knowledgeBase 'kb-support' references unresolved connectorRef 'openai-main'",
+        },
+      }),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.failure.kind).toBe("unresolved_symbolic_ref");
+      expect(result.error.failure.resourceKind).toBe("knowledgeBase");
+    }
+    expect(callOrder).toEqual(["connector"]);
+    expect(writers.agent.create).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.method)).toEqual([
+      "applyStarted",
+      "resourceApplied",
+      "applyFailed",
+    ]);
+  });
+
+  it("back-compat: knowledgeBaseExternalIdsByName still threads into the agent writer's context when reconcileKnowledgeBases is omitted", async () => {
+    const manifest = manifestWithConnectorAndAgent();
+    let capturedContext:
+      | { knowledgeBaseExternalIds?: ReadonlyMap<string, string> }
+      | undefined;
+    const writers: PlatformResourceWriters = {
+      channel: {
+        create: mock(async () => ({
+          ok: true as const,
+          value: { externalId: "n/a" },
+        })),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+      connector: {
+        create: mock(async () => ({
+          ok: true as const,
+          value: { externalId: "ext-connector" },
+        })),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+      agent: {
+        create: mock(
+          async (
+            _t: string,
+            _r: unknown,
+            context?: { knowledgeBaseExternalIds?: ReadonlyMap<string, string> }
+          ) => {
+            capturedContext = context;
+            return { ok: true as const, value: { externalId: "ext-agent" } };
+          }
+        ),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+      service: {
+        create: mock(async () => ({
+          ok: true as const,
+          value: { externalId: "n/a" },
+        })),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+      workflow: {
+        create: mock(async () => ({
+          ok: true as const,
+          value: { externalId: "n/a" },
+        })),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+    };
+    const { events } = recordingEvents();
+
+    const plan = planWith([
+      {
+        kind: "connector",
+        name: "hubspot",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+      {
+        kind: "agent",
+        name: "agent-1",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+      knowledgeBaseExternalIdsByName: new Map([["kb-support", "kb-ext-1"]]),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(capturedContext?.knowledgeBaseExternalIds?.get("kb-support")).toBe(
+      "kb-ext-1"
+    );
   });
 });

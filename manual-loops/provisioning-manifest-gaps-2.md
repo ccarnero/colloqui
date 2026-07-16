@@ -477,7 +477,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 
 - [x] T01 library/channel-less manifests (gap 1)
 - [x] T02 safety fix: fail loud on ref-shaped objects at non-allowlisted keys (gap 3)
-- [ ] T03 LLM/KB connector ID references (gap 2)
+- [x] T03 LLM/KB connector ID references (gap 2)
 - [ ] T04 agent per-tool MCP fields (gap 4)
 - [ ] T05 service `env` vars (gap 5)
 - [ ] T06 low-priority cleanup fold-in (optional)
@@ -585,3 +585,33 @@ Gates (attempt 2): G1 333/333, G2 clean, G3 265, G4 392, G6b revision 00029
 + e2e-manifest-apply PASSED (note: one rebuild attempt silently no-opped —
 revision verified before gates re-ran), G5 triple regression all-noop.
 Dual review: attempt 1 split (secretRef inclusion), attempt 2 → 2x APPROVED.
+
+### T03 — 2026-07-16
+
+HUMAN RULING (decision 4): allowlist + KB-tree walk; agent-ai-service
+untouched. SUBSTITUTION_ALLOWLIST +2: `connectorId` → connectorRef (agent
+model_config.llm — consumer credential-resolver.service.ts:171-248) and
+`provider_connector_id` → connectorRef (KB ingestion_config — consumer
+documents.service.ts:470-514). `knowledgeBaseSchema.ingestion_config` added
+(opaque record, additive — the schema had no such field). NEW TREE ROOT via
+a `reconcileKnowledgeBases` hook inside applyManifestPlan's ordered loop —
+which FIXED A REAL PRE-EXISTING ORDERING BUG: KB reconciliation used to run
+BEFORE the plan, so a KB referencing a same-apply connector could never
+resolve; the hook now fires exactly once after all connectors are processed
+(after-loop fallback for connector+KB-only library manifests), one
+applyStarted/Completed chain preserved, hook failures mirror writer
+failures. KB substitution reuses substituteSymbolicRefs verbatim (T02 error
+kinds, CREATE-path only per the no-mutable-KB-fields precedent). KB module
+deliberately NOT added to ResourceKind/RESOURCE_KIND_ORDER (its "no generic
+writer" architecture respected; error types widened additively).
+
+TWO review rounds: attempt 1 REJECTED (one reviewer; procedural note: only
+one reviewer was launched that round) — the hook re-fetched getLatest
+mid-apply, a TOCTOU race vs the run's loaded snapshot under concurrent PUT.
+Attempt 2: hook closes over apply()'s already-loaded revision.manifest, the
+second fetch and its "deleted concurrently" branch deleted, regression test
+proves getLatest is called exactly once and a mid-run rev-2 PUT never leaks
+into the reconciliation → 2x APPROVED.
+
+Gates (attempt 2): G1 350/350, G2 clean, G3 269 + G4 392 untouched, G6b
+revision 00031 + e2e-manifest-apply PASSED, G5 triple regression all-noop.

@@ -75,6 +75,42 @@ export const SUBSTITUTION_ALLOWLIST: readonly SubstitutionAllowlistEntry[] = [
       "@yoizen/shared workflow.interfaces.ts McpCallArgs.serverId — " +
       "the mcpCall activity's target agent-admin-service MCP server id.",
   },
+  // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2. HUMAN RULING
+  // (decision 4, resolved 2026-07-16): ALLOWLIST + KB-TREE WALK — no changes
+  // to agent-ai-service's credential-resolver. Sits inside an agent's own
+  // `profile.model_config.llm.connectorId` — already covered by the
+  // PRE-EXISTING agent-`profile` tree walk (`build-substituted-resource.ts`),
+  // this is a NEW allowlist entry, not a new tree root.
+  {
+    argKey: "connectorId",
+    refType: "connectorRef",
+    source:
+      "services/agent-ai-service/src/modules/llm/credential-resolver.service.ts:171-248 " +
+      "(resolveFromConnector) — fetches " +
+      "`${CONNECTOR_ADMIN_URL}/connectors/${connectorId}` directly by id; " +
+      "the id is read from `profile.model_config.llm.connectorId` by " +
+      "`chat.service.ts`/`session-chat.service.ts` and threaded through as " +
+      "CredentialResolutionParams.connectorId.",
+  },
+  // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2. Same ruling as
+  // `connectorId` above, but this key sits inside a `knowledgeBases[]`
+  // entry's `ingestion_config` — a tree NO existing tree-root walked before
+  // this task (`build-substituted-resource.ts` only ever walked workflow
+  // `definition`/agent `profile`). `substitute-kb-ingestion-config.ts`
+  // (`modules/kb/lib/`) is the NEW tree root that reuses this SAME allowlist
+  // + the SAME `substitute-symbolic-refs.ts` walker, invoked from the KB
+  // reconciler right before it CREATES a new (non-external) knowledge base.
+  {
+    argKey: "provider_connector_id",
+    refType: "connectorRef",
+    source:
+      "services/agent-admin-service/src/modules/knowledge-bases/documents.service.ts:470-514 " +
+      "(DocumentsService.resolveProviderCredentials) — reads " +
+      "`ingestion_config.provider_connector_id` (persisted verbatim on the " +
+      "`knowledge_bases` row) to fetch " +
+      "`${CONNECTOR_ADMIN_URL}/connectors/${provider_connector_id}` at " +
+      "embedding time, falling back to `OPENAI_API_KEY` if unset/unresolved.",
+  },
 ] as const;
 
 /** `argKey -> refType`, derived once from `SUBSTITUTION_ALLOWLIST` above. */

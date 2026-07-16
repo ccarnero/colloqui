@@ -11,6 +11,7 @@ import { createKnowledgeBaseReconciler } from "../../../src/modules/kb/lib/recon
 function fakeKbClient(): {
   client: IAgentAdminKbClient;
   createdKbs: string[];
+  createdIngestionConfigs: (Record<string, unknown> | undefined)[];
   uploadedTextDocs: { kbId: string; filename: string; content: string }[];
   uploadedFileDocs: { kbId: string; filename: string }[];
   deletedDocs: string[];
@@ -18,6 +19,7 @@ function fakeKbClient(): {
   const kbsByName = new Map<string, AgentAdminKbSummary>();
   const documentsByKb = new Map<string, AgentAdminDocumentSummary[]>();
   const createdKbs: string[] = [];
+  const createdIngestionConfigs: (Record<string, unknown> | undefined)[] = [];
   const uploadedTextDocs: {
     kbId: string;
     filename: string;
@@ -31,10 +33,11 @@ function fakeKbClient(): {
     async findKbByName(_tenantId, name) {
       return { ok: true, value: kbsByName.get(name) ?? null };
     },
-    async createKb(_tenantId, name) {
+    async createKb(_tenantId, name, ingestionConfig) {
       const kb = { id: `kb-${String(nextId++)}`, name };
       kbsByName.set(name, kb);
       createdKbs.push(name);
+      createdIngestionConfigs.push(ingestionConfig);
       return { ok: true, value: kb };
     },
     async listDocuments(_tenantId, kbId) {
@@ -67,6 +70,7 @@ function fakeKbClient(): {
   return {
     client,
     createdKbs,
+    createdIngestionConfigs,
     uploadedTextDocs,
     uploadedFileDocs,
     deletedDocs,
@@ -362,5 +366,154 @@ describe("createKnowledgeBaseReconciler", () => {
       expect(result.value).toHaveLength(0);
     }
     expect(createdKbs).toEqual([]);
+  });
+
+  // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2.
+  describe("ingestion_config connectorRef substitution (T03, gap 2)", () => {
+    it("substitutes provider_connector_id and forwards it to createKb when CREATING a new KB", async () => {
+      const { client, createdIngestionConfigs } = fakeKbClient();
+      const reconciler = createKnowledgeBaseReconciler({
+        kbClient: client,
+        checksumRepository: createInMemoryKbChecksumRepository(),
+        blobStore: createInMemoryKbBlobStore(),
+      });
+
+      const manifest = {
+        spec: {
+          knowledgeBases: [
+            {
+              name: "kb-support",
+              ingestion_config: {
+                provider_connector_id: { connectorRef: "openai-main" },
+              },
+              documents: [
+                {
+                  name: "faq",
+                  source: {
+                    type: "inline" as const,
+                    content: "Q: ...\nA: ...",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      const result = await reconciler.reconcile(
+        "tenant-a",
+        "demo",
+        manifest,
+        undefined,
+        undefined,
+        (refType, name) =>
+          refType === "connectorRef" && name === "openai-main"
+            ? "connector-real-id-1"
+            : undefined
+      );
+
+      expect(result.ok).toBe(true);
+      expect(createdIngestionConfigs).toHaveLength(1);
+      expect(createdIngestionConfigs[0]).toEqual({
+        provider_connector_id: "connector-real-id-1",
+      });
+    });
+
+    it("fails loud (unresolved_symbolic_ref) and never calls createKb when the connector has no real id yet", async () => {
+      const { client, createdKbs } = fakeKbClient();
+      const reconciler = createKnowledgeBaseReconciler({
+        kbClient: client,
+        checksumRepository: createInMemoryKbChecksumRepository(),
+        blobStore: createInMemoryKbBlobStore(),
+      });
+
+      const manifest = {
+        spec: {
+          knowledgeBases: [
+            {
+              name: "kb-support",
+              ingestion_config: {
+                provider_connector_id: { connectorRef: "openai-main" },
+              },
+              documents: [
+                {
+                  name: "faq",
+                  source: {
+                    type: "inline" as const,
+                    content: "Q: ...\nA: ...",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      const result = await reconciler.reconcile(
+        "tenant-a",
+        "demo",
+        manifest,
+        undefined,
+        undefined,
+        () => undefined
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe("unresolved_symbolic_ref");
+        expect(result.error.kbName).toBe("kb-support");
+      }
+      expect(createdKbs).toEqual([]);
+    });
+
+    it("never touches ingestion_config for an already-existing KB (pre-existing 'no mutable KB fields' limitation, unchanged)", async () => {
+      const { client, createdKbs, createdIngestionConfigs } = fakeKbClient();
+      // Pre-seed the KB as already existing.
+      await client.createKb("tenant-a", "kb-support");
+      createdKbs.length = 0;
+      createdIngestionConfigs.length = 0;
+
+      const reconciler = createKnowledgeBaseReconciler({
+        kbClient: client,
+        checksumRepository: createInMemoryKbChecksumRepository(),
+        blobStore: createInMemoryKbBlobStore(),
+      });
+
+      const manifest = {
+        spec: {
+          knowledgeBases: [
+            {
+              name: "kb-support",
+              ingestion_config: {
+                provider_connector_id: { connectorRef: "openai-main" },
+              },
+              documents: [
+                {
+                  name: "faq",
+                  source: {
+                    type: "inline" as const,
+                    content: "Q: ...\nA: ...",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      // No resolveRef supplied at all — if the existing-KB path attempted
+      // substitution it would throw/fail; it must not even try.
+      const result = await reconciler.reconcile(
+        "tenant-a",
+        "demo",
+        manifest,
+        undefined,
+        undefined
+      );
+
+      expect(result.ok).toBe(true);
+      expect(createdKbs).toEqual([]);
+      expect(createdIngestionConfigs).toEqual([]);
+    });
   });
 });

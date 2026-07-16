@@ -1,5 +1,6 @@
 import { Inject, Injectable, Optional } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
+import type { IntegrationManifest, SymbolicRefType } from "@yoizen/shared";
 import { err, ok, type Result } from "../../lib/result";
 import type { KbBundle, KbReconcileError } from "../kb/domain/kb.interfaces";
 import {
@@ -15,6 +16,7 @@ import type { CycleDetectedError } from "../plan/domain/plan.interfaces";
 import type { PlatformResourceClients } from "../plan/domain/platform-resource-client.interface";
 import { PLATFORM_RESOURCE_CLIENTS } from "../plan/domain/platform-resource-client.interface";
 import { buildManifestPlan } from "../plan/lib/build-manifest-plan";
+import { resourceKindOfRefType } from "../plan/lib/resource-kind-of-ref-type";
 import type {
   ManifestApplyFailure,
   ManifestApplySuccess,
@@ -23,6 +25,7 @@ import type { IApplyEventPublisher } from "./domain/apply-event-publisher.interf
 import { APPLY_EVENT_PUBLISHER } from "./domain/apply-event-publisher.interface";
 import type { PlatformResourceWriters } from "./domain/platform-resource-writer.interface";
 import { PLATFORM_RESOURCE_WRITERS } from "./domain/platform-resource-writer.interface";
+import type { ReconcileKnowledgeBasesResult } from "./lib/apply-manifest";
 import { applyManifestPlan } from "./lib/apply-manifest";
 
 export interface ManifestNotFoundApplyError {
@@ -58,13 +61,15 @@ export class ApplyService {
   ) {}
 
   /**
-   * Loads the latest stored revision of `name`, reconciles its
-   * `knowledgeBases` (T06 — create-or-update via agent-admin, checksum-gated
-   * re-embedding) BEFORE building the T03 plan (so agents can resolve
-   * `knowledgeBaseRefs`), builds a FRESH plan against current live state (so
-   * a re-apply after a partial failure always resumes from reality, never a
-   * stale cached plan), then executes the T04 apply engine. Never mutates
-   * anything the planner did not already mark `create`/`update`.
+   * Loads the latest stored revision of `name`, builds a FRESH plan against
+   * current live state (so a re-apply after a partial failure always resumes
+   * from reality, never a stale cached plan), then executes the T04 apply
+   * engine — which now (manual-loops/provisioning-manifest-gaps-2.md T03,
+   * gap 2) reconciles `knowledgeBases` MID-RUN, via the
+   * `reconcileKnowledgeBases` hook, right after connectors resolve and
+   * before agents, so a KB's `ingestion_config.provider_connector_id` can
+   * resolve a connector created in THIS SAME apply. Never mutates anything
+   * the planner did not already mark `create`/`update`.
    */
   async apply(
     tenantId: string,
@@ -79,23 +84,6 @@ export class ApplyService {
       );
       return err({ kind: "manifest_not_found", name });
     }
-
-    const kbResult = await this.kbReconciler.reconcile(
-      tenantId,
-      name,
-      revision.manifest,
-      bundle,
-      undefined
-    );
-    if (!kbResult.ok) {
-      this.logger.warn(
-        `apply: knowledge-base reconciliation FAILED for manifest='${name}' tenant='${tenantId}': ${kbResult.error.message}`
-      );
-      return err(kbResult.error);
-    }
-    const knowledgeBaseExternalIdsByName = new Map(
-      kbResult.value.map((kb) => [kb.kbName, kb.kbExternalId])
-    );
 
     const planResult = await buildManifestPlan(
       revision.manifest,
@@ -113,12 +101,91 @@ export class ApplyService {
       revision: revision.revision,
       writers: this.writers,
       events: this.events,
-      knowledgeBaseExternalIdsByName,
+      reconcileKnowledgeBases: (connectorResolvedIds) =>
+        // Close over the SAME `revision.manifest` snapshot the plan and apply
+        // run were built from — never re-query `getLatest` mid-run (avoids a
+        // TOCTOU race where a concurrent PUT between the initial load and this
+        // hook, arbitrarily delayed by connector-writer I/O, would reconcile
+        // KBs against a DIFFERENT, newer revision than the rest of this run).
+        this.reconcileKnowledgeBases(
+          tenantId,
+          revision.manifest,
+          bundle,
+          connectorResolvedIds
+        ),
     });
 
     if (!result.ok) {
       return err(result.error);
     }
-    return ok({ ...result.value, knowledgeBases: kbResult.value });
+    return ok(result.value);
+  }
+
+  /**
+   * T03 (gaps-2), gap 2 — wraps `IKnowledgeBaseReconciler.reconcile` with a
+   * `resolveRef` closure over the apply run's `connectorResolvedIds`
+   * (`"connector:<name>" -> realId`, only connectors are relevant here since
+   * `provider_connector_id` is the only ref kind currently allowed inside
+   * `ingestion_config`), converting the connector-only lookup into the
+   * generic `(refType, name) -> realId` shape `substitute-kb-ingestion-config.ts`
+   * expects — mirrors `build-substituted-resource.ts`'s own `resolveRef`
+   * closure exactly.
+   *
+   * `manifest` is the EXACT snapshot `apply()` loaded ONCE at the top of the
+   * run (and used for BOTH `buildManifestPlan` and `applyManifestPlan`) — it
+   * is passed in, NEVER re-fetched here, so plan, execution, and KB
+   * reconciliation are guaranteed to operate on ONE consistent revision even
+   * if a concurrent PUT lands mid-run (no `getLatest` round-trip, no TOCTOU
+   * race).
+   */
+  private async reconcileKnowledgeBases(
+    tenantId: string,
+    manifest: IntegrationManifest,
+    bundle: KbBundle | undefined,
+    connectorResolvedIds: ReadonlyMap<string, string>
+  ): Promise<ReconcileKnowledgeBasesResult> {
+    const resolveRef = (
+      refType: SymbolicRefType,
+      refName: string
+    ): string | undefined => {
+      const targetKind = resourceKindOfRefType(refType);
+      if (!targetKind) {
+        return undefined;
+      }
+      return connectorResolvedIds.get(`${targetKind}:${refName}`);
+    };
+
+    const kbResult = await this.kbReconciler.reconcile(
+      tenantId,
+      manifest.metadata.name,
+      manifest,
+      bundle,
+      undefined,
+      resolveRef
+    );
+    if (!kbResult.ok) {
+      this.logger.warn(
+        `apply: knowledge-base reconciliation FAILED for manifest='${manifest.metadata.name}' tenant='${tenantId}': ${kbResult.error.message}`
+      );
+      return {
+        ok: false,
+        error: {
+          kind: kbResult.error.kind,
+          resourceKind: "knowledgeBase",
+          resourceName: kbResult.error.kbName,
+          message: kbResult.error.message,
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      value: {
+        externalIdsByName: new Map(
+          kbResult.value.map((kb) => [kb.kbName, kb.kbExternalId])
+        ),
+        outcomes: kbResult.value,
+      },
+    };
   }
 }

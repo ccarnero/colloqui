@@ -122,6 +122,23 @@ const knowledgeBaseSchema = z
     documents: z
       .array(kbDocumentSchema)
       .min(1, "knowledge base must declare at least one document"),
+    // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — opaque
+    // passthrough record, mirroring `agentSchema.profile`'s precedent
+    // (`agent-admin-service`'s `CreateKnowledgeBaseDto.ingestion_config` is
+    // itself `@IsObject()` with no typed sub-fields, so there is nothing to
+    // model structurally here). Field name kept snake_case verbatim
+    // (matching `mcpServerSchema.transport_type`'s precedent of mirroring
+    // the target platform field name exactly) since this whole object is
+    // passed through to `POST/PATCH /admin/knowledge-bases` unchanged except
+    // for manifest-time `provider_connector_id` substitution (see
+    // `substitution-allowlist.ts`). May embed `{ connectorRef: <name> }` at
+    // `provider_connector_id` — resolved to the real connector-admin id by
+    // `substitute-kb-ingestion-config.ts` before the KB reconciler CREATES a
+    // new (non-external) knowledge base; an ALREADY-EXISTING KB's
+    // `ingestion_config` is not reconciled (see
+    // `reconcile-knowledge-base.ts`'s pre-existing "no mutable KB fields to
+    // reconcile in T06" limitation, unchanged by this task).
+    ingestion_config: z.record(z.string(), z.unknown()).optional(),
     external: z.boolean().optional(),
   })
   .strict();

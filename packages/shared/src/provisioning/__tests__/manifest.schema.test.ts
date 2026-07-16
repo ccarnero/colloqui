@@ -11,6 +11,63 @@ import {
 } from "../manifest.schema";
 import { buildValidManifest } from "./fixtures";
 
+// manual-loops/provisioning-manifest-gaps-2.md T03, gap 2.
+describe("knowledgeBaseSchema — ingestion_config (T03, gap 2)", () => {
+  function manifestWithKbIngestionConfig(ingestionConfig: unknown) {
+    const manifest = buildValidManifest();
+    return {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        knowledgeBases: [
+          {
+            ...manifest.spec.knowledgeBases[0],
+            ingestion_config: ingestionConfig,
+          },
+        ],
+      },
+    };
+  }
+
+  test("accepts a knowledge base with no ingestion_config at all (additive, back-compat)", () => {
+    expect(
+      integrationManifestSchema.safeParse(buildValidManifest()).success
+    ).toBe(true);
+  });
+
+  test("accepts ingestion_config as an opaque record with a connectorRef ref-object", () => {
+    const manifest = manifestWithKbIngestionConfig({
+      provider_connector_id: { connectorRef: "openai-main" },
+      embedding_model: "text-embedding-3-small",
+    });
+    const result = integrationManifestSchema.safeParse(manifest);
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts ingestion_config with a plain string provider_connector_id (already-resolved real id)", () => {
+    const manifest = manifestWithKbIngestionConfig({
+      provider_connector_id: "conn-real-id-1",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("rejects an unknown top-level key sibling to ingestion_config (knowledgeBaseSchema stays .strict())", () => {
+    const manifest = buildValidManifest();
+    const withUnknownKey = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        knowledgeBases: [
+          { ...manifest.spec.knowledgeBases[0], unknownField: "x" },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(withUnknownKey).success).toBe(
+      false
+    );
+  });
+});
+
 describe("connectorRefSchema — SYMBOLIC_REF_KEYS (T03, gap 3)", () => {
   test("SYMBOLIC_REF_KEYS includes connectorRef and mcpServerRef alongside the original four", () => {
     const sorted: string[] = [...SYMBOLIC_REF_KEYS].sort();

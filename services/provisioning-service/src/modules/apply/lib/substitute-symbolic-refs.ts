@@ -79,7 +79,13 @@ const REF_KEY_SET: ReadonlySet<string> = new Set(SYMBOLIC_REF_KEYS);
 
 export interface SubstituteSymbolicRefsArgs {
   readonly value: unknown;
-  readonly owningResourceKind: ResourceKind;
+  // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — widened with
+  // "knowledgeBase" so `substitute-kb-ingestion-config.ts` (a NEW tree root,
+  // `knowledgeBases[].ingestion_config`) can reuse this SAME walker; see
+  // `apply.interfaces.ts`'s `ApplyWriteError.resourceKind` comment for why
+  // this is a narrow widening of the error-reporting type only, not of
+  // `ResourceKind` itself.
+  readonly owningResourceKind: ResourceKind | "knowledgeBase";
   readonly owningResourceName: string;
   /** Resolves `(refType, manifestName) -> realId`, `undefined` if unresolved. */
   readonly resolveRef: (

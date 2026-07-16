@@ -70,11 +70,28 @@ export type ApplyWriteErrorKind =
   // owned by a DIFFERENT service/tenant. Re-verified by
   // `registry-services-writer.ts` immediately before writing any route
   // (create or remove-then-recreate), never just at plan time.
-  | "route_collision";
+  | "route_collision"
+  // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — a knowledge
+  // base's own reconciliation failure (`KbReconcileErrorKind`), surfaced
+  // through the SAME `ManifestApplyFailure` envelope as every other resource
+  // write failure once KB reconciliation moved INSIDE `applyManifestPlan`'s
+  // dependency-ordered run (see `apply-manifest.ts`'s
+  // `reconcileKnowledgeBases` hook) — never a bespoke shape.
+  | "kb_write_failed"
+  | "document_resolve_failed"
+  | "document_write_failed";
 
 export interface ApplyWriteError {
   readonly kind: ApplyWriteErrorKind;
-  readonly resourceKind: ResourceKind;
+  // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — widened with
+  // "knowledgeBase" ONLY here (error reporting), never in `ResourceKind`
+  // itself: `ResourceKind` also drives `PlatformResourceWriters`
+  // (`Record<ResourceKind, IPlatformResourceWriter>`) and
+  // `RESOURCE_KIND_ORDER`, and `kb.interfaces.ts`'s header comment documents
+  // why a knowledge base deliberately has NEITHER (its own reconciler, not a
+  // generic writer) — widening `ResourceKind` itself would force a
+  // `knowledgeBase` entry into both and reopen that settled decision.
+  readonly resourceKind: ResourceKind | "knowledgeBase";
   readonly resourceName: string;
   readonly message: string;
 }

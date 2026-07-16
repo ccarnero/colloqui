@@ -58,7 +58,11 @@ export interface IAgentAdminKbClient {
   ): Promise<Result<AgentAdminKbSummary | null, string>>;
   createKb(
     tenantId: string,
-    name: string
+    name: string,
+    /** manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — already
+     * connectorRef-substituted (real connector-admin id, never a manifest
+     * name) by the time this is called; see `substitute-kb-ingestion-config.ts`. */
+    ingestionConfig?: Record<string, unknown>
   ): Promise<Result<AgentAdminKbSummary, string>>;
   listDocuments(
     tenantId: string,
@@ -149,14 +153,19 @@ export function createAgentAdminKbClient(baseUrl: string): IAgentAdminKbClient {
       return ok(found ? { id: found.id, name: found.name } : null);
     },
 
-    async createKb(tenantId, name) {
-      logger.log(`createKb: kb='${name}' tenant='${tenantId}'`);
+    async createKb(tenantId, name, ingestionConfig) {
+      logger.log(
+        `createKb: kb='${name}' tenant='${tenantId}' ingestion_config=${ingestionConfig ? "present" : "absent"}`
+      );
       const result = await requestJson(
         tenantId,
         "POST",
         "/admin/knowledge-bases",
         {
           name,
+          ...(ingestionConfig !== undefined && {
+            ingestion_config: ingestionConfig,
+          }),
         }
       );
       if (!result.ok) {

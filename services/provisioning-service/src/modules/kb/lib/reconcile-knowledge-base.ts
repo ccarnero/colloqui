@@ -1,16 +1,25 @@
 // T06 apply-time KB reconciler: create-or-update each non-external
 // `knowledgeBases` entry via agent-admin-service's EXISTING API (never a
 // direct table write), applying the checksum-reconciliation decision per
-// document (skip unchanged, reembed changed, create new). Runs BEFORE the
-// generic `applyManifestPlan` call — see `kb.interfaces.ts` header for why.
+// document (skip unchanged, reembed changed, create new).
+//
+// manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — no longer runs
+// strictly BEFORE the generic `applyManifestPlan` call: it is invoked
+// MID-LOOP by `apply-manifest.ts`'s `reconcileKnowledgeBases` hook, right
+// after connectors resolve and before agents — see `kb.interfaces.ts` header
+// for the full ordering rationale. `resolveRef`, when supplied, substitutes
+// a `{ connectorRef: <name> }` at `ingestion_config.provider_connector_id`
+// to the real connector-admin id — ONLY on the CREATE path (`findOrCreateKb`)
+// — before calling `IAgentAdminKbClient.createKb`.
 
-import type { KbSource } from "@yoizen/shared";
+import type { KbSource, SymbolicRefType } from "@yoizen/shared";
 import type { PlanLogger } from "../../plan/lib/plan-logger.interface";
 import { NOOP_PLAN_LOGGER } from "../../plan/lib/plan-logger.interface";
 import type {
   IKnowledgeBaseReconciler,
   KbBundle,
   KbReconcileError,
+  KbResolveRef,
   ManifestKnowledgeBaseLike,
   ReconcileDocumentOutcome,
   ReconcileKbOutcome,
@@ -21,6 +30,16 @@ import type { IAgentAdminKbClient } from "../infrastructure/agent-admin-kb-clien
 import { decideDocumentAction } from "./decide-document-action";
 import { fetchKbUrlSource } from "./fetch-kb-url-source";
 import { resolveInlineOrFileSource } from "./resolve-kb-document-source";
+import { substituteKbIngestionConfig } from "./substitute-kb-ingestion-config";
+
+/** Local alias so the `onSubstituted` callback below isn't implicitly `any`. */
+type OnKbSubstituted = (info: {
+  argKey: string;
+  refType: SymbolicRefType;
+  name: string;
+  realId: string;
+  path: string;
+}) => void;
 
 export interface CreateKnowledgeBaseReconcilerDeps {
   readonly kbClient: IAgentAdminKbClient;
@@ -35,7 +54,14 @@ export function createKnowledgeBaseReconciler(
   const logger = deps.logger ?? NOOP_PLAN_LOGGER;
 
   return {
-    async reconcile(tenantId, manifestName, manifest, bundle, _correlationId) {
+    async reconcile(
+      tenantId,
+      manifestName,
+      manifest,
+      bundle,
+      _correlationId,
+      resolveRef
+    ) {
       const outcomes: ReconcileKbOutcome[] = [];
 
       for (const kb of manifest.spec
@@ -45,7 +71,13 @@ export function createKnowledgeBaseReconciler(
           continue;
         }
 
-        const kbResult = await findOrCreateKb(deps, tenantId, kb.name, logger);
+        const kbResult = await findOrCreateKb(
+          deps,
+          tenantId,
+          kb,
+          logger,
+          resolveRef
+        );
         if (!kbResult.ok) {
           return { ok: false, error: kbResult.error };
         }
@@ -85,12 +117,14 @@ export function createKnowledgeBaseReconciler(
 async function findOrCreateKb(
   deps: CreateKnowledgeBaseReconcilerDeps,
   tenantId: string,
-  kbName: string,
-  logger: PlanLogger
+  kb: ManifestKnowledgeBaseLike,
+  logger: PlanLogger,
+  resolveRef?: KbResolveRef
 ): Promise<
   | { readonly ok: true; readonly value: string }
   | { readonly ok: false; readonly error: KbReconcileError }
 > {
+  const kbName = kb.name;
   const lookup = await deps.kbClient.findKbByName(tenantId, kbName);
   if (!lookup.ok) {
     return {
@@ -99,13 +133,43 @@ async function findOrCreateKb(
     };
   }
   if (lookup.value) {
+    // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — pre-existing
+    // "no mutable KB fields to reconcile in T06" limitation, UNCHANGED here:
+    // an already-live KB's `ingestion_config` (including `provider_connector_id`)
+    // is never substituted/updated by apply, on purpose — see this task's
+    // Prior art for the finding.
     logger.log(
-      `kb: '${kbName}' already exists -> externalId='${lookup.value.id}' (update-in-place — no mutable KB fields to reconcile in T06)`
+      `kb: '${kbName}' already exists -> externalId='${lookup.value.id}' (update-in-place — no mutable KB fields to reconcile in T06, including ingestion_config)`
     );
     return { ok: true, value: lookup.value.id };
   }
 
-  const created = await deps.kbClient.createKb(tenantId, kbName);
+  let ingestionConfig: Record<string, unknown> | undefined;
+  if (kb.ingestion_config) {
+    const substituted = substituteKbIngestionConfig({
+      kbName,
+      ingestionConfig: kb.ingestion_config,
+      resolveRef: resolveRef ?? (() => undefined),
+      onSubstituted: ((info) => {
+        logger.log(
+          `kb: '${kbName}' substituted ${info.refType} '${info.name}' -> realId at ${info.path}`
+        );
+      }) satisfies OnKbSubstituted,
+    });
+    if (!substituted.ok) {
+      logger.warn(
+        `kb: '${kbName}' ingestion_config substitution FAILED (${substituted.error.kind}): ${substituted.error.message}`
+      );
+      return { ok: false, error: substituted.error };
+    }
+    ingestionConfig = substituted.value;
+  }
+
+  const created = await deps.kbClient.createKb(
+    tenantId,
+    kbName,
+    ingestionConfig
+  );
   if (!created.ok) {
     return {
       ok: false,

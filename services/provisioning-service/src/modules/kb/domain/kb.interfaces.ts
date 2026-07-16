@@ -19,8 +19,29 @@
 // pipeline is a `name -> externalId` map threaded through
 // `WriterContext.knowledgeBaseExternalIds` so `agents-writer.ts` can resolve
 // `knowledgeBaseRefs` (SPEC.md: "KB before agent").
+//
+// manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — UPDATE: KBs are
+// no longer reconciled strictly BEFORE `applyManifestPlan` starts. A KB's
+// `ingestion_config.provider_connector_id` may reference a connector CREATED
+// in the SAME apply run, and connectors are resolved/created INSIDE
+// `applyManifestPlan`'s dependency-ordered loop — reconciling KBs first (the
+// pre-T03-gap-2 order) could never see that connector's freshly-created id.
+// `apply-manifest.ts`'s `reconcileKnowledgeBases` hook now calls this
+// reconciler MID-LOOP, right after every "connector"-kind resource has been
+// created/updated/noop'd and before the next resource kind begins (still
+// strictly before "agent", preserving the original "KB before agent"
+// contract) — see that file for the exact boundary logic.
 
-import type { KbSource } from "@yoizen/shared";
+import type { KbSource, SymbolicRefType } from "@yoizen/shared";
+
+/** Resolves `(refType, manifestName) -> realId`, mirrors
+ * `build-substituted-resource.ts`'s `resolveRef` shape exactly — passed by
+ * `apply-manifest.ts`'s `reconcileKnowledgeBases` hook so `reconcile()` can
+ * substitute a `provider_connector_id` ref before CREATING a new KB. */
+export type KbResolveRef = (
+  refType: SymbolicRefType,
+  name: string
+) => string | undefined;
 
 /** Extracted tar bundle contents: relative path -> file bytes. */
 export type KbBundle = ReadonlyMap<string, Buffer>;
@@ -61,7 +82,15 @@ export interface ReconcileKbOutcome {
 export type KbReconcileErrorKind =
   | "kb_write_failed"
   | "document_resolve_failed"
-  | "document_write_failed";
+  | "document_write_failed"
+  // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — a KB's
+  // `ingestion_config.provider_connector_id` failed the SAME T02/T03
+  // fail-loud checks a workflow/agent tree's allowlisted refs would (see
+  // `substitute-symbolic-refs.ts`); reused verbatim (same string literal
+  // kinds, same walker), never a bespoke KB-only error kind.
+  | "unresolved_symbolic_ref"
+  | "mismatched_symbolic_ref"
+  | "unallowlisted_symbolic_ref";
 
 export interface KbReconcileError {
   readonly kind: KbReconcileErrorKind;
@@ -76,6 +105,14 @@ export interface IKnowledgeBaseReconciler {
    * against agent-admin-service (create-or-update by name, never a direct
    * table write) and returns a `kbName -> kbExternalId` map for
    * `agents-writer.ts` to resolve `knowledgeBaseRefs`.
+   *
+   * `resolveRef` (manual-loops/provisioning-manifest-gaps-2.md T03, gap 2)
+   * is used ONLY when CREATING a new (non-external) KB whose
+   * `ingestion_config` embeds a `{ connectorRef: <name> }` at
+   * `provider_connector_id` — substituted to the real connector-admin id via
+   * `substitute-kb-ingestion-config.ts` before `IAgentAdminKbClient.createKb`
+   * is called. Omitted (or `undefined`) call sites (pre-T03-gap-2 tests, or
+   * a manifest with no `ingestion_config`) behave exactly as before.
    */
   reconcile(
     tenantId: string,
@@ -84,7 +121,8 @@ export interface IKnowledgeBaseReconciler {
       spec: { knowledgeBases: readonly ManifestKnowledgeBaseLike[] };
     },
     bundle: KbBundle | undefined,
-    correlationId: string | undefined
+    correlationId: string | undefined,
+    resolveRef?: KbResolveRef
   ): Promise<
     | { readonly ok: true; readonly value: readonly ReconcileKbOutcome[] }
     | { readonly ok: false; readonly error: KbReconcileError }
@@ -99,6 +137,9 @@ export interface ManifestKnowledgeBaseLike {
     readonly name: string;
     readonly source: KbSource;
   }[];
+  /** manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — opaque, may
+   * embed `{ connectorRef: <name> }` at `provider_connector_id`. */
+  readonly ingestion_config?: Record<string, unknown>;
 }
 
 export const KB_RECONCILER = Symbol("KB_RECONCILER");
