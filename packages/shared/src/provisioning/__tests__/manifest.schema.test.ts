@@ -64,6 +64,35 @@ describe("integrationManifestSchema — valid manifest", () => {
   });
 });
 
+// manual-loops/provisioning-manifest-gaps-2.md T01, gap 1 — `kind` widened
+// from a fixed literal to a two-member enum (decision 3 ruling).
+describe("integrationManifestSchema — kind (T01, gap 1)", () => {
+  test("accepts kind: IntegrationManifest (existing shipped manifests)", () => {
+    const manifest = { ...buildValidManifest(), kind: "IntegrationManifest" };
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts kind: LibraryManifest", () => {
+    const manifest = { ...buildValidManifest(), kind: "LibraryManifest" };
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("rejects an unknown kind value", () => {
+    const manifest = { ...buildValidManifest(), kind: "SomethingElse" };
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("defaults kind to IntegrationManifest when omitted", () => {
+    const { kind, ...rest } = buildValidManifest();
+    void kind;
+    const result = integrationManifestSchema.safeParse(rest);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.kind).toBe("IntegrationManifest");
+    }
+  });
+});
+
 describe("integrationManifestSchema — unknown-key rejection (.strict())", () => {
   test("rejects an unknown key at the root", () => {
     const manifest = { ...buildValidManifest(), unexpectedRoot: "nope" };

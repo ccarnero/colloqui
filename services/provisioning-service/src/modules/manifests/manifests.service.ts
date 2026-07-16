@@ -36,7 +36,10 @@ export class ManifestsService {
       );
       return err(result.error);
     }
-    this.logger.debug("Manifest validation passed");
+    // manual-loops/provisioning-manifest-gaps-2.md T01, gap 1 — log the
+    // resolved `kind` at debug level; a `LibraryManifest` waives the
+    // >=1-channel/>=1-process checks inside `validateManifestStructuralRules`.
+    this.logger.debug(`Manifest validation passed kind='${result.value.kind}'`);
     return ok(result.value);
   }
 

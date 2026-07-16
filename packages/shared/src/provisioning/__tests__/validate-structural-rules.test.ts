@@ -49,6 +49,74 @@ describe("structural rule — at least one process (agent or workflow)", () => {
   });
 });
 
+// manual-loops/provisioning-manifest-gaps-2.md T01, gap 1 — `kind:
+// LibraryManifest` waives the >=1-inbound-channel and >=1-process checks
+// above, replaced by a >=1-real-resource check. The non-library assertions
+// above are UNCHANGED (regression).
+describe("structural rule — library manifests (kind: LibraryManifest)", () => {
+  test("a library manifest with only connectors and zero channels/processes is valid", () => {
+    const manifest = buildValidManifest();
+    manifest.kind = "LibraryManifest";
+    manifest.spec.channels = [];
+    manifest.spec.agents = [];
+    manifest.spec.workflows = [];
+    manifest.spec.mcpServers = [];
+    manifest.spec.knowledgeBases = [];
+    manifest.spec.services = [];
+    manifest.spec.systemVariables = [];
+    manifest.spec.secrets = manifest.spec.secrets.filter(
+      (s) => s.scope.kind === "connector"
+    );
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors).toEqual([]);
+  });
+
+  test("a library manifest with only mcpServers and zero channels/processes is valid", () => {
+    const manifest = buildValidManifest();
+    manifest.kind = "LibraryManifest";
+    manifest.spec.channels = [];
+    manifest.spec.agents = [];
+    manifest.spec.workflows = [];
+    manifest.spec.connectors = [];
+    manifest.spec.knowledgeBases = [];
+    manifest.spec.services = [];
+    manifest.spec.systemVariables = [];
+    manifest.spec.secrets = manifest.spec.secrets.filter(
+      (s) => s.scope.kind === "mcpServer"
+    );
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors).toEqual([]);
+  });
+
+  test("a library manifest declaring zero resources of any kind is invalid", () => {
+    const manifest = buildValidManifest();
+    manifest.kind = "LibraryManifest";
+    manifest.spec.channels = [];
+    manifest.spec.agents = [];
+    manifest.spec.workflows = [];
+    manifest.spec.connectors = [];
+    manifest.spec.mcpServers = [];
+    manifest.spec.knowledgeBases = [];
+    manifest.spec.services = [];
+    manifest.spec.systemVariables = [];
+    manifest.spec.secrets = [];
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some(
+        (e) => e.path === "spec" && /library manifest/.test(e.message)
+      )
+    ).toBe(true);
+  });
+
+  test("regression: a NON-library manifest with zero channels is still invalid", () => {
+    const manifest = buildValidManifest();
+    // kind stays IntegrationManifest (default from the fixture).
+    manifest.spec.channels = [];
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors.some((e) => e.path === "spec.channels")).toBe(true);
+  });
+});
+
 describe("structural rule — unique names per section", () => {
   test("flags a duplicate channel name", () => {
     const manifest = buildValidManifest();

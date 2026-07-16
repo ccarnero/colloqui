@@ -143,8 +143,21 @@ export function validateManifestStructuralRules(
   checkUniqueNames(manifest.spec.workflows, "spec.workflows", errors);
   checkUniqueNames(manifest.spec.secrets, "spec.secrets", errors);
 
-  checkAtLeastOneInboundChannel(manifest.spec.channels, errors);
-  checkAtLeastOneProcess(manifest.spec.agents, manifest.spec.workflows, errors);
+  // manual-loops/provisioning-manifest-gaps-2.md T01, gap 1, decision 3
+  // ruling: a `kind: LibraryManifest` manifest exists to provision shared
+  // resources, not to run a channel/process, so the >=1-inbound-channel and
+  // >=1-process checks are waived for it — replaced by a >=1-real-resource
+  // check so a truly empty manifest is still invalid regardless of kind.
+  if (manifest.kind === "LibraryManifest") {
+    checkAtLeastOneLibraryResource(manifest, errors);
+  } else {
+    checkAtLeastOneInboundChannel(manifest.spec.channels, errors);
+    checkAtLeastOneProcess(
+      manifest.spec.agents,
+      manifest.spec.workflows,
+      errors
+    );
+  }
   checkRefResolution(manifest, errors);
 
   return errors;
@@ -195,6 +208,29 @@ function checkAtLeastOneProcess(
       path: "spec",
       message:
         "manifest must declare at least one process: an agent or a workflow",
+    });
+  }
+}
+
+// manual-loops/provisioning-manifest-gaps-2.md T01, gap 1, decision 3 ruling —
+// replaces checkAtLeastOneInboundChannel/checkAtLeastOneProcess for a
+// `kind: LibraryManifest` manifest: it declares no channel/process by
+// design, but an entirely empty manifest (no resource of any kind) remains
+// invalid regardless of kind.
+function checkAtLeastOneLibraryResource(
+  manifest: IntegrationManifest,
+  errors: ManifestValidationError[]
+): void {
+  const hasResource =
+    manifest.spec.connectors.length > 0 ||
+    manifest.spec.mcpServers.length > 0 ||
+    manifest.spec.services.length > 0 ||
+    manifest.spec.systemVariables.length > 0;
+  if (!hasResource) {
+    errors.push({
+      path: "spec",
+      message:
+        "a library manifest (kind: LibraryManifest) must declare at least one resource: a connector, mcpServer, service, or systemVariable",
     });
   }
 }

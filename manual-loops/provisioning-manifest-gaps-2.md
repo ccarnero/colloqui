@@ -475,7 +475,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 
 ---
 
-- [ ] T01 library/channel-less manifests (gap 1)
+- [x] T01 library/channel-less manifests (gap 1)
 - [ ] T02 safety fix: fail loud on ref-shaped objects at non-allowlisted keys (gap 3)
 - [ ] T03 LLM/KB connector ID references (gap 2)
 - [ ] T04 agent per-tool MCP fields (gap 4)
@@ -533,4 +533,30 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 
 ## Progress
 
-(none yet — awaiting human approval to run)
+### Run approval — 2026-07-16
+
+Human approved this SPEC by invoking `/manual-loop` on it. All three OPEN
+rulings resolved in one round (per Human boundaries): decision 3 = `kind:
+library` marker; decision 5 = FAIL-LOUD; decision 4 = allowlist + KB-tree
+walk. PRECONDITION: `validate-dev-mode.sh --with-e2e` still fails at the
+KNOWN stage-4/5 internal race documented by the parent SPEC (verified same
+signature, not a new failure) — G6a skipped, G6b is the cluster gate.
+
+### T01 — 2026-07-16
+
+HUMAN RULING (decision 3): `kind: library` marker. Implemented as `kind:
+z.enum(["IntegrationManifest", "LibraryManifest"]).default(
+"IntegrationManifest")` — additive (old manifests declare the literal or
+default in). `validateManifestStructuralRules` branches on kind:
+LibraryManifest waives the >=1-channel/>=1-process checks and instead
+requires >=1 of connector/mcpServer/service/systemVariable
+(`checkAtLeastOneLibraryResource`, fail-loud); non-library path byte-
+identical to before. Mixed library manifests (with channels too) permitted —
+waiver not prohibition, documented. No production code assumed non-empty
+sections (grep-verified by implementer AND both reviewers). PUT/GET
+round-trip persists kind. SDK unaffected (Record<string,unknown> by design).
+
+Gates: G1 321/321, G2 clean, G3 265/265 + tsc, G4 392/392, G6b revision
+00027 + e2e-manifest-apply PASSED, G5 TRIPLE regression (3 shipped
+manifests) all VALID + all-noop. Dual review: 2x APPROVED (attempt 1).
+

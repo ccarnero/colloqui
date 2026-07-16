@@ -65,6 +65,26 @@ function validManifest(name = "demo"): unknown {
   };
 }
 
+// manual-loops/provisioning-manifest-gaps-2.md T01, gap 1 — a
+// channel-less/process-less manifest declaring `kind: LibraryManifest`,
+// valid only because it declares at least one real resource (a connector).
+function validLibraryManifest(name = "lib-demo"): unknown {
+  return {
+    apiVersion: "yoizen.io/v1",
+    kind: "LibraryManifest",
+    metadata: { name },
+    spec: {
+      channels: [],
+      connectors: [{ name: "http-connector", type: "http" }],
+      agents: [],
+      knowledgeBases: [],
+      services: [],
+      workflows: [],
+      secrets: [],
+    },
+  };
+}
+
 describe("ManifestsService", () => {
   let repository: FakeManifestRevisionRepository;
   let service: ManifestsService;
@@ -99,6 +119,26 @@ describe("ManifestsService", () => {
       manifest.spec.channels = [];
       const result = service.validate(manifest);
       expect(result.ok).toBe(false);
+    });
+
+    // manual-loops/provisioning-manifest-gaps-2.md T01, gap 1
+    it("returns ok for a library manifest with zero channels/processes but a real resource", () => {
+      const result = service.validate(validLibraryManifest());
+      expect(result.ok).toBe(true);
+    });
+
+    it("surfaces structural-rule errors for a library manifest with zero resources of any kind", () => {
+      const manifest = validLibraryManifest() as {
+        spec: { connectors: unknown[] };
+      };
+      manifest.spec.connectors = [];
+      const result = service.validate(manifest);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(
+          result.error.some((e) => /library manifest/.test(e.message))
+        ).toBe(true);
+      }
     });
   });
 
@@ -161,6 +201,20 @@ describe("ManifestsService", () => {
     it("returns null from getManifest when nothing was ever stored", async () => {
       const fetched = await service.getManifest("tenant-a", "missing");
       expect(fetched).toBeNull();
+    });
+
+    // manual-loops/provisioning-manifest-gaps-2.md T01, gap 1 — the `kind`
+    // marker round-trips through the stored-manifest path unchanged.
+    it("round-trips kind: LibraryManifest through PUT and GET", async () => {
+      const putResult = await service.putManifest(
+        "tenant-a",
+        "lib-demo",
+        validLibraryManifest("lib-demo")
+      );
+      expect(putResult.ok).toBe(true);
+
+      const fetched = await service.getManifest("tenant-a", "lib-demo");
+      expect(fetched?.manifest.kind).toBe("LibraryManifest");
     });
   });
 

@@ -76,6 +76,13 @@ export class PlanService {
       return err({ kind: "manifest_not_found", name });
     }
 
+    // manual-loops/provisioning-manifest-gaps-2.md T01, gap 1 — log the
+    // manifest's own `kind` at debug level; a `LibraryManifest` planned here
+    // may legitimately carry zero channels/agents/workflows.
+    this.logger.debug(
+      `plan: manifest='${name}' tenant='${tenantId}' kind='${revision.manifest.kind}'`
+    );
+
     // T06: read this service's own checksum bookkeeping (never a mutation)
     // so buildManifestPlan can decide create/reembed/skip per KB document.
     // A read failure (e.g. a transient DB error) must NEVER blank the KB

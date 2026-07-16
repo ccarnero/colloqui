@@ -713,10 +713,29 @@ const manifestSpecSchema = z
 
 export type IntegrationManifestSpec = z.infer<typeof manifestSpecSchema>;
 
+// `kind` (manual-loops/provisioning-manifest-gaps-2.md T01, gap 1, decision 3
+// ruling 2026-07-16): a manifest-level marker, mirroring how Kubernetes'
+// own `kind` field distinguishes resource shapes. Widened from the fixed
+// literal `"IntegrationManifest"` to a two-member enum so a manifest can
+// declare itself `kind: LibraryManifest` — a manifest that exists ONLY to
+// provision shared resources (connectors/mcpServers/services/
+// systemVariables) other manifests reference, never a channel/process of
+// its own. Additive: every existing manifest already declares
+// `kind: IntegrationManifest` explicitly, so defaulting the field when
+// absent is a pure convenience, not a behavior change for them.
+// `validate-structural-rules.ts` reads this field to decide whether the
+// >=1-inbound-channel and >=1-process checks apply (waived for
+// `LibraryManifest`, replaced there by a >=1-real-resource check).
+export const manifestKindSchema = z
+  .enum(["IntegrationManifest", "LibraryManifest"])
+  .default("IntegrationManifest");
+
+export type ManifestKind = z.infer<typeof manifestKindSchema>;
+
 export const integrationManifestSchema = z
   .object({
     apiVersion: z.literal("yoizen.io/v1"),
-    kind: z.literal("IntegrationManifest"),
+    kind: manifestKindSchema,
     metadata: manifestMetadataSchema,
     spec: manifestSpecSchema,
   })
