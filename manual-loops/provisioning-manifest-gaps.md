@@ -819,3 +819,25 @@ GAP D (minor, from batch 1) — `checkEnvSupport()` rejects any service
 mcp-connections' STANDBY.md updated to the current verified blockers
 (2x APPROVED docs review). T08 stands at 2/11 migrated; T09 (full canary
 set incl. mcp) blocked on GAP A/C rulings.
+
+### Loop closed — 2026-07-16
+
+HUMAN RULING (2026-07-16): close this loop rather than keep extending it
+in place. This SPEC's own six gaps are fully shipped — T01-T07 complete
+(connector credential wiring, connector `endpoints`, manifest-time real-ID
+substitution/`connectorRef`, `systemVariables`, service scaling+routes,
+`mcpServers`, SDK/CLI sweep). T08 stands at 2/11 samples migrated
+(`http-fanout-telegram`, `hosted-services-api`); the remaining 9 samples
+are BLOCKED on four gap kinds outside this SPEC's original six (GAP A
+library/channel-less manifests, GAP B LLM/KB connector ID references plus
+an adjacent silent-corruption safety finding, GAP C agent per-tool MCP
+fields, GAP D service `env` vars — all verified in the T08 batch-1 and
+batches-2-3 Progress entries above). T09 (full G8 canary set, mcp
+included) did NOT run — the `mcp` group still has zero migratable samples.
+
+A companion SPEC, `manual-loops/provisioning-manifest-gaps-2.md`, is
+authored to carry the four new gaps plus the safety fix through to
+shipping and to complete the remaining 9 sample migrations and the G8
+canary restoration. Per this SPEC's own Human boundaries, authoring the
+companion here does NOT authorize running it — it requires its own,
+separate human approval, stated on its own header.
