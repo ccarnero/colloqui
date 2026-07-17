@@ -5,142 +5,111 @@
 
 ## ¿Qué hace este sample?
 
-Después de ejecutar `./setup.sh`, la plataforma queda con **cinco connectors HTTP de salida**
+Después de aplicar `manifest.yaml`, la plataforma queda con **cinco connectors HTTP de salida**
 (adaptadores declarativos con `context = external`): cuatro sin autenticación
 (`jsonplaceholder`, `httpbin`, `pokeapi`, `catfacts`) y uno con Basic auth
 (`httpbin-basic-auth`), con **31 endpoints** registrados en total. No se crea ningún workflow ni
 canal: el comportamiento observable es que cualquier workflow del tenant puede, desde ese
 momento, invocar esas APIs públicas mediante una acción `endpointCall` sin conocer URLs,
 cabeceras ni credenciales. Es la contraparte de salida de `http-bridge` (que empuja mensajes
-*hacia adentro* de la plataforma).
+*hacia adentro* de la plataforma). El provisioning es **declarativo**: un único
+[`manifest.yaml`](./manifest.yaml) aplicado con la CLI `yoizen` (sin scripts de setup).
 
-## Escenario de uso
+## `kind: LibraryManifest`
 
-Un equipo integra su plataforma con varias APIs de terceros (un CRM, un servicio de geocoding, un
-proveedor de pagos). En lugar de repetir en cada workflow la URL base, los timeouts, los reintentos
-y las credenciales, define cada API una sola vez como un **connector declarativo**: un archivo JSON
-con `baseUrl`, `authType`, `endpoints[]` y, si conviene, una caché declarativa (`defaultCache`).
-Los workflows solo referencian el connector por `adapterId` y el endpoint por su `(method, path)`;
-si mañana cambia la credencial o el timeout, se edita el JSON y se re-ejecuta el setup — ningún
-workflow se toca.
+Este manifest existe solo para provisionar un catálogo de connectors compartido — no declara
+ningún canal ni ningún agente/workflow propio. `validate-structural-rules.ts` exige por defecto
+al menos un canal inbound y al menos un "proceso" (agente o workflow) en todo manifest; el marcador
+`kind: LibraryManifest` (ruling humano del 2026-07-16) exime esas dos reglas y exige en su lugar
+al menos un recurso real (connector/mcpServer/service/systemVariable) — satisfecho aquí por los 5
+connectors. Ver el comentario de cabecera de `manifest.yaml` para el detalle completo.
 
-Traza de ejemplo (desde un workflow cualquiera):
-
-```
-endpointCall { adapterId: <catfacts>, method: "GET", url: "/fact" }
-  → connector-runtime resuelve baseUrl + auth + caché → GET https://catfact.ninja/fact
-  → respuesta cacheada 300 s (defaultCache) → { "fact": "Cats sleep 70% of their lives." }
-```
-
-## Cómo funciona por dentro
-
-### Lo que provisiona setup.sh (vía `@yoizen/platform-sdk`, 3 etapas + recreate opcional)
-
-`setup.sh` solo resuelve el entorno (`../lib/resolve-env.sh`) y ejecuta `src/setup.ts` con
-`npx tsx`; toda la lógica de provisioning vive ahí, usando el recurso `connectors` del SDK. El
-login queda a cargo del cliente del SDK de forma transparente en la primera request, por eso la
-numeración de etapas salta directo de `0/3` a `2/3` (misma convención que `http-bridge`).
-
-| Etapa | Qué hace |
-| --- | --- |
-| 0 preflight | Valida que cada JSON de `connectors/` sea parseable (falla rápido ante uno malformado) |
-| recreate (opcional) | Con `RECREATE=1` borra **todos** los connectors `context=external` antes de reprovisionar |
-| 2 upsert | Por cada archivo de `connectors/`: crea o reutiliza el connector por nombre, aplica `update()` de `defaultCache` si el JSON lo declara, y reconcilia endpoints |
-| 3 summary | Imprime contadores `created / reused / endpoints added / failed` |
-
-El script es un **upsert verdadero e idempotente**:
-
-- El connector se crea con `endpoints = []` y luego la reconciliación agrega cada endpoint — así
-  toda alta queda registrada y contada de forma uniforme, sea el connector nuevo o preexistente.
-- La reconciliación compara por la clave única `(method, path)` **por connector**: solo agrega los
-  pares declarados en el JSON que aún no existen; el resto queda intacto. Agregar un endpoint al
-  archivo y re-ejecutar aplica exactamente ese delta.
-- Un 409 "already exists" (carrera con otra corrida) se trata como éxito, no como error.
-- Si hay connectors duplicados con el mismo nombre, el script auto-repara: conserva el primero y
-  borra los demás.
-
-### Los connectors declarados (archivos de `connectors/`)
+## Los connectors declarados
 
 | Connector | Auth | Base URL | Endpoints | Particularidad |
 | --- | --- | --- | --- | --- |
 | `jsonplaceholder` | none | `jsonplaceholder.typicode.com` | 9 (CRUD completo sobre `/posts` + `/todos`, `/users`, `/comments`) | Cubre GET/POST/PUT/PATCH/DELETE |
 | `httpbin` | none | `httpbin.org` | 11 (`/get`, `/post`, `/uuid`, `/headers`, `/ip`, …) | API espejo para inspeccionar requests |
 | `pokeapi` | none | `pokeapi.co` | 6 (`/api/v2/pokemon/ditto`, abilities, types, …) | Solo lectura |
-| `catfacts` | none | `catfact.ninja` | 3 (`/fact`, `/facts`, `/breeds`) | Declara `defaultCache` |
-| `httpbin-basic-auth` | basic | `httpbin.org` | 2 (`/basic-auth/...`, `/hidden-basic-auth/...`) | Credenciales en `authConfig` |
+| `catfacts` | none | `catfact.ninja` | 3 (`/fact`, `/facts`, `/breeds`) | Caché declarada por endpoint (ver más abajo) |
+| `httpbin-basic-auth` | basic | `httpbin.org` | 2 (`/basic-auth/...`, `/hidden-basic-auth/...`) | Credenciales via `secretRef` anidado |
 
-Cada JSON es un `CreateAdapterDto` completo: `name`, `context`, `baseUrl`, `authType`,
-`authConfig`, `endpoints[]` (con `label` descriptivo), más `timeoutMs`, `maxRetries`,
-`retryBackoffMs`, `healthCheckPath` y `tags`. Para agregar otro connector basta con soltar un
-archivo nuevo en `connectors/` y re-ejecutar.
+> **Nota de estado existente.** Estos 5 connectors ya existen en vivo (recreados el 2026-07-16 vía
+> el `setup.ts` ahora eliminado). Los nombres del manifest coinciden exactamente con los connectors
+> en vivo, así que `apply` los reconcilia (update/noop) en lugar de duplicarlos.
 
-### Conceptos de plataforma involucrados
+## Secretos (Basic auth)
 
-- **Caché declarativa (`defaultCache`).** `catfacts` declara `enabled: true`, `ttlSeconds: 300`,
-  `methods: ["GET","HEAD"]`, `keyQueryParams: "all"`: las respuestas GET se cachean 300 segundos.
-  El script hace `PATCH` de `defaultCache` en **cada** corrida, así que editar la caché en
-  `catfacts.json` y re-ejecutar aplica el cambio sin `RECREATE=1`.
-- **Auth resuelta por el connector, no por el llamador.** Para `authType: "basic"`,
-  `applyAdapterAuthHeadersSync` codifica `basicUsername:basicPassword` en base64 y agrega el
-  header `Authorization: Basic …` en cada request — el workflow nunca ve las credenciales.
-- **Sincronía credenciales/URL en httpbin.** El endpoint `/basic-auth/<user>/<passwd>` de httpbin
-  lleva las credenciales *esperadas* en el path. Al sobreescribir `HTTPBIN_BASIC_USER` /
-  `HTTPBIN_BASIC_PASS`, el script reescribe **tanto** el `authConfig` **como** los paths de los
-  endpoints basic-auth, para que nunca se desincronicen.
-- **Tres formas de invocación de `endpointCall`** (ver `EndpointCallArgs`):
-  1. `adapterId` + `endpointId` — todo (método, path, headers, auth, timeouts) sale del connector.
-  2. `adapterId` + `url` como path (p. ej. `/posts/1`) — se une al `baseUrl` del connector;
-     headers/auth/timeouts del connector siguen aplicando.
-  3. Sin `adapterId` — `url` absoluta, timeout fijo de 30 s, sin reintentos ni auth de adapter.
+`httpbin-basic-auth` usa `auth.authType: basic` con dos bindings `secretRef` anidados — el
+manifest nunca lleva una credencial literal:
 
-## Qué demuestra técnicamente
+| Binding (= var de entorno para `--secrets-from-env`) | Apunta a | Valor por defecto (reproduce el comportamiento original) |
+| --- | --- | --- |
+| `httpbin-basic-auth-username` | `authConfig.basicUsername` | `user` |
+| `httpbin-basic-auth-password` | `authConfig.basicPassword` | `passwd` |
 
-- Definición declarativa de adaptadores de salida: un JSON por API de terceros, versionable en git.
-- Upsert idempotente con reconciliación por drift: solo se aplica la diferencia entre el archivo y
-  el estado de la plataforma.
-- `defaultCache` como configuración del connector (no del workflow), reconciliada vía `PATCH`.
-- Resolución de autenticación en el lado plataforma (`authType: basic` → header `Authorization`).
-- CRUD completo de connectors y endpoints vía gateway (`/api/connectors`,
-  `/api/connectors/:id/endpoints`).
+**Limitación documentada (no es un gap silencioso).** El script eliminado reescribía
+dinámicamente credenciales y paths de endpoint juntos al sobreescribirlos, para que nunca queden
+desincronizados. Un manifest estático no puede hacer eso: para usar credenciales Basic distintas
+hay que editar **tanto** los valores de los secretos **como** los dos `path` de endpoint en
+`manifest.yaml`, a mano. Setear solo uno de los dos (para forzar un mismatch de prueba) sigue
+siendo posible y se comporta igual que en el sample original: httpbin responde `401`.
 
-Referencias de contrato (verificadas en código): `services/api-gateway/src/modules/connectors/connectors.controller.ts`
-(rutas del gateway, prefijo global `api`), `services/connector-admin/src/modules/adapters/adapters.controller.ts`
-+ `adapters.service.ts` (create/list, unicidad `(method, path)`), `packages/shared/src/adapter.interfaces.ts`
-(`AdapterConfig`), `packages/shared/src/adapter-auth-headers.ts` (Basic auth),
-`packages/shared/src/workflow.interfaces.ts` (`EndpointCallArgs`).
+## Gap documentado — `defaultCache` a nivel connector (NO se descarta, se re-expresa)
+
+El `setup.ts` eliminado hacía `PATCH` de un `defaultCache` a **nivel connector** sobre `catfacts`
+(mapeado a la columna `default_cache_strategy` de connector-admin). El schema de manifest v1
+(`connectorSchema`) no tiene un campo `defaultCache` a nivel connector — solo el `cache` **por
+endpoint** (`endpoints[].cache`, misma forma exacta: `enabled`/`ttlSeconds`/`methods`/
+`keyHeaders`/`keyQueryParams`/`keyBody`). Como el `defaultCache` de `catfacts` declaraba
+`methods: ["GET", "HEAD"]` y sus 3 endpoints son GET, `manifest.yaml` adjunta el **mismo** objeto
+de caché a cada uno de los 3 endpoints de `catfacts` — una re-expresión fiel al nivel de
+granularidad que el schema sí soporta, no una aproximación ni una funcionalidad descartada. Ver
+el comentario del propio `manifest.yaml` para el razonamiento completo, incluyendo por qué esta
+traducción NO generalizaría sin pérdida a un connector cuyos endpoints usen métodos distintos.
 
 ## Cómo ejecutarlo y qué esperar
 
-Prerrequisitos: Node >=18 y una plataforma alcanzable (por defecto el clúster de desarrollo).
-No requiere Telegram ni ningún otro sample.
+Prerrequisitos: un clúster de desarrollo corriendo, la CLI `yoizen`, y las variables de entorno
+habituales (`YOIZEN_BASE_URL`, `YOIZEN_HOST_HEADER`, `YOIZEN_TENANT`, `YOIZEN_EMAIL`,
+`YOIZEN_PASSWORD`).
+
+```bash
+cd sdk && bun link
+
+yoizen manifests validate -f ../integrations/http/http-connectors/manifest.yaml
+yoizen manifests plan     -f ../integrations/http/http-connectors/manifest.yaml
+env 'httpbin-basic-auth-username=user' 'httpbin-basic-auth-password=passwd' \
+  yoizen manifests apply  -f ../integrations/http/http-connectors/manifest.yaml --secrets-from-env
+```
+
+Una segunda `apply` es un no-op una vez convergido. Para verificar el catálogo (solo lectura):
 
 ```bash
 cd integrations/http/http-connectors
-./setup.sh    # o ./run.sh, que es equivalente (resuelve el entorno y ejecuta setup.sh)
+./run.sh
 ```
 
-Resultado esperado en la primera corrida: `connectors: created=5 reused=0 endpoints added=31 failed=0`,
-con una línea `+ <METHOD> <path> (<label>)` por endpoint. En una segunda corrida:
-`reuse '<name>' — exists` y `endpoints already up to date`, sin crear nada. Los connectors se
-listan con `GET /api/connectors?context=external` (el summary imprime el `curl` exacto), y sus
-ids son los que consumen los workflows (por ejemplo, `http-fanout-telegram`).
+`run.sh` (`src/index.ts`) lista los connectors `context=external` y confirma que los 5 declarados
+en el manifest existen, imprimiendo id, `authType` y cantidad de endpoints de cada uno. Nunca crea
+ni modifica objetos de la plataforma — aplicar el manifest primero.
+
+## Invocar un connector desde un workflow
+
+Los connectors se consumen con la actividad `endpointCall` (ver `EndpointCallArgs` en
+`packages/shared/src/workflow.interfaces.ts`), con tres formas válidas: `adapterId` +
+`endpointId` (todo resuelto por el connector), `adapterId` + `url` como path relativo (se une al
+`baseUrl` del connector, headers/auth/timeouts del connector siguen aplicando), o sin `adapterId`
+(`url` absoluta, timeout fijo de 30 s, sin auth de adapter).
 
 ## Detalles y advertencias
 
 - **`context` debe ser `external`.** Estos son APIs de terceros; el contexto `internal` es el
   espejo de servicios propios que administra `registry-service`.
-- **Unicidad `(method, path)` por connector.** `GET /post` y `POST /post` son filas distintas; la
-  reconciliación compara exactamente ese par.
-- **"already exists" no es un error.** El par `(name, tenant)` es único: si el create devuelve
-  409, el script lo registra como reuse y continúa con la reconciliación de endpoints.
-- **`401` en `httpbin-basic-auth`** significa que las credenciales Basic no coinciden con los
-  segmentos del path. Sobreescribir solo una de `HTTPBIN_BASIC_USER` / `HTTPBIN_BASIC_PASS` es la
-  forma deliberada de provocar el mismatch; el script en condiciones normales las mantiene en
-  sincronía.
+- **Unicidad `(method, path)` por connector.** El apply engine reconcilia cada endpoint declarado
+  contra los endpoints en vivo por esa clave — no por orden ni por un id declarado en el manifest.
 - **Provisionar ≠ poder llamar.** El connector se crea aunque la API pública no sea alcanzable; en
   runtime la llamada sale desde **dentro del clúster** (egress), no desde la laptop.
 - **Credenciales de ejemplo, no secretos reales.** `user`/`passwd` son valores públicos de prueba
-  de httpbin. Para connectors reales, las credenciales deben salir de un secret store, no de un
-  JSON commiteado.
-- **`RECREATE=1` es destructivo a nivel tenant:** borra *todos* los connectors `context=external`
-  (no solo los de este sample) antes de reprovisionar desde los archivos.
+  de httpbin. Para connectors reales, las credenciales deben salir de un secret store real, nunca
+  de un archivo commiteado (el manifest ya lo garantiza por schema: `auth` es `secretRef`-only).

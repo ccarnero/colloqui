@@ -1,0 +1,221 @@
+apiVersion: yoizen.io/v1
+# kind: LibraryManifest (manual-loops/provisioning-manifest-gaps-2.md T01, gap
+# 1, decision 3 ruling 2026-07-16). This manifest provisions ONLY a connector
+# catalog — no channel, no agent/workflow. `checkAtLeastOneLibraryResource`
+# waives the >=1-inbound-channel/>=1-process structural checks for
+# `LibraryManifest`, requiring instead >=1 of connector/mcpServer/service/
+# systemVariable — satisfied here by the 5 connectors below.
+kind: LibraryManifest
+metadata:
+  name: http-connectors
+spec:
+  # ---------------------------------------------------------------------------
+  # EXISTING-STATE NOTE: these 5 connectors already exist live (recreated
+  # 2026-07-16 via the deleted setup.ts). Names match the live connectors
+  # exactly so `apply` reconciles them (update/noop), never duplicates.
+  #
+  # Endpoints (T02, manual-loops/provisioning-manifest-gaps.md) and connector
+  # `auth` (T01 same parent SPEC, secretRef-only nested targeting) are BOTH
+  # already-shipped manifest v1 mechanisms — this sample is the first to
+  # exercise the FULL 31-endpoint catalog across 5 connectors, one of them
+  # Basic-auth.
+  #
+  # DOCUMENTED GAP (connector-level `defaultCache`, NOT the same as
+  # per-endpoint `endpoints[].cache`): the deleted `catfacts.json` declared a
+  # CONNECTOR-level `defaultCache` block, mapped by the old script's
+  # `client.connectors.update(id, { defaultCache })` to connector-admin's own
+  # `default_cache_strategy` column (`adapters.dto.ts`/`adapters.postgres.
+  # repository.ts`). `connectorSchema` (manifest.schema.ts) has NO top-level
+  # `defaultCache` field — only `config: Record<string, unknown>` (whose keys
+  # the writer ignores except `baseUrl`/`context`, see `connectors-writer.ts`'s
+  # `create()`) and the PER-ENDPOINT `endpoints[].cache`
+  # (`connectorEndpointCacheSchema`, T02) which uses the IDENTICAL shape
+  # (`enabled`/`ttlSeconds`/`methods`/`keyHeaders`/`keyQueryParams`/`keyBody`).
+  # Since catfacts' `defaultCache` declared `methods: ["GET","HEAD"]` and all
+  # 3 of its endpoints are GET, attaching the SAME cache object to each of the
+  # 3 endpoints below is a FAITHFUL re-expression at the granularity the
+  # schema actually supports — not an approximation, no behavior change
+  # (identical enabled/ttlSeconds/keyQueryParams/keyBody values, same
+  # coverage). Flagged here for a human ruling on adding a connector-level
+  # `defaultCache` field to `connectorSchema` for the general case (a
+  # connector with per-endpoint-varying methods could NOT be losslessly
+  # translated this way).
+  # ---------------------------------------------------------------------------
+  connectors:
+    - name: catfacts
+      type: http
+      config:
+        baseUrl: https://catfact.ninja
+        context: external
+      endpoints:
+        - label: Get a random cat fact
+          method: GET
+          path: /fact
+          cache:
+            enabled: true
+            ttlSeconds: 300
+            methods: [GET, HEAD]
+            keyQueryParams: all
+            keyBody: false
+        - label: List cat facts (paginated)
+          method: GET
+          path: /facts
+          cache:
+            enabled: true
+            ttlSeconds: 300
+            methods: [GET, HEAD]
+            keyQueryParams: all
+            keyBody: false
+        - label: List cat breeds (paginated)
+          method: GET
+          path: /breeds
+          cache:
+            enabled: true
+            ttlSeconds: 300
+            methods: [GET, HEAD]
+            keyQueryParams: all
+            keyBody: false
+
+    - name: httpbin
+      type: http
+      config:
+        baseUrl: https://httpbin.org
+        context: external
+      endpoints:
+        - label: Inspect GET request
+          method: GET
+          path: /get
+        - label: Inspect POST request
+          method: POST
+          path: /post
+        - label: Inspect PUT request
+          method: PUT
+          path: /put
+        - label: Inspect PATCH request
+          method: PATCH
+          path: /patch
+        - label: Inspect DELETE request
+          method: DELETE
+          path: /delete
+        - label: Generate a random UUID
+          method: GET
+          path: /uuid
+        - label: Echo request headers
+          method: GET
+          path: /headers
+        - label: Return origin IP
+          method: GET
+          path: /ip
+        - label: Return the User-Agent
+          method: GET
+          path: /user-agent
+        - label: Return sample JSON
+          method: GET
+          path: /json
+        - label: Return a fixed status code
+          method: GET
+          path: /status/200
+
+    # Basic-auth connector: `auth.authType: basic` + nested `secretRef`
+    # targeting (T01 decision 3) — the manifest never carries a literal
+    # credential. See `secrets:` below for the bindings and README.md for the
+    # env-var mapping (defaults reproduce the deleted setup.ts's
+    # HTTPBIN_BASIC_USER/PASS defaults, `user`/`passwd`, which is what the two
+    # endpoint paths below already hard-code — httpbin's `/basic-auth/<user>/
+    # <passwd>` echoes the EXPECTED credentials in the URL path itself. The
+    # deleted script's dynamic path-rewrite (keeping override creds and path
+    # in sync) has no manifest-time equivalent; overriding the credentials
+    # requires editing BOTH the secret value AND these two endpoint paths by
+    # hand — documented as a limitation in README.md, not silently dropped).
+    - name: httpbin-basic-auth
+      type: http
+      config:
+        baseUrl: https://httpbin.org
+        context: external
+      auth:
+        authType: basic
+        basicUsername:
+          secretRef: httpbin-basic-auth-username
+        basicPassword:
+          secretRef: httpbin-basic-auth-password
+      endpoints:
+        - label: Basic auth check (200 when creds match)
+          method: GET
+          path: /basic-auth/user/passwd
+        - label: Hidden basic auth check (404 when creds mismatch)
+          method: GET
+          path: /hidden-basic-auth/user/passwd
+
+    - name: jsonplaceholder
+      type: http
+      config:
+        baseUrl: https://jsonplaceholder.typicode.com
+        context: external
+      endpoints:
+        - label: List all posts
+          method: GET
+          path: /posts
+        - label: Get post by id
+          method: GET
+          path: /posts/1
+        - label: Create a post
+          method: POST
+          path: /posts
+        - label: Replace a post by id
+          method: PUT
+          path: /posts/1
+        - label: Update post fields by id
+          method: PATCH
+          path: /posts/1
+        - label: Delete a post by id
+          method: DELETE
+          path: /posts/1
+        - label: List comments for a post
+          method: GET
+          path: /posts/1/comments
+        - label: Get todo by id
+          method: GET
+          path: /todos/1
+        - label: Get user by id
+          method: GET
+          path: /users/1
+
+    - name: pokeapi
+      type: http
+      config:
+        baseUrl: https://pokeapi.co
+        context: external
+      endpoints:
+        - label: Get Pokemon by name or id
+          method: GET
+          path: /api/v2/pokemon/ditto
+        - label: List Pokemon (paginated)
+          method: GET
+          path: /api/v2/pokemon
+        - label: Get ability by name or id
+          method: GET
+          path: /api/v2/ability/limber
+        - label: Get type by name or id
+          method: GET
+          path: /api/v2/type/water
+        - label: Get move by name or id
+          method: GET
+          path: /api/v2/move/tackle
+        - label: Get generation by name or id
+          method: GET
+          path: /api/v2/generation/generation-i
+
+  # Bound to the connector owner so the broker binding-match check passes
+  # (scope kind=connector, owner=the connector name). The binding NAME is the
+  # env var `--secrets-from-env` reads the VALUE from (no naming transform —
+  # decision 7). Set both to `user`/`passwd` to reproduce the deleted
+  # setup.ts's defaults byte-for-byte (see README.md).
+  secrets:
+    - name: httpbin-basic-auth-username
+      scope:
+        kind: connector
+        owner: httpbin-basic-auth
+    - name: httpbin-basic-auth-password
+      scope:
+        kind: connector
+        owner: httpbin-basic-auth

@@ -3,10 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "http-connectors sample provisioning — upserts declarative outbound HTTP connectors through @yoizen/platform-sdk.",
+  "description": "http-connectors sample driver — verifies the manifest-provisioned outbound HTTP connector catalog through @yoizen/platform-sdk.",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "setup": "tsx src/setup.ts"
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@yoizen/platform-sdk": "file:../../../sdk"
