@@ -482,7 +482,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T05 service `env` vars (gap 5)
 - [x] T06 low-priority cleanup fold-in (optional)
 - [ ] T07 migrate the 9 remaining stand-by samples
-- [ ] T08 restore the full G8 canary set (mcp included for real)
+- [x] T08 restore the full G8 canary set (mcp included for real)
 
 ## Out of scope (explicit)
 
@@ -748,3 +748,36 @@ updated with citations; needs its own human decision round per decision 10.
 
 Gates: G1 383/383 + tsc, G3 299/299 + tsc, revision 00041 + e2e PASSED,
 full regression sweep (8 manifests) all-noop. Dual review: 2x APPROVED.
+
+### T07 batch C (mcp-repo-support-bot) — 2026-07-17
+
+MIGRATED (8/9 total): IntegrationManifest — telegram inbound channel
+(secretRef), mcpServer `deepwiki` (http, NO auth — the task brief's bearer
+assumption was corrected against the deleted setup.ts: authType "none"),
+shared `sample-openai-llm` connector (byte-identical to the ai samples' —
+reviewer-verified zero update-loop risk), two agents (connectorId refs),
+workflow triage→route→conditional(mcpCall via mcpServerRef)→summarize→reply
+verbatim. Live: create×5 + connector noop; second apply FULL NOOP 6/6.
+Commit 4317eb97. Dual review 2x APPROVED.
+
+T07 FINAL STATE: 8/9 migrated (11 manifests total in integrations/**).
+Literal Accept (12 manifests, zero setup files) NOT met — by the SANCTIONED
+decision-10 escalation: `ai-skill-support-agent` requires a `skills`
+manifest section (a fifth resource kind) and stays imperative with an
+updated STANDBY.md until its own decision round. T07 checkbox left
+unchecked to reflect that honestly.
+
+### T08 — 2026-07-17
+
+FULL G8 CANARY SET RESTORED: channels (telegram-transform-reply), ai
+(ai-agent-playground), http (http-connectors — a LibraryManifest canary),
+mcp (mcp-connections — the first REAL mcp canary, human-chosen). All four:
+VALID + two applies each with appliedCount=0 (all-noop both passes).
+The declarative provisioning showcase now covers every group.
+
+LOOP END STATE: T01-T06 + T08 complete; T07 8/9 with one sanctioned
+escalation. OPEN ITEMS FOR FUTURE DECISION ROUNDS: (a) `skills` manifest
+section (fifth resource kind — ai-skill-support-agent); (b) k8s-native
+secretKeyRef service env values (T05 ruling deferral); (c) secret-typed
+systemVariables (parent T04 deferral); (d) trigger accountIds pinning
+(plural-key substitution).
