@@ -2,9 +2,12 @@
  * ai-system-variables sample driver — SDK-powered replacement for the old
  * curl+jq `run.sh` body.
  *
- * Prerequisite: run ./setup.sh once first to provision the system variables,
- * connector, agent, HTTP instance and workflow. This script never creates or
- * modifies platform objects — it only:
+ * Provisioning is now declarative (`manifest.yaml` + `yoizen manifests
+ * apply`, see README.md).
+ *
+ * Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+ * once first (see README.md). This script never creates or modifies
+ * platform objects — it only:
  *   1. Verifies the sample's workflow exists via `client.workflows.list()`.
  *   2. Shows the CURRENT values of the three system variables via
  *      `client.systemVariables.list()` — they ARE the workflow's
@@ -59,8 +62,12 @@ async function main(): Promise<void> {
 
   const workflowName =
     process.env.SYSVARS_WORKFLOW_NAME ?? "ai-system-variables";
+  // The apply engine derives a channel's externalId as `manifest:<name>`
+  // (`channels-writer.ts`) — `manifest.yaml`'s channel name
+  // (`ai-system-variables`) becomes the externalId
+  // `manifest:ai-system-variables`.
   const instance =
-    process.env.SYSVARS_HTTP_EXTERNAL_ID ?? "ai-system-variables";
+    process.env.SYSVARS_HTTP_EXTERNAL_ID ?? "manifest:ai-system-variables";
   const sendDelayS = Number(process.env.SYSVARS_RUN_DELAY_S ?? "2");
 
   // The gateway's dev ingress routes by Host header (see
@@ -84,7 +91,7 @@ async function main(): Promise<void> {
 
   // ----- 1/3: verify workflow exists ------------------------------------------
   console.log(
-    `[run] 1/3 verifying workflow '${workflowName}' exists (run ./setup.sh first if this fails)...`
+    `[run] 1/3 verifying workflow '${workflowName}' exists (apply manifest.yaml first if this fails)...`
   );
   let workflowId: string | undefined;
   for await (const workflow of client.workflows.list()) {
@@ -95,7 +102,7 @@ async function main(): Promise<void> {
   }
   if (!workflowId) {
     console.error(
-      `[run] workflow '${workflowName}' not found — run ./setup.sh first`
+      `[run] workflow '${workflowName}' not found — apply manifest.yaml first`
     );
     process.exit(1);
   }
@@ -137,7 +144,7 @@ async function main(): Promise<void> {
   }
   if (!secret) {
     console.error(
-      `[run] could not resolve the '${instance}' instance token — run ./setup.sh first`
+      `[run] could not resolve the '${instance}' instance token — apply manifest.yaml first`
     );
     process.exit(1);
   }

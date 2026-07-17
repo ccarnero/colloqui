@@ -3,10 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "ai-system-variables sample driver — provisions + drives a brand-stamped escalation router through @yoizen/platform-sdk.",
+  "description": "ai-system-variables sample driver — drives a brand-stamped escalation router through @yoizen/platform-sdk.",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "setup": "tsx src/setup.ts"
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@yoizen/platform-sdk": "file:../../../sdk"

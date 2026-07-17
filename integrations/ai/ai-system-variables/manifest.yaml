@@ -1,0 +1,245 @@
+apiVersion: yoizen.io/v1
+kind: IntegrationManifest
+metadata:
+  name: ai-system-variables
+spec:
+  # Dedicated HTTP channel account — mirrors ai-agent-triage/http-fanout-
+  # telegram's own documented trigger-pin deviation below.
+  channels:
+    - name: ai-system-variables
+      type: http
+      direction: inbound
+
+    # CROSS-SAMPLE DEPENDENCY (Telegram account): owned by
+    # ../../channels/telegram-transform-reply/manifest.yaml, already applied.
+    - name: telegram-transform-reply-bot
+      type: telegram
+      direction: inbound
+      external: true
+
+  # LLM connector — the setup's default credential mode ("connector"), shared
+  # naming convention with the other AI samples (`sample-openai-llm`).
+  connectors:
+    - name: sample-openai-llm
+      type: llm
+      config:
+        baseUrl: https://api.openai.com/v1
+        context: external
+      auth:
+        authType: bearer
+        bearerToken:
+          secretRef: ai-system-variables-openai-api-key
+      # T07 batch B — deleted setup.ts sent `tags: ["llm"]`; required by
+      # agent-admin's credential resolver for the LLM adapter.
+      tags:
+        - llm
+
+  # ---------------------------------------------------------------------------
+  # T04 (parent SPEC, gap 4) systemVariables — the exact three resolution
+  # points this sample demonstrates, none secret-typed (manifest schema
+  # rejects `type: secret` fail-loud — none of these three are credentials,
+  # so no STOP was needed here):
+  #   * companyName        -> stamped into channelSend text (action-arg
+  #                            templating)
+  #   * escalationPriority -> the templated RIGHT-HAND SIDE of the notify
+  #                            conditional's condition.value
+  #   * brandVoice         -> referenced INSIDE the agent's system_prompt
+  #                            below, resolved by agent-ai-service's
+  #                            template renderer at agentCall time
+  # ---------------------------------------------------------------------------
+  systemVariables:
+    # NOTE: systemVariable `name` is a manifest-schema slug (`nameSchema` —
+    # lowercase alphanumeric + hyphens, no camelCase/uppercase), unlike the
+    # deleted setup.ts's live API calls which used the platform's own
+    # camelCase names (`companyName`/`escalationPriority`/`brandVoice`)
+    # directly. Renamed to `company-name`/`escalation-priority`/
+    # `brand-voice` here — every `{{variables.system.<name>}}` reference
+    # below (system_prompt + workflow) uses the SAME renamed slug
+    # consistently, so runtime resolution still works end to end; only the
+    # human-facing variable NAME changed, not its semantics.
+    - name: company-name
+      type: string
+      value: Acme Telco
+      label: Company name
+      description: >-
+        Brand name stamped into workflow notifications
+        (integrations/ai/ai-system-variables).
+    - name: escalation-priority
+      type: string
+      value: high
+      label: Escalation priority
+      description: >-
+        Priority level that routes to the escalation arm — PATCH this to
+        re-route the workflow live (integrations/ai/ai-system-variables).
+    - name: brand-voice
+      type: string
+      value: warm and upbeat, always thanking the customer
+      label: Brand voice
+      description: >-
+        Writing style injected into the classifier agent's system prompt
+        (integrations/ai/ai-system-variables).
+
+    # Telegram recipient — mirrors ai-agent-triage/http-fanout-telegram's own
+    # systemVariable-for-chat-id precedent (the deleted setup.ts
+    # auto-discovered TELEGRAM_CHAT_ID at provisioning time and baked it as a
+    # literal into the workflow's channelSend args; a static manifest
+    # expresses it as a runtime-resolved systemVariable instead). Kept as a
+    # SEPARATE variable from the three demo variables above
+    # (companyName/escalationPriority/brandVoice) — it is delivery plumbing,
+    # not one of this sample's three demonstrated resolution points.
+    - name: ai-system-variables-chat-id
+      type: string
+      value: "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID"
+      label: Telegram chat id for ai-system-variables
+      description: >-
+        Numeric Telegram chat id the 'notify' step DMs the classification
+        summary to. Edit this value and re-apply to change the recipient.
+
+  # `system_prompt` embeds `{{variables.system.company-name}}` and
+  # `{{variables.system.brand-voice}}` VERBATIM — stored as-is and resolved by
+  # agent-ai-service's template renderer at agentCall time, exactly like the
+  # deleted setup.ts's `SYSVARS_SYSTEM_PROMPT`.
+  agents:
+    - name: ai-sample-sysvars
+      profile:
+        description: >-
+          Brand-voiced priority classifier created by
+          integrations/ai/ai-system-variables
+        system_prompt: >-
+          You are a customer-message priority classifier for
+          {{variables.system.company-name}}. Your writing style is:
+          {{variables.system.brand-voice}}. For every customer message you
+          receive, reply ONLY with a compact single-line JSON object and
+          nothing else — no prose, no markdown, no code fences. The object
+          must have exactly these keys: {"priority":
+          "low|normal|high|urgent", "summary": "<one short sentence, written
+          in the brand voice above, summarizing the customer's message>"}
+          Rules: priority MUST be one of the listed values. Angry,
+          threatening, or repeated-failure messages are at least high
+          priority. Calm questions and thanks are low or normal. If the
+          message is empty or meaningless, use priority "low".
+        model_config:
+          llm:
+            provider: openai
+            model: gpt-4o-mini
+            connectorId:
+              connectorRef: sample-openai-llm
+            temperature: 0.1
+            maxTokens: 200
+          rules: >-
+            Reply ONLY with the compact JSON object. Never add prose,
+            markdown, or code fences.
+          soul: Precise, terse, deterministic.
+          subagents: []
+        tools: []
+        channels: []
+
+  # `agentId` (T03 allowlist -> `agentRef`), `accountId` (parent SPEC
+  # allowlist -> `channelRef`) resolve to real ids at apply time. `parse`'s
+  # jsFunction code is embedded VERBATIM from the deleted setup.ts's
+  # `PARSE_CODE`. Note where `{{variables.system.*}}` appears and where it
+  # does NOT (see the deleted setup.ts's own comment, reproduced here):
+  #   * channelSend.args.text embeds {{variables.system.company-name}}
+  #   * notify's condition.value IS
+  #     "{{variables.system.escalation-priority}}" — the conditional's
+  #     right-hand side is template-resolved too, so the routing policy
+  #     lives in the variable store, not in this workflow definition.
+  #   * The agent prompt's {{variables.system.brand-voice}} does NOT appear
+  #     here at all — it lives inside the agent's own system_prompt above.
+  workflows:
+    - name: ai-system-variables
+      definition:
+        application: samples
+        actions:
+          - name: triage
+            activity: agentCall
+            args:
+              agentId:
+                agentRef: ai-sample-sysvars
+              message: "{{request.text}}"
+              conversationId: ai-system-variables
+              userId: "{{request.from}}"
+              channel: http
+          - name: parse
+            activity: jsFunction
+            args:
+              code: |
+                (ctx) => {
+                  var triage = (ctx.results && ctx.results.triage) || {};
+                  var raw = (triage.data && typeof triage.data.reply === "string")
+                    ? triage.data.reply
+                    : "";
+
+                  var cleaned = raw.trim();
+                  var fence = cleaned.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+                  if (fence) cleaned = fence[1].trim();
+
+                  var parsed = null;
+                  try { parsed = JSON.parse(cleaned); } catch (e) { parsed = null; }
+                  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                    parsed = {
+                      priority: "high", // fail safe: an unparseable classification escalates
+                      summary: raw ? ("unparseable agent reply: " + raw.slice(0, 160)) : "agent returned no reply"
+                    };
+                  }
+
+                  return {
+                    priority: parsed.priority || "normal",
+                    summary: parsed.summary || "(no summary)"
+                  };
+                }
+          - name: notify
+            activity: conditional
+            branches:
+              - label: Escalate
+                condition:
+                  variable: results.parse.priority
+                  comparator: eq
+                  value: "{{variables.system.escalation-priority}}"
+                actions:
+                  - name: alertSend
+                    activity: channelSend
+                    args:
+                      accountId:
+                        channelRef: telegram-transform-reply-bot
+                      channel: telegram
+                      provider: telegram
+                      to: "{{variables.system.ai-system-variables-chat-id}}"
+                      type: text
+                      text: |-
+                        🚨 [{{variables.system.company-name}}] escalation — priority: {{results.parse.priority}}
+                        {{results.parse.summary}}
+                        Original: {{request.text}}
+            default:
+              - name: resolveSend
+                activity: channelSend
+                args:
+                  accountId:
+                    channelRef: telegram-transform-reply-bot
+                  channel: telegram
+                  provider: telegram
+                  to: "{{variables.system.ai-system-variables-chat-id}}"
+                  type: text
+                  text: |-
+                    ✅ [{{variables.system.company-name}}] handled — priority: {{results.parse.priority}}
+                    {{results.parse.summary}}
+                    Original: {{request.text}}
+        # DEVIATION (mirrors http-fanout-telegram/manifest.yaml exactly): the
+        # deleted setup.ts pinned this trigger to its own dedicated HTTP
+        # instance via `config.accountIds` (SYSVARS_PIN=1 default), which
+        # manifest v1 cannot express. Unpinned here: fires on ANY HTTP
+        # message for the tenant.
+        trigger:
+          type: message_received
+          mode: shared
+          config:
+            channels:
+              - http
+            providers:
+              - http
+
+  secrets:
+    - name: ai-system-variables-openai-api-key
+      scope:
+        kind: connector
+        owner: sample-openai-llm
