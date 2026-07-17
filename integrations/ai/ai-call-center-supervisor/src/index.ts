@@ -1,10 +1,12 @@
 /**
  * ai-call-center-supervisor sample driver — SDK-powered replacement for the
- * old curl+jq `run.sh` body (see sdk/GROWTH-PLAN.md P3.1, following the
- * `http-bridge` reference pattern).
+ * old curl+jq `run.sh` body, following the `http-bridge` reference pattern.
+ * Provisioning is now declarative (`manifest.yaml` + `yoizen manifests
+ * apply`, see README.md).
  *
- * Prerequisite: run ./setup.sh once first. This script never creates or
- * modifies platform objects — it only:
+ * Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+ * once first (see README.md). This script never creates or modifies
+ * platform objects — it only:
  *   1. Logs in and lists workflows via `client.workflows.list()` to confirm
  *      the sample's workflow exists.
  *   2. Lists `channel: "http"` accounts via `client.channels.listAccounts()`
@@ -40,8 +42,13 @@ async function main(): Promise<void> {
   const workflowName =
     process.env.SUPERVISOR_WORKFLOW_NAME ?? "ai-call-center-supervisor";
   const agentName = process.env.AI_AGENT_NAME ?? "ai-sample-supervisor";
+  // The apply engine derives a channel's externalId as `manifest:<name>`
+  // (`channels-writer.ts`) — `manifest.yaml`'s channel name
+  // (`ai-call-center-supervisor`) becomes the externalId
+  // `manifest:ai-call-center-supervisor`.
   const instanceExternalId =
-    process.env.SUPERVISOR_HTTP_EXTERNAL_ID ?? "ai-call-center-supervisor";
+    process.env.SUPERVISOR_HTTP_EXTERNAL_ID ??
+    "manifest:ai-call-center-supervisor";
   const pauseSeconds = Number(process.env.SUPERVISOR_RUN_PAUSE_SECONDS ?? "3");
   const angryText =
     process.env.SUPERVISOR_RUN_TEXT_ANGRY ??
@@ -69,7 +76,7 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    `[run] 1/3 verifying workflow '${workflowName}' exists (run ./setup.sh first if this fails)...`
+    `[run] 1/3 verifying workflow '${workflowName}' exists (apply manifest.yaml first if this fails)...`
   );
   let workflowId: string | undefined;
   for await (const workflow of client.workflows.list()) {
@@ -80,7 +87,7 @@ async function main(): Promise<void> {
   }
   if (!workflowId) {
     console.error(
-      `[run] workflow '${workflowName}' not found — run ./setup.sh first`
+      `[run] workflow '${workflowName}' not found — apply manifest.yaml first`
     );
     process.exit(1);
   }
@@ -97,7 +104,7 @@ async function main(): Promise<void> {
   }
   if (!appSecret) {
     console.error(
-      `[run] could not resolve the '${instanceExternalId}' instance token — run ./setup.sh first`
+      `[run] could not resolve the '${instanceExternalId}' instance token — apply manifest.yaml first`
     );
     process.exit(1);
   }

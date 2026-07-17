@@ -1,0 +1,263 @@
+apiVersion: yoizen.io/v1
+kind: IntegrationManifest
+metadata:
+  name: ai-call-center-supervisor
+spec:
+  # ---------------------------------------------------------------------------
+  # Dedicated HTTP channel account — a per-instance ingress. See the
+  # DEVIATION note on the workflow trigger below (mirrors http-fanout-
+  # telegram/hosted-services-api's own documented trigger deviation): the
+  # account exists but the trigger cannot be pinned to it today.
+  # ---------------------------------------------------------------------------
+  channels:
+    - name: ai-call-center-supervisor
+      type: http
+      direction: inbound
+
+    # CROSS-SAMPLE DEPENDENCY (Telegram account): owned by
+    # ../../channels/telegram-transform-reply/manifest.yaml, already applied.
+    - name: telegram-transform-reply-bot
+      type: telegram
+      direction: inbound
+      external: true
+
+  # LLM connector — shared naming convention with ai-agent-playground /
+  # ai-agent-triage (`sample-openai-llm`), reconciled as the SAME connector
+  # when applied to the same tenant (mirrors the deleted setup.ts's own
+  # `AI_LLM_CONNECTOR_NAME` default).
+  connectors:
+    - name: sample-openai-llm
+      type: llm
+      config:
+        baseUrl: https://api.openai.com/v1
+        context: external
+      auth:
+        authType: bearer
+        bearerToken:
+          secretRef: ai-call-center-supervisor-openai-api-key
+      # T07 batch B — deleted setup.ts sent `tags: ["llm"]`; required by
+      # agent-admin's credential resolver for the LLM adapter.
+      tags:
+        - llm
+
+  agents:
+    - name: ai-sample-supervisor
+      profile:
+        description: >-
+          AI call-center supervisor triage agent created by
+          integrations/ai/ai-call-center-supervisor
+        system_prompt: >-
+          You are an AI call-center supervisor triage assistant. Each user
+          message is a JSON payload with fields customer_message,
+          customer_id, and crm_record. Analyze it and respond with ONLY a
+          compact single-line JSON object — no markdown, no code fences, no
+          commentary: {"escalate": true|false, "reason": "short explanation",
+          "suggested_reply": "reply the agent could send the customer",
+          "priority": "low|normal|high|urgent"}. Set escalate to true when
+          ANY of these hold: the sentiment is very negative or abusive; a
+          refund greater than $100 is mentioned or demanded; legal action is
+          threatened; or the customer threatens to cancel or shows clear
+          churn risk. Otherwise set escalate to false and provide a helpful
+          suggested_reply.
+        model_config:
+          llm:
+            provider: openai
+            model: gpt-4o-mini
+            connectorId:
+              connectorRef: sample-openai-llm
+            temperature: 0.1
+            maxTokens: 300
+          rules: >-
+            Output strictly the JSON object described in the system prompt.
+            Never add any text before or after it.
+          soul: Calm, precise, risk-aware.
+          subagents: []
+        tools: []
+        channels: []
+
+  # ---------------------------------------------------------------------------
+  # Hosted mock-CRM service — T05 (this SPEC, gap 5) scaling fields + a plain-
+  # string env var. Mirrors the deleted setup.ts's `crmServiceBody()`
+  # field-for-field. `YOIZEN_SAMPLE` is a non-functional debug marker (read by
+  # nothing in the workflow or the echo-server image), not a credential — HUMAN
+  # RULING (2026-07-16/17, T05): plain strings only, no secretRef branch for
+  # service env.
+  # ---------------------------------------------------------------------------
+  services:
+    - name: sample-crm
+      image: ealen/echo-server:latest
+      port: 8080
+      minScale: 0
+      maxScale: 2
+      concurrencyTarget: 25
+      env:
+        - name: YOIZEN_SAMPLE
+          value: ai-call-center-supervisor
+
+  # T04 systemVariables — same rationale as ai-agent-triage/http-fanout-
+  # telegram: the deleted setup.ts baked the auto-discovered supervisor chat
+  # id into the workflow at provisioning time; expressed here as a
+  # runtime-resolved systemVariable instead.
+  systemVariables:
+    - name: ai-call-center-supervisor-chat-id
+      type: string
+      value: "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID"
+      label: Telegram chat id for ai-call-center-supervisor
+      description: >-
+        Numeric Telegram chat id the 'route' step DMs the escalation/resolved
+        summary to. Edit this value and re-apply to change the recipient —
+        resolved at workflow execution time via
+        {{variables.system.ai-call-center-supervisor-chat-id}}.
+
+  # `serviceId` (parent SPEC T05 allowlist -> `serviceRef`), `agentId` (T03
+  # allowlist -> `agentRef`), `accountId` (parent SPEC allowlist ->
+  # `channelRef`) all resolve to real ids at apply time. `buildTriageInput`/
+  # `decide`'s jsFunction code is embedded VERBATIM from the deleted
+  # setup.ts's `TRIAGE_INPUT_CODE`/`DECIDE_CODE`.
+  workflows:
+    - name: ai-call-center-supervisor
+      definition:
+        application: samples
+        actions:
+          - name: lookupCustomer
+            activity: serviceCall
+            args:
+              serviceId:
+                serviceRef: sample-crm
+              serviceSlug: sample-crm
+              method: POST
+              path: /crm/customers/lookup
+              data:
+                customerId: "{{request.from}}"
+                message: "{{request.text}}"
+                source: ai-call-center-supervisor
+          - name: buildTriageInput
+            activity: jsFunction
+            args:
+              code: |
+                (ctx) => {
+                  var req = ctx.request || {};
+                  var lookup = ctx.results.lookupCustomer || {};
+                  var payload = {
+                    customer_message: req.text || "",
+                    customer_id: req.from || "unknown",
+                    crm_record: lookup.data || {}
+                  };
+                  return { text: JSON.stringify(payload) };
+                }
+          - name: triage
+            activity: agentCall
+            args:
+              agentId:
+                agentRef: ai-sample-supervisor
+              message: "{{results.buildTriageInput.text}}"
+              conversationId: ai-call-center-supervisor
+              channel: http
+              userId: "{{request.from}}"
+          - name: decide
+            activity: jsFunction
+            args:
+              code: |
+                (ctx) => {
+                  var req = ctx.request || {};
+                  var triage = ctx.results.triage || {};
+                  var raw = (triage.data && triage.data.reply) || "";
+                  var verdict = {
+                    escalate: true,
+                    reason: "agent reply was not parseable JSON",
+                    suggested_reply: "",
+                    priority: "high"
+                  };
+                  try {
+                    var text = String(raw).trim();
+                    var fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+                    if (fenced) text = fenced[1].trim();
+                    var start = text.indexOf("{");
+                    var end = text.lastIndexOf("}");
+                    if (start >= 0 && end > start) text = text.slice(start, end + 1);
+                    var parsed = JSON.parse(text);
+                    if (typeof parsed.escalate === "boolean") {
+                      verdict = {
+                        escalate: parsed.escalate,
+                        reason: String(parsed.reason || ""),
+                        suggested_reply: String(parsed.suggested_reply || ""),
+                        priority: String(parsed.priority || "normal")
+                      };
+                    }
+                  } catch (e) {
+                    /* keep fail-safe fallback: escalate */
+                  }
+                  var who = req.from || "unknown";
+                  var msg = req.text || "";
+                  var alertText =
+                    "\u{1F6A8} SUPERVISOR ESCALATION\n" +
+                    "Customer: " + who + "\n" +
+                    "Message: " + msg + "\n" +
+                    "Priority: " + verdict.priority + "\n" +
+                    "Reason: " + verdict.reason + "\n" +
+                    "Suggested reply: " + (verdict.suggested_reply || "(none)");
+                  var resolvedText =
+                    "\u{2705} AUTO-RESOLVED\n" +
+                    "Customer: " + who + "\n" +
+                    "Message: " + msg + "\n" +
+                    "Reason: " + verdict.reason + "\n" +
+                    "Suggested reply: " + (verdict.suggested_reply || "(none)");
+                  return {
+                    escalate: verdict.escalate,
+                    priority: verdict.priority,
+                    reason: verdict.reason,
+                    alertText: alertText,
+                    resolvedText: resolvedText
+                  };
+                }
+          - name: route
+            activity: conditional
+            branches:
+              - label: Escalate to supervisor
+                condition:
+                  variable: results.decide.escalate
+                  comparator: eq
+                  value: "true"
+                actions:
+                  - name: notifyEscalation
+                    activity: channelSend
+                    args:
+                      accountId:
+                        channelRef: telegram-transform-reply-bot
+                      channel: telegram
+                      provider: telegram
+                      to: "{{variables.system.ai-call-center-supervisor-chat-id}}"
+                      type: text
+                      text: "{{results.decide.alertText}}"
+            default:
+              - name: notifyResolved
+                activity: channelSend
+                args:
+                  accountId:
+                    channelRef: telegram-transform-reply-bot
+                  channel: telegram
+                  provider: telegram
+                  to: "{{variables.system.ai-call-center-supervisor-chat-id}}"
+                  type: text
+                  text: "{{results.decide.resolvedText}}"
+        # DEVIATION (mirrors http-fanout-telegram/manifest.yaml exactly): the
+        # deleted setup.ts pinned this trigger to its own dedicated HTTP
+        # instance via `config.accountIds` (SUPERVISOR_PIN=1 default), which
+        # manifest v1 cannot express (SUBSTITUTION_ALLOWLIST only covers the
+        # singular `accountId` action-arg key, not the plural
+        # `trigger.config.accountIds`). Unpinned here: fires on ANY HTTP
+        # message for the tenant.
+        trigger:
+          type: message_received
+          mode: shared
+          config:
+            channels:
+              - http
+            providers:
+              - http
+
+  secrets:
+    - name: ai-call-center-supervisor-openai-api-key
+      scope:
+        kind: connector
+        owner: sample-openai-llm

@@ -3,10 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "ai-call-center-supervisor sample provisioning + driver — SDK-powered via @yoizen/platform-sdk.",
+  "description": "ai-call-center-supervisor sample driver — SDK-powered via @yoizen/platform-sdk.",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "setup": "tsx src/setup.ts"
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@yoizen/platform-sdk": "file:../../../sdk"
