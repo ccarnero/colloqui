@@ -677,3 +677,37 @@ sound — 6 static keys). `safeFetchJson` RECORDED as out-of-scope follow-up
 
 Gates: G1 368/368 + tsc, G3 295/295 + tsc, G4 392, G6b revision 00036 + e2e
 PASSED, G5 triple regression all-noop. Dual review: 2x APPROVED (attempt 1).
+
+### T07 batch A (http-connectors + mcp-connections) — 2026-07-17
+
+MIGRATED 2/9 across four attempts, each unblocked by a LIVE-GATE finding:
+1. `http-connectors` → `kind: LibraryManifest`, 5 connectors + 31 endpoints
+   verbatim, httpbin-basic-auth via nested basic secretRef auth (2 bindings,
+   env vars = binding names). Reconciled live 5-noop (no duplicates),
+   idempotent. Deviations documented: connector-level defaultCache
+   re-expressed per-endpoint (schema has no connector-level cache); dynamic
+   basic-auth path rewrite is now a documented manual step.
+2. `mcp-connections` → `kind: LibraryManifest` (mcpServer qualifies; mixed
+   library+process permitted per T01), mcpServer bearer auth via secretRef,
+   agent with enabledMcpTools + toolDescriptionOverrides (NO
+   enabledMcpServerRefs — the old setup never enabled servers; null = all),
+   workflow mcpCall via {mcpServerRef}. Names verified against the DELETED
+   setup.ts (git show): workflow `mcp-connections-demo` IS the code default.
+   Converged live: second apply FULL NOOP 3/3.
+
+LIVE-GATE FINDINGS FIXED (all in this batch, each reviewer-verified):
+(a) secrets.controller had a THIRD hand-kept VALID_SCOPE_KINDS copy missing
+`mcpServer` (parent-T07 dedup missed it); (b) `secretResourceName`
+interpolated the kind verbatim — camelCase `mcpServer` violated RFC 1123
+(k8s 422); now lowercased (no-op for the original five kinds, read/write
+symmetric); (c) `desired-fields-of-resource.ts` had NO case "mcpServer" —
+desired side projected empty → forever-update (parent-T06 escape); now
+delegates to mcpServerComparable; (d) the sample's documented server-side
+feature flags (AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED on agent-admin +
+agent-ai, AGENT_MCP_TOOL_FILTERING_ENABLED on agent-ai) enabled in the
+IN-REPO knative base + both local overlays (overlays replace env wholesale)
+— without them the overrides PATCH skip caused a forever-diff.
+
+Gates: G1 373/373 + tsc, provisioning revision 00039 + overlay applied
+(agent services Ready), e2e-manifest-apply PASSED, G5 triple all-noop,
+both new manifests live-idempotent. Dual review: 2x APPROVED.

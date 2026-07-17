@@ -49,6 +49,15 @@ spec:
               value: "27017"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
+            # Per-tool MCP feature flags (manual-loops/provisioning-manifest-gaps-2.md
+            # T07). Enabled in the dev deployment so the mcp-connections sample's
+            # manifest-declared toolDescriptionOverrides actually lands here at
+            # agent-admin-service (the PATCH /admin/agents/:id/tool-descriptions
+            # handler returns HTTP 400 when this flag is off — provisioning's
+            # agents-writer then correctly skips it, but the override would never
+            # persist and the agent plan verdict would be a forever `update`).
+            - name: AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED
+              value: "true"
             # Fallback API key for the Structured KB LLM path (NL->SQL).
             # The secret is created out-of-band (kubectl create secret) and
             # never committed; optional so the service starts without it.

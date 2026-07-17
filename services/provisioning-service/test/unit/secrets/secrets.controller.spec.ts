@@ -102,6 +102,48 @@ describe("SecretsController — write-only guarantee", () => {
     ).rejects.toBeInstanceOf(HttpException);
   });
 
+  it("PUT /secrets/:name accepts scope.kind mcpServer (T07 — third-copy drift fix)", async () => {
+    // Regression: the controller's own VALID_SCOPE_KINDS set had drifted from
+    // the CLI/shared mirrors, silently rejecting every mcpServer-scoped
+    // binding (T06-parent shipped mcpServer auth/headers secretRef bindings).
+    const service = new SecretsService(
+      fakeStore(),
+      NOOP_SECRET_AUDIT_PUBLISHER
+    );
+    const controller = new SecretsController(service);
+
+    const response = await controller.put(
+      "acme",
+      "mcp-connections-bearer-token",
+      {
+        value: "any-non-empty-value",
+        scope: { kind: "mcpServer", owner: "sample-mcp-server" },
+      }
+    );
+
+    expect(response).toEqual({
+      name: "mcp-connections-bearer-token",
+      scope: { kind: "mcpServer", owner: "sample-mcp-server" },
+    });
+  });
+
+  it("PUT /secrets/:name still rejects scope.kind systemVariable (deliberately omitted)", async () => {
+    // systemVariable is semantically dead as a secret scope (manifests reject
+    // systemVariables[].type: "secret"); mirror the CLI's reviewed rationale.
+    const service = new SecretsService(
+      fakeStore(),
+      NOOP_SECRET_AUDIT_PUBLISHER
+    );
+    const controller = new SecretsController(service);
+
+    await expect(
+      controller.put("acme", "some-var", {
+        value: "v",
+        scope: { kind: "systemVariable", owner: "some-var" },
+      })
+    ).rejects.toBeInstanceOf(HttpException);
+  });
+
   it("PUT /secrets/:name rejects a non-slug secret name", async () => {
     const service = new SecretsService(
       fakeStore(),

@@ -646,6 +646,16 @@ spec:
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
               value: "agent-ai-service"
+            # Per-tool MCP feature flags (manual-loops/provisioning-manifest-gaps-2.md
+            # T07). This overlay REPLACES the base env list wholesale (Knative
+            # Service is a CRD — no strategic merge), so the flags added in
+            # knative/services/base/agent-ai-service.yaml are REPEATED here. They
+            # gate RUNTIME application of the mcp-connections sample's per-tool
+            # enablement and description overrides.
+            - name: AGENT_MCP_TOOL_FILTERING_ENABLED
+              value: "true"
+            - name: AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED
+              value: "true"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -1273,6 +1283,13 @@ spec:
               value: "agent-admin-service"
             - name: CONNECTOR_ADMIN_URL
               value: "http://connector-admin-api.platform-services-dev.svc.cluster.local"
+            # Per-tool MCP feature flag (manual-loops/provisioning-manifest-gaps-2.md
+            # T07). This overlay REPLACES the base env list wholesale, so the flag
+            # added in knative/services/base/agent-admin-service.yaml is REPEATED
+            # here. Enables the tool-descriptions PATCH handler so the
+            # mcp-connections sample's toolDescriptionOverrides persist.
+            - name: AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED
+              value: "true"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

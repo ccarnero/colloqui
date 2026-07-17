@@ -139,6 +139,38 @@ describe("desiredFieldsOfResource", () => {
     });
   });
 
+  it("mcpServer (T07): projects transport_type/url/enabled — same key set the live side supplies, so a converged server reaches noop (not a forever-update)", () => {
+    // Regression: before T07 the switch fell through to `default: {}`,
+    // projecting an EMPTY desired shape while the live side supplied
+    // transport_type/url/enabled — every field was a one-sided diff and the
+    // plan verdict was a forever `update`.
+    const mcpServer: ManifestMcpServer = {
+      name: "sample-mcp-server",
+      transport_type: "http",
+      url: "https://mcp.example.com/mcp",
+      auth: { authType: "bearer", token: { secretRef: "mcp-bearer" } },
+      enabled: true,
+    };
+    expect(desiredFieldsOfResource("mcpServer", mcpServer)).toEqual({
+      transport_type: "http",
+      url: "https://mcp.example.com/mcp",
+      enabled: true,
+    });
+  });
+
+  it("mcpServer (T07): defaults `enabled` to true when the manifest omits it (mirrors the live default)", () => {
+    const mcpServer: ManifestMcpServer = {
+      name: "sample-mcp-server",
+      transport_type: "http",
+      url: "https://mcp.example.com/mcp",
+    };
+    expect(desiredFieldsOfResource("mcpServer", mcpServer)).toEqual({
+      transport_type: "http",
+      url: "https://mcp.example.com/mcp",
+      enabled: true,
+    });
+  });
+
   it("workflow: existence-only projection (opaque definition not mappable to actions/trigger/variables)", () => {
     const workflow: Workflow = {
       name: "ticket-router",

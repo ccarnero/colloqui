@@ -590,6 +590,18 @@ spec:
           value: http://otel-collector.support-services-dev.svc.cluster.local:4318
         - name: OTEL_SERVICE_NAME
           value: agent-ai-service
+        # Per-tool MCP feature flags (manual-loops/provisioning-manifest-gaps-2.md
+        # T07). This overlay REPLACES the base env list wholesale (Knative
+        # Service is a CRD — no strategic merge by name), so the two flags added
+        # in knative/services/base/agent-ai-service.yaml must be REPEATED here or
+        # they are dropped in the dev deployment. These gate RUNTIME application
+        # of the mcp-connections sample's per-tool enablement and description
+        # overrides (the writes always persist upstream; these flags decide
+        # whether agent-ai-service applies them when resolving the agent's tools).
+        - name: AGENT_MCP_TOOL_FILTERING_ENABLED
+          value: "true"
+        - name: AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED
+          value: "true"
         securityContext:
           runAsNonRoot: true
           allowPrivilegeEscalation: false
@@ -1140,6 +1152,17 @@ spec:
         # Dev-only: allow admins to mark MCP servers as scope=internal so
         # the SSRF guard permits in-cluster/private-IP targets.
         - name: MCP_INTERNAL_SCOPE_ENABLED
+          value: "true"
+        # Per-tool MCP feature flag (manual-loops/provisioning-manifest-gaps-2.md
+        # T07). This overlay REPLACES the base env list wholesale (see the
+        # OPENAI_API_KEY comment above), so the flag added in
+        # knative/services/base/agent-admin-service.yaml must be REPEATED here
+        # or it is dropped in the dev deployment. Enables the
+        # PATCH /admin/agents/:id/tool-descriptions handler so the
+        # mcp-connections sample's manifest-declared toolDescriptionOverrides
+        # actually persist (otherwise the handler 400s and the agent plan
+        # verdict stays a forever `update`).
+        - name: AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED
           value: "true"
         securityContext:
           runAsNonRoot: true

@@ -1,119 +1,107 @@
 # mcp-connections
 
-Demonstrates the **MCP Connections** feature end to end through `@yoizen/platform-sdk`'s
-`mcpServers`, `agents`, and `workflows` resources: typed auth on an MCP server, a live
-connectivity probe, live tool discovery, per-agent per-tool enablement (with a description
-override), and an `mcpCall` workflow action. This is the MCP counterpart to the
-[`http-connectors`](../../http/http-connectors) sample (which does the same for outbound HTTP adapters).
+Demonstrates the **MCP Connections** feature end to end: an MCP server with typed auth, an agent
+with per-tool enablement (plus a description override), and a workflow with one `mcpCall` action.
+This is the MCP counterpart to [`http-connectors`](../../http/http-connectors) (which does the
+same for outbound HTTP adapters). Provisioning is **declarative**: a single
+[`manifest.yaml`](./manifest.yaml) applied through the `yoizen` CLI (no setup scripts) — the
+platform's first REAL, migratable MCP canary.
 
-## What gets created
+```
+manifest.yaml ─► yoizen manifests apply ─► agent-admin-service (mcp server, agent, workflow)
+
+workflow mcpCall(serverId, toolName, params) ─► agent-ai-service ─► the MCP server
+```
+
+## Kind decision (`kind: LibraryManifest`)
+
+This manifest provisions an `mcpServer` + an `agent` + a `workflow` — a PROCESS exists (agents/
+workflows), but there is **no channel account** anywhere. An `IntegrationManifest` unconditionally
+requires >=1 inbound channel — `kind: LibraryManifest` waives that (and the >=1-process check)
+and instead requires >=1 of connector/mcpServer/service/systemVariable, satisfied here by the
+`mcpServer`. T01's ruling explicitly **permits** mixed library manifests (library resources
+alongside agents/workflows) — the waiver is additive, not a prohibition. Verified locally against
+`integrationManifestSchema.safeParse` + `validateManifestStructuralRules` before this manifest was
+committed — see the manifest's own header comment and this batch's migration report.
+
+## What `manifest.yaml` provisions
 
 | Resource | Name | Notes |
 | --- | --- | --- |
-| MCP server | `sample-mcp-server` | `transport_type: "http"`, `authType: "bearer"`, pointed at a **fake/example** URL (`https://mcp.example.com/mcp` by default) |
-| Agent | `mcp-connections-demo-agent` | Draft agent with `enabled_mcp_tools` restricted to a hardcoded tool subset for the MCP server above, plus one `tool_description_overrides` entry |
-| Workflow | `mcp-connections-demo` | One `mcpCall` action referencing the MCP server + a hardcoded tool name — no trigger, kept intentionally minimal |
+| MCP server | `sample-mcp-server` | `transport_type: http`, `authType: bearer` via `secretRef`, pointed at a **fake/example** URL (`https://mcp.example.com/mcp`) |
+| Agent | `mcp-connections-demo-agent` | `enabledMcpTools: { sample-mcp-server: [search, lookup] }` + one `toolDescriptionOverrides` entry (`sample-mcp-server:search`) |
+| Workflow | `mcp-connections-demo` | One `mcpCall` action, `serverId: { mcpServerRef: sample-mcp-server }` — no trigger, kept intentionally minimal |
 
-The MCP server URL is **intentionally fake** — this sample's job is to demonstrate the SDK
-call shapes (`create`, `testConnection`, `listTools`, `updateEnabledMcpTools`,
-`updateToolDescriptionOverrides`, and the workflow's `mcpCall` action), not to reach a real
-live MCP integration. `testConnection` and `listTools` are expected to fail or return empty
-against this fake endpoint — the script handles that gracefully (logged as `[WARN]`, not a
-hard failure).
+The MCP server URL is **intentionally fake** — this sample's job is to demonstrate the manifest/
+SDK shapes (`auth`, `testConnection`, `listTools`, `enabledMcpTools`, `toolDescriptionOverrides`,
+and the workflow's `mcpCall` action), not to reach a real live MCP integration. `testConnection`
+and `listTools` are expected to fail or return empty against this fake endpoint.
 
-## Run
+## Secrets (MCP server bearer auth)
+
+The deleted `setup.ts` read `MCP_AUTH_TOKEN` with a fallback literal `"sample-bearer-token"` when
+unset — a placeholder for a fake endpoint, but still a literal value, and manifest v1's `auth`
+block is `secretRef`-only by schema (no plaintext escape hatch). The manifest expresses
+`authType: bearer` with a nested `secretRef` (`mcp-connections-bearer-token`) instead:
+
+| Binding name (= env var for `--secrets-from-env`) | Targets | Value |
+| --- | --- | --- |
+| `mcp-connections-bearer-token` | `authConfig.token` | ANY non-empty string — the endpoint is fake and never actually authenticates |
+
+## Prerequisites
+
+- A running dev cluster with a provisioned tenant (`acme` by default).
+- The `yoizen` CLI (`cd sdk && bun link`, or `cd sdk && bun run bin/yoizen.ts ...`).
+- CLI environment: `YOIZEN_BASE_URL`, `YOIZEN_HOST_HEADER`, `YOIZEN_TENANT`, `YOIZEN_EMAIL`,
+  `YOIZEN_PASSWORD` — same as every other sample.
+- No real MCP server or Telegram account needed — this sample is self-contained.
+
+## Provision (declarative)
+
+```bash
+cd sdk && bun link   # one-time; or prefix each call with `bun run bin/yoizen.ts`
+
+yoizen manifests validate -f ../integrations/mcp/mcp-connections/manifest.yaml
+yoizen manifests plan     -f ../integrations/mcp/mcp-connections/manifest.yaml
+env 'mcp-connections-bearer-token=any-non-empty-value' \
+  yoizen manifests apply  -f ../integrations/mcp/mcp-connections/manifest.yaml --secrets-from-env
+```
+
+A second `apply` is a no-op once converged.
+
+## Run / verify
 
 ```bash
 cd integrations/mcp/mcp-connections
-./setup.sh
-# [STEP]  0/6 preflight
-# [STEP]  2/6 upsert MCP server 'sample-mcp-server'
-# [INFO]  created mcp server id=... (auth=bearer, transport=http)
-# [STEP]  3/6 test connection for mcp server ...
-# [WARN]  testConnection call itself failed (expected — fake endpoint unreachable): ...
-# [STEP]  4/6 discover tools for mcp server ...
-# [WARN]  no tools discovered (expected — fake endpoint has no real tools/list)
-# [STEP]  5/6 upsert agent 'mcp-connections-demo-agent' + per-tool MCP enablement
-# [INFO]  created agent id=...
-# [INFO]  enabled tools [search, lookup] for mcp server 'sample-mcp-server' on agent ...
-# [INFO]  set description override for 'sample-mcp-server:search'
-# [STEP]  6/6 ensure minimal workflow 'mcp-connections-demo' with an mcpCall action
-# [INFO]  created workflow id=...
+./run.sh
 ```
 
-Requires Node >=18 and a reachable platform (defaults to the dev cluster) — provisioning is
-driven by `@yoizen/platform-sdk` via `src/setup.ts` (`setup.sh` resolves the dev environment
-and execs it with `npx tsx`); login itself is handled transparently by the SDK client on first
-request, which is why the stage numbering skips straight from `0/6` to `2/6`. `./run.sh` is
-equivalent to `./setup.sh` — this sample has no separate "call" step, since the workflow is
-never actually executed (the MCP server is unreachable by design).
+`run.sh` (`src/index.ts`) is **read-only**: it confirms the MCP server, agent, and workflow all
+exist; best-effort probes `testConnection()`/`listTools()` (expected to warn — fake endpoint);
+and prints the agent's `enabled_mcp_tools`/`tool_description_overrides`. It never creates or
+modifies platform objects, and never executes the workflow or agent — the MCP server url is
+fake/unreachable by design.
 
-### Environment
+## What each manifest section demonstrates
 
-`setup.sh` sources `../lib/resolve-env.sh` automatically, which loads a `.env` file from this
-directory (if present) and detects the gateway endpoint.
-
-| Env var | Default | Purpose |
-| --- | --- | --- |
-| `RECREATE` | `0` | `1` deletes this sample's own MCP server / agent / workflow (by name) before reprovisioning |
-| `YOIZEN_BASE_URL` | auto-detected | Gateway base URL |
-| `YOIZEN_HOST_HEADER` | auto-detected | `Host` header for the dev ingress |
-| `YOIZEN_TENANT` | `acme` | Tenant id |
-| `YOIZEN_EMAIL` | `yclawd@demo.io` | Login email (dev seed admin) |
-| `YOIZEN_PASSWORD` | `admin123` | Login password |
-| `MCP_SERVER_NAME` | `sample-mcp-server` | MCP server name |
-| `MCP_SERVER_URL` | `https://mcp.example.com/mcp` | Fake/example endpoint |
-| `MCP_AUTH_TOKEN` | `sample-bearer-token` | Bearer token in `authConfig.token` |
-| `MCP_SAMPLE_TOOLS` | `search,lookup` | Comma-separated hardcoded tool names enabled per-agent |
-| `MCP_TOOL_DESCRIPTION_OVERRIDE` | (built-in text) | Override text for the first tool in `MCP_SAMPLE_TOOLS` |
-| `MCP_AGENT_NAME` | `mcp-connections-demo-agent` | Demo agent name |
-| `MCP_WORKFLOW_NAME` | `mcp-connections-demo` | Demo workflow name |
-| `MCP_APPLICATION` | `samples` | Workflow's `application` field |
-
-## SDK surface demonstrated
-
-Verified directly against `sdk/src/resources/mcp-servers/`, `sdk/src/resources/agents/`, and
-`sdk/src/resources/workflows/`:
-
-- `client.mcpServers.create(input)` — `authType`/`authConfig` are **camelCase** on the wire
-  (not `auth_type`/`auth_config` as an earlier design draft assumed).
-- `client.mcpServers.testConnection(id)` — `POST admin/mcp-servers/:id/test`, no request body,
-  no persistence side-effect; returns `{ success, latencyMs, toolCount?, error? }`.
-- `client.mcpServers.listTools(id)` — `GET admin/mcp-servers/:id/tools`, live `tools/list`
-  probe; returns `{ name, description, inputSchema }[]`.
-- `client.agents.updateEnabledMcpTools(id, { enabled_mcp_tools })` — `PATCH
-  admin/agents/:id/mcp-tools`; `enabled_mcp_tools` is `Record<serverName, string[] | null>`,
-  keyed by **MCP server name**, not id. `null` means "all tools enabled" for that server.
-- `client.agents.updateToolDescriptionOverrides(id, { tool_description_overrides })` — accepts
-  `"<serverName>:<toolName>"` keys for MCP tools, alongside its existing plain-name keys for
-  adapter/builtin tools.
-- `client.workflows.create(input)` with one action built from the `McpCallAction` helper type
-  (`{ name, activity: "mcpCall", args: { serverId, toolName, params? } }`), assignable to the
-  looser `WorkflowAction` the base workflow type uses.
-
-**Feature flag note**: per-tool MCP filtering is gated server-side by
-`AGENT_MCP_TOOL_FILTERING_ENABLED` (default off, per `DOCS/architecture/mcp-connections.md`
-§4). This sample's `updateEnabledMcpTools` call is expected to succeed and persist regardless
-— the flag only affects whether `agent-ai-service` applies the filter at runtime, not whether
-the SDK/API accepts the write.
-
-## Known SDK gaps found while building this sample
-
-- `sdk/src/resources/mcp-servers/index.ts` does not re-export `McpServerTestConnectionResult` —
-  callers can still use `testConnection()`'s return value via inference, just not import the
-  type by name from the `mcp-servers` subpath.
-- `sdk/src/resources/agents/index.ts` does not re-export `UpdateEnabledMcpToolsInput` (defined
-  in `agents/types.ts`, used by `AgentsClient.updateEnabledMcpTools`'s signature, but missing
-  from the barrel export) — this sample passes an inline object literal to
-  `updateEnabledMcpTools` instead of importing the type.
+- **`mcpServers[].auth`** — typed `authType`/`authConfig`, secretRef-only (T01/T06 decision 3),
+  mirrored field-for-field from `mcpServerAuthSchema`.
+- **`agents[].enabledMcpTools`** — per-tool allowlist scoped to one MCP server, keyed by server
+  NAME (never substituted to an id — decision 6, same precedent as `enabledMcpServerRefs`).
+- **`agents[].toolDescriptionOverrides`** — `"<serverName>:<toolName>"` keys for MCP tools,
+  reconciled via a dedicated PATCH after the agent itself is created/resolved.
+- **`workflows[].definition` `mcpCall` action** — `serverId: { mcpServerRef: <name> }`, the ONLY
+  place `mcpServerRef` participates in manifest-time name->id substitution (T06's
+  `SUBSTITUTION_ALLOWLIST`).
 
 ## Troubleshooting
 
-- **`Login failed`** — check `YOIZEN_EMAIL` / `YOIZEN_PASSWORD` / `YOIZEN_TENANT` and that the
-  gateway is reachable at `YOIZEN_BASE_URL`.
-- **`testConnection`/`listTools` warnings** — expected. The MCP server URL is fake by design;
-  point `MCP_SERVER_URL` at a real reachable MCP server (egress-reachable from inside the
-  cluster) to see a real success result.
-- **`updateEnabledMcpTools` succeeds but has no runtime effect** — check whether
-  `AGENT_MCP_TOOL_FILTERING_ENABLED` is enabled server-side; the write always persists, but the
-  filter is only *applied* when the flag is on.
+- **`updateEnabledMcpTools` persists but has no runtime effect** — check whether
+  `AGENT_MCP_TOOL_FILTERING_ENABLED` is enabled server-side on `agent-ai-service`; the write
+  always persists, the flag only controls whether it's *applied* at runtime.
+- **`tool_description_overrides` skipped with a warning during apply** — gated server-side by
+  `AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED` on `agent-admin-service`. A disabled flag is a valid
+  platform state; `agents-writer.ts` treats it as a skip, not a failure.
+- **Want a REAL MCP integration instead of the fake endpoint?** Edit `manifest.yaml`'s `url` to a
+  public, egress-reachable MCP server (the platform's SSRF guard blocks localhost/RFC1918 URLs)
+  and re-`apply` — `testConnection`/`listTools` will then report real results.

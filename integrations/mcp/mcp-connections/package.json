@@ -3,10 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "mcp-connections sample provisioning — demonstrates the MCP Connections feature (auth, test-connection, tool discovery, per-tool agent enablement, and an mcpCall workflow action) through @yoizen/platform-sdk.",
+  "description": "mcp-connections sample driver — verifies the manifest-provisioned MCP server, agent, and workflow (auth, test-connection, tool discovery, per-tool agent enablement, and an mcpCall workflow action) through @yoizen/platform-sdk.",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "setup": "tsx src/setup.ts"
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@yoizen/platform-sdk": "file:../../../sdk"

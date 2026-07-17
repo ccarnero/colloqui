@@ -14,6 +14,7 @@ import type {
   Connector,
   HostedService,
   ManifestChannel,
+  ManifestMcpServer,
   ManifestSystemVariable,
   Workflow,
 } from "@yoizen/shared";
@@ -22,6 +23,7 @@ import {
   agentComparable,
   channelComparable,
   connectorComparable,
+  mcpServerComparable,
   serviceComparable,
   systemVariableComparable,
   workflowComparable,
@@ -37,6 +39,14 @@ export function desiredFieldsOfResource(
       return channelComparable.fromManifest(resource as ManifestChannel);
     case "connector":
       return connectorComparable.fromManifest(resource as Connector);
+    // manual-loops/provisioning-manifest-gaps-2.md T07: without this case the
+    // switch fell through to `default: {}`, projecting an EMPTY desired shape
+    // for mcpServer while the mcp-servers-client projected the live side
+    // (transport_type/url/enabled) — every field became a one-sided diff and
+    // the mcpServer plan verdict was a FOREVER `update`. Both sides now share
+    // `mcpServerComparable`, so a converged server reaches `noop`.
+    case "mcpServer":
+      return mcpServerComparable.fromManifest(resource as ManifestMcpServer);
     case "agent":
       return agentComparable.fromManifest(resource as Agent);
     case "service":

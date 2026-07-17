@@ -3,10 +3,14 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # Drives the mcp-connections sample — SDK-powered via `@yoizen/platform-sdk`.
-# The actual provisioning logic lives in src/index.ts (which just delegates to
-# src/setup.ts's provisionMcpConnections()); this script only resolves the dev
-# environment (via ../../lib/resolve-env.sh, same as every other sample's
-# run.sh) and execs the Node app with those env vars in scope.
+# Provisioning itself is now declarative (`manifest.yaml` +
+# `yoizen manifests apply`, see README.md); src/index.ts only VERIFIES the
+# already-provisioned MCP server, agent, and workflow. This script only
+# resolves the dev environment (via ../../lib/resolve-env.sh, same as every
+# other sample's run.sh) and execs the Node app with those env vars in scope.
+#
+# Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+# once first. This script never creates or modifies platform objects.
 . ../../lib/resolve-env.sh
 
 if ! command -v node >/dev/null 2>&1; then

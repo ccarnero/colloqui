@@ -45,6 +45,18 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
+            # Per-tool MCP feature flags (manual-loops/provisioning-manifest-gaps-2.md
+            # T07). Enabled in the dev deployment so the mcp-connections sample's
+            # per-tool enablement (enabledMcpTools) and description overrides are
+            # actually APPLIED at runtime here in agent-ai-service (these flags
+            # only gate runtime application; the writes always persist upstream at
+            # agent-admin-service). AGENT_MCP_TOOL_FILTERING_ENABLED gates the
+            # per-tool allowlist filter; AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED
+            # gates applying the overrides when resolving the agent's tools.
+            - name: AGENT_MCP_TOOL_FILTERING_ENABLED
+              value: "true"
+            - name: AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED
+              value: "true"
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

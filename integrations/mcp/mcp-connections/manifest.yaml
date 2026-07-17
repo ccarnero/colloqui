@@ -1,0 +1,122 @@
+apiVersion: yoizen.io/v1
+# KIND DECISION (documented reasoning, verified against the validator +
+# T01's reviewed design — manual-loops/provisioning-manifest-gaps-2.md):
+#
+# This manifest provisions an mcpServer + an agent + a workflow — a PROCESS
+# exists (agents/workflows are the "process" resource kind per
+# `validate-structural-rules.ts`'s comment on `agentSchema`), but there is NO
+# channel account anywhere. An `IntegrationManifest` unconditionally requires
+# >=1 inbound channel (`checkAtLeastOneInboundChannel`) AND >=1 process
+# (`checkAtLeastOneProcess`) — the channel check would fail here, exactly the
+# gap 1 STANDBY.md recorded (2026-07-16 update, blocker #1).
+#
+# `kind: LibraryManifest` waives BOTH the >=1-channel and >=1-process checks
+# and instead requires `checkAtLeastOneLibraryResource`: >=1 of
+# connector/mcpServer/service/systemVariable. The `mcpServer` below satisfies
+# that on its own. T01's ruling PERMITS mixed library manifests (library
+# resources alongside agents/workflows) — the waiver is additive, not a
+# prohibition on declaring a process too. So `kind: LibraryManifest` is valid
+# here even though this manifest ALSO declares an agent and a workflow —
+# verified locally against `integrationManifestSchema.safeParse` +
+# `validateManifestStructuralRules` (see this batch's report) before writing
+# this file.
+kind: LibraryManifest
+metadata:
+  name: mcp-connections
+spec:
+  # ---------------------------------------------------------------------------
+  # MCP server. `transport_type`/`url`/`description` mirror the deleted
+  # setup.ts's `buildMcpServerPayload()` verbatim (fake/example endpoint,
+  # intentionally unreachable — this sample demonstrates the SDK/manifest call
+  # shapes, not a live MCP integration).
+  #
+  # AUTH: the deleted setup.ts read `MCP_AUTH_TOKEN` with a FALLBACK LITERAL
+  # `"sample-bearer-token"` when the env var was unset — that literal is a
+  # PLACEHOLDER value for a fake endpoint, never a real credential, but it is
+  # still a literal secret-shaped value and manifest v1's `auth` block is
+  # secretRef-ONLY by schema (T01/T06 decision 3 — no plaintext escape hatch).
+  # So the manifest expresses `authType: bearer` with a nested `secretRef`
+  # (`mcp-connections-bearer-token`) instead of any inline literal — see
+  # `secrets:` below and README.md, which documents that ANY value works for
+  # this demo (the endpoint is fake and never actually authenticates).
+  # ---------------------------------------------------------------------------
+  mcpServers:
+    - name: sample-mcp-server
+      description: >-
+        Example MCP server created by integrations/mcp/mcp-connections (fake
+        endpoint, demonstrates auth/agent-wiring/mcpCall manifest shapes)
+      transport_type: http
+      url: https://mcp.example.com/mcp
+      auth:
+        authType: bearer
+        token:
+          secretRef: mcp-connections-bearer-token
+      enabled: true
+
+  # T04 (manual-loops/provisioning-manifest-gaps-2.md, gap 4) per-tool MCP
+  # fields, mirroring the deleted setup.ts's stage 5 exactly:
+  #   - enabledMcpTools: { "sample-mcp-server": ["search", "lookup"] } —
+  #     `client.agents.updateEnabledMcpTools`'s payload shape, NAME-keyed
+  #     (decision 6, never substituted to an id).
+  #   - toolDescriptionOverrides: { "sample-mcp-server:search": "<override
+  #     text>" } — `client.agents.updateToolDescriptionOverrides`'s payload
+  #     shape, verbatim override text from setup.ts's
+  #     DESCRIPTION_OVERRIDE_TEXT default.
+  # `profile` carries the passthrough fields `agents-writer.ts` recognizes
+  # (description/system_prompt/model_config/tools/channels) — all verbatim
+  # from the deleted setup.ts's `buildAgentPayload()`.
+  agents:
+    - name: mcp-connections-demo-agent
+      profile:
+        description: >-
+          Demo agent wired to a subset of an MCP server's tools, created by
+          integrations/mcp/mcp-connections
+        system_prompt: >-
+          You are a demo assistant wired to a subset of an MCP server's
+          tools. Use the enabled tools when relevant to the user's request.
+        model_config: {}
+        tools: []
+        channels: []
+      enabledMcpTools:
+        sample-mcp-server:
+          - search
+          - lookup
+      toolDescriptionOverrides:
+        sample-mcp-server:search: >-
+          Searches the sample MCP server's index. Prefer this over any
+          built-in search tool for this agent.
+
+  # Minimal workflow, one `mcpCall` action — mirrors the deleted setup.ts's
+  # `buildWorkflowBody()`. `serverId` is an `{ mcpServerRef }` (T06's
+  # SUBSTITUTION_ALLOWLIST entry — the ONLY place `mcpServerRef` participates
+  # in name->id substitution), resolved to the real agent-admin-service MCP
+  # server id at apply time — never a manifest-time id baked in verbatim. No
+  # trigger: this sample's job is showing the SDK/manifest call shape for
+  # `mcpCall`, not building workflow scaffolding (same as the deleted script's
+  # own comment).
+  workflows:
+    - name: mcp-connections-demo
+      definition:
+        application: samples
+        actions:
+          - name: callMcpTool
+            activity: mcpCall
+            args:
+              serverId:
+                mcpServerRef: sample-mcp-server
+              toolName: search
+              params: {}
+
+  # Bound to the mcpServer owner so the broker binding-match check passes
+  # (scope kind=mcpServer, owner=the mcp server name). The binding NAME is the
+  # env var `--secrets-from-env` reads the VALUE from (no naming transform —
+  # decision 7). ANY non-empty value works for this demo — the endpoint is
+  # fake/unreachable and never actually authenticates against a real server;
+  # this is NOT the same as the deleted script's `"sample-bearer-token"`
+  # fallback literal, which this manifest deliberately does not reproduce
+  # (see the mcpServers comment above).
+  secrets:
+    - name: mcp-connections-bearer-token
+      scope:
+        kind: mcpServer
+        owner: sample-mcp-server

@@ -21,6 +21,15 @@ describe("secretResourceName", () => {
     );
   });
 
+  it("lowercases the camelCase mcpServer kind to a valid RFC 1123 name (T07)", () => {
+    // Regression: k8s metadata.name must be an RFC 1123 subdomain
+    // (lowercase); `psec-mcpServer-<owner>` was rejected with a 422 before
+    // the kind token was lowercased.
+    expect(secretResourceName("mcpServer", "sample-mcp-server")).toBe(
+      "psec-mcpserver-sample-mcp-server"
+    );
+  });
+
   it("is a pure function — same inputs always produce the same name", () => {
     const a = secretResourceName("connector", "hubspot");
     const b = secretResourceName("connector", "hubspot");
