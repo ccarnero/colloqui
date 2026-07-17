@@ -212,16 +212,19 @@ Between stress runs or after a failed integration-test run, leftover state
 can make the *next* run fail with what looks like a fresh timeout even
 though nothing is actually slow — a tripped circuit breaker's cooldown TTL,
 a Temporal workflow still `Running`, or old messages/rows still sitting in
-NATS/Postgres/Redis. These three scripts clear that residue without
-touching topology, schemas, or credentials:
+NATS/Postgres/Redis. All reset/cleanup scripts live under `scripts/reset/`
+and clear that residue without touching topology, schemas, or credentials:
 
 | Script | Clears | Notes |
 |---|---|---|
-| `scripts/purge-circuit-breakers.sh` | Redis `cb:*` breaker state (connector-runtime HTTP/agent, channel-service egress) | A tripped breaker's cooldown (~100s) otherwise fails every subsequent call with `Circuit breaker open ... (cooldown)` until it expires on its own. `--dry-run` / `count` subcommand available. |
-| `scripts/purge-temporal.sh` | Temporal workflow/history/task-queue tables (`postgres-temporal`, `postgres-temporal-visibility`) | Full DB recreate takes ~2-4min; this truncates in ~5-10s. Scales Temporal to 0 first to avoid lock contention. `--dry-run` / `counts` subcommand available. |
-| `scripts/reset-dev.ts` | JetStream stream contents + claim-check payloads, per-tenant Postgres/Mongo message & event tables, Redis caches/counters | See `RESET-INVENTORY.md` for the full DATA-vs-CONFIG classification this script implements. Dry-run by default; `--apply` (+ confirmation) actually deletes. Requires `pnpm install` at the repo root once. |
+| `scripts/reset/purge-circuit-breakers.sh` | Redis `cb:*` breaker state (connector-runtime HTTP/agent, channel-service egress) | A tripped breaker's cooldown (~100s) otherwise fails every subsequent call with `Circuit breaker open ... (cooldown)` until it expires on its own. `--dry-run` / `count` subcommand available. |
+| `scripts/reset/purge-temporal.sh` | Temporal workflow/history/task-queue tables (`postgres-temporal`, `postgres-temporal-visibility`) | Full DB recreate takes ~2-4min; this truncates in ~5-10s. Scales Temporal to 0 first to avoid lock contention. `--dry-run` / `counts` subcommand available. |
+| `scripts/reset/reset-dev.ts` | JetStream stream contents + claim-check payloads, per-tenant Postgres/Mongo message & event tables, Redis caches/counters | See `scripts/reset/INVENTORY.md` for the full DATA-vs-CONFIG classification this script implements. Dry-run by default; `--apply` (+ confirmation) actually deletes. Requires `pnpm install` at the repo root once. |
+| `scripts/reset/reset-tenant.sh` | Tenant resource *definitions* (workflows, agents, channel accounts, etc.) + `tracking.tracked_events` | Manifest-from-zero wipe; preserves `tenant_users`/`tenant_roles`/`credentials`. `--dry-run` by default. |
+| `scripts/reset/reset-all.sh` | Orchestrates all four scripts above in order | One-shot full dev-environment wipe. `--dry-run` by default. |
 
 Each script documents its own required flags/env vars in its header
-comment — read that before running it.
+comment — read that before running it. See `scripts/reset/README.md` for the
+full walkthrough and the `.env`/`.env.example` convention.
 
 Full documentation: [DOCS/README.md](DOCS/README.md)

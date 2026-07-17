@@ -31,7 +31,7 @@ kubectl -n $NS exec deploy/temporal -c temporal -- \
 kubectl -n $NS get pods -l app.kubernetes.io/name=temporal
 
 # Purge all workflow state (clean slate)
-./scripts/purge-temporal.sh --namespace=$NS --yes
+./scripts/reset/purge-temporal.sh --namespace=$NS --yes
 ```
 
 ---
@@ -183,7 +183,7 @@ NS=support-services-dev
 
 # 1. Optional: wipe stale workflow state on the CNPG cluster.
 #    Only needed when re-bootstrapping with existing Postgres data.
-./scripts/purge-temporal.sh --namespace=$NS --skip-restart --yes
+./scripts/reset/purge-temporal.sh --namespace=$NS --skip-restart --yes
 
 # 2. Apply the kustomize overlay. Creates:
 #    - ConfigMap (dynamic config)
@@ -281,16 +281,16 @@ kubectl -n $NS exec deploy/temporal -c temporal -- \
 
 Drop ALL workflow state without dropping schema. Useful between
 back-to-back test runs. Implemented by
-[`scripts/purge-temporal.sh`](../../scripts/purge-temporal.sh):
+[`scripts/reset/purge-temporal.sh`](../../scripts/reset/purge-temporal.sh):
 
 ```bash
-./scripts/purge-temporal.sh --namespace=$NS --yes
+./scripts/reset/purge-temporal.sh --namespace=$NS --yes
 
 # Variants:
-./scripts/purge-temporal.sh --namespace=$NS --skip-restart --yes
+./scripts/reset/purge-temporal.sh --namespace=$NS --skip-restart --yes
 # ^ wipe but leave temporal at 0 replicas (you'll restart later)
 
-./scripts/purge-temporal.sh --namespace=$NS counts
+./scripts/reset/purge-temporal.sh --namespace=$NS counts
 # ^ read-only: print row counts in workflow tables
 ```
 
@@ -425,7 +425,7 @@ All alerts live in
 - **Persistence**: [`infrastructure/base/postgres/postgres-temporal-cluster.yaml`](../../infrastructure/base/postgres/postgres-temporal-cluster.yaml)
 - **Overlays**: [`infrastructure/overlays/local/local-base/patches/postgres-temporal-resources.yaml`](../../infrastructure/overlays/local/local-base/patches/postgres-temporal-resources.yaml), [`infrastructure/overlays/orbstack/orbstack-base/patches/postgres-temporal.yaml`](../../infrastructure/overlays/orbstack/orbstack-base/patches/postgres-temporal.yaml)
 - **Bootstrap script**: [`bootstrap-orbstack-osx.sh`](../../bootstrap-orbstack-osx.sh)
-- **Purge script**: [`scripts/purge-temporal.sh`](../../scripts/purge-temporal.sh)
+- **Purge script**: [`scripts/reset/purge-temporal.sh`](../../scripts/reset/purge-temporal.sh)
 - **Prometheus alerts**: [`infrastructure/base/observability/prometheus/alerts.yaml`](../../infrastructure/base/observability/prometheus/alerts.yaml)
 - **Historical HA migration runbook**: [`DOCS/runbooks/archive/temporal-ha-migration.md`](./archive/temporal-ha-migration.md)
 - **Historical visibility-split runbook**: [`DOCS/runbooks/archive/temporal-visibility-split.md`](./archive/temporal-visibility-split.md)

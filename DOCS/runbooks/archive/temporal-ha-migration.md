@@ -77,7 +77,7 @@ kubectl -n $NS delete deploy/temporal --ignore-not-found
 #    workflows on the new ring. The new manifests' rbac-schema-wait
 #    ServiceAccount + Job handle their own readiness; only the
 #    workflow data is "stale" relative to the new topology.
-./scripts/purge-temporal.sh --namespace=$NS --skip-restart --yes
+./scripts/reset/purge-temporal.sh --namespace=$NS --skip-restart --yes
 
 # 3. Apply the new manifests. Kustomize creates:
 #    - ServiceAccount + Role + RoleBinding (rbac-schema-wait)
@@ -403,7 +403,7 @@ git checkout <pre-migration-sha> -- \
   infrastructure/overlays/local/local-base/patches/postgres-temporal-resources.yaml \
   infrastructure/overlays/orbstack/orbstack-base/patches/postgres-temporal.yaml \
   infrastructure/scripts/ensure-temporal-visibility-schema.sh \
-  bootstrap-orbstack-osx.sh scripts/purge-temporal.sh
+  bootstrap-orbstack-osx.sh scripts/reset/purge-temporal.sh
 
 # 2. Drop the new resources, leaving Postgres + secrets alone.
 kubectl -n $NS delete deploy/temporal-frontend deploy/temporal-history \

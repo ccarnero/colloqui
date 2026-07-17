@@ -31,7 +31,7 @@ function log(message: string): void {
   console.log(`[apply-schema] ${message}`);
 }
 
-/** Mirrors scripts/reset-dev.ts: connection is never defaulted. */
+/** Mirrors scripts/reset/reset-dev.ts: connection is never defaulted. */
 function resolveDsn(): string | undefined {
   for (const name of DSN_ENV) {
     const value = process.env[name]?.trim();

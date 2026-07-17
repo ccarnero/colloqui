@@ -1,13 +1,13 @@
-# RESET-README — wiping dev-environment data by hand
+# scripts/reset/README.md — wiping dev-environment data by hand
 
 How to clean ALL message/event/test data from the local dev cluster
 (OrbStack). Values below are baked in on purpose: this is the throwaway dev
 environment — every service in it uses the same `yoizen / yoizen-dev-password`
 app credentials, and the `*.svc.cluster.local` DNS names are routable from the
-host (OrbStack). See `RESET-INVENTORY.md` for the audit of exactly what each
+host (OrbStack). See `INVENTORY.md` for the audit of exactly what each
 stage touches.
 
-## 1. Main reset — `scripts/reset-dev.ts`
+## 1. Main reset — `scripts/reset/reset-dev.ts`
 
 Wipes JetStream stream contents (ingress, DLQ, gateway audit, claim-check
 payload buckets), per-tenant Postgres data tables, the usage Timescale DB, and
@@ -27,7 +27,7 @@ USAGE_POSTGRES_PORT=5432 \
 USAGE_POSTGRES_USER=yoizen USAGE_POSTGRES_PASSWORD=yoizen-dev-password \
 USAGE_POSTGRES_DB=yoizen_usage \
 REDIS_HOST=redis.support-services-dev.svc.cluster.local REDIS_PORT=6379 \
-bun run scripts/reset-dev.ts
+bun run scripts/reset/reset-dev.ts
 ```
 
 To actually delete, append `--apply` (asks for a typed `yes`) or
@@ -46,7 +46,7 @@ Notes that cost real debugging time — do not "fix" them:
 ## 2. Tracking traces — `tracking.tracked_events` (NOT covered by reset-dev)
 
 The trace/causal store (what the console shows under Processes → Trace) lives
-in the platform DB and post-dates `RESET-INVENTORY.md`, so `reset-dev.ts` does
+in the platform DB and post-dates `INVENTORY.md`, so `reset-dev.ts` does
 not wipe it. Manual wipe:
 
 ```bash
@@ -58,16 +58,16 @@ Payload claim-check blobs referenced by those rows live in the JetStream
 `PAYLOAD-<tenant>` buckets, which reset-dev DOES purge — run both for a full
 trace wipe.
 
-## 3. Temporal state — `scripts/purge-temporal.sh`
+## 3. Temporal state — `scripts/reset/purge-temporal.sh`
 
 Truncates workflow histories + visibility rows (both CNPG clusters) without
 dropping databases or namespaces. ~5-10s.
 
 ```bash
-./scripts/purge-temporal.sh
+./scripts/reset/purge-temporal.sh
 ```
 
-## 4. Circuit breakers — `scripts/purge-circuit-breakers.sh`
+## 4. Circuit breakers — `scripts/reset/purge-circuit-breakers.sh`
 
 Clears `cb:*` Redis state only (also included in reset-dev's Redis stage).
 
@@ -79,6 +79,35 @@ its per-run account. If a pre-T08 run left `e2e-http-log` / `e2e-http-agent`
 definitions behind, either run the current script once (it converges and then
 deletes them) or delete them via the console.
 
+## 6. Tenant definitions — `scripts/reset/reset-tenant.sh`
+
+Manifest-from-zero wipe: truncates the resource-*definition* tables in a
+tenant's Postgres database (`workflow_definitions`, `agents`,
+`channel_accounts`, etc. — see `INVENTORY.md`'s "Manifest-from-zero" section
+for the full table list and rationale) plus `tracking.tracked_events` on the
+platform DB. Preserves `tenant_users`, `tenant_roles`,
+`tenant_role_permissions`, and `credentials` so login/RBAC survive the wipe.
+
+```bash
+./scripts/reset/reset-tenant.sh --tenant acme --dry-run
+./scripts/reset/reset-tenant.sh --tenant acme --apply --yes
+```
+
+After an apply, re-provision the tenant with `yoizen manifests apply` and
+re-register the Telegram webhook by hand (see
+`integrations/channels/telegram-transform-reply/README.md` § "Run /
+exercise") — the old channel account no longer exists.
+
+## 7. One-shot full wipe — `scripts/reset/reset-all.sh`
+
+Runs all four scripts above in order (reset-dev.ts, purge-temporal.sh,
+reset-tenant.sh, purge-circuit-breakers.sh):
+
+```bash
+./scripts/reset/reset-all.sh --dry-run
+./scripts/reset/reset-all.sh --apply --yes
+```
+
 ## Full wipe, in order
 
 ```bash
@@ -87,5 +116,26 @@ deletes them) or delete them via the console.
 kubectl exec -n support-services-dev postgres-0 -- \
   psql -U yoizen -d yoizen -c "TRUNCATE tracking.tracked_events;"
 # 3. temporal histories
-./scripts/purge-temporal.sh
+./scripts/reset/purge-temporal.sh
+# 4. tenant definitions (manifest-from-zero) + tracking traces
+./scripts/reset/reset-tenant.sh --apply --yes
+# 5. circuit breakers
+./scripts/reset/purge-circuit-breakers.sh
+
+# ...or just run the orchestrator:
+./scripts/reset/reset-all.sh --apply --yes
 ```
+
+## Folder layout and `.env` convention
+
+- `reset-dev.ts`, `purge-temporal.sh`, `purge-circuit-breakers.sh`,
+  `reset-tenant.sh` — individual reset stages, each dry-run by default.
+- `reset-all.sh` — orchestrates all four stages in order; the one-shot
+  entry point for a full dev-environment wipe.
+- `INVENTORY.md` — the DATA-vs-CONFIG audit these scripts implement.
+- `.env.example` (committed) — documents every env var the folder's
+  scripts read, with placeholder/safe-default values.
+- `.env` (gitignored, NOT committed) — real dev-cluster values. Copy
+  `.env.example` to `.env` and fill in real credentials; every script in
+  this folder auto-loads `scripts/reset/.env` if present (`set -a` /
+  `dotenv`-style), so you don't have to export vars by hand each run.

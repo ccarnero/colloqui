@@ -3,7 +3,7 @@
  * reset-dev.ts — idempotent, dry-run-by-default reset of dev-environment
  * MESSAGE DATA left behind by old/fixed integration-test runs.
  *
- * Wipes (see RESET-INVENTORY.md at the repo root for the full audit this
+ * Wipes (see INVENTORY.md in this folder for the full audit this
  * script implements):
  *   - JetStream stream contents (INGRESS-*, DLQ-*, GATEWAY_AUDIT,
  *     PLATFORM_TENANTS, the legacy global DLQ stream if it still exists,
@@ -16,7 +16,7 @@
  * NEVER touches: stream/consumer/bucket *definitions* (topology), the
  * tenant registry, credentials, schemas, or connector/channel/agent
  * CONFIGURATION. Also deliberately EXCLUDES the `credentials`
- * table/collection even though RESET-INVENTORY.md's DUDOSO section was
+ * table/collection even though INVENTORY.md's DUDOSO section was
  * approved wholesale — it holds real per-tenant connector secrets, not
  * test-run residue, and wiping it is out of scope for "clean up old
  * failed test runs." Everything else flagged DUDOSO (agent_versions,
@@ -24,9 +24,9 @@
  * Redis keys, the legacy global DLQ stream) IS included below.
  *
  * Usage:
- *   bun run scripts/reset-dev.ts                # dry-run (default): prints counts only
- *   bun run scripts/reset-dev.ts --apply         # deletes; asks for a typed "yes" first
- *   bun run scripts/reset-dev.ts --apply --yes   # deletes; no prompt (CI/scripted use)
+ *   bun run scripts/reset/reset-dev.ts                # dry-run (default): prints counts only
+ *   bun run scripts/reset/reset-dev.ts --apply         # deletes; asks for a typed "yes" first
+ *   bun run scripts/reset/reset-dev.ts --apply --yes   # deletes; no prompt (CI/scripted use)
  *
  * Prerequisite: `pnpm install` at the repo root at least once (this
  * script depends on postgres/mongodb/ioredis/nats/@yoizen/database,
@@ -77,7 +77,7 @@ const ok = <T>(value: T): Result<T, never> => ({ ok: true, value });
 const fail = <E>(error: E): Result<never, E> => ({ ok: false, error });
 
 // ---------------------------------------------------------------------------
-// Pure: classification tables (mirrors RESET-INVENTORY.md)
+// Pure: classification tables (mirrors INVENTORY.md)
 // ---------------------------------------------------------------------------
 
 /**
@@ -128,7 +128,7 @@ const USAGE_POSTGRES_TABLES: readonly string[] = [
   "channel_events",
 ];
 
-/** Redis key patterns. `adapter:oauth:*` is included per explicit approval of RESET-INVENTORY.md's DUDOSO section. */
+/** Redis key patterns. `adapter:oauth:*` is included per explicit approval of INVENTORY.md's DUDOSO section. */
 const REDIS_PATTERNS: readonly string[] = [
   "pending:*",
   "*:pending:*",
@@ -157,7 +157,7 @@ function classifyStream(name: string): "data" | "unknown" {
     return "data";
   }
   if (name === "DLQ") {
-    return "data"; // legacy global stream, RESET-INVENTORY.md DUDOSO #1
+    return "data"; // legacy global stream, INVENTORY.md DUDOSO #1
   }
   if (name === "GATEWAY_AUDIT") {
     return "data";
@@ -291,7 +291,7 @@ async function runNatsStage(
 
     if (unknownStreams.length > 0) {
       log(
-        `  NOT touched (unrecognized, not in RESET-INVENTORY.md): ${unknownStreams.join(", ")}`
+        `  NOT touched (unrecognized, not in INVENTORY.md): ${unknownStreams.join(", ")}`
       );
     }
 

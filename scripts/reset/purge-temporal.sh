@@ -224,25 +224,25 @@ Defaults:
 
 Examples:
   # Standard between-runs reset (asks for confirmation):
-  ./scripts/purge-temporal.sh
+  ./scripts/reset/purge-temporal.sh
 
   # Non-interactive (CI / scripted):
-  ./scripts/purge-temporal.sh --yes
+  ./scripts/reset/purge-temporal.sh --yes
 
   # Dry-run (prints SQL and kubectl commands):
-  ./scripts/purge-temporal.sh --dry-run
+  ./scripts/reset/purge-temporal.sh --dry-run
 
   # Inspect current row counts without touching anything:
-  ./scripts/purge-temporal.sh counts
+  ./scripts/reset/purge-temporal.sh counts
 
   # Wipe but leave temporal at 0 replicas (you'll start it later):
-  ./scripts/purge-temporal.sh --skip-restart
+  ./scripts/reset/purge-temporal.sh --skip-restart
 
   # Wipe and DON'T touch task_queue_user_data (preserve versioning rules):
-  ./scripts/purge-temporal.sh --keep-task-queues
+  ./scripts/reset/purge-temporal.sh --keep-task-queues
 
   # Legacy single-cluster topology (visibility still on postgres-temporal-1):
-  ./scripts/purge-temporal.sh --vis-pg-pod=postgres-temporal-1
+  ./scripts/reset/purge-temporal.sh --vis-pg-pod=postgres-temporal-1
 
 Behavior:
   purge   Captures current replica count for each Temporal role

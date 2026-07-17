@@ -1,4 +1,4 @@
-# RESET-INVENTORY.md
+# scripts/reset/INVENTORY.md
 
 Inventario de todo lugar donde persisten rastros de mensajes en el ambiente
 de desarrollo de `platform-cluster`, para diseñar un reset limpio y
