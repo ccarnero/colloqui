@@ -480,7 +480,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T03 LLM/KB connector ID references (gap 2)
 - [x] T04 agent per-tool MCP fields (gap 4)
 - [x] T05 service `env` vars (gap 5)
-- [ ] T06 low-priority cleanup fold-in (optional)
+- [x] T06 low-priority cleanup fold-in (optional)
 - [ ] T07 migrate the 9 remaining stand-by samples
 - [ ] T08 restore the full G8 canary set (mcp included for real)
 
@@ -662,3 +662,18 @@ Gates (attempt 2): G1 368/368 + tsc, G3 292/292 + tsc, G4 392, G6b revision
 FOLLOW-UP (recorded): k8s-native secretKeyRef env design — needs its own
 decision round (provisioning ensures the k8s Secret; registry/knative-builder
 emits valueFrom.secretKeyRef; touches registry-service).
+
+### T06 — 2026-07-17
+
+Cleanup fold-in: `connectorRef` case added to checkRefResolution's workflow
+ref walk (validates against spec.connectors incl. external, mirroring the
+sibling cases; switch now exhaustive over all 6 SYMBOLIC_REF_KEYS; stale
+follow-up comment removed; unresolved connectorRefs are now caught at
+VALIDATE time, not only at apply). DRY: DEFAULT_ROUTE_METHODS extracted to
+one shared constant (writer + comparable import it);
+connectorEndpointCacheMethodSchema derives from AdapterCacheMethod (cast
+sound — 6 static keys). `safeFetchJson` RECORDED as out-of-scope follow-up
+(7 non-mechanical sites needing an error-kind decision).
+
+Gates: G1 368/368 + tsc, G3 295/295 + tsc, G4 392, G6b revision 00036 + e2e
+PASSED, G5 triple regression all-noop. Dual review: 2x APPROVED (attempt 1).

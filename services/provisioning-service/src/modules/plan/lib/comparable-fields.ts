@@ -33,6 +33,7 @@ import type {
   ManifestSystemVariable,
   Workflow,
 } from "@yoizen/shared";
+import { DEFAULT_ROUTE_METHODS } from "../../../lib/default-route-methods";
 
 // ---------------------------------------------------------------------------
 // Downstream response DTOs — only the NON-secret fields we are allowed to read.
@@ -333,9 +334,7 @@ function normalizeRouteForCompare(route: {
 } {
   return {
     pathPrefix: route.pathPrefix,
-    // Mirrors `RoutesService.create`'s own server-side default (see
-    // `services/registry-service/src/modules/routes/routes.service.ts`).
-    methods: [...(route.methods ?? ["GET", "POST", "PUT", "PATCH", "DELETE"])]
+    methods: [...(route.methods ?? DEFAULT_ROUTE_METHODS)]
       .map((method) => method.toUpperCase())
       .sort(),
     isPublic: route.isPublic ?? false,

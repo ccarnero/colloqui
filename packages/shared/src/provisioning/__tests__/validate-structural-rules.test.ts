@@ -281,6 +281,41 @@ describe("structural rule — ref resolution", () => {
     ).toBe(true);
   });
 
+  // manual-loops/provisioning-manifest-gaps-2.md T06, gap 1.
+  test("flags an unresolved connectorRef inside a workflow definition", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.workflows[0].definition = {
+      steps: [{ type: "connectorCall", connectorRef: "no-such-connector" }],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some((e) =>
+        /unresolved connectorRef "no-such-connector"/.test(e.message)
+      )
+    ).toBe(true);
+  });
+
+  test("passes with a connectorRef resolving to a declared connector", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.workflows[0].definition = {
+      steps: [{ type: "connectorCall", connectorRef: "hubspot" }],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors.some((e) => /connectorRef/.test(e.message))).toBe(false);
+  });
+
+  test("passes with a connectorRef resolving to an external connector", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.connectors = [
+      { ...manifest.spec.connectors[0], external: true },
+    ];
+    manifest.spec.workflows[0].definition = {
+      steps: [{ type: "connectorCall", connectorRef: "hubspot" }],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors.some((e) => /connectorRef/.test(e.message))).toBe(false);
+  });
+
   test("flags an unresolved enabledMcpServerRefs entry on an agent", () => {
     const manifest = buildValidManifest();
     manifest.spec.agents[0] = {

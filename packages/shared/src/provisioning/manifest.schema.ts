@@ -14,6 +14,7 @@
 // being silently dropped.
 
 import { z } from "zod";
+import { AdapterCacheMethod } from "../adapter.interfaces";
 import type { VariableType } from "../variable.interfaces";
 
 /** Size cap for inline KB document content (bytes, UTF-8). */
@@ -229,14 +230,12 @@ export type ConnectorAuthType = ConnectorAuth["authType"];
 // add-vs-update (T02). No secrets: endpoints carry only routing metadata.
 // ---------------------------------------------------------------------------
 
-const connectorEndpointCacheMethodSchema = z.enum([
-  "GET",
-  "HEAD",
-  "POST",
-  "PUT",
-  "PATCH",
-  "DELETE",
-]);
+// manual-loops/provisioning-manifest-gaps-2.md T06, gap 2 — derived from
+// `AdapterCacheMethod` (`adapter.interfaces.ts`) instead of a parallel string
+// literal so the two never drift.
+const connectorEndpointCacheMethodSchema = z.enum(
+  Object.values(AdapterCacheMethod) as [string, ...string[]]
+);
 
 const connectorEndpointCacheSchema = z
   .object({

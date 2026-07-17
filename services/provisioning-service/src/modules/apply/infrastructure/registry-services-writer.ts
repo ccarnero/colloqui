@@ -71,6 +71,7 @@
 import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
 import type { HostedService, ManifestServiceRoute } from "@yoizen/shared";
 import { TENANT_HEADER } from "@yoizen/shared";
+import { DEFAULT_ROUTE_METHODS } from "../../../lib/default-route-methods";
 import type { ApplyWriteError } from "../domain/apply.interfaces";
 import type {
   CreateOrUpdateResult,
@@ -92,9 +93,6 @@ interface GlobalLiveRoute {
   readonly serviceName: string;
   readonly tenantId: string;
 }
-
-/** Server-side default (mirrors `RoutesService.create`), used ONLY to detect a real change — never sent when the manifest omits `methods`. */
-const DEFAULT_ROUTE_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 function normalizeMethods(methods: readonly string[] | undefined): string[] {
   return [...(methods ?? DEFAULT_ROUTE_METHODS)]

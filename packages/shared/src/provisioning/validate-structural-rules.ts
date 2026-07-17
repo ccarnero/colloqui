@@ -241,6 +241,9 @@ function checkRefResolution(
   const channelNames = new Set(manifest.spec.channels.map((c) => c.name));
   const agentNames = new Set(manifest.spec.agents.map((a) => a.name));
   const serviceNames = new Set(manifest.spec.services.map((s) => s.name));
+  const connectorNames = new Set(
+    manifest.spec.connectors.map((connector) => connector.name)
+  );
   const mcpServerNames = new Set(
     manifest.spec.mcpServers.map((server) => server.name)
   );
@@ -401,9 +404,17 @@ function checkRefResolution(
             });
           }
           break;
-        // NOTE (T06 follow-up, not this task's scope): `connectorRef` is
-        // similarly absent from this switch since T03 shipped it — a
-        // pre-existing gap, not introduced or fixed here.
+        // manual-loops/provisioning-manifest-gaps-2.md T06, gap 1 — mirrors
+        // the channelRef/agentRef/serviceRef cases above exactly, against
+        // `spec.connectors[].name` (external included, same as those cases).
+        case "connectorRef":
+          if (!connectorNames.has(ref.value)) {
+            errors.push({
+              path: ref.path,
+              message: `unresolved connectorRef "${ref.value}": no connector with this name in the manifest`,
+            });
+          }
+          break;
       }
     }
   });
