@@ -4,10 +4,8 @@ metadata:
   name: ai-call-center-supervisor
 spec:
   # ---------------------------------------------------------------------------
-  # Dedicated HTTP channel account — a per-instance ingress. See the
-  # DEVIATION note on the workflow trigger below (mirrors http-fanout-
-  # telegram/hosted-services-api's own documented trigger deviation): the
-  # account exists but the trigger cannot be pinned to it today.
+  # Dedicated HTTP channel account — a per-instance ingress, pinned by the
+  # workflow trigger below (mirrors http-fanout-telegram/hosted-services-api).
   # ---------------------------------------------------------------------------
   channels:
     - name: ai-call-center-supervisor
@@ -240,13 +238,9 @@ spec:
                   to: "{{variables.system.ai-call-center-supervisor-chat-id}}"
                   type: text
                   text: "{{results.decide.resolvedText}}"
-        # DEVIATION (mirrors http-fanout-telegram/manifest.yaml exactly): the
-        # deleted setup.ts pinned this trigger to its own dedicated HTTP
-        # instance via `config.accountIds` (SUPERVISOR_PIN=1 default), which
-        # manifest v1 cannot express (SUBSTITUTION_ALLOWLIST only covers the
-        # singular `accountId` action-arg key, not the plural
-        # `trigger.config.accountIds`). Unpinned here: fires on ANY HTTP
-        # message for the tenant.
+        # Pinned to this manifest's own ai-call-center-supervisor HTTP account
+        # via the ARRAY channelRef substitution (provisioning-manifest-gaps-3.md
+        # T03), matching setup.ts's default SUPERVISOR_PIN=1 behavior.
         trigger:
           type: message_received
           mode: shared
@@ -255,6 +249,8 @@ spec:
               - http
             providers:
               - http
+            accountIds:
+              - channelRef: ai-call-center-supervisor
 
   secrets:
     - name: ai-call-center-supervisor-openai-api-key

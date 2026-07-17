@@ -652,7 +652,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T02 `skillRef` scalar substitution
 - [x] T03 ARRAY symbolic-ref substitution (workstream d)
 - [x] T04 `skills` apply-engine writer + migrate `ai-skill-support-agent`
-- [ ] T05 re-pin the seven migrated triggers + restore the full canary set
+- [x] T05 re-pin the seven migrated triggers + restore the full canary set
 
 ## Out of scope (explicit)
 
@@ -786,3 +786,33 @@ PASSED. Dual review: split — one rejection SOLELY for an unrelated stray
 this task; excluded from the commit, left untracked for the human);
 everything else verified APPROVED by both. FOLLOW-UP (style): skills-writer
 update() omits the explicit `_diff` param the siblings declare.
+
+### T05 — 2026-07-17
+
+Seven triggers RE-PINNED: `accountIds: [{ channelRef: <own-channel> }]` in
+each deviation-carrying manifest (targets reviewer-verified against every
+manifest's own channels section); the stale "cannot express the pin"
+paragraphs removed. LIVE FINDING + HUMAN RULING: the initial re-apply was
+ALL-NOOP — the workflow comparable is existence-only (pre-documented in
+workflows-writer.ts:23-24), so definition/trigger changes NEVER reconcile on
+existing workflows; the T05 prediction was wrong. Human ruled FORCE NOW +
+DOCUMENT: the seven live workflows were deleted via API and re-applied —
+each create carried the pin with the ARRAY SUBSTITUTION RESOLVED to the
+real channel account UUID (DB-verified), second applies FULL NOOP; the
+unpinned rows remaining in the DB are soft-deletes.
+
+Dual review: 2x APPROVED (attempt 1).
+
+## Loop end state — 2026-07-17
+
+ALL FIVE TASKS COMPLETE. 12/12 samples declarative (zero setup/STANDBY
+files); the skills resource kind live (first manifest-created catalog
+skill); array symbolic-ref substitution shipped and live-proven; all seven
+triggers pinned. OPEN ITEMS FOR FUTURE DECISION ROUNDS: (a) WORKFLOW
+DEFINITION DIFFING — the existence-only comparable means definition/trigger
+changes to EXISTING workflows silently no-op at plan; today's remedy is
+delete+re-apply (this task's precedent); a proper design needs plan-time ref
+resolution or normalized comparison; (b) k8s-native secretKeyRef service env
+values (gaps-2 T05 deferral); (c) secret-typed systemVariables (gaps T04
+deferral). Untracked stray `manual-loops-templates/README.md` left for the
+human's disposition.

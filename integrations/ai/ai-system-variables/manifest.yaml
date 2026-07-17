@@ -3,8 +3,8 @@ kind: IntegrationManifest
 metadata:
   name: ai-system-variables
 spec:
-  # Dedicated HTTP channel account — mirrors ai-agent-triage/http-fanout-
-  # telegram's own documented trigger-pin deviation below.
+  # Dedicated HTTP channel account — pinned by the workflow trigger below,
+  # mirrors ai-agent-triage/http-fanout-telegram.
   channels:
     - name: ai-system-variables
       type: http
@@ -224,11 +224,9 @@ spec:
                     ✅ [{{variables.system.company-name}}] handled — priority: {{results.parse.priority}}
                     {{results.parse.summary}}
                     Original: {{request.text}}
-        # DEVIATION (mirrors http-fanout-telegram/manifest.yaml exactly): the
-        # deleted setup.ts pinned this trigger to its own dedicated HTTP
-        # instance via `config.accountIds` (SYSVARS_PIN=1 default), which
-        # manifest v1 cannot express. Unpinned here: fires on ANY HTTP
-        # message for the tenant.
+        # Pinned to this manifest's own ai-system-variables HTTP account via
+        # the ARRAY channelRef substitution (provisioning-manifest-gaps-3.md
+        # T03), matching setup.ts's default SYSVARS_PIN=1 behavior.
         trigger:
           type: message_received
           mode: shared
@@ -237,6 +235,8 @@ spec:
               - http
             providers:
               - http
+            accountIds:
+              - channelRef: ai-system-variables
 
   secrets:
     - name: ai-system-variables-openai-api-key

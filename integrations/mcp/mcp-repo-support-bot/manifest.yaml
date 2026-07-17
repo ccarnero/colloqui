@@ -146,14 +146,9 @@ spec:
   # as telegram-transform-reply's own `reply` action: replying to the SAME
   # chat/account the message came from needs no symbolic ref).
   #
-  # DEVIATION (mirrors ai-agent-triage/telegram-transform-reply exactly): the
-  # deleted setup.ts's default TG_PIN=1 pinned the trigger to the created
-  # account via `config.accountIds`, plural and not in
-  # SUBSTITUTION_ALLOWLIST — manifest v1 cannot express that pin (no
-  # manifest-time id exists to embed). The trigger below is unpinned: it fires
-  # on ANY Telegram message for the tenant (behaviorally equivalent in a
-  # single-Telegram-account tenant; see README § Troubleshooting for running
-  # alongside other unpinned Telegram-triggered samples).
+  # Pinned to this manifest's own mcp-repo-support-bot telegram account via
+  # the ARRAY channelRef substitution (provisioning-manifest-gaps-3.md T03),
+  # matching setup.ts's default TG_PIN=1 behavior.
   # ---------------------------------------------------------------------------
   workflows:
     - name: mcp-repo-support-bot
@@ -280,6 +275,8 @@ spec:
               - telegram
             providers:
               - telegram
+            accountIds:
+              - channelRef: mcp-repo-support-bot
 
   # ---------------------------------------------------------------------------
   # Secrets. Binding NAMEs are the env vars `--secrets-from-env` reads VALUEs

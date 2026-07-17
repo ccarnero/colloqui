@@ -29,12 +29,9 @@ spec:
     # manifest-time id, so they are embedded verbatim (identical to the
     # deleted setup.ts buildWorkflowBody()).
     #
-    # DEVIATION (reported to the human): setup.ts default TG_PIN=1 pinned the
-    # trigger to the created account via `config.accountIds:[<accountId>]`.
-    # That account id does not exist at manifest-author time and manifest v1
-    # has no manifest-time id substitution, so the trigger here expresses the
-    # documented TG_PIN=0 mode (fires on any telegram message for the tenant).
-    # In a single-telegram-account tenant this is behaviorally equivalent.
+    # Pinned to this manifest's own telegram-transform-reply-bot account via
+    # the ARRAY channelRef substitution (provisioning-manifest-gaps-3.md T03),
+    # matching setup.ts's default TG_PIN=1 behavior.
     - name: telegram-transform-reply
       definition:
         application: samples
@@ -65,6 +62,8 @@ spec:
               - telegram
             providers:
               - telegram
+            accountIds:
+              - channelRef: telegram-transform-reply-bot
   secrets:
     # Bound to the channel owner so the broker binding-match check passes when
     # channels-writer resolves the secretRef (scope kind=channel, owner=the

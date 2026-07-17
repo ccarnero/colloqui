@@ -5,8 +5,7 @@ metadata:
 spec:
   # ---------------------------------------------------------------------------
   # Dedicated HTTP channel account — the workflow's own ingest instance
-  # (mirrors http-fanout-telegram; see the trigger DEVIATION note below for
-  # why it's created but not actually pin-able today).
+  # (mirrors http-fanout-telegram). The trigger below pins to this account.
   # ---------------------------------------------------------------------------
   channels:
     - name: hosted-services-api
@@ -134,15 +133,9 @@ spec:
               to: "{{variables.system.hosted-services-api-chat-id}}"
               type: text
               text: "{{results.summarize.text}}"
-        # DEVIATION (mirrors http-fanout-telegram/manifest.yaml exactly): the
-        # deleted setup.ts pinned this trigger to its own dedicated HTTP
-        # instance via `config.accountIds` (HOSTED_WORKFLOW_PIN=1 default),
-        # which manifest v1 cannot express (SUBSTITUTION_ALLOWLIST only
-        # covers the singular `accountId` action-arg key, not
-        # `trigger.config.accountIds`). Unpinned here: fires on ANY HTTP
-        # message for the tenant — see README § Troubleshooting for running
-        # this alongside http-fanout-telegram (also unpinned) without
-        # cross-firing.
+        # Pinned to this manifest's own hosted-services-api HTTP account via
+        # the ARRAY channelRef substitution (provisioning-manifest-gaps-3.md
+        # T03), matching setup.ts's default HOSTED_WORKFLOW_PIN=1 behavior.
         trigger:
           type: message_received
           mode: shared
@@ -151,3 +144,5 @@ spec:
               - http
             providers:
               - http
+            accountIds:
+              - channelRef: hosted-services-api

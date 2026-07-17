@@ -4,13 +4,8 @@ metadata:
   name: ai-agent-triage
 spec:
   # ---------------------------------------------------------------------------
-  # Dedicated HTTP channel account — a per-instance ingress so the workflow
-  # trigger COULD in principle be pinned to only its own traffic. See the
-  # DEVIATION note on the workflow trigger below: manifest v1 cannot actually
-  # express that pin today (no manifest-time id exists for
-  # `trigger.config.accountIds` to embed, mirrors http-fanout-telegram's own
-  # documented deviation), so the account still exists but the trigger is
-  # unpinned.
+  # Dedicated HTTP channel account — a per-instance ingress, pinned by the
+  # workflow trigger below (mirrors http-fanout-telegram).
   # ---------------------------------------------------------------------------
   channels:
     - name: ai-agent-triage
@@ -207,15 +202,9 @@ spec:
                   to: "{{variables.system.ai-agent-triage-chat-id}}"
                   type: text
                   text: "{{results.route.normalText}}"
-        # DEVIATION (mirrors http-fanout-telegram/manifest.yaml exactly): the
-        # deleted setup.ts pinned this trigger to its own dedicated HTTP
-        # instance via `config.accountIds` (TRIAGE_PIN=1 default), which
-        # manifest v1 cannot express (SUBSTITUTION_ALLOWLIST only covers the
-        # singular `accountId` action-arg key, not the plural
-        # `trigger.config.accountIds`). Unpinned here: fires on ANY HTTP
-        # message for the tenant — see README § Troubleshooting for running
-        # this alongside other unpinned HTTP-triggered samples without
-        # cross-firing.
+        # Pinned to this manifest's own ai-agent-triage HTTP account via the
+        # ARRAY channelRef substitution (provisioning-manifest-gaps-3.md T03),
+        # matching setup.ts's default TRIAGE_PIN=1 behavior.
         trigger:
           type: message_received
           mode: shared
@@ -224,6 +213,8 @@ spec:
               - http
             providers:
               - http
+            accountIds:
+              - channelRef: ai-agent-triage
 
   secrets:
     - name: ai-agent-triage-openai-api-key

@@ -5,10 +5,9 @@ metadata:
 spec:
   # ---------------------------------------------------------------------------
   # Dedicated HTTP channel account — a per-instance ingress so this workflow
-  # CAN be pinned to only its own traffic. See the DEVIATION note on the
-  # workflow trigger below: manifest v1 cannot actually express the pin today
-  # (no manifest-time id exists for `trigger.config.accountIds` to embed), so
-  # the account still exists but the trigger is unpinned.
+  # is pinned to only its own traffic. The trigger below pins
+  # `config.accountIds` to this account via the ARRAY channelRef substitution
+  # (provisioning-manifest-gaps-3.md T03).
   # ---------------------------------------------------------------------------
   channels:
     - name: http-fanout-telegram
@@ -170,22 +169,9 @@ spec:
               type: text
               text: "{{results.join.summary}}\n(httpbin status: {{results.postToHttpbin.status}})"
         # ---------------------------------------------------------------------
-        # DEVIATION (reported to the human, mirrors telegram-transform-reply's
-        # own documented trigger deviation): the deleted setup.ts pinned this
-        # trigger to the just-created HTTP instance via
-        # `config.accountIds: [<httpAccountId>]` (FANOUT_PIN=1 default) so
-        # ONLY messages sent to this sample's own ingest URL fired it. That
-        # account id does not exist at manifest-author time, and
-        # `SUBSTITUTION_ALLOWLIST` only covers the SINGULAR `accountId`
-        # argument key inside action `args` (channelSend/etc) — it does NOT
-        # cover the PLURAL `trigger.config.accountIds` array, which sits in a
-        # structurally different location workflows-writer.ts never runs
-        # substitution over. So this trigger is UNPINNED: it fires on ANY
-        # HTTP message for the tenant. In a tenant running ONLY this sample's
-        # HTTP-triggered workflow this is behaviorally equivalent; running it
-        # alongside hosted-services-api's ALSO-unpinned HTTP workflow means
-        # BOTH fire on every inbound HTTP message — see README §
-        # Troubleshooting for how to avoid cross-firing during testing.
+        # Pinned to this manifest's own http-fanout-telegram HTTP account via
+        # the ARRAY channelRef substitution (provisioning-manifest-gaps-3.md
+        # T03), matching setup.ts's default FANOUT_PIN=1 behavior.
         # ---------------------------------------------------------------------
         trigger:
           type: message_received
@@ -195,3 +181,5 @@ spec:
               - http
             providers:
               - http
+            accountIds:
+              - channelRef: http-fanout-telegram
