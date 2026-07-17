@@ -3,10 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "ai-knowledge-base-agent sample driver — KB -> document embeddings -> agent RAG through @yoizen/platform-sdk.",
+  "description": "ai-knowledge-base-agent sample driver — resolves the manifest-provisioned KB-backed agent and asks it a KB-only question through @yoizen/platform-sdk.",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "setup": "tsx src/setup.ts"
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@yoizen/platform-sdk": "file:../../../sdk"

@@ -1,111 +1,76 @@
-# AI knowledge-base agent — documentación funcional (ES)
+# ai-knowledge-base-agent — Documentación funcional (ES)
 
-> Documento funcional en español. Para la referencia técnica completa, consulte [README.md](README.md).
+> Complemento en español del [README.md](./README.md). No es una traducción: explica qué hace el
+> sample, cómo funciona por dentro y qué esperar al ejecutarlo.
 
 ## ¿Qué hace este sample?
 
-Este sample demuestra el ciclo completo de RAG (Retrieval-Augmented Generation) de la plataforma: crea una knowledge base, sube un documento Markdown con una FAQ de soporte, espera a que la ingesta genere los chunks con embeddings, adjunta la knowledge base a un agente de IA publicado y finalmente le hace una pregunta cuya respuesta **solo existe en el documento subido**.
+Después de aplicar `manifest.yaml`, la plataforma queda con **una base de conocimiento** con un
+documento FAQ inline, adjuntada a un **agente publicado**, que responde una pregunta cuya respuesta
+solo existe en ese documento (RAG). El provisioning es **declarativo**: un único
+[`manifest.yaml`](./manifest.yaml) aplicado con la CLI `yoizen`.
 
-Al finalizar obtiene:
+## Decisión de `kind` (`kind: LibraryManifest`)
 
-- Un connector LLM (`sample-<provider>-llm`, compartido con `ai-agent-playground`).
-- Una knowledge base `ai-sample-support-kb` con chunking recursivo y embeddings de OpenAI.
-- El documento `docs/support-faq.md` ingerido, con estado `ready` y sus chunks embebidos.
-- Un agente publicado con `knowledge_base_ids: [<kb id>]`.
-- Una ejecución de runtime cuya respuesta explica la política de reembolsos de la FAQ e incluye la frase de verificación `CONDOR-KB-READY`.
+Este manifest provisiona un connector + una base de conocimiento + un agente — existe un PROCESO
+(el agente), pero **no hay ningún canal**. `kind: LibraryManifest` exime las reglas de >=1-canal/
+>=1-proceso y exige en su lugar al menos un recurso de biblioteca, satisfecho aquí por el connector
+(las bases de conocimiento NO cuentan para esta regla).
 
-**Verificado**: este sample se ejecutó con éxito contra el clúster de desarrollo con `gpt-4o-mini`.
+## Qué provisiona `manifest.yaml`
 
-## Escenario y caso de uso
+| Recurso | Nombre | Notas |
+| --- | --- | --- |
+| Connector | `sample-openai-llm` | Reusado para el LLM del agente Y el proveedor de embeddings de la KB |
+| Base de conocimiento | `ai-sample-support-kb` | Un documento inline (`support-faq`), `ingestion_config.provider_connector_id: { connectorRef: sample-openai-llm }` |
+| Agente | `ai-sample-kb-agent` | `knowledgeBaseRefs: [ai-sample-support-kb]` |
 
-Piense en un equipo de soporte de una empresa SaaS. La política de reembolsos, las reglas de escalamiento y los horarios de atención viven en documentos internos, y cada agente humano los responde de memoria — con inconsistencias inevitables. El objetivo: que un agente de IA responda **con la política real de la empresa**, no con lo que el modelo "cree" que es una política de reembolsos típica.
+## Origen del documento (inline, no file/bundle)
 
-El documento de ejemplo (`docs/support-faq.md`) contiene:
+El contenido del FAQ se embebe VERBATIM en `manifest.yaml` vía `type: inline` (781 bytes, muy por
+debajo del límite de 64 KiB). `type: file` (path + sha256, vía bundle tar) se descartó: la CLI
+`yoizen` no tiene un flag `--bundle` hoy — solo el SDK acepta uno directamente — así que `type:
+file` sería inexpresable a través del flujo de CLI de este README.
 
-- **Política de reembolsos**: reembolsos para pedidos digitales dentro de los 14 días si el cliente no usó más del 20 % de los créditos; procesados al medio de pago original en cinco días hábiles.
-- **Regla de escalamiento**: cuentas Enterprise se escalan al equipo de success ante caídas de producción, disputas de facturación o pedidos de exportación de datos.
-- **Horarios de soporte**: lunes a viernes de 09:00 a 18:00 (hora de Argentina); Enterprise con cobertura 24x7.
-- **Frase de verificación**: `CONDOR-KB-READY` — el detalle clave del sample.
+**Limitación**: `documents[].name` en el schema es un slug (sin puntos), así que la extensión `.md`
+no se puede preservar verbatim (`support-faq` en vez de `support-faq.md`). La ingesta no se ve
+afectada: `uploadTextDocument` fija `mime_type: text/plain`/`content_type: text` para fuentes
+inline sin importar la extensión del nombre.
 
-La pregunta que envía el runtime:
+## Secretos (auth bearer del connector LLM/embedding)
 
-> "According to the support FAQ, what is the refund policy? Include the verification phrase if you see one."
-
-Y una respuesta correcta luce así:
-
-> "According to the support FAQ, refunds are available for digital orders within 14 days when less than 20 percent of the purchased credits have been used, processed back to the original payment method within five business days. CONDOR-KB-READY."
-
-La frase `CONDOR-KB-READY` es la prueba objetiva de que la respuesta salió de la knowledge base: ningún LLM la conoce por preentrenamiento. Si la respuesta describe una política plausible pero **no** incluye la frase, el agente respondió de memoria del modelo — el RAG no funcionó, aunque todo el aprovisionamiento haya salido bien. Esa distinción es exactamente lo que este sample está diseñado para hacer visible.
-
-## Cómo funciona por dentro
-
-`run.sh` carga `../lib/resolve-env.sh` y ejecuta `src/index.ts` (vía `npx tsx`), que a su vez corre el mismo pipeline de `src/setup.ts` — provisioning con `@yoizen/platform-sdk`, no bash/curl/jq. El pipeline tiene siete etapas (el login ya no es una etapa explícita: `createClient()` lo maneja de forma transparente en la primera request):
-
-```
-0/6 preflight   → valida el archivo del documento, el modo de credenciales
-1/6 connector   → connector con tag "llm" (credenciales para el agente y la ingesta)
-2/6 kb          → POST /api/admin/knowledge-bases (chunking + modelo de embeddings)
-3/6 documento   → POST .../documents/upload (o reingest si ya existe)
-4/6 espera      → polling del documento hasta status "ready" (o "failed")
-5/6 agente      → upsert + publish del agente con knowledge_base_ids
-6/6 ejecución   → POST /api/runtime/executions + polling del resultado
-```
-
-Detalles relevantes:
-
-- **Knowledge base (etapa 3)**: se crea con `ingestion_config`: `chunk_size: 800`, `chunk_overlap: 120`, `chunking_strategy: "recursive"` y `embedding_model` (`text-embedding-3-small` por defecto). En modo connector también se setea `provider_connector_id`, que da a la ingesta las credenciales del proveedor.
-- **Documento (etapa 4)**: se sube como JSON (`original_filename`, `mime_type: "text/markdown"`, `content_text` con el contenido completo). Si ya existe un documento con el mismo nombre, se solicita un `reingest` en lugar de duplicarlo.
-- **Ingesta asíncrona (etapa 5)**: la ingesta corre en segundo plano; el script hace polling cada 3 segundos hasta `DOC_TIMEOUT_S` (120 s). El estado pasa por `pending`/`processing` hasta `ready`, y al terminar reporta `chunk_count`.
-- **Agente (etapa 6)**: igual que en `ai-agent-playground`, pero con dos diferencias: `knowledge_base_ids: [<kb id>]` conecta la KB al agente, y se habilita la herramienta builtin `loadSkill` únicamente para que la ejecución use la ruta de runtime con soporte de herramientas. El `system_prompt` instruye responder desde la knowledge base e incluir la frase de verificación si aparece.
-- **Ejecución (etapa 7)**: `POST /api/runtime/executions` con la pregunta sobre reembolsos, y polling hasta `completed`. En tiempo de consulta, `agent-ai-service` usa los `knowledge_base_ids` del agente para buscar los chunks relevantes (búsqueda semántica con embeddings) e inyectarlos en el contexto del LLM.
-
-### ¿Las knowledge bases son solo para agentes?
-
-No. Son recursos administrativos independientes bajo `/api/admin/knowledge-bases`: se pueden crear, subir documentos, inspeccionar chunks y reingerir sin ningún agente. Pero **hoy el único consumidor de RAG en runtime es el agente**, vía `knowledge_base_ids`. En resumen: las KB son activos de contenido independientes; los agentes son el consumidor actual en runtime.
-
-## Qué demuestra técnicamente
-
-- **CRUD de knowledge bases y documentos**: `/api/admin/knowledge-bases`, subida de documentos, reingest, inspección de estado y chunks.
-- **Pipeline de ingesta**: chunking recursivo configurable + embeddings, con `provider_connector_id` como fuente de credenciales para la ingesta.
-- **RAG adjunto al agente**: `knowledge_base_ids` en el payload del agente, consumido por `agent-ai-service` al generar la respuesta.
-- **Verificación honesta del RAG**: la frase `CONDOR-KB-READY` distingue una respuesta con retrieval real de una alucinación plausible.
-- **Reutilización del contrato de `ai-agent-playground`**: mismo connector LLM, mismo flujo de upsert + publish, mismos requisitos de runtime.
+| Binding (= var de entorno para `--secrets-from-env`) | Apunta a | Valor |
+| --- | --- | --- |
+| `ai-knowledge-base-agent-openai-api-key` | `authConfig.bearerToken` | Tu `OPENAI_API_KEY` real |
 
 ## Cómo ejecutarlo y qué esperar
 
-Prerrequisitos: Node >=18, acceso al gateway de desarrollo y `OPENAI_API_KEY` (u otra key si cambia el proveedor del agente — pero vea la advertencia sobre embeddings más abajo).
+Prerrequisitos: clúster de desarrollo corriendo, una API key real de OpenAI (también debe estar
+presente en el entorno propio de `agent-ai-service`, ya que la búsqueda RAG en runtime usa
+embeddings de OpenAI independientemente del connector).
+
+```bash
+cd sdk && bun link
+
+yoizen manifests validate -f ../integrations/ai/ai-knowledge-base-agent/manifest.yaml
+yoizen manifests plan     -f ../integrations/ai/ai-knowledge-base-agent/manifest.yaml
+env "ai-knowledge-base-agent-openai-api-key=$OPENAI_API_KEY" \
+  yoizen manifests apply  -f ../integrations/ai/ai-knowledge-base-agent/manifest.yaml --secrets-from-env
+```
 
 ```bash
 cd integrations/ai/ai-knowledge-base-agent
-cp .env.example .env
-# editar .env: OPENAI_API_KEY=sk-...
 ./run.sh
 ```
 
-Salida esperada (resumida):
-
-```
-[STEP]  2/6 ensure knowledge base 'ai-sample-support-kb'
-[INFO]  created knowledge base id=...
-[STEP]  3/6 upload/reingest document 'support-faq.md'
-[INFO]  uploaded document id=...
-[STEP]  4/6 wait for document ingestion
-[INFO]  document ready chunks=2
-[STEP]  5/6 upsert + publish KB-backed agent 'ai-sample-kb-agent'
-[STEP]  6/6 execute KB-backed question
-[INFO]  completed
-{ "reply": "... within 14 days ... CONDOR-KB-READY ...", "provider": "openai", "model": "gpt-4o-mini", ... }
-```
-
-El criterio de éxito es doble: la respuesta describe la política de 14 días / 20 % de créditos / cinco días hábiles, **y** contiene `CONDOR-KB-READY`.
-
-Variables útiles: `KB_NAME`, `KB_EMBEDDING_MODEL`, `AI_AGENT_MESSAGE`, `RECREATE=1` (recrea KB, documento, connector y agente), `DOC_TIMEOUT_S` y `POLL_TIMEOUT_S`.
+`run.sh` resuelve el agente por nombre, envía una pregunta sobre la política de reembolsos, hace
+polling, e imprime el resultado. La respuesta debería mencionar la frase de verificación
+`CONDOR-KB-READY`.
 
 ## Detalles y advertencias
 
-- **Dos necesidades de IA en línea, no una**: (1) la generación del agente necesita un LLM, y (2) la ingesta **y la búsqueda en tiempo de consulta** necesitan embeddings. El modo connector cubre las credenciales de la ingesta vía `provider_connector_id`, pero la búsqueda de KB en runtime dentro de `agent-ai-service` usa embeddings de OpenAI directamente — el despliegue del servicio necesita `OPENAI_API_KEY` en su propio entorno. Configurarla solo en su shell puede no ser suficiente.
-- **Provisiona bien pero responde de memoria**: si todo se crea sin errores pero la respuesta no incluye `CONDOR-KB-READY`, la KB no se recuperó en runtime. Verifique que `agent-ai-service` tenga `OPENAI_API_KEY` y que el documento esté en estado `ready`.
-- **La ingesta es asíncrona**: no asuma que el documento está listo tras el upload; el script hace polling por diseño. Con documentos grandes, suba `DOC_TIMEOUT_S`.
-- **"adapter is not tagged llm"** — connector homónimo sin el tag `llm`; use `RECREATE=1` o renombre `AI_LLM_CONNECTOR_NAME`.
-- **Falla de ingesta sin API key** — configure `OPENAI_API_KEY`, o use modo connector con un connector-admin URL alcanzable desde `agent-admin-service`.
-- **El aprovisionamiento funciona pero el runtime falla** — aplican los mismos requisitos de LLM que en `../ai-agent-playground` (vea su sección de troubleshooting).
+- Editar el contenido del FAQ, el chunking o el modelo de embedding requiere editar
+  `manifest.yaml` y volver a aplicar.
+- Si la respuesta nunca menciona `CONDOR-KB-READY`, verificá que `OPENAI_API_KEY` esté seteada en
+  el entorno propio de `agent-ai-service` (camino de embeddings/búsqueda), no solo en el binding de
+  secreto del manifest (camino de auth del connector).

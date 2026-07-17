@@ -2,13 +2,17 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Drives the ai-knowledge-base-agent sample end-to-end — SDK-powered
-# (sdk/GROWTH-PLAN.md P3.1). The actual provisioning + question-asking logic
-# lives in src/index.ts (which re-runs src/setup.ts's pipeline, same as the
-# old `run.sh` being `exec ./setup.sh`), run via `@yoizen/platform-sdk`; this
-# script only resolves the dev environment (via ../../lib/resolve-env.sh, same
-# as every other sample's run.sh) and execs the Node app with those env vars
-# in scope.
+# Drives the ai-knowledge-base-agent sample end-to-end — SDK-powered.
+# Provisioning is now declarative (`manifest.yaml` + `yoizen manifests apply`,
+# see README.md); src/index.ts only VERIFIES the already-provisioned
+# KB-backed agent and asks it one question, run via `@yoizen/platform-sdk`;
+# this script only resolves the dev environment (via ../../lib/resolve-env.sh,
+# same as every other sample's run.sh) and execs the Node app with those env
+# vars in scope.
+#
+# Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+# once first (see README.md). This script never creates or modifies platform
+# objects.
 . ../../lib/resolve-env.sh
 
 if ! command -v node >/dev/null 2>&1; then

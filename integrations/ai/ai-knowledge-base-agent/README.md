@@ -1,64 +1,107 @@
-# AI knowledge-base agent sample
+# ai-knowledge-base-agent
 
-Create a knowledge base, upload a Markdown FAQ, attach it to an AI agent, publish the agent, then ask a question whose answer exists in the uploaded document.
+A knowledge base with an inline Markdown FAQ document, attached to a published AI agent, then
+asked a question whose answer only exists in that document (RAG). Provisioning is **declarative**:
+a single [`manifest.yaml`](./manifest.yaml) applied through the `yoizen` CLI (no setup scripts).
 
-## Quick path
+```
+manifest.yaml ─► yoizen manifests apply ─► agent-admin-service (connector, KB + document, agent)
+
+run.sh (src/index.ts) ─► client.runtime.createExecution() ─► poll ─► print reply (should cite CONDOR-KB-READY)
+```
+
+## Kind decision (`kind: LibraryManifest`)
+
+This manifest provisions a connector + a knowledge base + an agent — a PROCESS exists (the agent),
+but there is **no channel account**. `kind: LibraryManifest` waives the >=1-inbound-channel/
+>=1-process checks and instead requires `checkAtLeastOneLibraryResource`: >=1 of connector/
+mcpServer/service/systemVariable — satisfied here by the connector alone (knowledge bases do NOT
+count toward this check).
+
+## What `manifest.yaml` provisions
+
+| Resource | Name | Notes |
+| --- | --- | --- |
+| Connector | `sample-openai-llm` | Reused for BOTH the agent's LLM and the KB's embedding provider |
+| Knowledge base | `ai-sample-support-kb` | One inline document (`support-faq`), `ingestion_config.provider_connector_id: { connectorRef: sample-openai-llm }` |
+| Agent | `ai-sample-kb-agent` | `knowledgeBaseRefs: [ai-sample-support-kb]`, `model_config.llm.connectorId: { connectorRef: sample-openai-llm }` |
+
+`ingestion_config.provider_connector_id` is a manifest-time symbolic ref (`manual-loops/
+provisioning-manifest-gaps-2.md` T03, gap 2) resolved to the real connector-admin id by
+`substitute-kb-ingestion-config.ts` before the KB reconciler creates this (non-external) knowledge
+base. `knowledgeBaseRefs` resolves the KB NAME to `knowledge_base_ids` via `agents-writer.ts`'s
+`reconcileKnowledgeBases` (parent SPEC T06 precedent).
+
+## Document source (inline, not file/bundle)
+
+The FAQ content (originally `docs/support-faq.md`) is embedded VERBATIM in `manifest.yaml` via
+`type: inline` (781 bytes, well under the 64 KiB cap). `type: file` (path + sha256, resolved
+through an uploaded tar bundle) was considered and rejected: the `yoizen` CLI's `manifests apply`/
+`plan`/`validate` commands have no `--bundle` flag today — only the SDK's
+`client.manifests.apply(..., { bundle })` accepts one directly — so `type: file` would be
+inexpressible through this README's CLI-only flow. `type: inline` is the faithful, fully
+CLI-reachable choice for a document this small.
+
+**Limitation**: the manifest schema's `documents[].name` is a slug (lowercase alphanumeric +
+hyphens, no dots), and IS what gets uploaded as the document's `original_filename` — so the `.md`
+extension cannot be preserved verbatim (`support-faq` instead of `support-faq.md`). Ingestion is
+unaffected: `uploadTextDocument` hardcodes `mime_type: text/plain`/`content_type: text` for inline
+sources regardless of filename extension.
+
+## Secrets (LLM/embedding connector bearer auth)
+
+| Binding name (= env var for `--secrets-from-env`) | Targets | Value |
+| --- | --- | --- |
+| `ai-knowledge-base-agent-openai-api-key` | `authConfig.bearerToken` | Your real `OPENAI_API_KEY` |
+
+## Prerequisites
+
+- A running dev cluster with a provisioned tenant (`acme` by default).
+- A real OpenAI API key — `agent-ai-service`'s runtime KB search currently uses OpenAI embeddings
+  regardless of the connector, so `OPENAI_API_KEY` must also be present in that service's own
+  environment.
+- The `yoizen` CLI (`cd sdk && bun link`, or `cd sdk && bun run bin/yoizen.ts ...`).
+- CLI environment: `YOIZEN_BASE_URL`, `YOIZEN_HOST_HEADER`, `YOIZEN_TENANT`, `YOIZEN_EMAIL`,
+  `YOIZEN_PASSWORD`.
+
+## Provision (declarative)
+
+```bash
+cd sdk && bun link
+
+yoizen manifests validate -f ../integrations/ai/ai-knowledge-base-agent/manifest.yaml
+yoizen manifests plan     -f ../integrations/ai/ai-knowledge-base-agent/manifest.yaml
+env "ai-knowledge-base-agent-openai-api-key=$OPENAI_API_KEY" \
+  yoizen manifests apply  -f ../integrations/ai/ai-knowledge-base-agent/manifest.yaml --secrets-from-env
+```
+
+A second `apply` is a no-op once converged (the KB reconciler's checksum tracking skips re-ingesting
+an unchanged document — see `reconcile-knowledge-base.ts`'s "no mutable KB fields to reconcile"
+limitation: an already-existing KB's `ingestion_config` itself is not re-reconciled after creation).
+
+## Run / verify
 
 ```bash
 cd integrations/ai/ai-knowledge-base-agent
-cp .env.example .env
-# set OPENAI_API_KEY or the provider key you use for the agent LLM
 ./run.sh
 ```
 
-Expected result: the reply explains the sample refund policy and includes `CONDOR-KB-READY`.
+`run.sh` (`src/index.ts`) is **read-only**: it resolves the agent by name, submits one runtime
+execution asking about the refund policy, polls until `completed`/`failed`, and prints the result.
+The reply should mention the FAQ's verification phrase, `CONDOR-KB-READY`.
 
-## Are knowledge bases only for agents?
-
-No. Knowledge bases are standalone admin resources under `/api/admin/knowledge-bases`: you can create them, upload documents, inspect chunks, and reingest documents independently.
-
-But today, runtime RAG consumption is agent-attached: agents store `knowledge_base_ids`, and `agent-ai-service` uses those ids when generating a reply. So practically: **KBs are standalone content assets, but agents are the current runtime consumer.**
-
-## What gets created
-
-| Artifact | Purpose |
-| --- | --- |
-| LLM connector | Enabled connector tagged `llm`; used by the agent and as `provider_connector_id` for ingestion in connector mode |
-| Knowledge base | `ai-sample-support-kb`, configured for recursive chunking and OpenAI embeddings |
-| Document | `docs/support-faq.md`, uploaded and embedded into chunks |
-| Agent | Published agent with `knowledge_base_ids: [<kb id>]` |
-| Runtime execution | One `/api/runtime/executions` request asking about the FAQ refund policy |
-
-## Important LLM and embedding requirements
-
-This sample has two online-AI needs:
-
-1. **Agent generation** — the agent needs an LLM provider/model.
-2. **KB embeddings** — ingestion and query-time search need embeddings.
-
-Connector mode can provide credentials for document ingestion through `provider_connector_id`. However, current runtime KB search in `agent-ai-service` uses OpenAI embeddings directly, so the service deployment still needs `OPENAI_API_KEY` in its environment. Setting it only in this shell may not be enough for query-time search.
-
-That distinction matters. If we blur it, you get a sample that provisions fine but answers from model memory instead of the KB. Ese es el tipo de atajo que después te hace perder horas.
-
-## Environment
+## Environment (run.sh overrides only — provisioning is manifest-driven)
 
 | Var | Default | Notes |
 | --- | --- | --- |
-| `KB_NAME` | `ai-sample-support-kb` | Knowledge base name |
-| `KB_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model stored with chunks |
-| `AI_AGENT_NAME` | `ai-sample-kb-agent` | Agent name |
-| `AI_AGENT_PROVIDER` | `openai` | Agent LLM provider |
-| `AI_AGENT_MODEL` | `gpt-4o-mini` | Agent LLM model |
-| `AI_CREDENTIAL_MODE` | `connector` | `connector` or `env` |
-| `AI_LLM_CONNECTOR_NAME` | `sample-<provider>-llm` | Connector name in connector mode |
-| `AI_AGENT_MESSAGE` | refund-policy question | Runtime prompt |
-| `RECREATE` | `0` | `1` recreates sample resources where possible |
-| `DOC_TIMEOUT_S` | `120` | Document ingestion timeout |
-| `POLL_TIMEOUT_S` | `120` | Runtime execution timeout |
+| `AI_AGENT_NAME` | `ai-sample-kb-agent` | Must match `manifest.yaml`'s agent name |
+| `AI_AGENT_MESSAGE` | see `.env.example` | The question submitted to the agent |
+| `POLL_TIMEOUT_S` | `120` | Execution poll timeout |
 
-## Troubleshooting
+## Design notes & gotchas
 
-- **Document ingestion fails with no API key** — set `OPENAI_API_KEY`, or use connector mode with a reachable connector-admin URL from `agent-admin-service`.
-- **Agent answers but does not mention `CONDOR-KB-READY`** — the KB was not retrieved at runtime. Check `agent-ai-service` has `OPENAI_API_KEY`; also confirm the document status is `ready`.
-- **Agent creation says adapter is not tagged `llm`** — run with `RECREATE=1` or rename `AI_LLM_CONNECTOR_NAME`.
-- **Provisioning works but runtime fails** — check the same LLM requirements as `../ai-agent-playground`.
+- Editing the FAQ content, chunking config, or embedding model requires editing `manifest.yaml`
+  and re-applying.
+- If the reply never mentions `CONDOR-KB-READY`, check that `OPENAI_API_KEY` is set in
+  `agent-ai-service`'s own runtime environment (embeddings/search path), not just in the manifest
+  secret binding (connector auth path).

@@ -1,0 +1,138 @@
+apiVersion: yoizen.io/v1
+# KIND DECISION (manual-loops/provisioning-manifest-gaps-2.md T01, gap 1):
+# this manifest provisions a connector + a knowledge base + an agent — a
+# PROCESS exists (the agent), but there is NO channel account anywhere (the
+# deleted setup.ts's agent has `channels: []`). `kind: LibraryManifest`
+# waives the >=1-inbound-channel/>=1-process checks and instead requires
+# `checkAtLeastOneLibraryResource`: >=1 of connector/mcpServer/service/
+# systemVariable — satisfied here by the LLM/embedding connector alone
+# (knowledgeBases do NOT count toward this check — see
+# `checkAtLeastOneLibraryResource` in `validate-structural-rules.ts`).
+kind: LibraryManifest
+metadata:
+  name: ai-knowledge-base-agent
+spec:
+  # LLM/embedding connector — T01 (parent SPEC) nested bearer secretRef auth.
+  # Reused for BOTH the agent's `model_config.llm.connectorId` AND the
+  # knowledge base's `ingestion_config.provider_connector_id` below, exactly
+  # like the deleted setup.ts reused the same `connectorId` for both.
+  connectors:
+    - name: sample-openai-llm
+      type: llm
+      config:
+        baseUrl: https://api.openai.com/v1
+        context: external
+      auth:
+        authType: bearer
+        bearerToken:
+          secretRef: ai-knowledge-base-agent-openai-api-key
+      # T07 batch B — deleted setup.ts sent `tags: ["llm"]`; required by
+      # agent-admin's credential resolver for the LLM adapter (the agent's
+      # model_config.llm.connectorId AND the KB's
+      # ingestion_config.provider_connector_id both reference this connector).
+      tags:
+        - llm
+
+  # ---------------------------------------------------------------------------
+  # Knowledge base — T03 (this SPEC, gap 2) `ingestion_config` passthrough
+  # with `provider_connector_id` as a `{ connectorRef }` symbolic ref, resolved
+  # to the real connector-admin id by `substitute-kb-ingestion-config.ts`
+  # before the KB reconciler CREATES this (non-external) knowledge base.
+  # `chunk_size`/`chunk_overlap`/`embedding_model`/`chunking_strategy` mirror
+  # the deleted setup.ts's `ingestionConfig` verbatim.
+  #
+  # DOCUMENT SOURCE: `docs/support-faq.md` (781 bytes, well under the 64 KiB
+  # `KB_INLINE_CONTENT_MAX_BYTES` cap) is embedded verbatim below via
+  # `type: inline`. `type: file` (path + sha256, resolved through an uploaded
+  # tar bundle) was considered and rejected for this sample: the `yoizen`
+  # CLI's `manifests apply`/`plan`/`validate` commands (`sdk/src/cli/commands/
+  # apply-command.ts`) have NO `--bundle`/`--kb-bundle` flag today — only the
+  # SDK's `client.manifests.apply(..., { bundle })` method accepts one
+  # directly. Since this SPEC's README contract is the CLI flow (`yoizen
+  # manifests apply -f ... --secrets-from-env`), `type: file` would be
+  # inexpressible through that flow for a doc this small; `type: inline` is
+  # the faithful, fully CLI-reachable choice.
+  # ---------------------------------------------------------------------------
+  knowledgeBases:
+    - name: ai-sample-support-kb
+      documents:
+        # NOTE: the manifest schema's `documents[].name` is a slug
+        # (`nameSchema` — lowercase alphanumeric + hyphens, no dots) and IS
+        # what the reconciler uploads as the document's `original_filename`
+        # (`reconcile-knowledge-base.ts`/`agent-admin-kb-client.ts`
+        # `uploadTextDocument`) — so the `.md` extension the deleted
+        # setup.ts used (`support-faq.md`) cannot be preserved verbatim.
+        # Documented limitation, not a silent drop: ingestion is unaffected —
+        # `uploadTextDocument` hardcodes `mime_type: text/plain`/
+        # `content_type: text` for inline sources regardless of filename
+        # extension, so embedding/chunking behavior is identical either way.
+        - name: support-faq
+          source:
+            type: inline
+            content: |
+              # Yoizen Sample Support FAQ
+
+              ## Refund policy
+
+              The sample store offers refunds for digital orders within 14 days when the customer has not used more than 20 percent of the purchased credits. Refunds are processed back to the original payment method within five business days.
+
+              ## Escalation rule
+
+              Any account with the Enterprise plan must be escalated to the success team if the customer mentions a production outage, billing dispute, or data export request.
+
+              ## Support hours
+
+              Standard support is available Monday through Friday from 09:00 to 18:00 Argentina time. Enterprise accounts receive 24x7 urgent incident coverage.
+
+              ## Verification phrase
+
+              When this knowledge base is working, the assistant should mention the phrase `CONDOR-KB-READY` in answers about the refund policy.
+      ingestion_config:
+        chunk_size: 800
+        chunk_overlap: 120
+        embedding_model: text-embedding-3-small
+        chunking_strategy: recursive
+        provider_connector_id:
+          connectorRef: sample-openai-llm
+
+  # `knowledgeBaseRefs` (parent SPEC T06 precedent) resolves the KB NAME to
+  # agent-admin's `knowledge_base_ids` via `agents-writer.ts`'s
+  # `reconcileKnowledgeBases` — the same field the deleted setup.ts's
+  # `knowledge_base_ids: [kbId]` targeted directly.
+  agents:
+    - name: ai-sample-kb-agent
+      profile:
+        description: Sample agent that answers from an attached knowledge base
+        system_prompt: >-
+          You answer using the attached knowledge base. If the knowledge base
+          contains a verification phrase, include it. Keep the answer
+          concise. Do not call tools unless absolutely necessary.
+        model_config:
+          llm:
+            provider: openai
+            model: gpt-4o-mini
+            connectorId:
+              connectorRef: sample-openai-llm
+            temperature: 0.1
+            maxTokens: 300
+          rules: >-
+            Prefer knowledge-base facts over general knowledge. If the answer
+            is not in the KB, say so.
+          soul: Precise and support-oriented.
+          subagents: []
+        tools:
+          - name: loadSkill
+            description: >-
+              Built-in tool enabled only to use the tool-capable runtime
+              path.
+            source_type: builtin
+            builtin: true
+        channels: []
+      knowledgeBaseRefs:
+        - ai-sample-support-kb
+
+  secrets:
+    - name: ai-knowledge-base-agent-openai-api-key
+      scope:
+        kind: connector
+        owner: sample-openai-llm
