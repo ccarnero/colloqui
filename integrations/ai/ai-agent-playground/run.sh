@@ -2,15 +2,16 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Drives the ai-agent-playground sample end-to-end — SDK-powered (sdk/GROWTH-
-# PLAN.md P3.1). The actual agent-resolution/execute/poll logic lives in
-# src/index.ts, run via `@yoizen/platform-sdk`; this script only resolves the
-# dev environment (via ../../lib/resolve-env.sh, same as every other sample's
+# Drives the ai-agent-playground sample end-to-end — SDK-powered. Provisioning
+# is now declarative (`manifest.yaml` + `yoizen manifests apply`, see
+# README.md); the agent-resolution/execute/poll logic lives in src/index.ts,
+# run via `@yoizen/platform-sdk`; this script only resolves the dev
+# environment (via ../../lib/resolve-env.sh, same as every other sample's
 # run.sh) and execs the Node app with those env vars in scope.
 #
-# Prerequisite: run ./setup.sh once first to provision the published agent
-# (and its LLM connector, in connector credential mode). This script never
-# creates or modifies platform objects.
+# Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+# once first (see README.md). This script never creates or modifies platform
+# objects.
 . ../../lib/resolve-env.sh
 
 if ! command -v node >/dev/null 2>&1; then

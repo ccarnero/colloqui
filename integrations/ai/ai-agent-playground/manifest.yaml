@@ -1,0 +1,85 @@
+apiVersion: yoizen.io/v1
+# KIND DECISION (manual-loops/provisioning-manifest-gaps-2.md T01, gap 1):
+# this manifest provisions a connector + an agent — a PROCESS exists (agents
+# are the "process" resource kind per `validate-structural-rules.ts`), but
+# there is NO channel account anywhere (the deleted setup.ts's agent has
+# `channels: []`). An `IntegrationManifest` unconditionally requires >=1
+# inbound channel (`checkAtLeastOneInboundChannel`). `kind: LibraryManifest`
+# waives that check (and the >=1-process one) and instead requires
+# `checkAtLeastOneLibraryResource`: >=1 of connector/mcpServer/service/
+# systemVariable — satisfied here by the LLM connector alone. Verified
+# locally against `integrationManifestSchema.safeParse` +
+# `validateManifestStructuralRules` before committing this manifest.
+kind: LibraryManifest
+metadata:
+  name: ai-agent-playground
+spec:
+  # ---------------------------------------------------------------------------
+  # LLM connector — T01 (parent SPEC) nested bearer secretRef auth. The
+  # deleted setup.ts's default credential mode ("connector") created/reused an
+  # enabled HTTP connector tagged "llm" with `authConfig: { bearerToken:
+  # apiKey }` — the exact gap this batch's manifest-time connector auth
+  # wiring closes. `baseUrl` mirrors the deleted script's
+  # PROVIDER_DEFAULT_BASE_URL for openai; override the provider/model/baseUrl
+  # by editing this manifest (there is no per-run env override anymore — the
+  # manifest IS the config now, see README.md).
+  # ---------------------------------------------------------------------------
+  connectors:
+    - name: sample-openai-llm
+      type: llm
+      config:
+        baseUrl: https://api.openai.com/v1
+        context: external
+      auth:
+        authType: bearer
+        bearerToken:
+          secretRef: ai-agent-playground-openai-api-key
+      # T07 batch B fidelity fix — the deleted setup.ts created this connector
+      # with `tags: ["llm"]` (setup.ts connector-mode creation). agent-admin's
+      # credential resolver REQUIRES the `llm` tag on the adapter an agent's
+      # model_config.llm.connectorId points at; without it every referencing
+      # agent 400s with `Adapter '<id>' is not tagged as 'llm'`.
+      tags:
+        - llm
+
+  # ---------------------------------------------------------------------------
+  # Agent — `profile` carries the passthrough fields `agents-writer.ts`
+  # recognizes (description/system_prompt/model_config/tools/channels),
+  # verbatim from the deleted setup.ts's `buildAgentPayload()`.
+  # `model_config.llm.connectorId` is a T03 (this SPEC, gap 2) symbolic ref —
+  # `{ connectorRef: <name> }` — resolved to the real connector-admin id at
+  # apply time via `SUBSTITUTION_ALLOWLIST`'s new `connectorId` entry; never
+  # sent to agent-admin-service verbatim.
+  # ---------------------------------------------------------------------------
+  agents:
+    - name: ai-sample-playground
+      profile:
+        description: Sample agent created by integrations/ai/ai-agent-playground
+        system_prompt: >-
+          You are a concise sample agent. Answer briefly and mention if the
+          runtime execution reached the online LLM successfully.
+        model_config:
+          llm:
+            provider: openai
+            model: gpt-4o-mini
+            connectorId:
+              connectorRef: sample-openai-llm
+            temperature: 0.2
+            maxTokens: 256
+          rules: >-
+            Keep responses short. If asked for credentials or secrets,
+            refuse.
+          soul: Helpful, direct, calm.
+          subagents: []
+        tools: []
+        channels: []
+
+  # Bound to the connector owner so the broker binding-match check passes
+  # (scope kind=connector, owner=the connector name). The binding NAME is the
+  # env var `--secrets-from-env` reads the VALUE from (no naming transform —
+  # decision 7). Maps to OPENAI_API_KEY — see README.md.
+  secrets:
+    - name: ai-agent-playground-openai-api-key
+      scope:
+        kind: connector
+        owner: sample-openai-llm

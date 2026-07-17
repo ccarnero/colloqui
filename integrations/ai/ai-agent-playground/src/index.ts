@@ -1,11 +1,11 @@
 /**
  * ai-agent-playground sample driver — SDK-powered replacement for the
- * execute+poll tail of the old curl+jq `setup.sh` (see sdk/GROWTH-PLAN.md
- * P3.1).
+ * execute+poll tail of the old curl+jq `setup.sh`. Provisioning is now
+ * declarative (`manifest.yaml` + `yoizen manifests apply`, see README.md).
  *
- * Prerequisite: run ./setup.sh once first to provision the published agent
- * (and its LLM connector, in connector credential mode). This script never
- * creates or modifies platform objects — it only:
+ * Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+ * once first (see README.md). This script never creates or modifies platform
+ * objects — it only:
  *   1. Resolves the agent id by name via `client.agents.list()`.
  *   2. Submits one runtime execution via `client.runtime.createExecution()`.
  *   3. Polls `client.runtime.getExecution()` until `completed`/`failed` or
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    `[run] 1/3 resolving agent '${agentName}' (run ./setup.sh first if this fails)...`
+    `[run] 1/3 resolving agent '${agentName}' (apply manifest.yaml first if this fails)...`
   );
   let agentId: string | undefined;
   for await (const agent of client.agents.list({ pageSize: 100 })) {
@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   }
   if (!agentId) {
     console.error(
-      `[run] agent '${agentName}' not found — run ./setup.sh first`
+      `[run] agent '${agentName}' not found — apply manifest.yaml first`
     );
     process.exit(1);
   }
