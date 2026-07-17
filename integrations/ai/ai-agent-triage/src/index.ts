@@ -2,9 +2,9 @@
  * ai-agent-triage sample driver — SDK-powered replacement for the old
  * curl+jq `run.sh` body.
  *
- * Prerequisite: run ./setup.sh once first to provision the connector, agent,
- * HTTP channel instance, and workflow. This script never creates or modifies
- * platform objects — it only:
+ * Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+ * once first (see README.md). This script never creates or modifies platform
+ * objects — it only:
  *   1. Lists workflows via `client.workflows.list()` to confirm the sample's
  *      workflow exists.
  *   2. Lists `channel: "http"` accounts via `client.channels.listAccounts()`
@@ -40,8 +40,11 @@ async function main(): Promise<void> {
   const hostHeader = process.env.YOIZEN_HOST_HEADER;
 
   const workflowName = process.env.TRIAGE_WORKFLOW_NAME ?? "ai-agent-triage";
+  // The apply engine derives a channel's externalId as `manifest:<name>`
+  // (`channels-writer.ts`) — `manifest.yaml`'s channel name (`ai-agent-triage`)
+  // becomes the externalId `manifest:ai-agent-triage`.
   const instanceExternalId =
-    process.env.TRIAGE_HTTP_EXTERNAL_ID ?? "ai-agent-triage";
+    process.env.TRIAGE_HTTP_EXTERNAL_ID ?? "manifest:ai-agent-triage";
   const sendDelaySeconds = Number(process.env.TRIAGE_RUN_DELAY_S ?? "2");
 
   // The gateway's dev ingress routes by Host header (see
@@ -64,7 +67,7 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    `[run] 1/2 verifying workflow '${workflowName}' exists (run ./setup.sh first if this fails)...`
+    `[run] 1/2 verifying workflow '${workflowName}' exists (apply manifest.yaml first if this fails)...`
   );
   let workflowId: string | undefined;
   for await (const workflow of client.workflows.list()) {
@@ -75,7 +78,7 @@ async function main(): Promise<void> {
   }
   if (!workflowId) {
     console.error(
-      `[run] workflow '${workflowName}' not found — run ./setup.sh first`
+      `[run] workflow '${workflowName}' not found — apply manifest.yaml first`
     );
     process.exit(1);
   }
@@ -92,7 +95,7 @@ async function main(): Promise<void> {
   }
   if (!appSecret) {
     console.error(
-      `[run] could not resolve the '${instanceExternalId}' instance token — run ./setup.sh first`
+      `[run] could not resolve the '${instanceExternalId}' instance token — apply manifest.yaml first`
     );
     process.exit(1);
   }

@@ -5,8 +5,7 @@
   "type": "module",
   "description": "ai-agent-triage sample driver — posts sample customer messages through @yoizen/platform-sdk.",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "setup": "tsx src/setup.ts"
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@yoizen/platform-sdk": "file:../../../sdk"

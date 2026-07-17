@@ -1,0 +1,232 @@
+apiVersion: yoizen.io/v1
+kind: IntegrationManifest
+metadata:
+  name: ai-agent-triage
+spec:
+  # ---------------------------------------------------------------------------
+  # Dedicated HTTP channel account — a per-instance ingress so the workflow
+  # trigger COULD in principle be pinned to only its own traffic. See the
+  # DEVIATION note on the workflow trigger below: manifest v1 cannot actually
+  # express that pin today (no manifest-time id exists for
+  # `trigger.config.accountIds` to embed, mirrors http-fanout-telegram's own
+  # documented deviation), so the account still exists but the trigger is
+  # unpinned.
+  # ---------------------------------------------------------------------------
+  channels:
+    - name: ai-agent-triage
+      type: http
+      direction: inbound
+
+    # CROSS-SAMPLE DEPENDENCY (Telegram account): owned by
+    # ../../channels/telegram-transform-reply/manifest.yaml, already applied.
+    # `external: true` resolves this entry by NAME against LIVE platform
+    # state at plan/apply time (mirrors http-fanout-telegram/manifest.yaml).
+    # PREREQUISITE: apply telegram-transform-reply/manifest.yaml first.
+    - name: telegram-transform-reply-bot
+      type: telegram
+      direction: inbound
+      external: true
+
+  # ---------------------------------------------------------------------------
+  # LLM connector — T01 (parent SPEC) nested bearer secretRef auth, shared
+  # naming convention with ai-agent-playground (`sample-openai-llm`) so the
+  # two samples reconcile the SAME connector when applied to the same tenant
+  # (mirrors the deleted setup.ts's own `AI_LLM_CONNECTOR_NAME` default).
+  # ---------------------------------------------------------------------------
+  connectors:
+    - name: sample-openai-llm
+      type: llm
+      config:
+        baseUrl: https://api.openai.com/v1
+        context: external
+      auth:
+        authType: bearer
+        bearerToken:
+          secretRef: ai-agent-triage-openai-api-key
+      # T07 batch B — deleted setup.ts sent `tags: ["llm"]`; required by
+      # agent-admin's credential resolver for the LLM adapter.
+      tags:
+        - llm
+
+  # `model_config.llm.connectorId` is a T03 (this SPEC) `{ connectorRef }` —
+  # resolved to the real connector-admin id at apply time.
+  agents:
+    - name: ai-sample-triage
+      profile:
+        description: >-
+          Call-center triage classifier created by
+          integrations/ai/ai-agent-triage
+        system_prompt: >-
+          You are a call-center triage classifier. For every customer message
+          you receive, reply ONLY with a compact single-line JSON object and
+          nothing else — no prose, no markdown, no code fences. The object
+          must have exactly these keys: {"intent": "<short intent label, e.g.
+          refund, shipping, complaint, question>", "sentiment":
+          "positive|neutral|negative", "priority": "low|normal|high|urgent",
+          "summary": "<one short sentence summarizing the customer's
+          message>"} Rules: sentiment and priority MUST be one of the listed
+          values. Angry or threatening messages are negative and at least
+          high priority. If the message is empty or meaningless, use intent
+          "unknown", sentiment "neutral", priority "low".
+        model_config:
+          llm:
+            provider: openai
+            model: gpt-4o-mini
+            connectorId:
+              connectorRef: sample-openai-llm
+            temperature: 0.1
+            maxTokens: 200
+          rules: >-
+            Reply ONLY with the compact JSON object. Never add prose,
+            markdown, or code fences.
+          soul: Precise, terse, deterministic.
+          subagents: []
+        tools: []
+        channels: []
+
+  # ---------------------------------------------------------------------------
+  # T04 systemVariables — the deleted setup.ts auto-discovered
+  # TELEGRAM_CHAT_ID at PROVISIONING time and baked it as a literal into the
+  # workflow's channelSend args. A manifest is static/checked-in, so this is
+  # expressed as a runtime-resolved systemVariable instead (mirrors
+  # http-fanout-telegram/manifest.yaml exactly) — changing the recipient is a
+  # value re-apply, never a workflow edit.
+  #
+  # DOCUMENTED SIMPLIFICATION: the deleted script also supported a SECOND,
+  # dynamically-discovered recipient (`TELEGRAM_CHAT_ID_2`), fanning out via a
+  # parallel `branch` with one `channelSend` arm per chat. A systemVariable
+  # carries exactly one value, and the manifest is static, so this migration
+  # keeps ONE recipient only — the same simplification
+  # http-fanout-telegram/hosted-services-api already established for their
+  # own single-recipient notify steps. Not a capability gap: a second
+  # recipient could be added as a second systemVariable + a second
+  # unconditional channelSend action if ever needed.
+  # ---------------------------------------------------------------------------
+  systemVariables:
+    - name: ai-agent-triage-chat-id
+      type: string
+      value: "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID"
+      label: Telegram chat id for ai-agent-triage
+      description: >-
+        Numeric Telegram chat id the 'notify' step DMs the triage summary to.
+        Edit this value and re-apply to change the recipient — resolved at
+        workflow execution time via
+        {{variables.system.ai-agent-triage-chat-id}}.
+
+  # `agentId` (T03 allowlist -> `agentRef`) resolves to the real
+  # agent-admin-service agent id at apply time. `accountId` (T01/parent SPEC
+  # allowlist -> `channelRef`) resolves the external Telegram channel.
+  # `route`'s ROUTE_CODE and the conditional's shape are embedded VERBATIM
+  # from the deleted setup.ts's `buildWorkflowBody()`.
+  workflows:
+    - name: ai-agent-triage
+      definition:
+        application: samples
+        actions:
+          - name: triage
+            activity: agentCall
+            args:
+              agentId:
+                agentRef: ai-sample-triage
+              message: "{{request.text}}"
+              conversationId: ai-agent-triage
+              userId: "{{request.from}}"
+              channel: http
+          - name: route
+            activity: jsFunction
+            args:
+              code: |
+                (ctx) => {
+                  var req = ctx.request || {};
+                  var triage = (ctx.results && ctx.results.triage) || {};
+                  var raw = (triage.data && typeof triage.data.reply === "string")
+                    ? triage.data.reply
+                    : "";
+
+                  var cleaned = raw.trim();
+                  var fence = cleaned.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+                  if (fence) cleaned = fence[1].trim();
+
+                  var parsed = null;
+                  try { parsed = JSON.parse(cleaned); } catch (e) { parsed = null; }
+                  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                    parsed = {
+                      intent: "unknown",
+                      sentiment: "neutral",
+                      priority: "high", // fail safe: an unparseable triage is escalated
+                      summary: raw ? ("unparseable agent reply: " + raw.slice(0, 160)) : "agent returned no reply"
+                    };
+                  }
+
+                  var priority = parsed.priority || "normal";
+                  var sentiment = parsed.sentiment || "neutral";
+                  var escalate = priority === "urgent" || priority === "high" || sentiment === "negative";
+
+                  var detail =
+                    "priority: " + priority +
+                    " | sentiment: " + sentiment +
+                    " | intent: " + (parsed.intent || "unknown") + "\n" +
+                    (parsed.summary || "(no summary)") + "\n" +
+                    "Original: " + (req.text || "(empty)");
+
+                  return {
+                    escalate: escalate,
+                    priority: priority,
+                    sentiment: sentiment,
+                    alertText: "🚨 ESCALATION — " + detail,
+                    normalText: "✅ Triage — " + detail
+                  };
+                }
+          - name: notify
+            activity: conditional
+            branches:
+              - label: Escalate
+                condition:
+                  variable: results.route.escalate
+                  comparator: eq
+                  value: "true"
+                actions:
+                  - name: alertSend
+                    activity: channelSend
+                    args:
+                      accountId:
+                        channelRef: telegram-transform-reply-bot
+                      channel: telegram
+                      provider: telegram
+                      to: "{{variables.system.ai-agent-triage-chat-id}}"
+                      type: text
+                      text: "{{results.route.alertText}}"
+            default:
+              - name: resolveSend
+                activity: channelSend
+                args:
+                  accountId:
+                    channelRef: telegram-transform-reply-bot
+                  channel: telegram
+                  provider: telegram
+                  to: "{{variables.system.ai-agent-triage-chat-id}}"
+                  type: text
+                  text: "{{results.route.normalText}}"
+        # DEVIATION (mirrors http-fanout-telegram/manifest.yaml exactly): the
+        # deleted setup.ts pinned this trigger to its own dedicated HTTP
+        # instance via `config.accountIds` (TRIAGE_PIN=1 default), which
+        # manifest v1 cannot express (SUBSTITUTION_ALLOWLIST only covers the
+        # singular `accountId` action-arg key, not the plural
+        # `trigger.config.accountIds`). Unpinned here: fires on ANY HTTP
+        # message for the tenant — see README § Troubleshooting for running
+        # this alongside other unpinned HTTP-triggered samples without
+        # cross-firing.
+        trigger:
+          type: message_received
+          mode: shared
+          config:
+            channels:
+              - http
+            providers:
+              - http
+
+  secrets:
+    - name: ai-agent-triage-openai-api-key
+      scope:
+        kind: connector
+        owner: sample-openai-llm
