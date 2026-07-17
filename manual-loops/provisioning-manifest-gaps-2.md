@@ -711,3 +711,40 @@ IN-REPO knative base + both local overlays (overlays replace env wholesale)
 Gates: G1 373/373 + tsc, provisioning revision 00039 + overlay applied
 (agent services Ready), e2e-manifest-apply PASSED, G5 triple all-noop,
 both new manifests live-idempotent. Dual review: 2x APPROVED.
+
+### T07 batch B (6 ai samples) — 2026-07-17
+
+MIGRATED 5/6 (7/9 total for T07) across three attempts; every sample
+live-verified: first apply creates/repairs, second apply FULL NOOP; all
+prior manifests remain all-noop. Commits: tags fix 64f38ad9 +
+c16e247e/57232179/812020fd/220b0426/d51f6146 (one per sample).
+
+ATTEMPT HISTORY: (1) migrations written; live applies all 400'd at agent
+create. (2) suspected lost substitution — implementer PROVED the source
+correct at three reproduction levels and the pod binary probe confirmed
+T02/T03 present; a defensive noop-connector regression test was added.
+(3) REAL root cause found by POSTing the substituted body: agent-admin
+requires the referenced adapter to carry the `llm` TAG; the old setups all
+sent `tags: ["llm"]` (git-show verified per sample) and connectorSchema had
+NO tags field. FIDELITY FIX (orchestrator-authorized, same class as
+parent-T02 endpoints): `connectorSchema.tags` mirroring connector-admin's
+DTO; writer passes tags on create + PATCHes on update BEFORE endpoints;
+comparable projects sorted tags via the declared-gate idiom (live listing
+exposes tags) — the pre-existing tagless live connector SELF-REPAIRED via
+update verdict on the next apply (observed live).
+
+Sample notes: triage/supervisor/sysvars are IntegrationManifests with the
+documented unpinned-trigger + chat-id-via-systemVariable patterns;
+playground/kb-agent are LibraryManifests; KB doc expressed as inline source
+(CLI has no bundle flag; byte-identical content, name sans extension per
+nameSchema); sysvars renamed camelCase→kebab-case per nameSchema with every
+runtime reference updated (reviewer-grepped).
+
+ESCALATED (2/9 remain): `ai-skill-support-agent` — needs a `skills`
+manifest section (catalog Skill via client.skills + agent catalog_skill_id):
+a genuine FIFTH resource kind beyond this SPEC's four gaps; STANDBY.md
+updated with citations; needs its own human decision round per decision 10.
+`mcp-repo-support-bot` remains for batch C.
+
+Gates: G1 383/383 + tsc, G3 299/299 + tsc, revision 00041 + e2e PASSED,
+full regression sweep (8 manifests) all-noop. Dual review: 2x APPROVED.
