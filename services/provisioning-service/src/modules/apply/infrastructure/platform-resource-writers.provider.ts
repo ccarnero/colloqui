@@ -31,6 +31,11 @@ import { createWorkflowsWriter } from "./workflows-writer";
  * T06 (manual-loops/provisioning-manifest-gaps.md, gap 6): the MCPSERVER
  * writer ALSO takes `secretResolver` — its `auth`/`headers` fields resolve
  * secretRefs through the same broker resolver (see `mcp-servers-writer.ts`).
+ *
+ * T05 (manual-loops/provisioning-manifest-gaps-2.md, gap 5): the SERVICE
+ * (registry) writer's `env[].value` is PLAIN-STRING-ONLY (human ruling
+ * 2026-07-16) — no secretRef, no broker resolver dependency. Secret-valued
+ * env vars are a deferred k8s-native (`secretKeyRef`) follow-up.
  */
 export function buildPlatformResourceWriters(
   secretResolver?: ISecretValueResolver

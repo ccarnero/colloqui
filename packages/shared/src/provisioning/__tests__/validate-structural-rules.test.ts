@@ -397,4 +397,18 @@ describe("structural rule — ref resolution", () => {
       )
     ).toBe(true);
   });
+
+  // manual-loops/provisioning-manifest-gaps-2.md T05, gap 5 (HUMAN RULING
+  // 2026-07-16 — PLAIN STRINGS ONLY): `env[].value` is a plain `string`, so
+  // an env var can never carry a secretRef and never participates in
+  // ref/scope-binding resolution — a plain string value is inert here.
+  test("does not flag a plain string env value (not a secretRef at all)", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.services[0] = {
+      ...manifest.spec.services[0],
+      env: [{ name: "YOIZEN_SAMPLE", value: "true" }],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors.some((e) => /env\[0\]/.test(e.path ?? ""))).toBe(false);
+  });
 });

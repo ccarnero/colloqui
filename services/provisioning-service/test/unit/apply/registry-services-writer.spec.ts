@@ -36,23 +36,35 @@ describe("createRegistryServicesWriter", () => {
     }
   });
 
-  it("create: refuses a service with non-empty env (every env var needs a secretRef the T05 broker hasn't landed)", async () => {
-    globalThis.fetch = mock(async () => {
-      throw new Error("must never call the network for env with secretRef");
+  // Reworked (manual-loops/provisioning-manifest-gaps-2.md T05, gap 5 — HUMAN
+  // RULING 2026-07-16, PLAIN STRINGS ONLY): the blanket-rejection this test
+  // used to encode is lifted; env vars are now plain-string config that
+  // passes through verbatim into the `envVars` payload. No broker path,
+  // no secret_not_resolvable branch for env. (A `{ secretRef }`-shaped value
+  // is rejected at the SCHEMA layer — covered by manifest.schema.test.ts —
+  // so it can never reach this writer.)
+  it("create: plain string env values pass through verbatim into envVars", async () => {
+    let capturedBody: unknown;
+    globalThis.fetch = mock(async (_url, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string);
+      return json({ id: "svc-1" }, 201);
     }) as unknown as typeof fetch;
 
     const writer = createRegistryServicesWriter(BASE_URL);
     const service: HostedService = {
-      name: "priority-scorer",
-      image: "registry.example.com/priority-scorer:1.0",
-      env: [{ name: "API_KEY", secretRef: "scorer-key" }],
+      name: "hosted-services-api",
+      image: "registry.example.com/hosted-services-api:1.0",
+      env: [
+        { name: "YOIZEN_SAMPLE", value: "crm-support" },
+        { name: "MODE", value: "production" },
+      ],
     };
 
     const result = await writer.create("tenant-a", service);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.kind).toBe("secret_not_resolvable");
-    }
+    expect(result.ok).toBe(true);
+    expect(capturedBody).toMatchObject({
+      envVars: { YOIZEN_SAMPLE: "crm-support", MODE: "production" },
+    });
   });
 
   it("create: image-referenced service with no env -> POST /services", async () => {
@@ -88,6 +100,29 @@ describe("createRegistryServicesWriter", () => {
       { field: "envNames" },
     ]);
     expect(result.ok).toBe(true);
+  });
+
+  it("update: plain string env values pass through verbatim into the PATCH envVars", async () => {
+    let capturedBody: unknown;
+    globalThis.fetch = mock(async (_url, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string);
+      return json({ id: "svc-1" });
+    }) as unknown as typeof fetch;
+
+    const writer = createRegistryServicesWriter(BASE_URL);
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:2.0",
+      env: [{ name: "YOIZEN_SAMPLE", value: "crm-support" }],
+    };
+
+    const result = await writer.update("tenant-a", "svc-1", service, [
+      { field: "envNames" },
+    ]);
+    expect(result.ok).toBe(true);
+    expect(capturedBody).toMatchObject({
+      envVars: { YOIZEN_SAMPLE: "crm-support" },
+    });
   });
 
   // ---------------------------------------------------------------------

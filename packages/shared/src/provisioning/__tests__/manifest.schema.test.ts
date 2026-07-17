@@ -442,6 +442,162 @@ describe("hosted service — routes (T05, gap 5)", () => {
   });
 });
 
+describe("hosted service — env vars (provisioning-manifest-gaps-2.md T05, gap 5)", () => {
+  test("accepts a service with no env declared", () => {
+    const manifest = buildValidManifest();
+    const result = integrationManifestSchema.safeParse(manifest);
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts an env entry with a plain string value (non-secret metadata, e.g. YOIZEN_SAMPLE)", () => {
+    const manifest = buildValidManifest();
+    const valid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            env: [{ name: "YOIZEN_SAMPLE", value: "true" }],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(valid).success).toBe(true);
+  });
+
+  test("accepts multiple plain-string env entries on the same service", () => {
+    const manifest = buildValidManifest();
+    const valid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            env: [
+              { name: "MODE", value: "production" },
+              { name: "YOIZEN_SAMPLE", value: "crm-support" },
+            ],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(valid).success).toBe(true);
+  });
+
+  test("rejects a non-string env value (numbers, etc.)", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            env: [{ name: "BAD", value: 123 }],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("rejects a { secretRef }-shaped env value — secret-valued env vars are NOT expressible (human ruling 2026-07-16, pending k8s-native secretKeyRef)", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            env: [{ name: "API_KEY", value: { secretRef: "scorer-key" } }],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("rejects an empty-string env value", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            env: [{ name: "EMPTY", value: "" }],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("rejects an env entry missing name", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [{ ...manifest.spec.services[0], env: [{ value: "true" }] }],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("rejects an env entry missing value entirely", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          { ...manifest.spec.services[0], env: [{ name: "NO_VALUE" }] },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("rejects an unknown key on an env entry (.strict())", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            env: [{ name: "X", value: "y", unexpectedField: true }],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("rejects the pre-T05 shape ({ name, secretRef }) — superseded by { name, value }", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            env: [{ name: "API_KEY", secretRef: "scorer-key" }],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+});
+
 describe("kbSourceSchema — inline | file | url discriminated union", () => {
   test("accepts an inline source", () => {
     expect(

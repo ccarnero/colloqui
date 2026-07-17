@@ -13,7 +13,6 @@ import type {
   Agent,
   Connector,
   ConnectorAuth,
-  HostedService,
   IntegrationManifest,
   KnowledgeBase,
   ManifestChannel,
@@ -351,21 +350,6 @@ function checkRefResolution(
           path: `spec.agents[${index}].toolDescriptionOverrides["${overrideKey}"]`,
           message: `unresolved mcpServerRef "${serverName}": no MCP server with this name in the manifest`,
         });
-      }
-    });
-  });
-
-  manifest.spec.services.forEach((service: HostedService, index) => {
-    (service.env ?? []).forEach((envVar, envIndex) => {
-      if (envVar.secretRef !== undefined) {
-        checkSecretRef(
-          envVar.secretRef,
-          `spec.services[${index}].env[${envIndex}].secretRef`,
-          "service",
-          service.name,
-          secretsByName,
-          errors
-        );
       }
     });
   });

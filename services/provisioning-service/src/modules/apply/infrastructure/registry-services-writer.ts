@@ -7,11 +7,33 @@
 // `serviceComparable`), so a `buildRef`-declared service fails loud instead
 // of guessing an image.
 //
-// Env vars: `ServiceEnvVar` only carries `{name, secretRef}` — the manifest
-// schema has NO plain-value field (SPEC decision 3: secrets never inline).
-// Every env var therefore requires the T05 secrets broker to resolve a real
-// value; T04 supports ONLY services with an EMPTY `env` list. A non-empty
-// `env` fails loud with `secret_not_resolvable`.
+// Env vars (manual-loops/provisioning-manifest-gaps-2.md T05, gap 5 — HUMAN
+// RULING 2026-07-16, PLAIN STRINGS ONLY): `ServiceEnvVar.value` is a plain
+// `string` (e.g. a metadata marker like `YOIZEN_SAMPLE`). Each declared
+// entry passes through verbatim into registry-service's `envVars` payload —
+// no secrets broker involvement whatsoever. A `{ secretRef }` value form is
+// DELIBERATELY absent from the schema: resolving a secretRef to plaintext
+// here and shipping it in `envVars` would bake the literal secret into the
+// Knative spec (etcd-persisted, kubectl-visible), contradicting
+// `declarative-provisioning.md` decision 7 (hosted services receive secrets
+// K8S-NATIVELY via `valueFrom.secretKeyRef`). Secret-valued env vars are a
+// deferred k8s-native follow-up, NOT expressible in this task.
+//
+// LOGGING DISCIPLINE: even though these are plain config values (not
+// secrets), the writer logs env var NAMES only, never values wholesale —
+// keeping parity with every other credential-adjacent writer in this loop.
+//
+// COMPARABLE LIMITATION (documented, not a bug): `comparable-fields.ts`'s
+// `serviceComparable` projects env var NAMES only (never values — even a
+// plain value can be quasi-sensitive config, same names-only reasoning as
+// T04's systemVariables, and it keeps parity). Consequence: adding/removing
+// an env NAME produces an `update` verdict and this writer re-sends the full
+// `envVars` map; a VALUE-only change (same name, changed value) produces NO
+// diff at plan time, so this writer is never invoked for that change and the
+// live env var is NOT reconciled until some OTHER field on the service also
+// changes. This mirrors the T02-endpoints cache-exclusion precedent: an
+// accepted, explicitly documented limitation, not a defect to silently work
+// around.
 //
 // T05 (manual-loops/provisioning-manifest-gaps.md, gap 5): scaling fields
 // (`port`/`minScale`/`maxScale`/`concurrencyTarget`) are ALL optional and
@@ -103,16 +125,29 @@ export function createRegistryServicesWriter(
 ): IPlatformResourceWriter {
   const logger = new PinoLoggerService("apply.service-writer");
 
-  function checkEnvSupport(
-    service: HostedService
-  ): { ok: true } | { ok: false; message: string } {
-    if (service.env && service.env.length > 0) {
-      return {
-        ok: false,
-        message: `hosted service '${service.name}' declares env vars — every manifest env var requires a secretRef (SPEC decision 3), and the secrets broker lands in T05, so no real value can be resolved yet`,
-      };
+  /**
+   * Plain-string `env[].value` passthrough (T05, gap 5 — PLAIN STRINGS
+   * ONLY). No secrets broker involvement: every declared value is plain
+   * config mapped verbatim into registry-service's `envVars` payload. Logs
+   * env var NAMES only, never values wholesale (parity discipline).
+   */
+  function buildEnvVars(
+    service: HostedService,
+    verb: "create" | "update"
+  ): Record<string, string> {
+    const declared = service.env ?? [];
+    const envVars: Record<string, string> = {};
+    for (const envVar of declared) {
+      envVars[envVar.name] = envVar.value;
     }
-    return { ok: true };
+    if (declared.length > 0) {
+      logger.log(
+        `${verb}: service '${service.name}' env vars (plain config) [${declared
+          .map((e) => e.name)
+          .join(", ")}] (values NEVER logged)`
+      );
+    }
+    return envVars;
   }
 
   /** Only the scaling keys the manifest ACTUALLY declares — never fabricates a value for an omitted field. */
@@ -459,19 +494,7 @@ export function createRegistryServicesWriter(
         };
       }
 
-      const envCheck = checkEnvSupport(service);
-      if (!envCheck.ok) {
-        logger.warn(`create: ${envCheck.message}`);
-        return {
-          ok: false,
-          error: {
-            kind: "secret_not_resolvable",
-            resourceKind: "service",
-            resourceName: service.name,
-            message: envCheck.message,
-          },
-        };
-      }
+      const envVars = buildEnvVars(service, "create");
 
       const url = `${baseUrl}/services`;
       const scalingFields = scalingFieldsOf(service);
@@ -493,7 +516,7 @@ export function createRegistryServicesWriter(
           body: JSON.stringify({
             name: service.name,
             image: service.image,
-            envVars: {},
+            envVars,
             ...scalingFields,
           }),
           signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
@@ -546,19 +569,7 @@ export function createRegistryServicesWriter(
     ): Promise<CreateOrUpdateResult> {
       const service = resourceUnknown as HostedService;
 
-      const envCheck = checkEnvSupport(service);
-      if (!envCheck.ok) {
-        logger.warn(`update: ${envCheck.message}`);
-        return {
-          ok: false,
-          error: {
-            kind: "secret_not_resolvable",
-            resourceKind: "service",
-            resourceName: service.name,
-            message: envCheck.message,
-          },
-        };
-      }
+      const envVars = buildEnvVars(service, "update");
 
       const url = `${baseUrl}/services/${externalId}`;
       const scalingFields = scalingFieldsOf(service);
@@ -576,7 +587,7 @@ export function createRegistryServicesWriter(
             [TENANT_HEADER]: tenantId,
             "content-type": "application/json",
           },
-          body: JSON.stringify({ envVars: {}, ...scalingFields }),
+          body: JSON.stringify({ envVars, ...scalingFields }),
           signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
         });
         if (!response.ok) {

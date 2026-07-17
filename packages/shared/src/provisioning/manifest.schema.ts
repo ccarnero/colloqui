@@ -462,10 +462,30 @@ export type Agent = z.infer<typeof agentSchema>;
 // Hosted services — REFERENCES only (image or buildRef), never inline code.
 // ---------------------------------------------------------------------------
 
+// manual-loops/provisioning-manifest-gaps-2.md T05, gap 5.
+// BEFORE this task, `ServiceEnvVar` was `{ name, secretRef? }` — an env var
+// could ONLY ever be a secret binding (never a plain value), and
+// `registry-services-writer.ts`'s `checkEnvSupport()` rejected ANY non-empty
+// `env` outright. Nothing shipped ever used that shape (the three shipped
+// manifests declare no `env`; `hosted-services-api`'s `YOIZEN_SAMPLE` marker
+// was inexpressible under it, the exact gap this task closes).
+//
+// AFTER (HUMAN RULING 2026-07-16 — PLAIN STRINGS ONLY): each entry's `value`
+// is a plain non-secret string (e.g. a metadata marker like `YOIZEN_SAMPLE`).
+// A `{ secretRef }` value form is DELIBERATELY NOT offered here: resolving a
+// secretRef to plaintext inside provisioning-service and shipping it in the
+// registry `envVars` payload would bake the literal secret into the Knative
+// spec (etcd-persisted, kubectl-visible), contradicting
+// `declarative-provisioning.md` decision 7, which mandates hosted services
+// receive secrets K8S-NATIVELY (`valueFrom.secretKeyRef` from the `psec-*`
+// k8s Secrets the broker already materializes). SECRET-VALUED env vars are
+// therefore NOT EXPRESSIBLE pending that k8s-native `secretKeyRef` follow-up
+// design; a `{ secretRef }`-shaped value is rejected structurally by this
+// schema's `z.string()` type.
 const serviceEnvVarSchema = z
   .object({
     name: z.string().min(1, "env var name must not be empty"),
-    secretRef: secretRefSchema.optional(),
+    value: z.string().min(1, "env var value must not be empty"),
   })
   .strict();
 

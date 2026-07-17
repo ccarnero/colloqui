@@ -479,7 +479,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T02 safety fix: fail loud on ref-shaped objects at non-allowlisted keys (gap 3)
 - [x] T03 LLM/KB connector ID references (gap 2)
 - [x] T04 agent per-tool MCP fields (gap 4)
-- [ ] T05 service `env` vars (gap 5)
+- [x] T05 service `env` vars (gap 5)
 - [ ] T06 low-priority cleanup fold-in (optional)
 - [ ] T07 migrate the 9 remaining stand-by samples
 - [ ] T08 restore the full G8 canary set (mcp included for real)
@@ -638,3 +638,27 @@ Gates (attempt 2): G1 367/367 + tsc, G3 281 + G4 392, G6b revision 00033 +
 e2e PASSED, G5 triple regression all-noop.
 FOLLOW-UP (cosmetic): reconcileEnabledMcpServers logs a `create:` prefix
 even from update().
+
+### T05 — 2026-07-16/17
+
+TWO review rounds with a HUMAN RULING in between. Attempt 1 implemented
+decision 7's string|{secretRef} shape but a reviewer proved the secretRef
+branch resolved values to PLAINTEXT inside provisioning-service and baked
+them literally into the Knative spec (etcd-persisted, kubectl-visible) —
+contradicting declarative-provisioning decision 7's k8s-native secretKeyRef
+mandate (the psec-* k8s Secrets the broker already materializes are the
+intended vehicle). HUMAN RULING (2026-07-16): PLAIN STRINGS ONLY —
+`serviceEnvVarSchema` = { name, value: string }; the secretRef branch is
+REMOVED from gap 5 and deferred to a future k8s-native (valueFrom.
+secretKeyRef) design; the 9 samples only need plain values. Attempt 2
+delivered exactly that: pure `buildEnvVars` passthrough (no broker/
+secretResolver in the env path), checkEnvSupport's blanket rejection lifted,
+schema/writer headers cite the ruling + decision 7, comparable stays
+NAMES-only (value-only change no-ops at plan — documented limitation,
+T02 precedent). 2x APPROVED.
+
+Gates (attempt 2): G1 368/368 + tsc, G3 292/292 + tsc, G4 392, G6b revision
+00035 + e2e PASSED, G5 triple regression all-noop.
+FOLLOW-UP (recorded): k8s-native secretKeyRef env design — needs its own
+decision round (provisioning ensures the k8s Secret; registry/knative-builder
+emits valueFrom.secretKeyRef; touches registry-service).

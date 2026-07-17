@@ -75,7 +75,7 @@ export function buildValidManifest(): IntegrationManifest {
         {
           name: "priority-scorer",
           image: "registry.example.com/priority-scorer:1.0",
-          env: [{ name: "API_KEY", secretRef: "scorer-api-key" }],
+          env: [{ name: "YOIZEN_SAMPLE", value: "crm-support" }],
         },
       ],
       systemVariables: [
