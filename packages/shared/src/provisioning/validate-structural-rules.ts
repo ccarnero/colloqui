@@ -247,6 +247,8 @@ function checkRefResolution(
   const mcpServerNames = new Set(
     manifest.spec.mcpServers.map((server) => server.name)
   );
+  // manual-loops/provisioning-manifest-gaps-3.md T02, workstream a.
+  const skillNames = new Set(manifest.spec.skills.map((skill) => skill.name));
   const secretsByName = new Map(manifest.spec.secrets.map((s) => [s.name, s]));
 
   manifest.spec.channels.forEach((channel, index) => {
@@ -355,6 +357,24 @@ function checkRefResolution(
         });
       }
     });
+
+    // manual-loops/provisioning-manifest-gaps-3.md T02, workstream a — mirrors
+    // the connectorRef case (gaps-2 T06) below exactly, but walks an agent's
+    // own `profile` tree (where `skillRef` occurrences live, e.g.
+    // `profile.model_config.subagents[].catalog_skill_id`) rather than a
+    // workflow `definition`, since `skillRef` never appears in a workflow.
+    const profileRefs = collectSymbolicRefs(
+      agent.profile,
+      `spec.agents[${index}].profile`
+    );
+    for (const ref of profileRefs) {
+      if (ref.refType === "skillRef" && !skillNames.has(ref.value)) {
+        errors.push({
+          path: ref.path,
+          message: `unresolved skillRef "${ref.value}": no skill with this name in the manifest`,
+        });
+      }
+    }
   });
 
   manifest.spec.workflows.forEach((workflow, index) => {

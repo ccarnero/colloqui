@@ -649,7 +649,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 ---
 
 - [x] T01 `skills` manifest section (schema + planner)
-- [ ] T02 `skillRef` scalar substitution
+- [x] T02 `skillRef` scalar substitution
 - [ ] T03 ARRAY symbolic-ref substitution (workstream d)
 - [ ] T04 `skills` apply-engine writer + migrate `ai-skill-support-agent`
 - [ ] T05 re-pin the seven migrated triggers + restore the full canary set
@@ -725,4 +725,24 @@ forced by the total Record<ResourceKind,...> maps; T04 replaces the body.
 
 Gates: G1 388/388, G2/G3/G4 clean (shared 309, sdk 394), G6b revision 00042
 + e2e PASSED, four-canary regression all-noop. Dual review: 2x APPROVED
+(attempt 1).
+
+### T02 — 2026-07-17
+
+`skillRef` shipped as the 7th symbolic ref kind: schema alias +
+SYMBOLIC_REF_KEYS; `resource-kind-of-ref-type` skillRef→skill (edges via the
+generic walk; skill<agent order from T01); SUBSTITUTION_ALLOWLIST +
+`catalog_skill_id`→skillRef (source: deleted setup.ts:566 + runtime contract
+:550-558, verified verbatim); substitution reaches
+model_config.subagents[].catalog_skill_id via the EXISTING array-recursion
+branch (test-proven, no walker change). checkRefResolution gains a NEW walk
+root over agent.profile validating skillRef ONLY (reviewers traced: other
+collected ref kinds are ignored — the five AI manifests' connectorRef in
+profile cannot newly error; that pre-existing unvalidated gap stays
+documented, untouched). Fail-loud reuses the existing error kinds.
+
+Gates: G1 392/392, shared 314/314, sdk 394, all tsc clean, G6b revision
+00043 + e2e PASSED, four-canary regression all-noop. INFRA NOTE: a wedged
+workflow-service-api pod (1/2 for 27h) caused transient plan timeouts
+mid-gates — recycled, re-verified; not a T02 issue. Dual review: 2x APPROVED
 (attempt 1).

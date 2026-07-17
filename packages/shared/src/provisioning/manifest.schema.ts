@@ -54,6 +54,13 @@ export const connectorRefSchema = nameSchema;
 // `agentSchema.enabledMcpServerRefs` below for why that field resolves to the
 // manifest NAME, never a real id.
 export const mcpServerRefSchema = nameSchema;
+// manual-loops/provisioning-manifest-gaps-3.md T02, workstream a — lets an
+// agent's `profile.model_config.subagents[].catalog_skill_id` reference a
+// `skills[]` entry by manifest name, resolved to the real skill id at apply
+// time exactly like connectorRef/mcpServerRef (see
+// `services/provisioning-service/.../substitution-allowlist.ts`'s
+// `catalog_skill_id` entry).
+export const skillRefSchema = nameSchema;
 
 export const SYMBOLIC_REF_KEYS = [
   "channelRef",
@@ -62,6 +69,7 @@ export const SYMBOLIC_REF_KEYS = [
   "secretRef",
   "connectorRef",
   "mcpServerRef",
+  "skillRef",
 ] as const;
 
 export type SymbolicRefType = (typeof SYMBOLIC_REF_KEYS)[number];

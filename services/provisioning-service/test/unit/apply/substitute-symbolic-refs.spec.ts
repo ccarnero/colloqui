@@ -148,6 +148,39 @@ describe("substituteSymbolicRefs — T03 manifest-time real-ID substitution", ()
     }
   });
 
+  // manual-loops/provisioning-manifest-gaps-3.md T02, workstream a.
+  it("substitutes catalog_skill_id when its value is { skillRef } and resolvable, nested inside profile.model_config.subagents[]", () => {
+    const value = {
+      model_config: {
+        subagents: [
+          {
+            name: "refund-helper",
+            catalog_skill_id: { skillRef: "refund-policy-expert" },
+          },
+        ],
+      },
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "agent",
+      owningResourceName: "support-agent",
+      resolveRef: (refType, name) =>
+        refType === "skillRef" && name === "refund-policy-expert"
+          ? "skill-real-id-1"
+          : undefined,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(
+        (
+          result.value as {
+            model_config: { subagents: { catalog_skill_id: unknown }[] };
+          }
+        ).model_config.subagents[0]?.catalog_skill_id
+      ).toBe("skill-real-id-1");
+    }
+  });
+
   it("fails loud, naming the ref kind/name/owning resource, when a ref cannot be resolved", () => {
     const value = {
       actions: [
@@ -193,6 +226,49 @@ describe("substituteSymbolicRefs — T03 manifest-time real-ID substitution", ()
     });
     expect(result.ok).toBe(false);
     expect(resolveRef).not.toHaveBeenCalled();
+  });
+
+  // manual-loops/provisioning-manifest-gaps-3.md T02, workstream a.
+  it("fails loud with unresolved_symbolic_ref when catalog_skill_id's skillRef cannot be resolved", () => {
+    const value = {
+      model_config: {
+        subagents: [{ catalog_skill_id: { skillRef: "missing-skill" } }],
+      },
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "agent",
+      owningResourceName: "support-agent",
+      resolveRef: () => undefined,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("unresolved_symbolic_ref");
+      expect(result.error.message).toContain("skillRef");
+      expect(result.error.message).toContain("missing-skill");
+      expect(result.error.message).toContain("support-agent");
+    }
+  });
+
+  it("fails loud with mismatched_symbolic_ref when catalog_skill_id holds the WRONG ref kind", () => {
+    const value = {
+      model_config: {
+        subagents: [{ catalog_skill_id: { agentRef: "support-agent" } }],
+      },
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "agent",
+      owningResourceName: "support-agent",
+      resolveRef: () => "should-never-be-used",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("mismatched_symbolic_ref");
+      expect(result.error.message).toContain("skillRef");
+      expect(result.error.message).toContain("agentRef");
+      expect(result.error.message).toContain("catalog_skill_id");
+    }
   });
 
   it("fails loud when an allowlisted key holds a recognized ref-object of the WRONG kind, naming expected vs actual", () => {

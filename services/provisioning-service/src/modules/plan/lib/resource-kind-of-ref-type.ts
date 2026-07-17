@@ -36,6 +36,14 @@ export function resourceKindOfRefType(
     // `knowledgeBaseRefs`, which isn't in the ref-graph either).
     case "mcpServerRef":
       return "mcpServer";
+    // manual-loops/provisioning-manifest-gaps-3.md T02, workstream a —
+    // skillRef resolves against the manifest's `skills` section (an agent's
+    // `profile.model_config.subagents[].catalog_skill_id` references a skill
+    // by manifest name), so a skillRef occurrence becomes a dependency edge
+    // exactly like connectorRef/mcpServerRef above. `RESOURCE_KIND_ORDER`
+    // places `skill` before `agent` so the id resolves within the same apply.
+    case "skillRef":
+      return "skill";
     case "secretRef":
       return null;
     default:

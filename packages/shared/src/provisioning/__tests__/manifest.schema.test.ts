@@ -8,6 +8,7 @@ import {
   nameSchema,
   SYMBOLIC_REF_KEYS,
   serviceRouteMethodSchema,
+  skillRefSchema,
 } from "../manifest.schema";
 import { buildValidManifest } from "./fixtures";
 
@@ -69,7 +70,9 @@ describe("knowledgeBaseSchema — ingestion_config (T03, gap 2)", () => {
 });
 
 describe("connectorRefSchema — SYMBOLIC_REF_KEYS (T03, gap 3)", () => {
-  test("SYMBOLIC_REF_KEYS includes connectorRef and mcpServerRef alongside the original four", () => {
+  // manual-loops/provisioning-manifest-gaps-3.md T02, workstream a — widened
+  // to seven with skillRef; the original six assertions are unchanged.
+  test("SYMBOLIC_REF_KEYS includes connectorRef, mcpServerRef and skillRef alongside the original four", () => {
     const sorted: string[] = [...SYMBOLIC_REF_KEYS].sort();
     expect(sorted).toEqual(
       [
@@ -79,6 +82,7 @@ describe("connectorRefSchema — SYMBOLIC_REF_KEYS (T03, gap 3)", () => {
         "mcpServerRef",
         "secretRef",
         "serviceRef",
+        "skillRef",
       ].sort()
     );
   });
@@ -89,6 +93,17 @@ describe("connectorRefSchema — SYMBOLIC_REF_KEYS (T03, gap 3)", () => {
 
   test("connectorRefSchema rejects an empty string", () => {
     expect(connectorRefSchema.safeParse("").success).toBe(false);
+  });
+});
+
+// manual-loops/provisioning-manifest-gaps-3.md T02, workstream a.
+describe("skillRefSchema", () => {
+  test("accepts a slug-like name", () => {
+    expect(skillRefSchema.safeParse("refund-policy-expert").success).toBe(true);
+  });
+
+  test("rejects an empty string", () => {
+    expect(skillRefSchema.safeParse("").success).toBe(false);
   });
 });
 

@@ -111,6 +111,24 @@ export const SUBSTITUTION_ALLOWLIST: readonly SubstitutionAllowlistEntry[] = [
       "`${CONNECTOR_ADMIN_URL}/connectors/${provider_connector_id}` at " +
       "embedding time, falling back to `OPENAI_API_KEY` if unset/unresolved.",
   },
+  // manual-loops/provisioning-manifest-gaps-3.md T02, workstream a. Sits
+  // inside an agent's own `profile.model_config.subagents[].catalog_skill_id`
+  // — already covered by the PRE-EXISTING agent-`profile` tree walk
+  // (`build-substituted-resource.ts`, array-of-objects recursion verified),
+  // this is a NEW allowlist entry, not a new tree root (mirrors
+  // `connectorId`'s precedent exactly, `provisioning-manifest-gaps-2.md` T03).
+  {
+    argKey: "catalog_skill_id",
+    refType: "skillRef",
+    source:
+      "integrations/ai/ai-skill-support-agent/src/setup.ts:566 " +
+      "(buildAgentPayload) — writes `catalog_skill_id: skillId` on each " +
+      "`model_config.subagents[]` entry; agent-ai-service's subagent-mapping " +
+      "reads `model_config.subagents` -> `agent.skills`, per the runtime " +
+      "contract documented at setup.ts:550-558 (reads `trigger_commands`/" +
+      "`when_to_use`/`priority`/`mode` from the ENTRY ITSELF, never " +
+      "re-fetching the catalog skill by `catalog_skill_id` at chat time).",
+  },
 ] as const;
 
 /** `argKey -> refType`, derived once from `SUBSTITUTION_ALLOWLIST` above. */

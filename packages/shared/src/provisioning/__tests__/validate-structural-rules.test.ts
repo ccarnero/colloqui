@@ -316,6 +316,67 @@ describe("structural rule — ref resolution", () => {
     expect(errors.some((e) => /connectorRef/.test(e.message))).toBe(false);
   });
 
+  // manual-loops/provisioning-manifest-gaps-3.md T02, workstream a — mirrors
+  // the connectorRef case above, but the ref lives inside an agent's own
+  // `profile` tree (skillRef never appears in a workflow definition).
+  test("flags an unresolved skillRef inside an agent's profile", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      profile: {
+        model_config: {
+          subagents: [{ catalog_skill_id: { skillRef: "no-such-skill" } }],
+        },
+      },
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some((e) => /unresolved skillRef "no-such-skill"/.test(e.message))
+    ).toBe(true);
+  });
+
+  test("passes with a skillRef resolving to a declared skill", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.skills = [
+      { name: "refund-policy-expert", system_prompt: "Handle refunds." },
+    ];
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      profile: {
+        model_config: {
+          subagents: [
+            { catalog_skill_id: { skillRef: "refund-policy-expert" } },
+          ],
+        },
+      },
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors.some((e) => /skillRef/.test(e.message))).toBe(false);
+  });
+
+  test("passes with a skillRef resolving to an external skill", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.skills = [
+      {
+        name: "refund-policy-expert",
+        system_prompt: "Handle refunds.",
+        external: true,
+      },
+    ];
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      profile: {
+        model_config: {
+          subagents: [
+            { catalog_skill_id: { skillRef: "refund-policy-expert" } },
+          ],
+        },
+      },
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors.some((e) => /skillRef/.test(e.message))).toBe(false);
+  });
+
   test("flags an unresolved enabledMcpServerRefs entry on an agent", () => {
     const manifest = buildValidManifest();
     manifest.spec.agents[0] = {

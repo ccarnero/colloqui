@@ -787,6 +787,121 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
     );
   });
 
+  // manual-loops/provisioning-manifest-gaps-3.md T02, workstream a —
+  // `catalog_skill_id` ADDED to SUBSTITUTION_ALLOWLIST. Sits inside an
+  // agent's own `profile.model_config.subagents[].catalog_skill_id`, already
+  // covered by the PRE-EXISTING agent-`profile` tree walk — this proves the
+  // array-of-objects nesting resolves against a skill CREATED IN THE SAME
+  // APPLY (RESOURCE_KIND_ORDER places `skill` before `agent`).
+  it("an agent's profile.model_config.subagents[].catalog_skill_id resolves to the skill created in the SAME apply", async () => {
+    const manifest: IntegrationManifest = {
+      apiVersion: "yoizen.io/v1",
+      kind: "IntegrationManifest",
+      metadata: { name: "e2e-manifest-apply" },
+      spec: {
+        channels: [],
+        connectors: [],
+        agents: [
+          {
+            name: "support-agent",
+            profile: {
+              model_config: {
+                subagents: [
+                  {
+                    name: "refund-helper",
+                    catalog_skill_id: { skillRef: "refund-policy-expert" },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+        knowledgeBases: [],
+        services: [],
+        systemVariables: [],
+        mcpServers: [],
+        skills: [
+          { name: "refund-policy-expert", system_prompt: "Handle refunds." },
+        ],
+        workflows: [],
+        secrets: [],
+      },
+    };
+    let capturedAgentResource: unknown;
+    const { writers } = fakeWriters({
+      skill: {
+        create: mock(async () => ({
+          ok: true as const,
+          value: { externalId: "skill-real-id-9" },
+        })),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+      agent: {
+        create: mock(async (_t: string, resource: unknown) => {
+          capturedAgentResource = resource;
+          return {
+            ok: true as const,
+            value: { externalId: "agent-real-id-1" },
+          };
+        }),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+    });
+    const { events } = recordingEvents();
+
+    const plan = planWith([
+      {
+        kind: "skill",
+        name: "refund-policy-expert",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+      {
+        kind: "agent",
+        name: "support-agent",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+    });
+
+    expect(result.ok).toBe(true);
+    const substitutedProfile = (
+      capturedAgentResource as {
+        profile: {
+          model_config: { subagents: { catalog_skill_id: unknown }[] };
+        };
+      }
+    ).profile;
+    expect(substitutedProfile.model_config.subagents[0]?.catalog_skill_id).toBe(
+      "skill-real-id-9"
+    );
+    // Stored-manifest immutability holds for this NEW allowlist entry too.
+    expect(
+      (
+        manifest.spec.agents[0]?.profile as {
+          model_config: { subagents: { catalog_skill_id: unknown }[] };
+        }
+      ).model_config.subagents[0]?.catalog_skill_id
+    ).toEqual({ skillRef: "refund-policy-expert" });
+  });
+
   it("stored-manifest immutability: the original manifest's workflow definition is never mutated by substitution", async () => {
     const manifest = manifestWithConnectorAndWorkflow();
     const originalDefinitionSnapshot = JSON.parse(
