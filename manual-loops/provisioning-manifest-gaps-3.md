@@ -650,7 +650,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 
 - [x] T01 `skills` manifest section (schema + planner)
 - [x] T02 `skillRef` scalar substitution
-- [ ] T03 ARRAY symbolic-ref substitution (workstream d)
+- [x] T03 ARRAY symbolic-ref substitution (workstream d)
 - [ ] T04 `skills` apply-engine writer + migrate `ai-skill-support-agent`
 - [ ] T05 re-pin the seven migrated triggers + restore the full canary set
 
@@ -745,4 +745,22 @@ Gates: G1 392/392, shared 314/314, sdk 394, all tsc clean, G6b revision
 00043 + e2e PASSED, four-canary regression all-noop. INFRA NOTE: a wedged
 workflow-service-api pod (1/2 for 27h) caused transient plan timeouts
 mid-gates — recycled, re-verified; not a T02 issue. Dual review: 2x APPROVED
+(attempt 1).
+
+### T03 — 2026-07-17
+
+ARRAY substitution shipped: parallel `ARRAY_SUBSTITUTION_ALLOWLIST` (one
+entry `accountIds`→channelRef, disjoint from the scalar keys); walk
+substitutes per-element at array-allowlisted keys (right-kind ref →
+resolved id; wrong kind / unresolved → the existing fail-loud kinds with
+`key[index]` in the message, value-free); non-array at an array key → NEW
+typed `invalid_array_substitution_shape` (SPEC left it unstated; fail-loud
+chosen + documented); the unallowlisted branch extended element-wise with
+the secretRef exemption preserved. Deps already sound (generic walk +
+channel<workflow order). 11 new tests (report said 12 — reviewer counted;
+corrected here). Scalar/T02-parent behavior byte-identical (reviewers
+traced both shadowing edge cases).
+
+Gates: G1 403/403 + tsc, shared/sdk untouched, G6b revision 00044 + e2e
+PASSED, four-canary regression all-noop. Dual review: 2x APPROVED
 (attempt 1).

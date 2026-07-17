@@ -68,11 +68,42 @@
 // `{{...}}` templates, multi-key objects, single-key objects whose key is
 // not a SYMBOLIC_REF_KEYS member) — plus `{ secretRef }` at any key, per the
 // exemption above — legitimately pass through, at ANY key.
+//
+// manual-loops/provisioning-manifest-gaps-3.md T03, workstream d — ARRAY
+// symbolic-ref substitution. `ARRAY_SUBSTITUTION_ALLOWLIST`
+// (`array-substitution-allowlist.ts`) pairs a PLURAL argument key (today,
+// only `accountIds`) with the ONE ref kind each of its array elements must
+// carry. When the current key is array-allowlisted AND its value is an
+// ARRAY, every element is substituted independently via the SAME
+// `readRecognizedRefObject`/`resolveRef` logic proven for the scalar case,
+// BEFORE falling through to the generic array-recursion branch:
+//   - a recognized ref-object element of the RIGHT kind -> resolved to its
+//     real id, exactly like the scalar case;
+//   - a recognized ref-object element of the WRONG kind ->
+//     `mismatched_symbolic_ref`, naming the ELEMENT'S path (e.g.
+//     `...trigger.config.accountIds[0]`);
+//   - a recognized ref-object element of the RIGHT kind but unresolved ->
+//     `unresolved_symbolic_ref`, same per-element path naming;
+//   - a MIXED array is legal: elements that are NOT a recognized ref-object
+//     (already-real id strings, runtime `{{...}}` templates) pass through
+//     untouched (recursed generically, in case they nest further content),
+//     alongside ref-object elements that DO get substituted.
+// A NON-array value at an array-allowlisted key fails loud
+// (`invalid_array_substitution_shape`) rather than silently falling back to
+// scalar handling — the key is documented as plural, so a non-array value
+// there is an authoring-shape mismatch, not a legitimate scalar use.
+//
+// The `unallowlisted_symbolic_ref` safety fix (T02, gap 3) is likewise
+// extended to fire PER-ELEMENT for an array of ref-objects sitting at a key
+// that is in NEITHER allowlist — a stray ref-shaped array element at a
+// non-allowlisted plural key is exactly as corrupting as a stray scalar one,
+// with the same `secretRef` exemption applied per element.
 
 import type { SymbolicRefType } from "@yoizen/shared";
 import { SYMBOLIC_REF_KEYS } from "@yoizen/shared";
 import type { ResourceKind } from "../../plan/domain/plan.interfaces";
 import type { ApplyWriteError } from "../domain/apply.interfaces";
+import { ALLOWLISTED_ARRAY_SUBSTITUTION_KEYS } from "./array-substitution-allowlist";
 import { ALLOWLISTED_SUBSTITUTION_KEYS } from "./substitution-allowlist";
 
 const REF_KEY_SET: ReadonlySet<string> = new Set(SYMBOLIC_REF_KEYS);
@@ -153,6 +184,76 @@ function walk(
     )) {
       const childPath = `${path}.${key}`;
       const expectedRefType = ALLOWLISTED_SUBSTITUTION_KEYS.get(key);
+      const expectedArrayRefType = ALLOWLISTED_ARRAY_SUBSTITUTION_KEYS.get(key);
+
+      if (expectedArrayRefType !== undefined) {
+        // manual-loops/provisioning-manifest-gaps-3.md T03, workstream d —
+        // `key` is in `ARRAY_SUBSTITUTION_ALLOWLIST` (today, only
+        // `accountIds`). Substitute per-element BEFORE falling through to
+        // the generic array-recursion branch below.
+        if (!Array.isArray(child)) {
+          return {
+            ok: false,
+            error: {
+              kind: "invalid_array_substitution_shape",
+              resourceKind: args.owningResourceKind,
+              resourceName: args.owningResourceName,
+              message: `${args.owningResourceKind} '${args.owningResourceName}' at ${childPath} is array-allowlisted (key '${key}' expects an array of ${expectedArrayRefType} ref-objects) but its value is not an array — cannot substitute`,
+            },
+          };
+        }
+        const outArr: unknown[] = [];
+        for (let i = 0; i < child.length; i++) {
+          const element = child[i];
+          const elementPath = `${childPath}[${String(i)}]`;
+          const recognized = readRecognizedRefObject(element);
+          if (recognized) {
+            if (recognized.refType !== expectedArrayRefType) {
+              return {
+                ok: false,
+                error: {
+                  kind: "mismatched_symbolic_ref",
+                  resourceKind: args.owningResourceKind,
+                  resourceName: args.owningResourceName,
+                  message: `${args.owningResourceKind} '${args.owningResourceName}' at ${elementPath} references ${recognized.refType} '${recognized.name}', but the array-allowlisted key '${key}' only accepts ${expectedArrayRefType} — mismatched symbolic ref kind`,
+                },
+              };
+            }
+            const realId = args.resolveRef(recognized.refType, recognized.name);
+            if (realId === undefined) {
+              return {
+                ok: false,
+                error: {
+                  kind: "unresolved_symbolic_ref",
+                  resourceKind: args.owningResourceKind,
+                  resourceName: args.owningResourceName,
+                  message: `${args.owningResourceKind} '${args.owningResourceName}' at ${elementPath} references unresolved ${recognized.refType} '${recognized.name}' — no real id available for it (never created/resolved, or a dependency-order gap)`,
+                },
+              };
+            }
+            args.onSubstituted?.({
+              argKey: key,
+              refType: recognized.refType,
+              name: recognized.name,
+              realId,
+              path: elementPath,
+            });
+            outArr.push(realId);
+            continue;
+          }
+          // Not a recognized ref-object element — a literal id string or a
+          // runtime `{{...}}` template, legally mixed alongside ref-object
+          // elements. Recurse generically (mirrors the scalar-key
+          // passthrough) in case it nests further allowlisted content.
+          const elementResult = walk(element, elementPath, args);
+          if (!elementResult.ok) {
+            return elementResult;
+          }
+          outArr.push(elementResult.value);
+        }
+        out[key] = outArr;
+        continue;
+      }
 
       if (expectedRefType !== undefined) {
         const recognized = readRecognizedRefObject(child);
@@ -211,17 +312,39 @@ function walk(
         // the broker/consumers at runtime); it legitimately appears inside a
         // workflow `definition` at any depth (see this file's header, sources
         // 1 and 2), so it passes through untouched like a plain value.
-        const recognized = readRecognizedRefObject(child);
-        if (recognized && recognized.refType !== "secretRef") {
-          return {
-            ok: false,
-            error: {
-              kind: "unallowlisted_symbolic_ref",
-              resourceKind: args.owningResourceKind,
-              resourceName: args.owningResourceName,
-              message: `${args.owningResourceKind} '${args.owningResourceName}' at ${childPath} holds a recognized ${recognized.refType} ref-object '${recognized.name}' at key '${key}', which is not in SUBSTITUTION_ALLOWLIST — this ref would never be substituted and persisting it verbatim would silently corrupt the resource`,
-            },
-          };
+        //
+        // manual-loops/provisioning-manifest-gaps-3.md T03, workstream d —
+        // the SAME check must fire PER-ELEMENT for an array of ref-objects
+        // sitting at a key that is in NEITHER allowlist: a stray ref-shaped
+        // array element here is exactly as corrupting as a stray scalar one.
+        if (Array.isArray(child)) {
+          for (let i = 0; i < child.length; i++) {
+            const recognized = readRecognizedRefObject(child[i]);
+            if (recognized && recognized.refType !== "secretRef") {
+              return {
+                ok: false,
+                error: {
+                  kind: "unallowlisted_symbolic_ref",
+                  resourceKind: args.owningResourceKind,
+                  resourceName: args.owningResourceName,
+                  message: `${args.owningResourceKind} '${args.owningResourceName}' at ${childPath}[${String(i)}] holds a recognized ${recognized.refType} ref-object '${recognized.name}' at key '${key}', which is not in ARRAY_SUBSTITUTION_ALLOWLIST — this ref would never be substituted and persisting it verbatim would silently corrupt the resource`,
+                },
+              };
+            }
+          }
+        } else {
+          const recognized = readRecognizedRefObject(child);
+          if (recognized && recognized.refType !== "secretRef") {
+            return {
+              ok: false,
+              error: {
+                kind: "unallowlisted_symbolic_ref",
+                resourceKind: args.owningResourceKind,
+                resourceName: args.owningResourceName,
+                message: `${args.owningResourceKind} '${args.owningResourceName}' at ${childPath} holds a recognized ${recognized.refType} ref-object '${recognized.name}' at key '${key}', which is not in SUBSTITUTION_ALLOWLIST — this ref would never be substituted and persisting it verbatim would silently corrupt the resource`,
+              },
+            };
+          }
         }
       }
 

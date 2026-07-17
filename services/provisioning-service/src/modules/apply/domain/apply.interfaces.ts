@@ -65,6 +65,15 @@ export type ApplyWriteErrorKind =
   // kind/name, and the owning resource, exactly like its allowlisted-key
   // siblings above.
   | "unallowlisted_symbolic_ref"
+  // manual-loops/provisioning-manifest-gaps-3.md T03, workstream d — an
+  // ARRAY-allowlisted key (`array-substitution-allowlist.ts`, e.g.
+  // `accountIds`) held a NON-array value. The array allowlist only knows how
+  // to substitute per-element inside a real array; a scalar/object/other
+  // shape at that key is not a shape this substitution path can walk, and
+  // silently falling back to scalar handling would mask an authoring
+  // mistake (the key IS documented as plural). Fails loud instead of
+  // guessing, naming the key and the owning resource.
+  | "invalid_array_substitution_shape"
   // manual-loops/provisioning-manifest-gaps.md T05, gap 5, decision 6 ruling
   // (2026-07-16) — a declared route `pathPrefix` collides with a LIVE route
   // owned by a DIFFERENT service/tenant. Re-verified by

@@ -337,6 +337,307 @@ describe("substituteSymbolicRefs — T03 manifest-time real-ID substitution", ()
   });
 });
 
+// manual-loops/provisioning-manifest-gaps-3.md T03, workstream d — ARRAY
+// symbolic-ref substitution (`ARRAY_SUBSTITUTION_ALLOWLIST`, one entry:
+// `accountIds` -> `channelRef`).
+describe("substituteSymbolicRefs — T03 ARRAY symbolic-ref substitution (accountIds -> channelRef)", () => {
+  it("array happy path: every element is a recognized ref-object and resolves", () => {
+    const value = {
+      trigger: {
+        type: "message_received",
+        config: {
+          accountIds: [
+            { channelRef: "telegram-transform-reply-bot" },
+            { channelRef: "http-fanout-telegram-account" },
+          ],
+        },
+      },
+    };
+    const resolveRef = (refType: string, name: string): string | undefined => {
+      const table: Record<string, string> = {
+        "channelRef:telegram-transform-reply-bot": "channel-real-id-1",
+        "channelRef:http-fanout-telegram-account": "channel-real-id-2",
+      };
+      return table[`${refType}:${name}`];
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "wf-1",
+      resolveRef,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(
+        (
+          result.value as {
+            trigger: { config: { accountIds: unknown[] } };
+          }
+        ).trigger.config.accountIds
+      ).toEqual(["channel-real-id-1", "channel-real-id-2"]);
+    }
+  });
+
+  it("mixed array: literal id strings pass through untouched alongside resolved ref-object elements", () => {
+    const value = {
+      trigger: {
+        config: {
+          accountIds: [
+            "already-real-channel-id",
+            { channelRef: "telegram-transform-reply-bot" },
+            "{{variables.system.some-channel-id}}",
+          ],
+        },
+      },
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "wf-1",
+      resolveRef: (refType, name) =>
+        refType === "channelRef" && name === "telegram-transform-reply-bot"
+          ? "channel-real-id-1"
+          : undefined,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(
+        (
+          result.value as {
+            trigger: { config: { accountIds: unknown[] } };
+          }
+        ).trigger.config.accountIds
+      ).toEqual([
+        "already-real-channel-id",
+        "channel-real-id-1",
+        "{{variables.system.some-channel-id}}",
+      ]);
+    }
+  });
+
+  it("nested position: trigger.config.accountIds resolves at its real manifest depth", () => {
+    const value = {
+      actions: [{ activity: "jsFunction", args: { code: "..." } }],
+      trigger: {
+        type: "message_received",
+        mode: "shared",
+        config: {
+          channels: ["telegram"],
+          accountIds: [{ channelRef: "telegram-transform-reply-bot" }],
+        },
+      },
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "telegram-transform-reply",
+      resolveRef: () => "channel-real-id-1",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(
+        (
+          result.value as {
+            trigger: { config: { accountIds: unknown[] } };
+          }
+        ).trigger.config.accountIds
+      ).toEqual(["channel-real-id-1"]);
+    }
+  });
+
+  it("fails loud with mismatched_symbolic_ref, naming the element index, when an array element is the WRONG ref kind", () => {
+    const value = {
+      trigger: { config: { accountIds: [{ agentRef: "support-agent" }] } },
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "wf-1",
+      resolveRef: () => "should-never-be-used",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("mismatched_symbolic_ref");
+      expect(result.error.message).toContain("channelRef");
+      expect(result.error.message).toContain("agentRef");
+      expect(result.error.message).toContain("accountIds");
+      expect(result.error.message).toContain("trigger.config.accountIds[0]");
+    }
+  });
+
+  it("fails loud with unresolved_symbolic_ref, naming the element index, when an array element cannot be resolved", () => {
+    const value = {
+      trigger: {
+        config: {
+          accountIds: [
+            { channelRef: "telegram-transform-reply-bot" },
+            { channelRef: "missing-channel" },
+          ],
+        },
+      },
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "wf-1",
+      resolveRef: (refType, name) =>
+        refType === "channelRef" && name === "telegram-transform-reply-bot"
+          ? "channel-real-id-1"
+          : undefined,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("unresolved_symbolic_ref");
+      expect(result.error.message).toContain("channelRef");
+      expect(result.error.message).toContain("missing-channel");
+      expect(result.error.message).toContain("trigger.config.accountIds[1]");
+    }
+  });
+
+  it("fails loud with invalid_array_substitution_shape when a NON-array value sits at the array-allowlisted key", () => {
+    const value = {
+      trigger: { config: { accountIds: { channelRef: "single-not-array" } } },
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "wf-1",
+      resolveRef: () => "should-never-be-used",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("invalid_array_substitution_shape");
+      expect(result.error.message).toContain("accountIds");
+      expect(result.error.message).toContain("wf-1");
+    }
+  });
+
+  it("empty array at the array-allowlisted key is legal and resolves to an empty array", () => {
+    const value = { trigger: { config: { accountIds: [] } } };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "wf-1",
+      resolveRef: () => "should-never-be-used",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(
+        (
+          result.value as {
+            trigger: { config: { accountIds: unknown[] } };
+          }
+        ).trigger.config.accountIds
+      ).toEqual([]);
+    }
+  });
+
+  it("fails loud (unallowlisted_symbolic_ref) per-element for an array of ref-objects at a NON-array-allowlisted key, naming the element index", () => {
+    const value = {
+      trigger: {
+        config: {
+          // `otherIds` is not in ARRAY_SUBSTITUTION_ALLOWLIST — a stray
+          // ref-object array here must still fail loud (T02 safety fix,
+          // extended per-element by T03).
+          otherIds: [{ channelRef: "telegram-transform-reply-bot" }],
+        },
+      },
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "wf-1",
+      resolveRef: () => "should-never-be-used",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("unallowlisted_symbolic_ref");
+      expect(result.error.message).toContain("otherIds");
+      expect(result.error.message).toContain("channelRef");
+      expect(result.error.message).toContain("trigger.config.otherIds[0]");
+    }
+  });
+
+  it("secretRef array exemption consistency: an array of { secretRef } at a NON-allowlisted plural key passes through untouched", () => {
+    const value = {
+      trigger: {
+        config: {
+          someSecretRefs: [
+            { secretRef: "api-key-one" },
+            { secretRef: "api-key-two" },
+          ],
+        },
+      },
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "wf-1",
+      resolveRef: () => "should-never-be-used",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual(value);
+    }
+  });
+
+  it("never mutates the input value for array substitution — returns a fresh working copy", () => {
+    const value = {
+      trigger: {
+        config: {
+          accountIds: [{ channelRef: "telegram-transform-reply-bot" }],
+        },
+      },
+    };
+    const original = JSON.parse(JSON.stringify(value));
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "wf-1",
+      resolveRef: () => "channel-real-id-1",
+    });
+    expect(result.ok).toBe(true);
+    expect(value).toEqual(original);
+  });
+
+  // manual-loops/provisioning-manifest-gaps-3.md T03 accept criterion:
+  // "dependency-order (channel created same-apply -> workflow trigger gets
+  // fresh id)". The walker itself is order-agnostic (it just calls
+  // `resolveRef`); this proves that when `resolveRef` reflects a channel
+  // that WAS created earlier in the same apply (the caller's real usage
+  // shape via `RESOURCE_KIND_ORDER` ranking channel before workflow), the
+  // array substitution consumes that fresh id correctly.
+  it("dependency-order: an accountIds ref resolves to a channel id created earlier in the same apply", () => {
+    const createdThisApply = new Map<string, string>([
+      ["telegram-transform-reply-bot", "channel-fresh-id-42"],
+    ]);
+    const value = {
+      trigger: {
+        config: {
+          accountIds: [{ channelRef: "telegram-transform-reply-bot" }],
+        },
+      },
+    };
+    const result = substituteSymbolicRefs({
+      value,
+      owningResourceKind: "workflow",
+      owningResourceName: "telegram-transform-reply",
+      resolveRef: (refType, name) =>
+        refType === "channelRef" ? createdThisApply.get(name) : undefined,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(
+        (
+          result.value as {
+            trigger: { config: { accountIds: unknown[] } };
+          }
+        ).trigger.config.accountIds
+      ).toEqual(["channel-fresh-id-42"]);
+    }
+  });
+});
+
 // manual-loops/provisioning-manifest-gaps-2.md T02, gap 3, decision 5 ruling
 // (2026-07-16, FAIL LOUD).
 describe("substituteSymbolicRefs — T02 fail-loud on ref-shaped objects at non-allowlisted keys", () => {
