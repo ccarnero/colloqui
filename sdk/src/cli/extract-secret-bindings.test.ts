@@ -47,6 +47,23 @@ test("extractSecretBindings() errors on a malformed entry (missing scope)", () =
   }
 });
 
+test("extractSecretBindings() errors on scope.kind 'skill' (T01, manual-loops/provisioning-manifest-gaps-3.md — deliberately omitted, inert binding)", () => {
+  const result = extractSecretBindings({
+    spec: {
+      secrets: [
+        {
+          name: "some-skill-secret",
+          scope: { kind: "skill", owner: "refund-policy-expert" },
+        },
+      ],
+    },
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.error.message, /scope\.kind/);
+  }
+});
+
 test("extractSecretBindings() errors on an invalid scope.kind", () => {
   const result = extractSecretBindings({
     spec: {

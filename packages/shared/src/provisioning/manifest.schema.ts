@@ -403,6 +403,64 @@ const mcpServerSchema = z
 export type ManifestMcpServer = z.infer<typeof mcpServerSchema>;
 
 // ---------------------------------------------------------------------------
+// Skills — a standalone, reusable CATALOG resource (T01,
+// manual-loops/provisioning-manifest-gaps-3.md, workstream a). Mirrors
+// `services/agent-admin-service/src/modules/skills/skills.dto.ts`
+// `CreateSkillDto`/`UpdateSkillDto`/`SkillFileDto` field-for-field (decision
+// 4). Placed BEFORE `agentSchema`: an agent's `profile.model_config.subagents[]`
+// entry references a skill by id via `catalog_skill_id` (a `skillRef`
+// symbolic ref, T02), so skills must resolve/create first — same reasoning
+// as the mcpServer-before-agent ordering above.
+//
+// NO field here is credential-capable — verified against every field in
+// `CreateSkillDto`/`UpdateSkillDto` (no auth/token/key/secret field anywhere)
+// — so `skillSchema` carries no `secretRef` field of its own.
+// ---------------------------------------------------------------------------
+
+const skillFileTypeSchema = z.enum(["script", "reference", "asset"]);
+
+export type SkillFileType = z.infer<typeof skillFileTypeSchema>;
+
+// `SkillFileDto` — the "content" field is a plain inline string source only;
+// a file/url source variant (like `kbSourceSchema`'s discriminated union) is
+// explicitly out of scope for this task (see SPEC "Out of scope").
+const skillFileSchema = z
+  .object({
+    name: z.string().min(1, "skill file name must not be empty"),
+    path: z.string().min(1, "skill file path must not be empty"),
+    type: skillFileTypeSchema,
+    content: z.string(),
+  })
+  .strict();
+
+export type SkillFile = z.infer<typeof skillFileSchema>;
+
+const skillModeSchema = z.enum(["router", "llm_driven", "inline"]);
+
+export type SkillMode = z.infer<typeof skillModeSchema>;
+
+const skillSchema = z
+  .object({
+    name: nameSchema,
+    description: z.string().min(1).optional(),
+    system_prompt: z.string().min(1, "system_prompt must not be empty"),
+    icon: z.string().min(1).optional(),
+    color: z.string().min(1).optional(),
+    trigger_commands: z.array(z.string()).optional(),
+    when_to_use: z.string().min(1).optional(),
+    priority: z.number().int().min(0).max(1000).optional(),
+    allowed_tools: z.array(z.string()).optional(),
+    mode: skillModeSchema.optional(),
+    files: z.array(skillFileSchema).optional(),
+    // Mirrors the existing section shape (name + payload fields + external
+    // flag) every other full `ResourceKind` section carries.
+    external: z.boolean().optional(),
+  })
+  .strict();
+
+export type ManifestSkill = z.infer<typeof skillSchema>;
+
+// ---------------------------------------------------------------------------
 // Agents — a "process" for the >=1-process structural rule.
 // ---------------------------------------------------------------------------
 
@@ -730,6 +788,21 @@ export type Workflow = z.infer<typeof workflowSchema>;
 // `resource-kind-of-ref-type.ts` need. NOTE: the T06 task text asserted this
 // member already existed "since T04's plumbing" — verified FALSE (T04 only
 // added "systemVariable"); added here for the first time.
+// T01 (manual-loops/provisioning-manifest-gaps-3.md, workstream a): "skill"
+// added as PLUMBING ONLY, mirroring the "systemVariable" precedent above
+// EXACTLY, so the `ResourceKind = SecretScopeKind` type alias
+// (`services/provisioning-service/src/modules/plan/domain/plan.interfaces.ts`)
+// keeps compiling and `skill` can flow through the generic plan/apply
+// pipeline (`RESOURCE_KIND_ORDER`, `PlatformResourceWriters`). NOT to enable
+// secret-scope bindings: `skillSchema` (above) has NO credential-capable
+// field (verified against every field in `CreateSkillDto`/`UpdateSkillDto`),
+// so a skill-scoped secret binding would be schema-valid but semantically
+// INERT - no writer or resolver ever consumes one. `skill` is therefore
+// DELIBERATELY EXCLUDED from both hand-kept `VALID_SCOPE_KINDS` copies
+// (`sdk/src/cli/valid-scope-kinds.ts`,
+// `services/provisioning-service/src/modules/secrets/secrets.controller.ts`),
+// which reject it up front - the same posture already established for
+// "systemVariable".
 const secretScopeKindSchema = z.enum([
   "channel",
   "connector",
@@ -738,6 +811,7 @@ const secretScopeKindSchema = z.enum([
   "systemVariable",
   "mcpServer",
   "workflow",
+  "skill",
 ]);
 
 const secretScopeSchema = z
@@ -782,6 +856,12 @@ const manifestSpecSchema = z
     // entry by name (`agentSchema.enabledMcpServerRefs`), so mcpServers must
     // resolve/create first (RESOURCE_KIND_ORDER mirrors this section order).
     mcpServers: z.array(mcpServerSchema).default([]),
+    // T01 (manual-loops/provisioning-manifest-gaps-3.md, workstream a) -
+    // placed before agents: an agent's `profile.model_config.subagents[]`
+    // entry references a skill by id via `catalog_skill_id` (a `skillRef`
+    // symbolic ref, T02), so skills must resolve/create first
+    // (RESOURCE_KIND_ORDER mirrors this section order).
+    skills: z.array(skillSchema).default([]),
     agents: z.array(agentSchema).default([]),
     knowledgeBases: z.array(knowledgeBaseSchema).default([]),
     services: z.array(serviceSchema).default([]),

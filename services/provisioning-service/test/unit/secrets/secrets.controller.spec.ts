@@ -144,6 +144,23 @@ describe("SecretsController — write-only guarantee", () => {
     ).rejects.toBeInstanceOf(HttpException);
   });
 
+  it("PUT /secrets/:name still rejects scope.kind skill (deliberately omitted, T01 manual-loops/provisioning-manifest-gaps-3.md)", async () => {
+    // skill is semantically dead as a secret scope (no skillSchema field is
+    // credential-capable); mirror the systemVariable test above one-for-one.
+    const service = new SecretsService(
+      fakeStore(),
+      NOOP_SECRET_AUDIT_PUBLISHER
+    );
+    const controller = new SecretsController(service);
+
+    await expect(
+      controller.put("acme", "some-skill-secret", {
+        value: "v",
+        scope: { kind: "skill", owner: "refund-policy-expert" },
+      })
+    ).rejects.toBeInstanceOf(HttpException);
+  });
+
   it("PUT /secrets/:name rejects a non-slug secret name", async () => {
     const service = new SecretsService(
       fakeStore(),

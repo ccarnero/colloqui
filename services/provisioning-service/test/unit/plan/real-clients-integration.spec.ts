@@ -77,6 +77,7 @@ function realisticManifest(): IntegrationManifest {
       ],
       systemVariables: [],
       mcpServers: [],
+      skills: [],
       workflows: [
         {
           name: "ticket-router",

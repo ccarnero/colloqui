@@ -62,6 +62,7 @@ function manifestWith(
       services: [],
       systemVariables: [],
       mcpServers: [],
+      skills: [],
       workflows: [],
       secrets: [],
       ...overrides,

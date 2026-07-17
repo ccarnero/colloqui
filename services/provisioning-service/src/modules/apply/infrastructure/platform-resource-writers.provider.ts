@@ -10,6 +10,7 @@ import { createChannelsWriter } from "./channels-writer";
 import { createConnectorsWriter } from "./connectors-writer";
 import { createMcpServersWriter } from "./mcp-servers-writer";
 import { createRegistryServicesWriter } from "./registry-services-writer";
+import { createSkillsWriter } from "./skills-writer";
 import { createSystemVariablesWriter } from "./system-variables-writer";
 import { createWorkflowsWriter } from "./workflows-writer";
 
@@ -47,6 +48,10 @@ export function buildPlatformResourceWriters(
     // T06 — same downstream base URL as agents: MCP servers live in
     // agent-admin-service.
     mcpServer: createMcpServersWriter(urls.agents, secretResolver),
+    // T01 (manual-loops/provisioning-manifest-gaps-3.md, workstream a) —
+    // TYPE-SATISFYING STUB ONLY, see `skills-writer.ts`'s header comment;
+    // T04 replaces this with the real create-or-update writer.
+    skill: createSkillsWriter(),
     agent: createAgentsWriter(urls.agents),
     service: createRegistryServicesWriter(urls.registry),
     // T04 (manual-loops/provisioning-manifest-gaps.md, gap 4) — same

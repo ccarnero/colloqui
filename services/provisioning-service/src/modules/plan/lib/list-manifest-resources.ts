@@ -9,6 +9,7 @@ import type {
   IntegrationManifest,
   ManifestChannel,
   ManifestMcpServer,
+  ManifestSkill,
   ManifestSystemVariable,
   Workflow,
 } from "@yoizen/shared";
@@ -18,6 +19,7 @@ export type AnyManifestResource =
   | ManifestChannel
   | Connector
   | ManifestMcpServer
+  | ManifestSkill
   | Agent
   | HostedService
   | ManifestSystemVariable
@@ -57,6 +59,15 @@ export function listManifestResources(
       name: mcpServer.name,
       external: mcpServer.external ?? false,
       resource: mcpServer,
+    });
+  }
+  // T01 (manual-loops/provisioning-manifest-gaps-3.md, workstream a).
+  for (const skill of manifest.spec.skills) {
+    entries.push({
+      kind: "skill",
+      name: skill.name,
+      external: skill.external ?? false,
+      resource: skill,
     });
   }
   for (const agent of manifest.spec.agents) {

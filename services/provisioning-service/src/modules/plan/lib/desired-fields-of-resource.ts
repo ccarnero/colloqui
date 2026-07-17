@@ -15,6 +15,7 @@ import type {
   HostedService,
   ManifestChannel,
   ManifestMcpServer,
+  ManifestSkill,
   ManifestSystemVariable,
   Workflow,
 } from "@yoizen/shared";
@@ -25,6 +26,7 @@ import {
   connectorComparable,
   mcpServerComparable,
   serviceComparable,
+  skillComparable,
   systemVariableComparable,
   workflowComparable,
 } from "./comparable-fields";
@@ -47,6 +49,11 @@ export function desiredFieldsOfResource(
     // `mcpServerComparable`, so a converged server reaches `noop`.
     case "mcpServer":
       return mcpServerComparable.fromManifest(resource as ManifestMcpServer);
+    // T01 (manual-loops/provisioning-manifest-gaps-3.md, workstream a) — see
+    // `skillComparable`'s header comment for why a missing case here would
+    // cause the same forever-update loop mcpServer's T07 fix addressed.
+    case "skill":
+      return skillComparable.fromManifest(resource as ManifestSkill);
     case "agent":
       return agentComparable.fromManifest(resource as Agent);
     case "service":

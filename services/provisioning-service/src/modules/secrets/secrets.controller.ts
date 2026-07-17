@@ -44,6 +44,13 @@ interface PutSecretBody {
 // `systemVariables[].type: "secret"` entirely, so no system variable can ever
 // declare a nested secretRef and no binding to a systemVariable owner is ever
 // consumed.
+// `skill` (T01, manual-loops/provisioning-manifest-gaps-3.md, workstream a)
+// is ALSO DELIBERATELY OMITTED, same rationale one-for-one:
+// `secretScopeKindSchema` gained it in T01 only so `ResourceKind` could carry
+// `skills` through the generic plan/apply pipeline. No `skillSchema` field is
+// credential-capable (verified against every field in
+// `CreateSkillDto`/`UpdateSkillDto`), so no skill ever declares a nested
+// secretRef, and no binding to a skill owner is ever consumed.
 const VALID_SCOPE_KINDS = new Set<ResourceKind>([
   "channel",
   "connector",

@@ -1365,3 +1365,147 @@ describe("agentSchema — enabledMcpTools / toolDescriptionOverrides (T04, gap 4
     expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
   });
 });
+
+// T01 (manual-loops/provisioning-manifest-gaps-3.md, workstream a): `skills`
+// — mirrors `services/agent-admin-service/src/modules/skills/skills.dto.ts`
+// `CreateSkillDto`/`UpdateSkillDto`/`SkillFileDto` field-for-field. Additive:
+// optional array defaulting to `[]`, `.strict()` per every other section, no
+// credential-capable field anywhere (decision 4).
+describe("manifestSpecSchema — skills (T01, workstream a)", () => {
+  function manifestWithSkill(skill: Record<string, unknown>) {
+    const manifest = buildValidManifest();
+    return {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        skills: [skill],
+      },
+    };
+  }
+
+  test("omission stays valid — additive, defaults to []", () => {
+    const manifest = buildValidManifest();
+    const { skills: _omit, ...specWithoutSkills } = manifest.spec;
+    const withoutSkills = { ...manifest, spec: specWithoutSkills };
+    const result = integrationManifestSchema.safeParse(withoutSkills);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.spec.skills).toEqual([]);
+    }
+  });
+
+  test("accepts a minimal skill (name/system_prompt only)", () => {
+    const manifest = manifestWithSkill({
+      name: "refund-policy-expert",
+      system_prompt: "You explain refund policy to customers.",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts a skill with every optional field, including files", () => {
+    const manifest = manifestWithSkill({
+      name: "refund-policy-expert",
+      description: "Handles refund policy questions",
+      system_prompt: "You explain refund policy to customers.",
+      icon: "policy",
+      color: "#00acc1",
+      trigger_commands: ["/refund"],
+      when_to_use: "When the customer asks about refunds",
+      priority: 10,
+      allowed_tools: ["search_kb"],
+      mode: "router",
+      files: [
+        {
+          name: "policy.md",
+          path: "docs/policy.md",
+          type: "reference",
+          content: "# Refund policy\n...",
+        },
+      ],
+      external: false,
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("accepts every skillFile type literal", () => {
+    for (const type of ["script", "reference", "asset"]) {
+      const manifest = manifestWithSkill({
+        name: "refund-policy-expert",
+        system_prompt: "You explain refund policy.",
+        files: [{ name: "f", path: "f.txt", type, content: "x" }],
+      });
+      expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+    }
+  });
+
+  test("rejects a skill missing name", () => {
+    const manifest = manifestWithSkill({
+      system_prompt: "You explain refund policy.",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects a skill missing system_prompt", () => {
+    const manifest = manifestWithSkill({
+      name: "refund-policy-expert",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects a skill with an invalid mode enum literal", () => {
+    const manifest = manifestWithSkill({
+      name: "refund-policy-expert",
+      system_prompt: "You explain refund policy.",
+      mode: "not-a-mode",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects a skillFile with an invalid type enum literal", () => {
+    const manifest = manifestWithSkill({
+      name: "refund-policy-expert",
+      system_prompt: "You explain refund policy.",
+      files: [{ name: "f", path: "f.txt", type: "not-a-type", content: "x" }],
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  test("rejects a skill with an unknown key (.strict())", () => {
+    const manifest = manifestWithSkill({
+      name: "refund-policy-expert",
+      system_prompt: "You explain refund policy.",
+      unknownField: "nope",
+    });
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+});
+
+// T01 (manual-loops/provisioning-manifest-gaps-3.md, workstream a),
+// decision 4 — "skill" is PLUMBING ONLY on `secretScopeKindSchema`, mirroring
+// the `systemVariable` precedent: the SHARED schema accepts a
+// `scope.kind: "skill"` secret binding structurally (so `ResourceKind` keeps
+// compiling), but it is DELIBERATELY EXCLUDED from both hand-kept
+// `VALID_SCOPE_KINDS` runtime lists (CLI + provisioning-service controller),
+// which reject it up front — see the CLI/controller test suites for that
+// half of the coverage.
+describe("secretScopeKindSchema — skill (T01, decision 4, PLUMBING ONLY)", () => {
+  test("accepts scope.kind: 'skill' at the schema level (inert but structurally valid)", () => {
+    const manifest = buildValidManifest();
+    const withSkillScopedSecret = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        secrets: [
+          ...manifest.spec.secrets,
+          {
+            name: "unused-skill-secret",
+            scope: { kind: "skill", owner: "refund-policy-expert" },
+          },
+        ],
+      },
+    };
+    expect(
+      integrationManifestSchema.safeParse(withSkillScopedSecret).success
+    ).toBe(true);
+  });
+});

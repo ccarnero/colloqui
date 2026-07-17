@@ -32,9 +32,12 @@ export interface SkillsClient {
   get(id: string, opts?: SkillCallOptions): Promise<Skill | null>;
   /**
    * `PATCH /admin/skills/:id`. Returns `null` (HTTP 200) instead of throwing
-   * when not found — see types.ts. WARNING: currently returns HTTP 500 for
-   * every payload due to a downstream bug in `SkillsService.update` — see
-   * types.ts for the verified root cause; not fixable client-side.
+   * when not found — see types.ts. The historical HTTP-500-on-every-payload
+   * bug in `SkillsService.update` is FIXED server-side (live-verified
+   * 2026-07-05 by the e2e test and again 2026-07-17 by the orchestrator
+   * probe, HTTP 200) — see types.ts's corrected header note
+   * (manual-loops/provisioning-manifest-gaps-3.md T04, decision 5). This is a
+   * normal, working update path.
    */
   update(
     id: string,

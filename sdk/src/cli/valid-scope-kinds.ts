@@ -35,6 +35,19 @@ import type { SecretScopeKind } from "../resources/secrets/index.js";
  *   would be schema-valid but semantically inert (an orphan binding no
  *   writer or resolver ever consumes) — the CLI rejects it up front with a
  *   precise error instead of silently accepting a meaningless binding.
+ * - `skill` (T01, manual-loops/provisioning-manifest-gaps-3.md, workstream a)
+ *   — DELIBERATELY OMITTED, mirroring the `systemVariable` rationale above
+ *   EXACTLY. `secretScopeKindSchema` in `@yoizen/shared` gained this member
+ *   in T01 only so `ResourceKind` (literally `= SecretScopeKind` server-side)
+ *   could carry `skills` through the generic plan/apply pipeline — NOT to
+ *   enable secret-scope bindings to a skill owner. No field in
+ *   `skillSchema` is credential-capable (verified against every field in
+ *   `CreateSkillDto`/`UpdateSkillDto` — no auth/token/key/secret field
+ *   anywhere), so no skill ever declares a nested `secretRef`, and nothing
+ *   in `validate-structural-rules.ts` ever expects a
+ *   `scope.kind === "skill"` binding. A manifest declaring one would be
+ *   schema-valid but semantically inert — the CLI rejects it up front with a
+ *   precise error instead of silently accepting a meaningless binding.
  */
 export const VALID_SCOPE_KINDS: readonly SecretScopeKind[] = [
   "channel",

@@ -648,7 +648,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 
 ---
 
-- [ ] T01 `skills` manifest section (schema + planner)
+- [x] T01 `skills` manifest section (schema + planner)
 - [ ] T02 `skillRef` scalar substitution
 - [ ] T03 ARRAY symbolic-ref substitution (workstream d)
 - [ ] T04 `skills` apply-engine writer + migrate `ai-skill-support-agent`
@@ -702,3 +702,27 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
   seven documented unpinned-trigger deviations closed for real.
 
 ## Progress
+
+## Progress
+
+### T01 — 2026-07-17
+
+`skills` section shipped: `skillSchema`/`skillFileSchema` mirror agent-admin's
+CreateSkillDto/SkillFileDto field-for-field (mode router/llm_driven/inline;
+file types script/reference/asset); `manifestSpecSchema.skills` before
+agents. Kind plumbing per the systemVariable precedent: `"skill"` added to
+secretScopeKindSchema (alias compiles), EXCLUDED from both VALID_SCOPE_KINDS
+copies with drift guards, consumer policy apply-engine-only;
+RESOURCE_KIND_ORDER gains skill before agent. Planner wired end-to-end:
+skills client (GET /admin/skills {skills,total}), skillComparable with
+server-default parity (icon smart_toy / color #42a5f5 / mode llm_driven —
+verified against SkillsService.create's SQL defaults, no forever-diff),
+desired-fields case + integration test (the gaps-2 mcpServer lesson).
+SDK stale-500 comments corrected (doc-only). DEVIATION (reviewer-adjudicated
+legitimate): a type-satisfying skills-writer STUB (fail-loud
+unsupported_kind_shape, unreachable — no manifest declares skills) was
+forced by the total Record<ResourceKind,...> maps; T04 replaces the body.
+
+Gates: G1 388/388, G2/G3/G4 clean (shared 309, sdk 394), G6b revision 00042
++ e2e PASSED, four-canary regression all-noop. Dual review: 2x APPROVED
+(attempt 1).

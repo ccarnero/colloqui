@@ -18,6 +18,12 @@ export const RESOURCE_KIND_ORDER: readonly ResourceKind[] = [
   // must be resolved/created first (mirrors the connector-before-agent
   // ordering already established for connectorRef).
   "mcpServer",
+  // T01 (manual-loops/provisioning-manifest-gaps-3.md, workstream a) —
+  // BEFORE agent: an agent's `profile.model_config.subagents[].catalog_skill_id`
+  // references a skills[] entry by manifest name via `skillRef` (T02), so
+  // skills must be resolved/created first — mirrors the mcpServer-before-
+  // agent ordering above exactly.
+  "skill",
   "agent",
   "service",
   // T04 (manual-loops/provisioning-manifest-gaps.md, gap 4) — a leaf node

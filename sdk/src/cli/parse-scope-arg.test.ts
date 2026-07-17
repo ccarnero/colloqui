@@ -23,6 +23,14 @@ test("parseScopeArg() errors on an unknown scope kind", () => {
   }
 });
 
+test("parseScopeArg() rejects scope kind 'skill' (T01, manual-loops/provisioning-manifest-gaps-3.md — deliberately omitted from VALID_SCOPE_KINDS, like systemVariable)", () => {
+  const result = parseScopeArg("skill:refund-policy-expert");
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.error.message, /kind must be one of/);
+  }
+});
+
 test("parseScopeArg() allows an owner value that itself contains ':'", () => {
   const result = parseScopeArg("service:owner:with:colons");
   assert.equal(result.ok, true);

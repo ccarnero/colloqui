@@ -30,25 +30,25 @@
  * - `DELETE /admin/skills/:id` — soft-delete; downstream returns a bare
  *   boolean (`result.length > 0`), not an object, not a 404 on missing id.
  *   `remove()` is typed `Promise<boolean>`.
- * - **Verified live against the dev cluster 2026-07-04**: `PATCH
- *   /admin/skills/:id` currently returns HTTP 500 for EVERY payload (a
- *   single field, or all fields) — reproduced directly against the gateway
- *   with `curl`, independent of the SDK. Root cause in
- *   `SkillsService.update` (`skills.service.ts`): it builds each dynamic
- *   `SET` clause via `sql\`col = ${value}\`` (a `postgres.js` tagged-template
- *   fragment/`PendingQuery` object), pushes those objects into a
- *   `string[]`-typed array via an `as unknown as string` cast, then calls
- *   `.join(", ")` on the array — `Array.prototype.join` stringifies each
- *   element with `String(fragment)`, which does not serialize a `postgres.js`
- *   fragment back into valid parameterized SQL text, producing a malformed
- *   query and a 500 for any update. `update()` is still implemented and
- *   typed here (matching `UpdateSkillDto`) since the gateway route and
- *   downstream contract both exist and this is a service-side bug, not a
- *   missing route — per GROWTH-PLAN.md invariants this should be fixed
- *   upstream in `agent-admin-service`, not silently worked around in the
- *   SDK. `test/e2e/admin-resources.e2e.ts` asserts the CURRENT (broken)
- *   behavior — that `update()` rejects — and links back to this note; flip
- *   that assertion once the downstream bug is fixed.
+ * - **STALE NOTE, CORRECTED (T04, manual-loops/provisioning-manifest-gaps-3.md
+ *   decision 5) — the bug below is FIXED server-side.** This section
+ *   previously documented a 2026-07-04 finding that `PATCH /admin/skills/:id`
+ *   returned HTTP 500 for every payload, root-caused to `SkillsService.update`
+ *   (`skills.service.ts`) joining `postgres.js` tagged-template fragments via
+ *   `Array.prototype.join`, which stringifies each fragment with
+ *   `String(fragment)` instead of preserving its parameterization — a
+ *   malformed, unparameterized query. The CURRENT `skills.service.ts:144-215`
+ *   uses the CORRECT fragment-nesting pattern
+ *   (`sql\`${setClause}, col = ${value}\``, no cast, no `.join()`) — its own
+ *   comment explicitly contrasts against the old join anti-pattern. LIVE
+ *   PROBE (orchestrator, 2026-07-17, decisive): created a skill, `PATCH`ed it
+ *   via the gateway -> HTTP 200, field updated, cleanup 200. So
+ *   `client.skills.update()` is a NORMAL, working update path — no
+ *   special-casing, no "expect the 500". `test/e2e/admin-resources.e2e.ts`
+ *   already asserts the FIXED (successful) behavior, confirmed live on the
+ *   dev cluster 2026-07-05 and again 2026-07-17 — see that test's own
+ *   comment. Nothing to flip; this note only corrects the stale narrative
+ *   above (no test change).
  */
 
 export interface SkillFile {

@@ -25,6 +25,7 @@ function manifestWith(names: {
       services: [],
       systemVariables: [],
       mcpServers: [],
+      skills: [],
       workflows: names.workflow
         ? [
             {
@@ -445,6 +446,7 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
         services: [],
         systemVariables: [],
         mcpServers: [],
+        skills: [],
         workflows: [
           {
             name: "w1",
@@ -590,6 +592,7 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
         services: [],
         systemVariables: [],
         mcpServers: [],
+        skills: [],
         workflows: [],
         secrets: [],
       },
@@ -704,6 +707,7 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
         services: [],
         systemVariables: [],
         mcpServers: [],
+        skills: [],
         workflows: [],
         secrets: [],
       },
@@ -982,6 +986,7 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
         services: [],
         systemVariables: [],
         mcpServers: [],
+        skills: [],
         workflows: [
           {
             name: "w1",
@@ -1059,6 +1064,7 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
         services: [],
         systemVariables: [],
         mcpServers: [],
+        skills: [],
         workflows: [
           {
             name: "w1",
@@ -1182,6 +1188,7 @@ describe("applyManifestPlan — T03 gap 2 (gaps-2 SPEC): reconcileKnowledgeBases
         services: [],
         systemVariables: [],
         mcpServers: [],
+        skills: [],
         workflows: [],
         secrets: [],
       },
@@ -1246,6 +1253,7 @@ describe("applyManifestPlan — T03 gap 2 (gaps-2 SPEC): reconcileKnowledgeBases
         services: [],
         systemVariables: [],
         mcpServers: [],
+        skills: [],
         workflows: [],
         secrets: [],
       },

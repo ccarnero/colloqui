@@ -20,6 +20,7 @@ function baseManifest(): IntegrationManifest {
       ],
       systemVariables: [],
       mcpServers: [],
+      skills: [],
       workflows: [
         {
           name: "ticket-router",

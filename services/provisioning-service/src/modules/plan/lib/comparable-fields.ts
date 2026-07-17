@@ -30,6 +30,7 @@ import type {
   HostedService,
   ManifestChannel,
   ManifestMcpServer,
+  ManifestSkill,
   ManifestSystemVariable,
   Workflow,
 } from "@yoizen/shared";
@@ -145,6 +146,36 @@ export interface McpServerDto {
   readonly transport_type: string;
   readonly url: string;
   readonly enabled: boolean;
+}
+
+/**
+ * Live shape from `GET /admin/skills` (agent-admin-service's `ISkill`, T01,
+ * manual-loops/provisioning-manifest-gaps-3.md workstream a). `SkillsService.findAll`
+ * runs `SELECT *`, so every field this DTO lists round-trips 1:1 — an
+ * HONEST projection, per the task brief, not an assumed one. None of these
+ * fields is credential-capable (verified against every field in
+ * `CreateSkillDto`/`UpdateSkillDto`), so nothing here violates this file's
+ * secret-projection rule. `id`/`metadata`/`is_active`/timestamps are
+ * deliberately excluded — not part of the manifest-declared shape.
+ */
+export interface SkillDto {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly system_prompt: string;
+  readonly icon: string;
+  readonly color: string;
+  readonly trigger_commands: string[];
+  readonly when_to_use: string;
+  readonly priority: number;
+  readonly allowed_tools: string[];
+  readonly mode: string;
+  readonly files: readonly {
+    readonly name: string;
+    readonly path: string;
+    readonly type: string;
+    readonly content: string;
+  }[];
 }
 
 export interface ComparableFieldsContract<TManifest, TLive> {
@@ -519,5 +550,60 @@ export const mcpServerComparable: ComparableFieldsContract<
     transport_type: live.transport_type,
     url: live.url,
     enabled: live.enabled,
+  }),
+};
+
+// Skill (T01, manual-loops/provisioning-manifest-gaps-3.md, workstream a):
+// every non-identifier field `skillSchema` declares is faithfully comparable
+// — `skills.service.ts`'s `findAll`/`create`/`update` round-trip all of them
+// 1:1 (`SELECT *`, no derived/opaque columns). None is credential-capable
+// (see `SkillDto`'s header comment).
+//
+// Without this case, `desiredFieldsOfResource` would fall through to
+// `default: {}` for `kind: "skill"`, projecting an EMPTY desired shape while
+// the live side (once T04's `skills-writer.ts` client ships) projects the
+// real fields — every field a one-sided diff, a FOREVER `update` verdict
+// exactly like `provisioning-manifest-gaps-2.md` T07 batch A's mcpServer
+// finding (c). Both sides share this ONE contract instead.
+//
+// DEFAULTS: `skills.service.ts`'s `create()` applies fixed server-side
+// defaults for every optional field the manifest omits (`icon` ->
+// "smart_toy", `color` -> "#42a5f5", `mode` -> "llm_driven",
+// `trigger_commands`/`allowed_tools`/`files` -> `[]`, `description`/
+// `when_to_use` -> "", `priority` -> 0) — mirrored here on the MANIFEST side
+// (`fromManifest`) so a skill that never declares e.g. `icon` compares
+// cleanly against the live row's actual default value instead of diffing
+// `undefined` vs `"smart_toy"` forever, mirroring `mcpServerComparable`'s
+// `enabled ?? true` precedent (NOT the "declared-gate" idiom
+// `serviceComparable` uses — that idiom is for fields whose live default
+// varies per-resource; skills' defaults are fixed constants, so an
+// unconditional two-sided comparison with the SAME constants stays honest).
+export const skillComparable: ComparableFieldsContract<
+  ManifestSkill,
+  SkillDto
+> = {
+  fromManifest: (skill) => ({
+    description: skill.description ?? "",
+    system_prompt: skill.system_prompt,
+    icon: skill.icon ?? "smart_toy",
+    color: skill.color ?? "#42a5f5",
+    trigger_commands: skill.trigger_commands ?? [],
+    when_to_use: skill.when_to_use ?? "",
+    priority: skill.priority ?? 0,
+    allowed_tools: skill.allowed_tools ?? [],
+    mode: skill.mode ?? "llm_driven",
+    files: skill.files ?? [],
+  }),
+  fromLive: (live) => ({
+    description: live.description,
+    system_prompt: live.system_prompt,
+    icon: live.icon,
+    color: live.color,
+    trigger_commands: live.trigger_commands,
+    when_to_use: live.when_to_use,
+    priority: live.priority,
+    allowed_tools: live.allowed_tools,
+    mode: live.mode,
+    files: live.files,
   }),
 };

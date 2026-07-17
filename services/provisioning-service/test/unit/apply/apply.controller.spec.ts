@@ -88,6 +88,7 @@ function validManifest(name: string): IntegrationManifest {
       services: [],
       systemVariables: [],
       mcpServers: [],
+      skills: [],
       workflows: [],
       secrets: [],
     },

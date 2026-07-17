@@ -5,6 +5,7 @@ import type {
   Connector,
   HostedService,
   ManifestChannel,
+  ManifestSkill,
   Workflow,
 } from "@yoizen/shared";
 import { desiredFieldsOfResource } from "../../../src/modules/plan/lib/desired-fields-of-resource";
@@ -177,6 +178,30 @@ describe("desiredFieldsOfResource", () => {
       definition: { steps: [{ type: "agentCall", agentRef: "support-agent" }] },
     };
     expect(desiredFieldsOfResource("workflow", workflow)).toEqual({});
+  });
+
+  it("skill (T01, workstream a): projects every faithfully-comparable field — same key set the live side supplies, so a converged skill reaches noop (not a forever-update)", () => {
+    // Regression: without this case the switch falls through to `default: {}`,
+    // projecting an EMPTY desired shape while the live side (once T04's
+    // skills client ships) supplies the real fields — every field a
+    // one-sided diff, exactly mcpServer's T07 finding (c).
+    const skill: ManifestSkill = {
+      name: "refund-policy-expert",
+      system_prompt: "You explain refund policy.",
+      mode: "router",
+    };
+    expect(desiredFieldsOfResource("skill", skill)).toEqual({
+      description: "",
+      system_prompt: "You explain refund policy.",
+      icon: "smart_toy",
+      color: "#42a5f5",
+      trigger_commands: [],
+      when_to_use: "",
+      priority: 0,
+      allowed_tools: [],
+      mode: "router",
+      files: [],
+    });
   });
 
   it("systemVariable (T04): projects `type` and `value` — both faithfully comparable, value is CONFIG not a secret", () => {

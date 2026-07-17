@@ -44,6 +44,13 @@ const CONSUMER_POLICY: Readonly<Record<ResourceKind, ReadonlySet<string>>> = {
   // apply engine.
   mcpServer: new Set([APPLY_ENGINE_CONSUMER_SERVICE, "agent-ai-service"]),
   workflow: new Set([APPLY_ENGINE_CONSUMER_SERVICE, "workflow-service"]),
+  // T01 (manual-loops/provisioning-manifest-gaps-3.md, workstream a) —
+  // skills carry NO secretRef wiring (no field in `skillSchema` is
+  // credential-capable), so no runtime consumer resolves secrets for this
+  // kind. Only the apply engine is allow-listed, mirroring `systemVariable`'s
+  // defensive-only entry above, purely so `ResourceKind`'s new member
+  // type-checks here.
+  skill: new Set([APPLY_ENGINE_CONSUMER_SERVICE]),
 };
 
 /**

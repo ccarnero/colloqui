@@ -40,6 +40,8 @@ export function buildValidManifest(): IntegrationManifest {
           },
         },
       ],
+      // T01 (manual-loops/provisioning-manifest-gaps-3.md, workstream a).
+      skills: [],
       agents: [
         {
           name: "support-agent",
