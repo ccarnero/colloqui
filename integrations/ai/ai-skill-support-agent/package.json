@@ -3,11 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "ai-skill-support-agent sample provisioning + driver — SDK-powered via @yoizen/platform-sdk.",
+  "description": "ai-skill-support-agent sample driver — resolves the manifest-provisioned skill/KB-backed agent and asks it three questions through @yoizen/platform-sdk.",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "run": "tsx src/index.ts",
-    "setup": "tsx src/setup.ts"
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@yoizen/platform-sdk": "file:../../../sdk"

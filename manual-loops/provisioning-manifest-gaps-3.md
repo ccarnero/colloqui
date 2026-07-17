@@ -651,7 +651,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T01 `skills` manifest section (schema + planner)
 - [x] T02 `skillRef` scalar substitution
 - [x] T03 ARRAY symbolic-ref substitution (workstream d)
-- [ ] T04 `skills` apply-engine writer + migrate `ai-skill-support-agent`
+- [x] T04 `skills` apply-engine writer + migrate `ai-skill-support-agent`
 - [ ] T05 re-pin the seven migrated triggers + restore the full canary set
 
 ## Out of scope (explicit)
@@ -764,3 +764,25 @@ traced both shadowing edge cases).
 Gates: G1 403/403 + tsc, shared/sdk untouched, G6b revision 00044 + e2e
 PASSED, four-canary regression all-noop. Dual review: 2x APPROVED
 (attempt 1).
+
+### T04 — 2026-07-17
+
+Real skills-writer shipped (stub replaced): POST/PATCH /admin/skills
+mirroring mcp-servers-writer (guarded parses, fail-loud, value-free logs);
+only-when-declared optionals so server defaults win — reviewer-traced
+byte-identical to skillComparable's defaults (no forever-diff possible).
+FINAL MIGRATION (12/12): `ai-skill-support-agent` → LibraryManifest with the
+shared LLM connector, the CATALOG SKILL `refund-policy-expert` (all fields
+verbatim from the deleted buildSkillPayload), KB with inline policy doc +
+provider_connector_id ref, and the agent with connectorId/knowledgeBaseRefs
++ the full subagent snapshot with catalog_skill_id -> {skillRef}. LIVE:
+connector noop + skill CREATE (the first manifest-created catalog skill) +
+agent create; second apply FULL NOOP 3/3. Zero setup/STANDBY files remain
+repo-wide; 12 manifests validate.
+
+Gates: G1 411/411 + tsc, shared 314, sdk 394, G6b revision 00045 + e2e
+PASSED. Dual review: split — one rejection SOLELY for an unrelated stray
+`manual-loops-templates/README.md` swept in by staging (not authored by
+this task; excluded from the commit, left untracked for the human);
+everything else verified APPROVED by both. FOLLOW-UP (style): skills-writer
+update() omits the explicit `_diff` param the siblings declare.

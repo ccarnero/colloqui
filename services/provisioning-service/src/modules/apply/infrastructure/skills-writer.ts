@@ -1,73 +1,211 @@
-// `IPlatformResourceWriter` PLACEHOLDER for `skill` (T01,
-// manual-loops/provisioning-manifest-gaps-3.md, workstream a).
+// `IPlatformResourceWriter` for agent-admin-service's `POST /admin/skills` /
+// `PATCH /admin/skills/:id` (T04, manual-loops/provisioning-manifest-gaps-3.md
+// workstream a). REPLACES T01's type-satisfying stub (see this file's prior
+// header, now obsolete) — a manifest CAN declare a `skills[]` entry from this
+// task onward.
 //
-// T01's own task text scopes the schema + planner (comparable fields,
-// desired-fields, live-listing client, `RESOURCE_KIND_ORDER`) — the REAL
-// create-or-update writer is explicitly T04's job
-// ("skills apply-engine writer + migrate ai-skill-support-agent"), mirroring
-// `mcp-servers-writer.ts`/`agents-writer.ts`'s name-lookup shape via
-// `client.skills.list/create/update`.
+// Shape mirrors `mcp-servers-writer.ts` exactly (create-or-update-by-name is
+// the PLANNER's job via `skills-client.ts`'s `createHttpListResourceClient`
+// name lookup, T01 — this writer only ever receives the externalId the plan
+// already resolved; it never lists/looks up by name itself): POST/PATCH
+// against the SAME agent-admin-service base URL as agents/mcpServers/
+// systemVariables, fail loud with a typed `downstream_error` on network
+// failure, non-2xx, or malformed JSON — no auth/secretRef handling at all,
+// since NO `skillSchema` field is credential-capable (decision 4 — verified
+// against `CreateSkillDto`/`UpdateSkillDto`, no auth/token/key/secret field
+// anywhere).
 //
-// BUT `PlatformResourceWriters` (`platform-resource-writer.interface.ts`) is
-// `Readonly<Record<ResourceKind, IPlatformResourceWriter>>` — a TOTAL map
-// over the SAME union `secretScopeKindSchema` powers. The moment T01 adds
-// "skill" to that schema (decision 4, required so the `ResourceKind =
-// SecretScopeKind` type alias keeps compiling), `buildPlatformResourceWriters`
-// (`platform-resource-writers.provider.ts`) requires a "skill" entry to
-// typecheck — independent of `RESOURCE_KIND_ORDER` placement. This file is
-// that TYPE-SATISFYING STUB ONLY: no manifest declares a `skills[]` entry
-// until T04 migrates `ai-skill-support-agent` (the first and only one), so
-// `create`/`update` are never invoked by the regression set today. T04
-// REPLACES this file's body with the real writer — this is not new writer
-// functionality, it is the minimum needed to keep `services/provisioning-service`
-// compiling once `skill` is a full `ResourceKind` member.
+// `update()` is a NORMAL working call (decision 5 — the historical
+// `SkillsService.update` HTTP-500 bug from the dynamic-SET-clause
+// `Array.prototype.join` anti-pattern is FIXED server-side, live-verified
+// 2026-07-05 by `admin-resources.e2e.ts` and again 2026-07-17 by the
+// orchestrator probe): no special-casing, no "expect the 500" branch, exactly
+// like `mcp-servers-writer.ts`/`agents-writer.ts`'s own update paths.
 //
-// Precedent for a defensive-only entry gaining a `ResourceKind` member ahead
-// of its real runtime consumer: `secret-consumer-policy.ts`'s `systemVariable`
-// entry (T04, gap 4) is allow-listed for the apply engine ONLY, "purely so
-// `ResourceKind`'s new member type-checks" — the same posture this file takes
-// for the writer side.
+// The body sent on BOTH create and update mirrors `skillComparable`
+// (`comparable-fields.ts`)'s `fromManifest` field set verbatim (name always
+// sent; every optional field passed through only when the manifest declares
+// it, letting agent-admin-service apply its own fixed server-side defaults
+// for anything omitted — the SAME defaults `skillComparable.fromManifest`
+// already mirrors so the plan never re-diffs a server default as a forever
+// drift).
 
-import { PinoLoggerService } from "@yoizen/observability";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
+import type { ManifestSkill } from "@yoizen/shared";
+import { TENANT_HEADER } from "@yoizen/shared";
 import type {
   CreateOrUpdateResult,
   IPlatformResourceWriter,
 } from "../domain/platform-resource-writer.interface";
 
-export function createSkillsWriter(): IPlatformResourceWriter {
-  const logger = new PinoLoggerService("apply.skill-writer");
+const DEFAULT_TIMEOUT_MS = 10_000;
 
-  function notImplemented(resourceName: string): CreateOrUpdateResult {
-    const message =
-      "skills writer not yet implemented — T01 (manual-loops/provisioning-manifest-gaps-3.md) " +
-      "only wires 'skill' through the schema/planner; T04 ships the real " +
-      "create-or-update writer (mirrors mcp-servers-writer.ts/agents-writer.ts)";
-    logger.warn(`create/update: ${message} skill='${resourceName}'`);
-    return {
-      ok: false,
-      error: {
-        kind: "unsupported_kind_shape",
-        resourceKind: "skill",
-        resourceName,
-        message,
-      },
-    };
+function buildSkillBody(skill: ManifestSkill): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    name: skill.name,
+    // `system_prompt` is required on create by `CreateSkillDto`; the schema
+    // already enforces `min(1)` on it, so it's always present here.
+    system_prompt: skill.system_prompt,
+  };
+  if (skill.description !== undefined) {
+    body.description = skill.description;
   }
+  if (skill.icon !== undefined) {
+    body.icon = skill.icon;
+  }
+  if (skill.color !== undefined) {
+    body.color = skill.color;
+  }
+  if (skill.trigger_commands !== undefined) {
+    body.trigger_commands = skill.trigger_commands;
+  }
+  if (skill.when_to_use !== undefined) {
+    body.when_to_use = skill.when_to_use;
+  }
+  if (skill.priority !== undefined) {
+    body.priority = skill.priority;
+  }
+  if (skill.allowed_tools !== undefined) {
+    body.allowed_tools = skill.allowed_tools;
+  }
+  if (skill.mode !== undefined) {
+    body.mode = skill.mode;
+  }
+  if (skill.files !== undefined) {
+    body.files = skill.files;
+  }
+  return body;
+}
+
+export function createSkillsWriter(baseUrl: string): IPlatformResourceWriter {
+  const logger = new PinoLoggerService("apply.skills-writer");
 
   return {
-    async create(_tenantId, resource) {
-      const name =
-        typeof (resource as { name?: unknown }).name === "string"
-          ? (resource as { name: string }).name
-          : "<unknown>";
-      return notImplemented(name);
+    async create(tenantId, resourceUnknown): Promise<CreateOrUpdateResult> {
+      const skill = resourceUnknown as ManifestSkill;
+      const body = buildSkillBody(skill);
+      const url = `${baseUrl}/admin/skills`;
+      logger.log(
+        `create: POST ${url} skill='${skill.name}' mode='${skill.mode ?? "llm_driven"}' tenant='${tenantId}'`
+      );
+
+      let response: Response;
+      try {
+        response = await tracedFetch(url, {
+          method: "POST",
+          headers: {
+            [TENANT_HEADER]: tenantId,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+        });
+      } catch (cause) {
+        const message = `network failure calling ${url}: ${cause instanceof Error ? cause.message : String(cause)}`;
+        logger.warn(`create: ${message}`);
+        return {
+          ok: false,
+          error: {
+            kind: "downstream_error",
+            resourceKind: "skill",
+            resourceName: skill.name,
+            message,
+          },
+        };
+      }
+
+      if (!response.ok) {
+        const message = `HTTP ${String(response.status)} from ${url}`;
+        logger.warn(`create: ${message}`);
+        return {
+          ok: false,
+          error: {
+            kind: "downstream_error",
+            resourceKind: "skill",
+            resourceName: skill.name,
+            message,
+          },
+        };
+      }
+
+      let created: { id: string };
+      try {
+        created = (await response.json()) as { id: string };
+      } catch (cause) {
+        const message = `invalid JSON from ${url}: ${cause instanceof Error ? cause.message : String(cause)}`;
+        logger.warn(`create: ${message}`);
+        return {
+          ok: false,
+          error: {
+            kind: "downstream_error",
+            resourceKind: "skill",
+            resourceName: skill.name,
+            message,
+          },
+        };
+      }
+
+      logger.log(
+        `create: skill '${skill.name}' created -> externalId='${created.id}'`
+      );
+      return { ok: true, value: { externalId: created.id } };
     },
-    async update(_tenantId, _externalId, resource) {
-      const name =
-        typeof (resource as { name?: unknown }).name === "string"
-          ? (resource as { name: string }).name
-          : "<unknown>";
-      return notImplemented(name);
+
+    async update(
+      tenantId,
+      externalId,
+      resourceUnknown
+    ): Promise<CreateOrUpdateResult> {
+      const skill = resourceUnknown as ManifestSkill;
+      const body = buildSkillBody(skill);
+      const url = `${baseUrl}/admin/skills/${externalId}`;
+      logger.log(
+        `update: PATCH ${url} skill='${skill.name}' tenant='${tenantId}'`
+      );
+
+      let response: Response;
+      try {
+        response = await tracedFetch(url, {
+          method: "PATCH",
+          headers: {
+            [TENANT_HEADER]: tenantId,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+        });
+      } catch (cause) {
+        const message = `network failure calling ${url}: ${cause instanceof Error ? cause.message : String(cause)}`;
+        logger.warn(`update: ${message}`);
+        return {
+          ok: false,
+          error: {
+            kind: "downstream_error",
+            resourceKind: "skill",
+            resourceName: skill.name,
+            message,
+          },
+        };
+      }
+
+      if (!response.ok) {
+        const message = `HTTP ${String(response.status)} from ${url}`;
+        logger.warn(`update: ${message}`);
+        return {
+          ok: false,
+          error: {
+            kind: "downstream_error",
+            resourceKind: "skill",
+            resourceName: skill.name,
+            message,
+          },
+        };
+      }
+
+      logger.log(
+        `update: skill '${skill.name}' updated -> externalId='${externalId}'`
+      );
+      return { ok: true, value: { externalId } };
     },
   };
 }

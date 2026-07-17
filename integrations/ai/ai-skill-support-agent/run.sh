@@ -3,13 +3,16 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # Drives the ai-skill-support-agent sample end-to-end — SDK-powered
-# (@yoizen/platform-sdk). The actual resolve/ask/poll logic lives in
-# src/index.ts; this script only resolves the dev environment (via
-# ../../lib/resolve-env.sh, same as every other sample's run.sh) and execs the
-# Node app with those env vars in scope.
+# (@yoizen/platform-sdk). Provisioning is now declarative (`manifest.yaml` +
+# `yoizen manifests apply`, see README.md); src/index.ts only VERIFIES the
+# already-provisioned skill+KB-backed agent and asks it three questions, run
+# via `@yoizen/platform-sdk`; this script only resolves the dev environment
+# (via ../../lib/resolve-env.sh, same as every other sample's run.sh) and
+# execs the Node app with those env vars in scope.
 #
-# Prerequisite: run ./setup.sh once first to provision and publish the
-# agent. This script never creates or modifies platform objects.
+# Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+# once first (see README.md). This script never creates or modifies platform
+# objects.
 . ../../lib/resolve-env.sh
 
 if ! command -v node >/dev/null 2>&1; then

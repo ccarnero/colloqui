@@ -1,0 +1,263 @@
+apiVersion: yoizen.io/v1
+# KIND DECISION (manual-loops/provisioning-manifest-gaps-2.md T01, gap 1,
+# applied here per the ai-knowledge-base-agent/ai-agent-playground
+# precedent): this manifest provisions a connector + a skill + a knowledge
+# base + an agent — a PROCESS exists (the agent), but there is NO channel
+# account anywhere (the deleted setup.ts's agent has `channels: []`).
+# `kind: LibraryManifest` waives the >=1-inbound-channel/>=1-process checks
+# and instead requires `checkAtLeastOneLibraryResource`: >=1 of connector/
+# mcpServer/service/systemVariable — satisfied here by the LLM connector
+# alone (knowledgeBases/skills do NOT count toward this check — see
+# `checkAtLeastOneLibraryResource` in `validate-structural-rules.ts`).
+kind: LibraryManifest
+metadata:
+  name: ai-skill-support-agent
+spec:
+  # ---------------------------------------------------------------------------
+  # LLM connector — SAME shared entry as every other `ai` sample
+  # (ai-knowledge-base-agent, ai-agent-playground, ai-agent-triage,
+  # ai-call-center-supervisor, ai-system-variables): name, baseUrl, context,
+  # authType and tags are BYTE-IDENTICAL to those manifests on purpose
+  # (`connectorComparable` only diffs `endpoints`/`tags`, never `auth`'s
+  # secretRef name, so a distinct per-manifest secret BINDING name is safe —
+  # see `comparable-fields.ts`), so a re-apply of ANY sibling sample never
+  # produces an update-loop on this connector. Reused for BOTH the agent's
+  # `model_config.llm.connectorId` AND the knowledge base's
+  # `ingestion_config.provider_connector_id` below, exactly like the deleted
+  # setup.ts reused the same `connectorId` for both.
+  connectors:
+    - name: sample-openai-llm
+      type: llm
+      config:
+        baseUrl: https://api.openai.com/v1
+        context: external
+      auth:
+        authType: bearer
+        bearerToken:
+          secretRef: ai-skill-support-agent-openai-api-key
+      # T07 batch B fidelity fix (parent SPEC) — required by agent-admin's
+      # credential resolver for the LLM adapter; the deleted setup.ts always
+      # sent `tags: ["llm"]` on this connector (`stageEnsureLlmConnector`).
+      tags:
+        - llm
+
+  # ---------------------------------------------------------------------------
+  # Catalog skill (T01/T04, this SPEC, workstream a) — the FIFTH resource kind.
+  # Every field mirrors the deleted setup.ts's `buildSkillPayload()` verbatim
+  # (`SKILL_NAME` default "refund-policy-expert"), including the single
+  # `files[]` entry (`type: reference`) — `SkillFileDto.content` is inline-
+  # string-only per this SPEC's "Out of scope" (no file/url source variant).
+  # Placed BEFORE `agents` (`RESOURCE_KIND_ORDER`) so the agent's
+  # `catalog_skill_id: { skillRef: ... }` resolves within the same apply.
+  # ---------------------------------------------------------------------------
+  skills:
+    - name: refund-policy-expert
+      description: >-
+        Expert handling of refund and return requests under the Acme Telco
+        policy.
+      system_prompt: >-
+        You are the refund-policy expert for Acme Telco support. Steps: (1)
+        identify the item type (device, accessory, prepaid) and the days
+        elapsed since delivery; (2) apply the matching refund window (30 days
+        devices, 45 for Acme Max, 14 accessories, prepaid non-refundable); (3)
+        check the restocking-fee rule for opened non-defective devices after
+        day 15; (4) if the request is inside policy, explain the RMA step and
+        the 5-7 business day timeline; (5) if it is outside policy, decline
+        politely and offer escalation to Tier 2 Billing. Always cite the
+        policy section applied.
+      icon: currency_exchange
+      color: "#66bb6a"
+      trigger_commands:
+        - refund
+        - reembolso
+      when_to_use: >-
+        Use when the customer asks about refunds, returns, RMA, restocking
+        fees, or money back.
+      priority: 10
+      allowed_tools: []
+      mode: llm_driven
+      files:
+        - name: refund-cheatsheet.md
+          path: reference/refund-cheatsheet.md
+          type: reference
+          content: |
+            # Refund cheat-sheet (Acme Telco policy v3, condensed)
+
+            - Devices: full refund within 30 days of delivery (45 days for Acme Max customers).
+            - Accessories: 14 days.
+            - Prepaid top-ups / consumed data packs: non-refundable.
+            - Plan charges: prorated refund only for confirmed outages > 48 h.
+            - Restocking fee: 15% for opened, non-defective devices returned after day 15.
+            - Refunds go to the original payment method; 5-7 business days after inspection.
+            - RMA number required before any return shipment.
+            - Outside the window: never promise a refund — escalate to Tier 2 Billing (24 h SLA).
+
+  # ---------------------------------------------------------------------------
+  # Knowledge base — same `ingestion_config`/inline-document pattern as
+  # `ai-knowledge-base-agent` (gap 2's `provider_connector_id` symbolic ref +
+  # the CLI-reachable `type: inline` document source; the manifest schema's
+  # `documents[].name` is a nameSchema slug, so the deleted setup.ts's
+  # `acme-telco-policy.md` filename becomes `acme-telco-policy` here — same
+  # documented limitation as the kb-agent sample, ingestion is unaffected).
+  # ---------------------------------------------------------------------------
+  knowledgeBases:
+    - name: ai-sample-callcenter-kb
+      # NOTE: the deleted setup.ts's `CreateKnowledgeBaseInput` also carried
+      # `description`/`project`/`category`/`icon` — `knowledgeBaseSchema`
+      # (`manifest.schema.ts`) has NO typed field for any of the four (only
+      # `name`/`documents`/`ingestion_config`/`external`, mirroring the
+      # ai-knowledge-base-agent precedent exactly), so they are dropped here,
+      # not silently lost: agent-admin-service applies its own server-side
+      # defaults for all four on create, same documented limitation as that
+      # sibling sample.
+      documents:
+        - name: acme-telco-policy
+          source:
+            type: inline
+            content: |
+              # Acme Telco — Customer Care Policy Handbook (v3, fictional)
+
+              Internal reference for support agents. Verification phrase: `ACME-POLICY-V3-VERIFIED`.
+
+              ## 1. Refunds
+
+              - Full refund window: **30 calendar days** from delivery for devices (phones, routers, SmartHub).
+              - Accessories (cables, cases, SIM adapters): **14 calendar days** from delivery.
+              - Prepaid top-ups and consumed data packs are **non-refundable** once activated.
+              - Monthly plan charges: prorated refund only if service was down more than 48 consecutive hours
+                in the billing cycle and the outage was confirmed by Network Operations.
+              - Refund method: always to the original payment method. Cash refunds are never offered.
+              - Refund processing time: 5–7 business days after the returned item passes inspection.
+              - Restocking fee: 15% applies to opened devices returned without defect after day 15.
+                No restocking fee within the first 14 days or for confirmed defects.
+
+              ## 2. Returns
+
+              - A Return Merchandise Authorization (RMA) number is required before shipping anything back.
+              - Items must include all original accessories and the proof of purchase.
+              - Devices with water damage or unauthorized repairs are ineligible for refund; they are
+                returned to the customer at no charge with an inspection report.
+
+              ## 3. Shipping SLAs
+
+              | Service            | Coverage        | SLA (business days) | Notes                          |
+              | ------------------ | --------------- | -------------------- | ------------------------------ |
+              | Standard shipping  | Nationwide      | 3–5                  | Free on orders above $49       |
+              | Express shipping   | Metro areas     | 1–2                  | Flat $9.90                     |
+              | Same-day courier   | Capital city    | Same day (< 6 h)     | Orders placed before 12:00     |
+              | Replacement (RMA)  | Nationwide      | 2–4 after RMA scan   | Prepaid label included         |
+
+              - If a shipment exceeds its SLA by more than 2 business days, the customer is entitled to a
+                $10 service credit — apply it proactively, do not wait for the customer to ask.
+
+              ## 4. Plan tiers
+
+              | Tier         | Monthly | Data      | Support channel priority           |
+              | ------------ | ------- | --------- | ---------------------------------- |
+              | Acme Lite    | $19     | 5 GB      | Standard queue                     |
+              | Acme Plus    | $39     | 50 GB     | Priority queue                     |
+              | Acme Max     | $69     | Unlimited | Priority queue + dedicated line    |
+
+              - Acme Max customers get an extended refund window of **45 days** on devices.
+
+              ## 5. Escalation matrix
+
+              | Situation                                         | Escalate to             | Target response |
+              | -------------------------------------------------- | ------------------------ | --------------- |
+              | Refund request outside policy window              | Tier 2 — Billing         | 24 h             |
+              | Confirmed outage above 48 h                        | Network Operations       | 4 h              |
+              | Legal threat or regulator mention                  | Customer Advocacy team   | Same day         |
+              | Repeated SLA breach (2+ shipments, same account)   | Logistics supervisor     | 24 h             |
+
+              ## 6. Agent conduct rules
+
+              - Never promise a refund outside the windows above; offer escalation to Tier 2 instead.
+              - Always cite the policy section you are applying (for example, "per section 1, Refunds").
+              - Do not disclose internal SLAs targets from section 5 verbatim; summarize them.
+      ingestion_config:
+        chunk_size: 800
+        chunk_overlap: 120
+        embedding_model: text-embedding-3-small
+        chunking_strategy: recursive
+        provider_connector_id:
+          connectorRef: sample-openai-llm
+
+  # ---------------------------------------------------------------------------
+  # Agent — `profile.model_config.subagents[]` carries the T02 `skillRef`
+  # symbolic ref (`catalog_skill_id`) PLUS the full skill-field snapshot the
+  # deleted setup.ts's `buildAgentPayload()` embedded verbatim (name,
+  # description, system_prompt, enabled, trigger_commands, when_to_use,
+  # priority, mode) — required because agent-ai-service reads these fields
+  # from the subagent ENTRY ITSELF at chat time, never re-fetching the
+  # catalog skill by id (`setup.ts:550-558`'s documented runtime contract).
+  # MIGRATION NOTE: because this is a snapshot, not a live reference, a future
+  # re-apply that changes the catalog `skills[]` entry's fields must ALSO
+  # update this subagent snapshot's matching fields to stay consistent — the
+  # manifest declares both from the same source values, so a normal edit +
+  # re-apply keeps them in sync automatically.
+  # ---------------------------------------------------------------------------
+  agents:
+    - name: ai-sample-support
+      profile:
+        description: >-
+          Call-center support agent with a catalog skill and a knowledge
+          base
+        system_prompt: >-
+          You are the Acme Telco customer-care agent. Answer support
+          questions about refunds, returns, shipping and plans using the
+          attached knowledge base as the source of truth. If the knowledge
+          base contains a verification phrase, include it once in your
+          answer.
+        model_config:
+          llm:
+            provider: openai
+            model: gpt-4o-mini
+            connectorId:
+              connectorRef: sample-openai-llm
+            temperature: 0.2
+            maxTokens: 400
+          rules: >-
+            Never promise a refund outside the policy windows; offer
+            escalation to Tier 2 Billing instead. Always cite the policy
+            section you are applying. Prefer knowledge-base facts over
+            general knowledge; if the answer is not covered, say so.
+          soul: >-
+            Empathetic, professional and calm. Acknowledges frustration
+            before explaining policy.
+          subagents:
+            - name: refund-policy-expert
+              description: >-
+                Expert handling of refund and return requests under the
+                Acme Telco policy.
+              system_prompt: >-
+                You are the refund-policy expert for Acme Telco support.
+                Steps: (1) identify the item type (device, accessory,
+                prepaid) and the days elapsed since delivery; (2) apply the
+                matching refund window (30 days devices, 45 for Acme Max, 14
+                accessories, prepaid non-refundable); (3) check the
+                restocking-fee rule for opened non-defective devices after
+                day 15; (4) if the request is inside policy, explain the RMA
+                step and the 5-7 business day timeline; (5) if it is outside
+                policy, decline politely and offer escalation to Tier 2
+                Billing. Always cite the policy section applied.
+              enabled: true
+              catalog_skill_id:
+                skillRef: refund-policy-expert
+              trigger_commands:
+                - refund
+                - reembolso
+              when_to_use: >-
+                Use when the customer asks about refunds, returns, RMA,
+                restocking fees, or money back.
+              priority: 10
+              mode: llm_driven
+        tools: []
+        channels: []
+      knowledgeBaseRefs:
+        - ai-sample-callcenter-kb
+
+  secrets:
+    - name: ai-skill-support-agent-openai-api-key
+      scope:
+        kind: connector
+        owner: sample-openai-llm

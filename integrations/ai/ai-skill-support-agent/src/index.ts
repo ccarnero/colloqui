@@ -1,8 +1,10 @@
 /**
- * ai-skill-support-agent sample driver — SDK-powered replacement for the old
- * curl+jq `run.sh` body (mirrors http-bridge's src/index.ts pattern).
+ * ai-skill-support-agent sample driver — SDK-powered. Provisioning is now
+ * declarative (`manifest.yaml` + `yoizen manifests apply`, see README.md);
+ * this script only VERIFIES the already-provisioned agent.
  *
- * Requires ./setup.sh to have provisioned and published the agent first.
+ * Requires `yoizen manifests apply -f manifest.yaml --secrets-from-env` to
+ * have provisioned the skill/KB-backed agent first (see README.md).
  *
  * Flow: resolve agent by name -> submit three /api/runtime/executions and
  * poll each to completion:

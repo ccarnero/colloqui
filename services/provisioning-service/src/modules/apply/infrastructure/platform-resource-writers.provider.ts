@@ -48,10 +48,12 @@ export function buildPlatformResourceWriters(
     // T06 — same downstream base URL as agents: MCP servers live in
     // agent-admin-service.
     mcpServer: createMcpServersWriter(urls.agents, secretResolver),
-    // T01 (manual-loops/provisioning-manifest-gaps-3.md, workstream a) —
-    // TYPE-SATISFYING STUB ONLY, see `skills-writer.ts`'s header comment;
-    // T04 replaces this with the real create-or-update writer.
-    skill: createSkillsWriter(),
+    // T04 (manual-loops/provisioning-manifest-gaps-3.md, workstream a) — same
+    // downstream base URL as agents/mcpServers: skills live in
+    // agent-admin-service. Real create-or-update writer (T01 shipped a
+    // type-satisfying stub only); no secretResolver — no skillSchema field is
+    // credential-capable (decision 4).
+    skill: createSkillsWriter(urls.agents),
     agent: createAgentsWriter(urls.agents),
     service: createRegistryServicesWriter(urls.registry),
     // T04 (manual-loops/provisioning-manifest-gaps.md, gap 4) — same
