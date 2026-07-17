@@ -758,6 +758,55 @@ describe("connectorAuthSchema — secretRef-only, nested-field targeting", () =>
   });
 });
 
+// manual-loops/provisioning-manifest-gaps-2.md T07 batch B — connector `tags`
+// fidelity fix (LLM adapters require the `llm` tag on the connector-admin side).
+describe("connectorSchema — tags (T07 batch B)", () => {
+  function withConnectorTags(tags: unknown): unknown {
+    const manifest = buildValidManifest();
+    return {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        connectors: [
+          {
+            name: "sample-openai-llm",
+            type: "llm",
+            config: { baseUrl: "https://api.openai.com/v1" },
+            tags,
+          },
+        ],
+      },
+    };
+  }
+
+  test("accepts a connector declaring a string-array tags field", () => {
+    expect(
+      integrationManifestSchema.safeParse(withConnectorTags(["llm"])).success
+    ).toBe(true);
+  });
+
+  test("accepts a connector with tags omitted entirely (optional/additive)", () => {
+    const manifest = buildValidManifest();
+    // The fixture's `hubspot` connector declares no tags.
+    expect(
+      (manifest.spec.connectors[0] as { tags?: unknown }).tags
+    ).toBeUndefined();
+    expect(integrationManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  test("rejects a non-string tags entry", () => {
+    expect(
+      integrationManifestSchema.safeParse(withConnectorTags([123])).success
+    ).toBe(false);
+  });
+
+  test("rejects a non-array tags value", () => {
+    expect(
+      integrationManifestSchema.safeParse(withConnectorTags("llm")).success
+    ).toBe(false);
+  });
+});
+
 // T02 (manual-loops/provisioning-manifest-gaps.md, gap 2): connector
 // `endpoints` — mirrors the SDK's `CreateConnectorEndpointInput`
 // (`label`/`method`/`path`/optional `cache`). Additive-only: optional field,

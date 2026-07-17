@@ -667,6 +667,122 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
     ).toEqual({ connectorRef: "openai-main" });
   });
 
+  // manual-loops/provisioning-manifest-gaps-2.md T07 batch B, live-gate
+  // regression: the PRODUCTION scenario the sibling test above does NOT cover
+  // — the LLM connector already exists live (verdict "noop"), so the agent is
+  // the ONLY resource written. The noop branch of `applyManifestPlan`
+  // populates `resolvedIds` from `entry.externalId` WITHOUT ever invoking a
+  // writer, and the agent's `profile.model_config.llm.connectorId` must STILL
+  // resolve to that pre-existing connector's real id. If substitution were
+  // skipped (e.g. `connectorId` dropped from SUBSTITUTION_ALLOWLIST, or the
+  // agent-`profile` tree walk regressed), the raw `{ connectorRef }` object
+  // would reach the agent writer verbatim and agent-admin-service would
+  // stringify it to `[object Object]` — the exact HTTP 400 observed live. The
+  // capture asserts on `resource.profile.model_config.llm.connectorId` because
+  // that is precisely what the REAL `agents-writer.ts` copies into the POST
+  // body (`body.model_config = agent.profile.model_config`), so this fake
+  // mirrors the real wiring's read.
+  it("an agent's profile.model_config.llm.connectorId resolves against a PRE-EXISTING (noop) connector — no writer for the connector", async () => {
+    const manifest: IntegrationManifest = {
+      apiVersion: "yoizen.io/v1",
+      kind: "IntegrationManifest",
+      metadata: { name: "e2e-manifest-apply" },
+      spec: {
+        channels: [],
+        connectors: [{ name: "openai-main", type: "http" }],
+        agents: [
+          {
+            name: "support-agent",
+            profile: {
+              model_config: {
+                llm: { connectorId: { connectorRef: "openai-main" } },
+              },
+            },
+          },
+        ],
+        knowledgeBases: [],
+        services: [],
+        systemVariables: [],
+        mcpServers: [],
+        workflows: [],
+        secrets: [],
+      },
+    };
+    let capturedAgentResource: unknown;
+    const connectorCreate = mock(async () => ({
+      ok: true as const,
+      value: { externalId: "should-never-be-called" },
+    }));
+    const connectorUpdate = mock(async (_t: string, id: string) => ({
+      ok: true as const,
+      value: { externalId: id },
+    }));
+    const { writers } = fakeWriters({
+      connector: { create: connectorCreate, update: connectorUpdate },
+      agent: {
+        create: mock(async (_t: string, resource: unknown) => {
+          capturedAgentResource = resource;
+          return {
+            ok: true as const,
+            value: { externalId: "agent-real-id-1" },
+          };
+        }),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+    });
+    const { events } = recordingEvents();
+
+    // Connector is NOOP with its live externalId already known (the exact
+    // shape `build-manifest-plan.ts` produces when `findByName` locates an
+    // already-live connector whose fields match the manifest's desired shape).
+    const plan = planWith([
+      {
+        kind: "connector",
+        name: "openai-main",
+        external: false,
+        verdict: "noop",
+        externalId: "b4df2eb6-connector-real-id",
+        diff: [],
+      },
+      {
+        kind: "agent",
+        name: "support-agent",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+    });
+
+    expect(result.ok).toBe(true);
+    // The connector was noop — no writer call for it at all.
+    expect(connectorCreate).not.toHaveBeenCalled();
+    expect(connectorUpdate).not.toHaveBeenCalled();
+    // The agent body carries the RESOLVED id STRING, never the ref object.
+    const substitutedProfile = (
+      capturedAgentResource as {
+        profile: { model_config: { llm: { connectorId: unknown } } };
+      }
+    ).profile;
+    expect(substitutedProfile.model_config.llm.connectorId).toBe(
+      "b4df2eb6-connector-real-id"
+    );
+    expect(typeof substitutedProfile.model_config.llm.connectorId).toBe(
+      "string"
+    );
+  });
+
   it("stored-manifest immutability: the original manifest's workflow definition is never mutated by substitution", async () => {
     const manifest = manifestWithConnectorAndWorkflow();
     const originalDefinitionSnapshot = JSON.parse(

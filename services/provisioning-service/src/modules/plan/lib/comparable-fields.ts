@@ -59,6 +59,13 @@ export interface AdapterDto {
   readonly name: string;
   readonly context: string;
   readonly endpoints?: readonly AdapterEndpointDto[];
+  // manual-loops/provisioning-manifest-gaps-2.md T07 batch B — connector-admin's
+  // `mapAdapter` surfaces `tags: row.tags ?? []` on BOTH the list and get
+  // responses, so tags ARE faithfully readable off the live row (unlike
+  // `authConfig`, which is deliberately excluded above). Tags are routing
+  // metadata (e.g. `["llm"]`), never credential-bearing, so projecting them
+  // does not violate this file's secret-projection rule.
+  readonly tags?: readonly string[];
 }
 
 /**
@@ -221,12 +228,30 @@ export const connectorComparable: ComparableFieldsContract<
   Connector,
   AdapterDto
 > = {
-  fromManifest: (connector) => ({
-    endpoints: sortedNormalizedEndpoints(connector.endpoints ?? []),
-  }),
-  fromLive: (live) => ({
-    endpoints: sortedNormalizedEndpoints(live.endpoints ?? []),
-  }),
+  fromManifest: (connector) => {
+    const fields: Record<string, unknown> = {
+      endpoints: sortedNormalizedEndpoints(connector.endpoints ?? []),
+    };
+    // manual-loops/provisioning-manifest-gaps-2.md T07 batch B — `tags` use the
+    // SAME declared-gate idiom `serviceComparable` established for scaling
+    // fields: only compared when the manifest declares them, so a connector
+    // that never declares `tags` does not diff forever against a live row whose
+    // `tags` default to `[]`. Sorted for order-insensitive comparison, mirroring
+    // the endpoint/route normalization above.
+    if (connector.tags !== undefined) {
+      fields.tags = [...connector.tags].sort();
+    }
+    return fields;
+  },
+  fromLive: (live, declared) => {
+    const fields: Record<string, unknown> = {
+      endpoints: sortedNormalizedEndpoints(live.endpoints ?? []),
+    };
+    if (declared?.tags !== undefined) {
+      fields.tags = [...(live.tags ?? [])].sort();
+    }
+    return fields;
+  },
 };
 
 // Agent (manual-loops/provisioning-manifest-gaps-2.md T04, gap 4):

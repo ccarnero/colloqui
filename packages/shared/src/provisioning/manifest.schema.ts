@@ -273,6 +273,18 @@ const connectorEndpointSchema = z
 
 export type ConnectorEndpointManifest = z.infer<typeof connectorEndpointSchema>;
 
+// manual-loops/provisioning-manifest-gaps-2.md T07 batch B — connector `tags`
+// fidelity fix (migration-exposed, SAME class as the parent T02 endpoints
+// addition, NOT a new gap kind). connector-admin's `CreateAdapterDto`/
+// `UpdateAdapterDto` both accept `tags?: string[]` (stored as the `n` column,
+// surfaced verbatim as `tags` by `mapAdapter`); agent-admin's credential
+// resolver REQUIRES the referenced LLM adapter to carry the `llm` tag, so an
+// LLM connector created without it makes every agent referencing it fail
+// (`Adapter '<id>' is not tagged as 'llm'`). The deleted AI-sample setup.ts
+// scripts all sent `tags: ["llm"]` on their LLM connectors — this field lets a
+// migrated manifest express that same tag. Optional/additive: an omitted
+// `tags` leaves live state untouched (create-or-update, no prune). Non-secret
+// routing metadata only — never credential-bearing.
 const connectorSchema = z
   .object({
     name: nameSchema,
@@ -280,6 +292,7 @@ const connectorSchema = z
     config: z.record(z.string(), z.unknown()).optional(),
     auth: connectorAuthSchema.optional(),
     endpoints: z.array(connectorEndpointSchema).optional(),
+    tags: z.array(z.string()).optional(),
     external: z.boolean().optional(),
   })
   .strict();

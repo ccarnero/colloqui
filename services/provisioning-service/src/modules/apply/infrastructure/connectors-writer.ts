@@ -346,6 +346,70 @@ async function resolveConnectorAuth(
   return { ok: true, authType: auth.authType, authConfig };
 }
 
+/**
+ * T07 batch B — `PATCH /connectors/:id` with `{ tags }` (connector-admin's
+ * `UpdateAdapterDto.tags`). Used by the update path to reconcile a connector's
+ * tags without touching any other field. Fails loud on any non-2xx, naming the
+ * connector.
+ */
+async function patchConnectorTags(
+  baseUrl: string,
+  logger: PinoLoggerService,
+  tenantId: string,
+  connectorName: string,
+  externalId: string,
+  tags: readonly string[]
+): Promise<{ ok: true } | { ok: false; error: ApplyWriteError }> {
+  const url = `${baseUrl}/connectors/${externalId}`;
+  logger.log(
+    `update: PATCH ${url} connector='${connectorName}' tags=[${tags.join(",")}] tenant='${tenantId}'`
+  );
+
+  let response: Response;
+  try {
+    response = await tracedFetch(url, {
+      method: "PATCH",
+      headers: {
+        [TENANT_HEADER]: tenantId,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ tags }),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+  } catch (cause) {
+    const message = `network failure calling ${url} for connector '${connectorName}' tags reconciliation: ${cause instanceof Error ? cause.message : String(cause)}`;
+    logger.warn(`update: ${message}`);
+    return {
+      ok: false,
+      error: {
+        kind: "downstream_error",
+        resourceKind: "connector",
+        resourceName: connectorName,
+        message,
+      },
+    };
+  }
+
+  if (!response.ok) {
+    const message = `HTTP ${String(response.status)} from ${url} for connector '${connectorName}' tags reconciliation`;
+    logger.warn(`update: ${message}`);
+    return {
+      ok: false,
+      error: {
+        kind: "downstream_error",
+        resourceKind: "connector",
+        resourceName: connectorName,
+        message,
+      },
+    };
+  }
+
+  logger.log(
+    `update: connector '${connectorName}' tags reconciled -> [${tags.join(",")}]`
+  );
+  return { ok: true };
+}
+
 export function createConnectorsWriter(
   baseUrl: string,
   secretResolver?: ISecretValueResolver
@@ -404,6 +468,17 @@ export function createConnectorsWriter(
       if (connector.auth) {
         requestBody.authType = authResolution.authType;
         requestBody.authConfig = authResolution.authConfig;
+      }
+      // T07 batch B — connector-admin's `CreateAdapterDto.tags` (see
+      // manifest.schema.ts's `connectorSchema.tags` note). Passed through only
+      // when declared (create-or-update, absent = untouched). An LLM connector
+      // MUST carry `["llm"]` or agent-admin's credential resolver rejects every
+      // agent referencing it.
+      if (connector.tags !== undefined) {
+        requestBody.tags = connector.tags;
+        logger.log(
+          `create: connector '${connector.name}' tags=[${connector.tags.join(",")}]`
+        );
       }
 
       let response: Response;
@@ -480,9 +555,29 @@ export function createConnectorsWriter(
       const connector = resourceUnknown as Connector;
       const endpoints = connector.endpoints ?? [];
 
+      // T07 batch B — tags are reconciled via `PATCH /connectors/:id` (the
+      // SAME route the SDK's `client.connectors.update` used). Sent whenever
+      // the manifest declares `tags`, so a tags-only diff (an `update` verdict
+      // produced by `connectorComparable`) REPAIRS a live connector that was
+      // created without them — e.g. an LLM connector applied before this fix,
+      // whose live `tags` are `[]` while the manifest now declares `["llm"]`.
+      if (connector.tags !== undefined) {
+        const tagsResult = await patchConnectorTags(
+          baseUrl,
+          logger,
+          tenantId,
+          connector.name,
+          externalId,
+          connector.tags
+        );
+        if (!tagsResult.ok) {
+          return tagsResult;
+        }
+      }
+
       if (endpoints.length === 0) {
         logger.log(
-          `update: connector '${connector.name}' declares no endpoints and has no other comparable/writable field — no-op`
+          `update: connector '${connector.name}' declares no endpoints — endpoint reconciliation skipped${connector.tags !== undefined ? " (tags reconciled above)" : " and no other comparable/writable field, no-op"}`
         );
         return { ok: true, value: { externalId } };
       }

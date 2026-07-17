@@ -240,6 +240,141 @@ describe("createConnectorsWriter", () => {
     }
   });
 
+  // manual-loops/provisioning-manifest-gaps-2.md T07 batch B — connector `tags`
+  // (LLM-adapter fidelity fix). agent-admin's credential resolver requires the
+  // `llm` tag on the adapter an agent's model_config.llm.connectorId points at.
+  describe("tags (T07 batch B)", () => {
+    it("create: passes declared tags through in the POST body", async () => {
+      let capturedBody: unknown;
+      globalThis.fetch = mock(async (_url, init: RequestInit) => {
+        capturedBody = JSON.parse(init.body as string);
+        return json({ id: "conn-llm-1" }, 201);
+      }) as unknown as typeof fetch;
+
+      const writer = createConnectorsWriter(BASE_URL);
+      const connector: Connector = {
+        name: "sample-openai-llm",
+        type: "llm",
+        config: { baseUrl: "https://api.openai.com/v1" },
+        tags: ["llm"],
+      };
+
+      const result = await writer.create("tenant-a", connector);
+      expect(result.ok).toBe(true);
+      expect(capturedBody).toMatchObject({ tags: ["llm"] });
+    });
+
+    it("create: a connector without tags omits the field entirely (create-or-update, absent = untouched)", async () => {
+      let capturedBody: unknown;
+      globalThis.fetch = mock(async (_url, init: RequestInit) => {
+        capturedBody = JSON.parse(init.body as string);
+        return json({ id: "conn-notags-1" }, 201);
+      }) as unknown as typeof fetch;
+
+      const writer = createConnectorsWriter(BASE_URL);
+      const connector: Connector = {
+        name: "plain",
+        type: "http",
+        config: { baseUrl: "https://plain.example.com" },
+      };
+
+      const result = await writer.create("tenant-a", connector);
+      expect(result.ok).toBe(true);
+      expect(capturedBody).not.toHaveProperty("tags");
+    });
+
+    it("update: PATCHes /connectors/:id with tags — repairs a live connector created without the llm tag (no endpoints declared)", async () => {
+      const calls: { url: string; method: string; body: unknown }[] = [];
+      globalThis.fetch = mock(async (url, init: RequestInit) => {
+        calls.push({
+          url: String(url),
+          method: init.method ?? "GET",
+          body: init.body ? JSON.parse(init.body as string) : undefined,
+        });
+        return json({ id: "conn-llm-1" });
+      }) as unknown as typeof fetch;
+
+      const writer = createConnectorsWriter(BASE_URL);
+      const connector: Connector = {
+        name: "sample-openai-llm",
+        type: "llm",
+        config: { baseUrl: "https://api.openai.com/v1" },
+        tags: ["llm"],
+      };
+
+      const result = await writer.update("tenant-a", "conn-llm-1", connector, [
+        { field: "tags" },
+      ]);
+      expect(result.ok).toBe(true);
+      // Exactly one call: the tags PATCH (no endpoints declared, so no live
+      // endpoint fetch / endpoint reconciliation).
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.method).toBe("PATCH");
+      expect(calls[0]?.url).toBe(`${BASE_URL}/connectors/conn-llm-1`);
+      expect(calls[0]?.body).toEqual({ tags: ["llm"] });
+    });
+
+    it("update: a failing tags PATCH fails loud with a typed downstream_error", async () => {
+      globalThis.fetch = mock(async () =>
+        json({ message: "boom" }, 500)
+      ) as unknown as typeof fetch;
+
+      const writer = createConnectorsWriter(BASE_URL);
+      const connector: Connector = {
+        name: "sample-openai-llm",
+        type: "llm",
+        config: { baseUrl: "https://api.openai.com/v1" },
+        tags: ["llm"],
+      };
+
+      const result = await writer.update("tenant-a", "conn-llm-1", connector, [
+        { field: "tags" },
+      ]);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe("downstream_error");
+        expect(result.error.resourceName).toBe("sample-openai-llm");
+      }
+    });
+
+    it("update: tags PATCH runs BEFORE endpoint reconciliation when both are declared", async () => {
+      const calls: { url: string; method: string }[] = [];
+      globalThis.fetch = mock(async (url, init: RequestInit) => {
+        calls.push({ url: String(url), method: init.method ?? "GET" });
+        // The GET live-endpoints fetch returns no live endpoints.
+        if ((init.method ?? "GET") === "GET") {
+          return json({
+            id: "conn-llm-1",
+            name: "sample-openai-llm",
+            endpoints: [],
+          });
+        }
+        return json({ id: "conn-llm-1" });
+      }) as unknown as typeof fetch;
+
+      const writer = createConnectorsWriter(BASE_URL);
+      const connector: Connector = {
+        name: "sample-openai-llm",
+        type: "llm",
+        config: { baseUrl: "https://api.openai.com/v1" },
+        tags: ["llm"],
+        endpoints: [
+          { label: "Chat", method: "POST", path: "/chat/completions" },
+        ],
+      };
+
+      const result = await writer.update("tenant-a", "conn-llm-1", connector, [
+        { field: "tags" },
+      ]);
+      expect(result.ok).toBe(true);
+      // Order: tags PATCH first, then the live-endpoints GET, then the endpoint POST.
+      expect(calls[0]?.method).toBe("PATCH");
+      expect(calls[0]?.url).toBe(`${BASE_URL}/connectors/conn-llm-1`);
+      expect(calls[1]?.method).toBe("GET");
+      expect(calls[2]?.method).toBe("POST");
+    });
+  });
+
   // T02 (manual-loops/provisioning-manifest-gaps.md, gap 2): endpoint
   // reconciliation on create/update, via connector-admin's dedicated
   // endpoint API (POST .../endpoints, PATCH .../endpoints/:epId).

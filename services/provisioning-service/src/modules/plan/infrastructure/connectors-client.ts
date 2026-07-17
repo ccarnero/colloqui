@@ -13,6 +13,7 @@
 // credential value. Enforced by
 // `create-connectors-client-secret-scrub.spec.ts`.
 
+import type { Connector } from "@yoizen/shared";
 import type { IPlatformResourceClient } from "../domain/platform-resource-client.interface";
 import { type AdapterDto, connectorComparable } from "../lib/comparable-fields";
 import { createHttpListResourceClient } from "./create-http-list-resource-client";
@@ -26,6 +27,11 @@ export function createConnectorsClient(
     listPath: "/connectors",
     getName: (item) => item.name,
     getExternalId: (item) => item.id,
-    getFields: (item) => connectorComparable.fromLive(item),
+    // manual-loops/provisioning-manifest-gaps-2.md T07 batch B — forward the
+    // manifest's own declared connector so `connectorComparable.fromLive` can
+    // apply the `tags` declared-gate (mirrors the agent/service clients that
+    // already thread `declaredResource`).
+    getFields: (item, declared) =>
+      connectorComparable.fromLive(item, declared as Connector | undefined),
   });
 }
