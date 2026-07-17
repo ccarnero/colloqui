@@ -4,9 +4,12 @@
  * `manifest.yaml` + `yoizen manifests apply`; see README.md).
  *
  * This script:
- *   1. Ensures the sample's connector prerequisites exist by shelling out to
- *      `../../http/http-connectors/setup.sh` (that sample is still STAND-BY —
- *      see `../../http/http-connectors/STANDBY.md` — imperative, unchanged).
+ *   1. Verifies (read-only, via the SDK) that the four connector prerequisites
+ *      (`jsonplaceholder`/`pokeapi`/`catfacts`/`httpbin`) already exist live —
+ *      they are owned by `../../http/http-connectors`'s `manifest.yaml` (a
+ *      `LibraryManifest`, declarative since its migration), never created or
+ *      shelled-out-to from here. Fails fast with a clear message if any is
+ *      missing, telling the user to apply that manifest first.
  *   2. Verifies (read-only) that an active Telegram channel account exists —
  *      it no longer shells out to `../telegram-transform-reply/setup.ts`,
  *      deleted when that sample migrated to `manifest.yaml`
@@ -26,8 +29,17 @@
  * `../lib/resolve-env.sh` exports and `.env.example` documents — this file
  * is invoked by `run.sh` after that resolution has already happened.
  */
-import { spawnSync } from "node:child_process";
 import { createClient } from "@yoizen/platform-sdk";
+
+// The four http-connectors connectors this workflow's `connectorRef`
+// substitutions target (manifest.yaml's `connectors:` section, all
+// `external: true`) — see http-connectors/manifest.yaml.
+const REQUIRED_CONNECTOR_NAMES = [
+  "jsonplaceholder",
+  "pokeapi",
+  "catfacts",
+  "httpbin",
+] as const;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -39,22 +51,6 @@ function requireEnv(name: string): string {
 
 function step(msg: string): void {
   console.log(`[run] ${msg}`);
-}
-
-// runSetupScript <relativeDir> — shells out to a sibling sample's setup.sh,
-// mirroring the old run.sh's `( cd ../<dir> && ./setup.sh ) >/dev/null`.
-function runSetupScript(relativeDir: string): void {
-  const result = spawnSync("./setup.sh", [], {
-    cwd: new URL(`../../${relativeDir}/`, import.meta.url).pathname,
-    stdio: ["inherit", "ignore", "inherit"],
-    env: process.env,
-  });
-  if (result.status !== 0) {
-    console.error(
-      `[run] ../${relativeDir}/setup.sh failed (exit ${result.status})`
-    );
-    process.exit(1);
-  }
 }
 
 async function main(): Promise<void> {
@@ -72,17 +68,6 @@ async function main(): Promise<void> {
   const instanceExternalId =
     process.env.FANOUT_HTTP_EXTERNAL_ID ?? "manifest:http-fanout-telegram";
   const runText = process.env.RUN_TEXT ?? "hola desde run.sh";
-
-  // ----- 1. Prerequisites ----------------------------------------------------
-  step("1/3 ensuring connectors (jsonplaceholder/pokeapi/catfacts/httpbin)...");
-  runSetupScript("../http/http-connectors");
-  step("    connectors ready");
-
-  step(
-    "2/3 checking for an active telegram account (apply " +
-      "../telegram-transform-reply/manifest.yaml first if this sample was " +
-      "never provisioned)..."
-  );
 
   // The gateway's dev ingress routes by Host header (see
   // ../lib/resolve-env.sh); the SDK's fetch-based transport needs it passed
@@ -102,6 +87,35 @@ async function main(): Promise<void> {
     baseUrl,
     fetch: hostHeader ? fetchWithHostHeader : undefined,
   });
+
+  // ----- 1. Prerequisites (read-only check, no shell-out) --------------------
+  step(
+    "1/3 checking connectors (jsonplaceholder/pokeapi/catfacts/httpbin) exist..."
+  );
+  const liveConnectorNames = new Set<string>();
+  for await (const connector of client.connectors.list({
+    context: "external",
+  })) {
+    liveConnectorNames.add(connector.name);
+  }
+  const missingConnectors = REQUIRED_CONNECTOR_NAMES.filter(
+    (name) => !liveConnectorNames.has(name)
+  );
+  if (missingConnectors.length > 0) {
+    console.error(
+      `[run] missing connector(s): ${missingConnectors.join(", ")} — apply ` +
+        "../http/http-connectors/manifest.yaml --secrets-from-env first " +
+        "(see ../../http/http-connectors/README.md)"
+    );
+    process.exit(1);
+  }
+  step("    connectors ready");
+
+  step(
+    "2/3 checking for an active telegram account (apply " +
+      "../telegram-transform-reply/manifest.yaml first if this sample was " +
+      "never provisioned)..."
+  );
 
   let hasActiveTelegram = false;
   for await (const account of client.channels.listAccounts({

@@ -38,11 +38,11 @@ Bot → usuario: "Echo: hola — processed at 2026-07-03T11:22:33.456Z (epoch_ms
 | Workflow (`telegram-transform-reply`) | `transform` (jsFunction) + `reply` (channelSend), con trigger `message_received` sobre el canal `telegram`. |
 | Secreto (binding `telegram-bot-token`) | Alcance `channel:telegram-transform-reply-bot`. Solo nombre + alcance; el VALOR llega por variable de entorno al aplicar. |
 
-> **Nota sobre el alcance del trigger.** El script anterior fijaba (pin) el trigger a un id de
-> cuenta concreto (`TG_PIN=1`). Un manifest no puede expresar un id de cuenta que todavía no
-> existe (manifest v1 no tiene sustitución de ids en tiempo de aplicación), así que el manifest usa
-> el trigger sin pin: dispara con cualquier mensaje Telegram del tenant. En un tenant con una sola
-> cuenta Telegram el comportamiento es equivalente.
+> **Nota sobre el alcance del trigger.** El trigger está pineado a la cuenta propia de este
+> manifest (`telegram-transform-reply-bot`) vía `trigger.config.accountIds:
+> [{channelRef: telegram-transform-reply-bot}]` — la sustitución de arreglo `accountIds`
+> (`ARRAY_SUBSTITUTION_ALLOWLIST`). Ningún otro workflow disparado por Telegram dispara con el
+> tráfico de esta cuenta.
 
 ### Anatomía del workflow
 

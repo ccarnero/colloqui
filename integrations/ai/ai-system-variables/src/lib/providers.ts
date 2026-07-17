@@ -1,7 +1,8 @@
 /**
- * LLM provider helpers — same contract as ai-agent-triage's setup.sh
- * (provider_api_key_var / provider_base_url_var / provider_default_base_url /
- * is_placeholder_secret). Maps a provider name to the env var(s) that carry
+ * LLM provider helpers — same contract as ai-agent-triage's former setup.sh
+ * (now manifest.yaml): provider_api_key_var / provider_base_url_var /
+ * provider_default_base_url / is_placeholder_secret. Maps a provider name to
+ * the env var(s) that carry
  * its credentials and to its default API base URL.
  */
 

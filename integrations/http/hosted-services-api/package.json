@@ -5,8 +5,7 @@
   "type": "module",
   "description": "hosted-services-api sample driver — registers a Knative-backed hosted service and invokes it through @yoizen/platform-sdk.",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "setup": "tsx src/setup.ts"
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@yoizen/platform-sdk": "file:../../../sdk"

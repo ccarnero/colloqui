@@ -54,11 +54,12 @@ points.
 | --- | --- | --- |
 | `ai-system-variables-openai-api-key` | `authConfig.bearerToken` | Your real `OPENAI_API_KEY` |
 
-## Documented deviation (trigger is unpinned)
+## Trigger is pinned to this sample's own channel
 
-Same limitation as `ai-agent-triage`/`http-fanout-telegram`: manifest v1's symbolic-ref
-substitution only covers the singular `accountId` action-argument key, not the plural
-`trigger.config.accountIds`. This trigger fires on **any** HTTP message for the tenant.
+The trigger is pinned to this manifest's own `ai-system-variables` HTTP channel account via
+`trigger.config.accountIds: [{channelRef: ai-system-variables}]` — the plural `accountIds` array
+substitution (`ARRAY_SUBSTITUTION_ALLOWLIST`). No other HTTP-triggered workflow fires on this
+instance's traffic.
 
 ## Prerequisites
 
@@ -120,4 +121,3 @@ escalation — priority: high"`.
 - **`{{...}}` templating is string-coercing** — see the three resolution points above; `parse`'s
   `jsFunction` returns ONLY `{ priority, summary }`, keeping the routing DECISION in the
   `conditional`'s templated right-hand side (the variable store), not in code.
-- **Cross-firing** with other unpinned HTTP-triggered samples — see § Documented deviation above.

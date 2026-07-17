@@ -17,7 +17,8 @@
 #
 # It loads `<sample>/.env` first (so secrets like TELEGRAM_BOT_TOKEN live there),
 # then exports YOIZEN_* (consumed by http-connectors / http-fanout-telegram /
-# the SDK) AND TG_* aliases (consumed by telegram-transform-reply).
+# the SDK) AND vestigial TG_* aliases (no current sample consumes them; kept as
+# harmless compatibility exports — see the TG_* block below).
 # =============================================================================
 
 # --- load the caller sample's .env (secrets, overrides) ----------------------
@@ -59,7 +60,9 @@ export YOIZEN_TENANT="$__tenant"
 export YOIZEN_EMAIL="$__email"
 export YOIZEN_PASSWORD="$__password"
 
-# telegram-transform-reply/setup.sh reads TG_* instead of YOIZEN_*
+# vestigial TG_* compatibility aliases — no current sample reads them (the
+# migrated samples all use YOIZEN_*); kept as harmless exports to avoid
+# breaking any out-of-tree consumer that still expects the old names.
 export TG_API_URL="$__base"
 export TG_HOST_HEADER="$__host"
 export TG_TENANT="$__tenant"

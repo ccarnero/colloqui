@@ -47,17 +47,12 @@ extended this exact schema section for the scaling fields. This env var is there
 from `manifest.yaml`, not approximated — see the schema-adjacent comment in `manifest.yaml` for
 the full citation. This does not change the sample's observable behavior.
 
-## Documented deviation (trigger is unpinned)
+## Trigger is pinned to this sample's own channel
 
-The deleted `setup.ts` pinned this workflow's trigger to its own dedicated HTTP instance via
-`config.accountIds: [<id>]` (`HOSTED_WORKFLOW_PIN=1` default) so no OTHER HTTP-triggered workflow
-could fire it. Manifest v1's symbolic-ref substitution only covers the **singular** `accountId`
-action-argument key (`SUBSTITUTION_ALLOWLIST`), not the **plural** `trigger.config.accountIds`
-array, so this cannot be expressed today (same limitation the shipped
-`telegram-transform-reply/manifest.yaml` already documents for its own trigger). The trigger here
-fires on **any** HTTP message for the tenant. If you also run
-[`http-fanout-telegram`](../../channels/http-fanout-telegram) (also unpinned after its own
-migration), **both** workflows fire on every inbound HTTP message — see § Troubleshooting.
+The trigger is pinned to this manifest's own `hosted-services-api` HTTP channel account via
+`trigger.config.accountIds: [{channelRef: hosted-services-api}]` — the plural `accountIds` array
+substitution (`ARRAY_SUBSTITUTION_ALLOWLIST`). No other HTTP-triggered workflow fires on this
+instance's traffic.
 
 ## Prerequisites
 
@@ -134,9 +129,6 @@ That marker differentiates it from `http-fanout-telegram`, even if both send to 
   before the first invoke.
 - **`registry-service` hardcodes a `/health` readiness probe and `runAsUser: 1001`** — your image
   must support both, or the route may return `502` while the Knative Service is not ready.
-- **Cross-firing with `http-fanout-telegram`.** Both samples' HTTP-triggered workflows are unpinned
-  (see § Documented deviation). To test one in isolation, temporarily disable the other's workflow
-  via the admin console, or simply don't apply both manifests in the same tenant at once.
 - **`env` vars are not provisionable** (see § Documented gap) — if your own hosted service NEEDS a
   real env var, this sample cannot demonstrate that shape yet; track
   `manual-loops/provisioning-manifest-gaps.md`'s human-ruling backlog.

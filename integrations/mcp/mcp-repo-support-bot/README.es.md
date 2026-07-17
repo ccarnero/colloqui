@@ -142,17 +142,12 @@ aplicar, y seteá `TELEGRAM_WEBHOOK_SECRET` en `.env`. Seteá
 `SIMULATE_INBOUND=0` para saltear la simulación y solo verificar que los
 recursos existan.
 
-## Desvío del trigger
+## El trigger está pineado al canal propio del sample
 
-El `setup.ts` eliminado tenía `TG_PIN=1` por defecto, que fijaba el trigger a
-la cuenta creada vía `config.accountIds` — plural, y no está en
-`SUBSTITUTION_ALLOWLIST`. Manifest v1 no puede expresar ese pin (no existe un
-id de manifest-time para embeber). El trigger en `manifest.yaml` queda sin
-fijar: se dispara con **cualquier** mensaje de Telegram del tenant
-(equivalente en la práctica en un tenant con una sola cuenta de Telegram); ver
-Troubleshooting en el README en inglés si corrés esto junto a otros samples
-de Telegram sin fijar. Refleja el mismo desvío documentado por
-`ai-agent-triage` y `telegram-transform-reply`.
+El trigger está pineado a la cuenta Telegram propia de este manifest vía
+`trigger.config.accountIds: [{channelRef: mcp-repo-support-bot}]` — la
+sustitución de arreglo `accountIds` (`ARRAY_SUBSTITUTION_ALLOWLIST`). Ningún
+otro workflow disparado por Telegram dispara con el tráfico de esta cuenta.
 
 ## Por qué se necesita un servidor MCP público
 

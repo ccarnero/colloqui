@@ -66,7 +66,8 @@ Telegram side first:
 
 1. **A Telegram channel account** with a real bot token:
    ```bash
-   (cd ../../../integrations/channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN="123:ABC-…" ./setup.sh)
+   env 'telegram-bot-token=123:ABC-…' \
+     yoizen manifests apply -f integrations/channels/telegram-transform-reply/manifest.yaml --secrets-from-env
    ```
 2. **You (and optionally a second recipient) must have `/start`-ed the bot.** A bot cannot
    cold-message a phone number — Telegram addresses recipients by `chat_id`. You don't need to look
@@ -234,13 +235,17 @@ next to `setup.sh` — no manual sourcing needed.
   Discovery also only sees chats Telegram still has buffered for `getUpdates` — old `/start`s can
   age out if the bot has since made other API calls without acknowledging them.
 - **`getUpdates` 409s if a webhook is registered.** Telegram allows only one delivery mode per bot
-  token — `telegram-transform-reply`'s `setup.sh` registers a webhook, and polling `getUpdates`
-  while it's active fails with `Conflict: can't use getUpdates method while webhook is active`.
+  token — `channel-service` self-registers a webhook when the `telegram-transform-reply` channel
+  account is provisioned (via its `manifest.yaml` apply), and polling `getUpdates` while it's active
+  fails with `Conflict: can't use getUpdates method while webhook is active`.
   `discover_chat_ids` handles this automatically: it reads the current webhook via
   `getWebhookInfo`, clears it with `deleteWebhook`, polls, then restores the exact same URL via
   `setWebhook` (`BRIDGE_RESTORE_WEBHOOK=1`, the default). Set `BRIDGE_RESTORE_WEBHOOK=0` to leave
-  the bot in polling mode instead — you'll need to re-run `telegram-transform-reply/setup.sh` (or
-  call `setWebhook` yourself) to get webhook delivery back.
+  the bot in polling mode instead — to get webhook delivery back, call `setWebhook` yourself (see
+  `integrations/channels/telegram-transform-reply/README.md` § "Run / exercise" for the exact
+  procedure). Re-applying the manifest against the existing account does **not** re-register the
+  webhook — `channel-service` self-registers it only on channel-account *creation*, so the only
+  manifest path is to delete the channel account and re-apply.
 - **Old `/start`s don't replay after clearing the webhook — not even ones sent before this run.**
   Telegram treats updates already pushed through an active webhook as delivered and never hands
   them back via `getUpdates`, even after `deleteWebhook`. So if a webhook was active,

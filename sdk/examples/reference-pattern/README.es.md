@@ -104,8 +104,8 @@ Referencias de contrato (verificadas en código): `services/workflow-service/src
 ## Cómo ejecutarlo y qué esperar
 
 Prerrequisitos: cuenta Telegram provisionada con token real
-(`(cd ../../../integrations/channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN=... ./setup.sh)`) y que cada destinatario
-haya enviado `/start` al bot (un bot no puede iniciar conversación por número de teléfono).
+(`env 'telegram-bot-token=...' yoizen manifests apply -f integrations/channels/telegram-transform-reply/manifest.yaml --secrets-from-env`)
+y que cada destinatario haya enviado `/start` al bot (un bot no puede iniciar conversación por número de teléfono).
 
 ```bash
 cd sdk/examples/reference-pattern

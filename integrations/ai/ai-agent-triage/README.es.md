@@ -34,13 +34,12 @@ simplificación que `http-fanout-telegram`/`hosted-services-api` ya estableciero
 capacidad: se podría agregar un segundo destinatario con una segunda systemVariable + un segundo
 `channelSend` incondicional si hiciera falta.
 
-## Desviación documentada (trigger sin pin)
+## El trigger está pineado al canal propio del sample
 
-El `setup.ts` eliminado fijaba el trigger a su propia instancia HTTP vía
-`config.accountIds: [<id>]` (`TRIAGE_PIN=1` por defecto). La sustitución de refs simbólicos de
-manifest v1 solo cubre la clave SINGULAR `accountId` dentro de los argumentos de una acción, no el
-array PLURAL `trigger.config.accountIds`. El trigger dispara ante **cualquier** mensaje HTTP del
-tenant — ver § Solución de problemas si corrés este sample junto a otros con trigger HTTP sin pin.
+El trigger está pineado a la cuenta HTTP propia de este manifest vía `trigger.config.accountIds:
+[{channelRef: ai-agent-triage}]` — la sustitución de arreglo `accountIds`
+(`ARRAY_SUBSTITUTION_ALLOWLIST`). Ningún otro workflow disparado por HTTP dispara con el tráfico de
+esta instancia.
 
 ## Secretos (auth bearer del connector LLM)
 
@@ -82,6 +81,3 @@ publica tres mensajes de ejemplo (enojado / curioso / feliz). Esperá un DM de T
 
 - La respuesta JSON del agente vive en `results.triage.data.reply`; `route` la parsea con fallback
   seguro (no parseable -> prioridad `high`, escala).
-- **Cruce de disparos** con otros samples HTTP sin pin (`http-fanout-telegram`,
-  `hosted-services-api`, `ai-call-center-supervisor`, `ai-system-variables`) — corré uno a la vez en
-  el mismo tenant.

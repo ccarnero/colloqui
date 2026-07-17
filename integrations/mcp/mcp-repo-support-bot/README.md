@@ -175,17 +175,13 @@ The shipped template is named `env.example` (not `.env.example`): a sandbox
 restriction in the authoring environment prevents writing `.env.*` files. Copy
 it to `.env` (`cp env.example .env`) — `resolve-env.sh` loads `.env`.
 
-## Trigger deviation
+## Trigger is pinned to this sample's own channel
 
-The deleted `setup.ts`'s default `TG_PIN=1` pinned the workflow trigger to the
-account it created, via `config.accountIds` — plural, and not in
-`SUBSTITUTION_ALLOWLIST`. Manifest v1 cannot express that pin (no
-manifest-time id exists to embed). The trigger in `manifest.yaml` is
-unpinned: it fires on **any** Telegram message for the tenant (behaviorally
-equivalent in a single-Telegram-account tenant; see Troubleshooting below if
-you run this alongside other unpinned Telegram-triggered samples). This
-mirrors `ai-agent-triage`'s and `telegram-transform-reply`'s own documented
-trigger deviation exactly.
+The trigger is pinned to this manifest's own `mcp-repo-support-bot` Telegram
+channel account via `trigger.config.accountIds:
+[{channelRef: mcp-repo-support-bot}]` — the plural `accountIds` array
+substitution (`ARRAY_SUBSTITUTION_ALLOWLIST`). No other Telegram-triggered
+workflow fires on this account's traffic.
 
 ## Why a public MCP server is required
 
@@ -218,7 +214,7 @@ LLM connector.
 - **`BLOCKED_MCP_SERVER_URL` at runtime** — the configured DeepWiki URL
   resolves to a private/localhost address; use a public endpoint (SSRF guard).
 - **No execution observed within the timeout** — check `workflow-service` /
-  trigger-consumer logs; the trigger is unpinned (see above) — confirm no
-  other unpinned Telegram-triggered sample is intercepting the message first.
+  trigger-consumer logs; confirm the manifest was applied (the trigger is
+  pinned to this sample's own channel, see above).
 - **`TELEGRAM_WEBHOOK_SECRET is required`** — fetch the account's `appSecret`
   via `GET /channels/accounts` after apply, or set `SIMULATE_INBOUND=0`.

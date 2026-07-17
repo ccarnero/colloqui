@@ -36,11 +36,12 @@ HTTP msg ─► trigger (message_received, channels:["http"])
 > [`telegram-transform-reply`](../../channels/telegram-transform-reply)'s `manifest.yaml`. Apply it
 > first.
 
-## Documented deviation (trigger is unpinned)
+## Trigger is pinned to this sample's own channel
 
-Same limitation as `ai-agent-triage`/`http-fanout-telegram`/`hosted-services-api`: manifest v1's
-symbolic-ref substitution only covers the singular `accountId` action-argument key, not the plural
-`trigger.config.accountIds`. This trigger fires on **any** HTTP message for the tenant.
+The trigger is pinned to this manifest's own `ai-call-center-supervisor` HTTP channel account via
+`trigger.config.accountIds: [{channelRef: ai-call-center-supervisor}]` — the plural `accountIds`
+array substitution (`ARRAY_SUBSTITUTION_ALLOWLIST`). No other HTTP-triggered workflow fires on this
+instance's traffic.
 
 ## Secrets (LLM connector bearer auth)
 
@@ -106,4 +107,3 @@ few seconds apart.
   plain strings only, `YOIZEN_SAMPLE` is a non-functional debug marker, not a credential).
 - **Cold start**: `minScale: 0` means the first `serviceCall` may be slow while Knative scales the
   pod up.
-- **Cross-firing** with other unpinned HTTP-triggered samples — see § Documented deviation above.

@@ -57,9 +57,9 @@ export YOIZEN_TENANT="$__tenant"
 export YOIZEN_EMAIL="$__email"
 export YOIZEN_PASSWORD="$__password"
 
-# telegram-transform-reply/setup.sh reads TG_* instead of YOIZEN_*; kept here
-# for exact parity with the shared resolver even though this sample doesn't
-# read the TG_* aliases itself.
+# vestigial TG_* compatibility aliases — no current sample reads them (they all
+# use YOIZEN_*); kept for exact parity with the shared resolver even though this
+# sample doesn't read them itself.
 export TG_API_URL="$__base"
 export TG_HOST_HEADER="$__host"
 export TG_TENANT="$__tenant"

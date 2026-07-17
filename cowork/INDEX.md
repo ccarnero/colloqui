@@ -360,6 +360,9 @@ once a multipart parser dependency is vendored.
 
 ## Change: samples reorg — three-tier examples taxonomy + declarative provisioning showcase (samples-reorg)
 
+> **SUPERSEDED**: `manual-loops/provisioning-manifest-gaps-2.md`/`-3.md` later migrated all 12
+> samples to `manifest.yaml`; none remain stand-by.
+
 Manual-loop change (not SDD) reorganizing the old flat SDK samples tree (one true SDK example plus
 twelve platform integration examples) into three tiers, each with one reason to
 exist: `sdk/examples/` (SDK API-surface examples, seeded with `reference-pattern`),

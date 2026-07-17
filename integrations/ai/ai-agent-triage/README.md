@@ -42,14 +42,12 @@ the same simplification `http-fanout-telegram`/`hosted-services-api` already est
 own single-recipient notify steps. Not a capability gap: a second recipient could be added as a
 second systemVariable + a second unconditional `channelSend` action if ever needed.
 
-## Documented deviation (trigger is unpinned)
+## Trigger is pinned to this sample's own channel
 
-The deleted `setup.ts` pinned this workflow's trigger to its own dedicated HTTP instance via
-`config.accountIds: [<id>]` (`TRIAGE_PIN=1` default). Manifest v1's symbolic-ref substitution only
-covers the **singular** `accountId` action-argument key, not the **plural**
-`trigger.config.accountIds` array (mirrors `http-fanout-telegram`/`hosted-services-api`'s own
-documented trigger deviation). The trigger here fires on **any** HTTP message for the tenant — see
-§ Troubleshooting if you run this alongside other unpinned HTTP-triggered samples.
+The trigger is pinned to this manifest's own `ai-agent-triage` HTTP channel account via
+`trigger.config.accountIds: [{channelRef: ai-agent-triage}]` — the plural `accountIds` array
+substitution (`ARRAY_SUBSTITUTION_ALLOWLIST`). No other HTTP-triggered workflow fires on this
+instance's traffic.
 
 ## Secrets (LLM connector bearer auth)
 
@@ -117,6 +115,3 @@ URL. Expect one Telegram DM per message, e.g. `"🎧 Triage — priority: urgent
 - **`{{...}}` templating is string-coercing** — the agent's JSON reply lives at
   `results.triage.data.reply`; `route`'s `jsFunction` safely parses it (fail-safe fallback:
   unparseable -> priority `high`, escalates).
-- **Cross-firing with other unpinned HTTP-triggered samples** (`http-fanout-telegram`,
-  `hosted-services-api`, `ai-call-center-supervisor`, `ai-system-variables`) — see § Documented
-  deviation above; run only one at a time on the same tenant to avoid overlapping triggers.

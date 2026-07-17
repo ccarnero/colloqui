@@ -25,10 +25,20 @@ registry, workflows).
 
 ## Plan contract
 
-Dependency order (channel -> connector -> agent -> service -> workflow) is computed by
-`build-dependency-graph.ts` / `topological-resource-order.ts`; a cycle in the ref graph
-(e.g. workflow -> service -> workflow) is reported as a typed `cycle_detected` error
-(HTTP 409), never a hang.
+Dependency order (`RESOURCE_KIND_ORDER`, `plan/domain/plan.interfaces.ts`) is:
+
+```
+channel -> connector -> mcpServer -> skill -> agent -> service -> systemVariable -> workflow
+```
+
+`mcpServer` sits before `agent` because an agent's `enabledMcpServerRefs` and a workflow's
+`mcpCall.serverId` both reference an `mcpServers[]` entry by name. `skill` sits before `agent` for
+the same reason: an agent's `profile.model_config.subagents[].catalog_skill_id` references a
+`skills[]` entry by name via `skillRef`. `systemVariable` is a leaf with no refs in or out (its
+consumption is a runtime resolution point in workflow-service, not manifest-time), placed anywhere
+before `workflow`. This order is computed by `build-dependency-graph.ts` /
+`topological-resource-order.ts`; a cycle in the ref graph (e.g. workflow -> service -> workflow) is
+reported as a typed `cycle_detected` error (HTTP 409), never a hang.
 
 Each resource in `ManifestPlan.resources` carries a **verdict**:
 
@@ -144,6 +154,140 @@ secrets are wired as `env` sourced from the k8s Secret directly in their Knative
 User code inside the hosted service sees plain environment variables; only the apply
 engine ever writes/reads `service`-kind secrets through the broker (during apply, to
 materialize the Knative spec).
+
+## `kind: LibraryManifest`
+
+`kind` (`manifestKindSchema`, `packages/shared/src/provisioning/manifest.schema.ts`) is a
+two-member enum, defaulting to `IntegrationManifest`. A `LibraryManifest` provisions ONLY shared
+library resources — connectors, mcpServers, hosted services, or system variables — never a channel
+or process of its own. `validate-structural-rules.ts`'s `checkAtLeastOneLibraryResource` waives the
+`IntegrationManifest`'s ">=1 inbound channel" AND ">=1 process" checks for it, requiring instead
+">=1 of connector/mcpServer/service/systemVariable". Used by 5 shipped samples: `http-connectors`,
+`mcp-connections`, `ai-agent-playground`, `ai-knowledge-base-agent`, `ai-skill-support-agent` — see
+`integrations/README.md`.
+
+## Connectors: tags, endpoints, auth
+
+`connectorSchema` (`manifest.schema.ts`) carries, beyond `name`/`type`/`config`/`external`:
+
+- **`tags`** — `string[]`, non-secret routing metadata. `agent-ai-service`'s credential resolver
+  requires an LLM connector to carry the `llm` tag; a connector created without it makes every
+  agent referencing it fail (`Adapter '<id>' is not tagged as 'llm'`).
+- **`endpoints`** — `ConnectorEndpointManifest[]` (`label`/`method`/`path`/`cache?`). Uniqueness
+  downstream is `(method, path)` per connector, not a manifest-declared id — the writer matches on
+  that pair to decide add-vs-update. `cache` mirrors connector-admin's per-endpoint cache shape
+  (`enabled`/`ttlSeconds`/`methods`/`keyHeaders`/`keyQueryParams`/`keyBody`); there is no
+  connector-level `defaultCache` field (see `integrations/http/http-connectors/manifest.yaml`'s own
+  comment for the documented gap this creates for connectors with per-endpoint-varying methods).
+- **`auth`** — a discriminated union (`bearer`/`api-key`/`basic`), each field a nested
+  `{ secretRef }` — never a literal credential in the manifest (SPEC decision 3).
+
+## Agents: MCP + skills fields
+
+`agentSchema` carries, beyond `name`/`profile`/`knowledgeBaseRefs`/`external`:
+
+- **`enabledMcpServerRefs`** — `string[]` of `mcpServers[]` manifest NAMES (NOT run through
+  symbolic-ref id substitution — agent-ai-service's `enabled_mcp_servers`/`ns` field is keyed by MCP
+  server NAME, not id; substituting to an id would reintroduce a real fixed bug, see
+  `tool-bridge.service.spec.ts`).
+- **`enabledMcpTools`** — `Record<mcpServerName, string[] | null>`, `null` meaning "all tools
+  enabled" for that server. Outer key is the MCP server manifest NAME, never substituted.
+- **`toolDescriptionOverrides`** — `Record<string, string>`; keys are either `"<serverName>:
+  <toolName>"` (validated against `mcpServers[].name`) or a plain key with no colon (an
+  adapter/builtin tool, unvalidated).
+- **`profile.model_config.subagents[].catalog_skill_id`** — a manifest-time `skillRef` symbolic ref
+  (allowlisted, see below), resolved to the real skill id inside the pre-existing agent `profile`
+  tree walk.
+
+## Knowledge bases: `ingestion_config` refs
+
+`knowledgeBaseSchema.ingestion_config` is an open `Record<string, unknown>` mirroring
+`CreateKnowledgeBaseDto.ingestion_config`. Its `provider_connector_id` field accepts a
+`{ connectorRef }` symbolic ref (allowlisted, see below), resolved by
+`modules/kb/lib/substitute-kb-ingestion-config.ts` — a NEW tree root (not the pre-existing
+workflow/agent-profile walk) — right before the KB reconciler creates a new (non-external)
+knowledge base. `ingestion_config` itself is NOT re-reconciled after creation (no mutable KB fields
+to reconcile today).
+
+## System variables
+
+`systemVariableSchema` mirrors `CreateSystemVariableInput` (`name`/`type`/`value`/`label?`/
+`description?`) plus the section's usual `external` flag. It is a LEAF resource kind: nothing
+references a systemVariable and it references nothing back — `ai-system-variables`' runtime
+consumption (`{{variables.system.<name>}}`) is a workflow-service RUNTIME resolution point, not a
+manifest-time one. `type: "secret"` is REJECTED at the manifest surface (a secret-typed variable
+would carry a plaintext `value` echoed into plan output and the checked-in manifest file) — allowed
+types are `string`/`number`/`boolean`/`json`/`array`. The platform API/SDK keep the full
+`VariableType` enum (including `secret`) untouched; this restriction is manifest-surface-only.
+
+## Skills
+
+`skillSchema` is a standalone, reusable CATALOG resource mirroring
+`CreateSkillDto`/`UpdateSkillDto`/`SkillFileDto` field-for-field (`name`/`system_prompt`/
+`trigger_commands?`/`when_to_use?`/`priority?`/`mode?`/`files?`/...). No field is credential-capable
+— verified against every field in the live DTOs — so `skillSchema` carries no `secretRef` field of
+its own, and a skill-scoped secret binding is schema-valid but semantically INERT (see "Secret
+scope kinds" below). Skills are referenced from `agents[].profile.model_config.subagents[].
+catalog_skill_id` via a `skillRef`.
+
+## Symbolic-ref substitution: scalar + array allowlists
+
+Manifest-time ID substitution walks ONLY the argument keys listed in two hand-kept allowlists —
+never a structural walk that substitutes every key literally named `*Ref` wherever it appears (that
+would risk substituting an unrelated same-named field).
+
+**Scalar** (`modules/apply/lib/substitution-allowlist.ts`, `SUBSTITUTION_ALLOWLIST` — one ref-object
+value per key):
+
+| Arg key | Ref type | Source |
+|---|---|---|
+| `accountId` | `channelRef` | `ChannelSendArgs.accountId` |
+| `adapterId` | `connectorRef` | `EndpointCallArgs.adapterId` |
+| `agentId` | `agentRef` | `AgentCallArgs.agentId` |
+| `serviceId` | `serviceRef` | `ServiceCallArgs.serviceId` |
+| `serverId` | `mcpServerRef` | `McpCallArgs.serverId` |
+| `connectorId` | `connectorRef` | agent `profile.model_config.llm.connectorId` |
+| `provider_connector_id` | `connectorRef` | KB `ingestion_config.provider_connector_id` |
+| `catalog_skill_id` | `skillRef` | agent `profile.model_config.subagents[].catalog_skill_id` |
+
+**Array** (`modules/apply/lib/array-substitution-allowlist.ts`, `ARRAY_SUBSTITUTION_ALLOWLIST` —
+an ARRAY of single-key ref-objects, substituted element-wise):
+
+| Arg key | Ref type | Source |
+|---|---|---|
+| `accountIds` | `channelRef` | workflow trigger `config.accountIds` — the plural sibling of `accountId`; every migrated manifest pins its trigger to its own manifest-created channel this way |
+
+`accountIds` is the ONLY known plural ref-bearing key today; a separate map (not a scalar-or-array
+flag on the scalar entry shape) keeps the seven scalar entries' consuming code unchanged.
+
+## Secret scope kinds exclude `systemVariable` and `skill` (inert)
+
+The manifest schema's `secretScopeKindSchema` includes `systemVariable` and `skill` for PLUMBING
+ONLY (so `ResourceKind`/`RESOURCE_KIND_ORDER` compile and flow through the generic plan/apply
+pipeline) — neither has a credential-capable field, so a secret binding scoped to either would be
+schema-valid but semantically INERT (no writer or resolver ever consumes one). Both are therefore
+DELIBERATELY EXCLUDED from the two hand-kept `VALID_SCOPE_KINDS` rejection lists
+(`sdk/src/cli/valid-scope-kinds.ts`, this service's `secrets.controller.ts`), which reject them up
+front at the secrets-write API surface.
+
+## Known limitations
+
+- **Workflow comparability is existence-only.** `plan`'s verdict for an EXISTING workflow never
+  inspects `definition`/`trigger` for changes — only whether a workflow with that name exists.
+  Changing a workflow's `definition` or `trigger` in the manifest and re-applying is therefore a
+  no-op against an already-created workflow. Remedy: delete the live workflow and re-apply (create
+  path), or edit it directly via the admin API.
+- **Connector endpoint cache changes are no-op after creation.** Only the endpoint's own existence
+  (by `(method, path)`) is reconciled; changing an existing endpoint's `cache` block and re-applying
+  does not update the live endpoint.
+- **Secret-typed `systemVariable`s are rejected** at the manifest surface (see "System variables"
+  above) — no plaintext-value system variable can ever be checked into a `manifest.yaml`.
+- **Hosted-service `env` is plain-strings-only.** `serviceEnvVarSchema.value` is a required
+  `z.string()` — a `{ secretRef }` value form is deliberately NOT offered, because resolving it to
+  plaintext inside provisioning-service and shipping it in the registry `envVars` payload would bake
+  the literal secret into the Knative spec (etcd-persisted, kubectl-visible), contradicting decision
+  7's k8s-native secrets delivery. Secret-valued env vars for hosted services await a future
+  `valueFrom.secretKeyRef`-shaped design.
 
 ## KB source types + checksum semantics
 

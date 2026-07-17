@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # Drives the http-fanout-telegram sample end-to-end — SDK-powered. The actual
-# prereq-shelling/login/list/ingest logic lives in src/index.ts, run via
+# preflight-check/login/list/ingest logic lives in src/index.ts, run via
 # `@yoizen/platform-sdk`; this script only resolves the dev environment (via
 # ../../lib/resolve-env.sh, same as every other sample's run.sh) and execs the
 # Node app with those env vars in scope.
@@ -11,8 +11,9 @@ cd "$(dirname "$0")"
 # Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
 # once first to provision the workflow and its dedicated HTTP account (see
 # README.md). This script never creates or modifies platform objects itself
-# (it may shell out to the still-imperative http-connectors/setup.sh — see
-# src/index.ts). The Telegram recipient chat id lives in the manifest's
+# (src/index.ts does a read-only SDK preflight checking that the
+# http-connectors connectors and a Telegram account exist, then POSTs a test
+# message). The Telegram recipient chat id lives in the manifest's
 # `systemVariables` section now, not an env var here.
 . ../../lib/resolve-env.sh
 

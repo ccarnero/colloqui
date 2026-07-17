@@ -30,21 +30,21 @@ Samples are organized into three tiers, each with one reason to exist:
 platform-feature references, grouped `channels/`/`ai/`/`http/`/`mcp/`), and
 `demos/` (commercial showcases, untouched here). See
 [`integrations/README.md`](./integrations/README.md) for the taxonomy and the
-declarative provisioning convention. Most samples below still run through
-their own `setup.sh`; `telegram-transform-reply` is the one migrated
-reference — it provisions declaratively through a `manifest.yaml` applied via
-the `yoizen` CLI instead of a setup script (the eleven remaining stand-by
-samples are unaffected, see `manual-loops/provisioning-manifest-gaps.md`).
+declarative provisioning convention. **All 12 `integrations/` samples are now
+declarative**: each ships a `manifest.yaml` (`IntegrationManifest` or
+`LibraryManifest`) applied via the `yoizen` CLI (`manifests validate|plan|
+apply -f manifest.yaml --secrets-from-env`) — none run a `setup.sh`/`setup.ts`
+anymore.
 
 ```bash
-# 6) HTTP connectors
-# No .env required.
-cd integrations/http/http-connectors
-./setup.sh
-cd ../../..
-
-# 7) Telegram account + reply workflow (declarative — manifest.yaml + yoizen CLI, no setup script)
+# 6) HTTP connectors (LibraryManifest — connector catalog only, no channel/process)
 cd sdk && bun link && cd ..   # one-time; or prefix each call with `cd sdk && bun run bin/yoizen.ts`
+yoizen manifests validate -f integrations/http/http-connectors/manifest.yaml
+yoizen manifests plan     -f integrations/http/http-connectors/manifest.yaml
+env 'httpbin-basic-auth-username=user' 'httpbin-basic-auth-password=passwd' \
+  yoizen manifests apply -f integrations/http/http-connectors/manifest.yaml --secrets-from-env
+
+# 7) Telegram account + reply workflow
 yoizen manifests validate -f integrations/channels/telegram-transform-reply/manifest.yaml
 yoizen manifests plan     -f integrations/channels/telegram-transform-reply/manifest.yaml
 env 'telegram-bot-token=<bot-token-from-botfather>' \
@@ -52,70 +52,49 @@ env 'telegram-bot-token=<bot-token-from-botfather>' \
 # Optional: register the real Telegram webhook, or drive a synthetic inbound —
 # see integrations/channels/telegram-transform-reply/README.md "Run / exercise".
 
-# 8) HTTP fanout -> connectors -> Telegram
-cat > integrations/channels/http-fanout-telegram/.env <<'ENV'
-TELEGRAM_CHAT_ID=<numeric-chat-id>
-# Optional: lets run.sh also provision/reuse the Telegram account.
-# TELEGRAM_BOT_TOKEN=<bot-token-from-botfather>
-ENV
-cd integrations/channels/http-fanout-telegram
-./setup.sh
-./run.sh
-cd ../../..
+# 8) HTTP fanout -> connectors -> Telegram (depends on steps 6 and 7)
+yoizen manifests validate -f integrations/channels/http-fanout-telegram/manifest.yaml
+yoizen manifests plan     -f integrations/channels/http-fanout-telegram/manifest.yaml
+yoizen manifests apply    -f integrations/channels/http-fanout-telegram/manifest.yaml --secrets-from-env
+# Edit spec.systemVariables[0].value in manifest.yaml to your real Telegram chat id, then re-apply
+# (see its README.md "Configure"). Exercise it (read-only preflight + POST):
+cd integrations/channels/http-fanout-telegram && ./run.sh && cd ../../..
 
-# 9) AI agent playground
-cat > integrations/ai/ai-agent-playground/.env <<'ENV'
-AI_AGENT_PROVIDER=openai
-AI_AGENT_MODEL=gpt-4o-mini
-AI_CREDENTIAL_MODE=connector
-AI_LLM_CONNECTOR_NAME=sample-openai-llm
-OPENAI_API_KEY=<real-openai-key>
-OPENAI_BASE_URL=https://api.openai.com/v1
-RECREATE=0
-POLL_TIMEOUT_S=90
-ENV
-cd integrations/ai/ai-agent-playground
-./setup.sh
-cd ../../..
+# 9) AI agent playground (LibraryManifest — connector + agent, no channel)
+yoizen manifests validate -f integrations/ai/ai-agent-playground/manifest.yaml
+yoizen manifests plan     -f integrations/ai/ai-agent-playground/manifest.yaml
+env "ai-agent-playground-openai-api-key=$OPENAI_API_KEY" \
+  yoizen manifests apply  -f integrations/ai/ai-agent-playground/manifest.yaml --secrets-from-env
+cd integrations/ai/ai-agent-playground && ./run.sh && cd ../../..
 
-# 10) AI knowledge base agent
-cat > integrations/ai/ai-knowledge-base-agent/.env <<'ENV'
-AI_AGENT_PROVIDER=openai
-AI_AGENT_MODEL=gpt-4o-mini
-AI_CREDENTIAL_MODE=connector
-AI_LLM_CONNECTOR_NAME=sample-openai-llm
-OPENAI_API_KEY=<real-openai-key>
-OPENAI_BASE_URL=https://api.openai.com/v1
-KB_EMBEDDING_MODEL=text-embedding-3-small
-KB_NAME=ai-sample-support-kb
-AI_AGENT_NAME=ai-sample-kb-agent
-AI_AGENT_MESSAGE=According to the support FAQ, what is the refund policy? Include the verification phrase if you see one.
-RECREATE=0
-POLL_TIMEOUT_S=120
-DOC_TIMEOUT_S=120
-ENV
-cd integrations/ai/ai-knowledge-base-agent
-./setup.sh
-cd ../../..
+# 10) AI knowledge base agent (LibraryManifest — connector + KB + agent, no channel)
+yoizen manifests validate -f integrations/ai/ai-knowledge-base-agent/manifest.yaml
+yoizen manifests plan     -f integrations/ai/ai-knowledge-base-agent/manifest.yaml
+env "ai-knowledge-base-agent-openai-api-key=$OPENAI_API_KEY" \
+  yoizen manifests apply  -f integrations/ai/ai-knowledge-base-agent/manifest.yaml --secrets-from-env
+cd integrations/ai/ai-knowledge-base-agent && ./run.sh && cd ../../..
 
-# 11) Hosted services API sample
-cat > integrations/http/hosted-services-api/.env <<'ENV'
-HOSTED_SERVICE_NAME=sample-echo
-HOSTED_ROUTE_PREFIX=/samples/hosted-echo
-HOSTED_SERVICE_IMAGE=ealen/echo-server:latest
-HOSTED_SERVICE_PORT=8080
-RECREATE=0
-ENV
-cd integrations/http/hosted-services-api
-./setup.sh
-./run.sh
-cd ../../..
+# 11) Hosted services API sample (depends on step 7 for its Telegram notify step)
+yoizen manifests validate -f integrations/http/hosted-services-api/manifest.yaml
+yoizen manifests plan     -f integrations/http/hosted-services-api/manifest.yaml
+yoizen manifests apply    -f integrations/http/hosted-services-api/manifest.yaml --secrets-from-env
+# Edit spec.systemVariables[0].value in manifest.yaml to your real Telegram chat id, then re-apply
+# (see its README.md "Configure").
+cd integrations/http/hosted-services-api && ./run.sh && cd ../../..
 
 # 12) HTTP bridge sample - long-running, keep terminal open
 # No .env required.
 cd sdk/examples/reference-pattern
 ./run.sh
 ```
+
+The remaining six samples (`ai-agent-triage`, `ai-call-center-supervisor`,
+`ai-skill-support-agent`, `ai-system-variables`, `mcp-connections`,
+`mcp-repo-support-bot`) follow the identical `validate` -> `plan` -> `apply
+--secrets-from-env` -> `run.sh` pattern — see
+[`integrations/README.md`](./integrations/README.md) and each sample's own
+README for its specific secret bindings, cross-sample dependencies, and
+`.env` overrides.
 
 ## Gotcha
 

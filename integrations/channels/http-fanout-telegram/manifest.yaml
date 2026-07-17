@@ -31,17 +31,14 @@ spec:
       external: true
 
   # ---------------------------------------------------------------------------
-  # CROSS-SAMPLE DEPENDENCY (connectors): all four owned by
-  # ../../http/http-connectors, which is currently STAND-BY (its own
-  # migration is escalated — see http-connectors/STANDBY.md and this batch's
-  # report: manifest v1's >=1-inbound-channel + >=1-process structural rule,
-  # `declarative-provisioning.md` decision 2, makes a connector-only manifest
-  # with no channel/workflow of its own impossible to express). `external:
+  # CROSS-SAMPLE DEPENDENCY (connectors): all four provisioned by
+  # ../../http/http-connectors's own `manifest.yaml` (`kind: LibraryManifest` —
+  # a channel-less library manifest, see integrations/README.md). `external:
   # true` resolves each by NAME against LIVE platform state exactly like the
   # Telegram channel above — it does not require http-connectors to itself be
   # manifest-provisioned, only that the named connectors already exist live
-  # (via `http-connectors/setup.sh`, still imperative). `type` is schema
-  # filler only, ignored for external entries.
+  # (provisioned by http-connectors's own `manifest.yaml` LibraryManifest).
+  # `type` is schema filler only, ignored for external entries.
   # ---------------------------------------------------------------------------
   connectors:
     - name: jsonplaceholder

@@ -84,7 +84,10 @@ async function stageResolveAgent(): Promise<void> {
     }
   }
   if (!agentId) {
-    err(`Agent '${AGENT_NAME}' not found. Run ./setup.sh first.`);
+    err(
+      `Agent '${AGENT_NAME}' not found. Apply manifest.yaml first ` +
+        `(yoizen manifests apply -f manifest.yaml --secrets-from-env).`
+    );
     process.exit(1);
   }
   log(`agent id=${agentId}`);

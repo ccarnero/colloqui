@@ -411,7 +411,7 @@ async function discoverChatIds(botToken: string): Promise<void> {
       );
     } else {
       warn(
-        "BRIDGE_RESTORE_WEBHOOK=0 — webhook left cleared; re-run telegram-transform-reply's setup.sh or set it again manually when done polling"
+        "BRIDGE_RESTORE_WEBHOOK=0 — webhook left cleared; call setWebhook manually to restore delivery (see integrations/channels/telegram-transform-reply/README.md 'Run / exercise'). Re-applying the manifest against the existing account does NOT re-register the webhook (self-registration runs only on channel-account creation); a manifest path exists only if you delete the channel account and re-apply."
       );
     }
   }
@@ -434,7 +434,7 @@ async function stageResolve(): Promise<void> {
   if (!TG_ACCOUNT_ID) {
     err("no active Telegram channel account found.");
     err(
-      "Provision one first:  (cd ../../../integrations/channels/telegram-transform-reply && TELEGRAM_BOT_TOKEN=... ./setup.sh)"
+      "Provision one first:  env 'telegram-bot-token=...' yoizen manifests apply -f integrations/channels/telegram-transform-reply/manifest.yaml --secrets-from-env"
     );
     err("or pin one with TG_ACCOUNT_ID=<id>.");
     process.exit(1);

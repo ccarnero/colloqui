@@ -102,19 +102,46 @@ env 'telegram-bot-token=<real-bot-token>' \
 Missing bindings fail fast, listing every missing variable name — `apply`
 never partially resolves secrets silently.
 
-### What `STANDBY.md` means
+### History: `STANDBY.md`
 
-A sample carrying a `STANDBY.md` at its root is **not** manifest-migrated:
-its resources exceed what manifest v1 can express (verified against the
-apply engine's writer code, not just the schema — see each `STANDBY.md` for
-the specific gap and file:line evidence). Its setup scripts stay untouched
-until the gap is closed. The companion SPEC extending manifest v1 with the
-missing kinds is
+All 12 samples are now manifest-migrated; none carry a `STANDBY.md` anymore.
+Earlier loops parked samples whose resources exceeded manifest v1
+(`STANDBY.md` + untouched setup scripts) until
 [`manual-loops/provisioning-manifest-gaps.md`](../manual-loops/provisioning-manifest-gaps.md)
-— it needs its own human approval before it runs.
+and its follow-ups (`-2.md`/`-3.md`) closed the gaps (`LibraryManifest`,
+skills, array `accountIds` substitution, and more).
 
-`channels/telegram-transform-reply/` is the one reference integration
-migrated so far; the other eleven samples are stand-by.
+### `kind: LibraryManifest`
+
+A channel-less, process-less manifest that provisions only shared library
+resources — connectors, mcpServers, hosted services, or system variables —
+for other manifests to reference via `external: true`. It waives the
+`IntegrationManifest`'s ">=1 inbound channel" and ">=1 process" structural
+rules, requiring instead ">=1 of connector/mcpServer/service/systemVariable"
+(`checkAtLeastOneLibraryResource`). Used by 5 samples: `http-connectors`,
+`mcp-connections`, `ai-agent-playground`, `ai-knowledge-base-agent`, and
+`ai-skill-support-agent` — see each sample's own `manifest.yaml` header
+comment for its specific kind-decision reasoning.
+
+### `skills`
+
+A manifest's `skills` section declares catalog skills (name + prompt/files),
+referenced from an agent's `profile.model_config.subagents[].catalog_skill_id`
+via a `skillRef` symbolic ref, resolved to the skill's real id at apply time.
+Skills are resolved/created BEFORE agents in `RESOURCE_KIND_ORDER`
+(`services/provisioning-service/src/modules/plan/domain/plan.interfaces.ts`),
+mirroring the existing `mcpServer`-before-`agent` ordering. See
+`ai-skill-support-agent/manifest.yaml` for a worked example.
+
+### Trigger pinning: array `accountIds` substitution
+
+A workflow trigger's `config.accountIds` accepts an ARRAY of `{channelRef:
+<name>}` entries, substituted element-wise to the real channel account id at
+apply time (`ARRAY_SUBSTITUTION_ALLOWLIST`,
+`services/provisioning-service/src/modules/apply/lib/array-substitution-allowlist.ts`
+— the plural sibling of the scalar `accountId`/`channelRef` mapping). Every
+migrated manifest pins its trigger to its own manifest-created channel this
+way, so no other workflow fires on that channel's traffic.
 
 ### Known caveat: Telegram webhook self-registration
 
@@ -133,7 +160,7 @@ account's `appSecret` from Postgres and calling `setWebhook` directly).
 ## Shared library
 
 `lib/resolve-env.sh` is a shared shell helper for resolving the dev-cluster environment
-that the samples' `setup.sh`/`run.sh` scripts source. It exists only for this tier —
+that the samples' `run.sh` drivers source. It exists only for this tier —
 see the no-shared-lib rule below for why `sdk/examples/` cannot depend on it.
 
 ## How this tier differs from the other two

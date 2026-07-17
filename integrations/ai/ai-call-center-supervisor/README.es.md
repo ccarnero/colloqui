@@ -24,11 +24,12 @@ provisioning es **declarativo**: un único [`manifest.yaml`](./manifest.yaml) ap
 > **Dependencia cruzada, `external: true`**: el canal de Telegram, propiedad de
 > [`telegram-transform-reply`](../../channels/telegram-transform-reply)'s `manifest.yaml`.
 
-## Desviación documentada (trigger sin pin)
+## El trigger está pineado al canal propio del sample
 
-Misma limitación que `ai-agent-triage`/`http-fanout-telegram`: la sustitución de refs simbólicos
-solo cubre la clave singular `accountId`, no el array plural `trigger.config.accountIds`. Dispara
-ante cualquier mensaje HTTP del tenant.
+El trigger está pineado a la cuenta HTTP propia de este manifest vía `trigger.config.accountIds:
+[{channelRef: ai-call-center-supervisor}]` — la sustitución de arreglo `accountIds`
+(`ARRAY_SUBSTITUTION_ALLOWLIST`). Ningún otro workflow disparado por HTTP dispara con el tráfico de
+esta instancia.
 
 ## Secretos (auth bearer del connector LLM)
 
@@ -69,4 +70,3 @@ AUTO-RESOLVED) unos segundos después.
   hosteado usa `{ name, value }` — solo strings planos (T05), `YOIZEN_SAMPLE` es un marcador de
   debug, no una credencial.
 - **Cold start**: `minScale: 0` puede hacer lento el primer `serviceCall`.
-- **Cruce de disparos** con otros samples HTTP sin pin.

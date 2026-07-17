@@ -68,4 +68,6 @@ mensaje FURIOSO y uno TRANQUILO. Esperá DMs de Telegram con el valor de `compan
 
 - `parse` devuelve SOLO `{ priority, summary }` — la decisión de ruteo queda en el lado derecho
   templado del `conditional` (el variable store), no en código.
-- **Cruce de disparos** con otros samples HTTP sin pin.
+- **El trigger está pineado** a la cuenta HTTP propia del sample vía `trigger.config.accountIds:
+  [{channelRef: ai-system-variables}]` (sustitución de arreglo `accountIds`) — ningún otro workflow
+  HTTP dispara con este tráfico.

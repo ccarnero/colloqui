@@ -34,16 +34,12 @@ vacío — una restricción previa a este loop que el gap 5 (T05) no levantó pe
 sección para los campos de escalado. Por eso esta env var **se omite** del manifest, no se
 aproxima — ver el comentario dedicado en `manifest.yaml` para la cita exacta del código.
 
-## Desviación documentada — trigger sin pin
+## El trigger está pineado al canal propio del sample
 
-El script eliminado fijaba (pin) el trigger a su propia instancia HTTP vía
-`config.accountIds: [<id>]` (`HOSTED_WORKFLOW_PIN=1` por defecto). La sustitución de refs
-simbólicas de manifest v1 solo cubre la clave SINGULAR `accountId` dentro de los argumentos de una
-acción (`SUBSTITUTION_ALLOWLIST`), no el arreglo PLURAL `trigger.config.accountIds` — la misma
-limitación que ya documenta el manifest de `telegram-transform-reply` para su propio trigger. Este
-workflow dispara con **cualquier** mensaje HTTP del tenant; si además corrés
-[`http-fanout-telegram`](../../channels/http-fanout-telegram) (también sin pin tras su propia
-migración), ambos van a disparar con el mismo mensaje.
+El trigger está pineado a la cuenta HTTP propia de este manifest vía `trigger.config.accountIds:
+[{channelRef: hosted-services-api}]` — la sustitución de arreglo `accountIds`
+(`ARRAY_SUBSTITUTION_ALLOWLIST`). Ningún otro workflow disparado por HTTP dispara con el tráfico de
+esta instancia.
 
 ## Aprovisionar
 
@@ -112,9 +108,6 @@ mismo chat.
   primera invocación.
 - **`registry-service` hardcodea un readiness probe en `/health` y `runAsUser: 1001`** — tu imagen
   debe soportar ambos, o la ruta puede devolver `502` mientras el Knative Service no está listo.
-- **Cruce con `http-fanout-telegram`.** Los workflows HTTP de ambos samples están sin pin (ver §
-  Desviación documentada). Para probar uno aislado, deshabilitá el workflow del otro desde el
-  admin-console, o simplemente no apliques ambos manifests en el mismo tenant a la vez.
 - **Las env vars no son provisionables** (ver § Gap documentado) — si tu propio hosted service
   NECESITA una env var real, este sample todavía no puede demostrar esa forma; seguí el backlog de
   rulings humanos de `manual-loops/provisioning-manifest-gaps.md`.

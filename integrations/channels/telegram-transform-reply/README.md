@@ -37,10 +37,10 @@ is **declarative**: a single [`manifest.yaml`](./manifest.yaml) applied through 
 3. **A secret binding** (`telegram-bot-token`, scope `channel:telegram-transform-reply-bot`) — the
    bot token's binding; its VALUE is provided via `--secrets-from-env` at apply time.
 
-> **Trigger scope note.** The old script pinned the trigger to a specific account id (`TG_PIN=1`).
-> A manifest cannot express a not-yet-created account id (manifest v1 has no manifest-time id
-> substitution), so the manifest uses the unpinned trigger: it fires on any Telegram message for
-> the tenant. In a single-Telegram-account tenant this is behaviorally equivalent.
+> **Trigger scope note.** The trigger is pinned to this manifest's own `telegram-transform-reply-bot`
+> account via `trigger.config.accountIds: [{channelRef: telegram-transform-reply-bot}]` — the
+> plural `accountIds` array substitution (`ARRAY_SUBSTITUTION_ALLOWLIST`). No other Telegram-
+> triggered workflow fires on this account's traffic.
 
 ## Message flow
 
@@ -218,7 +218,8 @@ If the trace shows a `received` row with no matching `send`, the workflow didn't
 
 ```bash
 auth "$GW/api/workflows" | jq '.[] | select(.name=="telegram-transform-reply") | {id, trigger, reply: (.actions[]|select(.name=="reply").args)}'
-# the manifest trigger is unpinned: trigger.config is {channels:["telegram"], providers:["telegram"]}
+# the trigger is pinned: trigger.config.accountIds resolves to this manifest's own
+# telegram-transform-reply-bot channel account id (channelRef array substitution)
 ```
 
 ### Trace a message across services

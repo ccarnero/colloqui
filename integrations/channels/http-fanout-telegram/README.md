@@ -1,15 +1,15 @@
 # http-fanout-telegram
 
-A workflow that, on **any message arriving over the HTTP channel**, fans out **three connector
-calls in parallel**, **joins** their responses, **POSTs** the result to the httpbin connector, and
-**DMs you a summary over Telegram**. It stitches together two other samples —
-[`http-connectors`](../../http/http-connectors) (the outbound connectors, still imperative —
-STAND-BY, see below) and [`telegram-transform-reply`](../telegram-transform-reply) (the Telegram
+A workflow that, on **a message arriving over its own dedicated HTTP channel instance**, fans out
+**three connector calls in parallel**, **joins** their responses, **POSTs** the result to the
+httpbin connector, and **DMs you a summary over Telegram**. It stitches together two other samples
+— [`http-connectors`](../../http/http-connectors) (the outbound connectors, a declarative
+`LibraryManifest`) and [`telegram-transform-reply`](../telegram-transform-reply) (the Telegram
 channel account) — into one end-to-end flow. Provisioning is **declarative**: a single
 [`manifest.yaml`](./manifest.yaml) applied through the `yoizen` CLI (no setup scripts).
 
 ```
-HTTP msg ─► trigger (message_received, channels:["http"])
+HTTP msg ─► trigger (message_received, channels:["http"], accountIds pinned to this sample's own channel)
               │
               ├── branch (PARALLEL) ──► getPost      endpointCall  jsonplaceholder GET /posts/1
               │                          getPokemon   endpointCall  pokeapi         GET /api/v2/pokemon/ditto
@@ -36,25 +36,20 @@ HTTP msg ─► trigger (message_received, channels:["http"])
 
 > **Cross-sample dependencies, both `external: true`** (resolved by NAME against LIVE platform
 > state, never created by this manifest — see the comments in `manifest.yaml`):
-> - The 4 connectors (`jsonplaceholder`/`pokeapi`/`catfacts`/`httpbin`) — owned by
->   [`http-connectors`](../../http/http-connectors), which is **STAND-BY** (its own migration is
->   escalated — see its `STANDBY.md` and this batch's report: manifest v1's
->   >=1-inbound-channel + >=1-process structural rule makes a connector-only manifest with no
->   channel/workflow of its own impossible to express). Run `(cd ../../http/http-connectors &&
->   ./setup.sh)` first — imperative, unchanged.
+> - The 4 connectors (`jsonplaceholder`/`pokeapi`/`catfacts`/`httpbin`) — provisioned by
+>   [`http-connectors`](../../http/http-connectors)'s own `manifest.yaml` (`kind: LibraryManifest`).
+>   Apply it first:
+>   `env 'httpbin-basic-auth-username=user' 'httpbin-basic-auth-password=passwd' yoizen manifests
+>   apply -f ../../http/http-connectors/manifest.yaml --secrets-from-env` (see its README.md).
 > - The Telegram channel — owned by
 >   [`telegram-transform-reply`](../telegram-transform-reply)'s `manifest.yaml`. Apply it first.
 
-## Documented deviation (trigger is unpinned)
+## Trigger is pinned to this sample's own channel
 
-The deleted `setup.ts` pinned this workflow's trigger to its own dedicated HTTP instance via
-`config.accountIds: [<id>]` (`FANOUT_PIN=1` default) so no OTHER HTTP-triggered workflow could fire
-it. Manifest v1's symbolic-ref substitution only covers the **singular** `accountId`
-action-argument key (`SUBSTITUTION_ALLOWLIST`), not the **plural** `trigger.config.accountIds`
-array — the same limitation the shipped `telegram-transform-reply/manifest.yaml` already documents
-for its own trigger. The trigger here fires on **any** HTTP message for the tenant. If you also run
-[`hosted-services-api`](../../http/hosted-services-api) (also unpinned after its own migration),
-**both** workflows fire on every inbound HTTP message — see § Troubleshooting.
+The trigger is pinned to this manifest's own `http-fanout-telegram` HTTP channel account via
+`trigger.config.accountIds: [{channelRef: http-fanout-telegram}]` — the plural `accountIds` array
+substitution (`ARRAY_SUBSTITUTION_ALLOWLIST`, `array-substitution-allowlist.ts`). No other
+HTTP-triggered workflow fires on this instance's traffic.
 
 ## Prerequisites
 
@@ -98,10 +93,11 @@ cd integrations/channels/http-fanout-telegram
 ./run.sh
 ```
 
-`run.sh` (`src/index.ts`) verifies (read-only) an active Telegram account and the workflow, then
-POSTs a test message through the sample's own ingest URL
-(`/api/webhooks/http/<tenant>/manifest:http-fanout-telegram`). It still shells out to
-`../../http/http-connectors/setup.sh` first (that sample is still imperative). Expect:
+`run.sh` (`src/index.ts`) verifies (read-only, via the SDK) that the four `http-connectors`
+connectors exist, an active Telegram account exists, and the workflow exists, then POSTs a test
+message through the sample's own ingest URL
+(`/api/webhooks/http/<tenant>/manifest:http-fanout-telegram`). It never provisions anything itself
+— apply both prerequisite manifests first (see § What `manifest.yaml` provisions above). Expect:
 
 ```
 Mensaje recibido: hola desde run.sh [...]
@@ -129,4 +125,3 @@ Dato gatuno: Cats sleep 70% of their lives.
 - **`endpointCall` activities run on `connector-runtime`**, a separate service registered on
   Temporal task queue `connector-runtime` — not in-process on `workflow-orchestrator`.
 - **The HTTP channel is ingest-only**, so Telegram is the reply path by design.
-- **Cross-firing with `hosted-services-api`** — see § Documented deviation above.

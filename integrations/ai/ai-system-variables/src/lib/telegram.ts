@@ -1,6 +1,6 @@
 /**
  * Telegram chat_id discovery (raw Telegram Bot API, not SDK-covered) — same
- * contract as ../../http-bridge/src/setup.ts's discoverChatIds, but resolves
+ * contract as sdk/examples/reference-pattern/src/setup.ts's discoverChatIds, but resolves
  * a SINGLE chat_id (this sample only ever notifies one recipient) instead of
  * a pair. Talks directly to api.telegram.org via fetch(); that's Telegram's
  * own Bot API, not part of @yoizen/platform-sdk.
@@ -104,7 +104,8 @@ export interface DiscoverChatIdOptions {
 
 /**
  * discoverChatId — calls Telegram's getUpdates with the bot's OWN token
- * (fetched from the platform, see stageResolve in setup.ts) to auto-fill
+ * (fetched from the platform, see stageResolve in
+ * sdk/examples/reference-pattern/src/setup.ts) to auto-fill
  * TELEGRAM_CHAT_ID ONLY when it is unset. An explicit env var always wins —
  * discovery only fills a gap. Safe to skip: on any failure (placeholder
  * token, no updates yet) it just warns and returns the input unchanged.
@@ -189,7 +190,7 @@ export async function discoverChatId(
       );
     } else {
       warn(
-        "SYSVARS_RESTORE_WEBHOOK=0 — webhook left cleared; re-run telegram-transform-reply's setup.sh or set it again manually when done polling"
+        "SYSVARS_RESTORE_WEBHOOK=0 — webhook left cleared; call setWebhook manually to restore delivery (see integrations/channels/telegram-transform-reply/README.md 'Run / exercise'). Re-applying the manifest against the existing account does NOT re-register the webhook (self-registration runs only on channel-account creation); a manifest path exists only if you delete the channel account and re-apply."
       );
     }
   }

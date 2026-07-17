@@ -1,6 +1,6 @@
 /**
  * Shared logging + small helpers for the ai-system-variables sample —
- * same conventions as ../../http-bridge/src/setup.ts (colored
+ * same conventions as sdk/examples/reference-pattern/src/setup.ts (colored
  * [INFO]/[STEP]/[WARN]/[ERR] lines, requireEnv(), fail()).
  */
 
