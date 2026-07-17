@@ -3,14 +3,15 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # Drives the mcp-repo-support-bot sample — SDK-powered via `@yoizen/platform-sdk`.
-# The actual provisioning + one-exchange drive logic lives in src/index.ts
-# (which defaults SIMULATE_INBOUND=1 and delegates to src/setup.ts's main());
-# this script only resolves the dev environment (via ../../lib/resolve-env.sh,
-# same as every other sample's run.sh) and execs the Node app.
+# Provisioning itself is now declarative (`manifest.yaml` +
+# `yoizen manifests apply`, see README.md); src/index.ts only VERIFIES the
+# already-provisioned MCP server, agents, and workflow, then (by default)
+# drives one synthetic Telegram exchange end-to-end. This script only
+# resolves the dev environment (via ../../lib/resolve-env.sh, same as every
+# other sample's run.sh) and execs the Node app.
 #
-# Without a real TELEGRAM_BOT_TOKEN the chain still executes (observable), only
-# the outbound Telegram reply 404s. Put a real token in ./.env (see env.example)
-# and re-run with RECREATE=1 for real delivery.
+# Prerequisite: `yoizen manifests apply -f manifest.yaml --secrets-from-env`
+# once first. This script never creates or modifies platform objects.
 . ../../lib/resolve-env.sh
 
 if ! command -v node >/dev/null 2>&1; then

@@ -3,10 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "mcp-repo-support-bot sample — a Telegram 'Repo Support Bot' that triages a question, calls DeepWiki via the mcpCall workflow action, summarizes the answer, and replies, all through @yoizen/platform-sdk.",
+  "description": "mcp-repo-support-bot sample driver — verifies the manifest-provisioned DeepWiki MCP server, agents, and workflow, then drives one synthetic Telegram exchange (triage -> mcpCall DeepWiki -> summarize -> reply) through @yoizen/platform-sdk.",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "setup": "tsx src/setup.ts"
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@yoizen/platform-sdk": "file:../../../sdk"

@@ -1,0 +1,302 @@
+apiVersion: yoizen.io/v1
+# KIND DECISION: this manifest declares a Telegram inbound channel account AND
+# a process (two agents + a workflow) — both `checkAtLeastOneInboundChannel`
+# and `checkAtLeastOneProcess` (validate-structural-rules.ts) are satisfied
+# without any waiver, so this is a plain `IntegrationManifest` (the default
+# kind) — no `kind: LibraryManifest` marker needed here, unlike
+# `mcp-connections`/`ai-agent-playground` (both channel-less libraries).
+kind: IntegrationManifest
+metadata:
+  name: mcp-repo-support-bot
+spec:
+  # ---------------------------------------------------------------------------
+  # DeepWiki MCP server — a REAL, public, no-auth MCP server (mirrors the
+  # deleted setup.ts's `buildMcpServerPayload()` verbatim). `authType: "none"`
+  # is expressed by simply OMITTING `auth` (mcpServerSchema's own documented
+  # default — see manifest.schema.ts's header comment on `mcpServerSchema`),
+  # so no secretRef/binding is needed for this resource, unlike
+  # mcp-connections's fake bearer-auth endpoint.
+  # ---------------------------------------------------------------------------
+  mcpServers:
+    - name: deepwiki
+      description: >-
+        DeepWiki public MCP server — answers questions about indexed GitHub
+        repos. Registered by integrations/mcp/mcp-repo-support-bot.
+      transport_type: http
+      url: https://mcp.deepwiki.com/mcp
+      enabled: true
+
+  # ---------------------------------------------------------------------------
+  # LLM connector — SAME naming convention as ai-agent-triage/ai-agent-
+  # playground (`sample-<provider>-llm`, here `sample-openai-llm`): the deleted
+  # setup.ts's own `AI_LLM_CONNECTOR_NAME` default, so this manifest
+  # reconciles the SAME live connector those two samples already provision
+  # when applied to the same tenant. T01 nested bearer secretRef auth
+  # (decision 3); `tags: [llm]` is the T07 batch B fidelity fix — agent-admin's
+  # credential resolver requires it on any adapter an agent's
+  # `model_config.llm.connectorId` points at.
+  # ---------------------------------------------------------------------------
+  connectors:
+    - name: sample-openai-llm
+      type: llm
+      config:
+        baseUrl: https://api.openai.com/v1
+        context: external
+      auth:
+        authType: bearer
+        bearerToken:
+          secretRef: mcp-repo-support-bot-openai-api-key
+      tags:
+        - llm
+
+  # ---------------------------------------------------------------------------
+  # Two agents — `profile` carries the passthrough fields agents-writer.ts
+  # recognizes (description/system_prompt/model_config/tools/channels),
+  # verbatim from the deleted setup.ts's `buildAgentPayload()`. Neither agent
+  # is wired to the MCP server directly (no `enabledMcpTools`/
+  # `toolDescriptionOverrides` — unlike mcp-connections): the deleted setup.ts
+  # never enabled MCP tools on an agent here, the workflow calls DeepWiki
+  # directly via the `mcpCall` action instead (see workflows: below).
+  # `model_config.llm.connectorId` is a T03 (gap 2) `{ connectorRef }`,
+  # resolved to the real connector-admin id at apply time.
+  # ---------------------------------------------------------------------------
+  agents:
+    - name: repo-support-triage
+      profile:
+        description: >-
+          Classifies whether an inbound message is a question about
+          vercel/next.js. Created by integrations/mcp/mcp-repo-support-bot.
+        system_prompt: >-
+          You are a triage classifier for a support bot dedicated to the
+          GitHub repository "vercel/next.js". For every user message, decide
+          whether it is a question ABOUT that repository (its code,
+          architecture, APIs, configuration, usage, behavior, or internals) or
+          something else (greetings, small talk, unrelated topics, other
+          repositories).
+          Reply ONLY with a compact single-line JSON object and nothing else —
+          no prose, no markdown, no code fences:
+          {"about_repo": true}  or  {"about_repo": false}
+          Rules: "about_repo" MUST be a JSON boolean (true/false). A genuine
+          technical or usage question about vercel/next.js is true. Anything
+          else is false.
+        model_config:
+          llm:
+            provider: openai
+            model: gpt-4o-mini
+            connectorId:
+              connectorRef: sample-openai-llm
+            temperature: 0.2
+            maxTokens: 50
+          subagents: []
+        tools: []
+        channels: []
+
+    - name: repo-support-summarizer
+      profile:
+        description: >-
+          Rewrites DeepWiki's technical answer about vercel/next.js into a
+          brief, friendly reply. Created by
+          integrations/mcp/mcp-repo-support-bot.
+        system_prompt: >-
+          You are a friendly support assistant for the GitHub repository
+          "vercel/next.js". You receive a user's question and a technical
+          answer retrieved from the repository's documentation. Rewrite the
+          technical answer as a brief, clear, friendly reply for the user (a
+          few short sentences, plain language, no markdown headers). Stay
+          faithful to the retrieved answer — do not invent facts. If the
+          retrieved answer is empty or unhelpful, say you could not find a
+          confident answer and suggest rephrasing.
+        model_config:
+          llm:
+            provider: openai
+            model: gpt-4o-mini
+            connectorId:
+              connectorRef: sample-openai-llm
+            temperature: 0.2
+            maxTokens: 400
+          subagents: []
+        tools: []
+        channels: []
+
+  # ---------------------------------------------------------------------------
+  # Telegram channel account — RECEIVE via the webhook secret channel-service
+  # auto-generates, SEND via the bot token. Mirrors
+  # telegram-transform-reply/manifest.yaml's channel block exactly: the bot
+  # token is the ONLY secret value, bound below and supplied at apply time
+  # from the same-named env var via `--secrets-from-env`. The apply engine
+  # derives externalId deterministically as `manifest:mcp-repo-support-bot`
+  # (channels-writer.ts).
+  # ---------------------------------------------------------------------------
+  channels:
+    - name: mcp-repo-support-bot
+      type: telegram
+      direction: inbound
+      secretRef: mcp-repo-support-bot-telegram-token
+
+  # ---------------------------------------------------------------------------
+  # The workflow — triage (agentCall) -> route (jsFunction, parses the strict
+  # JSON verdict) -> respond (conditional): about_repo branch runs mcpCall
+  # DeepWiki.ask_question -> extract (jsFunction, flattens the MCP result) ->
+  # summarize (agentCall) -> reply (channelSend); default branch is a polite
+  # decline. `agentId`/`serverId` are T03/T06 SUBSTITUTION_ALLOWLIST symbolic
+  # refs (`agentRef`/`mcpServerRef`); `accountId`/`channel`/`provider`/`to` in
+  # reply/decline are RUNTIME templates (`{{request...}}`) resolved by
+  # workflow-service per-request — they carry no manifest-time id, embedded
+  # verbatim from the deleted setup.ts's `buildWorkflowBody()` (same pattern
+  # as telegram-transform-reply's own `reply` action: replying to the SAME
+  # chat/account the message came from needs no symbolic ref).
+  #
+  # DEVIATION (mirrors ai-agent-triage/telegram-transform-reply exactly): the
+  # deleted setup.ts's default TG_PIN=1 pinned the trigger to the created
+  # account via `config.accountIds`, plural and not in
+  # SUBSTITUTION_ALLOWLIST — manifest v1 cannot express that pin (no
+  # manifest-time id exists to embed). The trigger below is unpinned: it fires
+  # on ANY Telegram message for the tenant (behaviorally equivalent in a
+  # single-Telegram-account tenant; see README § Troubleshooting for running
+  # alongside other unpinned Telegram-triggered samples).
+  # ---------------------------------------------------------------------------
+  workflows:
+    - name: mcp-repo-support-bot
+      definition:
+        application: samples
+        actions:
+          - name: triage
+            activity: agentCall
+            args:
+              agentId:
+                agentRef: repo-support-triage
+              message: "{{request.text}}"
+              conversationId: mcp-repo-support-bot
+              userId: "{{request.from}}"
+              channel: telegram
+          - name: route
+            activity: jsFunction
+            args:
+              code: |
+                (ctx) => {
+                  var triage = (ctx.results && ctx.results.triage) || {};
+                  var raw = (triage.data && typeof triage.data.reply === "string")
+                    ? triage.data.reply
+                    : "";
+
+                  var cleaned = raw.trim();
+                  var fence = cleaned.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+                  if (fence) cleaned = fence[1].trim();
+
+                  var parsed = null;
+                  try { parsed = JSON.parse(cleaned); } catch (e) { parsed = null; }
+
+                  var aboutRepo = !!(parsed && parsed.about_repo === true);
+                  return { about_repo: aboutRepo };
+                }
+          - name: respond
+            activity: conditional
+            branches:
+              - label: AboutRepo
+                condition:
+                  variable: results.route.about_repo
+                  comparator: eq
+                  value: "true"
+                actions:
+                  - name: askDeepwiki
+                    activity: mcpCall
+                    args:
+                      serverId:
+                        mcpServerRef: deepwiki
+                      toolName: ask_question
+                      params:
+                        repoName: vercel/next.js
+                        question: "{{request.text}}"
+                  - name: extract
+                    activity: jsFunction
+                    args:
+                      code: |
+                        (ctx) => {
+                          var call = (ctx.results && ctx.results.askDeepwiki) || {};
+                          var content = call.result;
+                          var text = "";
+
+                          if (typeof content === "string") {
+                            text = content;
+                          } else if (Array.isArray(content)) {
+                            text = content
+                              .map(function (block) {
+                                if (block && typeof block.text === "string") return block.text;
+                                if (typeof block === "string") return block;
+                                return "";
+                              })
+                              .filter(Boolean)
+                              .join("\n");
+                          } else if (content && typeof content === "object") {
+                            if (typeof content.text === "string") text = content.text;
+                            else text = JSON.stringify(content);
+                          }
+
+                          if (!text) text = "(no answer returned by DeepWiki)";
+                          return { answer: text, isError: call.isError === true };
+                        }
+                  - name: summarize
+                    activity: agentCall
+                    args:
+                      agentId:
+                        agentRef: repo-support-summarizer
+                      message: |-
+                        User question: {{request.text}}
+
+                        Technical answer retrieved from the repository docs:
+                        {{results.extract.answer}}
+
+                        Rewrite the technical answer as a brief, friendly reply for the user.
+                      conversationId: mcp-repo-support-bot
+                      userId: "{{request.from}}"
+                      channel: telegram
+                  - name: reply
+                    activity: channelSend
+                    args:
+                      accountId: "{{request.envelope.accountId}}"
+                      channel: "{{request.channel}}"
+                      provider: "{{request.provider}}"
+                      to: "{{request.from}}"
+                      type: text
+                      text: "{{results.summarize.data.reply}}"
+            default:
+              - name: decline
+                activity: channelSend
+                args:
+                  accountId: "{{request.envelope.accountId}}"
+                  channel: "{{request.channel}}"
+                  provider: "{{request.provider}}"
+                  to: "{{request.from}}"
+                  type: text
+                  text: >-
+                    I only answer questions about the vercel/next.js
+                    repository. Ask me about its code, architecture,
+                    configuration, or usage.
+        trigger:
+          type: message_received
+          mode: shared
+          config:
+            channels:
+              - telegram
+            providers:
+              - telegram
+
+  # ---------------------------------------------------------------------------
+  # Secrets. Binding NAMEs are the env vars `--secrets-from-env` reads VALUEs
+  # from (no naming transform — decision 7). Both map to REAL credentials for
+  # this sample (unlike mcp-connections's fake-endpoint placeholder token):
+  #   - `mcp-repo-support-bot-openai-api-key` -> connector `bearerToken` ->
+  #     a real OpenAI API key (both agents need a working LLM).
+  #   - `mcp-repo-support-bot-telegram-token` -> channel bot token -> a real
+  #     @BotFather token for outbound delivery (inbound/observing an execution
+  #     still works with any non-empty placeholder value, per README).
+  # ---------------------------------------------------------------------------
+  secrets:
+    - name: mcp-repo-support-bot-openai-api-key
+      scope:
+        kind: connector
+        owner: sample-openai-llm
+    - name: mcp-repo-support-bot-telegram-token
+      scope:
+        kind: channel
+        owner: mcp-repo-support-bot
