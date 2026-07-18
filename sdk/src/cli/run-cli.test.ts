@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { ConflictError } from "../domain/errors.js";
 import { CliError } from "./cli-error.js";
 import { runCli } from "./run-cli.js";
 
@@ -274,6 +275,106 @@ test("runCli() 'secrets put' happy path resolves the value from env and never pr
   assert.equal(calls[0]!.value, "sk-super-secret");
   const allOutput = [...stdout.lines, ...stderr.lines].join("\n");
   assert.doesNotMatch(allOutput, /sk-super-secret/);
+});
+
+test("runCli() 'manifests apply' failure prints the server's structured apply_failed detail, not just the generic wrapper message (regression: apply used to swallow the server's error detail)", async () => {
+  const stderr = collector();
+  const client = fakeClient({
+    apply: async () => {
+      // True apply 409 body from the live repro: the WORKFLOW trips on the
+      // unresolved connectorRef, with `substitute-symbolic-refs.ts`'s real
+      // message format (NOT the plan-only `unresolvable_external_ref` text,
+      // which apply's 409 never carries).
+      throw new ConflictError("request failed: conflict", {
+        details: {
+          httpStatus: 409,
+          body: {
+            error: {
+              kind: "apply_failed",
+              manifestName: "http-fanout-telegram",
+              applied: [
+                {
+                  kind: "channel",
+                  name: "http-fanout-telegram",
+                  verdict: "noop",
+                },
+                { kind: "connector", name: "pokeapi", verdict: "noop" },
+                {
+                  kind: "systemVariable",
+                  name: "http-fanout-telegram-chat-id",
+                  verdict: "noop",
+                },
+              ],
+              pending: [],
+              failure: {
+                kind: "unresolved_symbolic_ref",
+                resourceKind: "workflow",
+                resourceName: "http-fanout-telegram",
+                message:
+                  "workflow 'http-fanout-telegram' at definition.actions[0].catfacts[0].args.adapterId references unresolved connectorRef 'catfacts' — no real id available for it (never created/resolved, or a dependency-order gap)",
+              },
+              durationMs: 3,
+            },
+          },
+        },
+      });
+    },
+  });
+
+  const exitCode = await runCli({
+    argv: ["manifests", "apply", "-f", "irrelevant.yaml"],
+    client: client as never,
+    readManifest: () => ({
+      ok: true,
+      value: { metadata: { name: "http-fanout-telegram" } },
+    }),
+    stdout: () => {},
+    stderr: stderr.fn,
+  });
+
+  assert.equal(exitCode, 1);
+  const output = stderr.lines.join("\n");
+  assert.match(output, /apply request failed for 'http-fanout-telegram'/);
+  assert.match(output, /unresolved_symbolic_ref/);
+  assert.match(output, /workflow\/http-fanout-telegram/);
+  assert.match(output, /references unresolved connectorRef 'catfacts'/);
+  assert.match(output, /applied=3 pending=0/);
+  assert.match(output, /manifests plan -f <file>/);
+});
+
+test("runCli() 'manifests apply' failure prints a cycle_detected failure.kind body", async () => {
+  const stderr = collector();
+  const client = fakeClient({
+    apply: async () => {
+      throw new ConflictError("request failed: conflict", {
+        details: {
+          httpStatus: 409,
+          body: {
+            error: {
+              kind: "cycle_detected",
+              cycle: ["connector:a", "agent:b", "connector:a"],
+              message: "dependency cycle detected",
+            },
+          },
+        },
+      });
+    },
+  });
+
+  const exitCode = await runCli({
+    argv: ["manifests", "apply", "-f", "irrelevant.yaml"],
+    client: client as never,
+    readManifest: () => ({
+      ok: true,
+      value: { metadata: { name: "cyclic-manifest" } },
+    }),
+    stdout: () => {},
+    stderr: stderr.fn,
+  });
+
+  assert.equal(exitCode, 1);
+  const output = stderr.lines.join("\n");
+  assert.match(output, /cycle detected: connector:a -> agent:b -> connector:a/);
 });
 
 test("runCli() reports a clear error for an unknown command", async () => {

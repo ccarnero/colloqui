@@ -3,6 +3,7 @@ import type { Client } from "../infrastructure/create-client.js";
 import { runApplyCommand } from "./commands/apply-command.js";
 import { runPlanCommand } from "./commands/plan-command.js";
 import { runValidateCommand } from "./commands/validate-command.js";
+import { formatErrorDetail } from "./format-error-detail.js";
 import { formatVerdictTable } from "./format-verdict-table.js";
 import type { readManifestFile } from "./read-manifest-file.js";
 
@@ -93,6 +94,9 @@ export async function handleManifestsCommand({
     const result = await runPlanCommand({ client, manifest, log: stderr });
     if (!result.ok) {
       stderr(`yoizen manifests plan: ${result.error.message}`);
+      for (const line of formatErrorDetail(result.error)) {
+        stderr(line);
+      }
       return 1;
     }
     stdout(
@@ -127,6 +131,9 @@ export async function handleManifestsCommand({
   });
   if (!result.ok) {
     stderr(`yoizen manifests apply: ${result.error.message}`);
+    for (const line of formatErrorDetail(result.error)) {
+      stderr(line);
+    }
     return 1;
   }
   stdout(
