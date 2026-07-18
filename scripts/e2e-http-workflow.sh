@@ -4,15 +4,65 @@ set -euo pipefail
 # End-to-end check of the http-channel → workflow trigger → jsFunction chain:
 #
 #   1. Login as tenant admin (acme by default)
-#   2. Ensure a fresh http channel account (delete + recreate so the
-#      auto-generated appSecret is always known to this run)
-#   3. Converge the e2e workflow definition (message_received trigger on
-#      channels:["http"] and — T08 — config.accountIds scoped to THIS run's
-#      account so the shared trigger no longer fans out onto every http
-#      message of the tenant; a jsFunction that console.logs + a T06
-#      endpointCall probe). Converged every run because the per-run account id
-#      always changes; an EXIT trap tears the definitions/account/agent down
-#      afterwards (skipped when E2E_KEEP=1).
+#   2/3/3a/3b. PROVISIONING IS NOW DECLARATIVE (T2,
+#      manual-loops/provisioning-manifest-gaps-3.md): a single IntegrationManifest
+#      (PUT -> plan -> apply against provisioning-service, via the gateway's
+#      T07 proxy routes, same authenticated `api()`/`api_status()` transport
+#      every other stage already uses) replaces the old imperative
+#      create-http-account / converge-workflow / ensure-agent / converge-
+#      agent-workflow calls. The manifest declares:
+#        - one `http` channel (per-run unique NAME so channel-service's
+#          deterministic `manifest:<name>` externalId is unique too — the
+#          NAME embeds this run's nonce, mirroring the old
+#          `ACCOUNT_EXTERNAL_PREFIX-${NONCE}` externalId scheme),
+#        - the echo agent (FIXED name, reused/no-op across runs — same
+#          identity as before),
+#        - both e2e workflows (`e2e-http-log`, `e2e-http-agent`), each with a
+#          `message_received` trigger whose `config.accountIds` is the ARRAY
+#          `channelRef` substitution (`[{ channelRef: <this run's channel
+#          name> }]`) pinning it to THIS run's account, plus (workflow 1) a
+#          jsFunction that console.logs and a T06 endpointCall probe, and
+#          (workflow 2) an agentCall bound to the echo agent via the SCALAR
+#          `agentRef` substitution.
+#      DEVIATION (found during migration, reported): workflow-service's own
+#      `workflowComparable` (T03) is existence-only — the apply engine's
+#      `update()` path for a workflow is a documented no-op stub
+#      (`workflows-writer.ts`), so re-applying the SAME workflow name would
+#      NEVER re-point a stale trigger's `accountIds` at a new run's account.
+#      Unlike the channel, the two e2e workflow NAMES therefore also embed
+#      this run's nonce — every run creates a brand-new workflow pinned from
+#      birth to that same run's fresh channel, rather than relying on an
+#      update path that cannot exist for workflows today. The channel-account
+#      lookup for the appSecret (below) and the workflow enable/disable
+#      toggle (stage 6/8) are UNCHANGED by this — they operate on whatever
+#      externalId the apply response reports for this run's resources.
+#      The endpointCall's `adapterId` stays the RAW pre-existing adapter id
+#      (E2E_ENDPOINT_ADAPTER_ID) exactly as before — it is a PRE-EXISTING
+#      connector-admin adapter, not manifest-created, so it is never wrapped
+#      in a `{ connectorRef: ... }` ref-object. Verified in
+#      `substitute-symbolic-refs.ts` (services/provisioning-service/src/
+#      modules/apply/lib/substitute-symbolic-refs.ts:258-303,360-362): `args.
+#      adapterId` IS in `SUBSTITUTION_ALLOWLIST` (connectorRef), but the
+#      walker only substitutes a value shaped `{ connectorRef: <name> }`
+#      (`readRecognizedRefObject`); a plain string at that same allowlisted
+#      key is "NOT a recognized single-key ref-object ... legitimately passes
+#      through untouched" and falls through to the primitive case, returned
+#      byte-identical. So a raw UUID string at an allowlisted key is safe by
+#      design, not merely by accident.
+#      The manifest apply engine never returns the channel account's
+#      `appSecret` (channels-writer.ts intentionally discards everything but
+#      `externalId`) — verified live that `GET /api/channels/accounts/:id`
+#      (via the gateway) returns the SAME `appSecret` the create response
+#      does (channel-service's `AccountsService`/`AccountsController` apply no
+#      masking), so it is fetched with one extra authenticated GET right
+#      after apply, using the channel's externalId from the apply response.
+#      An EXIT trap still tears the manifest-declared channel/workflows/agent
+#      down afterwards (skipped when E2E_KEEP=1) — see `cleanup_e2e_resources`.
+#      Agent PUBLISH is a runtime activation step, not a declarative manifest
+#      property (the manifest schema has no such field), so it stays an
+#      explicit imperative POST after apply, exactly like the workflow
+#      enable/disable toggle (stage 6/8) stays imperative — both are runtime
+#      state, not manifest-declared shape.
 #   4. POST a webhook message carrying a unique nonce
 #   5. Poll the workflow executions API until an execution for this run
 #      completes, then assert the nonce appeared in workflow-worker logs
@@ -35,8 +85,8 @@ set -euo pipefail
 #      duration_ms > 0 — every workflow run now emits `execution_started`
 #      (T02, manual-loops/workflow-step-events.md), so the workflow's own
 #      execution_started/execution_completed pair is asserted directly and no
-#      longer needs the agent-path's span as a stand-in. Stages 3a/3b still
-#      idempotently provision an echo agent + a second workflow with an
+#      longer needs the agent-path's span as a stand-in. The SAME manifest
+#      apply also declares the echo agent + a second workflow with an
 #      `agentCall` action sharing the same http trigger — kept as separate,
 #      still-valid coverage for the agent-execution span family, not removed.
 #  10b. Verify the T03 step-event contract on the same chain (T05,
@@ -93,8 +143,10 @@ set -euo pipefail
 #      fix, per T06.
 #
 # Exit code 0 = full chain verified; 1 = any stage failed. The workflow is
-# always left ENABLED on exit (trap), even on failure, so a failed run never
-# poisons subsequent runs that reuse the same 'e2e-http-log' workflow.
+# always left ENABLED on exit (trap), even on failure — moot for a future
+# run (each run's workflow is a fresh manifest-applied resource, see the
+# provisioning section above), but still correct for anyone inspecting a
+# kept run (E2E_KEEP=1) or a run this trap is unwinding mid-flight.
 #
 # Designed to be the executable foundation for future e2e suites: each stage
 # is a function with a single assertion point.
@@ -105,16 +157,37 @@ HOST_HEADER="${E2E_HOST_HEADER:-api-gateway.platform-services-dev.dev.local}"
 TENANT="${E2E_TENANT:-acme}"
 EMAIL="${E2E_EMAIL:-yclawd@demo.io}"
 PASSWORD="${E2E_PASSWORD:-admin123}"
-# Prefix shared by every run's account; the per-run externalId appends the
-# unique nonce so a fresh create can never collide on the (channel,
-# external_id) unique constraint, regardless of delete timing.
-ACCOUNT_EXTERNAL_PREFIX="e2e-http-workflow"
-WORKFLOW_NAME="e2e-http-log"
-# Stage 3a/3b: idempotent echo agent + agent-calling workflow sharing the
-# same http trigger, so the happy-path run also produces a real runtime
-# execution (agent-ai-service) whose span has duration_ms > 0 (see stage 10).
+# T2 (manual-loops/provisioning-manifest-gaps-3.md): provisioning is now one
+# IntegrationManifest (put+plan+apply against provisioning-service). The
+# manifest's own name stays fixed across runs (its revision number just
+# increments); the CHANNEL name embeds this run's nonce so channel-service's
+# deterministic `manifest:<name>` externalId can never collide on the
+# (channel, external_id) unique constraint (mirrors the old
+# `ACCOUNT_EXTERNAL_PREFIX-${NONCE}` externalId scheme). `ACCOUNT_EXTERNAL_PREFIX`
+# is kept as the deterministic PREFIX of that derived externalId (see
+# channels-writer.ts) so `cleanup_e2e_resources`' stale-account sweep still
+# matches by prefix.
+MANIFEST_NAME="e2e-http-workflow"
+ACCOUNT_EXTERNAL_PREFIX="manifest:e2e-http-workflow"
+CHANNEL_NAME_PREFIX="e2e-http-workflow"
+# DEVIATION (found during migration, reported in the header comment above):
+# workflow-service's `workflowComparable` is existence-only in the apply
+# engine (`workflows-writer.ts`'s `update()` is a documented no-op stub), so
+# a workflow name reused across runs could never have its trigger
+# `accountIds` re-pointed at a new run's account via manifest apply. Both e2e
+# workflow NAMES therefore also embed this run's nonce — a fresh
+# manifest-created workflow every run, pinned from birth to that same run's
+# channel — so `cleanup_e2e_resources` now sweeps workflows by NAME PREFIX
+# (like the channel account) instead of the old fixed-name exact match.
+WORKFLOW_NAME_PREFIX="e2e-http-log"
+# The echo agent + agent-calling workflow sharing the same http trigger, so
+# the happy-path run also produces a real runtime execution (agent-ai-service)
+# whose span has duration_ms > 0 (see stage 10). The agent's identity stays
+# FIXED across runs (reused/no-op'd by the manifest apply engine, exactly
+# like before); only the agent-calling WORKFLOW'S name embeds the nonce, for
+# the same reason as e2e-http-log above.
 AGENT_NAME="e2e-http-agent-echo"
-AGENT_WORKFLOW_NAME="e2e-http-agent"
+AGENT_WORKFLOW_NAME_PREFIX="e2e-http-agentflow"
 # T06 (manual-loops/connector-trace-linking.md): the pokeapi adapter — a
 # harmless GET, already registered in the dev cluster — used by stage 3's
 # 'probeEndpoint' endpointCall action so the e2e suite finally exercises the
@@ -185,13 +258,19 @@ err()  { echo -e "${RED}[ERR]${NC}   $*" >&2; }
 NONCE="e2e-$(date +%s)-$RANDOM"
 NONCE_DISABLED="e2e-disabled-$(date +%s)-$RANDOM"
 NONCE_REENABLED="e2e-reenabled-$(date +%s)-$RANDOM"
+# T2: per-run manifest resource names — see the provisioning section of the
+# header comment for why the channel AND both workflow names embed NONCE
+# (the agent's name stays the fixed AGENT_NAME above, reused across runs).
+CHANNEL_NAME="${CHANNEL_NAME_PREFIX}-${NONCE}"
+WORKFLOW_NAME="${WORKFLOW_NAME_PREFIX}-${NONCE}"
+AGENT_WORKFLOW_NAME="${AGENT_WORKFLOW_NAME_PREFIX}-${NONCE}"
 TOKEN=""
 APP_SECRET=""
 # T08 (manual-loops/connector-trace-linking.md): the http account created by
-# stage 2 each run. Its id is (a) the value the webhook envelope carries as
-# `accountId`, which the account-scoped triggers filter on, and (b) captured so
-# the EXIT cleanup can delete exactly this run's account. Was previously
-# discarded — only appSecret was kept.
+# the manifest apply each run. Its id is (a) the value the webhook envelope
+# carries as `accountId`, which the account-scoped triggers filter on, and
+# (b) captured so the EXIT cleanup can delete exactly this run's account.
+# Was previously discarded — only appSecret was kept.
 ACCOUNT_ID=""
 WORKFLOW_ID=""
 AGENT_ID=""
@@ -229,26 +308,30 @@ cleanup_e2e_resources() {
   # noise). Deletes: both e2e workflow definitions, this run's http account
   # (plus any e2e-prefixed stragglers), and the shared echo agent. Every call
   # is `|| true` — cleanup NEVER changes the run's exit status. `E2E_KEEP=1`
-  # skips it entirely (logged), leaving the converged definitions in place for
-  # inspection; the stage-2 stale sweep then reclaims them on the next run.
+  # skips it entirely (logged), leaving this run's manifest-applied
+  # resources in place for inspection; a future run's own per-run-unique
+  # channel/workflow names never collide with them regardless (T2), and this
+  # SAME sweep reclaims them (by prefix) the next time it runs uncached.
   if [[ "${E2E_KEEP:-0}" == "1" ]]; then
     warn "Cleanup: E2E_KEEP=1 set — leaving e2e workflows/account/echo agent in place"
     return 0
   fi
   log "Cleanup: removing this run's e2e workflows, http account, and echo agent (best-effort)"
   local id
-  # Workflow definitions — DELETE /api/workflows/:id (same endpoint the T06
-  # PUT-fallback and stage-2 sweep already use). Resolved by name so an early
-  # failure (ids never captured) is still cleaned.
+  # Workflow definitions — DELETE /api/workflows/:id (same endpoint apply's
+  # own workflow-writer POST uses). T2: matched by NAME PREFIX, not exact
+  # name — every run's manifest-applied workflows carry a per-run nonce
+  # suffix (see the header comment's DEVIATION note on workflowComparable
+  # being existence-only), so this also reclaims any e2e-prefixed stragglers
+  # left by a crashed prior run, same as the http-account sweep below.
   local wf_ids
   wf_ids="$(api GET /api/workflows 2>/dev/null \
-    | jq -r ".[] | select(.name == \"${WORKFLOW_NAME}\" or .name == \"${AGENT_WORKFLOW_NAME}\") | .id" 2>/dev/null || true)"
+    | jq -r ".[] | select(.name | startswith(\"${WORKFLOW_NAME_PREFIX}\") or startswith(\"${AGENT_WORKFLOW_NAME_PREFIX}\")) | .id" 2>/dev/null || true)"
   for id in $wf_ids; do
     cleanup_delete "workflow" "/api/workflows/${id}" "${id}"
   done
-  # Http account(s) — DELETE /api/channels/accounts/:id (same endpoint the
-  # stage-2 stale sweep uses). Covers this run's account and any e2e-prefixed
-  # leftovers from crashed runs.
+  # Http account(s) — DELETE /api/channels/accounts/:id. Covers this run's
+  # manifest-applied account and any e2e-prefixed leftovers from crashed runs.
   local acc_ids
   acc_ids="$(api GET "/api/channels/accounts?channel=http" 2>/dev/null \
     | jq -r ".[] | select(.externalId | startswith(\"${ACCOUNT_EXTERNAL_PREFIX}\")) | .id" 2>/dev/null || true)"
@@ -373,244 +456,202 @@ stage_login() {
   fi
 }
 
-stage_ensure_account() {
-  # A fresh http account is created per run with a unique externalId. The
-  # appSecret (webhook token) is only returned at creation time — there is no
-  # http-secret rotation endpoint and it is masked everywhere else — so each
-  # run must mint its own. The trigger matches by channel/provider, not by
-  # accountId, so a new account each run still drives the same workflow.
-  local external_id="${ACCOUNT_EXTERNAL_PREFIX}-${NONCE}"
-  log "Stage 2: create http channel account (externalId=${external_id})"
+e2e_manifest_body() {
+  # T2 (manual-loops/provisioning-manifest-gaps-3.md): the ONE
+  # IntegrationManifest that replaces every imperative create this section
+  # used to make (http channel account, echo agent, both e2e workflow
+  # definitions) — see the header comment's provisioning section for the
+  # full rationale, including the workflowComparable-existence-only finding
+  # that forces both workflow NAMES (not just their trigger config) to carry
+  # this run's nonce.
+  #
+  # `probeEndpoint.args.adapterId` is the RAW pre-existing adapter id
+  # (E2E_ENDPOINT_ADAPTER_ID) — never a `{ connectorRef: ... }` ref-object,
+  # because this adapter is NOT manifest-created (see header comment for the
+  # substitute-symbolic-refs.ts walker evidence that a raw string at this
+  # allowlisted key passes through untouched).
+  cat <<JSON
+{
+  "apiVersion": "yoizen.io/v1",
+  "kind": "IntegrationManifest",
+  "metadata": { "name": "${MANIFEST_NAME}" },
+  "spec": {
+    "channels": [
+      { "name": "${CHANNEL_NAME}", "type": "http", "direction": "inbound" }
+    ],
+    "agents": [
+      {
+        "name": "${AGENT_NAME}",
+        "profile": {
+          "system_prompt": "You are the e2e echo agent. Echo the user's message back verbatim.",
+          "model_config": { "provider": "mock", "model": "echo" }
+        }
+      }
+    ],
+    "workflows": [
+      {
+        "name": "${WORKFLOW_NAME}",
+        "definition": {
+          "application": "e2e",
+          "actions": [
+            {
+              "name": "logMessage",
+              "activity": "jsFunction",
+              "args": {
+                "code": "(ctx) => { console.log('[e2e-http-log]', ctx.request.from, ctx.request.text); return ctx.request.text; }"
+              }
+            },
+            {
+              "name": "probeEndpoint",
+              "activity": "endpointCall",
+              "args": {
+                "adapterId": "${ENDPOINT_ADAPTER_ID}",
+                "method": "GET",
+                "url": "/api/v2/pokemon/ditto"
+              }
+            }
+          ],
+          "trigger": {
+            "type": "message_received",
+            "mode": "shared",
+            "config": {
+              "channels": ["http"],
+              "providers": ["http"],
+              "accountIds": [ { "channelRef": "${CHANNEL_NAME}" } ]
+            }
+          }
+        }
+      },
+      {
+        "name": "${AGENT_WORKFLOW_NAME}",
+        "definition": {
+          "application": "e2e",
+          "actions": [
+            {
+              "name": "callAgent",
+              "activity": "agentCall",
+              "args": {
+                "agentId": { "agentRef": "${AGENT_NAME}" },
+                "message": "{{request.text}}"
+              }
+            }
+          ],
+          "trigger": {
+            "type": "message_received",
+            "mode": "shared",
+            "config": {
+              "channels": ["http"],
+              "providers": ["http"],
+              "accountIds": [ { "channelRef": "${CHANNEL_NAME}" } ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}
+JSON
+}
 
-  # Best-effort hygiene: remove accounts from previous runs. Failures here are
-  # non-fatal — the unique externalId above guarantees the create won't collide.
-  # NOTE the '{}' body on DELETE: api() always sets
-  # Content-Type: application/json, so an empty-body DELETE 400s at the gateway
-  # ("Body cannot be empty ...") — this sweep silently no-op'd for exactly that
-  # reason before T08 (accounts piled up run over run). '{}' fixes it.
-  local stale
-  stale="$(api GET "/api/channels/accounts?channel=http" \
-    | jq -r ".[] | select(.externalId | startswith(\"${ACCOUNT_EXTERNAL_PREFIX}\")) | .id")"
-  for id in $stale; do
-    api DELETE "/api/channels/accounts/${id}" '{}' >/dev/null 2>&1 || true
-  done
+stage_apply_manifest() {
+  # Stage 2/3/3a/3b (T2): PUT the manifest -> plan (log-only: verdicts
+  # legitimately vary run to run, channel/workflows always 'create', agent
+  # 'create' on the very first run and 'noop' every run after) -> apply.
+  # Talks to provisioning-service via the gateway's T07 proxy routes
+  # (/api/provisioning/manifests/...), reusing the SAME authenticated
+  # api()/api_status() transport every other stage in this script already
+  # uses — no new curl idiom, no direct-ingress bypass.
+  log "Stage 2/3: PUT manifest '${MANIFEST_NAME}' (channel='${CHANNEL_NAME}', agent='${AGENT_NAME}', workflows=['${WORKFLOW_NAME}','${AGENT_WORKFLOW_NAME}'])"
+  local body put_resp put_revision
+  body="$(e2e_manifest_body)"
+  put_resp="$(api PUT "/api/provisioning/manifests/${MANIFEST_NAME}" "$body")"
+  put_revision="$(echo "$put_resp" | jq -r '.revision // empty')"
+  if [[ -z "$put_revision" ]]; then
+    err "Manifest PUT did not return a revision: $put_resp"
+    return 1
+  fi
+  log "Manifest '${MANIFEST_NAME}' PUT -> revision ${put_revision}"
 
+  log "Stage 2/3: POST plan (log-only — verdicts legitimately vary run to run)"
+  local plan_resp
+  # '{}' body: api() always sets Content-Type: application/json, so an
+  # empty-body POST 400s at the gateway ("Body cannot be empty ..."), same
+  # gotcha every DELETE call in this script already works around.
+  plan_resp="$(api POST "/api/provisioning/manifests/${MANIFEST_NAME}/plan" '{}')"
+  log "Plan verdicts: $(echo "$plan_resp" | jq -c '[.resources[] | {kind, name, verdict}]')"
+
+  log "Stage 2/3: POST apply"
+  local apply_resp applied_count
+  apply_resp="$(api POST "/api/provisioning/manifests/${MANIFEST_NAME}/apply" '{}')"
+  applied_count="$(echo "$apply_resp" | jq -r '.appliedCount // empty')"
+  if [[ -z "$applied_count" ]]; then
+    err "Manifest apply failed or returned no appliedCount: $apply_resp"
+    return 1
+  fi
+  log "Manifest applied: appliedCount=${applied_count} noopCount=$(echo "$apply_resp" | jq -r '.noopCount // 0')"
+
+  # T08: accountId — see this var's declaration comment above.
+  ACCOUNT_ID="$(echo "$apply_resp" | jq -r --arg n "$CHANNEL_NAME" '.resources[] | select(.name == $n) | .externalId')"
+  AGENT_ID="$(echo "$apply_resp" | jq -r --arg n "$AGENT_NAME" '.resources[] | select(.name == $n) | .externalId')"
+  WORKFLOW_ID="$(echo "$apply_resp" | jq -r --arg n "$WORKFLOW_NAME" '.resources[] | select(.name == $n) | .externalId')"
+  AGENT_WORKFLOW_ID="$(echo "$apply_resp" | jq -r --arg n "$AGENT_WORKFLOW_NAME" '.resources[] | select(.name == $n) | .externalId')"
+  if [[ -z "$ACCOUNT_ID" || -z "$AGENT_ID" || -z "$WORKFLOW_ID" || -z "$AGENT_WORKFLOW_ID" ]]; then
+    err "Manifest apply response missing an expected resource externalId (channel=${ACCOUNT_ID:-<empty>} agent=${AGENT_ID:-<empty>} workflow=${WORKFLOW_ID:-<empty>} agentWorkflow=${AGENT_WORKFLOW_ID:-<empty>}): $apply_resp"
+    return 1
+  fi
+  log "Resolved externalIds: channel=${ACCOUNT_ID} agent=${AGENT_ID} workflow=${WORKFLOW_ID} agentWorkflow=${AGENT_WORKFLOW_ID}"
+}
+
+stage_fetch_channel_secret() {
+  # The manifest apply engine never returns appSecret (channels-writer.ts
+  # intentionally discards everything but externalId — it is not a
+  # declarative manifest-schema field, and the T05 secrets broker only
+  # resolves secretRef-declared VALUES the manifest supplies, never
+  # server-generated ones). But GET /api/channels/accounts/:id (via the
+  # gateway) DOES return the SAME appSecret the create response would have —
+  # verified live: channel-service's AccountsService/AccountsController apply
+  # no masking on read — so one extra authenticated GET recovers it using the
+  # channel's externalId from stage_apply_manifest.
+  log "Stage 2/3: fetch appSecret for channel account ${ACCOUNT_ID}"
   local resp
-  resp="$(api POST /api/channels/accounts \
-    "{\"channel\":\"http\",\"provider\":\"http\",\"name\":\"E2E HTTP Ingest\",\"externalId\":\"${external_id}\",\"accessToken\":\"placeholder\"}")"
+  resp="$(api GET "/api/channels/accounts/${ACCOUNT_ID}")"
   APP_SECRET="$(echo "$resp" | jq -r '.appSecret // empty')"
   if [[ -z "$APP_SECRET" ]]; then
-    err "Account creation did not return appSecret: $resp"
+    err "GET /api/channels/accounts/${ACCOUNT_ID} did not return appSecret: $resp"
     return 1
   fi
-  # T08: capture the account id — it is the `accountId` the ingress stamps on
-  # every message envelope (payload.accountId), which the account-scoped
-  # triggers (stages 3/3b) filter on, and the target of the EXIT cleanup.
-  ACCOUNT_ID="$(echo "$resp" | jq -r '.id // empty')"
-  if [[ -z "$ACCOUNT_ID" ]]; then
-    err "Account creation did not return id: $resp"
-    return 1
-  fi
-  log "Account created: ${ACCOUNT_ID} (externalId=${external_id})"
 }
 
-e2e_log_workflow_body() {
-  # T06/T08: the canonical '${WORKFLOW_NAME}' definition — two actions
-  # (jsFunction 'logMessage' + endpointCall 'probeEndpoint' on the pokeapi
-  # adapter, T06) and an ACCOUNT-SCOPED trigger (T08: config.accountIds gates
-  # the shared http trigger to THIS run's account so it no longer fans out
-  # onto every http message of the tenant). Emitted as one JSON body reused by
-  # both the PUT-converge and POST-create paths below so they can never drift.
-  cat <<JSON
-{
-  "name": "${WORKFLOW_NAME}",
-  "application": "e2e",
-  "actions": [
-    {
-      "name": "logMessage",
-      "activity": "jsFunction",
-      "args": {
-        "code": "(ctx) => { console.log('[e2e-http-log]', ctx.request.from, ctx.request.text); return ctx.request.text; }"
-      }
-    },
-    {
-      "name": "probeEndpoint",
-      "activity": "endpointCall",
-      "args": {
-        "adapterId": "${ENDPOINT_ADAPTER_ID}",
-        "method": "GET",
-        "url": "/api/v2/pokemon/ditto"
-      }
-    }
-  ],
-  "trigger": {
-    "type": "message_received",
-    "mode": "shared",
-    "config": { "channels": ["http"], "providers": ["http"], "accountIds": ["${ACCOUNT_ID}"] }
-  }
-}
-JSON
-}
-
-stage_ensure_workflow() {
-  # T08 (manual-loops/connector-trace-linking.md): '${WORKFLOW_NAME}' must be
-  # CONVERGED to the canonical definition EVERY run, not merely created-if-
-  # absent. Two reasons it can never be reused as-is:
-  #   - the trigger is now account-scoped (config.accountIds), and stage 2
-  #     mints a fresh account every run, so the accountIds always differ;
-  #   - a pre-T08 cluster still has a greedy (no-accountIds) and/or pre-T06
-  #     (no endpointCall probe) definition that MUST be converged or deleted
-  #     on first contact so it stops fanning out onto unrelated http messages.
-  # So: if a definition exists, PUT the canonical body over it (fall back to
-  # delete+recreate if PUT is rejected); otherwise create it. The old
-  # reuse-early-return is intentionally gone — with a per-run accountIds it
-  # was always dead weight (the definition would never already match).
-  log "Stage 3: converge workflow definition '${WORKFLOW_NAME}' (account-scoped trigger + endpointCall probe)"
-  local body
-  body="$(e2e_log_workflow_body)"
-  WORKFLOW_ID="$(api GET /api/workflows \
-    | jq -r ".[] | select(.name == \"${WORKFLOW_NAME}\") | .id" | head -1)"
-  if [[ -n "$WORKFLOW_ID" ]]; then
-    local update_resp update_status update_body
-    update_resp="$(api_status PUT "/api/workflows/${WORKFLOW_ID}" "$body")"
-    update_status="$(api_status_code "$update_resp")"
-    update_body="$(api_status_body "$update_resp")"
-    if [[ "$update_status" == "200" || "$update_status" == "201" ]]; then
-      log "Converged workflow ${WORKFLOW_ID} via PUT (accountIds=[${ACCOUNT_ID}], endpointCall probe present)"
-      return 0
-    fi
-    warn "PUT converge failed (status ${update_status}: ${update_body}); deleting and recreating workflow ${WORKFLOW_ID} instead"
-    # '{}' body: empty-body DELETE 400s (Content-Type is always JSON), see
-    # stage 2's sweep note.
-    api DELETE "/api/workflows/${WORKFLOW_ID}" '{}' >/dev/null 2>&1 || true
-    WORKFLOW_ID=""
-  fi
-  local resp
-  resp="$(api POST /api/workflows "$body")"
-  WORKFLOW_ID="$(echo "$resp" | jq -r '.id // empty')"
-  if [[ -z "$WORKFLOW_ID" ]]; then
-    err "Workflow creation failed: $resp"
-    return 1
-  fi
-  log "Workflow created: ${WORKFLOW_ID} (accountIds=[${ACCOUNT_ID}])"
-}
-
-stage_ensure_agent() {
-  # Idempotent: look up '${AGENT_NAME}' by name (GET /api/admin/agents ->
-  # {agents:[...],total} — NOT a bare array), create if missing, publish if
-  # not already published. provider MUST be "mock" (the dev echo provider,
-  # gated by RUNTIME_ALLOW_MOCK_PROVIDER=true in provider-registry.service.ts)
-  # — any other provider name is unsupported and the runtime execution ends
+stage_ensure_agent_published() {
+  # Agent PUBLISH is a runtime activation step, not a declarative manifest
+  # property (agentSchema has no such field, and agents-writer.ts never
+  # calls the publish endpoint) — so it stays an explicit imperative POST
+  # after apply, exactly like the workflow enable/disable toggle (stage 6/8)
+  # stays imperative. provider MUST be "mock" (the dev echo provider, gated
+  # by RUNTIME_ALLOW_MOCK_PROVIDER=true in provider-registry.service.ts,
+  # already declared in the manifest's agent profile above) — any other
+  # provider name is unsupported and the runtime execution ends
   # execution_failed, which would leave every span at duration_ms == 0 (see
   # BLOCKED.md).
-  log "Stage 3a: ensure agent '${AGENT_NAME}'"
-  local list_resp
-  list_resp="$(api GET /api/admin/agents)"
-  AGENT_ID="$(echo "$list_resp" | jq -r ".agents[]? | select(.name == \"${AGENT_NAME}\") | .id" | head -1)"
-
-  local agent_status=""
-  if [[ -n "$AGENT_ID" ]]; then
-    log "Reusing existing agent ${AGENT_ID}"
-    agent_status="$(echo "$list_resp" | jq -r ".agents[]? | select(.id == \"${AGENT_ID}\") | .status")"
-  else
-    local create_resp
-    create_resp="$(api POST /api/admin/agents "$(cat <<JSON
-{
-  "name": "${AGENT_NAME}",
-  "system_prompt": "You are the e2e echo agent. Echo the user's message back verbatim.",
-  "model_config": { "provider": "mock", "model": "echo" }
-}
-JSON
-)")"
-    AGENT_ID="$(echo "$create_resp" | jq -r '.id // empty')"
-    if [[ -z "$AGENT_ID" ]]; then
-      err "Agent creation failed: $create_resp"
-      return 1
-    fi
-    agent_status="$(echo "$create_resp" | jq -r '.status // empty')"
-    log "Agent created: ${AGENT_ID}"
+  log "Stage 2/3: ensure agent ${AGENT_ID} ('${AGENT_NAME}') is published"
+  local get_resp agent_status
+  get_resp="$(api GET "/api/admin/agents/${AGENT_ID}")"
+  agent_status="$(echo "$get_resp" | jq -r '.status // empty')"
+  if [[ "$agent_status" == "published" ]]; then
+    log "Agent ${AGENT_ID} already published"
+    return 0
   fi
-
-  if [[ "$agent_status" != "published" ]]; then
-    log "Publishing agent ${AGENT_ID}"
-    local publish_resp publish_status
-    # api() always sets Content-Type: application/json; an empty body then
-    # 400s with "Body cannot be empty" — an explicit '{}' is required.
-    publish_resp="$(api POST "/api/admin/agents/${AGENT_ID}/publish" '{}')"
-    publish_status="$(echo "$publish_resp" | jq -r '.status // empty')"
-    if [[ "$publish_status" != "published" ]]; then
-      err "Agent publish failed: $publish_resp"
-      return 1
-    fi
-  fi
-  log "Agent ready: ${AGENT_ID} (published)"
-}
-
-e2e_agent_workflow_body() {
-  # T08: canonical '${AGENT_WORKFLOW_NAME}' definition — one agentCall action
-  # bound to the current ${AGENT_ID}, and the SAME account-scoped http trigger
-  # as '${WORKFLOW_NAME}' so its runtime execution (and nonzero-ms span) lands
-  # on the happy-path run's correlation while no longer fanning out onto the
-  # tenant's other http messages. One body reused by PUT-converge and
-  # POST-create so the two paths cannot drift.
-  cat <<JSON
-{
-  "name": "${AGENT_WORKFLOW_NAME}",
-  "application": "e2e",
-  "actions": [{
-    "name": "callAgent",
-    "activity": "agentCall",
-    "args": {
-      "agentId": "${AGENT_ID}",
-      "message": "{{request.text}}"
-    }
-  }],
-  "trigger": {
-    "type": "message_received",
-    "mode": "shared",
-    "config": { "channels": ["http"], "providers": ["http"], "accountIds": ["${ACCOUNT_ID}"] }
-  }
-}
-JSON
-}
-
-stage_ensure_agent_workflow() {
-  # T08: converge '${AGENT_WORKFLOW_NAME}' to the canonical body EVERY run.
-  # Two things force a per-run reconcile: the account-scoped trigger
-  # (config.accountIds changes every run, stage 2 mints a fresh account) and
-  # the agentCall.args.agentId (stage 3a may have recreated the echo agent
-  # under a new id — a stale id makes every execution 404 from
-  # agent-ai-service). Both are folded into the single canonical body, so the
-  # old agentId-only reuse check is gone. PUT over an existing definition;
-  # fall back to delete+recreate if PUT is rejected; else create.
-  log "Stage 3b: converge agent workflow '${AGENT_WORKFLOW_NAME}' (account-scoped trigger + current agentId)"
-  local body
-  body="$(e2e_agent_workflow_body)"
-  AGENT_WORKFLOW_ID="$(api GET /api/workflows \
-    | jq -r ".[] | select(.name == \"${AGENT_WORKFLOW_NAME}\") | .id" | head -1)"
-  if [[ -n "$AGENT_WORKFLOW_ID" ]]; then
-    local update_resp update_status update_body
-    update_resp="$(api_status PUT "/api/workflows/${AGENT_WORKFLOW_ID}" "$body")"
-    update_status="$(api_status_code "$update_resp")"
-    update_body="$(api_status_body "$update_resp")"
-    if [[ "$update_status" == "200" || "$update_status" == "201" ]]; then
-      log "Converged agent workflow ${AGENT_WORKFLOW_ID} via PUT (agentId=${AGENT_ID}, accountIds=[${ACCOUNT_ID}])"
-      return 0
-    fi
-    warn "PUT converge failed (status ${update_status}: ${update_body}); deleting and recreating agent workflow ${AGENT_WORKFLOW_ID} instead"
-    # '{}' body: empty-body DELETE 400s (Content-Type is always JSON), see
-    # stage 2's sweep note.
-    api DELETE "/api/workflows/${AGENT_WORKFLOW_ID}" '{}' >/dev/null 2>&1 || true
-    AGENT_WORKFLOW_ID=""
-  fi
-  local resp
-  resp="$(api POST /api/workflows "$body")"
-  AGENT_WORKFLOW_ID="$(echo "$resp" | jq -r '.id // empty')"
-  if [[ -z "$AGENT_WORKFLOW_ID" ]]; then
-    err "Agent workflow creation failed: $resp"
+  log "Publishing agent ${AGENT_ID}"
+  local publish_resp publish_status
+  # api() always sets Content-Type: application/json; an empty body then
+  # 400s with "Body cannot be empty" — an explicit '{}' is required.
+  publish_resp="$(api POST "/api/admin/agents/${AGENT_ID}/publish" '{}')"
+  publish_status="$(echo "$publish_resp" | jq -r '.status // empty')"
+  if [[ "$publish_status" != "published" ]]; then
+    err "Agent publish failed: $publish_resp"
     return 1
   fi
-  log "Agent workflow created: ${AGENT_WORKFLOW_ID} (agentId=${AGENT_ID}, accountIds=[${ACCOUNT_ID}])"
+  log "Agent ready: ${AGENT_ID} (published)"
 }
 
 stage_send_message() {
@@ -1221,10 +1262,9 @@ stage_verify_endpoint_events_gateway() {
 main() {
   command -v jq >/dev/null || { err "jq is required"; exit 1; }
   stage_login
-  stage_ensure_account
-  stage_ensure_workflow
-  stage_ensure_agent
-  stage_ensure_agent_workflow
+  stage_apply_manifest
+  stage_fetch_channel_secret
+  stage_ensure_agent_published
   log_endpoint_orphans "before this run"
   stage_send_message "$NONCE"
   stage_verify_execution "$NONCE"
