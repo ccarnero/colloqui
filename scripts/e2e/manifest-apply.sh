@@ -218,6 +218,15 @@ connector_admin_curl() {
 }
 
 NONCE="e2e-$(date +%s)-$RANDOM"
+
+# Regression-test hook (scripts/e2e/teardown-regression.sh): when set, this
+# run's NONCE is written to the given file BEFORE anything else can fail, so
+# a caller that expects THIS script to fail mid-run can still discover which
+# nonce to sweep-check for leaked residue afterwards.
+if [[ -n "${E2E_NONCE_OUT_FILE:-}" ]]; then
+  printf '%s' "$NONCE" > "$E2E_NONCE_OUT_FILE"
+fi
+
 MANIFEST_NAME="e2e-manifest-apply-${NONCE}"
 CHANNEL_NAME="e2e-http-${NONCE}"
 WORKFLOW_NAME="e2e-flow-${NONCE}"
@@ -490,6 +499,99 @@ cleanup() {
     log "deleted k8s Secret psec-mcpserver-${SHOWCASE_SECRET_D_OWNER} (namespace ${TENANT_NAMESPACE})"
   fi
 
+  # --- Best-effort NAME-PREFIX SWEEP (independent of driver JSON) ---------
+  # The gap the JSON-driven teardown above can't cover: when
+  # manifest-showcase-driver.ts (stage 8) dies BEFORE printing its final JSON
+  # summary line (crash, connection failure, ctrl-c, or the
+  # E2E_SIMULATE_DRIVER_DEATH=1 regression hook below), every SHOWCASE_*/
+  # LIB_*/NEG_* variable above stays empty and every JSON-driven teardown
+  # block above is skipped entirely — leaking every resource the driver
+  # already created before it died (confirmed live incident: ~16 leaked
+  # workflows plus ~20 each of channels/connectors/agents/KBs/mcpServers/
+  # skills/systemVariables and 69 psec-* k8s Secrets from crashed debug
+  # runs). This sweep does NOT depend on SHOWCASE_JSON at all: it re-lists
+  # each admin API this script already talks to and deletes any resource
+  # whose name ends with THIS run's nonce ("${NONCE}") — every e2e-created
+  # resource in this script (T04-06 AND the showcase driver's) is named
+  # "e2e-<kind>-${NONCE}", so matching by nonce SUFFIX uniquely scopes the
+  # sweep to this run, safe to run unconditionally alongside the (now
+  # redundant-but-harmless) JSON-driven deletes above.
+  #
+  # E2E_SWEEP_STALE=1 (opt-in, e.g. from run-all.sh or CI cleanup jobs):
+  # widens the match to ANY e2e-* prefixed name, reclaiming residue from
+  # PRIOR crashed runs too. Off by default here — a concurrently-running e2e
+  # invocation's still-in-progress resources share the same "e2e-*" prefix,
+  # so broadening the match is only safe when the caller knows nothing else
+  # is running.
+  # NOTE: NOT every admin list endpoint returns a bare JSON array — verified
+  # live against the actual dev cluster while writing this sweep:
+  #   /channels/accounts, /connectors, /admin/mcp-servers, /workflows -> `[...]`
+  #   /admin/agents           -> `{ agents: [...], total }`
+  #   /admin/skills           -> `{ skills: [...], total }`
+  #   /admin/system-variables -> `{ variables: [...], total }`
+  #   /admin/knowledge-bases  -> `{ knowledge_bases: [...] }`
+  # An earlier version of this sweep assumed `.[]?` everywhere, which on the
+  # wrapped-object shapes silently iterates the object's VALUES (the array
+  # itself, `total`, ...) instead of its items — `.name` on a bare number
+  # throws, the whole jq pipeline aborts, "names" comes back empty, and the
+  # sweep silently reports every wrapped-object kind (agent/skill/
+  # systemVariable/knowledgeBase) as clean even when it is NOT. Caught live:
+  # a driver-death regression run leaked exactly those four kinds while this
+  # sweep's log line never mentioned deleting any of them. Each call below
+  # now passes the correct items-selector for its endpoint's actual shape.
+  sweep_by_name() {
+    local kind_label="$1" curl_fn="$2" list_path="$3" delete_path_prefix="$4" items_expr="$5"
+    local list_json names name id filter
+    list_json="$("${curl_fn}" GET "$list_path" 2>/dev/null || true)"
+    [[ -z "$list_json" ]] && return 0
+    if [[ "${E2E_SWEEP_STALE:-0}" == "1" ]]; then
+      filter="[${items_expr}] | .[] | select(.name != null and (.name | startswith(\"e2e-\"))) | \"\(.name)\t\(.id)\""
+      names="$(echo "$list_json" | jq -r "$filter" 2>/dev/null || true)"
+    else
+      filter="[${items_expr}] | .[] | select(.name != null and (.name | endswith(\$n))) | \"\(.name)\t\(.id)\""
+      names="$(echo "$list_json" | jq -r --arg n "$NONCE" "$filter" 2>/dev/null || true)"
+    fi
+    [[ -z "$names" ]] && return 0
+    while IFS=$'\t' read -r name id; do
+      [[ -z "$name" || -z "$id" ]] && continue
+      "${curl_fn}" DELETE "${delete_path_prefix}${id}" >/dev/null 2>&1 || true
+      log "sweep: deleted ${kind_label} name='${name}' externalId=${id}"
+    done <<< "$names"
+  }
+
+  log "Cleanup sweep: name-prefix residue check across every e2e admin API (independent of driver JSON availability)$( [[ "${E2E_SWEEP_STALE:-0}" == "1" ]] && echo ' [E2E_SWEEP_STALE=1: sweeping ALL e2e-* residue, not just this run]' )"
+  sweep_by_name "channel account"     channel_curl         "/channels/accounts"       "/channels/accounts/"       ".[]?"
+  sweep_by_name "connector"           connector_admin_curl "/connectors"              "/connectors/"              ".[]?"
+  sweep_by_name "mcpServer"           agent_admin_curl     "/admin/mcp-servers"       "/admin/mcp-servers/"       ".[]?"
+  sweep_by_name "skill"               agent_admin_curl     "/admin/skills"            "/admin/skills/"            ".skills[]?"
+  sweep_by_name "systemVariable"      agent_admin_curl     "/admin/system-variables"  "/admin/system-variables/"  ".variables[]?"
+  sweep_by_name "agent"               agent_admin_curl     "/admin/agents"            "/admin/agents/"            ".agents[]?"
+  sweep_by_name "knowledge base"      agent_admin_curl     "/admin/knowledge-bases"   "/admin/knowledge-bases/"   ".knowledge_bases[]?"
+  sweep_by_name "workflow definition" workflow_curl        "/workflows"               "/workflows/"               ".[]?"
+
+  # k8s Secrets: named `psec-<kind>-<owner>` where <owner> is the e2e-prefixed
+  # resource NAME it's bound to (see secret-resource-name.ts) — every owner
+  # name ends with this run's nonce, so a Secret name ending with the nonce
+  # (or, under --sweep-stale, any psec-*-e2e-* secret) is this run's residue.
+  # Sweeps by Secret NAME directly since a driver crash before its JSON means
+  # SHOWCASE_SECRET_*_OWNER above is never populated.
+  SWEEP_TENANT_NAMESPACE="${E2E_TENANT_NAMESPACE:-${TENANT}-dev-ns}"
+  SWEEP_SECRET_NAMES="$(kubectl get secrets -n "$SWEEP_TENANT_NAMESPACE" \
+    -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)"
+  if [[ -n "$SWEEP_SECRET_NAMES" ]]; then
+    for secret_name in $SWEEP_SECRET_NAMES; do
+      case "$secret_name" in
+        psec-*)
+          if { [[ "${E2E_SWEEP_STALE:-0}" == "1" ]] && [[ "$secret_name" == psec-*-e2e-* ]]; } \
+             || [[ "$secret_name" == *"-${NONCE}" ]]; then
+            kubectl delete secret "$secret_name" -n "$SWEEP_TENANT_NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+            log "sweep: deleted k8s Secret ${secret_name} (namespace ${SWEEP_TENANT_NAMESPACE})"
+          fi
+          ;;
+      esac
+    done
+  fi
+
   if [[ $status -eq 0 ]]; then
     log "e2e-manifest-apply: PASSED"
   else
@@ -749,6 +851,7 @@ if ! SHOWCASE_JSON="$(
   E2E_EMAIL="$E2E_EMAIL" \
   E2E_PASSWORD="$E2E_PASSWORD" \
   E2E_RESOLVE_IP="${E2E_RESOLVE_IP-127.0.0.1}" \
+  E2E_DIE_AFTER_APPLY="${E2E_SIMULATE_DRIVER_DEATH:-0}" \
   bun run "$SHOWCASE_DRIVER_PATH"
 )"; then
   err "T09 showcase driver FAILED (see stderr above for the failed assertion)"

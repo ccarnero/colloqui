@@ -672,6 +672,25 @@ async function main(): Promise<void> {
     );
   }
 
+  // Regression test hook for the mid-run driver-death leak (see
+  // scripts/e2e/teardown-regression.sh): manifest-apply.sh's cleanup() used
+  // to resolve every showcase resource EXCLUSIVELY from this driver's final
+  // JSON summary line. If the driver dies anywhere before that line prints —
+  // crash, connection failure, ctrl-c — every SHOWCASE_*/LIB_*/NEG_* resource
+  // it already created (this first apply just created 7+ of them, plus 4 k8s
+  // Secrets) leaked with zero teardown. E2E_DIE_AFTER_APPLY=1 simulates
+  // EXACTLY that: die right after the first successful apply, before any of
+  // the later rounds run and before the JSON summary is ever assembled or
+  // printed. manifest-apply.sh's cleanup() must recover via its
+  // name-prefix/nonce sweep regardless of this driver ever having produced
+  // JSON — that sweep is the actual fix under test.
+  if (process.env.E2E_DIE_AFTER_APPLY === "1") {
+    console.error(
+      "[showcase-driver] E2E_DIE_AFTER_APPLY=1 — simulating driver death right after the first apply, before the JSON summary is printed"
+    );
+    process.exit(1);
+  }
+
   const findExternalId = (name: string): string | undefined =>
     firstApply.resources.find((r) => r.name === name)?.externalId;
 

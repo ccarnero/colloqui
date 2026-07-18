@@ -14,12 +14,23 @@ set -euo pipefail
 #   3. connector-invoke.sh  (sync/async connector invoke, cache, webhook
 #                             receiver, tracking assertions)
 #
+# An optional 4th stage, teardown-regression, is NOT part of this default
+# sequence (see scripts/e2e/README.md for why): it deliberately provisions
+# real resources via manifest-apply.sh, then kills its SDK driver mid-run to
+# prove the teardown sweep survives a crash, so it is slower and more
+# invasive than the other three. Run it explicitly via
+# `--only teardown-regression`.
+#
 # See scripts/e2e/README.md for what each stage covers and rough runtimes.
 #
 # Flags:
 #   --only <name>   run ONLY the named stage (manifest-apply | http-workflow |
-#                     connector-invoke), skipping the other two
-#   --skip <name>   run every stage EXCEPT the named one (repeatable)
+#                     connector-invoke | teardown-regression), skipping the
+#                     others. teardown-regression is ONLY runnable via
+#                     --only — it never runs as part of the default sequence.
+#   --skip <name>   run every default stage EXCEPT the named one (repeatable;
+#                     not applicable to teardown-regression, which is never in
+#                     the default sequence to begin with)
 #
 # Exit codes:
 #   0  every stage that ran succeeded
@@ -49,22 +60,29 @@ usage() {
 Usage:
   $(basename "$0") [--only <name>] [--skip <name>]...
 
-Stages (in run order): manifest-apply, http-workflow, connector-invoke.
+Stages (in default run order): manifest-apply, http-workflow, connector-invoke.
+
+Optional (--only ONLY, never in the default sequence): teardown-regression
+  — provisions real resources then kills the SDK driver mid-run to prove
+  manifest-apply.sh's teardown sweep survives a crash. See
+  scripts/e2e/README.md.
 
 Examples:
-  ./scripts/e2e/run-all.sh                        # run all three stages
-  ./scripts/e2e/run-all.sh --only connector-invoke # run just one stage
-  ./scripts/e2e/run-all.sh --skip http-workflow    # run the other two
+  ./scripts/e2e/run-all.sh                          # run all three default stages
+  ./scripts/e2e/run-all.sh --only connector-invoke   # run just one stage
+  ./scripts/e2e/run-all.sh --skip http-workflow      # run the other two
+  ./scripts/e2e/run-all.sh --only teardown-regression # the optional 4th stage
 EOF
 }
 
 ALL_STAGES=(manifest-apply http-workflow connector-invoke)
+OPTIONAL_STAGES=(teardown-regression)
 ONLY_STAGE=""
 SKIP_STAGES=()
 
 is_known_stage() {
   local name="$1"
-  for s in "${ALL_STAGES[@]}"; do
+  for s in "${ALL_STAGES[@]}" "${OPTIONAL_STAGES[@]}"; do
     [[ "$s" == "$name" ]] && return 0
   done
   return 1
@@ -106,12 +124,23 @@ if [[ -n "$ONLY_STAGE" && ${#SKIP_STAGES[@]} -gt 0 ]]; then
   exit 2
 fi
 
+is_optional_stage() {
+  local name="$1"
+  for o in "${OPTIONAL_STAGES[@]}"; do
+    [[ "$o" == "$name" ]] && return 0
+  done
+  return 1
+}
+
 should_run() {
   local name="$1"
   if [[ -n "$ONLY_STAGE" ]]; then
     [[ "$name" == "$ONLY_STAGE" ]]
     return
   fi
+  # Optional stages (teardown-regression) NEVER run as part of the default
+  # sequence — only when explicitly selected via --only above.
+  is_optional_stage "$name" && return 1
   for s in "${SKIP_STAGES[@]+"${SKIP_STAGES[@]}"}"; do
     [[ "$s" == "$name" ]] && return 1
   done
@@ -121,11 +150,12 @@ should_run() {
 STAGE_SCRIPT_manifest_apply="${SCRIPT_DIR}/manifest-apply.sh"
 STAGE_SCRIPT_http_workflow="${SCRIPT_DIR}/http-workflow.sh"
 STAGE_SCRIPT_connector_invoke="${SCRIPT_DIR}/connector-invoke.sh"
+STAGE_SCRIPT_teardown_regression="${SCRIPT_DIR}/teardown-regression.sh"
 
 RESULTS=()
 STAGE_NUM=0
 TOTAL_STAGES=0
-for s in "${ALL_STAGES[@]}"; do
+for s in "${ALL_STAGES[@]}" "${OPTIONAL_STAGES[@]}"; do
   should_run "$s" && TOTAL_STAGES=$((TOTAL_STAGES + 1))
 done
 
@@ -158,6 +188,7 @@ print_summary() {
 should_run manifest-apply && run_stage "manifest-apply" "$STAGE_SCRIPT_manifest_apply"
 should_run http-workflow && run_stage "http-workflow" "$STAGE_SCRIPT_http_workflow"
 should_run connector-invoke && run_stage "connector-invoke" "$STAGE_SCRIPT_connector_invoke"
+should_run teardown-regression && run_stage "teardown-regression" "$STAGE_SCRIPT_teardown_regression"
 
 print_summary
 log "All requested stages finished successfully."

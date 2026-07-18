@@ -65,11 +65,17 @@ DEFAULT_TRACKING_PG_DB="${TRACKING_POSTGRES_DB:-yoizen}"
 
 # ----- color logging ---------------------------------------------------------
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+# ANSI-C ($'...') quoting so these hold the REAL ESC byte, not the literal
+# 4-character sequence "\033" — required so `cat <<EOF` heredocs (e.g.
+# print_post_wipe_caveats below) render color too. A plain '\033[...' single
+# quote only happens to render correctly through `echo -e` (which parses the
+# backslash escape itself); heredocs never do that parsing, so they used to
+# print the literal escape-code text instead of coloring it.
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'
+NC=$'\033[0m'
 
 log()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }

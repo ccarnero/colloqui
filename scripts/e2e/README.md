@@ -123,17 +123,59 @@ Rough runtime: ~30-60s.
 
 ## 4. `run-all.sh` — orchestrator
 
-Runs all three stages in order (`manifest-apply.sh` -> `http-workflow.sh`
--> `connector-invoke.sh`), aborting on the first failing stage and printing
-a pass/fail summary at the end.
+Runs the three default stages in order (`manifest-apply.sh` ->
+`http-workflow.sh` -> `connector-invoke.sh`), aborting on the first failing
+stage and printing a pass/fail summary at the end.
 
 ```bash
-./scripts/e2e/run-all.sh                          # run everything
+./scripts/e2e/run-all.sh                          # run everything (default 3 stages)
 ./scripts/e2e/run-all.sh --only connector-invoke   # run just one stage
 ./scripts/e2e/run-all.sh --skip http-workflow      # run the other two
 ```
 
+## 5. Teardown regression — `teardown-regression.sh` (optional, not in the default sequence)
+
+Regression test for a confirmed live incident: `manifest-apply.sh`'s
+EXIT-trap `cleanup()` used to resolve every T09/T1 showcase resource
+(channel, connector, mcpServer, skill, systemVariable, agent, knowledge
+base, workflow, plus their bound `psec-*` k8s Secrets) **exclusively** from
+`manifest-showcase-driver.ts`'s final stdout JSON summary line. When the
+driver died anywhere before printing that line — crash, connection failure,
+ctrl-c — `cleanup()` had no name/id to resolve from and silently skipped
+every showcase resource. One afternoon of crashed debug iterations leaked
+~16 workflows, ~20 each of channels/connectors/agents/knowledge
+bases/mcpServers/skills/systemVariables, and 69 `psec-*` Secrets in the
+tenant namespace.
+
+The fix: `cleanup()` now also runs an independent name-prefix sweep across
+every admin API it already talks to, matching by **this run's nonce
+suffix** (every e2e-created resource in this script is named
+`e2e-<kind>-${NONCE}`) — this sweep does not depend on the driver's JSON at
+all, so it survives a crash at any point. `E2E_SWEEP_STALE=1` widens the
+match to any `e2e-*`-prefixed name, reclaiming residue from **prior**
+crashed runs too (opt-in only — never safe to default on if another e2e run
+might be in flight concurrently).
+
+`teardown-regression.sh` proves the sweep works: it runs
+`manifest-apply.sh` with `E2E_SIMULATE_DRIVER_DEATH=1` (which makes
+`manifest-showcase-driver.ts` `process.exit(1)` right after its first
+successful apply, before ever assembling its JSON summary — an intentional,
+expected failure), then independently re-queries every admin API + kubectl
+for residue matching that run's nonce. Exits 0 iff nothing leaked.
+
+**Not part of the default `run-all.sh` sequence** — unlike the other three
+stages, it deliberately provisions real resources and then deliberately
+kills the driver mid-run, which is slower and more invasive than a normal
+assertion pass. Run it explicitly:
+
+```bash
+./scripts/e2e/teardown-regression.sh
+./scripts/e2e/run-all.sh --only teardown-regression
+```
+
 ## Full suite runtime
 
-~2-4 minutes total, dominated by `http-workflow.sh`'s Temporal execution
-polling.
+~2-4 minutes total for the three default stages, dominated by
+`http-workflow.sh`'s Temporal execution polling.
+`teardown-regression.sh` adds another manifest-apply.sh-sized round trip
+(~30-60s) when run explicitly.
