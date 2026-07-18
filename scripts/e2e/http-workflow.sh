@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Auto-load scripts/e2e/.env if present (same convention as scripts/reset/):
+# every var below has a script-level ${VAR:-default} fallback, so anything
+# set in .env wins over the hardcoded default. See scripts/e2e/README.md.
+E2E_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${E2E_SCRIPT_DIR}/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "${E2E_SCRIPT_DIR}/.env"
+  set +a
+fi
+
 # End-to-end check of the http-channel → workflow trigger → jsFunction chain:
 #
 #   1. Login as tenant admin (acme by default)

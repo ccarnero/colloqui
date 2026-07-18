@@ -16,7 +16,7 @@
 ./scripts/smoke-test.sh
 
 # 5) Optional core e2e
-E2E_API_URL=http://localhost:8080 ./scripts/e2e-http-workflow.sh
+E2E_API_URL=http://localhost:8080 ./scripts/e2e/http-workflow.sh
 ```
 
 For Linux/minikube, replace step 1 with:

@@ -10,7 +10,7 @@
 // For channels WITHOUT a `secretRef` (the only shape T04's e2e manifest
 // uses — an `http` channel), `accessToken: "placeholder"` is used. This is
 // NOT a fabricated secret: it mirrors the existing convention already used
-// by `scripts/e2e-http-workflow.sh` for the same `http` provider, which does
+// by `scripts/e2e/http-workflow.sh` for the same `http` provider, which does
 // not validate token authenticity.
 //
 // Update: the T03 comparable-fields contract for channels projects ONLY

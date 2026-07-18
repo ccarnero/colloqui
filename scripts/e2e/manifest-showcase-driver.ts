@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * e2e-manifest-showcase-driver.ts — T09 (manual-loops/declarative-provisioning.md)
+ * manifest-showcase-driver.ts — T09 (manual-loops/declarative-provisioning.md)
  * + T1 coverage-maximization pass (this task) "full showcase" manifest driven
  * through the REAL SDK (`sdk/src/index.ts`, imported directly by relative
  * path — the package ships no build output in this workspace and `bun`
@@ -8,7 +8,7 @@
  * their `.ts` files natively, exactly like every other file inside `sdk/src`
  * importing its siblings).
  *
- * Invoked by `scripts/e2e-manifest-apply.sh` (never run standalone in CI) —
+ * Invoked by `scripts/e2e/manifest-apply.sh` (never run standalone in CI) —
  * the bash script owns cluster reachability checks, trap-guarded teardown of
  * every downstream resource this driver creates, and the tracking-ingester
  * Postgres assertions (this driver has no cluster-internal DB access). This
@@ -104,7 +104,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { ConflictError, createClient } from "../sdk/src/index.js";
+import { ConflictError, createClient } from "../../sdk/src/index.js";
 
 // ---------------------------------------------------------------------------
 // Env / config — mirrors the E2E_* convention every other e2e script uses.

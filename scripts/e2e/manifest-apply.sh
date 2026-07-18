@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Auto-load scripts/e2e/.env if present (same convention as scripts/reset/):
+# every var below has a script-level ${VAR:-default} fallback, so anything
+# set in .env wins over the hardcoded default. See scripts/e2e/README.md.
+E2E_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${E2E_SCRIPT_DIR}/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "${E2E_SCRIPT_DIR}/.env"
+  set +a
+fi
+
 # End-to-end check of the T04 declarative-provisioning apply engine
 # (manual-loops/declarative-provisioning.md): plan -> apply -> re-plan
 # (all-noop) -> re-apply (no-op) -> teardown, driven directly against the
@@ -8,7 +19,7 @@ set -euo pipefail
 #
 # No api-gateway route exists yet (that lands in T07), so this script talks
 # to the Knative ingress hostnames of the services directly — the SAME
-# transport pattern every other e2e script uses (see e2e-http-workflow.sh:
+# transport pattern every other e2e script uses (see http-workflow.sh:
 # dev.local base URLs + Host header + --resolve for macOS mDNS). Knative
 # ksvc Services are activator/ingress-routed, so `kubectl port-forward`
 # does NOT work on them — hence direct ingress URLs, never port-forward.
@@ -47,7 +58,7 @@ set -euo pipefail
 #      knowledge base, and a workflow whose `trigger.config.accountIds` (ARRAY
 #      substitution) and `endpointCall.adapterId` (SCALAR substitution) both
 #      resolve to real ids — applied through the REAL SDK, not raw curl.
-#      Delegated to `scripts/e2e-manifest-showcase-driver.ts` (`bun run`,
+#      Delegated to `scripts/e2e/manifest-showcase-driver.ts` (`bun run`,
 #      imports `sdk/src/index.ts` directly) because "apply via the SDK" is
 #      this task's explicit ask; this bash script still owns cluster
 #      reachability, teardown, the tracking-ingester Postgres assertions, and
@@ -66,7 +77,7 @@ set -euo pipefail
 #      see the driver's header comment).
 #      Both the `apply_*` audit events and the `secret_access_denied` event
 #      are asserted present in `tracking.tracked_events` (queried the same
-#      way `e2e-http-workflow.sh` does: `kubectl exec` + `psql` against the
+#      way `http-workflow.sh` does: `kubectl exec` + `psql` against the
 #      tracking-ingester's Postgres store — this service has no other public
 #      query surface for arbitrary event lookups by manifest name).
 #      Teardown: the driver's created channel/connector/mcpServer/skill/
@@ -111,7 +122,7 @@ CONNECTOR_ADMIN_HOST="${E2E_CONNECTOR_ADMIN_HOST:-connector-admin-api.platform-s
 POLL_TIMEOUT_S="${E2E_POLL_TIMEOUT_S:-60}"
 
 # T09: tracking-ingester's Postgres store, queried directly the same way
-# e2e-http-workflow.sh does (kubectl exec + psql) — tracking-ingester-service
+# http-workflow.sh does (kubectl exec + psql) — tracking-ingester-service
 # has no public query surface for "every apply_* event for manifest X" or
 # "the secret_access_denied event for correlation Y" beyond raw SQL.
 TRACKING_PG_NAMESPACE="${E2E_TRACKING_PG_NAMESPACE:-support-services-dev}"
@@ -730,7 +741,7 @@ command -v bun >/dev/null 2>&1 || { err "bun not found in PATH — required for 
 E2E_EMAIL="${E2E_EMAIL:-yclawd@demo.io}"
 E2E_PASSWORD="${E2E_PASSWORD:-admin123}"
 
-SHOWCASE_DRIVER_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/e2e-manifest-showcase-driver.ts"
+SHOWCASE_DRIVER_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/manifest-showcase-driver.ts"
 SHOWCASE_WALL_START=$SECONDS
 if ! SHOWCASE_JSON="$(
   E2E_NONCE="$NONCE" \

@@ -71,7 +71,7 @@ E2E_CLIENT_ID=... E2E_CLIENT_SECRET=... bash scripts/smoke-test.sh
 
 Runs a Kubernetes readiness preflight against the dev cluster: every configured
 Knative Service and plain worker Deployment must be Ready. It does **not** run
-the workflow/browser e2e suites. Use `scripts/e2e-http-workflow.sh` for the
+the workflow/browser e2e suites. Use `scripts/e2e/http-workflow.sh` for the
 HTTP workflow smoke path, and the Playwright specs under `e2e/` for browser
 flows.
 
@@ -80,7 +80,7 @@ flows.
 ```bash
 ./scripts/smoke-test.sh                          # 1. all 25 workloads Ready
 E2E_API_URL=http://localhost:8080 \
-  ./scripts/e2e-http-workflow.sh                 # 2. HTTP → workflow → jsFunction chain
+  ./scripts/e2e/http-workflow.sh                 # 2. HTTP → workflow → jsFunction chain
 cd sdk && SDK_E2E=1 npm run test:e2e             # 3. full API contract (57 assertions via @yoizen/platform-sdk)
 ```
 
@@ -169,7 +169,7 @@ kubectl port-forward -n kourier-system svc/kourier 8080:80 &   # keep it running
 
 # 2. remote-execution e2e: http POST -> channel-service -> NATS -> workflow
 #    trigger -> Temporal -> jsFunction console.log (asserts the nonce in logs)
-E2E_API_URL=http://localhost:8080 ./scripts/e2e-http-workflow.sh
+E2E_API_URL=http://localhost:8080 ./scripts/e2e/http-workflow.sh
 
 # 3. preflight: every ksvc + worker Deployment is Ready
 ./scripts/smoke-test.sh

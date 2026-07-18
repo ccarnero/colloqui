@@ -16,7 +16,7 @@
 #   gate:       scripts/smoke-test.sh              (readiness preflight — fail fast)
 #   forward:    kubectl port-forward svc/kourier   (-> http://localhost:8080)
 #   tenant:     setup-tenant.sh                    (tenant 'acme' + admin, idempotent)
-#   e2e:        scripts/e2e-http-workflow.sh       (http channel -> workflow create+run+assert)
+#   e2e:        scripts/e2e/http-workflow.sh       (http channel -> workflow create+run+assert)
 #
 # Usage (run from anywhere — resolves repo root from its own location):
 #   scripts/minikube/startup.sh                # full: bootstrap -> smoke -> tenant -> e2e
@@ -139,10 +139,10 @@ bash ./setup-tenant.sh --api-url "$API_URL"
 #    out the tenant-provisioning window (setup-tenant can return before fully ready).
 if [[ $DO_E2E == 1 ]]; then
   stage "5/5 E2E http -> workflow (create + run + assert)"
-  if ! E2E_API_URL="$API_URL" bash scripts/e2e-http-workflow.sh; then
+  if ! E2E_API_URL="$API_URL" bash scripts/e2e/http-workflow.sh; then
     warn "e2e failed on first attempt — tenant may still be provisioning; retrying in 15s"
     sleep 15
-    E2E_API_URL="$API_URL" bash scripts/e2e-http-workflow.sh || die "e2e failed after retry"
+    E2E_API_URL="$API_URL" bash scripts/e2e/http-workflow.sh || die "e2e failed after retry"
   fi
 else
   warn "skipping e2e (--no-e2e)"

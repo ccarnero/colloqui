@@ -10,7 +10,7 @@ import { createClient } from "../../src/index.js";
  * through `createClient().workflows`.
  *
  * The workflow definition is a minimal single-`jsFunction`-action definition
- * — the same activity `scripts/e2e-http-workflow.sh` Stage 3 uses — but
+ * — the same activity `scripts/e2e/http-workflow.sh` Stage 3 uses — but
  * WITHOUT a `message_received` trigger: that script's trigger only matters
  * for channel-triggered auto-invocation (an http webhook post), which is out
  * of scope here. `POST /workflows/:id/execute` invokes a definition directly

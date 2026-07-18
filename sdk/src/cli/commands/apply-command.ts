@@ -23,7 +23,7 @@ export interface ApplyCommandDeps {
  * (failing fast listing ALL missing vars — never one at a time), then puts
  * every secret via `client.secrets.set()` BEFORE storing/applying the
  * manifest — mirrors the bind-then-provision order
- * `scripts/e2e-manifest-showcase-driver.ts` exercises against the real
+ * `scripts/e2e/manifest-showcase-driver.ts` exercises against the real
  * provisioning-service. Secret values travel from `env` straight into
  * `client.secrets.set()` and are never logged, never written to disk,
  * never passed as argv.

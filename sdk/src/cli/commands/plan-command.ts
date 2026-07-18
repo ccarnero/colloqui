@@ -15,8 +15,8 @@ export interface PlanCommandDeps {
  * `client.manifests.put()` (store the revision) then `.plan()` (read-only
  * diff). `plan`/`apply` both operate on the LATEST stored revision for a
  * name (see `resources/manifests/client.ts`), so `put()` must run first —
- * mirrors the order `scripts/e2e-manifest-apply.sh` and
- * `scripts/e2e-manifest-showcase-driver.ts` use (PUT -> plan -> apply).
+ * mirrors the order `scripts/e2e/manifest-apply.sh` and
+ * `scripts/e2e/manifest-showcase-driver.ts` use (PUT -> plan -> apply).
  */
 export async function runPlanCommand({
   client,

@@ -16,7 +16,7 @@ set -euo pipefail
 #   3. on          ./dev-mode.sh workflow-service on
 #   4. reload      append canary comment to src/main.ts → measure time until
 #                  the api pod logs a fresh Nest restart (bun --watch)
-#   5. e2e         [--with-e2e] run scripts/e2e-http-workflow.sh under dev mode
+#   5. e2e         [--with-e2e] run scripts/e2e/http-workflow.sh under dev mode
 #   6. off         ./dev-mode.sh workflow-service off
 #   7. restored    live image+command of EVERY object matches the snapshot;
 #                  dev-mode annotation gone. Guards the June-13 regression.
@@ -158,7 +158,7 @@ fi
 # ── Stage 5: optional e2e under dev mode ─────────────────────────────────────
 step "5/7 e2e smoke under dev mode"
 if $WITH_E2E; then
-  if ./scripts/e2e-http-workflow.sh; then
+  if ./scripts/e2e/http-workflow.sh; then
     log "e2e-http-workflow.sh green under dev mode"
   else
     fail "e2e-http-workflow.sh failed under dev mode"

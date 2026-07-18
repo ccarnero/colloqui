@@ -47,7 +47,7 @@ The old `sdk/samples` tier's top-level `README.md` claimed every sample depends 
 
 ### 1.4 Existing safety net (verified)
 
-- `scripts/e2e-http-workflow.sh` — live-cluster end-to-end covering the SDK's exact happy path: login → channel account cleanup/create → workflow create → webhook ingest → execution verification.
+- `scripts/e2e/http-workflow.sh` — live-cluster end-to-end covering the SDK's exact happy path: login → channel account cleanup/create → workflow create → webhook ingest → execution verification.
 - `scripts/smoke-test.sh` — preflight readiness of 17 Knative services + 8 worker deployments.
 - Per-service `test/unit`, and e2e/integration suites in several services (agent-admin-service has agents/multi-tenancy/credentials-security/NATS e2e).
 
@@ -56,7 +56,7 @@ The old `sdk/samples` tier's top-level `README.md` claimed every sample depends 
 ## 2. Invariants — do not break these
 
 1. The current public API (`createClient` → `{ send, sendText }`, error classes) keeps working unchanged until a major-version bump is explicitly decided.
-2. `scripts/smoke-test.sh` and `scripts/e2e-http-workflow.sh` must pass before AND after every phase. Run them and record the baseline before touching any code.
+2. `scripts/smoke-test.sh` and `scripts/e2e/http-workflow.sh` must pass before AND after every phase. Run them and record the baseline before touching any code.
 3. Existing `sdk/test/` unit tests keep passing at every step.
 4. Growth is additive: new code wraps or sits beside existing adapters; existing files are refactored only after the SDK e2e (Phase 0.5) is green and can prove parity.
 5. The SDK talks only to the api-gateway. Never call internal services directly.
@@ -86,7 +86,7 @@ Acceptance: gateway serves `/api/v1/*` and OpenAPI JSON; old routes still work; 
 Status: DONE — `sdk/test/e2e/http-ingest.e2e.ts` reproduces the full ingest flow through `createClient()` (gated behind `SDK_E2E=1`, `npm run test:e2e` added); the old `sdk/samples` tier's top-level `README.md` was corrected (since superseded by `integrations/README.md` + `sdk/examples/README.md`); green baseline recorded against the dev cluster and kept green through Phases 1-2.
 
 - Fix the old `sdk/samples` tier's top-level `README.md` (remove the false `file:`-link claim or make it true).
-- Create `sdk/test/e2e/` with a live-cluster test that reproduces `scripts/e2e-http-workflow.sh` THROUGH the SDK: `createClient()` → resolve channel account → `send()` → assert `status === "accepted"`. Gate it behind an env flag (e.g. `SDK_E2E=1`) so `npm test` stays offline-safe; add `npm run test:e2e`.
+- Create `sdk/test/e2e/` with a live-cluster test that reproduces `scripts/e2e/http-workflow.sh` THROUGH the SDK: `createClient()` → resolve channel account → `send()` → assert `status === "accepted"`. Gate it behind an env flag (e.g. `SDK_E2E=1`) so `npm test` stays offline-safe; add `npm run test:e2e`.
 - Run it against the dev cluster and record the green baseline.
 
 Acceptance: `npm run test:e2e` passes against the dev cluster. This test must stay green through all later phases.

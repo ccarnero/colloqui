@@ -1,6 +1,6 @@
 # SDK e2e (live cluster)
 
-`http-ingest.e2e.ts` reproduces the flow of `scripts/e2e-http-workflow.sh` — login, create a
+`http-ingest.e2e.ts` reproduces the flow of `scripts/e2e/http-workflow.sh` — login, create a
 fresh http channel account, send a message, assert `"accepted"` — but drives the send through
 the SDK's public API (`createClient` → `send` / `sendText`) instead of raw curl. Account
 create/delete uses plain `fetch` because account CRUD isn't part of the SDK yet.

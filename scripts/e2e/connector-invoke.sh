@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Auto-load scripts/e2e/.env if present (same convention as scripts/reset/):
+# every var below has a script-level ${VAR:-default} fallback, so anything
+# set in .env wins over the hardcoded default. See scripts/e2e/README.md.
+E2E_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${E2E_SCRIPT_DIR}/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "${E2E_SCRIPT_DIR}/.env"
+  set +a
+fi
+
 # End-to-end cluster check of the connector invoke API
 # (manual-loops/connector-invoke-api.md T07): sync + async round trip through
 # the api-gateway proxy, driven with plain curl against the SDK-visible
@@ -39,7 +50,7 @@ set -euo pipefail
 #      miss/hit (async reuses the SAME warmed cache key, so it is a hit too
 #      — asserted informationally, not strictly), and no `causation_id`
 #      (HTTP-facade calls start a ROOT correlation — there is no parent to
-#      join, unlike the Temporal workflow path e2e-http-workflow.sh
+#      join, unlike the Temporal workflow path http-workflow.sh
 #      exercises).
 #
 # Exit code 0 = full round trip verified; 1 = any stage failed. Cleanup
@@ -317,7 +328,7 @@ YAML
 }
 
 # Set by stage_sync_invoke. NOT returned via `echo` + command substitution —
-# log()/warn()/err() all write to stdout too (same as e2e-http-workflow.sh),
+# log()/warn()/err() all write to stdout too (same as http-workflow.sh),
 # so wrapping this function in `$(...)` would have captured the log lines
 # into the "return value" right along with the invocationId. Assigning
 # directly to a global and calling the function unwrapped avoids that trap.

@@ -4,7 +4,7 @@ import { createClient } from "../../src/index.js";
 
 /**
  * Live-cluster regression test. Reproduces the flow of
- * `scripts/e2e-http-workflow.sh` (login -> fresh http channel account ->
+ * `scripts/e2e/http-workflow.sh` (login -> fresh http channel account ->
  * webhook ingest -> "accepted") but drives the ingest step through the SDK's
  * public API (`createClient` -> `send` / `sendText`) instead of raw curl.
  *
