@@ -85,6 +85,54 @@ plan in dependency order; a second `apply` against a converged manifest is a
 no-op (`0 create / 0 update`, all verdicts `noop`) — the idempotence proof
 every migrated integration's README documents.
 
+### Provisioning from a blank tenant (dependency order)
+
+From the repo root, resolve infra coordinates and put the bot token in the
+environment:
+
+```bash
+source integrations/lib/resolve-env.sh   # YOIZEN_* + gateway detection
+export TELEGRAM_BOT_TOKEN=<bot-token-from-botfather>   # or however you keep it locally
+```
+
+`resolve-env.sh` derives the gateway endpoint (port-forward vs ingress,
+picked by a `/health` probe) and exports `YOIZEN_*` (base URL, tenant,
+email, password) the same way `port-forward.sh` does. (If you keep a local
+gitignored `.env` with your token, source it first — the repo does not ship
+one.)
+
+Against a tenant with nothing provisioned yet, apply in this order:
+
+1. [`http/http-connectors/manifest.yaml`](./http/http-connectors/manifest.yaml)
+   (`kind: LibraryManifest`) — provisions the shared connector catalog
+   (`catfacts`, `httpbin`, `httpbin-basic-auth`, `jsonplaceholder`,
+   `pokeapi`) that other samples reference via `external: true`. Its
+   `httpbin-basic-auth` connector needs the demo secret defaults documented
+   in its own README:
+   `env 'httpbin-basic-auth-username=user' 'httpbin-basic-auth-password=passwd'`.
+2. [`channels/telegram-transform-reply/manifest.yaml`](./channels/telegram-transform-reply/manifest.yaml)
+   — creates the shared Telegram channel account `telegram-transform-reply-bot`,
+   the one other samples reference via `external: true`. Bind the token
+   inline (double quotes so `$TELEGRAM_BOT_TOKEN` expands) — it travels only
+   via `--secrets-from-env`, never a repo file:
+   `env "telegram-bot-token=$TELEGRAM_BOT_TOKEN" yoizen manifests apply -f integrations/channels/telegram-transform-reply/manifest.yaml --secrets-from-env`.
+3. Everything that declares an `external: true` ref to either of the above —
+   currently `channels/http-fanout-telegram`, `http/hosted-services-api`,
+   `ai/ai-agent-triage`, `ai/ai-call-center-supervisor`, and
+   `ai/ai-system-variables` (each `manifest.yaml` header comments the
+   dependency). Applying one of these before its dependency exists fails at
+   `apply` with an `unresolved_symbolic_ref` failure; `yoizen manifests plan`
+   surfaces the full `unresolvable_external_ref` precondition set instead
+   (`plan` records every unresolvable ref, `apply` stops at the first one it
+   hits downstream) — the CLI now renders both the failing resource/message
+   and a `plan` hint on a 409 (`sdk/src/cli/format-error-detail.ts`,
+   `sdk/src/cli/format-typed-error.ts`).
+
+`apply` is convergent: a partial failure is safe to re-run — resources
+already applied noop on the next attempt. For the full from-zero walkthrough
+(cluster bring-up included), see
+[`bootstrap-from-scratch.md`](../bootstrap-from-scratch.md).
+
 ### Secrets: `--secrets-from-env`
 
 A manifest's `secrets` section carries only NAME + SCOPE bindings, never
