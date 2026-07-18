@@ -36,30 +36,55 @@ set -euo pipefail
 #      decision 8). Runs via an EXIT trap, idempotent (resolves by
 #      e2e-prefixed NAME as a fallback, safe to rerun after a crashed prior
 #      run).
-#   8. (T09) The FULL showcase manifest — telegram-style channel (`http`
-#      fallback for CI, real Telegram creds don't exist in dev), connector
-#      (no `secretRef` — deferred, see the driver's header comment),
-#      agent + knowledge base + workflow wiring them together — applied
-#      through the REAL SDK, not raw curl. Delegated to
-#      `scripts/e2e-manifest-showcase-driver.ts` (`bun run`, imports
-#      `sdk/src/index.ts` directly) because "apply via the SDK" is this
-#      task's explicit ask; this bash script still owns cluster reachability,
-#      teardown, and the tracking-ingester Postgres assertions the driver has
-#      no access to. Round trip: plan (all-create) -> apply (appliedCount=4)
-#      -> plan again (all-noop) -> apply again (no-op) -> a NEGATIVE broker
-#      test (a consumer presenting a MISMATCHED secret binding, called
-#      directly against provisioning-service's internal-only route, never
-#      through the gateway) is DENIED and audited (`secret_access_denied`).
+#   8. (T09 + this task's T1 coverage-maximization pass) The FULL showcase
+#      manifest — telegram-style channel (`http` fallback for CI, real
+#      Telegram creds don't exist in dev), a connector with `auth`
+#      (secretRef-resolved bearer token), `endpoints`, and `tags: ["llm"]`,
+#      an mcpServer with a `{ secretRef }` header, a minimal skill, a plain
+#      systemVariable, an agent (KB refs, enabledMcpServerRefs/
+#      enabledMcpTools/toolDescriptionOverrides, and a
+#      `model_config.llm.connectorId` SCALAR symbolic-ref substitution), a
+#      knowledge base, and a workflow whose `trigger.config.accountIds` (ARRAY
+#      substitution) and `endpointCall.adapterId` (SCALAR substitution) both
+#      resolve to real ids — applied through the REAL SDK, not raw curl.
+#      Delegated to `scripts/e2e-manifest-showcase-driver.ts` (`bun run`,
+#      imports `sdk/src/index.ts` directly) because "apply via the SDK" is
+#      this task's explicit ask; this bash script still owns cluster
+#      reachability, teardown, the tracking-ingester Postgres assertions, and
+#      the post-apply workflow-definition UUID check the driver has no
+#      access to. Round trip: plan (all-create, 7 resources) -> apply
+#      (appliedCount=7) -> plan again (all-noop) -> apply again (no-op) -> a
+#      NEGATIVE broker test (a consumer presenting a MISMATCHED secret
+#      binding, called directly against provisioning-service's internal-only
+#      route, never through the gateway) is DENIED and audited
+#      (`secret_access_denied`) -> ROUND 2 (a mini `kind: LibraryManifest`
+#      with ONE connector: put -> plan(create 1) -> apply(1) -> apply-noop)
+#      -> ROUND 3 (three plan-only negative tests against a SEPARATE
+#      throwaway manifest: `unallowlisted_symbolic_ref`,
+#      `mismatched_symbolic_ref`, `invalid_array_substitution_shape` — all
+#      three fail-loud kinds only surface at APPLY time, never at plan time,
+#      see the driver's header comment).
 #      Both the `apply_*` audit events and the `secret_access_denied` event
 #      are asserted present in `tracking.tracked_events` (queried the same
 #      way `e2e-http-workflow.sh` does: `kubectl exec` + `psql` against the
 #      tracking-ingester's Postgres store — this service has no other public
 #      query surface for arbitrary event lookups by manifest name).
-#      Teardown: the driver's created channel/connector/agent/KB/workflow are
-#      deleted directly via their owning services (same pattern as stage 7);
-#      the two k8s Secrets it created (`psec-channel-*`) have no delete API
-#      (write-only, decision 4) so they are removed with `kubectl delete
-#      secret` directly.
+#      Teardown: the driver's created channel/connector/mcpServer/skill/
+#      systemVariable/agent/KB/workflow are deleted directly via their owning
+#      services (same pattern as stage 7), as are the LibraryManifest's
+#      connector and the negative-test manifest's throwaway channel/connector
+#      (its workflow is asserted NEVER created, so there is nothing to delete
+#      for it); the four k8s Secrets it created (`psec-channel-*`,
+#      `psec-connector-*`, `psec-mcpserver-*`) have no delete API (write-only,
+#      decision 4) so they are removed with `kubectl delete secret` directly.
+#
+#      OUT OF SCOPE for this coverage pass (documented, not an oversight):
+#      `services[]` (hosted services / registry routes — a heavier Knative
+#      reconciliation stage this task's "no heavy stages" constraint
+#      excludes), `route_collision` preconditions (only reachable with
+#      `services[]`), and `knowledgeBases[].documents[].source.type: "url"`
+#      (network-fetched KB ingestion, likewise heavier than this task's
+#      scope).
 #
 # Exit code 0 = full round trip verified; 1 = any stage failed.
 
@@ -212,6 +237,30 @@ SHOWCASE_SECRET_B_NAME=""
 SHOWCASE_SECRET_B_OWNER=""
 SHOWCASE_DENY_CORRELATION_ID=""
 
+# T1 coverage-maximization additions — mcpServer/skill/systemVariable
+# resources + the two extra secrets bound to them, plus the LibraryManifest
+# (ROUND 2) and negative-test manifest (ROUND 3) state. Same
+# resolve-by-name-fallback idempotent teardown pattern as the T09 vars above.
+SHOWCASE_MCP_SERVER_NAME=""
+SHOWCASE_MCP_SERVER_EXTERNAL_ID=""
+SHOWCASE_SKILL_NAME=""
+SHOWCASE_SKILL_EXTERNAL_ID=""
+SHOWCASE_SYSTEM_VARIABLE_NAME=""
+SHOWCASE_SYSTEM_VARIABLE_EXTERNAL_ID=""
+SHOWCASE_SECRET_C_NAME=""
+SHOWCASE_SECRET_C_OWNER=""
+SHOWCASE_SECRET_D_NAME=""
+SHOWCASE_SECRET_D_OWNER=""
+LIB_MANIFEST_NAME=""
+LIB_CONNECTOR_NAME=""
+LIB_CONNECTOR_EXTERNAL_ID=""
+NEG_MANIFEST_NAME=""
+NEG_CHANNEL_NAME=""
+NEG_CHANNEL_EXTERNAL_ID=""
+NEG_CONNECTOR_NAME=""
+NEG_CONNECTOR_EXTERNAL_ID=""
+NEG_WORKFLOW_NAME=""
+
 wait_for_health() {
   local svc="$1"
   local deadline=$((SECONDS + POLL_TIMEOUT_S))
@@ -317,8 +366,91 @@ cleanup() {
     fi
   fi
 
-  # T09: the two k8s Secrets the showcase driver wrote have no delete API
-  # (write-only Secret API, SPEC.md decision 4) — removed directly via
+  # T1 coverage-maximization additions — mcpServer/skill/systemVariable,
+  # same resolve-by-name-fallback idempotent pattern as above.
+  if [[ -n "$SHOWCASE_MCP_SERVER_NAME" ]]; then
+    if [[ -z "$SHOWCASE_MCP_SERVER_EXTERNAL_ID" ]]; then
+      SHOWCASE_MCP_SERVER_EXTERNAL_ID="$(agent_admin_curl GET /admin/mcp-servers 2>/dev/null \
+        | jq -r --arg n "$SHOWCASE_MCP_SERVER_NAME" '[.[]? | select(.name == $n)][0].id // empty' 2>/dev/null || true)"
+    fi
+    if [[ -n "$SHOWCASE_MCP_SERVER_EXTERNAL_ID" ]]; then
+      agent_admin_curl DELETE "/admin/mcp-servers/${SHOWCASE_MCP_SERVER_EXTERNAL_ID}" >/dev/null 2>&1 || true
+      log "deleted showcase mcpServer externalId=${SHOWCASE_MCP_SERVER_EXTERNAL_ID}"
+    fi
+  fi
+
+  if [[ -n "$SHOWCASE_SKILL_NAME" ]]; then
+    if [[ -z "$SHOWCASE_SKILL_EXTERNAL_ID" ]]; then
+      SHOWCASE_SKILL_EXTERNAL_ID="$(agent_admin_curl GET /admin/skills 2>/dev/null \
+        | jq -r --arg n "$SHOWCASE_SKILL_NAME" '[.[]? | select(.name == $n)][0].id // empty' 2>/dev/null || true)"
+    fi
+    if [[ -n "$SHOWCASE_SKILL_EXTERNAL_ID" ]]; then
+      agent_admin_curl DELETE "/admin/skills/${SHOWCASE_SKILL_EXTERNAL_ID}" >/dev/null 2>&1 || true
+      log "deleted showcase skill externalId=${SHOWCASE_SKILL_EXTERNAL_ID}"
+    fi
+  fi
+
+  if [[ -n "$SHOWCASE_SYSTEM_VARIABLE_NAME" ]]; then
+    if [[ -z "$SHOWCASE_SYSTEM_VARIABLE_EXTERNAL_ID" ]]; then
+      SHOWCASE_SYSTEM_VARIABLE_EXTERNAL_ID="$(agent_admin_curl GET /admin/system-variables 2>/dev/null \
+        | jq -r --arg n "$SHOWCASE_SYSTEM_VARIABLE_NAME" '[.[]? | select(.name == $n)][0].id // empty' 2>/dev/null || true)"
+    fi
+    if [[ -n "$SHOWCASE_SYSTEM_VARIABLE_EXTERNAL_ID" ]]; then
+      agent_admin_curl DELETE "/admin/system-variables/${SHOWCASE_SYSTEM_VARIABLE_EXTERNAL_ID}" >/dev/null 2>&1 || true
+      log "deleted showcase systemVariable externalId=${SHOWCASE_SYSTEM_VARIABLE_EXTERNAL_ID}"
+    fi
+  fi
+
+  # ROUND 2 (LibraryManifest) — its one connector, same pattern.
+  if [[ -n "$LIB_CONNECTOR_NAME" ]]; then
+    if [[ -z "$LIB_CONNECTOR_EXTERNAL_ID" ]]; then
+      LIB_CONNECTOR_EXTERNAL_ID="$(connector_admin_curl GET /connectors 2>/dev/null \
+        | jq -r --arg n "$LIB_CONNECTOR_NAME" '[.[]? | select(.name == $n)][0].id // empty' 2>/dev/null || true)"
+    fi
+    if [[ -n "$LIB_CONNECTOR_EXTERNAL_ID" ]]; then
+      connector_admin_curl DELETE "/connectors/${LIB_CONNECTOR_EXTERNAL_ID}" >/dev/null 2>&1 || true
+      log "deleted LibraryManifest connector externalId=${LIB_CONNECTOR_EXTERNAL_ID}"
+    fi
+  fi
+
+  # ROUND 3 (negative-test manifest) — its throwaway channel + connector are
+  # created on the FIRST negative revision's apply attempt (before the
+  # deliberately-broken workflow is ever reached); its workflow is asserted
+  # NEVER created across all three revisions by stage 8c. That assertion is
+  # the guarantee — but as belt-and-suspenders (so a FUTURE regression that
+  # DID leak it cannot leave a live resource behind), teardown ALSO attempts
+  # a best-effort delete-by-name of NEG_WORKFLOW_NAME below.
+  if [[ -n "$NEG_WORKFLOW_NAME" ]]; then
+    NEG_WORKFLOW_LEAKED_ID="$(workflow_curl GET /workflows 2>/dev/null \
+      | jq -r --arg n "$NEG_WORKFLOW_NAME" '[.[]? | select(.name == $n)][0].id // empty' 2>/dev/null || true)"
+    if [[ -n "$NEG_WORKFLOW_LEAKED_ID" ]]; then
+      workflow_curl DELETE "/workflows/${NEG_WORKFLOW_LEAKED_ID}" >/dev/null 2>&1 || true
+      log "deleted LEAKED negative-test workflow definition externalId=${NEG_WORKFLOW_LEAKED_ID} (regression: it should never have been created — see stage 8c)"
+    fi
+  fi
+  if [[ -n "$NEG_CHANNEL_NAME" ]]; then
+    if [[ -z "$NEG_CHANNEL_EXTERNAL_ID" ]]; then
+      NEG_CHANNEL_EXTERNAL_ID="$(channel_curl GET /channels/accounts 2>/dev/null \
+        | jq -r --arg n "$NEG_CHANNEL_NAME" '[.[]? | select(.name == $n)][0].id // empty' 2>/dev/null || true)"
+    fi
+    if [[ -n "$NEG_CHANNEL_EXTERNAL_ID" ]]; then
+      channel_curl DELETE "/channels/accounts/${NEG_CHANNEL_EXTERNAL_ID}" >/dev/null 2>&1 || true
+      log "deleted negative-test channel account externalId=${NEG_CHANNEL_EXTERNAL_ID}"
+    fi
+  fi
+  if [[ -n "$NEG_CONNECTOR_NAME" ]]; then
+    if [[ -z "$NEG_CONNECTOR_EXTERNAL_ID" ]]; then
+      NEG_CONNECTOR_EXTERNAL_ID="$(connector_admin_curl GET /connectors 2>/dev/null \
+        | jq -r --arg n "$NEG_CONNECTOR_NAME" '[.[]? | select(.name == $n)][0].id // empty' 2>/dev/null || true)"
+    fi
+    if [[ -n "$NEG_CONNECTOR_EXTERNAL_ID" ]]; then
+      connector_admin_curl DELETE "/connectors/${NEG_CONNECTOR_EXTERNAL_ID}" >/dev/null 2>&1 || true
+      log "deleted negative-test connector externalId=${NEG_CONNECTOR_EXTERNAL_ID}"
+    fi
+  fi
+
+  # T09 + T1: the four k8s Secrets the showcase driver wrote have no delete
+  # API (write-only Secret API, SPEC.md decision 4) — removed directly via
   # kubectl. Idempotent (--ignore-not-found), safe to rerun. Secret names
   # are recomputed from the SHOWCASE_SECRET_*_OWNER vars — never from a
   # value, only names/owners ever cross this script.
@@ -333,6 +465,18 @@ cleanup() {
     kubectl delete secret "psec-channel-${SHOWCASE_SECRET_B_OWNER}" \
       -n "$TENANT_NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
     log "deleted k8s Secret psec-channel-${SHOWCASE_SECRET_B_OWNER} (namespace ${TENANT_NAMESPACE})"
+  fi
+  if [[ -n "$SHOWCASE_SECRET_C_OWNER" ]]; then
+    TENANT_NAMESPACE="${E2E_TENANT_NAMESPACE:-${TENANT}-dev-ns}"
+    kubectl delete secret "psec-connector-${SHOWCASE_SECRET_C_OWNER}" \
+      -n "$TENANT_NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+    log "deleted k8s Secret psec-connector-${SHOWCASE_SECRET_C_OWNER} (namespace ${TENANT_NAMESPACE})"
+  fi
+  if [[ -n "$SHOWCASE_SECRET_D_OWNER" ]]; then
+    TENANT_NAMESPACE="${E2E_TENANT_NAMESPACE:-${TENANT}-dev-ns}"
+    kubectl delete secret "psec-mcpserver-${SHOWCASE_SECRET_D_OWNER}" \
+      -n "$TENANT_NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+    log "deleted k8s Secret psec-mcpserver-${SHOWCASE_SECRET_D_OWNER} (namespace ${TENANT_NAMESPACE})"
   fi
 
   if [[ $status -eq 0 ]]; then
@@ -577,11 +721,11 @@ if [[ "$KB_REEMBED_COUNT" != "1" || "$KB_SKIP_COUNT" != "1" ]]; then
 fi
 log "second KB apply: exactly 1 document re-embedded, 1 unchanged (skip) — checksum reconciliation verified (OK)"
 
-# --- 8. T09: full showcase manifest, applied via the SDK ------------------
+# --- 8. T09 + T1: full showcase manifest, applied via the SDK -------------
 
-log "Stage 8 (T09): full showcase manifest — applied via the real SDK driver"
+log "Stage 8 (T09 + T1 coverage pass): full showcase manifest — applied via the real SDK driver"
 
-command -v bun >/dev/null 2>&1 || { err "bun not found in PATH — required for the T09 SDK driver"; exit 1; }
+command -v bun >/dev/null 2>&1 || { err "bun not found in PATH — required for the T09/T1 SDK driver"; exit 1; }
 
 E2E_EMAIL="${E2E_EMAIL:-yclawd@demo.io}"
 E2E_PASSWORD="${E2E_PASSWORD:-admin123}"
@@ -608,11 +752,17 @@ echo "$SHOWCASE_JSON" | jq -e '.ok == true' >/dev/null \
 SHOWCASE_MANIFEST_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.manifestName')"
 SHOWCASE_CHANNEL_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.channelName')"
 SHOWCASE_CONNECTOR_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.connectorName')"
+SHOWCASE_MCP_SERVER_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.mcpServerName')"
+SHOWCASE_SKILL_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.skillName')"
+SHOWCASE_SYSTEM_VARIABLE_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.systemVariableName')"
 SHOWCASE_AGENT_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.agentName')"
 SHOWCASE_WORKFLOW_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.workflowName')"
 SHOWCASE_KB_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.kbName')"
 SHOWCASE_CHANNEL_EXTERNAL_ID="$(echo "$SHOWCASE_JSON" | jq -r '.channelExternalId // empty')"
 SHOWCASE_CONNECTOR_EXTERNAL_ID="$(echo "$SHOWCASE_JSON" | jq -r '.connectorExternalId // empty')"
+SHOWCASE_MCP_SERVER_EXTERNAL_ID="$(echo "$SHOWCASE_JSON" | jq -r '.mcpServerExternalId // empty')"
+SHOWCASE_SKILL_EXTERNAL_ID="$(echo "$SHOWCASE_JSON" | jq -r '.skillExternalId // empty')"
+SHOWCASE_SYSTEM_VARIABLE_EXTERNAL_ID="$(echo "$SHOWCASE_JSON" | jq -r '.systemVariableExternalId // empty')"
 SHOWCASE_AGENT_EXTERNAL_ID="$(echo "$SHOWCASE_JSON" | jq -r '.agentExternalId // empty')"
 SHOWCASE_WORKFLOW_EXTERNAL_ID="$(echo "$SHOWCASE_JSON" | jq -r '.workflowExternalId // empty')"
 SHOWCASE_KB_EXTERNAL_ID="$(echo "$SHOWCASE_JSON" | jq -r '.kbExternalId // empty')"
@@ -620,19 +770,95 @@ SHOWCASE_SECRET_A_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.secretAName')"
 SHOWCASE_SECRET_A_OWNER="$(echo "$SHOWCASE_JSON" | jq -r '.secretAOwner')"
 SHOWCASE_SECRET_B_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.secretBName')"
 SHOWCASE_SECRET_B_OWNER="$(echo "$SHOWCASE_JSON" | jq -r '.secretBOwner')"
+SHOWCASE_SECRET_C_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.secretCName')"
+SHOWCASE_SECRET_C_OWNER="$(echo "$SHOWCASE_JSON" | jq -r '.secretCOwner')"
+SHOWCASE_SECRET_D_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.secretDName')"
+SHOWCASE_SECRET_D_OWNER="$(echo "$SHOWCASE_JSON" | jq -r '.secretDOwner')"
 SHOWCASE_DENY_CORRELATION_ID="$(echo "$SHOWCASE_JSON" | jq -r '.denyCorrelationId')"
+LIB_MANIFEST_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.libraryManifest.manifestName')"
+LIB_CONNECTOR_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.libraryManifest.connectorName')"
+LIB_CONNECTOR_EXTERNAL_ID="$(echo "$SHOWCASE_JSON" | jq -r '.libraryManifest.connectorExternalId // empty')"
+NEG_MANIFEST_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.negativeManifest.manifestName')"
+NEG_CHANNEL_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.negativeManifest.channelName')"
+NEG_CONNECTOR_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.negativeManifest.connectorName')"
+NEG_WORKFLOW_NAME="$(echo "$SHOWCASE_JSON" | jq -r '.negativeManifest.workflowName')"
 
-log "showcase manifest='${SHOWCASE_MANIFEST_NAME}': channel externalId=${SHOWCASE_CHANNEL_EXTERNAL_ID} connector externalId=${SHOWCASE_CONNECTOR_EXTERNAL_ID} agent externalId=${SHOWCASE_AGENT_EXTERNAL_ID} workflow externalId=${SHOWCASE_WORKFLOW_EXTERNAL_ID} kb externalId=${SHOWCASE_KB_EXTERNAL_ID}"
-log "showcase secrets (names/bindings only, value never logged): '${SHOWCASE_SECRET_A_NAME}' bound to channel/${SHOWCASE_SECRET_A_OWNER}; '${SHOWCASE_SECRET_B_NAME}' bound to channel/${SHOWCASE_SECRET_B_OWNER}"
+log "showcase manifest='${SHOWCASE_MANIFEST_NAME}': channel externalId=${SHOWCASE_CHANNEL_EXTERNAL_ID} connector externalId=${SHOWCASE_CONNECTOR_EXTERNAL_ID} mcpServer externalId=${SHOWCASE_MCP_SERVER_EXTERNAL_ID} skill externalId=${SHOWCASE_SKILL_EXTERNAL_ID} systemVariable externalId=${SHOWCASE_SYSTEM_VARIABLE_EXTERNAL_ID} agent externalId=${SHOWCASE_AGENT_EXTERNAL_ID} workflow externalId=${SHOWCASE_WORKFLOW_EXTERNAL_ID} kb externalId=${SHOWCASE_KB_EXTERNAL_ID}"
+log "showcase secrets (names/bindings only, value never logged): '${SHOWCASE_SECRET_A_NAME}' bound to channel/${SHOWCASE_SECRET_A_OWNER}; '${SHOWCASE_SECRET_B_NAME}' bound to channel/${SHOWCASE_SECRET_B_OWNER}; '${SHOWCASE_SECRET_C_NAME}' bound to connector/${SHOWCASE_SECRET_C_OWNER}; '${SHOWCASE_SECRET_D_NAME}' bound to mcpServer/${SHOWCASE_SECRET_D_OWNER}"
 log "T09 negative broker test: httpStatus=$(echo "$SHOWCASE_JSON" | jq -r '.negativeBroker.httpStatus') ok=$(echo "$SHOWCASE_JSON" | jq -r '.negativeBroker.ok') errorKind=$(echo "$SHOWCASE_JSON" | jq -r '.negativeBroker.errorKind') (expected ok=false errorKind=binding_mismatch)"
+log "ROUND 2 (LibraryManifest) '${LIB_MANIFEST_NAME}': connector '${LIB_CONNECTOR_NAME}' externalId=${LIB_CONNECTOR_EXTERNAL_ID}"
+log "ROUND 3 (negative-test manifest) '${NEG_MANIFEST_NAME}': results=$(echo "$SHOWCASE_JSON" | jq -c '.negativeManifest.results')"
 
-log "T09 runtime numbers (feed the demo narrative):"
+log "T09/T1 runtime numbers (feed the demo narrative):"
 echo "$SHOWCASE_JSON" | jq -r '
   "  first plan latency:    \(.firstPlan.latencyMs)ms",
   "  first apply latency:   \(.firstApply.latencyMs)ms (server durationMs=\(.firstApply.durationMs)ms, appliedCount=\(.firstApply.appliedCount))",
   "  second plan latency:   \(.secondPlan.latencyMs)ms",
   "  second apply latency:  \(.secondApply.latencyMs)ms (server durationMs=\(.secondApply.durationMs)ms, noopCount=\(.secondApply.noopCount))"
 '
+
+# --- 8b. post-apply workflow-definition substitution check ---------------
+# Fetches the CREATED workflow's stored definition (workflow-service is the
+# ONE service the driver has no direct wiring to talk to — see the driver's
+# header comment) and asserts it carries REAL ids for `accountIds`/
+# `adapterId`, never the symbolic `channelRef`/`connectorRef` strings the
+# manifest declared — proving the apply engine's scalar AND array
+# symbolic-ref substitution both actually ran before workflow-service ever
+# saw this definition.
+
+log "Stage 8b: fetching created workflow definition -> asserting real UUIDs, no symbolic refs remain"
+SHOWCASE_WORKFLOW_DEFINITION="$(workflow_curl GET "/workflows/${SHOWCASE_WORKFLOW_EXTERNAL_ID}")"
+
+# Scoped to the TWO fields the apply engine actually substitutes
+# (`trigger.config.accountIds` — ARRAY channelRef substitution;
+# `actions[].args.adapterId` — SCALAR connectorRef substitution). NOT a
+# whole-document grep for the strings "channelRef"/"connectorRef": this
+# workflow's `definition.variables.channelRef`/`.agentRef` are a SEPARATE,
+# deliberately-unsubstituted NAME-keyed wiring field (see the driver's
+# manifest comment) — a plain `{ channelRef: "<name>" }` STRING value, not
+# the `{ channelRef: <name> }` ref-OBJECT shape the substitution walker
+# recognizes, so it legitimately keeps the symbolic name verbatim.
+SUBSTITUTED_FIELDS_JSON="$(echo "$SHOWCASE_WORKFLOW_DEFINITION" | jq -c '{accountIds: .trigger.config.accountIds, adapterId: ([.actions[] | select(.activity == "endpointCall")][0].args.adapterId // empty)}')"
+if echo "$SUBSTITUTED_FIELDS_JSON" | grep -qE 'channelRef|connectorRef'; then
+  err "expected trigger.config.accountIds/endpointCall.args.adapterId to carry NO symbolic ref strings (channelRef/connectorRef), found one in: ${SUBSTITUTED_FIELDS_JSON}"
+  exit 1
+fi
+
+STORED_ACCOUNT_ID="$(echo "$SHOWCASE_WORKFLOW_DEFINITION" | jq -r '.trigger.config.accountIds[0] // empty')"
+STORED_ADAPTER_ID="$(echo "$SHOWCASE_WORKFLOW_DEFINITION" | jq -r '[.actions[] | select(.activity == "endpointCall")][0].args.adapterId // empty')"
+UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
+if [[ ! "$STORED_ACCOUNT_ID" =~ $UUID_RE ]]; then
+  err "expected trigger.config.accountIds[0] to be a real UUID (channelRef substituted), got: '${STORED_ACCOUNT_ID}'"
+  echo "$SHOWCASE_WORKFLOW_DEFINITION" | jq .
+  exit 1
+fi
+if [[ ! "$STORED_ADAPTER_ID" =~ $UUID_RE ]]; then
+  err "expected the endpointCall action's args.adapterId to be a real UUID (connectorRef substituted), got: '${STORED_ADAPTER_ID}'"
+  echo "$SHOWCASE_WORKFLOW_DEFINITION" | jq .
+  exit 1
+fi
+log "stored workflow definition: accountIds[0]='${STORED_ACCOUNT_ID}' adapterId='${STORED_ADAPTER_ID}' — both real UUIDs, no symbolic ref strings remain (OK)"
+
+# --- 8c. ROUND 3 negative-manifest workflow ABSENCE check ----------------
+# The driver's three ROUND 3 negative revisions each embed a deliberately
+# broken symbolic ref in NEG_WORKFLOW_NAME's definition; the apply engine
+# must fail-loud DURING substitution, BEFORE the workflow writer ever runs
+# (RESOURCE_KIND_ORDER ranks "workflow" last). This is the independent
+# assertion of that invariant the driver itself cannot make (it has no
+# workflow-service wiring): a REAL name lookup against workflow-service. A
+# regression that let the broken workflow reach the writer would BOTH pass
+# the driver's error-kind assertions AND leak an untorn-down workflow — this
+# check catches exactly that. Mirrors the resolve-by-name pattern cleanup()
+# uses for NEG_CHANNEL_EXTERNAL_ID/LIB_CONNECTOR_EXTERNAL_ID.
+log "Stage 8c: asserting the negative-test workflow '${NEG_WORKFLOW_NAME}' was NEVER created (broken ref must fail before the writer)"
+NEG_WORKFLOW_LEAKED_ID="$(workflow_curl GET /workflows 2>/dev/null \
+  | jq -r --arg n "$NEG_WORKFLOW_NAME" '[.[]? | select(.name == $n)][0].id // empty' 2>/dev/null || true)"
+if [[ -n "$NEG_WORKFLOW_LEAKED_ID" ]]; then
+  err "expected NO workflow named '${NEG_WORKFLOW_NAME}' to exist (every ROUND 3 apply must fail during substitution, before the workflow writer), but found one: externalId=${NEG_WORKFLOW_LEAKED_ID}"
+  exit 1
+fi
+log "Stage 8c: no workflow named '${NEG_WORKFLOW_NAME}' exists — broken refs fail before the writer, nothing leaked (OK)"
 
 # --- 8a. tracking-ingester assertions (async NATS ingestion, so polled) ---
 
@@ -662,7 +888,7 @@ while (( SECONDS < TRACKING_DEADLINE )); do
   RESOURCE_APPLIED_COUNT="$(tracking_count_apply_events resource_applied || echo 0)"
   APPLY_COMPLETED_COUNT="$(tracking_count_apply_events apply_completed || echo 0)"
   SECRET_DENIED_COUNT="$(tracking_count_secret_denied || echo 0)"
-  if [[ "${APPLY_STARTED_COUNT:-0}" -ge 1 && "${RESOURCE_APPLIED_COUNT:-0}" -ge 4 \
+  if [[ "${APPLY_STARTED_COUNT:-0}" -ge 1 && "${RESOURCE_APPLIED_COUNT:-0}" -ge 7 \
         && "${APPLY_COMPLETED_COUNT:-0}" -ge 1 && "${SECRET_DENIED_COUNT:-0}" -ge 1 ]]; then
     break
   fi
@@ -675,8 +901,8 @@ if [[ "${APPLY_STARTED_COUNT:-0}" -lt 1 ]]; then
   err "expected at least 1 apply_started event for manifest='${SHOWCASE_MANIFEST_NAME}' in tracking.tracked_events, got ${APPLY_STARTED_COUNT:-0}"
   exit 1
 fi
-if [[ "${RESOURCE_APPLIED_COUNT:-0}" -lt 4 ]]; then
-  err "expected at least 4 resource_applied events (channel/connector/agent/workflow) for manifest='${SHOWCASE_MANIFEST_NAME}', got ${RESOURCE_APPLIED_COUNT:-0}"
+if [[ "${RESOURCE_APPLIED_COUNT:-0}" -lt 7 ]]; then
+  err "expected at least 7 resource_applied events (channel/connector/mcpServer/skill/agent/systemVariable/workflow) for manifest='${SHOWCASE_MANIFEST_NAME}', got ${RESOURCE_APPLIED_COUNT:-0}"
   exit 1
 fi
 if [[ "${APPLY_COMPLETED_COUNT:-0}" -lt 1 ]]; then

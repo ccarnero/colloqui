@@ -57,7 +57,10 @@ export interface ManifestRevision {
  * `"systemVariable"` (T04) and `"mcpServer"` (T06) added in
  * `manual-loops/provisioning-manifest-gaps.md` T07 so `plan()`/`apply()`
  * responses for manifests with `systemVariables[]`/`mcpServers[]` sections
- * type-check against the real server payload shape.
+ * type-check against the real server payload shape. `"skill"` added
+ * (manual-loops/provisioning-manifest-gaps-3.md T01, workstream a) for the
+ * same reason, so `plan()`/`apply()` responses for manifests with a
+ * `skills[]` section type-check too.
  */
 export type ResourceKind =
   | "channel"
@@ -66,6 +69,7 @@ export type ResourceKind =
   | "service"
   | "systemVariable"
   | "mcpServer"
+  | "skill"
   | "workflow";
 
 export type ResourceVerdict = "create" | "update" | "noop";
