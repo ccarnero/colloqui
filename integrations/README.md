@@ -205,6 +205,26 @@ succeeds and no manual step is needed. See
 § Run / exercise for the full manual remediation procedure (reading the
 account's `appSecret` from Postgres and calling `setWebhook` directly).
 
+### Known caveat: placeholder `systemVariables` values apply silently
+
+Several sample manifests ship a `systemVariables` entry whose default
+`value` is a literal placeholder (`rg REPLACE_WITH integrations -g
+manifest.yaml` currently finds it in `channels/http-fanout-telegram`,
+`http/hosted-services-api`, `ai/ai-agent-triage`,
+`ai/ai-call-center-supervisor`, and `ai/ai-system-variables`). `validate`,
+`plan`, and `apply` all succeed with the placeholder left in place — nothing
+in the provisioning pipeline rejects it, because a system variable's value
+is free-form text, not a reference the apply engine can resolve or fail on.
+For manifests that feed the placeholder into a `channelSend` (as
+`http-fanout-telegram` does, targeting Telegram), the resulting send then
+fails silently: `channelSend` only publishes the outbound message for
+delivery and returns once that publish is confirmed — it does not wait for
+the channel provider's own delivery response — so the workflow execution,
+and `channelSend`'s own status, both report success even though the
+message never actually reaches the recipient. See
+[`channels/http-fanout-telegram/README.md`](./channels/http-fanout-telegram/README.md)
+§ Troubleshooting for the full diagnosis and remediation.
+
 ## Shared library
 
 `lib/resolve-env.sh` is a shared shell helper for resolving the dev-cluster environment

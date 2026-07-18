@@ -125,3 +125,50 @@ Dato gatuno: Cats sleep 70% of their lives.
 - **`endpointCall` activities run on `connector-runtime`**, a separate service registered on
   Temporal task queue `connector-runtime` — not in-process on `workflow-orchestrator`.
 - **The HTTP channel is ingest-only**, so Telegram is the reply path by design.
+
+## Troubleshooting
+
+### `run.sh` says sent / accepted but nothing arrives in Telegram
+
+`run.sh` prints `{"status":"accepted"}` from the webhook and the workflow's
+`notify` step (`channelSend`) shows `status=ok` — but no message shows up in
+the target Telegram chat. This is not a network or workflow bug; it is the
+sample's own placeholder value, unedited:
+
+1. **Check the value isn't still the placeholder.** `manifest.yaml`'s
+   `spec.systemVariables[0].value` ships as
+   `"REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID"` (see § Configure above) —
+   `validate`/`plan`/`apply` all succeed with the placeholder in place, so
+   nothing in the provisioning pipeline catches it. Read the live value
+   through the gateway's admin proxy:
+
+   ```bash
+   curl -s "$YOIZEN_BASE_URL/api/admin/system-variables" \
+     -H "x-yoizen-tenant: $YOIZEN_TENANT" \
+     -H "Authorization: Bearer $YOUR_TOKEN" | jq '.[] | select(.name == "http-fanout-telegram-chat-id")'
+   ```
+
+   If `value` is still `REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID`, edit
+   `manifest.yaml` with your real numeric chat id and re-apply (§ Configure).
+   `yoizen manifests plan` will show a single `systemVariable` update.
+
+2. **Why this is silent.** The `notify` step's `channelSend` activity
+   (`services/workflow-service/src/temporal/activities/channel-send.activity.ts`)
+   publishes the outbound message envelope to NATS and returns
+   `{ published: true, subject }` as soon as the publish is flushed — it
+   does **not** wait for `channel-service` to hand the message to the
+   Telegram provider, let alone for Telegram's own delivery response. So
+   every upstream signal (`run.sh`'s webhook response, the workflow
+   execution status, `channelSend`'s own `status=ok`) reports success even
+   when the `to` field is an invalid chat id: the rejection happens
+   downstream, after this activity has already returned.
+
+### `workflow-worker` logs `unregistered external sink 'exporter'`
+
+If you see this in `workflow-worker`'s logs while diagnosing a delivery
+issue, it is unrelated. It is Temporal Core SDK telemetry log noise emitted
+by the Rust core runtime when its internal metrics/tracing sink wiring
+doesn't fully match config (see `temporal-worker-bootstrap.ts`'s
+`Runtime.install(...)` for where telemetry is installed) — it does not mean
+any workflow, activity, or message failed. Do not use it as a signal for
+delivery problems; check the actual chat id value instead (above).

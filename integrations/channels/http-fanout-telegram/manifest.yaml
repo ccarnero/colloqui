@@ -78,7 +78,13 @@ spec:
         Numeric Telegram chat id the 'notify' step DMs a summary to. Edit
         this value (systemVariables[0].value) and re-apply to change the
         recipient — resolved at workflow execution time via
-        {{variables.system.http-fanout-telegram-chat-id}}.
+        {{variables.system.http-fanout-telegram-chat-id}}. This placeholder
+        applies cleanly (validate/plan/apply all succeed) — the workflow
+        will run and channelSend will report status=ok even with the
+        placeholder still in place, because channelSend only confirms the
+        message was published for delivery, not that Telegram accepted it;
+        the send itself will silently fail until you replace this value
+        (see README § Troubleshooting).
 
   # ---------------------------------------------------------------------------
   # The fan-out workflow — branch (3 parallel endpointCall) -> join (jsFunction)
